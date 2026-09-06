@@ -72,6 +72,7 @@ function relayWith(slugs: Record<string, string>): RelayAdapterCatalog {
 
 /** Drive one connect flow on a fake provider to its connected account. */
 async function connectOne(
+  registry: ConnectorRegistry,
   provider: FakeConnectorProvider,
   toolkit: string,
   label: string
@@ -79,28 +80,28 @@ async function connectOne(
   const { flowId } = await provider.startConnect(toolkit, { label });
   const { account } = await provider.pollConnect(flowId);
   if (!account) throw new Error(`connect for '${label}' produced no account`);
-  return account;
+  return registry.recordConnect(provider, account);
 }
 
 /** A gateway with two connected Gmail accounts, registered for routing + exposure. */
 async function twoGmailAccounts(providerType: string): Promise<{
+  db: ReturnType<typeof createTestDb>;
   registry: ConnectorRegistry;
   provider: FakeConnectorProvider;
   personal: ConnectedAccount;
   work: ConnectedAccount;
 }> {
-  const registry = new ConnectorRegistry({ db: createTestDb() });
+  const db = createTestDb();
+  const registry = new ConnectorRegistry({ db });
   const provider = new FakeConnectorProvider({
     type: providerType,
     custody: 'managed',
     supportsMultiAccount: true,
   });
   registry.register(provider);
-  const personal = await connectOne(provider, GMAIL, 'personal');
-  const work = await connectOne(provider, GMAIL, 'work');
-  registry.recordConnect(personal);
-  registry.recordConnect(work);
-  return { registry, provider, personal, work };
+  const personal = await connectOne(registry, provider, GMAIL, 'personal');
+  const work = await connectOne(registry, provider, GMAIL, 'work');
+  return { db, registry, provider, personal, work };
 }
 
 /** `recommendConnector('gmail')` must top with the gateway (no relay adapter for Gmail). */
@@ -127,11 +128,13 @@ const gmailRoutesToGateway: Oracle = async (): Promise<OracleResult> => {
 
 /** Two connects of Gmail yield two distinct accounts, each exposing a tool server. */
 const gmailTwoAccountAddressing: Oracle = async (): Promise<OracleResult> => {
-  const { provider, personal, work } = await twoGmailAccounts('composio');
+  const { registry, provider, personal, work } = await twoGmailAccounts('composio');
   const distinct = personal.id !== work.id;
   const accounts = await provider.listAccounts({ toolkit: GMAIL });
-  const serverPersonal = await provider.toolServerForAccount(personal.id);
-  const serverWork = await provider.toolServerForAccount(work.id);
+  const personalRef = registry.accountBinding(personal.id)?.externalAccountRef;
+  const workRef = registry.accountBinding(work.id)?.externalAccountRef;
+  const serverPersonal = personalRef ? await provider.toolServerForAccount(personalRef) : null;
+  const serverWork = workRef ? await provider.toolServerForAccount(workRef) : null;
   const passed =
     distinct && accounts.length === 2 && serverPersonal !== null && serverWork !== null;
   return {
@@ -147,14 +150,27 @@ const gmailNoProviderLeakage: Oracle = async (): Promise<OracleResult> => {
   // A NEUTRAL fake type so the fake's namespaced account id cannot itself smuggle
   // a real vendor name into the assertion — G2 is about the vendor's identity
   // (composio/nango/rube) never appearing, and the server name being toolkit+label.
-  const { registry, personal, work } = await twoGmailAccounts('gateway-under-test');
-  const attachmentsDb = createTestDb();
+  const { db, registry, personal, work } = await twoGmailAccounts('gateway-under-test');
+  db.$client
+    .prepare(
+      `INSERT INTO agents (id, name, runtime, project_path, registered_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      'connector-gmail-agent',
+      'connector-gmail-agent',
+      'test-mode',
+      '/eval/gmail',
+      '2026-09-05T00:00:00.000Z',
+      '2026-09-05T00:00:00.000Z'
+    );
   const service = new SessionConnectorService({
     registry,
-    agentAttachments: new AgentConnectorAttachmentStore(attachmentsDb),
-    sessionAttachments: new SessionConnectorAttachmentStore(attachmentsDb),
+    agentAttachments: new AgentConnectorAttachmentStore(db),
+    sessionAttachments: new SessionConnectorAttachmentStore(db),
   });
   const sessionId = 'connector-gmail-eval';
+  await service.hydrateSession(sessionId, 'connector-gmail-agent');
   await service.attach(sessionId, personal.id);
   await service.attach(sessionId, work.id);
 
@@ -201,7 +217,7 @@ const gmailPersistsOnlyVendorKeyRef: Oracle = async (): Promise<OracleResult> =>
       detail: 'provider was not created from the resolved key',
     };
   }
-  // Drive two connects; the per-account handles are opaque `ca_…` ids, NOT
+  // Drive two connects; the private per-account handles are opaque `ca_…` ids, NOT
   // credential references, and no further credential resolution happens.
   const first = await provider.startConnect(GMAIL, { label: 'personal' });
   const firstAccount = (await provider.pollConnect(first.flowId)).account;
@@ -213,15 +229,18 @@ const gmailPersistsOnlyVendorKeyRef: Oracle = async (): Promise<OracleResult> =>
   const vendorRefIsNotAccountScoped =
     COMPOSIO_API_KEY_REF === 'file:composio-api-key' && !COMPOSIO_API_KEY_REF.includes('ca_');
   const accountsAreOpaqueHandles = Boolean(
-    firstAccount?.id.includes('ca_') &&
-    secondAccount?.id.includes('ca_') &&
-    firstAccount.id !== secondAccount.id
+    firstAccount?.externalAccountRef.includes('ca_') &&
+    secondAccount?.externalAccountRef.includes('ca_') &&
+    firstAccount.externalAccountRef !== secondAccount.externalAccountRef
   );
   const passed = onlyVendorKeyResolved && vendorRefIsNotAccountScoped && accountsAreOpaqueHandles;
   return {
     label: 'managed path resolves only the vendor API-key ref, never a per-account token ref',
     passed,
-    evidence: { resolveCalls, accountIds: [firstAccount?.id, secondAccount?.id] },
+    evidence: {
+      resolveCalls,
+      accountIds: [firstAccount?.externalAccountRef, secondAccount?.externalAccountRef],
+    },
     ...(passed ? {} : { detail: `resolveCalls=${JSON.stringify(resolveCalls)}` }),
   };
 };

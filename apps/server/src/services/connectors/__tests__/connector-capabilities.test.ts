@@ -20,6 +20,7 @@ import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
 
 import { connectorDomain, type ConnectorCapabilityDeps } from '../connector-capabilities.js';
 import { ConnectorRegistry } from '../registry.js';
+import { ConnectionStore } from '../connection-store.js';
 import { ConnectorFlowBindings } from '../flow-bindings.js';
 import { SessionConnectorService } from '../session-exposure.js';
 import {
@@ -27,11 +28,11 @@ import {
   SessionConnectorAttachmentStore,
 } from '../attachment-store.js';
 import { custodyDisclosure } from '../custody-disclosure.js';
-import { RawMcpConnectorProvider } from '../providers/raw-mcp.js';
 import type { CapabilityDeps } from '../../core/capabilities/index.js';
 import { composeDorkOsCapabilityRegistry } from '../../core/self-description/dorkos-registry.js';
 import { initCapabilityTierGate } from '../../core/capabilities/tier-enforcement.js';
 import { ApprovalService } from '../../core/approvals/index.js';
+import { RawMcpConnectorProvider } from '../providers/raw-mcp.js';
 
 /** Resolve one capability by id, throwing when the domain stops declaring it. */
 function capability(id: string) {
@@ -56,7 +57,7 @@ describe('connector capabilities', () => {
     sessionConnectors = new SessionConnectorService({
       registry: connectorRegistry,
       agentAttachments: new AgentConnectorAttachmentStore(db),
-      sessionAttachments: new SessionConnectorAttachmentStore(db),
+      sessionAttachments: new SessionConnectorAttachmentStore(db, () => 'agent-a'),
     });
     const connectorDeps: ConnectorCapabilityDeps = {
       registry: connectorRegistry,
@@ -149,12 +150,9 @@ describe('connector capabilities', () => {
         { service: 'slack' },
         {}
       )) as { flowId: string };
-      const polled = (await capability('connector.poll_connect').invoke(
-        deps,
-        { flowId: started.flowId },
-        {}
-      )) as { status: string; account?: { toolkit: string } };
-      expect(polled).toMatchObject({ status: 'connected', account: { toolkit: 'slack' } });
+      expect(flowBindings.providerFor(started.flowId)).toMatchObject({
+        provider: { instanceId: 'provider_instance_composio' },
+      });
     });
 
     it('start_connect fails honestly when nothing can connect the service', async () => {
@@ -170,6 +168,42 @@ describe('connector capabilities', () => {
     });
   });
 
+  it('blocks every capability when the canonical connector migration is unavailable', async () => {
+    const unavailableRegistry = new ConnectorRegistry({
+      db,
+      connectionStore: new ConnectionStore({
+        db,
+        runMigration: () => ({
+          status: 'migration_failed',
+          error: 'Connector data could not be upgraded. Connector changes are unavailable.',
+        }),
+      }),
+    });
+    const unavailableDeps: CapabilityDeps = {
+      logger: noopLogger,
+      connectorDeps: {
+        registry: unavailableRegistry,
+        flowBindings,
+        sessionConnectors: new SessionConnectorService({
+          registry: unavailableRegistry,
+          agentAttachments: new AgentConnectorAttachmentStore(db),
+          sessionAttachments: new SessionConnectorAttachmentStore(db, () => 'agent-a'),
+        }),
+      },
+    };
+
+    await expect(
+      capability('connector.start_connect').invoke(
+        unavailableDeps,
+        { service: 'gmail', provider: 'composio' },
+        {}
+      )
+    ).rejects.toMatchObject({
+      code: 'migration_failed',
+      message: 'Connector data could not be upgraded. Connector changes are unavailable.',
+    });
+  });
+
   describe('start_connect markdown (the v1 in-chat connect experience)', () => {
     it('carries the auth URL, the EXACT custody disclosure, and the follow-up ask', async () => {
       const { started } = await connectViaCapabilities();
@@ -182,7 +216,7 @@ describe('connector capabilities', () => {
       expect(started.message).toContain("Tell me when you've signed in");
     });
 
-    it('checks a configured raw MCP connection without claiming it opened a sign-in flow', async () => {
+    it('checks a configured raw MCP connection without inventing a sign-in flow', async () => {
       connectorRegistry.unregister('composio');
       connectorRegistry.register(
         new RawMcpConnectorProvider({
@@ -211,7 +245,7 @@ describe('connector capabilities', () => {
   });
 
   describe('the shared flow-binding map (one map, both surfaces)', () => {
-    it('retains a terminal result so poll_connect is idempotent through the public capability', async () => {
+    it('records the binding on start and replays a bounded public terminal result', async () => {
       const started = (await capability('connector.start_connect').invoke(
         deps,
         { service: 'gmail' },
@@ -219,17 +253,19 @@ describe('connector capabilities', () => {
       )) as { flowId: string };
       // The SAME instance the REST router is handed — a flow started in chat is
       // pollable over REST because this binding exists.
+      expect(flowBindings.providerFor(started.flowId)).toMatchObject({
+        provider: { instanceId: 'provider_instance_composio' },
+      });
+
       const first = await capability('connector.poll_connect').invoke(
         deps,
         { flowId: started.flowId },
         {}
       );
-      const repeated = await capability('connector.poll_connect').invoke(
-        deps,
-        { flowId: started.flowId },
-        {}
-      );
-      expect(repeated).toEqual(first);
+      expect(flowBindings.providerFor(started.flowId)).toMatchObject({ state: 'terminal' });
+      expect(
+        await capability('connector.poll_connect').invoke(deps, { flowId: started.flowId }, {})
+      ).toEqual(first);
     });
 
     it('replays a terminal raw MCP failure through its original provider instance', async () => {
@@ -376,13 +412,13 @@ describe('connector capabilities', () => {
     it('surfaces an unexposable account as a warning on the result, never a throw', async () => {
       const provider = connectorRegistry.resolveProvider('composio') as FakeConnectorProvider;
       const { polled } = await connectViaCapabilities();
-      provider.setStatus(polled.account!.id as ConnectedAccountId, 'expired');
+      const accountId = polled.account!.id as ConnectedAccountId;
+      const externalAccountRef = connectorRegistry.accountBinding(accountId)!.externalAccountRef;
+      provider.setStatus(externalAccountRef, 'expired');
       // The routing cache still says active (best-effort), so re-record with the
       // expired status the provider now reports to drive the warning path.
-      connectorRegistry.recordDisconnect(polled.account!.id as ConnectedAccountId);
-      connectorRegistry.recordConnect({
-        ...(await provider.listAccounts())[0]!,
-      });
+      connectorRegistry.recordDisconnect(accountId);
+      connectorRegistry.recordConnect(provider, (await provider.listAccounts())[0]!);
 
       const attached = (await capability('connector.attach_account').invoke(
         deps,

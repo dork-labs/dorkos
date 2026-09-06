@@ -3,27 +3,27 @@
  * `specs/connection-scoping/` §Part 1) — the durable half of the two-level
  * consent ladder `SessionConnectorService` reads at hydration time.
  *
- * Two tables, two thin CRUD wrappers:
+ * Two canonical tables, two thin CRUD wrappers:
  *
  * - {@link AgentConnectorAttachmentStore} — standing, agent-level consent.
  *   Row existence IS the consent (no boolean column); a detach deletes the
  *   row.
  * - {@link SessionConnectorAttachmentStore} — per-session overrides. A row
- *   here is a tombstone, not just a presence flag: `'attached'` grants an
- *   account the agent has not standingly attached; `'detached'` SUPPRESSES
- *   one the agent HAS. See `design-decisions.md` D2 for why "no merge" means
- *   per-account override rather than an all-or-nothing session behavior.
+ *   here is a tombstone, not just a presence flag: `'attached'` selects the
+ *   session-scoped path for an account the agent has not standingly attached;
+ *   `'detached'` suppresses inherited access. The row never grants an operation
+ *   by itself. See `design-decisions.md` D2 for the per-account precedence.
  *
- * Both stores hold pure intent records — never a resolved
- * `McpAppServerConnection` (unserializable, provider-held). Reading either
+ * Both stores use stable DorkOS connection ids and hold pure intent records —
+ * never a resolved `McpAppServerConnection` (unserializable, provider-held). Reading either
  * table back never produces something tool-shaped by itself; a caller must
  * still resolve the connection via the owning `ConnectorProvider`.
  *
  * @module services/connectors/attachment-store
  */
 import {
-  agentConnectorAttachments,
-  sessionConnectorAttachments,
+  agentConnectionAttachments,
+  sessionConnectionOverrides,
   eq,
   and,
   type Db,
@@ -53,8 +53,8 @@ export class AgentConnectorAttachmentStore {
    */
   attach(agentId: string, accountId: ConnectedAccountId): void {
     this._db
-      .insert(agentConnectorAttachments)
-      .values({ agentId, accountId, attachedAt: new Date().toISOString() })
+      .insert(agentConnectionAttachments)
+      .values({ agentId, connectionId: accountId, attachedAt: new Date().toISOString() })
       .onConflictDoNothing()
       .run();
   }
@@ -62,11 +62,11 @@ export class AgentConnectorAttachmentStore {
   /** Revoke standing consent. Idempotent — detaching an unattached account is a no-op. */
   detach(agentId: string, accountId: ConnectedAccountId): void {
     this._db
-      .delete(agentConnectorAttachments)
+      .delete(agentConnectionAttachments)
       .where(
         and(
-          eq(agentConnectorAttachments.agentId, agentId),
-          eq(agentConnectorAttachments.accountId, accountId)
+          eq(agentConnectionAttachments.agentId, agentId),
+          eq(agentConnectionAttachments.connectionId, accountId)
         )
       )
       .run();
@@ -76,30 +76,14 @@ export class AgentConnectorAttachmentStore {
   listForAgent(agentId: string): AgentConnectorAttachment[] {
     return this._db
       .select()
-      .from(agentConnectorAttachments)
-      .where(eq(agentConnectorAttachments.agentId, agentId))
+      .from(agentConnectionAttachments)
+      .where(eq(agentConnectionAttachments.agentId, agentId))
       .all()
-      .map((row) => ({ ...row, accountId: row.accountId as ConnectedAccountId }));
-  }
-
-  /**
-   * Delete every standing attachment of `agentId` — the agent-deletion
-   * cascade (adversarial review MAJOR 6). Without this, unregistering an
-   * agent and later registering a NEW agent under the same id (a real
-   * possibility — mesh ids are stable strings a person can reuse by pointing
-   * a fresh directory at the same registration path) would silently inherit
-   * the deleted agent's standing account consent. Mirrors the reasoning
-   * `ConnectorRegistry.recordDisconnect`'s doc already makes for account ids:
-   * a deleted identity's consent rows must not outlive it. Idempotent —
-   * deleting an agent with nothing attached is a no-op.
-   *
-   * @param agentId - The unregistered agent's id.
-   */
-  deleteAgent(agentId: string): void {
-    this._db
-      .delete(agentConnectorAttachments)
-      .where(eq(agentConnectorAttachments.agentId, agentId))
-      .run();
+      .map((row) => ({
+        agentId: row.agentId,
+        accountId: row.connectionId as ConnectedAccountId,
+        attachedAt: row.attachedAt,
+      }));
   }
 }
 
@@ -109,32 +93,88 @@ export type SessionConnectorOverrideState = 'attached' | 'detached';
 /** One session's persisted override row. */
 export interface SessionConnectorOverride {
   sessionId: string;
+  agentId?: string;
   accountId: ConnectedAccountId;
   state: SessionConnectorOverrideState;
+  needsReconciliation: boolean;
   updatedAt: string;
+}
+
+/** Raised when a new session override cannot be tied to an existing agent. */
+export class SessionConnectorOwnerUnavailableError extends Error {
+  /** Construct the ownership failure for one session. */
+  constructor(sessionId: string) {
+    super(`Connector access cannot be changed because session '${sessionId}' has no agent owner.`);
+    this.name = 'SessionConnectorOwnerUnavailableError';
+  }
 }
 
 /** Per-session connector-attachment overrides — see module doc. */
 export class SessionConnectorAttachmentStore {
   private readonly _db: Db;
+  private readonly _resolveOwner: (sessionId: string) => string | undefined;
 
-  constructor(db: Db) {
+  constructor(db: Db, resolveOwner?: (sessionId: string) => string | undefined) {
     this._db = db;
+    this._resolveOwner =
+      resolveOwner ??
+      ((sessionId) => {
+        const candidate = this._db.$client
+          .prepare(
+            `SELECT COUNT(DISTINCT a.id) AS owner_count, MIN(a.id) AS id
+             FROM session_metadata sm
+             JOIN agents a ON a.project_path = sm.agent_path
+             WHERE sm.session_id = ? AND sm.agent_path IS NOT NULL`
+          )
+          .get(sessionId) as { owner_count: number; id: string | null };
+        return candidate.owner_count === 1 && candidate.id ? candidate.id : undefined;
+      });
+  }
+
+  /**
+   * Resolve the registered agent that owns a live session change.
+   *
+   * Callers that can otherwise no-op still use this first so an unknown or
+   * unowned session cannot probe connection ids through different responses.
+   *
+   * @param sessionId - Session whose connector state would change.
+   * @param agentId - Already resolved in-memory owner, when available.
+   * @returns The verified owner id.
+   * @throws {@link SessionConnectorOwnerUnavailableError} when the session has no owner.
+   */
+  requireOwner(sessionId: string, agentId?: string): string {
+    const owner = agentId ?? this._resolveOwner(sessionId);
+    if (!owner) throw new SessionConnectorOwnerUnavailableError(sessionId);
+    return owner;
   }
 
   /** Write (or replace) the override for one session's account. */
   setState(
     sessionId: string,
     accountId: ConnectedAccountId,
-    state: SessionConnectorOverrideState
+    state: SessionConnectorOverrideState,
+    agentId?: string
   ): void {
+    const owner = this.requireOwner(sessionId, agentId);
     const updatedAt = new Date().toISOString();
     this._db
-      .insert(sessionConnectorAttachments)
-      .values({ sessionId, accountId, state, updatedAt })
+      .insert(sessionConnectionOverrides)
+      .values({
+        sessionId,
+        connectionId: accountId,
+        state,
+        agentId: owner,
+        needsReconciliation: false,
+        updatedAt,
+      })
       .onConflictDoUpdate({
-        target: [sessionConnectorAttachments.sessionId, sessionConnectorAttachments.accountId],
-        set: { state, updatedAt },
+        target: [sessionConnectionOverrides.sessionId, sessionConnectionOverrides.connectionId],
+        set: {
+          state,
+          agentId: owner,
+          needsReconciliation: false,
+          updatedAt,
+        },
       })
       .run();
   }
@@ -143,14 +183,28 @@ export class SessionConnectorAttachmentStore {
   listForSession(sessionId: string): SessionConnectorOverride[] {
     return this._db
       .select()
-      .from(sessionConnectorAttachments)
-      .where(eq(sessionConnectorAttachments.sessionId, sessionId))
+      .from(sessionConnectionOverrides)
+      .where(eq(sessionConnectionOverrides.sessionId, sessionId))
       .all()
       .map((row) => ({
-        ...row,
-        accountId: row.accountId as ConnectedAccountId,
+        sessionId: row.sessionId,
+        ...(row.agentId && { agentId: row.agentId }),
+        accountId: row.connectionId as ConnectedAccountId,
         state: row.state as SessionConnectorOverrideState,
+        needsReconciliation: row.needsReconciliation,
+        updatedAt: row.updatedAt,
       }));
+  }
+
+  /** Bind new, non-migrated rows to an unambiguous session owner. */
+  bindOwner(sessionId: string, agentId: string): void {
+    this._db.$client
+      .prepare(
+        `UPDATE session_connection_overrides
+         SET agent_id = ?
+         WHERE session_id = ? AND agent_id IS NULL AND needs_reconciliation = 0`
+      )
+      .run(agentId, sessionId);
   }
 
   /**
@@ -171,31 +225,31 @@ export class SessionConnectorAttachmentStore {
     if (oldSessionId === newSessionId) return;
     const oldRows = this._db
       .select()
-      .from(sessionConnectorAttachments)
-      .where(eq(sessionConnectorAttachments.sessionId, oldSessionId))
+      .from(sessionConnectionOverrides)
+      .where(eq(sessionConnectionOverrides.sessionId, oldSessionId))
       .all();
     for (const row of oldRows) {
       const existing = this._db
         .select()
-        .from(sessionConnectorAttachments)
+        .from(sessionConnectionOverrides)
         .where(
           and(
-            eq(sessionConnectorAttachments.sessionId, newSessionId),
-            eq(sessionConnectorAttachments.accountId, row.accountId)
+            eq(sessionConnectionOverrides.sessionId, newSessionId),
+            eq(sessionConnectionOverrides.connectionId, row.connectionId)
           )
         )
         .get();
       const where = and(
-        eq(sessionConnectorAttachments.sessionId, oldSessionId),
-        eq(sessionConnectorAttachments.accountId, row.accountId)
+        eq(sessionConnectionOverrides.sessionId, oldSessionId),
+        eq(sessionConnectionOverrides.connectionId, row.connectionId)
       );
       if (existing) {
         // The new id already has its own explicit override for this account
         // — it wins; the old row would otherwise collide on the primary key.
-        this._db.delete(sessionConnectorAttachments).where(where).run();
+        this._db.delete(sessionConnectionOverrides).where(where).run();
       } else {
         this._db
-          .update(sessionConnectorAttachments)
+          .update(sessionConnectionOverrides)
           .set({ sessionId: newSessionId })
           .where(where)
           .run();

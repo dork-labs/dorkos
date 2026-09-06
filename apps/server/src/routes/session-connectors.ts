@@ -21,6 +21,7 @@
  */
 import { Router } from 'express';
 import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
+import { SessionConnectorOwnerUnavailableError } from '../services/connectors/attachment-store.js';
 import type { SessionConnectorService } from '../services/connectors/session-exposure.js';
 
 /** Constructor dependencies for {@link createSessionConnectorsRouter}. */
@@ -40,13 +41,34 @@ export function createSessionConnectorsRouter(deps: SessionConnectorsRouterDeps)
   const router = Router({ mergeParams: true });
   const { service } = deps;
 
+  router.use((_req, res, next) => {
+    const health = service.migrationHealth();
+    if (health.status === 'migration_failed') {
+      res.status(503).json({ status: health.status, error: health.error });
+      return;
+    }
+    next();
+  });
+
   router.get('/:id/connectors', (req, res) => {
     res.json(service.status(req.params.id));
   });
 
   router.post('/:id/connectors/:accountId', async (req, res) => {
     const accountId = req.params.accountId as ConnectedAccountId;
-    const result = await service.attach(req.params.id, accountId);
+    let result;
+    try {
+      result = await service.attach(req.params.id, accountId);
+    } catch (error) {
+      if (error instanceof SessionConnectorOwnerUnavailableError) {
+        res.status(409).json({
+          error: 'Choose a registered agent before attaching a connection to this session.',
+          code: 'SESSION_CONNECTOR_OWNER_UNAVAILABLE',
+        });
+        return;
+      }
+      throw error;
+    }
     if (!result) {
       res.status(404).json({ error: `Unknown connected account '${accountId}'` });
       return;
@@ -55,7 +77,18 @@ export function createSessionConnectorsRouter(deps: SessionConnectorsRouterDeps)
   });
 
   router.delete('/:id/connectors/:accountId', (req, res) => {
-    service.detach(req.params.id, req.params.accountId as ConnectedAccountId);
+    try {
+      service.detach(req.params.id, req.params.accountId as ConnectedAccountId);
+    } catch (error) {
+      if (error instanceof SessionConnectorOwnerUnavailableError) {
+        res.status(409).json({
+          error: 'Choose a registered agent before changing connections for this session.',
+          code: 'SESSION_CONNECTOR_OWNER_UNAVAILABLE',
+        });
+        return;
+      }
+      throw error;
+    }
     res.status(204).end();
   });
 

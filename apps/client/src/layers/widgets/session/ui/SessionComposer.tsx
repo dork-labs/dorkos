@@ -97,6 +97,10 @@ interface SessionComposerProps {
    * so nothing else stops a second Enter re-dispatching it.
    */
   commandPending: boolean;
+  /** Whether the selected directory's registered-agent lookup is still unresolved. */
+  agentLookupPending?: boolean;
+  /** Whether that lookup failed and needs an explicit retry before first send. */
+  agentLookupError?: boolean;
   status: 'idle' | 'streaming' | 'error';
   /**
    * Interrupt the running turn and empty its queue. Resolves with the server's
@@ -156,6 +160,8 @@ export function SessionComposer({
   addContextContent,
   tryNativeCommand,
   commandPending,
+  agentLookupPending = false,
+  agentLookupError = false,
   status,
   stop,
   setInput,
@@ -693,6 +699,14 @@ export function SessionComposer({
       input={{
         isStreaming,
         commandPending,
+        ...(agentLookupPending || agentLookupError
+          ? {
+              canSubmit: false,
+              canSubmitReason: agentLookupError
+                ? 'Try checking this directory again before starting the session.'
+                : 'Checking this directory before starting the session…',
+            }
+          : {}),
         onStop: handleStop,
         stopPending,
         onEscape: autocomplete.dismissPalettes,

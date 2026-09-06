@@ -1,14 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
-import type {
-  ConnectedAccount,
-  ConnectorCapabilities,
-  ConnectorProvider,
-  ConnectorToolkit,
-  ConnectPoll,
-  ConnectStart,
-} from '@dorkos/shared/connector-provider';
+import type { ConnectorToolkit, ProviderConnectedAccount } from '@dorkos/shared/connector-provider';
 import { ConnectorRegistry } from '../registry.js';
 import { recommendConnector, type RelayAdapterCatalog } from '../routing.js';
 
@@ -22,34 +15,16 @@ function relayWith(slugs: Record<string, string>): RelayAdapterCatalog {
 }
 
 /** A gateway provider whose `listToolkits` never resolves — the hung-provider case. */
-class HungProvider implements ConnectorProvider {
-  readonly type = 'hung';
-  getCapabilities(): ConnectorCapabilities {
-    return {
-      type: this.type,
-      supportsMultiAccount: true,
-      custody: 'managed',
-      exposesOverMcp: true,
-      features: {},
-    };
+class HungProvider extends FakeConnectorProvider {
+  constructor() {
+    super({ type: 'hung' });
   }
-  listToolkits(): Promise<ConnectorToolkit[]> {
+
+  override listToolkits(): Promise<ConnectorToolkit[]> {
     return new Promise<ConnectorToolkit[]>(() => {});
   }
-  startConnect(): Promise<ConnectStart> {
-    return Promise.reject(new Error('hung'));
-  }
-  pollConnect(): Promise<ConnectPoll> {
-    return Promise.resolve({ status: 'failed', error: 'hung' });
-  }
-  listAccounts(): Promise<ConnectedAccount[]> {
+  override listAccounts(): Promise<ProviderConnectedAccount[]> {
     return Promise.resolve([]);
-  }
-  disconnect(): Promise<void> {
-    return Promise.resolve();
-  }
-  toolServerForAccount() {
-    return Promise.resolve(null);
   }
 }
 

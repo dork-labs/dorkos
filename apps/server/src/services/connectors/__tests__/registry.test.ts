@@ -1,58 +1,35 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createDb, runMigrations, type Db } from '@dorkos/db';
+import { connectorProviderInstances, createDb, eq, runMigrations, type Db } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type {
   ConnectedAccount,
   ConnectedAccountId,
-  ConnectorCapabilities,
-  ConnectorProvider,
-  ConnectorToolkit,
-  ConnectPoll,
-  ConnectStart,
+  ConnectorProviderInstanceId,
+  ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
 import { ConnectorRegistry } from '../registry.js';
 
 /** A provider whose `listAccounts` always rejects — the degradation case. */
-class BrokenProvider implements ConnectorProvider {
-  readonly type = 'broken';
-  getCapabilities(): ConnectorCapabilities {
-    return {
-      type: this.type,
-      supportsMultiAccount: true,
-      custody: 'managed',
-      exposesOverMcp: true,
-      features: {},
-    };
+class BrokenProvider extends FakeConnectorProvider {
+  constructor() {
+    super({ type: 'broken' });
   }
-  listToolkits(): Promise<ConnectorToolkit[]> {
-    return Promise.resolve([]);
-  }
-  startConnect(): Promise<ConnectStart> {
-    return Promise.reject(new Error('broken'));
-  }
-  pollConnect(): Promise<ConnectPoll> {
-    return Promise.resolve({ status: 'failed', error: 'broken' });
-  }
-  listAccounts(): Promise<ConnectedAccount[]> {
+
+  override listAccounts(): Promise<ProviderConnectedAccount[]> {
     return Promise.reject(new Error('provider unreachable'));
-  }
-  disconnect(): Promise<void> {
-    return Promise.resolve();
-  }
-  toolServerForAccount() {
-    return Promise.resolve(null);
   }
 }
 
 /** Connect one account on a fake provider and return the resolved account. */
 async function connectOne(
+  registry: ConnectorRegistry,
   provider: FakeConnectorProvider,
   toolkit: string,
   label: string
 ): Promise<ConnectedAccount> {
   const { flowId } = await provider.startConnect(toolkit, { label });
   const { account } = await provider.pollConnect(flowId);
-  return account!;
+  return registry.recordConnect(provider, account!);
 }
 
 describe('ConnectorRegistry', () => {
@@ -81,37 +58,39 @@ describe('ConnectorRegistry', () => {
     expect(registry.resolveProvider('missing')).toBeUndefined();
   });
 
-  it('routes an account id to its owning provider via the connected_accounts binding', async () => {
+  it('routes a stable connection id through its canonical private provider binding', async () => {
     const composio = new FakeConnectorProvider({ type: 'composio' });
     const nango = new FakeConnectorProvider({ type: 'nango' });
     registry.register(composio);
     registry.register(nango);
 
-    const account = await connectOne(composio, 'gmail', 'personal');
-    registry.recordConnect(account);
+    const account = await connectOne(registry, composio, 'gmail', 'personal');
 
     expect(registry.providerForAccount(account.id)).toBe(composio);
     expect(registry.providerForAccount('never-bound' as ConnectedAccountId)).toBeUndefined();
   });
 
-  it('binds an account id first-write-wins (a second record does not re-route it)', async () => {
+  it('keeps identical private refs distinct across provider instances', async () => {
     const composio = new FakeConnectorProvider({ type: 'composio' });
     registry.register(composio);
-    const account = await connectOne(composio, 'gmail', 'personal');
+    const account = await connectOne(registry, composio, 'gmail', 'personal');
+    const upstream = (await composio.listAccounts())[0]!;
+    const secondInstance = new FakeConnectorProvider({
+      type: 'composio',
+      instanceId: 'second-composio-instance' as typeof composio.instanceId,
+    });
+    registry.register(secondInstance);
+    const sameExternal = registry.recordConnect(secondInstance, upstream);
 
-    registry.recordConnect(account);
-    // A second record of the same id under a different provider must not win.
-    registry.recordConnect({ ...account, provider: 'nango' });
-
-    const row = registry.providerForAccount(account.id);
-    expect(row).toBe(composio);
+    expect(sameExternal.id).not.toBe(account.id);
+    expect(registry.providerForAccount(account.id)).toBe(composio);
+    expect(registry.providerForAccount(sameExternal.id)).toBe(secondInstance);
   });
 
   it('retains a revoked ownership tombstone on disconnect (idempotent)', async () => {
     const composio = new FakeConnectorProvider({ type: 'composio' });
     registry.register(composio);
-    const account = await connectOne(composio, 'gmail', 'personal');
-    registry.recordConnect(account);
+    const account = await connectOne(registry, composio, 'gmail', 'personal');
 
     registry.recordDisconnect(account.id);
     expect(registry.providerForAccount(account.id)).toBeUndefined();
@@ -123,21 +102,28 @@ describe('ConnectorRegistry', () => {
     expect(() => registry.recordDisconnect(account.id)).not.toThrow();
   });
 
-  it('reactivates only the same provider ownership after an explicit reconnect', async () => {
+  it('reactivates only the same provider instance and private account ref', async () => {
     const composio = new FakeConnectorProvider({ type: 'composio' });
     registry.register(composio);
-    const account = await connectOne(composio, 'gmail', 'personal');
-    registry.recordConnect(account);
+    const account = await connectOne(registry, composio, 'gmail', 'personal');
+    const upstream = (await composio.listAccounts())[0]!;
     registry.recordDisconnect(account.id);
 
-    registry.recordConnect({ ...account, provider: 'nango', label: 'wrong owner' });
+    const nango = new FakeConnectorProvider({
+      type: 'nango',
+      instanceId: 'nango-personal' as ConnectorProviderInstanceId,
+    });
+    registry.register(nango);
+    const otherConnection = registry.recordConnect(nango, { ...upstream, label: 'wrong owner' });
+    expect(otherConnection.id).not.toBe(account.id);
     expect(registry.accountBinding(account.id)).toMatchObject({
       provider: 'composio',
       label: 'personal',
       status: 'revoked',
     });
 
-    registry.recordConnect({ ...account, label: 'reconnected', status: 'active' });
+    const restored = registry.recordConnect(composio, { ...upstream, label: 'reconnected' });
+    expect(restored.id).toBe(account.id);
     expect(registry.accountBinding(account.id)).toMatchObject({
       provider: 'composio',
       label: 'reconnected',
@@ -161,11 +147,40 @@ describe('ConnectorRegistry', () => {
     expect(registry.resolveProvider('composio')).toBe(fresh);
   });
 
+  it('unregisters one exact instance and deterministically falls back within its type', () => {
+    const first = new FakeConnectorProvider({
+      type: 'composio',
+      instanceId: 'composio-a' as ConnectorProviderInstanceId,
+    });
+    const second = new FakeConnectorProvider({
+      type: 'composio',
+      instanceId: 'composio-b' as ConnectorProviderInstanceId,
+    });
+    registry.register(first);
+    registry.register(second);
+    expect(registry.resolveProvider('composio')).toBe(second);
+
+    registry.unregisterProviderInstance(first.instanceId);
+    expect(registry.resolveProviderInstance(first.instanceId)).toBeUndefined();
+    expect(registry.resolveProvider('composio')).toBe(second);
+    expect(
+      db
+        .select({ status: connectorProviderInstances.status })
+        .from(connectorProviderInstances)
+        .where(eq(connectorProviderInstances.id, first.instanceId))
+        .get()
+    ).toEqual({ status: 'unavailable' });
+
+    registry.register(first);
+    registry.unregisterProviderInstance(first.instanceId);
+    expect(registry.resolveProvider('composio')).toBe(second);
+    expect(registry.listProviders()).toEqual([second]);
+  });
+
   it('degrades gracefully for accounts whose provider was unregistered', async () => {
     const composio = new FakeConnectorProvider({ type: 'composio' });
     registry.register(composio);
-    const account = await connectOne(composio, 'gmail', 'personal');
-    registry.recordConnect(account);
+    const account = await connectOne(registry, composio, 'gmail', 'personal');
 
     registry.unregister('composio');
 
@@ -184,8 +199,8 @@ describe('ConnectorRegistry', () => {
     const nango = new FakeConnectorProvider({ type: 'nango' });
     registry.register(composio);
     registry.register(nango);
-    const a = await connectOne(composio, 'gmail', 'personal');
-    const b = await connectOne(nango, 'slack', 'team');
+    const a = await connectOne(registry, composio, 'gmail', 'personal');
+    const b = await connectOne(registry, nango, 'slack', 'team');
 
     const { accounts, warnings } = await registry.listAccounts();
     expect(accounts.map((acc) => acc.id).sort()).toEqual([a.id, b.id].sort());
@@ -196,7 +211,7 @@ describe('ConnectorRegistry', () => {
     const composio = new FakeConnectorProvider({ type: 'composio' });
     registry.register(composio);
     registry.register(new BrokenProvider());
-    const a = await connectOne(composio, 'gmail', 'personal');
+    const a = await connectOne(registry, composio, 'gmail', 'personal');
 
     const { accounts, warnings } = await registry.listAccounts();
     expect(accounts.map((acc) => acc.id)).toEqual([a.id]);
@@ -210,7 +225,7 @@ describe('ConnectorRegistry', () => {
     registry.register(composio);
     // A provider that never resolves listAccounts — the timeout path.
     const stuck = new BrokenProvider();
-    stuck.listAccounts = () => new Promise<ConnectedAccount[]>(() => {});
+    stuck.listAccounts = () => new Promise<ProviderConnectedAccount[]>(() => {});
     registry.register(stuck);
 
     const { warnings } = await registry.listAccounts();

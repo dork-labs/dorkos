@@ -43,6 +43,10 @@ import type { CredentialProvider } from '../core/credential-provider.js';
 import { custodyDisclosure, MANAGED_CUSTODY_CANONICAL_SENTENCE } from './custody-disclosure.js';
 import type { ConnectorRegistry } from './registry.js';
 import {
+  legacyDefaultProviderInstanceId,
+  type ConnectorMigrationResult,
+} from './legacy-connection-migration.js';
+import {
   maybeCreateComposioProvider,
   COMPOSIO_API_KEY_REF,
   type MaybeCreateComposioProviderDeps,
@@ -93,7 +97,7 @@ export interface ConnectorProviderBootstrapperOpts {
    * cached session attachments and (for Nango) its proxy tokens, so a deleted
    * key revokes live sessions too — not just new connections.
    */
-  onUnregistered?: (providerType: string) => void;
+  onUnregistered?: (providerInstanceId: string, providerType: string) => void;
   /**
    * Test-only client-factory passthroughs for the two vendor providers, so the
    * post-registration connection check (`_swap`'s probe) never touches the
@@ -108,6 +112,8 @@ export interface ConnectorProviderBootstrapperOpts {
 interface ManagedProviderSpec {
   /** The backend type (= the `:provider` route segment). */
   type: string;
+  /** Exact default instance owned by this legacy type-scoped configuration. */
+  defaultInstanceId: ConnectorProvider['instanceId'];
   /** The log label boot/reload messages use, e.g. `'Composio managed backend'`. */
   logLabel: string;
   /** Custody stance echoed onto the status DTO. */
@@ -143,8 +149,10 @@ function reportsKeyKind(provider: unknown): provider is { keyKind(): ConnectorKe
 export class ConnectorProviderBootstrapper {
   private readonly _registry: ConnectorRegistry;
   private readonly _rawMcpServers: () => RawMcpServerDescriptor[];
-  private readonly _onUnregistered: ((providerType: string) => void) | undefined;
+  private readonly _onUnregistered:
+    ((providerInstanceId: string, providerType: string) => void) | undefined;
   private readonly _specs = new Map<string, ManagedProviderSpec>();
+  private readonly _instanceBySpecType = new Map<string, ConnectorProvider['instanceId']>();
   /** Last refusal/connection-check failure per provider type, surfaced on the status DTO. */
   private readonly _lastError = new Map<string, string>();
 
@@ -163,6 +171,9 @@ export class ConnectorProviderBootstrapper {
     const specs: ManagedProviderSpec[] = [
       {
         type: 'composio',
+        defaultInstanceId: legacyDefaultProviderInstanceId(
+          'composio'
+        ) as ConnectorProvider['instanceId'],
         logLabel: 'Composio managed backend',
         custody: 'managed',
         credentialName: credentialNameOf(COMPOSIO_API_KEY_REF),
@@ -176,6 +187,9 @@ export class ConnectorProviderBootstrapper {
       },
       {
         type: 'nango',
+        defaultInstanceId: legacyDefaultProviderInstanceId(
+          'nango'
+        ) as ConnectorProvider['instanceId'],
         logLabel: 'Nango self-host backend',
         custody: 'self-host',
         credentialName: credentialNameOf(NANGO_SECRET_KEY_REF),
@@ -199,6 +213,9 @@ export class ConnectorProviderBootstrapper {
       const { create } = opts.testConnector;
       specs.push({
         type: TEST_CONNECTOR_PROVIDER_TYPE,
+        defaultInstanceId: legacyDefaultProviderInstanceId(
+          TEST_CONNECTOR_PROVIDER_TYPE
+        ) as ConnectorProvider['instanceId'],
         logLabel: 'Test connector backend',
         custody: 'managed',
         credentialName: TEST_CONNECTOR_CREDENTIAL_NAME,
@@ -208,6 +225,11 @@ export class ConnectorProviderBootstrapper {
       });
     }
     for (const spec of specs) this._specs.set(spec.type, spec);
+  }
+
+  /** Connector source-of-truth health used to stop provider writes after a failed backfill. */
+  migrationHealth(): ConnectorMigrationResult {
+    return this._registry.migrationHealth();
   }
 
   /**
@@ -263,8 +285,12 @@ export class ConnectorProviderBootstrapper {
 
   /** Unregister → create → probe → register-if-it-answers, recording any failure. */
   private async _swap(spec: ManagedProviderSpec): Promise<void> {
-    const wasRegistered = this._registry.resolveProvider(spec.type) !== undefined;
-    this._registry.unregister(spec.type);
+    const previousInstanceId = this._instanceBySpecType.get(spec.type) ?? spec.defaultInstanceId;
+    const wasRegistered =
+      previousInstanceId !== undefined &&
+      this._registry.resolveProviderInstance(previousInstanceId) !== undefined;
+    if (previousInstanceId) this._registry.unregisterProviderInstance(previousInstanceId);
+    this._instanceBySpecType.delete(spec.type);
     this._lastError.delete(spec.type);
     try {
       const provider = await spec.create();
@@ -277,6 +303,7 @@ export class ConnectorProviderBootstrapper {
         // (Composio's own, secret-free) lands on the status DTO instead.
         await provider.listAccounts();
         this._registry.register(provider);
+        this._instanceBySpecType.set(spec.type, provider.instanceId);
         logger.info(`[Connectors] ${spec.logLabel} registered`);
       }
     } catch (err) {
@@ -295,8 +322,12 @@ export class ConnectorProviderBootstrapper {
       // A swap that took a live provider AWAY revokes what it was serving:
       // cached session attachments (and, for Nango, proxy tokens) must not keep
       // running on a credential the operator just deleted.
-      if (wasRegistered && this._registry.resolveProvider(spec.type) === undefined) {
-        this._onUnregistered?.(spec.type);
+      if (
+        wasRegistered &&
+        previousInstanceId &&
+        this._registry.resolveProviderInstance(previousInstanceId) === undefined
+      ) {
+        this._onUnregistered?.(previousInstanceId, spec.type);
       }
     }
   }
@@ -304,7 +335,10 @@ export class ConnectorProviderBootstrapper {
   /** Build one provider's reference-free status DTO. */
   private async _statusFor(spec: ManagedProviderSpec): Promise<ConnectorProviderStatus> {
     const error = this._lastError.get(spec.type);
-    const live = this._registry.resolveProvider(spec.type);
+    const liveInstanceId = this._instanceBySpecType.get(spec.type);
+    const live = liveInstanceId
+      ? this._registry.resolveProviderInstance(liveInstanceId)
+      : undefined;
     // Which credential kind validated (Composio has two, with different auth
     // headers) — a fact the card states, never a secret or a reference.
     const keyKind = live !== undefined && reportsKeyKind(live) ? live.keyKind() : undefined;

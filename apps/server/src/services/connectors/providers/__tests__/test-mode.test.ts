@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { connectorConformance } from '@dorkos/test-utils';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
-import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
+import type { ConnectorExternalAccountRef } from '@dorkos/shared/connector-provider';
 import type {
   CredentialProvider,
   CredentialResolution,
@@ -43,8 +43,8 @@ connectorConformance(makeProvider, {
     const provider = makeProvider();
     const { flowId } = await provider.startConnect('gmail');
     const { account } = await provider.pollConnect(flowId);
-    provider.setStatus(account!.id, 'expired');
-    return { provider, accountId: account!.id };
+    provider.setStatus(account!.externalAccountRef, 'expired');
+    return { provider, externalAccountRef: account!.externalAccountRef };
   },
 });
 
@@ -81,7 +81,7 @@ describe('TestModeConnectorProvider — scripted semantics', () => {
     expect(first.account).toMatchObject({ toolkit: 'gmail', label: 'work', status: 'active' });
 
     const second = await provider.pollConnect(flowId);
-    expect(second.account?.id).toBe(first.account?.id);
+    expect(second.account?.externalAccountRef).toBe(first.account?.externalAccountRef);
   });
 
   it('exposes an active account as a stub http tool server on the local origin', async () => {
@@ -89,14 +89,14 @@ describe('TestModeConnectorProvider — scripted semantics', () => {
     const { flowId } = await provider.startConnect('slack', { label: 'team' });
     const { account } = await provider.pollConnect(flowId);
 
-    const connection = await provider.toolServerForAccount(account!.id);
+    const connection = await provider.toolServerForAccount(account!.externalAccountRef);
     expect(connection).toMatchObject({ transport: 'http' });
     expect((connection as { url: string }).url.startsWith(`${LOCAL_ORIGIN}/`)).toBe(true);
   });
 
   it('resolves null for an unknown account id — never a throw', async () => {
     await expect(
-      makeProvider().toolServerForAccount('never-connected' as ConnectedAccountId)
+      makeProvider().toolServerForAccount('never-connected' as ConnectorExternalAccountRef)
     ).resolves.toBeNull();
   });
 });

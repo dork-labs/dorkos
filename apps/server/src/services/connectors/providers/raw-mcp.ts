@@ -17,14 +17,17 @@
  */
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type {
-  ConnectedAccount,
-  ConnectedAccountId,
   ConnectorCapabilities,
+  ConnectorExternalAccountRef,
   ConnectorProvider,
+  ConnectorProviderInstanceId,
   ConnectorToolkit,
   ConnectPoll,
   ConnectStart,
+  ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
+import type { ConnectorProviderExecuteCommand } from '@dorkos/shared/connector-schemas';
+import { legacyDefaultProviderInstanceId } from '../legacy-connection-migration.js';
 import { runProbe, type ProbeOutcome } from '../../mesh/agent-mcp-probe.js';
 
 /** The remote-server subset of {@link McpAppServerConnection} (no stdio for a raw remote MCP). */
@@ -54,6 +57,8 @@ export interface RawMcpConnectorProviderOpts {
    * @param slug - The server slug being probed.
    */
   isReachable?: (slug: string) => boolean | Promise<boolean>;
+  /** Stable configured provider instance id. */
+  instanceId?: ConnectorProviderInstanceId;
   /**
    * MCP initialize + tools/list probe. Production uses the shared real-client
    * probe; tests may replace it without changing the provider's decisions.
@@ -91,8 +96,8 @@ interface RawMcpFlow {
 }
 
 /** Deterministic single account id for one configured server. */
-function accountIdForSlug(slug: string): ConnectedAccountId {
-  return `mcp:${slug}` as ConnectedAccountId;
+function accountIdForSlug(slug: string): ConnectorExternalAccountRef {
+  return `mcp:${slug}` as ConnectorExternalAccountRef;
 }
 
 /**
@@ -101,13 +106,14 @@ function accountIdForSlug(slug: string): ConnectedAccountId {
  * of an already-connected toolkit rejects rather than duplicating.
  */
 export class RawMcpConnectorProvider implements ConnectorProvider {
+  readonly instanceId: ConnectorProviderInstanceId;
   readonly type = 'mcp';
 
   private readonly _servers = new Map<string, RawMcpServerDescriptor>();
   private readonly _isReachable: (slug: string) => boolean | Promise<boolean>;
   private readonly _probe: (connection: RemoteMcpConnection) => Promise<ProbeOutcome>;
   /** Accounts keyed by their opaque id; the derived registry, held in memory. */
-  private readonly _accounts = new Map<string, ConnectedAccount>();
+  private readonly _accounts = new Map<string, ProviderConnectedAccount>();
   /** Pending connect flows keyed by opaque flow id. */
   private readonly _flows = new Map<string, RawMcpFlow>();
   private _counter = 0;
@@ -118,6 +124,9 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
    * @param opts - Configured remote servers + optional reachability probe.
    */
   constructor(opts: RawMcpConnectorProviderOpts) {
+    this.instanceId =
+      opts.instanceId ??
+      (legacyDefaultProviderInstanceId(this.type) as ConnectorProviderInstanceId);
     for (const server of opts.servers) this._servers.set(server.slug, server);
     this._isReachable = opts.isReachable ?? (() => true);
     this._probe =
@@ -127,12 +136,63 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
 
   getCapabilities(): ConnectorCapabilities {
     return {
+      instanceId: this.instanceId,
       type: this.type,
       supportsMultiAccount: false,
       custody: 'external',
       exposesOverMcp: true,
+      capabilities: {
+        catalog: { status: 'available' },
+        authentication: { status: 'available' },
+        accounts: { status: 'available' },
+        operations: {
+          status: 'unsupported',
+          reason: 'Raw MCP has no trustworthy operation schema catalog.',
+        },
+        execution: {
+          status: 'unsupported',
+          reason: 'Raw MCP remains on the compatibility exposure seam until P2.',
+        },
+        triggers: { status: 'unsupported', reason: 'Raw MCP trigger discovery is unavailable.' },
+      },
       features: {},
     };
+  }
+
+  async listToolkitPage(request: { cursor?: string; query?: string; limit: number }) {
+    const all = (await this.listToolkits()).filter((toolkit) =>
+      request.query ? toolkit.displayName.toLowerCase().includes(request.query.toLowerCase()) : true
+    );
+    const offset = request.cursor ? Number(request.cursor) : 0;
+    const toolkits = all.slice(offset, offset + request.limit);
+    const next = offset + toolkits.length;
+    return {
+      status: 'ok' as const,
+      toolkits,
+      ...(next < all.length && { nextCursor: String(next) }),
+      truncated: next < all.length,
+    };
+  }
+
+  listOperationSchemas(_request: { toolkit: string; cursor?: string; limit: number }) {
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Raw MCP has no trustworthy operation schema catalog.',
+    });
+  }
+
+  execute(_command: ConnectorProviderExecuteCommand) {
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Raw MCP remains on the compatibility exposure seam until P2.',
+    });
+  }
+
+  listTriggerTypes(_toolkit: string) {
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Raw MCP trigger discovery is unavailable.',
+    });
   }
 
   listToolkits(): Promise<ConnectorToolkit[]> {
@@ -225,33 +285,32 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
       return { status: 'failed', error: PROBE_FAILURE.cancelled };
     }
 
-    const id = accountIdForSlug(flow.slug);
+    const externalAccountRef = accountIdForSlug(flow.slug);
     const account =
-      this._accounts.get(id) ??
+      this._accounts.get(externalAccountRef) ??
       ({
-        id,
-        provider: this.type,
+        externalAccountRef,
         toolkit: flow.slug,
         label: flow.label ?? flow.slug,
         status: 'active',
         custody: 'external',
-      } satisfies ConnectedAccount);
-    this._accounts.set(id, account);
+      } satisfies ProviderConnectedAccount);
+    this._accounts.set(externalAccountRef, account);
     return { status: 'connected', account };
   }
 
-  listAccounts(opts?: { toolkit?: string }): Promise<ConnectedAccount[]> {
+  listAccounts(opts?: { toolkit?: string }): Promise<ProviderConnectedAccount[]> {
     const all = [...this._accounts.values()];
     return Promise.resolve(opts?.toolkit ? all.filter((a) => a.toolkit === opts.toolkit) : all);
   }
 
-  disconnect(accountId: ConnectedAccountId): Promise<void> {
+  disconnect(accountId: ConnectorExternalAccountRef): Promise<void> {
     const account = this._accounts.get(accountId);
     this._accounts.delete(accountId);
-    // Drop only THIS toolkit's flows — leaving a pending flow for another
-    // toolkit (e.g. slack) untouched. The stable `mcp:<toolkit>` id also lets a
-    // repeated delete cancel a reconnect before that flow has recreated the
-    // in-memory account or its persisted routing row.
+    // A repeated disconnect can arrive while a reconnect has no account row
+    // yet. Raw MCP's private reference has the `mcp:<toolkit>` shape, so
+    // it can still cancel only that toolkit's flows without guessing from a
+    // public DorkOS connection id. Flows for other toolkits remain active.
     const toolkit =
       account?.toolkit ??
       (accountId.startsWith('mcp:') && accountId.length > 'mcp:'.length
@@ -266,7 +325,7 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
   }
 
   async toolServerForAccount(
-    accountId: ConnectedAccountId
+    accountId: ConnectorExternalAccountRef
   ): Promise<McpAppServerConnection | null> {
     const account = this._accounts.get(accountId);
     if (!account || account.status !== 'active') return null;

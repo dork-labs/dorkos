@@ -10,12 +10,13 @@ import { FakeConnectorProvider } from '../fake-connector-provider.js';
 // Multi-account (managed) — the flagship Composio shape.
 connectorConformance(() => new FakeConnectorProvider(), {
   name: 'FakeConnectorProvider (multi-account, managed) — conformance',
+  makeSlowExecutingProvider: () => new FakeConnectorProvider({ executeDelayMs: 100 }),
   makeUnexposableAccount: async () => {
     const provider = new FakeConnectorProvider();
     const { flowId } = await provider.startConnect('gmail');
     const { account } = await provider.pollConnect(flowId);
-    provider.setStatus(account!.id, 'expired');
-    return { provider, accountId: account!.id };
+    provider.setStatus(account!.externalAccountRef, 'expired');
+    return { provider, externalAccountRef: account!.externalAccountRef };
   },
 });
 
@@ -31,8 +32,8 @@ connectorConformance(
       });
       const { flowId } = await provider.startConnect('gmail');
       const { account } = await provider.pollConnect(flowId);
-      provider.setStatus(account!.id, 'revoked');
-      return { provider, accountId: account!.id };
+      provider.setStatus(account!.externalAccountRef, 'revoked');
+      return { provider, externalAccountRef: account!.externalAccountRef };
     },
   }
 );
@@ -47,7 +48,7 @@ connectorConformance(() => new FakeConnectorProvider({ exposesOverMcp: false }),
     const { flowId } = await provider.startConnect('gmail');
     const { account } = await provider.pollConnect(flowId);
     // A healthy, active account is already unexposable when exposesOverMcp:false.
-    return { provider, accountId: account!.id };
+    return { provider, externalAccountRef: account!.externalAccountRef };
   },
 });
 
@@ -60,9 +61,11 @@ describe('connectorConformance null-branch contract', () => {
     const { flowId } = await provider.startConnect('gmail');
     const { account } = await provider.pollConnect(flowId);
 
-    await expect(provider.toolServerForAccount(account!.id)).resolves.not.toBeNull();
+    await expect(
+      provider.toolServerForAccount(account!.externalAccountRef)
+    ).resolves.not.toBeNull();
 
-    provider.setStatus(account!.id, 'expired');
-    await expect(provider.toolServerForAccount(account!.id)).resolves.toBeNull();
+    provider.setStatus(account!.externalAccountRef, 'expired');
+    await expect(provider.toolServerForAccount(account!.externalAccountRef)).resolves.toBeNull();
   });
 });

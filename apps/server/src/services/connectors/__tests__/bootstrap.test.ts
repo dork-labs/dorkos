@@ -84,7 +84,7 @@ describe('ConnectorProviderBootstrapper', () => {
     nangoEnv?: () => { baseUrl?: string; encryptionKey?: string };
     rawMcpServers?: () => RawMcpServerDescriptor[];
     testConnector?: ConstructorParameters<typeof ConnectorProviderBootstrapper>[0]['testConnector'];
-    onUnregistered?: (providerType: string) => void;
+    onUnregistered?: (providerInstanceId: string, providerType: string) => void;
     /** Error the Composio connection check rejects with (the wrong-key branch). */
     composioProbeError?: Error;
   }) {
@@ -251,7 +251,7 @@ describe('ConnectorProviderBootstrapper', () => {
       const unregistered: string[] = [];
       secrets.set(COMPOSIO_API_KEY_REF, 'ck-good');
       const good = makeBootstrapper({
-        onUnregistered: (providerType) => unregistered.push(providerType),
+        onUnregistered: (_providerInstanceId, providerType) => unregistered.push(providerType),
       });
       await good.registerBootProviders();
       expect(registry.resolveProvider('composio')).toBeDefined();
@@ -260,7 +260,7 @@ describe('ConnectorProviderBootstrapper', () => {
       // broken key over a working one.
       const broken = makeBootstrapper({
         composioProbeError: new ComposioApiError(401, 'unauthorized'),
-        onUnregistered: (providerType) => unregistered.push(providerType),
+        onUnregistered: (_providerInstanceId, providerType) => unregistered.push(providerType),
       });
       const status = await broken.reload('composio');
       expect(status.registered).toBe(false);
@@ -271,7 +271,7 @@ describe('ConnectorProviderBootstrapper', () => {
     it('fires onUnregistered exactly when a swap takes a live provider away', async () => {
       const unregistered: string[] = [];
       const bootstrapper = makeBootstrapper({
-        onUnregistered: (providerType) => unregistered.push(providerType),
+        onUnregistered: (_providerInstanceId, providerType) => unregistered.push(providerType),
       });
       // Boot with nothing configured: nothing was ever registered → no firing.
       await bootstrapper.registerBootProviders();
@@ -303,7 +303,7 @@ describe('ConnectorProviderBootstrapper', () => {
       };
       const bootstrapper = makeBootstrapper({
         nangoEnv: () => ({ ...nangoSettings }),
-        onUnregistered: (providerType) => unregistered.push(providerType),
+        onUnregistered: (_providerInstanceId, providerType) => unregistered.push(providerType),
       });
       await bootstrapper.registerBootProviders();
       expect(registry.resolveProvider('nango')).toBeDefined();

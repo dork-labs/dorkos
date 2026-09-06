@@ -10,19 +10,26 @@
  * @module test-utils/fake-connector-provider
  */
 import type {
-  ConnectedAccount,
-  ConnectedAccountId,
-  ConnectedAccountStatus,
+  ConnectorExternalAccountRef,
   ConnectorCapabilities,
   ConnectorCustody,
   ConnectorProvider,
   ConnectorToolkit,
   ConnectPoll,
   ConnectStart,
+  ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
+import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
+import type {
+  ConnectorOperationRevision,
+  ConnectorProviderExecuteCommand,
+  ConnectorProviderInstanceId,
+} from '@dorkos/shared/connector-schemas';
 
 /** Construction options for {@link FakeConnectorProvider}. */
 export interface FakeConnectorProviderOpts {
+  /** Stable provider-instance identifier. */
+  instanceId?: ConnectorProviderInstanceId;
   /** Backend type identifier. Defaults to `'fake-connector'`. */
   type?: string;
   /** Whether one user may hold N accounts of one toolkit. Defaults to `true`. */
@@ -33,6 +40,8 @@ export interface FakeConnectorProviderOpts {
   exposesOverMcp?: boolean;
   /** Toolkits this fake can connect. Defaults to Gmail + Slack. */
   toolkits?: ConnectorToolkit[];
+  /** Delay exact-account execution so cancellation after dispatch can be tested. */
+  executeDelayMs?: number;
 }
 
 /** Default toolkit set — a multi-account service and a single common one. */
@@ -45,7 +54,7 @@ const DEFAULT_TOOLKITS: ConnectorToolkit[] = [
 interface FakeFlow {
   toolkit: string;
   label?: string;
-  accountId?: ConnectedAccountId;
+  externalAccountRef?: ConnectorExternalAccountRef;
 }
 
 /**
@@ -72,14 +81,16 @@ interface FakeFlow {
  * ```
  */
 export class FakeConnectorProvider implements ConnectorProvider {
+  readonly instanceId: ConnectorProviderInstanceId;
   readonly type: string;
 
   private readonly _supportsMultiAccount: boolean;
   private readonly _custody: ConnectorCustody;
   private readonly _exposesOverMcp: boolean;
   private readonly _toolkits: ConnectorToolkit[];
+  private readonly _executeDelayMs: number;
 
-  private readonly _accounts = new Map<string, ConnectedAccount>();
+  private readonly _accounts = new Map<string, ProviderConnectedAccount>();
   private readonly _flows = new Map<string, FakeFlow>();
   private _counter = 0;
 
@@ -90,20 +101,122 @@ export class FakeConnectorProvider implements ConnectorProvider {
    */
   constructor(opts: FakeConnectorProviderOpts = {}) {
     this.type = opts.type ?? 'fake-connector';
+    this.instanceId =
+      opts.instanceId ?? (`provider_instance_${this.type}` as ConnectorProviderInstanceId);
     this._supportsMultiAccount = opts.supportsMultiAccount ?? true;
     this._custody = opts.custody ?? 'managed';
     this._exposesOverMcp = opts.exposesOverMcp ?? true;
     this._toolkits = opts.toolkits ?? DEFAULT_TOOLKITS;
+    this._executeDelayMs = opts.executeDelayMs ?? 0;
   }
 
   getCapabilities(): ConnectorCapabilities {
     return {
+      instanceId: this.instanceId,
       type: this.type,
       supportsMultiAccount: this._supportsMultiAccount,
       custody: this._custody,
       exposesOverMcp: this._exposesOverMcp,
+      capabilities: {
+        catalog: { status: 'available' },
+        authentication: { status: 'available' },
+        accounts: { status: 'available' },
+        operations: { status: 'available' },
+        execution: { status: 'available' },
+        triggers: { status: 'unsupported', reason: 'Fake trigger support is disabled.' },
+      },
       features: {},
     };
+  }
+
+  listToolkitPage(request: { cursor?: string; query?: string; limit: number }) {
+    const offset = request.cursor ? Number(request.cursor) : 0;
+    const matching = request.query
+      ? this._toolkits.filter((toolkit) =>
+          toolkit.displayName.toLowerCase().includes(request.query!.toLowerCase())
+        )
+      : this._toolkits;
+    const toolkits = matching.slice(offset, offset + request.limit);
+    const next = offset + toolkits.length;
+    return Promise.resolve({
+      status: 'ok' as const,
+      toolkits,
+      ...(next < matching.length && { nextCursor: String(next) }),
+      truncated: next < matching.length,
+    });
+  }
+
+  listOperationSchemas(request: { toolkit: string; cursor?: string; limit: number }) {
+    const operations: Omit<ConnectorOperationRevision, 'id' | 'discoveredAt'>[] = [
+      {
+        providerInstanceId: this.instanceId,
+        toolkit: request.toolkit,
+        operationSlug: `${request.toolkit}.read`,
+        toolkitVersion: '2026-09-01',
+        schemaHash: 'sha256:fake-read-v1',
+        capabilityClassification: 'read',
+        inputSchema: { type: 'object', additionalProperties: false },
+      },
+      {
+        providerInstanceId: this.instanceId,
+        toolkit: request.toolkit,
+        operationSlug: `${request.toolkit}.write`,
+        toolkitVersion: '2026-09-01',
+        schemaHash: 'sha256:fake-write-v1',
+        capabilityClassification: 'write',
+        inputSchema: { type: 'object', additionalProperties: false },
+      },
+    ];
+    const offset = request.cursor ? Number(request.cursor) : 0;
+    const page = operations.slice(offset, offset + request.limit);
+    const next = offset + page.length;
+    return Promise.resolve({
+      status: 'ok' as const,
+      page: {
+        operations: page,
+        ...(next < operations.length && { nextCursor: String(next) }),
+        truncated: next < operations.length,
+      },
+    });
+  }
+
+  async execute(command: ConnectorProviderExecuteCommand) {
+    if (command.signal.aborted) {
+      return { status: 'error' as const, code: 'aborted', message: 'Aborted' };
+    }
+    if (this._executeDelayMs > 0) {
+      const aborted = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), this._executeDelayMs);
+        command.signal.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer);
+            resolve(true);
+          },
+          { once: true }
+        );
+      });
+      if (aborted) return { status: 'error' as const, code: 'aborted', message: 'Aborted' };
+    }
+    if (!this._accounts.has(command.externalAccountRef)) {
+      return {
+        status: 'error' as const,
+        code: 'account_not_found',
+        message: 'Account not found',
+      };
+    }
+    return {
+      status: 'success' as const,
+      data: { operation: command.operation.operationSlug, arguments: command.arguments },
+      providerLogId: `fake-log-${command.attemptId}`,
+    };
+  }
+
+  listTriggerTypes(_toolkit: string) {
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Fake trigger support is disabled.',
+    });
   }
 
   listToolkits(): Promise<ConnectorToolkit[]> {
@@ -134,40 +247,45 @@ export class FakeConnectorProvider implements ConnectorProvider {
       return Promise.resolve({ status: 'failed', error: `unknown flow '${flowId}'` });
     }
     // Resolve to a stable account: re-polling the same flow yields the same one.
-    if (!flow.accountId) {
+    if (!flow.externalAccountRef) {
       this._counter += 1;
-      const id = `${this.type}:${flow.toolkit}:${this._counter}` as ConnectedAccountId;
-      this._accounts.set(id, {
-        id,
-        provider: this.type,
+      const externalAccountRef =
+        `${this.type}:${flow.toolkit}:${this._counter}` as ConnectorExternalAccountRef;
+      this._accounts.set(externalAccountRef, {
+        externalAccountRef,
         toolkit: flow.toolkit,
         label: flow.label ?? `${flow.toolkit}@fake`,
         status: 'active',
         custody: this._custody,
       });
-      flow.accountId = id;
+      flow.externalAccountRef = externalAccountRef;
     }
-    return Promise.resolve({ status: 'connected', account: this._accounts.get(flow.accountId) });
+    return Promise.resolve({
+      status: 'connected',
+      account: this._accounts.get(flow.externalAccountRef),
+    });
   }
 
-  listAccounts(opts?: { toolkit?: string }): Promise<ConnectedAccount[]> {
+  listAccounts(opts?: { toolkit?: string }): Promise<ProviderConnectedAccount[]> {
     const all = [...this._accounts.values()];
     return Promise.resolve(opts?.toolkit ? all.filter((a) => a.toolkit === opts.toolkit) : all);
   }
 
-  disconnect(accountId: ConnectedAccountId): Promise<void> {
-    this._accounts.delete(accountId);
+  disconnect(externalAccountRef: ConnectorExternalAccountRef): Promise<void> {
+    this._accounts.delete(externalAccountRef);
     return Promise.resolve();
   }
 
-  toolServerForAccount(accountId: ConnectedAccountId) {
-    const account = this._accounts.get(accountId);
+  toolServerForAccount(
+    externalAccountRef: ConnectorExternalAccountRef
+  ): Promise<McpAppServerConnection | null> {
+    const account = this._accounts.get(externalAccountRef);
     if (!account || account.status !== 'active' || !this._exposesOverMcp) {
       return Promise.resolve(null);
     }
     return Promise.resolve({
       transport: 'http' as const,
-      url: `https://fake.mcp/${account.toolkit}/${accountId}`,
+      url: `https://fake.mcp/${account.toolkit}/${externalAccountRef}`,
       headers: {},
     });
   }
@@ -179,8 +297,11 @@ export class FakeConnectorProvider implements ConnectorProvider {
    * @param accountId - The account to mutate.
    * @param status - The status to set.
    */
-  setStatus(accountId: ConnectedAccountId, status: ConnectedAccountStatus): void {
-    const account = this._accounts.get(accountId);
+  setStatus(
+    externalAccountRef: ConnectorExternalAccountRef,
+    status: ProviderConnectedAccount['status']
+  ): void {
+    const account = this._accounts.get(externalAccountRef);
     if (account) account.status = status;
   }
 

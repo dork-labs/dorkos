@@ -1,53 +1,162 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
-import type { ConnectPoll } from '@dorkos/shared/connector-provider';
-import { ConnectorFlowBindings } from '../flow-bindings.js';
+import type { ConnectorConnectPollResponse } from '@dorkos/shared/connector-provider';
+import type { ConnectorProviderInstanceId } from '@dorkos/shared/connector-schemas';
+import { ConnectorFlowBindings, type ConnectorProviderFlowPoll } from '../flow-bindings.js';
 
 describe('ConnectorFlowBindings', () => {
-  it('caches only the schema-safe terminal DTO and polls the provider once', async () => {
-    const provider = new FakeConnectorProvider({ type: 'oauth-fixture', custody: 'managed' });
-    const { flowId } = await provider.startConnect('gmail');
-    const connected = await provider.pollConnect(flowId);
-    const providerResult = {
-      ...connected,
-      authorizeUrl: 'https://oauth.example/callback?code=secret',
-      account: {
-        ...connected.account!,
-        accessToken: 'must-not-be-retained',
-      },
-    } as ConnectPoll;
-    const pollConnect = vi.spyOn(provider, 'pollConnect').mockResolvedValue(providerResult);
-    const bindings = new ConnectorFlowBindings();
-    const publicFlowId = bindings.record(flowId, provider);
+  it('keeps colliding provider flow ids bound to the exact provider instance', () => {
+    // The injected factory also collides once, proving a public ID never
+    // replaces an existing route even when its entropy source repeats.
+    const ids = ['public-flow-a', 'public-flow-a', 'public-flow-b'];
+    const bindings = new ConnectorFlowBindings(() => ids.shift()!);
+    const firstProvider = new FakeConnectorProvider({
+      instanceId: 'composio-personal' as ConnectorProviderInstanceId,
+    });
+    const secondProvider = new FakeConnectorProvider({
+      instanceId: 'composio-work' as ConnectorProviderInstanceId,
+    });
 
-    const first = await bindings.poll(publicFlowId);
-    const repeated = await bindings.poll(publicFlowId);
+    const first = bindings.record('provider-flow-1', firstProvider);
+    const second = bindings.record('provider-flow-1', secondProvider);
 
-    expect(first).toEqual(repeated);
-    expect(first).not.toHaveProperty('authorizeUrl');
-    expect(first?.account).not.toHaveProperty('accessToken');
-    expect(pollConnect).toHaveBeenCalledTimes(1);
+    expect(first).not.toBe(second);
+    expect(bindings.providerFor(first)).toEqual({
+      state: 'active',
+      provider: firstProvider,
+      providerFlowId: 'provider-flow-1',
+    });
+    expect(bindings.providerFor(second)).toEqual({
+      state: 'active',
+      provider: secondProvider,
+      providerFlowId: 'provider-flow-1',
+    });
   });
 
-  it('shares one provider poll across concurrent callers', async () => {
-    const provider = new FakeConnectorProvider({ type: 'oauth-fixture', custody: 'managed' });
-    const { flowId } = await provider.startConnect('gmail');
-    const connected = await provider.pollConnect(flowId);
-    let finishPoll: ((result: ConnectPoll) => void) | undefined;
-    const pollConnect = vi.spyOn(provider, 'pollConnect').mockImplementation(
-      () =>
-        new Promise<ConnectPoll>((resolve) => {
-          finishPoll = resolve;
-        })
-    );
-    const bindings = new ConnectorFlowBindings();
-    const publicFlowId = bindings.record(flowId, provider);
+  it('retains terminal replay while evicting the least recently used bounded entry', () => {
+    const ids = ['public-a', 'public-b', 'public-c'];
+    const bindings = new ConnectorFlowBindings(() => ids.shift()!, 2);
+    const provider = new FakeConnectorProvider({
+      instanceId: 'composio-personal' as ConnectorProviderInstanceId,
+    });
+    const first = bindings.record('private-a', provider);
+    const second = bindings.record('private-b', provider);
+    const firstBinding = bindings.providerFor(first)!;
+    expect(firstBinding.state).toBe('active');
+    if (firstBinding.state !== 'active') throw new Error('expected active flow');
+    bindings.recordTerminal(first, firstBinding, {
+      status: 'failed',
+      error: 'Authorization was denied.',
+    });
+    expect(bindings.providerFor(first)).toEqual({
+      state: 'terminal',
+      result: { status: 'failed', error: 'Authorization was denied.' },
+    });
 
-    const first = bindings.poll(publicFlowId);
-    const concurrent = bindings.poll(publicFlowId);
-    expect(pollConnect).toHaveBeenCalledTimes(1);
+    const third = bindings.record('private-c', provider);
+    expect(bindings.providerFor(second)).toBeUndefined();
+    expect(bindings.providerFor(first)).toMatchObject({ state: 'terminal' });
+    expect(bindings.providerFor(third)).toMatchObject({
+      state: 'active',
+      providerFlowId: 'private-c',
+    });
+  });
 
-    finishPoll?.(connected);
-    await expect(Promise.all([first, concurrent])).resolves.toEqual([connected, connected]);
+  it('rejects a provider result that returns after its active binding was evicted', () => {
+    const ids = ['public-a', 'public-b'];
+    const bindings = new ConnectorFlowBindings(() => ids.shift()!, 1);
+    const provider = new FakeConnectorProvider({
+      instanceId: 'composio-personal' as ConnectorProviderInstanceId,
+    });
+    const first = bindings.record('private-a', provider);
+    const captured = bindings.providerFor(first)!;
+    if (captured.state !== 'active') throw new Error('expected active flow');
+    bindings.record('private-b', provider);
+
+    expect(
+      bindings.recordTerminal(first, captured, {
+        status: 'failed',
+        error: 'late result',
+      })
+    ).toBe(false);
+    expect(bindings.providerFor(first)).toBeUndefined();
+  });
+
+  it('coalesces concurrent polls and protects them from LRU eviction', async () => {
+    const ids = ['public-a', 'public-b'];
+    const bindings = new ConnectorFlowBindings(() => ids.shift()!, 1);
+    const provider = new FakeConnectorProvider({
+      instanceId: 'composio-personal' as ConnectorProviderInstanceId,
+    });
+    const first = bindings.record('private-a', provider);
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    const poller = async () => {
+      calls += 1;
+      await blocked;
+      return { status: 'failed' as const, error: 'Authorization was denied.' };
+    };
+    const publicize = ({ result }: ConnectorProviderFlowPoll): ConnectorConnectPollResponse => ({
+      status: result.status,
+      ...(result.error && { error: result.error }),
+    });
+
+    const firstPoll = bindings.poll(first, poller, publicize);
+    const concurrentPoll = bindings.poll(first, poller, publicize);
+    expect(() => bindings.record('private-b', provider)).toThrow(/already in progress/i);
+    release();
+
+    await expect(firstPoll).resolves.toEqual({
+      status: 'failed',
+      error: 'Authorization was denied.',
+    });
+    await expect(concurrentPoll).resolves.toEqual({
+      status: 'failed',
+      error: 'Authorization was denied.',
+    });
+    expect(calls).toBe(1);
+  });
+
+  it('strips extra provider-shaped fields before retaining a public terminal replay', () => {
+    const bindings = new ConnectorFlowBindings(() => 'public-a');
+    const provider = new FakeConnectorProvider({
+      instanceId: 'composio-personal' as ConnectorProviderInstanceId,
+    });
+    const flowId = bindings.record('private-flow', provider);
+    const active = bindings.providerFor(flowId)!;
+    if (active.state !== 'active') throw new Error('expected active flow');
+
+    bindings.recordTerminal(flowId, active, {
+      status: 'connected',
+      account: {
+        id: 'connection-a',
+        toolkit: 'gmail',
+        label: 'work',
+        status: 'active',
+        custody: 'managed',
+        disclosure: 'Stored by the provider.',
+        externalAccountRef: 'private-account',
+        url: 'https://private.example/mcp',
+      },
+      providerSession: 'private-session',
+    } as never);
+
+    expect(bindings.providerFor(flowId)).toEqual({
+      state: 'terminal',
+      result: {
+        status: 'connected',
+        account: {
+          id: 'connection-a',
+          toolkit: 'gmail',
+          label: 'work',
+          status: 'active',
+          custody: 'managed',
+          disclosure: 'Stored by the provider.',
+        },
+      },
+    });
   });
 });

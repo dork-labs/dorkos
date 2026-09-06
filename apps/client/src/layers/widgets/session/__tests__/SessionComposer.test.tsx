@@ -524,6 +524,14 @@ describe('SessionComposer — a failed attachment blocks the send (DOR-480)', ()
     expect(enqueue).not.toHaveBeenCalled();
   });
 
+  it('keeps the first send closed until the registered-agent lookup settles', () => {
+    render(<SessionComposerBench {...baseProps} input="hello?" agentLookupPending />);
+
+    const props = lastChatInputProps();
+    expect(props.canSubmit).toBe(false);
+    expect(props.canSubmitReason).toBe('Checking this directory before starting the session…');
+  });
+
   it('keeps the queue panel out of the tree entirely when nothing is queued', () => {
     // The presence guard lives at the call site so AnimatePresence can watch the
     // panel leave; a panel that merely renders null never animates out.

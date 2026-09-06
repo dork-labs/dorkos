@@ -27,6 +27,10 @@ import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
+import type { Session } from '@dorkos/shared/types';
+import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+
+const routerSearch = vi.hoisted(() => ({ current: {} as Record<string, string> }));
 
 // The durable stream: attach/connect must never open a real fetch in jsdom.
 vi.mock('@/layers/entities/attention', () => ({
@@ -54,7 +58,7 @@ vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({ state: { location: { pathname: '/session', search: {} } } }),
   useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
     select({ location: { pathname: '/session' } }),
-  useSearch: () => ({}),
+  useSearch: () => routerSearch.current,
   useLocation: () => ({ pathname: '/session' }),
 }));
 
@@ -106,8 +110,10 @@ vi.mock('../ui/SessionComposer', async () => {
 });
 
 import { ChatPanel } from '../ui/ChatPanel';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
+import { agentKeys } from '@/layers/entities/agent';
 import {
+  sessionKeys,
   useSessionChatStore,
   useSessionListStore,
   useSessionStreamStore,
@@ -123,15 +129,19 @@ function draft(): string {
 
 function renderPanel(
   transport: Transport,
-  transformContent?: (content: string) => Promise<string>
+  transformContent?: (content: string) => Promise<string>,
+  seedQuery?: (queryClient: QueryClient) => void,
+  panelProps?: Partial<React.ComponentProps<typeof ChatPanel>>
 ) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  seedQuery?.(queryClient);
   return render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
         <ChatPanel
           sessionId={SESSION_ID}
           {...(transformContent === undefined ? {} : { transformContent })}
+          {...panelProps}
         />
       </TransportProvider>
     </QueryClientProvider>
@@ -157,6 +167,8 @@ async function send(text: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  routerSearch.current = {};
+  useAppStore.setState({ selectedCwd: null });
   useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
   useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
   useSessionListStore.setState({
@@ -178,6 +190,179 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
+  it('keeps a manual first send closed while agent provenance is pending', async () => {
+    const getAgentByPath = vi.fn(() => new Promise<never>(() => {}));
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+
+    useAppStore.setState({ selectedCwd: '/test/dir' });
+    renderPanel(createMockTransport({ getAgentByPath, postMessage }));
+    await waitFor(() => expect(getAgentByPath).toHaveBeenCalledWith('/test/dir'));
+    await send('wait for provenance');
+
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(draft()).toBe('wait for provenance');
+  });
+
+  it('keeps an auto-send launch armed until agent provenance resolves', async () => {
+    let resolveAgent!: (agent: AgentManifest | null) => void;
+    const getAgentByPath = vi.fn(
+      () =>
+        new Promise<AgentManifest | null>((resolve) => {
+          resolveAgent = resolve;
+        })
+    );
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const onLaunchConsumed = vi.fn();
+    const streamState = useSessionStreamStore.getState().getSession(SESSION_ID);
+    useSessionStreamStore.setState({
+      sessions: { [SESSION_ID]: { ...streamState, streamReadyCursor: 0 } },
+      sessionAccessOrder: [SESSION_ID],
+    });
+    useAppStore.setState({ selectedCwd: '/test/dir' });
+
+    renderPanel(createMockTransport({ getAgentByPath, postMessage }), undefined, undefined, {
+      launchPrompt: 'run after provenance resolves',
+      launchSend: true,
+      onLaunchConsumed,
+    });
+    await waitFor(() => expect(getAgentByPath).toHaveBeenCalledWith('/test/dir'));
+    await waitFor(() => expect(draft()).toBe('run after provenance resolves'));
+
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(onLaunchConsumed).not.toHaveBeenCalled();
+
+    act(() => {
+      resolveAgent({
+        workspace: { mode: 'home' },
+        id: 'agent-a',
+        name: 'agent-a',
+        description: '',
+        runtime: 'claude-code',
+        capabilities: [],
+        behavior: { responseMode: 'always' },
+        registeredAt: '2026-09-06T00:00:00.000Z',
+        registeredBy: 'test',
+        personaEnabled: true,
+        enabledToolGroups: {},
+        mcpServers: [],
+      });
+    });
+
+    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
+    expect(postMessage.mock.calls[0]?.[3]).toMatchObject({ agentPath: '/test/dir' });
+    expect(onLaunchConsumed).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the URL-first directory for a cached-provenance launch auto-send', async () => {
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const getAgentByPath = vi.fn().mockRejectedValue(new Error('cache should satisfy this lookup'));
+    const cachedAgent = {
+      workspace: { mode: 'home' },
+      id: 'agent-url',
+      name: 'URL agent',
+      description: '',
+      runtime: 'claude-code',
+      capabilities: [],
+      behavior: { responseMode: 'always' },
+      registeredAt: '2026-09-06T00:00:00.000Z',
+      registeredBy: 'test',
+      personaEnabled: true,
+      enabledToolGroups: {},
+      mcpServers: [],
+    } satisfies AgentManifest;
+    const streamState = useSessionStreamStore.getState().getSession(SESSION_ID);
+    useSessionStreamStore.setState({
+      sessions: { [SESSION_ID]: { ...streamState, streamReadyCursor: 0 } },
+      sessionAccessOrder: [SESSION_ID],
+    });
+    useAppStore.setState({ selectedCwd: '/store/default' });
+    routerSearch.current = { dir: '/url/agent' };
+
+    renderPanel(
+      createMockTransport({ getAgentByPath, postMessage }),
+      undefined,
+      (queryClient) => {
+        queryClient.setQueryData(agentKeys.byPath('/url/agent'), cachedAgent);
+      },
+      {
+        launchPrompt: 'run in the URL directory',
+        launchSend: true,
+      }
+    );
+
+    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
+    expect(getAgentByPath).not.toHaveBeenCalled();
+    expect(postMessage.mock.calls[0]?.[2]).toBe('/url/agent');
+    expect(postMessage.mock.calls[0]?.[3]).toMatchObject({ agentPath: '/url/agent' });
+  });
+
+  it('keeps a first send closed until a failed agent lookup is retried', async () => {
+    const getAgentByPath = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('temporary lookup failure'))
+      .mockResolvedValue(null);
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+
+    useAppStore.setState({ selectedCwd: '/test/dir' });
+    renderPanel(createMockTransport({ getAgentByPath, postMessage }));
+    await waitFor(() => expect(getAgentByPath).toHaveBeenCalledWith('/test/dir'));
+    await send('do not lose my owner');
+
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(draft()).toBe('do not lose my owner');
+    expect(screen.getByText('Couldn’t check this directory')).toBeInTheDocument();
+    screen.getByRole('button', { name: 'Retry' }).click();
+    await waitFor(() => expect(getAgentByPath).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.queryByText('Couldn’t check this directory')).not.toBeInTheDocument()
+    );
+
+    await send('ordinary directories stay unowned');
+    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
+    expect(postMessage.mock.calls[0]?.[3]).not.toHaveProperty('agentPath');
+  });
+
+  it('allows an existing session reply when the agent lookup is unavailable', async () => {
+    const getAgentByPath = vi.fn().mockRejectedValue(new Error('temporary lookup failure'));
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const existing = {
+      id: SESSION_ID,
+      title: 'Existing session',
+      createdAt: '2026-09-06T00:00:00.000Z',
+      updatedAt: '2026-09-06T00:00:00.000Z',
+      runtime: 'claude-code',
+    } as Session;
+
+    useAppStore.setState({ selectedCwd: '/test/dir' });
+    renderPanel(
+      createMockTransport({
+        getAgentByPath,
+        postMessage,
+        listSessions: vi.fn().mockResolvedValue({ sessions: [existing] }),
+      }),
+      undefined,
+      (queryClient) => {
+        queryClient.setQueryData(sessionKeys.list('/test/dir'), [existing]);
+      }
+    );
+    await waitFor(() => expect(getAgentByPath).toHaveBeenCalledWith('/test/dir'));
+
+    await send('reply to the existing session');
+
+    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('Couldn’t check this directory')).not.toBeInTheDocument();
+  });
+
   it('empties the composer once the trigger has been accepted', async () => {
     // **Seeded defect:** drop `{ clearInput: true }` from `sendMessage` in
     // `ChatPanel` and this is the only assertion in the client suite that goes

@@ -124,6 +124,11 @@ export interface UseLaunchPromptParams {
   hydrated: boolean;
   /** The rendered chat status — an auto-send never interrupts a running turn. */
   status: ChatStatus;
+  /**
+   * Whether a transient caller-owned prerequisite prevents submission right now.
+   * The launch stays armed and retries when the prerequisite settles.
+   */
+  submitBlocked?: boolean;
   /** The composer's own submit (`handleSubmit`), which reads the composer text. */
   submit: () => Promise<void> | void;
   /** Called when the composer has just been seeded (the caller focuses it). */
@@ -147,6 +152,7 @@ export function useLaunchPrompt({
   messageCount,
   hydrated,
   status,
+  submitBlocked = false,
   submit,
   onSeeded,
   onConsumed,
@@ -199,7 +205,7 @@ export function useLaunchPrompt({
     // also what serializes the two effects: the send waits for the parent's
     // state update, so it can never race the pre-fill.
     if (input !== seed) return;
-    if (!hydrated || messageCount > 0 || status === 'streaming') return;
+    if (!hydrated || messageCount > 0 || status === 'streaming' || submitBlocked) return;
 
     sentLaunches.add(key);
     // Spend the URL BEFORE the turn starts. The first message can re-key the
@@ -207,5 +213,16 @@ export function useLaunchPrompt({
     // rewrite cannot carry a live `send=1` forward with it.
     onConsumed?.();
     void submit();
-  }, [key, seed, autoSend, input, hydrated, messageCount, status, submit, onConsumed]);
+  }, [
+    key,
+    seed,
+    autoSend,
+    input,
+    hydrated,
+    messageCount,
+    status,
+    submitBlocked,
+    submit,
+    onConsumed,
+  ]);
 }

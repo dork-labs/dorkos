@@ -114,6 +114,19 @@ export function ConnectionsShowcases() {
             />
           </ul>
         </ShowcaseDemo>
+
+        <ShowcaseLabel>Paused by the operator</ShowcaseLabel>
+        <ShowcaseDemo>
+          <ul className="max-w-xl">
+            <AccountRow
+              account={mockAccount({
+                id: 'ca_mock_4' as PublicConnectedAccount['id'],
+                status: 'paused',
+              })}
+              onDisconnect={() => {}}
+            />
+          </ul>
+        </ShowcaseDemo>
       </PlaygroundSection>
 
       <AccountsRegionShowcase />

@@ -118,6 +118,7 @@ import {
   AgentConnectorAttachmentStore,
   SessionConnectorAttachmentStore,
 } from './services/connectors/attachment-store.js';
+import { registerConnectorAgentCleanup } from './services/connectors/agent-access-cleanup.js';
 import {
   toSdkMcpServers,
   mergeSessionMcpServers,
@@ -640,6 +641,19 @@ async function start() {
   }
   runMigrations(db);
   logger.info(`[DB] Consolidated database ready at ${dbPath}`);
+
+  // Construct canonical connector identity and attachment services before Mesh
+  // can reconcile any agent away. The unregister callback is installed as soon
+  // as MeshCore exists below, before its first startup pass. Provider bootstrap
+  // and connector routes remain later in startup, after their other dependencies.
+  const connectorRegistry = new ConnectorRegistry({ db });
+  const agentConnectorAttachmentStore = new AgentConnectorAttachmentStore(db);
+  const sessionConnectorAttachmentStore = new SessionConnectorAttachmentStore(db);
+  const sessionConnectorService = new SessionConnectorService({
+    registry: connectorRegistry,
+    agentAttachments: agentConnectorAttachmentStore,
+    sessionAttachments: sessionConnectorAttachmentStore,
+  });
 
   // The daily safety net, under everything a migration cannot see coming. Once
   // per UTC day, here and again on the timer started after listen() so a server
@@ -1583,6 +1597,16 @@ async function start() {
     });
     logger.info('[Mesh] MeshCore initialized');
 
+    // This must precede startup reconciliation: that pass can permanently
+    // remove an expired unreachable agent and every removal path must revoke
+    // its canonical connector authority in the same callback cascade.
+    registerConnectorAgentCleanup({
+      mesh: meshCore,
+      registry: connectorRegistry,
+      sessions: sessionConnectorService,
+      logger,
+    });
+
     // Cascade: deleting or unregistering an agent is an operator's decision to
     // turn it off (DOR-490), and until this fired that decision had no effect
     // on identity — `AgentIdentityService.revoke` had zero production callers,
@@ -2136,13 +2160,6 @@ async function start() {
       error: err instanceof Error ? err.message : String(err),
     });
   }
-  // Connector registry + the per-account → session tool-server binder, created
-  // up front (both need only `db`) so the MCP factory closure can inject a
-  // session's attached connector accounts as named MCP tool servers alongside
-  // the built-in `dorkos` server (connector-gateway spec §Detailed Design 3).
-  // The `/api/connectors` and attach/detach routes are mounted later, once the
-  // relay adapter catalog is available.
-  const connectorRegistry = new ConnectorRegistry({ db });
   // ONE flow → provider binding map for the whole process, shared by the REST
   // router and the agent-facing connector capabilities so a connect flow
   // started on either surface can be polled on the other.
@@ -2159,30 +2176,6 @@ async function start() {
   // not dialable: Docker's 0.0.0.0 wildcard, and bare IPv6 literals.
   const localOrigin = `http://${localDialHost(env.DORKOS_HOST)}:${PORT}`;
   const nangoProxyMcp = new NangoProxyMcp({ localOrigin });
-  // The two persisted connector-attachment stores (connection-scoping spec
-  // `specs/connection-scoping/` §Part 1) — standing agent-level consent and
-  // per-session overrides. Created before the service that reads them.
-  const agentConnectorAttachmentStore = new AgentConnectorAttachmentStore(db);
-  const sessionConnectorAttachmentStore = new SessionConnectorAttachmentStore(db);
-  // Cascade: an unregistered agent's standing connector consent must not
-  // outlive it (connection-scoping spec §Part 1, adversarial review MAJOR 6)
-  // — a future agent registered under the same id must re-earn attachment,
-  // never silently inherit a deleted agent's. Deliberately independent of
-  // whether Tasks is enabled (unlike the schedule-disable cascade below,
-  // which lives inside that feature's own gate) — connector consent has
-  // nothing to do with Tasks. Session-level overrides are keyed by session
-  // id, not agent id, so they are untouched here and simply age out with
-  // their sessions.
-  meshCore?.onUnregister((agentId) => {
-    agentConnectorAttachmentStore.deleteAgent(agentId);
-  });
-  // Created before the bootstrapper so its unregister hook can revoke cached
-  // session attachments the moment a credential is deleted.
-  const sessionConnectorService = new SessionConnectorService({
-    registry: connectorRegistry,
-    agentAttachments: agentConnectorAttachmentStore,
-    sessionAttachments: sessionConnectorAttachmentStore,
-  });
   // Provider lifecycle is owned by ONE place (connector-completion spec §1):
   // boot registers raw-MCP always (from `connectors.rawMcpServers` config; the
   // empty list is valid) plus Composio/Nango when configured — silent-null when
@@ -2223,8 +2216,8 @@ async function start() {
     // Deleting a key (or a reload that refuses) revokes LIVE surfaces too:
     // cached session attachments stop injecting the provider's tool servers,
     // and the Nango proxy forgets its per-account tokens so the endpoint 401s.
-    onUnregistered: (providerType) => {
-      sessionConnectorService.invalidateProvider(providerType);
+    onUnregistered: (providerInstanceId, providerType) => {
+      sessionConnectorService.invalidateProviderInstance(providerInstanceId);
       if (providerType === NANGO_PROVIDER_TYPE) nangoProxyMcp.clear();
     },
   });
@@ -2676,6 +2669,7 @@ async function start() {
     createAgentConnectorsRouter({
       store: agentConnectorAttachmentStore,
       registry: connectorRegistry,
+      sessions: sessionConnectorService,
       ...(meshCore && { meshCore }),
     })
   );

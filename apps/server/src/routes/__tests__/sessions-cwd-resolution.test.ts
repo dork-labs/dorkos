@@ -237,6 +237,10 @@ beforeEach(() => {
   roomBinding = undefined;
   roomAuthor = agentAuthor('API Bot');
   ensureWorktree = () => Promise.resolve({ path: WORKTREE });
+  // `agentPath` is durable ownership provenance, so the route accepts it only
+  // when Mesh confirms the exact directory. Keep the cwd-resolution fixture on
+  // that production validation path instead of bypassing ownership checks.
+  app.locals.meshCore = { listWithPaths: () => [{ projectPath: AGENT }] };
   // The REAL port, over fake reads — so the lookup, the author-kind guard and
   // the `NOT_A_PROJECT_ROOM` translation are the shipped ones and only the
   // database and git are stood in for.

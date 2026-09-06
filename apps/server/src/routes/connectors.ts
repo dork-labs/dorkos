@@ -38,7 +38,7 @@ import { toPublicAccount } from '../services/connectors/public-account.js';
 export interface ConnectorsRouterDeps {
   /** The registry holding the connector backends + id → provider routing. */
   registry: ConnectorRegistry;
-  /** The shared bounded flow binding store (one instance per process). */
+  /** The shared bounded recent-flow store (one instance per process). */
   flowBindings: ConnectorFlowBindings;
   /** Optional relay adapter catalog for relay-adapter-first routing; absent when relay is off. */
   relay?: RelayAdapterCatalog;
@@ -66,6 +66,15 @@ const ConnectRequestSchema = z.object({
 export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
   const router = Router();
   const { registry, flowBindings, sessionConnectors } = deps;
+
+  router.use((_req, res, next) => {
+    const health = registry.migrationHealth();
+    if (health.status === 'migration_failed') {
+      res.status(503).json({ status: health.status, error: health.error });
+      return;
+    }
+    next();
+  });
 
   router.get('/toolkits', async (_req, res) => {
     const { toolkits, warnings } = await registry.listToolkits();
@@ -102,7 +111,11 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
         body.toolkit,
         body.label ? { label: body.label } : undefined
       );
-      const flowId = flowBindings.record(start.flowId, provider);
+      const flowId = flowBindings.record(
+        start.flowId,
+        provider,
+        registry.disconnectedConnectionFor(provider, body.toolkit, body.label)
+      );
       // A full binding registry can reject after the provider creates private flow state. The
       // provider owns and expires that bounded state: the port has no flow-cancel operation, and
       // no account identity exists yet that could be disconnected safely.
@@ -124,25 +137,26 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
 
   router.get('/flows/:flowId', async (req, res) => {
     const flowId = req.params.flowId;
-    const poll = await flowBindings.poll(flowId);
-    if (!poll) {
+    const response = await flowBindings.poll(
+      flowId,
+      (binding) => binding.provider.pollConnect(binding.providerFlowId),
+      ({ provider, result: providerResult }) => {
+        const account =
+          providerResult.status === 'connected' && providerResult.account
+            ? registry.recordConnect(provider, providerResult.account)
+            : undefined;
+        return {
+          status: providerResult.status,
+          ...(account && { account: toPublicAccount(account) }),
+          ...(providerResult.error && { error: providerResult.error }),
+        };
+      }
+    );
+    if (!response) {
       res.status(404).json({ error: `Unknown connect flow '${flowId}'` });
       return;
     }
-    // On success, bind the account id → provider so toolServerForAccount /
-    // disconnect can route it later (first-write-wins; re-polling is harmless).
-    if (poll.status === 'connected' && poll.account) {
-      registry.recordConnect(poll.account);
-    }
-    // ConnectorFlowBindings retains a bounded, secret-free terminal result so
-    // a retried GET replays the same outcome without retaining old credentials.
-    // The provider's poll result carries the FULL account (including the
-    // server-only `provider` field) — publicize it before it crosses out.
-    res.json({
-      status: poll.status,
-      ...(poll.account && { account: toPublicAccount(poll.account) }),
-      ...(poll.error && { error: poll.error }),
-    });
+    res.json(response);
   });
 
   router.get('/accounts', async (req, res) => {
@@ -153,25 +167,21 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
 
   router.delete('/accounts/:accountId', async (req, res) => {
     const accountId = req.params.accountId as ConnectedAccountId;
-    const accountBinding = registry.accountBinding(accountId);
-    const providerType = accountBinding?.provider;
-    // Revoked accounts retain provider-only routing metadata. Reach every
-    // exact in-flight instance of that recorded owner so an older probe cannot
-    // undo this idempotent delete after it returns 204.
-    if (providerType) {
-      await flowBindings.disconnectAccount(
-        accountId,
-        providerType,
-        registry.resolveProvider(providerType)
-      );
-    } else {
-      flowBindings.invalidateAccount(accountId);
-    }
+    const binding = registry.accountBinding(accountId);
+    const provider = binding
+      ? registry.resolveProviderInstance(binding.providerInstanceId)
+      : undefined;
+    // Invalidate active reconnects synchronously before awaiting provider I/O,
+    // so a late poll cannot restore local lifecycle while DELETE is in flight.
+    const providerDisconnect = binding
+      ? flowBindings.disconnectAccount(accountId, binding.externalAccountRef, provider)
+      : Promise.resolve(flowBindings.invalidateAccount(accountId));
     // Clears BOTH persisted connector-attachment tables (agent + session) and
     // marks the routing row revoked. The in-memory half of the cascade below
     // only needs the account id, not the freshly-cleared attachment rows.
     registry.recordDisconnect(accountId);
     sessionConnectors.invalidateAccount(accountId);
+    await providerDisconnect;
     res.status(204).end();
   });
 

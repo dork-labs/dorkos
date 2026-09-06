@@ -37,6 +37,15 @@ export interface ChatSessionOptions {
    */
   launchRuntime?: string;
   /**
+   * Exact registered agent path for the session-creating message. Omitted for
+   * ordinary working directories that do not belong to a registered agent.
+   */
+  agentPath?: string;
+  /** Whether the registered-agent lookup is still pending for the selected directory. */
+  agentLookupPending?: boolean;
+  /** Whether the registered-agent lookup failed for the selected directory. */
+  agentLookupFailed?: boolean;
+  /**
    * Navigation for the `/clear` command intent (DOR-109): open a fresh session in
    * the same project, linked back to `fromSessionId`. Injected by the host (which
    * owns the router) so the session orchestrator stays router-free.
