@@ -1,6 +1,6 @@
 ---
 name: writing-for-humans
-description: Writes user-facing DorkOS prose a non-developer can read: changelog fragments, release notes, READMEs, npm copy, docs guides and concept pages, blog posts, UI microcopy, and error messages. Use when writing or reviewing any copy a person (not a coding agent) will read.
+description: 'Writes user-facing DorkOS prose a non-developer can read: changelog fragments, release notes, READMEs, npm copy, docs guides and concept pages, blog posts, UI microcopy, and error messages. Use when writing or reviewing any copy a person (not a coding agent) will read.'
 ---
 
 # Writing for Humans

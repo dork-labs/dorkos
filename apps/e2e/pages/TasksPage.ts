@@ -91,12 +91,16 @@ export class TasksPage {
   /**
    * Reveal the cadence controls.
    *
-   * They sit in a closed `<details>` whenever the form started blank, and
-   * Playwright treats everything inside a closed `<details>` as hidden. The
-   * summary has no implicit ARIA role, hence the tag selector.
+   * They sit in a closed `CollapsibleFieldCard` whenever the form started blank,
+   * and a closed one keeps its rows out of the DOM entirely, so the cadence
+   * controls cannot be reached until this runs (DOR-1759). The trigger is a real
+   * button carrying the section name and its badge — it used to be a `<summary>`,
+   * which had no implicit ARIA role and needed a tag selector.
    */
   async openScheduleSection() {
-    await this.createDialog.locator('summary').filter({ hasText: 'Schedule' }).click();
+    // Anchored: the trigger's accessible name is the section name plus its badge
+    // ("Schedule Optional"), and "Advanced settings" is the only sibling card.
+    await this.createDialog.getByRole('button', { name: /^schedule\b/i }).click();
   }
 
   /**

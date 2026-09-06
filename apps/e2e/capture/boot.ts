@@ -77,6 +77,19 @@ export function baseEnv(): NodeJS.ProcessEnv {
     DORKOS_BOUNDARY: CAPTURE_WORLD,
     // The default working directory must sit inside that boundary.
     DORKOS_DEFAULT_CWD: path.join(FLEET_ROOT, 'atlas'),
+    // **This Vite must never hot-replace anything either** (DOR-1412, extended
+    // to the capture stack by DOR-1771). Nothing edits source during a capture,
+    // but plenty rewrites the files this client imports: `packages/*/dist` is in
+    // its module graph, and this repo is routinely several agents deep in one
+    // checkout, any of whom may run a build at any moment. Vite then hot-replaces
+    // the modules above the change while a page is still booting, and the drive
+    // fails on a page that never converges. Measured on this stack: 30 cold
+    // mobile boots with nothing rewriting `packages/shared/dist` came up 30
+    // times; 9 with one rewrite landing mid-boot failed 5 times.
+    //
+    // `playwright.config.ts` sets this on both of its Vite legs for exactly the
+    // same reason. The capture stack is the third leg and was simply missed.
+    DORKOS_E2E_NO_HMR: 'true',
     DORKOS_RELAY_ENABLED: 'true',
     // Mount the Tasks surface (test-mode runtime stands in as the scheduler's
     // agent manager); crons here are non-imminent so nothing fires mid-capture.

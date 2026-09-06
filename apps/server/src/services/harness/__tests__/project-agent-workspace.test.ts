@@ -142,9 +142,10 @@ function readSeededSkill(agentDir: string, name: string): { body: string; versio
     requireNameMatch: false,
   });
   if (!parsed.ok) throw new Error(`Could not parse ${filePath}: ${parsed.error}`);
+  const version = parsed.definition.meta.metadata?.dorkosPackVersion;
   return {
     body: parsed.definition.body,
-    version: parsed.definition.meta.metadata?.dorkosPackVersion,
+    version: typeof version === 'string' ? version : undefined,
   };
 }
 

@@ -100,7 +100,7 @@ export type RoomErrorCode =
   | 'OWNER_MUST_BE_PRESENT'
   /**
    * A non-person tried to do something only a person may do — today, stopping a
-   * room ({@link RoomService.requirePersonAuthor}).
+   * room ({@link RoomVisibility.requirePersonAuthor}).
    *
    * It used to guard reactions too. It does not any more: an agent may put an
    * emoji on a message, bounded by {@link ReactionBudget} rather than by kind

@@ -3,6 +3,42 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('electron', () => import('../../__tests__/electron-mock'));
 vi.mock('electron-log', () => import('../../__tests__/electron-log-mock'));
 
+/**
+ * Where the frames come from, for this file only.
+ *
+ * `notifications/index.ts` reads the stream through `subscribeEventStream`, so
+ * that one call is the seam: with a stand-in behind it a test hands the bridge
+ * frames directly and every assertion is true the instant the call returns —
+ * nothing to poll, nothing to out-wait. `null` puts the real transport back for
+ * the single socket test at the bottom of the file.
+ *
+ * Everything else `event-stream.ts` exports (`parseEventPayload`, which every
+ * parser in the module under test runs its payload through) stays real: this
+ * fakes where the frames arrive from, never what they mean.
+ */
+const seam = vi.hoisted(() => ({
+  subscribe: null as
+    | null
+    | ((
+        options: { getPort: () => number | null },
+        handlers: {
+          onFrame: (frame: { name: string; data: string }) => void;
+          onConnectionLost?: () => void;
+        }
+      ) => { unsubscribe: () => void }),
+}));
+
+vi.mock('../../event-stream', async (importActual) => {
+  const actual = await importActual<typeof import('../../event-stream')>();
+  return {
+    ...actual,
+    subscribeEventStream: (
+      options: Parameters<typeof actual.subscribeEventStream>[0],
+      handlers: Parameters<typeof actual.subscribeEventStream>[1]
+    ) => (seam.subscribe ?? actual.subscribeEventStream)(options, handlers),
+  };
+});
+
 import { watchNotifications, type NotificationsWatch } from '../index';
 import { resetAnswerLogGuard } from '../answer';
 import type {
@@ -10,39 +46,68 @@ import type {
   NativeNotificationSpec,
   NotificationHost,
 } from '../wrapper';
-import { FakeEventStream } from '../../__tests__/fake-event-stream';
+import { FakeEventSource, FakeEventStream } from '../../__tests__/fake-event-stream';
 
-/** A `NotificationHost` double that records every shown spec and a closeable handle for it. */
+/** The port the bridge is told the server is on — a constant, since nothing here opens a socket. */
+const PORT = 4242;
+
+/**
+ * A `NotificationHost` double that records every shown spec and a closeable
+ * handle for it.
+ *
+ * {@link shows} is the barrier the one socket test waits on; every other test
+ * in this file is handed its frames synchronously and has nothing to wait for.
+ */
 class FakeNotificationHost implements NotificationHost {
   supported = true;
-  shown: { spec: NativeNotificationSpec; closed: boolean }[] = [];
+  readonly shown: { spec: NativeNotificationSpec; closed: boolean; closes: number }[] = [];
+  private waiters: { at: number; resolve: () => void }[] = [];
 
   isSupported(): boolean {
     return this.supported;
   }
 
   show(spec: NativeNotificationSpec): NativeNotificationHandle {
-    const entry = { spec, closed: false };
+    const entry = { spec, closed: false, closes: 0 };
     this.shown.push(entry);
+    const reached = this.waiters.filter((waiter) => waiter.at <= this.shown.length);
+    this.waiters = this.waiters.filter((waiter) => waiter.at > this.shown.length);
+    for (const waiter of reached) waiter.resolve();
     return {
       close: () => {
         entry.closed = true;
+        // Counted, not just flagged: a banner retired twice — once by its
+        // expiry timer and once by the resolution that beat it — is invisible
+        // to a boolean.
+        entry.closes += 1;
       },
     };
+  }
+
+  /**
+   * Resolve once `count` banners have been shown in total (immediately if they have).
+   *
+   * @param count - The running total to wait for.
+   */
+  async shows(count: number): Promise<void> {
+    if (this.shown.length >= count) return;
+    await new Promise<void>((resolve) => this.waiters.push({ at: count, resolve }));
   }
 }
 
 const fetchMock = vi.fn();
 
-let stream: FakeEventStream;
+let source: FakeEventSource;
 let host: FakeNotificationHost;
 let watch: NotificationsWatch | null = null;
 let unfocused = true;
 const focusAndNavigate = vi.fn<(path: string) => void>();
+/** The real HTTP stream, for the one test at the bottom that opens one. */
+let socket: FakeEventStream | null = null;
 
-beforeEach(async () => {
-  stream = new FakeEventStream();
-  await stream.listen();
+beforeEach(() => {
+  source = new FakeEventSource();
+  seam.subscribe = source.subscribe;
   host = new FakeNotificationHost();
   unfocused = true;
   focusAndNavigate.mockClear();
@@ -55,24 +120,42 @@ beforeEach(async () => {
 afterEach(async () => {
   watch?.stop();
   watch = null;
-  await stream.close();
+  seam.subscribe = null;
+  // A no-op unless a test installed them; the one that does must not leave them
+  // behind for whatever runs next.
+  vi.useRealTimers();
+  // Cleaning up here rather than in the socket test's own `finally` is what
+  // keeps a test that never settles from leaving a live server (and a live
+  // subscription to it) behind: a `finally` inside a hung test never runs, and
+  // `afterEach` runs regardless.
+  await socket?.close();
+  socket = null;
   vi.unstubAllGlobals();
 });
 
-/** Start watching the fake stream and wait until it is connected. */
-async function start(): Promise<void> {
+/** Start watching the fake source. Nothing to wait for — the seam is already connected. */
+function start(): void {
   watch = watchNotifications({
-    getPort: () => stream.port,
+    getPort: () => PORT,
     isWindowUnfocused: () => unfocused,
     focusAndNavigate,
     host,
   });
-  await stream.connected();
 }
 
-/** Wait for a condition the stream (or a fire-and-forget async handler) will satisfy on its own. */
-async function eventually(assertion: () => void): Promise<void> {
-  await vi.waitFor(assertion, { timeout: 2_000, interval: 10 });
+/**
+ * Let the fire-and-forget answer chain a banner click starts run to its end.
+ *
+ * `onAction` and `onReply` hand `void`-ed promises to Electron, so the part of
+ * the chain a test cannot await is everything after `fetch` resolves — and all
+ * of that is microtasks, which the runtime drains to empty before it runs the
+ * next macrotask. So one turn of the event loop is past all of it, whatever
+ * else the machine is doing: a turn, not a slice of the wall clock, with no
+ * budget for a busy machine to spend (DOR-1826). `fetch` itself is called
+ * synchronously inside the click, so nothing has to wait for that at all.
+ */
+function answerSettles(): Promise<void> {
+  return new Promise<void>((resolve) => setImmediate(resolve));
 }
 
 function sendAskPending(overrides: {
@@ -80,7 +163,7 @@ function sendAskPending(overrides: {
   cwd?: string;
   interaction: Record<string, unknown>;
 }): void {
-  stream.sendEvent('interaction_pending', {
+  source.emitEvent('interaction_pending', {
     sessionId: overrides.sessionId ?? 'session-1',
     cwd: overrides.cwd ?? '/Users/dork/projects/myproj',
     interaction: overrides.interaction,
@@ -110,8 +193,8 @@ function singleQuestion(question = 'What color should the button be?'): Record<s
   };
 }
 
-function sendNotification(overrides: Record<string, unknown> = {}): void {
-  stream.sendEvent('notification', {
+function notificationPayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
     notification: {
       id: 'notif-1',
       kind: 'turn.completed',
@@ -122,11 +205,15 @@ function sendNotification(overrides: Record<string, unknown> = {}): void {
       createdAt: '2026-08-19T00:00:00.000Z',
       ...overrides,
     },
-  });
+  };
+}
+
+function sendNotification(overrides: Record<string, unknown> = {}): void {
+  source.emitEvent('notification', notificationPayload(overrides));
 }
 
 function sendStandingPending(overrides: Record<string, unknown> = {}): void {
-  stream.sendEvent('standing_pending', {
+  source.emitEvent('standing_pending', {
     kind: 'schedule.parked',
     subjectKey: 'schedule:task-1',
     tier: 'blocking',
@@ -149,11 +236,11 @@ function sendStandingPending(overrides: Record<string, unknown> = {}): void {
  * had to ask an agent to open the Tasks panel to find out.
  */
 describe('watchNotifications — standing conditions', () => {
-  it('shows a banner for a schedule an agent proposed', async () => {
-    await start();
+  it('shows a banner for a schedule an agent proposed', () => {
+    start();
     sendStandingPending();
 
-    await eventually(() => expect(host.shown).toHaveLength(1));
+    expect(host.shown).toHaveLength(1);
     expect(host.shown[0]?.spec.title).toBe('Nightly Bot proposed a scheduled task');
     expect(host.shown[0]?.spec.body).toBe('nightly-sweep will not run until you approve it.');
     // Click-to-open, no buttons: a schedule that will run unattended, and an
@@ -162,8 +249,8 @@ describe('watchNotifications — standing conditions', () => {
     expect(host.shown[0]?.spec.hasReply).toBeUndefined();
   });
 
-  it('shows a banner for a capability approval an agent is waiting on', async () => {
-    await start();
+  it('shows a banner for a capability approval an agent is waiting on', () => {
+    start();
     sendStandingPending({
       kind: 'approval.pending',
       subjectKey: 'approval:01J1',
@@ -172,178 +259,233 @@ describe('watchNotifications — standing conditions', () => {
       deepLink: '/',
     });
 
-    await eventually(() => expect(host.shown).toHaveLength(1));
+    expect(host.shown).toHaveLength(1);
     expect(host.shown[0]?.spec.title).toBe('Nightly Bot needs your approval');
   });
 
-  it('opens the route the server chose when the banner is clicked', async () => {
-    await start();
+  it('opens the route the server chose when the banner is clicked', () => {
+    start();
     sendStandingPending({ kind: 'approval.pending', subjectKey: 'approval:01J1', deepLink: '/' });
-    await eventually(() => expect(host.shown).toHaveLength(1));
 
     host.shown[0]?.spec.onClick?.();
 
     expect(focusAndNavigate).toHaveBeenCalledWith('/');
   });
 
-  it('interrupts even while a window is focused — Blocking always does', async () => {
+  it('interrupts even while a window is focused — Blocking always does', () => {
     unfocused = false;
-    await start();
+    start();
     sendStandingPending();
 
-    await eventually(() => expect(host.shown).toHaveLength(1));
-  });
-
-  it('never shows the same condition twice', async () => {
-    await start();
-    sendStandingPending();
-    await eventually(() => expect(host.shown).toHaveLength(1));
-
-    sendStandingPending();
-    await new Promise((resolve) => setTimeout(resolve, 30));
     expect(host.shown).toHaveLength(1);
   });
 
-  it('closes the banner when the condition resolves', async () => {
-    await start();
+  it('never shows the same condition twice', () => {
+    start();
     sendStandingPending();
-    await eventually(() => expect(host.shown).toHaveLength(1));
+    expect(host.shown).toHaveLength(1);
 
-    stream.sendEvent('standing_resolved', {
+    sendStandingPending();
+
+    expect(host.shown).toHaveLength(1);
+    // Positive control for that did-not-happen: the de-dupe is on the subject
+    // key, not on the stream having gone quiet — a DIFFERENT condition still
+    // gets its banner.
+    sendStandingPending({ subjectKey: 'schedule:task-2' });
+    expect(host.shown).toHaveLength(2);
+  });
+
+  it('closes the banner when the condition resolves', () => {
+    start();
+    sendStandingPending();
+    expect(host.shown).toHaveLength(1);
+
+    source.emitEvent('standing_resolved', {
       kind: 'schedule.parked',
       subjectKey: 'schedule:task-1',
       resolvedAt: '2026-08-25T00:01:00.000Z',
     });
 
-    await eventually(() => expect(host.shown[0]?.closed).toBe(true));
+    expect(host.shown[0]?.closed).toBe(true);
+    // And the condition is forgotten, not merely closed: a standing kind's
+    // `dedupeKey` is stable for the life of its subject (`schedule:${taskId}`,
+    // `notification-registry.ts`), so the very same key stands again whenever
+    // the task goes back to pending_approval. A resolution that closed the
+    // banner without dropping the key would silently suppress every later
+    // raise of it.
+    sendStandingPending();
+    expect(host.shown).toHaveLength(2);
   });
 
-  it('leaves a banner alone when a DIFFERENT condition resolves', async () => {
-    await start();
+  it('leaves a banner alone when a DIFFERENT condition resolves', () => {
+    start();
     sendStandingPending();
-    await eventually(() => expect(host.shown).toHaveLength(1));
+    expect(host.shown).toHaveLength(1);
 
-    stream.sendEvent('standing_resolved', {
+    source.emitEvent('standing_resolved', {
       kind: 'schedule.parked',
       subjectKey: 'schedule:task-999',
       resolvedAt: '2026-08-25T00:01:00.000Z',
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 30));
     expect(host.shown[0]?.closed).toBe(false);
+    // Positive control: the very same event naming the RIGHT key does close it,
+    // so the banner staying open was the key not matching and not a resolution
+    // path that does nothing to anybody.
+    source.emitEvent('standing_resolved', {
+      kind: 'schedule.parked',
+      subjectKey: 'schedule:task-1',
+      resolvedAt: '2026-08-25T00:01:00.000Z',
+    });
+    expect(host.shown[0]?.closed).toBe(true);
   });
 
-  it('ignores a frame with no usable tier, rather than defaulting to loud', async () => {
-    await start();
+  it('ignores a frame with no usable tier, rather than defaulting to loud', () => {
+    start();
     sendStandingPending({ tier: 'unheard-of' });
 
-    await new Promise((resolve) => setTimeout(resolve, 30));
     expect(host.shown).toHaveLength(0);
+    // Positive control: a well-formed frame straight after still gets through,
+    // so the silence was the tier being rejected and not a watcher the
+    // malformed frame knocked over.
+    sendStandingPending({ subjectKey: 'schedule:task-ok' });
+    expect(host.shown).toHaveLength(1);
   });
 
-  it('holds a Notable condition back while a window has focus', async () => {
+  it('holds a Notable condition back while a window has focus', () => {
     unfocused = false;
-    await start();
+    start();
     sendStandingPending({ tier: 'notable' });
 
-    await new Promise((resolve) => setTimeout(resolve, 30));
     expect(host.shown).toHaveLength(0);
+    // Positive control: the identical condition shows the moment focus is gone
+    // — a condition held back is not tracked, so re-sending it is the whole
+    // test of the away-only rule.
+    unfocused = true;
+    sendStandingPending({ tier: 'notable' });
+    expect(host.shown).toHaveLength(1);
   });
 
   // Expiry is the one ending the server never announces (DOR-1570 review): an
   // approval that runs out of time with no agent retry and no operator click
   // produces no `standing_resolved`. Without a local timer the banner would
   // linger forever, deep-linking to a bell with nothing behind it.
-  it('retires an approval banner at its own expiry, with no standing_resolved', async () => {
-    await start();
+  //
+  // The three cases below are the only ones in this file that involve a clock
+  // at all, and they own it rather than race it: with timers faked, the
+  // deadline arrives exactly when the test says so.
+  it('retires an approval banner at its own expiry, with no standing_resolved', () => {
+    vi.useFakeTimers();
+    start();
     sendStandingPending({
       kind: 'approval.pending',
       subjectKey: 'approval:01JEXPIRE',
       title: 'Nightly Bot needs your approval',
       deepLink: '/',
-      // Just ahead of now; the bridge adds ~500ms slack, so the banner closes
-      // shortly after without anything else being sent.
       expiresAt: new Date(Date.now() + 40).toISOString(),
     });
-    await eventually(() => expect(host.shown).toHaveLength(1));
+    expect(host.shown).toHaveLength(1);
+    expect(host.shown[0]?.closed).toBe(false);
 
-    // No standing_resolved is ever sent — the banner has to close on its own.
-    await eventually(() => expect(host.shown[0]?.closed).toBe(true));
+    // The bridge adds ~500ms of slack so its timer fires strictly after the
+    // deadline the server enforces; nothing else is sent.
+    vi.advanceTimersByTime(1_000);
+
+    expect(host.shown[0]?.closed).toBe(true);
   });
 
-  it('does not self-retire a schedule banner, which carries no expiry', async () => {
-    await start();
+  it('does not self-retire a schedule banner, which carries no expiry', () => {
+    vi.useFakeTimers();
+    start();
     // A parked schedule has no `expiresAt`; it must wait for standing_resolved.
     sendStandingPending();
-    await eventually(() => expect(host.shown).toHaveLength(1));
+    // Positive control, armed alongside it: an approval that DOES carry an
+    // expiry retires on the very same advance, so the schedule still standing
+    // is the missing deadline and not a timer nothing ever fires.
+    sendStandingPending({
+      kind: 'approval.pending',
+      subjectKey: 'approval:01JCONTROL',
+      deepLink: '/',
+      expiresAt: new Date(Date.now() + 40).toISOString(),
+    });
+    expect(host.shown).toHaveLength(2);
 
-    await new Promise((resolve) => setTimeout(resolve, 60));
+    vi.advanceTimersByTime(60_000);
+
     expect(host.shown[0]?.closed).toBe(false);
+    expect(host.shown[1]?.closed).toBe(true);
   });
 
-  it('does not double-handle when standing_resolved beats the expiry timer', async () => {
-    await start();
+  it('does not double-handle when standing_resolved beats the expiry timer', () => {
+    vi.useFakeTimers();
+    start();
     sendStandingPending({
       kind: 'approval.pending',
       subjectKey: 'approval:01JRACE',
       deepLink: '/',
-      // Far enough out that the resolution below lands first.
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
-    await eventually(() => expect(host.shown).toHaveLength(1));
+    expect(host.shown).toHaveLength(1);
 
-    stream.sendEvent('standing_resolved', {
+    source.emitEvent('standing_resolved', {
       kind: 'approval.pending',
       subjectKey: 'approval:01JRACE',
       resolvedAt: new Date().toISOString(),
     });
+    expect(host.shown[0]?.closed).toBe(true);
 
-    await eventually(() => expect(host.shown[0]?.closed).toBe(true));
-    // The banner closed exactly once; nothing re-opened or re-closed it when the
-    // (now-cleared) expiry deadline would have passed.
+    // Past the deadline the (now-cleared) timer would have fired at.
+    vi.advanceTimersByTime(120_000);
+
+    // The banner closed exactly once; nothing re-opened or re-closed it.
     expect(host.shown).toHaveLength(1);
+    expect(host.shown[0]?.closes).toBe(1);
   });
 });
 
 describe('watchNotifications — Asks', () => {
-  it('shows a Blocking banner for a pending approval, with Allow/Deny actions', async () => {
-    await start();
+  it('shows a Blocking banner for a pending approval, with Allow/Deny actions', () => {
+    start();
     sendAskPending({ interaction: approval() });
 
-    await eventually(() => expect(host.shown).toHaveLength(1));
+    expect(host.shown).toHaveLength(1);
     expect(host.shown[0]?.spec.title).toBe('myproj is waiting on your answer');
     expect(host.shown[0]?.spec.actions).toEqual([{ label: 'Allow' }, { label: 'Deny' }]);
   });
 
-  it('shows a Blocking banner even while a window is focused — Blocking always interrupts', async () => {
+  it('shows a Blocking banner even while a window is focused — Blocking always interrupts', () => {
     unfocused = false;
-    await start();
+    start();
     sendAskPending({ interaction: approval() });
 
-    await eventually(() => expect(host.shown).toHaveLength(1));
-  });
-
-  it('never shows the same pending Ask twice', async () => {
-    await start();
-    sendAskPending({ interaction: approval() });
-    await eventually(() => expect(host.shown).toHaveLength(1));
-
-    sendAskPending({ interaction: approval() });
-    // Give the (absent) second show a chance to land before asserting it didn't.
-    await new Promise((resolve) => setTimeout(resolve, 30));
     expect(host.shown).toHaveLength(1);
   });
 
-  it('Allow POSTs the exact approve payload', async () => {
-    await start();
+  it('never shows the same pending Ask twice', () => {
+    start();
+    sendAskPending({ interaction: approval() });
+    expect(host.shown).toHaveLength(1);
+
+    sendAskPending({ interaction: approval() });
+
+    expect(host.shown).toHaveLength(1);
+    // Positive control: a DIFFERENT interaction id still gets its banner, so
+    // the second frame being dropped was the de-dupe.
+    sendAskPending({ interaction: approval({ id: 'tool-2' }) });
+    expect(host.shown).toHaveLength(2);
+  });
+
+  it('Allow POSTs the exact approve payload', () => {
+    start();
     sendAskPending({ sessionId: 'session-9', interaction: approval({ id: 'tool-9' }) });
-    await eventually(() => expect(host.shown).toHaveLength(1));
 
     host.shown[0]?.spec.onAction?.(0);
 
-    await eventually(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    // The request goes out synchronously inside the click, before the chain
+    // that reads its answer ever suspends.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://127.0.0.1:' + stream.port + '/api/sessions/session-9/approve',
+      `http://127.0.0.1:${PORT}/api/sessions/session-9/approve`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -352,28 +494,23 @@ describe('watchNotifications — Asks', () => {
     );
   });
 
-  it('Deny POSTs the exact deny payload', async () => {
-    await start();
+  it('Deny POSTs the exact deny payload', () => {
+    start();
     sendAskPending({ sessionId: 'session-9', interaction: approval({ id: 'tool-9' }) });
-    await eventually(() => expect(host.shown).toHaveLength(1));
 
     host.shown[0]?.spec.onAction?.(1);
 
-    await eventually(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    expect(fetchMock).toHaveBeenCalledWith(
-      'http://127.0.0.1:' + stream.port + '/api/sessions/session-9/deny',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ toolCallId: 'tool-9' }),
-      }
-    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(`http://127.0.0.1:${PORT}/api/sessions/session-9/deny`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ toolCallId: 'tool-9' }),
+    });
   });
 
-  it('offers a reply field for a single-question ask, and Reply POSTs the typed text as answer 0', async () => {
-    await start();
+  it('offers a reply field for a single-question ask, and Reply POSTs the typed text as answer 0', () => {
+    start();
     sendAskPending({ sessionId: 'session-9', interaction: singleQuestion('Pick a color') });
-    await eventually(() => expect(host.shown).toHaveLength(1));
 
     expect(host.shown[0]?.spec.hasReply).toBe(true);
     expect(host.shown[0]?.spec.replyPlaceholder).toBe('Pick a color');
@@ -381,9 +518,9 @@ describe('watchNotifications — Asks', () => {
 
     host.shown[0]?.spec.onReply?.('Blue, please');
 
-    await eventually(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://127.0.0.1:' + stream.port + '/api/sessions/session-9/submit-answers',
+      `http://127.0.0.1:${PORT}/api/sessions/session-9/submit-answers`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -392,8 +529,8 @@ describe('watchNotifications — Asks', () => {
     );
   });
 
-  it('offers neither actions nor a reply for a multi-question ask', async () => {
-    await start();
+  it('offers neither actions nor a reply for a multi-question ask', () => {
+    start();
     sendAskPending({
       interaction: {
         type: 'question',
@@ -406,47 +543,45 @@ describe('watchNotifications — Asks', () => {
         ],
       },
     });
-    await eventually(() => expect(host.shown).toHaveLength(1));
+
+    expect(host.shown).toHaveLength(1);
     expect(host.shown[0]?.spec.hasReply).toBeUndefined();
     expect(host.shown[0]?.spec.actions).toBeUndefined();
   });
 
-  it('clicking the banner focuses the window and deep-links to the session', async () => {
-    await start();
+  it('clicking the banner focuses the window and deep-links to the session', () => {
+    start();
     sendAskPending({ sessionId: 'session-9', interaction: approval() });
-    await eventually(() => expect(host.shown).toHaveLength(1));
 
     host.shown[0]?.spec.onClick?.();
 
     expect(focusAndNavigate).toHaveBeenCalledWith('/session?session=session-9');
   });
 
-  it('closes the banner when interaction_resolved names it', async () => {
-    await start();
+  it('closes the banner when interaction_resolved names it', () => {
+    start();
     sendAskPending({ interaction: approval({ id: 'tool-close-me' }) });
-    await eventually(() => expect(host.shown).toHaveLength(1));
+    expect(host.shown).toHaveLength(1);
 
-    stream.sendEvent('interaction_resolved', {
+    source.emitEvent('interaction_resolved', {
       sessionId: 'session-1',
       interactionId: 'tool-close-me',
       outcome: 'answered',
       resolvedAt: '2026-08-19T00:00:00.000Z',
     });
 
-    await eventually(() => expect(host.shown[0]?.closed).toBe(true));
+    expect(host.shown[0]?.closed).toBe(true);
   });
 
   it('falls back to focus+deep-link on 401 (remote login on, main holds no credential)', async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 401 }));
-    await start();
+    start();
     sendAskPending({ sessionId: 'session-9', interaction: approval() });
-    await eventually(() => expect(host.shown).toHaveLength(1));
 
     host.shown[0]?.spec.onAction?.(0);
 
-    await eventually(() =>
-      expect(focusAndNavigate).toHaveBeenCalledWith('/session?session=session-9')
-    );
+    await answerSettles();
+    expect(focusAndNavigate).toHaveBeenCalledWith('/session?session=session-9');
   });
 
   it('does NOT steal focus on a refused action — the server understood and said no (already resolved)', async () => {
@@ -454,33 +589,43 @@ describe('watchNotifications — Asks', () => {
     // it timed out. Reopening the app over a card that no longer exists would
     // surprise the person for nothing.
     fetchMock.mockResolvedValue(new Response(null, { status: 409 }));
-    await start();
+    start();
     sendAskPending({ sessionId: 'session-9', interaction: approval() });
-    await eventually(() => expect(host.shown).toHaveLength(1));
 
     host.shown[0]?.spec.onAction?.(0);
 
-    await eventually(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    // Give the (absent) fallback a chance to land before asserting it didn't.
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await answerSettles();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(focusAndNavigate).not.toHaveBeenCalled();
+
+    // Positive control: the same click on the same banner DOES steal focus when
+    // the server answers a reason that a reopened window can help with. So the
+    // silence above was the 409 being read as final, not a chain that never ran.
+    fetchMock.mockResolvedValue(new Response(null, { status: 401 }));
+    host.shown[0]?.spec.onAction?.(0);
+    await answerSettles();
+    expect(focusAndNavigate).toHaveBeenCalledWith('/session?session=session-9');
   });
 
   it('does NOT steal focus on a refused reply either', async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 409 }));
-    await start();
+    start();
     sendAskPending({ sessionId: 'session-9', interaction: singleQuestion() });
-    await eventually(() => expect(host.shown).toHaveLength(1));
 
     host.shown[0]?.spec.onReply?.('Blue');
 
-    await eventually(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await answerSettles();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(focusAndNavigate).not.toHaveBeenCalled();
+
+    fetchMock.mockResolvedValue(new Response(null, { status: 401 }));
+    host.shown[0]?.spec.onReply?.('Blue');
+    await answerSettles();
+    expect(focusAndNavigate).toHaveBeenCalledWith('/session?session=session-9');
   });
 
-  it('shows nothing for a question-type interaction whose questions field is not an array', async () => {
-    await start();
+  it('shows nothing for a question-type interaction whose questions field is not an array', () => {
+    start();
     sendAskPending({
       interaction: {
         type: 'question',
@@ -490,161 +635,218 @@ describe('watchNotifications — Asks', () => {
         questions: 'not-an-array',
       },
     });
-    // Give the (absent) banner a chance to land before asserting it didn't —
-    // and prove the malformed payload didn't crash the watcher either: a
-    // well-formed frame right after it still gets through.
-    await new Promise((resolve) => setTimeout(resolve, 30));
+
     expect(host.shown).toHaveLength(0);
 
+    // Positive control: the malformed payload didn't crash the watcher — a
+    // well-formed frame right after it still gets through.
     sendAskPending({ interaction: approval() });
-    await eventually(() => expect(host.shown).toHaveLength(1));
+    expect(host.shown).toHaveLength(1);
   });
 });
 
 describe('watchNotifications — Activity notifications', () => {
-  it('shows a Notable notification only while no window is focused', async () => {
+  it('shows a Notable notification only while no window is focused', () => {
     unfocused = false;
-    await start();
+    start();
     sendNotification({ tier: 'notable' });
-    await new Promise((resolve) => setTimeout(resolve, 30));
+
     expect(host.shown).toHaveLength(0);
-  });
-
-  it('shows a Notable notification once no window is focused', async () => {
-    unfocused = true;
-    await start();
-    sendNotification({ tier: 'notable' });
-    await eventually(() => expect(host.shown).toHaveLength(1));
-  });
-
-  it('shows a Blocking notification regardless of focus', async () => {
-    unfocused = false;
-    await start();
+    // Positive control: a Blocking row on the same focused window does show, so
+    // the silence was the tier rule and not a stream nobody is listening to.
     sendNotification({ id: 'notif-blocking', tier: 'blocking' });
-    await eventually(() => expect(host.shown).toHaveLength(1));
-  });
-
-  it('never shows a Quiet notification', async () => {
-    unfocused = true;
-    await start();
-    sendNotification({ id: 'notif-quiet', tier: 'quiet' });
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(host.shown).toHaveLength(0);
-  });
-
-  it("skips a notification that arrives already read — a person's own action, or already handled", async () => {
-    unfocused = true;
-    await start();
-    sendNotification({ id: 'notif-read', tier: 'blocking', readAt: '2026-08-19T00:00:01.000Z' });
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(host.shown).toHaveLength(0);
-  });
-
-  it('never shows the same notification id twice', async () => {
-    unfocused = true;
-    await start();
-    sendNotification({ id: 'notif-dupe', tier: 'blocking' });
-    await eventually(() => expect(host.shown).toHaveLength(1));
-
-    sendNotification({ id: 'notif-dupe', tier: 'blocking' });
-    await new Promise((resolve) => setTimeout(resolve, 30));
     expect(host.shown).toHaveLength(1);
   });
 
-  it('ignores a notification whose subject type it does not know', async () => {
+  it('shows a Notable notification once no window is focused', () => {
+    unfocused = true;
+    start();
+    sendNotification({ tier: 'notable' });
+
+    expect(host.shown).toHaveLength(1);
+  });
+
+  it('shows a Blocking notification regardless of focus', () => {
+    unfocused = false;
+    start();
+    sendNotification({ id: 'notif-blocking', tier: 'blocking' });
+
+    expect(host.shown).toHaveLength(1);
+  });
+
+  it('never shows a Quiet notification', () => {
+    unfocused = true;
+    start();
+    sendNotification({ id: 'notif-quiet', tier: 'quiet' });
+
+    expect(host.shown).toHaveLength(0);
+    sendNotification({ id: 'notif-loud', tier: 'blocking' });
+    expect(host.shown).toHaveLength(1);
+  });
+
+  it("skips a notification that arrives already read — a person's own action, or already handled", () => {
+    unfocused = true;
+    start();
+    sendNotification({ id: 'notif-read', tier: 'blocking', readAt: '2026-08-19T00:00:01.000Z' });
+
+    expect(host.shown).toHaveLength(0);
+    // Positive control: the same row without `readAt` shows.
+    sendNotification({ id: 'notif-unread', tier: 'blocking' });
+    expect(host.shown).toHaveLength(1);
+  });
+
+  it('never shows the same notification id twice', () => {
+    unfocused = true;
+    start();
+    sendNotification({ id: 'notif-dupe', tier: 'blocking' });
+    expect(host.shown).toHaveLength(1);
+
+    sendNotification({ id: 'notif-dupe', tier: 'blocking' });
+
+    expect(host.shown).toHaveLength(1);
+    sendNotification({ id: 'notif-other', tier: 'blocking' });
+    expect(host.shown).toHaveLength(2);
+  });
+
+  it('ignores a notification whose subject type it does not know', () => {
     // `notificationDeepLink` switches on `subject.type`; a value outside the
     // enum falls off the end of that switch and yields `undefined`, which is a
     // banner whose click goes nowhere. Failing closed is the honest answer —
     // the row is still in the Inbox.
     unfocused = true;
-    await start();
+    start();
     sendNotification({
       id: 'notif-alien',
       tier: 'blocking',
       subject: { type: 'workspace', id: 'ws-1' },
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 30));
     expect(host.shown).toHaveLength(0);
+    sendNotification({ id: 'notif-known', tier: 'blocking' });
+    expect(host.shown).toHaveLength(1);
   });
 
-  it('ignores a notification whose subject carries no type at all', async () => {
+  it('ignores a notification whose subject carries no type at all', () => {
     unfocused = true;
-    await start();
+    start();
     sendNotification({ id: 'notif-typeless', tier: 'blocking', subject: { id: 'x' } });
 
-    await new Promise((resolve) => setTimeout(resolve, 30));
     expect(host.shown).toHaveLength(0);
+    sendNotification({ id: 'notif-known', tier: 'blocking' });
+    expect(host.shown).toHaveLength(1);
   });
 
-  it('still shows every subject type the deep-link builder handles', async () => {
+  it('still shows every subject type the deep-link builder handles', () => {
     // The guard above must fail closed on the unknown, not on everything.
     unfocused = true;
-    await start();
+    start();
     for (const type of ['session', 'task', 'run', 'room', 'agent', 'system']) {
       sendNotification({ id: `notif-${type}`, tier: 'blocking', subject: { type, id: 'x' } });
     }
 
-    await eventually(() => expect(host.shown).toHaveLength(6));
+    expect(host.shown).toHaveLength(6);
   });
 
-  it("clicking the banner deep-links to the notification's subject", async () => {
+  it("clicking the banner deep-links to the notification's subject", () => {
     unfocused = true;
-    await start();
+    start();
     sendNotification({ id: 'notif-click', tier: 'blocking', sessionId: 'session-77' });
-    await eventually(() => expect(host.shown).toHaveLength(1));
 
     host.shown[0]?.spec.onClick?.();
+
     expect(focusAndNavigate).toHaveBeenCalledWith('/session?session=session-77');
   });
 
-  it('closes a tracked banner when notification_read names its id', async () => {
+  it('closes a tracked banner when notification_read names its id', () => {
     unfocused = true;
-    await start();
+    start();
     sendNotification({ id: 'notif-read-me', tier: 'blocking' });
-    await eventually(() => expect(host.shown).toHaveLength(1));
+    expect(host.shown).toHaveLength(1);
 
-    stream.sendEvent('notification_read', {
+    source.emitEvent('notification_read', {
       ids: ['notif-read-me'],
       all: false,
       readAt: '2026-08-19T00:00:02.000Z',
       unreadCount: 0,
     });
 
-    await eventually(() => expect(host.shown[0]?.closed).toBe(true));
+    expect(host.shown[0]?.closed).toBe(true);
   });
 
-  it('closes every tracked banner when notification_read says all', async () => {
+  it('closes every tracked banner when notification_read says all', () => {
     unfocused = true;
-    await start();
+    start();
     sendNotification({ id: 'notif-a', tier: 'blocking' });
     sendNotification({ id: 'notif-b', tier: 'blocking' });
-    await eventually(() => expect(host.shown).toHaveLength(2));
+    expect(host.shown).toHaveLength(2);
 
-    stream.sendEvent('notification_read', {
+    source.emitEvent('notification_read', {
       ids: [],
       all: true,
       readAt: '2026-08-19T00:00:03.000Z',
       unreadCount: 0,
     });
 
-    await eventually(() => expect(host.shown.every((entry) => entry.closed)).toBe(true));
+    expect(host.shown.every((entry) => entry.closed)).toBe(true);
   });
 });
 
 describe('watchNotifications — platform support', () => {
   it('does nothing on a platform that cannot show native notifications', () => {
     host.supported = false;
-    // Deliberately not `start()`: an unsupported platform never subscribes to
-    // the stream at all, so there is no connection to wait for — that IS the
-    // no-op this test is proving.
+
+    start();
+
+    // An unsupported platform never subscribes to the stream at all — that IS
+    // the no-op this test is proving.
+    expect(source.subscriptions).toHaveLength(0);
+    sendNotification({ tier: 'blocking' });
+    expect(host.shown).toHaveLength(0);
+
+    // Positive control: the very same call on a supported host does subscribe,
+    // so the zero above is the platform check and not a watcher that never
+    // subscribes to anything.
+    watch?.stop();
+    host.supported = true;
+    start();
+    expect(source.subscriptions).toHaveLength(1);
+  });
+});
+
+describe('watchNotifications over a real socket', () => {
+  /**
+   * The one test in this file that opens a socket, and the only reason the rest
+   * can be trusted: it proves the seam above is wired to something real — a
+   * `notification` frame written to a real SSE response, over a real TCP
+   * connection, through the real `event-stream.ts`, pops a real banner.
+   *
+   * It waits on barriers the production code trips (the server's own request
+   * handler; the host's own `show`), never on a deadline, so there is no budget
+   * for a loaded machine to spend. The package's `testTimeout` still bounds a
+   * genuine hang. If it ever does flake, DELETE it rather than raising
+   * anything — every behaviour it touches is asserted exactly above, and a
+   * socket test that has to be nursed is worth less than the noise it makes
+   * (DOR-1777).
+   */
+  it('shows a banner off a real SSE connection', async () => {
+    seam.subscribe = null;
+    // Handed to `afterEach` before anything can throw, so the server is closed
+    // even if this test never reaches its end.
+    const stream = new FakeEventStream();
+    socket = stream;
+    await stream.listen();
+
     watch = watchNotifications({
       getPort: () => stream.port,
-      isWindowUnfocused: () => unfocused,
+      isWindowUnfocused: () => true,
       focusAndNavigate,
       host,
     });
-    expect(stream.connections).toBe(0);
-    expect(host.shown).toHaveLength(0);
+    await stream.connected();
+
+    stream.sendEvent('notification', notificationPayload({ tier: 'blocking' }));
+
+    await host.shows(1);
+    expect(host.shown[0]?.spec.title).toBe('myproj finished a turn');
   });
 });

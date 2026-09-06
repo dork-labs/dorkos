@@ -8,6 +8,14 @@
  * they leave in the login-off posture, and why the narrowing direction is barred
  * too (DOR-1507).
  *
+ * The secrets and settings routes are NOT behind that bar — they hold an
+ * extension's own per-extension data rather than a leaf of `extensions` in
+ * `~/.dork/config.json` — so an agent may legitimately write them. Every route
+ * here that records an Activity event therefore reads WHO asked
+ * (`readActivityActor`) instead of asserting it was the person; they all claimed
+ * `user` / `'You'` before DOR-1801, so an agent setting an API key showed up in
+ * the feed as the operator's own action.
+ *
  * @module routes/extensions
  */
 import { Router } from 'express';
@@ -22,6 +30,7 @@ import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
 import { resolveBlobPath } from '../services/extensions/extension-data-paths.js';
+import { readActivityActor } from '../services/activity/activity-actor.js';
 import { registerExtensionApprovalRoutes } from './extensions-approval.js';
 import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import {
@@ -169,8 +178,11 @@ export function createExtensionsRouter(
       const activityService = req.app.locals.activityService as ActivityService | undefined;
       if (activityService) {
         await activityService.emit({
-          actorType: 'user',
-          actorLabel: 'You',
+          // Always the person today — the bar above refuses anything that named
+          // itself an agent — and read from the caller anyway, so this router has
+          // exactly one way of saying who acted and no route can drift back to
+          // asserting it.
+          ...readActivityActor(req, res),
           category: 'config',
           eventType: 'config.extension_installed',
           resourceType: 'extension',
@@ -221,8 +233,9 @@ export function createExtensionsRouter(
       const activityService = req.app.locals.activityService as ActivityService | undefined;
       if (activityService) {
         await activityService.emit({
-          actorType: 'user',
-          actorLabel: 'You',
+          // Person-barred like `/enable`, and read from the caller for the same
+          // reason.
+          ...readActivityActor(req, res),
           category: 'config',
           eventType: 'config.extension_removed',
           resourceType: 'extension',
@@ -420,8 +433,10 @@ export function createExtensionsRouter(
       const activityService = req.app.locals.activityService as ActivityService | undefined;
       if (activityService) {
         await activityService.emit({
-          actorType: 'user',
-          actorLabel: 'You',
+          // No person bar on this route, so this genuinely varies: an agent that
+          // identified itself is named, and the feed stops crediting the person
+          // with a machine's write (DOR-1801).
+          ...readActivityActor(req, res),
           category: 'config',
           eventType: 'config.extension_updated',
           resourceType: 'extension',
@@ -529,8 +544,8 @@ export function createExtensionsRouter(
       const activityService = req.app.locals.activityService as ActivityService | undefined;
       if (activityService) {
         await activityService.emit({
-          actorType: 'user',
-          actorLabel: 'You',
+          // Ungated like the secrets route beside it, and attributed the same way.
+          ...readActivityActor(req, res),
           category: 'config',
           eventType: 'config.extension_updated',
           resourceType: 'extension',

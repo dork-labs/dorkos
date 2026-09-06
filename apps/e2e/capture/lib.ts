@@ -22,6 +22,41 @@ export const SETTLE_MS = 900;
 /** Default selector-wait budget. */
 export const WAIT_MS = 20_000;
 
+/** What the client's boot sentinel prefixes its give-up report with. */
+const BOOT_FAILURE_MARKER = '[dorkos:boot-failed]';
+
+/** Boot-sentinel reports heard on each context, for {@link waitForAppShell}. */
+const bootFailureReports = new WeakMap<BrowserContext, string[]>();
+
+/**
+ * Open a capture context that is listening when the client gives up on booting.
+ *
+ * **Every context in the record phase is minted here, and that is the point.**
+ * The client's boot sentinel writes what it knows to `console.error` precisely
+ * so an automated watcher can keep it (`apps/client/index.html`) — but a
+ * listener attached at each call site is a listener the next call site forgets,
+ * and the harness had none at all when DOR-1771 was filed. Attaching it to the
+ * context, in the only function that makes one, is what makes "the capture
+ * harness records it" a property of the harness rather than a habit.
+ *
+ * @param browser - The record phase's browser.
+ * @param options - Context options, passed through untouched.
+ * @returns A context whose boot-failure reports {@link waitForAppShell} can read.
+ */
+export async function newCaptureContext(
+  browser: Browser,
+  options?: Parameters<Browser['newContext']>[0]
+): Promise<BrowserContext> {
+  const ctx = await browser.newContext(options);
+  const reports: string[] = [];
+  bootFailureReports.set(ctx, reports);
+  ctx.on('console', (message) => {
+    const text = message.text();
+    if (text.includes(BOOT_FAILURE_MARKER)) reports.push(text);
+  });
+  return ctx;
+}
+
 /** Absolute client URL for a path. */
 export function url(pathname: string): string {
   return `${CLIENT_URL}${pathname}`;
@@ -91,16 +126,24 @@ export async function patch(pathname: string, body: unknown): Promise<void> {
  * It did, immediately. Driving `mobile-sessions` nine times over turned up one
  * failure, and this said what it was: the **crash fallback** ("DorkOS couldn't
  * finish starting"), not a slow gate — the shell's 3s `loadingTimedOut`
- * fall-through cannot produce a 20s wait, and the client boot crash that can is
- * a product defect, tracked separately from the harness.
+ * fall-through cannot produce a 20s wait.
+ *
+ * And then it stopped one step short, because `innerText` reads only what is
+ * VISIBLE and the boot sentinel keeps everything it knows in a collapsed
+ * `<details>`. The report was a headline and no stack (DOR-1771). Two ways in
+ * now, because either can be the one that survives: the details are lifted out
+ * of the DOM directly, whether or not a person has opened the block, and the
+ * sentinel's `console.error` is kept by {@link newCaptureContext} from the
+ * moment the context exists — which is the only one of the two that still works
+ * if the page has navigated or closed by the time this runs.
  */
 export async function waitForAppShell(page: Page): Promise<void> {
   try {
     await page.waitForSelector('[data-testid="app-shell"]', { timeout: WAIT_MS });
   } catch (err) {
-    // Both probes are best-effort, and must stay that way: this runs on a page
-    // that has already misbehaved, and a closed or navigating one would replace
-    // the timeout — the only evidence there is — with `Target closed`.
+    // Every probe here is best-effort, and must stay that way: this runs on a
+    // page that has already misbehaved, and a closed or navigating one would
+    // replace the timeout — the only evidence there is — with `Target closed`.
     const unreachable = await page
       .locator('[data-testid="server-unreachable"]')
       .count()
@@ -112,10 +155,23 @@ export async function waitForAppShell(page: Page): Promise<void> {
         .innerText()
         .catch(() => '')
     ).trim();
+    const bootFailure = await page
+      .evaluate(() => {
+        const panel = document.querySelector('[role="alertdialog"]');
+        if (!panel || !document.getElementById('dorkos-boot-failure-title')) return null;
+        // Scoped to the panel: when `#root` is missing the sentinel paints into
+        // the body, where somebody else's <pre> can be the first one.
+        const details = panel.querySelector('pre');
+        return details ? details.textContent : '(panel painted, no details block)';
+      })
+      .catch(() => null);
+    const reported = bootFailureReports.get(page.context()) ?? [];
     throw new Error(
       `app shell never rendered at ${page.url()} — ` +
         `server-unreachable screen: ${unreachable ? 'yes' : 'no'}; ` +
-        `page text: ${JSON.stringify(onScreen.slice(0, 300)) || '(empty)'}`,
+        `page text: ${JSON.stringify(onScreen.slice(0, 300)) || '(empty)'}` +
+        (bootFailure === null ? '' : `; boot sentinel details: ${bootFailure}`) +
+        (reported.length === 0 ? '' : `; boot sentinel console: ${reported.join(' | ')}`),
       { cause: err }
     );
   }
@@ -278,7 +334,7 @@ export async function recordLoop(
   rec: RunRecorder
 ): Promise<void> {
   const videoDir = mintVideoDir();
-  const ctx = await browser.newContext({
+  const ctx = await newCaptureContext(browser, {
     viewport: VIDEO_SIZE,
     recordVideo: { dir: videoDir, size: VIDEO_SIZE },
   });

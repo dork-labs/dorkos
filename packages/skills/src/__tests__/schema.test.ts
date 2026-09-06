@@ -104,12 +104,17 @@ describe('SkillFrontmatterSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejects non-string metadata values', () => {
+  it('accepts nested metadata values (third-party skills nest client config under metadata)', () => {
+    // A ClawHub/OpenClaw skill carries `metadata: { openclaw: { emoji, requires: {...} } }`.
+    // Rejecting the object dropped the whole skill from the registry.
     const result = SkillFrontmatterSchema.safeParse({
       ...minimal,
-      metadata: { key: 123 },
+      metadata: {
+        openclaw: { emoji: '🌎', requires: { bins: [], env: ['POSTIZ_API_URL'] } },
+        version: 3,
+      },
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it('accepts frontmatter with kind: "skill"', () => {

@@ -17,11 +17,12 @@ import { InvalidAvatarIdError } from '../avatar-store.js';
 import { LocalAvatarStore } from '../local-avatar-store.js';
 
 /**
- * Lets one `rename` fail on demand — the interruption that decides whether the
- * write order is safe. Everything else passes straight through to the real
- * filesystem, so these are still tests against real files.
+ * Lets one `rename` fail, and one file vanish mid-read, on demand — the two
+ * interruptions that decide whether the write order and the read are safe.
+ * Everything else passes straight through to the real filesystem, so these are
+ * still tests against real files.
  */
-const fsControl = vi.hoisted(() => ({ failNextRename: false }));
+const fsControl = vi.hoisted(() => ({ failNextRename: false, deleteAfterNextRead: false }));
 vi.mock('fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs/promises')>();
   return {
@@ -33,6 +34,17 @@ vi.mock('fs/promises', async (importOriginal) => {
         throw Object.assign(new Error('simulated rename failure'), { code: 'EIO' });
       }
       return actual.rename(...args);
+    },
+    readFile: async (...args: Parameters<typeof actual.readFile>) => {
+      const bytes = await actual.readFile(...args);
+      // Closes the window a `delete(id)` racing a `get(id)` really opens: reads
+      // are deliberately NOT serialized against writes, so the file a read has
+      // just hashed can be gone before that read has answered.
+      if (fsControl.deleteAfterNextRead) {
+        fsControl.deleteAfterNextRead = false;
+        await actual.rm(args[0] as string, { force: true });
+      }
+      return bytes;
     },
   };
 });
@@ -92,6 +104,27 @@ describe('LocalAvatarStore', () => {
     const stored = await store.get('author-1');
 
     expect(stored?.etag).toBe(`"${url.split('?v=')[1]}"`);
+    stored?.stream.destroy();
+  });
+
+  it('answers with bytes that no longer need the file, so a read cannot fault after it returns', async () => {
+    await store.put('author-1', PNG, 'image/png');
+    // The file disappears in the window between the read that produces the ETag
+    // and the stream `get` hands back. Reachable in production: reads are
+    // deliberately not serialized against writes, so a `delete(id)` or a
+    // cross-format `put(id)` can land right there.
+    fsControl.deleteAfterNextRead = true;
+
+    const stored = await store.get('author-1');
+
+    // Everything the caller was promised is already in hand. Re-opening the path
+    // to serve it would fault here instead — and a caller who never consumes the
+    // stream (a 304, a dropped request, a test asserting only the content type)
+    // has no `error` listener on it, which makes that fault a process-level
+    // uncaught exception rather than a failed request. That is what ejected
+    // unrelated PRs from the merge queue (DOR-1830).
+    expect(stored?.etag).toMatch(/^"[0-9a-f]+"$/);
+    expect(await drain(stored!.stream)).toEqual(PNG);
   });
 
   it('answers null for an identity with no photo', async () => {
@@ -105,6 +138,7 @@ describe('LocalAvatarStore', () => {
     expect(await readdir(path.join(dorkHome, 'avatars'))).toEqual(['author-1.png']);
     const stored = await store.get('author-1');
     expect(stored?.contentType).toBe('image/png');
+    stored?.stream.destroy();
   });
 
   it('keeps the old photo when committing the new one fails', async () => {

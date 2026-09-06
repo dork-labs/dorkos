@@ -55,6 +55,12 @@ describe('LocalSessionAttachmentStore', () => {
     expect(stored!.contentType).toBe('image/png');
     expect(stored!.size).toBe(PNG.byteLength);
     expect(stored!.etag.startsWith('W/"')).toBe(true);
+    // The `error` listener, not the `destroy()`, is what makes letting go of an
+    // unread `get` safe: the `fs.open` behind the stream is already in flight
+    // and destroying does not cancel it, so a file gone before it lands still
+    // emits `error` — a process-level uncaught exception when nobody is
+    // listening, which fails the shard with every test green (DOR-1830).
+    stored!.stream.on('error', () => {});
     stored!.stream.destroy();
   });
 

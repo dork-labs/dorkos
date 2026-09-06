@@ -12,6 +12,7 @@ import type { RunRecorder } from './library.js';
 import {
   attemptShot,
   mintVideoDir,
+  newCaptureContext,
   openLiveTurn,
   post,
   seedThemeOnContext,
@@ -34,7 +35,7 @@ const MOBILE_LOOP_MS = 9000;
 
 /** Open a fresh mobile browser context (390×844 @3x, touch). */
 async function newMobileContext(browser: Browser, options?: { video?: boolean }) {
-  return browser.newContext({
+  return newCaptureContext(browser, {
     viewport: MOBILE_VIEWPORT,
     deviceScaleFactor: MOBILE_SCALE_FACTOR,
     isMobile: true,

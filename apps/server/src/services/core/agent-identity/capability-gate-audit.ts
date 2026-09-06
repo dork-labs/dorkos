@@ -55,8 +55,8 @@
  *
  * @module services/core/agent-identity/capability-gate-audit
  */
-import path from 'node:path';
 import type { ActivityService } from '../../activity/activity-service.js';
+import { activityActorForIdentity } from '../../activity/activity-actor.js';
 import type { TierEnforcementAttempt } from '../capabilities/index.js';
 
 /**
@@ -81,21 +81,33 @@ export function createCapabilityGateAuditObserver(
   activityService: ActivityService
 ): (attempt: TierEnforcementAttempt) => void {
   return ({ action, identity, decision }) => {
-    const label = identity
-      ? identity.displayName || path.basename(identity.agentPath)
-      : 'Unidentified caller';
+    // One naming of an actor, shared with the attribution observer next door and
+    // the extension write routes (`services/activity/activity-actor.ts`).
+    const actor = activityActorForIdentity(identity);
+    const label = actor.actorLabel;
 
     // The one allowed decision the gate reports: a destructive call a standing
     // permission let through with no card. Recording it is what keeps a window in
     // which DorkOS stops asking from also being a window in which it stops
     // telling — the operator's answer to "what did my agent do while I was not
     // being asked". `identity` is always present here, because a permission keys on
-    // agent path and an anonymous caller can never match one.
+    // agent path and an anonymous caller can never match one — `resolveStandingGrant`
+    // in `../capabilities/tier-enforcement.ts` returns `undefined` on `!identity`
+    // before any grant is looked up, so `outcome: 'allowed'` cannot reach here
+    // unnamed.
+    //
+    // That is the one place the DOR-1801 extraction is not byte-for-byte
+    // behavior-preserving, and it is worth stating rather than leaving for the
+    // next reader to re-derive. This branch used to assert `actorType: 'agent'`
+    // unconditionally while taking its label from a formula that answers
+    // `'Unidentified caller'` for a missing identity — so had the unreachable case
+    // ever become reachable, it would have written an agent-typed row labelled
+    // "Unidentified caller" with no `actorId`. Deriving the whole actor together
+    // removes that latent mismatch: the type, the id and the label now cannot
+    // disagree about who acted.
     if (decision.outcome === 'allowed') {
       void activityService.emit({
-        actorType: 'agent',
-        ...(identity ? { actorId: identity.agentPath } : {}),
-        actorLabel: label,
+        ...actor,
         category: 'agent',
         eventType: 'capability.auto_approved',
         resourceType: 'capability',
@@ -117,9 +129,7 @@ export function createCapabilityGateAuditObserver(
     void activityService.emit({
       // An anonymous attempt is recorded as `system`, not as a nameless agent:
       // the feed must not imply DorkOS knows who asked when it does not.
-      actorType: identity ? 'agent' : 'system',
-      ...(identity ? { actorId: identity.agentPath } : {}),
-      actorLabel: label,
+      ...actor,
       category: 'agent',
       eventType: waiting ? 'capability.approval_required' : 'capability.denied',
       resourceType: 'capability',

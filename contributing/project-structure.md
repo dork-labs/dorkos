@@ -368,6 +368,10 @@ apps/server/src/
 │   ├── mesh/                    # Mesh state
 │   │   └── mesh-state.ts        # Internal state tracking (Mesh is always-on)
 │   ├── rooms/                   # Channels, DMs and threads (spec `rooms`)
+│   │   ├── room-service.ts      # The domain's front door — delegates to the three folders below (DOR-1697)
+│   │   ├── service/             # The machinery every part shares: the deps, the wiring, and who may see or change a room
+│   │   ├── manage/              # A room, its people and its turns: open, patch, bridge, roster, list, halt
+│   │   ├── messages/            # What is said in one: posting, the shared write, the room's own voice, reads, search, reactions
 │   │   └── attachments/         # Files posted with a message — rows, bytes behind a swappable store, and the paths projected to an agent
 │   ├── marketplace/             # Package install/uninstall/update pipeline
 │   │   ├── marketplace-installer.ts  # Orchestrator (8-stage pipeline, dispatches per-kind flows)

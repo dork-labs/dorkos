@@ -342,6 +342,20 @@ jobs:
       - name: npm-availability wait fixtures
         run: bash scripts/test-wait-for-npm.sh
 
+      # pre-push-watchdog.sh (DOR-473) is the bound on the pre-push test gate,
+      # which had none: one vitest that never exited stopped `git push` forever,
+      # with lefthook's buffered output showing an empty terminal throughout, so
+      # the standing workaround became `--no-verify` and the gate protected
+      # nothing. A watchdog has two ways to fail and both are silent — too slack
+      # and the stall passes through exactly as before, too eager and it starts
+      # killing honest pushes, which would send everyone back to --no-verify
+      # with a better excuse. Hermetic: shell fixtures under a temp dir with
+      # second-scale bounds from the script's DORKOS_PREPUSH_* overrides, so it
+      # never runs turbo, vitest or this repo's real suites, needs no
+      # `pnpm install`, and takes about half a minute.
+      - name: Pre-push watchdog fixtures
+        run: bash scripts/test-pre-push-watchdog.sh
+
       # test-watch-prs.sh pins watch-prs.sh's classify() vocabulary AND (as of
       # DOR-1630) a probe-seam tier that drives its real `gh pr checks`
       # collection path against a stubbed `gh`. Before DOR-1630 nothing

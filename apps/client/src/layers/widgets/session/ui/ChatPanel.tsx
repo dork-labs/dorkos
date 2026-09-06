@@ -11,13 +11,16 @@
  * @module widgets/session/ui/ChatPanel
  */
 import { useRef, useMemo, useCallback, useEffect } from 'react';
-import { AnimatePresence } from 'motion/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import type { TaskUpdateEvent } from '@dorkos/shared/types';
 import { useAgentBirthRecord, useSlotContributions } from '@/layers/shared/model';
-import { PermissionPrimer, useNotificationCues } from '@/layers/features/notifications';
-import { PromptSuggestionChips } from '@/layers/shared/ui';
+import {
+  PermissionPrimer,
+  useNotificationCues,
+  usePermissionPrimer,
+} from '@/layers/features/notifications';
+import { BottomSlot, PromptSuggestionChips, type BottomSlotCandidate } from '@/layers/shared/ui';
 import { useCommands } from '@/layers/entities/command';
 import {
   useSessionChatStore,
@@ -570,6 +573,78 @@ export function ChatPanel({
     files: fileUpload,
   });
 
+  // Whether the browser-notification question is fair to ask right now. Asked
+  // here, not inside the card, because the slot below has to know who qualifies
+  // before it renders anybody — and because the timer that arms the question has
+  // to keep running while another card holds the slot.
+  const {
+    eligible: primerEligible,
+    allow: allowNotifications,
+    notNow: declineNotifications,
+  } = usePermissionPrimer(status === 'streaming');
+
+  /**
+   * What may speak in the gap between the transcript and the composer, highest
+   * priority first.
+   *
+   * **One offer at a time.** The model's follow-up suggestions and the
+   * notification question each used to gate themselves on their own predicate,
+   * and they co-occur — unrelated offers stacked over the box a person is trying
+   * to type in. ADR 260819-210153 settled this question for the sidebar; this is
+   * the same arbiter, and the order below is the whole of the policy.
+   *
+   * The order: the model's follow-ups first, because they are about the answer
+   * still on screen and they expire on their own the moment a turn starts or a
+   * key is pressed — so nothing waits behind them for long. The permission
+   * question next: it is asked once ever, it arms mid-turn when the chips are
+   * hidden anyway, and it stands until answered.
+   *
+   * **The extensions' chips are NOT candidates, and cannot be.** The slot's one
+   * rule for callers is that a candidate's `show` must be answerable without
+   * rendering it; a contribution answers only by rendering null (`TourOfferChips`
+   * is null unless an occasion stands). Declared as a candidate, it wins the slot
+   * on `length > 0` and then draws nothing — which put an empty padded box in the
+   * column and moved it on every status change. The transcript above reads that
+   * column's geometry to decide the reader has reached the bottom, and reaching
+   * the bottom marks the session read: a session opened at its unread rule
+   * marked itself read and dropped the rule on every device (DOR-1759). So they
+   * stay where they were, drawn inline below the slot, self-suppressing and
+   * taking no space when they have nothing to say.
+   *
+   * What is deliberately NOT here either: the live lane (a reserved line by
+   * design), the to-do panel (content about the running turn, not an offer), and
+   * the error and turn-failed blocks. A failure must never be arbitrated away.
+   */
+  const offers = useMemo<BottomSlotCandidate[]>(
+    () => [
+      {
+        id: 'prompt-suggestions',
+        show: showSuggestions,
+        render: () => (
+          <PromptSuggestionChips
+            suggestions={promptSuggestions}
+            onChipClick={handleSuggestionClick}
+          />
+        ),
+      },
+      {
+        id: 'permission-primer',
+        show: primerEligible,
+        render: () => (
+          <PermissionPrimer onAllow={allowNotifications} onNotNow={declineNotifications} />
+        ),
+      },
+    ],
+    [
+      showSuggestions,
+      promptSuggestions,
+      handleSuggestionClick,
+      primerEligible,
+      allowNotifications,
+      declineNotifications,
+    ]
+  );
+
   const laneState = useSessionLaneState({
     asks: sessionAsks,
     status,
@@ -617,17 +692,19 @@ export function ChatPanel({
           every turn. */}
         <Conversation.LiveLane state={laneState} scope="session" />
 
-        <AnimatePresence>
-          {showSuggestions && (
-            <PromptSuggestionChips
-              suggestions={promptSuggestions}
-              onChipClick={handleSuggestionClick}
-            />
-          )}
-        </AnimatePresence>
+        {/* Everything that OFFERS rather than reports, arbitrated: one card at
+          a time, in the order declared above. */}
+        <BottomSlot
+          candidates={offers}
+          ready={hydrated}
+          name="session-bottom-slot"
+          className="px-4 pb-2"
+        />
 
-        {/* Suggestion chips (e.g. the living tour's offer) only appear when the
-          session is idle — never interrupt an in-flight turn. */}
+        {/* Not arbitrated — see {@link offers} for why a contribution cannot be a
+          candidate. Never mid-turn: an extension's offer must not interrupt a
+          running turn. Each chip draws nothing until its own occasion stands, so
+          this costs no height while there is nothing to offer. */}
         {status === 'idle' && suggestionChips.map((chip) => <chip.component key={chip.id} />)}
 
         <CelebrationOverlay
@@ -665,6 +742,9 @@ export function ChatPanel({
           </div>
         )}
 
+        {/* A REPORT, not an offer, so it stays inline rather than joining the
+            arbitrated slot above: the person cannot start the session until it
+            clears, and a card that waits its turn would hide the reason. */}
         {needsFirstTurnProvenance && isComposerAgentError && (
           <div className="mx-4 mb-2">
             <ErrorMessageBlock
@@ -674,12 +754,6 @@ export function ChatPanel({
             />
           </div>
         )}
-
-        {/* Asked once, and only after a turn has run long enough to walk away
-            from — never at launch. Sits here because this is where a person is
-            when the question first makes sense. Draws nothing until then, and
-            takes no space either. */}
-        <PermissionPrimer streaming={status === 'streaming'} />
 
         <SessionComposer
           chatInputRef={chatInputRef}

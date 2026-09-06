@@ -12,9 +12,9 @@
  * @module server/services/identity/local-avatar-store
  */
 import { createHash, randomUUID } from 'crypto';
-import { createReadStream } from 'fs';
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'fs/promises';
 import path from 'path';
+import { Readable } from 'stream';
 import { logError, logger } from '../../lib/logger.js';
 import {
   AVATAR_CONTENT_TYPES,
@@ -207,8 +207,17 @@ export class LocalAvatarStore implements AvatarStore {
    * "no such identity", and "that id is not one an avatar could have".
    *
    * The content hash is computed from the file on the way out rather than
-   * cached, so the ETag cannot drift from the bytes actually being served. It
-   * costs one extra read of at most 2 MB from the local disk.
+   * cached, so the ETag cannot drift from the bytes actually being served — and
+   * that is true because the ETag and the stream come from the SAME read.
+   * Hashing one read and then handing back a `createReadStream` over the path
+   * broke the claim twice over: a replacement landing in between served bytes
+   * the ETag did not name, and the second stream was a lazily-opened file
+   * descriptor the caller had to consume or leak. An abandoned one whose file
+   * had since gone emitted `error` with nobody listening, which is a
+   * process-level uncaught exception rather than a failed request (DOR-1830).
+   * A photo is capped at `MAX_AVATAR_BYTES` (2 MB), and reading it whole is
+   * already what the hash costs, so streaming those same bytes costs nothing
+   * further and cannot fail after this method returns.
    *
    * @param id - The identity id.
    */
@@ -218,7 +227,13 @@ export class LocalAvatarStore implements AvatarStore {
       const file = this.fileFor(id, extension);
       const bytes = await readIfPresent(file);
       if (!bytes) continue;
-      return { stream: createReadStream(file), contentType, etag: `"${hashOf(bytes)}"` };
+      // `objectMode: false` is the load-bearing half: `Readable.from` defaults
+      // to object mode, and a response should be piped from a plain byte stream
+      // rather than from a stream of one Buffer-shaped object. The array wrapper
+      // is what lets that option through — `Readable.from(buffer)` special-cases
+      // a Buffer into its own object-mode stream and ignores the options.
+      const stream = Readable.from([bytes], { objectMode: false });
+      return { stream, contentType, etag: `"${hashOf(bytes)}"` };
     }
     return null;
   }

@@ -102,7 +102,12 @@ Span attributes are **allowlisted** in `services/observability/attributes.ts`. T
 logger.warn('[rooms] triggered turn failed', { roomId, authorId, ...logError(err) });
 ```
 
-Passing a bare `{ err }` is a defect: `JSON.stringify` drops an `Error`'s `message` and `stack` because both are non-enumerable, so the line records `{"err":{}}`. **DOR-802 tracks fixing the reporter to serialize `Error` objects properly**; until it lands, `logError(err)` is the only pattern that puts the failure in the file. Do not mass-convert existing `{ err }` sites in the meantime — the reporter fix will make them correct on their own.
+Passing a bare `{ err }` used to be a defect: `JSON.stringify` drops an `Error`'s `message` and `stack` because both are non-enumerable, so the line recorded `{"err":{}}`. **The reporter serializes `Error` objects properly as of DOR-802**, so `{ err }`, `logger.error(msg, err)` and `...logError(err)` all put the failure in the file now. Prefer handing the `Error` over whole — see the bounds below for why — but there is no need to convert existing `logError` sites.
+
+**The output is bounded.** A message is cut at 4 KB and a stack at 16 KB, and what you get back then carries a marker naming the true size: `… [truncated, 1201085 characters total]` (DOR-802 for the file, DOR-1728 for the terminal, DOR-1827 for `logError` itself). Two consequences worth knowing:
+
+- **Only errors are bounded.** A bare string you build yourself — `String(err)`, a hand-picked `err.message`, a stringified response body — is written whole, however long, because nothing downstream can tell it from ordinary text. That is deliberate: a cap on every string would silently eat the tail of the JSON dump you logged in order to read it back. If a string field of yours can be huge, bound it at your call site; if it is really an error, hand over the `Error` and get the bound for free. This is why the crash handlers in `index.ts` pass `err` rather than `{ message, stack, name }` — the flattened form wrote a 1.2 MB line.
+- **`logError` never throws**, even on a malformed error (a non-string `message`, a getter that explodes). It collapses to `{ error: 'unserializable error' }` instead, because every call site is inside a `catch` that is already handling something else.
 
 ### 4.2 Tags
 

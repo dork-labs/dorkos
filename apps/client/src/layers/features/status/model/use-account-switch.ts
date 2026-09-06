@@ -152,11 +152,16 @@ export function useAccountSwitch(sessionId: string): AccountSwitch {
  *
  * **Freshness contract.** The agent half is only as current as the cached
  * manifest behind `useCurrentAgent` (`agentKeys.byPath`, 60s stale time), so this
- * label is right exactly as long as every writer of an agent's `account` goes
- * through `useUpdateAgent`, which invalidates that key. The agent profile's
- * Account row does. A future writer that patches an agent by some other route
+ * label is right exactly as long as every writer of an agent's `account` sweeps
+ * that key. Both writers do, and neither is the one this line used to name: an
+ * agent's account is OPERATOR-ONLY (`agent-write-policy.ts`), so the profile's
+ * Account row writes it through `entities/mesh`'s `useUpdateAgent`, whose
+ * `onSettled` invalidates the whole `['agents']` prefix — `byPath` included — at
+ * MUTATION level, where an unmounted popover cannot lose it (DOR-1736).
+ * `entities/agent`'s `useUpdateAgent` sweeps `byPath` for the fields the self-edit
+ * route does accept. A future writer that patches an agent by some other route
  * would leave this row naming the previous account until the stale time lapses —
- * wrong about money, and silently so. Route agent writes through `useUpdateAgent`.
+ * wrong about money, and silently so. Route agent writes through one of the two.
  *
  * @param input.accounts - Every account row the server reported, for naming.
  * @param input.resolvedAccount - The server default's absolute path.

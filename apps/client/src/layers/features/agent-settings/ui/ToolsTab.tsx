@@ -171,11 +171,14 @@ interface ToolsTabProps {
  * capabilities over the external MCP server, and the grant is enforced there too.
  *
  * **And it refreshes what it invalidated.** The `agent` this card renders is
- * read through `useCurrentAgent`, which the mesh mutation knows nothing about —
- * it clears `['mesh','agents']` and stops. Without the two invalidations below
- * the switch flipped, the server stored it, and the next render put it straight
- * back where it was: a save that looked like a refusal. The keys are the ones
- * `useProfileAgent` already clears for the same reason.
+ * read through `useCurrentAgent`, and without a sweep of that cache the switch
+ * flipped, the server stored it, and the next render put it straight back where
+ * it was: a save that looked like a refusal. `useUpdateAgent` now sweeps the
+ * `['agents']` prefix itself, at mutation level, so that half survives even a
+ * closed panel (DOR-1736); the pair below is kept because the roster key is one
+ * the hook cannot know about, and `agentKeys.all` beside it is what this card's
+ * own test pins. The keys are the ones `useProfileAgent` clears for the same
+ * reason.
  */
 function ManageRoomsCard({
   agent,
@@ -270,8 +273,8 @@ function ManageRoomsCard({
  * and can set any rung.
  *
  * The two invalidations are the ones `ManageRoomsCard` explains: this card's
- * `agent` comes from `useCurrentAgent`, which the mesh mutation knows nothing
- * about, so without them the select would snap back after a successful save.
+ * `agent` comes from `useCurrentAgent`, and without a sweep of that cache the
+ * select would snap back after a successful save.
  */
 function TierCeilingCard({ agent }: { agent: AgentManifest }) {
   const updateAgent = useUpdateMeshAgent();
@@ -368,8 +371,8 @@ export function ToolsTab({ agent, projectPath }: ToolsTabProps) {
   // update REPLACES `enabledToolGroups`, so dropping the key would clear it.
   //
   // The two invalidations are the ones `ManageRoomsCard` explains: the `agent`
-  // this tab renders comes from `useCurrentAgent`, which the mesh mutation knows
-  // nothing about, so without them a saved toggle snaps straight back.
+  // this tab renders comes from `useCurrentAgent`, so without a sweep of that
+  // cache a saved toggle snaps straight back.
   const writeToolGroups = useCallback(
     (next: EnabledToolGroups) => {
       updateAgent.mutate(
