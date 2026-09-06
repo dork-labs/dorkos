@@ -17,6 +17,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import request from 'supertest';
 import { openSseStream, type SseFrame } from '@dorkos/test-utils';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, type Db } from '@dorkos/db';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
@@ -69,6 +70,7 @@ import type { RoomTurnRequest, RoomTurnResult } from '../../services/rooms/room-
 
 const app = createApp();
 finalizeApp(app);
+const server = listeningServer(app);
 
 /** Register the one agent both rooms share — one directory, one checkout. */
 function registerAna(db: Db): void {
@@ -118,13 +120,13 @@ describe('two rooms, one agent, over HTTP', () => {
 
   /** Open a channel with Ana in it, answering whatever names her. */
   async function channel(title: string): Promise<string> {
-    const created = await request(app)
+    const created = await request(server)
       .post('/api/rooms')
       .send({ kind: 'channel', title, agentPaths: ['/agents/ana'] });
     expect(created.status).toBe(201);
     for (const member of created.body.members) {
       if (member.author.kind !== 'agent') continue;
-      await request(app)
+      await request(server)
         .patch(`/api/rooms/${created.body.id}/members/${member.authorId}`)
         .send({ responseMode: 'mention-only' });
     }
@@ -133,7 +135,7 @@ describe('two rooms, one agent, over HTTP', () => {
 
   /** Ana's author id in one room. */
   async function anaIn(roomId: string): Promise<string> {
-    const res = await request(app).get(`/api/rooms/${roomId}`);
+    const res = await request(server).get(`/api/rooms/${roomId}`);
     const member = res.body.members.find(
       (row: { author: { kind: string } }) => row.author.kind === 'agent'
     );
@@ -142,20 +144,13 @@ describe('two rooms, one agent, over HTTP', () => {
 
   /** One room's whole log, as the wire returns it. */
   async function entries(roomId: string): Promise<RoomEntry[]> {
-    const res = await request(app).get(`/api/rooms/${roomId}/entries?limit=200`);
+    const res = await request(server).get(`/api/rooms/${roomId}/entries?limit=200`);
     return res.body.entries as RoomEntry[];
   }
 
   /** Let several macrotasks pass, so a notice that WAS coming would have landed. */
   async function quiet(): Promise<void> {
     for (let tick = 0; tick < 6; tick += 1) await new Promise((r) => setTimeout(r, 0));
-  }
-
-  /** Start the app on an ephemeral port for one test. */
-  async function listen(): Promise<{ port: number; close: () => void }> {
-    const server = app.listen(0);
-    await new Promise<void>((resolve) => server.once('listening', resolve));
-    return { port: (server.address() as AddressInfo).port, close: () => server.close() };
   }
 
   /** Every presence signal a stream's frames carry, in order. */
@@ -177,63 +172,59 @@ describe('two rooms, one agent, over HTTP', () => {
     const a = await channel('Backend');
     const b = await channel('Deploys');
     const ana = await anaIn(b);
-    const server = await listen();
+    const port = (server.address() as AddressInfo).port;
 
-    try {
-      // Ana takes a turn in room A and stays in it.
-      const started = await request(app)
-        .post(`/api/rooms/${a}/entries`)
-        .send({ text: '@ana can you take the staging rollout?' });
-      expect(started.status).toBe(202);
-      await quiet();
-      expect(turns).toHaveLength(1);
+    // Ana takes a turn in room A and stays in it.
+    const started = await request(server)
+      .post(`/api/rooms/${a}/entries`)
+      .send({ text: '@ana can you take the staging rollout?' });
+    expect(started.status).toBe(202);
+    await quiet();
+    expect(turns).toHaveLength(1);
 
-      // Room B's stream is open BEFORE the second question, because a signal is
-      // ephemeral and never replays: a reader who connects afterwards is told
-      // nothing, which is the contract and not a gap.
-      const stream = openSseStream(server.port, `/api/rooms/${b}/events`, {
-        until: (frames) => signalsOf(frames).some((event) => event.state === 'held'),
-      });
-      await stream.ready;
+    // Room B's stream is open BEFORE the second question, because a signal is
+    // ephemeral and never replays: a reader who connects afterwards is told
+    // nothing, which is the contract and not a gap.
+    const stream = openSseStream(port, `/api/rooms/${b}/events`, {
+      until: (frames) => signalsOf(frames).some((event) => event.state === 'held'),
+    });
+    await stream.ready;
 
-      const asked = await request(app)
-        .post(`/api/rooms/${b}/entries`)
-        .send({ text: '@ana and the styles?' });
-      expect(asked.status).toBe(202);
+    const asked = await request(server)
+      .post(`/api/rooms/${b}/entries`)
+      .send({ text: '@ana and the styles?' });
+    expect(asked.status).toBe(202);
 
-      const frames = await stream.frames;
-      const waiting = signalsOf(frames).find((event) => event.state === 'held');
-      expect(waiting?.authorId).toBe(ana);
-      // The id of the room in the way, and nothing else about it — no title, no
-      // topic, no text. The reader resolves the name themselves.
-      expect(waiting?.heldBehind).toEqual({ roomId: a, othersWaiting: false });
+    const frames = await stream.frames;
+    const waiting = signalsOf(frames).find((event) => event.state === 'held');
+    expect(waiting?.authorId).toBe(ana);
+    // The id of the room in the way, and nothing else about it — no title, no
+    // topic, no text. The reader resolves the name themselves.
+    expect(waiting?.heldBehind).toEqual({ roomId: a, othersWaiting: false });
 
-      // **And nothing durable was written.** This is the whole regression: the
-      // old behaviour answered 202 and then put a line in this room asking the
-      // person to send the message again.
-      expect((await entries(b)).filter((entry) => entry.kind === 'notice')).toEqual([]);
+    // **And nothing durable was written.** This is the whole regression: the
+    // old behaviour answered 202 and then put a line in this room asking the
+    // person to send the message again.
+    expect((await entries(b)).filter((entry) => entry.kind === 'notice')).toEqual([]);
 
-      // Room A's turn finishes, and room B's question becomes a turn IN ROOM B.
-      turns[0]!.finish('rollout is queued');
-      await quiet();
-      expect(turns).toHaveLength(2);
-      expect(turns[1]!.roomId).toBe(b);
-      expect(turns[1]!.prompt).toBe('@ana and the styles?');
+    // Room A's turn finishes, and room B's question becomes a turn IN ROOM B.
+    turns[0]!.finish('rollout is queued');
+    await quiet();
+    expect(turns).toHaveLength(2);
+    expect(turns[1]!.roomId).toBe(b);
+    expect(turns[1]!.prompt).toBe('@ana and the styles?');
 
-      turns[1]!.finish('styles are fine');
-      await getRoomService().triggersIdle();
+    turns[1]!.finish('styles are fine');
+    await getRoomService().triggersIdle();
 
-      const log = await entries(b);
-      const answer = log.find((entry) => entry.kind === 'post' && entry.authorId === ana);
-      expect(answer?.body.text).toContain('styles are fine');
-      // …and it says which message it answers, which is what makes a late answer
-      // followable in a room that posts in arrival order.
-      const question = log.find((entry) => entry.body.text === '@ana and the styles?');
-      expect(answer?.body.answersEntryId).toBe(question?.id);
-      expect(log.filter((entry) => entry.kind === 'notice')).toEqual([]);
-    } finally {
-      server.close();
-    }
+    const log = await entries(b);
+    const answer = log.find((entry) => entry.kind === 'post' && entry.authorId === ana);
+    expect(answer?.body.text).toContain('styles are fine');
+    // …and it says which message it answers, which is what makes a late answer
+    // followable in a room that posts in arrival order.
+    const question = log.find((entry) => entry.body.text === '@ana and the styles?');
+    expect(answer?.body.answersEntryId).toBe(question?.id);
+    expect(log.filter((entry) => entry.kind === 'notice')).toEqual([]);
   });
 
   it('takes an ask-me-first, and answers false once there is nothing waiting', async () => {
@@ -241,14 +232,14 @@ describe('two rooms, one agent, over HTTP', () => {
     const b = await channel('Deploys');
     const ana = await anaIn(b);
 
-    await request(app)
+    await request(server)
       .post(`/api/rooms/${a}/entries`)
       .send({ text: '@ana can you take the staging rollout?' });
     await quiet();
-    await request(app).post(`/api/rooms/${b}/entries`).send({ text: '@ana and the styles?' });
+    await request(server).post(`/api/rooms/${b}/entries`).send({ text: '@ana and the styles?' });
     await quiet();
 
-    const asked = await request(app).post(`/api/rooms/${b}/holds/${ana}/promote`).send();
+    const asked = await request(server).post(`/api/rooms/${b}/holds/${ana}/promote`).send();
     expect(asked.status).toBe(200);
     expect(asked.body).toEqual({ promoted: true });
     // It REORDERS: the turn in the way is untouched and no second turn started.
@@ -261,7 +252,7 @@ describe('two rooms, one agent, over HTTP', () => {
 
     // Nothing is waiting now, and saying so is a normal answer rather than an
     // error: this is what a button left over from a wait that already ended does.
-    const stale = await request(app).post(`/api/rooms/${b}/holds/${ana}/promote`).send();
+    const stale = await request(server).post(`/api/rooms/${b}/holds/${ana}/promote`).send();
     expect(stale.status).toBe(200);
     expect(stale.body).toEqual({ promoted: false });
   });
@@ -269,7 +260,7 @@ describe('two rooms, one agent, over HTTP', () => {
   it('answers a room this caller cannot see exactly as it answers one that does not exist', async () => {
     const b = await channel('Deploys');
     const ana = await anaIn(b);
-    const missing = await request(app).post(`/api/rooms/nope/holds/${ana}/promote`).send();
+    const missing = await request(server).post(`/api/rooms/nope/holds/${ana}/promote`).send();
     expect(missing.status).toBe(404);
   });
 });

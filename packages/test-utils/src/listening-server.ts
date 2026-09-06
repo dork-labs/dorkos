@@ -3,24 +3,17 @@
  *
  * Handed a non-listening Express app, supertest opens a fresh ephemeral
  * listener per REQUEST (`if (!addr) this._server = app.listen(0)`) and closes
- * it in the response callback. Node's `http.globalAgent` sets
- * `keepAlive: true`, so superagent pools sockets keyed by `host:port` — and an
- * ephemeral port freed by a closing listener is immediately reclaimable by the
- * next `listen(0)`. A pooled socket for `127.0.0.1:P` then gets handed to a
- * request meant for the NEW server on P.
+ * it in the response callback. Under parallel workers that creates avoidable
+ * listener teardown and ephemeral-port churn. Aggregate runs have observed
+ * requests fail before Express logs them (`socket hang up` and HTTP parse
+ * errors), plus a registration request receive an impossible 404 from an app
+ * that mounts the route which returns 201. Focused reruns pass. Those
+ * observations locate the problem at the transport-fixture boundary; they do
+ * not prove a particular socket or operating-system race.
  *
- * That surfaces two ways. `Error: Parse Error: Expected HTTP/, RTSP/ or ICE/`
- * (or `socket hang up`) when the peer is already gone — noisy, and it lands on
- * a random later test rather than the one that churned the port, so it reads as
- * unrelated noise. And, worse because it is silent, a request served by a
- * PREVIOUS test's app and its state, scoring the previous test's answer.
- *
- * `server.closeAllConnections()` narrows the window but does not close it: the
- * agent can hand out a pooled entry before the RST lands. Measured over 150
- * runs, a one-listener-per-test variant with `closeAllConnections()` still
- * flaked once. Binding ONE listener for the whole file removes the mechanism
- * instead of narrowing it — no port is ever freed mid-file, so no pooled socket
- * can be misrouted.
+ * A one-listener-per-test variant with `closeAllConnections()` still flaked
+ * once over 150 measured runs. Binding ONE listener for the whole file removes
+ * the repeated bind/close cycle: its port is never freed between requests.
  *
  * The accepted cost: a listener-level failure now fails every test in the file
  * at once rather than one. That is the right trade — loud beats silent.
