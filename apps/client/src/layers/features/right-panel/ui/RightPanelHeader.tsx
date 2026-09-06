@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { X, Puzzle } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
 import {
   Button,
+  Tabs,
+  TabsList,
+  TabsTrigger,
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-  useRovingTabList,
-  type RovingTabProps,
 } from '@/layers/shared/ui';
+import { cn } from '@/layers/shared/lib/utils';
 import {
   revealInScroller,
   useAppStore,
@@ -89,21 +90,13 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
   const activeTab = useAppStore((s) => s.activeRightPanelTab);
   const setActiveTab = useAppStore((s) => s.setActiveRightPanelTab);
 
-  const { getTabProps } = useRovingTabList({
-    orderedIds: contributions.map((c) => c.id),
-    activeId: activeTab,
-    // Source is irrelevant here (no content auto-focus) — drop it so the store
-    // setter keeps its single-argument contract.
-    onActivate: (id) => setActiveTab(id),
-  });
-
   return (
     <div
       className="flex w-full items-center justify-between border-b px-3 py-2"
       data-slot="right-panel-header"
     >
       {contributions.length > 1 ? (
-        <TabStrip contributions={contributions} activeTab={activeTab} getTabProps={getTabProps} />
+        <TabStrip contributions={contributions} activeTab={activeTab} onActivate={setActiveTab} />
       ) : contributions.length === 1 ? (
         // Single panel: name it (icon + title) instead of a blank bar. Not a
         // tab/tablist — a quiet title — so the "no tab strip with one
@@ -158,16 +151,16 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
  * @param props - The visible contributions, the active tab, and the roving-tab props builder.
  * @param props.contributions - The visible panel contributions, in tab order.
  * @param props.activeTab - Id of the selected tab, or `null`.
- * @param props.getTabProps - Roving keyboard props for one tab, from `useRovingTabList`.
+ * @param props.onActivate - Called with a contribution's id when its tab is selected.
  */
 function TabStrip({
   contributions,
   activeTab,
-  getTabProps,
+  onActivate,
 }: {
   contributions: RightPanelContribution[];
   activeTab: string | null;
-  getTabProps: (id: string) => RovingTabProps;
+  onActivate: (id: string) => void;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const tablistRef = useRef<HTMLDivElement>(null);
@@ -235,68 +228,81 @@ function TabStrip({
   }, [revealActiveTab, selectedTab, tabIds]);
 
   return (
-    <div className="relative min-w-0 flex-1">
-      <div
-        ref={scrollerRef}
-        onScroll={edges.onScroll}
-        // `overflow-y-hidden` is explicit on purpose: with `overflow-x: auto` and a
-        // `visible` cross axis, CSS promotes the used `overflow-y` to `auto` too,
-        // which clips the active tab's `shadow-sm` and the focus ring against the
-        // scroll box. The `-my-1 py-1` pair gives both 4px of room without making
-        // the header any taller.
-        className="-my-1 overflow-x-auto overflow-y-hidden py-1"
-      >
+    // `value={activeTab ?? ''}` rather than `?? undefined`: Radix treats
+    // `undefined` as "uncontrolled" and warns the moment `activeTab` first
+    // resolves to a real id (the auto-select effect in RightPanelContainer
+    // flips it from null to a contribution's id on the next tick). `''`
+    // never matches a contribution's id, so it keeps Tabs controlled for its
+    // whole lifetime and selects nothing during that window instead of
+    // handing selection to Radix's own uncontrolled state.
+    <Tabs asChild value={activeTab ?? ''} onValueChange={onActivate}>
+      <div className="relative min-w-0 flex-1">
         <div
-          ref={tablistRef}
-          className="bg-accent/60 inline-flex gap-0.5 rounded-lg p-0.5"
-          role="tablist"
-          aria-label="Right panel tabs"
+          ref={scrollerRef}
+          onScroll={edges.onScroll}
+          // `overflow-y-hidden` is explicit on purpose: with `overflow-x: auto` and a
+          // `visible` cross axis, CSS promotes the used `overflow-y` to `auto` too,
+          // which clips the active tab's `shadow-sm` and the focus ring against the
+          // scroll box. The `-my-1 py-1` pair gives both 4px of room without making
+          // the header any taller.
+          className="-my-1 overflow-x-auto overflow-y-hidden py-1"
         >
-          {contributions.map((contribution) => {
-            const isActive = contribution.id === activeTab;
-            return (
-              <Tooltip key={contribution.id}>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={isActive}
-                    aria-label={contribution.title}
-                    id={rightPanelTabDomId(contribution.id)}
-                    aria-controls={isActive ? RIGHT_PANEL_PANEL_ID : undefined}
-                    {...getTabProps(contribution.id)}
-                    className={cn(
-                      'text-3xs flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 font-medium whitespace-nowrap transition-colors',
-                      isActive
-                        ? 'bg-background text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    <TabIcon raw={contribution.icon} className="size-3.5" />
-                    <span>{contribution.title}</span>
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">{contribution.title}</TooltipContent>
-              </Tooltip>
-            );
-          })}
+          <TabsList
+            ref={tablistRef}
+            responsive={false}
+            aria-label="Right panel tabs"
+            className="bg-accent/60 h-auto justify-start gap-0.5 rounded-lg p-0.5"
+          >
+            {contributions.map((contribution) => {
+              const isActive = contribution.id === activeTab;
+              return (
+                <Tooltip key={contribution.id}>
+                  <TooltipTrigger asChild>
+                    <TabsTrigger
+                      value={contribution.id}
+                      aria-label={contribution.title}
+                      id={rightPanelTabDomId(contribution.id)}
+                      aria-controls={isActive ? RIGHT_PANEL_PANEL_ID : undefined}
+                      // Driven off `isActive`, not `data-[state=active]`: the
+                      // `TooltipTrigger asChild` wrapping this element
+                      // composes its own `data-state` onto it (Radix's
+                      // Tooltip trigger tracks open/closed the same
+                      // attribute name Tabs uses for selected/unselected),
+                      // which wins the collision and leaves every tab
+                      // stamped `data-state="closed"` regardless of
+                      // selection. A prop the Tooltip cannot overwrite is
+                      // the only reliable signal here.
+                      className={cn(
+                        'text-muted-foreground hover:text-foreground text-3xs shrink-0 gap-1.5 rounded-md px-2.5 py-1',
+                        isActive && 'bg-background text-foreground shadow-sm'
+                      )}
+                    >
+                      <TabIcon raw={contribution.icon} className="size-3.5" />
+                      <span>{contribution.title}</span>
+                    </TabsTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">{contribution.title}</TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </TabsList>
         </div>
+        {/* Purely decorative, and never in the way of the tab it is drawn over. */}
+        {edges.start && (
+          <div
+            aria-hidden
+            data-testid="right-panel-tabs-fade-start"
+            className="from-sidebar via-sidebar/70 pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r to-transparent"
+          />
+        )}
+        {edges.end && (
+          <div
+            aria-hidden
+            data-testid="right-panel-tabs-fade-end"
+            className="from-sidebar via-sidebar/70 pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l to-transparent"
+          />
+        )}
       </div>
-      {/* Purely decorative, and never in the way of the tab it is drawn over. */}
-      {edges.start && (
-        <div
-          aria-hidden
-          data-testid="right-panel-tabs-fade-start"
-          className="from-sidebar via-sidebar/70 pointer-events-none absolute inset-y-0 left-0 w-6 bg-gradient-to-r to-transparent"
-        />
-      )}
-      {edges.end && (
-        <div
-          aria-hidden
-          data-testid="right-panel-tabs-fade-end"
-          className="from-sidebar via-sidebar/70 pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l to-transparent"
-        />
-      )}
-    </div>
+    </Tabs>
   );
 }
