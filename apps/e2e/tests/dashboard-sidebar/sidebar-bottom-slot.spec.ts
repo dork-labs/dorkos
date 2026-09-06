@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
+import { SOLE_SIDEBAR_TAG } from '../../fixtures/sole-access';
 import type { RoomsApi } from '../../fixtures/rooms-api';
 
 /**
@@ -78,7 +79,7 @@ async function isOnScreen(page: Page, selector: string): Promise<boolean> {
   }, selector);
 }
 
-test.describe('the sidebar’s bottom slot @smoke', () => {
+test.describe('the sidebar’s bottom slot @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
   // The spec dismisses a promo, which PATCHes `ui.promos.dismissedIds` to
   // `~/.dork/config.json` — a write that outlives this test. Fine for CI's
   // single run, but it made the spec impossible to `--repeat-each` to hunt

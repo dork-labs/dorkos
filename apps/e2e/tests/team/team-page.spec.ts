@@ -28,6 +28,18 @@ function cards(page: Page) {
 }
 
 /**
+ * The reader's own card — the one the roster marks "you".
+ *
+ * The badge is the only handle: a card carries its member id and its identity
+ * colour, neither of which says which of them is the person looking at it. The
+ * roster draws exactly one, which is what lets a caller assert on its presence
+ * rather than on a count of everybody (see "the Agents chip hides the people").
+ */
+function operatorCard(page: Page) {
+  return cards(page).filter({ has: page.getByText('you', { exact: true }) });
+}
+
+/**
  * Is this card's disc a circle?
  *
  * The shape IS the fix (spec §W1): a person is a circle, an agent is a filled
@@ -115,19 +127,28 @@ test.describe('Team — the roster @smoke', () => {
     await page.goto('/team');
     await basePage.waitForAppReady();
     await expect(card(page, agent.name)).toBeVisible();
+    // The reader's own card is the "people" this chip hides, and it is the
+    // control for the assertion after the click: without it, "the operator is
+    // gone" would also be true of a roster that never drew them.
+    await expect(operatorCard(page)).toHaveCount(1);
 
-    const before = await cards(page).count();
     await page
       .getByRole('group', { name: 'Filter by kind' })
       .getByRole('button', { name: 'Agents' })
       .click();
 
     await expect(page).toHaveURL(/[?&]kind=agents/);
-    // The agent stays; the operator's card goes. Asserting the count dropped as
-    // well as the flag being in the URL, so a chip that only wrote a param
-    // would still fail here.
+    // The agent stays; the operator's card goes. Named, not counted (DOR-1420).
+    // This read `cards(page)` twice and asserted the second was one shorter,
+    // which made it two separate hostages to a roster nobody in this test
+    // controls: the aggregate is still filling on a just-booted server — which
+    // is whatever spec `--shard` happens to put first — and a neighbouring spec
+    // registering its own agent between the two reads moves the number just as
+    // effectively. Asking who is on the roster instead of how many is immune to
+    // both, and it is the claim the chip actually makes. A chip that only wrote
+    // a param still fails here, because the operator's card would still be up.
     await expect(card(page, agent.name)).toBeVisible();
-    await expect(cards(page)).toHaveCount(before - 1);
+    await expect(operatorCard(page)).toHaveCount(0);
   });
 
   test('clicking an attribution filters to that owner', async ({ page, basePage, roomsApi }) => {

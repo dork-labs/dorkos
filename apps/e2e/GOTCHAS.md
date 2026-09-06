@@ -303,13 +303,34 @@ cannot reach CI.
   always green, and that is what CI runs (`workers: CI ? 1 : undefined`), so this
   cannot reach a PR check. Do not add a retry or stretch the timeout for it.
 
-**A stale Vite can outlive its run.** `turbo dev` spawns vite as a grandchild,
-so when Playwright kills the leg the vite process survives holding the port.
-Start a second run straight after a first and it inherits that vite — now
-proxying to an API leg that is gone — and `globalSetup` dies with
-`Could not dismiss onboarding … 500`, which names onboarding and not the cause.
-Reap the ports between back-to-back local runs. CI gets fresh runners, so this
-is local-only.
+**A stale Vite can outlive its run.** The Express legs go down with the run and
+the Vite legs do not: after Playwright exits, a `vite` process is still holding
+the client port. That much is measured. WHY the shutdown misses it is not — the
+obvious story is that `turbo dev` puts vite in a process group of its own and
+Playwright kills only the group it started, but the one orphan inspected for
+DOR-1420 had a pgid that was neither its own pid nor the leg's, so treat the
+mechanism as an open question and the symptom as the fact. What the next run does
+about it has changed with `reuseExistingServer`, and both spellings are worth
+knowing:
+
+- **Now, with reuse off** (`REUSE_EXISTING_SERVER = false`), the second run
+  refuses to start at all: `Error: http://localhost:4244 is already used, make
+sure that nothing is running on the port/url`. Measured three times in a row on
+  back-to-back local runs, DOR-1420. Loud, and it names the port.
+- **Before that**, the run ADOPTED the stale vite — now proxying to an API leg
+  that is gone — and `globalSetup` died with `Could not dismiss onboarding … 500`,
+  which names onboarding and not the cause.
+
+Reap the ports between back-to-back local runs (`lsof -ti :4244`, and the other
+ports in README's table — only ever by pid, never by name). CI gets fresh
+runners, so this is local-only. The likeliest durable fix is for the leg to run
+vite as a direct child the way the Express legs run `tsx` — build the workspace
+deps with `turbo run build --filter=@dorkos/client^...`, then
+`pnpm --filter @dorkos/client exec vite`. That is a change to the webServer
+commands and to the guard in `__tests__/playwright-config.test.ts` that keys off
+`turbo dev`, and it presumes the process-group story above, which is exactly the
+part nobody has confirmed — so it wants its own measurement rather than a rider
+on somebody else's branch.
 
 ## Assertions this suite cannot make
 
@@ -326,6 +347,23 @@ Concretely, do not assert:
   button's `data-emoji`) and assert against what you read;
 - that a palette's **first** row is anything in particular — another spec's unread room may be above yours;
 - that pressing Enter on an unfiltered list opens _your_ thing — filter to your own run id first.
+- **that the sidebar panel is the size or shape your fixtures made it.** Naming
+  isolates a room; it does not isolate the PANEL, which draws every room on the
+  server. A neighbour seeding twenty-five channels pushes your drop target off
+  the fold, and `ui.sidebar` is written whole on every config PATCH so the last
+  writer wins outright. A spec that drags, measures or folds the real sidebar
+  takes `SOLE_SIDEBAR_TAG` instead (README, "Specs that need the sidebar to
+  themselves").
+
+  **That tag REDUCES the hazard; it does not close it.** The lock excludes other
+  _tagged_ specs, and every bulk seeder in this suite is tagged — which is what
+  the clean concurrent runs actually rest on — but an untagged spec anywhere else
+  (`tests/rooms/`, `tests/team/`, `tests/search/`) still creates rooms that your
+  panel draws while you are measuring it. So keep a panel assertion as narrow as
+  the thing it is about: scope to the section and the row you seeded, and prefer
+  "is my row filed here" over "how many rows are there". If you find yourself
+  needing the whole panel to hold still, that is a spec to rethink rather than a
+  tag to add somewhere else.
 
 That last one is not hypothetical: `rooms-in-palette` pressed Enter on the untyped palette's first unread row, which on a busy suite was a _neighbour's_ room — and arriving at a room marks it read, so it silently cleared another spec's unread badge and made that spec fail about half the time. It looked like a product bug for a while (DOR-692, since closed as an artefact).
 

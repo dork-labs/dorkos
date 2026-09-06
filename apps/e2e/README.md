@@ -150,6 +150,48 @@ Tag a spec `@integration` whenever it cannot pass without a live model. If you
 can express it against `TestModeRuntime` instead, put it on the mock leg (next
 section) and it runs everywhere.
 
+## Specs that need the sidebar to themselves (`@sole-sidebar`)
+
+Most shared state in this suite is isolated by NAMING: `roomsApi` gives every
+test a `run-<runId>` namespace, so two tests asserting on `#e2e-today-a-3f2c` and
+`#e2e-today-b-91ab` never collide. That works for assertions about a room. It
+does not work for assertions about the **sidebar panel**, because the panel draws
+every room on the server — so the twenty-five channels `sidebar-bottom-slot.spec.ts`
+seeds to overflow its list are drawn in the page `sidebar-groups.spec.ts` is
+dragging in, whatever they are called. Measured at `--workers=3` on one server:
+
+```
+Error: Drag target is off screen (centre y=-553, viewport height 720).
+```
+
+The drop target had been pushed 553px above the fold by a neighbour's rows.
+Nothing about the product was wrong and no rename would have helped. `ui.sidebar`
+is shared the same way: `PATCH /api/config` replaces arrays, so the client sends
+the **complete** section on every write and the last one wins — two pages folding
+a section and creating a group at once are two whole-section writes.
+
+So those specs take exclusion instead of a namespace. Pass the tag:
+
+```ts
+import { SOLE_SIDEBAR_TAG } from '../../fixtures/sole-access';
+
+test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
+```
+
+An automatic fixture (`fixtures/sole-access.ts`) then holds a machine-wide lock,
+keyed on the leg's `baseURL`, for the length of the test — so the tagged specs run
+one at a time while the other forty spec files keep running beside them at full
+parallelism. `workers: 1` would buy the same correctness by making every
+unrelated spec wait too. The time a test spends queueing is added back to its own
+timeout, so a queue and a per-test deadline can coexist.
+
+Under `CI` the lock is free: that run is already `workers: 1`, so it is never
+contended.
+
+`__tests__/sole-sidebar-tag.test.ts` is what keeps this from being a matter of
+memory — a spec in `tests/dashboard-sidebar/` that carries neither the tag nor a
+named exemption fails it.
+
 ## Adding a mock-server suite
 
 `chromium-mock` matches exactly one file, `chat-mock.spec.ts`, and that is a

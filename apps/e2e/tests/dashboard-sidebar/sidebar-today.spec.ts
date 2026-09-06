@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
+import { SOLE_SIDEBAR_TAG } from '../../fixtures/sole-access';
 import { SERVER_ROUND_TRIP_MS, type RoomsApi, type SeededRoom } from '../../fixtures/rooms-api';
 
 /**
@@ -119,7 +120,7 @@ async function seedThreadedChannel(
   return { room, rootEntryId };
 }
 
-test.describe('Dashboard Sidebar — Today @smoke', () => {
+test.describe('Dashboard Sidebar — Today @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
   test.describe.configure({ mode: 'serial', timeout: 120_000 });
 
   test('the conversation you have open is Today’s first row, on every switch', async ({
@@ -281,41 +282,45 @@ test.describe('Dashboard Sidebar — Today @smoke', () => {
   });
 });
 
-test.describe('Dashboard Sidebar — Today under reduced motion @smoke', () => {
-  test.describe.configure({ timeout: 120_000 });
+test.describe(
+  'Dashboard Sidebar — Today under reduced motion @smoke',
+  { tag: SOLE_SIDEBAR_TAG },
+  () => {
+    test.describe.configure({ timeout: 120_000 });
 
-  test('jumps to the anchor instead of travelling to it', async ({
-    page,
-    basePage,
-    dashboardSidebar,
-    roomsApi,
-  }) => {
-    const first = `e2e-motion-a-${roomsApi.runId}`;
-    const second = `e2e-motion-b-${roomsApi.runId}`;
-    await seedChannel(roomsApi, first);
-    await seedChannel(roomsApi, second);
+    test('jumps to the anchor instead of travelling to it', async ({
+      page,
+      basePage,
+      dashboardSidebar,
+      roomsApi,
+    }) => {
+      const first = `e2e-motion-a-${roomsApi.runId}`;
+      const second = `e2e-motion-b-${roomsApi.runId}`;
+      await seedChannel(roomsApi, first);
+      await seedChannel(roomsApi, second);
 
-    // The preference, set on the CONTEXT rather than through `test.use` — the
-    // fixture object this suite extends does not carry Playwright's own
-    // options, so the emulation is applied directly.
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await recordScrolls(page);
-    await basePage.goto();
-    await basePage.waitForAppReady();
-    await basePage.ensureSidebarOpen();
+      // The preference, set on the CONTEXT rather than through `test.use` — the
+      // fixture object this suite extends does not carry Playwright's own
+      // options, so the emulation is applied directly.
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await recordScrolls(page);
+      await basePage.goto();
+      await basePage.waitForAppReady();
+      await basePage.ensureSidebarOpen();
 
-    await expect(dashboardSidebar.rowWithText(first)).toBeVisible({
-      timeout: SERVER_ROUND_TRIP_MS,
+      await expect(dashboardSidebar.rowWithText(first)).toBeVisible({
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
+      await dashboardSidebar.rowWithText(first).first().click();
+      await expect(dashboardSidebar.todayAnchor).toContainText(first);
+      await clearScrolls(page);
+
+      await dashboardSidebar.rowWithText(second).first().click();
+      await expect(dashboardSidebar.todayAnchor).toContainText(second);
+      const after = await scrolls(page);
+      expect(after.length).toBe(1);
+      // The row still comes into view; it just does not travel there.
+      expect(after[0]?.behavior).toBe('auto');
     });
-    await dashboardSidebar.rowWithText(first).first().click();
-    await expect(dashboardSidebar.todayAnchor).toContainText(first);
-    await clearScrolls(page);
-
-    await dashboardSidebar.rowWithText(second).first().click();
-    await expect(dashboardSidebar.todayAnchor).toContainText(second);
-    const after = await scrolls(page);
-    expect(after.length).toBe(1);
-    // The row still comes into view; it just does not travel there.
-    expect(after[0]?.behavior).toBe('auto');
-  });
-});
+  }
+);

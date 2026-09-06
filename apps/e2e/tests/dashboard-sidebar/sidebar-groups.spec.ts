@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
+import { SOLE_SIDEBAR_TAG } from '../../fixtures/sole-access';
 import { describeViolation, runAxe } from '../../axe';
 
 /**
@@ -54,13 +55,19 @@ async function token(page: Page, name: string): Promise<number> {
  * No Claude SDK / API key involved — sidebar organization is pure `ui.sidebar`
  * config plus mesh registration, so this stays a fast `@smoke` test.
  */
-test.describe('Dashboard Sidebar — Sections @smoke', () => {
+test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
   // **Serial, because these tests share one `ui.sidebar`.** The config is a
   // single file on a single server, and `fullyParallel` would otherwise put the
   // drag test and the density measurements on concurrent workers writing to it
   // — one test's group create landing in the middle of another's read. Every
   // way that failed looked like a product bug (an agent that never joined its
   // group, a row that vanished mid-measurement) and was neither.
+  //
+  // **Serial covers this file's tests against each other and nothing else**,
+  // which is the other half of why the describe wears `SOLE_SIDEBAR_TAG`: the
+  // panel draws every room on the SERVER, so a neighbouring file seeding
+  // twenty-five channels pushes this file's drop target off the fold whatever
+  // those rooms are called (DOR-1420, measured at `--workers=3`).
   test.describe.configure({ mode: 'serial' });
 
   const runId = randomUUID().slice(0, 8);

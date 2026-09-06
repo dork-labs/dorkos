@@ -1,5 +1,6 @@
 import type { Locator, Page, TestInfo } from '@playwright/test';
 import { test, expect } from '../../fixtures';
+import { SOLE_SIDEBAR_TAG } from '../../fixtures/sole-access';
 import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
 import { PHONE, TOUCH_TARGET_PX, touchHeight, settled } from '../rooms/room-sheet-helpers';
 
@@ -22,7 +23,7 @@ test.describe.configure({ mode: 'default', timeout: 90_000 });
  * mouse press is a different input: it never yields the gesture to the
  * compositor, which is precisely what the scroll case is about.
  */
-test.describe('Touch — 390×844 @smoke', () => {
+test.describe('Touch — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
   test.use({ viewport: PHONE, hasTouch: true, isMobile: true });
 
   /** How long a press must last to be a long press, with room to spare. */
