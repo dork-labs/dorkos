@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import { createHash, randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 
 import {

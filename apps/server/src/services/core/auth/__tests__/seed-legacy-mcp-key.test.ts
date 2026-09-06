@@ -6,7 +6,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, user, apikey, eq, type Db } from '@dorkos/db';
 import { getAuth, initAuth, toNodeHandler, seedLegacyMcpApiKey } from '../index.js';
 import { configManager, initConfigManager } from '../../config-manager.js';
@@ -18,6 +19,7 @@ const OWNER_PASSWORD = 'correct-horse-battery-staple';
 const OWNER_NAME = 'Owner';
 const ORIGIN = `http://localhost:${env.DORKOS_PORT}`;
 const LEGACY_KEY = 'dork_mcp_legacy_value_1234567890';
+const requestTarget = swappableServer();
 
 /** Store a legacy global key at `config.mcp.apiKey`, preserving the rest of the block. */
 function setLegacyKey(value: string | null): void {
@@ -55,7 +57,8 @@ describe('seedLegacyMcpApiKey — legacy MCP key migration (task 1.4)', () => {
   /** Create the owner directly so tests that are not about the HTTP hook stay simple. */
   async function createOwner(): Promise<string> {
     const app = buildApp();
-    const res = await request(app)
+    requestTarget.mount(app);
+    const res = await request(requestTarget.server)
       .post('/api/auth/sign-up/email')
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD, name: OWNER_NAME });

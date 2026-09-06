@@ -13,7 +13,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request, { type Response } from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
@@ -40,6 +41,9 @@ import { TaskStore } from '../../../tasks/task-store.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { Task } from '@dorkos/shared/schemas';
 
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
+
 /** A JSON-RPC reply, narrowed to the parts this test reads. */
 interface JsonRpcMessage {
   jsonrpc: string;
@@ -61,7 +65,7 @@ interface JsonRpcMessage {
 }
 
 /** Read a JSON or SSE reply, the way the sibling external-MCP test does. */
-function parseResponse(res: request.Response): JsonRpcMessage {
+function parseResponse(res: Response): JsonRpcMessage {
   const contentType = (res.headers['content-type'] as string) ?? '';
   if (contentType.includes('text/event-stream')) {
     for (const line of res.text.split('\n')) {
@@ -111,6 +115,8 @@ describe('tasks_* operator-only field guard (external /mcp server)', () => {
         server.close().catch(() => {});
       });
     });
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -119,7 +125,7 @@ describe('tasks_* operator-only field guard (external /mcp server)', () => {
 
   /** Issue one JSON-RPC call against the live external server. */
   async function rpc(method: string, params?: Record<string, unknown>) {
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post('/mcp')
       .set('Content-Type', 'application/json')
       .set('Accept', 'application/json, text/event-stream')
@@ -156,7 +162,7 @@ describe('tasks_* operator-only field guard (external /mcp server)', () => {
     expect(tool?.inputSchema?.required).toContain('reason');
 
     const before = store.getTasks().length;
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post('/mcp')
       .set('Content-Type', 'application/json')
       .set('Accept', 'application/json, text/event-stream')

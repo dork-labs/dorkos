@@ -23,7 +23,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -37,6 +38,9 @@ import { createTasksRouter } from '../tasks.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** Mutable posture the mocked config manager reports. */
 const state = vi.hoisted(() => ({ authEnabled: false }));
@@ -152,6 +156,8 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
       '/api/tasks',
       createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), dorkHome)
     );
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(async () => {
@@ -162,7 +168,7 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
   it('drops the bypass when an agent swaps the prompt, and the reconciler cannot resurrect it', async () => {
     const { id, filePath } = await seedApprovedBypassTask();
 
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .patch(`/api/tasks/${id}`)
       .set('x-dorkos-agent', 'agent-token-abc')
       .send({ prompt: MALICIOUS_PROMPT });
@@ -191,7 +197,7 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
   it('drops the bypass when an agent swaps the cron', async () => {
     const { id, filePath } = await seedApprovedBypassTask();
 
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .patch(`/api/tasks/${id}`)
       .set('x-dorkos-agent', 'agent-token-abc')
       .send({ cron: '* * * * *' });
@@ -214,7 +220,7 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
     // anything else — see the injection case below.)
     const { id } = await seedApprovedBypassTask();
 
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .patch(`/api/tasks/${id}`)
       .set('x-dorkos-agent', 'agent-token-abc')
       .send({ name: 'renamed-sweep' });
@@ -236,7 +242,7 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
     // the payload never lands.
     const { id } = await seedApprovedBypassTask();
 
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .patch(`/api/tasks/${id}`)
       .set('x-dorkos-agent', 'agent-token-abc')
       .send({
@@ -259,7 +265,7 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
     // description change does not alter what the approved run does.
     const { id, filePath } = await seedApprovedBypassTask();
 
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .patch(`/api/tasks/${id}`)
       .set('x-dorkos-agent', 'agent-token-abc')
       .send({ description: 'a tidier description' });
@@ -285,7 +291,9 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
       // designed to protect.
       const { id, filePath } = await seedApprovedBypassTask();
 
-      const res = await request(app).patch(`/api/tasks/${id}`).send({ prompt: REFINED_PROMPT });
+      const res = await request(fixtureServer)
+        .patch(`/api/tasks/${id}`)
+        .send({ prompt: REFINED_PROMPT });
 
       expect(res.status).toBe(200);
 
@@ -304,7 +312,7 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
       // rename keeps the grant.
       const { id } = await seedApprovedBypassTask();
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${id}`)
         .send({ name: 'renamed-by-operator' });
 

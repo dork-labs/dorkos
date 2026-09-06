@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import http from 'node:http';
 import type { Request, Response } from 'express';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { DataProxyConfig } from '@dorkos/extension-api';
 
 // --- Mocks ---
@@ -53,6 +54,8 @@ vi.mock('../../../middleware/extension-proxy-rate-limit.js', () => ({
 import { createProxyRouter, STRIPPED_HEADERS } from '../extension-proxy.js';
 import { logger } from '../../../lib/logger.js';
 import { AGENT_IDENTITY_HEADER } from '../../../middleware/agent-identity.js';
+
+const fixtureTarget = swappableServer();
 
 // --- Helpers ---
 
@@ -602,7 +605,7 @@ describe('createProxyRouter', () => {
       const app = express();
       app.use(createProxyRouter('test-ext', DEFAULT_CONFIG, '/fake/dork-home'));
 
-      await request(app).get('/proxy/v1/issues/123?state=open');
+      await request(fixtureTarget.mount(app)).get('/proxy/v1/issues/123?state=open');
 
       expect(globalThis.fetch).toHaveBeenCalledWith(
         'https://api.example.com/v1/issues/123?state=open',
@@ -791,7 +794,7 @@ describe('createProxyRouter', () => {
       const app = express();
       app.use(createProxyRouter('test-ext', SCOPED, '/fake/dork-home'));
 
-      const res = await request(app).get('/proxy/..%2f..%2fadmin');
+      const res = await request(fixtureTarget.mount(app)).get('/proxy/..%2f..%2fadmin');
 
       expect(res.status).toBe(400);
       expect(globalThis.fetch).not.toHaveBeenCalled();
@@ -1036,7 +1039,7 @@ describe('createProxyRouter', () => {
       const app = express();
       app.use(createProxyRouter('test-ext', DEFAULT_CONFIG, '/fake/dork-home'));
 
-      await request(app).get('/proxy/graphql');
+      await request(fixtureTarget.mount(app)).get('/proxy/graphql');
 
       expect(limiter.seen).toEqual(['/proxy/graphql']);
       expect(globalThis.fetch).toHaveBeenCalledTimes(1);
@@ -1050,7 +1053,7 @@ describe('createProxyRouter', () => {
       const app = express();
       app.use(createProxyRouter('test-ext', DEFAULT_CONFIG, '/fake/dork-home'));
 
-      const res = await request(app).get('/proxy/graphql');
+      const res = await request(fixtureTarget.mount(app)).get('/proxy/graphql');
 
       expect(res.status).toBe(429);
       expect(globalThis.fetch).not.toHaveBeenCalled();

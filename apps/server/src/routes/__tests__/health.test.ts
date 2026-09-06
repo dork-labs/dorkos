@@ -33,11 +33,13 @@ const defaultStatus = {
   domain: null,
 };
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 describe('Health Route', () => {
   beforeEach(() => {
@@ -46,7 +48,7 @@ describe('Health Route', () => {
   });
 
   it('GET /api/health returns status ok without tunnel field when disabled', async () => {
-    const res = await request(app).get('/api/health');
+    const res = await request(testServer).get('/api/health');
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ok');
     expect(typeof res.body.version).toBe('string');
@@ -65,7 +67,7 @@ describe('Health Route', () => {
       startedAt: '2025-01-01T00:00:00.000Z',
     };
 
-    const res = await request(app).get('/api/health');
+    const res = await request(testServer).get('/api/health');
     expect(res.status).toBe(200);
     expect(res.body.tunnel).toEqual(
       expect.objectContaining({
@@ -88,7 +90,7 @@ describe('Health Route', () => {
       startedAt: '2025-01-01T00:00:00.000Z',
     };
 
-    const res = await request(app).get('/api/health');
+    const res = await request(testServer).get('/api/health');
     expect(res.status).toBe(200);
     expect(res.body.tunnel.connected).toBe(false);
     expect(res.body.tunnel.url).toBeNull();

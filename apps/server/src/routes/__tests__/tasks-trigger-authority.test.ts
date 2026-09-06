@@ -21,7 +21,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { Task } from '@dorkos/shared/schemas';
@@ -44,6 +45,9 @@ import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 import { OPERATOR_ONLY_TASK_CODE } from '../../services/tasks/task-write-policy.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 function createMockScheduler(): TaskSchedulerService {
   return {
@@ -101,6 +105,8 @@ describe('POST /api/tasks/:id/trigger', () => {
       '/api/tasks',
       createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), '/tmp/dork-test')
     );
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -111,7 +117,7 @@ describe('POST /api/tasks/:id/trigger', () => {
     it('cannot run a schedule that is still waiting for approval', async () => {
       // The escalation this closes: parking a proposal is worth nothing if the
       // proposer can run it anyway through the next door along.
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post(`/api/tasks/${parked.id}/trigger`)
         .set('x-dorkos-agent', 'agent-token-abc');
 
@@ -123,7 +129,7 @@ describe('POST /api/tasks/:id/trigger', () => {
     it('cannot run an approved schedule off-schedule either', async () => {
       // The bar is about who is asking, not about the schedule's state — an
       // approval says "run at 2am", not "run whenever an agent says so".
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post(`/api/tasks/${active.id}/trigger`)
         .set('x-dorkos-agent', 'agent-token-abc');
 
@@ -134,7 +140,7 @@ describe('POST /api/tasks/:id/trigger', () => {
     it('is told what to do instead, not just refused', async () => {
       // This text lands in a model's context, and a model that is only told
       // "no" tries again.
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post(`/api/tasks/${active.id}/trigger`)
         .set('x-dorkos-agent', 'agent-token-abc');
 
@@ -144,7 +150,7 @@ describe('POST /api/tasks/:id/trigger', () => {
 
   describe('a person in the cockpit', () => {
     it('runs an approved schedule on demand', async () => {
-      const res = await request(app).post(`/api/tasks/${active.id}/trigger`);
+      const res = await request(fixtureServer).post(`/api/tasks/${active.id}/trigger`);
 
       expect(res.status).toBe(201);
       expect(res.body.runId).toBe('run-1');
@@ -153,7 +159,7 @@ describe('POST /api/tasks/:id/trigger', () => {
     it('runs a proposal once, before deciding about it', async () => {
       // "Try it once and see" is the whole point of the approval card, and the
       // authorization fix must not take it away.
-      const res = await request(app).post(`/api/tasks/${parked.id}/trigger`);
+      const res = await request(fixtureServer).post(`/api/tasks/${parked.id}/trigger`);
 
       expect(res.status).toBe(201);
       expect(scheduler.triggerManualRun).toHaveBeenCalledWith(parked.id);
@@ -163,7 +169,7 @@ describe('POST /api/tasks/:id/trigger', () => {
     it('still gets 404 for a schedule that does not exist', async () => {
       vi.mocked(scheduler.triggerManualRun).mockResolvedValueOnce(null);
 
-      const res = await request(app).post('/api/tasks/nope/trigger');
+      const res = await request(fixtureServer).post('/api/tasks/nope/trigger');
 
       expect(res.status).toBe(404);
     });
@@ -177,7 +183,7 @@ describe('POST /api/tasks/:id/trigger', () => {
     it('refuses a caller with no proven user, even with no agent header', async () => {
       signedInUser = undefined;
 
-      const res = await request(app).post(`/api/tasks/${active.id}/trigger`);
+      const res = await request(fixtureServer).post(`/api/tasks/${active.id}/trigger`);
 
       expect(res.status).toBe(403);
       expect(scheduler.triggerManualRun).not.toHaveBeenCalled();
@@ -186,7 +192,7 @@ describe('POST /api/tasks/:id/trigger', () => {
     it('allows a signed-in person', async () => {
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
 
-      const res = await request(app).post(`/api/tasks/${active.id}/trigger`);
+      const res = await request(fixtureServer).post(`/api/tasks/${active.id}/trigger`);
 
       expect(res.status).toBe(201);
     });

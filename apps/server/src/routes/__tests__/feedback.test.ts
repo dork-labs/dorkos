@@ -12,7 +12,8 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express, { type Request, type Response, type NextFunction } from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 vi.mock('../../services/core/feedback-reporter.js', () => ({
   sendFeedback: vi.fn(),
@@ -41,6 +42,8 @@ import {
 import { getRecentLogExcerpt } from '../../lib/log-excerpt.js';
 import { getSessionTranscriptExcerpt } from '../../lib/transcript-excerpt.js';
 import feedbackRouter from '../feedback.js';
+
+const fixtureTarget = swappableServer();
 
 const mockSend = vi.mocked(sendFeedback);
 const mockResolveIdentity = vi.mocked(resolveFeedbackIdentity);
@@ -76,7 +79,7 @@ describe('feedback route', () => {
 
   it('forwards a valid submission and relays ok:true', async () => {
     mockSend.mockResolvedValue({ ok: true });
-    const res = await request(buildApp())
+    const res = await request(fixtureTarget.mount(buildApp()))
       .post('/api/feedback')
       .send({ kind: 'bug', message: 'it broke', contact: 'a@b.com', route: '/agents' });
 
@@ -91,7 +94,7 @@ describe('feedback route', () => {
 
   it('relays ok:false when the forwarder could not deliver (still 200, honest)', async () => {
     mockSend.mockResolvedValue({ ok: false });
-    const res = await request(buildApp())
+    const res = await request(fixtureTarget.mount(buildApp()))
       .post('/api/feedback')
       .send({ kind: 'feedback', message: 'hello' });
 
@@ -101,7 +104,7 @@ describe('feedback route', () => {
 
   it('accepts the idea kind', async () => {
     mockSend.mockResolvedValue({ ok: true });
-    const res = await request(buildApp())
+    const res = await request(fixtureTarget.mount(buildApp()))
       .post('/api/feedback')
       .send({ kind: 'idea', message: 'add dark mode' });
     expect(res.status).toBe(200);
@@ -109,14 +112,16 @@ describe('feedback route', () => {
   });
 
   it('rejects an empty message with 400 and never calls the forwarder', async () => {
-    const res = await request(buildApp()).post('/api/feedback').send({ kind: 'bug', message: '' });
+    const res = await request(fixtureTarget.mount(buildApp()))
+      .post('/api/feedback')
+      .send({ kind: 'bug', message: '' });
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('INVALID_FEEDBACK');
     expect(mockSend).not.toHaveBeenCalled();
   });
 
   it('rejects an unknown kind with 400', async () => {
-    const res = await request(buildApp())
+    const res = await request(fixtureTarget.mount(buildApp()))
       .post('/api/feedback')
       .send({ kind: 'praise', message: 'nice' });
     expect(res.status).toBe(400);
@@ -124,7 +129,7 @@ describe('feedback route', () => {
   });
 
   it('rejects unknown body keys (strict) with 400', async () => {
-    const res = await request(buildApp())
+    const res = await request(fixtureTarget.mount(buildApp()))
       .post('/api/feedback')
       .send({ kind: 'bug', message: 'hi', surface: 'cockpit', distinctId: 'x' });
     expect(res.status).toBe(400);
@@ -137,7 +142,9 @@ describe('feedback route', () => {
       // slot on FeedbackSubmissionSchema at all, so a client that tries to spoof
       // one is rejected outright by the strict allowlist, never silently ignored
       // and never reaching resolveFeedbackIdentity/sendFeedback.
-      const res = await request(buildApp({ userId: 'user_1', credential: 'cookie' }))
+      const res = await request(
+        fixtureTarget.mount(buildApp({ userId: 'user_1', credential: 'cookie' }))
+      )
         .post('/api/feedback')
         .send({ kind: 'bug', message: 'hi', reporterEmail: 'attacker@evil.test' });
 
@@ -155,7 +162,9 @@ describe('feedback route', () => {
         name: 'Dorian',
       });
 
-      const res = await request(buildApp({ userId: 'user_1', credential: 'cookie' }))
+      const res = await request(
+        fixtureTarget.mount(buildApp({ userId: 'user_1', credential: 'cookie' }))
+      )
         .post('/api/feedback')
         .send({ kind: 'bug', message: 'hi' });
 
@@ -169,7 +178,7 @@ describe('feedback route', () => {
     it('never resolves or forwards identity when there is no session (auth off / anonymous)', async () => {
       mockSend.mockResolvedValue({ ok: true });
 
-      const res = await request(buildApp())
+      const res = await request(fixtureTarget.mount(buildApp()))
         .post('/api/feedback')
         .send({ kind: 'bug', message: 'hi' });
 
@@ -189,7 +198,9 @@ describe('feedback route', () => {
         name: 'Dorian',
       });
 
-      const res = await request(buildApp({ userId: 'user_1', credential: 'cookie' }))
+      const res = await request(
+        fixtureTarget.mount(buildApp({ userId: 'user_1', credential: 'cookie' }))
+      )
         .post('/api/feedback')
         .send({ kind: 'bug', message: 'hi', anonymous: true });
 
@@ -204,7 +215,7 @@ describe('feedback route', () => {
       mockSend.mockResolvedValue({ ok: true });
       mockGetTranscript.mockResolvedValue('user: it broke\nassistant: looking');
 
-      const res = await request(buildApp()).post('/api/feedback').send({
+      const res = await request(fixtureTarget.mount(buildApp())).post('/api/feedback').send({
         kind: 'bug',
         message: 'it crashed',
         sessionId: 'sess_123',
@@ -220,7 +231,7 @@ describe('feedback route', () => {
 
     it('does NOT gather a transcript when includeTranscript is not set', async () => {
       mockSend.mockResolvedValue({ ok: true });
-      await request(buildApp())
+      await request(fixtureTarget.mount(buildApp()))
         .post('/api/feedback')
         .send({ kind: 'bug', message: 'it crashed', sessionId: 'sess_123' });
       expect(mockGetTranscript).not.toHaveBeenCalled();
@@ -228,14 +239,14 @@ describe('feedback route', () => {
 
     it('does NOT gather a transcript when no sessionId is present', async () => {
       mockSend.mockResolvedValue({ ok: true });
-      await request(buildApp())
+      await request(fixtureTarget.mount(buildApp()))
         .post('/api/feedback')
         .send({ kind: 'bug', message: 'it crashed', includeTranscript: true });
       expect(mockGetTranscript).not.toHaveBeenCalled();
     });
 
     it('never reads a transcript for an invalid submission (validation runs first)', async () => {
-      const res = await request(buildApp())
+      const res = await request(fixtureTarget.mount(buildApp()))
         .post('/api/feedback')
         .send({ kind: 'bug', message: '', sessionId: 'sess_123', includeTranscript: true });
       expect(res.status).toBe(400);
@@ -246,7 +257,7 @@ describe('feedback route', () => {
       mockSend.mockResolvedValue({ ok: true });
       mockGetTranscript.mockResolvedValue(undefined);
 
-      await request(buildApp()).post('/api/feedback').send({
+      await request(fixtureTarget.mount(buildApp())).post('/api/feedback').send({
         kind: 'bug',
         message: 'it crashed',
         sessionId: 'sess_123',
@@ -268,7 +279,7 @@ describe('feedback route', () => {
       mockGetTranscript.mockResolvedValue(undefined);
       mockGetLogExcerpt.mockResolvedValue(undefined);
 
-      await request(buildApp())
+      await request(fixtureTarget.mount(buildApp()))
         .post('/api/feedback')
         .send({
           kind: 'bug',
@@ -295,7 +306,7 @@ describe('feedback route', () => {
       mockSend.mockResolvedValue({ ok: true });
       mockGetTranscript.mockResolvedValue('user: it broke\nassistant: looking');
 
-      await request(buildApp()).post('/api/feedback').send({
+      await request(fixtureTarget.mount(buildApp())).post('/api/feedback').send({
         kind: 'bug',
         message: 'it crashed',
         sessionId: 'sess_123',
@@ -316,7 +327,7 @@ describe('feedback route', () => {
       mockSend.mockResolvedValue({ ok: true });
       mockGetLogExcerpt.mockResolvedValue('warn: something scrubbed');
 
-      const res = await request(buildApp())
+      const res = await request(fixtureTarget.mount(buildApp()))
         .post('/api/feedback')
         .send({
           kind: 'bug',
@@ -341,7 +352,7 @@ describe('feedback route', () => {
 
     it('does NOT gather a log excerpt when includeServerLogs is not set', async () => {
       mockSend.mockResolvedValue({ ok: true });
-      await request(buildApp())
+      await request(fixtureTarget.mount(buildApp()))
         .post('/api/feedback')
         .send({
           kind: 'bug',
@@ -355,7 +366,7 @@ describe('feedback route', () => {
 
     it('does NOT gather a log excerpt for a non-bug kind, even with includeServerLogs set', async () => {
       mockSend.mockResolvedValue({ ok: true });
-      await request(buildApp()).post('/api/feedback').send({
+      await request(fixtureTarget.mount(buildApp())).post('/api/feedback').send({
         kind: 'feedback',
         message: 'nice work',
         includeServerLogs: true,
@@ -365,7 +376,7 @@ describe('feedback route', () => {
 
     it('does NOT gather a log excerpt when the submission carries no diagnostics', async () => {
       mockSend.mockResolvedValue({ ok: true });
-      await request(buildApp()).post('/api/feedback').send({
+      await request(fixtureTarget.mount(buildApp())).post('/api/feedback').send({
         kind: 'bug',
         message: 'it crashed',
         includeServerLogs: true,
@@ -374,7 +385,7 @@ describe('feedback route', () => {
     });
 
     it('never reads the log file for an invalid submission (validation runs first)', async () => {
-      const res = await request(buildApp())
+      const res = await request(fixtureTarget.mount(buildApp()))
         .post('/api/feedback')
         .send({ kind: 'bug', message: '', includeServerLogs: true });
       expect(res.status).toBe(400);
@@ -385,7 +396,7 @@ describe('feedback route', () => {
       mockSend.mockResolvedValue({ ok: true });
       mockGetLogExcerpt.mockResolvedValue(undefined);
 
-      await request(buildApp())
+      await request(fixtureTarget.mount(buildApp()))
         .post('/api/feedback')
         .send({
           kind: 'bug',
@@ -418,7 +429,7 @@ describe('feedback route', () => {
       ];
       mockListMyFeedback.mockResolvedValue(items);
 
-      const res = await request(buildApp()).get('/api/feedback/mine');
+      const res = await request(fixtureTarget.mount(buildApp())).get('/api/feedback/mine');
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual(items);
@@ -428,7 +439,7 @@ describe('feedback route', () => {
     it('returns 502 when listMyFeedback throws (site unreachable or non-OK)', async () => {
       mockListMyFeedback.mockRejectedValue(new Error('Feedback tracking read failed: HTTP 500'));
 
-      const res = await request(buildApp()).get('/api/feedback/mine');
+      const res = await request(fixtureTarget.mount(buildApp())).get('/api/feedback/mine');
 
       expect(res.status).toBe(502);
       expect(res.body).toEqual({ error: 'Could not reach the feedback service' });

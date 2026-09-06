@@ -1,12 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type { ConnectedAccount } from '@dorkos/shared/connector-provider';
 import { ConnectorRegistry } from '../../services/connectors/registry.js';
 import { AgentConnectorAttachmentStore } from '../../services/connectors/attachment-store.js';
 import { createAgentConnectorsRouter, type AgentConnectorsMeshLike } from '../agent-connectors.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** Connect one account on a fake provider and persist its routing binding. */
 async function connectAndRecord(
@@ -45,7 +49,9 @@ describe('agent-connectors router', () => {
 
   it('POST attaches an account to an agent (standing consent) and re-shows the custody disclosure', async () => {
     const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
-    const res = await request(buildApp()).post(`/api/agents/agent-a/connectors/${account.id}`);
+    const res = await request(fixtureTarget.mount(buildApp())).post(
+      `/api/agents/agent-a/connectors/${account.id}`
+    );
 
     expect(res.status).toBe(200);
     expect(res.body.account.accountId).toBe(account.id);
@@ -54,7 +60,9 @@ describe('agent-connectors router', () => {
   });
 
   it('POST returns 404 for an unknown account id and does not persist a row', async () => {
-    const res = await request(buildApp()).post('/api/agents/agent-a/connectors/does-not-exist');
+    const res = await request(fixtureTarget.mount(buildApp())).post(
+      '/api/agents/agent-a/connectors/does-not-exist'
+    );
     expect(res.status).toBe(404);
     expect(store.listForAgent('agent-a')).toEqual([]);
   });
@@ -63,10 +71,10 @@ describe('agent-connectors router', () => {
     const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
     const slack = await connectAndRecord(registry, provider, 'slack', 'team');
     const app = buildApp();
-    await request(app).post(`/api/agents/agent-a/connectors/${gmail.id}`);
-    await request(app).post(`/api/agents/agent-a/connectors/${slack.id}`);
+    await request(fixtureTarget.mount(app)).post(`/api/agents/agent-a/connectors/${gmail.id}`);
+    await request(fixtureServer).post(`/api/agents/agent-a/connectors/${slack.id}`);
 
-    const res = await request(app).get('/api/agents/agent-a/connectors');
+    const res = await request(fixtureServer).get('/api/agents/agent-a/connectors');
     expect(res.status).toBe(200);
     expect(res.body.accounts.map((a: { accountId: string }) => a.accountId).sort()).toEqual(
       [gmail.id, slack.id].sort()
@@ -76,20 +84,24 @@ describe('agent-connectors router', () => {
   it('DELETE detaches an account and is idempotent', async () => {
     const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
     const app = buildApp();
-    await request(app).post(`/api/agents/agent-a/connectors/${account.id}`);
+    await request(fixtureTarget.mount(app)).post(`/api/agents/agent-a/connectors/${account.id}`);
     expect(store.listForAgent('agent-a')).toHaveLength(1);
 
-    const del = await request(app).delete(`/api/agents/agent-a/connectors/${account.id}`);
+    const del = await request(fixtureServer).delete(`/api/agents/agent-a/connectors/${account.id}`);
     expect(del.status).toBe(204);
     expect(store.listForAgent('agent-a')).toEqual([]);
 
-    const again = await request(app).delete(`/api/agents/agent-a/connectors/${account.id}`);
+    const again = await request(fixtureServer).delete(
+      `/api/agents/agent-a/connectors/${account.id}`
+    );
     expect(again.status).toBe(204);
   });
 
   it('attaching to one agent does not attach to another', async () => {
     const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
-    await request(buildApp()).post(`/api/agents/agent-a/connectors/${account.id}`);
+    await request(fixtureTarget.mount(buildApp())).post(
+      `/api/agents/agent-a/connectors/${account.id}`
+    );
     expect(store.listForAgent('agent-b')).toEqual([]);
   });
 
@@ -98,7 +110,7 @@ describe('agent-connectors router', () => {
       const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
       const meshCore: AgentConnectorsMeshLike = { getProjectPath: () => undefined };
 
-      const res = await request(buildApp(meshCore)).post(
+      const res = await request(fixtureTarget.mount(buildApp(meshCore))).post(
         `/api/agents/ghost-agent/connectors/${account.id}`
       );
 
@@ -113,7 +125,7 @@ describe('agent-connectors router', () => {
         getProjectPath: (agentId) => (agentId === 'agent-a' ? '/agents/a' : undefined),
       };
 
-      const res = await request(buildApp(meshCore)).post(
+      const res = await request(fixtureTarget.mount(buildApp(meshCore))).post(
         `/api/agents/agent-a/connectors/${account.id}`
       );
 
@@ -123,7 +135,7 @@ describe('agent-connectors router', () => {
 
     it('the agent-existence check runs BEFORE the account-existence check (agent validation wins on both being wrong)', async () => {
       const meshCore: AgentConnectorsMeshLike = { getProjectPath: () => undefined };
-      const res = await request(buildApp(meshCore)).post(
+      const res = await request(fixtureTarget.mount(buildApp(meshCore))).post(
         '/api/agents/ghost-agent/connectors/does-not-exist'
       );
       expect(res.status).toBe(400);

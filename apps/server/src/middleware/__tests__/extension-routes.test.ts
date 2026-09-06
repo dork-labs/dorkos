@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import express, { Router } from 'express';
 import { createExtensionRoutesMiddleware } from '../extension-routes.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** Minimal mock matching the ExtensionManager.getServerRouter interface. */
 function createMockManager() {
@@ -32,12 +36,14 @@ describe('Extension Routes Middleware', () => {
     vi.clearAllMocks();
     manager = createMockManager();
     app = createApp(manager);
+
+    fixtureTarget.mount(app);
   });
 
   it('returns 404 when extension has no server router', async () => {
     manager.getServerRouter.mockReturnValue(null);
 
-    const res = await request(app).get('/api/ext/my-ext/status');
+    const res = await request(fixtureServer).get('/api/ext/my-ext/status');
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: "Extension 'my-ext' has no server routes" });
@@ -51,7 +57,7 @@ describe('Extension Routes Middleware', () => {
     });
     manager.getServerRouter.mockReturnValue(extRouter);
 
-    const res = await request(app).get('/api/ext/my-ext/status');
+    const res = await request(fixtureServer).get('/api/ext/my-ext/status');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, data: 'from-extension' });
@@ -65,7 +71,9 @@ describe('Extension Routes Middleware', () => {
     });
     manager.getServerRouter.mockReturnValue(extRouter);
 
-    const res = await request(app).post('/api/ext/test-ext/action').send({ key: 'value' });
+    const res = await request(fixtureServer)
+      .post('/api/ext/test-ext/action')
+      .send({ key: 'value' });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ received: { key: 'value' } });
@@ -78,7 +86,7 @@ describe('Extension Routes Middleware', () => {
     });
     manager.getServerRouter.mockReturnValue(extRouter);
 
-    const res = await request(app).get('/api/ext/my-ext/deep/nested/path');
+    const res = await request(fixtureServer).get('/api/ext/my-ext/deep/nested/path');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ nested: true });
@@ -91,7 +99,7 @@ describe('Extension Routes Middleware', () => {
     });
     manager.getServerRouter.mockReturnValue(extRouter);
 
-    const res = await request(app).get('/api/ext/my-ext');
+    const res = await request(fixtureServer).get('/api/ext/my-ext');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ root: true });
@@ -100,7 +108,7 @@ describe('Extension Routes Middleware', () => {
   it('returns 404 with correct message for each unique extension ID', async () => {
     manager.getServerRouter.mockReturnValue(null);
 
-    const res = await request(app).get('/api/ext/another-ext/anything');
+    const res = await request(fixtureServer).get('/api/ext/another-ext/anything');
 
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("Extension 'another-ext' has no server routes");
@@ -124,8 +132,8 @@ describe('Extension Routes Middleware', () => {
       return null;
     });
 
-    const resA = await request(app).get('/api/ext/ext-a/data');
-    const resB = await request(app).get('/api/ext/ext-b/data');
+    const resA = await request(fixtureServer).get('/api/ext/ext-a/data');
+    const resB = await request(fixtureServer).get('/api/ext/ext-b/data');
 
     expect(resA.body).toEqual({ source: 'ext-a' });
     expect(resB.body).toEqual({ source: 'ext-b' });

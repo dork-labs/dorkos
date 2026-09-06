@@ -11,13 +11,17 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import express from 'express';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import { createTemplateRouter } from '../templates.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 let DORK_HOME: string;
 
@@ -61,6 +65,8 @@ describe('Template Routes', () => {
     vi.clearAllMocks();
     DORK_HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'templates-routes-'));
     app = createApp();
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(async () => {
@@ -69,7 +75,7 @@ describe('Template Routes', () => {
 
   describe('GET /api/templates', () => {
     it('returns 7 built-in templates when no user file exists', async () => {
-      const res = await request(app).get('/api/templates');
+      const res = await request(fixtureServer).get('/api/templates');
 
       expect(res.status).toBe(200);
       expect(res.body.version).toBe(1);
@@ -80,7 +86,7 @@ describe('Template Routes', () => {
     it('returns merged list with user templates when file exists', async () => {
       await seedUserCatalog([{ id: 'my-custom', ...USER_TEMPLATE }]);
 
-      const res = await request(app).get('/api/templates');
+      const res = await request(fixtureServer).get('/api/templates');
 
       expect(res.status).toBe(200);
       expect(res.body.templates).toHaveLength(8);
@@ -90,7 +96,7 @@ describe('Template Routes', () => {
     it('handles malformed catalog file gracefully', async () => {
       await fs.writeFile(catalogPath(), '{ not valid json !!!', 'utf-8');
 
-      const res = await request(app).get('/api/templates');
+      const res = await request(fixtureServer).get('/api/templates');
 
       expect(res.status).toBe(200);
       expect(res.body.templates).toHaveLength(7);
@@ -99,7 +105,7 @@ describe('Template Routes', () => {
     it('handles catalog with invalid schema gracefully', async () => {
       await fs.writeFile(catalogPath(), JSON.stringify({ bad: 'data' }), 'utf-8');
 
-      const res = await request(app).get('/api/templates');
+      const res = await request(fixtureServer).get('/api/templates');
 
       expect(res.status).toBe(200);
       expect(res.body.templates).toHaveLength(7);
@@ -118,7 +124,7 @@ describe('Template Routes', () => {
         tags: ['test'],
       };
 
-      const res = await request(app).post('/api/templates').send(newTemplate);
+      const res = await request(fixtureServer).post('/api/templates').send(newTemplate);
 
       expect(res.status).toBe(201);
       expect(res.body.id).toBe('my-new');
@@ -130,14 +136,14 @@ describe('Template Routes', () => {
     });
 
     it('returns 400 on missing required fields', async () => {
-      const res = await request(app).post('/api/templates').send({ id: 'incomplete' });
+      const res = await request(fixtureServer).post('/api/templates').send({ id: 'incomplete' });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
     });
 
     it('returns 400 when id is empty string', async () => {
-      const res = await request(app).post('/api/templates').send({
+      const res = await request(fixtureServer).post('/api/templates').send({
         id: '',
         name: 'Test',
         description: 'desc',
@@ -149,7 +155,7 @@ describe('Template Routes', () => {
     });
 
     it('returns 409 on ID conflict with built-in template', async () => {
-      const res = await request(app).post('/api/templates').send({
+      const res = await request(fixtureServer).post('/api/templates').send({
         id: 'nextjs',
         name: 'My Next.js',
         description: 'Duplicate',
@@ -164,7 +170,7 @@ describe('Template Routes', () => {
     it('returns 409 on ID conflict with existing user template', async () => {
       await seedUserCatalog([{ id: 'existing', ...USER_TEMPLATE }]);
 
-      const res = await request(app).post('/api/templates').send({
+      const res = await request(fixtureServer).post('/api/templates').send({
         id: 'existing',
         name: 'Duplicate',
         description: 'Conflict',
@@ -177,7 +183,7 @@ describe('Template Routes', () => {
     });
 
     it('applies default values for optional fields', async () => {
-      const res = await request(app).post('/api/templates').send({
+      const res = await request(fixtureServer).post('/api/templates').send({
         id: 'minimal',
         name: 'Minimal',
         description: 'Just the basics',
@@ -201,7 +207,7 @@ describe('Template Routes', () => {
 
         const responses = await Promise.all(
           Array.from({ length: N }, (_, i) =>
-            request(app)
+            request(fixtureServer)
               .post('/api/templates')
               .send({
                 id: `tpl-${i}`,
@@ -226,8 +232,8 @@ describe('Template Routes', () => {
         await seedUserCatalog([{ id: 'doomed', ...USER_TEMPLATE }]);
 
         const [del, post] = await Promise.all([
-          request(app).delete('/api/templates/doomed'),
-          request(app).post('/api/templates').send({
+          request(fixtureServer).delete('/api/templates/doomed'),
+          request(fixtureServer).post('/api/templates').send({
             id: 'fresh',
             name: 'Fresh',
             description: 'Added during delete',
@@ -248,7 +254,7 @@ describe('Template Routes', () => {
     it('removes user template', async () => {
       await seedUserCatalog([{ id: 'to-delete', ...USER_TEMPLATE }]);
 
-      const res = await request(app).delete('/api/templates/to-delete');
+      const res = await request(fixtureServer).delete('/api/templates/to-delete');
 
       expect(res.status).toBe(200);
       expect(res.body.deleted).toBe('to-delete');
@@ -258,14 +264,14 @@ describe('Template Routes', () => {
     });
 
     it('returns 403 when trying to delete built-in template', async () => {
-      const res = await request(app).delete('/api/templates/nextjs');
+      const res = await request(fixtureServer).delete('/api/templates/nextjs');
 
       expect(res.status).toBe(403);
       expect(res.body.error).toContain('built-in');
     });
 
     it('returns 404 for non-existent template', async () => {
-      const res = await request(app).delete('/api/templates/does-not-exist');
+      const res = await request(fixtureServer).delete('/api/templates/does-not-exist');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toContain('not found');

@@ -43,7 +43,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { z } from 'zod';
 import { createDb, runMigrations, user, type Db } from '@dorkos/db';
 import { getAuth, initAuth, sessionGate, toNodeHandler } from '../../services/core/auth/index.js';
@@ -66,6 +67,9 @@ import {
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 import { createApprovalsRouter } from '../approvals.js';
 import { env } from '../../env.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 // Emails are assembled from parts so the source never contains a literal address.
 const DOMAIN = 'dork.test';
@@ -179,14 +183,14 @@ describe('the self-grant chain, against the real routers', () => {
    */
   async function openPermissionAsPerson(): Promise<string> {
     setLoginEnabled(true);
-    const config = await request(app)
+    const config = await request(fixtureServer)
       .patch('/api/config')
       .set('Cookie', cookies)
       .send({ approvals: { standingGrants: true, trustWindowMinutes: 480 } });
     expect(config.status).toBe(200);
 
     const approvalId = await askAsAgent();
-    const grant = await request(app)
+    const grant = await request(fixtureServer)
       .post(`/api/approvals/${approvalId}/grant`)
       .set('Cookie', cookies)
       .send({ standing: true });
@@ -228,12 +232,13 @@ describe('the self-grant chain, against the real routers', () => {
     app.use('/api/config', configRouter);
     app.use('/api/approvals', createApprovalsRouter(approvals, grants));
 
-    const signUp = await request(app)
+    fixtureTarget.mount(app);
+    const signUp = await request(fixtureServer)
       .post('/api/auth/sign-up/email')
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD, name: 'Owner' });
     expect(signUp.status).toBe(200);
-    const signIn = await request(app)
+    const signIn = await request(fixtureServer)
       .post('/api/auth/sign-in/email')
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
@@ -262,7 +267,7 @@ describe('the self-grant chain, against the real routers', () => {
 
   describe('with login off — the default posture the chain was run on', () => {
     it('step 1: refuses the header-free config write that started it', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch('/api/config')
         .send({ approvals: { standingGrants: true } });
 
@@ -278,7 +283,7 @@ describe('the self-grant chain, against the real routers', () => {
       setStandingGrants(true);
       const approvalId = await askAsAgent();
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post(`/api/approvals/${approvalId}/grant`)
         .send({ standing: true });
 
@@ -290,7 +295,9 @@ describe('the self-grant chain, against the real routers', () => {
     it('step 4 never happens: the next identified call still asks', async () => {
       setStandingGrants(true);
       const approvalId = await askAsAgent();
-      await request(app).post(`/api/approvals/${approvalId}/grant`).send({ standing: true });
+      await request(fixtureServer)
+        .post(`/api/approvals/${approvalId}/grant`)
+        .send({ standing: true });
 
       // No permission exists, so the very next call is gated exactly as before.
       expect(grants.list()).toEqual([]);
@@ -299,7 +306,7 @@ describe('the self-grant chain, against the real routers', () => {
 
     it('a plain one-time grant still works, so the gate is not simply broken', async () => {
       const approvalId = await askAsAgent();
-      const res = await request(app).post(`/api/approvals/${approvalId}/grant`).send({});
+      const res = await request(fixtureServer).post(`/api/approvals/${approvalId}/grant`).send({});
       expect(res.status).toBe(200);
       expect(res.body.outcome).toBe('granted');
     });
@@ -313,14 +320,14 @@ describe('the self-grant chain, against the real routers', () => {
       setStandingGrants(true);
       const approvalId = await askAsAgent();
 
-      const config = await request(app)
+      const config = await request(fixtureServer)
         .patch('/api/config')
         .set('Authorization', `Bearer ${apiKey}`)
         .send({ approvals: { trustWindowMinutes: 1440 } });
       expect(config.status).toBe(403);
       expect(config.body.code).toBe('operator_cookie_required');
 
-      const grant = await request(app)
+      const grant = await request(fixtureServer)
         .post(`/api/approvals/${approvalId}/grant`)
         .set('Authorization', `Bearer ${apiKey}`)
         .send({ standing: true });
@@ -334,7 +341,7 @@ describe('the self-grant chain, against the real routers', () => {
       setStandingGrants(true);
       const approvalId = await askAsAgent();
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post(`/api/approvals/${approvalId}/grant`)
         .set('Cookie', cookies)
         .set(AGENT_IDENTITY_HEADER, 'some-agent-token')
@@ -370,7 +377,7 @@ describe('the self-grant chain, against the real routers', () => {
       });
       expect(grants.list()).toHaveLength(1);
 
-      const off = await request(app)
+      const off = await request(fixtureServer)
         .patch('/api/config')
         .set('Cookie', cookies)
         .send({ auth: { enabled: false } });
@@ -399,7 +406,7 @@ describe('the self-grant chain, against the real routers', () => {
       const grantId = await openPermissionAsPerson();
       expect(await stillAsks()).toBe(false);
 
-      const ended = await request(app)
+      const ended = await request(fixtureServer)
         .delete(`/api/approvals/grants/${grantId}`)
         .set('Cookie', cookies);
       expect(ended.status).toBe(200);
@@ -411,7 +418,7 @@ describe('the self-grant chain, against the real routers', () => {
       await openPermissionAsPerson();
       expect(await stillAsks()).toBe(false);
 
-      const off = await request(app)
+      const off = await request(fixtureServer)
         .patch('/api/config')
         .set('Cookie', cookies)
         .send({ approvals: { standingGrants: false } });
@@ -427,7 +434,7 @@ describe('the self-grant chain, against the real routers', () => {
       await openPermissionAsPerson();
       expect(await stillAsks()).toBe(false);
 
-      const off = await request(app)
+      const off = await request(fixtureServer)
         .patch('/api/config')
         .set('Cookie', cookies)
         .send({ auth: { enabled: false } });

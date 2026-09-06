@@ -15,7 +15,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { AddressInfo } from 'node:net';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 import { openSseStream, type SseFrame } from '@dorkos/test-utils';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';

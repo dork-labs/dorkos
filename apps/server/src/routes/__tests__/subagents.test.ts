@@ -55,11 +55,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 describe('Subagents Routes', () => {
   beforeEach(() => {
@@ -67,7 +69,7 @@ describe('Subagents Routes', () => {
   });
 
   it('GET /api/subagents with no sessionId falls back to default runtime (cold discovery)', async () => {
-    const res = await request(app).get('/api/subagents');
+    const res = await request(testServer).get('/api/subagents');
     expect(res.status).toBe(200);
     expect(res.body.subagents).toEqual(claudeSubagents);
     expect(runtimeRegistry.getDefault).toHaveBeenCalledOnce();
@@ -75,7 +77,7 @@ describe('Subagents Routes', () => {
   });
 
   it('GET /api/subagents?sessionId=<claude-session> resolves the claude-code runtime', async () => {
-    const res = await request(app).get(`/api/subagents?sessionId=${CLAUDE_SESSION}`);
+    const res = await request(testServer).get(`/api/subagents?sessionId=${CLAUDE_SESSION}`);
     expect(res.status).toBe(200);
     expect(res.body.subagents).toEqual(claudeSubagents);
     expect(runtimeRegistry.resolveForSession).toHaveBeenCalledWith(CLAUDE_SESSION);
@@ -83,7 +85,7 @@ describe('Subagents Routes', () => {
   });
 
   it('GET /api/subagents?sessionId=<test-mode-session> resolves the test-mode runtime', async () => {
-    const res = await request(app).get(`/api/subagents?sessionId=${TEST_MODE_SESSION}`);
+    const res = await request(testServer).get(`/api/subagents?sessionId=${TEST_MODE_SESSION}`);
     expect(res.status).toBe(200);
     expect(res.body.subagents).toEqual(testModeSubagents);
     expect(runtimeRegistry.resolveForSession).toHaveBeenCalledWith(TEST_MODE_SESSION);

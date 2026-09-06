@@ -42,13 +42,15 @@ vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn(async () => null),
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
 
 /** Local-midnight-ish ISO timestamp `daysAgo` days before now. */
 function daysBefore(daysAgo: number): string {
@@ -103,7 +105,7 @@ describe('GET /api/sessions/daily-counts', () => {
       )
     );
 
-    const res = await request(app).get('/api/sessions/daily-counts');
+    const res = await request(testServer).get('/api/sessions/daily-counts');
 
     expect(res.status).toBe(200);
     expect(res.body.days).toBe(7);
@@ -112,7 +114,7 @@ describe('GET /api/sessions/daily-counts', () => {
   });
 
   it('answers zeros when no agent is registered', async () => {
-    const res = await request(app).get('/api/sessions/daily-counts');
+    const res = await request(testServer).get('/api/sessions/daily-counts');
 
     expect(res.status).toBe(200);
     expect(res.body.dailyCounts).toEqual([0, 0, 0, 0, 0, 0, 0]);
@@ -122,7 +124,7 @@ describe('GET /api/sessions/daily-counts', () => {
     setAgentPaths(['/p1']);
     runtime.listSessions.mockResolvedValue([makeSession('a1', daysBefore(0), '/p1')]);
 
-    const res = await request(app).get('/api/sessions/daily-counts?days=3');
+    const res = await request(testServer).get('/api/sessions/daily-counts?days=3');
 
     expect(res.status).toBe(200);
     expect(res.body.days).toBe(3);
@@ -131,7 +133,7 @@ describe('GET /api/sessions/daily-counts', () => {
 
   it('rejects an out-of-range or non-numeric days', async () => {
     for (const days of ['0', '32', 'abc']) {
-      const res = await request(app).get(`/api/sessions/daily-counts?days=${days}`);
+      const res = await request(testServer).get(`/api/sessions/daily-counts?days=${days}`);
       expect(res.status).toBe(400);
     }
   });
@@ -143,7 +145,7 @@ describe('GET /api/sessions/daily-counts', () => {
     down.listSessions.mockRejectedValue(new Error('sidecar not running'));
     runtimeRegistry.register(down);
 
-    const res = await request(app).get('/api/sessions/daily-counts');
+    const res = await request(testServer).get('/api/sessions/daily-counts');
 
     expect(res.status).toBe(200);
     expect(res.body.dailyCounts[5]).toBe(1);

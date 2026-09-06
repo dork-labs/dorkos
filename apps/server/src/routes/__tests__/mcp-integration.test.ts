@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request, { type Response, type Test } from '@dorkos/test-utils/supertest';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 // Mock env for server factory and core-tools handlers
@@ -305,7 +305,7 @@ function createAuthedApp(): Server {
 }
 
 /** Start a POST /mcp request against the authed app, optionally with a token. */
-function mcpPost(server: Server, auth?: string): request.Test {
+function mcpPost(server: Server, auth?: string): Test {
   const r = request(server)
     .post('/mcp')
     .set('Content-Type', 'application/json')
@@ -400,7 +400,7 @@ interface JsonRpcMessage {
  * The SDK may respond with SSE (text/event-stream) containing JSON-RPC messages,
  * or with direct JSON. This helper handles both cases.
  */
-function parseResponse(res: request.Response): JsonRpcMessage {
+function parseResponse(res: Response): JsonRpcMessage {
   const contentType = (res.headers['content-type'] as string) ?? '';
 
   if (contentType.includes('application/json')) {

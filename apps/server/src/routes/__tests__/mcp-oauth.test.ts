@@ -6,12 +6,14 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
-import { listeningServer } from '@dorkos/test-utils/listening-server';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 import { createMcpOAuthRouter } from '../mcp-oauth.js';
 import { getLocalCockpitOrigin } from '../../lib/trusted-origins.js';
 import type { AgentMcpOAuthService } from '../../services/mesh/agent-mcp-oauth-service.js';
+
+const fixtureTarget = swappableServer();
 
 /** A minimal engine stub exposing only the method the route calls. */
 function stubOAuth(
@@ -35,7 +37,7 @@ function appWith(oauth: AgentMcpOAuthService): express.Express {
 describe('GET /api/agents/mcp-oauth/callback', () => {
   it('renders the success page (200) for a completed local callback', async () => {
     const spy = vi.fn();
-    const server = listeningServer(appWith(stubOAuth({ connected: true }, spy)));
+    const server = fixtureTarget.mount(appWith(stubOAuth({ connected: true }, spy)));
     const res = await request(server).get('/api/agents/mcp-oauth/callback?state=s1&code=c1');
 
     expect(res.status).toBe(200);
@@ -46,7 +48,9 @@ describe('GET /api/agents/mcp-oauth/callback', () => {
   });
 
   it('names the server the operator signed in to, and links back to the cockpit', async () => {
-    const server = listeningServer(appWith(stubOAuth({ connected: true, serverName: 'granola' })));
+    const server = fixtureTarget.mount(
+      appWith(stubOAuth({ connected: true, serverName: 'granola' }))
+    );
     const res = await request(server).get('/api/agents/mcp-oauth/callback?state=s1&code=c1');
 
     // The payoff sentence: WHICH server, in the operator's own words. Reverting
@@ -61,7 +65,9 @@ describe('GET /api/agents/mcp-oauth/callback', () => {
 
   it('escapes a hostile server name instead of rendering it as markup', async () => {
     const hostile = '<img src=x onerror=alert(1)>';
-    const server = listeningServer(appWith(stubOAuth({ connected: true, serverName: hostile })));
+    const server = fixtureTarget.mount(
+      appWith(stubOAuth({ connected: true, serverName: hostile }))
+    );
     const res = await request(server).get('/api/agents/mcp-oauth/callback?state=s1&code=c1');
 
     // The name comes off the agent manifest, so it is operator-supplied text and
@@ -71,7 +77,7 @@ describe('GET /api/agents/mcp-oauth/callback', () => {
   });
 
   it('renders the failure page (400) when the exchange did not complete', async () => {
-    const server = listeningServer(appWith(stubOAuth({ connected: false, error: 'nope' })));
+    const server = fixtureTarget.mount(appWith(stubOAuth({ connected: false, error: 'nope' })));
     const res = await request(server).get('/api/agents/mcp-oauth/callback?state=s1&code=c1');
 
     expect(res.status).toBe(400);
@@ -80,7 +86,7 @@ describe('GET /api/agents/mcp-oauth/callback', () => {
 
   it('refuses a non-loopback caller with 403 and never runs the exchange', async () => {
     const spy = vi.fn();
-    const server = listeningServer(appWith(stubOAuth({ connected: true }, spy)));
+    const server = fixtureTarget.mount(appWith(stubOAuth({ connected: true }, spy)));
     const res = await request(server)
       .get('/api/agents/mcp-oauth/callback?state=s1&code=c1')
       .set('Host', 'evil.example.com');

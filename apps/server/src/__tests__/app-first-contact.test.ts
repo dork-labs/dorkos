@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 // A throwaway client dist, so the SPA branch has an index.html to serve. Same
 // shape as `app-spa-fallback.test.ts`: vi.hoisted holds the mutable ref (it
@@ -56,6 +57,9 @@ vi.mock('../services/core/config-manager.js', () => ({
 
 import { createApp, finalizeApp } from '../app.js';
 import { logger } from '../lib/logger.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** The marker logged the first time a boot serves the SPA shell. */
 const SHELL_MARKER = '[Client] first index.html served';
@@ -113,9 +117,9 @@ describe('first-client-contact markers', () => {
   it('logs the shell marker once, however many times the shell is served', async () => {
     const app = bootApp();
 
-    await request(app).get('/');
-    await request(app).get('/index.html');
-    await request(app).get('/agents/deep/route');
+    await request(fixtureTarget.mount(app)).get('/');
+    await request(fixtureServer).get('/index.html');
+    await request(fixtureServer).get('/agents/deep/route');
 
     expect(markers()).toEqual([SHELL_MARKER]);
   });
@@ -123,7 +127,7 @@ describe('first-client-contact markers', () => {
   it('logs the shell marker for a deep link, where no file is served by static', async () => {
     const app = bootApp();
 
-    await request(app).get('/agents/deep/route');
+    await request(fixtureTarget.mount(app)).get('/agents/deep/route');
 
     expect(markers()).toEqual([SHELL_MARKER]);
   });
@@ -131,9 +135,9 @@ describe('first-client-contact markers', () => {
   it('logs the API marker once, however many API requests arrive', async () => {
     const app = bootApp();
 
-    await request(app).get('/api/health');
-    await request(app).get('/api/nope');
-    await request(app).post('/api/also-nope').send({});
+    await request(fixtureTarget.mount(app)).get('/api/health');
+    await request(fixtureServer).get('/api/nope');
+    await request(fixtureServer).post('/api/also-nope').send({});
 
     expect(markers()).toEqual([API_MARKER]);
   });
@@ -144,7 +148,7 @@ describe('first-client-contact markers', () => {
     // which is the only question the line answers.
     const app = bootApp();
 
-    await request(app).get('/api/nope');
+    await request(fixtureTarget.mount(app)).get('/api/nope');
 
     expect(markers()).toEqual([API_MARKER]);
   });
@@ -152,11 +156,11 @@ describe('first-client-contact markers', () => {
   it('logs both markers, once each, over a realistic first load', async () => {
     const app = bootApp();
 
-    await request(app).get('/');
-    await request(app).get(`/assets/${HASHED_ASSET}`);
-    await request(app).get('/api/health');
-    await request(app).get('/api/health');
-    await request(app).get('/session');
+    await request(fixtureTarget.mount(app)).get('/');
+    await request(fixtureServer).get(`/assets/${HASHED_ASSET}`);
+    await request(fixtureServer).get('/api/health');
+    await request(fixtureServer).get('/api/health');
+    await request(fixtureServer).get('/session');
 
     expect(markers()).toEqual([SHELL_MARKER, API_MARKER]);
   });
@@ -170,7 +174,7 @@ describe('first-client-contact markers', () => {
     try {
       const app = bootApp();
 
-      await request(app).get('/agents/deep/route');
+      await request(fixtureTarget.mount(app)).get('/agents/deep/route');
 
       expect(markers()).toEqual([]);
     } finally {
@@ -182,7 +186,7 @@ describe('first-client-contact markers', () => {
   it('does not log the shell marker for a hashed bundle — only for the shell', async () => {
     const app = bootApp();
 
-    await request(app).get(`/assets/${HASHED_ASSET}`);
+    await request(fixtureTarget.mount(app)).get(`/assets/${HASHED_ASSET}`);
 
     expect(markers()).toEqual([]);
   });
@@ -190,8 +194,8 @@ describe('first-client-contact markers', () => {
   it('starts fresh on the next boot, rather than latching for the process lifetime', async () => {
     // "First" means first this boot. A module-level latch would pass every test
     // above and then stay silent for every restart after the first.
-    await request(bootApp()).get('/');
-    await request(bootApp()).get('/');
+    await request(fixtureTarget.mount(bootApp())).get('/');
+    await request(fixtureTarget.mount(bootApp())).get('/');
 
     expect(markers()).toEqual([SHELL_MARKER, SHELL_MARKER]);
   });
@@ -199,8 +203,8 @@ describe('first-client-contact markers', () => {
   it('leaves the per-request logging alone', async () => {
     const app = bootApp();
 
-    await request(app).get('/api/health');
-    await request(app).get('/api/health');
+    await request(fixtureTarget.mount(app)).get('/api/health');
+    await request(fixtureServer).get('/api/health');
 
     // Two requests, one marker: the request logger still decides on its own
     // what to say about each request, at its own level.

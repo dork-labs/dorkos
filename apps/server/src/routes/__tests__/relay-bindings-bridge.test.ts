@@ -8,11 +8,14 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createRelayRouter } from '../relay.js';
 import type { RelayCore } from '@dorkos/relay';
 import type { AdapterManager } from '../../services/relay/adapter-manager.js';
 import { RoomError } from '../../services/rooms/room-errors.js';
+
+const fixtureTarget = swappableServer();
 
 function createMockRelayCore(): RelayCore {
   return {
@@ -133,7 +136,7 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
     });
 
-    const res = await request(app)
+    const res = await request(fixtureTarget.mount(app))
       .patch('/api/relay/bindings/b-1')
       .send({ bridge: 'room' })
       .expect(200);
@@ -167,7 +170,7 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
     });
 
-    const res = await request(app)
+    const res = await request(fixtureTarget.mount(app))
       .patch('/api/relay/bindings/b-1')
       .send({ bridge: 'room' })
       .expect(200);
@@ -193,7 +196,10 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
     });
 
-    await request(app).patch('/api/relay/bindings/b-1').send({ bridge: 'room' }).expect(200);
+    await request(fixtureTarget.mount(app))
+      .patch('/api/relay/bindings/b-1')
+      .send({ bridge: 'room' })
+      .expect(200);
 
     expect(lifecycle.bridge).toHaveBeenCalledWith(
       expect.objectContaining({ chatType: 'supergroup', channelType: 'group' })
@@ -207,7 +213,10 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
     });
 
-    await request(app).patch('/api/relay/bindings/b-1').send({ bridge: 'room' }).expect(200);
+    await request(fixtureTarget.mount(app))
+      .patch('/api/relay/bindings/b-1')
+      .send({ bridge: 'room' })
+      .expect(200);
     expect(lifecycle.bridge).not.toHaveBeenCalled();
   });
 
@@ -218,7 +227,7 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
     });
 
-    const res = await request(app)
+    const res = await request(fixtureTarget.mount(app))
       .patch('/api/relay/bindings/b-1')
       .send({ bridge: 'off' })
       .expect(200);
@@ -241,7 +250,7 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
     });
 
-    const res = await request(app)
+    const res = await request(fixtureTarget.mount(app))
       .patch('/api/relay/bindings/b-1')
       .send({ bridge: 'room' })
       .expect(400);
@@ -262,7 +271,7 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
     });
 
-    const res = await request(app)
+    const res = await request(fixtureTarget.mount(app))
       .patch('/api/relay/bindings/b-1')
       .send({ bridge: 'room' })
       .expect(400);
@@ -283,7 +292,10 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
     });
 
-    await request(app).patch('/api/relay/bindings/b-1').send({ bridge: 'room' }).expect(200);
+    await request(fixtureTarget.mount(app))
+      .patch('/api/relay/bindings/b-1')
+      .send({ bridge: 'room' })
+      .expect(200);
 
     expect(lifecycle.bridge).toHaveBeenCalledWith(
       expect.objectContaining({ chatType: 'private', channelType: null })
@@ -297,7 +309,7 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
     });
 
-    const res = await request(app)
+    const res = await request(fixtureTarget.mount(app))
       .patch('/api/relay/bindings/b-1')
       .send({ bridge: 'room' })
       .expect(400);
@@ -315,7 +327,7 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
     });
 
-    const res = await request(app)
+    const res = await request(fixtureTarget.mount(app))
       .patch('/api/relay/bindings/b-1')
       .send({ bridge: 'room' })
       .expect(403);
@@ -330,7 +342,7 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       getMeshCore: vi.fn().mockReturnValue({ getProjectPath: () => undefined }) as never,
     });
 
-    const res = await request(app)
+    const res = await request(fixtureTarget.mount(app))
       .patch('/api/relay/bindings/b-1')
       .send({ bridge: 'room' })
       .expect(400);
@@ -344,7 +356,7 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
     // without the rooms subsystem, so a plain flag write is acceptable and keeps
     // the schema/route boundary (A3.5) behaving as before DOR-878.
     const app = createApp(store);
-    const res = await request(app)
+    const res = await request(fixtureTarget.mount(app))
       .patch('/api/relay/bindings/b-1')
       .send({ bridge: 'room' })
       .expect(200);

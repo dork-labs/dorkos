@@ -67,11 +67,13 @@ vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn(async () => null),
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 /** Valid UUID for session ID params (routes validate UUID format). */
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
@@ -105,7 +107,7 @@ describe('Sessions Routes — Boundary Validation', () => {
     it('rejects cwd outside boundary with 403', async () => {
       vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(boundaryError());
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch(`/api/sessions/${SESSION_ID}`)
         .query({ cwd: '/etc/shadow' })
         .send({ permissionMode: 'default' });
@@ -120,7 +122,7 @@ describe('Sessions Routes — Boundary Validation', () => {
         new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
       );
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch(`/api/sessions/${SESSION_ID}`)
         .query({ cwd: '/home/user\0' })
         .send({ permissionMode: 'default' });
@@ -132,7 +134,7 @@ describe('Sessions Routes — Boundary Validation', () => {
     it('allows request when cwd is within boundary', async () => {
       vi.mocked(validateBoundaryOrDorkHome).mockResolvedValueOnce('/mock/home/project');
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch(`/api/sessions/${SESSION_ID}`)
         .query({ cwd: '/mock/home/project' })
         .send({ permissionMode: 'default' });
@@ -146,7 +148,7 @@ describe('Sessions Routes — Boundary Validation', () => {
     it('rejects cwd outside boundary with 403', async () => {
       vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(boundaryError());
 
-      const res = await request(app)
+      const res = await request(testServer)
         .get(`/api/sessions/${SESSION_ID}/events`)
         .query({ cwd: '/etc/passwd' });
 
@@ -160,7 +162,7 @@ describe('Sessions Routes — Boundary Validation', () => {
         new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
       );
 
-      const res = await request(app)
+      const res = await request(testServer)
         .get(`/api/sessions/${SESSION_ID}/events`)
         .query({ cwd: '/home/user\0' });
 
@@ -171,7 +173,7 @@ describe('Sessions Routes — Boundary Validation', () => {
     it('validates the cwd through the DorkHome-aware seam, not the plain boundary', async () => {
       vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(boundaryError());
 
-      await request(app)
+      await request(testServer)
         .get(`/api/sessions/${SESSION_ID}/events`)
         .query({ cwd: '/outside/boundary' });
 
@@ -184,7 +186,7 @@ describe('Sessions Routes — Boundary Validation', () => {
     it('rejects cwd outside boundary with 403', async () => {
       vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(boundaryError());
 
-      const res = await request(app).get('/api/sessions').query({ cwd: '/etc/shadow' });
+      const res = await request(testServer).get('/api/sessions').query({ cwd: '/etc/shadow' });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
@@ -195,7 +197,7 @@ describe('Sessions Routes — Boundary Validation', () => {
     it('rejects cwd outside boundary with 403', async () => {
       vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(boundaryError());
 
-      const res = await request(app)
+      const res = await request(testServer)
         .get(`/api/sessions/${SESSION_ID}`)
         .query({ cwd: '/etc/shadow' });
 
@@ -208,7 +210,7 @@ describe('Sessions Routes — Boundary Validation', () => {
     it('rejects cwd outside boundary with 403', async () => {
       vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(boundaryError());
 
-      const res = await request(app)
+      const res = await request(testServer)
         .get(`/api/sessions/${SESSION_ID}/messages`)
         .query({ cwd: '/etc/shadow' });
 
@@ -221,7 +223,7 @@ describe('Sessions Routes — Boundary Validation', () => {
     it('rejects cwd outside boundary with 403', async () => {
       vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(boundaryError());
 
-      const res = await request(app)
+      const res = await request(testServer)
         .get(`/api/sessions/${SESSION_ID}/tasks`)
         .query({ cwd: '/etc/shadow' });
 
@@ -238,7 +240,9 @@ describe('Sessions Routes — Boundary Validation', () => {
   // routes wire that DorkHome-aware seam and map its verdicts to HTTP.
   describe('agent-home ({dorkHome}/agents/*) seam', () => {
     it('allows an agent-home cwd that the plain boundary would reject', async () => {
-      const res = await request(app).get(`/api/sessions/${SESSION_ID}`).query({ cwd: AGENT_HOME });
+      const res = await request(testServer)
+        .get(`/api/sessions/${SESSION_ID}`)
+        .query({ cwd: AGENT_HOME });
 
       expect(res.status).not.toBe(403);
       expect(validateBoundaryOrDorkHome).toHaveBeenCalledWith(AGENT_HOME);
@@ -249,7 +253,9 @@ describe('Sessions Routes — Boundary Validation', () => {
     it('still denies a dork-home path outside agents/* (the credential store)', async () => {
       vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(boundaryError());
 
-      const res = await request(app).get(`/api/sessions/${SESSION_ID}`).query({ cwd: SECRETS });
+      const res = await request(testServer)
+        .get(`/api/sessions/${SESSION_ID}`)
+        .query({ cwd: SECRETS });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');

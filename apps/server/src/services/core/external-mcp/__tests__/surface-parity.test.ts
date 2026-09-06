@@ -22,7 +22,8 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request, { type Response } from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 vi.mock('../../../../env.js', () => ({
@@ -86,7 +87,9 @@ interface JsonRpcMessage {
   result?: { tools?: ToolListEntry[] };
 }
 
-function parseResponse(res: request.Response): JsonRpcMessage {
+const requestTarget = swappableServer();
+
+function parseResponse(res: Response): JsonRpcMessage {
   const contentType = (res.headers['content-type'] as string) ?? '';
   if (contentType.includes('text/event-stream')) {
     for (const line of res.text.split('\n')) {
@@ -111,7 +114,8 @@ async function fetchExternalTools(): Promise<ToolListEntry[]> {
     });
   });
 
-  const res = await request(app)
+  requestTarget.mount(app);
+  const res = await request(requestTarget.server)
     .post('/mcp')
     .set('Content-Type', 'application/json')
     .set('Accept', 'application/json, text/event-stream')

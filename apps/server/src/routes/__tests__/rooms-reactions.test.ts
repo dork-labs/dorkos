@@ -14,7 +14,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { parseFrames, type SseFrame } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, type Db } from '@dorkos/db';
@@ -80,11 +81,11 @@ function registerAgent(db: Db, name: string, projectPath: string): void {
     .run();
 }
 
-/** Start the app on an ephemeral port for one test. */
-async function listen(): Promise<{ port: number; close: () => void }> {
-  const server = app.listen(0);
-  await new Promise<void>((resolve) => server.once('listening', resolve));
-  return { port: (server.address() as AddressInfo).port, close: () => server.close() };
+const testServer = listeningServer(app);
+
+/** Port of the file-scoped listener shared by Supertest and the raw SSE client. */
+function testServerPort(): number {
+  return (testServer.address() as AddressInfo).port;
 }
 
 /** Open the room stream and collect frames until `until` is satisfied. */
@@ -151,11 +152,11 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
     const subsystem = createRoomSubsystem({ db });
     setRoomService(subsystem.service);
     anaAuthorId = subsystem.authors.resolveAgent(ANA_PATH, 'Ana').id;
-    const created = await request(app)
+    const created = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Backend', agentPaths: [ANA_PATH] });
     roomId = created.body.id;
-    const posted = await request(app)
+    const posted = await request(testServer)
       .post(`/api/rooms/${roomId}/entries`)
       .send({ text: 'Deployed to staging.' });
     entryId = posted.body.entryId;
@@ -168,7 +169,9 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
 
   /** React as the person at the keyboard. */
   function react(emoji: string, target = entryId) {
-    return request(app).post(`/api/rooms/${roomId}/entries/${target}/reactions`).send({ emoji });
+    return request(testServer)
+      .post(`/api/rooms/${roomId}/entries/${target}/reactions`)
+      .send({ emoji });
   }
 
   it('accepts with 202 and says which way the toggle went', async () => {
@@ -185,16 +188,16 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
     // The retry a bare toggle cannot survive: a client that times out and
     // re-sends a flip undoes the thing it just did. Naming the state is the
     // shape it should send instead.
-    const first = await request(app)
+    const first = await request(testServer)
       .post(`/api/rooms/${roomId}/entries/${entryId}/reactions`)
       .send({ emoji: '👍', on: true });
-    const retry = await request(app)
+    const retry = await request(testServer)
       .post(`/api/rooms/${roomId}/entries/${entryId}/reactions`)
       .send({ emoji: '👍', on: true });
 
     expect([first.status, retry.status]).toEqual([202, 202]);
     expect([first.body.reacted, retry.body.reacted]).toEqual([true, true]);
-    const page = await request(app).get(`/api/rooms/${roomId}/entries`);
+    const page = await request(testServer).get(`/api/rooms/${roomId}/entries`);
     expect(page.body.entries[0].reactions.map((pill: { emoji: string }) => pill.emoji)).toEqual([
       '👍',
     ]);
@@ -203,13 +206,13 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
   it('takes a reaction away idempotently when the body says so', async () => {
     await react('👍');
     for (const _ of [1, 2]) {
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/rooms/${roomId}/entries/${entryId}/reactions`)
         .send({ emoji: '👍', on: false });
       expect(res.status).toBe(202);
       expect(res.body.reacted).toBe(false);
     }
-    const page = await request(app).get(`/api/rooms/${roomId}/entries`);
+    const page = await request(testServer).get(`/api/rooms/${roomId}/entries`);
     expect(page.body.entries[0].reactions).toEqual([]);
   });
 
@@ -220,7 +223,7 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
   });
 
   it('refuses an `on` that is not a boolean', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/rooms/${roomId}/entries/${entryId}/reactions`)
       .send({ emoji: '👍', on: 'yes' });
     expect(res.status).toBe(400);
@@ -246,7 +249,7 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
       expect(res.body.emoji).toBe(emoji);
     }
 
-    const page = await request(app).get(`/api/rooms/${roomId}/entries`);
+    const page = await request(testServer).get(`/api/rooms/${roomId}/entries`);
     const stored = page.body.entries[0].reactions.map((pill: { emoji: string }) => pill.emoji);
     // Compared as a set. Seven reactions from one person land inside the same
     // millisecond, and a same-millisecond group is ordered by the emoji itself
@@ -264,14 +267,14 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
     const identity = initAgentIdentityService(db);
     const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/rooms/${roomId}/entries/${entryId}/reactions`)
       .set('X-DorkOS-Agent', token)
       .send({ emoji: '👍' });
 
     expect(res.status).toBe(202);
 
-    const page = await request(app).get(`/api/rooms/${roomId}/entries`);
+    const page = await request(testServer).get(`/api/rooms/${roomId}/entries`);
     const pills = page.body.entries[0].reactions as Array<{
       emoji: string;
       authorIds: string[];
@@ -287,7 +290,7 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
     const identity = initAgentIdentityService(db);
     const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/rooms/${roomId}/entries`)
       .set('X-DorkOS-Agent', token)
       .send({ text: 'on it' });
@@ -302,21 +305,21 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
   });
 
   it('404s an unknown room', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/rooms/nope/entries/${entryId}/reactions`)
       .send({ emoji: '👍' });
     expect(res.status).toBe(404);
   });
 
   it('409s an archived room', async () => {
-    await request(app).patch(`/api/rooms/${roomId}`).send({ archived: true });
+    await request(testServer).patch(`/api/rooms/${roomId}`).send({ archived: true });
     const res = await react('👍');
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('ROOM_ARCHIVED');
   });
 
   it('is in the OpenAPI export the app serves', async () => {
-    const spec = await request(app).get('/api/openapi.json');
+    const spec = await request(testServer).get('/api/openapi.json');
     const path = spec.body.paths['/api/rooms/{id}/entries/{entryId}/reactions'];
     expect(path?.post).toBeDefined();
     expect(path.post.tags).toEqual(['Rooms']);
@@ -342,14 +345,12 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
 
   describe('on the room stream', () => {
     it('reaches a live reader as the entry’s whole current set', async () => {
-      const server = await listen();
-      const stream = openRoomStream(server.port, roomId, {
+      const stream = openRoomStream(testServerPort(), roomId, {
         until: (frames) => frames.some((f) => f.event === 'reaction'),
       });
       await stream.ready;
       await react('👍');
       const frames = await stream.frames;
-      server.close();
 
       const reaction = frames.find((f) => f.event === 'reaction')?.data as {
         entryId: string;
@@ -362,12 +363,10 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
     it('hydrates a cold connect with pills already on the entries', async () => {
       await react('🎉');
 
-      const server = await listen();
-      const stream = openRoomStream(server.port, roomId, {
+      const stream = openRoomStream(testServerPort(), roomId, {
         until: (frames) => frames.some((f) => f.event === 'snapshot'),
       });
       const frames = await stream.frames;
-      server.close();
 
       const snapshot = frames.find((f) => f.event === 'snapshot')?.data as {
         entries: Array<{ id: string; reactions: Array<{ emoji: string }> }>;
@@ -399,8 +398,7 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
       lastEventId: string,
       windowTail: string
     ): Promise<{ frames: SseFrame[]; reactionsByEntry: Map<string, Array<{ emoji: string }>> }> {
-      const server = await listen();
-      const stream = openRoomStream(server.port, roomId, {
+      const stream = openRoomStream(testServerPort(), roomId, {
         lastEventId,
         until: (frames) =>
           frames.some(
@@ -408,7 +406,6 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
           ),
       });
       const frames = await stream.frames;
-      server.close();
       const reactionsByEntry = new Map<string, Array<{ emoji: string }>>();
       for (const frame of frames) {
         if (frame.event !== 'reaction') continue;
@@ -422,7 +419,7 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
       // The reader holds through `entrySeq`. A second entry arrives, and the
       // reaction lands on the OLD one — so the replay (`seq > cursor`) carries
       // exactly one entry and says nothing about the pill the reader is missing.
-      const later = await request(app)
+      const later = await request(testServer)
         .post(`/api/rooms/${roomId}/entries`)
         .send({ text: 'and the rollback plan?' });
       await react('👍');
@@ -452,7 +449,7 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
       // entry is below the cursor and unchanged, so nothing replays it — and if
       // the resync only named entries that still HAVE pills, the reader would sit
       // on a 👍 the server no longer holds, with nothing on the wire to correct it.
-      const later = await request(app)
+      const later = await request(testServer)
         .post(`/api/rooms/${roomId}/entries`)
         .send({ text: 'and the rollback plan?' });
       await react('👍');
@@ -470,7 +467,7 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
       ).toBe(true);
       expect(reactionsByEntry.get(entryId), 'and say it is empty now').toEqual([]);
 
-      const truth = await request(app).get(`/api/rooms/${roomId}/entries`);
+      const truth = await request(testServer).get(`/api/rooms/${roomId}/entries`);
       expect(
         reactionsByEntry.get(entryId),
         'what the resumed reader draws matches what the server holds'
@@ -478,14 +475,12 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
     });
 
     it('gives a reaction frame no id: line, so it can never move the resume cursor', async () => {
-      const server = await listen();
-      const stream = openRoomStream(server.port, roomId, {
+      const stream = openRoomStream(testServerPort(), roomId, {
         until: (frames) => frames.some((f) => f.event === 'reaction'),
       });
       await stream.ready;
       await react('👍');
       const frames = await stream.frames;
-      server.close();
 
       expect(frames.find((f) => f.event === 'reaction')?.id).toBeUndefined();
     });

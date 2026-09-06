@@ -93,7 +93,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
 // Dynamically import after mocks are set up
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 import { createApp, finalizeApp } from '../../app.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import {

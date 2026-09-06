@@ -12,7 +12,8 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request, { type Response } from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 // Mock env for the server factory and core-tools handlers.
@@ -58,6 +59,8 @@ import { composeDorkOsCapabilityRegistry } from '../../self-description/dorkos-r
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 import { NotifyBudget } from '../../../relay/notify-budget.js';
+
+const requestTarget = swappableServer();
 
 /** Minimal McpToolDeps — only the fields registration touches are set. */
 function createMinimalDeps(): McpToolDeps {
@@ -142,7 +145,8 @@ interface ToolListEntry {
 /** Fetch every tool from the live server's tools/list, with annotations. */
 async function fetchLiveTools(): Promise<ToolListEntry[]> {
   const app = createStatelessTestApp();
-  const res = await request(app)
+  requestTarget.mount(app);
+  const res = await request(requestTarget.server)
     .post('/mcp')
     .set('Content-Type', 'application/json')
     .set('Accept', 'application/json, text/event-stream')
@@ -302,7 +306,7 @@ interface JsonRpcMessage {
   error?: { code: number; message: string };
 }
 
-function parseResponse(res: request.Response): JsonRpcMessage {
+function parseResponse(res: Response): JsonRpcMessage {
   const contentType = (res.headers['content-type'] as string) ?? '';
   if (contentType.includes('application/json')) {
     return res.body as JsonRpcMessage;

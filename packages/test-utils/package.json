@@ -15,7 +15,8 @@
     "./fake-community-adapter": "./src/fake-community-adapter.ts",
     "./fake-memory-provider": "./src/fake-memory-provider.ts",
     "./memory-conformance": "./src/memory-conformance.ts",
-    "./listening-server": "./src/listening-server.ts"
+    "./listening-server": "./src/listening-server.ts",
+    "./supertest": "./src/supertest.ts"
   },
   "scripts": {
     "lint": "eslint .",

@@ -6,7 +6,7 @@
  * @module routes/__tests__/helpers/trigger-turn-helpers
  */
 import http from 'node:http';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 
 /** A single SSE frame parsed off the `/events` wire, with its optional `id:`. */
 export interface SseFrame {

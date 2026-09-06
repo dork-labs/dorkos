@@ -44,7 +44,8 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { authors as authorRows, rooms as roomRows, roomEntries as roomEntryRows } from '@dorkos/db';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { createChatNoticeSender, type PublishResult, type RelayCore } from '@dorkos/relay';
@@ -77,6 +78,8 @@ import {
   type LifecycleBinding,
   type BridgeCreateInput,
 } from '../index.js';
+
+const fixtureTarget = swappableServer();
 
 const ADAPTER = 'tg-main';
 const BINDING_ID = 'binding-ana';
@@ -682,7 +685,7 @@ describe('bridged-room security suite (chats-as-channels §9)', () => {
       app.use(express.json());
       app.use('/api/relay', createRelayRouter(relayCore));
 
-      const res = await request(app)
+      const res = await request(fixtureTarget.mount(app))
         .post('/api/relay/messages')
         .send({
           subject: 'relay.human.telegram.tg1.chat-42',

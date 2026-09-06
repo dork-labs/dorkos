@@ -73,7 +73,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 import { createApp, finalizeApp } from '../../app.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { disposeProjector } from '../../services/session/session-state-projector.js';

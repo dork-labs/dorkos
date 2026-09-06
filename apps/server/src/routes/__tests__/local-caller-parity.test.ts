@@ -50,7 +50,7 @@ vi.mock('../../lib/boundary.js', () => ({
 }));
 
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import runtimesRouter from '../runtimes.js';
 import configRouter from '../config.js';

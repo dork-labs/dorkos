@@ -1,5 +1,5 @@
 /**
- * One HTTP listener per test file, bound once and never rebound.
+ * One HTTP listener per owning test scope, bound once and never rebound.
  *
  * Handed a non-listening Express app, supertest opens a fresh ephemeral
  * listener per REQUEST (`if (!addr) this._server = app.listen(0)`) and closes
@@ -11,12 +11,9 @@
  * observations locate the problem at the transport-fixture boundary; they do
  * not prove a particular socket or operating-system race.
  *
- * A one-listener-per-test variant with `closeAllConnections()` still flaked
- * once over 150 measured runs. Binding ONE listener for the whole file removes
- * the repeated bind/close cycle: its port is never freed between requests.
- *
- * The accepted cost: a listener-level failure now fails every test in the file
- * at once rather than one. That is the right trade — loud beats silent.
+ * A bounded probe established that this helper replaces repeated bind/close
+ * cycles with one listener for its owning scope. The specific operating-system
+ * mechanism behind the observed aggregate-run symptoms remains unproven.
  *
  * @module listening-server
  */

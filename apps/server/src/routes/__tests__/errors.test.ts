@@ -5,7 +5,8 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -19,6 +20,8 @@ import {
   registerServerErrorReporting,
   type RegisterServerErrorReportingOptions,
 } from '../../services/core/error-reporter.js';
+
+const fixtureTarget = swappableServer();
 
 async function waitFor(pred: () => boolean, timeoutMs = 1000): Promise<void> {
   const start = Date.now();
@@ -59,7 +62,7 @@ describe('POST /api/errors', () => {
     const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     register(fetchSpy, true);
 
-    const res = await request(makeApp())
+    const res = await request(fixtureTarget.mount(makeApp()))
       .post('/api/errors')
       .send({
         name: 'Err_/Users/alice',
@@ -91,7 +94,7 @@ describe('POST /api/errors', () => {
     const fetchSpy = vi.fn();
     register(fetchSpy, false);
 
-    const res = await request(makeApp())
+    const res = await request(fixtureTarget.mount(makeApp()))
       .post('/api/errors')
       .send({ name: 'TypeError', message: 'x', stack: 'Error: x' });
 
@@ -102,7 +105,7 @@ describe('POST /api/errors', () => {
 
   it('accepts an empty body without erroring', async () => {
     register(vi.fn(), true);
-    const res = await request(makeApp()).post('/api/errors').send({});
+    const res = await request(fixtureTarget.mount(makeApp())).post('/api/errors').send({});
     expect(res.status).toBe(202);
   });
 });

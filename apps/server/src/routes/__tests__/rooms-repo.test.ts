@@ -17,7 +17,8 @@
  * - Ignoring `config.rooms.repo.enabled` reddens the switched-off test.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -89,6 +90,7 @@ function gitInRepo(args: string[], store: RoomRepoStore, roomId: string): Promis
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
 
 const ANA_PATH = '/agents/ana';
 
@@ -151,7 +153,7 @@ describe('POST /api/rooms/:id/repo', () => {
 
   /** A channel with Ana on the roster. */
   async function channel(): Promise<string> {
-    const created = await request(app)
+    const created = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Release train', agentPaths: [ANA_PATH] });
     expect(created.status).toBe(201);
@@ -161,7 +163,7 @@ describe('POST /api/rooms/:id/repo', () => {
   it('gives the room a repo when the operator asks', async () => {
     const roomId = await channel();
 
-    const res = await request(app).post(`/api/rooms/${roomId}/repo`);
+    const res = await request(testServer).post(`/api/rooms/${roomId}/repo`);
 
     expect(res.status).toBe(201);
     expect(res.body.repo).toMatchObject({ roomId, mode: 'owned', defaultBranch: 'main' });
@@ -173,10 +175,10 @@ describe('POST /api/rooms/:id/repo', () => {
 
   it('answers 409 with the binding it already had, and makes no second commit', async () => {
     const roomId = await channel();
-    const first = await request(app).post(`/api/rooms/${roomId}/repo`);
+    const first = await request(testServer).post(`/api/rooms/${roomId}/repo`);
     const head = await gitInRepo(['rev-parse', 'HEAD'], store, roomId);
 
-    const second = await request(app).post(`/api/rooms/${roomId}/repo`);
+    const second = await request(testServer).post(`/api/rooms/${roomId}/repo`);
 
     expect(second.status).toBe(409);
     expect(second.body.code).toBe('ROOM_REPO_EXISTS');
@@ -190,10 +192,14 @@ describe('POST /api/rooms/:id/repo', () => {
     const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
 
     // Ana really is in this room: the same token reads it.
-    const reads = await request(app).get(`/api/rooms/${roomId}`).set('X-DorkOS-Agent', token);
+    const reads = await request(testServer)
+      .get(`/api/rooms/${roomId}`)
+      .set('X-DorkOS-Agent', token);
     expect(reads.status).toBe(200);
 
-    const res = await request(app).post(`/api/rooms/${roomId}/repo`).set('X-DorkOS-Agent', token);
+    const res = await request(testServer)
+      .post(`/api/rooms/${roomId}/repo`)
+      .set('X-DorkOS-Agent', token);
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('OPERATOR_ONLY');
@@ -209,8 +215,10 @@ describe('POST /api/rooms/:id/repo', () => {
       displayName: 'Outsider',
     });
 
-    const known = await request(app).post(`/api/rooms/${roomId}/repo`).set('X-DorkOS-Agent', token);
-    const unknown = await request(app)
+    const known = await request(testServer)
+      .post(`/api/rooms/${roomId}/repo`)
+      .set('X-DorkOS-Agent', token);
+    const unknown = await request(testServer)
       .post('/api/rooms/01NOSUCHROOM/repo')
       .set('X-DorkOS-Agent', token);
 
@@ -223,7 +231,7 @@ describe('POST /api/rooms/:id/repo', () => {
   it('refuses a token this machine cannot verify, before any room is looked up', async () => {
     const roomId = await channel();
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/rooms/${roomId}/repo`)
       .set('X-DorkOS-Agent', 'not-a-real-token');
 
@@ -232,7 +240,7 @@ describe('POST /api/rooms/:id/repo', () => {
   });
 
   it('answers 404 for a room that does not exist', async () => {
-    const res = await request(app).post('/api/rooms/01NOSUCHROOM/repo');
+    const res = await request(testServer).post('/api/rooms/01NOSUCHROOM/repo');
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('ROOM_NOT_FOUND');
   });
@@ -241,7 +249,7 @@ describe('POST /api/rooms/:id/repo', () => {
     const roomId = await channel();
     enabled = false;
 
-    const res = await request(app).post(`/api/rooms/${roomId}/repo`);
+    const res = await request(testServer).post(`/api/rooms/${roomId}/repo`);
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('ROOM_REPOS_DISABLED');
@@ -259,7 +267,7 @@ describe('POST /api/rooms/:id/repo', () => {
     vi.stubEnv('PATH', '');
     let res;
     try {
-      res = await request(app).post(`/api/rooms/${roomId}/repo`);
+      res = await request(testServer).post(`/api/rooms/${roomId}/repo`);
     } finally {
       vi.unstubAllEnvs();
     }
@@ -276,11 +284,11 @@ describe('POST /api/rooms/:id/repo', () => {
     const roomId = await channel();
     for (const flag of [true, false]) {
       enabled = flag;
-      const posted = await request(app)
+      const posted = await request(testServer)
         .post(`/api/rooms/${roomId}/entries`)
         .send({ text: `hello ${flag}` });
       expect(posted.status).toBe(202);
-      const read = await request(app).get(`/api/rooms/${roomId}`);
+      const read = await request(testServer).get(`/api/rooms/${roomId}`);
       expect(read.status).toBe(200);
       expect(read.body).not.toHaveProperty('repo');
     }
@@ -364,18 +372,18 @@ describe('the room repo routes', () => {
 
   /** A channel with Ana on the roster, with files of its own. */
   async function projectRoom(): Promise<string> {
-    const created = await request(app)
+    const created = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Release train', agentPaths: [ANA_PATH] });
     expect(created.status).toBe(201);
     const roomId = created.body.id as string;
-    expect((await request(app).post(`/api/rooms/${roomId}/repo`)).status).toBe(201);
+    expect((await request(testServer).post(`/api/rooms/${roomId}/repo`)).status).toBe(201);
     return roomId;
   }
 
   it('answers the status of a room with files', async () => {
     const roomId = await projectRoom();
-    const res = await request(app).get(`/api/rooms/${roomId}/repo/status`);
+    const res = await request(testServer).get(`/api/rooms/${roomId}/repo/status`);
 
     expect(res.status).toBe(200);
     expect(res.body.mainCommit).toMatch(/^[0-9a-f]{40}$/);
@@ -387,16 +395,16 @@ describe('the room repo routes', () => {
   });
 
   it('tells a room without files that it has none, on both routes', async () => {
-    const created = await request(app)
+    const created = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Plain', agentPaths: [ANA_PATH] });
     const roomId = created.body.id as string;
 
-    const status = await request(app).get(`/api/rooms/${roomId}/repo/status`);
+    const status = await request(testServer).get(`/api/rooms/${roomId}/repo/status`);
     expect(status.status).toBe(409);
     expect(status.body.code).toBe('NOT_A_PROJECT_ROOM');
 
-    const merged = await request(app)
+    const merged = await request(testServer)
       .post(`/api/rooms/${roomId}/repo/merge`)
       .send({ summary: 'anything' });
     expect(merged.status).toBe(409);
@@ -404,7 +412,7 @@ describe('the room repo routes', () => {
   });
 
   it('answers an unknown room the way reading one does', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/rooms/01NOSUCHROOMAAAAAAAAAAAAAA/repo/merge')
       .send({ summary: 'anything' });
     expect(res.status).toBe(404);
@@ -412,7 +420,9 @@ describe('the room repo routes', () => {
 
   it('refuses a merge with nothing to say', async () => {
     const roomId = await projectRoom();
-    const res = await request(app).post(`/api/rooms/${roomId}/repo/merge`).send({ summary: '' });
+    const res = await request(testServer)
+      .post(`/api/rooms/${roomId}/repo/merge`)
+      .send({ summary: '' });
     // The route's own validation, before any git runs: a merge nobody can read
     // a summary of is a line in the room that says nothing.
     expect(res.status).toBe(400);
@@ -441,7 +451,7 @@ describe('the room repo routes', () => {
       ceiling
     );
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/rooms/${roomId}/repo/merge`)
       .send({ summary: 'Add the deploy checklist', worktree: tree.slug });
 
@@ -451,7 +461,7 @@ describe('the room repo routes', () => {
     expect(existsSync(path.join(store.repoPath(roomId), 'checklist.md'))).toBe(true);
 
     // One line in the room, in the room's own voice, about Ana.
-    const log = await request(app).get(`/api/rooms/${roomId}/entries`);
+    const log = await request(testServer).get(`/api/rooms/${roomId}/entries`);
     const merges = (log.body.entries as { body: { merge?: unknown; text: string } }[]).filter(
       (entry) => entry.body.merge !== undefined
     );
@@ -489,31 +499,31 @@ describe('the room repo routes', () => {
       await editByHand(roomId, 'stray.md', 'typed straight into the folder\n');
 
       // The warning: what is different, named, so a person can act on it.
-      const paused = await request(app).get(`/api/rooms/${roomId}/repo/status`);
+      const paused = await request(testServer).get(`/api/rooms/${roomId}/repo/status`);
       expect(paused.status).toBe(200);
       expect(paused.body.main).toMatchObject({ branch: 'main', dirty: true, strayCount: 1 });
       expect(paused.body.main.strays).toEqual([{ path: 'stray.md', kind: 'untracked' }]);
 
       // And the pause itself, on the merge.
-      const refused = await request(app)
+      const refused = await request(testServer)
         .post(`/api/rooms/${roomId}/repo/merge`)
         .send({ summary: 'Add the deploy checklist', worktree: tree.slug });
       expect(refused.status).toBe(409);
       expect(refused.body.code).toBe('MAIN_CHECKOUT_DIRTY');
 
       // The way out: throw away the change nobody wanted, by name.
-      const repaired = await request(app)
+      const repaired = await request(testServer)
         .post(`/api/rooms/${roomId}/repo/main/repair`)
         .send({ action: 'discard', paths: ['stray.md'] });
       expect(repaired.status).toBe(200);
       expect(repaired.body).toMatchObject({ action: 'discard', paths: 1, clean: true });
 
       // And the room is working again — the merge that was refused now lands.
-      const merged = await request(app)
+      const merged = await request(testServer)
         .post(`/api/rooms/${roomId}/repo/merge`)
         .send({ summary: 'Add the deploy checklist', worktree: tree.slug });
       expect(merged.status).toBe(200);
-      const clear = await request(app).get(`/api/rooms/${roomId}/repo/status`);
+      const clear = await request(testServer).get(`/api/rooms/${roomId}/repo/status`);
       expect(clear.body.main).toMatchObject({ dirty: false, strayCount: 0, strays: [] });
     });
 
@@ -545,14 +555,14 @@ describe('the room repo routes', () => {
       );
       await editByHand(roomId, 'stray.md', 'typed straight into the folder\n');
 
-      const repaired = await request(app)
+      const repaired = await request(testServer)
         .post(`/api/rooms/${roomId}/repo/main/repair`)
         .send({ action: 'commit' });
       expect(repaired.body).toMatchObject({ action: 'commit', paths: 1, clean: true });
       // Their work was kept, which is the whole point of the other answer.
       expect(existsSync(path.join(store.repoPath(roomId), 'stray.md'))).toBe(true);
 
-      const merged = await request(app)
+      const merged = await request(testServer)
         .post(`/api/rooms/${roomId}/repo/merge`)
         .send({ summary: 'Add the deploy checklist', worktree: tree.slug });
       expect(merged.status).toBe(409);
@@ -564,7 +574,7 @@ describe('the room repo routes', () => {
       await editByHand(roomId, 'throw-away.md', 'not wanted\n');
       await editByHand(roomId, 'keep.md', 'wanted\n');
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/rooms/${roomId}/repo/main/repair`)
         .send({ action: 'discard', paths: ['throw-away.md'] });
 
@@ -584,7 +594,7 @@ describe('the room repo routes', () => {
         displayName: 'Ana',
       });
 
-      const asAgent = await request(app)
+      const asAgent = await request(testServer)
         .post(`/api/rooms/${roomId}/repo/main/repair`)
         .set('X-DorkOS-Agent', token)
         .send({ action: 'commit' });
@@ -593,7 +603,7 @@ describe('the room repo routes', () => {
 
       // "Discard nothing" is not an action, and the schema says so before any
       // git runs.
-      const empty = await request(app)
+      const empty = await request(testServer)
         .post(`/api/rooms/${roomId}/repo/main/repair`)
         .send({ action: 'discard', paths: [] });
       expect(empty.status).toBe(400);

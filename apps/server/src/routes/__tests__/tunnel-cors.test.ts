@@ -26,13 +26,16 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer, swappableServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { env } from '../../env.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
 
 const app = createApp();
+const server = listeningServer(app);
+const localTarget = swappableServer();
 
 describe('CORS with tunnel origin', () => {
   beforeEach(() => {
@@ -42,7 +45,7 @@ describe('CORS with tunnel origin', () => {
 
   it('accepts requests from localhost origins', async () => {
     const origin = `http://localhost:${env.DORKOS_PORT}`;
-    const res = await request(app).get('/api/health').set('Origin', origin);
+    const res = await request(server).get('/api/health').set('Origin', origin);
 
     expect(res.headers['access-control-allow-origin']).toBe(origin);
   });
@@ -53,7 +56,7 @@ describe('CORS with tunnel origin', () => {
   // browser rejects every response even when the origin itself is allowed.
   it('sends Access-Control-Allow-Credentials: true for an allowed origin (trusted-origins callback path)', async () => {
     const origin = `http://localhost:${env.DORKOS_PORT}`;
-    const res = await request(app).get('/api/health').set('Origin', origin);
+    const res = await request(server).get('/api/health').set('Origin', origin);
 
     expect(res.headers['access-control-allow-credentials']).toBe('true');
   });
@@ -62,14 +65,16 @@ describe('CORS with tunnel origin', () => {
     process.env.DORKOS_CORS_ORIGIN = 'http://localhost:5173';
     const envApp = createApp();
 
-    const res = await request(envApp).get('/api/health').set('Origin', 'http://localhost:5173');
+    const res = await request(localTarget.mount(envApp))
+      .get('/api/health')
+      .set('Origin', 'http://localhost:5173');
 
     expect(res.headers['access-control-allow-origin']).toBe('http://localhost:5173');
     expect(res.headers['access-control-allow-credentials']).toBe('true');
   });
 
   it('rejects requests from unknown origins', async () => {
-    const res = await request(app).get('/api/health').set('Origin', 'https://evil.example.com');
+    const res = await request(server).get('/api/health').set('Origin', 'https://evil.example.com');
 
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
   });
@@ -86,7 +91,7 @@ describe('CORS with tunnel origin', () => {
       domain: null,
     };
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/health')
       .set('Origin', 'https://abc123.ngrok-free.app');
 
@@ -105,7 +110,7 @@ describe('CORS with tunnel origin', () => {
       domain: null,
     };
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/health')
       .set('Origin', 'https://abc123.ngrok-free.app');
 
@@ -113,7 +118,7 @@ describe('CORS with tunnel origin', () => {
   });
 
   it('allows requests with no origin (server-to-server)', async () => {
-    const res = await request(app).get('/api/health');
+    const res = await request(server).get('/api/health');
 
     expect(res.status).not.toBe(403);
   });
@@ -125,7 +130,7 @@ describe('CORS with tunnel origin', () => {
   // Origin equals its own `${protocol}://${host}` is definitionally same-origin
   // and must be allowed without needing DORKOS_CORS_ORIGIN.
   it('accepts a same-origin request when the host port is remapped', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/health')
       .set('Host', 'localhost:9999')
       .set('Origin', 'http://localhost:9999');
@@ -138,7 +143,7 @@ describe('CORS with tunnel origin', () => {
     // An attacker page at evil.com sends its own Origin with the victim's Host.
     // Same-origin only holds when Origin equals this request's own origin, so
     // this is rejected — the fix adds zero cross-origin exposure.
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/health')
       .set('Host', 'localhost:9999')
       .set('Origin', 'https://evil.com');
@@ -149,7 +154,7 @@ describe('CORS with tunnel origin', () => {
   it('rejects a same-host request whose scheme differs (strict full-origin compare)', async () => {
     // Host localhost:9999 over plain http, but Origin claims https — the origins
     // differ by scheme, so this is not same-origin and must be rejected.
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/health')
       .set('Host', 'localhost:9999')
       .set('Origin', 'https://localhost:9999');
@@ -161,7 +166,7 @@ describe('CORS with tunnel origin', () => {
     // The browser preflights non-simple requests (e.g. POST) before sending
     // them, so the same-origin allowance must hold on OPTIONS too, not just the
     // simple GETs above.
-    const res = await request(app)
+    const res = await request(server)
       .options('/api/health')
       .set('Host', 'localhost:9999')
       .set('Origin', 'http://localhost:9999')
@@ -202,7 +207,7 @@ describe('Host guard on /api (DNS rebinding)', () => {
   });
 
   it('rejects a rebound request whose Origin matches its own Host', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/health')
       .set('Host', 'evil.com:4242')
       .set('Origin', 'http://evil.com:4242');
@@ -212,7 +217,7 @@ describe('Host guard on /api (DNS rebinding)', () => {
   });
 
   it('still allows a loopback request on a remapped port', async () => {
-    const res = await request(app).get('/api/health').set('Host', 'localhost:9999');
+    const res = await request(server).get('/api/health').set('Host', 'localhost:9999');
 
     expect(res.status).toBe(200);
   });
@@ -221,7 +226,7 @@ describe('Host guard on /api (DNS rebinding)', () => {
     vi.mocked(configManager.get).mockImplementation(((key: string) =>
       key === 'auth' ? { enabled: true } : undefined) as never);
 
-    const res = await request(app).get('/api/health').set('Host', 'dorkos.example.com');
+    const res = await request(server).get('/api/health').set('Host', 'dorkos.example.com');
 
     expect(res.status).toBe(200);
   });
