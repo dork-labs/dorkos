@@ -1,8 +1,8 @@
-import { createConsola, type LogObject } from 'consola';
+import { createConsola, type ConsolaInstance, type ConsolaReporter, type LogObject } from 'consola';
 import fs from 'fs';
 import path from 'path';
 import { currentDispatchId } from './dispatch-context.js';
-import { normalizeLogContext } from './serialize-error.js';
+import { clipLogArgs, normalizeLogContext } from './serialize-error.js';
 
 /**
  * Central logger module for DorkOS server.
@@ -219,10 +219,54 @@ function cleanupOldFiles(): void {
   }
 }
 
+/**
+ * Wrap a reporter so an oversized payload is cut down before it is formatted.
+ *
+ * This wraps rather than replaces consola's console reporter, which is the
+ * whole point: the reporter still does the formatting, so colours, level
+ * badges, the tag, the terminal-width layout and the indented stack frames are
+ * exactly what they were. Only the arguments handed to it are smaller.
+ *
+ * The clip runs per reporter on a COPY of the log object, never in place — the
+ * file reporter is a separate reporter reading the same object, and it does its
+ * own clipping on the way to the NDJSON line. Mutating here would hand it text
+ * that had already been marked truncated once.
+ *
+ * Nothing here may throw: a reporter runs inside whatever `catch` block called
+ * the logger, so a reporter that throws replaces the failure being reported
+ * with one of its own. The walk already contains the everyday hazard — a
+ * property whose getter throws costs only that property — so this `catch` is a
+ * last resort for the exotic remainder (a Proxy that refuses to be enumerated,
+ * a `Symbol.toPrimitive` that throws). It prints the line unclipped rather than
+ * not at all, which is the right trade only because it is now genuinely rare.
+ */
+function withClipping(inner: ConsolaReporter): ConsolaReporter {
+  return {
+    log(logObj, ctx) {
+      let args: unknown[];
+      try {
+        args = clipLogArgs(logObj.args as unknown[]);
+      } catch {
+        args = logObj.args as unknown[];
+      }
+      inner.log(args === logObj.args ? logObj : { ...logObj, args }, ctx);
+    },
+  };
+}
+
+/**
+ * A consola instance whose console output is bounded (DOR-1728).
+ *
+ * @param level - Numeric log level (0=fatal … 5=trace).
+ */
+function createClippedConsola(level: number): ConsolaInstance {
+  const instance = createConsola({ level });
+  instance.setReporters(instance.options.reporters.map(withClipping));
+  return instance;
+}
+
 /** Default logger instance (console-only until initLogger is called). */
-export let logger = createConsola({
-  level: 3, // info
-});
+export let logger = createClippedConsola(3); // info
 
 /**
  * Initialize the logger with file persistence and configured log level.
@@ -251,7 +295,7 @@ export function initLogger(options: {
   const level = options?.level ?? (process.env.NODE_ENV === 'production' ? 3 : 4);
   configuredLevel = level;
 
-  logger = createConsola({ level });
+  logger = createClippedConsola(level);
   logger.addReporter(createFileReporter());
 }
 

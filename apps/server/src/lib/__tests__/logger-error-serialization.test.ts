@@ -20,21 +20,17 @@ describe('NDJSON error serialization', () => {
 
     // Point consola's CONSOLE reporter at a sink, leaving the file reporter —
     // the thing actually under test — alone. Every assertion here reads the
-    // NDJSON back off disk, so console output proves nothing in this file, and
-    // it is not free noise: the clipping DOR-802 added guards what the FILE
-    // reporter writes, not what the console reporter prints, so the huge-message
-    // case below emitted a single ~2.0 MB line. On STDERR, not stdout —
-    // BasicReporter routes anything below level 2 to `options.stderr`, so
-    // reproducing this with `> file` and no `2>&1` shows you nothing at all.
-    // A GitHub runner serialises on a line that size: it spent ~10.6 minutes on
-    // the 621,377 characters that survived the pipe in CI, which is what turned
-    // an ordinary 37-minute affected-test run into a 46-minute timeout kill on
-    // PR #1486 (DOR-1726). How much of the 2 MB lands varies run to run, because
-    // `stream.write()` on a pipe is async and the process exits mid-drain.
+    // NDJSON back off disk, so console output proves nothing in this file.
     //
-    // The console reporter being unclipped at all is a product gap, not a test
-    // problem — that is DOR-1728, and fixing it there makes this sink redundant.
-    // BasicReporter reads `.columns` off the stream before it writes to it.
+    // This sink is now only about keeping test runs quiet. It used to be load
+    // bearing: the clipping DOR-802 added guarded what the FILE reporter wrote
+    // and not what the console reporter printed, so the huge-message case below
+    // emitted a single ~2.0 MB line, and a GitHub runner spent ~10.6 minutes
+    // serializing it — an ordinary 37-minute affected-test run became a
+    // 46-minute timeout kill on PR #1486 (DOR-1726). The console reporter clips
+    // on its own since DOR-1728, so removing this sink would cost noise, not a
+    // timeout. BasicReporter reads `.columns` off the stream before writing to
+    // it, and routes anything below level 2 to `options.stderr`.
     const sink = { columns: 80, write: () => true } as unknown as NodeJS.WriteStream;
     loggerModule.logger.options.stdout = sink;
     loggerModule.logger.options.stderr = sink;
@@ -163,8 +159,10 @@ describe('NDJSON error serialization', () => {
         'depth-9',
         'depth-8',
       ]);
-      // The tail collapses to one exact summary string rather than recursing on.
-      expect(c4.cause).toBe('Error: depth-7');
+      // The tail collapses to one exact summary string rather than recursing on
+      // — and says that it did, with the size of what it stopped following. A
+      // bare `Error: depth-7` would read exactly like the end of the chain.
+      expect(c4.cause).toBe('Error: depth-7 … [cause chain truncated at depth 5, 7 more levels]');
       expect(JSON.stringify(entry)).not.toContain('depth-6');
     });
   });
@@ -229,7 +227,8 @@ describe('NDJSON error serialization', () => {
       expect(raw.length).toBeLessThan(64 * 1024);
 
       const [entry] = lines();
-      expect(String(entry.error)).toContain('more characters]');
+      // The marker names the whole length, not the dropped remainder.
+      expect(String(entry.error)).toContain('[truncated, 2000000 characters total]');
       expect(String(entry.error).length).toBeLessThan(5 * 1024);
       expect(String(entry.stack).length).toBeLessThan(17 * 1024);
       // The head of the message — the part that identifies it — is still there.
@@ -247,8 +246,9 @@ describe('NDJSON error serialization', () => {
       expect(String(entry.logSerializationError)).toContain('circular');
     });
 
-    it('survives a context property whose getter throws', () => {
+    it('names the one property whose getter throws, and keeps its siblings', () => {
       const hostile = {
+        workspace: 'demo',
         get boom(): string {
           throw new Error('getter exploded');
         },
@@ -258,7 +258,13 @@ describe('NDJSON error serialization', () => {
 
       const [entry] = lines();
       expect(entry.msg).toBe('[relay] send failed');
-      expect(entry.logSerializationError).toBe('Error: getter exploded');
+      // The failure costs its own key and nothing else. It used to cost the
+      // whole context — the line degraded to a bare `logSerializationError` and
+      // `workspace` went with it — which on the console path (DOR-1728) also
+      // meant a hostile sibling disabled clipping for the whole line.
+      expect(entry.boom).toBe('[unreadable property: Error: getter exploded]');
+      expect(entry.workspace).toBe('demo');
+      expect(entry.logSerializationError).toBeUndefined();
     });
   });
 });
