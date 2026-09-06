@@ -71,10 +71,12 @@ interface AddSourceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   isPending: boolean;
+  /** Why the last attempt was refused, or `null` when there was none. */
+  error: string | null;
   onSubmit: (name: string, source: string) => void;
 }
 
-function AddSourceDialog({ open, onOpenChange, isPending, onSubmit }: AddSourceDialogProps) {
+function AddSourceDialog({ open, onOpenChange, isPending, error, onSubmit }: AddSourceDialogProps) {
   const [name, setName] = useState('');
   const [source, setSource] = useState('');
 
@@ -122,6 +124,14 @@ function AddSourceDialog({ open, onOpenChange, isPending, onSubmit }: AddSourceD
               autoComplete="off"
             />
           </div>
+          {/* The server refuses an address it cannot fetch from and says which
+              forms do work (DOR-1710). Without this the dialog just sat there
+              on a refusal, which reads as a broken button. */}
+          {error && (
+            <p role="alert" className="text-destructive text-sm">
+              {error}
+            </p>
+          )}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => handleOpenChange(false)} disabled={isPending}>
@@ -163,6 +173,15 @@ export function MarketplaceSourcesView() {
         onSuccess: () => setDialogOpen(false),
       }
     );
+  };
+
+  // Closing the dialog drops the last refusal with it — reopening to try again
+  // should not open onto the previous attempt's error.
+  const handleDialogOpenChange = (next: boolean) => {
+    if (!next) {
+      addSource.reset();
+    }
+    setDialogOpen(next);
   };
 
   const isEmpty = !isLoading && (!sources || sources.length === 0);
@@ -229,8 +248,9 @@ export function MarketplaceSourcesView() {
       {/* Add dialog */}
       <AddSourceDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        onOpenChange={handleDialogOpenChange}
         isPending={addSource.isPending}
+        error={addSource.error?.message ?? null}
         onSubmit={handleAdd}
       />
     </div>

@@ -39,6 +39,7 @@ import {
   InvalidPackageError,
   type InstallerLike,
 } from '../../services/marketplace/marketplace-installer.js';
+import { UnsupportedSourceUrlError } from '../../services/marketplace/source-url-policy.js';
 import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../../services/marketplace/flows/install-shape.js';
 import {
   PackageNotInstalledError,
@@ -284,6 +285,22 @@ describe('Marketplace Routes', () => {
       const res = await request(app).post('/api/marketplace/sources').send({ name: '' });
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
+    });
+
+    it('returns 400 and says what to use instead for an address git would run (DOR-1710)', async () => {
+      const res = await request(app)
+        .post('/api/marketplace/sources')
+        .send({ name: 'hostile', source: "ext::sh -c 'id > /tmp/pwned'" });
+
+      expect(res.status).toBe(400);
+      // The whole point of the refusal is that the person reading it learns
+      // which addresses do work — not just that this one did not.
+      expect(res.body.error).toMatch(/isn't one DorkOS can fetch a marketplace from/);
+      expect(res.body.error).toMatch(/https:\/\//);
+
+      const listRes = await request(app).get('/api/marketplace/sources');
+      const names = listRes.body.sources.map((s: { name: string }) => s.name);
+      expect(names).not.toContain('hostile');
     });
   });
 
@@ -894,6 +911,24 @@ describe('Marketplace Routes', () => {
       const res = await request(app).get('/api/marketplace/packages/broken');
       expect(res.status).toBe(400);
       expect(res.body.errors).toEqual(['bad manifest']);
+    });
+
+    it('returns 400 when the installer refuses the marketplace address (DOR-1710)', async () => {
+      // The refusal raised inside the install pipeline, not at the add route:
+      // a source that reached `marketplaces.json` some other way is only
+      // caught when the installer is about to hand it to `git`. This route is
+      // the ungated way in — a preview runs before any consent — so this is
+      // the branch of `mapErrorToStatus` that carries that refusal to a caller.
+      installer.preview.mockRejectedValue(
+        new UnsupportedSourceUrlError("ext::sh -c 'id > /tmp/pwned'")
+      );
+
+      const res = await request(app).get('/api/marketplace/packages/sample-plugin');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/isn't one DorkOS can fetch a marketplace from/);
+      // The hostile address is never echoed back to the caller.
+      expect(JSON.stringify(res.body)).not.toContain('ext::');
     });
   });
 
