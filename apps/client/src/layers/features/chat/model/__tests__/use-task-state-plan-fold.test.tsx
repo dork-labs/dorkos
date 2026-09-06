@@ -107,4 +107,26 @@ describe('useTaskState — when the plan is open', () => {
 
     expect(result.current.isCollapsed).toBe(true);
   });
+
+  it('does not carry a hand-collapsed plan into a different session that is also mid-turn (DOR-1759)', () => {
+    // The trap: both sessions report the SAME lifecycle string ('streaming'),
+    // so the lifecycle-transition effect (keyed on [lifecycle] alone) never
+    // sees a value change and never fires. Only a scope-change reset — the
+    // same mechanism the sibling task-list state already uses — catches this.
+    mockLifecycle = 'streaming';
+    const { result, rerender } = renderHook(
+      ({ sessionId }: { sessionId: string }) => useTaskState(sessionId),
+      { wrapper: createWrapper(), initialProps: { sessionId: 'session-a' } }
+    );
+    expect(result.current.isCollapsed).toBe(false);
+
+    act(() => result.current.toggleCollapse());
+    expect(result.current.isCollapsed).toBe(true);
+
+    // Switch to a different session, still mid-turn — nobody has collapsed
+    // ITS plan, and it is actively writing one.
+    rerender({ sessionId: 'session-b' });
+
+    expect(result.current.isCollapsed).toBe(false);
+  });
 });
