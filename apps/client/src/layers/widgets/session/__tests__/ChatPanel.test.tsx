@@ -50,6 +50,9 @@ vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({
 // Mock useChatSession — status is controllable so the suggestion-chip idle gate
 // can be exercised.
 let mockChatStatus = 'idle';
+// The model's follow-up lines. Non-empty in the arbitration case, where they are
+// the higher-priority offer.
+let mockPromptSuggestions: string[] = [];
 vi.mock('@/layers/features/chat/model/use-chat-session', () => ({
   useChatSession: () => ({
     messages: [],
@@ -73,7 +76,7 @@ vi.mock('@/layers/features/chat/model/use-chat-session', () => ({
     pendingInteractions: [],
     markToolCallResponded: vi.fn(),
     systemStatus: null,
-    promptSuggestions: [],
+    promptSuggestions: mockPromptSuggestions,
     syncConnectionState: 'connected',
   }),
 }));
@@ -259,6 +262,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockUseIsMobile.mockReturnValue(true);
   mockChatStatus = 'idle';
+  mockPromptSuggestions = [];
   useExtensionRegistry.setState({ slots: createInitialSlots() });
   localStorage.clear();
 });
@@ -286,6 +290,35 @@ describe('ChatPanel suggestion-chip slot', () => {
       component: () => <div data-testid="suggestion-chip" />,
     });
   }
+
+  it('arbitrates the offers that can answer for themselves, and only those', async () => {
+    // Offers that used to gate themselves independently and co-occur now share
+    // one slot (DOR-1759) — but ONLY the ones whose eligibility is answerable
+    // without rendering them.
+    //
+    // An extension's chip is not one of those: a contribution decides it has
+    // nothing to offer by rendering null, so declared as a candidate it wins the
+    // slot on `length > 0` and then draws nothing. That cost a real bug — an
+    // empty padded box in the session column, moving on every status change,
+    // which the transcript above read as the reader reaching the bottom and
+    // marked the session read, dropping its unread rule on every device. So the
+    // chip draws OUTSIDE the arbitrated slot, exactly where it always did.
+    registerChip();
+    mockPromptSuggestions = ['Try the next thing'];
+
+    render(<ChatPanel sessionId="test" />);
+
+    const suggestion = await screen.findByRole('button', { name: 'Try the next thing' });
+    const slot = document.querySelector('[data-slot="session-bottom-slot"]');
+    expect(slot).not.toBeNull();
+    // The follow-up won the slot.
+    expect(slot!.contains(suggestion)).toBe(true);
+
+    // And the chip is on screen beside it rather than starved behind it — but
+    // never inside the slot, which is what would let it win and draw nothing.
+    const chip = screen.getByTestId('suggestion-chip');
+    expect(slot!.contains(chip)).toBe(false);
+  });
 
   it('renders suggestion chips only while idle, never mid-stream', () => {
     registerChip();

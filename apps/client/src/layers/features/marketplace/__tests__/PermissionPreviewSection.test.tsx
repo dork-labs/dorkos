@@ -29,6 +29,35 @@ function makePreview(overrides: Partial<PermissionPreview> = {}): PermissionPrev
 }
 
 // ---------------------------------------------------------------------------
+// Section helpers
+//
+// Each group is a `CollapsibleFieldCard` (DOR-1759), which puts the heading and
+// its count badge inside one button and unmounts a closed group's rows. So the
+// heading text finds the whole trigger, and any assertion about a row inside a
+// group that starts closed opens it first.
+// ---------------------------------------------------------------------------
+
+/** The disclosure trigger for one permission group. */
+function sectionTrigger(title: string): HTMLElement {
+  const trigger = screen.getByText(title).closest('button');
+  if (!trigger) throw new Error(`No disclosure trigger for the "${title}" section`);
+  return trigger;
+}
+
+/** Whether one permission group is currently expanded. */
+function isOpen(title: string): boolean {
+  return sectionTrigger(title).getAttribute('data-state') === 'open';
+}
+
+/** Expand one permission group, the way a person would. */
+async function openSection(title: string): Promise<void> {
+  await userEvent.click(sectionTrigger(title));
+}
+
+/** The effects group, which every file-change assertion has to open. */
+const EFFECTS = 'What this package will do';
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -96,23 +125,20 @@ describe('PermissionPreviewSection', () => {
 
     render(<PermissionPreviewSection preview={preview} />);
 
-    const isOpen = (title: string) =>
-      (screen.getByText(title).closest('details') as HTMLDetailsElement).open;
-
     expect(isOpen('Commands this package declares')).toBe(true);
     expect(isOpen('Jobs it will schedule')).toBe(true);
     expect(isOpen('Conflicts')).toBe(true);
 
-    expect(isOpen('What this package will do')).toBe(false);
+    expect(isOpen(EFFECTS)).toBe(false);
     expect(isOpen('Secrets required')).toBe(false);
     expect(isOpen('External hosts')).toBe(false);
     expect(isOpen('Dependencies')).toBe(false);
 
     // A collapsed group still says how much it holds.
-    expect(screen.getByText('Secrets required').closest('summary')?.textContent).toContain('(1)');
+    expect(sectionTrigger('Secrets required').textContent).toContain('1');
   });
 
-  it('names every npm library the install will download, with its version', () => {
+  it('names every npm library the install will download, with its version', async () => {
     // The person is consenting to a network fetch of third-party code before
     // the package runs at all, so the row names each library rather than
     // counting them (DOR-1341).
@@ -124,6 +150,7 @@ describe('PermissionPreviewSection', () => {
     });
 
     render(<PermissionPreviewSection preview={preview} />);
+    await openSection(EFFECTS);
 
     expect(
       screen.getByText(/download 2 npm libraries, and everything they depend on/i)
@@ -131,19 +158,20 @@ describe('PermissionPreviewSection', () => {
     expect(screen.getByText(/zod@\^4\.3\.6, cronstrue@~2\.0\.0/)).toBeInTheDocument();
   });
 
-  it('says "library", singular, when there is exactly one', () => {
+  it('says "library", singular, when there is exactly one', async () => {
     render(
       <PermissionPreviewSection
         preview={makePreview({ npmDependencies: [{ name: 'zod', range: '^4.3.6' }] })}
       />
     );
+    await openSection(EFFECTS);
 
     expect(
       screen.getByText(/download 1 npm library, and everything they depend on/i)
     ).toBeInTheDocument();
   });
 
-  it('marks an optionalDependency as optional', () => {
+  it('marks an optionalDependency as optional', async () => {
     // npm installs these by default, so they are disclosed like any other; the
     // marker only says this one is allowed to fail.
     render(
@@ -153,6 +181,7 @@ describe('PermissionPreviewSection', () => {
         })}
       />
     );
+    await openSection(EFFECTS);
 
     expect(screen.getByText(/fsevents@\^2\.3\.3 \(optional\)/)).toBeInTheDocument();
   });
@@ -244,7 +273,7 @@ describe('PermissionPreviewSection', () => {
   // File effects — where the files go, and which ones disappear
   // -------------------------------------------------------------------------
 
-  it('names the folder and a count per action instead of a bare file total', () => {
+  it('names the folder and a count per action instead of a bare file total', async () => {
     const preview = makePreview({
       fileChanges: [
         { path: '/Users/kai/.dork/plugins/flow/commands/flow.md', action: 'create' },
@@ -254,6 +283,7 @@ describe('PermissionPreviewSection', () => {
     });
 
     render(<PermissionPreviewSection preview={preview} />);
+    await openSection(EFFECTS);
 
     expect(
       screen.getByText('3 files under /Users/kai/.dork/plugins/flow: 1 new, 1 changed, 1 removed')
@@ -272,6 +302,7 @@ describe('PermissionPreviewSection', () => {
     });
 
     render(<PermissionPreviewSection preview={preview} />);
+    await openSection(EFFECTS);
 
     const disclosure = screen.getByText('Show 2 files');
     const list = disclosure.closest('details') as HTMLDetailsElement;
@@ -285,7 +316,7 @@ describe('PermissionPreviewSection', () => {
     expect(screen.getByText('commands/flow.md')).toBeInTheDocument();
   });
 
-  it('lists what disappears before what arrives', () => {
+  it('lists what disappears before what arrives', async () => {
     const preview = makePreview({
       fileChanges: [
         { path: '/root/pkg/new.md', action: 'create' },
@@ -294,17 +325,19 @@ describe('PermissionPreviewSection', () => {
     });
 
     render(<PermissionPreviewSection preview={preview} />);
+    await openSection(EFFECTS);
 
     const paths = screen.getAllByTestId('file-change-path').map((el) => el.textContent);
     expect(paths).toEqual(['gone.md', 'new.md']);
   });
 
-  it('adds no reassurance row when every file stays inside the install folder', () => {
+  it('adds no reassurance row when every file stays inside the install folder', async () => {
     const preview = makePreview({
       fileChanges: [{ path: '/Users/kai/.dork/plugins/flow/a.md', action: 'create' }],
     });
 
     render(<PermissionPreviewSection preview={preview} installBase="/Users/kai/.dork" />);
+    await openSection(EFFECTS);
 
     // The headline already names the folder; a row that can never be false
     // would only spend vertical space the dialog does not have.
@@ -312,12 +345,13 @@ describe('PermissionPreviewSection', () => {
     expect(screen.getByText(/1 file under/)).toBeInTheDocument();
   });
 
-  it('warns in amber when a file lands outside the install folder', () => {
+  it('warns in amber when a file lands outside the install folder', async () => {
     const preview = makePreview({
       fileChanges: [{ path: '/Users/kai/.claude/settings.json', action: 'modify' }],
     });
 
     render(<PermissionPreviewSection preview={preview} installBase="/Users/kai/.dork" />);
+    await openSection(EFFECTS);
 
     const warning = screen.getByText('1 file lands outside /Users/kai/.dork.');
     expect(warning).toBeInTheDocument();
@@ -335,7 +369,7 @@ describe('PermissionPreviewSection', () => {
     expect(screen.queryByText(/lands outside/i)).not.toBeInTheDocument();
   });
 
-  it('renders the secrets section with required/optional keys', () => {
+  it('renders the secrets section with required/optional keys', async () => {
     const preview = makePreview({
       secrets: [
         { key: 'GITHUB_TOKEN', required: true },
@@ -346,12 +380,14 @@ describe('PermissionPreviewSection', () => {
     render(<PermissionPreviewSection preview={preview} />);
 
     expect(screen.getByText('Secrets required')).toBeInTheDocument();
+    await openSection('Secrets required');
+
     expect(screen.getByText('GITHUB_TOKEN')).toBeInTheDocument();
     expect(screen.getByText(/SLACK_WEBHOOK/)).toBeInTheDocument();
     expect(screen.getByText('Webhook for notifications')).toBeInTheDocument();
   });
 
-  it('renders the external hosts section', () => {
+  it('renders the external hosts section', async () => {
     const preview = makePreview({
       externalHosts: ['api.github.com', 'slack.com'],
     });
@@ -359,11 +395,13 @@ describe('PermissionPreviewSection', () => {
     render(<PermissionPreviewSection preview={preview} />);
 
     expect(screen.getByText('External hosts')).toBeInTheDocument();
+    await openSection('External hosts');
+
     expect(screen.getByText('api.github.com')).toBeInTheDocument();
     expect(screen.getByText('slack.com')).toBeInTheDocument();
   });
 
-  it('renders dependency requirements', () => {
+  it('renders dependency requirements', async () => {
     const preview = makePreview({
       requires: [{ type: 'plugin', name: '@dorkos/linter', satisfied: true }],
     });
@@ -371,6 +409,8 @@ describe('PermissionPreviewSection', () => {
     render(<PermissionPreviewSection preview={preview} />);
 
     expect(screen.getByText('Dependencies')).toBeInTheDocument();
+    await openSection('Dependencies');
+
     expect(screen.getByText(/@dorkos\/linter/)).toBeInTheDocument();
   });
 

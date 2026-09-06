@@ -13,7 +13,7 @@
  * @module dev/mock-samples
  */
 export { BACKGROUND_TASK_PARTS, ERROR_PARTS } from './tool-parts';
-export { SAMPLE_TASKS } from './tasks';
+export { SAMPLE_TASKS, SAMPLE_LONG_PLAN } from './tasks';
 export {
   SAMPLE_MESSAGES,
   SAMPLE_QUESTIONS,

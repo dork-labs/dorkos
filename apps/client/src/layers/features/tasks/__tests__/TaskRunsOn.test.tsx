@@ -99,6 +99,18 @@ function transportWithAgent(runtime: string | null, overrides: Partial<Transport
   });
 }
 
+/**
+ * Open the form's Advanced settings section.
+ *
+ * The Runs-on controls and the trust dial live behind that section, which — as
+ * the shared disclosure card the form now uses — unmounts what it hides
+ * (DOR-1759). Every case here reads a control inside it, so every case opens it,
+ * exactly as a person does.
+ */
+function openAdvanced() {
+  fireEvent.click(screen.getByRole('button', { name: /Advanced settings/ }));
+}
+
 /** Open the dialog on a fresh task and advance past the template gallery. */
 function renderNewTask(transport: Transport) {
   const Wrapper = createWrapper(transport);
@@ -108,6 +120,7 @@ function renderNewTask(transport: Transport) {
     </Wrapper>
   );
   fireEvent.click(screen.getByText('Start from scratch'));
+  openAdvanced();
 }
 
 /** Open the dialog on an existing task, which lands straight on the form. */
@@ -122,6 +135,7 @@ function renderEditTask(
       <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={task} />
     </Wrapper>
   );
+  openAdvanced();
 }
 
 /**
@@ -516,6 +530,7 @@ describe('the task form Runs-on controls', () => {
         </Wrapper>
       );
       fireEvent.click(screen.getByText('Start from scratch'));
+      openAdvanced();
     }
 
     /**
@@ -1196,6 +1211,7 @@ describe('the task form Runs-on controls', () => {
         </Wrapper>
       );
       fireEvent.click(screen.getByText('Start from scratch'));
+      openAdvanced();
 
       // Falls THROUGH to the default runtime, rather than treating an inherited
       // member as a registered one. `useTaskExecution` always read this from

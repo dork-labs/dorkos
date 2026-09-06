@@ -42,7 +42,7 @@ import type {
 import { runtimeAuthConnectKind, runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { claudeAccountName, cn } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
-import { Button, InlineCode } from '@/layers/shared/ui';
+import { Badge, Button, InlineCode } from '@/layers/shared/ui';
 import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
 import {
   CommandTransparencyNote,
@@ -364,6 +364,25 @@ export function RuntimeCard({
     </>
   ) : undefined;
 
+  // What the closed "Setup details" disclosure is hiding, said on its own
+  // trigger — this app's rule for every collapsed settings group
+  // (`contributing/design-system.md` §Disclosure). A missing/outdated check is
+  // the thing worth naming; a fully satisfied list just says how many there
+  // are.
+  const unsatisfiedDeps = requirementsEntry?.dependencies.filter(
+    (dep) => dep.status !== 'satisfied'
+  );
+  const setupBadge = requirementsEntry ? (
+    <Badge
+      variant="secondary"
+      className={cn('text-xs', unsatisfiedDeps?.length ? 'text-amber-600 dark:text-amber-400' : '')}
+    >
+      {unsatisfiedDeps?.length
+        ? `${unsatisfiedDeps.length} missing`
+        : `${requirementsEntry.dependencies.length} ${requirementsEntry.dependencies.length === 1 ? 'check' : 'checks'}`}
+    </Badge>
+  ) : undefined;
+
   return (
     // The card view is props-only and has no slot for what a WRITE has to say,
     // so the two lines that follow a write sit directly beneath it, aligned to
@@ -415,6 +434,7 @@ export function RuntimeCard({
         sections={settings?.sections}
         renderSection={(kind) => renderRuntimeSettingsSection(kind, { type })}
         setupDetails={setupDetails}
+        setupBadge={setupBadge}
       />
 
       {/* Only after something has actually changed (progressive disclosure):
