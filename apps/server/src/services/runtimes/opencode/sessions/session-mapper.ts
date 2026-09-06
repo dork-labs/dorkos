@@ -393,6 +393,31 @@ async function mapHistoryMessage(
  * Maps DorkOS sessions 1:1 to OpenCode sessions and reads listing/history
  * through the SDK against the managed sidecar. See the module doc for the
  * id-mapping model.
+ *
+ * **Every `cwd`/`projectDir` reaching this class is already canonical**, and
+ * that is the caller's job: {@link OpenCodeRuntime} passes each one through
+ * `canonicalDirectory` first. It cannot be done here — canonicalizing needs
+ * `realpath`, and this module's import graph is filesystem-free by test guard
+ * (ADR-0308: session data reaches DorkOS only through the SDK).
+ *
+ * Three methods DEPEND on it, because they put the directory on the wire as
+ * `?directory=` and the sidecar canonicalizes the directory it STORES while
+ * filtering on the literal string it is GIVEN — so any other spelling matches
+ * nothing at all (DOR-695):
+ *
+ * - {@link OpenCodeSessionMapper.ensureSession} (`session.create`)
+ * - {@link OpenCodeSessionMapper.listSessions} (`session.list`, plus its
+ *   `limit` probe)
+ * - {@link OpenCodeSessionMapper.getMessageHistory}, whose binding-rebuild
+ *   read is the same `session.list`
+ *
+ * The rest — `getSession`, `forkSession`, `renameSession` — are session-scoped
+ * calls that carry NO directory (the sidecar routes by the session's stored
+ * one, NOTES.md §1), so their `projectDir` reaches only `getClient`, which
+ * ignores it. They are canonicalized anyway, and only for that argument's
+ * stated future: `getClient` accepts a cwd "so a future pool could key on it
+ * without changing callers", and a pool keyed on raw spellings would boot two
+ * sidecars for one directory.
  */
 export class OpenCodeSessionMapper {
   /** DorkOS session id -> OpenCode session id. */

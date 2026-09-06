@@ -16,11 +16,29 @@
  * "this machine" names, which is why the rule lives here and not in either of
  * them.
  *
+ * ## One folder, several spellings (DOR-695)
+ *
+ * The membership rule compares two strings that reach it from different
+ * places: a session's `cwd`, and an agent's project directory. On macOS `/tmp`
+ * and `/var` are symlinks, so those are routinely two names for one folder,
+ * and the session was simply dropped. It happens in BOTH directions — a
+ * durable store reports the real path while the agent was registered through a
+ * symlink, and an in-memory tracked session carries the raw
+ * `DORKOS_DEFAULT_CWD` while the agent was registered by its real path — so
+ * {@link memberOfRoots} reconciles both sides rather than either one.
+ *
+ * The CLIENT mirrors this rule (`select-agent-sessions.ts`) and cannot resolve
+ * anything: it has no filesystem. Reconciling that half means deciding where a
+ * project directory becomes canonical for everyone — an ADR, not an adapter
+ * fix — so the surfaces reading the client-side selector still drop a
+ * symlink-spelt project's sessions.
+ *
  * @module services/session/agent-session-fanout
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Session, SessionListWarning } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
+import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import { aggregateSessionList } from './aggregate-session-list.js';
 
 /**
@@ -97,6 +115,50 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+/**
+ * A membership test for one agent's roots, ready to run over many sessions.
+ *
+ * Both sides of the comparison can spell the same folder differently
+ * (DOR-695), and both directions really happen:
+ *
+ * - A session's `cwd` is the REAL path whenever the runtime derived it from
+ *   the directory its process ran in — every runtime with a durable store does
+ *   — while an agent's registered project directory is whatever string was
+ *   typed. On macOS `/tmp` and `/var` are symlinks.
+ * - The reverse too: an in-memory tracked session carries the cwd it was
+ *   created with, and `sendMessage` falls back to `DEFAULT_CWD`, which is
+ *   `DORKOS_DEFAULT_CWD` taken verbatim. So a row whose `cwd` is the symlink
+ *   form reaches a fan-out whose root is the real one.
+ *
+ * The literal comparison is tried first and the resolved one only widens it,
+ * so this can only ever match more than {@link isWithinDirectory} alone.
+ *
+ * `realpath` is a syscall and this runs per session on the fleet-wide list,
+ * which is under a 2s per-runtime budget, so it is spent carefully: the roots
+ * resolve ONCE here, and a candidate resolves only after the literal
+ * comparison has already failed — and then at most once per distinct `cwd`,
+ * because a project's sessions overwhelmingly share a handful of them.
+ *
+ * @param roots - The agent's own directory plus its room worktrees
+ * @returns A predicate over a session's working directory
+ */
+function memberOfRoots(roots: string[]): (cwd: unknown) => boolean {
+  const canonicalRoots = [...new Set(roots.map(canonicalDirectory))];
+  const resolved = new Map<string, string>();
+  return (cwd) => {
+    if (roots.some((root) => isWithinDirectory(cwd, root))) return true;
+    // Answers false for an absent or malformed cwd rather than throwing, so a
+    // ghost session costs its own row and no others (DOR-202).
+    if (typeof cwd !== 'string') return false;
+    let real = resolved.get(cwd);
+    if (real === undefined) {
+      real = canonicalDirectory(cwd);
+      resolved.set(cwd, real);
+    }
+    return canonicalRoots.some((root) => isWithinDirectory(real, root));
+  };
+}
+
 /** One agent directory's sessions, after the membership filter. */
 export interface AgentSessions {
   /** The agent's project directory. */
@@ -140,6 +202,8 @@ export async function fanOutAgentSessions(opts: {
       );
       const bound = await sources.boundSessionIds(dir).catch(() => new Set<string>());
 
+      const isMember = memberOfRoots(roots);
+
       const warnings = scans.flatMap((scan) => scan.warnings);
       const members: Session[] = [];
       const seen = new Set<string>();
@@ -156,7 +220,7 @@ export async function fanOutAgentSessions(opts: {
           // OR the stored binding, which is what carries a conversation whose
           // DIRECTORY no longer says whose it is — the room-worktree case, and
           // any runtime that reports no cwd at all.
-          const mine = roots.some((root) => isWithinDirectory(s.cwd, root)) || bound.has(s.id);
+          const mine = isMember(s.cwd) || bound.has(s.id);
           if (!mine || seen.has(s.id)) continue;
           seen.add(s.id);
           members.push(s);

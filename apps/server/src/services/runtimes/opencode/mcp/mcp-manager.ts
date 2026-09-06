@@ -14,6 +14,25 @@
  * registry (no `opencode.json` write, verified against the pin — NOTES.md §6),
  * so injection is ephemeral, exactly like claude's inline servers.
  *
+ * ## The `cwd` here is RAW, and that is a decision (DOR-695)
+ *
+ * Sessions are now created against the sidecar in the CANONICAL spelling of
+ * their directory, because the sidecar was measured storing one spelling and
+ * filtering on another. This module was left alone, because its `cwd` is doing
+ * two jobs at once: it is the `?directory=` scope the sidecar reads, and it is
+ * the key DorkOS looks an agent up by (`meshCore.getByPath`,
+ * `resolver.injectableServersForCwd`) and caches status under. Canonicalizing
+ * only the wire half would split the two apart; canonicalizing both would
+ * re-key an agent registry against paths it was never registered with.
+ *
+ * **The open question, stated rather than assumed:** a turn now registers its
+ * managed servers under the raw spelling while its session lives under the
+ * canonical one. Whether the sidecar treats those as one instance or two was
+ * NOT measured — the DOR-695 evidence covers `POST`/`GET /session` only — so
+ * if agent tools ever go missing on a symlinked project, this is the first
+ * place to drive with a real sidecar. Deciding it belongs with the same ADR
+ * that settles what "the same directory" means across runtimes.
+ *
  * @module services/runtimes/opencode/mcp-manager
  */
 import type { OpencodeClient } from '@opencode-ai/sdk';
@@ -354,6 +373,7 @@ export class OpenCodeMcpManager {
         continue;
       }
       try {
+        // Raw `cwd`, deliberately — see this module's DOR-695 note.
         const result = await client.mcp.add({ query: { directory: cwd }, body: { name, config } });
         if (result.error !== undefined) {
           throw new Error(JSON.stringify(result.error));
@@ -384,6 +404,7 @@ export class OpenCodeMcpManager {
    */
   private async readLiveServerNames(client: OpencodeClient, cwd: string): Promise<Set<string>> {
     try {
+      // Raw `cwd`, deliberately — see this module's DOR-695 note.
       const result = await client.mcp.status({ query: { directory: cwd } });
       return result.data === undefined ? new Set() : new Set(Object.keys(result.data));
     } catch (err) {
@@ -398,6 +419,7 @@ export class OpenCodeMcpManager {
   /** Disconnect one previously-injected managed server from the live sidecar (best-effort). */
   private async disconnect(client: OpencodeClient, cwd: string, name: string): Promise<void> {
     try {
+      // Raw `cwd`, deliberately — see this module's DOR-695 note.
       await client.mcp.disconnect({ path: { name }, query: { directory: cwd } });
     } catch (err) {
       logger.warn(
