@@ -77,8 +77,10 @@ export function communityDir(dorkHome: string, community: CommunityRef): string 
  * @param dorkHome - The resolved DorkOS data directory (from `resolveDorkHome`).
  * @param community - The community whose credential to resolve.
  * @returns The credential (hex string, or the operator's env value).
- * @throws If the credential file exists but is blank or unreadable. It is never
- *   overwritten: the remote side may already know whatever it holds.
+ * @throws If the credential file exists but is blank or unreadable — the read
+ *   error itself, unchanged. It is never overwritten: the remote side may
+ *   already know whatever it holds, and minting a replacement would eject this
+ *   install from a community it is a member of without saying so.
  */
 export function resolveCommunityCredential(dorkHome: string, community: CommunityRef): string {
   // eslint-disable-next-line no-restricted-syntax -- reading an env override, not a homedir path
@@ -95,13 +97,24 @@ export function resolveCommunityCredential(dorkHome: string, community: Communit
       return persisted;
     }
   } catch (err) {
-    // ENOENT is the expected first-use case; anything else (e.g. EACCES) is
-    // worth surfacing before we overwrite, but is still recoverable below.
+    // ENOENT is the ONLY failure that means "there is nothing here yet", and it
+    // is the only one this falls through on. Every other one — EACCES, EISDIR, a
+    // filesystem that gave out — means the file is THERE and could not be read,
+    // and the two must not share a code path: minting a replacement in that
+    // state changes the identity this install presents to a community it is
+    // already a member of, and does it silently.
+    //
+    // This used to warn "generating a new one" and carry on. The generation was
+    // in fact refused one call later — `claimSecretText` will not publish over a
+    // file it cannot read — so the credential survived, but by somebody else's
+    // guard, and what a person was shown was a story about the wrong file. The
+    // honest answer is the error that actually happened, raised here.
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      logger.warn('[Communities] Could not read a persisted credential; generating a new one', {
+      logger.warn('[Communities] Could not read a persisted community credential', {
         path: credentialPath,
         error: (err as Error).message,
       });
+      throw err;
     }
   }
 

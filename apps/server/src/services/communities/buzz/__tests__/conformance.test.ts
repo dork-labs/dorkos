@@ -240,6 +240,13 @@ for (const { limitSemantics, historyPageSize } of REGISTRATIONS) {
       fixtureFor(adapter).relay.archiveChannel(roomId);
       return Promise.resolve('unknown');
     },
+    // A channel that is simply GONE — which archiving is not: an archived
+    // channel still appears in discovery and still reads. The next poll finds it
+    // missing and that is what `room_removed` reports.
+    makeRemovedRoom: (adapter, roomId) => {
+      fixtureFor(adapter).relay.deleteChannel(roomId);
+      return Promise.resolve();
+    },
   });
 }
 

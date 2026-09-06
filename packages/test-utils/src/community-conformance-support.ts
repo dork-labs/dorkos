@@ -30,6 +30,17 @@ export const QUIET_WINDOW_MS = 60;
 export const PAGE_SIZE = 1;
 
 /**
+ * A page big enough to hold a whole fixture room, for the assertions about what
+ * is INSIDE a page rather than about how pages follow one another.
+ *
+ * {@link PAGE_SIZE} is its opposite and both are load-bearing: a walk in pages
+ * of one proves the cursor chain and observes no intra-page order at all, so an
+ * adapter that reversed every page it emits would pass an ordering case written
+ * against it (DOR-792 review).
+ */
+export const WIDE_PAGE = 500;
+
+/**
  * Guard a `toThrow(SomeClass)` assertion against a stale `@dorkos/shared` dist.
  *
  * Vite's SSR interop does not enforce named-export existence the way Node's
@@ -118,6 +129,25 @@ export interface CommunityConformanceOpts {
     adapter: CommunityAdapter,
     roomId: string
   ) => Promise<CommunityRoomClosedReason>;
+
+  /**
+   * Optional: make a room LEAVE this identity's view, out of band — ejected
+   * from it, or the room deleted where it lives.
+   *
+   * `room_removed` is the one member of `CommunityRoomListEvent` nothing
+   * asserted, and it is the one whose absence is invisible: a backend that never
+   * emits it looks identical to a backend where no room has gone away, and the
+   * cost lands on a person, whose sidebar keeps a room they cannot open. Every
+   * backend that can arrange this owes the case.
+   *
+   * Arranging it needs an act the port deliberately does not expose — archiving
+   * is NOT it, because an archived room still reads and is still listed. An
+   * adapter that omits this hook declines the case by name.
+   *
+   * @param adapter - The adapter holding the room.
+   * @param roomId - The room to take out of this identity's view.
+   */
+  makeRemovedRoom?: (adapter: CommunityAdapter, roomId: string) => Promise<void>;
 
   /**
    * Optional: arrange an entry **authored by an admitted agent**, out of band,

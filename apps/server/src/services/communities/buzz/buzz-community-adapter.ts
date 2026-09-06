@@ -163,6 +163,8 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
 
   private readonly client: BuzzRelayClient;
   private readonly capabilities: CommunityCapabilities;
+  /** Rows per historical read — the only dep that has to outlive construction. */
+  private readonly rawLimit: number;
   private readonly rooms = new Map<string, CommunityRoom>();
   private readonly listStreams = new Set<PushStream<CommunityRoomListEvent>>();
   private readonly roomStreams = new Set<PushStream<CommunityRoomEvent>>();
@@ -171,10 +173,20 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
   /**
    * Wire an adapter. Nothing connects until {@link BuzzCommunityAdapter.connect}.
    *
+   * **`deps` is read here and never retained**, which is a credential rule and
+   * not a style preference. A `private readonly deps` parameter property is an
+   * ordinary enumerable field on the instance, so the credential this adapter is
+   * handed would be printed by anything that serialized one — a structured log
+   * line, an error reporter, a debug dump. Nothing in the port could catch it,
+   * because the port's own no-leakage rule is about what methods RETURN. What
+   * survives construction is the key derived from it (inside a closure, in
+   * `buzz-identity.ts`) and the one page-size knob a later read needs.
+   *
    * @param deps - The community ref, the relay URL, and this community's credential.
    */
-  constructor(private readonly deps: BuzzCommunityAdapterDeps) {
+  constructor(deps: BuzzCommunityAdapterDeps) {
     this.community = deps.community;
+    this.rawLimit = deps.historyPageSize ?? DEFAULT_RAW_LIMIT;
     this.client = new BuzzRelayClient({
       community: deps.community,
       relayUrl: deps.relayUrl,
@@ -414,7 +426,7 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
     const after =
       opts.cursor === undefined ? BEGINNING : readBuzzCursor(this.community, roomId, opts.cursor);
     const limit = opts.limit ?? DEFAULT_PAGE_SIZE;
-    const rawLimit = this.deps.historyPageSize ?? DEFAULT_RAW_LIMIT;
+    const { rawLimit } = this;
 
     const base: NostrFilter = {
       kinds: [KIND_STREAM_MESSAGE],
@@ -686,7 +698,7 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
   ): Promise<void> {
     const roomId = room.roomId;
     const base: NostrFilter = { kinds: [KIND_STREAM_MESSAGE], '#h': [roomId] };
-    const rawLimit = this.deps.historyPageSize ?? DEFAULT_RAW_LIMIT;
+    const { rawLimit } = this;
     const subscription = this.client.subscribe([
       { ...base, ...(from === null ? {} : { since: from.createdAt }), limit: rawLimit },
     ]);

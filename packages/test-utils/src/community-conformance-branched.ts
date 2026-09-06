@@ -32,7 +32,8 @@ import {
  */
 export function registerCapabilityBranchedAssertions(ctx: CommunityConformanceContext): void {
   const { makeAdapter, arrange, awaitRoomEvent, eventTimeoutMs } = ctx;
-  const { seedRoom, revokeOwner, makeUnadmittedAdapter, makeUnauthorizedAdapter } = ctx.opts;
+  const { seedRoom, revokeOwner, makeUnadmittedAdapter, makeUnauthorizedAdapter, makeRemovedRoom } =
+    ctx.opts;
   // Read once at REGISTRATION time so a case this backend cannot run registers a
   // named skip rather than returning green from inside the test body.
   const declared = makeAdapter().getCapabilities();
@@ -313,6 +314,50 @@ export function registerCapabilityBranchedAssertions(ctx: CommunityConformanceCo
         await iterator.return?.();
       }
     });
+
+    if (makeRemovedRoom) {
+      it('C20 reports a room that has left this identity’s view as removed', async () => {
+        // The third member of the room-list union, and the only one nothing
+        // asserted. C13/C14 cover `room_added` and `room_updated` rides the same
+        // path; `room_removed` is emitted by a different code path in every
+        // backend — a poll noticing an absence, a membership event — so a
+        // backend can pass C13 and never emit one at all. What that costs is
+        // paid by a person: a room in the sidebar that refuses to open.
+        const { adapter, caps } = await arrange();
+        const roomId = await seedRoom(adapter);
+        const budget =
+          caps.roomList === 'poll'
+            ? Math.max(eventTimeoutMs, (caps.roomListPollIntervalMs ?? 0) * 10)
+            : eventTimeoutMs;
+
+        const iterator = adapter.subscribeRoomList()[Symbol.asyncIterator]();
+        try {
+          await makeRemovedRoom(adapter, roomId);
+          const deadline = Date.now() + budget;
+          let found = false;
+          while (!found && Date.now() < deadline) {
+            const event = await nextEvent(
+              iterator,
+              `room_removed for '${roomId}' (${caps.roomList})`,
+              Math.max(1, deadline - Date.now())
+            );
+            if (event.type !== 'room_removed') continue;
+            expect(event.community, 'a removal names this adapter’s community').toBe(
+              adapter.community
+            );
+            found = event.roomId === roomId;
+          }
+          expect(
+            found,
+            'a room that has gone away must be reported gone, or it stays in a sidebar forever'
+          ).toBe(true);
+        } finally {
+          await iterator.return?.();
+        }
+      });
+    } else {
+      it.skip('C20 room_removed (no makeRemovedRoom hook supplied)', () => {});
+    }
 
     it('C15 round-trips a presence signal when it has signals, and yields none when it does not', async () => {
       const { adapter, caps, roomId, identityMemberId } = await arrange();

@@ -1,5 +1,5 @@
 /**
- * The universal half of the `CommunityAdapter` conformance suite: the seventeen
+ * The universal half of the `CommunityAdapter` conformance suite: the
  * assertions every backend owes, with no branch and no opt-out.
  *
  * These are the properties that stay true whatever a backend declares — an
@@ -9,6 +9,18 @@
  * defined answer for a room the caller cannot have, no credential anywhere on
  * the wire, and — U17, added after an adapter shipped minting a cursor its own
  * reader refused — every cursor an adapter hands out being one it takes back.
+ *
+ * **U18–U22 exist because this suite was adapter-vs-itself in places** (DOR-792
+ * review). Every one of them is an obligation the port's own TSDoc already
+ * states and nothing checked: that emission order is ONE order and every
+ * surface agrees on it, that the mentions a writer resolved survive the write
+ * ("`responseMode: 'mention-only'` is unusable without it"), that a receipt's
+ * cursor resumes AFTER the entry it names ("so a poster can subscribe without a
+ * round-trip"), that a declaration a consumer is handed cannot rewrite the next
+ * one, and that a foreign cursor is refused on the PAGING surface as well as the
+ * streaming one. Two real lossy mutations passed all ninety-eight assertions
+ * that came before them; these are the ones that had to be added rather than
+ * assumed.
  *
  * @module test-utils/community-conformance-universal
  */
@@ -30,6 +42,7 @@ import {
 import {
   GATED_PROBES,
   PAGE_SIZE,
+  WIDE_PAGE,
   assertImported,
   nextEvent,
   pageAllEntries,
@@ -599,6 +612,163 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
     } else {
       it.skip('U17 empty-room cursor (no seedEmptyRoom hook, and this backend cannot create one)', () => {});
     }
+
+    it('U18 emits entries in one order, and every surface it hands out agrees on it', async () => {
+      // "Order is the adapter's emission order" is the invariant that replaced
+      // `seq`, and nothing asserted it. A backend whose page walks one way and
+      // whose replay walks the other is internally consistent on each surface
+      // and shows a reader a conversation in two different orders.
+      const { adapter, caps, roomId } = await arrange();
+      // **A WIDE page, deliberately — the opposite of U8's page of one.** With a
+      // page size of one, the order this walk returns is the order the CURSORS
+      // step in, and the order inside a page is never observed at all: an
+      // adapter that reversed every page it emits would satisfy this case
+      // completely. One page holding every entry is the only read that puts the
+      // adapter's own intra-page order in front of an assertion.
+      const paged = (await pageAllEntries(adapter, roomId, WIDE_PAGE)).entries.map((e) => e.id);
+
+      const iterator = adapter.subscribeRoom(roomId)[Symbol.asyncIterator]();
+      let replayed: string[] = [];
+      try {
+        const first = await nextEvent(iterator, 'the opening snapshot', eventTimeoutMs);
+        if (first.type === 'snapshot') replayed = first.entries.map((e) => e.id);
+      } finally {
+        await iterator.return?.();
+      }
+
+      // Compared over what the two surfaces SHARE, because they legitimately
+      // hold different sets: a page is top-level only, while a snapshot replays
+      // thread replies too. What they may never do is disagree about the
+      // relative order of an entry both of them carry.
+      const inSnapshot = new Set(replayed);
+      const inPage = new Set(paged);
+      expect(
+        paged.filter((id) => inSnapshot.has(id)),
+        'a page and a replay must not order the same entries differently'
+      ).toEqual(replayed.filter((id) => inPage.has(id)));
+
+      if (!caps.canPost) return;
+      // The half with GROUND TRUTH behind it: this suite knows which of these
+      // two was written first, which nothing derived from the adapter's own
+      // reads can know.
+      const first = await adapter.post(roomId, { text: 'written first' });
+      const second = await adapter.post(roomId, { text: 'written second' });
+      const after = (await pageAllEntries(adapter, roomId, WIDE_PAGE)).entries.map((e) => e.id);
+      expect(after, 'both posts must be readable').toContain(first.entryId);
+      expect(
+        after.indexOf(first.entryId),
+        'history is oldest-first: what was said first'
+      ).toBeLessThan(after.indexOf(second.entryId));
+    });
+
+    if (!declared.canPost) {
+      it.skip('U19 mentions round-trip (this backend cannot post)', () => {});
+    } else {
+      it('U19 round-trips the mentions a writer resolved', async () => {
+        // `PostCommunityEntryInput.mentions` is "member ids the writer
+        // addressed", and `CommunityEntry.mentions` carries them back —
+        // "because `responseMode: 'mention-only'` is unusable without it", which
+        // is the port stating the consequence of losing them. An adapter that
+        // accepts the field and drops it satisfies every other assertion here.
+        const { adapter, roomId, identityMemberId } = await arrange();
+        const posted = await adapter.post(roomId, {
+          // Deliberately no `@` anywhere: a backend that resolves mentions by
+          // scanning the text would pass with the field still on the floor.
+          text: 'a line that names nobody in its own words',
+          mentions: [identityMemberId],
+        });
+
+        const written = (await adapter.listEntries(roomId, { limit: 500 })).entries.find(
+          (entry) => entry.id === posted.entryId
+        );
+        expect(written, 'the posted entry must be readable').toBeDefined();
+        expect(
+          written!.mentions,
+          'a mention the writer resolved must survive the write, or nothing addresses anyone'
+        ).toContain(identityMemberId);
+      });
+
+      it('U20 hands back a receipt cursor that resumes AFTER the entry it names', async () => {
+        // `CommunityEntryRef.cursor` is "the cursor that resumes after it, so a
+        // poster can subscribe without a round-trip". A receipt that resumes
+        // BEFORE its own entry makes that round trip a duplicate; one that
+        // resumes past the next entry loses it. Both look like a working cursor
+        // to every other assertion in this file.
+        const { adapter, roomId } = await arrange();
+        const receipt = await adapter.post(roomId, { text: 'the entry the receipt names' });
+        const next = await adapter.post(roomId, { text: 'the entry a resume must carry' });
+
+        const iterator = adapter.subscribeRoom(roomId, receipt.cursor)[Symbol.asyncIterator]();
+        try {
+          const snapshot = await nextEvent(iterator, 'the resumed snapshot', eventTimeoutMs);
+          expect(snapshot.type).toBe('snapshot');
+          if (snapshot.type !== 'snapshot') return;
+          const ids = snapshot.entries.map((entry) => entry.id);
+          expect(ids, 'a resume from a receipt must carry what was written after it').toContain(
+            next.entryId
+          );
+          expect(
+            ids,
+            'and must not replay the entry the receipt itself names — it resumes AFTER it'
+          ).not.toContain(receipt.entryId);
+        } finally {
+          await iterator.return?.();
+        }
+      });
+    }
+
+    it('U21 hands out a capability declaration a consumer cannot change', async () => {
+      // Capabilities decide what a caller may do, and every consumer reads them
+      // through this one method. A declaration handed out by reference is one
+      // stray `push` away from an adapter that says it can post because
+      // something else mutated what it was given — and the mutation is
+      // invisible, because the object still looks exactly like a declaration.
+      const adapter = makeAdapter();
+      const before = structuredClone(adapter.getCapabilities());
+      const handed = adapter.getCapabilities();
+
+      handed.canPost = !handed.canPost;
+      handed.roomAdmin = !handed.roomAdmin;
+      handed.roles.supported = !handed.roles.supported;
+      handed.roles.values.push({ id: 'intruder', label: 'Intruder', administers: true });
+      handed.features.intruder = true;
+
+      expect(
+        adapter.getCapabilities(),
+        'a consumer holding a declaration must not be able to rewrite the next one'
+      ).toEqual(before);
+    });
+
+    it('U22 refuses a cursor it did not mint, on BOTH surfaces that take one', async () => {
+      assertImported(StaleCommunityCursorError, 'StaleCommunityCursorError');
+      const { adapter } = await arrange();
+      const roomA = await seedRoom(adapter);
+      const roomB = await seedRoom(adapter);
+      const foreign = (await pageAllEntries(adapter, roomA)).entries[0]!.cursor;
+
+      // U7 asserts the streaming surface. This is the paging one, which takes a
+      // cursor too and had nothing asserting it at all: an adapter that rejected
+      // a foreign cursor on `subscribeRoom` and quietly bounded it on
+      // `listEntries` passed the whole suite, while serving a page from the
+      // wrong place in the wrong room.
+      await expect(
+        adapter.listEntries(roomB, { cursor: foreign }),
+        'listEntries must reject a cursor from another room, not bound it'
+      ).rejects.toBeInstanceOf(StaleCommunityCursorError);
+
+      // A token this adapter cannot have minted at all. Whatever the encoding
+      // is, "I do not recognise this" is a refusal and never a default position
+      // at the start of the room.
+      const nonsense = 'not-a-cursor-this-adapter-ever-minted' as CommunityCursor;
+      expect(
+        () => adapter.subscribeRoom(roomB, nonsense),
+        'an unrecognisable cursor is refused at call time, like every other one'
+      ).toThrow(StaleCommunityCursorError);
+      await expect(
+        adapter.listEntries(roomB, { cursor: nonsense }),
+        'and refused on the paging surface too, rather than read as the beginning'
+      ).rejects.toBeInstanceOf(StaleCommunityCursorError);
+    });
   });
 
   /**

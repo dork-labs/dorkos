@@ -54,6 +54,13 @@ function hooks(capabilities: Partial<Omit<CommunityCapabilities, 'type'>> = {}) 
       (adapter as FakeCommunityAdapter).evictRoom(roomId, 'access-revoked');
       return Promise.resolve('access-revoked' as const);
     },
+    // Out of band, like every other arrangement here: the port has no method
+    // that takes a room away, and archiving is not one — an archived room still
+    // reads and is still listed.
+    makeRemovedRoom: (adapter: CommunityAdapter, roomId: string) => {
+      (adapter as FakeCommunityAdapter).removeRoom(roomId);
+      return Promise.resolve();
+    },
     // The port has no post-as-agent, so the entry an agent wrote is arranged out
     // of band — the same way a read-only backend arranges anything at all.
     seedAgentEntry: (adapter: CommunityAdapter, roomId: string, agent: CommunityMember) =>

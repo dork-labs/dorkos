@@ -53,6 +53,17 @@ export interface RoomPostInput {
    * arrival order whatever a message responds to.
    */
   answersEntryId?: string;
+  /**
+   * Author ids the writer addressed and resolved for itself, unioned with
+   * whatever the text names.
+   *
+   * The `CommunityAdapter` port is the caller this exists for: its `post`
+   * carries mentions across the seam, and a member addressed with no `@` in the
+   * message is unreachable without them. Filtered to this room's own members —
+   * see `withCallerMentions` in {@link RoomEntryWriter}'s module — so supplying
+   * an id is never a way to reach somebody outside it.
+   */
+  mentions?: readonly string[];
 }
 
 /** The two doors a message comes through, and the files it may bring. */

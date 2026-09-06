@@ -83,12 +83,28 @@ export async function registerLocalCommunity(deps: {
     store: deps.store,
     resolveIdentity: localCommunityIdentity(deps.authors),
   });
+  // Registration first, and it is what the guarantee is about: after this line
+  // `LOCAL_COMMUNITY` is present whatever connecting turns out to do.
   registry.register(adapter, LOCAL_COMMUNITY_LABEL);
-  const connection = await registry.connect(adapter.community);
-  if (connection.status !== 'connected') {
-    logger.warn('[Communities] the local community did not connect', {
-      status: connection.status,
-      error: connection.error,
+  try {
+    const connection = await registry.connect(adapter.community);
+    if (connection.status !== 'connected') {
+      logger.warn('[Communities] the local community did not connect', {
+        status: connection.status,
+        error: connection.error,
+      });
+    }
+  } catch (err) {
+    // **Guarded because this is the startup path.** A connection outcome is
+    // typed on the result and cannot arrive here — but a THROW can, from
+    // anywhere under it: a store handle that dies mid-resolution, an author
+    // registry that raises, a later adapter whose `connect` is less careful than
+    // this one's. Unguarded, any of those stops the server before it listens and
+    // takes every other subsystem down with a community that failed to connect,
+    // which inverts the one rule the registry exists to hold. Degrading is the
+    // same answer `aggregateCommunityRooms` gives for every other community.
+    logger.warn('[Communities] the local community threw while connecting', {
+      error: err instanceof Error ? err.message : String(err),
     });
   }
   return adapter;

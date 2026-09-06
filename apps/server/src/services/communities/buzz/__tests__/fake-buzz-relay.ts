@@ -237,6 +237,22 @@ export class FakeBuzzRelay {
     this.channels.delete(channelId);
   }
 
+  /**
+   * Drop every live socket from the RELAY's side — a restart, a deploy, a
+   * network blip, an idle timeout.
+   *
+   * Distinct from a client-side close in the one way that matters here: the
+   * client did not ask for it and nothing above the socket knows it happened.
+   * Everything a relay client owes after this — reconnecting, and telling a
+   * caller that a read failed rather than answering it with an empty room — is
+   * only reachable through this door.
+   *
+   * @param reason - What the socket layer would have reported.
+   */
+  dropConnections(reason = 'connection reset by peer'): void {
+    for (const connection of [...this.connections]) connection.dropFromRelay(reason);
+  }
+
   // --- The relay ------------------------------------------------------------
 
   /**
@@ -445,6 +461,20 @@ class FakeConnection implements BuzzSocket {
     this.closed = true;
     this.relay.drop(this);
     this.handlers.onClose('closed by the client');
+  }
+
+  /**
+   * Close this connection from the relay's side, without the client having
+   * asked. The client learns about it exactly as `ws` would report it: one
+   * `onClose` with a reason.
+   *
+   * @param reason - What the socket layer reports.
+   */
+  dropFromRelay(reason: string): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.relay.drop(this);
+    this.handlers.onClose(reason);
   }
 
   /**
