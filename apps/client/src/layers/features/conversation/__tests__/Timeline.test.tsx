@@ -499,9 +499,9 @@ describe('Conversation.Timeline', () => {
   });
 
   it('draws the host’s skeleton instead of the list while history is loading', () => {
-    mount({ loading: <p>Loading conversation...</p> });
+    mount({ loading: <p>Loading conversation…</p> });
 
-    expect(screen.getByText('Loading conversation...')).toBeInTheDocument();
+    expect(screen.getByText('Loading conversation…')).toBeInTheDocument();
     expect(screen.queryByTestId('row-entry-1')).not.toBeInTheDocument();
   });
 

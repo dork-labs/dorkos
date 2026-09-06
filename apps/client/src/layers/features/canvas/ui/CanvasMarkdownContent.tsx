@@ -32,7 +32,7 @@ function saveStatusLabel(status: ReturnType<typeof useCanvasFileSave>['status'])
     case 'saved':
       return 'Saved';
     case 'error':
-      return "Couldn't save";
+      return 'Couldn’t save';
     default:
       return null;
   }

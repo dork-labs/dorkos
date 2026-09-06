@@ -157,7 +157,7 @@ describe('RoomFlow', () => {
 
   it('says the room keeps everything when the history could not be read', () => {
     renderTimeline({ error: new Error('offline') });
-    expect(screen.getByText(/Couldn't load this conversation/i)).toBeInTheDocument();
+    expect(screen.getByText(/Couldn’t load this conversation/i)).toBeInTheDocument();
   });
 
   it('invites you to add agents when nothing has been said', () => {
@@ -877,7 +877,7 @@ describe('toMessageAuthor', () => {
     expect(first.color).not.toBe(toMessageAuthor('bo', new Map()).color);
   });
 
-  it("passes through the roster's own emoji and color rather than guessing over them", () => {
+  it('passes through the roster’s own emoji and color rather than guessing over them', () => {
     const authors = authorsById([
       member('ana', 'Ana', 'agent', { emoji: '🎨', color: 'hsl(210 70% 55%)' }),
     ]);

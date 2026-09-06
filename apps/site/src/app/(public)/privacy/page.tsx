@@ -176,10 +176,10 @@ export default function PrivacyPolicyPage() {
             <p className="text-warm-gray leading-relaxed">
               Here is the honest part: if you decline, ignore the banner, or turn analytics off, we
               still count your visit, but anonymously. No cookies, no stored ID, and no way to
-              connect today&apos;s visit to tomorrow&apos;s. We use a privacy-preserving code that
-              is reshuffled every day, so the count cannot be traced back to you. We also honor your
-              browser&apos;s Do Not Track and Global Privacy Control signals: if either is on, the
-              cookie version stays off automatically.
+              connect today’s visit to tomorrow’s. We use a privacy-preserving code that is
+              reshuffled every day, so the count cannot be traced back to you. We also honor your
+              browser’s Do Not Track and Global Privacy Control signals: if either is on, the cookie
+              version stays off automatically.
             </p>
 
             <AnalyticsPreferenceControl />

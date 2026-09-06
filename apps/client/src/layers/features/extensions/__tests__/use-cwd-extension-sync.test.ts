@@ -127,7 +127,7 @@ describe('useCwdExtensionSync', () => {
     });
 
     await vi.waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith("Couldn't load this project's extensions");
+      expect(toast.error).toHaveBeenCalledWith('Couldn’t load this project’s extensions');
     });
     expect(toast.info).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith(

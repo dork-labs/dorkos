@@ -19,7 +19,7 @@
  * channel") was a plain falsehood for one of the two. This sentence is true of
  * both, which is why no new field had to reach the wire to make the copy honest.
  */
-export const NOT_IN_ROOM_LABEL = "You're not in this channel";
+export const NOT_IN_ROOM_LABEL = 'You’re not in this channel';
 
 /**
  * The label plus the consequence, which is the part a reader actually needs:

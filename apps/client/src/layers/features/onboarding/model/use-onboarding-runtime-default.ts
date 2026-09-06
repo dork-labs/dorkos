@@ -139,7 +139,7 @@ export function useOnboardingRuntimeDefault({
           // `actedOnRef` deliberately stays: this settle has had its turn, and
           // the next one gets another.
           setOptimistic(null);
-          setError(err.message || 'Could not save that. Try again.');
+          setError(err.message || 'Couldn’t save that. Try again.');
         },
       });
     },

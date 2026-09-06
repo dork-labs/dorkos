@@ -119,7 +119,7 @@ describe('the warning', () => {
     renderWarning(dirtyRoom());
 
     expect(
-      await screen.findByText(/Somebody changed this room's files outside DorkOS/)
+      await screen.findByText(/Somebody changed this room’s files outside DorkOS/)
     ).toBeInTheDocument();
     expect(screen.getByText('ROOM.md')).toBeInTheDocument();
     expect(screen.getByText('notes/scratch.md')).toBeInTheDocument();

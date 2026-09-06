@@ -191,14 +191,14 @@ describe('the task form Runs-on controls', () => {
   afterEach(() => cleanup());
 
   describe('what the default option says', () => {
-    it("names the target agent's own runtime", async () => {
+    it('names the target agent’s own runtime', async () => {
       const transport = transportWithAgent('codex');
       renderEditTask(
         transport,
         createMockSchedule({ id: 'sched-1', agentId: 'agent-1', runtime: null })
       );
 
-      await expectSelected('task-runtime-select', "Agent's runtime (Codex)");
+      await expectSelected('task-runtime-select', 'Agent’s runtime (Codex)');
     });
 
     it('names the server default when no agent is picked', async () => {
@@ -226,7 +226,7 @@ describe('the task form Runs-on controls', () => {
   });
 
   describe('the model select', () => {
-    it("asks the EFFECTIVE runtime's catalog, not the default's", async () => {
+    it('asks the EFFECTIVE runtime’s catalog, not the default’s', async () => {
       const getModels = vi.fn().mockResolvedValue([]);
       const transport = transportWithAgent('codex', { getModels });
       renderEditTask(
@@ -537,7 +537,7 @@ describe('the task form Runs-on controls', () => {
         target: { value: 'Nightly build' },
       });
       fireEvent.change(
-        screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
+        screen.getByPlaceholderText('Review all pending PRs and summarize findings…'),
         { target: { value: 'Run the nightly build' } }
       );
     }
@@ -547,7 +547,7 @@ describe('the task form Runs-on controls', () => {
       const transport = transportWithAgentPerRuntime({ createTask });
       renderNewTaskOnClaude(transport);
 
-      await pickAgent("Agent's runtime (Claude Code)", 'codex-bot');
+      await pickAgent('Agent’s runtime (Claude Code)', 'codex-bot');
 
       const door = await screen.findByRole('alertdialog');
       // Codex's own word for the stop `acceptEdits` sits at, and the sentence
@@ -562,11 +562,11 @@ describe('the task form Runs-on controls', () => {
       expect(screen.getByText('claude-bot')).toBeInTheDocument();
       expect(screen.queryByText('codex-bot')).toBeNull();
       expect(screen.getByTestId('task-runtime-select')).toHaveTextContent(
-        "Agent's runtime (Claude Code)"
+        'Agent’s runtime (Claude Code)'
       );
 
       await confirmConsent('Turn on Act');
-      await expectSelected('task-runtime-select', "Agent's runtime (Codex)");
+      await expectSelected('task-runtime-select', 'Agent’s runtime (Codex)');
 
       fillRequiredFields();
       fireEvent.click(screen.getByText('Create'));
@@ -582,7 +582,7 @@ describe('the task form Runs-on controls', () => {
       const transport = transportWithAgentPerRuntime({ createTask });
       renderNewTaskOnClaude(transport);
 
-      await pickAgent("Agent's runtime (Claude Code)", 'codex-bot');
+      await pickAgent('Agent’s runtime (Claude Code)', 'codex-bot');
 
       const door = await screen.findByRole('alertdialog');
       await user.click(within(door).getByRole('button', { name: 'Cancel' }));
@@ -591,7 +591,7 @@ describe('the task form Runs-on controls', () => {
       expect(screen.getByText('claude-bot')).toBeInTheDocument();
       expect(screen.queryByText('codex-bot')).toBeNull();
       expect(screen.getByTestId('task-runtime-select')).toHaveTextContent(
-        "Agent's runtime (Claude Code)"
+        'Agent’s runtime (Claude Code)'
       );
 
       // All the way to the wire: the task is filed against the agent it had,
@@ -613,9 +613,9 @@ describe('the task form Runs-on controls', () => {
       const transport = transportWithAgentPerRuntime();
       renderNewTaskOnClaude(transport);
 
-      await pickAgent("Agent's runtime (Claude Code)", 'oc-bot');
+      await pickAgent('Agent’s runtime (Claude Code)', 'oc-bot');
 
-      await expectSelected('task-runtime-select', "Agent's runtime (OpenCode)");
+      await expectSelected('task-runtime-select', 'Agent’s runtime (OpenCode)');
       expect(screen.queryByRole('alertdialog')).toBeNull();
     });
 
@@ -641,9 +641,9 @@ describe('the task form Runs-on controls', () => {
       await waitFor(() =>
         expect(screen.getByRole('radio', { name: 'Full autonomy' })).toBeChecked()
       );
-      await pickAgent("Agent's runtime (Claude Code)", 'codex-bot');
+      await pickAgent('Agent’s runtime (Claude Code)', 'codex-bot');
 
-      await expectSelected('task-runtime-select', "Agent's runtime (Codex)");
+      await expectSelected('task-runtime-select', 'Agent’s runtime (Codex)');
       expect(screen.queryByRole('alertdialog')).toBeNull();
     });
 
@@ -688,7 +688,7 @@ describe('the task form Runs-on controls', () => {
         );
 
         // And no other agent is reachable from this form at all.
-        expect(screen.queryByPlaceholderText('Search agents...')).toBeNull();
+        expect(screen.queryByPlaceholderText('Search agents…')).toBeNull();
         expect(screen.queryByText('claude-bot')).toBeNull();
         expect(screen.queryByText('oc-bot')).toBeNull();
       });
@@ -749,7 +749,7 @@ describe('the task form Runs-on controls', () => {
           vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-1' }))
         );
 
-        await expectSelected('task-runtime-select', "Agent's runtime (Codex)");
+        await expectSelected('task-runtime-select', 'Agent’s runtime (Codex)');
 
         // The repro's first move has nowhere to start: the agent is text, not a
         // control, so the Claude Code agent cannot be reached and nothing
@@ -786,7 +786,7 @@ describe('the task form Runs-on controls', () => {
           vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-1' }))
         );
 
-        await expectSelected('task-runtime-select', "Agent's runtime (Codex)");
+        await expectSelected('task-runtime-select', 'Agent’s runtime (Codex)');
         fireEvent.click(screen.getByText('Save'));
         await waitFor(() => expect(updateTask).toHaveBeenCalled());
         const body = updateTask.mock.calls[0]?.[1] as Record<string, unknown>;
@@ -815,7 +815,7 @@ describe('the task form Runs-on controls', () => {
 
       // Pinned to the runtime the task is already on, so the pin itself is not a
       // widening and needs no door of its own.
-      await expectSelected('task-runtime-select', "Agent's runtime (Claude Code)");
+      await expectSelected('task-runtime-select', 'Agent’s runtime (Claude Code)');
       await pick('task-runtime-select', 'Claude Code');
       await expectSelected('task-runtime-select', 'Claude Code');
 
@@ -935,7 +935,7 @@ describe('the task form Runs-on controls', () => {
         const door = await screen.findByRole('alertdialog');
         expect(door).toHaveTextContent('Turn on Act');
         await confirmConsent('Turn on Act');
-        await expectSelected('task-runtime-select', "Agent's runtime (Codex)");
+        await expectSelected('task-runtime-select', 'Agent’s runtime (Codex)');
         expect(screen.queryByTestId('agent-pick-waiting')).toBeNull();
       });
 
@@ -958,7 +958,7 @@ describe('the task form Runs-on controls', () => {
         const door = await screen.findByRole('alertdialog');
         await user.click(within(door).getByRole('button', { name: 'Cancel' }));
         await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-        await expectSelected('task-runtime-select', "Agent's runtime (Claude Code)");
+        await expectSelected('task-runtime-select', 'Agent’s runtime (Claude Code)');
 
         // Nothing else happens in between. The roster grows, which is all it
         // takes to make the manifests unknown and then known again.
@@ -966,7 +966,7 @@ describe('the task form Runs-on controls', () => {
         await expectSelected('task-runtime-select', 'Server default (Claude Code)');
         releaseSecond();
 
-        await expectSelected('task-runtime-select', "Agent's runtime (Claude Code)");
+        await expectSelected('task-runtime-select', 'Agent’s runtime (Claude Code)');
         expect(screen.queryByRole('alertdialog')).toBeNull();
         expect(screen.getByText('claude-bot')).toBeInTheDocument();
 
@@ -1008,7 +1008,7 @@ describe('the task form Runs-on controls', () => {
         // Then a different agent, which needs no door of its own.
         fireEvent.click(screen.getByText('claude-bot'));
         fireEvent.click(await screen.findByText('oc-bot'));
-        await expectSelected('task-runtime-select', "Agent's runtime (OpenCode)");
+        await expectSelected('task-runtime-select', 'Agent’s runtime (OpenCode)');
 
         // The manifests are read again — the everyday event, not an exotic one.
         const releaseSecond = await beginSecondRead(transport, client);
@@ -1021,7 +1021,7 @@ describe('the task form Runs-on controls', () => {
 
         // The refused pick does not come back to life, and the one the person
         // actually made is still theirs.
-        await expectSelected('task-runtime-select', "Agent's runtime (OpenCode)");
+        await expectSelected('task-runtime-select', 'Agent’s runtime (OpenCode)');
         expect(screen.queryByRole('alertdialog')).toBeNull();
         fillRequiredFields();
         fireEvent.click(screen.getByText('Create'));
@@ -1061,7 +1061,7 @@ describe('the task form Runs-on controls', () => {
         const releaseSecond = await beginSecondRead(transport, client);
         releaseSecond();
 
-        await expectSelected('task-runtime-select', "Agent's runtime (Claude Code)");
+        await expectSelected('task-runtime-select', 'Agent’s runtime (Claude Code)');
         expect(screen.queryByRole('alertdialog')).toBeNull();
         fillRequiredFields();
         fireEvent.click(screen.getByText('Create'));
@@ -1235,7 +1235,7 @@ describe('the task form Runs-on controls', () => {
         target: { value: 'Nightly build' },
       });
       fireEvent.change(
-        screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
+        screen.getByPlaceholderText('Review all pending PRs and summarize findings…'),
         { target: { value: 'Run the nightly build' } }
       );
 
@@ -1271,7 +1271,7 @@ describe('the task form Runs-on controls', () => {
         target: { value: 'Nightly build' },
       });
       fireEvent.change(
-        screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
+        screen.getByPlaceholderText('Review all pending PRs and summarize findings…'),
         { target: { value: 'Run the nightly build' } }
       );
       fireEvent.click(screen.getByText('Create'));

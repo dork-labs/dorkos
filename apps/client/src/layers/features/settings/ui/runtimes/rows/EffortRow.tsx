@@ -125,7 +125,7 @@ export function EffortRow({
           data-testid={`runtime-effort-model-unsupported-${runtimeType}`}
         >
           <p className="text-muted-foreground text-xs">
-            {selectedModel?.displayName ?? configuredModelId} doesn&apos;t take an effort setting
+            {selectedModel?.displayName ?? configuredModelId} doesn’t take an effort setting
           </p>
           {value && (
             <button

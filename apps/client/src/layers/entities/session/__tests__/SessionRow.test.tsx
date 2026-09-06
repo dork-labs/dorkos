@@ -244,7 +244,7 @@ describe('SessionRow variant="full"', () => {
     ['bypassPermissions', 'Full power'],
     ['plan', 'Plan Mode'],
     ['acceptEdits', 'Accept Edits'],
-    ['dontAsk', "Don't Ask"],
+    ['dontAsk', 'Don’t Ask'],
     ['auto', 'Auto'],
     ['default', 'Default'],
   ] as const)('names %s as "%s" in the details panel', (mode, label) => {
@@ -261,7 +261,7 @@ describe('SessionRow variant="full"', () => {
     expect(screen.getByText(label)).toBeDefined();
   });
 
-  it("shows a runtime's own name for a mode DorkOS has no label for", () => {
+  it('shows a runtime’s own name for a mode DorkOS has no label for', () => {
     // A made-up label would be a worse answer than the runtime's own spelling.
     renderRow(
       <SessionRow

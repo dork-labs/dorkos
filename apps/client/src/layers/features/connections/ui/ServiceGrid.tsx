@@ -29,7 +29,7 @@ export function ServiceGrid() {
   if (isError) {
     return (
       <p role="alert" className="text-destructive text-sm">
-        Could not load services: {error.message}
+        Couldn’t load services: {error.message}
       </p>
     );
   }

@@ -54,7 +54,7 @@ function LinkBlock({ url }: { url: string }) {
     label = 'Copied';
   } else if (failed) {
     icon = <X className="text-destructive size-3.5" />;
-    label = "Couldn't copy";
+    label = 'Couldn’t copy';
   } else {
     icon = <Copy className="size-3.5" />;
     label = 'Copy link';

@@ -88,7 +88,7 @@ describe('AgentRosterPicker states', () => {
 
     expect(screen.queryByText(EMPTY_COPY)).not.toBeInTheDocument();
     const alert = screen.getByRole('alert');
-    expect(alert).toHaveTextContent(/Couldn't read your agents/i);
+    expect(alert).toHaveTextContent(/Couldn’t read your agents/i);
     expect(alert).toHaveTextContent(/still there/i);
 
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));

@@ -23,6 +23,6 @@ export function useCreateAgent() {
     },
     // The shared mutation toast (`query-client.ts`) reports failures — the
     // dialog used to show its own on top of it.
-    meta: { errorLabel: "Couldn't create that agent" },
+    meta: { errorLabel: 'Couldn’t create that agent' },
   });
 }

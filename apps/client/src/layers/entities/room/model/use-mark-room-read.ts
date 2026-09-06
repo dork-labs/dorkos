@@ -137,6 +137,6 @@ export function useMarkRoomReadNow(): UseMutationResult<void, Error, string> {
     // one identical toast per room. Sonner keys on the id, so the tenth failure
     // replaces the first line instead of burying the sidebar (the collapse rule
     // documented on the mutation cache in `lib/query-client.ts`).
-    meta: { errorLabel: "Couldn't mark that room as read", errorToastId: 'mark-room-read' },
+    meta: { errorLabel: 'Couldn’t mark that room as read', errorToastId: 'mark-room-read' },
   });
 }

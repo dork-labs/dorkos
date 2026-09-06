@@ -34,8 +34,8 @@ export function CapabilityApprovalTimedOut({ title }: CapabilityApprovalTimedOut
       <div className="min-w-0 flex-1">
         <p className="text-sm">The agent stopped waiting for your answer.</p>
         <p className="text-muted-foreground mt-0.5 text-xs">
-          &ldquo;{title}&rdquo; is still in your Approvals list. Answer it there, then tell the
-          agent to try again.
+          “{title}” is still in your Approvals list. Answer it there, then tell the agent to try
+          again.
         </p>
       </div>
     </div>

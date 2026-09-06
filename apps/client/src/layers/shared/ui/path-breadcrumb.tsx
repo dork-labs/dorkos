@@ -43,7 +43,7 @@ export function PathBreadcrumb({
     >
       {truncated && (
         <>
-          <span className={cn(textClass, 'text-muted-foreground/50 flex-shrink-0')}>...</span>
+          <span className={cn(textClass, 'text-muted-foreground/50 flex-shrink-0')}>…</span>
           <ChevronRight className={cn(chevronClass, 'text-muted-foreground/40 flex-shrink-0')} />
         </>
       )}

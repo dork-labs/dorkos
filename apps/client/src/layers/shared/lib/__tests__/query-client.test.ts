@@ -54,7 +54,7 @@ describe('mutation error toast policy', () => {
     fireMutationError(undefined);
 
     expect(toast.error).toHaveBeenCalledWith(
-      "That didn't work. Try again.",
+      'That didn’t work. Try again.',
       expect.objectContaining({ action: expect.objectContaining({ label: 'Report' }) })
     );
   });
@@ -63,10 +63,10 @@ describe('mutation error toast policy', () => {
   // description under it. It used to be one line joined by an em dash, so
   // "ENOENT: no such file or directory" led every failure that named itself.
   it('puts the authored label on top and the raw error underneath', () => {
-    fireMutationError({ errorLabel: "Couldn't send your message." });
+    fireMutationError({ errorLabel: 'Couldn’t send your message.' });
 
     expect(toast.error).toHaveBeenCalledWith(
-      "Couldn't send your message.",
+      'Couldn’t send your message.',
       expect.objectContaining({ description: 'boom' })
     );
     const [headline] = vi.mocked(toast.error).mock.calls[0] as [string, unknown];
@@ -90,7 +90,7 @@ describe('mutation error toast policy', () => {
     fireMutationError({ somethingElse: true });
 
     expect(toast.error).toHaveBeenCalledWith(
-      "That didn't work. Try again.",
+      'That didn’t work. Try again.',
       expect.objectContaining({ action: expect.objectContaining({ label: 'Report' }) })
     );
   });

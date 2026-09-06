@@ -228,7 +228,7 @@ describe('the panel resolving its own room', () => {
       createMockTransport({ getRoom: vi.fn().mockRejectedValue(new Error('404 Not Found')) })
     );
 
-    expect(await screen.findByText("That room isn't here")).toBeInTheDocument();
+    expect(await screen.findByText('That room isn’t here')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Current members' })).not.toBeInTheDocument();
   });

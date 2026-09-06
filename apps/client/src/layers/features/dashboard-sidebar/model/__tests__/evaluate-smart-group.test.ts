@@ -56,7 +56,7 @@ describe('describeRules', () => {
     ).toBe('Codex · needs attention or active · active in the last hour');
   });
 
-  it("the spec's own example reads as documented", () => {
+  it('the spec’s own example reads as documented', () => {
     expect(describeRules({ runtimes: ['codex'], lastActiveWithinMs: HOUR })).toBe(
       'Codex · active in the last hour'
     );

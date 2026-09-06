@@ -101,7 +101,7 @@ export function useCwdExtensionSync(onExtensionsChanged: () => void | Promise<vo
         toast.info('Project extensions updated');
       } catch (err) {
         console.error('[extensions] Failed to apply the new extension set:', err);
-        toast.error("Couldn't load this project's extensions");
+        toast.error('Couldn’t load this project’s extensions');
       }
     });
   }, [selectedCwd]);

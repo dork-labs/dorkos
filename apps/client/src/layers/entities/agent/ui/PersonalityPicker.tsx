@@ -263,7 +263,7 @@ export function PersonalityPicker({
                 transition={FADE_TRANSITION}
                 className="text-muted-foreground text-xs leading-relaxed italic"
               >
-                &ldquo;{sampleText}&rdquo;
+                “{sampleText}”
               </motion.p>
             </AnimatePresence>
           ) : (

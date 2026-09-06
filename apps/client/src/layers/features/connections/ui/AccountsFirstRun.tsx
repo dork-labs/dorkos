@@ -41,8 +41,8 @@ export function AccountsFirstRun({ onSetUpCarrier }: { onSetUpCarrier: () => voi
         <p className="text-sm font-medium">Nothing can be connected yet</p>
         <p className="text-muted-foreground max-w-prose text-sm leading-relaxed">
           Accounts reach DorkOS through Composio, an outside service that holds the sign-ins. It is
-          a one-time setup and takes about two minutes. Your sign-ins live in Composio&rsquo;s
-          vault, not on this machine.
+          a one-time setup and takes about two minutes. Your sign-ins live in Composio’s vault, not
+          on this machine.
         </p>
         <Button size="sm" onClick={onSetUpCarrier}>
           Set up Composio

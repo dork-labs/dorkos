@@ -157,7 +157,7 @@ export const ALL_FIELD_TYPES: ConfigField[] = [
     label: 'Text Field',
     type: 'text',
     required: true,
-    placeholder: 'Enter text...',
+    placeholder: 'Enter text…',
     description: 'A standard text input.',
   },
   {
@@ -211,7 +211,7 @@ export const ALL_FIELD_TYPES: ConfigField[] = [
     label: 'Textarea',
     type: 'textarea',
     required: false,
-    placeholder: 'Enter multiline text...',
+    placeholder: 'Enter multiline text…',
     description: 'Multiline text input.',
   },
   {
@@ -235,7 +235,7 @@ export const ERROR_FIELDS: ConfigField[] = [
     label: 'API Key',
     type: 'text',
     required: true,
-    placeholder: 'Enter your API key...',
+    placeholder: 'Enter your API key…',
     description: 'Required text field with validation error.',
   },
   {

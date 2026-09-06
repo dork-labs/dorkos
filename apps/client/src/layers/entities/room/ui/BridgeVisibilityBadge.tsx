@@ -86,9 +86,9 @@ export function BridgeVisibilityBadge({ visibility, className }: BridgeVisibilit
           What this room can see
         </ResponsivePopoverTitle>
         <p className="text-muted-foreground text-xs">
-          This is Telegram&apos;s own privacy switch for the bot, not a DorkOS setting. You
-          can&apos;t change it here. Turning it off means removing the bot from this group and
-          adding it back after flipping the switch in Telegram.
+          This is Telegram’s own privacy switch for the bot, not a DorkOS setting. You can’t change
+          it here. Turning it off means removing the bot from this group and adding it back after
+          flipping the switch in Telegram.
         </p>
         <p className="text-muted-foreground text-xs">
           The switch is bot-wide, not per group: if the bot was added here before you last changed
@@ -96,9 +96,9 @@ export function BridgeVisibilityBadge({ visibility, className }: BridgeVisibilit
           applies in groups where it was added after this was set.
         </p>
         <p className="text-muted-foreground text-xs">
-          This badge only describes Telegram&apos;s side. DorkOS has a reply setting of its own for
-          this room that can narrow things further, so a bot Telegram lets see everything can still
-          only act on messages that mention it.
+          This badge only describes Telegram’s side. DorkOS has a reply setting of its own for this
+          room that can narrow things further, so a bot Telegram lets see everything can still only
+          act on messages that mention it.
         </p>
       </ResponsivePopoverContent>
     </ResponsivePopover>

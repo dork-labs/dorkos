@@ -142,7 +142,7 @@ export function DirectoryPicker({
       // Auto-navigate into the new folder
       handleNavigate(result.path);
     } catch (err) {
-      toast.error("Couldn't make that folder.", {
+      toast.error('Couldn’t make that folder.', {
         description:
           err instanceof Error ? err.message : 'Check the name, or pick a different place.',
       });

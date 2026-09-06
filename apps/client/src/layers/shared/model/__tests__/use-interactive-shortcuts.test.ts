@@ -87,7 +87,7 @@ describe('useInteractiveShortcuts', () => {
       expect(onDeny).toHaveBeenCalledTimes(1);
     });
 
-    it("leaves Enter alone while someone is typing into the card's own field", () => {
+    it('leaves Enter alone while someone is typing into the card’s own field', () => {
       // The safety case. The deny-reason field lives inside the approval card,
       // and the card's bare-Enter shortcut is APPROVE — so without this guard
       // the Enter that submits "no, do it the other way" would allow the very

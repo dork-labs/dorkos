@@ -63,7 +63,7 @@ describe('useAgentSessions', () => {
   // that list, so it fetched the window's directory and always came back empty —
   // this test fails red against it and green only once the query keys on the
   // agent's own path.
-  it("fetches the agent's own directory, not the window's selected one (DOR-929)", async () => {
+  it('fetches the agent’s own directory, not the window’s selected one (DOR-929)', async () => {
     appStore.selectedCwd = '/window/cwd'; // window is looking at a DIFFERENT agent
     const agentSession = makeSession({ id: 'agent-session', cwd: '/agent/cwd' });
     const listSessions = vi.fn((cwd?: string) =>

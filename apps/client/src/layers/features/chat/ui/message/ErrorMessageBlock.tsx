@@ -30,7 +30,7 @@ const ERROR_COPY: Record<ErrorCategory, { heading: string; subtext: string; retr
     },
     output_format_error: {
       heading: 'Output format error',
-      subtext: "The agent couldn't produce the required output format.",
+      subtext: 'The agent couldn’t produce the required output format.',
       retryable: false,
     },
     auth_error: {

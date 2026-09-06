@@ -414,7 +414,7 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
         ) : !effortIsChoosable ? (
           <EffortNote
             testId="agent-effort-unsupported-model"
-            text="This model doesn't take an effort setting"
+            text="This model doesn’t take an effort setting"
             warning={breakageFor(['effort-unsupported-model'])}
           />
         ) : (

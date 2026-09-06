@@ -105,7 +105,7 @@ export function EntryReactionGrid({ mine, frequents, onPick, disabled }: EntryRe
       />
       {disabled === true && (
         <p role="status" className="text-muted-foreground px-1 text-xs">
-          Reactions won&apos;t send until the room reconnects.
+          Reactions won’t send until the room reconnects.
         </p>
       )}
       <div className="max-h-64 overflow-y-auto pr-1">

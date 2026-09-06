@@ -59,7 +59,7 @@ export function TelemetryConsentMoment() {
       <DialogHeader>
         <DialogTitle>Share anonymous usage data?</DialogTitle>
         <DialogDescription>
-          DorkOS sends us nothing unless you say so. Want to share a daily “I&apos;m alive” ping and
+          DorkOS sends us nothing unless you say so. Want to share a daily “I’m alive” ping and
           install counts? Never your prompts, code, or files.
         </DialogDescription>
       </DialogHeader>
@@ -82,7 +82,7 @@ export function TelemetryConsentMoment() {
       <DialogFooter className="items-center gap-2 sm:justify-between">
         {updateConfig.isError ? (
           <p role="alert" className="text-destructive text-xs">
-            Couldn&apos;t save your choice. Try again.
+            Couldn’t save your choice. Try again.
           </p>
         ) : (
           <span aria-hidden />

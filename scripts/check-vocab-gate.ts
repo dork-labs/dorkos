@@ -66,15 +66,19 @@
  * named `*ErrorMessage`/`honestInstallError`, or a `// vocab-gate: copy`
  * marker comment) without touching the mechanism this file already has.
  *
- * DATA, NOT CODE, IS WHAT WAVE 2 EXTENDS. `vocab-gate/banned-terms.json` holds
- * one wave per retired word (Wave 1: "connection"); `vocab-gate/allowlist.json`
- * holds every legitimate domain use the parser still flags, each with a path
- * substring, an optional term scope, and a written reason. Wave 2 (plan:
- * integration, connector, adapter, provider, platform-channel) adds a wave
- * object and whatever allowlist entries its own sweep turns up — this file
- * does not change. See `scripts/__tests__/check-vocab-gate.test.ts`, the pin
- * suite that keeps this mechanism from rotting the way `assert-tests-executed.sh`
- * is pinned by `test-assert-tests-executed.sh`.
+ * DATA, NOT CODE, IS WHAT A NEW WAVE EXTENDS. `vocab-gate/banned-terms.json`
+ * holds one wave per retired string (Wave 1: "connection"; Wave 2: "mission
+ * control"/"cockpit"; Wave 3: the typography DOR-1756 settled — "...",
+ * "&apos;", "&rsquo;", "&ldquo;", "&rdquo;"); `vocab-gate/allowlist.json` holds
+ * every legitimate domain use the parser still flags, each with a path
+ * substring, an optional term scope, and a written reason. A new wave adds a
+ * wave object and whatever allowlist entries its own sweep turns up — this file
+ * does not change. Wave 3 is the one exception to date: banning punctuation
+ * needed {@link termMatcher}, because the old inline `\b${term}\b` both treated
+ * `.` as a wildcard and demanded a word boundary an ellipsis does not have. See
+ * `scripts/__tests__/check-vocab-gate.test.ts`, the pin suite that keeps this
+ * mechanism from rotting the way `assert-tests-executed.sh` is pinned by
+ * `test-assert-tests-executed.sh`.
  *
  * Usage:
  *   pnpm exec tsx scripts/check-vocab-gate.ts [repoRoot]
@@ -323,6 +327,24 @@ export function isCopySink(node: ts.Node): boolean {
   return false;
 }
 
+/**
+ * Build the matcher for one banned term.
+ *
+ * The term is escaped, so a wave may ban punctuation (`...`, `&apos;`) and not
+ * just words — an unescaped `.` matched any character, which is fine for
+ * "connection" and wrong for an ellipsis. Word boundaries are added only at the
+ * ends that have a word character to be a boundary of: `\bconnection\b` is what
+ * keeps "reconnecting" clean, while `\b...\b` would never match anything.
+ *
+ * @param term - The banned term, as written in `banned-terms.json`.
+ */
+export function termMatcher(term: string): RegExp {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const lead = /^\w/.test(term) ? '\\b' : '';
+  const tail = /\w$/.test(term) ? '\\b' : '';
+  return new RegExp(`${lead}${escaped}${tail}`, 'i');
+}
+
 /** Scan one already-read source file for banned-term hits in copy-bearing positions. */
 export function scanSource(filePath: string, text: string, terms: BannedTerm[]): Violation[] {
   const sourceFile = ts.createSourceFile(
@@ -332,7 +354,7 @@ export function scanSource(filePath: string, text: string, terms: BannedTerm[]):
     true,
     filePath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
   );
-  const matchers = terms.map((t) => ({ ...t, re: new RegExp(`\\b${t.term}\\b`, 'i') }));
+  const matchers = terms.map((t) => ({ ...t, re: termMatcher(t.term) }));
   const violations: Violation[] = [];
 
   function record(node: ts.Node, raw: string): void {
@@ -411,8 +433,10 @@ if (isMain) {
       console.error(`    ${v.snippet}`);
     }
     console.error(
-      '\nRewrite the copy to drop the retired word, or — if this use is genuinely ' +
-        'Connections-domain — add a scoped entry with a reason to scripts/vocab-gate/allowlist.json.'
+      '\nRewrite the copy: drop the retired word, or spell the mark the house way ' +
+        '(… ’ “ ”, never ... or &apos;). If the use is genuinely legitimate — a real ' +
+        'Connections-domain noun, GitHub\'s own "Mission Control", a code sample — add ' +
+        'a scoped entry with a reason to scripts/vocab-gate/allowlist.json.'
     );
     process.exit(1);
   }

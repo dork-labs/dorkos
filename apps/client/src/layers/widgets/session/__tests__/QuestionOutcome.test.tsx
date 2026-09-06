@@ -136,7 +136,7 @@ describe('a question that ended in history (DOR-1293)', () => {
     });
 
     const row = screen.getByTestId('question-prompt-unanswered');
-    expect(row).toHaveTextContent("The question didn't go through");
+    expect(row).toHaveTextContent('The question didn’t go through');
     // The reason is the one thing the label cannot supply.
     expect(row).toHaveTextContent('MCP server "asker" is not connected');
   });

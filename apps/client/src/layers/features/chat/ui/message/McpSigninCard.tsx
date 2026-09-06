@@ -65,7 +65,7 @@ function SigninReceipt({ part }: { part: McpSigninPart }) {
         }
       >
         <p className="text-sm">
-          The sign-in to &ldquo;{part.serverName}&rdquo; didn’t finish. Ask your agent to try again.
+          The sign-in to “{part.serverName}” didn’t finish. Ask your agent to try again.
         </p>
       </CardShell>
     );

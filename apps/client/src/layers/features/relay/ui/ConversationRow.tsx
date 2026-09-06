@@ -263,7 +263,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
                   className="h-6 px-0 text-xs"
                   onClick={handleRouteAdvanced}
                 >
-                  More options...
+                  More options…
                 </Button>
                 <Button
                   size="sm"
@@ -279,7 +279,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
         </div>
       </div>
 
-      {/* Full BindingDialog for advanced routing (More options...) */}
+      {/* Full BindingDialog for advanced routing (More options…) */}
       {bindingDialogOpen && (
         <BindingDialog
           open={true}

@@ -111,7 +111,7 @@ export function MessagingConnections({ enabled }: MessagingConnectionsProps) {
         setConflict(found);
         return;
       }
-      toast.error(err instanceof Error ? err.message : "Couldn't save that");
+      toast.error(err instanceof Error ? err.message : 'Couldn’t save that');
     }
   }
 

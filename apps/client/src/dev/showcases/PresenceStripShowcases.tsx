@@ -137,7 +137,7 @@ export function PresenceStripShowcases() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Quiet: zero DOM, not an empty box (the frame below is the demo&rsquo;s)
+        Quiet: zero DOM, not an empty box (the frame below is the demo’s)
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="border-border/60 w-full rounded-lg border border-dashed p-4">

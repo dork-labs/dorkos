@@ -48,7 +48,7 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm }: LinkSafetyM
     ? describeRefusal(refusal, url)
     : {
         title: 'Open external link?',
-        detail: "You're about to visit an external website.",
+        detail: 'You’re about to visit an external website.',
       };
 
   return createPortal(

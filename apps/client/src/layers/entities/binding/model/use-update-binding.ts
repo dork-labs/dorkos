@@ -39,6 +39,6 @@ export function useUpdateBinding(options: UseUpdateBindingOptions = {}) {
     },
     meta: options.suppressErrorToast
       ? { suppressErrorToast: true }
-      : { errorLabel: options.errorLabel ?? "Couldn't update that connection" },
+      : { errorLabel: options.errorLabel ?? 'Couldn’t update that connection' },
   });
 }

@@ -233,14 +233,14 @@ describe('QuestionPrompt', () => {
   it('renders "Other" option with text input when selected (single-select)', () => {
     render(<QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} />);
     // Text input should not be visible initially
-    expect(screen.queryByPlaceholderText('Type your answer...')).toBeNull();
+    expect(screen.queryByPlaceholderText('Type your answer…')).toBeNull();
 
     // Select "Other"
     const otherRadio = screen.getAllByRole('radio')[2]; // Last radio is "Other"
     fireEvent.click(otherRadio);
 
     // Text input should now be visible
-    expect(screen.getByPlaceholderText('Type your answer...')).toBeDefined();
+    expect(screen.getByPlaceholderText('Type your answer…')).toBeDefined();
   });
 
   it('submit button is disabled when no selection made', () => {
@@ -305,14 +305,14 @@ describe('QuestionPrompt', () => {
     });
   });
 
-  it('for "Other" selection, answer is the user\'s typed text (single-select)', async () => {
+  it('for "Other" selection, answer is the user’s typed text (single-select)', async () => {
     render(<QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} />);
     // Select "Other"
     const otherRadio = screen.getAllByRole('radio')[2];
     fireEvent.click(otherRadio);
 
     // Type custom text
-    const textInput = screen.getByPlaceholderText('Type your answer...');
+    const textInput = screen.getByPlaceholderText('Type your answer…');
     fireEvent.change(textInput, { target: { value: 'My custom answer' } });
 
     const submitButton = screen.getByRole('button', { name: /submit/i });
@@ -382,7 +382,7 @@ describe('QuestionPrompt', () => {
     expect(screen.getAllByRole('radio').length).toBe(3);
   });
 
-  it('shows "Submitting..." text during submission', async () => {
+  it('shows "Submitting…" text during submission', async () => {
     // Make submitAnswers hang so we can observe the submitting state
     let resolveSubmit: (value: unknown) => void;
     mockSubmitAnswers.mockImplementationOnce(
@@ -398,13 +398,13 @@ describe('QuestionPrompt', () => {
     fireEvent.click(radio);
     fireEvent.click(screen.getByRole('button', { name: /submit/i }));
 
-    // Should show "Submitting..." while waiting
-    expect(screen.getByText('Submitting...')).toBeDefined();
+    // Should show "Submitting…" while waiting
+    expect(screen.getByText('Submitting…')).toBeDefined();
 
     // Resolve the promise to clean up
     resolveSubmit!({ ok: true });
     await waitFor(() => {
-      expect(screen.queryByText('Submitting...')).toBeNull();
+      expect(screen.queryByText('Submitting…')).toBeNull();
     });
   });
 

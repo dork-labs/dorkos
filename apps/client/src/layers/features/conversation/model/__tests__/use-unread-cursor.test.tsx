@@ -442,7 +442,7 @@ describe('useUnreadCursor', () => {
     expect(writes.filter(([id]) => id === 's-A')).toEqual([['s-A', 3]]);
     expect(
       writes.some(([id, seq]) => id === 's-A' && seq === 50),
-      "session A must never be told session B's position"
+      'session A must never be told session B’s position'
     ).toBe(false);
   });
 

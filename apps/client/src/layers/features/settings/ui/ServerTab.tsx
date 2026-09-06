@@ -106,7 +106,7 @@ function ServerUnreachable({
   return (
     <div className="-mx-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 dark:border-amber-800 dark:bg-amber-950/30">
       <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
-        Can&rsquo;t reach the DorkOS server
+        Can’t reach the DorkOS server
       </span>
       <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">
         It may be restarting. Give it a moment and try again.
@@ -219,7 +219,7 @@ function ConfigRow({
 
   function content() {
     if (copied) return <span className="text-muted-foreground text-xs">Copied</span>;
-    if (failed) return <span className="text-destructive text-xs">Couldn&apos;t copy</span>;
+    if (failed) return <span className="text-destructive text-xs">Couldn’t copy</span>;
     return (
       <span
         className={cn(

@@ -638,7 +638,7 @@ describe('usePaletteItems', () => {
     expect(item?.keywords).toBeUndefined();
   });
 
-  it("carries a feature contribution's keywords into the flat search list", () => {
+  it('carries a feature contribution’s keywords into the flat search list', () => {
     mockUseSlotContributions.mockReturnValue([
       ...DEFAULT_PALETTE_CONTRIBUTIONS.filter((c) => c.id !== 'relay'),
       {
@@ -657,7 +657,7 @@ describe('usePaletteItems', () => {
     expect(item?.keywords).toEqual(['connectors', 'telegram', 'slack']);
   });
 
-  it("carries a quick-action contribution's keywords into the flat search list", () => {
+  it('carries a quick-action contribution’s keywords into the flat search list', () => {
     mockUseSlotContributions.mockReturnValue([
       ...DEFAULT_PALETTE_CONTRIBUTIONS.filter((c) => c.id !== 'browse'),
       {

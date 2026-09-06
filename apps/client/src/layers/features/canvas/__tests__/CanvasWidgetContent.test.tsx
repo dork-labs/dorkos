@@ -70,14 +70,14 @@ describe('CanvasWidgetContent', () => {
     } as unknown as Extract<UiCanvasContent, { type: 'widget' }>;
 
     expect(() => render(<CanvasWidgetContent content={content} />)).not.toThrow();
-    expect(screen.getByText("This widget couldn't be rendered")).toBeInTheDocument();
+    expect(screen.getByText('This widget couldn’t be rendered')).toBeInTheDocument();
   });
 
   it('survives an undefined definition', () => {
     const content = { type: 'widget' } as unknown as Extract<UiCanvasContent, { type: 'widget' }>;
 
     expect(() => render(<CanvasWidgetContent content={content} />)).not.toThrow();
-    expect(screen.getByText("This widget couldn't be rendered")).toBeInTheDocument();
+    expect(screen.getByText('This widget couldn’t be rendered')).toBeInTheDocument();
   });
 });
 

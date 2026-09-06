@@ -60,7 +60,7 @@ describe('CanvasImageContent', () => {
 
   it('shows a security message for a blocked source', () => {
     render(<CanvasImageContent content={{ type: 'image', src: 'javascript:alert(1)' }} />);
-    expect(screen.getByText(/can't be displayed for security reasons/i)).toBeInTheDocument();
+    expect(screen.getByText(/can’t be displayed for security reasons/i)).toBeInTheDocument();
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
@@ -98,7 +98,7 @@ describe('CanvasImageContent', () => {
   it('reports local files as unavailable when the transport cannot serve them', () => {
     mediaUrl.mockReturnValueOnce(null);
     render(<CanvasImageContent content={{ type: 'image', src: 'assets/logo.png' }} />);
-    expect(screen.getByText(/local image files can't be displayed here/i)).toBeInTheDocument();
+    expect(screen.getByText(/local image files can’t be displayed here/i)).toBeInTheDocument();
   });
 });
 

@@ -172,7 +172,7 @@ describe('useCopyFeedback', () => {
       await result.current.copy('hello');
     });
 
-    expect(toast.error).toHaveBeenCalledWith("Couldn't copy to the clipboard");
+    expect(toast.error).toHaveBeenCalledWith('Couldn’t copy to the clipboard');
     expect(toast.success).not.toHaveBeenCalled();
   });
 

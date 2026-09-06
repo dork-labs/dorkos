@@ -85,7 +85,7 @@ export function AccountMenuContainer({
     // looks exactly like success. Swallowing it would be the worst kind of quiet
     // — a toast is the only surface left once the menu is gone.
     if (!result.ok) {
-      toast.error('Could not sign out', {
+      toast.error('Couldn’t sign out', {
         description: result.error?.message ?? 'Something went wrong. Try again.',
       });
     }

@@ -85,8 +85,8 @@ export function ServerRestartOverlay({ open, onDismiss }: ServerRestartOverlayPr
         ) : (
           <>
             <Loader2 className="text-muted-foreground size-8 animate-spin" />
-            <p className="text-foreground text-sm font-medium">Restarting server...</p>
-            <p className="text-muted-foreground text-sm">Waiting for server to come back...</p>
+            <p className="text-foreground text-sm font-medium">Restarting server…</p>
+            <p className="text-muted-foreground text-sm">Waiting for server to come back…</p>
           </>
         )}
       </div>

@@ -350,7 +350,7 @@ describe('useStartDirectMessage', () => {
     // One toast, naming the action in the person's terms, with the server's
     // own sentence under it — never two toasts in two voices.
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-      "Couldn't start that conversation",
+      'Couldn’t start that conversation',
       expect.objectContaining({ description: 'That agent is not registered' })
     );
   });

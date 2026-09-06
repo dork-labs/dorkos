@@ -173,7 +173,7 @@ describe('what a room does with ?entry=', () => {
     expect(result.current.roomRow?.()).toBeUndefined();
     expect(toastInfo).toHaveBeenCalledTimes(1);
     expect(toastInfo).toHaveBeenCalledWith(
-      "DorkOS can't find that message in what's open here",
+      'DorkOS can’t find that message in what’s open here',
       expect.objectContaining({ description: expect.any(String) as string })
     );
   });

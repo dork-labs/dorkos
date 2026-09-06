@@ -436,7 +436,7 @@ describe('RoomLiveLane', () => {
     expect(screen.queryByTestId('room-presence')).toBeNull();
     expect(screen.getByTestId('room-stalled')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reconnect' })).toBeInTheDocument();
-    expect(screen.getByRole('status').textContent).toContain("New messages aren't coming through");
+    expect(screen.getByRole('status').textContent).toContain('New messages aren’t coming through');
   });
 
   it('names the thread’s announcer apart from the room’s', () => {

@@ -101,7 +101,7 @@ export function useRoomRowMenu({ room, isActive }: RoomRowMenuInput): RoomRowAct
   const { mutate: renameRoom } = useRenameRoom();
   const { mutate: archiveRoom } = useArchiveRoom();
   const { mutate: unarchiveRoom } = useUnarchiveRoom();
-  const { mutate: leaveRoom } = useRemoveRoomMember({ errorLabel: "Couldn't leave" });
+  const { mutate: leaveRoom } = useRemoveRoomMember({ errorLabel: 'Couldn’t leave' });
   const { mutate: joinRoom } = useAddRoomMember();
   const { update: updateSidebarPrefs } = useUpdateSidebarPrefs();
 

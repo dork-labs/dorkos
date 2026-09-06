@@ -194,7 +194,7 @@ export function ActivityFeed({
 
           <Input
             className="h-9 w-44"
-            placeholder="Filter by agent or message..."
+            placeholder="Filter by agent or message…"
             value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)}
             aria-label="Search conversations"

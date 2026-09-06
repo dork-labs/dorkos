@@ -62,7 +62,7 @@ describe('friendlyErrorMessage', () => {
 
   it('maps ECONNREFUSED errors', () => {
     expect(friendlyErrorMessage('ECONNREFUSED 127.0.0.1:4242')).toBe(
-      "Couldn't reach your DorkOS server. Make sure it's running."
+      'Couldn’t reach your DorkOS server. Make sure it’s running.'
     );
   });
 

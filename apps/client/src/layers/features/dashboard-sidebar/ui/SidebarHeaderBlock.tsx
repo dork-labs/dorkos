@@ -61,7 +61,7 @@ import { configKeys, CONFIG_STALE_TIME_MS } from '@/layers/entities/config';
 export function teamNameFor(displayName: string | null): string {
   const trimmed = displayName?.trim() ?? '';
   if (trimmed.length === 0 || trimmed === OPERATOR_FALLBACK_DISPLAY_NAME) return 'Your team';
-  return trimmed.endsWith('s') ? `${trimmed}' team` : `${trimmed}'s team`;
+  return trimmed.endsWith('s') ? `${trimmed}’ team` : `${trimmed}’s team`;
 }
 
 /** The header block. */
@@ -110,14 +110,14 @@ export function SidebarHeaderBlock() {
     const current = fresh.data?.version;
     const latest = fresh.data?.latestVersion ?? null;
     if (current === undefined) {
-      toast.error('Could not check for updates');
+      toast.error('Couldn’t check for updates');
       return;
     }
     if (latest !== null && isNewer(latest, current)) {
       toast.success(`Version ${latest} is available`);
       return;
     }
-    toast.success("You're up to date");
+    toast.success('You’re up to date');
   }, [queryClient, refetch]);
 
   const nodes = buildHeaderBlockMenuNodes({

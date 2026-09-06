@@ -248,7 +248,7 @@ describe('ClaudeAccountsSection', () => {
     expect(ids).toEqual(['acme-corp-2', 'acme-corp', 'third']);
   });
 
-  it("refuses a path that is not the folder's full path, and says what to type", async () => {
+  it('refuses a path that is not the folder’s full path, and says what to type', async () => {
     const user = userEvent.setup();
     const transport = renderSection({ resolvedAccount: HOME, inherited: true, accounts: [] });
     await waitFor(() =>
@@ -262,7 +262,7 @@ describe('ClaudeAccountsSection', () => {
     await user.type(screen.getByLabelText('Account folder'), '~/.claude2');
 
     expect(screen.getByTestId('claude-account-not-absolute')).toHaveTextContent(
-      "Use the folder's full path"
+      'Use the folder’s full path'
     );
     expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled();
     expect(transport.updateConfig).not.toHaveBeenCalled();

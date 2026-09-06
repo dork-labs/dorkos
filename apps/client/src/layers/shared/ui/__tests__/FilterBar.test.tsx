@@ -99,11 +99,11 @@ describe('FilterBar', () => {
     const state = createMockFilterState();
     render(
       <FilterBar state={state}>
-        <FilterBar.Search placeholder="Filter agents..." />
+        <FilterBar.Search placeholder="Filter agents…" />
       </FilterBar>
     );
 
-    expect(screen.getByPlaceholderText('Filter agents...')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Filter agents…')).toBeInTheDocument();
   });
 
   it('renders unfiltered result count', () => {
@@ -176,11 +176,11 @@ describe('FilterBar', () => {
     const state = createMockFilterState();
     render(
       <FilterBar state={state}>
-        <FilterBar.Search placeholder="Search..." />
+        <FilterBar.Search placeholder="Search…" />
       </FilterBar>
     );
 
-    const input = screen.getByPlaceholderText('Search...');
+    const input = screen.getByPlaceholderText('Search…');
     expect(input.className).toContain('md:h-8');
     // The bare (unprefixed) h-8 that used to win at every width is gone —
     // it would otherwise beat the default `h-11` below `md` too.
@@ -193,11 +193,11 @@ describe('FilterBar', () => {
 
     render(
       <FilterBar state={state}>
-        <FilterBar.Search placeholder="Search..." />
+        <FilterBar.Search placeholder="Search…" />
       </FilterBar>
     );
 
-    const input = screen.getByPlaceholderText('Search...');
+    const input = screen.getByPlaceholderText('Search…');
     await user.type(input, 'hello');
 
     expect((state as unknown as { set: ReturnType<typeof vi.fn> }).set).toHaveBeenCalledWith(

@@ -227,9 +227,9 @@ export function LiveLaneShowcase() {
       description="One reserved line above the composer, on every conversation surface. It is a fixed 24 pixels whether or not it has anything to say — that is the whole feature, because it means an agent picking something up cannot push the message you were reading. Ten states share it and the first match wins: an Ask outranks a stalled stream (a prompt in hand is still answerable when the wire goes quiet), a stalled stream outranks presence (a client that cannot read the stream must not claim to know who is working), and everything about this conversation's own turn sits below both. Only the working dot moves."
     >
       <ShowcaseLabel>
-        Empty — a quiet room looks quiet. The bordered box below is the showcase&apos;s, not the
-        lane&apos;s: the shipped lane has no border and no placeholder, and the 24 pixels inside the
-        box are all it draws.
+        Empty — a quiet room looks quiet. The bordered box below is the showcase’s, not the lane’s:
+        the shipped lane has no border and no placeholder, and the 24 pixels inside the box are all
+        it draws.
       </ShowcaseLabel>
       <ShowcaseDemo>
         <LaneBox>
@@ -312,8 +312,8 @@ export function LiveLaneShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Presence in a thread — the same rung, announced under its own name so the room&apos;s lane
-        and the panel&apos;s can be told apart
+        Presence in a thread — the same rung, announced under its own name so the room’s lane and
+        the panel’s can be told apart
       </ShowcaseLabel>
       <ShowcaseDemo>
         <LaneBox>
@@ -357,7 +357,7 @@ export function LiveLaneShowcase() {
         Silent finish (D7) — the pill releasing into a brief, fading past-tense line. Under
         `rooms.toolOnlyReplies` a turn often runs and puts nothing durable in front of the room;
         this is what stops that from reading as a crash. No dot, no elapsed time — it is a report,
-        styled like the session&apos;s own finished-turn summary below.
+        styled like the session’s own finished-turn summary below.
       </ShowcaseLabel>
       <ShowcaseDemo>
         <LaneBox>
@@ -497,7 +497,7 @@ export function LiveLaneShowcase() {
         </LaneBox>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>The finished turn&apos;s summary, on its way out</ShowcaseLabel>
+      <ShowcaseLabel>The finished turn’s summary, on its way out</ShowcaseLabel>
       <ShowcaseDemo>
         <LaneBox>
           <Conversation.LiveLane state={turn({ status: 'idle', showComplete: true })} />
@@ -507,7 +507,7 @@ export function LiveLaneShowcase() {
       <ShowcaseLabel>
         Reduced motion — the dot stays and only its breathing goes. The branch is OFF, not shorter:
         every end state above reads statically, so a reader who asked for less motion loses nothing
-        but the movement. In the app it follows the reader&apos;s own system setting; these two are
+        but the movement. In the app it follows the reader’s own system setting; these two are
         forced, which is the only way a bench can draw the branch at all.
       </ShowcaseLabel>
       <ShowcaseDemo>

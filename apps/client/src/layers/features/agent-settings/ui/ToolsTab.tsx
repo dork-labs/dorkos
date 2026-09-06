@@ -244,8 +244,8 @@ function ManageRoomsCard({
         </p>
         {supportsDorkTools ? null : (
           <p className="text-muted-foreground text-sm">
-            This agent&rsquo;s runtime reaches these over the external MCP server rather than
-            in-session, and the switch applies there just the same.
+            This agent’s runtime reaches these over the external MCP server rather than in-session,
+            and the switch applies there just the same.
           </p>
         )}
       </FieldCardContent>
@@ -475,9 +475,9 @@ export function ToolsTab({ agent, projectPath }: ToolsTabProps) {
         <FieldCard>
           <FieldCardContent>
             <p className="text-muted-foreground text-sm">
-              This agent&rsquo;s runtime does not support DorkOS tool groups (Scheduling, Messaging,
-              Agent discovery, Connection management). These are delivered over MCP, which this
-              runtime cannot consume.
+              This agent’s runtime does not support DorkOS tool groups (Scheduling, Messaging, Agent
+              discovery, Connection management). These are delivered over MCP, which this runtime
+              cannot consume.
             </p>
           </FieldCardContent>
         </FieldCard>

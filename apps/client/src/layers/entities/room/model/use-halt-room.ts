@@ -43,6 +43,6 @@ export function useHaltRoom(): UseMutationResult<HaltRoomResponse, Error, HaltRo
     // because the button that pressed it may well be gone by the time a refusal
     // lands: the control only shows while something is working, and the thing
     // that was working may have finished on its own.
-    meta: { errorLabel: "Couldn't stop this room" },
+    meta: { errorLabel: 'Couldn’t stop this room' },
   });
 }

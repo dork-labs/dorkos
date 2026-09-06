@@ -61,12 +61,12 @@ function renderSearch({
 describe('PlaygroundSearch', () => {
   it('renders the search input when open', () => {
     renderSearch();
-    expect(screen.getByPlaceholderText('Search sections...')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search sections…')).toBeInTheDocument();
   });
 
   it('does not render content when closed', () => {
     renderSearch({ open: false });
-    expect(screen.queryByPlaceholderText('Search sections...')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Search sections…')).not.toBeInTheDocument();
   });
 
   it('renders all three page group headings', () => {
@@ -114,7 +114,7 @@ describe('PlaygroundSearch', () => {
   it('shows empty state when search query has no matches', () => {
     renderSearch();
 
-    const input = screen.getByPlaceholderText('Search sections...');
+    const input = screen.getByPlaceholderText('Search sections…');
     fireEvent.change(input, { target: { value: 'xyznonexistent123' } });
 
     expect(screen.getByText('No sections found.')).toBeInTheDocument();
@@ -123,7 +123,7 @@ describe('PlaygroundSearch', () => {
   it('filters results by title when typing', () => {
     renderSearch();
 
-    const input = screen.getByPlaceholderText('Search sections...');
+    const input = screen.getByPlaceholderText('Search sections…');
     fireEvent.change(input, { target: { value: 'Typography' } });
 
     expect(screen.getByText('Typography')).toBeInTheDocument();

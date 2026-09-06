@@ -815,7 +815,7 @@ describe('UI_COMMAND_REACH is true of the real dispatcher (DOR-625)', () => {
         ctx.applyShape,
         `${action} is classified client-only, so an agent may issue it with nobody asked — ` +
           `but the dispatcher answers it by applying a Shape, which writes files and ` +
-          `rewrites scheduled work on the operator's machine. Either the verdict in ` +
+          `rewrites scheduled work on the operator’s machine. Either the verdict in ` +
           `UI_COMMAND_REACH is wrong or this case body is.`
       ).not.toHaveBeenCalled();
     }

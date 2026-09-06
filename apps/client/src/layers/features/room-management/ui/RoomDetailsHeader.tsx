@@ -120,7 +120,7 @@ export function RoomDetailsHeader({
             room.bridge?.platformTitle &&
             room.bridge.platformTitle !== room.title && (
               <p className="text-muted-foreground truncate text-xs">
-                Telegram calls this chat &ldquo;{room.bridge.platformTitle}&rdquo;
+                Telegram calls this chat “{room.bridge.platformTitle}”
               </p>
             )}
         </div>

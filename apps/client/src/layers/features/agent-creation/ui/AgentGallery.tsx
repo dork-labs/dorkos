@@ -129,7 +129,7 @@ export function AgentGallery({ onDesignYourOwn, onSelectTemplate, onImport }: Ag
           data-testid="gallery-templates-note"
         >
           {error
-            ? 'Could not load ready-made agents. Check your marketplace sources in Settings. You can still design your own above.'
+            ? 'Couldn’t load ready-made agents. Check your marketplace sources in Settings. You can still design your own above.'
             : 'No ready-made agents yet. Design your own above, or add a marketplace source in Settings.'}
         </p>
       )}

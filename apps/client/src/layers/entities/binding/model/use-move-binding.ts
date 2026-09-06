@@ -16,7 +16,7 @@ export function useMoveBinding() {
   return useMutation({
     mutationFn: ({ id, agentId }: { id: string; agentId: string }) =>
       transport.moveBinding(id, agentId),
-    meta: { errorLabel: "Couldn't move the chat" },
+    meta: { errorLabel: 'Couldn’t move the chat' },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: [...BINDINGS_QUERY_KEY] });
     },

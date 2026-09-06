@@ -17,16 +17,16 @@ import { cn } from '@/layers/shared/lib';
  * prose and no page has to guess which one it received.
  */
 const SOURCE_COPY: Record<string, string> = {
-  agents: "Couldn't read your agents. Showing who we could.",
-  authors: "Couldn't read the people on this install. Showing who we could.",
-  account: "Couldn't read your account, so your own name may be missing.",
+  agents: 'Couldn’t read your agents. Showing who we could.',
+  authors: 'Couldn’t read the people on this install. Showing who we could.',
+  account: 'Couldn’t read your account, so your own name may be missing.',
   team: 'Your team lives on the DorkOS server, and there is no server here.',
   // The three activity sources. Each one says what is missing rather than
   // implying the roster is: everybody is still here, we just cannot say what
   // they are up to.
-  claims: "Couldn't tell which of your agents are working right now.",
-  rooms: "Couldn't read your rooms, so we can't name where an agent is working.",
-  sessions: "Couldn't read recent sessions, so “last active” may be missing.",
+  claims: 'Couldn’t tell which of your agents are working right now.',
+  rooms: 'Couldn’t read your rooms, so we can’t name where an agent is working.',
+  sessions: 'Couldn’t read recent sessions, so “last active” may be missing.',
 };
 
 /**
@@ -39,7 +39,7 @@ const SOURCE_COPY: Record<string, string> = {
  * token turns out to be, and a source worth naming earns an entry above.
  */
 function copyFor(source: string): string {
-  return SOURCE_COPY[source] ?? "Some of your team couldn't be loaded.";
+  return SOURCE_COPY[source] ?? 'Some of your team couldn’t be loaded.';
 }
 
 export interface TeamRosterWarningsProps {

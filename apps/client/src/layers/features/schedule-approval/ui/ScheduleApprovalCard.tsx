@@ -290,7 +290,7 @@ export function ScheduleApprovalCard({
                 onClick={() => goToSession(task.proposedBySessionId as string)}
                 className="text-primary focus-visible:ring-ring/50 rounded-sm underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:outline-none"
               >
-                &ldquo;{sessionTitle}&rdquo;
+                “{sessionTitle}”
               </button>
             </>
           )}
@@ -313,7 +313,7 @@ export function ScheduleApprovalCard({
             !dorkosWrote && 'italic'
           )}
         >
-          {dorkosWrote ? reason : <>&ldquo;{reason}&rdquo;</>}
+          {dorkosWrote ? reason : <>“{reason}”</>}
         </p>
       )}
 

@@ -121,7 +121,7 @@ describe('AccountMenuContainer', () => {
     // The menu closes either way, so without this the person is left signed in
     // looking at a UI that behaved exactly as it does on success.
     await waitFor(() => expect(mockToastError).toHaveBeenCalledTimes(1));
-    expect(mockToastError.mock.calls[0][0]).toBe('Could not sign out');
+    expect(mockToastError.mock.calls[0][0]).toBe('Couldn’t sign out');
     expect(mockToastError.mock.calls[0][1]).toMatchObject({ description: 'Network unreachable' });
   });
 

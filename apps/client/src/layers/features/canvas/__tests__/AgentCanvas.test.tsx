@@ -175,7 +175,7 @@ describe('AgentCanvas', () => {
     expect(screen.getByTestId('resize-handle')).toBeInTheDocument();
   });
 
-  it("renders the document's tab label from its title", () => {
+  it('renders the document’s tab label from its title', () => {
     mockState.canvasOpen = true;
     setActiveDoc({ type: 'markdown', content: '# Hello', title: 'Test Doc' });
     render(<AgentCanvas />);

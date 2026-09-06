@@ -98,6 +98,6 @@ export function useReplyInThread(): UseMutationResult<
     onError: (_error, { clientId }) => usePendingPostStore.getState().failed(clientId),
     // Reads "Couldn't send your reply — This room is archived" through the
     // shared mutation toast, which is fit to show a person as-is.
-    meta: { errorLabel: "Couldn't send your reply" },
+    meta: { errorLabel: 'Couldn’t send your reply' },
   });
 }

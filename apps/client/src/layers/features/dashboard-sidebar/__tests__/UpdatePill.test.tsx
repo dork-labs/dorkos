@@ -146,7 +146,7 @@ describe('UpdatePill', () => {
 
     fireEvent.click(screen.getByText('Update ready: v1.4.0'));
 
-    await waitFor(() => expect(screen.getByText("Couldn't copy")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Couldn’t copy')).toBeInTheDocument());
     expect(screen.queryByText('Command copied')).toBeNull();
   });
 
@@ -189,7 +189,7 @@ describe('UpdatePill', () => {
 
     expect(
       screen.getByText(
-        "The update couldn't install itself. Download a fresh copy. Your settings and agents stay put."
+        'The update couldn’t install itself. Download a fresh copy. Your settings and agents stay put.'
       )
     ).toBeInTheDocument();
     expect(screen.getByText('Download fresh copy')).toBeInTheDocument();

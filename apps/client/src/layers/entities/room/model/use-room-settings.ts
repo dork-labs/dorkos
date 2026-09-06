@@ -66,7 +66,7 @@ export function useRenameRoom(): UseMutationResult<RoomWithRoster, Error, Rename
   return useMutation({
     mutationFn: ({ roomId, title }: RenameRoomInput) => transport.updateRoom(roomId, { title }),
     onSuccess: (_room, { roomId }) => refreshRoom(queryClient, roomId),
-    meta: { errorLabel: "Couldn't rename that room" },
+    meta: { errorLabel: 'Couldn’t rename that room' },
   });
 }
 
@@ -84,7 +84,7 @@ export function useSetRoomTopic(): UseMutationResult<RoomWithRoster, Error, SetR
   return useMutation({
     mutationFn: ({ roomId, topic }: SetRoomTopicInput) => transport.updateRoom(roomId, { topic }),
     onSuccess: (_room, { roomId }) => refreshRoom(queryClient, roomId),
-    meta: { errorLabel: "Couldn't change that topic" },
+    meta: { errorLabel: 'Couldn’t change that topic' },
   });
 }
 
@@ -101,7 +101,7 @@ export function useArchiveRoom(): UseMutationResult<RoomWithRoster, Error, strin
   return useMutation({
     mutationFn: (roomId: string) => transport.updateRoom(roomId, { archived: true }),
     onSuccess: (_room, roomId) => refreshRoom(queryClient, roomId),
-    meta: { errorLabel: "Couldn't archive that room" },
+    meta: { errorLabel: 'Couldn’t archive that room' },
   });
 }
 
@@ -142,7 +142,7 @@ export function useSetDeliverNotices(): UseMutationResult<
     mutationFn: ({ roomId, deliverNotices }: SetDeliverNoticesInput) =>
       transport.updateRoom(roomId, { deliverNotices }),
     onSuccess: (_room, { roomId }) => refreshRoom(queryClient, roomId),
-    meta: { errorLabel: "Couldn't change what reaches the chat" },
+    meta: { errorLabel: 'Couldn’t change what reaches the chat' },
   });
 }
 
@@ -236,6 +236,6 @@ export function useUnarchiveRoom(): UseMutationResult<RoomWithRoster, Error, Una
     mutationFn: ({ roomId, title }: UnarchiveRoomInput) =>
       transport.updateRoom(roomId, { archived: false, ...(title === undefined ? {} : { title }) }),
     onSuccess: (_room, { roomId }) => refreshRoom(queryClient, roomId),
-    meta: { errorLabel: "Couldn't bring that room back" },
+    meta: { errorLabel: 'Couldn’t bring that room back' },
   });
 }

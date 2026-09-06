@@ -143,9 +143,7 @@ function HighlightedTextVariants() {
       <ShowcaseDemo>
         <div className="space-y-2 text-sm">
           <HighlightedText text="Frontend App" indices={[[0, 4]]} />
-          <div className="text-muted-foreground text-xs">
-            indices: [[0, 4]] — &ldquo;Front&rdquo; bolded
-          </div>
+          <div className="text-muted-foreground text-xs">indices: [[0, 4]] — “Front” bolded</div>
         </div>
       </ShowcaseDemo>
 
@@ -309,7 +307,7 @@ function EdgeCases() {
       <ShowcaseLabel>Empty search results</ShowcaseLabel>
       <ShowcaseDemo>
         <Command className="rounded-lg border">
-          <CommandInput placeholder="Search..." value="xyznonexistent" readOnly />
+          <CommandInput placeholder="Search…" value="xyznonexistent" readOnly />
           <CommandList>
             <CommandEmpty>No results found.</CommandEmpty>
           </CommandList>

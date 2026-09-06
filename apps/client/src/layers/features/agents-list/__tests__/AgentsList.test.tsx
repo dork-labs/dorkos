@@ -381,7 +381,7 @@ describe('AgentsList', () => {
       wrapper: createWrapper(),
     });
 
-    expect(screen.getByPlaceholderText('Filter agents...')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Filter agents…')).toBeInTheDocument();
   });
 
   it('renders result count', () => {

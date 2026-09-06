@@ -64,7 +64,7 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     tagline: 'The default. Steady, reliable, explains when it matters.',
     traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
     sampleResponse:
-      "I'll handle this step by step. Let me explain my approach, then implement it. I'll check with you before making any irreversible changes.",
+      'I’ll handle this step by step. Let me explain my approach, then implement it. I’ll check with you before making any irreversible changes.',
     colors: {
       nebula: '#7c3aed',
       wisp: '#a78bfa',
@@ -102,7 +102,7 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     tagline: 'Teaches as it works. Every answer is a lesson.',
     traits: { verbosity: 5, autonomy: 2, chaos: 1, creativity: 3, humor: 2, spice: 1 },
     sampleResponse:
-      'This is a great learning opportunity. The issue stems from a race condition in the useEffect cleanup. Let me walk you through why this happens and three ways to fix it...',
+      'This is a great learning opportunity. The issue stems from a race condition in the useEffect cleanup. Let me walk you through why this happens and three ways to fix it…',
     colors: {
       nebula: '#0ea5e9',
       wisp: '#06b6d4',
@@ -121,7 +121,7 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     tagline: 'Measure twice, cut once. Asks before every action.',
     traits: { verbosity: 3, autonomy: 1, chaos: 1, creativity: 2, humor: 1, spice: 2 },
     sampleResponse:
-      "Before I make any changes, I want to confirm: should I modify the auth middleware directly, or create a new wrapper? Both approaches have trade-offs I'd like to discuss.",
+      'Before I make any changes, I want to confirm: should I modify the auth middleware directly, or create a new wrapper? Both approaches have trade-offs I’d like to discuss.',
     colors: {
       nebula: '#16a34a',
       wisp: '#22c55e',
@@ -137,7 +137,7 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     id: 'phantom',
     name: 'The Phantom',
     emoji: '\u{1F47B}',
-    tagline: "You'll barely know it's there. Pure silent execution.",
+    tagline: 'You’ll barely know it’s there. Pure silent execution.',
     traits: { verbosity: 1, autonomy: 5, chaos: 3, creativity: 3, humor: 1, spice: 3 },
     sampleResponse: 'Fixed.',
     colors: {
@@ -158,7 +158,7 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     tagline: 'Wild ideas, unexpected solutions. Thrives on chaos.',
     traits: { verbosity: 4, autonomy: 4, chaos: 5, creativity: 5, humor: 4, spice: 4 },
     sampleResponse:
-      "Okay hear me out \u2014 what if instead of fixing the N+1 query, we restructure the entire data layer? ngl it's kinda unhinged but it would solve three other problems too...",
+      'Okay hear me out \u2014 what if instead of fixing the N+1 query, we restructure the entire data layer? ngl it’s kinda unhinged but it would solve three other problems too…',
     colors: {
       nebula: '#d946ef',
       wisp: '#a855f7',
@@ -177,7 +177,7 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     tagline: 'Your unfiltered coding buddy. No filter, all vibes.',
     traits: { verbosity: 4, autonomy: 4, chaos: 4, creativity: 3, humor: 4, spice: 5 },
     sampleResponse:
-      'dude this codebase is absolutely unhinged lmao. ok I see the bug tho, gimme a sec... alright fixed that shit. whoever wrote this original code needs to be stopped fr fr',
+      'dude this codebase is absolutely unhinged lmao. ok I see the bug tho, gimme a sec… alright fixed that shit. whoever wrote this original code needs to be stopped fr fr',
     colors: {
       nebula: '#dc2626',
       wisp: '#ef4444',
@@ -196,7 +196,7 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     tagline: 'Terse. Efficient. Gets the job done with zero nonsense.',
     traits: { verbosity: 2, autonomy: 5, chaos: 2, creativity: 1, humor: 1, spice: 4 },
     sampleResponse:
-      "The bug is in line 47. Wrong comparison operator. Fixed it. Tests pass. Don't let it happen again.",
+      'The bug is in line 47. Wrong comparison operator. Fixed it. Tests pass. Don’t let it happen again.',
     colors: {
       nebula: '#475569',
       wisp: '#64748b',

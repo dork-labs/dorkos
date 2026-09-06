@@ -664,7 +664,7 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
 
     await waitFor(() => {
       expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-        "Couldn't let it run.",
+        'Couldn’t let it run.',
         expect.objectContaining({
           description: 'Only a person can approve an extension to run inside DorkOS',
         })

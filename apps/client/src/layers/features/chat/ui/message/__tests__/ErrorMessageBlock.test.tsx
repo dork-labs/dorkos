@@ -360,7 +360,7 @@ describe('ErrorMessageBlock', () => {
       render(
         <ErrorMessageBlock
           message="ignored"
-          heading="Couldn't reach the provider"
+          heading="Couldn’t reach the provider"
           subtext="Check status at https://status.example/incidents"
         />
       );

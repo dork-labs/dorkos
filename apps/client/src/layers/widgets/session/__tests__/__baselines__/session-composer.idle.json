@@ -160,7 +160,7 @@
                               "children": [
                                 {
                                   "kind": "text",
-                                  "text": "Send a message..."
+                                  "text": "Send a message…"
                                 }
                               ]
                             }
@@ -183,7 +183,7 @@
                           "attrs": {
                             "aria-autocomplete": "list",
                             "aria-expanded": "false",
-                            "aria-label": "Send a message...",
+                            "aria-label": "Send a message…",
                             "placeholder": "",
                             "role": "combobox",
                             "rows": "1"

@@ -241,7 +241,7 @@ function InstalledList({
           else if (failed) {
             action = (
               <ConnectErrorRow
-                message={connect.errorMessage ?? 'Could not connect to Ollama.'}
+                message={connect.errorMessage ?? 'Couldn’t connect to Ollama.'}
                 onRetry={handleUse}
               />
             );

@@ -89,7 +89,7 @@ export function useConnectOllama(): UseConnectOllama {
     isSuccess: mutation.isSuccess,
     isError: mutation.isError,
     errorMessage: mutation.isError
-      ? ((mutation.error as Error).message ?? 'Could not connect to Ollama.')
+      ? ((mutation.error as Error).message ?? 'Couldn’t connect to Ollama.')
       : null,
   };
 }
@@ -149,7 +149,7 @@ export function useConnectDirectProvider(): UseConnectDirectProvider {
     isSuccess: mutation.isSuccess,
     isError: mutation.isError,
     errorMessage: mutation.isError
-      ? ((mutation.error as Error).message ?? 'Could not save the provider key.')
+      ? ((mutation.error as Error).message ?? 'Couldn’t save the provider key.')
       : null,
   };
 }

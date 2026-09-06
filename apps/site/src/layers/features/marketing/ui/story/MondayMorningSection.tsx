@@ -106,7 +106,7 @@ export function MondayMorningSection({ slideId = 'morning' }: MondayMorningSecti
                 className="border-warm-gray/10 border-t pt-5 text-center"
               >
                 <p className="text-cream-white text-[15px] font-semibold italic">
-                  &ldquo;This isn&apos;t ChatGPT. This is a personal operating system.&rdquo;
+                  “This isn’t ChatGPT. This is a personal operating system.”
                 </p>
               </motion.div>
             )}

@@ -22,7 +22,7 @@ export function ProviderSetup() {
   if (isError) {
     return (
       <p role="alert" className="text-destructive text-sm">
-        Could not load provider setup: {error.message}
+        Couldn’t load provider setup: {error.message}
       </p>
     );
   }

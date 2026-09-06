@@ -102,9 +102,9 @@ function powerSources(): PowerSources {
       step: 'cloud',
       title: 'Best models, zero setup',
       description:
-        "Claude, GPT, Gemini and 300+ more, running in the cloud. Your hardware doesn't matter.",
+        'Claude, GPT, Gemini and 300+ more, running in the cloud. Your hardware doesn’t matter.',
       sub: 'One OpenRouter account covers all of them. Pay only for what you use.',
-      tradeOff: "Your prompts and code are sent to the model's provider.",
+      tradeOff: 'Your prompts and code are sent to the model’s provider.',
       recommended: true,
     },
     local: {

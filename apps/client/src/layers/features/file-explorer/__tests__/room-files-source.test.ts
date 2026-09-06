@@ -131,7 +131,7 @@ describe('the room files source', () => {
     const file = await source.read!('link');
     expect(file.body).toEqual({
       kind: 'not-readable',
-      reason: "This isn't a file that can be shown here.",
+      reason: 'This isn’t a file that can be shown here.',
     });
   });
 

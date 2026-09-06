@@ -409,11 +409,11 @@ describe('RuntimeItem', () => {
       expect(screen.queryByTestId('dropdown-root')).not.toBeInTheDocument();
       expect(screen.queryByRole('button')).not.toBeInTheDocument();
       expect(screen.getByTestId('tooltip-content')).toHaveTextContent(
-        "The runtime is set when a session starts and can't be changed afterward."
+        'The runtime is set when a session starts and can’t be changed afterward.'
       );
     });
 
-    it("displays the runtime prop's identity — the session row's bound runtime", () => {
+    it('displays the runtime prop’s identity — the session row’s bound runtime', () => {
       // The render site passes the session row's server-authoritative runtime
       // once started; the chip must show exactly that, even with multiple
       // runtimes registered and a different server default.
@@ -872,7 +872,7 @@ describe('RuntimeItem', () => {
       );
     });
 
-    it("names the AGENT's account on the default row, not the server default", async () => {
+    it('names the AGENT’s account on the default row, not the server default', async () => {
       // The ladder is agent-then-default, so on a directory whose agent is
       // pinned to Acme Corp a machine defaulting to Personal still bills Acme.
       // "Default: Personal" here would be a false statement about money.

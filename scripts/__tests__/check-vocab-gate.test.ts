@@ -28,11 +28,18 @@ import {
   loadBannedTerms,
   runVocabGate,
   scanSource,
+  termMatcher,
   type AllowlistEntry,
   type BannedTerm,
 } from '../check-vocab-gate.ts';
 
 const TERMS: BannedTerm[] = [{ term: 'connection', wave: 'wave-1', issue: 'DOR-855' }];
+
+/** Wave 3 bans punctuation, not words — the case boundary-fencing gets wrong. */
+const PUNCTUATION_TERMS: BannedTerm[] = [
+  { term: '...', wave: 'wave-3', issue: 'DOR-1756' },
+  { term: '&apos;', wave: 'wave-3', issue: 'DOR-1756' },
+];
 
 const tempDirs: string[] = [];
 
@@ -229,6 +236,73 @@ describe('scanSource — non-copy positions the gate must ignore', () => {
 // Allowlist
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Punctuation terms (wave 3)
+// ---------------------------------------------------------------------------
+
+describe('termMatcher — boundaries only where a word boundary exists', () => {
+  it('fences a word term, so an inflection sharing its prefix stays clean', () => {
+    const re = termMatcher('connection');
+    expect(re.test('Connection lost')).toBe(true);
+    expect(re.test('reconnecting now')).toBe(false);
+  });
+
+  it('does not fence a punctuation term — `\\b...\\b` would match nothing', () => {
+    const re = termMatcher('...');
+    expect(re.test('Saving...')).toBe(true);
+    expect(re.test('Saving…')).toBe(false);
+  });
+
+  it('escapes the term, so `...` is three literal periods and not three wildcards', () => {
+    expect(termMatcher('...').test('abc')).toBe(false);
+  });
+
+  it('still fences the leading word character of an entity term', () => {
+    // `&apos;` starts with `&`, a non-word character, so no leading `\b`.
+    expect(termMatcher('&apos;').test('Couldn&apos;t copy')).toBe(true);
+  });
+});
+
+describe('scanSource — punctuation in copy positions', () => {
+  it('catches a three-period ellipsis in a copy attribute', () => {
+    const violations = scanSource(
+      'Filter.tsx',
+      `<Input placeholder="Filter agents..." />`,
+      PUNCTUATION_TERMS
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.term).toBe('...');
+  });
+
+  it('catches an `&apos;` entity in JSX text', () => {
+    const violations = scanSource(
+      'Copy.tsx',
+      `export function Copy() { return <span>Couldn&apos;t copy</span>; }`,
+      PUNCTUATION_TERMS
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.term).toBe('&apos;');
+  });
+
+  it('passes the single ellipsis character and a literal curly apostrophe', () => {
+    const violations = scanSource(
+      'Filter.tsx',
+      `<Input placeholder="Filter agents…" title="Couldn’t copy" />`,
+      PUNCTUATION_TERMS
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it('ignores a spread, which is three periods in a position that is not copy', () => {
+    const violations = scanSource(
+      'Row.tsx',
+      `function Row({ label, ...rest }) { return <div {...rest}>{label}</div>; }`,
+      PUNCTUATION_TERMS
+    );
+    expect(violations).toEqual([]);
+  });
+});
+
 describe('isAllowlisted', () => {
   const entries: AllowlistEntry[] = [
     { path: 'features/connections/', terms: ['connection'], reason: 'The Connections page.' },
@@ -390,6 +464,12 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
   it('parses banned-terms.json and includes the Wave 1 "connection" term', () => {
     const terms = loadBannedTerms();
     expect(terms).toContainEqual({ term: 'connection', wave: 'wave-1', issue: 'DOR-855' });
+  });
+
+  it('carries the Wave 3 typography terms', () => {
+    const terms = loadBannedTerms();
+    expect(terms).toContainEqual({ term: '...', wave: 'wave-3', issue: 'DOR-1756' });
+    expect(terms).toContainEqual({ term: '&apos;', wave: 'wave-3', issue: 'DOR-1756' });
   });
 
   it('parses allowlist.json, and every entry carries a non-empty reason', () => {

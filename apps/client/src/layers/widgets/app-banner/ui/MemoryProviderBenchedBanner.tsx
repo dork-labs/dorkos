@@ -73,7 +73,7 @@ export function MemoryProviderBenchedBanner({
   return (
     <Banner variant="warning">
       The <span className="font-medium">{configuredId}</span> memory backend{' '}
-      {benched ? 'stopped answering' : "isn't installed or didn't register"}. DorkOS switched to its
+      {benched ? 'stopped answering' : 'isn’t installed or didn’t register'}. DorkOS switched to its
       own local memory until you restart.
     </Banner>
   );

@@ -222,7 +222,7 @@ describe('widget actions', () => {
     expect(button).toHaveAttribute('aria-disabled', 'true');
     button.focus();
     expect(
-      (await screen.findAllByText("This one's from an earlier message.")).length
+      (await screen.findAllByText('This one’s from an earlier message.')).length
     ).toBeGreaterThan(0);
     expect(screen.queryByText(/superseded/i)).not.toBeInTheDocument();
   });
@@ -266,7 +266,7 @@ describe('widget actions', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Go' }));
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("Couldn't send the action", expect.anything())
+      expect(toast.error).toHaveBeenCalledWith('Couldn’t send the action', expect.anything())
     );
   });
 
@@ -568,7 +568,7 @@ describe('WidgetFence (fence detection)', () => {
 
   it('renders the error card for invalid JSON', () => {
     render(<WidgetFence code={'{ not json'} isIncomplete={false} />);
-    expect(screen.getByText("This widget couldn't be rendered")).toBeInTheDocument();
+    expect(screen.getByText('This widget couldn’t be rendered')).toBeInTheDocument();
   });
 });
 

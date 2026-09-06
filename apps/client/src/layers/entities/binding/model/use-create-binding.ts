@@ -35,6 +35,6 @@ export function useCreateBinding(options: UseCreateBindingOptions = {}) {
     },
     meta: options.suppressErrorToast
       ? { suppressErrorToast: true }
-      : { errorLabel: options.errorLabel ?? "Couldn't add that connection" },
+      : { errorLabel: options.errorLabel ?? 'Couldn’t add that connection' },
   });
 }

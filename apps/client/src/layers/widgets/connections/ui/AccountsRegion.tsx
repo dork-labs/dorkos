@@ -48,7 +48,7 @@ export function AccountsRegion() {
         // truth about the account, and hide the carriers below that a person
         // could still set up. Say what actually happened, and offer a retry.
         <div className="bg-card shadow-soft space-y-3 rounded-lg border p-5">
-          <p className="text-sm font-medium">Couldn&rsquo;t load your services</p>
+          <p className="text-sm font-medium">Couldn’t load your services</p>
           <p className="text-muted-foreground max-w-prose text-sm leading-relaxed">
             Something went wrong reaching them just now. This is usually temporary.
           </p>

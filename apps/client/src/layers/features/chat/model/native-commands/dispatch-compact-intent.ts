@@ -45,7 +45,7 @@ export async function dispatchCompactIntent(
     toast.error(
       locked
         ? 'The agent is busy. Try compacting again in a moment.'
-        : "Couldn't compact the conversation."
+        : 'Couldn’t compact the conversation.'
     );
     return false;
   }

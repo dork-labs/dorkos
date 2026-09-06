@@ -123,7 +123,7 @@ export const operatorDomain: CapabilityDomain = {
         'sidebar/status-bar prefs, scheduler, logging, mesh scan roots, telemetry choices, runtimes, ' +
         'workspace and server paths, and more. Left out: every secret (tunnel auth token, tunnel auth, ' +
         'MCP api key, cloud instance token), every credential reference (the providers map and the Codex ' +
-        'credentialRef), and the linked account label. In their place you get boolean ...Configured flags ' +
+        'credentialRef), and the linked account label. In their place you get boolean *Configured flags ' +
         'plus providersConfigured (the provider ids that have a credential), so you can see what is set up ' +
         'without seeing where the material lives.',
       tier: 'observe',

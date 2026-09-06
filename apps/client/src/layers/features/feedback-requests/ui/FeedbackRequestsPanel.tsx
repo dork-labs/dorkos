@@ -141,8 +141,8 @@ export function FeedbackRequestsPanel() {
     return (
       <QueryErrorState
         className="h-full"
-        title="Couldn't load your reports"
-        description="The feedback service is unreachable. Check that you're online and try again."
+        title="Couldn’t load your reports"
+        description="The feedback service is unreachable. Check that you’re online and try again."
         onRetry={() => void refetch()}
         isRetrying={isFetching}
       />
@@ -155,7 +155,7 @@ export function FeedbackRequestsPanel() {
         <MessageSquare className="text-muted-foreground/50 size-8" aria-hidden="true" />
         <p className="text-sm font-medium">Nothing sent yet</p>
         <p className="text-muted-foreground max-w-xs text-xs">
-          Send feedback, report a bug, or share an idea from the help menu. It&apos;ll show up here.
+          Send feedback, report a bug, or share an idea from the help menu. It’ll show up here.
         </p>
       </div>
     );

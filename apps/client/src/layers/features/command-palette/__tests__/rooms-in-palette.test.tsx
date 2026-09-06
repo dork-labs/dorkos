@@ -341,7 +341,7 @@ vi.mock('motion/react', () => ({
 
 // --- Helpers ---
 
-const searchInput = () => screen.getByPlaceholderText('Search rooms, agents, commands...');
+const searchInput = () => screen.getByPlaceholderText('Search rooms, agents, commands…');
 
 const type = (value: string) => fireEvent.change(searchInput(), { target: { value } });
 
@@ -572,7 +572,7 @@ describe('rooms in the command palette', () => {
       render(<CommandPaletteDialog />);
       type('#');
 
-      expect(await screen.findByText('Could not load your channels.')).toBeInTheDocument();
+      expect(await screen.findByText('Couldn’t load your channels.')).toBeInTheDocument();
     });
 
     it('says there are none when the list is genuinely empty', async () => {
@@ -597,12 +597,12 @@ describe('rooms in the command palette', () => {
       vi.mocked(mockTransport.listRooms).mockRejectedValue(new Error('offline'));
       render(<CommandPaletteDialog />);
       type('#');
-      expect(await screen.findByText('Could not load your channels.')).toBeInTheDocument();
+      expect(await screen.findByText('Couldn’t load your channels.')).toBeInTheDocument();
 
       type('');
 
       await waitFor(() =>
-        expect(screen.queryByText('Could not load your channels.')).not.toBeInTheDocument()
+        expect(screen.queryByText('Couldn’t load your channels.')).not.toBeInTheDocument()
       );
       // The zero-query list is still drawn — this is a message that left, not a
       // palette that emptied. The prefix legend closes that list and is drawn

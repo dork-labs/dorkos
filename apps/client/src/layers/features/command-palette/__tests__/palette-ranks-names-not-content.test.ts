@@ -105,7 +105,7 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-describe("⌘K's list is built from names, never from message content", () => {
+describe('⌘K’s list is built from names, never from message content', () => {
   const all = sourceFiles(FEATURE_DIR);
   const exempt = new Set(MESSAGE_SEARCH_MODULES.map((p) => join(FEATURE_DIR, p)));
   const navigation = all.filter((path) => !exempt.has(path));

@@ -217,7 +217,7 @@ describe('a start that failed', () => {
 
     await waitFor(() =>
       expect(description()).toHaveTextContent(
-        "Couldn't reach your DorkOS server. Make sure it's running."
+        'Couldn’t reach your DorkOS server. Make sure it’s running.'
       )
     );
     // Still on, and still says so through the switch — the row is not claiming

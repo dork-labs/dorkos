@@ -68,7 +68,7 @@ export function EmbedSidebar() {
         await queryClient.invalidateQueries({ queryKey: sessionKeys.listRoot });
         handleSessionClick(forked.id);
       } catch (err) {
-        toast.error("Couldn't branch off this conversation.", {
+        toast.error('Couldn’t branch off this conversation.', {
           description: err instanceof Error ? err.message : 'The original is untouched.',
         });
       }

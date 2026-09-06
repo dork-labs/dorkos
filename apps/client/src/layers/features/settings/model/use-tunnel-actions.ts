@@ -58,7 +58,7 @@ export function useTunnelActions({ machine }: UseTunnelActionsArgs): TunnelActio
       remote.clearError();
       queryClient.invalidateQueries({ queryKey: configKeys.all });
     } catch (err) {
-      machine.setTokenError(describeTunnelWriteFailure(err, 'Could not save token. Try again.'));
+      machine.setTokenError(describeTunnelWriteFailure(err, 'Couldn’t save token. Try again.'));
     }
   }, [machine, queryClient, remote, transport]);
 
@@ -84,7 +84,7 @@ export function useTunnelActions({ machine }: UseTunnelActionsArgs): TunnelActio
       await transport.updateConfig({ tunnel: { domain: machine.domain.trim() || null } });
       queryClient.invalidateQueries({ queryKey: configKeys.all });
     } catch (err) {
-      machine.setDomainError(describeTunnelWriteFailure(err, 'Could not save domain. Try again.'));
+      machine.setDomainError(describeTunnelWriteFailure(err, 'Couldn’t save domain. Try again.'));
     }
   }, [machine, queryClient, transport]);
 

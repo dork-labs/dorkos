@@ -628,7 +628,7 @@ describe('buildSidebarAnnouncements', () => {
       over: over({ type: 'container', container: inGroup('g1') }),
     });
     expect(msg).toBe(
-      "Can't move api-server into Clients. Membership is rule-based. Edit rules instead."
+      'Can’t move api-server into Clients. Membership is rule-based. Edit rules instead.'
     );
   });
 
@@ -639,7 +639,7 @@ describe('buildSidebarAnnouncements', () => {
         ...active(agentNode('/api', PINNED)),
         over: over({ type: 'container', container: { kind: 'computed', zone: 'today' } }),
       })
-    ).toBe(`Can't move api-server there. ${COMPUTED_ZONE_REJECTION}`);
+    ).toBe(`Can’t move api-server there. ${COMPUTED_ZONE_REJECTION}`);
   });
 
   it('names Heads up and Today on drag-over', () => {

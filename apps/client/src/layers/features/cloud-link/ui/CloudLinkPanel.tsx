@@ -109,7 +109,7 @@ function CloudLinkBody({ view, start, unlink, starting, unlinking, startError }:
       return (
         <RecoveryState
           title="Link request denied"
-          description="The request was rejected on dorkos.ai. Start again if that wasn't intentional."
+          description="The request was rejected on dorkos.ai. Start again if that wasn’t intentional."
           actionLabel="Try again"
           onAction={start}
           pending={starting}
@@ -119,7 +119,7 @@ function CloudLinkBody({ view, start, unlink, starting, unlinking, startError }:
       return (
         <RecoveryState
           title="This instance was unlinked"
-          description="DorkOS revoked this instance's access. Link again to reconnect it to your account."
+          description="DorkOS revoked this instance’s access. Link again to reconnect it to your account."
           actionLabel="Link again"
           onAction={start}
           pending={starting}
@@ -179,7 +179,7 @@ function IdleState({
     try {
       await updateConfig.mutateAsync({ telemetry: { linkAnalyticsToAccount: linkAnalytics } });
     } catch {
-      setConsentError("Couldn't save your choice. Try again.");
+      setConsentError('Couldn’t save your choice. Try again.');
       return;
     }
     await start();
@@ -202,7 +202,7 @@ function IdleState({
           className="mt-0.5"
         />
         <label htmlFor={checkboxId} className="space-y-1 text-sm leading-snug">
-          <span className="font-medium">Also connect this app's usage data to my account</span>
+          <span className="font-medium">Also connect this app’s usage data to my account</span>
           <span className="text-muted-foreground block text-xs">
             Links the anonymous usage counts from this install to your account so you can see them
             signed in. Off by default. Takes effect at link time, so turning it on after linking
@@ -243,7 +243,7 @@ function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending'
           <button
             className="text-muted-foreground hover:text-foreground shrink-0 rounded-sm p-2 transition-colors"
             onClick={() => void copy(view.userCode)}
-            aria-label={failed ? "Couldn't copy code. Try again" : 'Copy code'}
+            aria-label={failed ? 'Couldn’t copy code. Try again' : 'Copy code'}
           >
             {copied ? (
               <Check className="size-4 text-green-500" />

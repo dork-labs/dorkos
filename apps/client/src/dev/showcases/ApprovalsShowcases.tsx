@@ -267,7 +267,7 @@ export function ApprovalsShowcases() {
         title="ApprovalsUnavailable"
         description="The state that must never look like silence. A failed read and 'nothing is waiting' are the same empty space on screen, and the difference is an agent sitting blocked while nobody knows to answer it."
       >
-        <ShowcaseLabel>Could not read the list</ShowcaseLabel>
+        <ShowcaseLabel>Couldn’t read the list</ShowcaseLabel>
         <ShowcaseDemo responsive>
           <ApprovalsUnavailable onRetry={() => {}} />
         </ShowcaseDemo>

@@ -6,7 +6,7 @@ import { selectRenderedMessages } from '../model/stream/derive-rendered-state';
 import type { ChatMessage } from '../model/chat-types';
 
 const KICKOFF_TEXT = '<dork-kickoff>\nintroduce yourself from SOUL.md\n</dork-kickoff>';
-const GREETING_TEXT = "Hi — I'm Keeper. Want me to do a dry run?";
+const GREETING_TEXT = 'Hi — I’m Keeper. Want me to do a dry run?';
 
 // Legacy-path fixtures (ChatMessage[] — the send-path fallback list).
 const KICKOFF: ChatMessage = {

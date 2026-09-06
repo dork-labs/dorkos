@@ -97,12 +97,12 @@ describe('which field the composer renders', () => {
 
   it('keeps the same accessible name across the swap', async () => {
     const { rerender } = render(<ComposerInput {...base} />);
-    expect(screen.getByRole('combobox', { name: 'Send a message...' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Send a message…' })).toBeInTheDocument();
 
     rerender(<ComposerInput {...base} richText />);
     await waitFor(() => expect(document.querySelector('[contenteditable="true"]')).not.toBeNull(), {
       timeout: 10_000,
     });
-    expect(screen.getByRole('combobox', { name: 'Send a message...' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Send a message…' })).toBeInTheDocument();
   });
 });

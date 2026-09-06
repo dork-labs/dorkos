@@ -132,7 +132,7 @@ describe('the room panel fixture reaches every state', () => {
     // this surface at all — not a roster it could not fetch under a name that
     // never arrives. The fixture reaches the state; the sentence and the retry
     // are `RoomPanel.test.tsx`'s contract.
-    expect(await screen.findByText("That room isn't here")).toBeInTheDocument();
+    expect(await screen.findByText('That room isn’t here')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 

@@ -202,7 +202,7 @@ describe('CanvasFileContent', () => {
     await waitFor(() => expect(mockFileSave.save).toHaveBeenLastCalledWith('edited body'));
     expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'true');
     expect(screen.getByTestId('cm-value')).toHaveTextContent('edited body');
-    expect(screen.getByText("Couldn't save")).toBeInTheDocument();
+    expect(screen.getByText('Couldn’t save')).toBeInTheDocument();
   });
 
   it('a refetch landing mid-edit does not remount the editor (refresh, then edit)', async () => {

@@ -410,6 +410,18 @@ The only exceptions are proper nouns: product names (DorkOS, Claude Code, Codex,
 
 Title Case makes a small UI shout, and mixing the two registers in one menu reads as two products stitched together. DOR-1755 fixed the worst of these collisions and is the rule's origin, but the sweep is not finished everywhere — a survivor is a bug against this rule, not evidence the rule is aspirational. When in doubt, write the words the way you would write them in a sentence.
 
+#### Punctuation: one ellipsis, one apostrophe, one full-stop rule
+
+Three small rules, all settled by DOR-1756, all for the same reason as the casing rule: two spellings of the same mark in one screen read as two products.
+
+- **Ellipsis is `…`, the single character** — never three periods. They render at visibly different widths, and a screen that mixes them looks unfinished. "Saving…", "Search agents…", "Reconnecting…".
+- **Apostrophes and quotes are the curly characters** — `’`, `“`, `”` — written **literally**, never as `&apos;`, `&rsquo;`, `&ldquo;` or `&rdquo;`. The literal is what typesets correctly, and it is the only form a grep for a phrase can find. ESLint's `react/no-unescaped-entities` only bans the straight `'` and `"` in JSX text, so the curly characters need no entity.
+- **A headline takes no full stop; a supporting sentence does.** "No chats yet" over "Type a message below to begin." One line that carries both — "No chats yet. Press ⌘↵ to start one." — is a sentence, so it keeps its stops.
+
+None of this binds code: a token placeholder like `xoxb-...`, a JSON preview, or anything inside a `<code>` block is a sample, not copy. Dev Playground commentary is a development tool and is not swept, but a showcase that quotes a real string must quote it exactly as the app renders it. Prompt text written for a model — a task template, the memory rules in `packages/shared/src/convention-files.ts` — is not copy either.
+
+`scripts/check-vocab-gate.ts` enforces the first two rules on every ellipsis and every entity in a copy position across `apps/client/src`, `apps/site/src` and `apps/server/src`. The straight apostrophe is **not** gated, because the sweep of it has only reached `apps/client/src`: the marketing site and server-authored copy the client renders verbatim (a custody disclosure, a provisioning error) still spell it straight in places. Curl it when you next touch one of those strings.
+
 #### The three geometry tokens
 
 Every horizontal inset in the sidebar comes off three custom properties, declared on `:root` in `apps/client/src/index.css`. They are measured **from the panel's left edge**, not from the element that pays them — the panel already pays 8px (`px-2` on `SidebarContent`), so each consumer applies `calc(var(--token) - 0.5rem)`.

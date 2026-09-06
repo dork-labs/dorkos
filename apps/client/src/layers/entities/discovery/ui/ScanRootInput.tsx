@@ -74,7 +74,7 @@ export function ScanRootInput({ roots, onChange }: ScanRootInputProps) {
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={roots.length === 0 ? 'Add paths to scan (Enter to add)' : 'Add more...'}
+          placeholder={roots.length === 0 ? 'Add paths to scan (Enter to add)' : 'Add more…'}
           className="placeholder:text-muted-foreground min-w-[120px] flex-1 bg-transparent text-sm focus-visible:outline-none"
         />
         <button

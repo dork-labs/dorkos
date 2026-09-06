@@ -18,10 +18,10 @@ export default function NewsletterUnsubscribedPage() {
     <MarketingChrome>
       <main className="mx-auto max-w-xl px-6 pt-32 pb-24 text-center">
         <h1 className="text-charcoal font-mono text-2xl font-bold tracking-tight sm:text-3xl">
-          You&apos;re unsubscribed.
+          You’re unsubscribed.
         </h1>
         <p className="text-warm-gray mt-4 text-lg">
-          You won&apos;t get any more DorkOS newsletters. No hard feelings — you can resubscribe any
+          You won’t get any more DorkOS newsletters. No hard feelings — you can resubscribe any
           time.
         </p>
         <div className="mt-8 flex justify-center gap-4 font-mono text-sm">

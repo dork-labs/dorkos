@@ -383,7 +383,7 @@ describe('the third button on an approval card', () => {
     expect(toastCallCount()).toBe(1);
   });
 
-  it("shows the server's own reason when the permission is refused", async () => {
+  it('shows the server’s own reason when the permission is refused', async () => {
     const failure = new Error(
       'Standing permissions are switched off. Turn them on in Settings, under Security, first.'
     ) as Error & { code?: string };
@@ -412,7 +412,7 @@ describe('the third button on an approval card', () => {
     expect(toastCallCount()).toBe(1);
   });
 
-  it('keeps "Don\'t allow" first, and the standing answer last', async () => {
+  it('keeps "Don’t allow" first, and the standing answer last', async () => {
     // Neither answer may be dressed up as the safe one, and the permanent answer
     // must not sit where the eye lands first.
     renderWith(

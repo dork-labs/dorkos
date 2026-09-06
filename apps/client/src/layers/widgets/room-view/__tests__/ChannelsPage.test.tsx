@@ -457,7 +457,7 @@ describe('ChannelsPage — a refusal nobody is listening for', () => {
       // `expect.anything()` covers the shared "Report" action every
       // mutation-error toast carries; query-client.test.ts owns its content.
       expect(toastError).toHaveBeenCalledWith(
-        "Couldn't send your message",
+        'Couldn’t send your message',
         expect.objectContaining({ description: 'This room is archived' })
       )
     );
@@ -511,7 +511,7 @@ describe('ChannelsPage — a refusal nobody is listening for', () => {
     });
     expect(toastError).toHaveBeenCalledTimes(1);
     expect(toastError).toHaveBeenCalledWith(
-      "Couldn't send your message",
+      'Couldn’t send your message',
       expect.objectContaining({ description: 'Not a member of this room' })
     );
   });
@@ -606,7 +606,7 @@ describe('ChannelsPage — whose unread rule is this', () => {
    * cursor. Dorian is listed first and has read everything; Priya, the viewer,
    * has read nothing, so she must see the rule.
    */
-  it("draws the rule from the viewer's cursor, not the first human's", async () => {
+  it('draws the rule from the viewer’s cursor, not the first human’s', async () => {
     openRoomId = 'room-1';
     const transport = createMockTransport({
       getRoom: vi.fn(() =>
@@ -721,7 +721,7 @@ describe('ChannelsPage — a thread reply still clears the badge', () => {
     return transport;
   }
 
-  it("moves the cursor to the reply's seq, not to the newest entry on screen", async () => {
+  it('moves the cursor to the reply’s seq, not to the newest entry on screen', async () => {
     const transport = renderRoom();
 
     await waitFor(() => expect(transport.setReadCursor).toHaveBeenCalledWith('room', 'room-1', 2));
@@ -1071,7 +1071,7 @@ describe('ChannelsPage — landing on the message a search hit named (DOR-687)',
     expect(await landedOn()).toBe('end');
     await waitFor(() =>
       expect(toastInfo).toHaveBeenCalledWith(
-        "DorkOS can't find that message in what's open here",
+        'DorkOS can’t find that message in what’s open here',
         expect.anything()
       )
     );

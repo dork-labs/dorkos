@@ -250,7 +250,7 @@ function LogLocationRow({ dorkHome }: { dorkHome: string }) {
 
   function content() {
     if (copied) return <span className="text-xs">Copied</span>;
-    if (failed) return <span className="text-destructive text-xs">Couldn&apos;t copy</span>;
+    if (failed) return <span className="text-destructive text-xs">Couldn’t copy</span>;
     return (
       <>
         {/* Clipped at the front, so the folder name survives and the shared

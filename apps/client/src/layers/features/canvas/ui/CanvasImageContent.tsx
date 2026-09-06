@@ -57,7 +57,7 @@ export function CanvasImageContent({ content }: CanvasImageContentProps) {
         </p>
       )}
       {loadState === 'error' ? (
-        <MediaMessage>This image couldn&rsquo;t be loaded.</MediaMessage>
+        <MediaMessage>This image couldn’t be loaded.</MediaMessage>
       ) : (
         <TransformWrapper centerOnInit doubleClick={{ mode: 'toggle' }} wheel={{ step: 0.15 }}>
           <ZoomControls />

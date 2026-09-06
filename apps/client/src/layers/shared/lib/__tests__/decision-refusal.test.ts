@@ -47,7 +47,7 @@ describe('describeDecisionRefusal', () => {
     expect(refusal.message).toContain('allowed this one action');
   });
 
-  it("shows the server's own sentence for every refusal that has one", () => {
+  it('shows the server’s own sentence for every refusal that has one', () => {
     const cases: [string, string][] = [
       [
         'standing_grants_require_login',

@@ -10,7 +10,7 @@ interface FilterBarSearchProps {
 }
 
 /** Search input bound to the filter state's search field. */
-function FilterBarSearch({ placeholder = 'Search...', className }: FilterBarSearchProps) {
+function FilterBarSearch({ placeholder = 'Search…', className }: FilterBarSearchProps) {
   const { inputValues, set } = useFilterBar();
   const value = (inputValues as Record<string, unknown>).search as string | undefined;
 

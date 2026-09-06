@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import { claudeAccountName, claudeAccountOptions, isAbsoluteAccountPath } from '../claude-accounts';
 
 describe('claudeAccountName', () => {
-  it("prefers the operator's label, because that is the answer they want", () => {
+  it('prefers the operator’s label, because that is the answer they want', () => {
     expect(
       claudeAccountName('/Users/dev/.claude2', [
         { path: '/Users/dev/.claude2', label: 'Acme Corp' },
@@ -42,7 +42,7 @@ describe('claudeAccountName', () => {
 });
 
 describe('claudeAccountOptions', () => {
-  it("carries each account's usability through, so a picker can say what the server found", () => {
+  it('carries each account’s usability through, so a picker can say what the server found', () => {
     expect(
       claudeAccountOptions(
         [

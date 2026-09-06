@@ -154,7 +154,7 @@ export interface ComposerInputProps {
   onCursorChange?: (pos: number) => void;
   /** Callback when files are selected via the paperclip button. */
   onAttach?: (files: File[]) => void;
-  /** Custom placeholder text for the textarea. Defaults to "Send a message...". */
+  /** Custom placeholder text for the textarea. Defaults to "Send a message…". */
   placeholder?: string;
   /** Overlay element rendered in place of the native placeholder (e.g. animated hints). */
   placeholderOverlay?: React.ReactNode;
@@ -274,7 +274,7 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
       paletteListboxId,
       onCursorChange,
       onAttach,
-      placeholder = 'Send a message...',
+      placeholder = 'Send a message…',
       placeholderOverlay,
       onQueueNavigateUp,
       onQueueNavigateDown,

@@ -57,8 +57,8 @@ export function PipPanelShowcases() {
               peek to minimize into the 64px mini-bar (tap it to restore; its X closes). The content
               behind the sheet stays scrollable and clickable (no overlay, no background scaling),
               and the mini-bar pads the page bottom via --pip-dock so the routed page clears it. In
-              the real app the mini-bar also docks above the phone&apos;s bottom tab bar rather than
-              on the screen edge, which this page has no tab bar to show (DOR-1177).
+              the real app the mini-bar also docks above the phone’s bottom tab bar rather than on
+              the screen edge, which this page has no tab bar to show (DOR-1177).
             </p>
           </div>
         </ShowcaseDemo>

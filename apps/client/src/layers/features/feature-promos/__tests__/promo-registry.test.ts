@@ -136,7 +136,7 @@ describe('promo-registry', () => {
     }
   });
 
-  it("the spec's worked example is reachable: schedules speaks on a used install", () => {
+  it('the spec’s worked example is reachable: schedules speaks on a used install', () => {
     // Priority is shared with the cards, so a higher-priority suggestion would
     // quietly monopolise the one slot. This pins the arrangement the spec
     // describes — somebody who has run agents and has no schedules yet gets

@@ -301,7 +301,7 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
             <p className="text-sm font-medium">No connections available</p>
             <p className="text-muted-foreground max-w-xs text-xs leading-relaxed">
               To connect this agent to Telegram, Slack, or a webhook, add a connection first. It
-              will appear here as soon as it&apos;s ready.
+              will appear here as soon as it’s ready.
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => openConnections('messaging')}>

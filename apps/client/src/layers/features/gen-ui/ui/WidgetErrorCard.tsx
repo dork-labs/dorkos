@@ -26,7 +26,7 @@ export function WidgetErrorCard({ error, raw }: WidgetErrorCardProps) {
       <div className="flex items-start gap-2">
         <AlertTriangle className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden />
         <div className="min-w-0 flex-1">
-          <p className="font-medium">This widget couldn&apos;t be rendered</p>
+          <p className="font-medium">This widget couldn’t be rendered</p>
           <p className="text-muted-foreground mt-0.5 text-xs break-words">{error}</p>
           <button
             type="button"

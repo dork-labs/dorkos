@@ -88,7 +88,7 @@ function toWritableAccounts(accounts: readonly Account[]): {
  * transport that throws without a message at all.
  */
 function describeWriteFailure(err: unknown): string {
-  return (err instanceof Error && err.message) || 'Could not save that. Try again.';
+  return (err instanceof Error && err.message) || 'Couldn’t save that. Try again.';
 }
 
 /**
@@ -308,7 +308,7 @@ export function ClaudeAccountsSection() {
                 className="text-muted-foreground text-xs"
                 data-testid="claude-account-not-absolute"
               >
-                Use the folder&apos;s full path, like <code>/Users/you/.claude2</code>. A path that
+                Use the folder’s full path, like <code>/Users/you/.claude2</code>. A path that
                 starts with <code>~</code> will not work. Browse to pick the folder if you are not
                 sure.
               </p>

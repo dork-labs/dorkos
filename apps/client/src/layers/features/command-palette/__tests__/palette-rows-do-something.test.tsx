@@ -393,7 +393,7 @@ describe('a Continue row', () => {
   });
 });
 
-describe("an agent's recent sessions", () => {
+describe('an agent’s recent sessions', () => {
   it('opens the one you pick, in that agent’s directory', () => {
     render(<CommandPaletteDialog />);
     fireEvent.click(rowFor('Auth Service'));

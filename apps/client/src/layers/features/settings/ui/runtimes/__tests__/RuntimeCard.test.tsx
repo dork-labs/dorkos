@@ -212,7 +212,7 @@ describe('RuntimeCard — write paths', () => {
     );
   });
 
-  it("writes a null model for Automatic, never the picker's sentinel", async () => {
+  it('writes a null model for Automatic, never the picker’s sentinel', async () => {
     const { updateConfig } = renderCard(
       {},
       {
@@ -388,7 +388,7 @@ describe('RuntimeCard — write paths', () => {
     );
   });
 
-  it("shows a refused write in the server's own words", async () => {
+  it('shows a refused write in the server’s own words', async () => {
     const { updateConfig } = renderCard(
       {},
       {
@@ -538,7 +538,7 @@ describe('RuntimeCard — the summary line', () => {
     );
   });
 
-  it("names this runtime's own stop as its own once it overrides the global one", async () => {
+  it('names this runtime’s own stop as its own once it overrides the global one', async () => {
     renderCard({ trustStop: 'autonomy', globalStop: 'ask' });
     const summary = await screen.findByTestId('runtime-card-summary-codex');
     expect(summary).toHaveTextContent('Full autonomy');
@@ -684,7 +684,7 @@ describe('RuntimeCard — connecting and reconnecting', () => {
     expect(screen.queryByTestId('runtime-reconnect-panel-codex')).not.toBeInTheDocument();
   });
 
-  it("calls OpenCode's reopened flow a change of source, not a sign-in", async () => {
+  it('calls OpenCode’s reopened flow a change of source, not a sign-in', async () => {
     renderCard({ type: 'opencode' });
 
     await userEvent.click(await screen.findByTestId('runtime-change-opencode'));
@@ -706,7 +706,7 @@ describe('RuntimeCard — declared sections', () => {
     expect(screen.queryByTestId('runtime-card-section-claude-accounts-opencode')).toBeNull();
   });
 
-  it("names the power source in the collapsed card's summary", async () => {
+  it('names the power source in the collapsed card’s summary', async () => {
     renderCard({ type: 'opencode' });
     const summary = await screen.findByTestId('runtime-card-summary-opencode');
     await waitFor(() => expect(summary).toHaveTextContent('On your computer (Ollama)'));
