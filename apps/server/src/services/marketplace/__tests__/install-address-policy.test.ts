@@ -19,13 +19,19 @@
  * hostile git command even if a guard regresses — the spies are the evidence
  * that the address stopped short of the subprocess boundary.
  *
+ * The LOCAL half of the same door lives here too (DOR-1825). An install address
+ * has two local spellings — `./some/path` and `file:///some/path` — and the
+ * question they have to answer together is the directory boundary, not the
+ * transport allowlist. Only the first one answered it until DOR-1825.
+ *
  * @vitest-environment node
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { isSafeGitUrl, type ResolvedSourceDescriptor } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { PackageFetcher, type FetcherDeps } from '../package-fetcher.js';
@@ -33,6 +39,7 @@ import { gitSubdirResolver } from '../source-resolvers/git-subdir.js';
 import { UNSUPPORTED_GIT_REMOTE_MESSAGE, UnsupportedSourceUrlError } from '../source-url-policy.js';
 import type { MarketplaceCache } from '../marketplace-cache.js';
 import type { TemplateDownloader } from '../../core/template-downloader.js';
+import { BoundaryError, initBoundary } from '../../../lib/boundary.js';
 import { buildInstallerForTests } from './installer-harness.js';
 
 // The subprocess boundary. Mocked at module scope so the assertions below are
@@ -150,15 +157,22 @@ function buildDownloader(): TemplateDownloader {
 
 describe('install addresses — the whole pipeline', () => {
   let dorkHome: string;
+  let boundaryRoot: string;
+  let outside: string;
 
   beforeEach(async () => {
     dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-install-address-'));
     await mkdir(path.join(dorkHome, 'plugins'), { recursive: true });
+    boundaryRoot = await realpath(await mkdtemp(path.join(tmpdir(), 'dorkos-in-boundary-')));
+    outside = await realpath(await mkdtemp(path.join(tmpdir(), 'dorkos-out-of-boundary-')));
+    await initBoundary(boundaryRoot);
   });
 
   afterEach(async () => {
     vi.clearAllMocks();
     await rm(dorkHome, { recursive: true, force: true }).catch(() => undefined);
+    await rm(boundaryRoot, { recursive: true, force: true }).catch(() => undefined);
+    await rm(outside, { recursive: true, force: true }).catch(() => undefined);
   });
 
   it('refuses a direct `name@ext::…` install before any git subprocess starts', async () => {
@@ -203,6 +217,20 @@ describe('install addresses — the whole pipeline', () => {
       expect.any(String),
       'main'
     );
+  });
+
+  it('gives one answer to a directory outside the boundary, whichever way it is spelled', async () => {
+    // The alignment DOR-1825 is about. `./some/path` and `file:///some/path`
+    // name the same directory and take different branches through the
+    // resolver, so the only way the boundary means anything is if both branches
+    // ask it. Asserted as a pair on purpose: split apart, either half reads as
+    // a test of its own branch rather than of the agreement between them.
+    const { installer } = buildInstallerForTests(dorkHome);
+
+    await expect(installer.install({ name: outside })).rejects.toBeInstanceOf(BoundaryError);
+    await expect(
+      installer.install({ name: 'x', source: pathToFileURL(outside).href })
+    ).rejects.toBeInstanceOf(BoundaryError);
   });
 });
 
@@ -254,20 +282,111 @@ describe('install addresses — the git seam in PackageFetcher', () => {
     }
   });
 
-  it('serves a file:// address from disk instead of refusing it', async () => {
-    const localDir = await mkdtemp(path.join(tmpdir(), 'dorkos-local-package-'));
-    try {
+  /**
+   * The local half of the door (DOR-1825). A `file://` address is served from
+   * disk rather than handed to `git`, so the transport allowlist has nothing to
+   * say about it — the directory boundary does, exactly as it does for the
+   * `./some/path` spelling of the same request.
+   */
+  describe('the file:// branch, which never reaches git', () => {
+    let boundaryRoot: string;
+    let outside: string;
+
+    beforeEach(async () => {
+      // Realpath'd because `initBoundary` canonicalizes its argument, and on
+      // macOS `os.tmpdir()` is a symlink — an un-resolved root would compare
+      // against a location neither side reaches.
+      boundaryRoot = await realpath(await mkdtemp(path.join(tmpdir(), 'dorkos-in-boundary-')));
+      outside = await realpath(await mkdtemp(path.join(tmpdir(), 'dorkos-out-of-boundary-')));
+      await initBoundary(boundaryRoot);
+    });
+
+    afterEach(async () => {
+      await rm(boundaryRoot, { recursive: true, force: true }).catch(() => undefined);
+      await rm(outside, { recursive: true, force: true }).catch(() => undefined);
+    });
+
+    it('serves a file:// package inside the boundary from disk', async () => {
+      const pkgDir = path.join(boundaryRoot, 'my-plugin');
+      await mkdir(pkgDir, { recursive: true });
+
       const result = await fetcher.fetchFromGit({
         packageName: 'x',
-        gitUrl: `file://${localDir}`,
+        gitUrl: pathToFileURL(pkgDir).href,
       });
 
-      expect(result.path).toBe(localDir);
+      expect(result.path).toBe(pkgDir);
       expect(result.commitSha).toBe('local');
       expect(downloader.cloneRepository).not.toHaveBeenCalled();
-    } finally {
-      await rm(localDir, { recursive: true, force: true });
-    }
+    });
+
+    it('refuses a file:// package outside the boundary', async () => {
+      await expect(
+        fetcher.fetchFromGit({ packageName: 'x', gitUrl: pathToFileURL(outside).href })
+      ).rejects.toBeInstanceOf(BoundaryError);
+
+      expect(downloader.cloneRepository).not.toHaveBeenCalled();
+    });
+
+    it('refuses a file:// path that climbs out of the boundary with `..`', async () => {
+      // Hand-built rather than via `pathToFileURL`, which would have no `..` to
+      // carry. `new URL` normalizes the segment away, so what the fetcher
+      // actually converts is the escaped destination — which is the point: the
+      // boundary is what refuses it, not the spelling.
+      const climbing = `file://${boundaryRoot}/../${path.basename(outside)}`;
+
+      await expect(
+        fetcher.fetchFromGit({ packageName: 'x', gitUrl: climbing })
+      ).rejects.toBeInstanceOf(BoundaryError);
+
+      expect(downloader.cloneRepository).not.toHaveBeenCalled();
+    });
+
+    it('refuses a file:// path that climbs out with a percent-encoded `..`', async () => {
+      // `new URL` leaves `%2e%2e` alone where it would have normalized a bare
+      // `..`; `fileURLToPath` decodes it afterwards. So the escape survives URL
+      // parsing and arrives as a real `..` on the path — which is why the
+      // boundary canonicalizes with `realpath` instead of judging the spelling.
+      const encoded = `file://${boundaryRoot}/%2e%2e/${path.basename(outside)}`;
+
+      await expect(
+        fetcher.fetchFromGit({ packageName: 'x', gitUrl: encoded })
+      ).rejects.toBeInstanceOf(BoundaryError);
+
+      expect(downloader.cloneRepository).not.toHaveBeenCalled();
+    });
+
+    it('refuses a file://localhost/… address, which drops its host and keeps the path', async () => {
+      // The one host segment `fileURLToPath` accepts rather than rejecting, so
+      // it is the one that still reaches the boundary check.
+      await expect(
+        fetcher.fetchFromGit({ packageName: 'x', gitUrl: `file://localhost${outside}` })
+      ).rejects.toBeInstanceOf(BoundaryError);
+
+      expect(downloader.cloneRepository).not.toHaveBeenCalled();
+    });
+
+    it('refuses a file:// path whose symlink leads out of the boundary', async () => {
+      const link = path.join(boundaryRoot, 'looks-local');
+      await symlink(outside, link, 'dir');
+
+      await expect(
+        fetcher.fetchFromGit({ packageName: 'x', gitUrl: pathToFileURL(link).href })
+      ).rejects.toBeInstanceOf(BoundaryError);
+
+      expect(downloader.cloneRepository).not.toHaveBeenCalled();
+    });
+
+    it('does not treat an upper-case FILE:// address as a local path', async () => {
+      // `isFileUrl` is deliberately case-sensitive, so this address falls
+      // through to the git door and is refused as an unsupported transport
+      // rather than quietly bypassing the boundary check above.
+      await expect(
+        fetcher.fetchFromGit({ packageName: 'x', gitUrl: `FILE://${outside}` })
+      ).rejects.toBeInstanceOf(UnsupportedSourceUrlError);
+
+      expect(downloader.cloneRepository).not.toHaveBeenCalled();
+    });
   });
 
   it('refuses through the legacy bare-gitUrl entry as well', async () => {

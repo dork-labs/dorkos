@@ -34,14 +34,17 @@ import { spawn, execSync } from 'node:child_process';
 import { rm } from 'node:fs/promises';
 import { downloadTemplate as gigetDownload } from 'giget';
 import { env as mockEnv } from '../../../env.js';
+import { isSafeGitUrl } from '@dorkos/marketplace';
 import {
   resolveGitUrl,
   resolveGitAuth,
   classifyGigetError,
   execGitClone,
   downloadTemplate,
+  isSupportedTemplateSource,
   redactAuthTokens,
   TemplateDownloadError,
+  UNSUPPORTED_TEMPLATE_SOURCE_MESSAGE,
 } from '../template-downloader.js';
 
 /** Create a mock child process with emitters for stdout, stderr, and process events. */
@@ -118,6 +121,153 @@ describe('resolveGitUrl', () => {
 
   it('defaults bare org/repo to GitHub', () => {
     expect(resolveGitUrl('org/repo')).toBe('https://github.com/org/repo.git');
+  });
+});
+
+/**
+ * Which addresses a workspace template may be downloaded from (DOR-1825).
+ *
+ * The template source is a free-form string on `POST /api/agents/create` — a
+ * person types it into the New Agent gallery's template field, passes it to
+ * `dorkos agent create --template`, or picks a marketplace agent listing whose
+ * `source` string becomes it. `downloadTemplate` handed it to two git-cloning
+ * strategies without ever asking what it was.
+ *
+ * The second strategy is why this matters more than the first. `execGitClone`
+ * only ever sees `resolveGitUrl`'s output, which prefixes anything unrecognised
+ * with `https://github.com/`; the giget fallback receives the RAW string,
+ * dispatches on its scheme, and its git provider spawns `git clone -- <uri>`
+ * with none of the `GIT_ALLOW_PROTOCOL` confinement `hardenedGitEnv` gives the
+ * first strategy — while its http provider sends `resolveGitAuth()`'s GitHub
+ * token to whatever host the address names.
+ */
+describe('template sources — which addresses may be downloaded from', () => {
+  /**
+   * The shapes a hostile or dead address arrives in. `ext+git::` is the one
+   * that actually reaches an unconfined `git clone` (giget strips the `+git`
+   * suffix and hands `ext::sh -c id` to git); the rest are the neighbours
+   * DOR-1710's review probed, plus the transports this door has never been able
+   * to clone from.
+   */
+  const REFUSED_SOURCES = [
+    "ext::sh -c 'id > /tmp/dorkos-dor-1825'",
+    "ext+git::sh -c 'id > /tmp/dorkos-dor-1825'",
+    'file::/tmp/not-a-repo',
+    'file:///etc',
+    'fd::0/foo',
+    '-upload-pack=touch /tmp/dorkos-dor-1825',
+    '--upload-pack=touch /tmp/dorkos-dor-1825',
+    'http://example.com/repo.git',
+    'git://example.com/foo/bar.git',
+    'ssh://git@example.com/foo/bar.git',
+    'npm:some-package',
+    './relative/path',
+    '../climbing/out',
+    'org/../../etc/passwd',
+    // scp-style addresses that LOOK like the allowed `git@host:path` form and
+    // are not. Present so the `isSafeGitUrl` call in the predicate is doing
+    // work: without them every full-address case here is refused by the
+    // `https://`/`git@` prefix test alone, and stubbing the shared predicate to
+    // `true` would leave this suite green.
+    'git@-oProxyCommand=id:x/y',
+    'git@evil.example.com/no-colon',
+    // A `#ref` is honoured on a shorthand (below), but only there and only when
+    // it is a plausible ref.
+    'github:org/repo#-oProxyCommand=id',
+    'github:org/repo#../../etc',
+    'github:org/repo#with space',
+    'github:org/repo#',
+    'github:org/repo#a#b',
+    'org/repo#dev',
+  ];
+
+  /**
+   * The two addresses this door refuses that {@link isSafeGitUrl} allows. Kept
+   * separate so the divergence is a decision rather than a quiet weakening of
+   * the agreement check below: `resolveGitUrl` passes through only `https://`
+   * and `git@host:path`, so an `ssh://` or `git://` template has never been
+   * cloneable here — accepting the string would accept an address that then
+   * fails, and hand the giget fallback a scheme to dispatch on.
+   */
+  const NARROWED_BEYOND_SHARED_PREDICATE = [
+    'ssh://git@example.com/foo/bar.git',
+    'git://example.com/foo/bar.git',
+  ];
+
+  /** The templates people really install from, none of which may regress. */
+  const ALLOWED_SOURCES = [
+    'github:org/repo',
+    'gitlab:org/repo',
+    'bitbucket:org/repo',
+    // The subpath shorthand `resolvePackageSource` builds for a marketplace
+    // agent listing that lives inside its registry repo.
+    'github:dork-labs/marketplace/plugins/qa-agent',
+    'org/repo',
+    'dorkos-templates/nextjs',
+    'https://github.com/org/repo.git',
+    'git@github.com:org/repo.git',
+    // Pinning a template to a version. No first-party surface emits one, but a
+    // person typing it is a legitimate want and giget's shorthand providers
+    // have always honoured it — so the guard must not be what takes it away.
+    'github:org/repo#dev',
+    'gitlab:org/repo#v2.1.0',
+    'github:org/repo#a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0',
+    'https://github.com/org/repo.git#dev',
+  ];
+
+  it.each(REFUSED_SOURCES)('refuses %s without cloning or fetching anything', async (source) => {
+    await expect(downloadTemplate(source, '/tmp/target')).rejects.toMatchObject({
+      code: 'UNSUPPORTED_SOURCE',
+      message: UNSUPPORTED_TEMPLATE_SOURCE_MESSAGE,
+    });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(gigetDownload).not.toHaveBeenCalled();
+  });
+
+  it.each(ALLOWED_SOURCES)('still clones %s', async (source) => {
+    const mockProc = createMockProcess();
+    vi.mocked(spawn).mockReturnValue(mockProc);
+
+    const promise = downloadTemplate(source, '/tmp/target');
+    mockProc._emit('close', 0);
+    await promise;
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(gigetDownload).not.toHaveBeenCalled();
+  });
+
+  it('agrees with `isSafeGitUrl` on every full address, except the two deliberate narrowings', () => {
+    // Not a test of the guard — it never calls `downloadTemplate`. It is what
+    // keeps the two lists above honest, so this file cannot drift into
+    // asserting a transport policy the marketplace half of the repo does not
+    // hold. Only full addresses are compared: the shared predicate has nothing
+    // to say about `github:org/repo` or a bare `org/repo`, which are shorthands
+    // `resolveGitUrl` expands rather than transports.
+    for (const source of REFUSED_SOURCES) {
+      if (NARROWED_BEYOND_SHARED_PREDICATE.includes(source)) {
+        expect(isSafeGitUrl(source), source).toBe(true);
+        continue;
+      }
+      expect(isSafeGitUrl(source), source).toBe(false);
+    }
+    for (const source of ALLOWED_SOURCES.filter(
+      (s) => s.startsWith('https://') || s.startsWith('git@')
+    )) {
+      expect(isSafeGitUrl(source), source).toBe(true);
+    }
+  });
+
+  it('answers the same question as the predicate it exports', () => {
+    // The predicate is exported for callers that want to ask before they act
+    // (the create-agent route could, one day). Pinned against the same fixture
+    // lists so the two can never disagree.
+    for (const source of REFUSED_SOURCES) {
+      expect(isSupportedTemplateSource(source), source).toBe(false);
+    }
+    for (const source of ALLOWED_SOURCES) {
+      expect(isSupportedTemplateSource(source), source).toBe(true);
+    }
   });
 });
 

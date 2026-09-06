@@ -416,6 +416,32 @@ describe('POST /api/agents/create', () => {
       });
     });
 
+    it('answers 400, not 500, when the template ADDRESS is the thing that was refused', async () => {
+      // The shape `downloadTemplate` really throws for an address DorkOS will
+      // not download from (DOR-1825) — an error carrying `code`, built here
+      // rather than imported because the stub above exports only the function,
+      // which is exactly why the status decision reads the code and not the
+      // class. A person who typed a bad address has a request to fix; a 500
+      // would tell them DorkOS broke.
+      mockDownloadTemplate.mockRejectedValueOnce(
+        Object.assign(new Error("That template address isn't one DorkOS can download from."), {
+          code: 'UNSUPPORTED_SOURCE',
+        })
+      );
+
+      const res = await request(testServer)
+        .post('/api/agents/create')
+        .send({ name: 'my-agent', template: 'ext::sh -c id' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Template download failed');
+      // The refusal still rolls back the directory this run created.
+      expect(mockRm).toHaveBeenCalledWith('/mock/agents/my-agent', {
+        recursive: true,
+        force: true,
+      });
+    });
+
     it('detects postinstall hook in package.json → _meta.hasPostInstall: true', async () => {
       mockFsReadFile.mockResolvedValueOnce(
         JSON.stringify({ scripts: { postinstall: 'node setup.js' } })

@@ -153,6 +153,28 @@ function endSentence(text: string): string {
 }
 
 /**
+ * True when a template download failed because the ADDRESS was refused rather
+ * than because the download went wrong (DOR-1825).
+ *
+ * Read off the error's `code` rather than an `instanceof TemplateDownloadError`
+ * check, and that is the point rather than a shortcut: `template-downloader.js`
+ * is imported dynamically here, and the suites that stub that module supply
+ * only the `downloadTemplate` function — an `instanceof` against a class the
+ * stub never exports would throw where it should answer `false`. Only
+ * `TemplateDownloadError` ever carries this code.
+ *
+ * @param err - Whatever the template download threw.
+ * @returns `true` when the caller's address is the thing to fix.
+ */
+function isUnsupportedTemplateSource(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: unknown }).code === 'UNSUPPORTED_SOURCE'
+  );
+}
+
+/**
  * Undo a scaffold that failed partway through, and describe what is left.
  *
  * The two cases are deliberately different. When this run created the workspace
@@ -331,7 +353,10 @@ export async function createAgentWorkspace(
       throw new AgentCreationError(
         `Template download failed: ${endSentence(message)} ${cleanup}`,
         'TEMPLATE',
-        500
+        // An address DorkOS will not download from is the caller's to fix, not
+        // a failure of ours — 400, not the 500 every other download failure
+        // (network, auth, disk) honestly earns (DOR-1825).
+        isUnsupportedTemplateSource(templateErr) ? 400 : 500
       );
     }
   }
