@@ -313,7 +313,7 @@ describe('CreateTaskDialog', () => {
       target: { value: 'Folded away' },
     });
     fireEvent.change(
-      screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
+      screen.getByPlaceholderText('Review all pending PRs and summarize findings…'),
       { target: { value: 'Still sticky' } }
     );
 
