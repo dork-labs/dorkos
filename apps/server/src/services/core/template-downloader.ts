@@ -159,7 +159,8 @@ export function classifyGigetError(err: unknown): TemplateErrorCode {
  * The clone runs with {@link hardenedGitEnv}: `GIT_ALLOW_PROTOCOL` confines the
  * author-supplied URL to safe transports (blocks the `ext::`/`file::` command
  * helpers, which fire at preview time before install consent), and
- * `GIT_TERMINAL_PROMPT=0` stops a private URL from hanging on a prompt. A
+ * `GIT_TERMINAL_PROMPT=0` stops a private URL from hanging on a prompt. The URL
+ * and target follow `--end-of-options`, so neither can be read as a flag. A
  * wall-clock {@link GIT_CLONE_TIMEOUT_MS} caps a stalled clone.
  *
  * @param url - Git clone URL
@@ -181,7 +182,23 @@ export async function execGitClone(
   return new Promise<void>((resolve, reject) => {
     const proc = spawn(
       'git',
-      ['clone', '--depth', '1', '--single-branch', '--progress', cloneUrl, target],
+      [
+        'clone',
+        '--depth',
+        '1',
+        '--single-branch',
+        '--progress',
+        // Everything after this is a value, never a flag. The URL reaching here
+        // is author- or operator-supplied, and one starting with `-` would
+        // otherwise be offered to git as an option — the same fourth layer the
+        // marketplace's other two git call sites already carry, added so the
+        // claim "every helper passes the destination as one argv element after
+        // `--end-of-options`" is true of the clone primitive too (DOR-1799).
+        // Supported since git 2.24, below this repo's 2.25 floor.
+        '--end-of-options',
+        cloneUrl,
+        target,
+      ],
       {
         stdio: ['ignore', 'pipe', 'pipe'],
         // Confine git to safe transports so an author-controlled URL cannot
