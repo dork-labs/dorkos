@@ -18,8 +18,6 @@ interface A2aRouterDeps {
   baseUrl: string;
   /** DorkOS version string. */
   version: string;
-  /** Whether the A2A surface enforces auth (cards advertise a security requirement). */
-  authRequired: boolean;
   /** Rate limiter applied to the JSON-RPC endpoints. */
   rpcRateLimiter: RequestHandler;
   /** Lighter rate limiter applied to card (discovery) endpoints. */
@@ -50,7 +48,6 @@ export function createA2aRouter(deps: A2aRouterDeps): {
   const config: CardGeneratorConfig = {
     baseUrl: deps.baseUrl,
     version: deps.version,
-    authRequired: deps.authRequired,
   };
 
   const handlers = createA2aHandlers({

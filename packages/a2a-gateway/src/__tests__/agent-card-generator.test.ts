@@ -10,11 +10,14 @@ import type { CardGeneratorConfig } from '../types.js';
 const BASE_CONFIG: CardGeneratorConfig = {
   baseUrl: 'https://dorkos.example.com',
   version: '1.2.3',
-  authRequired: true,
 };
 
-/** A pass-through (no-auth) config: the scheme is described but not required. */
-const PASSTHROUGH_CONFIG: CardGeneratorConfig = { ...BASE_CONFIG, authRequired: false };
+/**
+ * Anything that would tell a card reader WHERE this instance's credential
+ * lives: the local token's own prefix, its filename, and the data directory
+ * holding it. The card may say a bearer is required; it may not say that.
+ */
+const CREDENTIAL_LOCATION_PATTERN = /dork_mcp_local_|mcp-local-token|\.dork\b/;
 
 function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
   return {
@@ -90,7 +93,7 @@ describe('generateAgentCard', () => {
     expect(card.defaultOutputModes).toContain('text/plain');
   });
 
-  it('advertises the spec-standard http/bearer scheme and a requirement when auth is enforced', () => {
+  it('advertises the spec-standard http/bearer scheme and always requires it', () => {
     const card = generateAgentCard(makeManifest(), BASE_CONFIG);
 
     expect(card.securitySchemes['bearerAuth']).toEqual({
@@ -99,18 +102,25 @@ describe('generateAgentCard', () => {
         value: {
           scheme: 'bearer',
           bearerFormat: '',
-          description: 'API key sent as `Authorization: Bearer <key>`.',
+          description:
+            'A credential for this DorkOS instance, sent as `Authorization: Bearer <token>`. ' +
+            'Obtained out of band from the operator; this endpoint issues none.',
         },
       },
     });
+    // Unconditional: every JSON-RPC POST is gated in every posture (DOR-278),
+    // so a card that advertised no requirement would be lying (DOR-1824).
     expect(card.securityRequirements).toEqual([{ schemes: { bearerAuth: { list: [] } } }]);
   });
 
-  it('describes the bearer scheme but advertises no requirement in pass-through mode', () => {
-    const card = generateAgentCard(makeManifest(), PASSTHROUGH_CONFIG);
+  it('names no credential value or file path ANYWHERE on the card', () => {
+    // The whole document, not just the scheme description: the card is the one
+    // A2A artifact a stranger may read before presenting anything, and the
+    // promise ("the card never says where your key is kept") is about the card,
+    // so a future field that leaked a path has to red here too.
+    const card = generateAgentCard(makeManifest(), BASE_CONFIG);
 
-    expect(card.securitySchemes['bearerAuth']).toBeDefined();
-    expect(card.securityRequirements).toEqual([]);
+    expect(JSON.stringify(card)).not.toMatch(CREDENTIAL_LOCATION_PATTERN);
   });
 
   // ---------------------------------------------------------------------------
@@ -288,7 +298,7 @@ describe('generateFleetCard', () => {
     expect(tags).not.toContain('undefined');
   });
 
-  it('advertises the http/bearer scheme with a requirement when auth is enforced', () => {
+  it('advertises the http/bearer scheme and always requires it', () => {
     const card = generateFleetCard([alpha], BASE_CONFIG);
 
     expect(card.securitySchemes['bearerAuth']?.scheme).toMatchObject({
@@ -298,11 +308,11 @@ describe('generateFleetCard', () => {
     expect(card.securityRequirements).toEqual([{ schemes: { bearerAuth: { list: [] } } }]);
   });
 
-  it('describes the bearer scheme but advertises no requirement in pass-through mode', () => {
-    const card = generateFleetCard([alpha], PASSTHROUGH_CONFIG);
+  it('names no credential value or file path ANYWHERE on the card', () => {
+    // The fleet card is the roster a stranger reaches first — same promise.
+    const card = generateFleetCard([alpha, beta], BASE_CONFIG);
 
-    expect(card.securitySchemes['bearerAuth']).toBeDefined();
-    expect(card.securityRequirements).toEqual([]);
+    expect(JSON.stringify(card)).not.toMatch(CREDENTIAL_LOCATION_PATTERN);
   });
 
   it('advertises streaming capability', () => {

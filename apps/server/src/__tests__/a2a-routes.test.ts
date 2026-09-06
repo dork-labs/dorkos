@@ -117,8 +117,6 @@ function messageSend(text: string, opts: { agentId?: string; taskId?: string } =
 // ---------------------------------------------------------------------------
 
 interface BuildOptions {
-  /** Whether cards advertise a security requirement (default false — pass-through). */
-  authRequired?: boolean;
   /** Per-minute RPC/card limits (default high enough not to trip in tests). */
   rpcMaxPerMinute?: number;
   cardMaxPerMinute?: number;
@@ -140,7 +138,6 @@ function buildTestApp(agents: AgentManifest[] = [], options: BuildOptions = {}) 
     db: db as never,
     baseUrl: BASE_URL,
     version: VERSION,
-    authRequired: options.authRequired ?? false,
     rpcRateLimiter,
     cardRateLimiter,
   });
@@ -268,7 +265,7 @@ describe('A2A Express routes', () => {
       expect(res2.body.skills).toHaveLength(2);
     });
 
-    it('describes the http/bearer scheme without a requirement in pass-through mode', async () => {
+    it('advertises the http/bearer scheme and a bearer requirement on the wire', async () => {
       const { app } = buildTestApp([AGENT_ALPHA]);
 
       const res = await request(fixtureTarget.mount(app)).get('/.well-known/agent.json');
@@ -277,18 +274,8 @@ describe('A2A Express routes', () => {
       expect(card.securitySchemes?.bearerAuth?.httpAuthSecurityScheme).toMatchObject({
         scheme: 'bearer',
       });
-      expect(card.securityRequirements ?? []).toEqual([]);
-    });
-
-    it('advertises a bearer security requirement when auth is enforced', async () => {
-      const { app } = buildTestApp([AGENT_ALPHA], { authRequired: true });
-
-      const res = await request(fixtureTarget.mount(app)).get('/.well-known/agent.json');
-      const card = res.body;
-
-      expect(card.securitySchemes?.bearerAuth?.httpAuthSecurityScheme).toMatchObject({
-        scheme: 'bearer',
-      });
+      // No posture switch: the router takes none. Execution is gated in every
+      // posture, so the served card says so every time (DOR-1824).
       expect(card.securityRequirements).toEqual([{ schemes: { bearerAuth: {} } }]);
     });
   });

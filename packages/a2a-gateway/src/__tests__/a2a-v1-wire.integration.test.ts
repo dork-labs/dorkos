@@ -196,7 +196,7 @@ beforeEach(async () => {
     agentRegistry: makeRegistry([makeManifest()]),
     relay: relay as unknown as RelayCore,
     db: createTestDb(),
-    config: { baseUrl, version: '0.0.0-test', authRequired: false },
+    config: { baseUrl, version: '0.0.0-test' },
     logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
   });
 
@@ -429,7 +429,7 @@ describe('ListTasks scoping', () => {
       agentRegistry: makeRegistry([makeManifest('agent-backend'), makeManifest('agent-frontend')]),
       relay: scopedRelay as unknown as RelayCore,
       db: createTestDb(),
-      config: { baseUrl: scopedUrl, version: '0.0.0-test', authRequired: false },
+      config: { baseUrl: scopedUrl, version: '0.0.0-test' },
       logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
     });
     app.post('/a2a/agents/:id', handlers.agentJsonRpc);
@@ -586,7 +586,7 @@ describe('a token-gated deployment', () => {
       agentRegistry: makeRegistry([makeManifest()]),
       relay: guardedRelay as unknown as RelayCore,
       db: createTestDb(),
-      config: { baseUrl: guardedUrl, version: '0.0.0-test', authRequired: true },
+      config: { baseUrl: guardedUrl, version: '0.0.0-test' },
       logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
     });
 

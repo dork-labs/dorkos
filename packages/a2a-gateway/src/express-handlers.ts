@@ -39,7 +39,7 @@ export interface A2aHandlerDeps {
   relay: RelayCore;
   /** Drizzle database instance for A2A task persistence. */
   db: Db;
-  /** Card generation configuration (baseUrl, version, authRequired). */
+  /** Card generation configuration (baseUrl, version). */
   config: CardGeneratorConfig;
   /**
    * Where the executor reports what it could and could not stop.

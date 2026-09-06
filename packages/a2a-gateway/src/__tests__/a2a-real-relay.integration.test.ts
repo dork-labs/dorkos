@@ -185,7 +185,7 @@ async function buildHarness(script: ResponderScript): Promise<void> {
     agentRegistry: makeRegistry([makeManifest()]),
     relay,
     db,
-    config: { baseUrl: 'http://127.0.0.1:0', version: '0.0.0-test', authRequired: false },
+    config: { baseUrl: 'http://127.0.0.1:0', version: '0.0.0-test' },
   });
 
   const app = express();
