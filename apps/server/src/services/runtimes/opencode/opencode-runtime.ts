@@ -106,6 +106,7 @@ import {
 import { resolveCompactionModel } from './messaging/compaction-model.js';
 import { projectModelOptions, projectedProviderIds } from './providers/models.js';
 import { OpenCodeMcpManager } from './mcp/mcp-manager.js';
+import { canonicalDirectory } from './canonical-directory.js';
 import { captureOpenCodeMedia } from './events/media-capture.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 
@@ -227,7 +228,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     sessionId: string,
     opts?: { upToMessageId?: string; title?: string }
   ): Promise<Session | null> {
-    return this.mapper.forkSession(projectDir, sessionId, opts);
+    return this.mapper.forkSession(canonicalDirectory(projectDir), sessionId, opts);
   }
 
   /**
@@ -266,7 +267,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    */
   async renameSession(sessionId: string, title: string, projectDir: string): Promise<void> {
     this.registry.rename(sessionId, title);
-    await this.mapper.renameSession(projectDir, sessionId, title);
+    await this.mapper.renameSession(canonicalDirectory(projectDir), sessionId, title);
   }
 
   // --- Messaging ---
@@ -682,9 +683,15 @@ export class OpenCodeRuntime implements AgentRuntime {
    * `permissionMode: 'default'` (OpenCode has no per-session mode), so the
    * DorkOS-tracked settings are overlaid; restart-persisted settings are
    * overlaid one layer up from `session_metadata` (ADR-0260).
+   *
+   * The sidecar is asked in the CANONICAL spelling of the directory, because
+   * that is the spelling it stored (DOR-695 — see {@link canonicalDirectory}).
+   * The registry is asked in the spelling the caller used, and reconciles the
+   * two itself: it holds the cwd whoever created each session used, which is
+   * its own third spelling of the same folder.
    */
   async listSessions(projectDir: string): Promise<Session[]> {
-    const listed = await this.mapper.listSessions(projectDir);
+    const listed = await this.mapper.listSessions(canonicalDirectory(projectDir));
     const byId = new Map(listed.map((session) => [session.id, session]));
     for (const tracked of this.registry.list(projectDir)) {
       if (!byId.has(tracked.id)) byId.set(tracked.id, tracked);
@@ -707,7 +714,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     const sessions = await this.listSessions(projectDir);
     const listed = sessions.find((session) => session.id === sessionId);
     if (listed) return listed;
-    const session = await this.mapper.getSession(projectDir, sessionId);
+    const session = await this.mapper.getSession(canonicalDirectory(projectDir), sessionId);
     if (session) this.overlayTrackedSettings(session);
     return session;
   }
@@ -724,7 +731,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    */
   async getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
     try {
-      return await this.mapper.getMessageHistory(projectDir, sessionId);
+      return await this.mapper.getMessageHistory(canonicalDirectory(projectDir), sessionId);
     } catch (err) {
       logger.debug(
         '[OpenCodeRuntime] native history read failed — serving durable EventLog fallback',
@@ -859,7 +866,10 @@ export class OpenCodeRuntime implements AgentRuntime {
     try {
       const client = await this.provider.getClient(DEFAULT_CWD);
       const listed = unwrap(
-        await client.provider.list({ query: { directory: DEFAULT_CWD } }),
+        // Canonical, like every other directory-scoped read (DOR-695):
+        // `DORKOS_DEFAULT_CWD` is taken verbatim, and on macOS a `/tmp` or
+        // `/var` spelling reaches the sidecar as a directory it never stored.
+        await client.provider.list({ query: { directory: canonicalDirectory(DEFAULT_CWD) } }),
         'provider.list'
       );
       const [installedOllamaTags, openRouterCatalog] = await Promise.all([
@@ -1073,7 +1083,10 @@ export class OpenCodeRuntime implements AgentRuntime {
     const inflight = this.binding.get(sessionId);
     if (inflight) return inflight;
     const creating = this.mapper
-      .ensureSession(sessionId, { cwd, ...(title !== undefined ? { title } : {}) })
+      .ensureSession(sessionId, {
+        cwd: canonicalDirectory(cwd),
+        ...(title !== undefined ? { title } : {}),
+      })
       .finally(() => {
         if (this.binding.get(sessionId) === creating) this.binding.delete(sessionId);
       });

@@ -393,6 +393,15 @@ async function mapHistoryMessage(
  * Maps DorkOS sessions 1:1 to OpenCode sessions and reads listing/history
  * through the SDK against the managed sidecar. See the module doc for the
  * id-mapping model.
+ *
+ * **Every `cwd`/`projectDir` reaching this class is already canonical**, and
+ * that is the caller's job: {@link OpenCodeRuntime} passes each one through
+ * `canonicalDirectory` first. It cannot be done here — canonicalizing needs
+ * `realpath`, and this module's import graph is filesystem-free by test guard
+ * (ADR-0308: session data reaches DorkOS only through the SDK). The spelling
+ * matters because the sidecar canonicalizes the directory it STORES but
+ * filters on the literal string it is GIVEN, so a `?directory=` in any other
+ * spelling matches nothing at all (DOR-695).
  */
 export class OpenCodeSessionMapper {
   /** DorkOS session id -> OpenCode session id. */
