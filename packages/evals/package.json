@@ -28,13 +28,13 @@
     "@dorkos/server": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@dorkos/test-utils": "workspace:*",
-    "zod": "^4.4.3"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@types/node": "^24",
-    "tsx": "^4.23.12",
+    "tsx": "^4.23.13",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
   }

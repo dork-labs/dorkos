@@ -33,17 +33,29 @@ export interface OwnerAuth {
       config: { minPasswordLength: number };
     };
     internalAdapter: {
-      findAccounts(userId: string): Promise<Array<{ providerId: string }>>;
+      findAccounts(userId: string): Promise<Array<{ providerId: string; issuer: string }>>;
       updatePassword(userId: string, hashedPassword: string): Promise<void>;
       createAccount(account: {
         userId: string;
         providerId: string;
+        issuer: string;
         accountId: string;
         password: string;
       }): Promise<unknown>;
     };
   }>;
 }
+
+/**
+ * The issuer Better Auth stamps on local email+password accounts.
+ *
+ * Since 1.7 an account row is identified by `(issuer, accountId)`, and
+ * `internalAdapter.updatePassword` only touches rows carrying this exact issuer
+ * — the value Better Auth's own `createLocalAccountIssuer('credential')`
+ * returns. It is inlined because `better-auth` does not re-export that helper
+ * from any of its public entry points.
+ */
+const CREDENTIAL_ISSUER = 'local:credential';
 
 /** A source of credential values (interactive prompt or piped stdin). */
 export interface CredentialPrompt {
@@ -266,7 +278,9 @@ export async function runAuthResetPassword(deps: AuthResetPasswordDeps): Promise
 
   const hashedPassword = await context.password.hash(password);
   const accounts = await context.internalAdapter.findAccounts(owner.id);
-  const hasCredential = accounts.some((entry) => entry.providerId === 'credential');
+  const hasCredential = accounts.some(
+    (entry) => entry.providerId === 'credential' && entry.issuer === CREDENTIAL_ISSUER
+  );
   if (hasCredential) {
     await context.internalAdapter.updatePassword(owner.id, hashedPassword);
   } else {
@@ -275,6 +289,7 @@ export async function runAuthResetPassword(deps: AuthResetPasswordDeps): Promise
     await context.internalAdapter.createAccount({
       userId: owner.id,
       providerId: 'credential',
+      issuer: CREDENTIAL_ISSUER,
       accountId: owner.id,
       password: hashedPassword,
     });
