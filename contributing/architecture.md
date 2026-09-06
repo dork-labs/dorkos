@@ -1101,7 +1101,7 @@ Agent response → Relay subscription → schema-translator → A2A TaskStatusUp
 
 ### Auth
 
-Reuses `MCP_API_KEY` via the existing `mcpApiKeyAuth` middleware — the same authentication used by the MCP endpoint.
+Guarded by `createMcpAuth({ surface: 'a2a' })` — the same credential acceptors the MCP endpoint uses (`MCP_API_KEY` override → per-user key or session → legacy compat key → the local token while login is off). The surfaces differ only in what happens when none matches. **Login off:** A2A leaves `GET` agent-card discovery open and `401`s every JSON-RPC `POST`, where `/mcp` applies its read-only tool carve-out instead. **Login on:** A2A `401`s both, card discovery included, and `/mcp` has no tokenless path either — but `sessionGate` covers only `/api/*` and `/mcp`, so it never runs on `/a2a` and the `MCP_API_KEY` override still reaches this surface.
 
 ### Server Integration
 

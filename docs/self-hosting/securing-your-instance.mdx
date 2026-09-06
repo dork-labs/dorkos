@@ -141,10 +141,13 @@ curl -H "Authorization: Bearer dork_..." http://localhost:4242/mcp
 </Step>
 </Steps>
 
-<Callout type="info">
-  **Headless deployments** (a server running with nobody signed in at a screen, like CI or a
-  background job): the `MCP_API_KEY` environment variable is still honored as a static override for
-  the `/mcp` endpoint. It takes priority over per-user keys and cannot be revoked from the UI.
+<Callout type="warn">
+  **`MCP_API_KEY` does not open a side door past login.** Once login is on, the login gate answers
+  `/mcp` first, and it only accepts a session or a per-user API key — a client sending nothing but
+  `MCP_API_KEY` gets a `401`. Use it for a **headless** setup (a server nobody signs into, like CI
+  or a background job) where login stays off: there it is a fixed key you can hand to every client,
+  it wins over the local token, and it can only be changed in the environment, never revoked from
+  the UI. It does still work on the separate A2A gateway, which the login gate does not cover.
 </Callout>
 
 The old global MCP key (and its `POST /api/config/mcp/generate-key` / `DELETE /api/config/mcp/api-key` endpoints) have been removed. If you had a global MCP key configured, it is **migrated automatically** into an owner-owned API key the first time you create the owner account (or on the next server start if an owner already exists), so existing MCP clients keep working without changes.

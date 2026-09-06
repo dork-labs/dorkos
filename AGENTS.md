@@ -115,7 +115,7 @@ Express **5** on `DORKOS_PORT` (default 4242, dev 6242) — mind Express 5 seman
 - `lib/dork-home.ts` is the single source of truth for the data directory (`~/.dork/` prod, `apps/server/.temp/.dork/` dev). `os.homedir()` is banned outside the five carve-outs in Hard Rule 3.
 - `lib/resolve-root.ts` resolves the default working directory; each app has its own Zod-validated `env.ts`.
 - Persistent user config: `~/.dork/config.json` via `conf` (`services/core/config-manager.ts`); Zod is the authoritative schema. Schema changes require a semver-keyed migration — `contributing/configuration.md` + the `adding-config-fields` skill.
-- External MCP server at `/mcp` (Streamable HTTP, stateless, optional `MCP_API_KEY`) exposes all DorkOS tools, including the 8 marketplace tools.
+- External MCP server at `/mcp` (Streamable HTTP, stateless) exposes all DorkOS tools, including the 8 marketplace tools. Its auth is **fail-closed** (`middleware/mcp-auth.ts`): the per-instance local token gates every mutating call while login is off, per-user keys take over once login is on, and `MCP_API_KEY` is an optional static override for headless deployments — never the thing that turns auth on.
 
 ### Sessions
 
