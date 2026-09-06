@@ -233,9 +233,12 @@ function cleanupOldFiles(): void {
  * that had already been marked truncated once.
  *
  * Nothing here may throw: a reporter runs inside whatever `catch` block called
- * the logger. A context object can still defeat the walk (a getter that
- * throws), and a line that cannot be clipped is still worth printing, so that
- * case falls through to the arguments as they came.
+ * the logger, so a reporter that throws replaces the failure being reported
+ * with one of its own. The walk already contains the everyday hazard — a
+ * property whose getter throws costs only that property — so this `catch` is a
+ * last resort for the exotic remainder (a Proxy that refuses to be enumerated,
+ * a `Symbol.toPrimitive` that throws). It prints the line unclipped rather than
+ * not at all, which is the right trade only because it is now genuinely rare.
  */
 function withClipping(inner: ConsolaReporter): ConsolaReporter {
   return {
