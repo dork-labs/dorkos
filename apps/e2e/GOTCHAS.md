@@ -303,13 +303,27 @@ cannot reach CI.
   always green, and that is what CI runs (`workers: CI ? 1 : undefined`), so this
   cannot reach a PR check. Do not add a retry or stretch the timeout for it.
 
-**A stale Vite can outlive its run.** `turbo dev` spawns vite as a grandchild,
-so when Playwright kills the leg the vite process survives holding the port.
-Start a second run straight after a first and it inherits that vite — now
-proxying to an API leg that is gone — and `globalSetup` dies with
-`Could not dismiss onboarding … 500`, which names onboarding and not the cause.
-Reap the ports between back-to-back local runs. CI gets fresh runners, so this
-is local-only.
+**A stale Vite can outlive its run.** `turbo dev` spawns vite in its own process
+group, so Playwright's shutdown — which kills the group it started — misses it,
+and the vite process survives holding the port. What the next run does about that
+has changed with `reuseExistingServer`, and both spellings are worth knowing:
+
+- **Now, with reuse off** (`REUSE_EXISTING_SERVER = false`), the second run
+  refuses to start at all: `Error: http://localhost:4244 is already used, make
+sure that nothing is running on the port/url`. Measured three times in a row on
+  back-to-back local runs, DOR-1420. Loud, and it names the port.
+- **Before that**, the run ADOPTED the stale vite — now proxying to an API leg
+  that is gone — and `globalSetup` died with `Could not dismiss onboarding … 500`,
+  which names onboarding and not the cause.
+
+Reap the ports between back-to-back local runs (`lsof -ti :4244`, and the other
+ports in README's table — only ever by pid, never by name). CI gets fresh
+runners, so this is local-only. The durable fix is for the leg to run vite as a
+direct child the way the Express legs run `tsx` — build the workspace deps with
+`turbo run build --filter=@dorkos/client^...`, then `pnpm --filter @dorkos/client
+exec vite` — which is a change to the webServer commands and to the guard in
+`__tests__/playwright-config.test.ts` that keys off `turbo dev`, so it wants its
+own measurement rather than a rider on somebody else's branch.
 
 ## Assertions this suite cannot make
 
@@ -326,6 +340,13 @@ Concretely, do not assert:
   button's `data-emoji`) and assert against what you read;
 - that a palette's **first** row is anything in particular — another spec's unread room may be above yours;
 - that pressing Enter on an unfiltered list opens _your_ thing — filter to your own run id first.
+- **that the sidebar panel is the size or shape your fixtures made it.** Naming
+  isolates a room; it does not isolate the PANEL, which draws every room on the
+  server. A neighbour seeding twenty-five channels pushes your drop target off
+  the fold, and `ui.sidebar` is written whole on every config PATCH so the last
+  writer wins outright. A spec that drags, measures or folds the real sidebar
+  takes `SOLE_SIDEBAR_TAG` instead (README, "Specs that need the sidebar to
+  themselves").
 
 That last one is not hypothetical: `rooms-in-palette` pressed Enter on the untyped palette's first unread row, which on a busy suite was a _neighbour's_ room — and arriving at a room marks it read, so it silently cleared another spec's unread badge and made that spec fail about half the time. It looked like a product bug for a while (DOR-692, since closed as an artefact).
 

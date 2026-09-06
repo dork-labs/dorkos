@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
+import { SOLE_SIDEBAR_TAG } from '../../fixtures/sole-access';
 import { BOOT_CACHE_DISABLED_KEY } from '../../boot-cache-flag';
 import type { RoomsApi } from '../../fixtures/rooms-api';
 
@@ -199,7 +200,7 @@ async function seedChannels(roomsApi: RoomsApi): Promise<void> {
   }
 }
 
-test.describe('the sidebar’s first paint @smoke', () => {
+test.describe('the sidebar’s first paint @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
   /**
    * The one spec that OPTS IN to the cockpit's local memory.
    *

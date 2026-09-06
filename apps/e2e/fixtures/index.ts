@@ -13,8 +13,17 @@ import { ControlCenterPage } from '../pages/ControlCenterPage';
 import { RoomsApi } from './rooms-api';
 import { TeamRoomApi } from './team-room-api';
 import { TasksApi } from './tasks-api';
+import { soleAccess } from './sole-access';
 
 type DorkOSFixtures = {
+  /**
+   * Sole access to the shared cockpit sidebar, for the tests that asked for it.
+   *
+   * Automatic rather than requested, so a spec that wears the tag cannot forget
+   * to take the lock — see `fixtures/sole-access.ts` for what is shared and why
+   * a namespace cannot isolate it.
+   */
+  soleSidebar: void;
   basePage: BasePage;
   chatPage: ChatPage;
   dashboardSidebar: DashboardSidebarPage;
@@ -32,6 +41,18 @@ type DorkOSFixtures = {
 };
 
 export const test = base.extend<DorkOSFixtures>({
+  // Keyed on `baseURL` because the panel is shared per SERVER: two checkouts
+  // running on their own ports have their own sidebars and must not queue behind
+  // each other. A run with no baseURL configured has one notional server, so one
+  // lock is still the right answer.
+  soleSidebar: [
+    async ({ baseURL }, use, testInfo) => {
+      await soleAccess(baseURL ?? 'default', testInfo, async () => {
+        await use();
+      });
+    },
+    { auto: true },
+  ],
   basePage: async ({ page }, use) => {
     await use(new BasePage(page));
   },

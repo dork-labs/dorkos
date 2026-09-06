@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
+import { SOLE_SIDEBAR_TAG } from '../../fixtures/sole-access';
 
 /**
  * The session switcher, in a browser — which is the only place most of it is
@@ -157,7 +158,7 @@ async function groupOrder(page: Page): Promise<string[]> {
     .allTextContents();
 }
 
-test.describe('session switcher @smoke', () => {
+test.describe('session switcher @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
   test('groups an agent’s sessions Live now / Recent / Automated, with Automated collapsed', async ({
     page,
   }) => {
@@ -423,7 +424,7 @@ test.describe('session switcher @smoke', () => {
  *
  * Not `@smoke` — it drives the app rather than a playground page.
  */
-test.describe('session switcher, from ⌘K', () => {
+test.describe('session switcher, from ⌘K', { tag: SOLE_SIDEBAR_TAG }, () => {
   /**
    * Two sessions with EXPLICIT, distinct recency.
    *

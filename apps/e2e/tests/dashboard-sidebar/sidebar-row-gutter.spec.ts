@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
+import { SOLE_SIDEBAR_TAG } from '../../fixtures/sole-access';
 
 /**
  * The Dev Playground section this spec drives.
@@ -128,7 +129,7 @@ async function box(locator: Locator): Promise<{ x: number; y: number; width: num
   return measured!;
 }
 
-test.describe('SidebarRow — the reserved right gutter @smoke', () => {
+test.describe('SidebarRow — the reserved right gutter @smoke', { tag: SOLE_SIDEBAR_TAG }, () => {
   test('really reserves the gutter it declares', async ({ page }) => {
     await openShowcase(page);
 
