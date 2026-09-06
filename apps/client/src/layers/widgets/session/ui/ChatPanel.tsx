@@ -754,7 +754,6 @@ export function ChatPanel({
           </div>
         )}
 
-
         <SessionComposer
           chatInputRef={chatInputRef}
           input={input}
