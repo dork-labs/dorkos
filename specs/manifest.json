@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260906-164422",
+      "slug": "gate-bypass-surfaces",
+      "title": "Routes that mount outside the session gate and the host guard: gate them, or pin the assumption",
+      "created": "2026-09-06",
+      "status": "ideation"
+    },
+    {
       "id": "260906-000529",
       "slug": "stable-http-test-listeners",
       "title": "Stable HTTP listeners for server test fixtures",
