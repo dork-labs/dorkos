@@ -10,6 +10,7 @@ export { BindingBridgeSection } from './ui/BindingBridgeSection';
 export type { BindingBridgeSectionProps } from './ui/BindingBridgeSection';
 export { ActivityFeed } from './ui/ActivityFeed';
 export { ConnectionStatusBanner } from './ui/ConnectionStatusBanner';
+export type { ConnectionStatusBannerProps } from './ui/ConnectionStatusBanner';
 export { AdapterCard } from './ui/adapter/AdapterCard';
 export { AdapterCardHeader } from './ui/adapter/AdapterCardHeader';
 export { AdapterCardBindings } from './ui/adapter/AdapterCardBindings';

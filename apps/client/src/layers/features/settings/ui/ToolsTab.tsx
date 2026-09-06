@@ -6,7 +6,6 @@ import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { useToolNamesForGroup } from '@/layers/entities/capability';
 import { FieldCard, FieldCardContent, SettingRow } from '@/layers/shared/ui';
 import { useDeepLinkScroll, useSettingsDeepLink, useTransport } from '@/layers/shared/model';
-import { useAgentContextConfig } from '@/layers/features/agent-settings/model/use-agent-context-config';
 import {
   TOOL_INVENTORY,
   TOOL_GROUPS,
@@ -19,7 +18,7 @@ import { SchedulerSettings } from './tools/SchedulerSettings';
 import { BackgroundSystemsCard } from './tools/BackgroundSystemsCard';
 import { ExternalMcpCard } from './external-mcp/ExternalMcpCard';
 import { ResetToDefaultsButton } from './ResetToDefaultsButton';
-import { configKeys } from '@/layers/entities/config';
+import { configKeys, useAgentContextConfig } from '@/layers/entities/config';
 
 /**
  * Header action for the Tools panel — turns every tool group back on.
@@ -121,7 +120,7 @@ export function ToolsTab() {
 
   // The background-system switches send the ONE key they change. `PATCH
   // /api/config` deep-merges, so the rest of each block is left alone — which
-  // matters here because the cockpit is not sent every field of these blocks and
+  // matters here because the app is not sent every field of these blocks and
   // could not round-trip them faithfully if it tried.
   const setTasksEnabled = useCallback(
     async (enabled: boolean) => {

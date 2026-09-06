@@ -9,7 +9,7 @@ import { ApprovalCardShowcase } from '../showcases/ApprovalsShowcases';
 import { ChipShowcases } from '../showcases/ChipShowcases';
 import {
   ComposerShowcases,
-  CommandPaletteShowcase,
+  SlashCommandListShowcase,
   QuestionPromptShowcase,
 } from '../showcases/ComposerShowcases';
 import { StatusShowcases } from '../showcases/StatusShowcases';
@@ -35,7 +35,7 @@ export function ConversationPage() {
       <AsksShowcase />
       <ChipShowcases />
       <ComposerShowcases />
-      <CommandPaletteShowcase />
+      <SlashCommandListShowcase />
       <QuestionPromptShowcase />
       <StatusShowcases />
       <LiveLaneShowcase />

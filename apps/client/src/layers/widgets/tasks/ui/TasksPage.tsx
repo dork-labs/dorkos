@@ -7,8 +7,7 @@ import type { TaskTemplate } from '@/layers/entities/tasks';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import type { Task } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import { TasksList } from '@/layers/features/tasks/ui/TasksList';
-import { TasksEmptyState, CreateTaskDialog } from '@/layers/features/tasks';
+import { CreateTaskDialog, TasksEmptyState, TasksList } from '@/layers/features/tasks';
 
 /** Tasks page -- full-viewport task management surface at /tasks. */
 export function TasksPage() {

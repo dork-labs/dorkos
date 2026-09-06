@@ -19,11 +19,11 @@ import {
   applyStatusBudget,
   selectPromotedItems,
 } from '@/layers/features/status';
-// `resolveStatusBudget` is not in the slice's barrel — in the app it is reached
-// only through `useStatusBudget`, which needs a live element to measure. The
-// showcase supplies the width itself, so it calls the same pure function directly
-// rather than reimplement the tier table and let it drift.
-import { resolveStatusBudget } from '@/layers/features/status/model/status-budget';
+// In the app `resolveStatusBudget` is reached only through `useStatusBudget`,
+// which needs a live element to measure. The showcase supplies the width itself,
+// so it calls the same pure function directly rather than reimplement the tier
+// table and let it drift.
+import { resolveStatusBudget } from '@/layers/features/status';
 import { buildStatusItemNodes } from '@/layers/features/chat/ui/status/status-item-nodes';
 import { AgentIdentityChip } from '@/layers/features/chat/ui/status/AgentIdentityChip';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -387,7 +387,7 @@ export function AgentIdentityChipShowcase() {
   return (
     <PlaygroundSection
       title="AgentIdentityChip"
-      description="Who you are talking to — the identity anchor of the left cluster. Click opens the profile, the same one every other face in the cockpit opens; right-click (long-press on touch) offers switch agent, view profile, and new session."
+      description="Who you are talking to — the identity anchor of the left cluster. Click opens the profile, the same one every other face in the app opens; right-click (long-press on touch) offers switch agent, view profile, and new session."
     >
       <ShowcaseLabel>With a name — every tier down to 340px</ShowcaseLabel>
       <ShowcaseDemo>

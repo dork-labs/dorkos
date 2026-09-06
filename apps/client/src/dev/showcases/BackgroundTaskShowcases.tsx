@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BackgroundTaskBar } from '@/layers/features/chat/ui/tasks/BackgroundTaskBar';
+import { BackgroundTaskBar } from '@/layers/features/chat';
 import { TaskDotSection } from '@/layers/features/chat/ui/tasks/TaskDotSection';
 import { TaskDetailPanel } from '@/layers/features/chat/ui/tasks/TaskDetailPanel';
 import { InlineKillButton } from '@/layers/features/chat/ui/tasks/InlineKillButton';

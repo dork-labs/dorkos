@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { resolveSessionForCwd, notifySessionLookupFailed } from './resolve-session-for-cwd';
-import { beginSessionNavigation, type CockpitLocation } from './session-navigation-intent';
+import { beginSessionNavigation, type AppLocation } from './session-navigation-intent';
 
 /**
  * App-store slice {@link switchAgentCwd} reads and writes. A structural subset
@@ -26,7 +26,7 @@ export interface SwitchAgentCwdDeps {
    * switch whose lookup comes back to a different destination has been
    * overtaken and must not land.
    */
-  currentLocation: () => CockpitLocation;
+  currentLocation: () => AppLocation;
   /**
    * Navigate to the `/session` route with the resolved directory + session.
    * Kept router-agnostic so the caller owns the route target and the function
@@ -36,7 +36,7 @@ export interface SwitchAgentCwdDeps {
 }
 
 /**
- * Switch the cockpit's active agent to `cwd`.
+ * Switch the app's active agent to `cwd`.
  *
  * Mirrors the command palette's agent-select path (`handleAgentSelect` →
  * `setDir`): resolve which conversation that directory is on, then persist the

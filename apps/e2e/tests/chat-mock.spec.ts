@@ -471,7 +471,7 @@ test.describe('Runtime UX — multi-runtime test server', () => {
 // map as enabled — so no palette row is ever disabled against this server. That
 // gating branch is covered by the Phase 3 unit tests
 // (features/chat/model/__tests__/build-palette-commands.test.ts +
-// features/commands CommandPalette gating), which mock caps to supported:false.
+// features/slash-commands SlashCommandList gating), which mock caps to supported:false.
 // The intent rows themselves are client-side (COMMAND_INTENTS), so these
 // assertions hold on a cold session with no prior turn.
 test.describe('Command Intents — inline palette dedupe + alias hints', () => {
@@ -696,7 +696,7 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
 
     await switchAgentViaPalette(page, 'Alpha Remount Agent');
 
-    // The cockpit switched to the target agent's working directory.
+    // The app switched to the target agent's working directory.
     await expect
       .poll(() => new URL(page.url()).searchParams.get('dir'), { timeout: 10_000 })
       .toBe(dirA);
@@ -989,7 +989,7 @@ registerHeldProcessTests({ apiUrl: API_URL, agentDir: () => agentDir });
 // header for why it must ride this file's worker rather than be its own spec.
 registerCompactionTests({ apiUrl: API_URL, agentDir: () => agentDir });
 
-// The cockpit adapting to the runtime it is talking to (L-10). Registered here
+// The app adapting to the runtime it is talking to (L-10). Registered here
 // because this leg is the ONLY place a browser can see a runtime that is not
 // Claude Code: real Codex and OpenCode need model credentials a PR runner does
 // not have, so the divergent descriptors TestModeRuntime declares are the whole

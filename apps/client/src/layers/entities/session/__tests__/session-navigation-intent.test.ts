@@ -3,7 +3,7 @@ import type { InPlaceNavigationState } from '@/layers/shared/model';
 import {
   beginSessionNavigation,
   sessionDestination,
-  type CockpitLocation,
+  type AppLocation,
 } from '../lib/session-navigation-intent';
 
 /**
@@ -20,10 +20,10 @@ import {
  * @param to - An optional route the rewrite also names (the thread sync does).
  */
 function rewriteInPlace(
-  current: CockpitLocation,
+  current: AppLocation,
   patch: Record<string, unknown>,
   to?: string
-): CockpitLocation {
+): AppLocation {
   const inPlaceBase = (current.state as InPlaceNavigationState | undefined)?.inPlaceBase ?? {
     pathname: current.pathname,
     search: current.search,
@@ -37,12 +37,12 @@ function rewriteInPlace(
 }
 
 /** Mirror of a genuine navigation: TanStack resets history state to `{}`. */
-function navigateGenuine(pathname: string, search: Record<string, unknown>): CockpitLocation {
+function navigateGenuine(pathname: string, search: Record<string, unknown>): AppLocation {
   return { pathname, search, state: {} };
 }
 
 /** A location reader over a mutable slot, the way the guard reads the router. */
-function reader(slot: { at: CockpitLocation }): () => CockpitLocation {
+function reader(slot: { at: AppLocation }): () => AppLocation {
   return () => slot.at;
 }
 

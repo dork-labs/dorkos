@@ -394,8 +394,8 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
-    id: 'commandpalette',
-    title: 'CommandPalette',
+    id: 'slashcommandlist',
+    title: 'SlashCommandList',
     page: 'conversation',
     category: 'Input',
     keywords: ['command', 'palette', 'slash', 'autocomplete', 'dropdown', 'namespace'],

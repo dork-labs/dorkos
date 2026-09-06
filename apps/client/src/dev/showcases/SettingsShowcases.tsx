@@ -20,12 +20,16 @@ import {
   NavigationLayoutPanelHeader,
   NavigationLayoutDialogHeader,
 } from '@/layers/shared/ui';
-import { SettingsDialog } from '@/layers/features/settings';
+import {
+  ClaudeAccountsSection,
+  ExecutionExceptionsStrip,
+  PreferencesTab,
+  SettingsDialog,
+} from '@/layers/features/settings';
 import {
   AppearanceResetAction,
   AppearanceTab,
 } from '@/layers/features/settings/ui/tabs/AppearanceTab';
-import { PreferencesTab } from '@/layers/features/settings/ui/tabs/PreferencesTab';
 import { NotificationsTab } from '@/layers/features/settings/ui/tabs/NotificationsTab';
 import { RoomsTab } from '@/layers/features/settings/ui/tabs/RoomsTab';
 import { ServerTab } from '@/layers/features/settings/ui/ServerTab';
@@ -34,7 +38,6 @@ import { DangerZoneTab } from '@/layers/features/settings/ui/DangerZoneTab';
 import { RemoteAccessTab } from '@/layers/features/settings/ui/RemoteAccessTab';
 import { ExperimentsTab } from '@/layers/features/settings/ui/ExperimentsTab';
 import { BackgroundSystemsCard } from '@/layers/features/settings/ui/tools/BackgroundSystemsCard';
-import { ClaudeAccountsSection, ExecutionExceptionsStrip } from '@/layers/features/settings';
 import { ControlCenterBody } from '@/layers/widgets/control-center';
 import {
   LiveRuntimeCard,

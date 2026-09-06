@@ -63,7 +63,7 @@ vi.mock('@/layers/features/ask', () => ({
   }),
   groupAsks: () => [],
 }));
-vi.mock('@/layers/features/commands', () => ({ CommandPalette: () => null }));
+vi.mock('@/layers/features/slash-commands', () => ({ SlashCommandList: () => null }));
 vi.mock('@/layers/features/files', () => ({ FilePalette: () => null }));
 vi.mock('react-dropzone', () => ({
   useDropzone: () => ({ getRootProps: () => ({}), getInputProps: () => ({}), isDragActive: false }),

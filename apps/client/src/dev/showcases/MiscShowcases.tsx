@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { CelebrationOverlay } from '@/layers/features/chat/ui/CelebrationOverlay';
+import { CelebrationOverlay } from '@/layers/features/chat';
 import { Button } from '@/layers/shared/ui';
 import type { CelebrationEvent } from '@/layers/shared/lib';
 import { PlaygroundSection } from '../PlaygroundSection';

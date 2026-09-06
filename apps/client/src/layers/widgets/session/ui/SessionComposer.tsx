@@ -40,7 +40,7 @@ import {
   type SyncPresenceProps,
   type useInputAutocomplete,
 } from '@/layers/features/chat';
-import { CommandPalette } from '@/layers/features/commands';
+import { SlashCommandList } from '@/layers/features/slash-commands';
 import { FilePalette } from '@/layers/features/files';
 import { ScanLine } from '@/layers/shared/ui';
 import { useAppStore, useTransport } from '@/layers/shared/model';
@@ -636,7 +636,7 @@ export function SessionComposer({
         <>
           <AnimatePresence>
             {autocomplete.commands.show && (
-              <CommandPalette
+              <SlashCommandList
                 filteredCommands={autocomplete.commands.filtered}
                 selectedIndex={autocomplete.commands.selectedIndex}
                 onSelect={autocomplete.handleCommandSelect}

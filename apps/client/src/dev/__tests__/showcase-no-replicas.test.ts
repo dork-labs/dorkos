@@ -80,8 +80,13 @@ describe('the status showcases render the real components', () => {
     // ErrorMessageBlock, but the showcase hand-drew its own
     // `TransportErrorBanner` — self-documented as a replica — with markup that
     // had already diverged from the real component.
+    //
+    // The barrel, not the leaf path: `features/chat` exports this component, so
+    // the playground asks for it the way every other consumer does (DOR-1765).
     expect(source).toContain('<ErrorMessageBlock');
-    expect(source).toMatch(/from '@\/layers\/features\/chat\/ui\/message\/ErrorMessageBlock'/);
+    expect(source).toMatch(
+      /import \{[^}]*\bErrorMessageBlock\b[^}]*\} from '@\/layers\/features\/chat'/
+    );
   });
 
   it('defines no local transport-error banner of its own', () => {
@@ -137,9 +142,12 @@ describe('the Composer showcase renders the real components', () => {
 
   it('imports the real Conversation.Composer and QueuePanel', () => {
     expect(source).toMatch(/import \{ Conversation \} from '@\/layers\/features\/conversation'/);
-    expect(source).toMatch(
-      /import \{ QueuePanel \} from '@\/layers\/features\/chat\/ui\/input\/QueuePanel'/
-    );
+    // Both through their slice barrels — `features/chat` exports `QueuePanel`,
+    // so the playground asks for it there (DOR-1765). Tolerant of other names
+    // sharing the same barrel import, the same shape as the ErrorMessageBlock
+    // assertion above — a second chat symbol folding into this import is the
+    // batch's own barrel-first rule working as intended, not a regression.
+    expect(source).toMatch(/import \{[^}]*\bQueuePanel\b[^}]*\} from '@\/layers\/features\/chat'/);
   });
 
   it('drives every disposition through the real Conversation.Composer, not a hand-rolled replica', () => {

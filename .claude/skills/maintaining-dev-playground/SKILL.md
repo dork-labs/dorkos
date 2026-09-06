@@ -214,6 +214,16 @@ Guidelines:
 - Import the REAL component — never recreate its markup
 - Pass mock data via props, using factories from `dev/mock-factories.ts`
 
+**Imports: barrel when there is one, leaf when there isn't.** If the slice's
+`index.ts` already exports the symbol, import it from
+`@/layers/features/<slice>` like every other consumer does — the playground is
+the first place a new contributor reads, so it should model the convention.
+When the barrel does not export it, import the leaf module directly. That is
+allowed here and nowhere else: showing a leaf component in isolation is this
+directory's whole job, and widening a feature's public API just to feed a
+showcase would be the worse trade. Do not add an export to a barrel only for
+the playground.
+
 ### 3. Add to the page component
 
 Import the showcase in the relevant page file (`dev/pages/FeaturesPage.tsx`):

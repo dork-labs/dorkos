@@ -1,7 +1,7 @@
+import { ErrorMessageBlock } from '@/layers/features/chat';
 import { ToolCallCard } from '@/layers/features/chat/ui/tools/ToolCallCard';
 import { BackgroundTaskShowcases } from './BackgroundTaskShowcases';
 import { SubagentBlock } from '@/layers/features/chat/ui/message/SubagentBlock';
-import { ErrorMessageBlock } from '@/layers/features/chat/ui/message/ErrorMessageBlock';
 import { ThinkingBlock } from '@/layers/features/chat/ui/message/ThinkingBlock';
 import { CollapsibleRun } from '@/layers/features/chat/ui/message/CollapsibleRun';
 import { PlaygroundSection } from '../PlaygroundSection';

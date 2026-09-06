@@ -27,7 +27,7 @@ import { useToolNamesForGroup } from '@/layers/entities/capability';
 import { useUpdateAgent as useUpdateMeshAgent } from '@/layers/entities/mesh';
 import { agentKeys } from '@/layers/entities/agent';
 import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
-import { useAgentContextConfig } from '../model/use-agent-context-config';
+import { useAgentContextConfig } from '@/layers/entities/config';
 import { AgentMcpServers } from './AgentMcpServers';
 
 type GlobalConfigKey = 'tasksTools' | 'relayTools' | 'meshTools' | 'adapterTools';
@@ -162,7 +162,7 @@ interface ToolsTabProps {
  *
  * **Written through the operator's route, never the agent self-edit route.**
  * `PATCH /api/agents/current` REFUSES this field by design: a grant the governed
- * agent can set for itself is not a grant. The cockpit is the person, so it uses
+ * agent can set for itself is not a grant. The app is the person, so it uses
  * `PATCH /api/mesh/agents/:id`, which is the only way in.
  *
  * **Rendered whatever the runtime is.** The four toggles above hide when a
@@ -266,7 +266,7 @@ function ManageRoomsCard({
  * the same reason the grant below it is: the self-edit route refuses any change
  * that WIDENS a ceiling, whoever sends it, so an agent cannot hand itself back
  * what a person took away. Lowering is the one direction an agent may take on
- * its own. The cockpit is the person, so it uses `PATCH /api/mesh/agents/:id`
+ * its own. The app is the person, so it uses `PATCH /api/mesh/agents/:id`
  * and can set any rung.
  *
  * The two invalidations are the ones `ManageRoomsCard` explains: this card's
@@ -361,7 +361,7 @@ export function ToolsTab({ agent, projectPath }: ToolsTabProps) {
   // BEATS the global `agentContext.*` switch (`resolveToolConfig`), and those
   // four are operator-only at the config seam, so leaving these writable there
   // let an agent undo a narrowing the person had made to its own tool context.
-  // The cockpit is the person, so it uses `PATCH /api/mesh/agents/:id`.
+  // The app is the person, so it uses `PATCH /api/mesh/agents/:id`.
   //
   // The whole stored object is sent, `roomsManage` included: the operator's
   // route carries the grant, and `deepMerge` is not in play here — the manifest

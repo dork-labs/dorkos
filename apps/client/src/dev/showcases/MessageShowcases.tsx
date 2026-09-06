@@ -1,9 +1,11 @@
 import { Conversation, MessageAuthorAvatar } from '@/layers/features/conversation';
-import { UserMessageContent } from '@/layers/features/chat/ui/message/UserMessageContent';
-import { AssistantMessageContent } from '@/layers/features/chat/ui/message/AssistantMessageContent';
-import { MessageProvider } from '@/layers/features/chat/ui/message/MessageContext';
+import {
+  AssistantMessageContent,
+  MessageProvider,
+  StagedContextNote,
+  UserMessageContent,
+} from '@/layers/features/chat';
 import { PermissionDeniedChip } from '@/layers/features/chat/ui/message/PermissionDeniedChip';
-import { StagedContextNote } from '@/layers/features/chat/ui/message/StagedContextNote';
 import { MessageImage } from '@/layers/features/chat/ui/message/MessageImage';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
