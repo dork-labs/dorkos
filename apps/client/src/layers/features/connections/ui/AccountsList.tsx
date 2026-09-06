@@ -25,6 +25,7 @@ const STATUS_BADGE_VARIANT: Record<
   'secondary' | 'outline' | 'destructive'
 > = {
   active: 'secondary',
+  paused: 'outline',
   pending: 'outline',
   expired: 'destructive',
   revoked: 'destructive',

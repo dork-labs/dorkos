@@ -15,24 +15,25 @@
  * **The HTTP boundary is injectable** ({@link ComposioHttpClient}), so this
  * provider is verified hermetically against a fake client (DorkOS CI is
  * mock-backed; a live Composio account is an external dependency exercised out of
- * band). The `ca_… ↔ ConnectedAccountId` normalization is confined to this file
- * ({@link toConnectedAccountId} / {@link toComposioAccountId}); no `ca_` handle
+ * band). The `ca_… ↔ ConnectorExternalAccountRef` normalization is confined to this file
+ * ({@link toExternalAccountRef} / {@link toComposioAccountId}); no `ca_` handle
  * ever leaks past the port.
  *
  * @module services/connectors/providers/composio
  */
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type {
-  ConnectedAccount,
-  ConnectedAccountId,
-  ConnectedAccountStatus,
   ConnectorCapabilities,
+  ConnectorExternalAccountRef,
   ConnectorKeyKind,
   ConnectorProvider,
+  ConnectorProviderInstanceId,
   ConnectorToolkit,
   ConnectPoll,
   ConnectStart,
+  ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
+import type { ConnectorProviderExecuteCommand } from '@dorkos/shared/connector-schemas';
 import type { CredentialProvider } from '../../core/credential-provider.js';
 import { logger } from '../../../lib/logger.js';
 import {
@@ -42,6 +43,7 @@ import {
   type ComposioConnectedAccount,
   type ComposioHttpClient,
 } from './composio-client.js';
+import { legacyDefaultProviderInstanceId } from '../legacy-connection-migration.js';
 
 /** The backend type identifier this provider registers and reports under. */
 export const COMPOSIO_PROVIDER_TYPE = 'composio';
@@ -65,25 +67,23 @@ export const COMPOSIO_CREDENTIAL_NAME = 'composio-api-key';
 export const COMPOSIO_API_KEY_REF = `file:${COMPOSIO_CREDENTIAL_NAME}`;
 
 /**
- * Wrap a raw Composio `ca_…` handle as an opaque, provider-scoped
- * {@link ConnectedAccountId}. The `composio:` prefix namespaces the id (mirrors
- * raw-MCP's `mcp:` scheme) and makes the inverse deterministic; session code
- * treats it as opaque and never parses it.
+ * Wrap a raw Composio `ca_…` handle as a private, provider-scoped
+ * {@link ConnectorExternalAccountRef}. The prefix makes the inverse deterministic.
  *
  * @param composioAccountId - The raw Composio `ca_…` connected-account id.
  */
-export function toConnectedAccountId(composioAccountId: string): ConnectedAccountId {
-  return `${COMPOSIO_PROVIDER_TYPE}:${composioAccountId}` as ConnectedAccountId;
+export function toExternalAccountRef(composioAccountId: string): ConnectorExternalAccountRef {
+  return `${COMPOSIO_PROVIDER_TYPE}:${composioAccountId}` as ConnectorExternalAccountRef;
 }
 
 /**
- * Unwrap a {@link ConnectedAccountId} back to the raw Composio `ca_…` handle for
- * a vendor API call. The inverse of {@link toConnectedAccountId}; confined to
+ * Unwrap a {@link ConnectorExternalAccountRef} back to the raw Composio `ca_…` handle for
+ * a vendor API call. The inverse of {@link toExternalAccountRef}; confined to
  * this adapter so no `ca_` string leaks outside it.
  *
- * @param accountId - An opaque account id minted by this provider.
+ * @param accountId - A private account reference minted by this provider.
  */
-export function toComposioAccountId(accountId: ConnectedAccountId): string {
+export function toComposioAccountId(accountId: ConnectorExternalAccountRef): string {
   const prefix = `${COMPOSIO_PROVIDER_TYPE}:`;
   return accountId.startsWith(prefix) ? accountId.slice(prefix.length) : accountId;
 }
@@ -114,7 +114,7 @@ function toAuthKind(authScheme: string | undefined): ConnectorToolkit['authKind'
 }
 
 /** Map a Composio lifecycle status onto the port's {@link ConnectedAccountStatus}. */
-function toPortStatus(status: ComposioAccountStatus): ConnectedAccountStatus {
+function toPortStatus(status: ComposioAccountStatus): ProviderConnectedAccount['status'] {
   switch (status) {
     case 'ACTIVE':
       return 'active';
@@ -132,12 +132,14 @@ function toPortStatus(status: ComposioAccountStatus): ConnectedAccountStatus {
 export interface ComposioConnectorProviderOpts {
   /** The Composio HTTP boundary (a fake in tests, {@link FetchComposioHttpClient} in prod). */
   client: ComposioHttpClient;
+  /** Stable configured provider instance id. */
+  instanceId?: ConnectorProviderInstanceId;
 }
 
 /**
  * Managed-custody connector over Composio. Multi-account by construction:
  * distinct connects of one toolkit (distinguished by `alias`) yield distinct
- * `ca_…` handles, each an independently-addressable {@link ConnectedAccountId}.
+ * `ca_…` handles, each an independently addressable private provider reference.
  *
  * **Degrade contract** (a Composio API call can fail — a stale key's 401, a
  * 5xx, a `fetch` timeout — so each method declares how it degrades):
@@ -168,6 +170,7 @@ export interface ComposioConnectorProviderOpts {
  * swallowed — it surfaces from every method.
  */
 export class ComposioConnectorProvider implements ConnectorProvider {
+  readonly instanceId: ConnectorProviderInstanceId;
   readonly type = COMPOSIO_PROVIDER_TYPE;
 
   private readonly _client: ComposioHttpClient;
@@ -179,6 +182,9 @@ export class ComposioConnectorProvider implements ConnectorProvider {
    */
   constructor(opts: ComposioConnectorProviderOpts) {
     this._client = opts.client;
+    this.instanceId =
+      opts.instanceId ??
+      (legacyDefaultProviderInstanceId(this.type) as ConnectorProviderInstanceId);
   }
 
   /**
@@ -192,12 +198,60 @@ export class ComposioConnectorProvider implements ConnectorProvider {
 
   getCapabilities(): ConnectorCapabilities {
     return {
+      instanceId: this.instanceId,
       type: this.type,
       supportsMultiAccount: true,
       custody: 'managed',
       exposesOverMcp: true,
+      capabilities: {
+        catalog: { status: 'available' },
+        authentication: { status: 'available' },
+        accounts: { status: 'available' },
+        operations: {
+          status: 'unsupported',
+          reason: 'Direct operation discovery activates in P2.',
+        },
+        execution: { status: 'unsupported', reason: 'Brokered execution activates in P2.' },
+        triggers: { status: 'unsupported', reason: 'Trigger support is not configured.' },
+      },
       features: {},
     };
+  }
+
+  async listToolkitPage(request: { cursor?: string; query?: string; limit: number }) {
+    const all = (await this.listToolkits()).filter((toolkit) =>
+      request.query ? toolkit.displayName.toLowerCase().includes(request.query.toLowerCase()) : true
+    );
+    const offset = request.cursor ? Number(request.cursor) : 0;
+    const toolkits = all.slice(offset, offset + request.limit);
+    const next = offset + toolkits.length;
+    return {
+      status: 'ok' as const,
+      toolkits,
+      ...(next < all.length && { nextCursor: String(next) }),
+      truncated: next < all.length,
+    };
+  }
+
+  listOperationSchemas(_request: { toolkit: string; cursor?: string; limit: number }) {
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Direct operation discovery activates in P2.',
+    });
+  }
+
+  execute(_command: ConnectorProviderExecuteCommand) {
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Brokered execution activates in P2.',
+    });
+  }
+
+  listTriggerTypes(_toolkit: string) {
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Trigger support is not configured.',
+    });
   }
 
   async listToolkits(): Promise<ConnectorToolkit[]> {
@@ -254,20 +308,20 @@ export class ComposioConnectorProvider implements ConnectorProvider {
     }
   }
 
-  async listAccounts(opts?: { toolkit?: string }): Promise<ConnectedAccount[]> {
+  async listAccounts(opts?: { toolkit?: string }): Promise<ProviderConnectedAccount[]> {
     // Propagates on failure — see listToolkits.
     const accounts = await this._client.listConnectedAccounts(opts);
     return accounts.map((account) => this._toPortAccount(account));
   }
 
-  async disconnect(accountId: ConnectedAccountId): Promise<void> {
+  async disconnect(accountId: ConnectorExternalAccountRef): Promise<void> {
     // Idempotent: the client swallows a 404, so revoking an unknown/already-
     // revoked id resolves without throwing (conformance requires this).
     await this._client.deleteConnectedAccount(toComposioAccountId(accountId));
   }
 
   async toolServerForAccount(
-    accountId: ConnectedAccountId
+    accountId: ConnectorExternalAccountRef
   ): Promise<McpAppServerConnection | null> {
     // Route the opaque id back to its Composio handle and mint the Rube MCP
     // session. A null session (unusable account, no live url) surfaces as null —
@@ -292,11 +346,10 @@ export class ComposioConnectorProvider implements ConnectorProvider {
     }
   }
 
-  /** Map a Composio domain account onto the provider-neutral {@link ConnectedAccount}. */
-  private _toPortAccount(account: ComposioConnectedAccount): ConnectedAccount {
+  /** Map a Composio domain account onto private provider account metadata. */
+  private _toPortAccount(account: ComposioConnectedAccount): ProviderConnectedAccount {
     return {
-      id: toConnectedAccountId(account.connectedAccountId),
-      provider: this.type,
+      externalAccountRef: toExternalAccountRef(account.connectedAccountId),
       toolkit: account.toolkit,
       label: account.alias ?? account.toolkit,
       status: toPortStatus(account.status),

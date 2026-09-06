@@ -63,9 +63,13 @@ export {
   type SessionConnectorOverrideState,
 } from './attachment-store.js';
 export {
+  registerConnectorAgentCleanup,
+  type ConnectorAgentCleanupDeps,
+} from './agent-access-cleanup.js';
+export {
   ComposioConnectorProvider,
   maybeCreateComposioProvider,
-  toConnectedAccountId,
+  toExternalAccountRef,
   toComposioAccountId,
   COMPOSIO_PROVIDER_TYPE,
   COMPOSIO_CREDENTIAL_NAME,
@@ -95,7 +99,7 @@ export {
   NangoEncryptionKeyError,
   maybeCreateNangoProvider,
   assertNangoEncryptionKey,
-  toConnectedAccountId as toNangoConnectedAccountId,
+  toExternalAccountRef as toNangoExternalAccountRef,
   toNangoConnectionId,
   NANGO_PROVIDER_TYPE,
   NANGO_CREDENTIAL_NAME,

@@ -80,6 +80,12 @@ interface UseSessionSubmitParams {
   transformContent: ChatSessionOptions['transformContent'];
   /** Launch-time runtime selection (`?runtime=`) — see {@link ChatSessionOptions.launchRuntime}. */
   launchRuntime: ChatSessionOptions['launchRuntime'];
+  /** Exact registered agent path to persist on a newly created session. */
+  agentPath?: ChatSessionOptions['agentPath'];
+  /** Whether the exact registered-agent lookup is still pending. */
+  agentLookupPending?: ChatSessionOptions['agentLookupPending'];
+  /** Whether the exact registered-agent lookup failed for the selected directory. */
+  agentLookupFailed?: ChatSessionOptions['agentLookupFailed'];
   /**
    * Launch-time Claude Code billing selection: a registry id
    * (`runtimes.claudeCode.accounts[].id`) the status bar is holding for this
@@ -123,6 +129,9 @@ export function useSessionSubmit({
   onSessionIdChangeReplace,
   transformContent,
   launchRuntime,
+  agentPath,
+  agentLookupPending,
+  agentLookupFailed,
   launchAccount,
   takeSeedContext,
   setInput,
@@ -131,6 +140,10 @@ export function useSessionSubmit({
 }: UseSessionSubmitParams) {
   // Refs to avoid stale closures inside the async submit callback.
   const selectedCwdRef = useRef(selectedCwd);
+  // ChatPanel reads URL-first through useDirectoryState. That hook's store sync
+  // settles during the launch prompt's required seed-and-rerender step, before
+  // its separate auto-send effect can submit; the cached-agent panel regression
+  // pins this ordering without relying on a network wait.
   useEffect(() => {
     selectedCwdRef.current = selectedCwd;
   }, [selectedCwd]);
@@ -233,6 +246,15 @@ export function useSessionSubmit({
       const cwd = opts.cwd ?? selectedCwdRef.current;
       setError(null);
 
+      // A session absent from the list cache is being CREATED by this send —
+      // the same signal gates the immutable first-turn provenance below. A
+      // failed exact-path lookup is different from a successful `null`: the
+      // latter is an ordinary unowned directory, while the former cannot tell
+      // whether omitting `agentPath` would lose a registered agent forever.
+      const sessions = queryClient.getQueryData<Session[]>(sessionKeys.list(cwd)) ?? [];
+      const isNewSession = !sessions.some((s) => s.id === targetSessionId);
+      if (isNewSession && (agentLookupPending || agentLookupFailed)) return;
+
       // **Writing is the strongest thing a person can do to a conversation, so
       // it is recorded like opening one** (DOR-1156). Today's membership and
       // order are `max(userLastMessageAt, userLastOpenedAt)` (BC-16), and the
@@ -317,14 +339,6 @@ export function useSessionSubmit({
 
       const streamStore = useSessionStreamStore.getState();
 
-      // A session absent from the list cache is being CREATED by this send —
-      // the same signal gates both the optimistic sidebar row and the one-shot
-      // runtime hint below. (A stale/empty cache can misread an existing
-      // session as new; the resulting extra hint is harmless — the server's
-      // persistSessionRuntime is first-write-wins.)
-      const sessions = queryClient.getQueryData<Session[]>(sessionKeys.list(cwd)) ?? [];
-      const isNewSession = !sessions.some((s) => s.id === targetSessionId);
-
       // Optimistically insert a placeholder session if not yet in the cache so
       // the sidebar shows the new conversation immediately.
       if (isNewSession) {
@@ -378,6 +392,13 @@ export function useSessionSubmit({
         // charge (resolveRuntimeTypeForNewSession priority order).
         if (isNewSession && launchRuntimeRef.current) {
           postOptions.runtime = launchRuntimeRef.current;
+        }
+        // A path is sent only after `useCurrentAgent` confirmed that the
+        // selected directory belongs to a registered agent. Arbitrary working
+        // directories remain valid sessions, but do not acquire an invented
+        // connector owner.
+        if (isNewSession && agentPath) {
+          postOptions.agentPath = agentPath;
         }
         // First-turn billing hint, gated on the SAME signal for the same reason:
         // the account is fixed to the one that created the session (ADR
@@ -481,7 +502,17 @@ export function useSessionSubmit({
         });
       }
     },
-    [sessionId, transport, queryClient, setInput, setError, tryNativeCommand]
+    [
+      sessionId,
+      transport,
+      queryClient,
+      setInput,
+      setError,
+      tryNativeCommand,
+      agentPath,
+      agentLookupPending,
+      agentLookupFailed,
+    ]
   );
 
   /**

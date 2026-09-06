@@ -109,6 +109,10 @@ describe('Database Migrations', () => {
       // Better Auth identity tables (accounts-and-auth P1, migration 0019).
       'account',
       'activity_events',
+      // Stable provider-neutral connection attachments. The legacy connector
+      // tables remain until their last compatibility consumer moves in a later
+      // workstream (Connections P1, migration 0086).
+      'agent_connection_attachments',
       // Standing, agent-level connector consent — row existence IS the
       // attachment (connection-scoping spec §Part 1, migration 0048).
       'agent_connector_attachments',
@@ -134,6 +138,21 @@ describe('Database Migrations', () => {
       // Derived cache binding a ConnectedAccountId → owning connector provider
       // (connector-gateway spec §Detailed Design 2, migration 0029).
       'connected_accounts',
+      // Provider instances, stable DorkOS connections, immutable operation
+      // revisions, exact grants, event delivery, review/resume state, usage,
+      // and the application-backfill ledger (Connections P1, migration 0086).
+      'connection_operation_grants',
+      'connections',
+      'connector_agent_requests',
+      'connector_application_migrations',
+      'connector_event_inbox',
+      'connector_event_receipts',
+      'connector_event_subscriptions',
+      'connector_legacy_agent_revocations',
+      'connector_operation_revisions',
+      'connector_provider_instances',
+      'connector_review_requests',
+      'connector_usage_attempts',
       'handle_tombstones',
       'mesh_namespace_rules',
       // The message-search index and its frontier: a derived, rebuildable
@@ -204,6 +223,7 @@ describe('Database Migrations', () => {
       // already been read (migration 0037).
       'search_sources',
       'session',
+      'session_connection_overrides',
       // Per-session connector-attachment overrides — a tombstone table (state
       // 'attached'|'detached'), never a plain delete (connection-scoping spec
       // §Part 1, migration 0048).

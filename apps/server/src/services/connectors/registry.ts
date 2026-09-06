@@ -4,35 +4,31 @@
  * its owning provider, and aggregates accounts across every backend with
  * per-provider degradation.
  *
- * It is the connector analogue of `runtimeRegistry`: id → provider binding is
- * first-write-wins (ADR-0255), and cross-provider `listAccounts` aggregation
+ * It is the connector analogue of `runtimeRegistry`: stable connection ids
+ * resolve through private instance/account bindings, and cross-provider `listAccounts` aggregation
  * degrades one unreachable provider to a `warnings[]` entry rather than failing
  * the whole call (ADR-0310), exactly as session listing degrades per runtime.
  *
- * The `connected_accounts` table (`@dorkos/db`) is the derived routing cache
- * (ADR-0043): the registry writes a row on a successful `pollConnect`
- * (first-write-wins) and marks it revoked on `disconnect`; the provider vaults
- * remain the source of truth for the tokens themselves. The revoked row is a
- * credential-free ownership tombstone, so a repeated disconnect can still
- * reach the right provider while an older connect poll is settling.
+ * The canonical `connections` table owns DorkOS identity and private provider
+ * routing. The registry reconciles it after provider reads and tombstones it on
+ * disconnect; provider vaults remain the source of truth for tokens.
  *
  * @module services/connectors/registry
  */
-import {
-  connectedAccounts,
-  agentConnectorAttachments,
-  sessionConnectorAttachments,
-  eq,
-  type Db,
-} from '@dorkos/db';
+import type { Db } from '@dorkos/db';
 import type {
   ConnectedAccount,
   ConnectedAccountId,
-  ConnectedAccountStatus,
-  ConnectorCustody,
   ConnectorProvider,
+  ConnectorProviderInstanceId,
   ConnectorToolkit,
+  ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
+import { ConnectionStore, type StableConnectionBinding } from './connection-store.js';
+import type {
+  ConnectorMigrationResult,
+  LegacyConnectionMigrationInput,
+} from './legacy-connection-migration.js';
 
 /** Default per-provider deadline for an aggregation call, in milliseconds. */
 const DEFAULT_PROVIDER_TIMEOUT_MS = 5_000;
@@ -62,32 +58,23 @@ export interface AggregatedToolkits {
 }
 
 /**
- * One `connected_accounts` routing-cache row — the provider-neutral metadata
+ * One canonical stable connection binding — the provider-neutral metadata
  * that binds an opaque `ConnectedAccountId` to its owning backend and carries
  * the naming/disclosure fields the session tool surface reads (toolkit, label,
  * custody) without ever exposing which vendor is behind the connection.
  */
-export interface ConnectedAccountBinding {
-  /** The opaque account handle this row routes. */
-  accountId: ConnectedAccountId;
-  /** Owning backend type — SERVER-ONLY, used to route, never in a tool-server name. */
-  provider: string;
-  /** Service slug, e.g. `'gmail'` — half of the injected tool-server name. */
-  toolkit: string;
-  /** User-facing disambiguator, e.g. `'work'` — the other half of the name. */
-  label: string;
-  /** Custody stance, echoed so a per-account disclosure line can be rendered. */
-  custody: ConnectorCustody;
-  /** Last-known lifecycle status, used to explain an unexposable account. */
-  status: ConnectedAccountStatus;
-}
+export type ConnectedAccountBinding = StableConnectionBinding;
 
 /** Construction options for {@link ConnectorRegistry}. */
 export interface ConnectorRegistryOpts {
-  /** The DorkOS database holding the `connected_accounts` routing cache. */
+  /** The DorkOS database holding canonical connector identity and authority. */
   db: Db;
   /** Override the per-provider aggregation timeout (default 5s). */
   providerTimeoutMs?: number;
+  /** Already-resolved application migration input. Production P1 supplies no operation set. */
+  migration?: LegacyConnectionMigrationInput;
+  /** Inject an authoritative store in focused tests. */
+  connectionStore?: ConnectionStore;
 }
 
 /**
@@ -118,35 +105,88 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
  * cross-provider aggregation.
  */
 export class ConnectorRegistry {
-  private readonly _db: Db;
   private readonly _providerTimeoutMs: number;
+  private readonly _connections: ConnectionStore;
   private readonly _providers = new Map<string, ConnectorProvider>();
+  private readonly _defaultInstanceByType = new Map<string, ConnectorProviderInstanceId>();
 
   /**
-   * Construct the registry over the routing-cache database.
+   * Construct the registry over the canonical connector database.
    *
    * @param opts - The database and optional timeout; see {@link ConnectorRegistryOpts}.
    */
   constructor(opts: ConnectorRegistryOpts) {
-    this._db = opts.db;
     this._providerTimeoutMs = opts.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
+    this._connections =
+      opts.connectionStore ?? new ConnectionStore({ db: opts.db, migration: opts.migration });
+  }
+
+  /** Current source-of-truth migration health for route-level 503 responses. */
+  migrationHealth(): ConnectorMigrationResult {
+    return this._connections.health();
+  }
+
+  /** Reject connector work while the stable source-of-truth migration is unavailable. */
+  assertAvailable(): void {
+    this._connections.assertAvailable();
+  }
+
+  /** Revoke all durable connector authority owned by one removed agent. */
+  removeAgentAccess(agentId: string): string[] {
+    return this._connections.removeAgentAccess(agentId);
+  }
+
+  /** Revoke one agent's durable authority for one exact stable connection. */
+  removeAgentConnectionAccess(agentId: string, accountId: ConnectedAccountId): string[] {
+    return this._connections.removeAgentConnectionAccess(agentId, accountId);
+  }
+
+  /** Fence retained legacy consent before an agent is removed. */
+  recordAgentRemoval(agentId: string): void {
+    this._connections.recordAgentRemoval(agentId);
   }
 
   /**
-   * Register a backend under its `type`. Last registration of a type wins (a
-   * reconfigured provider replaces the old instance).
+   * Register an exact backend instance. The most recently registered instance
+   * becomes the compatibility default for its type; other instances remain
+   * independently registered and routable.
    *
    * @param provider - The backend to register.
    */
   register(provider: ConnectorProvider): void {
-    this._providers.set(provider.type, provider);
+    this._providers.set(provider.instanceId, provider);
+    this._defaultInstanceByType.set(provider.type, provider.instanceId);
+    if (this._connections.health().status === 'ready') this._connections.registerProvider(provider);
+  }
+
+  /**
+   * Remove one exact provider instance while retaining every sibling instance.
+   * If it was the type's compatibility default, choose the lexically first
+   * remaining instance so legacy type selectors continue deterministically.
+   *
+   * @param instanceId - Exact configured provider instance to disable.
+   */
+  unregisterProviderInstance(instanceId: ConnectorProviderInstanceId): void {
+    const provider = this._providers.get(instanceId);
+    if (!provider) return;
+    this._providers.delete(instanceId);
+    if (this._defaultInstanceByType.get(provider.type) === instanceId) {
+      const fallback = [...this._providers.values()]
+        .filter((candidate) => candidate.type === provider.type)
+        .sort((left, right) => left.instanceId.localeCompare(right.instanceId))[0];
+      if (fallback) this._defaultInstanceByType.set(provider.type, fallback.instanceId);
+      else this._defaultInstanceByType.delete(provider.type);
+    }
+    if (this._connections.health().status === 'ready') {
+      this._connections.unregisterProvider(instanceId);
+    }
   }
 
   /**
    * Remove a backend registration. Idempotent — unregistering an absent type is
    * a no-op, so a credential-delete reload can call it unconditionally.
    *
-   * Account bindings in `connected_accounts` survive: `providerForAccount`
+   * Canonical account bindings survive: `providerForAccount`
    * already tolerates a missing provider (returns `undefined`) and every route
    * degrades rather than throws, so re-registering the type later restores
    * routing for the same accounts.
@@ -154,7 +194,9 @@ export class ConnectorRegistry {
    * @param type - The backend type to remove, e.g. `'composio'`.
    */
   unregister(type: string): void {
-    this._providers.delete(type);
+    const instanceId = this._defaultInstanceByType.get(type);
+    if (!instanceId) return;
+    this.unregisterProviderInstance(instanceId);
   }
 
   /** Every registered provider, in registration order. */
@@ -168,100 +210,70 @@ export class ConnectorRegistry {
    * @param type - The backend type, e.g. `'composio'`.
    */
   resolveProvider(type: string): ConnectorProvider | undefined {
-    return this._providers.get(type);
+    const instanceId = this._defaultInstanceByType.get(type);
+    return instanceId ? this._providers.get(instanceId) : undefined;
+  }
+
+  /** Resolve one exact configured provider instance. */
+  resolveProviderInstance(instanceId: ConnectorProviderInstanceId): ConnectorProvider | undefined {
+    return this._providers.get(instanceId);
   }
 
   /**
-   * Route an active opaque account id to the provider that owns it, via the
-   * `connected_accounts` binding. Returns `undefined` when the id is unknown,
-   * revoked, or its owning provider is no longer registered. Disconnect uses
-   * {@link accountBinding} directly because it must also route a tombstone.
+   * Route an active account id to the provider that owns it, via the canonical
+   * private binding. Returns `undefined` when the id is unknown, locally paused
+   * or disconnected, provider-expired, or its exact provider is unavailable.
+   * Disconnect reads the tombstone with {@link accountBinding} instead.
    *
    * @param accountId - The opaque account handle to route.
    */
   providerForAccount(accountId: ConnectedAccountId): ConnectorProvider | undefined {
     const binding = this.accountBinding(accountId);
-    if (!binding || binding.status === 'revoked') return undefined;
-    return this.resolveProvider(binding.provider);
+    if (!binding || binding.status !== 'active') return undefined;
+    return this.resolveProviderInstance(binding.providerInstanceId);
   }
 
   /**
-   * Read the full routing-cache row for an account id — the provider-neutral
+   * Read the canonical private binding for an account id — the provider-neutral
    * metadata (owning provider, toolkit, label, custody, status) the session
-   * tool surface needs to name and disclose an attached account. Revoked rows
-   * remain available here as provider-ownership tombstones. Returns `undefined`
-   * when the id is unknown.
+   * tool surface needs to name and disclose an attached account. Returns
+   * `undefined` when the id is unknown.
    *
    * @param accountId - The opaque account handle to look up.
    */
   accountBinding(accountId: ConnectedAccountId): ConnectedAccountBinding | undefined {
-    const row = this._db
-      .select()
-      .from(connectedAccounts)
-      .where(eq(connectedAccounts.accountId, accountId))
-      .get();
-    if (!row) return undefined;
-    return {
-      accountId: row.accountId as ConnectedAccountId,
-      provider: row.provider,
-      toolkit: row.toolkit,
-      label: row.label,
-      custody: row.custody,
-      status: row.status,
-    };
+    return this._connections.binding(accountId);
+  }
+
+  /** Resolve the one disconnected connection a provider connect flow can safely restore. */
+  disconnectedConnectionFor(
+    provider: ConnectorProvider,
+    toolkit: string,
+    label?: string
+  ): ConnectedAccountId | undefined {
+    return this._connections.disconnectedConnectionFor(provider.instanceId, toolkit, label);
   }
 
   /**
-   * Bind an account id to its owning provider (first-write-wins). Called after a
-   * successful `pollConnect`. Re-recording an already-bound id is a no-op, so
-   * the first provider to claim an id keeps it (mirrors `runtimeRegistry`). A
-   * successful explicit reconnect from that same provider reactivates its
-   * revoked ownership tombstone without restoring old attachment consent.
+   * Reconcile a provider-owned account to its stable DorkOS connection. Called
+   * after a successful `pollConnect` and provider inventory refresh.
    *
    * @param account - The freshly connected account to persist for routing.
    */
-  recordConnect(account: ConnectedAccount): void {
-    const existing = this.accountBinding(account.id);
-    if (existing?.provider === account.provider && existing.status === 'revoked') {
-      this._db
-        .update(connectedAccounts)
-        .set({
-          toolkit: account.toolkit,
-          label: account.label,
-          custody: account.custody,
-          status: account.status,
-        })
-        .where(eq(connectedAccounts.accountId, account.id))
-        .run();
-      return;
-    }
-    this._db
-      .insert(connectedAccounts)
-      .values({
-        accountId: account.id,
-        provider: account.provider,
-        toolkit: account.toolkit,
-        label: account.label,
-        custody: account.custody,
-        status: account.status,
-        createdAt: new Date().toISOString(),
-      })
-      .onConflictDoNothing()
-      .run();
+  recordConnect(provider: ConnectorProvider, account: ProviderConnectedAccount): ConnectedAccount {
+    return this._connections.reconcile(provider, account, { restoreDisconnected: true });
   }
 
   /**
-   * Revoke an account id's routing binding. Called on `disconnect`. The
-   * credential-free row remains as an ownership tombstone; this lets a repeated
-   * delete reach the same provider while an older connect poll is still
-   * settling. Revoking an unknown id is a no-op.
+   * Tombstone a stable connection and revoke its active local authority. Called
+   * on `disconnect`; an unknown id is a no-op.
    *
    * **Cascades to every persisted connector attachment of this account**
    * (connection-scoping spec `specs/connection-scoping/` §Part 1 Revocation):
    * both the agent-level standing table and the session-level override table
    * are cleared for `accountId`, across every agent/session that ever
    * attached it. A disconnected account's credential is gone — leaving a
-   * consent row pointing at it would let a future reconnect of the SAME
+   * consent row pointing at it would let a future re-connect of the SAME
    * account id (a real possibility: providers are free to reuse an id) silently
    * inherit stale consent nobody re-confirmed. This method does not, by
    * itself, drop an already-resolved connection out of a LIVE session's
@@ -269,22 +281,15 @@ export class ConnectorRegistry {
    * `SessionConnectorService.invalidateAccount` for that, mirroring the
    * existing provider-unregister cascade in `index.ts`.
    *
-   * @param accountId - The opaque account handle to revoke.
+   * @param accountId - The opaque account handle to unbind.
    */
   recordDisconnect(accountId: ConnectedAccountId): void {
-    this._db
-      .update(connectedAccounts)
-      .set({ status: 'revoked' })
-      .where(eq(connectedAccounts.accountId, accountId))
-      .run();
-    this._db
-      .delete(agentConnectorAttachments)
-      .where(eq(agentConnectorAttachments.accountId, accountId))
-      .run();
-    this._db
-      .delete(sessionConnectorAttachments)
-      .where(eq(sessionConnectorAttachments.accountId, accountId))
-      .run();
+    this._connections.revokeConnection(accountId);
+  }
+
+  /** Pause or resume a stable connection without changing provider authentication state. */
+  setPaused(accountId: ConnectedAccountId, paused: boolean): void {
+    this._connections.setPaused(accountId, paused);
   }
 
   /**
@@ -295,8 +300,29 @@ export class ConnectorRegistry {
    * @param opts - Optional filter; `toolkit` narrows to one service slug.
    */
   async listAccounts(opts?: { toolkit?: string }): Promise<AggregatedAccounts> {
-    const { items, warnings } = await this._aggregate((provider) => provider.listAccounts(opts));
-    return { accounts: items, warnings };
+    this._connections.assertAvailable();
+    const providers = this.listProviders();
+    const settled = await Promise.allSettled(
+      providers.map((provider) =>
+        withTimeout(provider.listAccounts(opts), this._providerTimeoutMs, provider.type)
+      )
+    );
+    const accounts: ConnectedAccount[] = [];
+    const warnings: ConnectorWarning[] = [];
+    settled.forEach((result, index) => {
+      const provider = providers[index]!;
+      if (result.status === 'fulfilled') {
+        accounts.push(
+          ...result.value.map((account) => this._connections.reconcile(provider, account))
+        );
+      } else {
+        warnings.push({
+          provider: provider.type,
+          message: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        });
+      }
+    });
+    return { accounts, warnings };
   }
 
   /**
@@ -306,6 +332,7 @@ export class ConnectorRegistry {
    * once.
    */
   async listToolkits(): Promise<AggregatedToolkits> {
+    this._connections.assertAvailable();
     const { items, warnings } = await this._aggregate((provider) => provider.listToolkits());
     const bySlug = new Map<string, ConnectorToolkit>();
     for (const toolkit of items) if (!bySlug.has(toolkit.slug)) bySlug.set(toolkit.slug, toolkit);
@@ -325,6 +352,7 @@ export class ConnectorRegistry {
   async providersForToolkit(
     toolkitSlug: string
   ): Promise<{ providers: ConnectorProvider[]; warnings: ConnectorWarning[] }> {
+    this._connections.assertAvailable();
     const providers = this.listProviders();
     const settled = await Promise.allSettled(
       providers.map((provider) =>

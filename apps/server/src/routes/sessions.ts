@@ -1070,6 +1070,25 @@ router.post('/:id/messages', async (req, res) => {
     disposition,
   } = parsed.data;
 
+  // `agentPath` is durable ownership provenance, not an ordinary cwd hint. A
+  // caller may name it only when Mesh currently knows that exact registered
+  // agent directory. This keeps the first-write session binding authoritative
+  // without letting client metadata manufacture an agent owner.
+  let verifiedAgentPath: string | undefined;
+  if (agentPath !== undefined) {
+    const meshCore = req.app.locals.meshCore as MeshCore | undefined;
+    const isRegistered = meshCore?.listWithPaths().some((agent) => agent.projectPath === agentPath);
+    if (!isRegistered) {
+      return sendError(
+        res,
+        400,
+        'Choose a registered agent before starting this session',
+        'INVALID_AGENT_PATH'
+      );
+    }
+    verifiedAgentPath = agentPath;
+  }
+
   // Opt-in workspace binding (DOR-84). When a workspaceKey is supplied, the
   // server provisions-or-reuses the managed workspace from the source repo
   // (`cwd`) and runs the turn with `cwd = workspace.path` + its port block.
@@ -1120,7 +1139,7 @@ router.post('/:id/messages', async (req, res) => {
     // every uncommitted edit the agent has made in the room. The port answers
     // `null` for every other session, which leaves the chain exactly as it was.
     const resolved = await resolveSessionCwdWithRoom(
-      { cwd, agentPath, sessionId },
+      { cwd, agentPath: verifiedAgentPath, sessionId },
       req.app.locals.roomSessionPlace as RoomSessionPlacePort | undefined
     );
     if (resolved.rung !== 'default') effectiveCwd = resolved.cwd;
@@ -1131,7 +1150,11 @@ router.post('/:id/messages', async (req, res) => {
   // row a pre-launch settings change already created — and leaves an
   // already-bound session completely alone, so a later call passing a different
   // (or no) hint changes nothing. The first message wins.
-  const runtimeType = await resolveRuntimeTypeForNewSession({ runtimeHint, agentPath, cwd });
+  const runtimeType = await resolveRuntimeTypeForNewSession({
+    runtimeHint,
+    agentPath: verifiedAgentPath,
+    cwd,
+  });
   if (!runtimeRegistry.has(runtimeType)) {
     return sendError(res, 400, `Unknown runtime: ${runtimeType}`, 'UNKNOWN_RUNTIME');
   }
@@ -1149,7 +1172,7 @@ router.post('/:id/messages', async (req, res) => {
   const isNewSession = await runtimeRegistry.persistSessionRuntime(
     sessionId,
     runtimeType,
-    agentPath,
+    verifiedAgentPath,
     { interactive: true }
   );
   // Fire the anonymous `session_created` usage event exactly once, on the write

@@ -2,17 +2,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createDb, runMigrations, type Db } from '@dorkos/db';
+import { agents, connections, createDb, runMigrations, type Db } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
-import type {
-  ConnectedAccount,
-  ConnectorCapabilities,
-  ConnectorProvider,
-  ConnectorToolkit,
-  ConnectedAccountId,
-  ConnectPoll,
-  ConnectStart,
-} from '@dorkos/shared/connector-provider';
+import type { ConnectorToolkit, ProviderConnectedAccount } from '@dorkos/shared/connector-provider';
 import { custodyDisclosure } from '../../services/connectors/custody-disclosure.js';
 import { ConnectorRegistry } from '../../services/connectors/registry.js';
 import { ConnectorFlowBindings } from '../../services/connectors/flow-bindings.js';
@@ -24,6 +16,7 @@ import {
 } from '../../services/connectors/attachment-store.js';
 import type { RelayAdapterCatalog } from '../../services/connectors/routing.js';
 import { createConnectorsRouter } from '../connectors.js';
+import { logger } from '../../lib/logger.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -36,34 +29,16 @@ function relayWith(slugs: Record<string, string>): RelayAdapterCatalog {
 }
 
 /** A gateway provider whose `listToolkits` never resolves — the hung-provider case. */
-class HungProvider implements ConnectorProvider {
-  readonly type = 'hung';
-  getCapabilities(): ConnectorCapabilities {
-    return {
-      type: this.type,
-      supportsMultiAccount: true,
-      custody: 'managed',
-      exposesOverMcp: true,
-      features: {},
-    };
+class HungProvider extends FakeConnectorProvider {
+  constructor() {
+    super({ type: 'hung' });
   }
-  listToolkits(): Promise<ConnectorToolkit[]> {
+
+  override listToolkits(): Promise<ConnectorToolkit[]> {
     return new Promise<ConnectorToolkit[]>(() => {});
   }
-  startConnect(): Promise<ConnectStart> {
-    return Promise.reject(new Error('hung'));
-  }
-  pollConnect(): Promise<ConnectPoll> {
-    return Promise.resolve({ status: 'failed', error: 'hung' });
-  }
-  listAccounts(): Promise<ConnectedAccount[]> {
+  override listAccounts(): Promise<ProviderConnectedAccount[]> {
     return Promise.resolve([]);
-  }
-  disconnect(): Promise<void> {
-    return Promise.resolve();
-  }
-  toolServerForAccount() {
-    return Promise.resolve(null);
   }
 }
 
@@ -86,7 +61,7 @@ describe('connectors router', () => {
         sessionConnectors: new SessionConnectorService({
           registry,
           agentAttachments: new AgentConnectorAttachmentStore(db),
-          sessionAttachments: new SessionConnectorAttachmentStore(db),
+          sessionAttachments: new SessionConnectorAttachmentStore(db, () => 'agent-a'),
         }),
         relay,
       })
@@ -143,7 +118,7 @@ describe('connectors router', () => {
         sessionConnectors: new SessionConnectorService({
           registry: bounded,
           agentAttachments: new AgentConnectorAttachmentStore(db),
-          sessionAttachments: new SessionConnectorAttachmentStore(db),
+          sessionAttachments: new SessionConnectorAttachmentStore(db, () => 'agent-a'),
         }),
       })
     );
@@ -178,7 +153,7 @@ describe('connectors router', () => {
         sessionConnectors: new SessionConnectorService({
           registry: bounded,
           agentAttachments: new AgentConnectorAttachmentStore(db),
-          sessionAttachments: new SessionConnectorAttachmentStore(db),
+          sessionAttachments: new SessionConnectorAttachmentStore(db, () => 'agent-a'),
         }),
       })
     );
@@ -219,185 +194,77 @@ describe('connectors router', () => {
     expect(poll.body.account.disclosure).toBe(
       custodyDisclosure('managed', { service: 'personal' })
     );
+    const replay = await request(fixtureServer).get(`/api/connectors/flows/${start.body.flowId}`);
+    expect(replay.status).toBe(200);
+    expect(replay.body).toEqual(poll.body);
   });
 
-  it('GET /flows/:flowId replays a terminal raw MCP result through the provider that started it', async () => {
-    registry.unregister('composio');
-    const original = new RawMcpConnectorProvider({
-      servers: [
-        {
-          slug: 'notes',
-          displayName: 'Notes',
-          connection: { transport: 'http', url: 'https://mcp.notes.example/mcp' },
-        },
-      ],
-      probe: () => Promise.resolve({ kind: 'ok', toolCount: 1 }),
-    });
-    registry.register(original);
-    const flowBindings = new ConnectorFlowBindings();
-    const app = buildApp(undefined, flowBindings);
-
-    const start = await request(fixtureTarget.mount(app))
-      .post('/api/connectors/mcp/connect')
-      .send({ toolkit: 'notes' });
-    // A config reload may register another instance of the same provider type.
-    // The already-started flow still belongs to the instance that holds its
-    // auth/verification state; routing by type would send this poll elsewhere.
-    registry.register(
-      new RawMcpConnectorProvider({
-        servers: [
-          {
-            slug: 'notes',
-            displayName: 'Notes',
-            connection: { transport: 'http', url: 'https://replacement.invalid/mcp' },
-          },
-        ],
-        probe: () => Promise.resolve({ kind: 'failed', error: 'replacement must not be polled' }),
-      })
-    );
-
-    const first = await request(fixtureServer).get(`/api/connectors/flows/${start.body.flowId}`);
-    expect(first.status).toBe(200);
-    expect(first.body.status).toBe('connected');
-    const repeated = await request(fixtureServer).get(`/api/connectors/flows/${start.body.flowId}`);
-    expect(repeated.status).toBe(200);
-    expect(repeated.body).toEqual(first.body);
-  });
-
-  it('keeps provider-local flow id collisions isolated behind public flow ids', async () => {
-    const firstProvider = new FakeConnectorProvider({ type: 'first', custody: 'managed' });
-    const secondProvider = new FakeConnectorProvider({ type: 'second', custody: 'self-host' });
-    const providerFlowId = 'provider-local-flow-1';
-    vi.spyOn(firstProvider, 'startConnect').mockResolvedValue({ flowId: providerFlowId });
-    vi.spyOn(secondProvider, 'startConnect').mockResolvedValue({ flowId: providerFlowId });
-    const firstPoll = vi.spyOn(firstProvider, 'pollConnect').mockResolvedValue({
-      status: 'connected',
-      account: {
-        id: 'first:account' as ConnectedAccountId,
-        provider: 'first',
-        toolkit: 'gmail',
-        label: 'first',
-        status: 'active',
-        custody: 'managed',
-      },
-    });
-    const secondPoll = vi.spyOn(secondProvider, 'pollConnect').mockResolvedValue({
-      status: 'connected',
-      account: {
-        id: 'second:account' as ConnectedAccountId,
-        provider: 'second',
-        toolkit: 'slack',
-        label: 'second',
-        status: 'active',
-        custody: 'self-host',
-      },
-    });
-    registry.register(firstProvider);
-    registry.register(secondProvider);
+  it('polls the exact provider object that started a flow after its registry slot is replaced', async () => {
     const app = buildApp();
-
-    const firstStart = await request(fixtureTarget.mount(app))
-      .post('/api/connectors/first/connect')
-      .send({ toolkit: 'gmail' });
-    const secondStart = await request(fixtureServer)
-      .post('/api/connectors/second/connect')
-      .send({ toolkit: 'slack' });
-    const first = await request(fixtureServer).get(
-      `/api/connectors/flows/${firstStart.body.flowId}`
-    );
-    const second = await request(fixtureServer).get(
-      `/api/connectors/flows/${secondStart.body.flowId}`
-    );
-
-    expect(first.body.account.id).toBe('first:account');
-    expect(second.body.account.id).toBe('second:account');
-    expect(firstStart.body.flowId).not.toBe(secondStart.body.flowId);
-    expect(firstStart.body.flowId).not.toBe(providerFlowId);
-    expect(firstPoll).toHaveBeenCalledWith(providerFlowId);
-    expect(secondPoll).toHaveBeenCalledWith(providerFlowId);
-  });
-
-  it('bounds abandoned flow bindings while keeping recent flows pollable', async () => {
-    const flowBindings = new ConnectorFlowBindings({ maxEntries: 2 });
-    const app = buildApp(undefined, flowBindings);
-    const flowIds: string[] = [];
-
-    for (const toolkit of ['gmail', 'slack', 'gmail']) {
-      const start = await request(fixtureTarget.mount(app))
-        .post('/api/connectors/composio/connect')
-        .send({ toolkit });
-      flowIds.push(start.body.flowId);
-    }
-
-    const evicted = await request(fixtureServer).get(`/api/connectors/flows/${flowIds[0]}`);
-    expect(evicted.status).toBe(404);
-    for (const flowId of flowIds.slice(1)) {
-      const retained = await request(fixtureServer).get(`/api/connectors/flows/${flowId}`);
-      expect(retained.status).toBe(200);
-      expect(retained.body.status).toBe('connected');
-    }
-  });
-
-  it('pins an in-flight raw MCP poll so capacity cannot hide its connected account', async () => {
-    let finishProbe: ((outcome: { kind: 'ok'; toolCount: number }) => void) | undefined;
-    const probe = vi.fn(
-      () =>
-        new Promise<{ kind: 'ok'; toolCount: number }>((resolve) => {
-          finishProbe = resolve;
-        })
-    );
-    registry.unregister('composio');
-    const provider = new RawMcpConnectorProvider({
-      servers: [
-        {
-          slug: 'notes',
-          displayName: 'Notes',
-          connection: { transport: 'http', url: 'https://mcp.notes.example/mcp' },
-        },
-      ],
-      probe,
+    const originalProvider = registry.resolveProvider('composio') as FakeConnectorProvider;
+    const start = await request(fixtureTarget.mount(app))
+      .post('/api/connectors/composio/connect')
+      .send({ toolkit: 'gmail', label: 'original-instance' });
+    const replacementProvider = new FakeConnectorProvider({
+      type: 'composio',
+      custody: 'managed',
+      instanceId: originalProvider.instanceId,
     });
-    registry.register(provider);
-    const app = buildApp(undefined, new ConnectorFlowBindings({ maxEntries: 1 }));
+    registry.register(replacementProvider);
 
+    const poll = await request(fixtureServer).get(`/api/connectors/flows/${start.body.flowId}`);
+    expect(poll.status).toBe(200);
+    expect(poll.body).toMatchObject({
+      status: 'connected',
+      account: { label: 'original-instance' },
+    });
+    expect((await originalProvider.listAccounts()).map((account) => account.label)).toEqual([
+      'original-instance',
+    ]);
+    expect(await replacementProvider.listAccounts()).toEqual([]);
+  });
+
+  it('pins a provider poll against capacity eviction and rejects the competing start', async () => {
+    const flowBindings = new ConnectorFlowBindings(undefined, 1);
+    const app = buildApp(undefined, flowBindings);
+    const provider = registry.resolveProvider('composio') as FakeConnectorProvider;
+    const originalPoll = provider.pollConnect.bind(provider);
+    let announcePoll!: () => void;
+    let releasePoll!: () => void;
+    const pollStarted = new Promise<void>((resolve) => {
+      announcePoll = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      releasePoll = resolve;
+    });
+    provider.pollConnect = async (flowId) => {
+      announcePoll();
+      await blocked;
+      return originalPoll(flowId);
+    };
     const first = await request(fixtureTarget.mount(app))
-      .post('/api/connectors/mcp/connect')
-      .send({ toolkit: 'notes' });
+      .post('/api/connectors/composio/connect')
+      .send({ toolkit: 'gmail', label: 'late' });
     const latePoll = request(fixtureServer)
       .get(`/api/connectors/flows/${first.body.flowId}`)
-      .then((res) => res);
-    await vi.waitFor(() => expect(probe).toHaveBeenCalledTimes(1));
+      .then((response) => response);
+    await pollStarted;
+    const competing = await request(fixtureServer)
+      .post('/api/connectors/composio/connect')
+      .send({ toolkit: 'gmail', label: 'newer' });
+    expect(competing.status).toBe(400);
+    expect(competing.body.error).toMatch(/connection checks are already in progress/i);
+    releasePoll();
 
-    // Capacity cannot evict work that is already on the wire. Rejecting this
-    // start is honest: the first poll remains observable through both its flow
-    // response and the account inventory after the probe succeeds.
-    const second = await request(fixtureServer)
-      .post('/api/connectors/mcp/connect')
-      .send({ toolkit: 'notes' });
-    expect(second.status).toBe(400);
-    expect(second.body.error).toBe(
-      'Too many connection checks are already in progress. Wait for one to finish and try again.'
-    );
-
-    finishProbe?.({ kind: 'ok', toolCount: 1 });
-    const late = await latePoll;
-    expect(late.status).toBe(200);
-    expect(late.body).toMatchObject({
+    const completed = await latePoll;
+    expect(completed.status).toBe(200);
+    expect(completed.body).toMatchObject({
       status: 'connected',
-      account: { id: 'mcp:notes', toolkit: 'notes', status: 'active' },
+      account: { toolkit: 'gmail', label: 'late' },
     });
-    expect(registry.accountBinding('mcp:notes' as ConnectedAccountId)).toMatchObject({
-      accountId: 'mcp:notes',
-      provider: 'mcp',
-      toolkit: 'notes',
-      status: 'active',
-    });
-
-    const accounts = await request(fixtureServer).get('/api/connectors/accounts');
-    expect(accounts.status).toBe(200);
-    expect(accounts.body.accounts).toEqual([
-      expect.objectContaining({ id: 'mcp:notes', toolkit: 'notes', status: 'active' }),
-    ]);
+    expect(db.select().from(connections).all()).toHaveLength(1);
+    const inventory = await request(fixtureServer).get('/api/connectors/accounts');
+    expect(inventory.body.accounts).toEqual([completed.body.account]);
   });
 
   it('POST /:provider/connect 404s for an unknown provider', async () => {
@@ -434,17 +301,66 @@ describe('connectors router', () => {
     const account = res.body.accounts[0];
     // The DTO carries account metadata but NOT the owning provider field, and
     // never a McpAppServerConnection (no url/command/transport/headers).
-    // (The opaque account id may be provider-scoped — that is by design and
-    // never names the vendor in the session tool surface.)
+    // The public id is assigned by DorkOS and does not fall back to the
+    // provider-owned account reference.
     expect(Object.keys(account)).not.toContain('provider');
     expect(account.provider).toBeUndefined();
     expect(account).not.toHaveProperty('connection');
     expect(account).not.toHaveProperty('url');
     expect(account).not.toHaveProperty('command');
     expect(account).toMatchObject({ toolkit: 'gmail', label: 'personal', custody: 'managed' });
+    expect(account.id).not.toContain('composio');
+    expect(account.id).not.toContain('ca_');
     // Every listed account carries its own server-composed custody sentence —
     // the client never composes disclosure copy (spec §UX).
     expect(account.disclosure).toBe(custodyDisclosure('managed', { service: 'personal' }));
+  });
+
+  it('reports a scrubbed migration_failed response without exposing a private legacy reference', async () => {
+    const privateRef = 'composio:private-vendor-ref-sentinel';
+    const errorLog = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    db = createDb(':memory:');
+    runMigrations(db);
+    db.insert(agents)
+      .values({
+        id: 'agent-a',
+        name: 'Agent A',
+        runtime: 'claude-code',
+        projectPath: '/agents/a',
+        registeredAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      })
+      .run();
+    db.$client
+      .prepare(
+        'INSERT INTO agent_connector_attachments(agent_id, account_id, attached_at) VALUES (?, ?, ?)'
+      )
+      .run('agent-a', privateRef, new Date(0).toISOString());
+    registry = new ConnectorRegistry({ db });
+
+    const res = await request(fixtureTarget.mount(buildApp())).get('/api/connectors/accounts');
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({
+      status: 'migration_failed',
+      error:
+        'Connector data could not be upgraded. Connector changes are unavailable; restart DorkOS to retry.',
+    });
+    expect(JSON.stringify(res.body)).not.toContain(privateRef);
+    expect(JSON.stringify(res.body)).not.toMatch(/SQLITE|agent_connector_attachments|\/Users\//i);
+    expect(errorLog).toHaveBeenCalledWith('[connectors] legacy connection migration failed', {
+      migrationVersion: 1,
+      phase: 'attachments',
+      category: 'invariant',
+      causeCode: 'legacy_agent_account_missing',
+    });
+    const diagnostic = JSON.stringify(errorLog.mock.calls);
+    expect(diagnostic).not.toContain(privateRef);
+    expect(diagnostic).not.toMatch(/SQLITE|agent_connector_attachments|\/Users\//i);
+    errorLog.mockRestore();
+    expect(db.$client.prepare('SELECT COUNT(*) AS count FROM connections').get()).toEqual({
+      count: 0,
+    });
   });
 
   it('GET /accounts?toolkit filters to one service', async () => {
@@ -466,6 +382,8 @@ describe('connectors router', () => {
       .send({ toolkit: 'gmail', label: 'personal' });
     const poll = await request(fixtureServer).get(`/api/connectors/flows/${start.body.flowId}`);
     const accountId = poll.body.account.id;
+    const externalAccountRef = registry.accountBinding(accountId)!.externalAccountRef;
+    expect(accountId).not.toBe(externalAccountRef);
 
     const first = await request(fixtureServer).delete(
       `/api/connectors/accounts/${encodeURIComponent(accountId)}`
@@ -474,97 +392,68 @@ describe('connectors router', () => {
     // Gone from the aggregate now.
     const after = await request(fixtureServer).get('/api/connectors/accounts');
     expect(after.body.accounts).toHaveLength(0);
-
-    // The terminal flow must no longer replay a connected result after its
-    // account is revoked, or the poll route would recreate the routing row.
-    const stalePoll = await request(fixtureServer).get(
-      `/api/connectors/flows/${start.body.flowId}`
-    );
-    expect(stalePoll.status).toBe(404);
-    expect(registry.accountBinding(accountId)).toMatchObject({
-      provider: 'composio',
-      status: 'revoked',
-    });
+    const replay = await request(fixtureServer).get(`/api/connectors/flows/${start.body.flowId}`);
+    expect(replay.status).toBe(404);
+    expect(registry.accountBinding(accountId)?.status).toBe('revoked');
 
     // Deleting an unknown/already-removed id still resolves 204.
     const again = await request(fixtureServer).delete('/api/connectors/accounts/never-existed');
     expect(again.status).toBe(204);
   });
 
-  it('cancels an in-flight raw MCP reconnect when its stable account id is deleted again', async () => {
-    let finishReconnect: ((outcome: { kind: 'ok'; toolCount: number }) => void) | undefined;
-    const probe = vi
-      .fn()
-      .mockResolvedValueOnce({ kind: 'ok', toolCount: 1 })
-      .mockImplementationOnce(
-        () =>
-          new Promise<{ kind: 'ok'; toolCount: number }>((resolve) => {
-            finishReconnect = resolve;
-          })
-      );
-    registry.unregister('composio');
-    const provider = new RawMcpConnectorProvider({
+  it('DELETE cancels an in-flight reconnect by stable id without reviving its tombstone', async () => {
+    const raw = new RawMcpConnectorProvider({
       servers: [
         {
-          slug: 'notes',
-          displayName: 'Notes',
-          connection: { transport: 'http', url: 'https://mcp.notes.example/mcp' },
+          slug: 'notion',
+          displayName: 'Notion',
+          connection: { transport: 'http', url: 'https://mcp.notion.example/mcp' },
         },
       ],
-      probe,
+      probe: () => Promise.resolve({ kind: 'ok', toolCount: 1 }),
     });
-    registry.register(provider);
+    registry.register(raw);
     const app = buildApp();
-
     const initialStart = await request(fixtureTarget.mount(app))
       .post('/api/connectors/mcp/connect')
-      .send({ toolkit: 'notes' });
+      .send({ toolkit: 'notion', label: 'notion' });
     const initialPoll = await request(fixtureServer).get(
       `/api/connectors/flows/${initialStart.body.flowId}`
     );
-    expect(initialPoll.body.status).toBe('connected');
-    await request(fixtureServer).delete('/api/connectors/accounts/mcp%3Anotes').expect(204);
+    const connectionId = initialPoll.body.account.id;
+    const externalAccountRef = registry.accountBinding(connectionId)!.externalAccountRef;
+    expect(connectionId).not.toBe(externalAccountRef);
+    await request(fixtureServer).delete(`/api/connectors/accounts/${connectionId}`).expect(204);
 
     const reconnect = await request(fixtureServer)
       .post('/api/connectors/mcp/connect')
-      .send({ toolkit: 'notes' });
-    const latePoll = request(fixtureServer)
+      .send({ toolkit: 'notion', label: 'notion' });
+    const originalPoll = raw.pollConnect.bind(raw);
+    let announcePoll!: () => void;
+    let releasePoll!: () => void;
+    const pollStarted = new Promise<void>((resolve) => {
+      announcePoll = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      releasePoll = resolve;
+    });
+    raw.pollConnect = async (providerFlowId) => {
+      announcePoll();
+      await blocked;
+      return originalPoll(providerFlowId);
+    };
+    const pendingPoll = request(fixtureServer)
       .get(`/api/connectors/flows/${reconnect.body.flowId}`)
-      .then((res) => res);
-    await vi.waitFor(() => expect(probe).toHaveBeenCalledTimes(2));
-
-    // A config reload may replace the registered provider while the older
-    // instance still owns this reconnect. Delete must reach both.
-    registry.register(
-      new RawMcpConnectorProvider({
-        servers: [
-          {
-            slug: 'notes',
-            displayName: 'Notes',
-            connection: { transport: 'http', url: 'https://replacement.invalid/mcp' },
-          },
-        ],
-        probe: () => Promise.resolve({ kind: 'failed', error: 'replacement is not the owner' }),
-      })
+      .then((response) => response);
+    await pollStarted;
+    const disconnected = await request(fixtureServer).delete(
+      `/api/connectors/accounts/${connectionId}`
     );
+    expect(disconnected.status).toBe(204);
+    releasePoll();
 
-    // No routing row exists yet, but the stable raw-MCP account id still names
-    // the reconnect that the person is revoking.
-    await request(fixtureServer).delete('/api/connectors/accounts/mcp%3Anotes').expect(204);
-    finishReconnect?.({ kind: 'ok', toolCount: 1 });
-
-    const late = await latePoll;
-    expect(late.status).toBe(200);
-    expect(late.body).toEqual({
-      status: 'failed',
-      error: 'This connection check is no longer active. Start again to retry.',
-    });
-    expect(registry.accountBinding('mcp:notes' as ConnectedAccountId)).toMatchObject({
-      provider: 'mcp',
-      status: 'revoked',
-    });
-    await expect(provider.listAccounts()).resolves.toEqual([]);
-    const accounts = await request(fixtureServer).get('/api/connectors/accounts');
-    expect(accounts.body.accounts).toEqual([]);
+    expect((await pendingPoll).status).toBe(404);
+    expect(await raw.listAccounts()).toEqual([]);
+    expect(registry.accountBinding(connectionId)?.status).toBe('revoked');
   });
 });

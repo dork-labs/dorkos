@@ -22,6 +22,7 @@ import { useCommands } from '@/layers/entities/command';
 import {
   useSessionChatStore,
   useSessionId,
+  useSessions,
   useSessionQueue,
   useSessionStatus,
   useSessionStreamLifecycle,
@@ -133,6 +134,18 @@ export function ChatPanel({
   // owns that question, so this call site simply says when a turn ended.
   const { play: playCue } = useNotificationCues();
   const [cwd] = useDirectoryState();
+  // This exact-path lookup distinguishes a registered agent directory from a
+  // normal working directory. Only the former may become connector ownership
+  // provenance on a new session.
+  const {
+    data: composerAgent,
+    isPending: isComposerAgentPending,
+    isError: isComposerAgentError,
+    refetch: retryComposerAgent,
+  } = useCurrentAgent(cwd);
+  const { sessions: knownSessions } = useSessions();
+  const needsFirstTurnProvenance =
+    sessionId !== null && !knownSessions.some((session) => session.id === sessionId);
 
   const fileUpload = useFileUpload();
 
@@ -281,6 +294,9 @@ export function ChatPanel({
     startFreshSession,
     compactIntent,
     launchRuntime,
+    ...(composerAgent && cwd ? { agentPath: cwd } : {}),
+    agentLookupPending: cwd !== null && isComposerAgentPending,
+    agentLookupFailed: cwd !== null && isComposerAgentError,
     takeSeedContext,
     onStreamingDone: useCallback(() => {
       playCue('turn-end');
@@ -334,6 +350,8 @@ export function ChatPanel({
     messageCount: messages.length,
     hydrated,
     status,
+    submitBlocked:
+      needsFirstTurnProvenance && cwd !== null && (isComposerAgentPending || isComposerAgentError),
     submit: handleSubmit,
     onSeeded: handleLaunchSeeded,
     onConsumed: onLaunchConsumed,
@@ -537,7 +555,6 @@ export function ChatPanel({
   ]);
   // What the empty box says. The agent registered at the working directory
   // names it; without one it is the generic invitation.
-  const { data: composerAgent } = useCurrentAgent(cwd);
   const defaultPlaceholder = composerAgent
     ? `Message ${getAgentDisplayName(composerAgent)}…`
     : 'Send a message…';
@@ -648,6 +665,16 @@ export function ChatPanel({
           </div>
         )}
 
+        {needsFirstTurnProvenance && isComposerAgentError && (
+          <div className="mx-4 mb-2">
+            <ErrorMessageBlock
+              heading="Couldn’t check this directory"
+              message="DorkOS couldn’t confirm whether this directory belongs to a registered agent. Try again before starting the session."
+              onRetry={() => void retryComposerAgent()}
+            />
+          </div>
+        )}
+
         {/* Asked once, and only after a turn has run long enough to walk away
             from — never at launch. Sits here because this is where a person is
             when the question first makes sense. Draws nothing until then, and
@@ -662,6 +689,8 @@ export function ChatPanel({
           addContextContent={addContextContent}
           tryNativeCommand={tryNativeCommand}
           commandPending={commandPending}
+          agentLookupPending={needsFirstTurnProvenance && cwd !== null && isComposerAgentPending}
+          agentLookupError={needsFirstTurnProvenance && cwd !== null && isComposerAgentError}
           status={status}
           stop={stop}
           setInput={setInput}

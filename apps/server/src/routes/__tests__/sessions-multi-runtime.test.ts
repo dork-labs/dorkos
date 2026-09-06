@@ -138,6 +138,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
   });
 
   afterEach(() => {
+    delete app.locals.meshCore;
     // The projector registry is a process singleton; a triggered turn leaves
     // per-session projector state. Drop it so accumulated turns don't leak across
     // tests (e.g. an earlier "Echo: hi" turn surfacing in a later assertion).
@@ -356,6 +357,9 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
     });
 
     it('records agentPath on first message for provenance', async () => {
+      app.locals.meshCore = {
+        listWithPaths: () => [{ projectPath: '/projects/my-agent' }],
+      };
       await postMessage(TEST_MODE_SESSION, {
         content: 'hi',
         runtime: 'test-mode',

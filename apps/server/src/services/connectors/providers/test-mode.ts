@@ -28,17 +28,19 @@
  */
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type {
-  ConnectedAccount,
-  ConnectedAccountId,
-  ConnectedAccountStatus,
   ConnectorCapabilities,
+  ConnectorExternalAccountRef,
   ConnectorProvider,
+  ConnectorProviderInstanceId,
   ConnectorToolkit,
   ConnectPoll,
   ConnectStart,
+  ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
+import type { ConnectorProviderExecuteCommand } from '@dorkos/shared/connector-schemas';
 import type { CredentialProvider } from '../../core/credential-provider.js';
 import { TEST_CONNECTOR_API_KEY_REF, TEST_CONNECTOR_PROVIDER_TYPE } from '../bootstrap.js';
+import { legacyDefaultProviderInstanceId } from '../legacy-connection-migration.js';
 
 /** The scripted services the test backend can connect. */
 const TEST_TOOLKITS: ConnectorToolkit[] = [
@@ -50,7 +52,7 @@ const TEST_TOOLKITS: ConnectorToolkit[] = [
 interface TestFlow {
   toolkit: string;
   label?: string;
-  accountId?: ConnectedAccountId;
+  accountId?: ConnectorExternalAccountRef;
 }
 
 /** Construction options for {@link TestModeConnectorProvider}. */
@@ -60,6 +62,8 @@ export interface TestModeConnectorProviderOpts {
    * and the stub tool-server URL point at — everything stays on-machine.
    */
   localOrigin: string;
+  /** Stable configured provider instance id. */
+  instanceId?: ConnectorProviderInstanceId;
 }
 
 /**
@@ -67,10 +71,11 @@ export interface TestModeConnectorProviderOpts {
  * Passes `connectorConformance`; see the module docs for the behavior script.
  */
 export class TestModeConnectorProvider implements ConnectorProvider {
+  readonly instanceId: ConnectorProviderInstanceId;
   readonly type = TEST_CONNECTOR_PROVIDER_TYPE;
 
   private readonly _localOrigin: string;
-  private readonly _accounts = new Map<string, ConnectedAccount>();
+  private readonly _accounts = new Map<string, ProviderConnectedAccount>();
   private readonly _flows = new Map<string, TestFlow>();
   private _counter = 0;
 
@@ -81,16 +86,70 @@ export class TestModeConnectorProvider implements ConnectorProvider {
    */
   constructor(opts: TestModeConnectorProviderOpts) {
     this._localOrigin = opts.localOrigin;
+    this.instanceId =
+      opts.instanceId ??
+      (legacyDefaultProviderInstanceId(this.type) as ConnectorProviderInstanceId);
   }
 
   getCapabilities(): ConnectorCapabilities {
     return {
+      instanceId: this.instanceId,
       type: this.type,
       supportsMultiAccount: true,
       custody: 'managed',
       exposesOverMcp: true,
+      capabilities: {
+        catalog: { status: 'available' },
+        authentication: { status: 'available' },
+        accounts: { status: 'available' },
+        operations: {
+          status: 'unsupported',
+          reason: 'Test mode keeps execution on the P1 compatibility seam.',
+        },
+        execution: {
+          status: 'unsupported',
+          reason: 'Test mode keeps execution on the P1 compatibility seam.',
+        },
+        triggers: { status: 'unsupported', reason: 'Test mode triggers are unavailable.' },
+      },
       features: {},
     };
+  }
+
+  async listToolkitPage(request: { cursor?: string; query?: string; limit: number }) {
+    const all = (await this.listToolkits()).filter((toolkit) =>
+      request.query ? toolkit.displayName.toLowerCase().includes(request.query.toLowerCase()) : true
+    );
+    const offset = request.cursor ? Number(request.cursor) : 0;
+    const toolkits = all.slice(offset, offset + request.limit);
+    const next = offset + toolkits.length;
+    return {
+      status: 'ok' as const,
+      toolkits,
+      ...(next < all.length && { nextCursor: String(next) }),
+      truncated: next < all.length,
+    };
+  }
+
+  listOperationSchemas(_request: { toolkit: string; cursor?: string; limit: number }) {
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Test mode keeps execution on the P1 compatibility seam.',
+    });
+  }
+
+  execute(_command: ConnectorProviderExecuteCommand) {
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Test mode keeps execution on the P1 compatibility seam.',
+    });
+  }
+
+  listTriggerTypes(_toolkit: string) {
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Test mode triggers are unavailable.',
+    });
   }
 
   listToolkits(): Promise<ConnectorToolkit[]> {
@@ -122,10 +181,9 @@ export class TestModeConnectorProvider implements ConnectorProvider {
     // account; every later poll of the same flow answers the same account.
     if (!flow.accountId) {
       this._counter += 1;
-      const id = `${this.type}:${flow.toolkit}:${this._counter}` as ConnectedAccountId;
+      const id = `${this.type}:${flow.toolkit}:${this._counter}` as ConnectorExternalAccountRef;
       this._accounts.set(id, {
-        id,
-        provider: this.type,
+        externalAccountRef: id,
         toolkit: flow.toolkit,
         label: flow.label ?? flow.toolkit,
         status: 'active',
@@ -136,18 +194,20 @@ export class TestModeConnectorProvider implements ConnectorProvider {
     return Promise.resolve({ status: 'connected', account: this._accounts.get(flow.accountId) });
   }
 
-  listAccounts(opts?: { toolkit?: string }): Promise<ConnectedAccount[]> {
+  listAccounts(opts?: { toolkit?: string }): Promise<ProviderConnectedAccount[]> {
     const all = [...this._accounts.values()];
     return Promise.resolve(opts?.toolkit ? all.filter((a) => a.toolkit === opts.toolkit) : all);
   }
 
-  disconnect(accountId: ConnectedAccountId): Promise<void> {
+  disconnect(accountId: ConnectorExternalAccountRef): Promise<void> {
     // Idempotent by construction — deleting an unknown id is a no-op.
     this._accounts.delete(accountId);
     return Promise.resolve();
   }
 
-  toolServerForAccount(accountId: ConnectedAccountId): Promise<McpAppServerConnection | null> {
+  toolServerForAccount(
+    accountId: ConnectorExternalAccountRef
+  ): Promise<McpAppServerConnection | null> {
     const account = this._accounts.get(accountId);
     // The documented null branch: unknown or non-active accounts are surfaced
     // as unexposable, never thrown.
@@ -168,7 +228,10 @@ export class TestModeConnectorProvider implements ConnectorProvider {
    * @param accountId - The account to mutate.
    * @param status - The status to set.
    */
-  setStatus(accountId: ConnectedAccountId, status: ConnectedAccountStatus): void {
+  setStatus(
+    accountId: ConnectorExternalAccountRef,
+    status: ProviderConnectedAccount['status']
+  ): void {
     const account = this._accounts.get(accountId);
     if (account) account.status = status;
   }

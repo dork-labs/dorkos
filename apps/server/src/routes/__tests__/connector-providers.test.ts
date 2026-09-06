@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createDb, runMigrations, type Db } from '@dorkos/db';
+import { agents, createDb, runMigrations, type Db } from '@dorkos/db';
 import type {
   CredentialProvider,
   CredentialResolution,
@@ -147,6 +147,38 @@ describe('connector-providers router', () => {
     expect(composio).toMatchObject({ configured: true, registered: true });
   });
 
+  it('blocks provider reads and credential writes when the canonical migration failed', async () => {
+    db = createDb(':memory:');
+    runMigrations(db);
+    db.insert(agents)
+      .values({
+        id: 'agent-a',
+        name: 'Agent A',
+        runtime: 'claude-code',
+        projectPath: '/agents/a',
+        registeredAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      })
+      .run();
+    db.$client
+      .prepare(
+        'INSERT INTO agent_connector_attachments(agent_id, account_id, attached_at) VALUES (?, ?, ?)'
+      )
+      .run('agent-a', 'private-provider-ref', new Date(0).toISOString());
+    registry = new ConnectorRegistry({ db });
+    const app = buildApp();
+
+    const get = await request(fixtureTarget.mount(app)).get('/api/connectors/providers');
+    const put = await request(fixtureServer)
+      .put('/api/connectors/providers/composio/credential')
+      .send({ secret: SECRET });
+
+    expect(get.status).toBe(503);
+    expect(put.status).toBe(503);
+    expect(await store.get('composio-api-key')).toBeNull();
+    expect(JSON.stringify([get.body, put.body])).not.toContain('private-provider-ref');
+  });
+
   it('DELETE credential unregisters the provider and is idempotent (missing key still 200)', async () => {
     const app = buildApp();
     await request(fixtureTarget.mount(app))
@@ -228,7 +260,7 @@ describe('connector-providers router', () => {
     const sessionConnectors = new SessionConnectorService({
       registry,
       agentAttachments: new AgentConnectorAttachmentStore(db),
-      sessionAttachments: new SessionConnectorAttachmentStore(db),
+      sessionAttachments: new SessionConnectorAttachmentStore(db, () => 'agent-a'),
     });
     const bootstrapper = new ConnectorProviderBootstrapper({
       registry,
@@ -237,7 +269,8 @@ describe('connector-providers router', () => {
       nangoProxy: new NangoProxyMcp({ localOrigin: 'http://127.0.0.1:4242' }),
       rawMcpServers: () => [],
       ...hermeticClients,
-      onUnregistered: (providerType) => sessionConnectors.invalidateProvider(providerType),
+      onUnregistered: (providerInstanceId) =>
+        sessionConnectors.invalidateProviderInstance(providerInstanceId),
     });
     const app = express();
     app.use(express.json());
@@ -252,12 +285,16 @@ describe('connector-providers router', () => {
       .put('/api/connectors/providers/composio/credential')
       .send({ secret: SECRET });
     expect(registry.resolveProvider('composio')).toBeDefined();
-    const provider = new FakeConnectorProvider({ type: 'composio', custody: 'managed' });
+    const provider = new FakeConnectorProvider({
+      type: 'composio',
+      custody: 'managed',
+      instanceId: registry.resolveProvider('composio')!.instanceId,
+    });
     registry.register(provider);
     const { flowId } = await provider.startConnect('gmail', { label: 'work' });
     const account = (await provider.pollConnect(flowId)).account!;
-    registry.recordConnect(account);
-    const attached = await sessionConnectors.attach('session-1', account.id);
+    const connected = registry.recordConnect(provider, account);
+    const attached = await sessionConnectors.attach('session-1', connected.id);
     expect(attached!.account.exposed).toBe(true);
 
     // Delete the key: the reload unregisters the provider AND the session's

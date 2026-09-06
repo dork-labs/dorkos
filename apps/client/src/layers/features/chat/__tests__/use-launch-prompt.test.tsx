@@ -25,6 +25,7 @@ interface Harness {
   messageCount?: number;
   hydrated?: boolean;
   status?: ChatStatus;
+  submitBlocked?: boolean;
 }
 
 function setup(overrides: Harness = {}) {
@@ -44,6 +45,7 @@ function setup(overrides: Harness = {}) {
         messageCount: params.messageCount ?? 0,
         hydrated: params.hydrated ?? true,
         status: params.status ?? 'idle',
+        submitBlocked: params.submitBlocked ?? false,
         submit,
         onSeeded,
         onConsumed,
@@ -230,6 +232,30 @@ describe('useLaunchPrompt', () => {
       const { submit, rerender } = setup({ autoSend: true, status: 'streaming' });
       rerender({ prompt: PROMPT, autoSend: true, input: PROMPT, status: 'streaming' });
       expect(submit).not.toHaveBeenCalled();
+    });
+
+    it('stays armed while a transient submission prerequisite is unresolved', () => {
+      const { submit, onConsumed, rerender } = setup({
+        autoSend: true,
+        submitBlocked: true,
+      });
+      rerender({
+        prompt: PROMPT,
+        autoSend: true,
+        input: PROMPT,
+        submitBlocked: true,
+      });
+      expect(submit).not.toHaveBeenCalled();
+      expect(onConsumed).not.toHaveBeenCalled();
+
+      rerender({
+        prompt: PROMPT,
+        autoSend: true,
+        input: PROMPT,
+        submitBlocked: false,
+      });
+      expect(onConsumed).toHaveBeenCalledTimes(1);
+      expect(submit).toHaveBeenCalledTimes(1);
     });
 
     it('drops the launch params from the URL before the turn starts', () => {

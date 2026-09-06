@@ -19,6 +19,7 @@ import { accountDisplayName, FALLBACK_SERVICE_ICON, SERVICE_ICONS } from '../lib
 /** Plain-language copy per null-branch reason — mirrors the server's reasons. */
 const WARNING_COPY: Record<SessionConnectorWarning['reason'], string> = {
   expired: 'This account expired. Reconnect it under Connections.',
+  paused: 'This account is paused. Resume it under Connections.',
   revoked: 'This account was disconnected. Reconnect it under Connections.',
   unavailable: 'This account is not available right now.',
 };
