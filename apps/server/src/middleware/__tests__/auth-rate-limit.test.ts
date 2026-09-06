@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, beforeAll, afterAll } from 'vitest';
 import express, { type RequestHandler } from 'express';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 import { buildAuthRateLimiter } from '../auth-rate-limit.js';
 import { env } from '../../env.js';
 

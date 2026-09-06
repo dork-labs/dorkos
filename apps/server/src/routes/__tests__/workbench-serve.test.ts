@@ -21,7 +21,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { initBoundary } from '../../lib/boundary.js';
 import { WORKBENCH } from '../../config/constants.js';
@@ -35,6 +36,7 @@ import { tunnelManager } from '../../services/core/tunnel-manager.js';
 let root: string;
 let outside: string;
 const app = createApp();
+const testServer = listeningServer(app);
 
 beforeAll(async () => {
   // realpath so the served root matches the canonical boundary (macOS symlinks
@@ -60,14 +62,16 @@ afterAll(async () => {
 
 describe('POST /api/workbench/sign', () => {
   it('mints a serve URL for a cwd within the boundary, and that URL serves the file', async () => {
-    const sign = await request(app).post('/api/workbench/sign').send({ kind: 'serve', cwd: root });
+    const sign = await request(testServer)
+      .post('/api/workbench/sign')
+      .send({ kind: 'serve', cwd: root });
     expect(sign.status).toBe(200);
     expect(sign.body.url).toContain('/api/workbench/serve/');
     expect(sign.body.url).toContain('/index.html');
 
     // Follow the minted URL (strip origin — supertest targets the same app).
     const servePath = sign.body.url.slice(sign.body.url.indexOf('/api/'));
-    const served = await request(app).get(servePath);
+    const served = await request(testServer).get(servePath);
     expect(served.status).toBe(200);
     expect(served.text).toContain('hello preview');
     // Served content must never be sniffed into an executable type.
@@ -75,14 +79,16 @@ describe('POST /api/workbench/sign', () => {
   });
 
   it('rejects minting a serve URL for a cwd outside the boundary (403)', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/workbench/sign')
       .send({ kind: 'serve', cwd: outside });
     expect(res.status).toBe(403);
   });
 
   it('rejects a proxy port outside the valid range — no arbitrary target (400)', async () => {
-    const res = await request(app).post('/api/workbench/sign').send({ kind: 'proxy', port: 70000 });
+    const res = await request(testServer)
+      .post('/api/workbench/sign')
+      .send({ kind: 'proxy', port: 70000 });
     expect(res.status).toBe(400);
   });
 });
@@ -102,7 +108,7 @@ describe('POST /api/workbench/probe', () => {
   });
 
   it('reports a port with a server on it as listening', async () => {
-    const res = await request(app).post('/api/workbench/probe').send({ port: upstreamPort });
+    const res = await request(testServer).post('/api/workbench/probe').send({ port: upstreamPort });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ listening: true });
   });
@@ -115,7 +121,7 @@ describe('POST /api/workbench/probe', () => {
     const deadPort = (probe.address() as AddressInfo).port;
     await new Promise<void>((resolve) => probe.close(() => resolve()));
 
-    const res = await request(app).post('/api/workbench/probe').send({ port: deadPort });
+    const res = await request(testServer).post('/api/workbench/probe').send({ port: deadPort });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ listening: false });
   });
@@ -137,7 +143,7 @@ describe('POST /api/workbench/probe', () => {
     }
     try {
       const port = (v6.address() as AddressInfo).port;
-      const res = await request(app).post('/api/workbench/probe').send({ port });
+      const res = await request(testServer).post('/api/workbench/probe').send({ port });
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ listening: true });
     } finally {
@@ -146,11 +152,13 @@ describe('POST /api/workbench/probe', () => {
   });
 
   it('rejects a port outside the valid range (400)', async () => {
-    expect((await request(app).post('/api/workbench/probe').send({ port: 70000 })).status).toBe(
+    expect(
+      (await request(testServer).post('/api/workbench/probe').send({ port: 70000 })).status
+    ).toBe(400);
+    expect((await request(testServer).post('/api/workbench/probe').send({ port: 0 })).status).toBe(
       400
     );
-    expect((await request(app).post('/api/workbench/probe').send({ port: 0 })).status).toBe(400);
-    expect((await request(app).post('/api/workbench/probe').send({})).status).toBe(400);
+    expect((await request(testServer).post('/api/workbench/probe').send({})).status).toBe(400);
   });
 });
 
@@ -158,7 +166,7 @@ describe('GET /api/workbench/serve/:token/*', () => {
   const validToken = () => workbenchTokenSigner.mint({ kind: 'serve', cwd: root });
 
   it('serves a relative asset within the cwd, with no-referrer so the token URL cannot leak', async () => {
-    const res = await request(app).get(`/api/workbench/serve/${validToken()}/style.css`);
+    const res = await request(testServer).get(`/api/workbench/serve/${validToken()}/style.css`);
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('text/css');
     expect(res.text).toContain('color:red');
@@ -172,7 +180,7 @@ describe('GET /api/workbench/serve/:token/*', () => {
       { kind: 'serve', cwd: root },
       Date.now() - WORKBENCH.SIGNED_URL_TTL_MS - 1000
     );
-    const res = await request(app).get(`/api/workbench/serve/${expired}/index.html`);
+    const res = await request(testServer).get(`/api/workbench/serve/${expired}/index.html`);
     expect(res.status).toBe(401);
     expect(res.body.code).toBe('EXPIRED');
   });
@@ -190,21 +198,21 @@ describe('GET /api/workbench/serve/:token/*', () => {
     const sigHead = token[dot + 1];
     const forged = `${token.slice(0, dot + 1)}${sigHead === 'A' ? 'B' : 'A'}${token.slice(dot + 2)}`;
     expect(forged).not.toBe(token);
-    const res = await request(app).get(`/api/workbench/serve/${forged}/index.html`);
+    const res = await request(testServer).get(`/api/workbench/serve/${forged}/index.html`);
     expect(res.status).toBe(403);
   });
 
   it('rejects a path escape (../) out of the cwd even with a valid token (403)', async () => {
     // Encode the traversal so it survives URL routing and lands in the splat.
     const escape = encodeURIComponent(`../${path.basename(outside)}/secret.txt`);
-    const res = await request(app).get(`/api/workbench/serve/${validToken()}/${escape}`);
+    const res = await request(testServer).get(`/api/workbench/serve/${validToken()}/${escape}`);
     expect(res.status).toBe(403);
     expect(res.text).not.toContain('TOP SECRET');
   });
 
   it('rejects a proxy-scoped token on the serve route (403 wrong scope)', async () => {
     const proxyToken = workbenchTokenSigner.mint({ kind: 'proxy', port: 5173 });
-    const res = await request(app).get(`/api/workbench/serve/${proxyToken}/index.html`);
+    const res = await request(testServer).get(`/api/workbench/serve/${proxyToken}/index.html`);
     expect(res.status).toBe(403);
   });
 });
@@ -213,7 +221,7 @@ describe('GET /api/workbench/serve — DevTools shim injection (DOR-213)', () =>
   const validToken = () => workbenchTokenSigner.mint({ kind: 'serve', cwd: root });
 
   it('injects the shim as the first <head> child of an HTML file, with a recomputed Content-Length', async () => {
-    const res = await request(app).get(`/api/workbench/serve/${validToken()}/page.html`);
+    const res = await request(testServer).get(`/api/workbench/serve/${validToken()}/page.html`);
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('text/html');
     expect(res.text).toMatch(/<head><script>/);
@@ -224,7 +232,7 @@ describe('GET /api/workbench/serve — DevTools shim injection (DOR-213)', () =>
   });
 
   it('leaves a non-HTML asset byte-for-byte unchanged (no shim, no length change)', async () => {
-    const res = await request(app).get(`/api/workbench/serve/${validToken()}/style.css`);
+    const res = await request(testServer).get(`/api/workbench/serve/${validToken()}/style.css`);
     expect(res.status).toBe(200);
     expect(res.text).toBe('body{color:red}');
     expect(res.text).not.toContain('__dorkosDevtools');
@@ -253,7 +261,7 @@ describe('POST /api/workbench/sign — dev-server preview', () => {
   });
 
   it('answers with a preview origin on the host the caller reached, not the API port', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/workbench/sign')
       // Not `localhost`, so a hardcoded hostname would show up here. (A LAN or
       // Tailscale name would too, but the app's host guard rejects those before
@@ -271,10 +279,10 @@ describe('POST /api/workbench/sign — dev-server preview', () => {
   });
 
   it('reuses one listener for one dev server', async () => {
-    const first = await request(app)
+    const first = await request(testServer)
       .post('/api/workbench/sign')
       .send({ kind: 'proxy', port: upstreamPort });
-    const second = await request(app)
+    const second = await request(testServer)
       .post('/api/workbench/sign')
       .send({ kind: 'proxy', port: upstreamPort });
 
@@ -284,7 +292,7 @@ describe('POST /api/workbench/sign — dev-server preview', () => {
   it('says previews are unavailable through a tunnel instead of naming an unreachable port', async () => {
     tunnelManager.status.url = 'https://demo.ngrok.app';
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/workbench/sign')
       .set('Host', 'demo.ngrok.app')
       .send({ kind: 'proxy', port: upstreamPort });
@@ -298,7 +306,7 @@ describe('POST /api/workbench/sign — dev-server preview', () => {
       new PreviewPortExhaustedError({ from: 4243, to: 4243 })
     );
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/workbench/sign')
       .send({ kind: 'proxy', port: upstreamPort });
 

@@ -90,10 +90,12 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 describe('cold-discovery routes with a non-Claude default runtime', () => {
   beforeEach(() => {
@@ -101,25 +103,25 @@ describe('cold-discovery routes with a non-Claude default runtime', () => {
   });
 
   it('GET /api/models returns the default runtime own catalog', async () => {
-    const res = await request(app).get('/api/models');
+    const res = await request(testServer).get('/api/models');
     expect(res.status).toBe(200);
     expect(res.body.models).toEqual(openCodeModels);
   });
 
   it('GET /api/commands returns the default runtime own commands', async () => {
-    const res = await request(app).get('/api/commands');
+    const res = await request(testServer).get('/api/commands');
     expect(res.status).toBe(200);
     expect(res.body).toEqual(openCodeCommands);
   });
 
   it('GET /api/subagents returns the default runtime own subagents', async () => {
-    const res = await request(app).get('/api/subagents');
+    const res = await request(testServer).get('/api/subagents');
     expect(res.status).toBe(200);
     expect(res.body.subagents).toEqual(openCodeSubagents);
   });
 
   it('GET /api/mcp-config reports no servers instead of reading Claude .mcp.json', async () => {
-    const res = await request(app).get('/api/mcp-config?path=/projects/demo');
+    const res = await request(testServer).get('/api/mcp-config?path=/projects/demo');
     expect(res.status).toBe(200);
     expect(res.body.servers).toEqual([]);
     // The load-bearing half: `.mcp.json` is a Claude Code artifact. Reading it
@@ -128,7 +130,7 @@ describe('cold-discovery routes with a non-Claude default runtime', () => {
   });
 
   it('GET /api/capabilities reports the non-Claude default', async () => {
-    const res = await request(app).get('/api/capabilities');
+    const res = await request(testServer).get('/api/capabilities');
     expect(res.status).toBe(200);
     expect(res.body.defaultRuntime).toBe('opencode');
   });

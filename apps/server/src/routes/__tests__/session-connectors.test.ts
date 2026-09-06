@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type { ConnectedAccount } from '@dorkos/shared/connector-provider';
@@ -11,6 +12,9 @@ import {
   SessionConnectorAttachmentStore,
 } from '../../services/connectors/attachment-store.js';
 import { createSessionConnectorsRouter } from '../session-connectors.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** Connect one account on a fake provider and persist its routing binding. */
 async function connectAndRecord(
@@ -53,7 +57,9 @@ describe('session-connectors router', () => {
 
   it('POST attaches an account and re-shows the custody disclosure', async () => {
     const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
-    const res = await request(buildApp()).post(`/api/sessions/s1/connectors/${account.id}`);
+    const res = await request(fixtureTarget.mount(buildApp())).post(
+      `/api/sessions/s1/connectors/${account.id}`
+    );
 
     expect(res.status).toBe(200);
     expect(res.body.account.exposed).toBe(true);
@@ -64,7 +70,9 @@ describe('session-connectors router', () => {
   });
 
   it('POST returns 404 for an unknown account id', async () => {
-    const res = await request(buildApp()).post('/api/sessions/s1/connectors/does-not-exist');
+    const res = await request(fixtureTarget.mount(buildApp())).post(
+      '/api/sessions/s1/connectors/does-not-exist'
+    );
     expect(res.status).toBe(404);
     expect(res.body.error).toContain('does-not-exist');
   });
@@ -75,10 +83,10 @@ describe('session-connectors router', () => {
     provider.setStatus(expired.id, 'expired');
 
     const app = buildApp();
-    await request(app).post(`/api/sessions/s1/connectors/${active.id}`);
-    await request(app).post(`/api/sessions/s1/connectors/${expired.id}`);
+    await request(fixtureTarget.mount(app)).post(`/api/sessions/s1/connectors/${active.id}`);
+    await request(fixtureServer).post(`/api/sessions/s1/connectors/${expired.id}`);
 
-    const res = await request(app).get('/api/sessions/s1/connectors');
+    const res = await request(fixtureServer).get('/api/sessions/s1/connectors');
     expect(res.status).toBe(200);
     expect(res.body.accounts).toHaveLength(2);
     expect(res.body.warnings.map((w: { accountId: string }) => w.accountId)).toEqual([expired.id]);
@@ -87,21 +95,23 @@ describe('session-connectors router', () => {
   it('DELETE detaches an account and is idempotent', async () => {
     const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
     const app = buildApp();
-    await request(app).post(`/api/sessions/s1/connectors/${account.id}`);
+    await request(fixtureTarget.mount(app)).post(`/api/sessions/s1/connectors/${account.id}`);
     expect(Object.keys(service.mcpServersForSession('s1').servers)).toEqual(['gmail-personal']);
 
-    const del = await request(app).delete(`/api/sessions/s1/connectors/${account.id}`);
+    const del = await request(fixtureServer).delete(`/api/sessions/s1/connectors/${account.id}`);
     expect(del.status).toBe(204);
     expect(service.mcpServersForSession('s1').servers).toEqual({});
 
     // Detaching again still resolves 204.
-    const again = await request(app).delete(`/api/sessions/s1/connectors/${account.id}`);
+    const again = await request(fixtureServer).delete(`/api/sessions/s1/connectors/${account.id}`);
     expect(again.status).toBe(204);
   });
 
   it('never exposes McpAppServerConnection details to the client', async () => {
     const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
-    const res = await request(buildApp()).post(`/api/sessions/s1/connectors/${account.id}`);
+    const res = await request(fixtureTarget.mount(buildApp())).post(
+      `/api/sessions/s1/connectors/${account.id}`
+    );
     // The response carries only account metadata + disclosure — no url/command/env.
     const body = JSON.stringify(res.body);
     expect(body).not.toContain('fake.mcp');

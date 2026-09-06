@@ -12,7 +12,9 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import type { Server } from 'node:http';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { DisplayNameSource } from '@dorkos/shared/config-schema';
 import { user, eq, type Db } from '@dorkos/db';
@@ -31,6 +33,7 @@ const inertStore: AvatarStore = {
 };
 
 describe('PATCH /api/profile', () => {
+  const target = swappableServer();
   let db: Db;
   let registry: AuthorRegistry;
   let ownerAuthor: AuthorRecord;
@@ -83,7 +86,7 @@ describe('PATCH /api/profile', () => {
         defaultAgentName: () => null,
       })
     );
-    return server;
+    return target.mount(server);
   }
 
   function storedAccountName(): string | null {
@@ -94,7 +97,7 @@ describe('PATCH /api/profile', () => {
   }
 
   /** What the roster would show for the person reading it. */
-  async function rosterSelfName(server: express.Express): Promise<string> {
+  async function rosterSelfName(server: Server): Promise<string> {
     const res = await request(server).get('/api/team');
     expect(res.status).toBe(200);
     return res.body.members.find((m: { isSelf: boolean }) => m.isSelf).displayName;
@@ -104,9 +107,7 @@ describe('PATCH /api/profile', () => {
    * Whether the roster would draw a "Suggested by …" note under that name, and
    * whose (DOR-1022). `undefined` is the payload saying "no note".
    */
-  async function rosterSelfSuggestedBy(
-    server: express.Express
-  ): Promise<string | null | undefined> {
+  async function rosterSelfSuggestedBy(server: Server): Promise<string | null | undefined> {
     const res = await request(server).get('/api/team');
     expect(res.status).toBe(200);
     return res.body.members.find((m: { isSelf: boolean }) => m.isSelf).person?.nameSuggestedBy;
@@ -127,7 +128,7 @@ describe('PATCH /api/profile', () => {
    * mutated, because `bindOwner` is one-way — and this is the install shape
    * most people actually run, so it gets a real fixture rather than a flag.
    */
-  function stageLoginOff(): express.Express {
+  function stageLoginOff(): Server {
     db = createTestDb();
     registry = new AuthorRegistry(db);
     ownerAuthor = registry.localHuman();

@@ -7,11 +7,15 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import type { Server } from 'node:http';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createRelayRouter } from '../relay.js';
 import type { RelayCore } from '@dorkos/relay';
 import { AdapterError, type AdapterManager } from '../../services/relay/adapter-manager.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
+
+const target = swappableServer();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -124,7 +128,7 @@ function createMockAdapterManager(overrides?: Partial<AdapterManager>): AdapterM
   } as unknown as AdapterManager;
 }
 
-function createTestApp(adapterManager?: AdapterManager, traceStore?: unknown): express.Application {
+function createTestApp(adapterManager?: AdapterManager, traceStore?: unknown): Server {
   const app = express();
   app.use(express.json());
   app.use(
@@ -140,7 +144,7 @@ function createTestApp(adapterManager?: AdapterManager, traceStore?: unknown): e
       res.status(500).json({ error: err.message });
     }
   );
-  return app;
+  return target.mount(app);
 }
 
 // ---------------------------------------------------------------------------
@@ -148,7 +152,7 @@ function createTestApp(adapterManager?: AdapterManager, traceStore?: unknown): e
 // ---------------------------------------------------------------------------
 
 describe('Binding CRUD roundtrip', () => {
-  let app: express.Application;
+  let app: Server;
   let bindingStore: ReturnType<typeof createStatefulBindingStore>;
 
   beforeEach(() => {
@@ -313,7 +317,7 @@ describe('Binding CRUD roundtrip', () => {
 // ---------------------------------------------------------------------------
 
 describe('Binding bridge field — wildcard bindings cannot be bridged (A3.5)', () => {
-  let app: express.Application;
+  let app: Server;
   let bindingStore: ReturnType<typeof createStatefulBindingStore>;
 
   beforeEach(() => {
@@ -427,7 +431,7 @@ describe('Binding bridge field — wildcard bindings cannot be bridged (A3.5)', 
 // ---------------------------------------------------------------------------
 
 describe('Binding CRUD broadcasts a freshness signal', () => {
-  let app: express.Application;
+  let app: Server;
   let bindingStore: ReturnType<typeof createStatefulBindingStore>;
   let broadcastSpy: ReturnType<typeof vi.spyOn>;
 

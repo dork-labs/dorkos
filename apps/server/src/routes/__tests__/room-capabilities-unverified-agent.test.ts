@@ -56,7 +56,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request, { type Response, type Test } from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 vi.mock('../../env.js', () => ({
   env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined },
@@ -137,6 +138,8 @@ import {
   type RoomHarness,
 } from '../../services/rooms/__tests__/room-test-harness.js';
 
+const fixtureTarget = swappableServer();
+
 /** A token shaped like the real thing that resolves to NO agent at all. */
 const UNVERIFIABLE = 'dork_agent_this-token-resolves-to-nothing';
 
@@ -173,7 +176,7 @@ function toolCall(name: string, args: Record<string, unknown>): Record<string, u
 }
 
 /** Read one JSON-RPC message back, whichever way the transport chose to send it. */
-function jsonRpc(res: request.Response): {
+function jsonRpc(res: Response): {
   result?: { isError?: boolean; content?: Array<{ text?: string }> };
 } {
   const contentType = (res.headers['content-type'] as string) ?? '';
@@ -185,7 +188,7 @@ function jsonRpc(res: request.Response): {
 }
 
 /** The payload a capability refusal carries back through the MCP envelope. */
-function mcpErrorPayload(res: request.Response): { code?: string; error?: string } {
+function mcpErrorPayload(res: Response): { code?: string; error?: string } {
   const body = jsonRpc(res);
   expect(body.result?.isError).toBe(true);
   return JSON.parse(body.result!.content![0]!.text!);
@@ -206,7 +209,7 @@ function mcpErrorPayload(res: request.Response): { code?: string; error?: string
  * @param res - The transport response.
  * @returns The refusal text, for the caller to make its own claims about.
  */
-function refusalText(res: request.Response): string {
+function refusalText(res: Response): string {
   const body = jsonRpc(res);
   const text = body.result?.content?.[0]?.text ?? '';
   // Parsed, not substring-matched: the denial payload is pretty-printed, so
@@ -300,7 +303,7 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
     }
 
     it.each(DEAD_TOKEN_STATES)('refuses rooms.post for a %s token', async (state) => {
-      const refused = await request(app())
+      const refused = await request(fixtureTarget.mount(app()))
         .post('/api/capabilities/rooms.post/invoke')
         .set('X-DorkOS-Agent', await deadToken(state))
         .send({ roomId, text: 'as you, apparently' });
@@ -323,7 +326,7 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
     it('posts as the operator with no header at all, which is the control', () => {
       // The header is the ONLY difference. Without this the refusals above would
       // also pass for a route that was simply broken.
-      return request(app())
+      return request(fixtureTarget.mount(app()))
         .post('/api/capabilities/rooms.post/invoke')
         .send({ roomId, text: 'from the keyboard' })
         .expect(200)
@@ -338,7 +341,7 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
       async (state) => {
         // `observe` returns allowed before any other check runs, so the ONLY
         // thing between this caller and the operator's rooms is `callerAuthor`.
-        const refused = await request(app())
+        const refused = await request(fixtureTarget.mount(app()))
           .post('/api/capabilities/rooms.read_history/invoke')
           .set('X-DorkOS-Agent', await deadToken(state))
           .send({ roomId, limit: 5 });
@@ -353,7 +356,7 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
     it('still lets a token that resolves act as its own agent', async () => {
       const token = await anaToken();
 
-      const res = await request(app())
+      const res = await request(fixtureTarget.mount(app()))
         .post('/api/capabilities/rooms.post/invoke')
         .set('X-DorkOS-Agent', token)
         .send({ roomId, text: 'on it' });
@@ -389,12 +392,11 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
     /**
      * Post one JSON-RPC message with the headers the transport insists on.
      *
-     * `token` is set BEFORE the body, because supertest dispatches on the first
-     * `.send()` of a chain — a `.set()` written after it never reaches the wire,
-     * which is exactly how this test first passed against the unfixed code.
+     * `token` is set before the body so the identity is complete before awaiting
+     * the chain; awaiting, `.then()`, or `.end()` dispatches it.
      */
-    function rpc(body: Record<string, unknown>, token?: string): request.Test {
-      const req = request(app())
+    function rpc(body: Record<string, unknown>, token?: string): Test {
+      const req = request(fixtureTarget.mount(app()))
         .post('/mcp')
         .set('Content-Type', 'application/json')
         .set('Accept', 'application/json, text/event-stream');
@@ -605,8 +607,8 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
     }
 
     /** Post one JSON-RPC message, headers before body (see the note above). */
-    function rpc(body: Record<string, unknown>, token?: string): request.Test {
-      const req = request(app())
+    function rpc(body: Record<string, unknown>, token?: string): Test {
+      const req = request(fixtureTarget.mount(app()))
         .post('/mcp')
         .set('Content-Type', 'application/json')
         .set('Accept', 'application/json, text/event-stream');
@@ -615,7 +617,7 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
     }
 
     /** The gate's structured payload, read out of the MCP envelope. */
-    function refusalPayload(res: request.Response): Record<string, unknown> {
+    function refusalPayload(res: Response): Record<string, unknown> {
       const body = jsonRpc(res);
       // NOT `isError`. A refusal is a step in a protocol, not a crash, and the
       // model has to read the sentence rather than treat it as a tool failure.
@@ -783,7 +785,7 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
       grantIs(undefined);
       const token = await anaToken();
 
-      const res = await request(app())
+      const res = await request(fixtureTarget.mount(app()))
         .post('/api/capabilities/grantprobe.run/invoke')
         .set('X-DorkOS-Agent', token)
         .send({});
@@ -800,7 +802,7 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
       grantIs(true);
       const token = await anaToken();
 
-      const res = await request(app())
+      const res = await request(fixtureTarget.mount(app()))
         .post('/api/capabilities/grantprobe.run/invoke')
         .set('X-DorkOS-Agent', token)
         .send({});

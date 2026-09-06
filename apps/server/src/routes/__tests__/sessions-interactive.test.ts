@@ -61,10 +61,12 @@ vi.mock('../../lib/boundary.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 /** Valid UUID for session ID params (routes validate UUID format). */
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
@@ -78,7 +80,7 @@ describe('POST /api/sessions/:id/submit-answers', () => {
   it('returns 200 when pending question exists', async () => {
     fakeRuntime.submitAnswers.mockReturnValue(true);
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/submit-answers`)
       .send({ toolCallId: 'tc-1', answers: { '0': 'Option A' } });
 
@@ -100,7 +102,7 @@ describe('POST /api/sessions/:id/submit-answers', () => {
     fakeRuntime.submitAnswers.mockReturnValue(false);
     fakeRuntime.hasSession.mockReturnValue(false);
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/submit-answers`)
       .send({ toolCallId: 'tc-1', answers: { '0': 'Option A' } });
 
@@ -112,7 +114,7 @@ describe('POST /api/sessions/:id/submit-answers', () => {
     fakeRuntime.submitAnswers.mockReturnValue(false);
     fakeRuntime.hasSession.mockReturnValue(true);
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/submit-answers`)
       .send({ toolCallId: 'tc-1', answers: { '0': 'Option A' } });
 
@@ -122,7 +124,7 @@ describe('POST /api/sessions/:id/submit-answers', () => {
   });
 
   it('returns 400 when toolCallId is missing', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/submit-answers`)
       .send({ answers: { '0': 'Option A' } });
 
@@ -131,7 +133,7 @@ describe('POST /api/sessions/:id/submit-answers', () => {
   });
 
   it('returns 400 when answers is missing', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/submit-answers`)
       .send({ toolCallId: 'tc-1' });
 
@@ -144,7 +146,7 @@ describe('POST /api/sessions/:id/approve', () => {
   it('returns 200 when pending approval exists', async () => {
     fakeRuntime.approveTool.mockReturnValue(true);
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .send({ toolCallId: 'tc-1' });
 
@@ -159,7 +161,7 @@ describe('POST /api/sessions/:id/approve', () => {
     fakeRuntime.approveTool.mockReturnValue(false);
     fakeRuntime.hasSession.mockReturnValue(false);
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .send({ toolCallId: 'tc-1' });
 
@@ -171,7 +173,7 @@ describe('POST /api/sessions/:id/approve', () => {
     fakeRuntime.approveTool.mockReturnValue(false);
     fakeRuntime.hasSession.mockReturnValue(true);
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .send({ toolCallId: 'tc-1' });
 
@@ -185,7 +187,7 @@ describe('POST /api/sessions/:id/deny', () => {
   it('returns 200 when pending approval exists', async () => {
     fakeRuntime.approveTool.mockReturnValue(true);
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/deny`)
       .send({ toolCallId: 'tc-1' });
 
@@ -216,13 +218,13 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
     fakeRuntime.hasSession.mockReturnValue(true);
     fakeRuntime.approveTool.mockReturnValueOnce(true).mockReturnValue(false);
 
-    const first = await request(app)
+    const first = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .send({ toolCallId: 'tc-1' });
     expect(first.status).toBe(200);
     expect(first.body).toEqual({ ok: true });
 
-    const second = await request(app)
+    const second = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .send({ toolCallId: 'tc-1' });
     expect(second.status).toBe(409);
@@ -248,13 +250,13 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
     // call finds the entry already gone and returns false.
     fakeRuntime.approveTool.mockReturnValueOnce(true).mockReturnValue(false);
 
-    const denied = await request(app)
+    const denied = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/deny`)
       .send({ toolCallId: 'tc-1' });
     expect(denied.status).toBe(200);
     expect(denied.body).toEqual({ ok: true });
 
-    const staleApprove = await request(app)
+    const staleApprove = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .send({ toolCallId: 'tc-1' });
     expect(staleApprove.status).toBe(409);
@@ -279,7 +281,7 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
     fakeRuntime.approveTool.mockReturnValue(false);
     fakeRuntime.hasSession.mockReturnValue(false);
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .send({ toolCallId: 'tc-1' });
 
@@ -296,12 +298,12 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
     fakeRuntime.hasSession.mockReturnValue(true);
     fakeRuntime.submitAnswers.mockReturnValueOnce(true).mockReturnValue(false);
 
-    const first = await request(app)
+    const first = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/submit-answers`)
       .send({ toolCallId: 'tc-1', answers: { '0': 'Option A' } });
     expect(first.status).toBe(200);
 
-    const second = await request(app)
+    const second = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/submit-answers`)
       .send({ toolCallId: 'tc-1', answers: { '0': 'Option A' } });
     expect(second.status).toBe(409);
@@ -316,12 +318,12 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
     fakeRuntime.hasSession.mockReturnValue(true);
     fakeRuntime.submitElicitation.mockReturnValueOnce(true).mockReturnValue(false);
 
-    const first = await request(app)
+    const first = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/submit-elicitation`)
       .send({ interactionId: 'el-1', action: 'accept', content: { apiKey: 'x' } });
     expect(first.status).toBe(200);
 
-    const second = await request(app)
+    const second = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/submit-elicitation`)
       .send({ interactionId: 'el-1', action: 'accept', content: { apiKey: 'x' } });
     expect(second.status).toBe(409);
@@ -340,7 +342,7 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
     fakeRuntime.approveTool.mockReturnValue(false);
     fakeRuntime.hasSession.mockReturnValue(false);
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/deny`)
       .send({ toolCallId: 'tc-1' });
 
@@ -358,7 +360,7 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
     fakeRuntime.submitElicitation.mockReturnValue(false);
     fakeRuntime.hasSession.mockReturnValue(false);
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/submit-elicitation`)
       .send({ interactionId: 'el-1', action: 'accept', content: { apiKey: 'x' } });
 

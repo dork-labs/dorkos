@@ -23,12 +23,16 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
@@ -91,6 +95,8 @@ describe('a standing Full-autonomy default, end to end', () => {
     });
     app.use('/api/config', configRouter);
     app.use('/api/sessions', sessionsRouter);
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -110,7 +116,7 @@ describe('a standing Full-autonomy default, end to end', () => {
   it('births a bypassed session, and the session door lets that session through', async () => {
     // 1. Settings, in one write: the consent record and the new default. This is
     //    exactly what the confirmation dialog sends.
-    await request(app)
+    await request(fixtureServer)
       .patch('/api/config')
       .send({
         ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
@@ -132,7 +138,7 @@ describe('a standing Full-autonomy default, end to end', () => {
     //    on ordinary journeys — coming out of Plan is the common one — and
     //    without a standing record every one of them would 428 on a session that
     //    was ALREADY running in autonomy.
-    const patched = await request(app)
+    const patched = await request(fixtureServer)
       .patch(`/api/sessions/${SESSION_ID}`)
       .send({ permissionMode: autonomyModeId() });
     expect(patched.status).toBe(200);
@@ -142,7 +148,7 @@ describe('a standing Full-autonomy default, end to end', () => {
     // The same config, the unattended path — a room turn, a scheduled run, a
     // relay binding. They keep the runtime's own default however the cockpit's
     // default is set.
-    await request(app)
+    await request(fixtureServer)
       .patch('/api/config')
       .send({
         ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
@@ -160,7 +166,7 @@ describe('a standing Full-autonomy default, end to end', () => {
   });
 
   it('refuses the default until the acknowledgement exists, and seeds nothing meanwhile', async () => {
-    const refused = await request(app)
+    const refused = await request(fixtureServer)
       .patch('/api/config')
       .send({ runtimes: { defaultTrustStop: 'autonomy' } });
     expect(refused.status).toBe(428);
@@ -175,7 +181,7 @@ describe('a standing Full-autonomy default, end to end', () => {
     expect(settings?.permissionMode).toBeUndefined();
 
     // And the session door is exactly where it was: still asking.
-    const patched = await request(app)
+    const patched = await request(fixtureServer)
       .patch(`/api/sessions/${SESSION_ID}`)
       .send({ permissionMode: autonomyModeId() });
     expect(patched.status).toBe(428);
@@ -188,7 +194,7 @@ describe('a standing Full-autonomy default, end to end', () => {
     // one of them bounced off the session door — the person running without
     // asking, unable to change it back without a dialog they thought they had
     // just re-armed.
-    await request(app)
+    await request(fixtureServer)
       .patch('/api/config')
       .send({
         ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
@@ -196,7 +202,7 @@ describe('a standing Full-autonomy default, end to end', () => {
       })
       .expect(200);
 
-    await request(app)
+    await request(fixtureServer)
       .patch('/api/config')
       .send({ ui: { autonomyAcknowledgedAt: null } })
       .expect(200);
@@ -211,14 +217,14 @@ describe('a standing Full-autonomy default, end to end', () => {
     expect(settings?.permissionMode).toBeUndefined();
 
     // And the door asks again, which is what Reset promised.
-    const patched = await request(app)
+    const patched = await request(fixtureServer)
       .patch(`/api/sessions/${SESSION_ID}`)
       .send({ permissionMode: autonomyModeId() });
     expect(patched.status).toBe(428);
   });
 
   it('starts a new session at a gentler configured stop with no ritual at all', async () => {
-    await request(app)
+    await request(fixtureServer)
       .patch('/api/config')
       .send({ runtimes: { defaultTrustStop: 'act' } })
       .expect(200);
@@ -272,7 +278,7 @@ describe('a standing Full-autonomy default, end to end', () => {
       // what wrote it? — has three possible answers now that `dorkos config set`
       // and the `config_patch` tool write the same line through the same step.
       const lines = await infoLines(() =>
-        request(app)
+        request(fixtureServer)
           .patch('/api/config')
           .send({ runtimes: { claudeCode: { defaultTrustStop: 'act' } } })
           .expect(200)
@@ -288,7 +294,7 @@ describe('a standing Full-autonomy default, end to end', () => {
       // default with it, in the same write. Those leaves are the ones nobody
       // asked to change, so they are the ones most worth having in the log —
       // and reading the WRITE rather than the request is what catches them.
-      await request(app)
+      await request(fixtureServer)
         .patch('/api/config')
         .send({
           ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
@@ -297,7 +303,7 @@ describe('a standing Full-autonomy default, end to end', () => {
         .expect(200);
 
       const lines = await infoLines(() =>
-        request(app)
+        request(fixtureServer)
           .patch('/api/config')
           .send({ ui: { autonomyAcknowledgedAt: null } })
           .expect(200)
@@ -313,7 +319,7 @@ describe('a standing Full-autonomy default, end to end', () => {
       // issues. `mcp.apiKey` is declared sensitive by the schema, and the write
       // is allowed; what must never happen is the key landing in the log.
       const lines = await infoLines(() =>
-        request(app)
+        request(fixtureServer)
           .patch('/api/config')
           .send({ mcp: { apiKey: 'sk-do-not-log-me-4242' } })
           .expect(200)
@@ -327,14 +333,16 @@ describe('a standing Full-autonomy default, end to end', () => {
       // An empty body, and a body that re-sends what is already stored. The
       // second is the one that matters: a client refreshing its whole section
       // must not fill the log with writes that never happened.
-      await request(app)
+      await request(fixtureServer)
         .patch('/api/config')
         .send({ ui: { theme: 'dark' } })
         .expect(200);
 
-      const empty = await infoLines(() => request(app).patch('/api/config').send({}).expect(200));
+      const empty = await infoLines(() =>
+        request(fixtureServer).patch('/api/config').send({}).expect(200)
+      );
       const unchanged = await infoLines(() =>
-        request(app)
+        request(fixtureServer)
           .patch('/api/config')
           .send({ ui: { theme: 'dark' } })
           .expect(200)
@@ -349,7 +357,7 @@ describe('a standing Full-autonomy default, end to end', () => {
       // A line reporting it would send the next investigation after a setting
       // that does not exist.
       const lines = await infoLines(() =>
-        request(app)
+        request(fixtureServer)
           .patch('/api/config')
           .send({ ui: { totallyMadeUpKey: 'x' } })
           .expect(200)
@@ -368,7 +376,7 @@ describe('a standing Full-autonomy default, end to end', () => {
         'proj\n[info] [Config] Patched by PATCH /api/config: runtimes.claudeCode.defaultTrustStop';
 
       const lines = await infoLines(() =>
-        request(app)
+        request(fixtureServer)
           .patch('/api/config')
           .send({ ui: { shapes: { agentDefaults: { [forged]: 'shapeA' } } } })
           .expect(200)

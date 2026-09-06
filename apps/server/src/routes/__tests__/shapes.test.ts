@@ -11,7 +11,8 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { Logger } from '@dorkos/shared/logger';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { ApplyShapeDeps } from '../../services/shapes/apply-shape.js';
@@ -25,6 +26,9 @@ import {
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { composeCapabilityRegistryForDocs } from '../../services/core/self-description/dorkos-registry.js';
 import { APPLY_SHAPE_ACTION, createShapesRouter } from '../shapes.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 // Local login off — the DEFAULT posture, and therefore the one the gate has to be
 // right in. `resolveDecisionAuthority` reads this to decide whether a caller with
@@ -147,7 +151,7 @@ describe('shapes router', () => {
 
   it('GET /api/shapes lists installed Shapes with the active flag', async () => {
     const { app } = await buildApp('linear-ops');
-    const res = await request(app).get('/api/shapes');
+    const res = await request(fixtureTarget.mount(app)).get('/api/shapes');
     expect(res.status).toBe(200);
     expect(res.body.shapes).toHaveLength(1);
     expect(res.body.shapes[0]).toMatchObject({
@@ -159,7 +163,9 @@ describe('shapes router', () => {
 
   it('POST /api/shapes/:name/apply returns the §5 contract (applied chrome + warnings + offers)', async () => {
     const { app, setActiveShape } = await buildApp();
-    const res = await request(app).post('/api/shapes/linear-ops/apply').send({});
+    const res = await request(fixtureTarget.mount(app))
+      .post('/api/shapes/linear-ops/apply')
+      .send({});
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
     expect(res.body.applied.layout.sidebarTab).toBe('overview');
@@ -175,14 +181,16 @@ describe('shapes router', () => {
 
   it('POST /api/shapes/:name/apply returns 404 when the Shape is not installed', async () => {
     const { app } = await buildApp();
-    const res = await request(app).post('/api/shapes/ghost/apply').send({});
+    const res = await request(fixtureTarget.mount(app)).post('/api/shapes/ghost/apply').send({});
     expect(res.status).toBe(404);
     expect(res.body.error).toBe("Shape 'ghost' is not installed");
   });
 
   it('POST /api/shapes/:name/fork clones with lineage (201)', async () => {
     const { app, dorkHome } = await buildApp();
-    const res = await request(app).post('/api/shapes/linear-ops/fork').send({ as: 'my-ops' });
+    const res = await request(fixtureTarget.mount(app))
+      .post('/api/shapes/linear-ops/fork')
+      .send({ as: 'my-ops' });
     expect(res.status).toBe(201);
     expect(res.body.name).toBe('my-ops');
     expect(res.body.forkedFrom).toBe('linear-ops@local');
@@ -193,7 +201,7 @@ describe('shapes router', () => {
     // The switcher's capture reaches the service over HTTP: the fields it
     // reports land in the fork, and the ones it omits keep the source's values.
     const { app } = await buildApp('linear-ops');
-    const res = await request(app)
+    const res = await request(fixtureTarget.mount(app))
       .post('/api/shapes/linear-ops/fork')
       .send({
         as: 'my-ops',
@@ -212,7 +220,7 @@ describe('shapes router', () => {
 
   it('POST /api/shapes/:name/fork rejects a malformed liveLayout with 400', async () => {
     const { app } = await buildApp('linear-ops');
-    const res = await request(app)
+    const res = await request(fixtureTarget.mount(app))
       .post('/api/shapes/linear-ops/fork')
       .send({ captureCurrent: true, liveLayout: { openPanels: ['not-a-panel'] } });
 
@@ -221,14 +229,16 @@ describe('shapes router', () => {
 
   it('POST /api/shapes/:name/fork returns 404 for a missing source Shape', async () => {
     const { app } = await buildApp();
-    const res = await request(app).post('/api/shapes/ghost/fork').send({});
+    const res = await request(fixtureTarget.mount(app)).post('/api/shapes/ghost/fork').send({});
     expect(res.status).toBe(404);
   });
 
   it('POST /api/shapes/:name/fork returns 409 when the target name is taken', async () => {
     const { app, dorkHome } = await buildApp();
     await installShapeOnDisk(dorkHome, 'taken');
-    const res = await request(app).post('/api/shapes/linear-ops/fork').send({ as: 'taken' });
+    const res = await request(fixtureTarget.mount(app))
+      .post('/api/shapes/linear-ops/fork')
+      .send({ as: 'taken' });
     expect(res.status).toBe(409);
   });
 
@@ -236,7 +246,9 @@ describe('shapes router', () => {
     // A bad name in the request BODY is a client error (400), not a conflict
     // (409) with an existing Shape.
     const { app } = await buildApp();
-    const res = await request(app).post('/api/shapes/linear-ops/fork').send({ as: 'Not A Slug!' });
+    const res = await request(fixtureTarget.mount(app))
+      .post('/api/shapes/linear-ops/fork')
+      .send({ as: 'Not A Slug!' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/kebab-case slug/);
   });
@@ -254,7 +266,9 @@ describe('shapes router', () => {
       ['a name past the 64-character cap', 'a'.repeat(65)],
     ])('answers 400 for %s', async (_label, as) => {
       const { app } = await buildApp();
-      const res = await request(app).post('/api/shapes/linear-ops/fork').send({ as });
+      const res = await request(fixtureTarget.mount(app))
+        .post('/api/shapes/linear-ops/fork')
+        .send({ as });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/^Forked manifest failed validation:/);
@@ -264,7 +278,9 @@ describe('shapes router', () => {
       // The re-validate runs BEFORE the install transaction stages anything, so
       // a refused fork is zero-residue — `linear-ops` is still the only Shape.
       const { app, dorkHome } = await buildApp();
-      await request(app).post('/api/shapes/linear-ops/fork').send({ as: 'my--ops' });
+      await request(fixtureTarget.mount(app))
+        .post('/api/shapes/linear-ops/fork')
+        .send({ as: 'my--ops' });
 
       expect(await readdir(path.join(dorkHome, 'shapes'))).toEqual(['linear-ops']);
     });
@@ -278,7 +294,9 @@ describe('shapes router', () => {
     // OUTSIDE shapes/ and returned 201.)
     it('POST /api/shapes/:name/apply rejects a traversal name with 400', async () => {
       const { app } = await buildApp();
-      const res = await request(app).post('/api/shapes/..%2F..%2Fsecret/apply').send({});
+      const res = await request(fixtureTarget.mount(app))
+        .post('/api/shapes/..%2F..%2Fsecret/apply')
+        .send({});
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/kebab-case slug/);
     });
@@ -293,7 +311,9 @@ describe('shapes router', () => {
       // `{dorkHome}/shapes/../../secret` — for a temp dorkHome at <parent>/<home>,
       // two levels up from shapes/ is <parent>; target dorkHome/secret via one
       // level: shapes/../secret. Use the one-level form the exploit used.
-      const res = await request(app).post('/api/shapes/..%2Fsecret/fork').send({});
+      const res = await request(fixtureTarget.mount(app))
+        .post('/api/shapes/..%2Fsecret/fork')
+        .send({});
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/kebab-case slug/);
 
@@ -304,9 +324,11 @@ describe('shapes router', () => {
 
     it('still 404s for a well-formed but absent name (semantics preserved)', async () => {
       const { app } = await buildApp();
-      const applyRes = await request(app).post('/api/shapes/ghost/apply').send({});
+      const applyRes = await request(fixtureTarget.mount(app))
+        .post('/api/shapes/ghost/apply')
+        .send({});
       expect(applyRes.status).toBe(404);
-      const forkRes = await request(app).post('/api/shapes/ghost/fork').send({});
+      const forkRes = await request(fixtureServer).post('/api/shapes/ghost/fork').send({});
       expect(forkRes.status).toBe(404);
     });
   });
@@ -346,7 +368,7 @@ describe('shapes router', () => {
     it('asks a person first when an agent applies a Shape, and nothing is scheduled', async () => {
       const { app, setActiveShape, createSchedule } = await buildApp();
 
-      const res = await request(app)
+      const res = await request(fixtureTarget.mount(app))
         .post('/api/shapes/linear-ops/apply')
         .set('x-dorkos-agent', 'dork_agent_token')
         .send({});
@@ -366,7 +388,7 @@ describe('shapes router', () => {
     it('applies once a person grants the approval and the caller retries', async () => {
       const { app, createSchedule } = await buildApp();
 
-      const asked = await request(app)
+      const asked = await request(fixtureTarget.mount(app))
         .post('/api/shapes/linear-ops/apply')
         .set('x-dorkos-agent', 'dork_agent_token')
         .send({});
@@ -374,7 +396,7 @@ describe('shapes router', () => {
 
       approvals.grant(asked.body.approvalId as string);
 
-      const done = await request(app)
+      const done = await request(fixtureServer)
         .post('/api/shapes/linear-ops/apply')
         .set('x-dorkos-agent', 'dork_agent_token')
         .set('x-dorkos-approval', asked.body.approvalToken as string)
@@ -389,7 +411,9 @@ describe('shapes router', () => {
       // No agent header and no approval token: `resolveDecisionAuthority` calls
       // this the operator, so the gate is skipped and the click just works.
       const { app, setActiveShape } = await buildApp();
-      const res = await request(app).post('/api/shapes/linear-ops/apply').send({});
+      const res = await request(fixtureTarget.mount(app))
+        .post('/api/shapes/linear-ops/apply')
+        .send({});
       expect(res.status).toBe(200);
       expect(setActiveShape).toHaveBeenCalledWith('linear-ops');
     });
@@ -438,7 +462,7 @@ describe('shapes router', () => {
       // the effect anyway would turn a wiring mistake into unattended cron jobs.
       resetCapabilityTierGate();
       const { app, createSchedule } = await buildApp();
-      const res = await request(app)
+      const res = await request(fixtureTarget.mount(app))
         .post('/api/shapes/linear-ops/apply')
         .set('x-dorkos-agent', 'dork_agent_token')
         .send({});

@@ -57,7 +57,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
@@ -65,6 +66,7 @@ import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
 
 /** The id DorkOS minted, which the runtime has since retired. */
 const RETIRED_ID = '11111111-1111-4111-8111-111111111111';
@@ -148,13 +150,13 @@ describe('permissionMode parity between GET /api/sessions and GET /api/sessions/
    * @returns The list rows, for follow-up assertions about membership.
    */
   async function expectListDetailParity(): Promise<Session[]> {
-    const listRes = await request(app).get('/api/sessions');
+    const listRes = await request(testServer).get('/api/sessions');
     expect(listRes.status).toBe(200);
     const rows = listRes.body.sessions as Session[];
     expect(rows.length, 'nothing listed — the sweep would be vacuous').toBeGreaterThan(0);
 
     for (const row of rows) {
-      const detailRes = await request(app).get(`/api/sessions/${row.id}`);
+      const detailRes = await request(testServer).get(`/api/sessions/${row.id}`);
       expect(detailRes.status, `detail for listed id ${row.id}`).toBe(200);
       expect(
         detailRes.body.id,
@@ -195,7 +197,7 @@ describe('permissionMode parity between GET /api/sessions and GET /api/sessions/
     expect(rows.map((r) => r.id)).toEqual([PLAIN_ID]);
     // The retired id remains reachable by id, resolving to its successor — that
     // continuity is why it must not also appear as its own row.
-    const detail = await request(app).get(`/api/sessions/${RETIRED_ID}`);
+    const detail = await request(testServer).get(`/api/sessions/${RETIRED_ID}`);
     expect(detail.body.id).toBe(CANONICAL_ID);
   });
 
@@ -204,7 +206,7 @@ describe('permissionMode parity between GET /api/sessions and GET /api/sessions/
     withAlias();
     runtime.listSessions.mockResolvedValue([makeSession(CANONICAL_ID)]);
 
-    const patch = await request(app)
+    const patch = await request(testServer)
       .patch(`/api/sessions/${RETIRED_ID}`)
       .send({ permissionMode: 'plan' });
     expect(patch.status).toBe(200);
@@ -226,7 +228,7 @@ describe('permissionMode parity between GET /api/sessions and GET /api/sessions/
     // re-key. Here the fake stands in for the adapter — the real wiring is
     // covered by `session-settings-rekey.test.ts`.
     runtime.listSessions.mockResolvedValue([makeSession(RETIRED_ID)]);
-    await request(app).patch(`/api/sessions/${RETIRED_ID}`).send({ permissionMode: 'plan' });
+    await request(testServer).patch(`/api/sessions/${RETIRED_ID}`).send({ permissionMode: 'plan' });
     await Promise.all(pendingWrites);
 
     // Before the alias exists the session is listed under its own id, and the
@@ -244,17 +246,19 @@ describe('permissionMode parity between GET /api/sessions and GET /api/sessions/
     // runtime-derived modes ('default' for the retired id, 'bypassPermissions'
     // for the canonical one) — so neither answer can be coming from the
     // transcript.
-    const retiredRead = await request(app).get(`/api/sessions/${RETIRED_ID}`);
+    const retiredRead = await request(testServer).get(`/api/sessions/${RETIRED_ID}`);
     expect(retiredRead.body.id).toBe(CANONICAL_ID);
     expect(retiredRead.body.permissionMode).toBe('plan');
-    const canonicalRead = await request(app).get(`/api/sessions/${CANONICAL_ID}`);
+    const canonicalRead = await request(testServer).get(`/api/sessions/${CANONICAL_ID}`);
     expect(canonicalRead.body.permissionMode).toBe('plan');
   });
 
   it('agrees with no aliasing at all (the ordinary session)', async () => {
     runtime.listSessions.mockResolvedValue([makeSession(PLAIN_ID)]);
 
-    await request(app).patch(`/api/sessions/${PLAIN_ID}`).send({ permissionMode: 'acceptEdits' });
+    await request(testServer)
+      .patch(`/api/sessions/${PLAIN_ID}`)
+      .send({ permissionMode: 'acceptEdits' });
     await Promise.all(pendingWrites);
 
     const rows = await expectListDetailParity();
@@ -268,7 +272,7 @@ describe('permissionMode parity between GET /api/sessions and GET /api/sessions/
       makeSession(CANONICAL_ID),
       makeSession(PLAIN_ID),
     ]);
-    await request(app).patch(`/api/sessions/${PLAIN_ID}`).send({ permissionMode: 'plan' });
+    await request(testServer).patch(`/api/sessions/${PLAIN_ID}`).send({ permissionMode: 'plan' });
     await Promise.all(pendingWrites);
 
     const rows = await expectListDetailParity();
@@ -282,13 +286,13 @@ describe('permissionMode parity between GET /api/sessions and GET /api/sessions/
     withAlias();
     runtime.listSessions.mockResolvedValue([makeSession(CANONICAL_ID)]);
 
-    await request(app)
+    await request(testServer)
       .patch(`/api/sessions/${RETIRED_ID}`)
       .send({ permissionMode: 'plan', model: 'chosen-model', effort: 'high', fastMode: true });
     await Promise.all(pendingWrites);
 
-    const listRes = await request(app).get('/api/sessions');
-    const detailRes = await request(app).get(`/api/sessions/${CANONICAL_ID}`);
+    const listRes = await request(testServer).get('/api/sessions');
+    const detailRes = await request(testServer).get(`/api/sessions/${CANONICAL_ID}`);
     const row = (listRes.body.sessions as Session[])[0]!;
 
     for (const field of ['permissionMode', 'model', 'effort', 'fastMode'] as const) {

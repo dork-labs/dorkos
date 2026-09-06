@@ -13,7 +13,9 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import type { Server } from 'node:http';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
   ApprovalGrantService,
@@ -42,9 +44,10 @@ const AGENT_IDENTITY = {
 };
 
 describe('approvals routes', () => {
+  const target = swappableServer();
   let approvals: ApprovalService;
   let grants: ApprovalGrantService;
-  let app: express.Express;
+  let app: Server;
   let emitted: { eventType: string; metadata?: Record<string, unknown> | null }[];
 
   /**
@@ -61,7 +64,7 @@ describe('approvals routes', () => {
       /** Whether the operator switched standing permissions on. Off by default. */
       standingGrants?: boolean;
     } = {}
-  ): express.Express {
+  ): Server {
     const built = express();
     built.use(express.json());
     built.use((_req, res, next) => {
@@ -87,7 +90,7 @@ describe('approvals routes', () => {
           id === 'marketplace.uninstall' ? { title: 'Uninstall a marketplace package' } : undefined,
       })
     );
-    return built;
+    return target.mount(built);
   }
 
   beforeEach(() => {

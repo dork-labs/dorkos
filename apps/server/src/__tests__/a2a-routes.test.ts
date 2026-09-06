@@ -6,10 +6,14 @@
 // fails these tests with confusing module-resolution or assertion errors.
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { createA2aRouter } from '../routes/a2a.js';
 import { buildA2aRateLimiters } from '../middleware/a2a-rate-limit.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -164,7 +168,7 @@ describe('A2A Express routes', () => {
     it('serves the fleet card at the A2A spec well-known path', async () => {
       const { app } = buildTestApp([AGENT_ALPHA]);
 
-      const res = await request(app).get('/.well-known/agent-card.json');
+      const res = await request(fixtureTarget.mount(app)).get('/.well-known/agent-card.json');
 
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toMatch(/json/);
@@ -176,7 +180,7 @@ describe('A2A Express routes', () => {
     it('returns 200 with valid JSON', async () => {
       const { app } = buildTestApp([AGENT_ALPHA]);
 
-      const res = await request(app).get('/.well-known/agent.json');
+      const res = await request(fixtureTarget.mount(app)).get('/.well-known/agent.json');
 
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toMatch(/json/);
@@ -185,7 +189,7 @@ describe('A2A Express routes', () => {
     it('returns a card with required A2A fields', async () => {
       const { app } = buildTestApp([AGENT_ALPHA]);
 
-      const res = await request(app).get('/.well-known/agent.json');
+      const res = await request(fixtureTarget.mount(app)).get('/.well-known/agent.json');
       const card = res.body;
 
       expect(card.name).toBe('DorkOS Agent Fleet');
@@ -218,7 +222,7 @@ describe('A2A Express routes', () => {
     it('populates skills from registered agents', async () => {
       const { app } = buildTestApp([AGENT_ALPHA, AGENT_BETA]);
 
-      const res = await request(app).get('/.well-known/agent.json');
+      const res = await request(fixtureTarget.mount(app)).get('/.well-known/agent.json');
       const { skills } = res.body;
 
       expect(skills).toHaveLength(2);
@@ -238,7 +242,7 @@ describe('A2A Express routes', () => {
     it('returns empty skills array when no agents are registered', async () => {
       const { app } = buildTestApp([]);
 
-      const res = await request(app).get('/.well-known/agent.json');
+      const res = await request(fixtureTarget.mount(app)).get('/.well-known/agent.json');
       const card = res.body;
 
       // A2A v1.0 serializes cards as protobuf JSON, which omits empty repeated
@@ -253,21 +257,21 @@ describe('A2A Express routes', () => {
       const { app, meshCore } = buildTestApp(agents);
 
       // First request: one agent
-      const res1 = await request(app).get('/.well-known/agent.json');
+      const res1 = await request(fixtureTarget.mount(app)).get('/.well-known/agent.json');
       expect(res1.body.skills).toHaveLength(1);
 
       // Simulate agent registration by updating the mock
       meshCore.list.mockReturnValue([AGENT_ALPHA, AGENT_BETA]);
 
       // Second request: two agents
-      const res2 = await request(app).get('/.well-known/agent.json');
+      const res2 = await request(fixtureServer).get('/.well-known/agent.json');
       expect(res2.body.skills).toHaveLength(2);
     });
 
     it('describes the http/bearer scheme without a requirement in pass-through mode', async () => {
       const { app } = buildTestApp([AGENT_ALPHA]);
 
-      const res = await request(app).get('/.well-known/agent.json');
+      const res = await request(fixtureTarget.mount(app)).get('/.well-known/agent.json');
       const card = res.body;
 
       expect(card.securitySchemes?.bearerAuth?.httpAuthSecurityScheme).toMatchObject({
@@ -279,7 +283,7 @@ describe('A2A Express routes', () => {
     it('advertises a bearer security requirement when auth is enforced', async () => {
       const { app } = buildTestApp([AGENT_ALPHA], { authRequired: true });
 
-      const res = await request(app).get('/.well-known/agent.json');
+      const res = await request(fixtureTarget.mount(app)).get('/.well-known/agent.json');
       const card = res.body;
 
       expect(card.securitySchemes?.bearerAuth?.httpAuthSecurityScheme).toMatchObject({
@@ -297,7 +301,7 @@ describe('A2A Express routes', () => {
     it('returns 200 with a valid agent card for a known agent', async () => {
       const { app } = buildTestApp([AGENT_ALPHA, AGENT_BETA]);
 
-      const res = await request(app).get(`/a2a/agents/${AGENT_ALPHA.id}/card`);
+      const res = await request(fixtureTarget.mount(app)).get(`/a2a/agents/${AGENT_ALPHA.id}/card`);
 
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toMatch(/json/);
@@ -306,7 +310,7 @@ describe('A2A Express routes', () => {
     it('returns agent-specific name and description', async () => {
       const { app } = buildTestApp([AGENT_ALPHA]);
 
-      const res = await request(app).get(`/a2a/agents/${AGENT_ALPHA.id}/card`);
+      const res = await request(fixtureTarget.mount(app)).get(`/a2a/agents/${AGENT_ALPHA.id}/card`);
       const card = res.body;
 
       expect(card.name).toBe('alpha-agent');
@@ -316,7 +320,7 @@ describe('A2A Express routes', () => {
     it('maps agent capabilities to skills', async () => {
       const { app } = buildTestApp([AGENT_ALPHA]);
 
-      const res = await request(app).get(`/a2a/agents/${AGENT_ALPHA.id}/card`);
+      const res = await request(fixtureTarget.mount(app)).get(`/a2a/agents/${AGENT_ALPHA.id}/card`);
       const { skills } = res.body;
 
       expect(skills).toHaveLength(2);
@@ -335,7 +339,7 @@ describe('A2A Express routes', () => {
     it('returns 404 for an unknown agent ID', async () => {
       const { app } = buildTestApp([AGENT_ALPHA]);
 
-      const res = await request(app).get('/a2a/agents/nonexistent-id/card');
+      const res = await request(fixtureTarget.mount(app)).get('/a2a/agents/nonexistent-id/card');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Agent not found');
@@ -344,7 +348,7 @@ describe('A2A Express routes', () => {
     it('includes protocol metadata on per-agent card', async () => {
       const { app } = buildTestApp([AGENT_ALPHA]);
 
-      const res = await request(app).get(`/a2a/agents/${AGENT_ALPHA.id}/card`);
+      const res = await request(fixtureTarget.mount(app)).get(`/a2a/agents/${AGENT_ALPHA.id}/card`);
       const card = res.body;
 
       // Per-agent card advertises the agent's own JSON-RPC endpoint (F5), at
@@ -372,7 +376,7 @@ describe('A2A Express routes', () => {
       });
       const { app } = buildTestApp([noCaps]);
 
-      const res = await request(app).get(`/a2a/agents/${noCaps.id}/card`);
+      const res = await request(fixtureTarget.mount(app)).get(`/a2a/agents/${noCaps.id}/card`);
 
       expect(res.status).toBe(200);
       // Omitted, not `[]` — protobuf JSON drops empty repeated fields.
@@ -382,7 +386,7 @@ describe('A2A Express routes', () => {
     it('falls back to generated description when agent description is empty', async () => {
       const { app } = buildTestApp([AGENT_BETA]);
 
-      const res = await request(app).get(`/a2a/agents/${AGENT_BETA.id}/card`);
+      const res = await request(fixtureTarget.mount(app)).get(`/a2a/agents/${AGENT_BETA.id}/card`);
 
       expect(res.body.description).toBe('DorkOS agent: beta-agent');
     });
@@ -396,12 +400,15 @@ describe('A2A Express routes', () => {
     it('returns JSON-RPC error for unknown method', async () => {
       const { app } = buildTestApp([AGENT_ALPHA]);
 
-      const res = await request(app).post('/a2a').set('Content-Type', 'application/json').send({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'invalid/method',
-        params: {},
-      });
+      const res = await request(fixtureTarget.mount(app))
+        .post('/a2a')
+        .set('Content-Type', 'application/json')
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'invalid/method',
+          params: {},
+        });
 
       expect(res.status).toBe(200);
       expect(res.body.jsonrpc).toBe('2.0');
@@ -412,7 +419,7 @@ describe('A2A Express routes', () => {
     it('returns JSON-RPC response for tasks/get with nonexistent task', async () => {
       const { app } = buildTestApp([AGENT_ALPHA]);
 
-      const res = await request(app)
+      const res = await request(fixtureTarget.mount(app))
         .post('/a2a')
         .set('Content-Type', 'application/json')
         .send({
@@ -431,7 +438,7 @@ describe('A2A Express routes', () => {
     it('rejects a message with no metadata.agentId with an actionable error (never guesses)', async () => {
       const { app, relay } = buildTestApp([AGENT_ALPHA]);
 
-      const res = await request(app)
+      const res = await request(fixtureTarget.mount(app))
         .post('/a2a')
         .set('Content-Type', 'application/json')
         .send(messageSend('Hi.'));
@@ -452,7 +459,7 @@ describe('A2A Express routes', () => {
     it('returns a JSON-RPC 404 error for an unknown agent', async () => {
       const { app } = buildTestApp([AGENT_ALPHA]);
 
-      const res = await request(app)
+      const res = await request(fixtureTarget.mount(app))
         .post('/a2a/agents/no-such-agent')
         .set('Content-Type', 'application/json')
         .send(messageSend('Hi.'));
@@ -464,7 +471,7 @@ describe('A2A Express routes', () => {
     it('rejects a metadata.agentId that conflicts with the endpoint agent', async () => {
       const { app } = buildTestApp([AGENT_ALPHA, AGENT_BETA]);
 
-      const res = await request(app)
+      const res = await request(fixtureTarget.mount(app))
         .post(`/a2a/agents/${AGENT_ALPHA.id}`)
         .set('Content-Type', 'application/json')
         .send(messageSend('Hi.', { agentId: AGENT_BETA.id }));
@@ -484,9 +491,9 @@ describe('A2A Express routes', () => {
       const { app } = buildTestApp([AGENT_ALPHA], { cardMaxPerMinute: 2 });
       const path = `/a2a/agents/${AGENT_ALPHA.id}/card`;
 
-      expect((await request(app).get(path)).status).toBe(200);
-      expect((await request(app).get(path)).status).toBe(200);
-      const limited = await request(app).get(path);
+      expect((await request(fixtureTarget.mount(app)).get(path)).status).toBe(200);
+      expect((await request(fixtureServer).get(path)).status).toBe(200);
+      const limited = await request(fixtureServer).get(path);
 
       expect(limited.status).toBe(429);
       expect(limited.body.error.code).toBe(-32029);

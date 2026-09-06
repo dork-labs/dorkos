@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express, { type Request, type Response, type NextFunction } from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 // Hoist mock so it's available to vi.mock factories (which are hoisted)
 const mockTunnelManager = vi.hoisted(() => ({
@@ -30,6 +31,8 @@ vi.mock('../../lib/logger.js', () => ({
 }));
 
 import { validateMcpOrigin } from '../mcp-origin.js';
+
+const fixtureTarget = swappableServer();
 
 /**
  * A request as the middleware reads it: the two headers that decide, and a
@@ -217,7 +220,7 @@ describe('validateMcpOrigin', () => {
       }
 
       it('refuses a rebound Host even when X-Forwarded-Host forges localhost', async () => {
-        const res = await request(mcpApp())
+        const res = await request(fixtureTarget.mount(mcpApp()))
           .post('/mcp')
           .set('Host', 'evil.example')
           .set('X-Forwarded-Host', 'localhost:4242')
@@ -230,7 +233,7 @@ describe('validateMcpOrigin', () => {
       it('lets the real thing through, so the refusal above is about the Host', async () => {
         // The positive control. Without it a middleware that refused everything
         // would satisfy the case above.
-        const res = await request(mcpApp())
+        const res = await request(fixtureTarget.mount(mcpApp()))
           .post('/mcp')
           .set('Host', 'localhost:4242')
           .set('Origin', 'http://localhost:4242');
@@ -239,7 +242,9 @@ describe('validateMcpOrigin', () => {
       });
 
       it('passes a request with no Origin at all, which is every MCP client', async () => {
-        const res = await request(mcpApp()).post('/mcp').set('Host', 'localhost:4242');
+        const res = await request(fixtureTarget.mount(mcpApp()))
+          .post('/mcp')
+          .set('Host', 'localhost:4242');
 
         expect(res.status).toBe(200);
       });

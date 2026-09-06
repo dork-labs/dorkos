@@ -40,7 +40,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { z } from 'zod';
 import { createDb, runMigrations, user, type Db } from '@dorkos/db';
 import { getAuth, initAuth, sessionGate, toNodeHandler } from '../../services/core/auth/index.js';
@@ -61,6 +62,9 @@ import {
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 import { createApprovalsRouter } from '../approvals.js';
 import { env } from '../../env.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 // Emails are assembled from parts so the source never contains a literal address.
 const DOMAIN = 'dork.test';
@@ -155,12 +159,13 @@ describe('an agent holding the API key cannot approve its own work', () => {
     app.use(sessionGate);
     app.use('/api/approvals', createApprovalsRouter(approvals, grants));
 
-    const signUp = await request(app)
+    fixtureTarget.mount(app);
+    const signUp = await request(fixtureServer)
       .post('/api/auth/sign-up/email')
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD, name: 'Owner' });
     expect(signUp.status).toBe(200);
-    const signIn = await request(app)
+    const signIn = await request(fixtureServer)
       .post('/api/auth/sign-in/email')
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
@@ -188,7 +193,7 @@ describe('an agent holding the API key cannot approve its own work', () => {
       setLoginEnabled(true);
       const { approvalId, approvalToken } = await askAsAgent();
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post(`/api/approvals/${approvalId}/grant`)
         .set('Authorization', `Bearer ${apiKey}`)
         .send({});
@@ -211,7 +216,7 @@ describe('an agent holding the API key cannot approve its own work', () => {
       setLoginEnabled(true);
       const { approvalId } = await askAsAgent();
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post(`/api/approvals/${approvalId}/deny`)
         .set('Authorization', `Bearer ${apiKey}`)
         .send({ reason: 'nothing to see here' });
@@ -225,7 +230,7 @@ describe('an agent holding the API key cannot approve its own work', () => {
       setLoginEnabled(true);
       const { approvalId } = await askAsAgent();
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post(`/api/approvals/${approvalId}/grant`)
         .set('Authorization', `Bearer ${apiKey}`)
         .send({});
@@ -242,7 +247,7 @@ describe('an agent holding the API key cannot approve its own work', () => {
       setLoginEnabled(true);
       const { approvalId } = await askAsAgent();
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post(`/api/approvals/${approvalId}/grant`)
         .set('Authorization', `Bearer ${apiKey}`)
         .set(AGENT_IDENTITY_HEADER, 'agent-token')
@@ -257,7 +262,7 @@ describe('an agent holding the API key cannot approve its own work', () => {
       setLoginEnabled(true);
       const { approvalId } = await askAsAgent();
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post(`/api/approvals/${approvalId}/grant`)
         .set('Cookie', cookies)
         .send({});
@@ -276,7 +281,7 @@ describe('an agent holding the API key cannot approve its own work', () => {
       // Require login is what closes it (`decision-authority.ts`).
       const { approvalId } = await askAsAgent();
 
-      const res = await request(app).post(`/api/approvals/${approvalId}/grant`).send({});
+      const res = await request(fixtureServer).post(`/api/approvals/${approvalId}/grant`).send({});
 
       expect(res.status).toBe(200);
       expect(res.body.outcome).toBe('granted');
@@ -286,7 +291,7 @@ describe('an agent holding the API key cannot approve its own work', () => {
     it('still refuses an agent that names itself', async () => {
       const { approvalId } = await askAsAgent();
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post(`/api/approvals/${approvalId}/grant`)
         .set(AGENT_IDENTITY_HEADER, 'agent-token')
         .send({});

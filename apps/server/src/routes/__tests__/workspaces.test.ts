@@ -6,7 +6,8 @@
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import express, { type Express } from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { mkdtemp, rm, mkdir, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -14,6 +15,8 @@ import { execFileSync } from 'node:child_process';
 import workspaceRoutes from '../workspaces.js';
 import { setWorkspaceManager, setWorkspaceRoot } from '../../services/workspace/index.js';
 import type { WorkspaceManager, Workspace } from '@dorkos/shared/workspace';
+
+const fixtureTarget = swappableServer();
 
 function mountWith(manager: Partial<WorkspaceManager>): Express {
   setWorkspaceManager(manager as WorkspaceManager);
@@ -47,14 +50,14 @@ describe('workspaces routes', () => {
     const app = mountWith({
       list: vi.fn().mockResolvedValue([{ ...sampleWorkspace, sessions: [] }]),
     });
-    const res = await request(app).get('/api/workspaces');
+    const res = await request(fixtureTarget.mount(app)).get('/api/workspaces');
     expect(res.status).toBe(200);
     expect(res.body.workspaces).toHaveLength(1);
   });
 
   it('GET /resolve maps a nested path to its workspace', async () => {
     const app = mountWith({ resolveByPath: vi.fn().mockResolvedValue(sampleWorkspace) });
-    const res = await request(app)
+    const res = await request(fixtureTarget.mount(app))
       .get('/api/workspaces/resolve')
       .query({ path: '/root/core/DOR-84/x' });
     expect(res.status).toBe(200);
@@ -69,7 +72,7 @@ describe('workspaces routes', () => {
         dirty: { dirty: true, uncommitted: [], untracked: ['scratch.txt'], unpushed: 0 },
       }),
     });
-    const res = await request(app).delete('/api/workspaces/w1');
+    const res = await request(fixtureTarget.mount(app)).delete('/api/workspaces/w1');
     expect(res.status).toBe(200);
     expect(res.body.removed).toBe(false);
     expect(res.body.blocked).toBe('dirty');
@@ -77,13 +80,13 @@ describe('workspaces routes', () => {
 
   it('DELETE returns 404 when the workspace does not exist', async () => {
     const app = mountWith({ remove: vi.fn().mockResolvedValue({ removed: false }) });
-    const res = await request(app).delete('/api/workspaces/missing');
+    const res = await request(fixtureTarget.mount(app)).delete('/api/workspaces/missing');
     expect(res.status).toBe(404);
   });
 
   it('DELETE returns the result on a clean removal', async () => {
     const app = mountWith({ remove: vi.fn().mockResolvedValue({ removed: true }) });
-    const res = await request(app).delete('/api/workspaces/w1');
+    const res = await request(fixtureTarget.mount(app)).delete('/api/workspaces/w1');
     expect(res.status).toBe(200);
     expect(res.body.removed).toBe(true);
   });
@@ -125,7 +128,7 @@ describe('GET /api/workspaces/scan', () => {
     setWorkspaceRoot(root);
     const app = mountWith({});
 
-    const res = await request(app).get('/api/workspaces/scan');
+    const res = await request(fixtureTarget.mount(app)).get('/api/workspaces/scan');
 
     expect(res.status).toBe(200);
     expect(res.body.root).toBe(root);
@@ -145,7 +148,7 @@ describe('GET /api/workspaces/scan', () => {
     const get = vi.fn().mockResolvedValue(null);
     const app = mountWith({ get });
 
-    const res = await request(app).get('/api/workspaces/scan');
+    const res = await request(fixtureTarget.mount(app)).get('/api/workspaces/scan');
 
     expect(res.status).toBe(200);
     expect(get).not.toHaveBeenCalled();

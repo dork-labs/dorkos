@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import type { Server } from 'node:http';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,11 +32,12 @@ function fakeLifecycle(
 }
 
 describe('unclaimed-chats router', () => {
+  const target = swappableServer();
   let db: Db;
   let tmpDir: string;
   let bindingStore: BindingStore;
   let store: UnclaimedChatStore;
-  let app: express.Application;
+  let app: Server;
 
   beforeEach(async () => {
     db = createDb(':memory:');
@@ -44,9 +47,9 @@ describe('unclaimed-chats router', () => {
     await bindingStore.init();
     store = new UnclaimedChatStore(db);
 
-    app = express();
-    app.use(express.json());
-    app.use(
+    const built = express();
+    built.use(express.json());
+    built.use(
       '/api/relay/unclaimed-chats',
       createUnclaimedChatsRouter({
         store,
@@ -54,6 +57,7 @@ describe('unclaimed-chats router', () => {
         meshCore: { getProjectPath: (id: string) => (id === 'agent-a' ? '/proj/a' : undefined) },
       })
     );
+    app = target.mount(built);
   });
 
   afterEach(async () => {
@@ -191,6 +195,7 @@ describe('unclaimed-chats router', () => {
  * stands on its own, so failure degrades to that and reports why.
  */
 describe('unclaimed-chats router — "Answer in a channel" (DOR-882)', () => {
+  const target = swappableServer();
   let db: Db;
   let tmpDir: string;
   let bindingStore: BindingStore;
@@ -224,7 +229,7 @@ describe('unclaimed-chats router — "Answer in a channel" (DOR-882)', () => {
         ...(lifecycle && { lifecycle }),
       })
     );
-    return app;
+    return target.mount(app);
   }
 
   it('claims, binds, and bridges atomically in one call — the response binding carries the room', async () => {
@@ -383,6 +388,7 @@ describe('unclaimed-chats router — "Answer in a channel" (DOR-882)', () => {
  * reuses to dismiss the card once the platform call succeeds.
  */
 describe('unclaimed-chats router — Leave (DOR-883)', () => {
+  const target = swappableServer();
   let db: Db;
   let tmpDir: string;
   let bindingStore: BindingStore;
@@ -413,7 +419,7 @@ describe('unclaimed-chats router — Leave (DOR-883)', () => {
         ...(leaveChat && { leaveChat }),
       })
     );
-    return app;
+    return target.mount(app);
   }
 
   it('calls the adapter leave, then dismisses the card, writing no binding', async () => {

@@ -10,7 +10,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,6 +20,9 @@ import { createRelayRouter } from '../relay.js';
 import { BindingStore } from '../../services/relay/binding-store.js';
 import { BindingRouter, type RelayCoreLike } from '../../services/relay/binding-router.js';
 import type { AdapterManager } from '../../services/relay/adapter-manager.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 function createMockRelayCore(): RelayCoreLike {
   return {
@@ -61,6 +65,8 @@ describe('POST/PATCH /bindings conflict + POST /bindings/:id/move', () => {
       '/api/relay',
       createRelayRouter(createMockRelayCore() as unknown as RelayCore, adapterManager, undefined)
     );
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(async () => {
@@ -70,12 +76,12 @@ describe('POST/PATCH /bindings conflict + POST /bindings/:id/move', () => {
   });
 
   it('AC2.1: creating a second binding on the same (adapterId, chatId) 409s with the conflicting binding', async () => {
-    const first = await request(app)
+    const first = await request(fixtureServer)
       .post('/api/relay/bindings')
       .send({ adapterId: 'tg-bot', agentId: 'agent-a', chatId: '123' });
     expect(first.status).toBe(201);
 
-    const second = await request(app)
+    const second = await request(fixtureServer)
       .post('/api/relay/bindings')
       .send({ adapterId: 'tg-bot', agentId: 'agent-b', chatId: '123' });
     expect(second.status).toBe(409);
@@ -90,14 +96,14 @@ describe('POST/PATCH /bindings conflict + POST /bindings/:id/move', () => {
   });
 
   it('AC2.2: PATCHing chatId onto a value another binding already owns 409s the same way', async () => {
-    const owner = await request(app)
+    const owner = await request(fixtureServer)
       .post('/api/relay/bindings')
       .send({ adapterId: 'tg-bot', agentId: 'agent-a', chatId: '123' });
-    const other = await request(app)
+    const other = await request(fixtureServer)
       .post('/api/relay/bindings')
       .send({ adapterId: 'tg-bot', agentId: 'agent-b', chatId: '456' });
 
-    const patch = await request(app)
+    const patch = await request(fixtureServer)
       .patch(`/api/relay/bindings/${other.body.binding.id}`)
       .send({ chatId: '123' });
     expect(patch.status).toBe(409);
@@ -105,7 +111,7 @@ describe('POST/PATCH /bindings conflict + POST /bindings/:id/move', () => {
   });
 
   it('AC2.3: move re-points agentId on the SAME binding id and clears its stale sessions', async () => {
-    const created = await request(app)
+    const created = await request(fixtureServer)
       .post('/api/relay/bindings')
       .send({ adapterId: 'tg-bot', agentId: 'agent-a', chatId: '123' });
     const bindingId = created.body.binding.id as string;
@@ -122,7 +128,7 @@ describe('POST/PATCH /bindings conflict + POST /bindings/:id/move', () => {
     });
     expect(bindingRouter.getSessionsByBinding(bindingId)).toHaveLength(1);
 
-    const moved = await request(app)
+    const moved = await request(fixtureServer)
       .post(`/api/relay/bindings/${bindingId}/move`)
       .send({ agentId: 'agent-b' });
     expect(moved.status).toBe(200);
@@ -133,7 +139,7 @@ describe('POST/PATCH /bindings conflict + POST /bindings/:id/move', () => {
   });
 
   it('move on an unknown binding id 404s', async () => {
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post('/api/relay/bindings/does-not-exist/move')
       .send({ agentId: 'agent-b' });
     expect(res.status).toBe(404);

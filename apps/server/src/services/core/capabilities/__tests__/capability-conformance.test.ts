@@ -37,7 +37,8 @@ import { z } from 'zod';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { noopLogger } from '@dorkos/shared/logger';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { capabilityConformance } from '@dorkos/test-utils';
@@ -337,6 +338,7 @@ const DESTRUCTIVE_INPUT = { name: 'nonexistent-conformance-pkg', purge: true };
 const approvalDb = createTestDb();
 const approvalService = new ApprovalService(approvalDb);
 const approvalGrantService = new ApprovalGrantService(approvalDb);
+const requestTarget = swappableServer();
 initCapabilityTierGate({ approvals: approvalService });
 
 /** Read a plain payload back out of an MCP text-content result. */
@@ -374,7 +376,8 @@ function routeProbe(identity?: typeof PROBE_IDENTITY) {
         next();
       });
       app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
-      const res = await request(app)
+      requestTarget.mount(app);
+      const res = await request(requestTarget.server)
         .post(`/api/capabilities/${DESTRUCTIVE_ID}/invoke`)
         .send(DESTRUCTIVE_INPUT);
       expect(res.status).toBe(202);
@@ -449,8 +452,9 @@ const requesterDecideProbe = async () => {
     '/api/approvals',
     createApprovalsRouter(approvalService, approvalGrantService, { isLoginEnabled: () => false })
   );
+  requestTarget.mount(app);
 
-  const asked = await request(app)
+  const asked = await request(requestTarget.server)
     .post(`/api/capabilities/${DESTRUCTIVE_ID}/invoke`)
     .send(DESTRUCTIVE_INPUT);
   expect(asked.status).toBe(202);
@@ -459,7 +463,7 @@ const requesterDecideProbe = async () => {
     approvalToken: string;
   };
 
-  const decided = await request(app)
+  const decided = await request(requestTarget.server)
     .post(`/api/approvals/${approvalId}/grant`)
     .set(APPROVAL_TOKEN_HEADER, approvalToken)
     .send();

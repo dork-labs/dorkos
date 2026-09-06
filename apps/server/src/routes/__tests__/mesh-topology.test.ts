@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import type { Server } from 'node:http';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { WILDCARD_NAMESPACE_BOTH_SIDES_MESSAGE } from '@dorkos/shared/mesh-schemas';
 import { createMeshRouter, type MeshRouterDeps } from '../mesh.js';
 import type { MeshCore } from '@dorkos/mesh';
@@ -68,19 +70,21 @@ function createMockMeshCore() {
 }
 
 describe('Mesh topology routes', () => {
-  let app: express.Application;
+  const target = swappableServer();
+  let app: Server;
   let meshCore: ReturnType<typeof createMockMeshCore>;
 
   beforeEach(() => {
     meshCore = createMockMeshCore();
-    app = express();
-    app.use(express.json());
-    app.use('/api/mesh', createMeshRouter({ meshCore: meshCore as unknown as MeshCore }));
-    app.use(
+    const built = express();
+    built.use(express.json());
+    built.use('/api/mesh', createMeshRouter({ meshCore: meshCore as unknown as MeshCore }));
+    built.use(
       (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
         res.status(500).json({ error: err.message });
       }
     );
+    app = target.mount(built);
   });
 
   // --- GET /topology ---
@@ -336,7 +340,8 @@ describe('Mesh topology routes', () => {
 });
 
 describe('Topology enrichment — Tasks agent linking', () => {
-  let app: express.Application;
+  const target = swappableServer();
+  let app: Server;
   let meshCore: ReturnType<typeof createMockMeshCore>;
 
   const SINGLE_AGENT_TOPOLOGY = {
@@ -354,9 +359,10 @@ describe('Topology enrichment — Tasks agent linking', () => {
       meshCore: meshCore as unknown as MeshCore,
       taskStore,
     };
-    app = express();
-    app.use(express.json());
-    app.use('/api/mesh', createMeshRouter(deps));
+    const built = express();
+    built.use(express.json());
+    built.use('/api/mesh', createMeshRouter(deps));
+    app = target.mount(built);
   }
 
   it('counts tasks linked to the agent by agentId', async () => {
@@ -462,7 +468,8 @@ describe('Topology enrichment — Tasks agent linking', () => {
 // ---------------------------------------------------------------------------
 
 describe('Topology enrichment — relayAdapters excludes sibling agent ULIDs', () => {
-  let app: express.Application;
+  const target = swappableServer();
+  let app: Server;
   let meshCore: ReturnType<typeof createMockMeshCore>;
 
   const NS = 'ns-a';
@@ -494,9 +501,10 @@ describe('Topology enrichment — relayAdapters excludes sibling agent ULIDs', (
         ],
       },
     };
-    app = express();
-    app.use(express.json());
-    app.use('/api/mesh', createMeshRouter(deps));
+    const built = express();
+    built.use(express.json());
+    built.use('/api/mesh', createMeshRouter(deps));
+    app = target.mount(built);
   });
 
   function findAgent(

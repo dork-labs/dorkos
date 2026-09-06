@@ -4,7 +4,8 @@ import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 // Mock boundary validation — default to passthrough (returns path as-is)
 vi.mock('../../lib/boundary.js', () => ({
@@ -45,6 +46,9 @@ import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../
 import { removeDorkDirectory } from '@dorkos/shared/manifest';
 import { logOrphanedInstalls } from '../../services/mesh/orphaned-installs.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** Create a mock MeshCore with vi.fn() stubs for all methods. */
 function createMockMeshCore() {
@@ -115,6 +119,8 @@ describe('Mesh routes', () => {
         res.status(500).json({ error: err.message });
       }
     );
+
+    fixtureTarget.mount(app);
   });
 
   // --- POST /discover ---
@@ -137,7 +143,7 @@ describe('Mesh routes', () => {
         }
       });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/discover')
         .send({ roots: ['/home/user'] });
 
@@ -153,7 +159,7 @@ describe('Mesh routes', () => {
         // yields nothing
       });
 
-      await request(app)
+      await request(fixtureServer)
         .post('/api/mesh/discover')
         .send({ roots: ['/home/user'], maxDepth: 3 });
 
@@ -161,14 +167,14 @@ describe('Mesh routes', () => {
     });
 
     it('returns 400 when roots is missing', async () => {
-      const res = await request(app).post('/api/mesh/discover').send({});
+      const res = await request(fixtureServer).post('/api/mesh/discover').send({});
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
     });
 
     it('returns 400 when roots is empty array', async () => {
-      const res = await request(app).post('/api/mesh/discover').send({ roots: [] });
+      const res = await request(fixtureServer).post('/api/mesh/discover').send({ roots: [] });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -179,7 +185,7 @@ describe('Mesh routes', () => {
         throw new Error('Permission denied');
       });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/discover')
         .send({ roots: ['/root/secret'] });
 
@@ -192,7 +198,7 @@ describe('Mesh routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/discover')
         .send({ roots: ['/etc/passwd'] });
 
@@ -209,7 +215,7 @@ describe('Mesh routes', () => {
           new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
         );
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/discover')
         .send({ roots: ['/home/user/good', '/outside/boundary'] });
 
@@ -225,7 +231,7 @@ describe('Mesh routes', () => {
     it('registers an agent and returns 201', async () => {
       meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
@@ -246,7 +252,7 @@ describe('Mesh routes', () => {
     it('passes approver to registerByPath', async () => {
       meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
 
-      await request(app)
+      await request(fixtureServer)
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
@@ -265,7 +271,7 @@ describe('Mesh routes', () => {
     it('passes a validated scan root through to registerByPath (ADR-0032)', async () => {
       meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
 
-      await request(app)
+      await request(fixtureServer)
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/projects/dorkos/core',
@@ -284,7 +290,7 @@ describe('Mesh routes', () => {
     });
 
     it('returns 400 when the scan root is not an ancestor of the agent path', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/projects/dorkos/core',
@@ -306,7 +312,7 @@ describe('Mesh routes', () => {
           new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
         );
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
@@ -320,7 +326,7 @@ describe('Mesh routes', () => {
     });
 
     it('returns 400 when path is missing', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/agents')
         .send({
           overrides: { name: 'Test', runtime: 'claude-code' },
@@ -331,7 +337,7 @@ describe('Mesh routes', () => {
     });
 
     it('returns 400 when overrides.name is missing', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
@@ -356,14 +362,14 @@ describe('Mesh routes', () => {
       );
       meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
 
-      const res = await request(app).post('/api/mesh/agents').send({ path: dir });
+      const res = await request(fixtureServer).post('/api/mesh/agents').send({ path: dir });
 
       expect(res.status).toBe(201);
       expect(meshCore.registerByPath).toHaveBeenCalled();
     });
 
     it('returns 400 when overrides.runtime is missing', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
@@ -377,7 +383,7 @@ describe('Mesh routes', () => {
     it('returns 422 when registerByPath throws', async () => {
       meshCore.registerByPath.mockRejectedValue(new Error('Duplicate agent'));
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
@@ -394,7 +400,7 @@ describe('Mesh routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/agents')
         .send({
           path: '/etc/shadow',
@@ -419,7 +425,7 @@ describe('Mesh routes', () => {
       setOnAgentCreated(listener);
       meshCore.registerByPath.mockResolvedValue({ ...MOCK_MANIFEST, displayName: 'Testy' });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
@@ -444,7 +450,7 @@ describe('Mesh routes', () => {
       setOnAgentCreated(vi.fn().mockRejectedValue(new Error('team seat exploded')));
       meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
@@ -466,7 +472,7 @@ describe('Mesh routes', () => {
         emit: vi.fn().mockRejectedValue(new Error('activity store is down')),
       };
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
@@ -483,7 +489,7 @@ describe('Mesh routes', () => {
       setOnAgentCreated(listener);
       meshCore.registerByPath.mockRejectedValue(new Error('Duplicate agent'));
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
@@ -501,7 +507,7 @@ describe('Mesh routes', () => {
     it('returns agent list with health', async () => {
       meshCore.listWithHealth.mockReturnValue([MOCK_MANIFEST]);
 
-      const res = await request(app).get('/api/mesh/agents');
+      const res = await request(fixtureServer).get('/api/mesh/agents');
 
       expect(res.status).toBe(200);
       expect(res.body.agents).toHaveLength(1);
@@ -512,7 +518,7 @@ describe('Mesh routes', () => {
     it('passes runtime filter', async () => {
       meshCore.listWithHealth.mockReturnValue([]);
 
-      await request(app).get('/api/mesh/agents?runtime=cursor');
+      await request(fixtureServer).get('/api/mesh/agents?runtime=cursor');
 
       expect(meshCore.listWithHealth).toHaveBeenCalledWith(
         expect.objectContaining({ runtime: 'cursor' })
@@ -522,7 +528,7 @@ describe('Mesh routes', () => {
     it('passes capability filter', async () => {
       meshCore.listWithHealth.mockReturnValue([]);
 
-      await request(app).get('/api/mesh/agents?capability=code');
+      await request(fixtureServer).get('/api/mesh/agents?capability=code');
 
       expect(meshCore.listWithHealth).toHaveBeenCalledWith(
         expect.objectContaining({ capability: 'code' })
@@ -530,7 +536,7 @@ describe('Mesh routes', () => {
     });
 
     it('returns 400 for invalid runtime filter', async () => {
-      const res = await request(app).get('/api/mesh/agents?runtime=invalid-runtime');
+      const res = await request(fixtureServer).get('/api/mesh/agents?runtime=invalid-runtime');
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -543,7 +549,7 @@ describe('Mesh routes', () => {
     it('returns agent when found', async () => {
       meshCore.get.mockReturnValue(MOCK_MANIFEST);
 
-      const res = await request(app).get('/api/mesh/agents/agent-1');
+      const res = await request(fixtureServer).get('/api/mesh/agents/agent-1');
 
       expect(res.status).toBe(200);
       expect(res.body.id).toBe('agent-1');
@@ -554,7 +560,7 @@ describe('Mesh routes', () => {
     it('returns 404 when agent not found', async () => {
       meshCore.get.mockReturnValue(undefined);
 
-      const res = await request(app).get('/api/mesh/agents/nonexistent');
+      const res = await request(fixtureServer).get('/api/mesh/agents/nonexistent');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Agent not found');
@@ -568,7 +574,7 @@ describe('Mesh routes', () => {
       const updated = { ...MOCK_MANIFEST, name: 'Updated Agent' };
       meshCore.update.mockReturnValue(updated);
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ name: 'Updated Agent' });
 
@@ -586,7 +592,9 @@ describe('Mesh routes', () => {
         new ManifestUnreadableError('/agents/ana', 'Unexpected token }')
       );
 
-      const res = await request(app).patch('/api/mesh/agents/agent-1').send({ tierCeiling: 'act' });
+      const res = await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ tierCeiling: 'act' });
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('MANIFEST_UNREADABLE');
@@ -599,7 +607,9 @@ describe('Mesh routes', () => {
       // What `writeManifest` throws when the merge does not satisfy the schema.
       meshCore.update.mockRejectedValue(new Error('Refusing to write invalid agent manifest'));
 
-      const res = await request(app).patch('/api/mesh/agents/agent-1').send({ tierCeiling: 'act' });
+      const res = await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ tierCeiling: 'act' });
 
       // It reaches the error middleware, which is where an unexpected failure
       // belongs — this route no longer relabels it. What the handler chooses to
@@ -623,7 +633,7 @@ describe('Mesh routes', () => {
         enabledToolGroups: { roomsManage: true },
       });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ enabledToolGroups: { roomsManage: true } });
 
@@ -636,7 +646,7 @@ describe('Mesh routes', () => {
     it("carries an agent's model and effort through to the manifest write", async () => {
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'sonnet', effort: 'low' });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ model: 'sonnet', effort: 'low' });
 
@@ -653,7 +663,7 @@ describe('Mesh routes', () => {
       // edits — a refusal here fails for reasons they cannot see or fix.
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'gpt-5.3-codex' });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ model: 'gpt-5.3-codex' });
 
@@ -668,7 +678,7 @@ describe('Mesh routes', () => {
       // `services/core/operator/__tests__/agent-updater.test.ts`.
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, account: 'acme-corp' });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ account: 'acme-corp' });
 
@@ -679,7 +689,9 @@ describe('Mesh routes', () => {
     it('reads a null account as "bill the server default again"', async () => {
       meshCore.update.mockReturnValue(MOCK_MANIFEST);
 
-      const res = await request(app).patch('/api/mesh/agents/agent-1').send({ account: null });
+      const res = await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ account: null });
 
       expect(res.status).toBe(200);
       const patch = meshCore.update.mock.calls[0][1] as Record<string, unknown>;
@@ -690,7 +702,7 @@ describe('Mesh routes', () => {
     it('reads null as "go back to inheriting the server default"', async () => {
       meshCore.update.mockReturnValue(MOCK_MANIFEST);
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ model: null, effort: null });
 
@@ -710,7 +722,7 @@ describe('Mesh routes', () => {
     it('returns 404 when agent not found', async () => {
       meshCore.update.mockReturnValue(undefined);
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch('/api/mesh/agents/nonexistent')
         .send({ name: 'No Agent' });
 
@@ -721,7 +733,7 @@ describe('Mesh routes', () => {
     it('returns 403 when modifying protected fields on a system agent', async () => {
       meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, isSystem: true });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ name: 'Hacked Name', description: 'Hacked Desc' });
 
@@ -735,7 +747,7 @@ describe('Mesh routes', () => {
     it('returns 403 when modifying namespace on a system agent', async () => {
       meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, isSystem: true });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ namespace: 'evil-ns' });
 
@@ -746,7 +758,9 @@ describe('Mesh routes', () => {
     it('returns 403 when modifying isSystem on a system agent', async () => {
       meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, isSystem: true });
 
-      const res = await request(app).patch('/api/mesh/agents/agent-1').send({ isSystem: false });
+      const res = await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ isSystem: false });
 
       expect(res.status).toBe(403);
       expect(res.body.error).toContain('isSystem');
@@ -757,7 +771,7 @@ describe('Mesh routes', () => {
       meshCore.get.mockReturnValue(systemAgent);
       meshCore.update.mockReturnValue({ ...systemAgent, capabilities: ['code', 'review'] });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ capabilities: ['code', 'review'] });
 
@@ -769,7 +783,9 @@ describe('Mesh routes', () => {
       meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, isSystem: false });
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, name: 'New Name' });
 
-      const res = await request(app).patch('/api/mesh/agents/agent-1').send({ name: 'New Name' });
+      const res = await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ name: 'New Name' });
 
       expect(res.status).toBe(200);
       expect(res.body.name).toBe('New Name');
@@ -783,7 +799,7 @@ describe('Mesh routes', () => {
     it('unregisters agent and returns success', async () => {
       meshCore.get.mockReturnValue(MOCK_MANIFEST);
 
-      const res = await request(app).delete('/api/mesh/agents/agent-1');
+      const res = await request(fixtureServer).delete('/api/mesh/agents/agent-1');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -793,7 +809,7 @@ describe('Mesh routes', () => {
     it('returns 404 when agent not found', async () => {
       meshCore.get.mockReturnValue(undefined);
 
-      const res = await request(app).delete('/api/mesh/agents/nonexistent');
+      const res = await request(fixtureServer).delete('/api/mesh/agents/nonexistent');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Agent not found');
@@ -803,7 +819,7 @@ describe('Mesh routes', () => {
       meshCore.get.mockReturnValue(MOCK_MANIFEST);
       meshCore.getProjectPath.mockReturnValue('/home/user/project');
 
-      const res = await request(app).delete('/api/mesh/agents/agent-1');
+      const res = await request(fixtureServer).delete('/api/mesh/agents/agent-1');
 
       expect(res.status).toBe(200);
       expect(logOrphanedInstalls).toHaveBeenCalledWith(
@@ -821,7 +837,7 @@ describe('Mesh routes', () => {
       meshCore.get.mockReturnValue(MOCK_MANIFEST);
       meshCore.getProjectPath.mockReturnValue(undefined);
 
-      await request(app).delete('/api/mesh/agents/agent-1');
+      await request(fixtureServer).delete('/api/mesh/agents/agent-1');
 
       expect(logOrphanedInstalls).not.toHaveBeenCalled();
       expect(meshCore.unregister).toHaveBeenCalledWith('agent-1');
@@ -834,7 +850,7 @@ describe('Mesh routes', () => {
     it('returns 404 when agent not found', async () => {
       meshCore.get.mockReturnValue(undefined);
 
-      const res = await request(app).delete('/api/mesh/agents/nonexistent/data');
+      const res = await request(fixtureServer).delete('/api/mesh/agents/nonexistent/data');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Agent not found');
@@ -845,7 +861,7 @@ describe('Mesh routes', () => {
     it('returns 403 when agent is a system agent', async () => {
       meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, isSystem: true });
 
-      const res = await request(app).delete('/api/mesh/agents/agent-1/data');
+      const res = await request(fixtureServer).delete('/api/mesh/agents/agent-1/data');
 
       expect(res.status).toBe(403);
       expect(res.body.error).toContain('System agents');
@@ -860,7 +876,7 @@ describe('Mesh routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app).delete('/api/mesh/agents/agent-1/data');
+      const res = await request(fixtureServer).delete('/api/mesh/agents/agent-1/data');
 
       expect(res.status).toBe(403);
       expect(res.body.error).toContain('Path outside boundary');
@@ -872,7 +888,7 @@ describe('Mesh routes', () => {
       meshCore.get.mockReturnValue(MOCK_MANIFEST);
       meshCore.getProjectPath.mockReturnValue(undefined);
 
-      const res = await request(app).delete('/api/mesh/agents/agent-1/data');
+      const res = await request(fixtureServer).delete('/api/mesh/agents/agent-1/data');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Agent project path not found');
@@ -884,7 +900,7 @@ describe('Mesh routes', () => {
       meshCore.get.mockReturnValue(MOCK_MANIFEST);
       meshCore.unregister.mockResolvedValue({ manifestKept: true });
 
-      const res = await request(app).delete('/api/mesh/agents/agent-1');
+      const res = await request(fixtureServer).delete('/api/mesh/agents/agent-1');
 
       expect(res.status).toBe(200);
       // The app says so in the toast; without this the second effect is invisible.
@@ -909,7 +925,7 @@ describe('Mesh routes', () => {
       meshCore.get.mockReturnValue(MOCK_MANIFEST);
       meshCore.getProjectPath.mockReturnValue(repo);
 
-      const res = await request(app).delete('/api/mesh/agents/agent-1/data');
+      const res = await request(fixtureServer).delete('/api/mesh/agents/agent-1/data');
 
       expect(res.status).toBe(409);
       expect(res.body.error).toContain('agent.json');
@@ -924,7 +940,7 @@ describe('Mesh routes', () => {
       meshCore.get.mockReturnValue(MOCK_MANIFEST);
       meshCore.getProjectPath.mockReturnValue('/home/user/project');
 
-      const res = await request(app).delete('/api/mesh/agents/agent-1/data');
+      const res = await request(fixtureServer).delete('/api/mesh/agents/agent-1/data');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -938,7 +954,7 @@ describe('Mesh routes', () => {
 
   describe('POST /api/mesh/deny', () => {
     it('denies a path and returns 201', async () => {
-      const res = await request(app).post('/api/mesh/deny').send({
+      const res = await request(fixtureServer).post('/api/mesh/deny').send({
         path: '/home/user/bad-project',
         reason: 'Untrusted source',
         denier: 'admin',
@@ -954,7 +970,7 @@ describe('Mesh routes', () => {
     });
 
     it('denies with only required path field', async () => {
-      const res = await request(app).post('/api/mesh/deny').send({
+      const res = await request(fixtureServer).post('/api/mesh/deny').send({
         path: '/home/user/bad-project',
       });
 
@@ -963,7 +979,7 @@ describe('Mesh routes', () => {
     });
 
     it('returns 400 when path is missing', async () => {
-      const res = await request(app).post('/api/mesh/deny').send({});
+      const res = await request(fixtureServer).post('/api/mesh/deny').send({});
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -972,7 +988,7 @@ describe('Mesh routes', () => {
     it('returns 422 when deny throws', async () => {
       meshCore.deny.mockRejectedValue(new Error('Already denied'));
 
-      const res = await request(app).post('/api/mesh/deny').send({
+      const res = await request(fixtureServer).post('/api/mesh/deny').send({
         path: '/home/user/bad-project',
       });
 
@@ -985,7 +1001,7 @@ describe('Mesh routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app).post('/api/mesh/deny').send({
+      const res = await request(fixtureServer).post('/api/mesh/deny').send({
         path: '/etc/passwd',
       });
 
@@ -1009,7 +1025,7 @@ describe('Mesh routes', () => {
       ];
       meshCore.listDenied.mockReturnValue(denials);
 
-      const res = await request(app).get('/api/mesh/denied');
+      const res = await request(fixtureServer).get('/api/mesh/denied');
 
       expect(res.status).toBe(200);
       expect(res.body.denied).toHaveLength(1);
@@ -1019,7 +1035,7 @@ describe('Mesh routes', () => {
     it('returns empty array when no denials', async () => {
       meshCore.listDenied.mockReturnValue([]);
 
-      const res = await request(app).get('/api/mesh/denied');
+      const res = await request(fixtureServer).get('/api/mesh/denied');
 
       expect(res.status).toBe(200);
       expect(res.body.denied).toEqual([]);
@@ -1032,7 +1048,7 @@ describe('Mesh routes', () => {
     it('clears a denial by encoded path', async () => {
       const encodedPath = encodeURIComponent('/home/user/bad-project');
 
-      const res = await request(app).delete(`/api/mesh/denied/${encodedPath}`);
+      const res = await request(fixtureServer).delete(`/api/mesh/denied/${encodedPath}`);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -1043,7 +1059,7 @@ describe('Mesh routes', () => {
       const path = '/home/user/my project (2)/agent';
       const encodedPath = encodeURIComponent(path);
 
-      const res = await request(app).delete(`/api/mesh/denied/${encodedPath}`);
+      const res = await request(fixtureServer).delete(`/api/mesh/denied/${encodedPath}`);
 
       expect(res.status).toBe(200);
       expect(meshCore.undeny).toHaveBeenCalledWith(path);
@@ -1055,7 +1071,7 @@ describe('Mesh routes', () => {
       );
 
       const encodedPath = encodeURIComponent('/etc/shadow');
-      const res = await request(app).delete(`/api/mesh/denied/${encodedPath}`);
+      const res = await request(fixtureServer).delete(`/api/mesh/denied/${encodedPath}`);
 
       expect(res.status).toBe(403);
       expect(res.body.error).toContain('Path outside boundary');
@@ -1077,7 +1093,7 @@ describe('Mesh routes', () => {
       };
       meshCore.getStatus.mockReturnValue(mockStatus);
 
-      const res = await request(app).get('/api/mesh/status');
+      const res = await request(fixtureServer).get('/api/mesh/status');
 
       expect(res.status).toBe(200);
       expect(res.body.totalAgents).toBe(3);
@@ -1089,7 +1105,7 @@ describe('Mesh routes', () => {
     });
 
     it('returns zero counts when no agents registered', async () => {
-      const res = await request(app).get('/api/mesh/status');
+      const res = await request(fixtureServer).get('/api/mesh/status');
 
       expect(res.status).toBe(200);
       expect(res.body.totalAgents).toBe(0);
@@ -1113,7 +1129,7 @@ describe('Mesh routes', () => {
       };
       meshCore.getAgentHealth.mockReturnValue(mockHealth);
 
-      const res = await request(app).get('/api/mesh/agents/agent-1/health');
+      const res = await request(fixtureServer).get('/api/mesh/agents/agent-1/health');
 
       expect(res.status).toBe(200);
       expect(res.body.agentId).toBe('agent-1');
@@ -1125,7 +1141,7 @@ describe('Mesh routes', () => {
     it('returns 404 for unknown agent', async () => {
       meshCore.getAgentHealth.mockReturnValue(undefined);
 
-      const res = await request(app).get('/api/mesh/agents/nonexistent/health');
+      const res = await request(fixtureServer).get('/api/mesh/agents/nonexistent/health');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Agent not found');
@@ -1148,7 +1164,7 @@ describe('Mesh routes', () => {
       };
       meshCore.getAgentHealth.mockReturnValue(mockHealth);
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/agents/agent-1/heartbeat')
         .send({ event: 'message_sent' });
 
@@ -1170,7 +1186,7 @@ describe('Mesh routes', () => {
       };
       meshCore.getAgentHealth.mockReturnValue(mockHealth);
 
-      const res = await request(app).post('/api/mesh/agents/agent-1/heartbeat').send({});
+      const res = await request(fixtureServer).post('/api/mesh/agents/agent-1/heartbeat').send({});
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -1180,7 +1196,7 @@ describe('Mesh routes', () => {
     it('returns 404 for unknown agent', async () => {
       meshCore.getAgentHealth.mockReturnValue(undefined);
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/mesh/agents/nonexistent/heartbeat')
         .send({ event: 'heartbeat' });
 

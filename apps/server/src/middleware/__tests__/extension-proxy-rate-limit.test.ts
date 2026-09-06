@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 import type { DataProxyConfig } from '@dorkos/extension-api';
 
@@ -9,6 +10,9 @@ import {
   EXTENSION_PROXY_RATE_LIMIT_DEFAULT,
 } from '../extension-proxy-rate-limit.js';
 import { createProxyRouter } from '../../services/extensions/extension-proxy.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** A proxy config pointing at an upstream no test request ever reaches. */
 const PROXY_CONFIG: DataProxyConfig = {
@@ -32,16 +36,16 @@ describe('buildExtensionProxyRateLimiter', () => {
   it('lets requests through up to the limit', async () => {
     const app = appWithLimiter(2);
 
-    expect((await request(app).get('/proxy/thing')).status).toBe(200);
-    expect((await request(app).get('/proxy/thing')).status).toBe(200);
+    expect((await request(fixtureTarget.mount(app)).get('/proxy/thing')).status).toBe(200);
+    expect((await request(fixtureServer).get('/proxy/thing')).status).toBe(200);
   });
 
   it('answers 429 once the limit is spent', async () => {
     const app = appWithLimiter(2);
 
-    await request(app).get('/proxy/thing');
-    await request(app).get('/proxy/thing');
-    const res = await request(app).get('/proxy/thing');
+    await request(fixtureTarget.mount(app)).get('/proxy/thing');
+    await request(fixtureServer).get('/proxy/thing');
+    const res = await request(fixtureServer).get('/proxy/thing');
 
     expect(res.status).toBe(429);
     expect(res.body.code).toBe('PROXY_RATE_LIMITED');
@@ -50,7 +54,7 @@ describe('buildExtensionProxyRateLimiter', () => {
   it('sends the standard RateLimit headers and not the legacy ones', async () => {
     const app = appWithLimiter(2);
 
-    const res = await request(app).get('/proxy/thing');
+    const res = await request(fixtureTarget.mount(app)).get('/proxy/thing');
 
     expect(res.headers['ratelimit-limit']).toBe('2');
     expect(res.headers['x-ratelimit-limit']).toBeUndefined();
@@ -60,15 +64,15 @@ describe('buildExtensionProxyRateLimiter', () => {
     const first = appWithLimiter(1);
     const second = appWithLimiter(1);
 
-    await request(first).get('/proxy/thing');
-    expect((await request(first).get('/proxy/thing')).status).toBe(429);
-    expect((await request(second).get('/proxy/thing')).status).toBe(200);
+    await request(fixtureTarget.mount(first)).get('/proxy/thing');
+    expect((await request(fixtureServer).get('/proxy/thing')).status).toBe(429);
+    expect((await request(fixtureTarget.mount(second)).get('/proxy/thing')).status).toBe(200);
   });
 
   it('defaults to 120 requests per minute', async () => {
     const app = appWithLimiter();
 
-    const res = await request(app).get('/proxy/thing');
+    const res = await request(fixtureTarget.mount(app)).get('/proxy/thing');
 
     expect(res.headers['ratelimit-limit']).toBe('120');
     expect(EXTENSION_PROXY_RATE_LIMIT_DEFAULT).toBe(120);
@@ -83,7 +87,7 @@ describe('wired into the extension proxy router', () => {
     const app = express();
     app.use(createProxyRouter('test-ext', PROXY_CONFIG, '/no/such/dork-home'));
 
-    const res = await request(app).get('/proxy/thing');
+    const res = await request(fixtureTarget.mount(app)).get('/proxy/thing');
 
     expect(res.headers['ratelimit-limit']).toBe('120');
     expect(res.status).not.toBe(429);

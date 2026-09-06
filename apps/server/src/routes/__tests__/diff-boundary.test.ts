@@ -16,12 +16,14 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { initBoundary } from '../../lib/boundary.js';
 import { editBaselineStore } from '../../services/diff/index.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 const SESSION = 'sess-diff-1';
 
 describe('Diff routes — real boundary + symlink escapes', () => {
@@ -45,7 +47,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
 
   it('GET /baseline through a symlinked parent cannot read outside cwd (403)', async () => {
     await fs.writeFile(path.join(outside, 'secret.txt'), 'top secret\n');
-    const res = await request(app)
+    const res = await request(testServer)
       .get('/api/diff/baseline')
       .query({ cwd, path: 'link/secret.txt', sessionId: SESSION });
     expect(res.status).toBe(403);
@@ -53,7 +55,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
   });
 
   it('GET /baseline with a ../ path is rejected (403)', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .get('/api/diff/baseline')
       .query({ cwd, path: '../outside/secret.txt', sessionId: SESSION });
     expect(res.status).toBe(403);
@@ -62,13 +64,13 @@ describe('Diff routes — real boundary + symlink escapes', () => {
 
   it('GET /baseline rejects a null-byte path (400)', async () => {
     const qs = `cwd=${encodeURIComponent(cwd)}&path=a%00b.ts&sessionId=${SESSION}`;
-    const res = await request(app).get(`/api/diff/baseline?${qs}`);
+    const res = await request(testServer).get(`/api/diff/baseline?${qs}`);
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('NULL_BYTE');
   });
 
   it('POST /baseline/advance through a symlinked parent cannot escape cwd (403)', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/diff/baseline/advance')
       .send({ cwd, path: 'link/secret.txt', sessionId: SESSION });
     expect(res.status).toBe(403);
@@ -76,7 +78,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
   });
 
   it('GET /pending rejects a cwd outside the boundary (403)', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .get('/api/diff/pending')
       .query({ cwd: '/etc', sessionId: SESSION });
     expect(res.status).toBe(403);
@@ -84,7 +86,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
 
   it('GET /baseline returns 400 for a directory target (never a 500)', async () => {
     await fs.mkdir(path.join(cwd, 'subdir'));
-    const res = await request(app)
+    const res = await request(testServer)
       .get('/api/diff/baseline')
       .query({ cwd, path: 'subdir', sessionId: SESSION });
     expect(res.status).toBe(400);
@@ -93,7 +95,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
 
   it('GET /baseline returns 415 for a binary file', async () => {
     await fs.writeFile(path.join(cwd, 'logo.bin'), Buffer.from([0x00, 0x01, 0x02, 0x00]));
-    const res = await request(app)
+    const res = await request(testServer)
       .get('/api/diff/baseline')
       .query({ cwd, path: 'logo.bin', sessionId: SESSION });
     expect(res.status).toBe(415);
@@ -102,7 +104,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
 
   it('GET /baseline resolves an empty base for an untracked, unsnapshotted file (control)', async () => {
     await fs.writeFile(path.join(cwd, 'note.txt'), 'hello\nworld\n');
-    const res = await request(app)
+    const res = await request(testServer)
       .get('/api/diff/baseline')
       .query({ cwd, path: 'note.txt', sessionId: SESSION });
     expect(res.status).toBe(200);
@@ -115,7 +117,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
     await fs.writeFile(path.join(cwd, 'app.ts'), 'const a = 1;\n');
     await editBaselineStore.captureFromDisk(SESSION, path.join(cwd, 'app.ts'));
     await fs.writeFile(path.join(cwd, 'app.ts'), 'const a = 2;\n');
-    const res = await request(app)
+    const res = await request(testServer)
       .get('/api/diff/baseline')
       .query({ cwd, path: 'app.ts', sessionId: SESSION });
     expect(res.status).toBe(200);
@@ -130,7 +132,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
 
   it('GET /baseline/raw through a symlinked parent cannot read outside cwd (403)', async () => {
     await fs.writeFile(path.join(outside, 'secret.png'), PNG_V1);
-    const res = await request(app)
+    const res = await request(testServer)
       .get('/api/diff/baseline/raw')
       .query({ cwd, path: 'link/secret.png', sessionId: SESSION });
     expect(res.status).toBe(403);
@@ -138,7 +140,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
   });
 
   it('GET /baseline/raw with a ../ path is rejected (403)', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .get('/api/diff/baseline/raw')
       .query({ cwd, path: '../outside/secret.png', sessionId: SESSION });
     expect(res.status).toBe(403);
@@ -147,7 +149,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
 
   it('GET /baseline/raw rejects a null-byte path (400)', async () => {
     const qs = `cwd=${encodeURIComponent(cwd)}&path=a%00b.png&sessionId=${SESSION}`;
-    const res = await request(app).get(`/api/diff/baseline/raw?${qs}`);
+    const res = await request(testServer).get(`/api/diff/baseline/raw?${qs}`);
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('NULL_BYTE');
   });
@@ -155,7 +157,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
   it('GET /baseline/raw serves ONLY media types (415 for .ts)', async () => {
     await fs.writeFile(path.join(cwd, 'app.ts'), 'code\n');
     await editBaselineStore.captureFromDisk(SESSION, path.join(cwd, 'app.ts'));
-    const res = await request(app)
+    const res = await request(testServer)
       .get('/api/diff/baseline/raw')
       .query({ cwd, path: 'app.ts', sessionId: SESSION });
     expect(res.status).toBe(415);
@@ -164,7 +166,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
 
   it('GET /baseline/raw is 404 when no baseline exists', async () => {
     await fs.writeFile(path.join(cwd, 'logo.png'), PNG_V2);
-    const res = await request(app)
+    const res = await request(testServer)
       .get('/api/diff/baseline/raw')
       .query({ cwd, path: 'logo.png', sessionId: SESSION });
     expect(res.status).toBe(404);
@@ -177,7 +179,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
     await editBaselineStore.captureFromDisk(SESSION, file);
     await fs.writeFile(file, PNG_V2);
 
-    const res = await request(app)
+    const res = await request(testServer)
       .get('/api/diff/baseline/raw')
       .query({ cwd, path: 'logo.png', sessionId: SESSION })
       .buffer(true)
@@ -197,7 +199,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
     const file = path.join(cwd, 'icon.svg');
     await fs.writeFile(file, '<svg xmlns="http://www.w3.org/2000/svg"/>');
     await editBaselineStore.captureFromDisk(SESSION, file);
-    const res = await request(app)
+    const res = await request(testServer)
       .get('/api/diff/baseline/raw')
       .query({ cwd, path: 'icon.svg', sessionId: SESSION });
     expect(res.status).toBe(200);
@@ -206,7 +208,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
 
   it('POST /revert through a symlinked parent cannot write outside cwd (403)', async () => {
     await fs.writeFile(path.join(outside, 'victim.png'), PNG_V2);
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/diff/revert')
       .send({ cwd, path: 'link/victim.png', sessionId: SESSION });
     expect(res.status).toBe(403);
@@ -221,7 +223,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
     await editBaselineStore.captureFromDisk(SESSION, file);
     await fs.writeFile(file, PNG_V2);
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/diff/revert')
       .send({ cwd, path: 'logo.png', sessionId: SESSION });
     expect(res.status).toBe(200);
@@ -231,7 +233,7 @@ describe('Diff routes — real boundary + symlink escapes', () => {
   it('POST /revert is 404 when nothing is restorable (never deletes)', async () => {
     const file = path.join(cwd, 'new.png');
     await fs.writeFile(file, PNG_V2);
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/diff/revert')
       .send({ cwd, path: 'new.png', sessionId: SESSION });
     expect(res.status).toBe(404);

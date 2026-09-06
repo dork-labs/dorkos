@@ -5,7 +5,8 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, authors, type Db } from '@dorkos/db';
 import { MemberRoomsResponseSchema, TeamRosterResponseSchema } from '@dorkos/shared/team-schemas';
@@ -13,6 +14,9 @@ import { AuthorRegistry } from '../../services/rooms/author-registry.js';
 import { RoomStore } from '../../services/rooms/room-store.js';
 import { createTeamRouter, type TeamMeshReader, type TeamRouterDeps } from '../team.js';
 import type { TeamAgentSource } from '../../services/identity/aggregate-team.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 const OWNER_USER_ID = 'user-1';
 
@@ -81,7 +85,7 @@ describe('GET /api/team', () => {
   });
 
   it('serves one roster of people and agents', async () => {
-    const res = await request(app()).get('/api/team');
+    const res = await request(fixtureTarget.mount(app())).get('/api/team');
 
     expect(res.status).toBe(200);
     expect(TeamRosterResponseSchema.safeParse(res.body).success).toBe(true);
@@ -94,7 +98,7 @@ describe('GET /api/team', () => {
   });
 
   it('names the operator and marks their row as the self row', async () => {
-    const res = await request(app()).get('/api/team');
+    const res = await request(fixtureTarget.mount(app())).get('/api/team');
     const self = res.body.members.find((m: { isSelf: boolean }) => m.isSelf);
 
     expect(self.displayName).toBe('Dorian');
@@ -103,14 +107,16 @@ describe('GET /api/team', () => {
 
   it('answers 200 with a warning when the mesh read throws', async () => {
     const res = await request(
-      app({
-        meshCore: {
-          listWithHealth: () => {
-            throw new Error('mesh registry unavailable');
+      fixtureTarget.mount(
+        app({
+          meshCore: {
+            listWithHealth: () => {
+              throw new Error('mesh registry unavailable');
+            },
+            listWithPaths: () => [],
           },
-          listWithPaths: () => [],
-        },
-      })
+        })
+      )
     ).get('/api/team');
 
     expect(res.status).toBe(200);
@@ -119,7 +125,7 @@ describe('GET /api/team', () => {
   });
 
   it('answers 200 with a warning when the mesh never started', async () => {
-    const res = await request(app({ meshCore: undefined })).get('/api/team');
+    const res = await request(fixtureTarget.mount(app({ meshCore: undefined }))).get('/api/team');
 
     expect(res.status).toBe(200);
     expect(res.body.members).toHaveLength(1);
@@ -134,7 +140,9 @@ describe('GET /api/team', () => {
     // no-account install — the `'local'` sentinel, never bound — is covered in
     // `aggregate-team.test.ts` under "a fresh install that has never had an
     // account", where `isSelf` IS true.
-    const res = await request(app({ ownerAccount: () => null })).get('/api/team');
+    const res = await request(fixtureTarget.mount(app({ ownerAccount: () => null }))).get(
+      '/api/team'
+    );
 
     expect(res.status).toBe(200);
     expect(res.body.members[0]?.displayName).toBe('You');
@@ -155,7 +163,9 @@ describe('GET /api/team', () => {
       ['the profile display name', { configDisplayName: boom }, 'config'],
       ['the default-agent setting', { defaultAgentName: boom }, 'config'],
     ])('answers 200 when %s throws', async (_label, override, source) => {
-      const res = await request(app(override as Partial<TeamRouterDeps>)).get('/api/team');
+      const res = await request(fixtureTarget.mount(app(override as Partial<TeamRouterDeps>))).get(
+        '/api/team'
+      );
 
       expect(res.status).toBe(200);
       // The roster is whole: one person plus both agents.
@@ -164,7 +174,7 @@ describe('GET /api/team', () => {
     });
 
     it('still names the operator when only the email lookup throws', async () => {
-      const res = await request(app({ ownerEmail: boom })).get('/api/team');
+      const res = await request(fixtureTarget.mount(app({ ownerEmail: boom }))).get('/api/team');
       // The account read failed as a whole, so the name falls to the next rung
       // rather than to a half-built account object.
       expect(res.body.members.find((m: { isSelf: boolean }) => m.isSelf)).toBeUndefined();
@@ -196,7 +206,7 @@ describe('GET /api/team', () => {
     }
 
     it('puts the project path back on a local agent, and leaves the namespace off', async () => {
-      const res = await request(app()).get('/api/team');
+      const res = await request(fixtureTarget.mount(app())).get('/api/team');
       const ana = res.body.members.find((m: { id: string }) => m.id === ANA.id);
 
       // Joined from `listWithPaths()`, which is the only reader here entitled to
@@ -212,12 +222,14 @@ describe('GET /api/team', () => {
     it('reports the room an agent is mid-turn in, by name', async () => {
       const authorId = mintAnaAuthor();
       const res = await request(
-        app({
-          activeClaims: () => [
-            { roomId: 'room-1', authorId, claimedAt: '2026-08-16T10:00:00.000Z' },
-          ],
-          listRooms: () => [{ id: 'room-1', name: 'team' }],
-        })
+        fixtureTarget.mount(
+          app({
+            activeClaims: () => [
+              { roomId: 'room-1', authorId, claimedAt: '2026-08-16T10:00:00.000Z' },
+            ],
+            listRooms: () => [{ id: 'room-1', name: 'team' }],
+          })
+        )
       ).get('/api/team');
 
       expect(TeamRosterResponseSchema.safeParse(res.body).success).toBe(true);
@@ -229,7 +241,11 @@ describe('GET /api/team', () => {
 
     it('dates an agent from its newest session, keyed on the path it just recovered', async () => {
       const res = await request(
-        app({ sessionActivity: () => Promise.resolve({ [ANA_PATH]: '2026-08-15T09:00:00.000Z' }) })
+        fixtureTarget.mount(
+          app({
+            sessionActivity: () => Promise.resolve({ [ANA_PATH]: '2026-08-15T09:00:00.000Z' }),
+          })
+        )
       ).get('/api/team');
 
       expect(res.body.members.find((m: { id: string }) => m.id === ANA.id).agent.activity).toEqual({
@@ -240,12 +256,14 @@ describe('GET /api/team', () => {
 
     it('answers 200 with a warning when a claim or session read throws', async () => {
       const res = await request(
-        app({
-          activeClaims: () => {
-            throw new Error('dispatcher unavailable');
-          },
-          sessionActivity: () => Promise.reject(new Error('runtime unavailable')),
-        })
+        fixtureTarget.mount(
+          app({
+            activeClaims: () => {
+              throw new Error('dispatcher unavailable');
+            },
+            sessionActivity: () => Promise.reject(new Error('runtime unavailable')),
+          })
+        )
       ).get('/api/team');
 
       expect(res.status).toBe(200);
@@ -270,7 +288,7 @@ describe('GET /api/team', () => {
         displayName: 'Priya',
       });
       const before = Date.now();
-      const res = await request(app()).get('/api/team');
+      const res = await request(fixtureTarget.mount(app())).get('/api/team');
 
       const self = res.body.members.find((m: { isSelf: boolean }) => m.isSelf);
       expect(Date.parse(self.person.lastSeenAt)).toBeGreaterThanOrEqual(before - 1000);
@@ -283,9 +301,11 @@ describe('GET /api/team', () => {
 
   it('has no write path', async () => {
     const server = app();
-    expect((await request(server).post('/api/team').send({ id: 'x' })).status).toBe(404);
-    expect((await request(server).patch('/api/team/x').send({})).status).toBe(404);
-    expect((await request(server).delete('/api/team/x')).status).toBe(404);
+    expect(
+      (await request(fixtureTarget.mount(server)).post('/api/team').send({ id: 'x' })).status
+    ).toBe(404);
+    expect((await request(fixtureServer).patch('/api/team/x').send({})).status).toBe(404);
+    expect((await request(fixtureServer).delete('/api/team/x')).status).toBe(404);
   });
 });
 
@@ -361,7 +381,7 @@ describe('GET /api/team/:memberId/rooms', () => {
   });
 
   it('lists the rooms a person is in', async () => {
-    const res = await request(app()).get(`/api/team/${ownerAuthorId}/rooms`);
+    const res = await request(fixtureTarget.mount(app())).get(`/api/team/${ownerAuthorId}/rooms`);
 
     expect(res.status).toBe(200);
     expect(MemberRoomsResponseSchema.safeParse(res.body).success).toBe(true);
@@ -371,21 +391,21 @@ describe('GET /api/team/:memberId/rooms', () => {
   });
 
   it('lists the rooms an agent is in, addressed by its manifest id', async () => {
-    const res = await request(app()).get(`/api/team/${ANA.id}/rooms`);
+    const res = await request(fixtureTarget.mount(app())).get(`/api/team/${ANA.id}/rooms`);
 
     expect(res.status).toBe(200);
     expect(res.body.rooms.map((room: { id: string }) => room.id)).toEqual(['team-room']);
   });
 
   it('lists the rooms the system agent is in', async () => {
-    const res = await request(app()).get(`/api/team/${DORKBOT.id}/rooms`);
+    const res = await request(fixtureTarget.mount(app())).get(`/api/team/${DORKBOT.id}/rooms`);
 
     expect(res.status).toBe(200);
     expect(res.body.rooms.map((room: { id: string }) => room.id)).toEqual(['team-room']);
   });
 
   it('answers 404 for an id this install has never heard of', async () => {
-    const res = await request(app()).get('/api/team/nobody/rooms');
+    const res = await request(fixtureTarget.mount(app())).get('/api/team/nobody/rooms');
 
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('MEMBER_NOT_FOUND');
@@ -397,7 +417,9 @@ describe('GET /api/team/:memberId/rooms', () => {
     // profile of a perfectly ordinary agent.
     const fresh: TeamAgentSource = { ...ANA, id: 'agent-new', name: 'new' };
     const res = await request(
-      app({ meshCore: { listWithHealth: () => [ANA, DORKBOT, fresh], listWithPaths: () => [] } })
+      fixtureTarget.mount(
+        app({ meshCore: { listWithHealth: () => [ANA, DORKBOT, fresh], listWithPaths: () => [] } })
+      )
     ).get('/api/team/agent-new/rooms');
 
     expect(res.status).toBe(200);
@@ -408,7 +430,9 @@ describe('GET /api/team/:memberId/rooms', () => {
     // The degraded case: without the registry, an id with no author row can no
     // longer be told from an unknown one — but everybody who has ever been in a
     // room still resolves, which is everybody this page asks about.
-    const res = await request(app({ meshCore: undefined })).get(`/api/team/${ANA.id}/rooms`);
+    const res = await request(fixtureTarget.mount(app({ meshCore: undefined }))).get(
+      `/api/team/${ANA.id}/rooms`
+    );
 
     expect(res.status).toBe(200);
     expect(res.body.rooms).toHaveLength(1);
@@ -416,14 +440,16 @@ describe('GET /api/team/:memberId/rooms', () => {
 
   it('answers 500 when the room store cannot be read', async () => {
     const res = await request(
-      app({
-        rooms: {
-          listRoomsForMember: () => {
-            throw new Error('database is locked');
+      fixtureTarget.mount(
+        app({
+          rooms: {
+            listRoomsForMember: () => {
+              throw new Error('database is locked');
+            },
+            listMembersForRooms: () => [],
           },
-          listMembersForRooms: () => [],
-        },
-      })
+        })
+      )
     ).get(`/api/team/${ownerAuthorId}/rooms`);
 
     expect(res.status).toBe(500);
@@ -434,7 +460,7 @@ describe('GET /api/team/:memberId/rooms', () => {
     // The route takes ANY member's id, so an agent that could call it would read
     // the title of every DM the operator has — walking around the membership
     // scope `listRoomsForMember` exists to impose by asking about somebody else.
-    const res = await request(app())
+    const res = await request(fixtureTarget.mount(app()))
       .get(`/api/team/${ownerAuthorId}/rooms`)
       .set('x-dorkos-agent', 'some-agent-token');
 
@@ -445,7 +471,7 @@ describe('GET /api/team/:memberId/rooms', () => {
   it('leaves an agent’s author id out of the id space it answers for', async () => {
     // The roster hands out manifest ULIDs for agents and author ids for people.
     // Accepting an agent's author id would be a third id space nothing produces.
-    const res = await request(app()).get('/api/team/author-ana/rooms');
+    const res = await request(fixtureTarget.mount(app())).get('/api/team/author-ana/rooms');
 
     expect(res.status).toBe(404);
   });

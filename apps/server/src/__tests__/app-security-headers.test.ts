@@ -36,11 +36,15 @@ vi.mock('../lib/logger.js', () => ({
 }));
 
 import type express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../app.js';
 import { env } from '../env.js';
 import { logger } from '../lib/logger.js';
 import { isTrustedBrowserOrigin } from '../lib/trusted-origins.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** What the WebSocket upgrade asks of the shared origin policy. */
 const UPGRADE_POLICY = { allowNoOrigin: true, pairSameOriginWithHost: true } as const;
@@ -77,6 +81,8 @@ describe('CORS: DORKOS_CORS_ORIGIN wildcard', () => {
   beforeAll(() => {
     process.env.DORKOS_CORS_ORIGIN = '*';
     app = createApp();
+
+    fixtureTarget.mount(app);
   });
 
   afterAll(() => {
@@ -84,14 +90,14 @@ describe('CORS: DORKOS_CORS_ORIGIN wildcard', () => {
   });
 
   it('sends no permissive ACAO to a cross-origin request', async () => {
-    const res = await request(app).get('/api/health').set('Origin', EVIL_ORIGIN);
+    const res = await request(fixtureServer).get('/api/health').set('Origin', EVIL_ORIGIN);
 
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
     expect(res.headers['access-control-allow-credentials']).toBeUndefined();
   });
 
   it('sends no permissive ACAO on the preflight either', async () => {
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .options('/api/health')
       .set('Origin', EVIL_ORIGIN)
       .set('Access-Control-Request-Method', 'POST');
@@ -100,7 +106,7 @@ describe('CORS: DORKOS_CORS_ORIGIN wildcard', () => {
   });
 
   it('still allows a genuinely trusted origin (falls through to the per-request policy)', async () => {
-    const res = await request(app).get('/api/health').set('Origin', LOOPBACK_ORIGIN);
+    const res = await request(fixtureServer).get('/api/health').set('Origin', LOOPBACK_ORIGIN);
 
     expect(res.headers['access-control-allow-origin']).toBe(LOOPBACK_ORIGIN);
     expect(res.headers['access-control-allow-credentials']).toBe('true');
@@ -118,7 +124,7 @@ describe('CORS: DORKOS_CORS_ORIGIN wildcard', () => {
 
   it('agrees with the WebSocket origin policy, which has always refused the wildcard', async () => {
     const httpAllowed =
-      (await request(app).get('/api/health').set('Origin', EVIL_ORIGIN)).headers[
+      (await request(fixtureServer).get('/api/health').set('Origin', EVIL_ORIGIN)).headers[
         'access-control-allow-origin'
       ] !== undefined;
     const socketAllowed = isTrustedBrowserOrigin(
@@ -149,6 +155,8 @@ describe('CORS: DORKOS_CORS_ORIGIN with surrounding whitespace', () => {
   beforeAll(() => {
     process.env.DORKOS_CORS_ORIGIN = ' * ';
     app = createApp();
+
+    fixtureTarget.mount(app);
   });
 
   afterAll(() => {
@@ -156,13 +164,13 @@ describe('CORS: DORKOS_CORS_ORIGIN with surrounding whitespace', () => {
   });
 
   it('reads a padded wildcard as the wildcard, so the app keeps working', async () => {
-    const res = await request(app).get('/api/health').set('Origin', LOOPBACK_ORIGIN);
+    const res = await request(fixtureServer).get('/api/health').set('Origin', LOOPBACK_ORIGIN);
 
     expect(res.headers['access-control-allow-origin']).toBe(LOOPBACK_ORIGIN);
   });
 
   it('still refuses a stranger', async () => {
-    const res = await request(app).get('/api/health').set('Origin', EVIL_ORIGIN);
+    const res = await request(fixtureServer).get('/api/health').set('Origin', EVIL_ORIGIN);
 
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
   });
@@ -200,16 +208,18 @@ describe('X-Content-Type-Options', () => {
   beforeAll(() => {
     delete process.env.DORKOS_CORS_ORIGIN;
     app = createApp();
+
+    fixtureTarget.mount(app);
   });
 
   it('rides every API response, not only the routes that set it themselves', async () => {
-    const res = await request(app).get('/api/health');
+    const res = await request(fixtureServer).get('/api/health');
 
     expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 
   it('rides a 404 too', async () => {
-    const res = await request(app).get('/api/no-such-route');
+    const res = await request(fixtureServer).get('/api/no-such-route');
 
     expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
@@ -221,6 +231,8 @@ describe('CORS: an explicit DORKOS_CORS_ORIGIN allowlist is untouched', () => {
   beforeAll(() => {
     process.env.DORKOS_CORS_ORIGIN = 'http://localhost:5173,https://dorkos.example.com';
     app = createApp();
+
+    fixtureTarget.mount(app);
   });
 
   afterAll(() => {
@@ -232,14 +244,16 @@ describe('CORS: an explicit DORKOS_CORS_ORIGIN allowlist is untouched', () => {
   });
 
   it('echoes a listed origin with credentials', async () => {
-    const res = await request(app).get('/api/health').set('Origin', 'https://dorkos.example.com');
+    const res = await request(fixtureServer)
+      .get('/api/health')
+      .set('Origin', 'https://dorkos.example.com');
 
     expect(res.headers['access-control-allow-origin']).toBe('https://dorkos.example.com');
     expect(res.headers['access-control-allow-credentials']).toBe('true');
   });
 
   it('refuses an origin that is not on the list', async () => {
-    const res = await request(app).get('/api/health').set('Origin', EVIL_ORIGIN);
+    const res = await request(fixtureServer).get('/api/health').set('Origin', EVIL_ORIGIN);
 
     expect(res.headers['access-control-allow-origin']).toBeUndefined();
   });
@@ -279,7 +293,7 @@ describe('CORS: an explicit DORKOS_CORS_ORIGIN allowlist is untouched', () => {
     const REMAPPED = 'localhost:4300';
 
     it('still accepts a same-origin WRITE from a host that is not on the list', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/errors')
         .set('Host', REMAPPED)
         .set('Origin', `http://${REMAPPED}`)
@@ -295,7 +309,7 @@ describe('CORS: an explicit DORKOS_CORS_ORIGIN allowlist is untouched', () => {
       // The other direction: falling through to the same-origin branch must not
       // become "anything goes". `evil.example.com` is not on the list and is not
       // same-origin with a `Host` this instance answers to.
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/errors')
         .set('Host', REMAPPED)
         .set('Origin', EVIL_ORIGIN)
@@ -306,7 +320,7 @@ describe('CORS: an explicit DORKOS_CORS_ORIGIN allowlist is untouched', () => {
     });
 
     it('still accepts a listed origin cross-origin, which is what the list is FOR', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/errors')
         .set('Host', REMAPPED)
         .set('Origin', 'https://dorkos.example.com')

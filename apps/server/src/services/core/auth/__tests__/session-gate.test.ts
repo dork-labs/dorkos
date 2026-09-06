@@ -6,11 +6,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, user, type Db } from '@dorkos/db';
 import { getAuth, initAuth, sessionGate, toNodeHandler, verifyRequestAuth } from '../index.js';
 import { configManager, initConfigManager } from '../../config-manager.js';
 import { env } from '../../../../env.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /**
  * Build an app that mirrors `app.ts`'s middleware order for the gate: the Better
@@ -76,13 +80,14 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
     app = buildApp();
 
     // Create the owner and capture a real session cookie.
-    const signUp = await request(app)
+    fixtureTarget.mount(app);
+    const signUp = await request(fixtureServer)
       .post('/api/auth/sign-up/email')
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD, name: OWNER_NAME });
     expect(signUp.status).toBe(200);
 
-    const signIn = await request(app)
+    const signIn = await request(fixtureServer)
       .post('/api/auth/sign-in/email')
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
@@ -110,14 +115,14 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
   describe('auth.enabled = false (zero-overhead pass-through)', () => {
     it('lets every route through with no credentials', async () => {
       setAuthEnabled(false);
-      expect((await request(app).get('/api/sessions')).status).toBe(200);
-      expect((await request(app).get('/mcp')).status).toBe(200);
-      expect((await request(app).get('/')).status).toBe(200);
+      expect((await request(fixtureServer).get('/api/sessions')).status).toBe(200);
+      expect((await request(fixtureServer).get('/mcp')).status).toBe(200);
+      expect((await request(fixtureServer).get('/')).status).toBe(200);
     });
 
     it('does not attach res.locals.user when disabled', async () => {
       setAuthEnabled(false);
-      const res = await request(app).get('/api/sessions');
+      const res = await request(fixtureServer).get('/api/sessions');
       expect(res.body.user).toBeNull();
     });
   });
@@ -125,14 +130,14 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
   describe('auth.enabled = true', () => {
     it('returns 401 AUTH_REQUIRED on a gated route with no credentials', async () => {
       setAuthEnabled(true);
-      const res = await request(app).get('/api/sessions');
+      const res = await request(fixtureServer).get('/api/sessions');
       expect(res.status).toBe(401);
       expect(res.body).toEqual({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
     });
 
     it('gates /mcp with no credentials', async () => {
       setAuthEnabled(true);
-      const res = await request(app).get('/mcp');
+      const res = await request(fixtureServer).get('/mcp');
       expect(res.status).toBe(401);
       expect(res.body).toEqual({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
     });
@@ -143,7 +148,7 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       // lowercase forms, so the gate must normalize case — otherwise a mixed-case
       // prefix would slip past the gate yet still reach the protected route.
       for (const p of ['/API/sessions', '/Api/Sessions', '/MCP']) {
-        const res = await request(app).get(p);
+        const res = await request(fixtureServer).get(p);
         expect(res.status, `expected ${p} to be gated`).toBe(401);
         expect(res.body).toEqual({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
       }
@@ -151,21 +156,21 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
 
     it('does not gate non-API paths (SPA assets load so login can render)', async () => {
       setAuthEnabled(true);
-      const res = await request(app).get('/');
+      const res = await request(fixtureServer).get('/');
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ spa: true });
     });
 
     it('keeps /api/health reachable without credentials', async () => {
       setAuthEnabled(true);
-      const res = await request(app).get('/api/health');
+      const res = await request(fixtureServer).get('/api/health');
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ status: 'ok' });
     });
 
     it('gates /api/health/deep even though /api/health is exempt', async () => {
       setAuthEnabled(true);
-      const res = await request(app).get('/api/health/deep');
+      const res = await request(fixtureServer).get('/api/health/deep');
       expect(res.status).toBe(401);
       expect(res.body?.code).toBe('AUTH_REQUIRED');
     });
@@ -188,7 +193,7 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       ['mixed case with trailing slash', '/Api/Health/Deep/'],
     ])('gates /api/health/deep spelled with a %s', async (_name, path) => {
       setAuthEnabled(true);
-      const res = await request(app).get(path);
+      const res = await request(fixtureServer).get(path);
       expect(res.status).toBe(401);
       expect(res.body?.code).toBe('AUTH_REQUIRED');
     });
@@ -208,7 +213,7 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       ['dot segment', '/api/debug/./refusals'],
     ])('gates /api/debug spelled with a %s', async (_name, spelling) => {
       setAuthEnabled(true);
-      const res = await request(app).get(spelling);
+      const res = await request(fixtureServer).get(spelling);
       expect(res.status).toBe(401);
       expect(res.body?.code).toBe('AUTH_REQUIRED');
     });
@@ -217,13 +222,13 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       // The other half: a gate that refused everybody would pass the test above
       // while making the surface useless.
       setAuthEnabled(true);
-      const res = await request(app).get('/api/debug/dispatches').set('Cookie', cookies);
+      const res = await request(fixtureServer).get('/api/debug/dispatches').set('Cookie', cookies);
       expect(res.status).toBe(200);
     });
 
     it('still exempts the liveness probe with a trailing slash', async () => {
       setAuthEnabled(true);
-      const res = await request(app).get('/api/health/');
+      const res = await request(fixtureServer).get('/api/health/');
       expect(res.status).not.toBe(401);
     });
 
@@ -231,7 +236,7 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       setAuthEnabled(true);
       // A bad sign-in body reaches Better Auth (its own 4xx), never the gate's
       // AUTH_REQUIRED — proving the exemption lets the request through.
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/auth/sign-in/email')
         .set('Origin', ORIGIN)
         .send({ email: OWNER_EMAIL, password: 'wrong-password' });
@@ -240,7 +245,7 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
 
     it('allows a gated route with a valid session cookie and attaches the user', async () => {
       setAuthEnabled(true);
-      const res = await request(app).get('/api/sessions').set('Cookie', cookies);
+      const res = await request(fixtureServer).get('/api/sessions').set('Cookie', cookies);
       expect(res.status).toBe(200);
       // The attached identity says WHICH credential proved it, because a few
       // writes are reserved for a person in the cockpit (DOR-501).
@@ -249,14 +254,16 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
 
     it('allows a gated route with a valid API key Bearer and attaches the user', async () => {
       setAuthEnabled(true);
-      const res = await request(app).get('/api/sessions').set('Authorization', `Bearer ${apiKey}`);
+      const res = await request(fixtureServer)
+        .get('/api/sessions')
+        .set('Authorization', `Bearer ${apiKey}`);
       expect(res.status).toBe(200);
       expect(res.body.user).toEqual({ userId: ownerId, credential: 'api-key' });
     });
 
     it('returns 401 AUTH_REQUIRED with an invalid API key Bearer', async () => {
       setAuthEnabled(true);
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .get('/api/sessions')
         .set('Authorization', 'Bearer not-a-real-key');
       expect(res.status).toBe(401);

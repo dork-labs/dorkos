@@ -48,7 +48,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
 import {
   recordDispatchStart,
@@ -72,6 +73,7 @@ import type { RawSessionEvent } from '../../services/session/session-state-proje
 import type { DebugDeps } from '../debug.js';
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000dbb01';
+const target = swappableServer();
 
 /** Text, paths and credentials that must never reach a response. */
 const POISON = {
@@ -84,7 +86,7 @@ function buildApp(deps?: DebugDeps) {
   const app = createApp();
   if (deps) app.locals.debugDeps = deps;
   finalizeApp(app);
-  return app;
+  return target.mount(app);
 }
 
 beforeEach(() => {
