@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
+import { render, screen, cleanup } from '@testing-library/react';
 import { NewTaskAction } from '../ui/NewTaskAction';
 import { BarHarness } from './bar-harness';
 
@@ -17,11 +17,14 @@ vi.mock('@/layers/features/right-panel', () => ({
 // Mocks
 // ---------------------------------------------------------------------------
 
+let mockIsMobile = false;
+
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = { setGlobalPaletteOpen: vi.fn() };
     return selector ? selector(state) : state;
   },
+  useIsMobile: () => mockIsMobile,
 }));
 
 const mockOpenBlank = vi.fn();
@@ -53,6 +56,20 @@ beforeAll(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
+afterEach(() => {
+  cleanup();
+  mockIsMobile = false;
+});
+
+/** Mount the action inside the bar it ships in. */
+function renderAction() {
+  render(
+    <BarHarness>
+      <NewTaskAction />
+    </BarHarness>
+  );
+}
+
 describe('NewTaskAction', () => {
   // The page's NAME is the tab now — "Scheduled" is drawn by the shared
   // home-surface strip, and `HomeSurfaceBar.test.tsx` pins that it says so on
@@ -61,12 +78,26 @@ describe('NewTaskAction', () => {
   it('still calls the thing you create a task', () => {
     // Renaming the page did not rename the noun: task creation keeps its own
     // vocabulary, here and in the dialogs.
-    render(
-      <BarHarness>
-        <NewTaskAction />
-      </BarHarness>
-    );
+    renderAction();
 
     expect(screen.getByRole('button', { name: /new schedule/i })).toBeInTheDocument();
+  });
+
+  it('collapses to a labelled icon on a phone (DOR-1747)', () => {
+    // The words were the last thing in a 390px bar still spending width the row
+    // did not have, and the actions cluster is `shrink-0` — so it painted 11px
+    // past the bar's own wrapper instead of yielding. The button stays reachable
+    // by the same name; only the letters go.
+    mockIsMobile = true;
+    renderAction();
+
+    const button = screen.getByRole('button', { name: 'New Schedule' });
+    expect(button).not.toHaveTextContent('New Schedule');
+  });
+
+  it('spells the words out on a desktop', () => {
+    renderAction();
+
+    expect(screen.getByRole('button', { name: /new schedule/i })).toHaveTextContent('New Schedule');
   });
 });
