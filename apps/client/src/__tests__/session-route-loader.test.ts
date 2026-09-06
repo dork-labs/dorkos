@@ -295,7 +295,7 @@ describe('sessionRouteLoader', () => {
           seed: undefined,
         },
       })
-    ).rejects.toThrow(/could ?n[o']t reach the server/i);
+    ).rejects.toThrow(/could ?n[o’]t reach the server/i);
   });
 
   it('carries the prompt seed onto a genuinely fresh session', async () => {

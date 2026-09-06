@@ -48,7 +48,7 @@ describe('describeAuthError', () => {
 
   it('still explains itself when the caller does not know the address', () => {
     const copy = describeAuthError(invalidOrigin);
-    expect(copy?.message).toContain("this app's address");
+    expect(copy?.message).toContain('this app’s address');
     expect(copy?.message).not.toContain('undefined');
   });
 

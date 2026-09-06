@@ -15,13 +15,17 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { mkdtemp, rm, readdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { RoomAttachmentStore } from '../room-attachment-store.js';
 import type { AuthorRecord } from '../../author-registry.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /**
  * A store that keeps nothing locally and answers with an absolute URL — exactly
@@ -100,6 +104,8 @@ describe('the seam, through the real route', () => {
     app = express();
     app.use(express.json());
     app.use('/api/rooms', roomsRouter);
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(async () => {
@@ -107,7 +113,7 @@ describe('the seam, through the real route', () => {
   });
 
   it('serves whatever URL the store returned, absolute host and all, all the way to a reader', async () => {
-    const posted = await request(app)
+    const posted = await request(fixtureServer)
       .post(`/api/rooms/${roomId}/attachments`)
       .attach('files', Buffer.from('bytes'), { filename: 'thing.bin' });
 
@@ -115,20 +121,20 @@ describe('the seam, through the real route', () => {
     expect(posted.body.attachments[0].url).toBe('https://cdn.example/x.bin');
 
     // 2. The row kept it, rather than a path rebuilt from the ids.
-    const wrote = await request(app)
+    const wrote = await request(fixtureServer)
       .post(`/api/rooms/${roomId}/entries`)
       .send({ text: 'from somewhere else', attachmentIds: [posted.body.attachments[0].id] });
     expect(wrote.status).toBe(202);
 
     // 3. And a reader gets it verbatim, with no route, schema or renderer
     //    change anywhere between the store and here.
-    const listed = await request(app).get(`/api/rooms/${roomId}/entries?limit=10`);
+    const listed = await request(fixtureServer).get(`/api/rooms/${roomId}/entries?limit=10`);
     const entry = listed.body.entries.find((e: { id: string }) => e.id === wrote.body.entryId);
     expect(entry.attachments[0].url).toBe('https://cdn.example/x.bin');
   });
 
   it('writes nothing to this machine — the route never touched a path', async () => {
-    await request(app)
+    await request(fixtureServer)
       .post(`/api/rooms/${roomId}/attachments`)
       .attach('files', Buffer.from('bytes'), { filename: 'thing.bin' });
 

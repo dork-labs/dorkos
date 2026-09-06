@@ -57,7 +57,7 @@ export function PlaygroundSearch({ open, onOpenChange, onSelect }: PlaygroundSea
         {/* sr-only title satisfies Radix accessibility requirement without visible heading */}
         <DialogTitle className="sr-only">Search playground sections</DialogTitle>
         <Command>
-          <CommandInput placeholder="Search sections..." />
+          <CommandInput placeholder="Search sections…" />
           <CommandList>
             <CommandEmpty>No sections found.</CommandEmpty>
             {PAGE_ORDER.map((page) => {

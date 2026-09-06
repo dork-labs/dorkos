@@ -55,7 +55,7 @@ function Harness({
       onKeyDown={onKeyDown}
       onFocus={() => {}}
       onBlur={() => {}}
-      placeholder="Send a message..."
+      placeholder="Send a message…"
       isPaletteOpen={isPaletteOpen}
       paletteHasResults={paletteHasResults}
       onSurfaceChange={() => {}}

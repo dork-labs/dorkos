@@ -84,7 +84,7 @@ describe('captureShapeLayout', () => {
     expect(forked.focusDashboardSections).toEqual(['linear-issues:board']);
   });
 
-  it("keeps the source Shape's panels when a reload closed everything (no data loss)", () => {
+  it('keeps the source Shape’s panels when a reload closed everything (no data loss)', () => {
     // The regression guard for the reload path: apply a Shape that opens the
     // tasks panel, reload (panels reset — the user changed nothing), then fork.
     // The copy must still carry the source's arrival panel.

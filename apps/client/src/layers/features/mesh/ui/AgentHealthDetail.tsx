@@ -68,7 +68,7 @@ export function AgentHealthDetail({ agentId, onClose }: AgentHealthDetailProps) 
   if (isLoading) {
     return (
       <div className="flex w-64 items-center justify-center border-l p-4">
-        <span className="text-muted-foreground text-sm">Loading...</span>
+        <span className="text-muted-foreground text-sm">Loading…</span>
       </div>
     );
   }

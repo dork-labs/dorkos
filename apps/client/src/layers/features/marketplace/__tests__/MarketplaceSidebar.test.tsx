@@ -321,7 +321,7 @@ describe('MarketplaceSidebar', () => {
     expect(sourceRow('claude-plugins-official')).toHaveTextContent('2');
   });
 
-  it("puts DorkOS's own source first, then the biggest sources", () => {
+  it('puts DorkOS’s own source first, then the biggest sources', () => {
     setPackages([
       pkg({ name: 'a', marketplace: 'claude-plugins-official' }),
       pkg({ name: 'b', marketplace: 'claude-plugins-official' }),

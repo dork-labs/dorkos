@@ -8,16 +8,17 @@
  * outlive the conversation they belong to. Nothing inside the component can
  * observe that; only mounting the page and changing its search param can.
  */
-import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, mockRoomEntryPage } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import {
   agentAuthorRef,
   REACTION_FREQUENTS_DEFAULT,
+  ROOM_ENTRY_PAGE_SIZE_DEFAULT,
   type PostToRoomResponse,
   type RoomEntry,
   type RoomEvent,
@@ -26,6 +27,7 @@ import {
 import {
   usePendingPostStore,
   useRoomDraftStore,
+  useRoomHistoryPagingStore,
   useRoomOpenThreadStore,
 } from '@/layers/entities/room';
 import { createQueryClientConfig } from '@/layers/shared/lib';
@@ -303,7 +305,7 @@ describe('ChannelsPage members-panel entry points', () => {
     renderPage({
       ...fleet,
       getRoom: vi.fn((id: string) => Promise.resolve(peopled(id, 'general'))),
-      listRoomEntries: vi.fn().mockResolvedValue([]),
+      listRoomEntries: vi.fn().mockResolvedValue(mockRoomEntryPage()),
     });
 
     expect(
@@ -349,7 +351,7 @@ describe('ChannelsPage members-panel entry points', () => {
           ],
         });
       }),
-      listRoomEntries: vi.fn().mockResolvedValue([]),
+      listRoomEntries: vi.fn().mockResolvedValue(mockRoomEntryPage()),
     });
 
     expect(await screen.findByText(/Say something to get it going/i)).toBeInTheDocument();
@@ -455,7 +457,7 @@ describe('ChannelsPage — a refusal nobody is listening for', () => {
       // `expect.anything()` covers the shared "Report" action every
       // mutation-error toast carries; query-client.test.ts owns its content.
       expect(toastError).toHaveBeenCalledWith(
-        "Couldn't send your message",
+        'Couldn’t send your message',
         expect.objectContaining({ description: 'This room is archived' })
       )
     );
@@ -509,7 +511,7 @@ describe('ChannelsPage — a refusal nobody is listening for', () => {
     });
     expect(toastError).toHaveBeenCalledTimes(1);
     expect(toastError).toHaveBeenCalledWith(
-      "Couldn't send your message",
+      'Couldn’t send your message',
       expect.objectContaining({ description: 'Not a member of this room' })
     );
   });
@@ -604,7 +606,7 @@ describe('ChannelsPage — whose unread rule is this', () => {
    * cursor. Dorian is listed first and has read everything; Priya, the viewer,
    * has read nothing, so she must see the rule.
    */
-  it("draws the rule from the viewer's cursor, not the first human's", async () => {
+  it('draws the rule from the viewer’s cursor, not the first human’s', async () => {
     openRoomId = 'room-1';
     const transport = createMockTransport({
       getRoom: vi.fn(() =>
@@ -614,7 +616,7 @@ describe('ChannelsPage — whose unread rule is this', () => {
           viewerAuthorId: 'priya',
         })
       ),
-      listRoomEntries: vi.fn(() => Promise.resolve([post(1), post(2)])),
+      listRoomEntries: vi.fn(() => Promise.resolve(mockRoomEntryPage([post(1), post(2)]))),
       subscribeRoom: vi.fn((_id: string, _cursor: number, signal: AbortSignal) =>
         staysOpen(signal)
       ),
@@ -700,7 +702,7 @@ describe('ChannelsPage — a thread reply still clears the badge', () => {
   function renderRoom() {
     const transport = createMockTransport({
       getRoom: vi.fn(() => Promise.resolve(readNothing())),
-      listRoomEntries: vi.fn(() => Promise.resolve([root, reply])),
+      listRoomEntries: vi.fn(() => Promise.resolve(mockRoomEntryPage([root, reply]))),
       subscribeRoom: vi.fn((_id: string, _cursor: number, signal: AbortSignal) =>
         staysOpen(signal)
       ),
@@ -719,7 +721,7 @@ describe('ChannelsPage — a thread reply still clears the badge', () => {
     return transport;
   }
 
-  it("moves the cursor to the reply's seq, not to the newest entry on screen", async () => {
+  it('moves the cursor to the reply’s seq, not to the newest entry on screen', async () => {
     const transport = renderRoom();
 
     await waitFor(() => expect(transport.setReadCursor).toHaveBeenCalledWith('room', 'room-1', 2));
@@ -814,7 +816,7 @@ describe('ChannelsPage — switching between threads', () => {
   function renderRoom() {
     const transport = createMockTransport({
       getRoom: vi.fn(() => Promise.resolve(roomWith('room-1', 'backend'))),
-      listRoomEntries: vi.fn(() => Promise.resolve(history)),
+      listRoomEntries: vi.fn(() => Promise.resolve(mockRoomEntryPage(history))),
       subscribeRoom: vi.fn((_id: string, _cursor: number, signal: AbortSignal) =>
         staysOpen(signal)
       ),
@@ -1010,7 +1012,7 @@ describe('ChannelsPage — landing on the message a search hit named (DOR-687)',
           <TransportProvider
             transport={createMockTransport({
               getRoom: vi.fn(() => Promise.resolve(roomWith('room-1', 'backend'))),
-              listRoomEntries: vi.fn(() => Promise.resolve(entries)),
+              listRoomEntries: vi.fn(() => Promise.resolve(mockRoomEntryPage(entries))),
               subscribeRoom: vi.fn((_id: string, _cursor: number, signal: AbortSignal) =>
                 staysOpen(signal)
               ),
@@ -1069,7 +1071,7 @@ describe('ChannelsPage — landing on the message a search hit named (DOR-687)',
     expect(await landedOn()).toBe('end');
     await waitFor(() =>
       expect(toastInfo).toHaveBeenCalledWith(
-        "DorkOS can't find that message in what's open here",
+        'DorkOS can’t find that message in what’s open here',
         expect.anything()
       )
     );
@@ -1135,5 +1137,137 @@ describe('ChannelsPage — landing on the message a search hit named (DOR-687)',
     await screen.findByText('the port question');
 
     expect(screen.queryByTestId('room-thread-feed')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Reading a room past the page it opened on, end to end (DOR-1734).
+ *
+ * The pieces have their own files — the cursor in `use-load-older-entries`, the
+ * row in `RoomFlow` — and this is the wiring between them: that the control the
+ * flow draws reaches the entity's read, and that what comes back is drawn in
+ * the room the reader is standing in.
+ */
+describe('ChannelsPage — reading older history', () => {
+  function post(seq: number, text: string): RoomEntry {
+    return {
+      roomId: 'room-1',
+      seq,
+      id: `entry-${seq}`,
+      authorId: 'ana',
+      kind: 'post',
+      body: { text },
+      mentions: [],
+      sessionId: null,
+      cascadeRoot: `entry-${seq}`,
+      cascadeDepth: 0,
+      parentEntryId: null,
+      threadRootEntryId: null,
+      signature: null,
+      createdAt: '2026-07-26T10:00:00.000Z',
+    };
+  }
+
+  beforeEach(() => {
+    // Module-level and keyed by room, so a previous test's boundary would
+    // otherwise decide whether this one is offered anything at all.
+    useRoomHistoryPagingStore.setState({ paging: {} });
+  });
+
+  /**
+   * A full page, because a short one IS the beginning of the room on this route
+   * — the control is not offered over a room that fitted in one read.
+   */
+  function firstPage(): RoomEntry[] {
+    const filler = Array.from({ length: ROOM_ENTRY_PAGE_SIZE_DEFAULT - 1 }, (_, i) =>
+      post(11 + i, `filler ${i}`)
+    );
+    return [post(10, 'what the room opened on'), ...filler];
+  }
+
+  function renderRoom() {
+    const listRoomEntries = vi
+      .fn()
+      .mockResolvedValueOnce(mockRoomEntryPage(firstPage()))
+      .mockResolvedValueOnce(mockRoomEntryPage([post(9, 'said the day before')]))
+      // The beginning of the room. Nothing below seq 9, so the next read finds
+      // nothing and the control has no more to offer.
+      .mockResolvedValue(mockRoomEntryPage());
+    const transport = createMockTransport({
+      getRoom: vi.fn(() => Promise.resolve(roomWith('room-1', 'backend'))),
+      listRoomEntries,
+      subscribeRoom: vi.fn((_id: string, _cursor: number, signal: AbortSignal) =>
+        staysOpen(signal)
+      ),
+    });
+    render(
+      <QueryClientProvider client={new QueryClient(createQueryClientConfig())}>
+        <EventStreamProvider>
+          <TransportProvider transport={transport}>
+            <TooltipProvider>
+              <ChannelsPage />
+            </TooltipProvider>
+          </TransportProvider>
+        </EventStreamProvider>
+      </QueryClientProvider>
+    );
+    return transport;
+  }
+
+  // A wider budget than the file's default, and the reason is in `firstPage`:
+  // the control only exists over a room whose first read was FULL, so this test
+  // renders the whole page-sized room through the whole stack — the query, the
+  // stream, the grouping and the timeline. On an idle machine it is a quarter of
+  // a second; measured at load average 211 (several worktrees of agents, which
+  // AGENTS.md says is this repo's normal), the transform alone took ninety.
+  // Same reasoning `room-conversation.spec.ts` sizes its own budget by.
+  it('puts what was said before the loaded page into the room, in order', async () => {
+    const transport = renderRoom();
+
+    expect(await screen.findByText('what the room opened on')).toBeInTheDocument();
+    // `fireEvent`, not `userEvent`: this is one press on one button, and
+    // userEvent's pointer simulation is the expensive half of it.
+    fireEvent.click(await screen.findByTestId('room-load-older'));
+
+    expect(await screen.findByText('said the day before')).toBeInTheDocument();
+    expect(transport.listRoomEntries).toHaveBeenLastCalledWith(
+      'room-1',
+      expect.objectContaining({ before: 10 })
+    );
+    // The room's own order, not "whatever arrived last at the bottom".
+    const drawn = screen.getAllByTestId('room-entry').map((row) => row.textContent);
+    expect(drawn[0]).toContain('said the day before');
+    expect(drawn[1]).toContain('what the room opened on');
+    // …and the control is gone, because that second read was short.
+    await waitFor(() => expect(screen.queryByTestId('room-load-older')).not.toBeInTheDocument());
+  }, 30_000);
+
+  it('offers nothing at all over a room that fitted in one read', async () => {
+    // The common room, through the whole stack: the first page comes back short
+    // and the control is never drawn, rather than drawn and then dead.
+    render(
+      <QueryClientProvider client={new QueryClient(createQueryClientConfig())}>
+        <EventStreamProvider>
+          <TransportProvider
+            transport={createMockTransport({
+              getRoom: vi.fn(() => Promise.resolve(roomWith('room-1', 'backend'))),
+              listRoomEntries: vi.fn(() =>
+                Promise.resolve(mockRoomEntryPage([post(1, 'the only thing said here')]))
+              ),
+              subscribeRoom: vi.fn((_id: string, _cursor: number, signal: AbortSignal) =>
+                staysOpen(signal)
+              ),
+            })}
+          >
+            <TooltipProvider>
+              <ChannelsPage />
+            </TooltipProvider>
+          </TransportProvider>
+        </EventStreamProvider>
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByText('the only thing said here')).toBeInTheDocument();
+    expect(screen.queryByTestId('room-load-older')).not.toBeInTheDocument();
   });
 });

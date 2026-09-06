@@ -105,8 +105,8 @@ export function TeamShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>
-          Loading — mirrors TeamMemberCard&rsquo;s own dimensions so the grid does not jump when the
-          real roster lands (batch 06, finding 6.5)
+          Loading — mirrors TeamMemberCard’s own dimensions so the grid does not jump when the real
+          roster lands (batch 06, finding 6.5)
         </ShowcaseLabel>
         <ShowcaseDemo>
           <TeamRosterSkeleton />

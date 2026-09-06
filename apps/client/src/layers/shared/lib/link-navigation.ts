@@ -465,7 +465,7 @@ export function describeRefusal(
 ): { title: string; detail: string } {
   const incomplete = 'That address is incomplete, so there is nowhere to send you.';
   if (reason === 'unparsable') {
-    return { title: "DorkOS couldn't open that link", detail: incomplete };
+    return { title: 'DorkOS couldn’t open that link', detail: incomplete };
   }
 
   const scheme = declaredScheme(href);
@@ -476,25 +476,25 @@ export function describeRefusal(
     // plainly false — so say only what is known.
     if (!scheme || isWebUrl(href)) {
       return {
-        title: "The desktop app couldn't open that link",
+        title: 'The desktop app couldn’t open that link',
         detail: 'The desktop app would not hand this one to your browser.',
       };
     }
     return {
-      title: `The desktop app can't open ${scheme} links`,
+      title: `The desktop app can’t open ${scheme} links`,
       detail: `${scheme} links open in a browser, but not in the desktop app, so nothing would happen.`,
     };
   }
 
   if (!scheme) {
     return {
-      title: "DorkOS couldn't open that link",
+      title: 'DorkOS couldn’t open that link',
       detail: 'Only web, email and phone links open from here.',
     };
   }
   return {
-    title: `DorkOS doesn't open ${scheme} links`,
-    detail: `${scheme} links don't open from DorkOS, so nothing would happen.`,
+    title: `DorkOS doesn’t open ${scheme} links`,
+    detail: `${scheme} links don’t open from DorkOS, so nothing would happen.`,
   };
 }
 

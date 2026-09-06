@@ -440,9 +440,9 @@ function describeSidebarDropOp(op: SidebarDropOp, ctx: SidebarDndAnnounceContext
     case 'reorder-pinned':
       return `Reordered ${ctx.itemName(op.ref)} in Pinned.`;
     case 'reject-smart-group':
-      return `Can't move ${ctx.itemName(op.ref)} into ${ctx.groupName(op.groupId)}. Membership is rule-based. Edit rules instead.`;
+      return `Can’t move ${ctx.itemName(op.ref)} into ${ctx.groupName(op.groupId)}. Membership is rule-based. Edit rules instead.`;
     case 'reject-computed-zone':
-      return `Can't move ${ctx.itemName(op.ref)} there. ${COMPUTED_ZONE_REJECTION}`;
+      return `Can’t move ${ctx.itemName(op.ref)} there. ${COMPUTED_ZONE_REJECTION}`;
     case 'none':
       return '';
   }

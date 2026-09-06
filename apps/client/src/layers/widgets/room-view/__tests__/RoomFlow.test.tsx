@@ -157,7 +157,7 @@ describe('RoomFlow', () => {
 
   it('says the room keeps everything when the history could not be read', () => {
     renderTimeline({ error: new Error('offline') });
-    expect(screen.getByText(/Couldn't load this conversation/i)).toBeInTheDocument();
+    expect(screen.getByText(/Couldn’t load this conversation/i)).toBeInTheDocument();
   });
 
   it('invites you to add agents when nothing has been said', () => {
@@ -480,6 +480,20 @@ describe('RoomFlow — thread reply rows', () => {
     renderTimeline({ entries: [entry(1), reply(2, 1), reply(3, 1)] });
 
     expect(screen.getByTestId('room-thread-replies')).toHaveTextContent('2 replies');
+  });
+
+  it('counts what is loaded once that overtakes the number the root came with', () => {
+    // The room's count is a SNAPSHOT, taken when the root was fetched from
+    // behind the page — and two things routinely put more on screen than it
+    // knows about: a reply arriving on the live stream, and reading further
+    // back (DOR-1734), which loads the older half of the very thread the count
+    // was compensating for. Letting the field win outright left the row saying
+    // "2 replies" over three of them.
+    const root = entry(1, { threadReplyCount: 2 });
+
+    renderTimeline({ entries: [root, reply(2, 1), reply(3, 1), reply(4, 1)] });
+
+    expect(screen.getByTestId('room-thread-replies')).toHaveTextContent('3 replies');
   });
 
   it('keeps the unread rule between two rows the reader can see', () => {
@@ -863,7 +877,7 @@ describe('toMessageAuthor', () => {
     expect(first.color).not.toBe(toMessageAuthor('bo', new Map()).color);
   });
 
-  it("passes through the roster's own emoji and color rather than guessing over them", () => {
+  it('passes through the roster’s own emoji and color rather than guessing over them', () => {
     const authors = authorsById([
       member('ana', 'Ana', 'agent', { emoji: '🎨', color: 'hsl(210 70% 55%)' }),
     ]);
@@ -955,5 +969,80 @@ describe('toMessageAuthor', () => {
     // A person keeps the hashed hue: the seeded palette is the agents' own
     // vocabulary, and DorkOS never picks a face for a human being.
     expect(toMessageAuthor('dorian', authors, faces).color).toBe(authorColor('dorian'));
+  });
+});
+
+describe('RoomFlow — reading past the page the room opened on (DOR-1734)', () => {
+  it('offers nothing when the loaded history is the whole room', () => {
+    renderTimeline({ entries: [entry(1), entry(2)], onLoadOlder: vi.fn() });
+
+    expect(screen.queryByTestId('room-load-older')).not.toBeInTheDocument();
+  });
+
+  it('puts the way further back above the oldest message it holds', () => {
+    // Above everything, including the first day divider: that divider labels
+    // the oldest message this client HAS, and pressing here is what moves it.
+    const { container } = renderTimeline({
+      entries: [entry(1), entry(2)],
+      canLoadOlder: true,
+      onLoadOlder: vi.fn(),
+    });
+
+    const drawn = Array.from(
+      container.querySelectorAll(
+        '[data-testid="room-load-older"], [data-testid="day-divider"], [data-testid="room-entry"]'
+      )
+    );
+    expect(drawn[0]).toHaveAttribute('data-testid', 'room-load-older');
+  });
+
+  it('asks for the older page when pressed', async () => {
+    const onLoadOlder = vi.fn();
+    renderTimeline({ entries: [entry(1)], canLoadOlder: true, onLoadOlder });
+
+    await userEvent.click(screen.getByTestId('room-load-older'));
+
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+  });
+
+  it('says the page is on its way and refuses a second press meanwhile', async () => {
+    const onLoadOlder = vi.fn();
+    renderTimeline({
+      entries: [entry(1)],
+      canLoadOlder: true,
+      isLoadingOlder: true,
+      onLoadOlder,
+    });
+
+    const control = screen.getByTestId('room-load-older');
+    expect(control).toBeDisabled();
+    expect(control).toHaveTextContent(/Loading older messages/i);
+    await userEvent.click(control);
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  it('offers nothing while the room’s own history is still arriving', () => {
+    // "Older messages" is older THAN something, and during the wait there is
+    // nothing for it to be older than. It is also the row that consumed the
+    // timeline's one-shot landing when it was the only one in the array —
+    // measured in Chromium, skeleton on screen, no scroller in the document —
+    // which is why the timeline now waits for the list as well.
+    renderTimeline({
+      entries: [],
+      isLoading: true,
+      canLoadOlder: true,
+      onLoadOlder: vi.fn(),
+    });
+
+    expect(screen.queryByTestId('room-load-older')).not.toBeInTheDocument();
+    expect(screen.getByTestId('room-timeline-loading')).toBeInTheDocument();
+  });
+
+  it('draws no control on a host that cannot answer one', () => {
+    // A room drawn somewhere that does not page — the Dev Playground, a
+    // showcase — must not be given a button that does nothing.
+    renderTimeline({ entries: [entry(1)], canLoadOlder: true });
+
+    expect(screen.queryByTestId('room-load-older')).not.toBeInTheDocument();
   });
 });

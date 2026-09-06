@@ -240,7 +240,7 @@ export function MarketplaceSidebar() {
                   label={name}
                   title={
                     name === DORKOS_MARKETPLACE_SOURCE_NAME
-                      ? "DorkOS's own marketplace"
+                      ? 'DorkOS’s own marketplace'
                       : `Packages mirrored from ${name}`
                   }
                   count={count}

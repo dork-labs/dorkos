@@ -89,7 +89,7 @@ describe('useChatSession — launch-runtime handoff (opencode connect → first 
   // invalidated → OpenCode ready → the toolbar chip's onChangeRuntime sets
   // pendingRuntime, which reaches useChatSession as `launchRuntime`. This proves
   // the final link — a new session's FIRST message binds the session to OpenCode.
-  it("a new session's first message posts runtime: 'opencode'", async () => {
+  it("a new session’s first message posts runtime: 'opencode'", async () => {
     const postMessage = vi
       .fn()
       .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
@@ -203,7 +203,7 @@ describe('useChatSession — enqueueContent (a message that waits its turn)', ()
     });
 
     expect(accepted).toBe(false);
-    expect(result.current.error?.heading).toBe('Could not queue message');
+    expect(result.current.error?.heading).toBe('Couldn’t queue message');
     // Not retryable: the words are still in the composer, a keystroke away.
     expect(result.current.error?.retryable).toBe(false);
   });
@@ -269,6 +269,6 @@ describe('useChatSession — steer and add context (the other two dispositions)'
     });
 
     expect(accepted).toBe(false);
-    expect(result.current.error?.heading).toBe('Could not steer the agent');
+    expect(result.current.error?.heading).toBe('Couldn’t steer the agent');
   });
 });

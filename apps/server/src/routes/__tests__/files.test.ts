@@ -38,11 +38,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 describe('Files Routes', () => {
   beforeEach(() => {
@@ -55,7 +57,7 @@ describe('Files Routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app).get('/api/files').query({ cwd: '/etc/shadow' });
+      const res = await request(testServer).get('/api/files').query({ cwd: '/etc/shadow' });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
@@ -66,7 +68,7 @@ describe('Files Routes', () => {
         new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
       );
 
-      const res = await request(app).get('/api/files').query({ cwd: '/home/user\0' });
+      const res = await request(testServer).get('/api/files').query({ cwd: '/home/user\0' });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('NULL_BYTE');
@@ -92,7 +94,7 @@ describe('Files Routes', () => {
 
     it('writes new content when expectedHash matches and returns the new hash', async () => {
       const next = '# Title\n\nbody edited\n';
-      const res = await request(app)
+      const res = await request(testServer)
         .put('/api/files/content')
         .send({ cwd: dir, path: 'doc.md', content: next, expectedHash: sha(original) });
 
@@ -105,7 +107,7 @@ describe('Files Routes', () => {
       const changed = '# Title\n\nchanged by agent\n';
       await fs.writeFile(file, changed, 'utf8');
 
-      const res = await request(app)
+      const res = await request(testServer)
         .put('/api/files/content')
         .send({ cwd: dir, path: 'doc.md', content: 'mine\n', expectedHash: sha(original) });
 
@@ -121,7 +123,7 @@ describe('Files Routes', () => {
       await fs.writeFile(file, 'whatever\n', 'utf8');
       const next = 'forced\n';
 
-      const res = await request(app)
+      const res = await request(testServer)
         .put('/api/files/content')
         .send({ cwd: dir, path: 'doc.md', content: next });
 
@@ -130,7 +132,7 @@ describe('Files Routes', () => {
     });
 
     it('returns 404 for a file that does not exist (never creates files)', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .put('/api/files/content')
         .send({ cwd: dir, path: 'missing.md', content: 'x\n' });
 
@@ -139,7 +141,7 @@ describe('Files Routes', () => {
     });
 
     it('treats identical content as a successful no-op', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .put('/api/files/content')
         .send({ cwd: dir, path: 'doc.md', content: original, expectedHash: sha(original) });
 
@@ -149,7 +151,7 @@ describe('Files Routes', () => {
 
     it('accepts a first save conditioned on baseline content (server hashes it)', async () => {
       const next = '# Title\n\nbody edited\n';
-      const res = await request(app)
+      const res = await request(testServer)
         .put('/api/files/content')
         .send({ cwd: dir, path: 'doc.md', content: next, expectedContent: original });
 
@@ -160,7 +162,7 @@ describe('Files Routes', () => {
 
     it('409s when the baseline content no longer matches disk', async () => {
       await fs.writeFile(file, '# Title\n\nchanged\n', 'utf8');
-      const res = await request(app)
+      const res = await request(testServer)
         .put('/api/files/content')
         .send({ cwd: dir, path: 'doc.md', content: 'mine\n', expectedContent: original });
 
@@ -180,7 +182,7 @@ describe('Files Routes', () => {
           );
         });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .put('/api/files/content')
         .send({ cwd: dir, path: '../../etc/passwd', content: 'x\n' });
 
@@ -213,7 +215,7 @@ describe('Files Routes', () => {
     });
 
     it('streams an image with the correct content type', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .get('/api/files/raw')
         .query({ cwd: dir, path: 'pic.png' })
         .buffer(true);
@@ -225,7 +227,7 @@ describe('Files Routes', () => {
     });
 
     it('streams a PDF with the correct content type', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .get('/api/files/raw')
         .query({ cwd: dir, path: 'doc.pdf' })
         .buffer(true);
@@ -238,7 +240,9 @@ describe('Files Routes', () => {
     });
 
     it('serves SVG under a script-neutering CSP sandbox', async () => {
-      const res = await request(app).get('/api/files/raw').query({ cwd: dir, path: 'icon.svg' });
+      const res = await request(testServer)
+        .get('/api/files/raw')
+        .query({ cwd: dir, path: 'icon.svg' });
 
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toBe('image/svg+xml');
@@ -248,14 +252,18 @@ describe('Files Routes', () => {
     });
 
     it('rejects non-image/pdf extensions with 415', async () => {
-      const res = await request(app).get('/api/files/raw').query({ cwd: dir, path: 'notes.txt' });
+      const res = await request(testServer)
+        .get('/api/files/raw')
+        .query({ cwd: dir, path: 'notes.txt' });
 
       expect(res.status).toBe(415);
       expect(res.body.code).toBe('UNSUPPORTED_TYPE');
     });
 
     it('returns 404 for a missing file', async () => {
-      const res = await request(app).get('/api/files/raw').query({ cwd: dir, path: 'gone.png' });
+      const res = await request(testServer)
+        .get('/api/files/raw')
+        .query({ cwd: dir, path: 'gone.png' });
 
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('NOT_FOUND');
@@ -273,7 +281,7 @@ describe('Files Routes', () => {
           );
         });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .get('/api/files/raw')
         .query({ cwd: dir, path: '../../etc/passwd.png' });
 
@@ -282,7 +290,7 @@ describe('Files Routes', () => {
     });
 
     it('rejects a missing path query with 400', async () => {
-      const res = await request(app).get('/api/files/raw').query({ cwd: dir });
+      const res = await request(testServer).get('/api/files/raw').query({ cwd: dir });
 
       expect(res.status).toBe(400);
     });
@@ -292,7 +300,7 @@ describe('Files Routes', () => {
       ['part.3mf', 'model/3mf'],
       ['clip.mp4', 'video/mp4'],
     ])('serves %s as %s with Accept-Ranges', async (name, type) => {
-      const res = await request(app)
+      const res = await request(testServer)
         .get('/api/files/raw')
         .query({ cwd: dir, path: name })
         .buffer(true);
@@ -303,7 +311,7 @@ describe('Files Routes', () => {
     });
 
     it('advertises Accept-Ranges and serves the full body when no Range header is sent', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .get('/api/files/raw')
         .query({ cwd: dir, path: 'clip.mp4' })
         .buffer(true);
@@ -314,7 +322,7 @@ describe('Files Routes', () => {
     });
 
     it('serves a 206 partial response with the correct slice for a Range request', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .get('/api/files/raw')
         .query({ cwd: dir, path: 'clip.mp4' })
         .set('Range', 'bytes=4-9')
@@ -328,7 +336,7 @@ describe('Files Routes', () => {
     });
 
     it('serves an open-ended suffix Range (last N bytes) as 206', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .get('/api/files/raw')
         .query({ cwd: dir, path: 'clip.mp4' })
         .set('Range', 'bytes=-5')
@@ -340,7 +348,7 @@ describe('Files Routes', () => {
     });
 
     it('returns 416 with a Content-Range header for an unsatisfiable Range', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .get('/api/files/raw')
         .query({ cwd: dir, path: 'clip.mp4' })
         .set('Range', `bytes=${mp4Bytes.length}-`);
@@ -351,7 +359,7 @@ describe('Files Routes', () => {
     });
 
     it('ignores a malformed Range header and serves the full body (200)', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .get('/api/files/raw')
         .query({ cwd: dir, path: 'clip.mp4' })
         .set('Range', 'rows=1-2')
@@ -362,7 +370,7 @@ describe('Files Routes', () => {
     });
 
     it('still rejects an unknown extension with 415 even with a Range header', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .get('/api/files/raw')
         .query({ cwd: dir, path: 'notes.txt' })
         .set('Range', 'bytes=0-1');

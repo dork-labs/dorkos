@@ -25,7 +25,12 @@
  *
  * @module services/marketplace/marketplace-installer
  */
-import type { MarketplacePackageManifest, PackageType, PluginSource } from '@dorkos/marketplace';
+import {
+  isSafeGitUrl,
+  type MarketplacePackageManifest,
+  type PackageType,
+  type PluginSource,
+} from '@dorkos/marketplace';
 import { validatePackage } from '@dorkos/marketplace/package-validator';
 import type { Logger } from '@dorkos/shared/logger';
 import { fileUrlToPath, type PackageFetcher } from './package-fetcher.js';
@@ -49,6 +54,7 @@ import {
   sameDisclosedEffects,
 } from './disclosed-effects.js';
 import { RELATIVE_PATH_SENTINEL_SHA } from './source-resolvers/relative-path.js';
+import { UnsupportedSourceUrlError } from './source-url-policy.js';
 import type { ConflictReport, InstallRequest, InstallResult, PermissionPreview } from './types.js';
 import { cp, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -676,6 +682,18 @@ export class MarketplaceInstaller implements InstallerLike {
    * source is passed through and the fetcher resolves it locally via
    * `marketplaceRoot`.
    *
+   * The `git-subdir` source built here is the one that skips
+   * `GitSubdirSourceSchema` — it is assembled in code from the CONFIGURED
+   * marketplace's address, not parsed out of a `marketplace.json` — so it asks
+   * the schema's own transport question directly (DOR-1710). Addresses are
+   * already refused when a source is added; this is what still stands between
+   * `git` and an address that reached `marketplaces.json` some other way.
+   *
+   * It asks `isSafeGitUrl`, not the narrower
+   * `isSupportedMarketplaceSourceUrl` the add path uses: the question here is
+   * the security one — may this string be handed to `git` — and not the
+   * separate question of which addresses can serve a listing over HTTP.
+   *
    * @internal
    */
   private buildFetchableSource(resolved: ResolvedPackageSource): PluginSource {
@@ -698,6 +716,16 @@ export class MarketplaceInstaller implements InstallerLike {
 
     // Remote marketplace: convert relative-path to a git-subdir source.
     // This lets the fetcher sparse-clone just the package subdirectory.
+    if (!isSafeGitUrl(sourceUrl)) {
+      // The address is logged here and nowhere else: it is the one fact that
+      // makes this refusal actionable, and the operator-facing message
+      // deliberately omits it.
+      this.deps.logger.warn(
+        '[marketplace-installer] refused to clone from an unsupported marketplace address',
+        { marketplace: resolved.marketplaceName, url: sourceUrl }
+      );
+      throw new UnsupportedSourceUrlError(sourceUrl);
+    }
     const subpath = resolveRelativeSubpath(resolved.pluginSource, resolved.pluginRoot);
     return { source: 'git-subdir', url: sourceUrl, path: subpath };
   }

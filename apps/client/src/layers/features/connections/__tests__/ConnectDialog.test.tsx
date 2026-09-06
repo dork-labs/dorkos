@@ -2,12 +2,11 @@
  * @vitest-environment jsdom
  *
  * The connect flow dialog: recommendation routing (relay adapter leads when
- * one exists), the multi-account label suggestion, and the consent sequence —
- * the server's custody disclosure is on screen BEFORE the sign-in link opens
- * anything, and polling starts only after the person opens it.
+ * one exists), the multi-account label suggestion, the browser consent
+ * sequence, and immediate verification for a flow with no browser step.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -122,6 +121,77 @@ describe('ConnectDialog', () => {
     // click on the anchor is the only way the vendor page opens.
     expect(openSpy).not.toHaveBeenCalled();
     openSpy.mockRestore();
+  });
+
+  it('shows connection verification without inventing a sign-in link', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorRecommendation).mockResolvedValue({
+      recommendations: [
+        {
+          kind: 'raw-mcp',
+          target: 'gmail',
+          provider: 'mcp',
+          rank: 2,
+          reason: 'Use the configured MCP server.',
+          custody: 'external',
+        },
+      ],
+      warnings: [],
+    });
+    vi.mocked(transport.startConnectorFlow).mockResolvedValue({
+      flowId: 'flow-1',
+      disclosure: 'This tool connects straight to Gmail.',
+    });
+    vi.mocked(transport.pollConnectorFlow).mockReturnValue(new Promise(() => {}));
+
+    renderDialog(transport);
+    await user.click(await screen.findByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByText('Checking the configured server…')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /sign-in/i })).toBeNull();
+    expect(screen.getByText(/only if the server accepts the configured connection/i)).toBeVisible();
+    expect(transport.pollConnectorFlow).toHaveBeenCalledWith('flow-1');
+  });
+
+  it('does not connect after the dialog closes while verification is starting', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorRecommendation).mockResolvedValue({
+      recommendations: [
+        {
+          kind: 'raw-mcp',
+          target: 'gmail',
+          provider: 'mcp',
+          rank: 2,
+          reason: 'Use the configured MCP server.',
+          custody: 'external',
+        },
+      ],
+      warnings: [],
+    });
+    let finishStart: ((result: { flowId: string; disclosure: string }) => void) | undefined;
+    const startRequest = new Promise<{ flowId: string; disclosure: string }>((resolve) => {
+      finishStart = resolve;
+    });
+    vi.mocked(transport.startConnectorFlow).mockReturnValue(startRequest);
+    const { onClose, setService } = renderDialog(transport);
+
+    await user.click(await screen.findByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(transport.startConnectorFlow).toHaveBeenCalledTimes(1));
+    expect(useConnectFlowStore.getState().step).toBe('starting');
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+    setService(null);
+    expect(useConnectFlowStore.getState().step).toBe('idle');
+
+    await act(async () => {
+      finishStart?.({ flowId: 'late-flow', disclosure: 'Late verification response.' });
+      await startRequest;
+    });
+
+    expect(useConnectFlowStore.getState().step).toBe('idle');
+    expect(transport.pollConnectorFlow).not.toHaveBeenCalled();
   });
 
   it('suggests the "personal" label when a first account of the service exists', async () => {

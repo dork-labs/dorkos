@@ -13,7 +13,9 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import type { Server } from 'node:http';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { ApprovalGrantService, ApprovalService } from '../../services/core/approvals/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
@@ -43,11 +45,13 @@ function parsePayload<T>(result: { content: { text: string }[] }): T {
 }
 
 describe('marketplace install → cockpit approval → retry', () => {
+  const target = swappableServer();
   let approvals: ApprovalService;
   let grants: ApprovalGrantService;
   let installer: InstallerLike;
   let handler: ReturnType<typeof createInstallHandler>;
   let app: express.Express;
+  let server: Server;
 
   beforeEach(() => {
     const db = createTestDb();
@@ -78,6 +82,7 @@ describe('marketplace install → cockpit approval → retry', () => {
       '/api/approvals',
       createApprovalsRouter(approvals, grants, { isLoginEnabled: () => false })
     );
+    server = target.mount(app);
   });
 
   afterEach(() => {
@@ -95,7 +100,7 @@ describe('marketplace install → cockpit approval → retry', () => {
     expect(installer.install).not.toHaveBeenCalled();
 
     // 2. The operator sees it on the card, with a summary they can act on.
-    const pending = await request(app).get('/api/approvals/pending');
+    const pending = await request(server).get('/api/approvals/pending');
     expect(pending.status).toBe(200);
     expect(pending.body.approvals).toHaveLength(1);
     expect(pending.body.approvals[0]).toMatchObject({
@@ -108,7 +113,7 @@ describe('marketplace install → cockpit approval → retry', () => {
     expect(pending.text).not.toContain(confirmationToken);
 
     // 3. They allow it, by approval id.
-    const granted = await request(app)
+    const granted = await request(server)
       .post(`/api/approvals/${pending.body.approvals[0].approvalId}/grant`)
       .send();
     expect(granted.status).toBe(200);
@@ -124,7 +129,7 @@ describe('marketplace install → cockpit approval → retry', () => {
     expect(installer.install).toHaveBeenCalledTimes(1);
 
     // 5. The approval is spent and off the card; a replay installs nothing more.
-    const afterwards = await request(app).get('/api/approvals/pending');
+    const afterwards = await request(server).get('/api/approvals/pending');
     expect(afterwards.body.approvals).toEqual([]);
     const replay = await handler({
       name: 'sentry-monitor',
@@ -139,8 +144,8 @@ describe('marketplace install → cockpit approval → retry', () => {
     const first = await handler({ name: 'sentry-monitor', marketplace: 'community' });
     const { confirmationToken } = parsePayload<{ confirmationToken: string }>(first);
 
-    const pending = await request(app).get('/api/approvals/pending');
-    const denied = await request(app)
+    const pending = await request(server).get('/api/approvals/pending');
+    const denied = await request(server)
       .post(`/api/approvals/${pending.body.approvals[0].approvalId}/deny`)
       .send({ reason: 'looks sketchy' });
     expect(denied.status).toBe(200);
@@ -175,17 +180,18 @@ describe('marketplace install → cockpit approval → retry', () => {
       '/api/approvals',
       createApprovalsRouter(approvals, grants, { isLoginEnabled: () => false })
     );
+    const agentServer = target.mount(agentApp);
 
     const first = await handler({ name: 'sentry-monitor', marketplace: 'community' });
     const { confirmationToken } = parsePayload<{ confirmationToken: string }>(first);
-    const pending = await request(agentApp).get('/api/approvals/pending');
+    const pending = await request(agentServer).get('/api/approvals/pending');
     const approvalId = pending.body.approvals[0].approvalId;
 
-    const selfGrant = await request(agentApp).post(`/api/approvals/${approvalId}/grant`).send();
+    const selfGrant = await request(agentServer).post(`/api/approvals/${approvalId}/grant`).send();
     expect(selfGrant.status).toBe(403);
     expect(selfGrant.body.code).toBe('AGENT_CANNOT_DECIDE');
 
-    const selfDeny = await request(agentApp).post(`/api/approvals/${approvalId}/deny`).send();
+    const selfDeny = await request(agentServer).post(`/api/approvals/${approvalId}/deny`).send();
     expect(selfDeny.status).toBe(403);
 
     // Still pending, and the retry still cannot install.

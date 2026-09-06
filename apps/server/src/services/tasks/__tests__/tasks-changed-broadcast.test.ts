@@ -45,7 +45,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 
@@ -119,6 +120,9 @@ import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js'
 import { ActivityService } from '../../activity/activity-service.js';
 import { activityEvents } from '@dorkos/db';
 import type { Task } from '@dorkos/shared/schemas';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** The `tool()` shape, narrowed to what this file drives. */
 interface SessionTool {
@@ -202,6 +206,8 @@ describe('a task write tells the world it happened', () => {
       cron: '0 2 * * *',
       filePath: '/tmp/tasks/nightly/SKILL.md',
     });
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -209,7 +215,7 @@ describe('a task write tells the world it happened', () => {
   });
 
   it('POST /api/tasks broadcasts tasks_changed', async () => {
-    const res = await request(app).post('/api/tasks').send({
+    const res = await request(fixtureServer).post('/api/tasks').send({
       name: 'New',
       description: 'do stuff',
       prompt: 'do stuff',
@@ -222,14 +228,16 @@ describe('a task write tells the world it happened', () => {
   });
 
   it('PATCH /api/tasks/:id broadcasts tasks_changed', async () => {
-    const res = await request(app).patch(`/api/tasks/${existing.id}`).send({ enabled: false });
+    const res = await request(fixtureServer)
+      .patch(`/api/tasks/${existing.id}`)
+      .send({ enabled: false });
 
     expect(res.status).toBe(200);
     expect(broadcastTasksChangedCount()).toBe(1);
   });
 
   it('DELETE /api/tasks/:id broadcasts tasks_changed', async () => {
-    const res = await request(app).delete(`/api/tasks/${existing.id}`);
+    const res = await request(fixtureServer).delete(`/api/tasks/${existing.id}`);
 
     expect(res.status).toBe(200);
     expect(broadcastTasksChangedCount()).toBe(1);
@@ -300,7 +308,7 @@ describe('a task write tells the world it happened', () => {
     // writes the same eventType with no status in its metadata — this is
     // the distinguishing signal a consumer needs to tell the two apart
     // without a second lookup.
-    const restRes = await request(app).post('/api/tasks').send({
+    const restRes = await request(fixtureServer).post('/api/tasks').send({
       name: 'Operator created',
       description: 'do stuff',
       prompt: 'do stuff',
@@ -323,7 +331,7 @@ describe('a task write tells the world it happened', () => {
     // A 404 changes nothing, so it must announce nothing — otherwise every
     // assertion above would pass against a broadcast fired unconditionally at
     // the top of each handler.
-    const res = await request(app).patch('/api/tasks/nope').send({ enabled: false });
+    const res = await request(fixtureServer).patch('/api/tasks/nope').send({ enabled: false });
     const mcp = await tools['tasks_delete']!.handler({ id: 'nope' }, undefined);
 
     expect(res.status).toBe(404);

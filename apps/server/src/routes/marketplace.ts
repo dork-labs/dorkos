@@ -38,6 +38,7 @@ import {
   PackageNotInstalledError,
   type UninstallFlow,
 } from '../services/marketplace/flows/uninstall.js';
+import { UnsupportedSourceUrlError } from '../services/marketplace/source-url-policy.js';
 import type { UpdateFlow } from '../services/marketplace/flows/update.js';
 import {
   assertPackageName,
@@ -230,6 +231,12 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
   }
   if (err instanceof MarketplaceNotFoundError) {
     return { status: 404, body: { error: err.message } };
+  }
+  // A configured marketplace whose address is not one we will hand to `git`
+  // (DOR-1710). Its message is written for the person reading it and says which
+  // forms do work, so it goes back verbatim.
+  if (err instanceof UnsupportedSourceUrlError) {
+    return { status: 400, body: { error: err.message } };
   }
   return {
     status: 500,
@@ -489,6 +496,18 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       const created = await sourceManager.add(parsed.data);
       return res.status(201).json(created);
     } catch (err) {
+      // An address DorkOS will not fetch from. Answered here rather than left
+      // to the 500 below: this is the caller's input, and the message names the
+      // forms that do work. The address itself is logged rather than echoed —
+      // the operator knows what they typed, and the log is where a support
+      // question gets answered.
+      if (err instanceof UnsupportedSourceUrlError) {
+        logger.warn('[Marketplace] Refused an unsupported source address', {
+          name: parsed.data.name,
+          url: err.url,
+        });
+        return res.status(400).json({ error: err.message });
+      }
       const message = err instanceof Error ? err.message : 'Failed to add marketplace source';
       if (message.includes('already exists')) {
         return res.status(409).json({ error: message });

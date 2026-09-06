@@ -19,9 +19,12 @@ vi.mock('../../lib/boundary.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import express from 'express';
 import { createDiscoveryRouter } from '../discovery.js';
+
+const fixtureTarget = swappableServer();
 
 /** Mock MeshCore with a controllable discover() async generator. */
 const mockDiscover = vi.fn();
@@ -46,7 +49,9 @@ describe('Discovery Route', () => {
     it('returns 400 for maxDepth out of range', async () => {
       const app = createTestApp();
 
-      const res = await request(app).post('/api/discovery/scan').send({ maxDepth: 100 });
+      const res = await request(fixtureTarget.mount(app))
+        .post('/api/discovery/scan')
+        .send({ maxDepth: 100 });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -55,7 +60,9 @@ describe('Discovery Route', () => {
     it('returns 400 for timeout too small', async () => {
       const app = createTestApp();
 
-      const res = await request(app).post('/api/discovery/scan').send({ timeout: 500 });
+      const res = await request(fixtureTarget.mount(app))
+        .post('/api/discovery/scan')
+        .send({ timeout: 500 });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -64,7 +71,9 @@ describe('Discovery Route', () => {
     it('returns 400 for timeout too large', async () => {
       const app = createTestApp();
 
-      const res = await request(app).post('/api/discovery/scan').send({ timeout: 200000 });
+      const res = await request(fixtureTarget.mount(app))
+        .post('/api/discovery/scan')
+        .send({ timeout: 200000 });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -73,7 +82,9 @@ describe('Discovery Route', () => {
     it('returns 400 for non-integer maxDepth', async () => {
       const app = createTestApp();
 
-      const res = await request(app).post('/api/discovery/scan').send({ maxDepth: 3.5 });
+      const res = await request(fixtureTarget.mount(app))
+        .post('/api/discovery/scan')
+        .send({ maxDepth: 3.5 });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -85,7 +96,9 @@ describe('Discovery Route', () => {
       mockIsWithinBoundary.mockResolvedValue(false);
       const app = createTestApp();
 
-      const res = await request(app).post('/api/discovery/scan').send({ root: '/etc/secrets' });
+      const res = await request(fixtureTarget.mount(app))
+        .post('/api/discovery/scan')
+        .send({ root: '/etc/secrets' });
 
       expect(res.status).toBe(403);
       expect(res.body.error).toBe('Root path outside directory boundary');
@@ -96,7 +109,7 @@ describe('Discovery Route', () => {
       mockIsWithinBoundary.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
       const app = createTestApp();
 
-      const res = await request(app)
+      const res = await request(fixtureTarget.mount(app))
         .post('/api/discovery/scan')
         .send({ roots: ['/home/user/ok', '/etc/secrets'] });
 
@@ -110,7 +123,7 @@ describe('Discovery Route', () => {
 
       const app = createTestApp();
 
-      await request(app)
+      await request(fixtureTarget.mount(app))
         .post('/api/discovery/scan')
         .send({})
         .buffer(true)
@@ -138,7 +151,7 @@ describe('Discovery Route', () => {
 
       const app = createTestApp();
 
-      await request(app)
+      await request(fixtureTarget.mount(app))
         .post('/api/discovery/scan')
         .send({ root: '/home/user/projects', maxDepth: 3, timeout: 10000 })
         .buffer(true)
@@ -165,7 +178,7 @@ describe('Discovery Route', () => {
 
       const app = createTestApp();
 
-      await request(app)
+      await request(fixtureTarget.mount(app))
         .post('/api/discovery/scan')
         .send({ roots: ['/home/user/a', '/home/user/b'] })
         .buffer(true)
@@ -212,7 +225,7 @@ describe('Discovery Route', () => {
 
       const app = createTestApp();
 
-      const res = await request(app)
+      const res = await request(fixtureTarget.mount(app))
         .post('/api/discovery/scan')
         .send({})
         .buffer(true)
@@ -256,7 +269,7 @@ describe('Discovery Route', () => {
 
       const app = createTestApp();
 
-      const res = await request(app)
+      const res = await request(fixtureTarget.mount(app))
         .post('/api/discovery/scan')
         .send({})
         .buffer(true)
@@ -290,7 +303,7 @@ describe('Discovery Route', () => {
 
       const app = createTestApp();
 
-      await request(app)
+      await request(fixtureTarget.mount(app))
         .post('/api/discovery/scan')
         .send({})
         .buffer(true)

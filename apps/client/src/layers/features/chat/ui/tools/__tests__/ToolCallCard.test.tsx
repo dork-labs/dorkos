@@ -121,11 +121,11 @@ describe('ToolCallCard truncation', () => {
 });
 
 describe('ToolCallCard streaming display', () => {
-  it('shows "Preparing..." with spinner when running with empty input', () => {
+  it('shows "Preparing…" with spinner when running with empty input', () => {
     render(
       <ToolCallCard toolCall={makeToolCall({ status: 'running', input: '' })} defaultExpanded />
     );
-    expect(screen.getByText('Preparing...')).toBeInTheDocument();
+    expect(screen.getByText('Preparing…')).toBeInTheDocument();
     expect(document.querySelector('.animate-spin')).toBeInTheDocument();
   });
 
@@ -145,11 +145,11 @@ describe('ToolCallCard streaming display', () => {
     expect(pre!.querySelector('.animate-breath')).not.toBeNull();
   });
 
-  it('does not show "Preparing..." for completed tool calls with empty input', () => {
+  it('does not show "Preparing…" for completed tool calls with empty input', () => {
     render(
       <ToolCallCard toolCall={makeToolCall({ status: 'complete', input: '' })} defaultExpanded />
     );
-    expect(screen.queryByText('Preparing...')).not.toBeInTheDocument();
+    expect(screen.queryByText('Preparing…')).not.toBeInTheDocument();
   });
 });
 

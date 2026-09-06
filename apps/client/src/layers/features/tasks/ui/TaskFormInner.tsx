@@ -350,7 +350,7 @@ export function ScheduleForm({
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
                   rows={4}
-                  placeholder="Review all pending PRs and summarize findings..."
+                  placeholder="Review all pending PRs and summarize findings…"
                 />
                 {field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
                   <p className="text-destructive text-xs">{String(field.state.meta.errors[0])}</p>
@@ -627,7 +627,7 @@ export function ScheduleForm({
               form="schedule-form"
               disabled={!isFormValid || isPending}
             >
-              {isPending ? 'Saving...' : editTask ? 'Save' : 'Create'}
+              {isPending ? 'Saving…' : editTask ? 'Save' : 'Create'}
             </Button>
           )}
         </form.Subscribe>

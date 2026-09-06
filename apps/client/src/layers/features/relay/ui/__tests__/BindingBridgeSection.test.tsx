@@ -91,7 +91,7 @@ describe('BindingBridgeSection — bridge action (§3.1, A12.2)', () => {
 describe('BindingBridgeSection — refusals render their reason, not a dead button', () => {
   it('a chat-wildcard binding shows the reason and offers no bridge button', () => {
     renderSection(makeBinding({ chatId: undefined }));
-    expect(screen.getByText(/Can't bridge this chat/i)).toBeInTheDocument();
+    expect(screen.getByText(/Can’t bridge this chat/i)).toBeInTheDocument();
     expect(screen.getByText(/reaches every chat here/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /bridge to a channel/i })).not.toBeInTheDocument();
   });
@@ -100,7 +100,7 @@ describe('BindingBridgeSection — refusals render their reason, not a dead butt
   // broadcast-specific reason, never bridged — a one-way feed is not a chat.
   it('a real broadcast binding (platformChatType: channel) shows the broadcast reason and offers no bridge button', () => {
     renderSection(makeBinding({ platformChatType: 'channel', channelType: 'group' }));
-    expect(screen.getByText(/Can't bridge this chat/i)).toBeInTheDocument();
+    expect(screen.getByText(/Can’t bridge this chat/i)).toBeInTheDocument();
     expect(screen.getByText(/broadcast channel, not a two-way conversation/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /bridge to a channel/i })).not.toBeInTheDocument();
   });
@@ -110,7 +110,7 @@ describe('BindingBridgeSection — refusals render their reason, not a dead butt
   // it is not a folded broadcast, so we do not bridge it.
   it('an old group binding with no platform type shows the conservative reason and offers no bridge button', () => {
     renderSection(makeBinding({ channelType: 'group', platformChatType: undefined }));
-    expect(screen.getByText(/Can't bridge this chat/i)).toBeInTheDocument();
+    expect(screen.getByText(/Can’t bridge this chat/i)).toBeInTheDocument();
     expect(screen.getByText(/before we started noting/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /bridge to a channel/i })).not.toBeInTheDocument();
   });

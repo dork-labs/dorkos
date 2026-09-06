@@ -226,7 +226,7 @@ function BellStatesShowcase() {
         />
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Over the cap: a long queue reads &ldquo;9+&rdquo;</ShowcaseLabel>
+      <ShowcaseLabel>Over the cap: a long queue reads “9+”</ShowcaseLabel>
       <ShowcaseDemo>
         <InboxBellPill
           tone="waiting"

@@ -67,7 +67,7 @@ export function useToggleAdapter() {
     },
     // The shared mutation toast (`query-client.ts`) reports the failure now
     // — this used to show its own on top of it.
-    meta: { errorLabel: "Couldn't turn that connection on or off" },
+    meta: { errorLabel: 'Couldn’t turn that connection on or off' },
   });
 }
 

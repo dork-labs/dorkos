@@ -281,7 +281,7 @@ export function useAdapterWizard({
                       description: `${manifest.displayName} could not be pointed at an agent, so it was not saved. ${error.message}`,
                     });
                   } else {
-                    toast.error("Couldn't finish undoing", {
+                    toast.error('Couldn’t finish undoing', {
                       description: `${manifest.displayName} was added but has no agent to answer it, and it could not be removed automatically. Remove it from Messaging by hand. ${error.message}`,
                     });
                   }

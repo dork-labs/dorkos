@@ -183,7 +183,7 @@
                           "attrs": {
                             "aria-autocomplete": "list",
                             "aria-expanded": "false",
-                            "aria-label": "Send a message...",
+                            "aria-label": "Send a message…",
                             "aria-multiline": "true",
                             "contenteditable": "true",
                             "data-lexical-editor": "true",

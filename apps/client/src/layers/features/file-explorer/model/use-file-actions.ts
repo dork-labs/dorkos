@@ -63,7 +63,7 @@ export function useFileActions(cwd: string | null): FileActionsApi {
       try {
         await transport.revealEntry(cwd, entry.path);
       } catch (err) {
-        toastCrudError(err, "Couldn't open the file manager");
+        toastCrudError(err, 'Couldn’t open the file manager');
       }
     },
     [transport, cwd]
@@ -79,7 +79,7 @@ export function useFileActions(cwd: string | null): FileActionsApi {
       // once rather than failing silently. Success stays silent — the menu
       // closing is the acknowledgement, per the copy-path convention every
       // editor shares.
-      if (!ok) toast.error("Couldn't copy to the clipboard");
+      if (!ok) toast.error('Couldn’t copy to the clipboard');
     },
     [cwd, copy]
   );

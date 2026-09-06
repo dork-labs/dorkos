@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 // A per-run throwaway client dist so the SPA fallback has an index.html to
 // serve. vi.hoisted holds a mutable ref (it runs before imports, so it can't
@@ -38,6 +39,9 @@ vi.mock('../services/core/tunnel-manager.js', () => ({
 
 import { finalizeApp } from '../app.js';
 
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
+
 /**
  * Guards the production SPA serving path (`finalizeApp` under
  * NODE_ENV=production). Regression coverage for the Express 5 migration
@@ -62,6 +66,8 @@ describe('finalizeApp — production SPA fallback (Express 5)', () => {
     app = express();
     app.get('/api/ping', (_req, res) => res.json({ ok: true }));
     finalizeApp(app);
+
+    fixtureTarget.mount(app);
   });
 
   afterAll(() => {
@@ -69,30 +75,30 @@ describe('finalizeApp — production SPA fallback (Express 5)', () => {
   });
 
   it('serves index.html for a client-side deep link', async () => {
-    const res = await request(app).get('/agents/deep/route');
+    const res = await request(fixtureServer).get('/agents/deep/route');
     expect(res.status).toBe(200);
     expect(res.text).toContain('id="root"');
   });
 
   it('serves index.html for a deep link carrying a query string', async () => {
-    const res = await request(app).get('/session?id=abc');
+    const res = await request(fixtureServer).get('/session?id=abc');
     expect(res.status).toBe(200);
     expect(res.text).toContain('id="root"');
   });
 
   it('serves a HEAD deep link (Express auto-mapped HEAD->GET on app.get, so the fallback must too)', async () => {
-    const res = await request(app).head('/agents/deep/route');
+    const res = await request(fixtureServer).head('/agents/deep/route');
     expect(res.status).toBe(200);
   });
 
   it('returns the JSON API 404 for unknown /api routes, not the SPA shell', async () => {
-    const res = await request(app).get('/api/nope');
+    const res = await request(fixtureServer).get('/api/nope');
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('API_NOT_FOUND');
   });
 
   it('does not serve the SPA shell for non-GET requests', async () => {
-    const res = await request(app).post('/agents/deep/route');
+    const res = await request(fixtureServer).post('/agents/deep/route');
     expect(res.status).toBe(404);
   });
 
@@ -104,32 +110,32 @@ describe('finalizeApp — production SPA fallback (Express 5)', () => {
    */
   describe('missing assets 404 instead of falling back to the SPA shell', () => {
     it('404s a missing hashed bundle instead of serving the SPA shell', async () => {
-      const res = await request(app).get('/assets/nope-abc123.js');
+      const res = await request(fixtureServer).get('/assets/nope-abc123.js');
       expect(res.status).toBe(404);
       expect(res.text).not.toContain('id="root"');
       expect(res.headers['cache-control']).not.toBe('no-store');
     });
 
     it('still serves an existing hashed bundle as 200 immutable', async () => {
-      const res = await request(app).get(`/assets/${HASHED_ASSET}`);
+      const res = await request(fixtureServer).get(`/assets/${HASHED_ASSET}`);
       expect(res.status).toBe(200);
       expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
     });
 
     it('404s a HEAD request for a missing hashed bundle', async () => {
-      const res = await request(app).head('/assets/nope-abc123.js');
+      const res = await request(fixtureServer).head('/assets/nope-abc123.js');
       expect(res.status).toBe(404);
     });
 
     it('still serves a genuine deep client route as 200 index.html no-store', async () => {
-      const res = await request(app).get('/agents/deep/route');
+      const res = await request(fixtureServer).get('/agents/deep/route');
       expect(res.status).toBe(200);
       expect(res.text).toContain('id="root"');
       expect(res.headers['cache-control']).toBe('no-store');
     });
 
     it('404s the exact /assets/ directory (no matching index file within it)', async () => {
-      const res = await request(app).get('/assets/');
+      const res = await request(fixtureServer).get('/assets/');
       expect(res.status).toBe(404);
       expect(res.text).not.toContain('id="root"');
     });
@@ -144,31 +150,31 @@ describe('finalizeApp — production SPA fallback (Express 5)', () => {
    */
   describe('cache headers', () => {
     it('never stores the shell served at /', async () => {
-      const res = await request(app).get('/');
+      const res = await request(fixtureServer).get('/');
       expect(res.status).toBe(200);
       expect(res.headers['cache-control']).toBe('no-store');
     });
 
     it('never stores the shell requested by name', async () => {
-      const res = await request(app).get('/index.html');
+      const res = await request(fixtureServer).get('/index.html');
       expect(res.status).toBe(200);
       expect(res.headers['cache-control']).toBe('no-store');
     });
 
     it('never stores the shell served through the deep-link fallback', async () => {
-      const res = await request(app).get('/agents/deep/route');
+      const res = await request(fixtureServer).get('/agents/deep/route');
       expect(res.status).toBe(200);
       expect(res.headers['cache-control']).toBe('no-store');
     });
 
     it('caches a content-hashed bundle for a year, immutably', async () => {
-      const res = await request(app).get(`/assets/${HASHED_ASSET}`);
+      const res = await request(fixtureServer).get(`/assets/${HASHED_ASSET}`);
       expect(res.status).toBe(200);
       expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
     });
 
     it('leaves unhashed root files (favicon) on the revalidating default', async () => {
-      const res = await request(app).get('/favicon.ico');
+      const res = await request(fixtureServer).get('/favicon.ico');
       expect(res.status).toBe(200);
       expect(res.headers['cache-control']).not.toContain('no-store');
       expect(res.headers['cache-control']).not.toContain('immutable');
@@ -223,7 +229,7 @@ describe('finalizeApp — production SPA fallback (Express 5)', () => {
 
     /** The directives of the shell's CSP, as a name -> value lookup. */
     async function policyFor(url: string): Promise<Record<string, string>> {
-      const res = await request(app).get(url);
+      const res = await request(fixtureServer).get(url);
       expect(res.status).toBe(200);
       const header = res.headers['content-security-policy'];
       expect(header, `no CSP on ${url}`).toBeTruthy();
@@ -236,12 +242,12 @@ describe('finalizeApp — production SPA fallback (Express 5)', () => {
     }
 
     it('serves the whole policy with the shell at /', async () => {
-      const res = await request(app).get('/');
+      const res = await request(fixtureServer).get('/');
       expect(res.headers['content-security-policy']).toBe(EXPECTED_CSP);
     });
 
     it('serves the whole policy with the shell requested by name', async () => {
-      const res = await request(app).get('/index.html');
+      const res = await request(fixtureServer).get('/index.html');
       expect(res.headers['content-security-policy']).toBe(EXPECTED_CSP);
     });
 
@@ -249,7 +255,7 @@ describe('finalizeApp — production SPA fallback (Express 5)', () => {
       // A deep link is served by different Express machinery from `/` (the
       // sendFile fallback, not the static hit), so the header has to be set in
       // two places and is asserted in both.
-      const res = await request(app).get('/agents/deep/route');
+      const res = await request(fixtureServer).get('/agents/deep/route');
       expect(res.headers['content-security-policy']).toBe(EXPECTED_CSP);
     });
 
@@ -300,7 +306,7 @@ describe('finalizeApp — production SPA fallback (Express 5)', () => {
     it('does not put the shell policy on hashed bundles', async () => {
       // The policy belongs to the document, not its assets — a second copy on
       // every bundle is bytes that enforce nothing.
-      const res = await request(app).get(`/assets/${HASHED_ASSET}`);
+      const res = await request(fixtureServer).get(`/assets/${HASHED_ASSET}`);
       expect(res.status).toBe(200);
       expect(res.headers['content-security-policy']).toBeUndefined();
     });

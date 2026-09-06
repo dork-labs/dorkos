@@ -97,25 +97,28 @@ describe('listRoomEntries', () => {
     );
   }
 
-  it('puts the roots the page replies to in front of it (DOR-690)', async () => {
-    // The room that made the ticket: every entry in the page is a reply to one
-    // message far behind it. Dropping the root here is what left the timeline
-    // fifty flat rows with nothing marking them as answers — and the order is
-    // the other half of the contract, because everything above reads this as one
-    // array in `seq` order.
+  it('keeps the page and the roots apart, exactly as the route sent them', async () => {
+    // The room DOR-690 was filed over: every entry in the page is a reply to
+    // one message far behind it. The roots have to arrive (dropping them is
+    // what left the timeline fifty flat rows with nothing marking them as
+    // answers) and they have to arrive SEPARATELY — a merged array cannot be
+    // paged from, because its first element is the root and not the page
+    // (DOR-1734). The join happens above this seam, in `mergeRoomHistory`.
     servePage([152, 153, 154], [1]);
 
-    const history = await setup().listRoomEntries('room-1');
+    const page = await setup().listRoomEntries('room-1');
 
-    expect(history.map((entry) => entry.seq)).toEqual([1, 152, 153, 154]);
+    expect(page.entries.map((entry) => entry.seq)).toEqual([152, 153, 154]);
+    expect(page.threadRoots.map((root) => root.seq)).toEqual([1]);
   });
 
-  it('is the page alone when the page already holds every root', async () => {
+  it('answers empty roots when the page already holds every root it points at', async () => {
     servePage([1, 2, 3], []);
 
-    const history = await setup().listRoomEntries('room-1');
+    const page = await setup().listRoomEntries('room-1');
 
-    expect(history.map((entry) => entry.seq)).toEqual([1, 2, 3]);
+    expect(page.entries.map((entry) => entry.seq)).toEqual([1, 2, 3]);
+    expect(page.threadRoots).toEqual([]);
   });
 
   it('sends the paging window it was given', async () => {

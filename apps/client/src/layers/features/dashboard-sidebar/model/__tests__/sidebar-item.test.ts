@@ -105,7 +105,7 @@ describe('buildRoomVisualIndex', () => {
     expect(sidebarItemFaces(markOf(CHANNEL)!)).toEqual([]);
   });
 
-  it("draws a one-to-one DM with the SAME face the agent's own row draws (DOR-582)", () => {
+  it('draws a one-to-one DM with the SAME face the agent’s own row draws (DOR-582)', () => {
     // No `emoji` and no `color` on the AuthorRef: the server only caches those
     // for an agent that has one stored, which is the exact condition that made
     // this mark a letter.

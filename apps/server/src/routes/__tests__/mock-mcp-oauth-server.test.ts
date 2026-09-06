@@ -18,7 +18,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import { createHash, randomBytes } from 'node:crypto';
-import request from 'supertest';
+import type { AddressInfo } from 'node:net';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 
 import {
   MOCK_MCP_OAUTH_BASE,
@@ -36,13 +38,14 @@ function buildApp() {
 }
 
 const app = buildApp();
+const server = listeningServer(app);
 
 /** A loopback callback URL of the shape the DorkOS OAuth client registers. */
 const CALLBACK = 'http://127.0.0.1:4242/api/agents/mcp-oauth/callback';
 
 /** Register a client through DCR and return its `client_id`. */
 async function registerClient(): Promise<string> {
-  const res = await request(app)
+  const res = await request(server)
     .post(`${MOCK_MCP_OAUTH_BASE}/register`)
     .send({ redirect_uris: [CALLBACK] });
   expect(res.status).toBe(201);
@@ -55,7 +58,7 @@ async function signIn(): Promise<{ accessToken: string; refreshToken: string }> 
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
 
-  const authorized = await request(app).get(`${MOCK_MCP_OAUTH_BASE}/authorize`).query({
+  const authorized = await request(server).get(`${MOCK_MCP_OAUTH_BASE}/authorize`).query({
     client_id: clientId,
     redirect_uri: CALLBACK,
     code_challenge: challenge,
@@ -66,7 +69,7 @@ async function signIn(): Promise<{ accessToken: string; refreshToken: string }> 
   const code = new URL(authorized.headers.location).searchParams.get('code');
   expect(code).toBeTruthy();
 
-  const token = await request(app)
+  const token = await request(server)
     .post(`${MOCK_MCP_OAUTH_BASE}/token`)
     .type('form')
     .send({ grant_type: 'authorization_code', code: code!, code_verifier: verifier });
@@ -79,7 +82,7 @@ async function signIn(): Promise<{ accessToken: string; refreshToken: string }> 
 
 /** Send an MCP `initialize` to the protected endpoint with the given auth header. */
 function callMcp(authorization?: string) {
-  const req = request(app)
+  const req = request(server)
     .post(MOCK_MCP_OAUTH_MCP_PATH)
     .set('Accept', 'application/json, text/event-stream')
     .set('Content-Type', 'application/json');
@@ -100,11 +103,33 @@ beforeEach(() => {
   resetMockMcpOAuthState();
 });
 
+describe('HTTP fixture', () => {
+  it('serves sequential requests through one bound listener', async () => {
+    const port = (server.address() as AddressInfo).port;
+    let observedRequests = 0;
+    const observeRequest = () => {
+      observedRequests += 1;
+    };
+    server.on('request', observeRequest);
+
+    try {
+      expect(await registerClient()).toBeTruthy();
+      expect(await registerClient()).toBeTruthy();
+    } finally {
+      server.off('request', observeRequest);
+    }
+
+    expect(observedRequests).toBe(2);
+    expect(server.listening).toBe(true);
+    expect((server.address() as AddressInfo).port).toBe(port);
+  });
+});
+
 describe('mock OAuth server — the refresh grant', () => {
   it('exchanges a refresh token it issued for a working access token', async () => {
     const { refreshToken } = await signIn();
 
-    const res = await request(app)
+    const res = await request(server)
       .post(`${MOCK_MCP_OAUTH_BASE}/token`)
       .type('form')
       .send({ grant_type: 'refresh_token', refresh_token: refreshToken });
@@ -119,7 +144,7 @@ describe('mock OAuth server — the refresh grant', () => {
   it('rejects a refresh token it never issued', async () => {
     await signIn();
 
-    const res = await request(app)
+    const res = await request(server)
       .post(`${MOCK_MCP_OAUTH_BASE}/token`)
       .type('form')
       .send({ grant_type: 'refresh_token', refresh_token: 'mock-refresh-not-a-real-token' });
@@ -129,7 +154,7 @@ describe('mock OAuth server — the refresh grant', () => {
   });
 
   it('rejects a missing refresh token rather than treating it as valid', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post(`${MOCK_MCP_OAUTH_BASE}/token`)
       .type('form')
       .send({ grant_type: 'refresh_token' });
@@ -141,7 +166,7 @@ describe('mock OAuth server — the refresh grant', () => {
   it('rotates: the presented refresh token is spent, and the new one works', async () => {
     const { refreshToken } = await signIn();
 
-    const first = await request(app)
+    const first = await request(server)
       .post(`${MOCK_MCP_OAUTH_BASE}/token`)
       .type('form')
       .send({ grant_type: 'refresh_token', refresh_token: refreshToken });
@@ -149,13 +174,13 @@ describe('mock OAuth server — the refresh grant', () => {
     const rotated = first.body.refresh_token as string;
     expect(rotated).not.toBe(refreshToken);
 
-    const replay = await request(app)
+    const replay = await request(server)
       .post(`${MOCK_MCP_OAUTH_BASE}/token`)
       .type('form')
       .send({ grant_type: 'refresh_token', refresh_token: refreshToken });
     expect(replay.status).toBe(400);
 
-    const next = await request(app)
+    const next = await request(server)
       .post(`${MOCK_MCP_OAUTH_BASE}/token`)
       .type('form')
       .send({ grant_type: 'refresh_token', refresh_token: rotated });
@@ -163,7 +188,7 @@ describe('mock OAuth server — the refresh grant', () => {
   });
 
   it('rejects a grant type it does not implement', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post(`${MOCK_MCP_OAUTH_BASE}/token`)
       .type('form')
       .send({ grant_type: 'client_credentials' });
@@ -177,12 +202,12 @@ describe('mock OAuth server — the authorization-code grant', () => {
   it('rejects a code whose PKCE verifier does not match', async () => {
     const clientId = await registerClient();
     const challenge = createHash('sha256').update('the-real-verifier').digest('base64url');
-    const authorized = await request(app)
+    const authorized = await request(server)
       .get(`${MOCK_MCP_OAUTH_BASE}/authorize`)
       .query({ client_id: clientId, redirect_uri: CALLBACK, code_challenge: challenge });
     const code = new URL(authorized.headers.location).searchParams.get('code')!;
 
-    const res = await request(app)
+    const res = await request(server)
       .post(`${MOCK_MCP_OAUTH_BASE}/token`)
       .type('form')
       .send({ grant_type: 'authorization_code', code, code_verifier: 'a-different-verifier' });
@@ -197,14 +222,14 @@ describe('mock OAuth server — the authorization-code grant', () => {
       const clientId = await registerClient();
       const verifier = 'verifier-for-the-stale-code';
       const challenge = createHash('sha256').update(verifier).digest('base64url');
-      const authorized = await request(app)
+      const authorized = await request(server)
         .get(`${MOCK_MCP_OAUTH_BASE}/authorize`)
         .query({ client_id: clientId, redirect_uri: CALLBACK, code_challenge: challenge });
       const code = new URL(authorized.headers.location).searchParams.get('code')!;
 
       vi.advanceTimersByTime(10 * 60 * 1000 + 1);
 
-      const res = await request(app)
+      const res = await request(server)
         .post(`${MOCK_MCP_OAUTH_BASE}/token`)
         .type('form')
         .send({ grant_type: 'authorization_code', code, code_verifier: verifier });
@@ -219,7 +244,7 @@ describe('mock OAuth server — the authorization-code grant', () => {
 
 describe('mock OAuth server — the authorize endpoint', () => {
   it('refuses a client_id that never registered through DCR', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .get(`${MOCK_MCP_OAUTH_BASE}/authorize`)
       .query({ client_id: 'mock-client-invented', redirect_uri: CALLBACK });
 
@@ -234,7 +259,7 @@ describe('mock OAuth server — the authorize endpoint', () => {
     ['nothing at all', ''],
   ])('refuses to redirect to %s', async (_label, redirectUri) => {
     const clientId = await registerClient();
-    const res = await request(app)
+    const res = await request(server)
       .get(`${MOCK_MCP_OAUTH_BASE}/authorize`)
       .query({ client_id: clientId, redirect_uri: redirectUri });
 

@@ -56,12 +56,14 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 import { revealInFileManager } from '../../lib/reveal-in-file-manager.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 /** Make the second validateBoundary call (target-vs-cwd) reject like an escape. */
 function mockBoundaryEscape() {
@@ -89,7 +91,7 @@ describe('File explorer copy + reveal routes', () => {
     it('copies a file, leaving the source in place', async () => {
       await fs.writeFile(path.join(dir, 'from.txt'), 'x\n');
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/copy')
         .send({ cwd: dir, from: 'from.txt', to: 'to.txt' });
 
@@ -104,7 +106,7 @@ describe('File explorer copy + reveal routes', () => {
       await fs.writeFile(path.join(dir, 'src', 'a.ts'), 'a\n');
       await fs.writeFile(path.join(dir, 'src', 'nested', 'b.ts'), 'b\n');
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/copy')
         .send({ cwd: dir, from: 'src', to: 'src-copy' });
 
@@ -116,7 +118,7 @@ describe('File explorer copy + reveal routes', () => {
     it('creates missing destination parents', async () => {
       await fs.writeFile(path.join(dir, 'from.txt'), 'x\n');
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/copy')
         .send({ cwd: dir, from: 'from.txt', to: 'deep/nested/to.txt' });
 
@@ -125,7 +127,7 @@ describe('File explorer copy + reveal routes', () => {
     });
 
     it('returns 404 when the source is missing', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/copy')
         .send({ cwd: dir, from: 'gone.txt', to: 'to.txt' });
 
@@ -137,7 +139,7 @@ describe('File explorer copy + reveal routes', () => {
       await fs.writeFile(path.join(dir, 'from.txt'), 'x\n');
       await fs.writeFile(path.join(dir, 'to.txt'), 'existing\n');
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/copy')
         .send({ cwd: dir, from: 'from.txt', to: 'to.txt' });
 
@@ -150,7 +152,7 @@ describe('File explorer copy + reveal routes', () => {
       await fs.mkdir(path.join(dir, 'src'));
       await fs.writeFile(path.join(dir, 'src', 'a.ts'), 'a\n');
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/copy')
         .send({ cwd: dir, from: 'src', to: 'src/inner' });
 
@@ -167,7 +169,7 @@ describe('File explorer copy + reveal routes', () => {
       await fs.writeFile(path.join(dir, 'from.txt'), 'x\n');
       await fs.symlink(path.join(dir, 'no-such-target'), path.join(dir, 'dangling'));
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/copy')
         .send({ cwd: dir, from: 'from.txt', to: 'dangling' });
 
@@ -184,7 +186,7 @@ describe('File explorer copy + reveal routes', () => {
       await fs.writeFile(path.join(dir, 'real.txt'), 'real\n');
       await fs.symlink(path.join(dir, 'real.txt'), path.join(dir, 'alias'));
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/copy')
         .send({ cwd: dir, from: 'from.txt', to: 'alias' });
 
@@ -203,7 +205,7 @@ describe('File explorer copy + reveal routes', () => {
       await fs.writeFile(path.join(dir, 'src', 'a.ts'), 'a\n');
       await fs.symlink(path.join(dir, 'src'), path.join(dir, 'link'), 'dir');
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/copy')
         .send({ cwd: dir, from: 'src', to: 'link/inner' });
 
@@ -219,7 +221,7 @@ describe('File explorer copy + reveal routes', () => {
         await fs.mkdir(path.join(dir, 'src'));
         await fs.writeFile(path.join(dir, 'src', 'a.ts'), 'a\n');
 
-        const res = await request(app)
+        const res = await request(testServer)
           .post('/api/files/copy')
           .send({ cwd: dir, from: 'src', to: 'SRC/inner' });
 
@@ -232,7 +234,7 @@ describe('File explorer copy + reveal routes', () => {
     it('refuses to copy over the working-directory root', async () => {
       await fs.writeFile(path.join(dir, 'from.txt'), 'x\n');
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/copy')
         .send({ cwd: dir, from: '.', to: 'copy-of-root' });
 
@@ -243,7 +245,7 @@ describe('File explorer copy + reveal routes', () => {
     it('rejects a from-path that escapes the working directory with 403', async () => {
       mockBoundaryEscape();
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/copy')
         .send({ cwd: dir, from: '../../etc/passwd', to: 'to.txt' });
 
@@ -252,7 +254,9 @@ describe('File explorer copy + reveal routes', () => {
     });
 
     it('rejects a body missing `to` with 400', async () => {
-      const res = await request(app).post('/api/files/copy').send({ cwd: dir, from: 'a.txt' });
+      const res = await request(testServer)
+        .post('/api/files/copy')
+        .send({ cwd: dir, from: 'a.txt' });
 
       expect(res.status).toBe(400);
       expect(revealInFileManager).not.toHaveBeenCalled();
@@ -263,7 +267,9 @@ describe('File explorer copy + reveal routes', () => {
     it('dispatches the file manager for an existing file and answers 204', async () => {
       await fs.writeFile(path.join(dir, 'note.txt'), 'x\n');
 
-      const res = await request(app).post('/api/files/reveal').send({ cwd: dir, path: 'note.txt' });
+      const res = await request(testServer)
+        .post('/api/files/reveal')
+        .send({ cwd: dir, path: 'note.txt' });
 
       expect(res.status).toBe(204);
       expect(revealInFileManager).toHaveBeenCalledWith(path.join(dir, 'note.txt'));
@@ -272,14 +278,18 @@ describe('File explorer copy + reveal routes', () => {
     it('reveals a directory too', async () => {
       await fs.mkdir(path.join(dir, 'src'));
 
-      const res = await request(app).post('/api/files/reveal').send({ cwd: dir, path: 'src' });
+      const res = await request(testServer)
+        .post('/api/files/reveal')
+        .send({ cwd: dir, path: 'src' });
 
       expect(res.status).toBe(204);
       expect(revealInFileManager).toHaveBeenCalledWith(path.join(dir, 'src'));
     });
 
     it('returns 404 for a path that does not exist, without launching anything', async () => {
-      const res = await request(app).post('/api/files/reveal').send({ cwd: dir, path: 'gone.txt' });
+      const res = await request(testServer)
+        .post('/api/files/reveal')
+        .send({ cwd: dir, path: 'gone.txt' });
 
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('NOT_FOUND');
@@ -290,7 +300,7 @@ describe('File explorer copy + reveal routes', () => {
       await fs.writeFile(path.join(dir, 'note.txt'), 'x\n');
       mockBoundaryEscape();
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/reveal')
         .send({ cwd: dir, path: '../../etc/passwd' });
 
@@ -303,14 +313,16 @@ describe('File explorer copy + reveal routes', () => {
       await fs.writeFile(path.join(dir, 'note.txt'), 'x\n');
       vi.mocked(revealInFileManager).mockRejectedValueOnce(new Error('spawn xdg-open ENOENT'));
 
-      const res = await request(app).post('/api/files/reveal').send({ cwd: dir, path: 'note.txt' });
+      const res = await request(testServer)
+        .post('/api/files/reveal')
+        .send({ cwd: dir, path: 'note.txt' });
 
       expect(res.status).toBe(500);
       expect(res.body.code).toBe('REVEAL_UNAVAILABLE');
     });
 
     it('rejects an empty body with 400', async () => {
-      const res = await request(app).post('/api/files/reveal').send();
+      const res = await request(testServer).post('/api/files/reveal').send();
 
       expect(res.status).toBe(400);
       expect(revealInFileManager).not.toHaveBeenCalled();

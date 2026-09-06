@@ -349,7 +349,7 @@ describe('uploadRoomAttachments goes to the room, not to a working directory', (
     expect(FakeXhr.latest.url).not.toContain('cwd');
   });
 
-  it("leaves chat's own URL byte-identical", async () => {
+  it('leaves chat’s own URL byte-identical', async () => {
     // The regression this refactor risks: chat's endpoint is the thing the
     // generalization moved through, and nothing about it may have shifted.
     await startUpload();

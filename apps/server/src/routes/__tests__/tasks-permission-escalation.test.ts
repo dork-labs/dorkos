@@ -43,7 +43,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -88,6 +89,9 @@ import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
+
 /** The operator's `runtimes` block, sitting at full power. */
 function autonomyRuntimes(): UserConfig['runtimes'] {
   return { ...USER_CONFIG_DEFAULTS.runtimes, defaultTrustStop: 'autonomy' };
@@ -126,6 +130,8 @@ describe('an agent cannot escalate a schedule to bypassPermissions', () => {
       '/api/tasks',
       createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), dorkHome)
     );
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -155,7 +161,7 @@ describe('an agent cannot escalate a schedule to bypassPermissions', () => {
   it('still refuses an agent that simply asks for the mode', async () => {
     // The guard that does work, pinned here as the baseline the cases below are
     // trying to get around.
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post('/api/tasks')
       .set('x-dorkos-agent', 'agent-token-abc')
       .send(agentBody({ permissionMode: 'bypassPermissions' }));
@@ -165,7 +171,7 @@ describe('an agent cannot escalate a schedule to bypassPermissions', () => {
   });
 
   it('clamps on the happy path, where the file parses', async () => {
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post('/api/tasks')
       .set('x-dorkos-agent', 'agent-token-abc')
       .send(agentBody());
@@ -179,7 +185,7 @@ describe('an agent cannot escalate a schedule to bypassPermissions', () => {
     // regex in the frontmatter, so this body is accepted, written, and then
     // fails its own re-parse — landing on the fallback insert, which had no
     // clamp and was handed the resolved `bypassPermissions`.
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post('/api/tasks')
       .set('x-dorkos-agent', 'agent-token-abc')
       .send(agentBody({ maxRuntime: 'banana' }));
@@ -196,7 +202,7 @@ describe('an agent cannot escalate a schedule to bypassPermissions', () => {
     // The same trick through a different field: the request had no length cap
     // and the frontmatter caps at 1024. Pinned because the structural fix has to
     // hold for every such divergence, not just the one that was reported.
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post('/api/tasks')
       .set('x-dorkos-agent', 'agent-token-abc')
       .send(agentBody({ description: 'x'.repeat(2000) }));
@@ -209,7 +215,7 @@ describe('an agent cannot escalate a schedule to bypassPermissions', () => {
   it('clamps when a name that slugifies to nothing makes the file unreadable', async () => {
     // The third divergence: `slugify` can answer the empty string, which the
     // frontmatter's name rule rejects.
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post('/api/tasks')
       .set('x-dorkos-agent', 'agent-token-abc')
       .send(agentBody({ name: '!!!' }));

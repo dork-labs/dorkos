@@ -75,7 +75,7 @@ export function DeadLetterDetailSheet({ open, itemId, onClose }: DeadLetterDetai
                   send them.
                 </p>
                 <p className="text-foreground text-sm">
-                  {group.count} message{group.count === 1 ? '' : 's'} couldn&rsquo;t be delivered
+                  {group.count} message{group.count === 1 ? '' : 's'} couldn’t be delivered
                 </p>
                 <Badge variant="secondary">{deadLetterReasonLabel(group.reason)}</Badge>
               </div>

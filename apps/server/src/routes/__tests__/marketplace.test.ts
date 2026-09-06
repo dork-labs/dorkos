@@ -6,7 +6,8 @@ import { mkdtempSync, rmSync, mkdirSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { MarketplaceJson, PluginPackageManifest, PluginSource } from '@dorkos/marketplace';
 import { resolvePackageSource } from '../marketplace.js';
 
@@ -39,6 +40,7 @@ import {
   InvalidPackageError,
   type InstallerLike,
 } from '../../services/marketplace/marketplace-installer.js';
+import { UnsupportedSourceUrlError } from '../../services/marketplace/source-url-policy.js';
 import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../../services/marketplace/flows/install-shape.js';
 import {
   PackageNotInstalledError,
@@ -55,6 +57,9 @@ import { noopLogger } from '@dorkos/shared/logger';
 import { initConfigManager } from '../../services/core/config-manager.js';
 import type { MarketplaceMcpDeps } from '../../services/marketplace-mcp/marketplace-mcp-tools.js';
 import type { CapabilityRegistry } from '../../services/core/capabilities/index.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 const SAMPLE_MARKETPLACE_JSON: MarketplaceJson = {
   name: 'dorkos-community',
@@ -234,6 +239,8 @@ describe('Marketplace Routes', () => {
         capabilityRegistry: () => gateRegistry,
       })
     );
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -243,7 +250,7 @@ describe('Marketplace Routes', () => {
 
   describe('GET /sources', () => {
     it('returns seeded sources on first call', async () => {
-      const res = await request(app).get('/api/marketplace/sources');
+      const res = await request(fixtureServer).get('/api/marketplace/sources');
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('sources');
       expect(Array.isArray(res.body.sources)).toBe(true);
@@ -256,7 +263,7 @@ describe('Marketplace Routes', () => {
 
   describe('POST /sources', () => {
     it('adds a new source and returns 201 with the created entry', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'my-custom', source: 'https://github.com/me/marketplace' });
 
@@ -268,11 +275,11 @@ describe('Marketplace Routes', () => {
     });
 
     it('returns 409 when adding a duplicate name', async () => {
-      await request(app)
+      await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'dup', source: 'https://example.com/one' });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'dup', source: 'https://example.com/two' });
 
@@ -281,22 +288,38 @@ describe('Marketplace Routes', () => {
     });
 
     it('returns 400 for invalid body', async () => {
-      const res = await request(app).post('/api/marketplace/sources').send({ name: '' });
+      const res = await request(fixtureServer).post('/api/marketplace/sources').send({ name: '' });
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
+    });
+
+    it('returns 400 and says what to use instead for an address git would run (DOR-1710)', async () => {
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'hostile', source: "ext::sh -c 'id > /tmp/pwned'" });
+
+      expect(res.status).toBe(400);
+      // The whole point of the refusal is that the person reading it learns
+      // which addresses do work — not just that this one did not.
+      expect(res.body.error).toMatch(/isn't one DorkOS can fetch a marketplace from/);
+      expect(res.body.error).toMatch(/https:\/\//);
+
+      const listRes = await request(fixtureServer).get('/api/marketplace/sources');
+      const names = listRes.body.sources.map((s: { name: string }) => s.name);
+      expect(names).not.toContain('hostile');
     });
   });
 
   describe('DELETE /sources/:name', () => {
     it('removes a source and returns 204', async () => {
-      await request(app)
+      await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'removable', source: 'https://example.com/r' });
 
-      const res = await request(app).delete('/api/marketplace/sources/removable');
+      const res = await request(fixtureServer).delete('/api/marketplace/sources/removable');
       expect(res.status).toBe(204);
 
-      const listRes = await request(app).get('/api/marketplace/sources');
+      const listRes = await request(fixtureServer).get('/api/marketplace/sources');
       const names = listRes.body.sources.map((s: { name: string }) => s.name);
       expect(names).not.toContain('removable');
     });
@@ -304,11 +327,11 @@ describe('Marketplace Routes', () => {
 
   describe('POST /sources/:name/refresh', () => {
     it('calls fetcher with the resolved source and returns marketplace JSON', async () => {
-      await request(app)
+      await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'refreshable', source: 'https://example.com/refresh' });
 
-      const res = await request(app).post('/api/marketplace/sources/refreshable/refresh');
+      const res = await request(fixtureServer).post('/api/marketplace/sources/refreshable/refresh');
 
       expect(res.status).toBe(200);
       expect(res.body.marketplace).toEqual(SAMPLE_MARKETPLACE_JSON);
@@ -320,7 +343,7 @@ describe('Marketplace Routes', () => {
     });
 
     it('returns 404 when the source does not exist', async () => {
-      const res = await request(app).post('/api/marketplace/sources/missing/refresh');
+      const res = await request(fixtureServer).post('/api/marketplace/sources/missing/refresh');
       expect(res.status).toBe(404);
     });
   });
@@ -343,7 +366,7 @@ describe('Marketplace Routes', () => {
         version: '0.5.0',
       });
 
-      const res = await request(app).get('/api/marketplace/installed');
+      const res = await request(fixtureServer).get('/api/marketplace/installed');
       expect(res.status).toBe(200);
       expect(res.body.packages).toHaveLength(2);
 
@@ -357,7 +380,7 @@ describe('Marketplace Routes', () => {
     });
 
     it('returns empty list when no packages installed', async () => {
-      const res = await request(app).get('/api/marketplace/installed');
+      const res = await request(fixtureServer).get('/api/marketplace/installed');
       expect(res.status).toBe(200);
       expect(res.body.packages).toEqual([]);
     });
@@ -374,7 +397,7 @@ describe('Marketplace Routes', () => {
         version: '2.0.0',
       });
 
-      const res = await request(app).get('/api/marketplace/installed');
+      const res = await request(fixtureServer).get('/api/marketplace/installed');
       expect(res.status).toBe(200);
       expect(res.body.packages).toHaveLength(1);
       expect(res.body.packages[0]).toMatchObject({
@@ -398,7 +421,7 @@ describe('Marketplace Routes', () => {
         version: '2.0.0',
       });
 
-      const res = await request(app).get('/api/marketplace/installed');
+      const res = await request(fixtureServer).get('/api/marketplace/installed');
       expect(res.status).toBe(200);
       expect(res.body.packages).toHaveLength(1);
       expect(res.body.packages[0]).toMatchObject({
@@ -430,7 +453,7 @@ describe('Marketplace Routes', () => {
         version: '1.1.0',
       });
 
-      const res = await request(app).get('/api/marketplace/installed');
+      const res = await request(fixtureServer).get('/api/marketplace/installed');
       expect(res.status).toBe(200);
       expect(res.body.packages).toHaveLength(2);
       const scopes = res.body.packages.map((p: { scope: string }) => p.scope).sort();
@@ -450,7 +473,7 @@ describe('Marketplace Routes', () => {
         version: '1.2.3',
       });
 
-      const res = await request(app).get('/api/marketplace/installed/my-plugin');
+      const res = await request(fixtureServer).get('/api/marketplace/installed/my-plugin');
       expect(res.status).toBe(200);
       expect(res.body.installations).toHaveLength(1);
       expect(res.body.installations[0].name).toBe('my-plugin');
@@ -480,7 +503,7 @@ describe('Marketplace Routes', () => {
         version: '1.0.0',
       });
 
-      const res = await request(app).get('/api/marketplace/installed/multi');
+      const res = await request(fixtureServer).get('/api/marketplace/installed/multi');
       expect(res.status).toBe(200);
       expect(res.body.installations).toHaveLength(2);
       const byScope = Object.fromEntries(
@@ -496,14 +519,14 @@ describe('Marketplace Routes', () => {
     });
 
     it('returns 404 when not installed', async () => {
-      const res = await request(app).get('/api/marketplace/installed/nonexistent');
+      const res = await request(fixtureServer).get('/api/marketplace/installed/nonexistent');
       expect(res.status).toBe(404);
     });
   });
 
   describe('GET /cache', () => {
     it('returns cache size info', async () => {
-      const res = await request(app).get('/api/marketplace/cache');
+      const res = await request(fixtureServer).get('/api/marketplace/cache');
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('marketplaces');
       expect(res.body).toHaveProperty('packages');
@@ -517,7 +540,7 @@ describe('Marketplace Routes', () => {
       await cache.writeMarketplace('test-mp', SAMPLE_MARKETPLACE_JSON);
       await cache.putPackage('test-pkg', 'deadbeef');
 
-      const res = await request(app).get('/api/marketplace/cache');
+      const res = await request(fixtureServer).get('/api/marketplace/cache');
       expect(res.status).toBe(200);
       expect(res.body.marketplaces).toBe(1);
       expect(res.body.packages).toBe(1);
@@ -529,10 +552,10 @@ describe('Marketplace Routes', () => {
     it('clears the cache and returns 204', async () => {
       await cache.writeMarketplace('test-mp', SAMPLE_MARKETPLACE_JSON);
 
-      const res = await request(app).delete('/api/marketplace/cache');
+      const res = await request(fixtureServer).delete('/api/marketplace/cache');
       expect(res.status).toBe(204);
 
-      const statusRes = await request(app).get('/api/marketplace/cache');
+      const statusRes = await request(fixtureServer).get('/api/marketplace/cache');
       expect(statusRes.body.marketplaces).toBe(0);
       expect(statusRes.body.packages).toBe(0);
     });
@@ -551,7 +574,9 @@ describe('Marketplace Routes', () => {
       const secondPath = await cache.putPackage('test-pkg', 'bbbbbbbb');
       writeFileSync(join(secondPath, 'payload.txt'), 'second');
 
-      const res = await request(app).post('/api/marketplace/cache/prune').send({ keepLastN: 1 });
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/cache/prune')
+        .send({ keepLastN: 1 });
 
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.removed)).toBe(true);
@@ -562,7 +587,7 @@ describe('Marketplace Routes', () => {
       expect(res.body.freedBytes).toBeGreaterThan(0);
 
       // The surviving SHA should still be discoverable via GET /cache.
-      const statusRes = await request(app).get('/api/marketplace/cache');
+      const statusRes = await request(fixtureServer).get('/api/marketplace/cache');
       expect(statusRes.body.packages).toBe(1);
     });
 
@@ -573,14 +598,16 @@ describe('Marketplace Routes', () => {
       const secondPath = await cache.putPackage('pkg', 'bbbb');
       writeFileSync(join(secondPath, 'f'), 'b');
 
-      const res = await request(app).post('/api/marketplace/cache/prune').send({});
+      const res = await request(fixtureServer).post('/api/marketplace/cache/prune').send({});
       expect(res.status).toBe(200);
       expect(res.body.removed).toHaveLength(1);
       expect(res.body.removed[0].commitSha).toBe('aaaa');
     });
 
     it('rejects invalid keepLastN payloads', async () => {
-      const res = await request(app).post('/api/marketplace/cache/prune').send({ keepLastN: -1 });
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/cache/prune')
+        .send({ keepLastN: -1 });
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
     });
@@ -589,10 +616,10 @@ describe('Marketplace Routes', () => {
   describe('GET /packages', () => {
     it('aggregates packages from every enabled marketplace', async () => {
       // Seed two sources so the fetcher is called twice.
-      await request(app)
+      await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'mp-one', source: 'https://example.com/one' });
-      await request(app)
+      await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'mp-two', source: 'https://example.com/two' });
 
@@ -609,7 +636,7 @@ describe('Marketplace Routes', () => {
         })
       );
 
-      const res = await request(app).get('/api/marketplace/packages');
+      const res = await request(fixtureServer).get('/api/marketplace/packages');
       expect(res.status).toBe(200);
       const names = res.body.packages.map((p: { name: string }) => p.name).sort();
       // One entry per configured marketplace (seeded defaults + mp-one + mp-two).
@@ -622,10 +649,10 @@ describe('Marketplace Routes', () => {
     });
 
     it('skips a failing marketplace and returns entries from the others', async () => {
-      await request(app)
+      await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'mp-one', source: 'https://example.com/one' });
-      await request(app)
+      await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'mp-two', source: 'https://example.com/two' });
 
@@ -647,7 +674,7 @@ describe('Marketplace Routes', () => {
         }
       );
 
-      const res = await request(app).get('/api/marketplace/packages');
+      const res = await request(fixtureServer).get('/api/marketplace/packages');
       expect(res.status).toBe(200);
       const names = res.body.packages.map((p: { name: string }) => p.name);
       expect(names).toContain('mp-one-pkg');
@@ -668,7 +695,7 @@ describe('Marketplace Routes', () => {
         },
       });
 
-      const res = await request(app).get('/api/marketplace/packages');
+      const res = await request(fixtureServer).get('/api/marketplace/packages');
       expect(res.status).toBe(200);
       const pkg = res.body.packages.find((p: { name: string }) => p.name === 'sample-plugin');
       expect(pkg).toBeDefined();
@@ -689,7 +716,7 @@ describe('Marketplace Routes', () => {
         },
       });
 
-      const res = await request(app).get('/api/marketplace/packages');
+      const res = await request(fixtureServer).get('/api/marketplace/packages');
       expect(res.status).toBe(200);
       const pkg = res.body.packages.find((p: { name: string }) => p.name === 'sample-plugin');
       expect(pkg.type).toBe('adapter');
@@ -707,7 +734,7 @@ describe('Marketplace Routes', () => {
         },
       });
 
-      const res = await request(app).get('/api/marketplace/packages');
+      const res = await request(fixtureServer).get('/api/marketplace/packages');
       expect(res.status).toBe(200);
       const pkg = res.body.packages.find((p: { name: string }) => p.name === 'sample-plugin');
       expect(pkg.type).toBe('plugin');
@@ -717,7 +744,7 @@ describe('Marketplace Routes', () => {
     it('returns packages when sidecar is absent', async () => {
       fetcher.fetchDorkosSidecar.mockResolvedValue(null);
 
-      const res = await request(app).get('/api/marketplace/packages');
+      const res = await request(fixtureServer).get('/api/marketplace/packages');
       expect(res.status).toBe(200);
       expect(res.body.packages.length).toBeGreaterThan(0);
       const pkg = res.body.packages.find((p: { name: string }) => p.name === 'sample-plugin');
@@ -738,7 +765,7 @@ describe('Marketplace Routes', () => {
         },
       });
 
-      const res = await request(app).get('/api/marketplace/packages');
+      const res = await request(fixtureServer).get('/api/marketplace/packages');
       expect(res.status).toBe(200);
       const pkg = res.body.packages.find((p: { name: string }) => p.name === 'sample-plugin');
       expect(pkg.categories).toEqual(['security', 'code-review']);
@@ -761,7 +788,7 @@ describe('Marketplace Routes', () => {
         ],
       });
 
-      const res = await request(app).get('/api/marketplace/packages');
+      const res = await request(fixtureServer).get('/api/marketplace/packages');
       expect(res.status).toBe(200);
       const pkg = res.body.packages.find((p: { name: string }) => p.name === 'sample-plugin');
       expect(pkg.category).toBe('security');
@@ -779,7 +806,7 @@ describe('Marketplace Routes', () => {
         packagePath: '/tmp/fake/pkg',
       });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .get('/api/marketplace/packages/sample-plugin')
         .query({ marketplace: 'dorkos-community' });
 
@@ -805,7 +832,7 @@ describe('Marketplace Routes', () => {
         packagePath: pkgDir,
       });
 
-      const res = await request(app).get('/api/marketplace/packages/sample-plugin');
+      const res = await request(fixtureServer).get('/api/marketplace/packages/sample-plugin');
 
       expect(res.status).toBe(200);
       expect(res.body.readme).toBe(readmeBody);
@@ -819,7 +846,7 @@ describe('Marketplace Routes', () => {
         packagePath: pkgDir,
       });
 
-      const res = await request(app).get('/api/marketplace/packages/sample-plugin');
+      const res = await request(fixtureServer).get('/api/marketplace/packages/sample-plugin');
 
       expect(res.status).toBe(200);
       expect(res.body).not.toHaveProperty('readme');
@@ -835,7 +862,7 @@ describe('Marketplace Routes', () => {
         packagePath: pkgDir,
       });
 
-      const res = await request(app).get('/api/marketplace/packages/sample-plugin');
+      const res = await request(fixtureServer).get('/api/marketplace/packages/sample-plugin');
 
       expect(res.status).toBe(200);
       expect(Buffer.byteLength(res.body.readme, 'utf8')).toBe(200 * 1024);
@@ -858,7 +885,7 @@ describe('Marketplace Routes', () => {
         packagePath: pkgDir,
       });
 
-      const res = await request(app).get('/api/marketplace/packages/sample-plugin');
+      const res = await request(fixtureServer).get('/api/marketplace/packages/sample-plugin');
 
       expect(res.status).toBe(200);
       expect(res.body).not.toHaveProperty('readme');
@@ -878,7 +905,7 @@ describe('Marketplace Routes', () => {
         packagePath: pkgDir,
       });
 
-      const res = await request(app).get('/api/marketplace/packages/sample-plugin');
+      const res = await request(fixtureServer).get('/api/marketplace/packages/sample-plugin');
 
       expect(res.status).toBe(200);
       const readme: string = res.body.readme;
@@ -891,9 +918,27 @@ describe('Marketplace Routes', () => {
 
     it('returns 400 when installer.preview throws InvalidPackageError', async () => {
       installer.preview.mockRejectedValue(new InvalidPackageError(['bad manifest']));
-      const res = await request(app).get('/api/marketplace/packages/broken');
+      const res = await request(fixtureServer).get('/api/marketplace/packages/broken');
       expect(res.status).toBe(400);
       expect(res.body.errors).toEqual(['bad manifest']);
+    });
+
+    it('returns 400 when the installer refuses the marketplace address (DOR-1710)', async () => {
+      // The refusal raised inside the install pipeline, not at the add route:
+      // a source that reached `marketplaces.json` some other way is only
+      // caught when the installer is about to hand it to `git`. This route is
+      // the ungated way in — a preview runs before any consent — so this is
+      // the branch of `mapErrorToStatus` that carries that refusal to a caller.
+      installer.preview.mockRejectedValue(
+        new UnsupportedSourceUrlError("ext::sh -c 'id > /tmp/pwned'")
+      );
+
+      const res = await request(fixtureServer).get('/api/marketplace/packages/sample-plugin');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/isn't one DorkOS can fetch a marketplace from/);
+      // The hostile address is never echoed back to the caller.
+      expect(JSON.stringify(res.body)).not.toContain('ext::');
     });
   });
 
@@ -907,7 +952,7 @@ describe('Marketplace Routes', () => {
         packagePath: '/tmp/fake/pkg',
       });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/preview')
         .send({ marketplace: 'dorkos-community' });
 
@@ -922,7 +967,7 @@ describe('Marketplace Routes', () => {
     });
 
     it('returns 400 when the body is invalid', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/preview')
         .send({ force: 'not-a-boolean' });
       expect(res.status).toBe(400);
@@ -937,7 +982,7 @@ describe('Marketplace Routes', () => {
         new PathEscapeError('/Users/realperson/.dork/cache/marketplace/packages', 'evil')
       );
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/preview')
         .send({});
 
@@ -952,7 +997,7 @@ describe('Marketplace Routes', () => {
     it('names the rejected package name, which the caller supplied itself', async () => {
       installer.preview.mockRejectedValue(new InvalidPackageNameError('Bad Name', 'must be kebab'));
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/preview')
         .send({});
 
@@ -966,7 +1011,7 @@ describe('Marketplace Routes', () => {
       const result = buildSampleInstallResult();
       installer.install.mockResolvedValue(result);
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/install')
         .send({ marketplace: 'dorkos-community', force: false });
 
@@ -988,7 +1033,7 @@ describe('Marketplace Routes', () => {
       };
       installer.install.mockResolvedValue(result);
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/linear-ops/install')
         .send({ projectPath: '/some/project' });
 
@@ -999,7 +1044,7 @@ describe('Marketplace Routes', () => {
     it('fires onPluginsChanged with the install context (projectPath from body)', async () => {
       installer.install.mockResolvedValue(buildSampleInstallResult());
 
-      await request(app)
+      await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/install')
         .send({ projectPath: '/some/project' });
 
@@ -1021,7 +1066,7 @@ describe('Marketplace Routes', () => {
       // spelling rather than on the directory.
       installer.install.mockResolvedValue(buildSampleInstallResult());
 
-      await request(app)
+      await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/install')
         .send({ projectPath: '/some/project' });
 
@@ -1033,7 +1078,7 @@ describe('Marketplace Routes', () => {
     it('passes projectPath: undefined to onPluginsChanged for a global install', async () => {
       installer.install.mockResolvedValue(buildSampleInstallResult());
 
-      await request(app).post('/api/marketplace/packages/sample-plugin/install').send({});
+      await request(fixtureServer).post('/api/marketplace/packages/sample-plugin/install').send({});
 
       expect(onPluginsChanged.mock.calls[0][0]).toEqual({
         projectPath: undefined,
@@ -1045,7 +1090,7 @@ describe('Marketplace Routes', () => {
     it('does NOT fire onPluginsChanged when the install fails', async () => {
       installer.install.mockRejectedValue(new InvalidPackageError(['bad']));
 
-      await request(app).post('/api/marketplace/packages/sample-plugin/install').send({});
+      await request(fixtureServer).post('/api/marketplace/packages/sample-plugin/install').send({});
 
       expect(onPluginsChanged).not.toHaveBeenCalled();
     });
@@ -1058,7 +1103,7 @@ describe('Marketplace Routes', () => {
       installer.install.mockResolvedValue(buildSampleInstallResult());
       const rawParam = encodeURIComponent('./local/clones/sample-plugin');
 
-      await request(app)
+      await request(fixtureServer)
         .post(`/api/marketplace/packages/${rawParam}/install`)
         .send({ projectPath: '/some/project' });
 
@@ -1080,7 +1125,7 @@ describe('Marketplace Routes', () => {
       ];
       installer.install.mockRejectedValue(new ConflictError(conflicts));
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/install')
         .send({});
 
@@ -1091,7 +1136,7 @@ describe('Marketplace Routes', () => {
     it('returns 400 when installer.install throws InvalidPackageError', async () => {
       installer.install.mockRejectedValue(new InvalidPackageError(['manifest.version required']));
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/install')
         .send({});
 
@@ -1108,7 +1153,7 @@ describe('Marketplace Routes', () => {
       // this route can tell it apart from the person in the cockpit.
       agentHeader = 'agent-token';
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/demo-plugin/uninstall')
         .send({ purge: true });
 
@@ -1130,7 +1175,7 @@ describe('Marketplace Routes', () => {
         preservedData: [],
       });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/demo-plugin/uninstall')
         .send({});
 
@@ -1159,7 +1204,7 @@ describe('Marketplace Routes', () => {
         preservedData: [],
       });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/demo-plugin/uninstall')
         .send({ purge: true });
 
@@ -1182,7 +1227,7 @@ describe('Marketplace Routes', () => {
         preservedData: [],
       });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/demo-plugin/uninstall')
         .send({});
 
@@ -1203,7 +1248,9 @@ describe('Marketplace Routes', () => {
         warnings: [],
       });
 
-      const res = await request(app).post('/api/marketplace/packages/demo-plugin/install').send({});
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/demo-plugin/install')
+        .send({});
 
       expect(res.status).toBe(200);
       expect(installer.install).toHaveBeenCalled();
@@ -1214,7 +1261,7 @@ describe('Marketplace Routes', () => {
     /** Read the source names back as the cockpit would, with no agent header. */
     async function listSourceNames(): Promise<string[]> {
       agentHeader = undefined;
-      const res = await request(app).get('/api/marketplace/sources');
+      const res = await request(fixtureServer).get('/api/marketplace/sources');
       return res.body.sources.map((s: { name: string }) => s.name);
     }
 
@@ -1223,7 +1270,7 @@ describe('Marketplace Routes', () => {
       // code from, and the install gate never asks where a package came from.
       agentHeader = 'agent-token';
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'attacker', source: 'https://attacker.example/marketplace' });
 
@@ -1238,12 +1285,12 @@ describe('Marketplace Routes', () => {
     });
 
     it('refuses an AGENT that tries to remove a source, and the source survives', async () => {
-      await request(app)
+      await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'keeper', source: 'https://example.com/keeper' });
 
       agentHeader = 'agent-token';
-      const res = await request(app).delete('/api/marketplace/sources/keeper');
+      const res = await request(fixtureServer).delete('/api/marketplace/sources/keeper');
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('operator_only_marketplace_source');
@@ -1259,7 +1306,7 @@ describe('Marketplace Routes', () => {
       // a different answer for a caller that may not do this at all.
       agentHeader = 'agent-token';
 
-      const res = await request(app).post('/api/marketplace/sources').send({ name: '' });
+      const res = await request(fixtureServer).post('/api/marketplace/sources').send({ name: '' });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('operator_only_marketplace_source');
@@ -1269,13 +1316,13 @@ describe('Marketplace Routes', () => {
     it('lets the person in the cockpit add and then remove a source', async () => {
       // The other half of the bar. Without this, inverting the guard so it
       // refuses the operator and allows the agent would still look green.
-      const added = await request(app)
+      const added = await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'mine', source: 'https://example.com/mine' });
       expect(added.status).toBe(201);
       expect(await listSourceNames()).toContain('mine');
 
-      const removed = await request(app).delete('/api/marketplace/sources/mine');
+      const removed = await request(fixtureServer).delete('/api/marketplace/sources/mine');
       expect(removed.status).toBe(204);
       expect(await listSourceNames()).not.toContain('mine');
     });
@@ -1292,18 +1339,18 @@ describe('Marketplace Routes', () => {
       agentHeader = undefined;
       signedInUser = { userId: 'user_cli', credential: 'api-key' };
 
-      const added = await request(app)
+      const added = await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'from-cli', source: 'https://example.com/from-cli' });
       expect(added.status).toBe(201);
 
-      const removed = await request(app).delete('/api/marketplace/sources/from-cli');
+      const removed = await request(fixtureServer).delete('/api/marketplace/sources/from-cli');
       expect(removed.status).toBe(204);
 
       // And the agent bar still holds in this posture — the allow above is about
       // WHICH credential the operator may present, not a hole login-on opens.
       agentHeader = 'agent-token';
-      const refused = await request(app)
+      const refused = await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'attacker', source: 'https://attacker.example/marketplace' });
       expect(refused.status).toBe(403);
@@ -1313,15 +1360,17 @@ describe('Marketplace Routes', () => {
     it('leaves reading, refreshing, and listing open to an agent', async () => {
       // Refusing more than the line justifies makes the surface useless. An
       // agent still needs to see what this install reads from.
-      await request(app)
+      await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'readable', source: 'https://example.com/readable' });
 
       agentHeader = 'agent-token';
-      const list = await request(app).get('/api/marketplace/sources');
+      const list = await request(fixtureServer).get('/api/marketplace/sources');
       expect(list.status).toBe(200);
 
-      const refresh = await request(app).post('/api/marketplace/sources/readable/refresh');
+      const refresh = await request(fixtureServer).post(
+        '/api/marketplace/sources/readable/refresh'
+      );
       expect(refresh.status).toBe(200);
     });
   });
@@ -1335,7 +1384,7 @@ describe('Marketplace Routes', () => {
         preservedData: [],
       });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/uninstall')
         .send({ purge: true });
 
@@ -1356,7 +1405,7 @@ describe('Marketplace Routes', () => {
         preservedData: [],
       });
 
-      await request(app)
+      await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/uninstall')
         .send({ projectPath: '/some/project' });
 
@@ -1381,7 +1430,7 @@ describe('Marketplace Routes', () => {
       // the route now takes canonical package names only — but the regression
       // this test guards is unchanged: the event carries what the flow
       // resolved, never what the URL said.
-      await request(app)
+      await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin-alias/uninstall')
         .send({ projectPath: '/some/project' });
 
@@ -1403,7 +1452,7 @@ describe('Marketplace Routes', () => {
       ['a%2F..%2F..%2F..%2Fetc', 'embedded traversal'],
       ['Sample-Plugin', 'uppercase — never an install directory'],
     ])('refuses %s with 400 (%s) and never reaches the flow', async (rawName) => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post(`/api/marketplace/packages/${rawName}/uninstall`)
         .send({});
 
@@ -1416,7 +1465,7 @@ describe('Marketplace Routes', () => {
     it('returns 404 when the package is not installed', async () => {
       uninstallFlow.uninstall.mockRejectedValue(new PackageNotInstalledError('missing-pkg'));
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/missing-pkg/uninstall')
         .send({});
 
@@ -1441,7 +1490,7 @@ describe('Marketplace Routes', () => {
         applied: [],
       });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/update')
         .send({});
 
@@ -1466,7 +1515,7 @@ describe('Marketplace Routes', () => {
         applied: [buildSampleInstallResult()],
       });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/update')
         .send({ apply: true });
 
@@ -1484,7 +1533,7 @@ describe('Marketplace Routes', () => {
         applied: [buildSampleInstallResult()],
       });
 
-      await request(app)
+      await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/update')
         .send({ apply: true, projectPath: '/some/project' });
 
@@ -1499,7 +1548,7 @@ describe('Marketplace Routes', () => {
     it('does NOT fire onPluginsChanged for an advisory-only update (nothing applied)', async () => {
       updateFlow.run.mockResolvedValue({ checks: [], applied: [] });
 
-      await request(app).post('/api/marketplace/packages/sample-plugin/update').send({});
+      await request(fixtureServer).post('/api/marketplace/packages/sample-plugin/update').send({});
 
       expect(onPluginsChanged).not.toHaveBeenCalled();
     });
@@ -1511,7 +1560,7 @@ describe('Marketplace Routes', () => {
         applied: [buildSampleInstallResult(), second],
       });
 
-      await request(app)
+      await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/update')
         .send({ apply: true, projectPath: '/some/project' });
 
@@ -1533,7 +1582,7 @@ describe('Marketplace Routes', () => {
     it('install returns 403 and projects nothing when projectPath is outside the boundary', async () => {
       rejectBoundaryOnce();
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/install')
         .send({ projectPath: '/etc/evil' });
 
@@ -1550,7 +1599,7 @@ describe('Marketplace Routes', () => {
     it('preview returns 403 and never previews when projectPath is outside the boundary', async () => {
       rejectBoundaryOnce();
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/preview')
         .send({ projectPath: '/etc/evil' });
 
@@ -1561,7 +1610,7 @@ describe('Marketplace Routes', () => {
     it('uninstall returns 403 when projectPath is outside the boundary', async () => {
       rejectBoundaryOnce();
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/uninstall')
         .send({ projectPath: '/etc/evil' });
 
@@ -1572,7 +1621,7 @@ describe('Marketplace Routes', () => {
     it('update returns 403 when projectPath is outside the boundary', async () => {
       rejectBoundaryOnce();
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/update')
         .send({ apply: true, projectPath: '/etc/evil' });
 

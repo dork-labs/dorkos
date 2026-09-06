@@ -179,7 +179,7 @@ describe('useEntryActions — the action set', () => {
     actionsFor(entry()).current[1]!.run();
 
     await vi.waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith("Couldn't copy to the clipboard")
+      expect(toastError).toHaveBeenCalledWith('Couldn’t copy to the clipboard')
     );
     expect(toastSuccess).not.toHaveBeenCalled();
   });

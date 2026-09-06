@@ -272,7 +272,7 @@ export function LivePeek({
                       onClick={() => onOpenRoom(row.behind!.roomId)}
                       className="h-7 gap-1 px-2 text-xs"
                     >
-                      Open where it&rsquo;s working
+                      Open where it’s working
                       <ArrowRight aria-hidden="true" className="size-3" />
                     </Button>
                   )}

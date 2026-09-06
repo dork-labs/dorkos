@@ -254,7 +254,7 @@ describe('where the search box exists', () => {
   });
 });
 
-describe("where ⌘K's hand-off row is drawn", () => {
+describe('where ⌘K’s hand-off row is drawn', () => {
   /** The hand-off row, or `null`. */
   function handoffRow(): HTMLElement | null {
     return (

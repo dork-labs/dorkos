@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, mockRoomEntryPage } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomEntry, RoomSummary } from '@dorkos/shared/room-schemas';
 import { toast } from 'sonner';
@@ -219,7 +219,7 @@ describe('useRoom / useRoomEntries', () => {
   it('reads one room and its history once selected', async () => {
     const transport = createMockTransport({
       getRoom: vi.fn().mockResolvedValue({ ...room(), members: [] }),
-      listRoomEntries: vi.fn().mockResolvedValue([entry(1)]),
+      listRoomEntries: vi.fn().mockResolvedValue(mockRoomEntryPage([entry(1)])),
     });
     const wrapper = wrapperFor(transport);
     const roomHook = renderHook(() => useRoom('room-1'), { wrapper });
@@ -350,7 +350,7 @@ describe('useStartDirectMessage', () => {
     // One toast, naming the action in the person's terms, with the server's
     // own sentence under it — never two toasts in two voices.
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-      "Couldn't start that conversation",
+      'Couldn’t start that conversation',
       expect.objectContaining({ description: 'That agent is not registered' })
     );
   });

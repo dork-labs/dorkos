@@ -152,11 +152,11 @@ describe('the Control Center row and the top-bar beacon', () => {
     // The panel says it, where the switch that failed is.
     const panelError = await screen.findByTestId('remote-access-panel-error');
     expect(panelError).toHaveTextContent(
-      "Couldn't reach your DorkOS server. Make sure it's running."
+      'Couldn’t reach your DorkOS server. Make sure it’s running.'
     );
     // And so does the row, which is where somebody who closed the flyout looks.
     expect(rowDescription()).toHaveTextContent(
-      "Couldn't reach your DorkOS server. Make sure it's running."
+      'Couldn’t reach your DorkOS server. Make sure it’s running.'
     );
     // Remote access is still on — the stop did not happen.
     expect(rowSwitch()).toBeChecked();

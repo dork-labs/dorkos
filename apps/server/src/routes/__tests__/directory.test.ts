@@ -50,7 +50,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 
 // Import the mocked BoundaryError for instanceof checks
@@ -58,6 +59,7 @@ import { BoundaryError } from '../../lib/boundary.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 const BOUNDARY = '/Users/testuser';
 const AGENTS_ROOT = '/home/node/.dork/agents';
 
@@ -78,7 +80,9 @@ describe('Directory Routes', () => {
         { name: 'readme.md', isDirectory: () => false },
       ]);
 
-      const res = await request(app).get(`/api/directory?path=${encodeURIComponent(testPath)}`);
+      const res = await request(testServer).get(
+        `/api/directory?path=${encodeURIComponent(testPath)}`
+      );
 
       expect(res.status).toBe(200);
       expect(res.body.path).toBe(testPath);
@@ -92,7 +96,7 @@ describe('Directory Routes', () => {
       mockValidateBoundaryOrDorkHome.mockResolvedValue(BOUNDARY);
       mockReaddir.mockResolvedValue([{ name: 'Documents', isDirectory: () => true }]);
 
-      const res = await request(app).get('/api/directory');
+      const res = await request(testServer).get('/api/directory');
 
       expect(res.status).toBe(200);
       expect(res.body.path).toBe(BOUNDARY);
@@ -104,7 +108,7 @@ describe('Directory Routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app).get('/api/directory?path=/etc/passwd');
+      const res = await request(testServer).get('/api/directory?path=/etc/passwd');
 
       expect(res.status).toBe(403);
       expect(res.body.error).toContain('outside directory boundary');
@@ -116,7 +120,7 @@ describe('Directory Routes', () => {
       err.code = 'ENOENT';
       mockValidateBoundaryOrDorkHome.mockRejectedValue(err);
 
-      const res = await request(app).get('/api/directory?path=/nonexistent');
+      const res = await request(testServer).get('/api/directory?path=/nonexistent');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toContain('not found');
@@ -127,7 +131,7 @@ describe('Directory Routes', () => {
         new BoundaryError('Permission denied', 'PERMISSION_DENIED')
       );
 
-      const res = await request(app).get('/api/directory?path=/restricted');
+      const res = await request(testServer).get('/api/directory?path=/restricted');
 
       expect(res.status).toBe(403);
       expect(res.body.error).toContain('Permission denied');
@@ -138,7 +142,7 @@ describe('Directory Routes', () => {
         new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
       );
 
-      const res = await request(app).get('/api/directory?path=/foo%00bar');
+      const res = await request(testServer).get('/api/directory?path=/foo%00bar');
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('NULL_BYTE');
@@ -152,7 +156,9 @@ describe('Directory Routes', () => {
         { name: 'visible', isDirectory: () => true },
       ]);
 
-      const res = await request(app).get(`/api/directory?path=${encodeURIComponent(testPath)}`);
+      const res = await request(testServer).get(
+        `/api/directory?path=${encodeURIComponent(testPath)}`
+      );
 
       expect(res.status).toBe(200);
       expect(res.body.entries).toHaveLength(1);
@@ -167,7 +173,7 @@ describe('Directory Routes', () => {
         { name: 'visible', isDirectory: () => true },
       ]);
 
-      const res = await request(app).get(
+      const res = await request(testServer).get(
         `/api/directory?path=${encodeURIComponent(testPath)}&showHidden=true`
       );
 
@@ -179,7 +185,7 @@ describe('Directory Routes', () => {
       mockValidateBoundaryOrDorkHome.mockResolvedValue(BOUNDARY);
       mockReaddir.mockResolvedValue([]);
 
-      const res = await request(app).get('/api/directory');
+      const res = await request(testServer).get('/api/directory');
 
       expect(res.status).toBe(200);
       expect(res.body.parent).toBeNull();
@@ -190,7 +196,9 @@ describe('Directory Routes', () => {
       mockValidateBoundaryOrDorkHome.mockResolvedValue(testPath);
       mockReaddir.mockResolvedValue([]);
 
-      const res = await request(app).get(`/api/directory?path=${encodeURIComponent(testPath)}`);
+      const res = await request(testServer).get(
+        `/api/directory?path=${encodeURIComponent(testPath)}`
+      );
 
       expect(res.status).toBe(200);
       expect(res.body.parent).toBe(`${BOUNDARY}/projects`);
@@ -201,7 +209,7 @@ describe('Directory Routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app).get('/api/directory?path=/../../../etc');
+      const res = await request(testServer).get('/api/directory?path=/../../../etc');
 
       expect(res.status).toBe(403);
     });
@@ -212,7 +220,9 @@ describe('Directory Routes', () => {
       mockValidateBoundaryOrDorkHome.mockResolvedValue(BOUNDARY);
       mockReaddir.mockResolvedValue([]);
 
-      const res = await request(app).get(`/api/directory?path=${encodeURIComponent(BOUNDARY)}`);
+      const res = await request(testServer).get(
+        `/api/directory?path=${encodeURIComponent(BOUNDARY)}`
+      );
 
       expect(res.status).toBe(200);
       // /Users is NOT within boundary, so parent should be null
@@ -227,7 +237,9 @@ describe('Directory Routes', () => {
       mockValidateBoundaryOrDorkHome.mockResolvedValue(AGENTS_ROOT);
       mockReaddir.mockResolvedValue([{ name: 'dorkbot', isDirectory: () => true }]);
 
-      const res = await request(app).get(`/api/directory?path=${encodeURIComponent(AGENTS_ROOT)}`);
+      const res = await request(testServer).get(
+        `/api/directory?path=${encodeURIComponent(AGENTS_ROOT)}`
+      );
 
       expect(res.status).toBe(200);
       expect(res.body.path).toBe(AGENTS_ROOT);
@@ -254,7 +266,9 @@ describe('Directory Routes', () => {
       mockValidateBoundaryOrDorkHome.mockResolvedValue(agentDir);
       mockReaddir.mockResolvedValue([]);
 
-      const res = await request(app).get(`/api/directory?path=${encodeURIComponent(agentDir)}`);
+      const res = await request(testServer).get(
+        `/api/directory?path=${encodeURIComponent(agentDir)}`
+      );
 
       expect(res.status).toBe(200);
       expect(res.body.parent).toBe(AGENTS_ROOT);
@@ -263,7 +277,7 @@ describe('Directory Routes', () => {
 
   describe('GET /api/directory/default', () => {
     it('returns the boundary-resolved default cwd, not the raw process cwd', async () => {
-      const res = await request(app).get('/api/directory/default');
+      const res = await request(testServer).get('/api/directory/default');
 
       expect(res.status).toBe(200);
       expect(res.body.path).toBe(DEFAULT_CWD);
@@ -278,7 +292,7 @@ describe('Directory Routes', () => {
       mockAccess.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
       mockMkdir.mockResolvedValue(undefined);
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/directory')
         .send({ parentPath, folderName: 'my-new-agent' });
 
@@ -293,7 +307,7 @@ describe('Directory Routes', () => {
       // fs.access succeeds — directory exists
       mockAccess.mockResolvedValue(undefined);
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/directory')
         .send({ parentPath, folderName: 'existing-dir' });
 
@@ -302,7 +316,7 @@ describe('Directory Routes', () => {
     });
 
     it('returns 400 for invalid folder names (uppercase)', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/directory')
         .send({ parentPath: `${BOUNDARY}/projects`, folderName: 'MyAgent' });
 
@@ -311,7 +325,7 @@ describe('Directory Routes', () => {
     });
 
     it('returns 400 for invalid folder names (special chars)', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/directory')
         .send({ parentPath: `${BOUNDARY}/projects`, folderName: 'my_agent!' });
 
@@ -324,7 +338,7 @@ describe('Directory Routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/directory')
         .send({ parentPath: '/etc', folderName: 'my-agent' });
 
@@ -333,7 +347,7 @@ describe('Directory Routes', () => {
     });
 
     it('returns 400 when parentPath is missing', async () => {
-      const res = await request(app).post('/api/directory').send({ folderName: 'my-agent' });
+      const res = await request(testServer).post('/api/directory').send({ folderName: 'my-agent' });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('Validation failed');

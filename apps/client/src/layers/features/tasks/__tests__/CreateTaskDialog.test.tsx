@@ -208,7 +208,7 @@ describe('CreateTaskDialog', () => {
       target: { value: 'Nightly build' },
     });
     fireEvent.change(
-      screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
+      screen.getByPlaceholderText('Review all pending PRs and summarize findings…'),
       { target: { value: 'Run the nightly build' } }
     );
 
@@ -249,7 +249,7 @@ describe('CreateTaskDialog', () => {
       target: { value: 'Standup digest' },
     });
     fireEvent.change(
-      screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
+      screen.getByPlaceholderText('Review all pending PRs and summarize findings…'),
       { target: { value: 'Summarise what changed' } }
     );
     fireEvent.click(screen.getByText('Use a cron expression'));
@@ -315,7 +315,7 @@ describe('CreateTaskDialog', () => {
         target: { value: 'Nightly build' },
       });
       fireEvent.change(
-        screen.getByPlaceholderText('Review all pending PRs and summarize findings...'),
+        screen.getByPlaceholderText('Review all pending PRs and summarize findings…'),
         { target: { value: 'Run the nightly build' } }
       );
       fireEvent.click(screen.getByText('Use a cron expression'));
@@ -637,7 +637,7 @@ describe('CreateTaskDialog', () => {
                     asks: 'never',
                     reach: 'workspace',
                     promise:
-                      "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
+                      'Edits files and runs commands inside the workspace — Codex can’t pause to ask.',
                   },
                 ],
               },
@@ -658,7 +658,7 @@ describe('CreateTaskDialog', () => {
       // Nothing overridden and no agent: the run lands on the registry default,
       // and the dial says what THAT runtime promises.
       await waitFor(() =>
-        expect(screen.getByTestId('trust-dial-caption')).toHaveTextContent(/can't pause to ask/)
+        expect(screen.getByTestId('trust-dial-caption')).toHaveTextContent(/can’t pause to ask/)
       );
       // Codex never asks, so the note about an ask nobody answers has nothing to
       // warn about — it is gated on the declared `asks`, not on a mode id.
@@ -985,7 +985,7 @@ describe('CreateTaskDialog', () => {
       fireEvent.click(screen.getByText('Start from scratch'));
 
       await waitFor(() => {
-        expect(screen.getByText('Select an agent...')).toBeTruthy();
+        expect(screen.getByText('Select an agent…')).toBeTruthy();
       });
     });
 

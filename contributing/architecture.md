@@ -869,7 +869,9 @@ apps/
     middleware/
       host-guard.ts         -- /api Host allowlist; DNS rebinding protection, login-off only
       mcp-auth.ts           -- MCP API key auth middleware
-      mcp-origin.ts         -- MCP Origin header validation (DNS rebinding protection)
+      browser-origin.ts     -- Express -> BrowserOriginFacts, for the one origin policy
+      mcp-origin.ts         -- MCP Origin validation; thin adapter over that policy
+      rate-limit-key.ts     -- The one rate-limit bucket key (socket peer; DORKOS_TRUST_PROXY)
     index.ts                -- Express server entry
 ```
 
@@ -1028,9 +1030,9 @@ This replaced the previous pattern where each route computed its own fallback pa
 
 ### CORS Configuration (`DORKOS_CORS_ORIGIN`)
 
-The server reads `DORKOS_CORS_ORIGIN` from the environment to configure CORS allowed origins — a comma-separated list. When unset, defaults to the Vite dev server origin. This allows production deployments to restrict cross-origin access without code changes. A `*` is not an allowlist and is ignored with a warning, on the HTTP path and the WebSocket path alike.
+The server reads `DORKOS_CORS_ORIGIN` from the environment — a comma-separated list of extra origins. It is ADDITIVE (DOR-1711): the listed origins join the loopback dev origins, the live tunnel and the same-origin branch rather than replacing them, so naming a production origin never locks the operator out of `localhost` or out of the port their container is published on. A `*` is not an allowlist and is ignored with a warning, on every surface.
 
-Three surfaces honour the variable and all three read one parser (`parseConfiguredOrigins`): the CORS middleware, the WebSocket upgrade check (`isTrustedUpgradeOrigin`), and Better Auth's CSRF allowlist (`resolveAuthTrustedOrigins`, DOR-1744). The auth list drops wildcard-pattern and empty entries so it can never be wider than the CORS one. `resolveTrustedOrigins()` itself is deliberately unchanged: `routes/extensions-person-bar.ts` reads it and must not consult the operator's CORS list.
+Every surface honours the variable through one parser (`parseConfiguredOrigins`): CORS, the three MCP mounts and the WebSocket upgrade all reach it as branch 3 of `isTrustedBrowserOrigin` — the single origin policy since DOR-1711 — and Better Auth's CSRF allowlist reads it separately (`resolveAuthTrustedOrigins`, DOR-1744). The auth list drops wildcard-pattern and empty entries so it can never be wider than the CORS one. `resolveTrustedOrigins()` itself is deliberately unchanged: `routes/extensions-person-bar.ts` reads it and must not consult the operator's CORS list.
 
 ### Dynamic Model List (`GET /api/models`)
 

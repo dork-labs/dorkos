@@ -415,7 +415,7 @@ export function SessionTranscript({
           >
             <div className="text-muted-foreground flex items-center gap-2 text-sm">
               <TypingDots />
-              Loading conversation...
+              Loading conversation…
             </div>
           </Feed>
         ) : undefined

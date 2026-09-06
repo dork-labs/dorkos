@@ -64,7 +64,7 @@ describe('TelemetryConsentMoment', () => {
     expect(screen.getByRole('button', { name: /share anonymously/i })).toBeInTheDocument();
   });
 
-  it('reveals the heartbeat payload verbatim after clicking "See what\'s sent"', async () => {
+  it('reveals the heartbeat payload verbatim after clicking "See what’s sent"', async () => {
     const user = userEvent.setup();
     renderMoment();
 

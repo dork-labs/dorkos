@@ -100,10 +100,10 @@ describe('ExternalMcpCard', () => {
     expect(screen.getByText('Enabled')).toBeInTheDocument();
   });
 
-  it('shows No auth badge when enabled but no auth', () => {
+  it('shows a Not protected badge when enabled but no auth', () => {
     const { Wrapper } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
-    expect(screen.getByText('No auth')).toBeInTheDocument();
+    expect(screen.getByText('Not protected')).toBeInTheDocument();
   });
 
   it('shows Disabled badge when not enabled', () => {
@@ -235,20 +235,20 @@ describe('ExternalMcpCard', () => {
     const { Wrapper } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
     await expandCard(user);
-    expect(screen.getByText(/Couldn't generate a local token/i)).toBeInTheDocument();
+    expect(screen.getByText(/Couldn’t generate a local token/i)).toBeInTheDocument();
     expect(screen.queryByText('Local MCP token')).not.toBeInTheDocument();
   });
 
   it('shows personal-API-key guidance for login-on none (no keys minted yet)', async () => {
     // Purpose: login ON with authSource 'none' just means no personal API key
     // exists yet — a reachable state. The "couldn't generate a local token"
-    // alarm would be false there; the card points at Settings → Security instead.
+    // alarm would be false there; the card points at Settings → Access instead.
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={true} />, { wrapper: Wrapper });
     await expandCard(user);
     expect(screen.getByText(/personal API key/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Couldn't generate a local token/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Couldn’t generate a local token/i)).not.toBeInTheDocument();
   });
 
   it('opens a confirm dialog that warns clients break before rotating', async () => {
@@ -279,7 +279,7 @@ describe('ExternalMcpCard', () => {
     expect(await screen.findByText('dork_mcp_local_test')).toBeInTheDocument();
   });
 
-  it('reads green Enabled in local-token mode and amber No auth only in none', () => {
+  it('reads green Enabled in local-token mode and amber Not protected only in none', () => {
     // Purpose: the header badge tracks authConfigured — local-token is gated
     // (green), only the degenerate none is unprotected (amber).
     const { Wrapper } = createWrapper();
@@ -287,10 +287,10 @@ describe('ExternalMcpCard', () => {
       wrapper: Wrapper,
     });
     expect(screen.getByText('Enabled')).toBeInTheDocument();
-    expect(screen.queryByText('No auth')).not.toBeInTheDocument();
+    expect(screen.queryByText('Not protected')).not.toBeInTheDocument();
 
     rerender(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />);
-    expect(screen.getByText('No auth')).toBeInTheDocument();
+    expect(screen.getByText('Not protected')).toBeInTheDocument();
     expect(screen.queryByText('Enabled')).not.toBeInTheDocument();
   });
 });

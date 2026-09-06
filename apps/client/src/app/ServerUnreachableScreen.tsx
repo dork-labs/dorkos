@@ -52,9 +52,7 @@ export function ServerUnreachableScreen() {
             logo is a fixed-colour SVG, not a `currentColor` glyph. */}
         <DorkLogo size={120} className="mb-8 opacity-80 dark:hidden" />
         <DorkLogo variant="white" size={120} className="mb-8 hidden opacity-80 dark:block" />
-        <h1 className="text-xl font-semibold tracking-tight">
-          DorkOS can&rsquo;t reach its server.
-        </h1>
+        <h1 className="text-xl font-semibold tracking-tight">DorkOS can’t reach its server</h1>
         <p className="text-muted-foreground mt-3 text-sm">
           It may still be starting up. DorkOS keeps checking, and this screen clears as soon as the
           server answers.

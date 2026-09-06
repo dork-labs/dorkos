@@ -11,7 +11,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { mkdtemp, rm, readdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
@@ -23,6 +24,9 @@ import { LocalAvatarStore } from '../../services/identity/local-avatar-store.js'
 import type { AvatarStore } from '../../services/identity/avatar-store.js';
 import { createProfileRouter, type ProfileRouterDeps } from '../profile.js';
 import { createTeamRouter } from '../team.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 const OWNER_USER_ID = 'user-1';
 
@@ -113,7 +117,7 @@ describe('/api/profile/avatar', () => {
 
   describe('the round trip', () => {
     it('stores the photo, serves it back, and tells both identity records about it', async () => {
-      const posted = await request(app())
+      const posted = await request(fixtureTarget.mount(app()))
         .post('/api/profile/avatar')
         .attach('avatar', PNG, { filename: 'me.png', contentType: 'image/png' });
 
@@ -126,7 +130,7 @@ describe('/api/profile/avatar', () => {
       expect(registry.getById(ownerAuthor.id)?.imageUrl).toBe(posted.body.imageUrl);
       expect(storedAccountImage()).toBe(posted.body.imageUrl);
 
-      const fetched = await request(app()).get(posted.body.imageUrl);
+      const fetched = await request(fixtureTarget.mount(app())).get(posted.body.imageUrl);
       expect(fetched.status).toBe(200);
       expect(fetched.headers['content-type']).toBe('image/png');
       expect(fetched.headers['x-content-type-options']).toBe('nosniff');
@@ -137,26 +141,28 @@ describe('/api/profile/avatar', () => {
     });
 
     it('clears the file and both records on delete', async () => {
-      const posted = await request(app())
+      const posted = await request(fixtureTarget.mount(app()))
         .post('/api/profile/avatar')
         .attach('avatar', PNG, { filename: 'me.png' });
 
-      const deleted = await request(app()).delete('/api/profile/avatar');
+      const deleted = await request(fixtureTarget.mount(app())).delete('/api/profile/avatar');
       expect(deleted.status).toBe(204);
 
       expect(await readdir(path.join(dorkHome, 'avatars'))).toEqual([]);
       expect(registry.getById(ownerAuthor.id)?.imageUrl).toBeNull();
       expect(storedAccountImage()).toBeNull();
-      expect((await request(app()).get(posted.body.imageUrl)).status).toBe(404);
+      expect((await request(fixtureTarget.mount(app())).get(posted.body.imageUrl)).status).toBe(
+        404
+      );
     });
 
     it('answers 304 when the browser already has that exact photo', async () => {
-      const posted = await request(app())
+      const posted = await request(fixtureTarget.mount(app()))
         .post('/api/profile/avatar')
         .attach('avatar', PNG, { filename: 'me.png' });
-      const first = await request(app()).get(posted.body.imageUrl);
+      const first = await request(fixtureTarget.mount(app())).get(posted.body.imageUrl);
 
-      const again = await request(app())
+      const again = await request(fixtureTarget.mount(app()))
         .get(posted.body.imageUrl)
         .set('If-None-Match', first.headers.etag);
 
@@ -164,16 +170,18 @@ describe('/api/profile/avatar', () => {
     });
 
     it('answers 404 for an identity with no photo', async () => {
-      expect((await request(app()).get('/api/profile/avatar/nobody')).status).toBe(404);
+      expect(
+        (await request(fixtureTarget.mount(app())).get('/api/profile/avatar/nobody')).status
+      ).toBe(404);
     });
 
     it('serves must-revalidate when the request names no version at all', async () => {
-      const posted = await request(app())
+      const posted = await request(fixtureTarget.mount(app()))
         .post('/api/profile/avatar')
         .attach('avatar', PNG, { filename: 'me.png' });
       const bare = posted.body.imageUrl.split('?')[0];
 
-      const fetched = await request(app()).get(bare);
+      const fetched = await request(fixtureTarget.mount(app())).get(bare);
 
       expect(fetched.status).toBe(200);
       expect(fetched.headers['cache-control']).toBe('private, max-age=0, must-revalidate');
@@ -184,23 +192,25 @@ describe('/api/profile/avatar', () => {
       // a stale cache — one photo replaced by another — no longer names what
       // the path serves today. Caching that as `immutable` would be a promise
       // this route cannot keep.
-      const posted = await request(app())
+      const posted = await request(fixtureTarget.mount(app()))
         .post('/api/profile/avatar')
         .attach('avatar', PNG, { filename: 'me.png' });
       const stalePath = posted.body.imageUrl.split('?')[0];
 
-      const fetched = await request(app()).get(`${stalePath}?v=0000000000000000`);
+      const fetched = await request(fixtureTarget.mount(app())).get(
+        `${stalePath}?v=0000000000000000`
+      );
 
       expect(fetched.status).toBe(200);
       expect(fetched.headers['cache-control']).toBe('private, max-age=0, must-revalidate');
     });
 
     it('serves immutable only when ?v= names the photo currently behind the path', async () => {
-      const posted = await request(app())
+      const posted = await request(fixtureTarget.mount(app()))
         .post('/api/profile/avatar')
         .attach('avatar', PNG, { filename: 'me.png' });
 
-      const fetched = await request(app()).get(posted.body.imageUrl);
+      const fetched = await request(fixtureTarget.mount(app())).get(posted.body.imageUrl);
 
       expect(posted.body.imageUrl).toContain('?v=');
       expect(fetched.headers['cache-control']).toBe('private, max-age=31536000, immutable');
@@ -209,7 +219,7 @@ describe('/api/profile/avatar', () => {
 
   describe('what it refuses', () => {
     it('refuses a file over 2 MB before writing a byte of it', async () => {
-      const res = await request(app())
+      const res = await request(fixtureTarget.mount(app()))
         .post('/api/profile/avatar')
         .attach('avatar', THREE_MB, { filename: 'huge.png', contentType: 'image/png' });
 
@@ -227,7 +237,7 @@ describe('/api/profile/avatar', () => {
       const image = Buffer.concat([PNG, Buffer.alloc(size - PNG.length, 0)]);
       expect(image.length).toBe(size);
 
-      const res = await request(app())
+      const res = await request(fixtureTarget.mount(app()))
         .post('/api/profile/avatar')
         .attach('avatar', image, { filename: 'big.png', contentType: 'image/png' });
 
@@ -235,7 +245,7 @@ describe('/api/profile/avatar', () => {
     });
 
     it('refuses an SVG, however it is labelled', async () => {
-      const res = await request(app())
+      const res = await request(fixtureTarget.mount(app()))
         .post('/api/profile/avatar')
         .attach('avatar', SVG, { filename: 'me.png', contentType: 'image/png' });
 
@@ -245,7 +255,7 @@ describe('/api/profile/avatar', () => {
     });
 
     it('believes the bytes, not the name: a .png whose content is a GIF is refused', async () => {
-      const res = await request(app())
+      const res = await request(fixtureTarget.mount(app()))
         .post('/api/profile/avatar')
         .attach('avatar', GIF, { filename: 'me.png', contentType: 'image/png' });
 
@@ -254,7 +264,7 @@ describe('/api/profile/avatar', () => {
     });
 
     it('refuses HTML wearing high-bit RIFF/WEBP magic, and stores nothing', async () => {
-      const res = await request(app())
+      const res = await request(fixtureTarget.mount(app()))
         .post('/api/profile/avatar')
         .attach('avatar', HIGH_BIT_RIFF, { filename: 'me.webp', contentType: 'image/webp' });
 
@@ -265,7 +275,7 @@ describe('/api/profile/avatar', () => {
     });
 
     it('refuses a POST carrying no file at all', async () => {
-      const res = await request(app()).post('/api/profile/avatar');
+      const res = await request(fixtureTarget.mount(app())).post('/api/profile/avatar');
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('AVATAR_MISSING');
@@ -278,7 +288,7 @@ describe('/api/profile/avatar', () => {
       // assuming would let a second person overwrite the OWNER's account photo.
       const stranger = registry.human('user-999');
 
-      const res = await request(app({ caller: () => stranger }))
+      const res = await request(fixtureTarget.mount(app({ caller: () => stranger })))
         .post('/api/profile/avatar')
         .attach('avatar', PNG, { filename: 'me.png' });
 
@@ -291,14 +301,16 @@ describe('/api/profile/avatar', () => {
     });
 
     it('never clears the owner’s account record on a stranger’s delete', async () => {
-      await request(app())
+      await request(fixtureTarget.mount(app()))
         .post('/api/profile/avatar')
         .attach('avatar', PNG, { filename: 'me.png' });
       const ownerImage = storedAccountImage();
       expect(ownerImage).not.toBeNull();
 
       const stranger = registry.human('user-999');
-      const res = await request(app({ caller: () => stranger })).delete('/api/profile/avatar');
+      const res = await request(fixtureTarget.mount(app({ caller: () => stranger }))).delete(
+        '/api/profile/avatar'
+      );
 
       expect(res.status).toBe(204);
       expect(storedAccountImage()).toBe(ownerImage);
@@ -306,7 +318,7 @@ describe('/api/profile/avatar', () => {
 
     it('refuses an agent — a profile photo is the operator’s to set', async () => {
       const agent = registry.resolveAgent('/tmp/agent-ana', 'Ana');
-      const res = await request(app({ caller: () => agent }))
+      const res = await request(fixtureTarget.mount(app({ caller: () => agent })))
         .post('/api/profile/avatar')
         .attach('avatar', PNG, { filename: 'me.png' });
 
@@ -328,7 +340,7 @@ describe('/api/profile/avatar', () => {
         );
       };
 
-      const res = await request(app({ caller: refusing }))
+      const res = await request(fixtureTarget.mount(app({ caller: refusing })))
         .post('/api/profile/avatar')
         .attach('avatar', PNG, { filename: 'me.png' });
 
@@ -341,7 +353,7 @@ describe('/api/profile/avatar', () => {
     it.each(['..%2Fsecret', '..', '%2e%2e%2f%2e%2e%2fetc%2fpasswd'])(
       'cannot be walked out of the avatar directory with %s',
       async (id) => {
-        const res = await request(app()).get(`/api/profile/avatar/${id}`);
+        const res = await request(fixtureTarget.mount(app())).get(`/api/profile/avatar/${id}`);
         expect(res.status).toBe(404);
       }
     );
@@ -359,7 +371,7 @@ describe('/api/profile/avatar', () => {
     };
 
     it('serves whatever URL the store returned, absolute host and all', async () => {
-      const posted = await request(app({ avatars: cdn }))
+      const posted = await request(fixtureTarget.mount(app({ avatars: cdn })))
         .post('/api/profile/avatar')
         .attach('avatar', PNG, { filename: 'me.png' });
 
@@ -372,11 +384,11 @@ describe('/api/profile/avatar', () => {
 
     it('carries that absolute URL to the roster with no route or schema change', async () => {
       const server = app({ avatars: cdn });
-      await request(server)
+      await request(fixtureTarget.mount(server))
         .post('/api/profile/avatar')
         .attach('avatar', PNG, { filename: 'me.png' });
 
-      const roster = await request(server).get('/api/team');
+      const roster = await request(fixtureServer).get('/api/team');
       const self = roster.body.members.find((m: { isSelf: boolean }) => m.isSelf);
 
       expect(self.imageUrl).toBe('https://cdn.example/x.png');

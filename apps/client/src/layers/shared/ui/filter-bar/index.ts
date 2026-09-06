@@ -4,7 +4,7 @@
  * @example
  * ```tsx
  * <FilterBar state={filterState}>
- *   <FilterBar.Search placeholder="Filter agents..." />
+ *   <FilterBar.Search placeholder="Filter agents…" />
  *   <FilterBar.Primary name="status" />
  *   <FilterBar.AddFilter />
  *   <FilterBar.Sort options={sortOptions} />

@@ -86,12 +86,14 @@ vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn(async () => null),
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
 
 const S1 = '00000000-0000-4000-8000-000000000001';
 const ENVELOPE = wrapKickoff('Read your SOUL.md and introduce yourself. Offer a first action.');
@@ -124,7 +126,7 @@ describe('GET /api/sessions/:id/messages — kickoff suppression at the route (a
         GREETING,
       ]);
 
-      const res = await request(app).get(`/api/sessions/${S1}/messages`);
+      const res = await request(testServer).get(`/api/sessions/${S1}/messages`);
 
       expect(res.status).toBe(200);
       expect(res.body.messages).toHaveLength(1);
@@ -144,7 +146,7 @@ describe('GET /api/sessions/:id/messages — kickoff suppression at the route (a
       GREETING,
     ]);
 
-    const res = await request(app).get(`/api/sessions/${S1}/messages`);
+    const res = await request(testServer).get(`/api/sessions/${S1}/messages`);
 
     expect(res.body.messages).toHaveLength(1);
     expect(res.body.messages[0].role).toBe('assistant');
@@ -157,7 +159,7 @@ describe('GET /api/sessions/:id/messages — kickoff suppression at the route (a
       GREETING,
     ]);
 
-    const res = await request(app).get(`/api/sessions/${S1}/messages`);
+    const res = await request(testServer).get(`/api/sessions/${S1}/messages`);
 
     expect(res.body.messages).toHaveLength(2);
     expect(res.body.messages[0].content).toBe('<dork-kickoff> what is this?');
@@ -169,7 +171,7 @@ describe('GET /api/sessions/:id/messages — kickoff suppression at the route (a
       GREETING,
     ]);
 
-    const res = await request(app).get(`/api/sessions/${S1}/messages`);
+    const res = await request(testServer).get(`/api/sessions/${S1}/messages`);
 
     expect(res.body.messages).toHaveLength(2);
   });
@@ -180,7 +182,7 @@ describe('GET /api/sessions/:id/messages — kickoff suppression at the route (a
       { id: 'a1', role: 'assistant', content: ENVELOPE },
     ]);
 
-    const res = await request(app).get(`/api/sessions/${S1}/messages`);
+    const res = await request(testServer).get(`/api/sessions/${S1}/messages`);
 
     expect(res.body.messages).toHaveLength(2);
     expect(res.body.messages[1].content).toBe(ENVELOPE);
@@ -193,7 +195,7 @@ describe('GET /api/sessions/:id/messages — kickoff suppression at the route (a
       { id: 'u2', role: 'user', content: ENVELOPE },
     ]);
 
-    const res = await request(app).get(`/api/sessions/${S1}/messages`);
+    const res = await request(testServer).get(`/api/sessions/${S1}/messages`);
 
     expect(res.body.messages).toHaveLength(3);
   });

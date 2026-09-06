@@ -19,14 +19,17 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { DeepHealthResponseSchema } from '@dorkos/shared/health-schemas';
 import { createApp } from '../../app.js';
 import type { DeepHealthDeps } from '../../services/observability/deep-health/index.js';
 
+const fixtureTarget = swappableServer();
+
 describe('GET /api/health/deep', () => {
   it('answers 200 with a schema-valid body even when nothing is wired', async () => {
-    const res = await request(createApp()).get('/api/health/deep');
+    const res = await request(fixtureTarget.mount(createApp())).get('/api/health/deep');
 
     expect(res.status).toBe(200);
     expect(DeepHealthResponseSchema.safeParse(res.body).success).toBe(true);
@@ -40,7 +43,7 @@ describe('GET /api/health/deep', () => {
       relay: { isAccessControlQuarantined: () => true, listAccessRules: () => [] },
     } satisfies DeepHealthDeps;
 
-    const res = await request(app).get('/api/health/deep');
+    const res = await request(fixtureTarget.mount(app)).get('/api/health/deep');
 
     expect(res.status).toBe(200);
     expect(res.body.checks.some((c: { status: string }) => c.status === 'fail')).toBe(true);
@@ -58,7 +61,7 @@ describe('GET /api/health/deep', () => {
       },
     } satisfies DeepHealthDeps;
 
-    const res = await request(app).get('/api/health/deep');
+    const res = await request(fixtureTarget.mount(app)).get('/api/health/deep');
 
     expect(res.status).toBe(200);
     expect(DeepHealthResponseSchema.safeParse(res.body).success).toBe(true);
@@ -67,7 +70,7 @@ describe('GET /api/health/deep', () => {
   });
 
   it('leaves the liveness probe alone', async () => {
-    const res = await request(createApp()).get('/api/health');
+    const res = await request(fixtureTarget.mount(createApp())).get('/api/health');
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('status', 'ok');

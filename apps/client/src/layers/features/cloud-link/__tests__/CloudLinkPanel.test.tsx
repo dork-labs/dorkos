@@ -169,7 +169,7 @@ describe('CloudLinkPanel', () => {
 
     // The consent checkbox is off by default.
     const checkbox = await screen.findByRole('checkbox', {
-      name: /connect this app's usage data/i,
+      name: /connect this app’s usage data/i,
     });
     expect(checkbox).not.toBeChecked();
 
@@ -222,7 +222,7 @@ describe('CloudLinkPanel', () => {
     // The failure surfaces honestly and the handshake NEVER fires — proceeding
     // would act on the stale persisted flag (worst case: a withdrawal that
     // failed to persist would still send the id).
-    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn't save your choice/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn’t save your choice/i);
     expect(transport.startCloudLink).not.toHaveBeenCalled();
     // The user stays on the idle entry point, free to retry.
     expect(screen.getByRole('button', { name: /link this instance/i })).toBeInTheDocument();
@@ -232,11 +232,11 @@ describe('CloudLinkPanel', () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.startCloudLink).mockRejectedValue(
-      new Error('Could not reach the DorkOS cloud to start linking. Try again shortly.')
+      new Error('Couldn’t reach the DorkOS cloud to start linking. Try again shortly.')
     );
     renderPanel(transport);
 
     await user.click(await screen.findByRole('button', { name: /link this instance/i }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/could not reach the dorkos cloud/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn’t reach the dorkos cloud/i);
   });
 });

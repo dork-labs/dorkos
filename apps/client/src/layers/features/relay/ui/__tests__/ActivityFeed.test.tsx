@@ -141,7 +141,7 @@ describe('ActivityFeed', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
-      fireEvent.change(screen.getByPlaceholderText('Filter by agent or message...'), {
+      fireEvent.change(screen.getByPlaceholderText('Filter by agent or message…'), {
         target: { value: 'zzznomatch' },
       });
 
@@ -346,7 +346,7 @@ describe('ActivityFeed', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
-      expect(screen.getByPlaceholderText('Filter by agent or message...')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('Filter by agent or message…')).toBeInTheDocument();
     });
 
     it('filters conversations by from/to labels and subject (case-insensitive)', () => {
@@ -368,7 +368,7 @@ describe('ActivityFeed', () => {
 
       render(<ActivityFeed enabled={true} />);
 
-      fireEvent.change(screen.getByPlaceholderText('Filter by agent or message...'), {
+      fireEvent.change(screen.getByPlaceholderText('Filter by agent or message…'), {
         target: { value: 'ALICE' },
       });
 
@@ -381,7 +381,7 @@ describe('ActivityFeed', () => {
 
       render(<ActivityFeed enabled={true} />);
 
-      fireEvent.change(screen.getByPlaceholderText('Filter by agent or message...'), {
+      fireEvent.change(screen.getByPlaceholderText('Filter by agent or message…'), {
         target: { value: 'zzznomatch' },
       });
 
@@ -412,7 +412,7 @@ describe('ActivityFeed', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
       render(<ActivityFeed enabled={true} />);
 
-      fireEvent.change(screen.getByPlaceholderText('Filter by agent or message...'), {
+      fireEvent.change(screen.getByPlaceholderText('Filter by agent or message…'), {
         target: { value: 'test' },
       });
 
@@ -490,7 +490,7 @@ describe('ActivityFeed', () => {
       fireEvent.click(sourceCombobox);
       fireEvent.click(screen.getByRole('option', { name: 'Chat messages' }));
 
-      fireEvent.change(screen.getByPlaceholderText('Filter by agent or message...'), {
+      fireEvent.change(screen.getByPlaceholderText('Filter by agent or message…'), {
         target: { value: 'alpha' },
       });
 

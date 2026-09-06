@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'fs';
 import os from 'os';
@@ -1271,7 +1271,7 @@ describe('GET /api/config', () => {
       mountCallerFixture(legacyApp);
       legacyApp.use('/api/config', legacyRouter);
 
-      const res = await request(legacyApp).get('/api/config').expect(200);
+      const res = await request(target.mount(legacyApp)).get('/api/config').expect(200);
       expect(res.body.onboarding).toHaveProperty('runtimeDefaultSetAt', null);
       // The values that file DID carry survive the load untouched.
       expect(res.body.onboarding.completedAt).toBe('2026-07-01T00:05:00.000Z');

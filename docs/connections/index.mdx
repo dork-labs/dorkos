@@ -100,7 +100,7 @@ Every account connection moves your login somewhere. DorkOS tells you where, in 
 
 There are three custody types:
 
-- **Direct**: the service's own sign-in, and the key stays on your machine. Nothing in the middle holds it. This is the strongest custody line DorkOS can offer.
+- **Direct**: DorkOS connects to a remote tool server using the connection details you configured. Any login needed by its tools stays with that server.
 - **Managed**: a trusted company (Composio) holds your login in its own secure vault, not on your computer. This is the easiest path for services that don't connect directly.
 - **Self-host**: your own server (Nango) holds the login, on infrastructure you control. Nothing leaves your systems.
 
@@ -126,7 +126,7 @@ When you click Connect, DorkOS routes the service for you:
   <Card
     title="Raw MCP server"
     href="/docs/connections/raw-mcp"
-    description="Point DorkOS at a remote tool server that manages its own sign-in."
+    description="Point DorkOS at a remote tool server with a working connection. DorkOS checks it before adding the account."
   />
   <Card
     title="Nango (self-host)"

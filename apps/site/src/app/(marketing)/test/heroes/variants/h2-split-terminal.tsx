@@ -360,7 +360,7 @@ function BrowserWindow() {
                 >
                   Claude
                 </div>
-                I&apos;ll fix the token refresh timing. Reading{' '}
+                I’ll fix the token refresh timing. Reading{' '}
                 <code
                   className="rounded-[2px] px-1 font-mono"
                   style={{ background: '#EDE6D6', fontSize: '10px' }}

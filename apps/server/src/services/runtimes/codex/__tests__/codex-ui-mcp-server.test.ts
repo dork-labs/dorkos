@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import type { Server } from 'node:http';
+import request, { type Response } from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createCodexUiMcpServer, CODEX_UI_MCP_SERVER } from '../codex-ui-mcp-server.js';
 import { createMcpRouter } from '../../../../routes/mcp.js';
 
@@ -8,6 +10,8 @@ import { createMcpRouter } from '../../../../routes/mcp.js';
 vi.mock('../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
+
+const target = swappableServer();
 
 /**
  * Mount the scoped server behind the production stateless MCP router, exactly
@@ -21,7 +25,7 @@ function createTestApp() {
     '/codex-ui-mcp',
     createMcpRouter(() => createCodexUiMcpServer())
   );
-  return app;
+  return target.mount(app);
 }
 
 /** Loosely-typed JSON-RPC message for assertions. */
@@ -38,7 +42,7 @@ interface JsonRpcMessage {
 }
 
 /** Parse a JSON or SSE (text/event-stream) MCP response into its first message. */
-function parseResponse(res: request.Response): JsonRpcMessage {
+function parseResponse(res: Response): JsonRpcMessage {
   const contentType = (res.headers['content-type'] as string) ?? '';
   if (contentType.includes('text/event-stream')) {
     for (const line of res.text.split('\n')) {
@@ -49,7 +53,7 @@ function parseResponse(res: request.Response): JsonRpcMessage {
 }
 
 /** POST a JSON-RPC body to the scoped endpoint with the MCP Accept headers. */
-function postRpc(app: express.Express, body: Record<string, unknown>) {
+function postRpc(app: Server, body: Record<string, unknown>) {
   return request(app)
     .post('/codex-ui-mcp')
     .set('Content-Type', 'application/json')

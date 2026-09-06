@@ -267,7 +267,7 @@ export function DataDisplayShowcases() {
           <FeatureDisabledState
             icon={Radio}
             name="Scheduling"
-            description="Scheduled tasks let your agents work on a timer, even when you're not here."
+            description="Scheduled tasks let your agents work on a timer, even when you’re not here."
             command="dorkos --tasks"
             commandHint="Start DorkOS from your terminal like this:"
           />

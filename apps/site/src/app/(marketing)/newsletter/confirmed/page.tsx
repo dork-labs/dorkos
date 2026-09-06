@@ -28,12 +28,12 @@ export default async function NewsletterConfirmedPage(props: {
         <p className="text-warm-gray mt-4 text-lg">
           {invalid ? (
             <>
-              This confirmation link is invalid or has expired. Subscribe again and we&apos;ll send
-              a fresh one.
+              This confirmation link is invalid or has expired. Subscribe again and we’ll send a
+              fresh one.
             </>
           ) : (
             <>
-              Your email is confirmed. You&apos;ll get release notes and agent reports about twice a
+              Your email is confirmed. You’ll get release notes and agent reports about twice a
               month, and one click unsubscribes any time.
             </>
           )}

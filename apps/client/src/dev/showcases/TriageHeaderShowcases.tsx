@@ -193,7 +193,7 @@ export function TriageHeaderShowcases() {
       description="What sits above the home feed and stays there while it scrolls — a band of its own between the room's masthead and the conversation, never inside it: what is waiting on a decision, what needs you, what agents did while you were away, and what went wrong lately. Nothing waiting, nothing wrong and nothing to report draws no header at all — no border, no 'all clear' card, nothing. Answers happen where the card is; the feed underneath never moves. It is capped at a fraction of the viewport and scrolls inside itself past that, with a fade over whichever edge still has cards behind it — and only while they are really there. On a phone it condenses to one line of counts while the composer holds the caret, because a software keyboard and this header cannot both have the screen."
     >
       <ShowcaseLabel>
-        Quiet: zero DOM, not an empty box (the frame below is the demo&rsquo;s)
+        Quiet: zero DOM, not an empty box (the frame below is the demo’s)
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="border-border/60 w-full rounded-lg border border-dashed p-4">
@@ -359,7 +359,7 @@ export function TriageHeaderShowcases() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Unreadable: the one state that must never look like &ldquo;nothing is waiting&rdquo;
+        Unreadable: the one state that must never look like “nothing is waiting”
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-full">

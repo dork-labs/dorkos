@@ -545,7 +545,7 @@ export function GenUiShowcases() {
         <ShowcaseDemo>
           <WidgetRenderer document={BOARD_WON} />
         </ShowcaseDemo>
-        <ShowcaseLabel>won — stroke inherits the winning cells&apos; tone</ShowcaseLabel>
+        <ShowcaseLabel>won — stroke inherits the winning cells’ tone</ShowcaseLabel>
         <ShowcaseDemo>
           <WidgetRenderer document={BOARD_WON_TONED} />
         </ShowcaseDemo>

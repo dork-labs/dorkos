@@ -28,7 +28,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, user, type Db } from '@dorkos/db';
 import roomRoutes from '../rooms.js';
 import readCursorRoutes from '../read-cursors.js';
@@ -37,6 +38,9 @@ import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.
 import { setReadCursorService } from '../../services/core/read-cursor-service.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import { env } from '../../env.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** An app in `app.ts`'s middleware order, mounting only the rooms surface. */
 function buildApp(): express.Express {
@@ -78,6 +82,8 @@ describe('resolveCaller — one owner, one author id, across every login posture
     setRoomService(rooms.service);
     setReadCursorService(rooms.readCursors);
     app = buildApp();
+
+    fixtureTarget.mount(app);
   });
 
   afterAll(() => {
@@ -89,7 +95,7 @@ describe('resolveCaller — one owner, one author id, across every login posture
     // ---- Phase 1: login off, nobody registered ----
     setAuthEnabled(false);
 
-    const created = await request(app)
+    const created = await request(fixtureServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Backend' });
     expect(created.status).toBe(201);
@@ -99,25 +105,29 @@ describe('resolveCaller — one owner, one author id, across every login posture
     // The unbound sentinel renders as "You" — nobody else is here to disambiguate.
     expect(created.body.members[0].author.displayName).toBe('You');
 
-    const posted = await request(app)
+    const posted = await request(fixtureServer)
       .post(`/api/rooms/${roomId}/entries`)
       .send({ text: 'said before there were accounts' });
     expect(posted.status).toBe(202);
     const seq = posted.body.seq as number;
 
     expect(
-      (await request(app).put(`/api/read-cursors/room/${roomId}`).send({ lastReadSeq: seq })).status
+      (
+        await request(fixtureServer)
+          .put(`/api/read-cursors/room/${roomId}`)
+          .send({ lastReadSeq: seq })
+      ).status
     ).toBe(200);
 
     // ---- Phase 2: the owner registers (the enable-login flow) ----
-    const signUp = await request(app)
+    const signUp = await request(fixtureServer)
       .post('/api/auth/sign-up/email')
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD, name: 'Dorian' });
     expect(signUp.status).toBe(200);
     const ownerUserId = db.select().from(user).get()!.id;
 
-    const signIn = await request(app)
+    const signIn = await request(fixtureServer)
       .post('/api/auth/sign-in/email')
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
@@ -127,7 +137,9 @@ describe('resolveCaller — one owner, one author id, across every login posture
     // ---- Phase 3: login on, owner signed in (branch 2 → bindOwner) ----
     setAuthEnabled(true);
 
-    const signedIn = await request(app).get(`/api/rooms/${roomId}`).set('Cookie', cookies);
+    const signedIn = await request(fixtureServer)
+      .get(`/api/rooms/${roomId}`)
+      .set('Cookie', cookies);
     expect(signedIn.status).toBe(200);
     // The rebind, observed from outside: same author, now bound to the account.
     expect(signedIn.body.viewerAuthorId).toBe(authorId);
@@ -140,7 +152,7 @@ describe('resolveCaller — one owner, one author id, across every login posture
     expect(membership.author.displayName).toBe('You');
     expect(membership.author.displayName).not.toBe('Dorian');
 
-    const listedSignedIn = await request(app).get('/api/rooms').set('Cookie', cookies);
+    const listedSignedIn = await request(fixtureServer).get('/api/rooms').set('Cookie', cookies);
     expect(listedSignedIn.body.rooms.map((r: { id: string }) => r.id)).toEqual([roomId]);
     // The natural key moved even though nothing else did — the rebind happened.
     expect(readNaturalKey(db, authorId)).toBe(`user:${ownerUserId}`);
@@ -151,14 +163,14 @@ describe('resolveCaller — one owner, one author id, across every login posture
     // opens the cockpit to an empty sidebar, holding no cursor and no membership.
     setAuthEnabled(false);
 
-    const loggedOut = await request(app).get(`/api/rooms/${roomId}`);
+    const loggedOut = await request(fixtureServer).get(`/api/rooms/${roomId}`);
     expect(loggedOut.status).toBe(200);
     expect(loggedOut.body.viewerAuthorId).toBe(authorId);
     expect(
       loggedOut.body.members.find((m: { authorId: string }) => m.authorId === authorId).lastReadSeq
     ).toBe(seq);
 
-    const listedLoggedOut = await request(app).get('/api/rooms');
+    const listedLoggedOut = await request(fixtureServer).get('/api/rooms');
     expect(listedLoggedOut.body.rooms.map((r: { id: string }) => r.id)).toEqual([roomId]);
 
     // And no stray author was left anywhere along the way.
@@ -166,7 +178,7 @@ describe('resolveCaller — one owner, one author id, across every login posture
 
     // ---- And back on again, for good measure ----
     setAuthEnabled(true);
-    const backOn = await request(app).get(`/api/rooms/${roomId}`).set('Cookie', cookies);
+    const backOn = await request(fixtureServer).get(`/api/rooms/${roomId}`).set('Cookie', cookies);
     expect(backOn.body.viewerAuthorId).toBe(authorId);
     expect(countHumanAuthors(db)).toBe(1);
   });
@@ -176,7 +188,7 @@ describe('resolveCaller — one owner, one author id, across every login posture
     // not reachable from the network. `res.locals.user` exists on a room handler
     // only because the session gate put it there.
     setAuthEnabled(true);
-    expect((await request(app).get('/api/rooms')).status).toBe(401);
+    expect((await request(fixtureServer).get('/api/rooms')).status).toBe(401);
   });
 });
 

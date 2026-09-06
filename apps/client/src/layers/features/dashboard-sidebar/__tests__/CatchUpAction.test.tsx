@@ -13,7 +13,7 @@ import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, mockRoomEntryPage } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { buildSidebarModel } from '../model/build-sidebar-model';
 import type { SidebarRowModel } from '../model/build-sidebar-model';
@@ -67,7 +67,26 @@ beforeEach(() => {
   useEmulatedViewport();
   transport = createMockTransport();
   // One entry per room, so the sweep has a `seq` to move the cursor onto.
-  transport.listRoomEntries = vi.fn().mockResolvedValue([{ id: 'e1', seq: 42 }]);
+  transport.listRoomEntries = vi.fn().mockResolvedValue(
+    mockRoomEntryPage([
+      {
+        roomId: 'room-1',
+        seq: 42,
+        id: 'e1',
+        authorId: 'ana',
+        kind: 'post',
+        body: { text: 'hi' },
+        mentions: [],
+        sessionId: null,
+        cascadeRoot: 'e1',
+        cascadeDepth: 0,
+        parentEntryId: null,
+        threadRootEntryId: null,
+        signature: null,
+        createdAt: '2026-07-26T10:00:00.000Z',
+      },
+    ])
+  );
   window.localStorage.clear();
 });
 afterEach(cleanup);

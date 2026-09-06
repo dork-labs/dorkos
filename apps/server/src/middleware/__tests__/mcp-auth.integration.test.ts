@@ -16,8 +16,10 @@ import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { Server } from 'node:http';
 import express from 'express';
-import request from 'supertest';
+import request, { type Test } from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, user, apikey, eq, type Db } from '@dorkos/db';
 
 /** A valid local token (dork_mcp_local_ + 64 hex) the acceptor should accept. */
@@ -79,11 +81,8 @@ function buildApp(): express.Express {
 }
 
 /** Start a POST /mcp request, optionally with a Bearer token or session cookie. */
-function postMcp(
-  app: express.Express,
-  opts: { auth?: string; cookie?: string[] } = {}
-): request.Test {
-  let r = request(app).post('/mcp').set('Content-Type', 'application/json');
+function postMcp(server: Server, opts: { auth?: string; cookie?: string[] } = {}): Test {
+  let r = request(server).post('/mcp').set('Content-Type', 'application/json');
   if (opts.auth) r = r.set('Authorization', opts.auth);
   if (opts.cookie) r = r.set('Cookie', opts.cookie);
   return r;
@@ -102,9 +101,10 @@ function setLegacyKey(value: string | null): void {
 }
 
 describe('createMcpAuth — /mcp end-to-end (integration)', () => {
+  const target = swappableServer();
+  const server = target.server;
   let tmpDir: string;
   let db: Db;
-  let app: express.Express;
   let ownerId: string;
   let cookies: string[];
   let userKey: string;
@@ -115,15 +115,15 @@ describe('createMcpAuth — /mcp end-to-end (integration)', () => {
     db = createDb(path.join(tmpDir, 'mcpauth-test.db'));
     runMigrations(db);
     const auth = initAuth(db, tmpDir);
-    app = buildApp();
+    target.mount(buildApp());
 
-    const signUp = await request(app)
+    const signUp = await request(server)
       .post('/api/auth/sign-up/email')
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD, name: OWNER_NAME });
     expect(signUp.status).toBe(200);
 
-    const signIn = await request(app)
+    const signIn = await request(server)
       .post('/api/auth/sign-in/email')
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
@@ -147,18 +147,18 @@ describe('createMcpAuth — /mcp end-to-end (integration)', () => {
 
   describe('auth.enabled = false (gate transparent, the carve-out + local token apply)', () => {
     it('allows a tokenless read-only tools/call (carve-out)', async () => {
-      const res = await postMcp(app).send(READ_ONLY_CALL);
+      const res = await postMcp(server).send(READ_ONLY_CALL);
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
     });
 
     it('allows a tokenless discovery tools/list', async () => {
-      const res = await postMcp(app).send(DISCOVERY_LIST);
+      const res = await postMcp(server).send(DISCOVERY_LIST);
       expect(res.status).toBe(200);
     });
 
     it('401s a tokenless mutating tools/call with a helpful, non-leaking body', async () => {
-      const res = await postMcp(app).send(MUTATING_CALL);
+      const res = await postMcp(server).send(MUTATING_CALL);
       expect(res.status).toBe(401);
       const body = res.body as { jsonrpc: string; error: { code: number; message: string } };
       expect(body.jsonrpc).toBe('2.0');
@@ -171,27 +171,27 @@ describe('createMcpAuth — /mcp end-to-end (integration)', () => {
     });
 
     it('allows the same mutating call WITH the local token', async () => {
-      const res = await postMcp(app, { auth: `Bearer ${LOCAL_TOKEN}` }).send(MUTATING_CALL);
+      const res = await postMcp(server, { auth: `Bearer ${LOCAL_TOKEN}` }).send(MUTATING_CALL);
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
     });
 
     it('401s a tokenless resources/read (fail-closed on data reads)', async () => {
-      const res = await postMcp(app).send(RESOURCES_READ);
+      const res = await postMcp(server).send(RESOURCES_READ);
       expect(res.status).toBe(401);
     });
 
     it('accepts the exact MCP_API_KEY env override on a mutating call, rejects a wrong one', async () => {
       (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'headless-secret';
-      const ok = await postMcp(app, { auth: 'Bearer headless-secret' }).send(MUTATING_CALL);
+      const ok = await postMcp(server, { auth: 'Bearer headless-secret' }).send(MUTATING_CALL);
       expect(ok.status).toBe(200);
 
-      const bad = await postMcp(app, { auth: 'Bearer wrong' }).send(MUTATING_CALL);
+      const bad = await postMcp(server, { auth: 'Bearer wrong' }).send(MUTATING_CALL);
       expect(bad.status).toBe(401);
     });
 
     it('accepts a per-user Better Auth API key on a mutating call', async () => {
-      const res = await postMcp(app, { auth: `Bearer ${userKey}` }).send(MUTATING_CALL);
+      const res = await postMcp(server, { auth: `Bearer ${userKey}` }).send(MUTATING_CALL);
       expect(res.status).toBe(200);
     });
 
@@ -200,14 +200,16 @@ describe('createMcpAuth — /mcp end-to-end (integration)', () => {
       const created = await auth.api.createApiKey({ body: { userId: ownerId, name: 'revoke-me' } });
       db.delete(apikey).where(eq(apikey.id, created.id)).run();
 
-      const res = await postMcp(app, { auth: `Bearer ${created.key}` }).send(MUTATING_CALL);
+      const res = await postMcp(server, { auth: `Bearer ${created.key}` }).send(MUTATING_CALL);
       expect(res.status).toBe(401);
       expect((res.body as { error: { code: number } }).error.code).toBe(-32001);
     });
 
     it('accepts a not-yet-seeded legacy config key on a mutating call (compat window)', async () => {
       setLegacyKey('dork_mcp_legacy_compat');
-      const res = await postMcp(app, { auth: 'Bearer dork_mcp_legacy_compat' }).send(MUTATING_CALL);
+      const res = await postMcp(server, { auth: 'Bearer dork_mcp_legacy_compat' }).send(
+        MUTATING_CALL
+      );
       expect(res.status).toBe(200);
     });
 
@@ -220,14 +222,16 @@ describe('createMcpAuth — /mcp end-to-end (integration)', () => {
       // bearer that was never a Better Auth key and was about to be accepted.
       const errors = vi.spyOn(logger, 'error').mockImplementation(() => {});
       try {
-        const ok = await postMcp(app, { auth: `Bearer ${LOCAL_TOKEN}` }).send(MUTATING_CALL);
+        const ok = await postMcp(server, { auth: `Bearer ${LOCAL_TOKEN}` }).send(MUTATING_CALL);
         expect(ok.status).toBe(200);
         expect(errors.mock.calls.flat().join(' ')).not.toContain('Failed to validate API key');
 
         // The discriminating half: a bearer that really could have been a key
         // must still report its failure, or this would just be muting the log.
         errors.mockClear();
-        const bad = await postMcp(app, { auth: 'Bearer dork_not_a_real_key' }).send(MUTATING_CALL);
+        const bad = await postMcp(server, { auth: 'Bearer dork_not_a_real_key' }).send(
+          MUTATING_CALL
+        );
         expect(bad.status).toBe(401);
         expect(errors.mock.calls.flat().join(' ')).toContain('Failed to validate API key');
       } finally {
@@ -239,7 +243,7 @@ describe('createMcpAuth — /mcp end-to-end (integration)', () => {
   describe('auth.enabled = true (session gate is the front-line authority)', () => {
     it('gate 401s an unauthenticated /mcp request before the middleware runs', async () => {
       setAuthEnabled(true);
-      const res = await postMcp(app).send(READ_ONLY_CALL);
+      const res = await postMcp(server).send(READ_ONLY_CALL);
       expect(res.status).toBe(401);
       // The gate's shape, not the JSON-RPC shape — it 401s before the middleware.
       expect(res.body).toEqual({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
@@ -247,27 +251,27 @@ describe('createMcpAuth — /mcp end-to-end (integration)', () => {
 
     it('does not accept the local token when login is on (gate blocks it)', async () => {
       setAuthEnabled(true);
-      const res = await postMcp(app, { auth: `Bearer ${LOCAL_TOKEN}` }).send(READ_ONLY_CALL);
+      const res = await postMcp(server, { auth: `Bearer ${LOCAL_TOKEN}` }).send(READ_ONLY_CALL);
       expect(res.status).toBe(401);
       expect(res.body).toEqual({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
     });
 
     it('accepts a per-user API key through both the gate and the middleware', async () => {
       setAuthEnabled(true);
-      const res = await postMcp(app, { auth: `Bearer ${userKey}` }).send(MUTATING_CALL);
+      const res = await postMcp(server, { auth: `Bearer ${userKey}` }).send(MUTATING_CALL);
       expect(res.status).toBe(200);
     });
 
     it('accepts a valid session cookie', async () => {
       setAuthEnabled(true);
-      const res = await postMcp(app, { cookie: cookies }).send(MUTATING_CALL);
+      const res = await postMcp(server, { cookie: cookies }).send(MUTATING_CALL);
       expect(res.status).toBe(200);
     });
 
     it('the MCP_API_KEY env override alone is blocked by the gate when login is on', async () => {
       setAuthEnabled(true);
       (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'headless-secret';
-      const res = await postMcp(app, { auth: 'Bearer headless-secret' }).send(READ_ONLY_CALL);
+      const res = await postMcp(server, { auth: 'Bearer headless-secret' }).send(READ_ONLY_CALL);
       expect(res.status).toBe(401);
       expect(res.body).toEqual({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
     });

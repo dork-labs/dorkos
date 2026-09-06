@@ -114,7 +114,8 @@ vi.mock('../../services/core/template-downloader.js', () => ({
   downloadTemplate: (...args: unknown[]) => mockDownloadTemplate(...args),
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import express from 'express';
 import { createAgentsRouter } from '../agents.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
@@ -126,6 +127,7 @@ const mockMeshCore = { syncFromDisk: mockSyncFromDisk };
 const app = express();
 app.use(express.json());
 app.use('/api/agents', createAgentsRouter(mockMeshCore));
+const testServer = listeningServer(app);
 
 describe('POST /api/agents/create', () => {
   beforeEach(() => {
@@ -139,7 +141,7 @@ describe('POST /api/agents/create', () => {
   });
 
   it('creates agent with full pipeline — 201 + manifest with correct fields', async () => {
-    const res = await request(app).post('/api/agents/create').send({ name: 'my-agent' });
+    const res = await request(testServer).post('/api/agents/create').send({ name: 'my-agent' });
 
     expect(res.status).toBe(201);
     expect(res.body.id).toBe('MOCK_ULID_001');
@@ -164,7 +166,7 @@ describe('POST /api/agents/create', () => {
   });
 
   it('creates directory structure: parent (recursive) + agent dir + .dork/', async () => {
-    await request(app).post('/api/agents/create').send({ name: 'my-agent' });
+    await request(testServer).post('/api/agents/create').send({ name: 'my-agent' });
 
     const mkdirCalls = mockMkdir.mock.calls;
     // Parent directory created recursively
@@ -180,7 +182,7 @@ describe('POST /api/agents/create', () => {
   });
 
   it('scaffolds SOUL.md and NOPE.md via writeConventionFile', async () => {
-    await request(app).post('/api/agents/create').send({ name: 'my-agent' });
+    await request(testServer).post('/api/agents/create').send({ name: 'my-agent' });
 
     expect(mockWriteConventionFile).toHaveBeenCalledWith(
       '/mock/agents/my-agent',
@@ -195,7 +197,7 @@ describe('POST /api/agents/create', () => {
   });
 
   it('DorkBot creation scaffolds instructions with its orientation template', async () => {
-    await request(app).post('/api/agents/create').send({ name: 'dorkbot' });
+    await request(testServer).post('/api/agents/create').send({ name: 'dorkbot' });
 
     expect(mockDorkbotTemplate).toHaveBeenCalled();
     // DOR-142: scaffolds into the workspace root via @dorkos/harness, with the
@@ -208,7 +210,7 @@ describe('POST /api/agents/create', () => {
   });
 
   it('non-DorkBot agents scaffold instructions with a fillable default body', async () => {
-    await request(app).post('/api/agents/create').send({ name: 'my-agent' });
+    await request(testServer).post('/api/agents/create').send({ name: 'my-agent' });
 
     // DOR-142: scaffolding now extends to every agent, not just DorkBot — but a
     // non-DorkBot agent gets the default body, never the DorkBot template.
@@ -223,21 +225,23 @@ describe('POST /api/agents/create', () => {
     // Both directory and .dork/ exist
     mockStat.mockResolvedValue({ isDirectory: () => true } as never);
 
-    const res = await request(app).post('/api/agents/create').send({ name: 'existing-agent' });
+    const res = await request(testServer)
+      .post('/api/agents/create')
+      .send({ name: 'existing-agent' });
 
     expect(res.status).toBe(409);
     expect(res.body.error).toContain('DorkOS project');
   });
 
   it('returns 400 for invalid agent name', async () => {
-    const res = await request(app).post('/api/agents/create').send({ name: 'INVALID_NAME' });
+    const res = await request(testServer).post('/api/agents/create').send({ name: 'INVALID_NAME' });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Validation failed');
   });
 
   it('returns 400 for missing name', async () => {
-    const res = await request(app).post('/api/agents/create').send({});
+    const res = await request(testServer).post('/api/agents/create').send({});
 
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Validation failed');
@@ -246,7 +250,7 @@ describe('POST /api/agents/create', () => {
   it('rolls back on scaffold failure — directory cleaned up', async () => {
     mockWriteManifest.mockRejectedValue(new Error('disk full'));
 
-    const res = await request(app).post('/api/agents/create').send({ name: 'fail-agent' });
+    const res = await request(testServer).post('/api/agents/create').send({ name: 'fail-agent' });
 
     expect(res.status).toBe(500);
     expect(mockRm).toHaveBeenCalledWith('/mock/agents/fail-agent', {
@@ -256,7 +260,7 @@ describe('POST /api/agents/create', () => {
   });
 
   it('resolves default directory when no directory provided', async () => {
-    const res = await request(app).post('/api/agents/create').send({ name: 'my-agent' });
+    const res = await request(testServer).post('/api/agents/create').send({ name: 'my-agent' });
 
     expect(res.status).toBe(201);
     // Agent path should be default directory + name
@@ -264,7 +268,7 @@ describe('POST /api/agents/create', () => {
   });
 
   it('uses custom directory when provided', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/agents/create')
       .send({ name: 'my-agent', directory: '/custom/path/my-agent' });
 
@@ -273,7 +277,7 @@ describe('POST /api/agents/create', () => {
   });
 
   it('conventions default to all true', async () => {
-    const res = await request(app).post('/api/agents/create').send({ name: 'my-agent' });
+    const res = await request(testServer).post('/api/agents/create').send({ name: 'my-agent' });
 
     expect(res.status).toBe(201);
     expect(res.body.conventions).toEqual({
@@ -285,7 +289,7 @@ describe('POST /api/agents/create', () => {
   });
 
   it('accepts custom conventions', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/agents/create')
       .send({
         name: 'my-agent',
@@ -303,14 +307,16 @@ describe('POST /api/agents/create', () => {
 
   it('accepts custom traits', async () => {
     const traits = { ...DEFAULT_TRAITS, verbosity: 1, autonomy: 5, chaos: 2, humor: 4 };
-    const res = await request(app).post('/api/agents/create').send({ name: 'my-agent', traits });
+    const res = await request(testServer)
+      .post('/api/agents/create')
+      .send({ name: 'my-agent', traits });
 
     expect(res.status).toBe(201);
     expect(res.body.traits).toEqual(traits);
   });
 
   it('meshCore.syncFromDisk called on success', async () => {
-    await request(app).post('/api/agents/create').send({ name: 'my-agent' });
+    await request(testServer).post('/api/agents/create').send({ name: 'my-agent' });
 
     expect(mockSyncFromDisk).toHaveBeenCalledWith('/mock/agents/my-agent');
   });
@@ -318,7 +324,7 @@ describe('POST /api/agents/create', () => {
   it('succeeds even if meshCore.syncFromDisk fails', async () => {
     mockSyncFromDisk.mockRejectedValueOnce(new Error('sync failed'));
 
-    const res = await request(app).post('/api/agents/create').send({ name: 'my-agent' });
+    const res = await request(testServer).post('/api/agents/create').send({ name: 'my-agent' });
 
     expect(res.status).toBe(201);
   });
@@ -334,7 +340,7 @@ describe('POST /api/agents/create', () => {
       const listener = vi.fn().mockResolvedValue(undefined);
       setOnAgentCreated(listener);
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/agents/create')
         .send({ name: 'my-agent', displayName: 'My Agent' });
 
@@ -356,7 +362,7 @@ describe('POST /api/agents/create', () => {
     it('still returns 201 when the seam listener throws (never-500 guarantee)', async () => {
       setOnAgentCreated(vi.fn().mockRejectedValue(new Error('shape re-bind exploded')));
 
-      const res = await request(app).post('/api/agents/create').send({ name: 'my-agent' });
+      const res = await request(testServer).post('/api/agents/create').send({ name: 'my-agent' });
 
       expect(res.status).toBe(201);
       expect(res.body.id).toBe('MOCK_ULID_001');
@@ -368,7 +374,7 @@ describe('POST /api/agents/create', () => {
       // Directory exists AND contains a .dork project → 409 collision.
       mockStat.mockResolvedValue({ isDirectory: () => true });
 
-      const res = await request(app).post('/api/agents/create').send({ name: 'my-agent' });
+      const res = await request(testServer).post('/api/agents/create').send({ name: 'my-agent' });
 
       expect(res.status).toBe(409);
       expect(listener).not.toHaveBeenCalled();
@@ -379,7 +385,7 @@ describe('POST /api/agents/create', () => {
 
   describe('template download', () => {
     it('calls downloadTemplate when template option is provided', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/agents/create')
         .send({ name: 'my-agent', template: 'github:org/repo' });
 
@@ -388,7 +394,7 @@ describe('POST /api/agents/create', () => {
     });
 
     it('does not call downloadTemplate when no template option', async () => {
-      const res = await request(app).post('/api/agents/create').send({ name: 'my-agent' });
+      const res = await request(testServer).post('/api/agents/create').send({ name: 'my-agent' });
 
       expect(res.status).toBe(201);
       expect(mockDownloadTemplate).not.toHaveBeenCalled();
@@ -397,7 +403,7 @@ describe('POST /api/agents/create', () => {
     it('rolls back directory on download failure', async () => {
       mockDownloadTemplate.mockRejectedValueOnce(new Error('clone failed'));
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/agents/create')
         .send({ name: 'my-agent', template: 'github:org/repo' });
 
@@ -415,7 +421,7 @@ describe('POST /api/agents/create', () => {
         JSON.stringify({ scripts: { postinstall: 'node setup.js' } })
       );
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/agents/create')
         .send({ name: 'my-agent', template: 'github:org/repo' });
 
@@ -426,7 +432,7 @@ describe('POST /api/agents/create', () => {
     it('detects setup script in package.json → _meta.hasPostInstall: true', async () => {
       mockFsReadFile.mockResolvedValueOnce(JSON.stringify({ scripts: { setup: 'bash init.sh' } }));
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/agents/create')
         .send({ name: 'my-agent', template: 'github:org/repo' });
 
@@ -439,7 +445,7 @@ describe('POST /api/agents/create', () => {
         JSON.stringify({ scripts: { prepare: 'husky install' } })
       );
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/agents/create')
         .send({ name: 'my-agent', template: 'github:org/repo' });
 
@@ -449,7 +455,7 @@ describe('POST /api/agents/create', () => {
 
     it('no package.json → _meta.hasPostInstall: false', async () => {
       // mockFsReadFile defaults to ENOENT rejection
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/agents/create')
         .send({ name: 'my-agent', template: 'github:org/repo' });
 
@@ -462,7 +468,7 @@ describe('POST /api/agents/create', () => {
         JSON.stringify({ scripts: { build: 'tsc', test: 'vitest' } })
       );
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/agents/create')
         .send({ name: 'my-agent', template: 'github:org/repo' });
 
@@ -471,7 +477,7 @@ describe('POST /api/agents/create', () => {
     });
 
     it('_meta.templateMethod reflects method used', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/agents/create')
         .send({ name: 'my-agent', template: 'github:org/repo' });
 
@@ -480,7 +486,7 @@ describe('POST /api/agents/create', () => {
     });
 
     it('no template option → _meta absent from response', async () => {
-      const res = await request(app).post('/api/agents/create').send({ name: 'my-agent' });
+      const res = await request(testServer).post('/api/agents/create').send({ name: 'my-agent' });
 
       expect(res.status).toBe(201);
       expect(res.body._meta).toBeUndefined();
@@ -492,7 +498,7 @@ describe('POST /api/agents/create', () => {
       new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
     );
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/agents/create')
       .send({ name: 'my-agent', directory: '/etc/evil' });
 

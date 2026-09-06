@@ -360,7 +360,7 @@ describe('AssistantMessageContent — error parts keep the server-authored messa
         message={makeMessage([
           {
             type: 'error' as const,
-            message: "That model isn't available. Pick another one from the model menu.",
+            message: 'That model isn’t available. Pick another one from the model menu.',
             category: 'execution_error' as const,
           },
         ])}
@@ -368,7 +368,7 @@ describe('AssistantMessageContent — error parts keep the server-authored messa
     );
 
     expect(
-      screen.getByText("That model isn't available. Pick another one from the model menu.")
+      screen.getByText('That model isn’t available. Pick another one from the model menu.')
     ).toBeInTheDocument();
     expect(screen.queryByText('An error occurred during execution.')).not.toBeInTheDocument();
   });

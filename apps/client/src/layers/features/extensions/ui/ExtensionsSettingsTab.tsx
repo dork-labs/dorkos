@@ -44,7 +44,7 @@ export function ExtensionsSettingsTab() {
         );
       },
       onError: (err) => {
-        toast.error(approve ? "Couldn't let it run." : "Couldn't stop it running.", {
+        toast.error(approve ? 'Couldn’t let it run.' : 'Couldn’t stop it running.', {
           description: err.message,
         });
       },
@@ -67,7 +67,7 @@ export function ExtensionsSettingsTab() {
       // buried the half that tells the reader what to do. Headline plus
       // description keeps both, in the shape the approval toggle above uses.
       onError: (err) => {
-        toast.error(enabled ? "Couldn't turn that on." : "Couldn't turn that off.", {
+        toast.error(enabled ? 'Couldn’t turn that on.' : 'Couldn’t turn that off.', {
           description: err.message,
         });
       },
@@ -77,10 +77,10 @@ export function ExtensionsSettingsTab() {
   function handleReload() {
     reloadMutation.mutate(undefined, {
       onSuccess: (updated) => {
-        toast.success(`Reloaded ${updated.length} extension(s)`);
+        toast.success(`Reloaded ${updated.length} extension${updated.length === 1 ? '' : 's'}`);
       },
       onError: (err) => {
-        toast.error("Couldn't reload your extensions.", { description: err.message });
+        toast.error('Couldn’t reload your extensions.', { description: err.message });
       },
     });
   }

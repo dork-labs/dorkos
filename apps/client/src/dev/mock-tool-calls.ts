@@ -103,7 +103,7 @@ export const TOOL_CALLS_EXTENDED: Record<string, ToolCallState> = {
     toolName: 'ReadMcpResourceTool',
     input: JSON.stringify({ server: 'context7', uri: 'docs://react/hooks/useState' }),
     status: 'complete',
-    result: 'useState documentation content...',
+    result: 'useState documentation content…',
   }),
 };
 

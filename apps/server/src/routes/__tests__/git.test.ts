@@ -32,11 +32,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 describe('Git Routes', () => {
   beforeEach(() => {
@@ -49,7 +51,7 @@ describe('Git Routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app).get('/api/git/status').query({ dir: '/etc/shadow' });
+      const res = await request(testServer).get('/api/git/status').query({ dir: '/etc/shadow' });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
@@ -60,7 +62,7 @@ describe('Git Routes', () => {
         new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
       );
 
-      const res = await request(app).get('/api/git/status').query({ dir: '/tmp\0evil' });
+      const res = await request(testServer).get('/api/git/status').query({ dir: '/tmp\0evil' });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('NULL_BYTE');

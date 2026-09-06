@@ -127,7 +127,7 @@ describe('RoomFilesSection', () => {
       );
     const { queryErrors } = renderSection(transport);
 
-    await screen.findByText("Couldn't load files.");
+    await screen.findByText('Couldn’t load files.');
     // Reported, not swallowed — and the count is deliberately not pinned: the
     // tree mounts a second reader of the same cache entry, which refetches and
     // fails again. What matters is that this one reaches the error path at all,
@@ -371,7 +371,7 @@ describe('RoomFilesSection', () => {
     // A refusal that is NOT "this room has no files" is a real failure, and the
     // section stays to say so rather than vanishing and leaving a person to
     // wonder where the files went.
-    expect(await screen.findByText("Couldn't load files.")).toBeInTheDocument();
+    expect(await screen.findByText('Couldn’t load files.')).toBeInTheDocument();
   });
 });
 
@@ -404,7 +404,7 @@ describe('RoomFilesSection previews', () => {
 
     fireEvent.click(await screen.findByRole('treeitem', { name: 'logo.png' }));
     expect(
-      await screen.findByText("This isn't text, so there's nothing to show here.")
+      await screen.findByText('This isn’t text, so there’s nothing to show here.')
     ).toBeInTheDocument();
   });
 
@@ -434,7 +434,7 @@ describe('RoomFilesSection previews', () => {
 
     fireEvent.click(await screen.findByRole('treeitem', { name: 'link' }));
     expect(
-      await screen.findByText("This isn't a file that can be shown here.")
+      await screen.findByText('This isn’t a file that can be shown here.')
     ).toBeInTheDocument();
   });
 });

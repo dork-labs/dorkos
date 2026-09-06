@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 // Mutable env stand-in — DORKOS_MANAGED_BY is read per request, so each test
 // sets it without re-importing the module.
@@ -23,6 +24,9 @@ vi.mock('child_process', () => ({
 import { createAdminRouter, MANAGED_BY_DESKTOP_CODE } from '../admin.js';
 import { spawn } from 'child_process';
 import fs from 'fs/promises';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** The data directory the refusal copy has to name so "delete it" is actionable. */
 const DORK_HOME = '/tmp/test-dork-home';
@@ -50,6 +54,8 @@ describe('Admin routes', () => {
         closeDb: mockCloseDb,
       })
     );
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -58,18 +64,18 @@ describe('Admin routes', () => {
 
   describe('POST /api/admin/reset', () => {
     it('returns 400 without confirm field', async () => {
-      const res = await request(app).post('/api/admin/reset').send({});
+      const res = await request(fixtureServer).post('/api/admin/reset').send({});
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('confirm');
     });
 
     it('returns 400 with wrong confirm value', async () => {
-      const res = await request(app).post('/api/admin/reset').send({ confirm: 'delete' });
+      const res = await request(fixtureServer).post('/api/admin/reset').send({ confirm: 'delete' });
       expect(res.status).toBe(400);
     });
 
     it('returns 200 with correct confirm value', async () => {
-      const res = await request(app).post('/api/admin/reset').send({ confirm: 'reset' });
+      const res = await request(fixtureServer).post('/api/admin/reset').send({ confirm: 'reset' });
       expect(res.status).toBe(200);
       expect(res.body.message).toContain('Reset initiated');
     });
@@ -77,7 +83,7 @@ describe('Admin routes', () => {
 
   describe('POST /api/admin/restart', () => {
     it('returns 200', async () => {
-      const res = await request(app).post('/api/admin/restart');
+      const res = await request(fixtureServer).post('/api/admin/restart');
       expect(res.status).toBe(200);
       expect(res.body.message).toContain('Restart initiated');
     });
@@ -89,7 +95,7 @@ describe('Admin routes', () => {
     });
 
     it('refuses a restart with 409 and never exits the process', async () => {
-      const res = await request(app).post('/api/admin/restart');
+      const res = await request(fixtureServer).post('/api/admin/restart');
       expect(res.status).toBe(409);
       expect(res.body.code).toBe(MANAGED_BY_DESKTOP_CODE);
       expect(res.body.error).toContain('Quit DorkOS and open it again');
@@ -99,7 +105,7 @@ describe('Admin routes', () => {
     });
 
     it('refuses a reset with 409 and never deletes the data directory', async () => {
-      const res = await request(app).post('/api/admin/reset').send({ confirm: 'reset' });
+      const res = await request(fixtureServer).post('/api/admin/reset').send({ confirm: 'reset' });
       expect(res.status).toBe(409);
       expect(res.body.code).toBe(MANAGED_BY_DESKTOP_CODE);
       expect(mockCloseDb).not.toHaveBeenCalled();
@@ -111,7 +117,7 @@ describe('Admin routes', () => {
     // intent. It deletes nothing, so giving it for a reset would send someone
     // away believing their data was wiped when it is all still there.
     it('does not tell a reset caller that reopening the app resets anything', async () => {
-      const res = await request(app).post('/api/admin/reset').send({ confirm: 'reset' });
+      const res = await request(fixtureServer).post('/api/admin/reset').send({ confirm: 'reset' });
 
       expect(res.body.error).toContain('Nothing has been deleted');
       expect(res.body.error).toContain(DORK_HOME);
@@ -133,7 +139,7 @@ describe('Admin routes', () => {
       '/api/admin/restart/',
       '/api/admin/RESTART/',
     ])('refuses %s without touching the data directory', async (path) => {
-      const res = await request(app).post(path).send({ confirm: 'reset' });
+      const res = await request(fixtureServer).post(path).send({ confirm: 'reset' });
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe(MANAGED_BY_DESKTOP_CODE);
@@ -148,9 +154,9 @@ describe('Admin routes', () => {
     // many admin requests" for five minutes.
     it('keeps explaining itself past the rate limit', async () => {
       for (let i = 0; i < 4; i++) {
-        await request(app).post('/api/admin/restart');
+        await request(fixtureServer).post('/api/admin/restart');
       }
-      const res = await request(app).post('/api/admin/restart');
+      const res = await request(fixtureServer).post('/api/admin/restart');
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe(MANAGED_BY_DESKTOP_CODE);
@@ -159,10 +165,10 @@ describe('Admin routes', () => {
 
   describe('rate limiting', () => {
     it('returns 429 after 3 requests within 5 minutes', async () => {
-      await request(app).post('/api/admin/restart');
-      await request(app).post('/api/admin/restart');
-      await request(app).post('/api/admin/restart');
-      const res = await request(app).post('/api/admin/restart');
+      await request(fixtureServer).post('/api/admin/restart');
+      await request(fixtureServer).post('/api/admin/restart');
+      await request(fixtureServer).post('/api/admin/restart');
+      const res = await request(fixtureServer).post('/api/admin/restart');
       expect(res.status).toBe(429);
     });
   });

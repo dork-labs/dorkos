@@ -370,6 +370,43 @@ export function flowRowForEntry(entries: readonly RoomEntry[], entryId: string):
 }
 
 /**
+ * Which row a reader should be left standing on after a page of OLDER history
+ * lands in front of them (DOR-1734).
+ *
+ * **The boundary is named by `seq`, and taking it from `entries[0]` is the
+ * defect this function exists to make unrepeatable.** The loaded history is one
+ * array in `seq` order, and its first element is routinely NOT the oldest entry
+ * of the oldest page: a thread root the page replies to from outside itself
+ * rides in front of it (DOR-690), at an arbitrary distance below. Anchoring on
+ * that root drops the reader somewhere they have never been — days before the
+ * message they pressed at — and it is the identical trap `olderCursor` exists
+ * to keep the READ out of. The paging cursor already names the boundary
+ * exactly; this only has to find it.
+ *
+ * The row it returns is `flowRowForEntry`'s answer rather than the entry's own,
+ * because the boundary is not always drawn as itself: a thread reply is reached
+ * through its thread's line. It is the same lookup a search hit's landing uses,
+ * deliberately — two rules for "which row takes me to this message" is how one
+ * of them becomes a link into nothing.
+ *
+ * @param entries - The room's loaded history as it stands BEFORE the merge. The
+ *   boundary is in it either way, and looking it up afterwards would mean
+ *   searching an array the merge has already changed.
+ * @param cursorSeq - The `seq` the next read pages from — the oldest entry of
+ *   the oldest page loaded. `null` when there is nothing to page from.
+ * @returns The row to return the reader to, or `null` when this client does not
+ *   hold the boundary and the honest answer is to leave the scroll alone.
+ */
+export function olderPageAnchor(
+  entries: readonly RoomEntry[],
+  cursorSeq: number | null
+): FlowRowRef | null {
+  if (cursorSeq === null) return null;
+  const boundary = entries.find((held) => held.seq === cursorSeq);
+  return boundary === undefined ? null : flowRowForEntry(entries, boundary.id);
+}
+
+/**
  * How much of the answered message the reference chip quotes back.
  *
  * Short on purpose: the chip is a pointer, not a quote. Longer than this and it

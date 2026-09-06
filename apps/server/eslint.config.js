@@ -39,6 +39,14 @@ const OTEL_BAN = {
   message:
     'OpenTelemetry imports are confined to services/observability/. Instrument through the observability helpers instead.',
 };
+// Server tests must use the facade that accepts only an already-listening
+// Server or an explicit URL. Direct Supertest imports can silently reintroduce
+// the per-request listen(0)/close cycle this test boundary removes.
+const SUPERTEST_BAN = {
+  regex: '^supertest(?:/.*)?$',
+  message:
+    'Import request and its types from @dorkos/test-utils/supertest so tests can target an already-listening Server.',
+};
 
 // Every dependency confined to exactly one directory. DERIVED from, rather
 // than restated alongside, both the global ban list and every per-directory
@@ -121,7 +129,7 @@ function confineDirectory(dir, patterns) {
     },
     {
       files: [`${dir}/**/__tests__/**/*.ts`, `${dir}/**/*.test.ts`],
-      rules: { 'no-restricted-imports': ['error', { patterns }] },
+      rules: { 'no-restricted-imports': ['error', { patterns: [...patterns, SUPERTEST_BAN] }] },
     },
   ];
 }
@@ -132,6 +140,23 @@ export default defineConfig([
     // extensions, which are never linted), may contain JSX in .ts files, and is
     // not part of the server's own code — exclude it from the server lint pass.
     ignores: ['dist/**', 'dist-server/**', '.turbo/**', '.temp/**', 'src/core-extensions/**'],
+  },
+
+  // Tests keep every dependency-confinement ban and additionally prohibit
+  // direct Supertest runtime or type imports. Later owner-directory blocks
+  // replace this rule deliberately so their own SDK remains available; the
+  // confineDirectory test half re-adds SUPERTEST_BAN alongside the remaining
+  // confinement patterns.
+  {
+    files: ['src/**/__tests__/**/*.ts', 'src/**/*.test.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [...ALL_CONFINED, SUPERTEST_BAN],
+        },
+      ],
+    },
   },
   ...nodeConfig,
 
@@ -189,6 +214,7 @@ export default defineConfig([
       'src/services/observability/**',
       'src/lib/dork-home.ts',
       'src/**/__tests__/**',
+      'src/**/*.test.ts',
     ],
     rules: {
       'no-restricted-imports': [

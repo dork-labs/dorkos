@@ -172,7 +172,7 @@ export function RoomMemberList({
         // out of a person.
         <div role="alert" className="space-y-2">
           <p className="text-muted-foreground text-sm">
-            Couldn&apos;t read who is in here. Everyone is still where they were.
+            Couldn’t read who is in here. Everyone is still where they were.
           </p>
           <Button type="button" size="sm" variant="outline" onClick={onRetry}>
             Try again

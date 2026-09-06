@@ -6,7 +6,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { z } from 'zod';
 import { noopLogger } from '@dorkos/shared/logger';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -26,6 +27,9 @@ import { createCapabilitiesInvokeRouter } from '../capabilities-invoke.js';
 import { createApprovalsRouter } from '../approvals.js';
 import { createCapabilitiesCatalogRouter } from '../capabilities-catalog.js';
 import capabilitiesMatrixRouter from '../capabilities.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 const testDomain: CapabilityDomain = {
   name: 'test',
@@ -65,7 +69,7 @@ function buildApp() {
 
 describe('POST /api/capabilities/:id/invoke', () => {
   it('invokes a capability and returns its plain result', async () => {
-    const res = await request(buildApp())
+    const res = await request(fixtureTarget.mount(buildApp()))
       .post('/api/capabilities/test.echo/invoke')
       .send({ msg: 'hi' });
     expect(res.status).toBe(200);
@@ -73,13 +77,15 @@ describe('POST /api/capabilities/:id/invoke', () => {
   });
 
   it('404s an unknown capability id', async () => {
-    const res = await request(buildApp()).post('/api/capabilities/test.nope/invoke').send({});
+    const res = await request(fixtureTarget.mount(buildApp()))
+      .post('/api/capabilities/test.nope/invoke')
+      .send({});
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('UNKNOWN_CAPABILITY');
   });
 
   it('400s input that fails the capability input schema', async () => {
-    const res = await request(buildApp())
+    const res = await request(fixtureTarget.mount(buildApp()))
       .post('/api/capabilities/test.echo/invoke')
       .send({ msg: 123 });
     expect(res.status).toBe(400);
@@ -88,7 +94,9 @@ describe('POST /api/capabilities/:id/invoke', () => {
   });
 
   it('surfaces a capability error payload verbatim as 400', async () => {
-    const res = await request(buildApp()).post('/api/capabilities/test.fail/invoke').send({});
+    const res = await request(fixtureTarget.mount(buildApp()))
+      .post('/api/capabilities/test.fail/invoke')
+      .send({});
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: 'boom', code: 'DELIBERATE' });
   });
@@ -104,11 +112,13 @@ describe('POST /api/capabilities/:id/invoke', () => {
     app.use('/api/capabilities/catalog', createCapabilitiesCatalogRouter(registry));
     app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
 
-    const invoke = await request(app).post('/api/capabilities/test.echo/invoke').send({ msg: 'x' });
+    const invoke = await request(fixtureTarget.mount(app))
+      .post('/api/capabilities/test.echo/invoke')
+      .send({ msg: 'x' });
     expect(invoke.status).toBe(200);
     expect(invoke.body).toEqual({ echoed: 'x' });
 
-    const catalog = await request(app).get('/api/capabilities/catalog');
+    const catalog = await request(fixtureServer).get('/api/capabilities/catalog');
     expect(catalog.status).toBe(200);
     expect(catalog.body).toHaveProperty('catalogVersion');
   });
@@ -182,7 +192,7 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
   });
 
   it('202s with an approval_required payload and runs nothing', async () => {
-    const res = await request(buildGatedApp(AGENT))
+    const res = await request(fixtureTarget.mount(buildGatedApp(AGENT)))
       .post('/api/capabilities/gated.destroy/invoke')
       .send({ name: 'production' });
 
@@ -196,12 +206,12 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
 
   it('runs the capability after a person grants it, on a retry with the header', async () => {
     const app = buildGatedApp(AGENT);
-    const asked = await request(app)
+    const asked = await request(fixtureTarget.mount(app))
       .post('/api/capabilities/gated.destroy/invoke')
       .send({ name: 'production' });
     approvals.grant(asked.body.approvalId);
 
-    const retried = await request(app)
+    const retried = await request(fixtureServer)
       .post('/api/capabilities/gated.destroy/invoke')
       .set('X-DorkOS-Approval', asked.body.approvalToken)
       .send({ name: 'production' });
@@ -213,12 +223,12 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
 
   it('refuses a granted token used for a different target', async () => {
     const app = buildGatedApp(AGENT);
-    const asked = await request(app)
+    const asked = await request(fixtureTarget.mount(app))
       .post('/api/capabilities/gated.destroy/invoke')
       .send({ name: 'staging' });
     approvals.grant(asked.body.approvalId);
 
-    const redirected = await request(app)
+    const redirected = await request(fixtureServer)
       .post('/api/capabilities/gated.destroy/invoke')
       .set('X-DorkOS-Approval', asked.body.approvalToken)
       .send({ name: 'production' });
@@ -229,7 +239,7 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
   });
 
   it('403s an agent whose ceiling forbids the tier, with no approval to chase', async () => {
-    const res = await request(buildGatedApp({ ...AGENT, tierCeiling: 'act' }))
+    const res = await request(fixtureTarget.mount(buildGatedApp({ ...AGENT, tierCeiling: 'act' })))
       .post('/api/capabilities/gated.destroy/invoke')
       .send({ name: 'production' });
 
@@ -244,7 +254,7 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
     // `env -u DORKOS_AGENT_TOKEN dorkos call …` and a bare curl both arrive here
     // with no identity, and sessionGate is a pass-through in the default local
     // posture. Requiring less capability must not buy more permission.
-    const res = await request(buildGatedApp())
+    const res = await request(fixtureTarget.mount(buildGatedApp()))
       .post('/api/capabilities/gated.destroy/invoke')
       .send({ name: 'production' });
 
@@ -256,12 +266,12 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
 
   it('lets an unidentified caller through once a person grants the approval', async () => {
     const app = buildGatedApp();
-    const asked = await request(app)
+    const asked = await request(fixtureTarget.mount(app))
       .post('/api/capabilities/gated.destroy/invoke')
       .send({ name: 'production' });
     approvals.grant(asked.body.approvalId);
 
-    const retried = await request(app)
+    const retried = await request(fixtureServer)
       .post('/api/capabilities/gated.destroy/invoke')
       .set('X-DorkOS-Approval', asked.body.approvalToken)
       .send({ name: 'production' });
@@ -294,7 +304,7 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
     it('breaks the reproduced three-step self-approval chain', async () => {
       // Step 1: ask. The 202 hands the caller BOTH the approval id and its token.
       const app = buildFullApp();
-      const asked = await request(app)
+      const asked = await request(fixtureTarget.mount(app))
         .post('/api/capabilities/gated.destroy/invoke')
         .send({ name: 'production' });
       expect(asked.status).toBe(202);
@@ -303,7 +313,7 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
       // Step 2: grant it as the caller that asked. This used to answer 200 because
       // the check keyed on the PRESENCE of an agent identity, so omitting a header
       // was all it took.
-      const selfGrant = await request(app)
+      const selfGrant = await request(fixtureServer)
         .post(`/api/approvals/${approvalId}/grant`)
         .set('X-DorkOS-Approval', approvalToken)
         .send();
@@ -311,7 +321,7 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
       expect(selfGrant.body.code).toBe('REQUESTER_CANNOT_DECIDE');
 
       // Step 3: retry. Still waiting on a person, and nothing was destroyed.
-      const retried = await request(app)
+      const retried = await request(fixtureServer)
         .post('/api/capabilities/gated.destroy/invoke')
         .set('X-DorkOS-Approval', approvalToken)
         .send({ name: 'production' });
@@ -323,11 +333,11 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
 
     it('breaks it for an identified agent too, even without the token header', async () => {
       const app = buildFullApp(AGENT);
-      const asked = await request(app)
+      const asked = await request(fixtureTarget.mount(app))
         .post('/api/capabilities/gated.destroy/invoke')
         .send({ name: 'production' });
 
-      const selfGrant = await request(app)
+      const selfGrant = await request(fixtureServer)
         .post(`/api/approvals/${asked.body.approvalId}/grant`)
         .send();
       expect(selfGrant.status).toBe(403);

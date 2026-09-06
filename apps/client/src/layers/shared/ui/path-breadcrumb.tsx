@@ -6,7 +6,7 @@ import { cn } from '@/layers/shared/lib/utils';
 export interface PathBreadcrumbProps extends React.ComponentProps<'div'> {
   /** Absolute path to display */
   path: string | null;
-  /** Max segments to show; earlier segments are replaced with "..." */
+  /** Max segments to show; earlier segments are replaced with "…" */
   maxSegments?: number;
   /** When provided, each segment becomes a clickable button that receives the full path up to that segment */
   onSegmentClick?: (segmentPath: string) => void;
@@ -43,7 +43,7 @@ export function PathBreadcrumb({
     >
       {truncated && (
         <>
-          <span className={cn(textClass, 'text-muted-foreground/50 flex-shrink-0')}>...</span>
+          <span className={cn(textClass, 'text-muted-foreground/50 flex-shrink-0')}>…</span>
           <ChevronRight className={cn(chevronClass, 'text-muted-foreground/40 flex-shrink-0')} />
         </>
       )}

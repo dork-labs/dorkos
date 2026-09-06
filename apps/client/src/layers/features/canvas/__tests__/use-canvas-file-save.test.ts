@@ -57,7 +57,7 @@ describe('useCanvasFileSave', () => {
     });
   });
 
-  it("serializes overlapping saves so the second sees the first's confirmed hash", async () => {
+  it('serializes overlapping saves so the second sees the first’s confirmed hash', async () => {
     writeFile.mockResolvedValueOnce({ ok: true, hash: 'server1' });
     writeFile.mockResolvedValueOnce({ ok: true, hash: 'server2' });
     const { result } = renderHook(() => useCanvasFileSave(ARGS));

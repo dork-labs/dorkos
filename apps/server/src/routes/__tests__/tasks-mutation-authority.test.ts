@@ -18,7 +18,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { Task } from '@dorkos/shared/schemas';
@@ -41,6 +42,9 @@ import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 import { OPERATOR_COOKIE_REQUIRED_CODE } from '../../lib/caller-authority.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 function createMockScheduler(): TaskSchedulerService {
   return {
@@ -91,6 +95,8 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
       '/api/tasks',
       createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), '/tmp/dork-test')
     );
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -99,7 +105,7 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
 
   describe('with login OFF — the accepted DOR-505 residual, unchanged', () => {
     it('lets a credential-free caller delete a schedule', async () => {
-      const res = await request(app).delete(`/api/tasks/${schedule.id}`);
+      const res = await request(fixtureServer).delete(`/api/tasks/${schedule.id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -107,7 +113,7 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
     });
 
     it('lets a credential-free caller cancel a run', async () => {
-      const res = await request(app).post(`/api/tasks/runs/${runId}/cancel`);
+      const res = await request(fixtureServer).post(`/api/tasks/runs/${runId}/cancel`);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -126,7 +132,7 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
       // Only a browser cookie separates it from the cockpit.
       signedInUser = { userId: 'user_key', credential: 'api-key' };
 
-      const res = await request(app).delete(`/api/tasks/${schedule.id}`);
+      const res = await request(fixtureServer).delete(`/api/tasks/${schedule.id}`);
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe(OPERATOR_COOKIE_REQUIRED_CODE);
@@ -137,7 +143,7 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
     it('refuses a DELETE from a caller with no credential at all', async () => {
       signedInUser = undefined;
 
-      const res = await request(app).delete(`/api/tasks/${schedule.id}`);
+      const res = await request(fixtureServer).delete(`/api/tasks/${schedule.id}`);
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe(OPERATOR_COOKIE_REQUIRED_CODE);
@@ -147,7 +153,7 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
     it('refuses a cancel from a caller with no session cookie', async () => {
       signedInUser = { userId: 'user_key', credential: 'api-key' };
 
-      const res = await request(app).post(`/api/tasks/runs/${runId}/cancel`);
+      const res = await request(fixtureServer).post(`/api/tasks/runs/${runId}/cancel`);
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe(OPERATOR_COOKIE_REQUIRED_CODE);
@@ -158,7 +164,7 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
     it('lets a signed-in person delete a schedule', async () => {
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
 
-      const res = await request(app).delete(`/api/tasks/${schedule.id}`);
+      const res = await request(fixtureServer).delete(`/api/tasks/${schedule.id}`);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -168,7 +174,7 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
     it('lets a signed-in person cancel a run', async () => {
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
 
-      const res = await request(app).post(`/api/tasks/runs/${runId}/cancel`);
+      const res = await request(fixtureServer).post(`/api/tasks/runs/${runId}/cancel`);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);

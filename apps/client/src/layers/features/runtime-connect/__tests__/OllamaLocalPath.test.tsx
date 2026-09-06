@@ -234,14 +234,14 @@ describe('OllamaLocalPath — Ollama not installed', () => {
       provisionOllama: vi.fn().mockResolvedValue({
         ok: false,
         installMethod: 'brew',
-        error: 'Could not install Ollama. Check your network and try again.',
+        error: 'Couldn’t install Ollama. Check your network and try again.',
       }),
     });
 
     await user.click(await screen.findByTestId('ollama-install-oneclick'));
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(/could not install ollama/i);
+    expect(alert).toHaveTextContent(/couldn’t install ollama/i);
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /download ollama/i })).toBeVisible();
   });

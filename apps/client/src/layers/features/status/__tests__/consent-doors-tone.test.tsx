@@ -43,7 +43,7 @@ const WORKSPACE_WRITE: PermissionModeDescriptor = {
   stop: 'act',
   asks: 'never',
   reach: 'edit',
-  promise: "Edits and runs commands in this project. Codex can't pause to ask.",
+  promise: 'Edits and runs commands in this project. Codex can’t pause to ask.',
 };
 
 /** Render each door at one mode, so a rule can be asserted against both at once. */

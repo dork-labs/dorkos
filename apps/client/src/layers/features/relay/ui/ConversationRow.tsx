@@ -205,7 +205,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
             <div className="mt-1 flex items-center gap-2">
               {conversation.preview && (
                 <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-                  &quot;{conversation.preview}&quot;
+                  “{conversation.preview}”
                 </span>
               )}
               <span className={cn('shrink-0 text-xs', textColor)}>
@@ -263,7 +263,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
                   className="h-6 px-0 text-xs"
                   onClick={handleRouteAdvanced}
                 >
-                  More options...
+                  More options…
                 </Button>
                 <Button
                   size="sm"
@@ -279,7 +279,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
         </div>
       </div>
 
-      {/* Full BindingDialog for advanced routing (More options...) */}
+      {/* Full BindingDialog for advanced routing (More options…) */}
       {bindingDialogOpen && (
         <BindingDialog
           open={true}

@@ -75,7 +75,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import express from 'express';
 import { createAgentsRouter } from '../agents.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
@@ -87,6 +88,7 @@ import { seedAgentFace } from '@dorkos/shared/agent-face';
 const app = express();
 app.use(express.json());
 app.use('/api/agents', createAgentsRouter());
+const testServer = listeningServer(app);
 
 const mockManifest: AgentManifest = {
   id: 'test-agent-id',
@@ -109,7 +111,7 @@ describe('Agents Routes', () => {
 
   describe('GET /api/agents/current', () => {
     it('returns 400 when path query is missing', async () => {
-      const res = await request(app).get('/api/agents/current');
+      const res = await request(testServer).get('/api/agents/current');
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('path query parameter required');
@@ -118,7 +120,7 @@ describe('Agents Routes', () => {
     it('returns 200 with null when no manifest found', async () => {
       mockReadManifest.mockResolvedValue(null);
 
-      const res = await request(app)
+      const res = await request(testServer)
         .get('/api/agents/current')
         .query({ path: '/home/user/project' });
 
@@ -129,7 +131,7 @@ describe('Agents Routes', () => {
     it('returns 200 with manifest when found', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
-      const res = await request(app)
+      const res = await request(testServer)
         .get('/api/agents/current')
         .query({ path: '/home/user/project' });
 
@@ -143,7 +145,9 @@ describe('Agents Routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app).get('/api/agents/current').query({ path: '/etc/shadow' });
+      const res = await request(testServer)
+        .get('/api/agents/current')
+        .query({ path: '/etc/shadow' });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
@@ -154,7 +158,7 @@ describe('Agents Routes', () => {
     it('returns agents map for mixed registered/unregistered paths', async () => {
       mockReadManifest.mockResolvedValueOnce(mockManifest).mockResolvedValueOnce(null);
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/agents/resolve')
         .send({ paths: ['/home/user/project-a', '/home/user/project-b'] });
 
@@ -165,14 +169,16 @@ describe('Agents Routes', () => {
     });
 
     it('returns 400 for invalid request body', async () => {
-      const res = await request(app).post('/api/agents/resolve').send({ paths: [] });
+      const res = await request(testServer).post('/api/agents/resolve').send({ paths: [] });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
     });
 
     it('returns 400 when paths is not an array', async () => {
-      const res = await request(app).post('/api/agents/resolve').send({ paths: 'not-an-array' });
+      const res = await request(testServer)
+        .post('/api/agents/resolve')
+        .send({ paths: 'not-an-array' });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -187,7 +193,7 @@ describe('Agents Routes', () => {
 
       mockReadManifest.mockResolvedValueOnce(mockManifest);
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/agents/resolve')
         .send({ paths: ['/home/user/good-path', '/etc/shadow'] });
 
@@ -201,7 +207,9 @@ describe('Agents Routes', () => {
     it('creates agent with defaults (name from basename, ULID id)', async () => {
       mockReadManifest.mockResolvedValue(null);
 
-      const res = await request(app).post('/api/agents').send({ path: '/home/user/my-project' });
+      const res = await request(testServer)
+        .post('/api/agents')
+        .send({ path: '/home/user/my-project' });
 
       expect(res.status).toBe(201);
       expect(res.body.id).toBe('MOCK_ULID_001');
@@ -221,7 +229,9 @@ describe('Agents Routes', () => {
     it('gives the registered agent a face from the curated sets (DOR-949)', async () => {
       mockReadManifest.mockResolvedValue(null);
 
-      const res = await request(app).post('/api/agents').send({ path: '/home/user/my-project' });
+      const res = await request(testServer)
+        .post('/api/agents')
+        .send({ path: '/home/user/my-project' });
 
       expect(res.status).toBe(201);
       expect({ color: res.body.color, icon: res.body.icon }).toEqual(seedAgentFace(res.body.id));
@@ -236,7 +246,7 @@ describe('Agents Routes', () => {
     it('creates agent with provided name and description', async () => {
       mockReadManifest.mockResolvedValue(null);
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/agents')
         .send({ path: '/home/user/my-project', name: 'Custom Agent', description: 'Does things' });
 
@@ -248,7 +258,9 @@ describe('Agents Routes', () => {
     it('returns 409 when agent already exists', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
-      const res = await request(app).post('/api/agents').send({ path: '/home/user/project' });
+      const res = await request(testServer)
+        .post('/api/agents')
+        .send({ path: '/home/user/project' });
 
       expect(res.status).toBe(409);
       expect(res.body.error).toBe('Agent already exists at this path');
@@ -256,7 +268,7 @@ describe('Agents Routes', () => {
     });
 
     it('returns 400 for missing path', async () => {
-      const res = await request(app).post('/api/agents').send({});
+      const res = await request(testServer).post('/api/agents').send({});
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -267,7 +279,7 @@ describe('Agents Routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app).post('/api/agents').send({ path: '/etc/shadow' });
+      const res = await request(testServer).post('/api/agents').send({ path: '/etc/shadow' });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
@@ -284,7 +296,9 @@ describe('Agents Routes', () => {
       setOnAgentCreated(listener);
       mockReadManifest.mockResolvedValue(null);
 
-      const res = await request(app).post('/api/agents').send({ path: '/home/user/my-project' });
+      const res = await request(testServer)
+        .post('/api/agents')
+        .send({ path: '/home/user/my-project' });
 
       expect(res.status).toBe(201);
       expect(listener).toHaveBeenCalledTimes(1);
@@ -304,7 +318,9 @@ describe('Agents Routes', () => {
       setOnAgentCreated(vi.fn().mockRejectedValue(new Error('shape re-bind exploded')));
       mockReadManifest.mockResolvedValue(null);
 
-      const res = await request(app).post('/api/agents').send({ path: '/home/user/my-project' });
+      const res = await request(testServer)
+        .post('/api/agents')
+        .send({ path: '/home/user/my-project' });
 
       expect(res.status).toBe(201);
       expect(res.body.id).toBe('MOCK_ULID_001');
@@ -315,7 +331,9 @@ describe('Agents Routes', () => {
       setOnAgentCreated(listener);
       mockReadManifest.mockResolvedValue(mockManifest); // already exists
 
-      const res = await request(app).post('/api/agents').send({ path: '/home/user/project' });
+      const res = await request(testServer)
+        .post('/api/agents')
+        .send({ path: '/home/user/project' });
 
       expect(res.status).toBe(409);
       expect(listener).not.toHaveBeenCalled();
@@ -324,7 +342,7 @@ describe('Agents Routes', () => {
 
   describe('PATCH /api/agents/current', () => {
     it('returns 400 when path query is missing', async () => {
-      const res = await request(app).patch('/api/agents/current').send({ name: 'new-name' });
+      const res = await request(testServer).patch('/api/agents/current').send({ name: 'new-name' });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('path query parameter required');
@@ -337,7 +355,7 @@ describe('Agents Routes', () => {
       // (DOR-1506), so a patch naming an operator-only field is refused whether
       // or not an agent lives at the path — which is the point: the answer to
       // "may you write this" must not depend on, or disclose, who is there.
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ displayName: 'New Name' });
@@ -349,7 +367,7 @@ describe('Agents Routes', () => {
     it("records the agent's own model and effort", async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ model: 'sonnet', effort: 'low' });
@@ -366,7 +384,7 @@ describe('Agents Routes', () => {
     it('drops them back to inherited when sent as null', async () => {
       mockReadManifest.mockResolvedValue({ ...mockManifest, model: 'sonnet', effort: 'low' });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ model: null, effort: null });
@@ -379,7 +397,7 @@ describe('Agents Routes', () => {
     it('merges updates into existing manifest', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ displayName: 'Updated Name', description: 'new description' });
@@ -403,7 +421,7 @@ describe('Agents Routes', () => {
     it('updates persona fields', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ persona: 'You are an API expert', personaEnabled: true });
@@ -418,7 +436,7 @@ describe('Agents Routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/agents/current')
         .query({ path: '/etc/shadow' })
         .send({ name: 'hacker' });
@@ -433,7 +451,7 @@ describe('Agents Routes', () => {
       // The UpdateAgentRequestSchema should reject unknown fields
       // but since it's a partial schema, empty body should be fine
       // Test with a persona that's too long (>4000 chars)
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ persona: 'x'.repeat(4001) });
@@ -448,7 +466,7 @@ describe('Agents Routes', () => {
       // "Saved" over a file that never reached the disk (DOR-1253).
       mockReadManifest.mockResolvedValue(mockManifest);
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ soulContent: 'x'.repeat(4001), displayName: 'Renamed' });
@@ -462,7 +480,7 @@ describe('Agents Routes', () => {
     it('returns 403 when modifying protected fields on a system agent', async () => {
       mockReadManifest.mockResolvedValue({ ...mockManifest, isSystem: true });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ displayName: 'Hacked Name', description: 'Hacked Desc' });
@@ -477,7 +495,7 @@ describe('Agents Routes', () => {
     it('returns 403 when modifying namespace on a system agent', async () => {
       mockReadManifest.mockResolvedValue({ ...mockManifest, isSystem: true });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ namespace: 'evil-ns' });
@@ -489,7 +507,7 @@ describe('Agents Routes', () => {
     it('returns 403 when modifying isSystem on a system agent', async () => {
       mockReadManifest.mockResolvedValue({ ...mockManifest, isSystem: true });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ isSystem: false });
@@ -502,7 +520,7 @@ describe('Agents Routes', () => {
       const systemManifest = { ...mockManifest, isSystem: true };
       mockReadManifest.mockResolvedValue(systemManifest);
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ persona: 'You are helpful', personaEnabled: true });
@@ -515,7 +533,7 @@ describe('Agents Routes', () => {
     it('allows protected fields on a non-system agent', async () => {
       mockReadManifest.mockResolvedValue({ ...mockManifest, isSystem: false });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ displayName: 'New Display Name' });
@@ -532,7 +550,7 @@ describe('Agents Routes', () => {
       // what a caller acts on either way.
       mockReadManifest.mockResolvedValue({ ...mockManifest, isSystem: false });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ name: 'new-slug' });
@@ -548,7 +566,7 @@ describe('Agents Routes', () => {
       // which `resolveToolConfig` prefers over the global switch.
       mockReadManifest.mockResolvedValue(mockManifest);
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ displayName: 'Sneaky', enabledToolGroups: { relay: true, mesh: true } });
@@ -594,7 +612,9 @@ describe('Agents Routes', () => {
     it('GET /current on the system agent succeeds (seam allows dork-home)', async () => {
       mockReadManifest.mockResolvedValue(systemManifest);
 
-      const res = await request(app).get('/api/agents/current').query({ path: DORKBOT_PATH });
+      const res = await request(testServer)
+        .get('/api/agents/current')
+        .query({ path: DORKBOT_PATH });
 
       expect(res.status).toBe(200);
       expect(res.body.name).toBe('dorkbot');
@@ -605,7 +625,7 @@ describe('Agents Routes', () => {
     it('PATCH /current applies DorkBot persona under a workspace boundary (the bug)', async () => {
       mockReadManifest.mockResolvedValue(systemManifest);
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/agents/current')
         .query({ path: DORKBOT_PATH })
         .send({ persona: 'You are DorkBot', personaEnabled: true });
@@ -632,6 +652,7 @@ describe('Agents Routes with MeshCore (ADR-0043)', () => {
   const appWithMesh = express();
   appWithMesh.use(express.json());
   appWithMesh.use('/api/agents', createAgentsRouter(mockMeshCore));
+  const meshTestServer = listeningServer(appWithMesh);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -640,7 +661,7 @@ describe('Agents Routes with MeshCore (ADR-0043)', () => {
   });
 
   it('POST calls syncFromDisk after creating agent', async () => {
-    const res = await request(appWithMesh)
+    const res = await request(meshTestServer)
       .post('/api/agents')
       .send({ path: '/home/user/new-project' });
 
@@ -651,7 +672,7 @@ describe('Agents Routes with MeshCore (ADR-0043)', () => {
   it('PATCH calls syncFromDisk after updating agent', async () => {
     mockReadManifest.mockResolvedValue(mockManifest);
 
-    const res = await request(appWithMesh)
+    const res = await request(meshTestServer)
       .patch('/api/agents/current')
       .query({ path: '/home/user/project' })
       .send({ displayName: 'Synced Name' });
@@ -663,7 +684,7 @@ describe('Agents Routes with MeshCore (ADR-0043)', () => {
   it('POST succeeds even if syncFromDisk fails', async () => {
     mockSyncFromDisk.mockRejectedValueOnce(new Error('sync failed'));
 
-    const res = await request(appWithMesh)
+    const res = await request(meshTestServer)
       .post('/api/agents')
       .send({ path: '/home/user/failing-sync' });
 
@@ -674,7 +695,7 @@ describe('Agents Routes with MeshCore (ADR-0043)', () => {
     mockReadManifest.mockResolvedValue(mockManifest);
     mockSyncFromDisk.mockRejectedValueOnce(new Error('sync failed'));
 
-    const res = await request(appWithMesh)
+    const res = await request(meshTestServer)
       .patch('/api/agents/current')
       .query({ path: '/home/user/project' })
       .send({ displayName: 'Still Works' });

@@ -100,7 +100,7 @@ export function CreateAgentDialog() {
     ? (template.description ?? 'A ready-made agent.')
     : seed?.template.persona
       ? seed.template.persona
-      : "You'll define the job together in your first conversation.";
+      : 'You’ll define the job together in your first conversation.';
   const previewCapabilities = template
     ? (template.tags ?? [])
     : (seed?.template.capabilities ?? []);

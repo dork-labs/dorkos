@@ -145,7 +145,7 @@ describe('useInstallWithToast', () => {
         perCall.onSuccess({
           success: true,
           warnings: [
-            "DorkOS could not install this package's npm libraries because npm is not installed.",
+            'DorkOS could not install this package’s npm libraries because npm is not installed.',
           ],
         });
       });

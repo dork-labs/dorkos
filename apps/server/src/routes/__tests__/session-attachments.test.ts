@@ -10,7 +10,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { mkdir, mkdtemp, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -26,6 +27,7 @@ const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 const app = express();
 app.get('/api/sessions/:id/attachments/:file', sessionAttachmentHandler);
+const testServer = listeningServer(app);
 
 describe('GET /api/sessions/:id/attachments/:file', () => {
   let dorkHome: string;
@@ -45,7 +47,7 @@ describe('GET /api/sessions/:id/attachments/:file', () => {
   it('serves the bytes inline, typed by the stored suffix, with nosniff', async () => {
     const { url } = await store.put(SESSION, 'abc123', 'image/png', PNG);
 
-    const res = await request(app).get(url);
+    const res = await request(testServer).get(url);
 
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toBe('image/png');
@@ -56,9 +58,9 @@ describe('GET /api/sessions/:id/attachments/:file', () => {
 
   it('answers 304 to a matching If-None-Match, without re-reading the file', async () => {
     const { url } = await store.put(SESSION, 'abc123', 'image/png', PNG);
-    const first = await request(app).get(url);
+    const first = await request(testServer).get(url);
 
-    const second = await request(app).get(url).set('If-None-Match', first.headers.etag);
+    const second = await request(testServer).get(url).set('If-None-Match', first.headers.etag);
 
     expect(second.status).toBe(304);
   });
@@ -70,12 +72,12 @@ describe('GET /api/sessions/:id/attachments/:file', () => {
     // validator is keyed on the attachment id instead — the file is written
     // once under a derived id and never rewritten with different bytes.
     const { url } = await store.put(SESSION, 'abc123', 'image/png', PNG);
-    const first = await request(app).get(url);
+    const first = await request(testServer).get(url);
     await new Promise((resolve) => setTimeout(resolve, 50));
-    const second = await request(app).get(url);
+    const second = await request(testServer).get(url);
 
     expect(second.headers.etag).toBe(first.headers.etag);
-    const third = await request(app).get(url).set('If-None-Match', second.headers.etag);
+    const third = await request(testServer).get(url).set('If-None-Match', second.headers.etag);
     expect(third.status).toBe(304);
   });
 
@@ -89,7 +91,7 @@ describe('GET /api/sessions/:id/attachments/:file', () => {
     const before = new Date(Date.now() - 60 * 60 * 1000);
     await utimes(path.join(dir, 'abc123.png'), before, before);
 
-    await request(app).get(url);
+    await request(testServer).get(url);
     // `touch` is fire-and-forget so the response never waits on it.
     await new Promise((resolve) => setTimeout(resolve, 50));
 
@@ -98,20 +100,20 @@ describe('GET /api/sessions/:id/attachments/:file', () => {
   });
 
   it('404s an id that is not there', async () => {
-    const res = await request(app).get(`/api/sessions/${SESSION}/attachments/nothing.png`);
+    const res = await request(testServer).get(`/api/sessions/${SESSION}/attachments/nothing.png`);
 
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('ATTACHMENT_NOT_FOUND');
   });
 
   it('400s a malformed session id', async () => {
-    const res = await request(app).get('/api/sessions/not-a-uuid/attachments/abc123.png');
+    const res = await request(testServer).get('/api/sessions/not-a-uuid/attachments/abc123.png');
 
     expect(res.status).toBe(400);
   });
 
   it('404s a traversal attempt rather than telling the prober it was recognized', async () => {
-    const res = await request(app).get(
+    const res = await request(testServer).get(
       `/api/sessions/${SESSION}/attachments/${encodeURIComponent('../../../etc/passwd')}`
     );
 
@@ -126,7 +128,7 @@ describe('GET /api/sessions/:id/attachments/:file', () => {
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, 'evil.svg'), '<svg onload="alert(1)"/>');
 
-    const res = await request(app).get(`/api/sessions/${SESSION}/attachments/evil.svg`);
+    const res = await request(testServer).get(`/api/sessions/${SESSION}/attachments/evil.svg`);
 
     expect(res.status).toBe(404);
   });
@@ -135,7 +137,7 @@ describe('GET /api/sessions/:id/attachments/:file', () => {
     const { url } = await store.put(SESSION, 'abc123', 'image/png', PNG);
     resetSessionAttachmentStore();
 
-    const res = await request(app).get(url);
+    const res = await request(testServer).get(url);
 
     expect(res.status).toBe(404);
   });

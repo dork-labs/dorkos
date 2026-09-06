@@ -31,7 +31,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request, { type Response, type Test } from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { noopLogger } from '@dorkos/shared/logger';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
@@ -76,6 +77,8 @@ import {
 import { agentIdentityTokens } from '@dorkos/db';
 import { createCapabilitiesInvokeRouter } from '../capabilities-invoke.js';
 import { createMcpRouter } from '../mcp.js';
+
+const fixtureTarget = swappableServer();
 
 /** A token shaped like the real thing that resolves to NO agent at all. */
 const UNVERIFIABLE = 'dork_agent_this-token-resolves-to-nothing';
@@ -137,7 +140,7 @@ function minimalMcpDeps(): McpToolDeps {
 }
 
 /** Read one JSON-RPC message back, whichever way the transport chose to send it. */
-function jsonRpc(res: request.Response): {
+function jsonRpc(res: Response): {
   result?: { isError?: boolean; content?: Array<{ text?: string }> };
 } {
   const contentType = (res.headers['content-type'] as string) ?? '';
@@ -149,7 +152,7 @@ function jsonRpc(res: request.Response): {
 }
 
 /** The payload an MCP tool result carries, refusal or not. */
-function mcpPayload(res: request.Response): Record<string, unknown> {
+function mcpPayload(res: Response): Record<string, unknown> {
   const body = jsonRpc(res);
   return JSON.parse(body.result!.content![0]!.text!);
 }
@@ -222,15 +225,15 @@ describe('an unverifiable agent token on the mcp.* capability surfaces', () => {
      *
      * @param token - The `X-DorkOS-Agent` value to present, if any.
      */
-    async function askGrantRetry(token?: string): Promise<request.Response> {
-      const ask = request(app()).post('/api/capabilities/mcp.add/invoke');
+    async function askGrantRetry(token?: string): Promise<Response> {
+      const ask = request(fixtureTarget.mount(app())).post('/api/capabilities/mcp.add/invoke');
       if (token) ask.set('X-DorkOS-Agent', token);
       const asked = await ask.send(SERVER);
       expect(asked.status, 'a destructive verb must ask a person first').toBe(202);
       expect(recordedAddedBy, 'nothing may be written before the grant').toEqual([]);
       approvals.grant(asked.body.approvalId);
 
-      const retry = request(app())
+      const retry = request(fixtureTarget.mount(app()))
         .post('/api/capabilities/mcp.add/invoke')
         .set('X-DorkOS-Approval', asked.body.approvalToken);
       if (token) retry.set('X-DorkOS-Agent', token);
@@ -256,7 +259,7 @@ describe('an unverifiable agent token on the mcp.* capability surfaces', () => {
       // is capped at `observe`, so this `destructive` verb is refused outright
       // rather than queued for a person. Nothing is recorded either way, which
       // is the property both rows share (DOR-486).
-      const res = await request(app())
+      const res = await request(fixtureTarget.mount(app()))
         .post('/api/capabilities/mcp.add/invoke')
         .set('X-DorkOS-Agent', await deadToken('revoked'))
         .send(SERVER);
@@ -307,11 +310,11 @@ describe('an unverifiable agent token on the mcp.* capability surfaces', () => {
     }
 
     /**
-     * Post one `tools/call`. The token is set BEFORE the body, because supertest
-     * dispatches on the first `.send()` of a chain.
+     * Post one `tools/call`. The token is set before the body so the identity is
+     * complete before awaiting the chain; awaiting, `.then()`, or `.end()` dispatches it.
      */
-    function rpc(args: Record<string, unknown>, token?: string): request.Test {
-      const req = request(app())
+    function rpc(args: Record<string, unknown>, token?: string): Test {
+      const req = request(fixtureTarget.mount(app()))
         .post('/mcp')
         .set('Content-Type', 'application/json')
         .set('Accept', 'application/json, text/event-stream');
@@ -331,7 +334,7 @@ describe('an unverifiable agent token on the mcp.* capability surfaces', () => {
      *
      * @param token - The `X-DorkOS-Agent` value to present, if any.
      */
-    async function askGrantRetry(token?: string): Promise<request.Response> {
+    async function askGrantRetry(token?: string): Promise<Response> {
       const asked = await rpc(SERVER, token);
       const payload = mcpPayload(asked) as {
         status?: string;

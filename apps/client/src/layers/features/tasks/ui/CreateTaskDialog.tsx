@@ -323,8 +323,8 @@ export function CreateTaskDialog({
             <DialogHeader>
               <DialogTitle>Delete scheduled task</DialogTitle>
               <DialogDescription>
-                Delete &ldquo;{editTask.name}&rdquo;? This will also remove all run history. This
-                action cannot be undone.
+                Delete “{editTask.name}”? This will also remove all run history. This action cannot
+                be undone.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -339,7 +339,7 @@ export function CreateTaskDialog({
                 disabled={deleteTask.isPending}
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90 inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium shadow-sm transition-colors"
               >
-                {deleteTask.isPending ? 'Deleting...' : 'Delete'}
+                {deleteTask.isPending ? 'Deleting…' : 'Delete'}
               </button>
             </DialogFooter>
           </DialogContent>

@@ -98,7 +98,7 @@ describe('session-scoped queries and the working directory', () => {
     expect(transport.getSession).toHaveBeenCalledWith(SESSION_ID, CWD);
   });
 
-  it("the session's tasks are requested once, without a directory nothing named", async () => {
+  it('the session’s tasks are requested once, without a directory nothing named', async () => {
     // No `?dir=` on the URL (no router in this harness), so the request goes out
     // with no directory and the server resolves the session's own. The thing
     // that must NOT happen is a second request when `selectedCwd` later fills

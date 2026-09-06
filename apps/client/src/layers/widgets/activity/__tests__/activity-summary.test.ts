@@ -45,7 +45,7 @@ describe('sessionActivitySummary', () => {
     // behind a dead backend. Saying either would be a guess, including the
     // sympathetic-sounding "some sessions couldn't be counted".
     expect(sessionActivitySummary([0, 0, 0, 0, 0, 0, 0], true)).toBe(
-      "This week's count is incomplete"
+      'This week’s count is incomplete'
     );
   });
 });

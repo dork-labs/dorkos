@@ -1363,7 +1363,7 @@ describe('projectSessionMessages', () => {
     expect((messages[1].parts ?? []).map((p) => p.type)).toEqual(['thinking']);
   });
 
-  it("keeps an earlier turn's finished call when a later turn reuses its id (codex)", () => {
+  it('keeps an earlier turn’s finished call when a later turn reuses its id (codex)', () => {
     // TOOL CALL IDS ARE NOT SESSION-UNIQUE. codex passes the SDK's raw item id
     // through and opens a fresh thread per turn, so turn 2 starts counting at
     // '0' again — as do the codex fixtures, and as do the test-mode scenarios,

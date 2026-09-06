@@ -184,7 +184,7 @@ export function ClaimCard({
 
       <p className="text-muted-foreground text-xs">
         {isBroadcast ? (
-          "This is a broadcast channel, not a conversation, so there's no one here for an agent " +
+          'This is a broadcast channel, not a conversation, so there’s no one here for an agent ' +
           'to answer. Ignore hides this and stays quiet. Leave removes the bot from the channel.'
         ) : isGroup ? (
           'Ignore hides this and stays quiet. Leave removes the bot from the group, so nothing ' +

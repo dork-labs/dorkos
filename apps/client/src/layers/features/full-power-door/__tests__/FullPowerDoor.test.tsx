@@ -112,6 +112,18 @@ describe('FullPowerDoor', () => {
     expect(screen.getByRole('button', { name: CUSTOMIZE })).toBeInTheDocument();
   });
 
+  it('lets the "Pick the pieces yourself" sentence wrap, so it cannot set the dialog’s width', () => {
+    renderDoor();
+
+    // `Button` is `whitespace-nowrap`, which is right for "Save" and wrong for
+    // a sentence: an unbreakable label sets the dialog's minimum width, and on
+    // a phone this one measured 424px inside a 390px window — the heading, the
+    // description and every bullet stretched with it and painted off the
+    // screen (DOR-1747).
+    const customize = screen.getByRole('button', { name: CUSTOMIZE });
+    expect(customize.className).toContain('whitespace-normal');
+  });
+
   it('omits the "Pick the pieces yourself" link when the host provides no onCustomize', () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -281,12 +293,12 @@ describe('FullPowerDoor', () => {
 
   it('surfaces a config-write failure inline and leaves the choice on offer', async () => {
     const user = userEvent.setup();
-    configMutateAsync.mockRejectedValue(new Error('Could not save that. Try again.'));
+    configMutateAsync.mockRejectedValue(new Error('Couldn’t save that. Try again.'));
     renderDoor();
 
     await user.click(screen.getByRole('button', { name: ACCEPT }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/could not save that/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn’t save that/i);
     // Still answerable — the failure is a prompt to retry, not a dead end.
     expect(screen.getByRole('button', { name: ACCEPT })).toBeEnabled();
     expect(screen.getByRole('button', { name: DECLINE })).toBeEnabled();

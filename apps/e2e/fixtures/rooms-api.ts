@@ -316,17 +316,26 @@ export class RoomsApi {
    * looks the same whether it addressed somebody or posted as plain prose.
    *
    * **This is the newest PAGE, not the whole room** — the route serves 50 by
-   * default. Sound here only because every room this fixture seeds is created by
-   * one test and archived at the end of it, so it never approaches the window.
-   * A caller reading a long-lived room needs the paginated walk
-   * `TeamRoomApi.entries` does, and the reason is written out there: a truncated
-   * page is a valid answer that looks exactly like the room, so the failure is
-   * silent (DOR-1213).
+   * default and 200 at most. Sound for a room this fixture seeds within one
+   * page, which is nearly all of them; a caller reading a long-lived room needs
+   * the paginated walk `TeamRoomApi.entries` does, and the reason is written out
+   * there: a truncated page is a valid answer that looks exactly like the room,
+   * so the failure is silent (DOR-1213).
+   *
+   * `limit` exists for the one caller that cannot survive that silence —
+   * {@link RoomsApi.postEntries}, which COUNTS what came back. Seeding more than
+   * fifty entries left it polling a page that could never reach the number it
+   * was waiting for, so the seed hung until the test timed out and the report
+   * blamed whatever the test was actually about (found seeding a paging spec,
+   * DOR-1734).
    *
    * @param roomId - The room to read.
+   * @param limit - How many entries to ask for. The route's own default when
+   *   omitted; anything above its 200 ceiling is a 400.
    */
-  async listEntries(roomId: string): Promise<SeededEntry[]> {
-    const res = await this.request.get(`/api/rooms/${roomId}/entries`);
+  async listEntries(roomId: string, limit?: number): Promise<SeededEntry[]> {
+    const query = limit === undefined ? '' : `?limit=${limit}`;
+    const res = await this.request.get(`/api/rooms/${roomId}/entries${query}`);
     if (!res.ok()) throw new Error(`Could not read entries of ${roomId}: ${await res.text()}`);
     const { entries } = (await res.json()) as { entries: SeededEntry[] };
     return entries;
@@ -450,7 +459,10 @@ export class RoomsApi {
 
     const deadline = Date.now() + SERVER_ROUND_TRIP_MS;
     for (;;) {
-      const entries = await this.listEntries(roomId);
+      // Asked for by the number being waited on, never the route's default page:
+      // counting a page that cannot hold the answer is a wait that can only end
+      // in a timeout. See `listEntries`.
+      const entries = await this.listEntries(roomId, Math.max(texts.length, 1));
       if (entries.length >= texts.length) return;
       if (Date.now() > deadline) {
         throw new Error(

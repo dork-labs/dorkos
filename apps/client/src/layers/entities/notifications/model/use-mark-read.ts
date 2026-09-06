@@ -126,7 +126,7 @@ export function useMarkAllRead(): MarkAllReadMutation {
     onError: (_error, _vars, snapshot) => {
       if (snapshot) restoreNotifications(queryClient, snapshot);
     },
-    meta: { errorLabel: "Couldn't mark everything read" },
+    meta: { errorLabel: 'Couldn’t mark everything read' },
   });
 
   return { mutate: () => mutation.mutate(), isPending: mutation.isPending };

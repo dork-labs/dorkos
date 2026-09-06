@@ -64,7 +64,7 @@ export function HomeStatesShowcases() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Quiet, plus DorkBot&rsquo;s one suggestion underneath — press either side
+        Quiet, plus DorkBot’s one suggestion underneath — press either side
       </ShowcaseLabel>
       <ShowcaseDemo>
         <QuietSuggestionDemo forwardLook={null} />

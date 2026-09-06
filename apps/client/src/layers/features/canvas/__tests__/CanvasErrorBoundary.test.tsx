@@ -53,23 +53,23 @@ describe('CanvasErrorBoundary', () => {
     expect(screen.getByText('viewer content')).toBeInTheDocument();
   });
 
-  it('catches a viewer render throw and shows the friendly card with Retry', () => {
+  it('catches a viewer render throw and shows the friendly card with Try again', () => {
     render(
       <CanvasErrorBoundary documentId="d1">
         <Boom />
       </CanvasErrorBoundary>
     );
-    expect(screen.getByText('This tab hit a problem.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+    expect(screen.getByText('This tab hit a problem')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
     // A generic (non-chunk) error never offers the app reload.
-    expect(screen.queryByRole('button', { name: /reload app/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reload dorkos/i })).not.toBeInTheDocument();
   });
 
-  it('Retry re-attempts the viewer — recovering once the underlying failure clears', async () => {
+  it('Try again re-attempts the viewer — recovering once the underlying failure clears', async () => {
     const user = userEvent.setup();
     // A viewer whose failure is transient: while `throws` is set every render
     // fails (so the boundary shows the fallback, not React's own error-recovery
-    // re-render). Clearing it before Retry proves the button re-attempts render.
+    // re-render). Clearing it before Try again proves the button re-attempts render.
     const control = { throws: true };
     function MaybeThrow() {
       if (control.throws) throw new Error('viewer unavailable');
@@ -81,18 +81,18 @@ describe('CanvasErrorBoundary', () => {
         <MaybeThrow />
       </CanvasErrorBoundary>
     );
-    expect(screen.getByText('This tab hit a problem.')).toBeInTheDocument();
+    expect(screen.getByText('This tab hit a problem')).toBeInTheDocument();
     expect(screen.queryByText('viewer recovered')).not.toBeInTheDocument();
 
     // The underlying failure clears, then the user retries.
     control.throws = false;
-    await user.click(screen.getByRole('button', { name: /retry/i }));
+    await user.click(screen.getByRole('button', { name: /try again/i }));
 
     expect(screen.getByText('viewer recovered')).toBeInTheDocument();
-    expect(screen.queryByText('This tab hit a problem.')).not.toBeInTheDocument();
+    expect(screen.queryByText('This tab hit a problem')).not.toBeInTheDocument();
   });
 
-  it('offers a Reload app affordance for a stale-chunk dynamic-import error', async () => {
+  it('offers a Reload DorkOS affordance for a stale-chunk dynamic-import error', async () => {
     const user = userEvent.setup();
     const reload = vi.fn();
     Object.defineProperty(window, 'location', { configurable: true, value: { reload } });
@@ -103,14 +103,14 @@ describe('CanvasErrorBoundary', () => {
       </CanvasErrorBoundary>
     );
 
-    expect(screen.getByText('This tab hit a problem.')).toBeInTheDocument();
+    expect(screen.getByText('This tab hit a problem')).toBeInTheDocument();
     // The chunk-specific hint + reload button appear only for import failures.
     expect(screen.getByText(/app may have updated/i)).toBeInTheDocument();
-    // Retry is NOT offered for a stale chunk — React caches the rejected import,
+    // Try again is NOT offered for a stale chunk — React caches the rejected import,
     // so a remount would re-throw instantly; a full reload is the only remedy.
-    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /reload app/i }));
+    await user.click(screen.getByRole('button', { name: /reload dorkos/i }));
     expect(reload).toHaveBeenCalledTimes(1);
   });
 });

@@ -87,7 +87,7 @@ describe('statusRowValue', () => {
 
   it('has nothing to say about rows with no live value', () => {
     expect(statusRowValue('agent', diagnostics())).toBeNull();
-    expect(statusRowValue('polling', diagnostics())).toBeNull();
+    expect(statusRowValue('plan', diagnostics())).toBeNull();
   });
 });
 

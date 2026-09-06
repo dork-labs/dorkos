@@ -57,7 +57,7 @@ export function useUpdateTask() {
     },
     // The shared mutation toast (`query-client.ts`) reports the failure —
     // `TaskRow.tsx`'s own call-time `onError` used to duplicate it.
-    meta: { errorLabel: "Couldn't update the schedule" },
+    meta: { errorLabel: 'Couldn’t update the schedule' },
   });
 }
 
@@ -78,7 +78,7 @@ export function useDeleteTask() {
       // the nav stays mounted while Tasks is only a dialog).
       queryClient.invalidateQueries({ queryKey: [...TASK_RUNS_KEY] });
     },
-    meta: { errorLabel: "Couldn't delete the schedule" },
+    meta: { errorLabel: 'Couldn’t delete the schedule' },
   });
 }
 
@@ -103,6 +103,6 @@ export function useTriggerTask() {
       // refetch — and reset mid-turn — the chat panel's todo query.
       queryClient.invalidateQueries({ queryKey: [...TASKS_KEY], exact: true });
     },
-    meta: { errorLabel: "Couldn't run the scheduled task" },
+    meta: { errorLabel: 'Couldn’t run the scheduled task' },
   });
 }

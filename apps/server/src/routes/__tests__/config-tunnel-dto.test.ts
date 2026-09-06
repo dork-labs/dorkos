@@ -15,7 +15,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 /** The live tunnel status the route reads; each test sets it. */
 const tunnelStatus: Record<string, unknown> = {};
@@ -45,6 +46,9 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import { env } from '../../env.js';
 import configRouter from '../config.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /**
  * Writable handle on the env values this block resolves from.
@@ -81,6 +85,8 @@ describe('GET /api/config — the tunnel block', () => {
     app = express();
     app.use(express.json());
     app.use('/api/config', configRouter);
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -90,7 +96,7 @@ describe('GET /api/config — the tunnel block', () => {
   it('reports the SAVED domain while no tunnel is running', async () => {
     storedTunnel = { enabled: true, domain: 'my.ngrok.app', authtoken: 'tok', auth: null };
 
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(fixtureServer).get('/api/config').expect(200);
 
     expect(res.body.tunnel.domain).toBe('my.ngrok.app');
   });
@@ -99,7 +105,7 @@ describe('GET /api/config — the tunnel block', () => {
     storedTunnel = { enabled: true, domain: 'saved.ngrok.app', authtoken: 'tok', auth: null };
     Object.assign(tunnelStatus, { enabled: true, connected: true, domain: 'live.ngrok.app' });
 
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(fixtureServer).get('/api/config').expect(200);
 
     expect(res.body.tunnel.domain).toBe('live.ngrok.app');
   });
@@ -107,14 +113,14 @@ describe('GET /api/config — the tunnel block', () => {
   it('says what the setting says as well as what is running', async () => {
     storedTunnel = { enabled: true, domain: null, authtoken: null, auth: null };
 
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(fixtureServer).get('/api/config').expect(200);
 
     expect(res.body.tunnel.enabled).toBe(false);
     expect(res.body.tunnel.enabledInConfig).toBe(true);
   });
 
   it('reports enabledInConfig false when there is no stored tunnel section', async () => {
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(fixtureServer).get('/api/config').expect(200);
 
     expect(res.body.tunnel.enabledInConfig).toBe(false);
   });
@@ -122,7 +128,7 @@ describe('GET /api/config — the tunnel block', () => {
   it('counts an exported TUNNEL_AUTH as auth, for a tunnel that is not running yet', async () => {
     mutableEnv.TUNNEL_AUTH = 'user:pass';
 
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(fixtureServer).get('/api/config').expect(200);
 
     expect(res.body.tunnel.authEnabled).toBe(true);
   });
@@ -134,7 +140,7 @@ describe('GET /api/config — the tunnel block', () => {
     mutableEnv.TUNNEL_AUTH = 'user:pass';
     Object.assign(tunnelStatus, { enabled: true, connected: true, authEnabled: false });
 
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(fixtureServer).get('/api/config').expect(200);
 
     expect(res.body.tunnel.authEnabled).toBe(false);
   });
@@ -145,7 +151,7 @@ describe('GET /api/config — the tunnel block', () => {
     // on load, before any SSE frame has landed.
     Object.assign(tunnelStatus, { enabled: true, connected: false, isRunning: true });
 
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(fixtureServer).get('/api/config').expect(200);
 
     expect(res.body.tunnel.isRunning).toBe(true);
     expect(res.body.tunnel.connected).toBe(false);
@@ -154,7 +160,7 @@ describe('GET /api/config — the tunnel block', () => {
   it('counts a stored token as configured, for a tunnel that is not running yet', async () => {
     storedTunnel = { enabled: false, domain: null, authtoken: 'stored-token', auth: null };
 
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(fixtureServer).get('/api/config').expect(200);
 
     expect(res.body.tunnel.tokenConfigured).toBe(true);
   });

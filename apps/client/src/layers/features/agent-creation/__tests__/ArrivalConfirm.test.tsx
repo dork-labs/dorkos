@@ -89,7 +89,7 @@ describe('ArrivalConfirm — avatar face', () => {
     expect(screen.queryByText('R')).not.toBeInTheDocument();
   });
 
-  it("falls back to the name's initial when the seed has no icon", () => {
+  it('falls back to the name’s initial when the seed has no icon', () => {
     renderArrival(makeSeed({ displayName: 'Reviewer' }));
 
     expect(screen.getByText('R')).toBeInTheDocument();
@@ -184,7 +184,7 @@ describe('ArrivalConfirm — what the package runs on its own (DOR-644)', () => 
     expect(screen.getByTestId('arrival-create')).toBeEnabled();
   });
 
-  it("leaves a Shape offer's own cadence line untouched", () => {
+  it('leaves a Shape offer’s own cadence line untouched', () => {
     renderArrival(makeSeed({ schedule: 'Every weekday at 9:00 AM' }));
 
     expect(screen.getByTestId('arrival-schedule')).toHaveTextContent('Every weekday at 9:00 AM');

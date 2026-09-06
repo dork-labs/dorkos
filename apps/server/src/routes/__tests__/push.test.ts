@@ -3,12 +3,16 @@ import express from 'express';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import type { RequestUser } from '../../services/core/auth/index.js';
 import { PushSubscriptionStore } from '../../services/notifications/push-subscription-store.js';
 import { WebPushChannel } from '../../services/notifications/channels/web-push.js';
 import { createPushRouter } from '../push.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 let db: Db;
 let dorkHome: string;
@@ -61,7 +65,7 @@ afterEach(() => {
 
 describe('GET /api/push/vapid-public-key', () => {
   it('answers with the key a browser needs to subscribe', async () => {
-    const res = await request(buildApp()).get('/api/push/vapid-public-key');
+    const res = await request(fixtureTarget.mount(buildApp())).get('/api/push/vapid-public-key');
 
     expect(res.status).toBe(200);
     expect(typeof res.body.key).toBe('string');
@@ -69,7 +73,9 @@ describe('GET /api/push/vapid-public-key', () => {
   });
 
   it('refuses an agent, and does not create a keypair for it', async () => {
-    const res = await request(buildApp(AS_AGENT)).get('/api/push/vapid-public-key');
+    const res = await request(fixtureTarget.mount(buildApp(AS_AGENT))).get(
+      '/api/push/vapid-public-key'
+    );
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('PUSH_OPERATOR_ONLY');
@@ -81,7 +87,9 @@ describe('GET /api/push/vapid-public-key', () => {
 
 describe('POST /api/push/subscriptions', () => {
   it('remembers a browser and answers without echoing the endpoint back', async () => {
-    const res = await request(buildApp()).post('/api/push/subscriptions').send(subscribeBody());
+    const res = await request(fixtureTarget.mount(buildApp()))
+      .post('/api/push/subscriptions')
+      .send(subscribeBody());
 
     expect(res.status).toBe(200);
     expect(res.body.subscription.service).toBe('fcm.googleapis.com');
@@ -92,15 +100,19 @@ describe('POST /api/push/subscriptions', () => {
 
   it('is idempotent by endpoint, so calling it on every load costs nothing', async () => {
     const app = buildApp();
-    const first = await request(app).post('/api/push/subscriptions').send(subscribeBody());
-    const second = await request(app).post('/api/push/subscriptions').send(subscribeBody());
+    const first = await request(fixtureTarget.mount(app))
+      .post('/api/push/subscriptions')
+      .send(subscribeBody());
+    const second = await request(fixtureServer)
+      .post('/api/push/subscriptions')
+      .send(subscribeBody());
 
     expect(second.body.subscription.id).toBe(first.body.subscription.id);
     expect(subscriptions.all()).toHaveLength(1);
   });
 
   it('refuses a body that is not a subscription', async () => {
-    const res = await request(buildApp())
+    const res = await request(fixtureTarget.mount(buildApp()))
       .post('/api/push/subscriptions')
       .send({ endpoint: 'not-a-url', keys: {} });
 
@@ -109,7 +121,7 @@ describe('POST /api/push/subscriptions', () => {
   });
 
   it('refuses an agent, and stores nothing', async () => {
-    const res = await request(buildApp(AS_AGENT))
+    const res = await request(fixtureTarget.mount(buildApp(AS_AGENT)))
       .post('/api/push/subscriptions')
       .send(subscribeBody());
 
@@ -123,7 +135,7 @@ describe('GET /api/push/subscriptions', () => {
     subscriptions.upsert(subscribeBody('https://fcm.googleapis.com/older'));
     subscriptions.upsert(subscribeBody('https://web.push.apple.com/newer'));
 
-    const res = await request(buildApp()).get('/api/push/subscriptions');
+    const res = await request(fixtureTarget.mount(buildApp())).get('/api/push/subscriptions');
 
     expect(res.status).toBe(200);
     expect(res.body.subscriptions.map((s: { service: string }) => s.service)).toEqual([
@@ -136,7 +148,9 @@ describe('GET /api/push/subscriptions', () => {
   it('refuses an agent — which devices can be buzzed is not a machine’s question', async () => {
     subscriptions.upsert(subscribeBody());
 
-    const res = await request(buildApp(AS_AGENT)).get('/api/push/subscriptions');
+    const res = await request(fixtureTarget.mount(buildApp(AS_AGENT))).get(
+      '/api/push/subscriptions'
+    );
 
     expect(res.status).toBe(403);
     expect(res.body.subscriptions).toBeUndefined();
@@ -147,7 +161,9 @@ describe('GET /api/push/subscriptions', () => {
     // operator's own. A push device is a capability to make a phone buzz, which
     // is a different question with a different answer.
     const res = await request(
-      buildApp({ user: { userId: 'u1', credential: 'api-key' } as unknown as RequestUser })
+      fixtureTarget.mount(
+        buildApp({ user: { userId: 'u1', credential: 'api-key' } as unknown as RequestUser })
+      )
     ).get('/api/push/subscriptions');
 
     expect(res.status).toBe(403);
@@ -159,7 +175,9 @@ describe('DELETE /api/push/subscriptions/:id', () => {
     const keep = subscriptions.upsert(subscribeBody('https://fcm.googleapis.com/keep'));
     const drop = subscriptions.upsert(subscribeBody('https://fcm.googleapis.com/drop'));
 
-    const res = await request(buildApp()).delete(`/api/push/subscriptions/${drop.id}`);
+    const res = await request(fixtureTarget.mount(buildApp())).delete(
+      `/api/push/subscriptions/${drop.id}`
+    );
 
     expect(res.status).toBe(200);
     expect(res.body.removed).toBe(1);
@@ -169,7 +187,9 @@ describe('DELETE /api/push/subscriptions/:id', () => {
   it('reports zero rather than 404 for a device that is already gone', async () => {
     // "Stop pushing to this device" is already true of a device with no row, and
     // a second window's list can be a moment out of date.
-    const res = await request(buildApp()).delete('/api/push/subscriptions/never-existed');
+    const res = await request(fixtureTarget.mount(buildApp())).delete(
+      '/api/push/subscriptions/never-existed'
+    );
 
     expect(res.status).toBe(200);
     expect(res.body.removed).toBe(0);
@@ -178,7 +198,9 @@ describe('DELETE /api/push/subscriptions/:id', () => {
   it('refuses an agent, and removes nothing', async () => {
     const row = subscriptions.upsert(subscribeBody());
 
-    const res = await request(buildApp(AS_AGENT)).delete(`/api/push/subscriptions/${row.id}`);
+    const res = await request(fixtureTarget.mount(buildApp(AS_AGENT))).delete(
+      `/api/push/subscriptions/${row.id}`
+    );
 
     expect(res.status).toBe(403);
     expect(subscriptions.all()).toHaveLength(1);

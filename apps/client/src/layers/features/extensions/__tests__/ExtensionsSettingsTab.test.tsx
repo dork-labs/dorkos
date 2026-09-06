@@ -231,10 +231,10 @@ describe('ExtensionsSettingsTab', () => {
 
       const { headline, description } = await toggleAndCatchToast();
       // Byte-for-byte, and in the description rather than glued onto the
-      // headline — the double-wrapped "Couldn't turn that on.: DorkOS changed
+      // headline — the double-wrapped "Couldn’t turn that on.: DorkOS changed
       // nothing…" is exactly what this refuses to accept.
       expect(description).toBe(refusal);
-      expect(headline).toBe("Couldn't turn that on.");
+      expect(headline).toBe('Couldn’t turn that on.');
     });
 
     it('falls back to `error` when the body carries no message', async () => {
@@ -757,7 +757,7 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
 
     await waitFor(() => {
       expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-        "Couldn't let it run.",
+        'Couldn’t let it run.',
         expect.objectContaining({
           description: 'Only a person can approve an extension to run inside DorkOS',
         })

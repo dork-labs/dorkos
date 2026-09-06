@@ -44,7 +44,7 @@ export function FormShowcases() {
       <PlaygroundSection title="Input" description="Text input field variants.">
         <ShowcaseLabel>Default</ShowcaseLabel>
         <ShowcaseDemo>
-          <Input placeholder="Type something..." />
+          <Input placeholder="Type something…" />
         </ShowcaseDemo>
 
         <ShowcaseLabel>With Label</ShowcaseLabel>
@@ -64,7 +64,7 @@ export function FormShowcases() {
       <PlaygroundSection title="Textarea" description="Multi-line text input.">
         <ShowcaseLabel>Default</ShowcaseLabel>
         <ShowcaseDemo>
-          <Textarea placeholder="Write a message..." />
+          <Textarea placeholder="Write a message…" />
         </ShowcaseDemo>
 
         <ShowcaseLabel>With Content</ShowcaseLabel>
@@ -336,7 +336,7 @@ export function FormShowcases() {
       >
         <ShowcaseDemo>
           <Command className="border shadow-md">
-            <CommandInput placeholder="Search agents..." />
+            <CommandInput placeholder="Search agents…" />
             <CommandList>
               <CommandEmpty>No results found.</CommandEmpty>
               <CommandGroup heading="Runtimes">

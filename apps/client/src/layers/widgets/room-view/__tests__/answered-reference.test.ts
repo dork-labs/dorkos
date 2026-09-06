@@ -148,7 +148,7 @@ describe('answeredReference', () => {
     const secondReply = entry('r2', 'still going', 'root');
     const page = loaded(root, firstReply, secondReply);
 
-    it("suppresses a thread's first reply, which sits under its root", () => {
+    it('suppresses a thread’s first reply, which sits under its root', () => {
       // `RoomThreadPanel` passes the ROOT for `replyIndex <= 0`.
       expect(answeredReference(firstReply, root, page)).toBeNull();
     });
@@ -163,7 +163,7 @@ describe('answeredReference', () => {
       });
     });
 
-    it("draws in the room's flow when a thread reply sat between the two", () => {
+    it('draws in the room’s flow when a thread reply sat between the two', () => {
       // The flow's `previous` is `topLevel[index - 1]`, which skips the thread
       // reply the panel would have counted — so the same pair of entries can be
       // adjacent in one surface and not in the other, and each host is asked

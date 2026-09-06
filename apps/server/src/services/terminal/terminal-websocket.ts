@@ -47,7 +47,7 @@ export type TerminalUpgradeDecision =
  * no longer checks it itself. One place rather than one per route — and a
  * slightly WIDER policy than the bare allowlist this used to consult, since it
  * also accepts an `Origin` that exactly matches the `Host` the request was
- * reached on (gated by the host allowlist). See `isTrustedUpgradeOrigin`.
+ * reached on (gated by the host allowlist). See `isTrustedBrowserOrigin`.
  *
  * @param req - The upgrade request (reads `url`).
  * @param manager - The terminal manager (checks the id exists).

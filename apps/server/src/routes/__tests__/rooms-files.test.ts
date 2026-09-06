@@ -24,7 +24,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, type Db } from '@dorkos/db';
@@ -88,6 +89,7 @@ import { runGit } from '../../services/rooms/repo/room-repo-git.js';
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
 
 const ANA_PATH = '/agents/ana';
 
@@ -169,7 +171,7 @@ describe('room files routes', () => {
 
   /** A channel with Ana on the roster. */
   async function channel(title = 'Release train'): Promise<string> {
-    const created = await request(app)
+    const created = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title, agentPaths: [ANA_PATH] });
     expect(created.status).toBe(201);
@@ -179,7 +181,7 @@ describe('room files routes', () => {
   /** A channel with Ana on it, given files and one extra commit. */
   async function roomWithFiles(): Promise<string> {
     const roomId = await channel();
-    expect((await request(app).post(`/api/rooms/${roomId}/repo`)).status).toBe(201);
+    expect((await request(testServer).post(`/api/rooms/${roomId}/repo`)).status).toBe(201);
     const repoDir = store.repoPath(roomId);
     const ceiling = store.homeDir(roomId);
     await mkdir(path.join(repoDir, 'docs'), { recursive: true });
@@ -213,7 +215,7 @@ describe('room files routes', () => {
     it('lets the owner list and read', async () => {
       const roomId = await roomWithFiles();
 
-      const listed = await request(app).get(`/api/rooms/${roomId}/files`);
+      const listed = await request(testServer).get(`/api/rooms/${roomId}/files`);
 
       expect(listed.status).toBe(200);
       expect(listed.body.commit).toMatch(/^[0-9a-f]{40}$/);
@@ -234,7 +236,7 @@ describe('room files routes', () => {
         subject: 'Add a plan',
       });
 
-      const read = await request(app)
+      const read = await request(testServer)
         .get(`/api/rooms/${roomId}/files/content`)
         .query({ path: 'docs/plan.md' });
       expect(read.status).toBe(200);
@@ -245,10 +247,10 @@ describe('room files routes', () => {
       const roomId = await roomWithFiles();
       const token = await anaToken();
 
-      const listed = await request(app)
+      const listed = await request(testServer)
         .get(`/api/rooms/${roomId}/files`)
         .set('X-DorkOS-Agent', token);
-      const read = await request(app)
+      const read = await request(testServer)
         .get(`/api/rooms/${roomId}/files/content`)
         .query({ path: 'ROOM.md' })
         .set('X-DorkOS-Agent', token);
@@ -271,7 +273,7 @@ describe('room files routes', () => {
           `/api/rooms/${roomId}/files`,
           `/api/rooms/${bare}/files`,
           '/api/rooms/01NOSUCHROOM/files',
-        ].map((url) => request(app).get(url).set('X-DorkOS-Agent', token))
+        ].map((url) => request(testServer).get(url).set('X-DorkOS-Agent', token))
       );
 
       // All three identical: a room with files, a room without, and no room at
@@ -280,7 +282,7 @@ describe('room files routes', () => {
         expect(res.status).toBe(404);
         expect(res.body.code).toBe('ROOM_NOT_FOUND');
       }
-      const contents = await request(app)
+      const contents = await request(testServer)
         .get(`/api/rooms/${roomId}/files/content`)
         .query({ path: 'ROOM.md' })
         .set('X-DorkOS-Agent', token);
@@ -291,7 +293,7 @@ describe('room files routes', () => {
     it('refuses a token this machine cannot verify, before any room is looked up', async () => {
       const roomId = await roomWithFiles();
 
-      const res = await request(app)
+      const res = await request(testServer)
         .get(`/api/rooms/${roomId}/files`)
         .set('X-DorkOS-Agent', 'not-a-real-token');
 
@@ -306,11 +308,11 @@ describe('room files routes', () => {
       // and un-archiving is supposed to return everything exactly as it was.
       const roomId = await roomWithFiles();
       expect(
-        (await request(app).patch(`/api/rooms/${roomId}`).send({ archived: true })).status
+        (await request(testServer).patch(`/api/rooms/${roomId}`).send({ archived: true })).status
       ).toBe(200);
 
-      const listed = await request(app).get(`/api/rooms/${roomId}/files`);
-      const read = await request(app)
+      const listed = await request(testServer).get(`/api/rooms/${roomId}/files`);
+      const read = await request(testServer)
         .get(`/api/rooms/${roomId}/files/content`)
         .query({ path: 'ROOM.md' });
 
@@ -326,7 +328,7 @@ describe('room files routes', () => {
       // No `path` at all on the content route is the 400 case; the token is the
       // 401 case. The caller is resolved first, so the answer is about WHO is
       // asking rather than about what they typed.
-      const res = await request(app)
+      const res = await request(testServer)
         .get(`/api/rooms/${roomId}/files/content`)
         .set('X-DorkOS-Agent', 'not-a-real-token');
 
@@ -337,7 +339,7 @@ describe('room files routes', () => {
     it('tells a MEMBER that a room has no files of its own', async () => {
       const roomId = await channel();
 
-      const res = await request(app).get(`/api/rooms/${roomId}/files`);
+      const res = await request(testServer).get(`/api/rooms/${roomId}/files`);
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('ROOM_HAS_NO_REPO');
@@ -349,7 +351,7 @@ describe('room files routes', () => {
       const roomId = await roomWithFiles();
 
       for (const bad of ['../../etc/passwd', '/etc/passwd', 'docs\\..\\..\\x', '.git/config']) {
-        const res = await request(app)
+        const res = await request(testServer)
           .get(`/api/rooms/${roomId}/files/content`)
           .query({ path: bad });
         expect(res.status).toBeGreaterThanOrEqual(400);
@@ -360,7 +362,7 @@ describe('room files routes', () => {
     it('lists a symlink but never follows it', async () => {
       const roomId = await roomWithFiles();
 
-      const res = await request(app)
+      const res = await request(testServer)
         .get(`/api/rooms/${roomId}/files/content`)
         .query({ path: 'secrets' });
 
@@ -373,14 +375,14 @@ describe('room files routes', () => {
     it('answers a binary file as binary and an over-cap file as too large', async () => {
       const roomId = await roomWithFiles();
 
-      const binary = await request(app)
+      const binary = await request(testServer)
         .get(`/api/rooms/${roomId}/files/content`)
         .query({ path: 'logo.png' });
       expect(binary.status).toBe(200);
       expect(binary.body.body).toEqual({ kind: 'binary' });
 
       maxFileBytes = 3;
-      const capped = await request(app)
+      const capped = await request(testServer)
         .get(`/api/rooms/${roomId}/files/content`)
         .query({ path: 'docs/plan.md' });
       expect(capped.status).toBe(200);
@@ -391,7 +393,7 @@ describe('room files routes', () => {
     it('answers 404 for a path that is not in the commit', async () => {
       const roomId = await roomWithFiles();
 
-      const res = await request(app)
+      const res = await request(testServer)
         .get(`/api/rooms/${roomId}/files/content`)
         .query({ path: 'docs/nope.md' });
 
@@ -401,9 +403,11 @@ describe('room files routes', () => {
 
     it('leaves every other room path behaving exactly as it does today', async () => {
       const roomId = await roomWithFiles();
-      const posted = await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'hi' });
+      const posted = await request(testServer)
+        .post(`/api/rooms/${roomId}/entries`)
+        .send({ text: 'hi' });
       expect(posted.status).toBe(202);
-      const read = await request(app).get(`/api/rooms/${roomId}`);
+      const read = await request(testServer).get(`/api/rooms/${roomId}`);
       expect(read.status).toBe(200);
       expect(read.body).not.toHaveProperty('files');
     });
@@ -417,7 +421,7 @@ describe('room files routes', () => {
       commit: string;
       text: string;
     }> {
-      const res = await request(app)
+      const res = await request(testServer)
         .get(`/api/rooms/${roomId}/files/content`)
         .query({ path: filePath });
       expect(res.status).toBe(200);
@@ -428,7 +432,7 @@ describe('room files routes', () => {
       const roomId = await roomWithFiles();
       const opened = await readFileAt(roomId, 'docs/plan.md');
 
-      const saved = await request(app)
+      const saved = await request(testServer)
         .put(`/api/rooms/${roomId}/files/content`)
         .send({ path: 'docs/plan.md', baseCommit: opened.commit, text: '# Plan\n\nShip it.\n' });
 
@@ -446,7 +450,7 @@ describe('room files routes', () => {
       const opened = await readFileAt(roomId, 'docs/plan.md');
       const token = await anaToken();
 
-      const res = await request(app)
+      const res = await request(testServer)
         .put(`/api/rooms/${roomId}/files/content`)
         .set('X-DorkOS-Agent', token)
         .send({ path: 'docs/plan.md', baseCommit: opened.commit, text: 'agent was here\n' });
@@ -467,7 +471,7 @@ describe('room files routes', () => {
         displayName: 'Outsider',
       });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .put(`/api/rooms/${roomId}/files/content`)
         .set('X-DorkOS-Agent', token)
         .send({ path: 'docs/plan.md', baseCommit: null, text: 'x\n' });
@@ -483,12 +487,12 @@ describe('room files routes', () => {
       const opened = await readFileAt(roomId, 'docs/plan.md');
       // Somebody else edits the same file — through the same door, which is the
       // only door a person has.
-      const theirs = await request(app)
+      const theirs = await request(testServer)
         .put(`/api/rooms/${roomId}/files/content`)
         .send({ path: 'docs/plan.md', baseCommit: opened.commit, text: '# Plan\n\nTheirs.\n' });
       expect(theirs.status).toBe(200);
 
-      const mine = await request(app)
+      const mine = await request(testServer)
         .put(`/api/rooms/${roomId}/files/content`)
         .send({ path: 'docs/plan.md', baseCommit: opened.commit, text: '# Plan\n\nMine.\n' });
 
@@ -505,7 +509,7 @@ describe('room files routes', () => {
       expect((await readFileAt(roomId, 'docs/plan.md')).text).toBe('# Plan\n\nTheirs.\n');
 
       // And the way through: send the commit the conflict named, deliberately.
-      const overwritten = await request(app).put(`/api/rooms/${roomId}/files/content`).send({
+      const overwritten = await request(testServer).put(`/api/rooms/${roomId}/files/content`).send({
         path: 'docs/plan.md',
         baseCommit: mine.body.conflict.commit,
         text: '# Plan\n\nMine, on purpose.\n',
@@ -517,10 +521,10 @@ describe('room files routes', () => {
       const roomId = await roomWithFiles();
       const opened = await readFileAt(roomId, 'docs/plan.md');
       expect(
-        (await request(app).patch(`/api/rooms/${roomId}`).send({ archived: true })).status
+        (await request(testServer).patch(`/api/rooms/${roomId}`).send({ archived: true })).status
       ).toBe(200);
 
-      const res = await request(app)
+      const res = await request(testServer)
         .put(`/api/rooms/${roomId}/files/content`)
         .send({ path: 'docs/plan.md', baseCommit: opened.commit, text: 'after the fact\n' });
 
@@ -536,7 +540,7 @@ describe('room files routes', () => {
       // file cap, so the request never reaches the room at all. It used to
       // answer 500 `INTERNAL_ERROR`, which told a person the server had broken
       // rather than the one thing they could act on (found in review).
-      const res = await request(app)
+      const res = await request(testServer)
         .put(`/api/rooms/${roomId}/files/content`)
         .send({ path: 'docs/plan.md', baseCommit: opened.commit, text: 'x'.repeat(1_200_000) });
 
@@ -548,7 +552,7 @@ describe('room files routes', () => {
 
     it('refuses a room with no files of its own, and a malformed request', async () => {
       const bare = await channel('Quiet corner');
-      const noFiles = await request(app)
+      const noFiles = await request(testServer)
         .put(`/api/rooms/${bare}/files/content`)
         .send({ path: 'ROOM.md', baseCommit: null, text: 'x\n' });
       expect(noFiles.status).toBe(409);
@@ -556,7 +560,7 @@ describe('room files routes', () => {
 
       const roomId = await roomWithFiles();
       // A base commit that is not a commit id never becomes a git argument.
-      const malformed = await request(app)
+      const malformed = await request(testServer)
         .put(`/api/rooms/${roomId}/files/content`)
         .send({ path: 'ROOM.md', baseCommit: '--upload-pack=touch /tmp/pwned', text: 'x\n' });
       expect(malformed.status).toBe(400);

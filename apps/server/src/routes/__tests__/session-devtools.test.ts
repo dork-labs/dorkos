@@ -12,14 +12,16 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { devtoolsCaptureStore } from '../../services/session/index.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 function ingest(body: unknown, id = crypto.randomUUID()) {
-  return request(app).post(`/api/sessions/${id}/devtools/ingest`).send(body);
+  return request(testServer).post(`/api/sessions/${id}/devtools/ingest`).send(body);
 }
 
 afterEach(() => devtoolsCaptureStore.clear());
@@ -110,7 +112,7 @@ describe('POST /api/sessions/:id/devtools/ingest', () => {
   });
 
   it('rejects a non-UUID session id with 400', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/sessions/not-a-uuid/devtools/ingest')
       .send({ seq: 1, console: [], network: [] });
     expect(res.status).toBe(400);

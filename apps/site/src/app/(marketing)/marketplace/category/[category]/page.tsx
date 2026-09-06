@@ -179,8 +179,8 @@ export default async function MarketplaceCategoryPage(props: {
         <section className="border-warm-gray-light/30 bg-cream-secondary/50 rounded-lg border p-12 text-center">
           <h2 className="text-charcoal font-mono text-xl font-semibold">No {label} packages yet</h2>
           <p className="text-warm-gray mx-auto mt-4 max-w-xl text-base leading-relaxed">
-            Packages in this category will appear here as they&apos;re published. In the meantime,
-            browse the{' '}
+            Packages in this category will appear here as they’re published. In the meantime, browse
+            the{' '}
             <Link href="/marketplace" className="text-charcoal underline">
               full marketplace
             </Link>

@@ -15,8 +15,9 @@
  * sidecar provider (task 3.7) prove the real adapters merge, tag, filter,
  * and stream through the same aggregation + durable-events paths.
  */
+import type { AddressInfo } from 'node:net';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { FakeAgentRuntime, collectDurableEvents } from '@dorkos/test-utils';
+import { FakeAgentRuntime, collectDurableEventsAt } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
 import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 
@@ -97,7 +98,8 @@ vi.mock('@openai/codex-sdk', () => {
   };
 });
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, eq } from '@dorkos/db';
@@ -111,6 +113,12 @@ import { peekProjector, disposeProjector } from '../../services/session/session-
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
+
+/** Base URL for raw SSE collection through the file-scoped listener. */
+function testServerBaseUrl(): string {
+  return `http://127.0.0.1:${(testServer.address() as AddressInfo).port}`;
+}
 
 function makeSession(overrides: Partial<Session> & Pick<Session, 'id' | 'updatedAt'>): Session {
   return {
@@ -363,7 +371,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
       makeSession({ id: 'b-mid', updatedAt: '2026-02-01T00:00:00.000Z', runtime: 'fake-b' }),
     ]);
 
-    const res = await request(app).get('/api/sessions');
+    const res = await request(testServer).get('/api/sessions');
 
     expect(res.status).toBe(200);
     expect(res.body.sessions.map((s: Session) => s.id)).toEqual(['a-new', 'b-mid', 'a-old']);
@@ -382,7 +390,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
     ]);
     runtimeB.listSessions.mockRejectedValue(new Error('cold backend'));
 
-    const res = await request(app).get('/api/sessions');
+    const res = await request(testServer).get('/api/sessions');
 
     expect(res.status).toBe(200);
     expect(res.body.sessions.map((s: Session) => s.id)).toEqual(['a-1']);
@@ -397,7 +405,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
       makeSession({ id: 'b-1', updatedAt: '2026-02-01T00:00:00.000Z', runtime: 'fake-b' }),
     ]);
 
-    const res = await request(app).get('/api/sessions').query({ runtime: 'fake-a' });
+    const res = await request(testServer).get('/api/sessions').query({ runtime: 'fake-a' });
 
     expect(res.status).toBe(200);
     expect(res.body.sessions.map((s: Session) => s.id)).toEqual(['a-1']);
@@ -408,7 +416,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
   it('rejects an unregistered ?runtime= with 400 UNKNOWN_RUNTIME', async () => {
     const codexListSpy = vi.spyOn(codex, 'listSessions');
 
-    const res = await request(app).get('/api/sessions').query({ runtime: 'nonexistent' });
+    const res = await request(testServer).get('/api/sessions').query({ runtime: 'nonexistent' });
 
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('UNKNOWN_RUNTIME');
@@ -427,7 +435,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
       makeSession({ id: 'b-1', updatedAt: '2026-02-01T00:00:00.000Z', runtime: 'fake-b' }),
     ]);
 
-    const res = await request(app).get('/api/sessions').query({ limit: 2 });
+    const res = await request(testServer).get('/api/sessions').query({ limit: 2 });
 
     expect(res.status).toBe(200);
     // Top 2 of the merged+sorted list — one from each runtime.
@@ -452,7 +460,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
       permissionMode: 'bypassPermissions',
     });
 
-    const res = await request(app).get('/api/sessions');
+    const res = await request(testServer).get('/api/sessions');
 
     expect(res.status).toBe(200);
     expect(res.body.sessions[0].permissionMode).toBe('bypassPermissions');
@@ -469,7 +477,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
     ]);
     runtimeB.listSessions.mockResolvedValue([]);
 
-    const res = await request(app).get('/api/sessions');
+    const res = await request(testServer).get('/api/sessions');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -493,7 +501,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
       // belongs to NO project list (ADR 260707-193314), so attribute it there.
       codex.ensureSession(CODEX_SESSION, { permissionMode: 'default', cwd: DEFAULT_CWD });
 
-      const res = await request(app).get('/api/sessions');
+      const res = await request(testServer).get('/api/sessions');
 
       expect(res.status).toBe(200);
       // The registry stamps "now" on tracked sessions — later than the fixed
@@ -508,7 +516,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
       runtimeB.listSessions.mockRejectedValue(new Error('cold backend'));
       codex.ensureSession(CODEX_SESSION, { permissionMode: 'default', cwd: DEFAULT_CWD });
 
-      const res = await request(app).get('/api/sessions');
+      const res = await request(testServer).get('/api/sessions');
 
       expect(res.status).toBe(200);
       expect(res.body.sessions.map((s: Session) => s.id)).toEqual([CODEX_SESSION]);
@@ -522,7 +530,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
       runtimeB.listSessions.mockResolvedValue([]);
       codex.ensureSession(CODEX_SESSION, { permissionMode: 'default', cwd: DEFAULT_CWD });
 
-      const res = await request(app).get('/api/sessions').query({ runtime: 'codex' });
+      const res = await request(testServer).get('/api/sessions').query({ runtime: 'codex' });
 
       expect(res.status).toBe(200);
       expect(res.body.sessions.map((s: Session) => s.id)).toEqual([CODEX_SESSION]);
@@ -531,7 +539,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
     });
 
     it('POST /:id/messages accepts the runtime:"codex" hint (202 + persisted row); an unknown hint still 400s', async () => {
-      const accepted = await request(app)
+      const accepted = await request(testServer)
         .post(`/api/sessions/${CODEX_SESSION}/messages`)
         .send({ content: 'ping', runtime: 'codex' });
 
@@ -548,7 +556,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
         expect(peekProjector(CODEX_SESSION)?.getStatus().lifecycle).toBe('idle');
       });
 
-      const rejected = await request(app)
+      const rejected = await request(testServer)
         .post(`/api/sessions/${UNKNOWN_HINT_SESSION}/messages`)
         .send({ content: 'ping', runtime: 'nonexistent-runtime' });
 
@@ -559,7 +567,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
     it('delivers a mocked Codex turn over the durable /events path (snapshot + replay)', async () => {
       // Trigger-only POST (ADR-0264): 202 with the canonical id; the turn runs
       // detached, feeding the runtime's mapped StreamEvents into the projector.
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/sessions/${CODEX_SESSION}/messages`)
         .send({ content: 'Hello codex', runtime: 'codex' });
 
@@ -579,7 +587,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
 
       // Cold connect: the snapshot carries the EventLog-reconstructed history —
       // the assistant text assembled from the adapter's cumulative-delta mapping.
-      const cold = await collectDurableEvents(app, CODEX_SESSION, {
+      const cold = await collectDurableEventsAt(testServerBaseUrl(), CODEX_SESSION, {
         until: (frames) => frames.some((f) => f.event === 'snapshot'),
       });
       const snapshot = cold.frames.find((f) => f.event === 'snapshot')!.data as SessionSnapshot;
@@ -593,7 +601,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
 
       // Resume connect: ?after=0 replays the whole log — no snapshot frame; the
       // Codex turn produced at least one text_delta and terminated with turn_end.
-      const replayed = await collectDurableEvents(app, CODEX_SESSION, {
+      const replayed = await collectDurableEventsAt(testServerBaseUrl(), CODEX_SESSION, {
         until: (frames) => frames.some((f) => f.event === 'turn_end'),
         after: 0,
       });
@@ -618,7 +626,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
       // Attribute to the default root — the dir a no-?cwd GET lists (ADR 260707-193314).
       opencode.ensureSession(OPENCODE_SESSION, { permissionMode: 'default', cwd: DEFAULT_CWD });
 
-      const res = await request(app).get('/api/sessions');
+      const res = await request(testServer).get('/api/sessions');
 
       expect(res.status).toBe(200);
       // The registry stamps "now" on tracked sessions — later than the fixed
@@ -639,7 +647,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
         error: { message: 'sidecar exploded' },
       } as never);
 
-      const res = await request(app).get('/api/sessions');
+      const res = await request(testServer).get('/api/sessions');
 
       expect(res.status).toBe(200);
       expect(res.body.sessions.map((s: Session) => s.id)).toEqual(['a-1']);
@@ -668,7 +676,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
       ]);
       runtimeB.listSessions.mockResolvedValue([]);
 
-      const res = await request(app).get('/api/sessions');
+      const res = await request(testServer).get('/api/sessions');
 
       expect(res.status).toBe(200);
       // Partial-but-fast: the DorkOS-tracked inventory still lists (cold is a
@@ -681,7 +689,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
     it('delivers a mocked OpenCode turn over the durable /events path (snapshot + replay)', async () => {
       // Trigger-only POST (ADR-0264): 202 with the canonical id; the turn runs
       // detached, feeding the adapter's mapped StreamEvents into the projector.
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/sessions/${OPENCODE_SESSION}/messages`)
         .send({ content: 'Hello opencode', runtime: 'opencode' });
 
@@ -702,7 +710,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
       // Cold connect: unlike stateless Codex, OpenCode snapshots serve
       // completed messages from the sidecar's durable store (session.messages
       // through the mapper).
-      const cold = await collectDurableEvents(app, OPENCODE_SESSION, {
+      const cold = await collectDurableEventsAt(testServerBaseUrl(), OPENCODE_SESSION, {
         until: (frames) => frames.some((f) => f.event === 'snapshot'),
       });
       const snapshot = cold.frames.find((f) => f.event === 'snapshot')!.data as SessionSnapshot;
@@ -716,7 +724,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
 
       // Resume connect: ?after=0 replays the whole log — no snapshot frame;
       // the OpenCode turn streamed deltas and terminated with turn_end.
-      const replayed = await collectDurableEvents(app, OPENCODE_SESSION, {
+      const replayed = await collectDurableEventsAt(testServerBaseUrl(), OPENCODE_SESSION, {
         until: (frames) => frames.some((f) => f.event === 'turn_end'),
         after: 0,
       });

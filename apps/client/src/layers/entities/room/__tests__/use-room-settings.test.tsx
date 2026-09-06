@@ -55,7 +55,7 @@ describe('room settings failures', () => {
       // this file's. Asserted as `anything()` rather than dropped, so a toast
       // raised with no options at all still fails here.
       expect(toast.error).toHaveBeenCalledWith(
-        "Couldn't rename that room",
+        'Couldn’t rename that room',
         expect.objectContaining({ description: 'A channel called #backend already exists' })
       )
     );
@@ -81,7 +81,7 @@ describe('room settings failures', () => {
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        "Couldn't bring that room back",
+        'Couldn’t bring that room back',
         expect.objectContaining({ description: 'A channel called #backend already exists' })
       )
     );

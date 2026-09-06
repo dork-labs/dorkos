@@ -150,7 +150,7 @@ export function useSessionTarget(input: SessionTargetInput): ConversationTarget 
       // `postMessage(null, …)`, which the route rejects outright —
       // `parseSessionId` is a uuid check, so `/api/sessions/null/messages` is a
       // 400 — and the composer had already been emptied by then. The words were
-      // gone and all that came back was "Could not send message".
+      // gone and all that came back was "Couldn’t send message".
       //
       // The sentence is its OWN, deliberately not the room target's "Still
       // opening this conversation…": nothing is opening here, and telling

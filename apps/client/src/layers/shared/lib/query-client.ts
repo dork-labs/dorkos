@@ -105,7 +105,7 @@ export function createQueryClientConfig(): QueryClientConfig {
         });
         addBreadcrumb('query_error', `${String(query.queryKey[0] ?? 'query')}: ${error.message}`);
         if (query.meta?.showToastOnError) {
-          const label = (query.meta.errorLabel as string) ?? "Couldn't load that. Try again.";
+          const label = (query.meta.errorLabel as string) ?? 'Couldn’t load that. Try again.';
           toast.error(label, { action: reportAction(`${label}: ${error.message}`) });
         }
       },
@@ -135,7 +135,7 @@ export function createQueryClientConfig(): QueryClientConfig {
         // answering — wants the tenth failure to REPLACE the first line rather
         // than stack a column of identical ones. Sonner keys on the id.
         const id = mutation.meta?.errorToastId as string | undefined;
-        const headline = label ?? "That didn't work. Try again.";
+        const headline = label ?? 'That didn’t work. Try again.';
         // Every failure toast now carries a "Report" action that opens a
         // prefilled bug report — the highest-intent moment to capture one. The
         // report still gets both halves on one line, because that is a bug

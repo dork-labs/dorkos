@@ -225,8 +225,8 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
 
       {!canAdd && (
         <p className="text-muted-foreground text-xs">
-          This agent&rsquo;s runtime can&rsquo;t run DorkOS-managed MCP servers yet. Any servers
-          below show read-only status.
+          This agent’s runtime can’t run DorkOS-managed MCP servers yet. Any servers below show
+          read-only status.
         </p>
       )}
 
@@ -240,7 +240,7 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
       ) : managed.isError ? (
         <FieldCard>
           <FieldCardContent className="flex items-center justify-between gap-2">
-            <p className="text-destructive text-sm">Couldn&rsquo;t load managed servers.</p>
+            <p className="text-destructive text-sm">Couldn’t load managed servers.</p>
             <Button
               variant="outline"
               size="sm"

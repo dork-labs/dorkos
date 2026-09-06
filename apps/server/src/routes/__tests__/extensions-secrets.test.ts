@@ -35,10 +35,14 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import express from 'express';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import { createExtensionsRouter } from '../extensions.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 const DORK_HOME = '/tmp/dork-test';
 const TEST_CWD = '/tmp/test-project';
@@ -142,6 +146,8 @@ describe('Extension Secrets Routes', () => {
     mockSecretStores.clear();
     manager = createMockManager();
     app = createApp(manager);
+
+    fixtureTarget.mount(app);
   });
 
   describe('GET /api/extensions/:id/secrets', () => {
@@ -152,7 +158,7 @@ describe('Extension Secrets Routes', () => {
       ]);
       manager.get.mockReturnValue(record);
 
-      const res = await request(app).get('/api/extensions/test-ext/secrets');
+      const res = await request(fixtureServer).get('/api/extensions/test-ext/secrets');
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(2);
@@ -176,11 +182,11 @@ describe('Extension Secrets Routes', () => {
       manager.get.mockReturnValue(record);
 
       // Set the secret first
-      await request(app)
+      await request(fixtureServer)
         .put('/api/extensions/test-ext/secrets/api_key')
         .send({ value: 'sk-test-123' });
 
-      const res = await request(app).get('/api/extensions/test-ext/secrets');
+      const res = await request(fixtureServer).get('/api/extensions/test-ext/secrets');
 
       expect(res.status).toBe(200);
       expect(res.body[0].isSet).toBe(true);
@@ -191,11 +197,11 @@ describe('Extension Secrets Routes', () => {
       manager.get.mockReturnValue(record);
 
       // Set a secret
-      await request(app)
+      await request(fixtureServer)
         .put('/api/extensions/test-ext/secrets/api_key')
         .send({ value: 'sk-secret-value' });
 
-      const res = await request(app).get('/api/extensions/test-ext/secrets');
+      const res = await request(fixtureServer).get('/api/extensions/test-ext/secrets');
 
       expect(res.status).toBe(200);
       const body = JSON.stringify(res.body);
@@ -214,7 +220,7 @@ describe('Extension Secrets Routes', () => {
       const record = stubRecordNoSecrets();
       manager.get.mockReturnValue(record);
 
-      const res = await request(app).get('/api/extensions/test-ext/secrets');
+      const res = await request(fixtureServer).get('/api/extensions/test-ext/secrets');
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual([]);
@@ -223,14 +229,14 @@ describe('Extension Secrets Routes', () => {
     it('returns 404 for non-existent extension', async () => {
       manager.get.mockReturnValue(undefined);
 
-      const res = await request(app).get('/api/extensions/missing/secrets');
+      const res = await request(fixtureServer).get('/api/extensions/missing/secrets');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toContain('missing');
     });
 
     it('returns 400 for invalid extension ID', async () => {
-      const res = await request(app).get('/api/extensions/INVALID_ID/secrets');
+      const res = await request(fixtureServer).get('/api/extensions/INVALID_ID/secrets');
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Invalid extension ID');
@@ -242,7 +248,7 @@ describe('Extension Secrets Routes', () => {
       const record = stubRecordWithSecrets([{ key: 'api_key', label: 'API Key', required: true }]);
       manager.get.mockReturnValue(record);
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .put('/api/extensions/test-ext/secrets/api_key')
         .send({ value: 'sk-test-123' });
 
@@ -254,7 +260,7 @@ describe('Extension Secrets Routes', () => {
       const record = stubRecordWithSecrets([{ key: 'api_key', label: 'API Key', required: true }]);
       manager.get.mockReturnValue(record);
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .put('/api/extensions/test-ext/secrets/unknown_key')
         .send({ value: 'some-value' });
 
@@ -267,7 +273,7 @@ describe('Extension Secrets Routes', () => {
       const record = stubRecordWithSecrets([{ key: 'api_key', label: 'API Key', required: true }]);
       manager.get.mockReturnValue(record);
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .put('/api/extensions/test-ext/secrets/api_key')
         .send({ value: '' });
 
@@ -279,7 +285,9 @@ describe('Extension Secrets Routes', () => {
       const record = stubRecordWithSecrets([{ key: 'api_key', label: 'API Key', required: true }]);
       manager.get.mockReturnValue(record);
 
-      const res = await request(app).put('/api/extensions/test-ext/secrets/api_key').send({});
+      const res = await request(fixtureServer)
+        .put('/api/extensions/test-ext/secrets/api_key')
+        .send({});
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -288,7 +296,7 @@ describe('Extension Secrets Routes', () => {
     it('returns 404 for non-existent extension', async () => {
       manager.get.mockReturnValue(undefined);
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .put('/api/extensions/missing/secrets/api_key')
         .send({ value: 'test' });
 
@@ -297,7 +305,7 @@ describe('Extension Secrets Routes', () => {
     });
 
     it('returns 400 for invalid extension ID', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .put('/api/extensions/INVALID_ID/secrets/api_key')
         .send({ value: 'test' });
 
@@ -312,12 +320,12 @@ describe('Extension Secrets Routes', () => {
       manager.get.mockReturnValue(record);
 
       // Set the secret first
-      await request(app)
+      await request(fixtureServer)
         .put('/api/extensions/test-ext/secrets/api_key')
         .send({ value: 'sk-test-123' });
 
       // Delete it
-      const res = await request(app).delete('/api/extensions/test-ext/secrets/api_key');
+      const res = await request(fixtureServer).delete('/api/extensions/test-ext/secrets/api_key');
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
@@ -328,14 +336,14 @@ describe('Extension Secrets Routes', () => {
       manager.get.mockReturnValue(record);
 
       // Set then delete
-      await request(app)
+      await request(fixtureServer)
         .put('/api/extensions/test-ext/secrets/api_key')
         .send({ value: 'sk-test-123' });
 
-      await request(app).delete('/api/extensions/test-ext/secrets/api_key');
+      await request(fixtureServer).delete('/api/extensions/test-ext/secrets/api_key');
 
       // List should show isSet: false
-      const res = await request(app).get('/api/extensions/test-ext/secrets');
+      const res = await request(fixtureServer).get('/api/extensions/test-ext/secrets');
 
       expect(res.status).toBe(200);
       expect(res.body[0].isSet).toBe(false);
@@ -344,14 +352,14 @@ describe('Extension Secrets Routes', () => {
     it('returns 404 for non-existent extension', async () => {
       manager.get.mockReturnValue(undefined);
 
-      const res = await request(app).delete('/api/extensions/missing/secrets/api_key');
+      const res = await request(fixtureServer).delete('/api/extensions/missing/secrets/api_key');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toContain('missing');
     });
 
     it('returns 400 for invalid extension ID', async () => {
-      const res = await request(app).delete('/api/extensions/INVALID_ID/secrets/api_key');
+      const res = await request(fixtureServer).delete('/api/extensions/INVALID_ID/secrets/api_key');
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Invalid extension ID');

@@ -135,7 +135,7 @@ export function useToggleReaction(): UseMutationResult<
     },
 
     meta: {
-      errorLabel: "Couldn't add your reaction",
+      errorLabel: 'Couldn’t add your reaction',
       // Reacting is the one act a person can fire ten times in three seconds, so
       // repeated failures replace one another instead of stacking up a column of
       // identical toasts.

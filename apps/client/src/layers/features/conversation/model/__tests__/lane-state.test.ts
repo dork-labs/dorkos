@@ -509,7 +509,7 @@ describe('deriveLaneState — a message that has not started', () => {
 
     expect(state).toEqual({
       kind: 'held',
-      sentence: "Mio Clicker PM and Ana will pick this up when they're free",
+      sentence: 'Mio Clicker PM and Ana will pick this up when they’re free',
       authorIds: ['mio clicker pm', 'ana'],
       // **The OLDEST wait**, which is the longest anybody here has been waiting.
       // Reading the last one instead reports the shortest, and the number beside
@@ -573,7 +573,7 @@ describe('deriveLaneState — a message that has not started', () => {
   it('counts past the naming limit instead of listing everybody', () => {
     const many = ['A', 'B', 'C', 'D'].map((name) => waiting(name, 1, null));
     expect(deriveLaneState(input({ held: many }))).toMatchObject({
-      sentence: "4 agents will pick this up when they're free",
+      sentence: '4 agents will pick this up when they’re free',
     });
   });
 });

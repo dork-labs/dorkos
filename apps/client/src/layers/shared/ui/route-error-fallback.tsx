@@ -18,6 +18,12 @@ import { LinkifiedText } from './linkified-text';
  * since-deleted chunk 404s, and React caches the rejected module payload, so
  * `router.invalidate()` re-throws instantly. That case offers a full reload
  * instead, which re-fetches the current chunk hashes.
+ *
+ * Shares one vocabulary with `AppCrashFallback` and `NotFoundFallback` —
+ * "Reload DorkOS", "Try again", "Back to home" (DOR-1756 finding 10.4). The
+ * headline used to be followed by a raw `error.message` and nothing else, which
+ * told a person nothing they could act on; it now leads with an authored
+ * sentence and files the raw text under "Details".
  */
 export function RouteErrorFallback({ error }: ErrorComponentProps) {
   const router = useRouter();
@@ -37,7 +43,7 @@ export function RouteErrorFallback({ error }: ErrorComponentProps) {
 
   function stackCopyLabel(): string {
     if (copied) return 'Copied!';
-    if (failed) return "Couldn't copy";
+    if (failed) return 'Couldn’t copy';
     return 'Copy';
   }
 
@@ -46,16 +52,24 @@ export function RouteErrorFallback({ error }: ErrorComponentProps) {
       <AlertTriangle className="text-muted-foreground size-10" />
       <div className="flex flex-col items-center gap-2 text-center">
         <h2 className="text-foreground text-lg font-semibold">Something went wrong</h2>
-        {/* The message linkifies; the dev stack trace below deliberately does
-            not — its `http://localhost:<port>/src/...` entries are source
-            locations, not somewhere to send a person. */}
         <p className="text-muted-foreground max-w-md text-sm">
-          {staleChunk ? (
-            'The app may have updated since you opened this tab. Reloading usually fixes it.'
-          ) : (
-            <LinkifiedText text={error.message} />
-          )}
+          {staleChunk
+            ? 'The app may have updated since you opened this tab. Reloading usually fixes it.'
+            : 'This part of DorkOS didn’t load. Try again, or head back home.'}
         </p>
+        {/* The raw error goes UNDER the sentence written for the reader, the
+            same shape the crash screen uses: it is what a person pastes into a
+            bug report, not an explanation. It linkifies; the dev stack trace
+            below deliberately does not — its `http://localhost:<port>/src/...`
+            entries are source locations, not somewhere to send a person. */}
+        {!staleChunk && (
+          <>
+            <p className="text-muted-foreground/60 mt-2 text-xs">Details</p>
+            <p className="text-muted-foreground/80 max-w-md text-xs break-words">
+              <LinkifiedText text={error.message} />
+            </p>
+          </>
+        )}
       </div>
 
       {import.meta.env.DEV && error.stack && (
@@ -85,12 +99,12 @@ export function RouteErrorFallback({ error }: ErrorComponentProps) {
       <div className="flex gap-3">
         {staleChunk ? (
           <Button size="sm" onClick={() => window.location.reload()}>
-            Reload app
+            Reload DorkOS
           </Button>
         ) : (
           <>
             <Button variant="outline" size="sm" onClick={() => router.invalidate()}>
-              Retry
+              Try again
             </Button>
             <Button variant="ghost" size="sm" onClick={() => router.navigate({ to: '/' })}>
               Back to home

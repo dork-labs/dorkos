@@ -21,7 +21,7 @@ import { TransportProvider } from '@/layers/shared/model';
 import { ServerUnreachableScreen } from '../ServerUnreachableScreen';
 
 /** The headline, spelled with the typographic apostrophe the component renders. */
-const HEADLINE = 'DorkOS can’t reach its server.';
+const HEADLINE = 'DorkOS can’t reach its server';
 
 /** The screen's own retry cadence, as a literal — see the module's note. */
 const RETRY_INTERVAL_MS = 5000;

@@ -84,6 +84,6 @@ describe('useFileActions — copyPath', () => {
       await result.current.copyPath(readme(), 'relative');
     });
 
-    expect(toastError).toHaveBeenCalledWith("Couldn't copy to the clipboard");
+    expect(toastError).toHaveBeenCalledWith('Couldn’t copy to the clipboard');
   });
 });

@@ -16,9 +16,9 @@ export interface ConnectFlow {
   /** The flow's observable state (app-wide — see {@link useConnectFlowStore}). */
   state: ConnectFlowState;
   /**
-   * Begin a flow on one provider. Moves `idle → starting → disclosure`
-   * (or `failed` when the server rejects the start). Replaces any previous
-   * flow's tracking — one consent screen at a time.
+   * Begin a flow on one provider. Moves `idle → starting → disclosure` when a
+   * browser step exists, or straight to `waiting` for verification-only flows.
+   * Replaces any previous flow's tracking.
    *
    * @param opts - The provider to connect through, the toolkit, and an
    *   optional multi-account label.
@@ -35,9 +35,9 @@ export interface ConnectFlow {
 }
 
 /**
- * The connect-flow state machine: start → disclosure-before-URL → poll to a
- * terminal state. On `connected` the account aggregates are invalidated so the
- * new account appears without a reload.
+ * The connect-flow state machine: start → optional disclosure-before-URL → poll
+ * to a terminal state. On `connected` the account aggregates are invalidated so
+ * the new account appears without a reload.
  *
  * The state lives in {@link useConnectFlowStore}, not in the caller — a flow
  * in `waiting` keeps polling as long as ANY mounted surface uses this hook
@@ -73,10 +73,10 @@ export function useConnectFlow(): ConnectFlow {
 
   const start = useCallback(
     (opts: { provider: string; toolkit: string; label?: string }) => {
-      useConnectFlowStore.getState().begin(opts.toolkit);
+      const generation = useConnectFlowStore.getState().begin(opts.toolkit);
       startMutation.mutate(opts, {
-        onSuccess: (result) => useConnectFlowStore.getState().startResolved(result),
-        onError: (err) => useConnectFlowStore.getState().startFailed(err.message),
+        onSuccess: (result) => useConnectFlowStore.getState().startResolved(generation, result),
+        onError: (err) => useConnectFlowStore.getState().startFailed(generation, err.message),
       });
     },
     [startMutation]

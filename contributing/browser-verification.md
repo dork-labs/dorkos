@@ -76,7 +76,7 @@ Specific traps, each of which has produced a false green here:
 - **A router-level test cannot pin a defence-in-depth guard** whose case is also
   caught downstream. Two mutations of the upgrade origin check stayed green
   because a later layer refused the same request; only a direct test of the
-  predicate reddened them. See `apps/server/src/lib/__tests__/trusted-origins-upgrade.test.ts`.
+  predicate reddened them. See `apps/server/src/lib/__tests__/trusted-origins-browser.test.ts`.
 - **Scan the right role.** A transcript check that scans every entry matches the
   marker inside the _user's own_ message ("reply with X") and reports that the
   agent answered when it never did.

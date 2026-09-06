@@ -39,16 +39,23 @@
  *    not help, since it withholds the RESPONSE while the write has already
  *    happened.
  *
- *    The allowlist is the SERVER's (`resolveTrustedOrigins`, the repo's single
- *    origin policy), and membership is exact. It deliberately does not compare
- *    the `Origin` against anything derived from the request: an earlier version
- *    allowed an origin equal to `${req.protocol}://${req.headers.host}`,
- *    borrowed from the CORS delegate in `app.ts` to cover port remaps, and that
- *    is precisely what DNS rebinding defeats — the browser sends
- *    `Host: evil.example` AND `Origin: http://evil.example`, they match, and the
- *    bar never runs. An expected value taken from the request cannot judge the
- *    request. `middleware/mcp-origin.ts` has always done it this way and names
- *    this attack outright.
+ *    The allowlist is the SERVER's own static set (`resolveTrustedOrigins`), and
+ *    membership is exact. These routes deliberately do NOT use
+ *    `isTrustedBrowserOrigin` — the repo's single origin policy, which every
+ *    other surface reads (DOR-1711) — and the reason is its branch 4: that
+ *    policy accepts an `Origin` equal to the request's own
+ *    `<scheme>://<Host>`, which is exactly what DNS rebinding produces. The
+ *    browser sends `Host: evil.example` AND `Origin: http://evil.example`, they
+ *    match, and a bar built on them never runs. An expected value taken from the
+ *    request cannot judge the request.
+ *
+ *    That branch is safe where it lives because it is PAIRED with the host
+ *    allowlist (on the MCP mounts and the socket) or backed by `hostGuard` a few
+ *    handlers later (on `/api`). This bar wants something stricter than "not
+ *    rebound": it wants "served by DorkOS itself", because what it governs is
+ *    which code this copy of DorkOS runs and the record of a person's decision
+ *    about it. So it stays on the static set, and this paragraph is here so
+ *    nobody unifies it onto the shared predicate for the sake of consistency.
  *
  *    Requests with no `Origin` (curl, the CLI, the desktop shell) pass, the same
  *    allowance `validateMcpOrigin` makes for the same reason: only browsers send

@@ -69,7 +69,7 @@ describe('useSessionStatus', () => {
     expect(reader.result.current.permissionMode).toBe('plan');
   });
 
-  it("keeps one session's optimism out of another session", async () => {
+  it('keeps one session’s optimism out of another session', async () => {
     const transport = createMockTransport({
       getSession: vi.fn(
         async (id: string) => ({ id, model: 'a', permissionMode: 'default' }) as never
@@ -201,7 +201,7 @@ describe('useSessionStatus', () => {
     await expect(result.current.updateSession({ model: 'other' })).resolves.toBeUndefined();
   });
 
-  it("a failed PATCH does not revert a later writer's pending value", async () => {
+  it('a failed PATCH does not revert a later writer’s pending value', async () => {
     // Two surfaces now share one optimism store, so a rollback has to be
     // value-scoped. Key-scoped, this sequence snapped every reader back to the
     // server's model while B's request was still in flight: A sets X, B sets Y, A

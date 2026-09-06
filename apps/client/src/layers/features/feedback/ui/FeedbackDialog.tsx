@@ -62,7 +62,7 @@ const KINDS: { value: FeedbackSubmissionKind; label: string; icon: typeof Messag
 
 /** Placeholder text per kind — a gentle nudge toward a useful message. */
 const PLACEHOLDER: Record<FeedbackSubmissionKind, string> = {
-  feedback: 'What works, what does not, what you wish it did...',
+  feedback: 'What works, what does not, what you wish it did…',
   bug: 'What happened, and what did you expect instead?',
   idea: 'What would you like DorkOS to do?',
 };
@@ -292,8 +292,8 @@ export function FeedbackDialog({
               </div>
               {anonymous && (
                 <p className="text-muted-foreground text-xs">
-                  Your report won&apos;t include your name or email. You can still track it in this
-                  app; add a contact below if you&apos;d like a reply.
+                  Your report won’t include your name or email. You can still track it in this app;
+                  add a contact below if you’d like a reply.
                 </p>
               )}
             </div>
@@ -371,7 +371,7 @@ export function FeedbackDialog({
               id="feedback-contact"
               value={contact}
               onChange={(e) => setContact(e.target.value)}
-              placeholder="Email or handle, if you'd like a reply"
+              placeholder="Email or handle, if you’d like a reply"
               maxLength={254}
               autoComplete="off"
             />

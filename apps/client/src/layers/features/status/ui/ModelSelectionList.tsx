@@ -64,7 +64,7 @@ export function ModelLoadError({ onRetry }: { onRetry: () => void }) {
       data-testid="model-load-error"
     >
       <AlertCircle className="text-muted-foreground size-5" />
-      <p className="text-muted-foreground text-xs">Couldn&rsquo;t load the model list.</p>
+      <p className="text-muted-foreground text-xs">Couldn’t load the model list.</p>
       <button
         onClick={onRetry}
         className="text-foreground hover:bg-accent inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors"
@@ -299,7 +299,7 @@ function UnavailableSavedModel({ value }: { value: string }) {
         </div>
       </div>
       <p className="text-muted-foreground text-2xs leading-snug">
-        This model isn&apos;t available anymore. Pick another.
+        This model isn’t available anymore. Pick another.
       </p>
     </div>
   );

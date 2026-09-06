@@ -1,4 +1,4 @@
-import type { Page, Locator } from '@playwright/test';
+import { expect, type Page, type Locator } from '@playwright/test';
 import { BasePage } from './BasePage';
 
 /**
@@ -158,19 +158,25 @@ export class RightPanelPage {
   }
 
   /**
-   * Select a tab the way the app's own code does, without focusing it.
+   * Select a tab through its UI activation contract without focusing it.
    *
    * A real click focuses the tab, and the browser scrolls what it focuses — which
-   * hides the whole class of bug this exercises. A synthetic `click()` fires the
-   * handler without moving focus, which is exactly what a server `ui_command` or a
-   * restored layout does to the strip.
+   * hides the whole class of bug this exercises. The custom tab activates on a
+   * synthetic click, while Radix Tabs activates on a left-button mousedown. Fire
+   * both programmatically so either implementation follows its selection contract
+   * without native focus or scrolling doing the reveal for it.
    *
    * @param contributionId - Id of the contribution whose tab should be selected.
    */
   async activateTabWithoutFocus(contributionId: string) {
-    await this.page.evaluate((id) => {
-      document.getElementById(`right-panel-tab-${id}`)?.click();
-    }, contributionId);
+    const tab = this.header.locator(`#right-panel-tab-${contributionId}`);
+    await tab.dispatchEvent('mousedown', { button: 0, ctrlKey: false });
+    await tab.evaluate((element) => (element as HTMLElement).click());
+    await expect(tab, `the ${contributionId} tab must accept synthetic selection`).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    await expect(tab, `the ${contributionId} tab must be selected without focus`).not.toBeFocused();
   }
 
   /** Navigate to a route and wait for the shell. SSE means no networkidle — use DOM-ready. */

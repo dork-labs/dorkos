@@ -93,7 +93,7 @@ function createRoomFixtureTransport(read: RoomRead, fleet: FleetEntry[]): Transp
 
   const handlers: Partial<Record<keyof Transport, unknown>> = {
     getRoom: snapshot,
-    listRoomEntries: () => Promise.resolve([]),
+    listRoomEntries: () => Promise.resolve({ entries: [], threadRoots: [] }),
     getConfig: () => Promise.resolve(ROOMS_SERVER_CONFIG),
     listMeshAgentPaths: () =>
       Promise.resolve({

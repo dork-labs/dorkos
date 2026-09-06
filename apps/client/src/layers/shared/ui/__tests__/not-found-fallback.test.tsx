@@ -33,7 +33,7 @@ describe('NotFoundFallback', () => {
 
   it('renders description text', () => {
     render(<NotFoundFallback />);
-    expect(screen.getByText(/the page you're looking for/i)).toBeInTheDocument();
+    expect(screen.getByText(/the page you’re looking for/i)).toBeInTheDocument();
   });
 
   it('renders "Back to home" link pointing to "/"', () => {

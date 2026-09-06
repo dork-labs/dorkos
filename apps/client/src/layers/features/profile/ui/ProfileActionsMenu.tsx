@@ -90,7 +90,7 @@ export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuP
     },
     // The shared mutation toast (`query-client.ts`) reports the failure now
     // — this used to show its own on top of it.
-    meta: { errorLabel: "Couldn't set that as the default agent" },
+    meta: { errorLabel: 'Couldn’t set that as the default agent' },
   });
 
   if (!hasProfileActions(member, relationship)) return null;

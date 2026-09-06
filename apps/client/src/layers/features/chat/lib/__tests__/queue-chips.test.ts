@@ -25,7 +25,7 @@ describe('queueDowngradeNotice — say what happened, once, in plain words (AC4)
 
   it('explains an unsupported steer in plain words, no code or field name', () => {
     const notice = queueDowngradeNotice(downgraded('unsupported'));
-    expect(notice).toBe("Queued. This agent can't take a message mid-task.");
+    expect(notice).toBe('Queued. This agent can’t take a message mid-task.');
     // Never leaks the machinery.
     expect(notice).not.toMatch(/steer|stage|disposition|degrad|unsupported/i);
   });
@@ -35,7 +35,7 @@ describe('queueDowngradeNotice — say what happened, once, in plain words (AC4)
     // be joined, and the message really did go to the back of the line. Staying
     // quiet about that was the lie.
     const notice = queueDowngradeNotice(downgraded('not-steerable'));
-    expect(notice).toBe("Couldn't cut in. It's waiting in line.");
+    expect(notice).toBe('Couldn’t cut in. It’s waiting in line.');
     expect(notice).not.toMatch(/steer|stage|disposition|degrad|session|runtime/i);
     // And it is NOT the silent one, which is the whole point.
     expect(notice).not.toBeNull();
@@ -60,7 +60,7 @@ describe('queueDowngradeNotice — say what happened, once, in plain words (AC4)
     // checked whether it had. The chip now says only what the server verified.
     const notice = queueDowngradeNotice(downgraded('turn-owned-elsewhere'));
     expect(notice).toBe(
-      "Couldn't cut in. Something else is running this task, so it's waiting in line."
+      'Couldn’t cut in. Something else is running this task, so it’s waiting in line.'
     );
     // No claim about the task being over, in any wording. This is the assertion
     // the old copy failed.

@@ -35,7 +35,9 @@
  * the requirement instead of silently escaping it.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
@@ -135,6 +137,64 @@ function pinsBase(text: string): boolean {
 const lefthookText = readFileSync(path.join(repoRoot, 'lefthook.yml'), 'utf8');
 const packageText = readFileSync(path.join(repoRoot, 'package.json'), 'utf8');
 
+/** One Turbo invocation captured by the executable verify-script fixture. */
+interface TurboInvocation {
+  /** Arguments Turbo received from the shell. */
+  args: string[];
+  /** Diff base exported by the verify script. */
+  base?: string;
+}
+
+/** Write a runnable command stub into the fixture's private PATH. */
+function writeStub(binDir: string, name: string, body: string): void {
+  const stubPath = path.join(binDir, name);
+  writeFileSync(stubPath, `#!/bin/sh\n${body}\n`);
+  chmodSync(stubPath, 0o755);
+}
+
+/**
+ * Execute the real root verify script while replacing its external commands
+ * with deterministic stubs, returning the Turbo calls that reached the runner.
+ */
+function captureVerifyTurboInvocations(): TurboInvocation[] {
+  const fixtureDir = mkdtempSync(path.join(tmpdir(), 'dorkos-verify-gate-'));
+  const capturePath = path.join(fixtureDir, 'turbo-calls.jsonl');
+
+  try {
+    writeStub(fixtureDir, 'pnpm', 'exit 0');
+    writeStub(fixtureDir, 'git', "printf '%s\\n' test-origin-main");
+    writeStub(
+      fixtureDir,
+      'turbo',
+      `node -e 'const fs = require("node:fs"); fs.appendFileSync(process.env.TURBO_CAPTURE, JSON.stringify({ args: process.argv.slice(1), base: process.env.TURBO_SCM_BASE }) + "\\n")' "$@"`
+    );
+
+    const scripts = JSON.parse(packageText) as { scripts?: Record<string, string> };
+    const verify = scripts.scripts?.verify;
+    expect(verify, 'root package.json has no `verify` script').toBeTypeOf('string');
+
+    // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; the fixture must preserve PATH while prepending its command stubs
+    const inheritedEnv = process.env;
+    const result = spawnSync('/bin/sh', ['-c', verify as string], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      env: {
+        ...inheritedEnv,
+        PATH: `${fixtureDir}:${inheritedEnv.PATH ?? ''}`,
+        TURBO_CAPTURE: capturePath,
+      },
+    });
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+
+    return readFileSync(capturePath, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as TurboInvocation);
+  } finally {
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }
+}
+
 describe('local turbo --affected gates pin their diff base', () => {
   it('finds the call sites at all', () => {
     // Without this, every assertion below passes vacuously the day someone
@@ -196,5 +256,18 @@ describe('local turbo --affected gates pin their diff base', () => {
     );
     expect(prePush?.text).toContain('Delete-only push');
     expect(prePush?.text).toContain('turbo test --affected');
+  });
+
+  it('runs verify tests through Turbo with the pre-push scheduling contract', () => {
+    expect(captureVerifyTurboInvocations()).toEqual([
+      {
+        args: ['run', 'typecheck', 'lint', '--affected'],
+        base: 'test-origin-main',
+      },
+      {
+        args: ['run', 'test', '--affected', '--concurrency=1', '--', '--run'],
+        base: 'test-origin-main',
+      },
+    ]);
   });
 });

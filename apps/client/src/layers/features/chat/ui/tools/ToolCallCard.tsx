@@ -143,7 +143,7 @@ export function ToolCallCard({ toolCall, defaultExpanded = false }: ToolCallCard
       {toolCall.status === 'running' && !toolCall.input ? (
         <div className="text-muted-foreground flex items-center gap-1.5 py-1 text-xs">
           <Spinner size="xs" />
-          <span>Preparing...</span>
+          <span>Preparing…</span>
         </div>
       ) : toolCall.input !== undefined && toolCall.input !== '' ? (
         <ToolArgumentsDisplay

@@ -1,4 +1,5 @@
 import rateLimit, { type RateLimitRequestHandler } from 'express-rate-limit';
+import { rateLimitKey } from './rate-limit-key.js';
 
 /** Default requests per minute per IP through one extension's data proxy. */
 export const EXTENSION_PROXY_RATE_LIMIT_DEFAULT = 120;
@@ -19,11 +20,11 @@ const WINDOW_MS = 60_000;
  * One limiter is built per proxy router, so each extension gets its own budget
  * and a chatty one cannot starve the rest.
  *
- * SECURITY: the per-IP buckets hold only behind a single trusted proxy —
- * `app.ts` sets `trust proxy, 1`, so the client IP comes from
- * `X-Forwarded-For`. On a direct public bind a caller can rotate spoofed values
- * across unlimited buckets, exactly as `a2a-rate-limit` documents. Treat this
- * as a throttle, not an authorization boundary.
+ * Keys through {@link rateLimitKey} — the TCP peer address unless
+ * `DORKOS_TRUST_PROXY` says a proxy is in front (DOR-1711), so a caller can no
+ * longer rotate a spoofed `X-Forwarded-For` across unlimited buckets. It is
+ * still a throttle rather than an authorization boundary: what stops an
+ * unapproved caller is the extension approval gate, not this.
  *
  * @param maxPerMinute - Requests per minute per IP; defaults to
  *   {@link EXTENSION_PROXY_RATE_LIMIT_DEFAULT}.
@@ -32,6 +33,7 @@ export function buildExtensionProxyRateLimiter(maxPerMinute?: number): RateLimit
   return rateLimit({
     windowMs: WINDOW_MS,
     max: maxPerMinute ?? EXTENSION_PROXY_RATE_LIMIT_DEFAULT,
+    keyGenerator: rateLimitKey,
     standardHeaders: true,
     legacyHeaders: false,
     message: {

@@ -64,7 +64,7 @@ export function SessionsPage({ member }: ProfilePageContentProps) {
       await queryClient.invalidateQueries({ queryKey: sessionKeys.listRoot });
       open(forked.id);
     } catch (err) {
-      toast.error("Couldn't branch off this conversation.", {
+      toast.error('Couldn’t branch off this conversation.', {
         description: err instanceof Error ? err.message : 'The original is untouched.',
       });
     }

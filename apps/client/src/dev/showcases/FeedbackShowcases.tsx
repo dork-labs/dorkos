@@ -73,7 +73,7 @@ function CopyButtonDemo() {
   );
 }
 
-/** The inline text-morph shape `ServerTab`/`AdvancedTab` use around the same hook. */
+/** The inline text-morph shape `ServerTab`'s copy rows use around the same hook. */
 function CopyTextRowDemo() {
   const { copied, failed, copy } = useCopyFeedback();
   return (
@@ -86,7 +86,7 @@ function CopyTextRowDemo() {
       {copied ? (
         <span className="text-xs">Copied</span>
       ) : failed ? (
-        <span className="text-destructive text-xs">Couldn&apos;t copy</span>
+        <span className="text-destructive text-xs">Couldn’t copy</span>
       ) : (
         <span className="font-mono text-xs">~/.dork/logs</span>
       )}
@@ -280,7 +280,7 @@ export function FeedbackShowcases() {
           <CopyButtonDemo />
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Text morph — ServerTab, AdvancedTab</ShowcaseLabel>
+        <ShowcaseLabel>Text morph — ServerTab copy rows</ShowcaseLabel>
         <ShowcaseDemo>
           <CopyTextRowDemo />
         </ShowcaseDemo>
@@ -325,7 +325,7 @@ export function FeedbackShowcases() {
           <div className="border-border/60 rounded-md border border-dashed p-3">
             <PermissionModeScopeNote mode="default" />
             <p className="text-muted-foreground text-xs italic">
-              (nothing rendered above — the border is the demo&rsquo;s)
+              (nothing rendered above — the border is the demo’s)
             </p>
           </div>
         </ShowcaseDemo>

@@ -12,26 +12,26 @@ function CanvasErrorFallback({
   onRetry: () => void;
 }): ReactElement {
   // A stale dynamic-import chunk can't be recovered by remounting: React caches
-  // the rejected module payload, so Retry would re-throw instantly. Offer only a
+  // the rejected module payload, so Try again would re-throw instantly. Offer only a
   // full app reload, which re-fetches the current chunk hashes. Every other
   // failure is worth retrying in place.
   const staleChunk = isDynamicImportError(error);
   return (
     <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-      <p>This tab hit a problem.</p>
+      <p>This tab hit a problem</p>
       {staleChunk ? (
         <>
           <p className="text-sm">
             The app may have updated since you opened this tab. Reloading usually fixes it.
           </p>
           <Button type="button" size="sm" onClick={() => window.location.reload()}>
-            Reload app
+            Reload DorkOS
           </Button>
         </>
       ) : (
         <Button type="button" variant="outline" size="sm" onClick={onRetry}>
           <RotateCw className="size-4" />
-          Retry
+          Try again
         </Button>
       )}
     </div>
@@ -50,7 +50,7 @@ interface CanvasErrorBoundaryProps {
 
 interface CanvasErrorBoundaryState {
   error: Error | null;
-  /** Bumped by Retry to remount the wrapped renderer without switching tabs. */
+  /** Bumped by Try again to remount the wrapped renderer without switching tabs. */
   retryKey: number;
 }
 
@@ -60,8 +60,8 @@ interface CanvasErrorBoundaryState {
  * Wraps only the active document's renderer, so a viewer that throws — a failed
  * `React.lazy` chunk import after a rebuild, a WebGL failure, a bad file — is
  * contained to that one tab. The tab strip, tab switching, and every other open
- * document keep working. The fallback offers Retry (remounts the viewer) for an
- * ordinary failure, or Reload app for a stale-chunk import failure a remount
+ * document keep working. The fallback offers Try again (remounts the viewer) for an
+ * ordinary failure, or Reload DorkOS for a stale-chunk import failure a remount
  * can't recover. The outer `PanelErrorBoundary` stays as the last-resort net.
  */
 export class CanvasErrorBoundary extends Component<
@@ -87,7 +87,7 @@ export class CanvasErrorBoundary extends Component<
     if (error) {
       return <CanvasErrorFallback error={error} onRetry={this.handleRetry} />;
     }
-    // Keyed so Retry unmounts and remounts the renderer fresh, re-attempting the
+    // Keyed so Try again unmounts and remounts the renderer fresh, re-attempting the
     // viewer instead of re-rendering the failed instance.
     return <Fragment key={retryKey}>{this.props.children}</Fragment>;
   }

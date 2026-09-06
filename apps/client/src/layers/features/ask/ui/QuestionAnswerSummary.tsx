@@ -60,7 +60,7 @@ const UNANSWERED: Record<
     Icon: MinusCircle,
     iconClass: 'text-muted-foreground',
   },
-  errored: { label: "The question didn't go through", Icon: X, iconClass: 'text-status-error' },
+  errored: { label: 'The question didn’t go through', Icon: X, iconClass: 'text-status-error' },
   // The turn ended without recording an ending at all — interrupted, crashed,
   // or trimmed out of the log. Says only what is known, which is nothing.
   unresolved: {

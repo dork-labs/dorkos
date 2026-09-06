@@ -243,7 +243,7 @@ vi.mock('motion/react', () => ({
 
 // --- Helpers ---
 
-const searchInput = () => screen.getByPlaceholderText('Search rooms, agents, commands...');
+const searchInput = () => screen.getByPlaceholderText('Search rooms, agents, commands…');
 const type = (value: string) => fireEvent.change(searchInput(), { target: { value } });
 
 /**

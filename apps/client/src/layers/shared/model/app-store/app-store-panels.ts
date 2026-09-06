@@ -20,12 +20,12 @@ export type SettingsTab =
   | 'notifications'
   | 'server'
   | 'tools'
-  | 'security'
-  | 'account'
+  | 'access'
+  | 'remote-access'
   | 'runtimes'
   | 'rooms'
   | 'privacy'
-  | 'advanced'
+  | 'danger'
   | 'experiments'
   | (string & {});
 

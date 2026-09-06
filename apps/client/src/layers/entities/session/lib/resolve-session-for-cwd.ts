@@ -41,7 +41,7 @@ import { partitionSessionsByOrigin } from './partition-sessions-by-origin';
  * they must not drift into describing the same event three ways.
  */
 export const SESSION_LOOKUP_FAILED_MESSAGE =
-  "Couldn't reach the server to find this agent's latest conversation.";
+  'Couldn’t reach the server to find this agent’s latest conversation.';
 
 /**
  * Tell the operator the lookup failed, without moving them.

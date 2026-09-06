@@ -61,7 +61,7 @@ export function TopologyShowcases() {
           <AgentExpandedCard d={AGENTS[0]} />
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Health statuses — the node's own dot, never the disc</ShowcaseLabel>
+        <ShowcaseLabel>Health statuses — the node’s own dot, never the disc</ShowcaseLabel>
         <ShowcaseDemo>
           {/* The disc used to wear health as a coloured 2px ring, on this page
               and on every list row in the product. Health is a diagnostic about

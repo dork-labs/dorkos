@@ -58,7 +58,7 @@ export function FounderSection({ slideId = 'founder' }: FounderSectionProps) {
           className="text-cream-white mb-4 text-[clamp(20px,2.8vw,32px)] leading-[1.45] font-light"
         >
           I used to pull all-nighters.
-          <br />I don&rsquo;t want to do that anymore.
+          <br />I don’t want to do that anymore.
         </motion.p>
 
         <motion.p

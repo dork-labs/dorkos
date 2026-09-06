@@ -56,7 +56,7 @@ function CopyActionButton({
     label = 'Copied';
   } else if (failed) {
     icon = <X className="text-destructive size-3" />;
-    label = "Couldn't copy";
+    label = 'Couldn’t copy';
   } else {
     icon = <IdleIcon className="size-3" />;
     label = idleLabel;

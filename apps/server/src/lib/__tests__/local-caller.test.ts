@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 
 // Mutable stand-in so the container flag can be moved one test at a time — the

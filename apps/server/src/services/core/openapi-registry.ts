@@ -2982,8 +2982,8 @@ registry.registerPath({
   tags: ['Connectors'],
   summary: 'Begin a connect flow for a toolkit',
   description:
-    'Starts an OAuth/connect flow on the named provider and returns a consent URL plus a ' +
-    'pollable flow id. Secrets stay server-side — the response is reference-shaped.',
+    'Starts a connect flow on the named provider and returns a pollable flow id. Browser-based ' +
+    'flows also return a consent URL; verification-only flows omit it. Secrets stay server-side.',
   request: {
     params: z.object({ provider: z.string() }),
     body: {
@@ -2997,8 +2997,8 @@ registry.registerPath({
   responses: {
     200: {
       description:
-        'Connect started; carries the authorize URL, a pollable flow id, and the custody ' +
-        'disclosure to show BEFORE the URL is opened',
+        'Connect started; carries a pollable flow id and custody disclosure. Browser-based ' +
+        'flows also carry the authorize URL to open after the disclosure is shown.',
       content: { 'application/json': { schema: ConnectorConnectStartResponseSchema } },
     },
     400: {

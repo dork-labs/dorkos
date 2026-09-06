@@ -186,7 +186,7 @@ describe('RoomMessage — mentions inside a message', () => {
     expect(content()).toHaveTextContent('hey Bo can you take a look?');
   });
 
-  it("draws the pill from the ROSTER's identity, never from the tag's own text", () => {
+  it('draws the pill from the ROSTER’s identity, never from the tag’s own text', () => {
     // The span's matched text is `@bo` — the handle the author actually typed
     // — but the roster is what says who that is. If the pill ever started
     // reading its label off the tag's children instead, this would still

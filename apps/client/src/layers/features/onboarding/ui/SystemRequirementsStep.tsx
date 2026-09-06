@@ -39,7 +39,7 @@ type CheckPhase = 'checking' | 'done';
 const CHECKING_MIN_MS = 2200;
 
 const HEADING_CHECKING = ['Checking', 'your', 'setup'];
-const HEADING_READY = ["You're", 'ready'];
+const HEADING_READY = ['You’re', 'ready'];
 const HEADING_CONNECT = ['Connect', 'your', 'first', 'runtime'];
 const HEADING_ERROR = ['One', 'moment'];
 
@@ -169,7 +169,7 @@ export function SystemRequirementsStep({
     phase === 'checking'
       ? 'Looking for Claude Code, Codex, and OpenCode on your machine.'
       : errored
-        ? "We couldn't check your setup just now."
+        ? 'We couldn’t check your setup just now.'
         : hasReady
           ? connectedSentence(readyTypes, defaultRuntime.runtime)
           : 'DorkOS drives Claude Code, Codex, and OpenCode. Set one up to get started. It takes about a minute.';
@@ -350,7 +350,7 @@ function ErrorPanel({ onRetry, isRetrying }: { onRetry: () => void; isRetrying: 
   return (
     <div className="flex flex-col items-center gap-3" role="alert">
       <p className="text-muted-foreground text-sm text-balance">
-        The check couldn't reach the server. Make sure DorkOS is running, then try again.
+        The check couldn’t reach the server. Make sure DorkOS is running, then try again.
       </p>
       <Button variant="outline" className="gap-2" onClick={onRetry} disabled={isRetrying}>
         <RefreshCw className={cn('size-3.5', isRetrying && 'animate-spin')} />
@@ -535,6 +535,6 @@ function connectedSentence(types: string[], defaultRuntime: string | null): stri
   const meanwhile = chooseDefaultRuntime(types, defaultRuntime);
   const meanwhileLabel = meanwhile ? getRuntimeDescriptor(meanwhile).label : null;
   return meanwhileLabel
-    ? `${connected} New chats will start with ${label} once it's connected. Until then they'll use ${meanwhileLabel}.`
-    : `${connected} New chats will start with ${label} once it's connected.`;
+    ? `${connected} New chats will start with ${label} once it’s connected. Until then they’ll use ${meanwhileLabel}.`
+    : `${connected} New chats will start with ${label} once it’s connected.`;
 }

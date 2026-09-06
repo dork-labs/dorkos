@@ -25,7 +25,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -70,6 +71,9 @@ import { skillsRoot } from '../../services/tasks/__tests__/task-root-fixtures.js
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
+
 function createMockScheduler(): TaskSchedulerService {
   return {
     registerTask: vi.fn(),
@@ -111,7 +115,7 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
 
   /** Create a task through the route, the way the cockpit does. */
   async function createTask(body: Record<string, unknown>): Promise<string> {
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post('/api/tasks')
       .send({
         name: 'nightly-sweep',
@@ -138,6 +142,8 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
       '/api/tasks',
       createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), dorkHome)
     );
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(async () => {
@@ -182,7 +188,7 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
     it('leaves a file that still parses, and a frontmatter key that is simply gone', async () => {
       const id = await createTask({ maxRuntime: '30m' });
 
-      const res = await request(app).patch(`/api/tasks/${id}`).send({ maxRuntime: null });
+      const res = await request(fixtureServer).patch(`/api/tasks/${id}`).send({ maxRuntime: null });
       expect(res.status, JSON.stringify(res.body)).toBe(200);
 
       const raw = await fs.readFile(skillPath('nightly-sweep'), 'utf-8');
@@ -198,7 +204,7 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
     it('clears display-name, cron, and timezone the same way', async () => {
       const id = await createTask({ displayName: 'Nightly Sweep', timezone: 'Europe/Berlin' });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${id}`)
         .send({ displayName: null, cron: null, timezone: null });
       expect(res.status, JSON.stringify(res.body)).toBe(200);
@@ -232,7 +238,7 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
       // as it does on create and on file sync.
       const id = await createTask({});
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${id}`)
         .send({ cron: null, prompt: 'sweep the backlog more gently' });
       expect(res.status, JSON.stringify(res.body)).toBe(200);
@@ -255,9 +261,9 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
       // all, so later edits lived only in the row until the reconciler undid
       // them.
       const id = await createTask({ maxRuntime: '30m' });
-      await request(app).patch(`/api/tasks/${id}`).send({ maxRuntime: null });
+      await request(fixtureServer).patch(`/api/tasks/${id}`).send({ maxRuntime: null });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${id}`)
         .send({ description: 'sweeps the backlog, twice as hard' });
       expect(res.status).toBe(200);
@@ -277,7 +283,7 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
         code: 'EACCES',
       });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${id}`)
         .send({ description: 'an edit the disk would not take' });
 
@@ -310,7 +316,7 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
         filePath: aDirectory,
       });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${notAFile.id}`)
         .send({ description: 'an edit that cannot be checked against the file' });
 
@@ -333,7 +339,7 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
         'utf-8'
       );
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${id}`)
         .send({ description: 'an edit onto a broken file' });
 
@@ -357,7 +363,7 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
         filePath: path.join(dorkHome, 'skills', 'legacy', SKILL_FILENAME),
       });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${legacy.id}`)
         .send({ description: 'edited anyway' });
 
@@ -373,7 +379,9 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
       // unreadable. A 400 is the only honest answer.
       const id = await createTask({ maxRuntime: '30m' });
 
-      const res = await request(app).patch(`/api/tasks/${id}`).send({ maxRuntime: '10 minutes' });
+      const res = await request(fixtureServer)
+        .patch(`/api/tasks/${id}`)
+        .send({ maxRuntime: '10 minutes' });
 
       expect(res.status).toBe(400);
       expect(store.getTask(id)!.maxRuntime).toBe(1_800_000);
@@ -382,7 +390,9 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
     it('accepts a duration it can read', async () => {
       const id = await createTask({ maxRuntime: '30m' });
 
-      const res = await request(app).patch(`/api/tasks/${id}`).send({ maxRuntime: '10m' });
+      const res = await request(fixtureServer)
+        .patch(`/api/tasks/${id}`)
+        .send({ maxRuntime: '10m' });
 
       expect(res.status).toBe(200);
       expect(store.getTask(id)!.maxRuntime).toBe(600_000);
@@ -391,7 +401,7 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
     it('still accepts null, which is how a cap is removed', async () => {
       const id = await createTask({ maxRuntime: '30m' });
 
-      const res = await request(app).patch(`/api/tasks/${id}`).send({ maxRuntime: null });
+      const res = await request(fixtureServer).patch(`/api/tasks/${id}`).send({ maxRuntime: null });
 
       expect(res.status).toBe(200);
       expect(store.getTask(id)!.maxRuntime).toBeNull();
@@ -457,6 +467,8 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
       '/api/tasks',
       createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), dorkHome)
     );
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(async () => {
@@ -469,7 +481,7 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
     const before = await fs.readFile(filePath, 'utf-8');
     const id = seedParked('nightly', filePath, '0 9 * * *');
 
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .patch(`/api/tasks/${id}`)
       .send({ status: 'active', enabled: true });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
@@ -483,7 +495,7 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
     const before = await fs.readFile(filePath, 'utf-8');
     const id = seedParked('broken', filePath, '');
 
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .patch(`/api/tasks/${id}`)
       .send({ status: 'active', enabled: true });
 
@@ -499,7 +511,7 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
     const filePath = await writeBlockSkill('nightly', "  cron: '0 9 * * *'");
     const id = seedParked('nightly', filePath, '0 9 * * *');
 
-    const res = await request(app).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
+    const res = await request(fixtureServer).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
 
     const raw = await fs.readFile(filePath, 'utf-8');
@@ -526,7 +538,7 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
     const before = await fs.readFile(filePath, 'utf-8');
     const id = seedParked('owned', filePath, '0 9 * * *');
 
-    const res = await request(app).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
+    const res = await request(fixtureServer).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
 
     expect(res.status).toBe(409);
     expect(await fs.readFile(filePath, 'utf-8')).toBe(before);
@@ -552,7 +564,7 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
       return realUpdate(taskId, data);
     });
 
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .patch(`/api/tasks/${id}`)
       .send({ status: 'active', cron: '0 21 * * *' });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
@@ -596,6 +608,8 @@ describe('PATCH /api/tasks/:id and a live schedule’s approval', () => {
     app = express();
     app.use(express.json());
     app.use('/api/tasks', createTasksRouter(store, scheduler, registrar, dorkHome));
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(async () => {
@@ -605,7 +619,7 @@ describe('PATCH /api/tasks/:id and a live schedule’s approval', () => {
 
   /** An operator-created, already-live schedule. */
   async function liveSchedule(): Promise<string> {
-    const res = await request(app).post('/api/tasks').send({
+    const res = await request(fixtureServer).post('/api/tasks').send({
       name: 'nightly-sweep',
       description: 'sweeps the backlog',
       prompt: 'sweep the backlog',
@@ -620,7 +634,7 @@ describe('PATCH /api/tasks/:id and a live schedule’s approval', () => {
   it('keeps a schedule armed when a person edits what it does', async () => {
     const id = await liveSchedule();
 
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .patch(`/api/tasks/${id}`)
       .send({ prompt: 'sweep the backlog and file anything stale' });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
@@ -636,7 +650,7 @@ describe('PATCH /api/tasks/:id and a live schedule’s approval', () => {
   it('keeps a schedule armed when a person edits when it runs', async () => {
     const id = await liveSchedule();
 
-    await request(app).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
+    await request(fixtureServer).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
     await reconciler.reconcile();
 
     expect(store.getTask(id)!.status).toBe('active');
@@ -650,7 +664,7 @@ describe('PATCH /api/tasks/:id and a live schedule’s approval', () => {
   it('sends a schedule back for approval when an AGENT edits what it does', async () => {
     const id = await liveSchedule();
 
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .patch(`/api/tasks/${id}`)
       .set('x-dorkos-agent', 'agent-token-abc')
       .send({ prompt: 'sweep the backlog and then delete everything' });
@@ -665,9 +679,9 @@ describe('PATCH /api/tasks/:id and a live schedule’s approval', () => {
 
   it('does not re-approve a schedule that was already waiting', async () => {
     const id = await liveSchedule();
-    await request(app).patch(`/api/tasks/${id}`).send({ status: 'pending_approval' });
+    await request(fixtureServer).patch(`/api/tasks/${id}`).send({ status: 'pending_approval' });
 
-    await request(app).patch(`/api/tasks/${id}`).send({ prompt: 'something else' });
+    await request(fixtureServer).patch(`/api/tasks/${id}`).send({ prompt: 'something else' });
     await reconciler.reconcile();
 
     expect(store.getTask(id)!.status).toBe('pending_approval');

@@ -879,7 +879,7 @@ describe('sdk-event-mapper hook lifecycle events', () => {
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe('system_status');
     expect(events[0].data).toEqual({
-      message: 'Running hook "session-init"...',
+      message: 'Running hook "session-init"…',
     });
   });
 

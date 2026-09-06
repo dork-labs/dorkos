@@ -25,7 +25,7 @@ export const TIER_GROUP_ORDER = [
   { slug: 'quick-helpers', label: 'Quick helpers' },
   { slug: 'more-models', label: 'More models' },
   // Last on purpose: still reachable, never in the way.
-  { slug: 'no-tools', label: "Can't do agent work" },
+  { slug: 'no-tools', label: 'Can’t do agent work' },
 ] as const;
 
 /** Slug identifying one of the model-menu groups. */
@@ -38,7 +38,7 @@ export const SEARCHABLE_THRESHOLD = 10;
  * Why a model in the "Can't do agent work" group is there — it cannot call
  * tools, so it can only talk.
  */
-const NO_TOOLS_NOTE = "Can't use tools, so it can't read files or run commands.";
+const NO_TOOLS_NOTE = 'Can’t use tools, so it can’t read files or run commands.';
 
 /**
  * Why an image model is flagged wherever it sits. Honest about DorkOS, not about

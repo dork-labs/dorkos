@@ -20,7 +20,7 @@ function DiagnosticsIcon({ copied, failed }: { copied: boolean; failed: boolean 
 /** The label paired with {@link DiagnosticsIcon} — always the same word for the same state. */
 function diagnosticsLabel(copied: boolean, failed: boolean): string {
   if (copied) return 'Copied';
-  if (failed) return "Couldn't copy";
+  if (failed) return 'Couldn’t copy';
   return 'Copy diagnostics';
 }
 

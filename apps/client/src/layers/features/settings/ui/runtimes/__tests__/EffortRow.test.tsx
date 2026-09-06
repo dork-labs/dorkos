@@ -75,7 +75,7 @@ describe('EffortRow', () => {
     expect(onChange).toHaveBeenCalledWith('high');
   });
 
-  it("reports the runtime's-choice segment as null, never as its sentinel", async () => {
+  it('reports the runtime’s-choice segment as null, never as its sentinel', async () => {
     const { onChange } = renderRow({ selectedModel: SHORT_LADDER, value: 'high' });
     await userEvent.click(screen.getByRole('radio', { name: 'Automatic' }));
     expect(onChange).toHaveBeenCalledWith(null);
@@ -162,7 +162,7 @@ describe('EffortRow', () => {
     // get the setting back.
     renderRow({ selectedModel: HAIKU, configuredModelId: 'haiku' });
     expect(screen.getByTestId('runtime-effort-model-unsupported-claude-code')).toHaveTextContent(
-      "Haiku doesn't take an effort setting"
+      'Haiku doesn’t take an effort setting'
     );
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
   });

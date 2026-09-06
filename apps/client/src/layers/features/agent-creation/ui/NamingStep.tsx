@@ -226,7 +226,7 @@ export function NamingStep({
                   id="agent-directory"
                   placeholder={
                     form.resolvedDirectory ||
-                    (form.defaultDirectory ? `${form.defaultDirectory}/...` : '')
+                    (form.defaultDirectory ? `${form.defaultDirectory}/…` : '')
                   }
                   value={form.directoryOverride}
                   onChange={form.setDirectoryOverride}

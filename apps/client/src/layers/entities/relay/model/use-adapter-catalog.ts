@@ -79,7 +79,7 @@ export function useRemoveAdapter() {
       // one binding (IntegrationsTab.tsx). This one deletes the whole
       // Telegram/Slack/webhook source and every binding routed through it,
       // so it needs its own words (DOR-1754).
-      toast.success('Removed — nothing routes through it anymore.');
+      toast.success('Removed. Nothing routes through it anymore.');
     },
     onError: (error) => {
       toast.error(getErrorMessage(error));

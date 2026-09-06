@@ -57,7 +57,7 @@ const LIMIT_FIELDS: readonly LimitField[] = [
   {
     key: 'maxTurnsPerAgentPerCascade',
     label: 'Replies from one agent',
-    description: `How many turns one agent may take in a single back-and-forth. Progress notes an agent posts while it works belong to the turn it is already taking, so they don't count extra. Default: ${ROOM_TURN_LIMIT_DEFAULTS.maxTurnsPerAgentPerCascade}.`,
+    description: `How many turns one agent may take in a single back-and-forth. Progress notes an agent posts while it works belong to the turn it is already taking, so they don’t count extra. Default: ${ROOM_TURN_LIMIT_DEFAULTS.maxTurnsPerAgentPerCascade}.`,
     min: ROOM_TURN_LIMIT_BOUNDS.maxTurnsPerAgentPerCascade.min,
     max: ROOM_TURN_LIMIT_BOUNDS.maxTurnsPerAgentPerCascade.max,
   },
@@ -111,8 +111,7 @@ export function RoomsTab() {
               </p>
             ) : unsupported ? (
               <p className="text-muted-foreground text-sm">
-                This server doesn&apos;t report these settings yet. Update DorkOS to change them
-                here.
+                This server doesn’t report these settings yet. Update DorkOS to change them here.
               </p>
             ) : (
               // Never the shipped defaults while the read is in flight: these

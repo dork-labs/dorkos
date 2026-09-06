@@ -62,7 +62,8 @@ vi.mock('../../lib/logger.js', () => ({
 vi.mock('../../env.js', () => ({ env: { DORKOS_PORT: 7777 } }));
 vi.stubEnv('VITE_PORT', '7779');
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import express from 'express';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import { createExtensionsRouter } from '../extensions.js';
@@ -70,6 +71,9 @@ import {
   findOperatorOnlyPaths,
   OPERATOR_ONLY_CONFIG_CODE,
 } from '../../services/core/operator/config-write-policy.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** The literal port `resolveTrustedOrigins()` is pinned to above. */
 const TRUSTED_PORT = 7777;
@@ -168,6 +172,8 @@ describe('who may turn an extension on or off', () => {
         () => null
       )
     );
+
+    fixtureTarget.mount(app);
   });
 
   /**
@@ -186,7 +192,7 @@ describe('who may turn an extension on or off', () => {
 
   describe('an agent that names itself', () => {
     it('CANNOT turn an extension on, and nothing is written', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/enable')
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({});
@@ -200,7 +206,7 @@ describe('who may turn an extension on or off', () => {
     it('CANNOT turn one off either — operator-only reads paths, never values', async () => {
       state.extensions = { ...state.extensions, enabled: ['my-ext'] };
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/disable')
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({});
@@ -219,7 +225,7 @@ describe('who may turn an extension on or off', () => {
       // `serverLifecycle.initialize` does when `mayRunExtensionCode` says yes.
       state.extensions = { enabled: [], disabled: ['my-ext'], approvedToRun: ['my-ext'] };
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/enable')
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({});
@@ -233,7 +239,7 @@ describe('who may turn an extension on or off', () => {
       state.authEnabled = true;
       signedInUser = { userId: 'u1', credential: 'cookie' };
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/enable')
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({});
@@ -247,7 +253,7 @@ describe('who may turn an extension on or off', () => {
 
   describe('a caller that strips its agent header', () => {
     it('IS ALLOWED while login is off — the documented residual, not an oversight', async () => {
-      const res = await request(app).post('/api/extensions/my-ext/enable').send({});
+      const res = await request(fixtureServer).post('/api/extensions/my-ext/enable').send({});
 
       expect(res.status).toBe(200);
       expect(state.extensions.enabled).toEqual(['my-ext']);
@@ -261,7 +267,7 @@ describe('who may turn an extension on or off', () => {
       state.authEnabled = true;
       signedInUser = undefined;
 
-      const res = await request(app).post('/api/extensions/my-ext/enable').send({});
+      const res = await request(fixtureServer).post('/api/extensions/my-ext/enable').send({});
 
       // 403 rather than 401: the answer is "only a person signed in to DorkOS
       // can change this", which is true of an unauthenticated caller and of one
@@ -276,7 +282,7 @@ describe('who may turn an extension on or off', () => {
       state.authEnabled = true;
       signedInUser = { userId: 'u1', credential: 'api-key' };
 
-      const res = await request(app).post('/api/extensions/my-ext/enable').send({});
+      const res = await request(fixtureServer).post('/api/extensions/my-ext/enable').send({});
 
       // An API key is something a program can hold. A session cookie is the one
       // signal a header-stripping caller cannot fake.
@@ -287,7 +293,7 @@ describe('who may turn an extension on or off', () => {
 
   describe('a person in the app', () => {
     it('turns an extension on with one click while login is off', async () => {
-      const res = await request(app).post('/api/extensions/my-ext/enable').send({});
+      const res = await request(fixtureServer).post('/api/extensions/my-ext/enable').send({});
 
       expect(res.status).toBe(200);
       expect(manager.enable).toHaveBeenCalledWith('my-ext');
@@ -298,7 +304,7 @@ describe('who may turn an extension on or off', () => {
       signedInUser = { userId: 'u1', credential: 'cookie' };
       state.extensions = { ...state.extensions, enabled: ['my-ext'] };
 
-      const res = await request(app).post('/api/extensions/my-ext/disable').send({});
+      const res = await request(fixtureServer).post('/api/extensions/my-ext/disable').send({});
 
       expect(res.status).toBe(200);
       expect(state.extensions.disabled).toEqual(['my-ext']);
@@ -307,7 +313,7 @@ describe('who may turn an extension on or off', () => {
     it('is allowed from the app own origin, which the bar must not refuse', async () => {
       // The positive control for the origin bar: a bar that refused everything
       // would pass every case above and lock the person out of their own app.
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/enable')
         .set('origin', `http://localhost:${TRUSTED_PORT}`)
         .send({});
@@ -325,7 +331,7 @@ describe('who may turn an extension on or off', () => {
    */
   describe('a page on another site, posting through the person browser', () => {
     it('is refused on enable, and nothing is written', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/enable')
         .set('origin', 'https://evil.example')
         .send({});
@@ -338,7 +344,7 @@ describe('who may turn an extension on or off', () => {
     it('is refused on disable too, so nothing can be silently switched off', async () => {
       state.extensions = { ...state.extensions, enabled: ['my-ext'] };
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/disable')
         .set('origin', 'https://evil.example')
         .send({});
@@ -353,7 +359,7 @@ describe('who may turn an extension on or off', () => {
       state.authEnabled = true;
       signedInUser = { userId: 'u1', credential: 'cookie' };
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/enable')
         .set('origin', 'https://evil.example')
         .send({});
@@ -366,7 +372,7 @@ describe('who may turn an extension on or off', () => {
       // An expected origin derived from `req.headers.host` matches whatever the
       // attacker sets, so the bar would skip itself. The allowlist has to be the
       // server's own — `middleware/mcp-origin.ts` names this attack outright.
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/enable')
         .set('host', 'evil.example')
         .set('origin', 'http://evil.example')
@@ -377,7 +383,7 @@ describe('who may turn an extension on or off', () => {
     });
 
     it('is not fooled by a host that merely starts with a trusted one', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/enable')
         .set('origin', `http://localhost:${TRUSTED_PORT}.evil.example`)
         .send({});
@@ -397,12 +403,12 @@ describe('who may turn an extension on or off', () => {
    */
   describe('the read and rescan routes', () => {
     it('still answer an agent, because they write no config', async () => {
-      const list = await request(app)
+      const list = await request(fixtureServer)
         .get('/api/extensions')
         .set('x-dorkos-agent', 'agent-token-abc');
       expect(list.status).toBe(200);
 
-      const reload = await request(app)
+      const reload = await request(fixtureServer)
         .post('/api/extensions/reload')
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({});

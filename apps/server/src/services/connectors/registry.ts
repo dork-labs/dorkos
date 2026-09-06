@@ -11,8 +11,10 @@
  *
  * The `connected_accounts` table (`@dorkos/db`) is the derived routing cache
  * (ADR-0043): the registry writes a row on a successful `pollConnect`
- * (first-write-wins) and clears it on `disconnect`; the provider vaults remain
- * the source of truth for the tokens themselves.
+ * (first-write-wins) and marks it revoked on `disconnect`; the provider vaults
+ * remain the source of truth for the tokens themselves. The revoked row is a
+ * credential-free ownership tombstone, so a repeated disconnect can still
+ * reach the right provider while an older connect poll is settling.
  *
  * @module services/connectors/registry
  */
@@ -170,23 +172,25 @@ export class ConnectorRegistry {
   }
 
   /**
-   * Route an opaque account id to the provider that owns it, via the
-   * `connected_accounts` binding. Returns `undefined` when the id is unknown or
-   * its owning provider is no longer registered.
+   * Route an active opaque account id to the provider that owns it, via the
+   * `connected_accounts` binding. Returns `undefined` when the id is unknown,
+   * revoked, or its owning provider is no longer registered. Disconnect uses
+   * {@link accountBinding} directly because it must also route a tombstone.
    *
    * @param accountId - The opaque account handle to route.
    */
   providerForAccount(accountId: ConnectedAccountId): ConnectorProvider | undefined {
     const binding = this.accountBinding(accountId);
-    if (!binding) return undefined;
+    if (!binding || binding.status === 'revoked') return undefined;
     return this.resolveProvider(binding.provider);
   }
 
   /**
    * Read the full routing-cache row for an account id — the provider-neutral
    * metadata (owning provider, toolkit, label, custody, status) the session
-   * tool surface needs to name and disclose an attached account. Returns
-   * `undefined` when the id is unknown.
+   * tool surface needs to name and disclose an attached account. Revoked rows
+   * remain available here as provider-ownership tombstones. Returns `undefined`
+   * when the id is unknown.
    *
    * @param accountId - The opaque account handle to look up.
    */
@@ -210,11 +214,27 @@ export class ConnectorRegistry {
   /**
    * Bind an account id to its owning provider (first-write-wins). Called after a
    * successful `pollConnect`. Re-recording an already-bound id is a no-op, so
-   * the first provider to claim an id keeps it (mirrors `runtimeRegistry`).
+   * the first provider to claim an id keeps it (mirrors `runtimeRegistry`). A
+   * successful explicit reconnect from that same provider reactivates its
+   * revoked ownership tombstone without restoring old attachment consent.
    *
    * @param account - The freshly connected account to persist for routing.
    */
   recordConnect(account: ConnectedAccount): void {
+    const existing = this.accountBinding(account.id);
+    if (existing?.provider === account.provider && existing.status === 'revoked') {
+      this._db
+        .update(connectedAccounts)
+        .set({
+          toolkit: account.toolkit,
+          label: account.label,
+          custody: account.custody,
+          status: account.status,
+        })
+        .where(eq(connectedAccounts.accountId, account.id))
+        .run();
+      return;
+    }
     this._db
       .insert(connectedAccounts)
       .values({
@@ -231,15 +251,17 @@ export class ConnectorRegistry {
   }
 
   /**
-   * Clear an account id's routing binding. Called on `disconnect`. Idempotent —
-   * clearing an unknown id is a no-op.
+   * Revoke an account id's routing binding. Called on `disconnect`. The
+   * credential-free row remains as an ownership tombstone; this lets a repeated
+   * delete reach the same provider while an older connect poll is still
+   * settling. Revoking an unknown id is a no-op.
    *
    * **Cascades to every persisted connector attachment of this account**
    * (connection-scoping spec `specs/connection-scoping/` §Part 1 Revocation):
    * both the agent-level standing table and the session-level override table
    * are cleared for `accountId`, across every agent/session that ever
    * attached it. A disconnected account's credential is gone — leaving a
-   * consent row pointing at it would let a future re-connect of the SAME
+   * consent row pointing at it would let a future reconnect of the SAME
    * account id (a real possibility: providers are free to reuse an id) silently
    * inherit stale consent nobody re-confirmed. This method does not, by
    * itself, drop an already-resolved connection out of a LIVE session's
@@ -247,10 +269,14 @@ export class ConnectorRegistry {
    * `SessionConnectorService.invalidateAccount` for that, mirroring the
    * existing provider-unregister cascade in `index.ts`.
    *
-   * @param accountId - The opaque account handle to unbind.
+   * @param accountId - The opaque account handle to revoke.
    */
   recordDisconnect(accountId: ConnectedAccountId): void {
-    this._db.delete(connectedAccounts).where(eq(connectedAccounts.accountId, accountId)).run();
+    this._db
+      .update(connectedAccounts)
+      .set({ status: 'revoked' })
+      .where(eq(connectedAccounts.accountId, accountId))
+      .run();
     this._db
       .delete(agentConnectorAttachments)
       .where(eq(agentConnectorAttachments.accountId, accountId))

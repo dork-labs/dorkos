@@ -56,10 +56,10 @@ describe('ToolArgumentsDisplay', () => {
     expect(boolEl.className).toContain('amber');
   });
 
-  it('renders nested objects with {...', () => {
+  it('renders nested objects as a collapsed {…}', () => {
     const input = JSON.stringify({ config: { nested: { deep: 'value' } } });
     render(<ToolArgumentsDisplay toolName="Test" input={input} />);
-    expect(screen.getByText('{...')).toBeTruthy();
+    expect(screen.getByText('{…}')).toBeTruthy();
   });
 
   it('renders arrays with "and N more" for long arrays', () => {

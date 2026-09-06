@@ -364,7 +364,7 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
   if (view.isError) {
     return (
       <RoomPanelNotice
-        title="That room isn't here"
+        title="That room isn’t here"
         body="It may have been deleted, or the link may be out of date."
         action={
           <Button type="button" size="sm" variant="outline" onClick={view.retry}>

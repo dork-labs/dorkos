@@ -112,7 +112,7 @@ export function ErrorStateShowcases() {
               className="border-border hover:bg-muted rounded-md border px-3 py-1.5 text-sm"
               onClick={() =>
                 toast.error('Live updates lost', {
-                  description: 'Attempting to reconnect...',
+                  description: 'Attempting to reconnect…',
                 })
               }
             >

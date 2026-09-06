@@ -96,7 +96,7 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
     return (
       <QueryErrorState
         className="h-full"
-        title="Could not load your team"
+        title="Couldn’t load your team"
         description="The DorkOS server did not answer. Check that it is still running."
         onRetry={() => void refetch()}
       />

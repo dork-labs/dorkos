@@ -34,7 +34,7 @@ function resolved(seq: number, result: 'success' | 'failed'): SessionEvent {
 
 /** A non-tool hook progress event ("Running hook X…") — message, no operation. */
 function hook(seq: number, name: string): SessionEvent {
-  return { seq, type: 'system_status', message: `Running hook "${name}"...` };
+  return { seq, type: 'system_status', message: `Running hook "${name}"…` };
 }
 
 /** A streamed assistant text delta — stands in for "the model resumed". */
@@ -157,7 +157,7 @@ describe('useSystemStatusEvents — session hooks', () => {
         setStatus
       )
     );
-    expect(setStatus).toHaveBeenCalledWith({ message: 'Running hook "inject-context"...' });
+    expect(setStatus).toHaveBeenCalledWith({ message: 'Running hook "inject-context"…' });
   });
 
   it('clears the hook flash once the model resumes (next turn event)', () => {
@@ -167,7 +167,7 @@ describe('useSystemStatusEvents — session hooks', () => {
       ({ turn }: { turn: SessionEvent[] }) => useSystemStatusEvents(SID, turn, setOp, setStatus),
       { initialProps: { turn: [hook(1, 'pre')] as SessionEvent[] } }
     );
-    expect(setStatus).toHaveBeenLastCalledWith({ message: 'Running hook "pre"...' });
+    expect(setStatus).toHaveBeenLastCalledWith({ message: 'Running hook "pre"…' });
     rerender({ turn: [hook(1, 'pre'), textDelta(2)] });
     expect(setStatus).toHaveBeenLastCalledWith(null);
   });

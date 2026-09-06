@@ -36,8 +36,8 @@ describe('ServerRestartOverlay', () => {
 
   it('renders loading state when open', () => {
     render(<ServerRestartOverlay {...defaultProps} />, { wrapper: Wrapper });
-    expect(screen.getByText('Restarting server...')).toBeInTheDocument();
-    expect(screen.getByText('Waiting for server to come back...')).toBeInTheDocument();
+    expect(screen.getByText('Restarting server…')).toBeInTheDocument();
+    expect(screen.getByText('Waiting for server to come back…')).toBeInTheDocument();
   });
 
   it('does not render when not open', () => {
@@ -92,7 +92,7 @@ describe('ServerRestartOverlay', () => {
       fireEvent.click(screen.getByRole('button', { name: /try again/i }));
     });
     // Should be back to loading state
-    expect(screen.getByText('Restarting server...')).toBeInTheDocument();
+    expect(screen.getByText('Restarting server…')).toBeInTheDocument();
   });
 
   it('Dismiss calls onDismiss callback', async () => {

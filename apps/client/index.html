@@ -81,7 +81,7 @@
           if (failures.length >= MAX_FAILURES) return;
           var line = String(text == null ? 'Unknown error' : text);
           if (line.length > MAX_FAILURE_CHARS) {
-            line = line.slice(0, MAX_FAILURE_CHARS) + '\n... (truncated)';
+            line = line.slice(0, MAX_FAILURE_CHARS) + '\n… (truncated)';
           }
           failures.push(line);
         }
@@ -186,7 +186,7 @@
 
         function detailsText() {
           var lines = [
-            'DorkOS could not finish starting.',
+            'DorkOS couldn’t finish starting.',
             'When: ' + new Date().toISOString(),
             'Page: ' + location.href,
             'Browser: ' + navigator.userAgent,
@@ -322,7 +322,7 @@
           var heading = el(
             'h1',
             { margin: '0 0 8px', fontSize: '18px', fontWeight: '600', letterSpacing: '-0.01em' },
-            "DorkOS couldn't finish starting."
+            'DorkOS couldn’t finish starting'
           );
           heading.id = 'dorkos-boot-failure-title';
           panel.appendChild(heading);
@@ -330,7 +330,7 @@
             el(
               'p',
               { margin: '0 0 20px', fontSize: '14px', lineHeight: '1.55', color: c.dim },
-              "Try again first. If that doesn't help, copy the details below and send them to us."
+              'Try again first. If that doesn’t help, copy the details below and send them to us.'
             )
           );
 

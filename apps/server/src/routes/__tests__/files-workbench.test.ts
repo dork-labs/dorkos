@@ -35,12 +35,14 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 
 const execFileAsync = promisify(execFile);
 const app = createApp();
+const testServer = listeningServer(app);
 const sha = (s: string) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
 
 /** Make the second validateBoundary call (target-vs-cwd) reject like an escape. */
@@ -72,7 +74,7 @@ describe('Workbench file routes', () => {
     });
 
     it('lists the immediate level (depth 1) with directories first', async () => {
-      const res = await request(app).get('/api/files/tree').query({ cwd: dir });
+      const res = await request(testServer).get('/api/files/tree').query({ cwd: dir });
 
       expect(res.status).toBe(200);
       const names = res.body.entries.map((e: { name: string }) => e.name);
@@ -86,19 +88,21 @@ describe('Workbench file routes', () => {
     });
 
     it('does not recurse into subdirectories at depth 1 (lazy)', async () => {
-      const res = await request(app).get('/api/files/tree').query({ cwd: dir, depth: '1' });
+      const res = await request(testServer).get('/api/files/tree').query({ cwd: dir, depth: '1' });
       const paths = res.body.entries.map((e: { path: string }) => e.path);
       expect(paths).not.toContain('src/index.ts');
     });
 
     it('recurses when depth > 1', async () => {
-      const res = await request(app).get('/api/files/tree').query({ cwd: dir, depth: '2' });
+      const res = await request(testServer).get('/api/files/tree').query({ cwd: dir, depth: '2' });
       const paths = res.body.entries.map((e: { path: string }) => e.path);
       expect(paths).toContain('src/index.ts');
     });
 
     it('reveals dotfiles when showHidden is set', async () => {
-      const res = await request(app).get('/api/files/tree').query({ cwd: dir, showHidden: 'true' });
+      const res = await request(testServer)
+        .get('/api/files/tree')
+        .query({ cwd: dir, showHidden: 'true' });
       const names = res.body.entries.map((e: { name: string }) => e.name);
       expect(names).toContain('.hidden');
     });
@@ -108,7 +112,7 @@ describe('Workbench file routes', () => {
       await fs.writeFile(path.join(dir, '.gitignore'), 'ignored.txt\n');
       await fs.writeFile(path.join(dir, 'ignored.txt'), 'nope\n');
 
-      const res = await request(app).get('/api/files/tree').query({ cwd: dir });
+      const res = await request(testServer).get('/api/files/tree').query({ cwd: dir });
       const names = res.body.entries.map((e: { name: string }) => e.name);
       expect(names).not.toContain('ignored.txt');
       // A non-ignored, non-hidden sibling still shows.
@@ -116,20 +120,26 @@ describe('Workbench file routes', () => {
     });
 
     it('returns 400 when the target is a file, not a directory', async () => {
-      const res = await request(app).get('/api/files/tree').query({ cwd: dir, path: 'README.md' });
+      const res = await request(testServer)
+        .get('/api/files/tree')
+        .query({ cwd: dir, path: 'README.md' });
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('NOT_A_DIRECTORY');
     });
 
     it('returns 404 for a missing directory', async () => {
-      const res = await request(app).get('/api/files/tree').query({ cwd: dir, path: 'nope' });
+      const res = await request(testServer)
+        .get('/api/files/tree')
+        .query({ cwd: dir, path: 'nope' });
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('NOT_FOUND');
     });
 
     it('rejects a path that escapes the working directory with 403', async () => {
       mockBoundaryEscape();
-      const res = await request(app).get('/api/files/tree').query({ cwd: dir, path: '../../etc' });
+      const res = await request(testServer)
+        .get('/api/files/tree')
+        .query({ cwd: dir, path: '../../etc' });
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
     });
@@ -140,14 +150,18 @@ describe('Workbench file routes', () => {
       const text = 'hello world\n';
       await fs.writeFile(path.join(dir, 'a.txt'), text, 'utf8');
 
-      const res = await request(app).get('/api/files/content').query({ cwd: dir, path: 'a.txt' });
+      const res = await request(testServer)
+        .get('/api/files/content')
+        .query({ cwd: dir, path: 'a.txt' });
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ content: text, hash: sha(text), encoding: 'utf-8' });
     });
 
     it('rejects a binary file (NUL byte) with 415', async () => {
       await fs.writeFile(path.join(dir, 'bin'), Buffer.from([0x00, 0x01, 0x02, 0x00]));
-      const res = await request(app).get('/api/files/content').query({ cwd: dir, path: 'bin' });
+      const res = await request(testServer)
+        .get('/api/files/content')
+        .query({ cwd: dir, path: 'bin' });
       expect(res.status).toBe(415);
       expect(res.body.code).toBe('BINARY_FILE');
     });
@@ -155,20 +169,24 @@ describe('Workbench file routes', () => {
     it('rejects a file over the 5 MB text cap with 413', async () => {
       // One byte past the cap — the boundary condition that must fail.
       await fs.writeFile(path.join(dir, 'big.txt'), Buffer.alloc(5 * 1024 * 1024 + 1, 0x61));
-      const res = await request(app).get('/api/files/content').query({ cwd: dir, path: 'big.txt' });
+      const res = await request(testServer)
+        .get('/api/files/content')
+        .query({ cwd: dir, path: 'big.txt' });
       expect(res.status).toBe(413);
       expect(res.body.code).toBe('TOO_LARGE');
     });
 
     it('returns 404 for a missing file', async () => {
-      const res = await request(app).get('/api/files/content').query({ cwd: dir, path: 'gone' });
+      const res = await request(testServer)
+        .get('/api/files/content')
+        .query({ cwd: dir, path: 'gone' });
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('NOT_FOUND');
     });
 
     it('rejects a path that escapes the working directory with 403', async () => {
       mockBoundaryEscape();
-      const res = await request(app)
+      const res = await request(testServer)
         .get('/api/files/content')
         .query({ cwd: dir, path: '../../etc/passwd' });
       expect(res.status).toBe(403);
@@ -178,7 +196,7 @@ describe('Workbench file routes', () => {
 
   describe('POST /api/files (create)', () => {
     it('creates a file with seeded content and returns 201', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files')
         .send({ cwd: dir, path: 'new.txt', type: 'file', content: 'seed\n' });
       expect(res.status).toBe(201);
@@ -187,7 +205,7 @@ describe('Workbench file routes', () => {
     });
 
     it('creates a directory', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files')
         .send({ cwd: dir, path: 'newdir', type: 'dir' });
       expect(res.status).toBe(201);
@@ -195,7 +213,7 @@ describe('Workbench file routes', () => {
     });
 
     it('creates intermediate parent directories for a nested file', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files')
         .send({ cwd: dir, path: 'a/b/c.txt', type: 'file', content: 'x' });
       expect(res.status).toBe(201);
@@ -204,7 +222,7 @@ describe('Workbench file routes', () => {
 
     it('returns 409 when the target already exists', async () => {
       await fs.writeFile(path.join(dir, 'dupe.txt'), 'old\n');
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files')
         .send({ cwd: dir, path: 'dupe.txt', type: 'file', content: 'new\n' });
       expect(res.status).toBe(409);
@@ -215,7 +233,7 @@ describe('Workbench file routes', () => {
 
     it('rejects a path that escapes the working directory with 403', async () => {
       mockBoundaryEscape();
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files')
         .send({ cwd: dir, path: '../evil.txt', type: 'file' });
       expect(res.status).toBe(403);
@@ -226,7 +244,9 @@ describe('Workbench file routes', () => {
   describe('DELETE /api/files', () => {
     it('deletes a file', async () => {
       await fs.writeFile(path.join(dir, 'del.txt'), 'x\n');
-      const res = await request(app).delete('/api/files').query({ cwd: dir, path: 'del.txt' });
+      const res = await request(testServer)
+        .delete('/api/files')
+        .query({ cwd: dir, path: 'del.txt' });
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
       await expect(fs.access(path.join(dir, 'del.txt'))).rejects.toThrow();
@@ -236,11 +256,13 @@ describe('Workbench file routes', () => {
       await fs.mkdir(path.join(dir, 'tree'));
       await fs.writeFile(path.join(dir, 'tree', 'f.txt'), 'x\n');
 
-      const refused = await request(app).delete('/api/files').query({ cwd: dir, path: 'tree' });
+      const refused = await request(testServer)
+        .delete('/api/files')
+        .query({ cwd: dir, path: 'tree' });
       expect(refused.status).toBe(409);
       expect(refused.body.code).toBe('DIR_NOT_EMPTY');
 
-      const ok = await request(app)
+      const ok = await request(testServer)
         .delete('/api/files')
         .query({ cwd: dir, path: 'tree', recursive: 'true' });
       expect(ok.status).toBe(200);
@@ -248,20 +270,20 @@ describe('Workbench file routes', () => {
     });
 
     it('refuses to delete the cwd root with 400', async () => {
-      const res = await request(app).delete('/api/files').query({ cwd: dir, path: '.' });
+      const res = await request(testServer).delete('/api/files').query({ cwd: dir, path: '.' });
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('REFUSE_ROOT');
     });
 
     it('returns 404 for a missing path', async () => {
-      const res = await request(app).delete('/api/files').query({ cwd: dir, path: 'gone' });
+      const res = await request(testServer).delete('/api/files').query({ cwd: dir, path: 'gone' });
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('NOT_FOUND');
     });
 
     it('rejects a path that escapes the working directory with 403', async () => {
       mockBoundaryEscape();
-      const res = await request(app)
+      const res = await request(testServer)
         .delete('/api/files')
         .query({ cwd: dir, path: '../../etc/passwd' });
       expect(res.status).toBe(403);
@@ -272,7 +294,7 @@ describe('Workbench file routes', () => {
   describe('POST /api/files/rename', () => {
     it('renames a file', async () => {
       await fs.writeFile(path.join(dir, 'from.txt'), 'x\n');
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/rename')
         .send({ cwd: dir, from: 'from.txt', to: 'to.txt' });
       expect(res.status).toBe(200);
@@ -283,7 +305,7 @@ describe('Workbench file routes', () => {
 
     it('moves a file into a not-yet-existing subdirectory', async () => {
       await fs.writeFile(path.join(dir, 'from.txt'), 'x\n');
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/rename')
         .send({ cwd: dir, from: 'from.txt', to: 'nested/to.txt' });
       expect(res.status).toBe(200);
@@ -293,7 +315,7 @@ describe('Workbench file routes', () => {
     it('returns 409 when the target already exists', async () => {
       await fs.writeFile(path.join(dir, 'from.txt'), 'x\n');
       await fs.writeFile(path.join(dir, 'to.txt'), 'existing\n');
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/rename')
         .send({ cwd: dir, from: 'from.txt', to: 'to.txt' });
       expect(res.status).toBe(409);
@@ -304,7 +326,7 @@ describe('Workbench file routes', () => {
     });
 
     it('returns 404 when the source is missing', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/rename')
         .send({ cwd: dir, from: 'gone.txt', to: 'to.txt' });
       expect(res.status).toBe(404);
@@ -313,7 +335,7 @@ describe('Workbench file routes', () => {
 
     it('rejects a from-path that escapes the working directory with 403', async () => {
       mockBoundaryEscape();
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/files/rename')
         .send({ cwd: dir, from: '../../etc/passwd', to: 'to.txt' });
       expect(res.status).toBe(403);
@@ -325,7 +347,7 @@ describe('Workbench file routes', () => {
     it('streams a .glb file as model/gltf-binary', async () => {
       const bytes = Buffer.from('glTF-fake-binary');
       await fs.writeFile(path.join(dir, 'model.glb'), bytes);
-      const res = await request(app)
+      const res = await request(testServer)
         .get('/api/files/raw')
         .query({ cwd: dir, path: 'model.glb' })
         .buffer(true);

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 // Mutable stand-ins so each test can move one fact at a time. The middleware
 // reads all three per request, which is exactly the behaviour under test.
@@ -24,6 +25,9 @@ vi.mock('../../lib/logger.js', () => ({
 
 import { hostGuard, isHostAllowed, parseTrustedHosts } from '../host-guard.js';
 import { logger } from '../../lib/logger.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /**
  * An app shaped like the real one: the guard sits in front of `/api`, ahead of
@@ -52,31 +56,33 @@ describe('hostGuard', () => {
     mockTunnelManager.status.url = null;
     mockAuthConfig.enabled = false;
     app = createTestApp();
+
+    fixtureTarget.mount(app);
   });
 
   describe('loopback hosts', () => {
     it.each(['localhost:4242', '127.0.0.1:4242', '[::1]:4242', 'localhost', '127.0.0.1'])(
       'allows Host: %s',
       async (host) => {
-        const res = await request(app).get('/api/health').set('Host', host);
+        const res = await request(fixtureServer).get('/api/health').set('Host', host);
         expect(res.status).toBe(200);
       }
     );
 
     it('ignores the port, so the Vite dev proxy and ssh -L forwards pass', async () => {
-      const res = await request(app).get('/api/health').set('Host', 'localhost:4300');
+      const res = await request(fixtureServer).get('/api/health').set('Host', 'localhost:4300');
       expect(res.status).toBe(200);
     });
 
     it('is case-insensitive', async () => {
-      const res = await request(app).get('/api/health').set('Host', 'LOCALHOST:4242');
+      const res = await request(fixtureServer).get('/api/health').set('Host', 'LOCALHOST:4242');
       expect(res.status).toBe(200);
     });
   });
 
   describe('untrusted hosts', () => {
     it('rejects a rebound host with 403 before the body is parsed', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/sessions/abc/messages')
         .set('Host', 'evil.com:4242')
         .send({ prompt: 'rm -rf /', cwd: '/' });
@@ -86,19 +92,19 @@ describe('hostGuard', () => {
     });
 
     it('names DORKOS_TRUSTED_HOSTS in the error so the fix reads in one line', async () => {
-      const res = await request(app).get('/api/health').set('Host', 'evil.com');
+      const res = await request(fixtureServer).get('/api/health').set('Host', 'evil.com');
       expect(res.body.error).toContain('DORKOS_TRUSTED_HOSTS');
     });
 
     it('does not echo the allowlist back to the caller', async () => {
       mockEnv.DORKOS_TRUSTED_HOSTS = 'dorkos.example.com';
-      const res = await request(app).get('/api/health').set('Host', 'evil.com');
+      const res = await request(fixtureServer).get('/api/health').set('Host', 'evil.com');
       expect(res.body.error).not.toContain('dorkos.example.com');
       expect(res.body.error).not.toContain('localhost');
     });
 
     it('logs the offending host at warn', async () => {
-      await request(app).get('/api/health').set('Host', 'evil.com');
+      await request(fixtureServer).get('/api/health').set('Host', 'evil.com');
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('untrusted Host'),
         expect.objectContaining({ host: 'evil.com' })
@@ -126,25 +132,27 @@ describe('hostGuard', () => {
   describe('DORKOS_TRUSTED_HOSTS', () => {
     it('allows a configured host name', async () => {
       mockEnv.DORKOS_TRUSTED_HOSTS = 'dorkos.example.com';
-      const res = await request(app).get('/api/health').set('Host', 'dorkos.example.com');
+      const res = await request(fixtureServer).get('/api/health').set('Host', 'dorkos.example.com');
       expect(res.status).toBe(200);
     });
 
     it('allows a configured host on any port', async () => {
       mockEnv.DORKOS_TRUSTED_HOSTS = 'dorkos.example.com';
-      const res = await request(app).get('/api/health').set('Host', 'dorkos.example.com:8443');
+      const res = await request(fixtureServer)
+        .get('/api/health')
+        .set('Host', 'dorkos.example.com:8443');
       expect(res.status).toBe(200);
     });
 
     it('accepts a comma-separated list with stray whitespace and mixed case', async () => {
       mockEnv.DORKOS_TRUSTED_HOSTS = ' first.example.com , DorkOS.Internal ';
-      const res = await request(app).get('/api/health').set('Host', 'dorkos.internal');
+      const res = await request(fixtureServer).get('/api/health').set('Host', 'dorkos.internal');
       expect(res.status).toBe(200);
     });
 
     it('still rejects a host that is not on the list', async () => {
       mockEnv.DORKOS_TRUSTED_HOSTS = 'dorkos.example.com';
-      const res = await request(app).get('/api/health').set('Host', 'evil.com');
+      const res = await request(fixtureServer).get('/api/health').set('Host', 'evil.com');
       expect(res.status).toBe(403);
     });
   });
@@ -152,12 +160,16 @@ describe('hostGuard', () => {
   describe('tunnel host', () => {
     it('allows the live tunnel host', async () => {
       mockTunnelManager.status.url = 'https://my-tunnel.ngrok-free.app';
-      const res = await request(app).get('/api/health').set('Host', 'my-tunnel.ngrok-free.app');
+      const res = await request(fixtureServer)
+        .get('/api/health')
+        .set('Host', 'my-tunnel.ngrok-free.app');
       expect(res.status).toBe(200);
     });
 
     it('rejects a tunnel-shaped host when no tunnel is connected', async () => {
-      const res = await request(app).get('/api/health').set('Host', 'my-tunnel.ngrok-free.app');
+      const res = await request(fixtureServer)
+        .get('/api/health')
+        .set('Host', 'my-tunnel.ngrok-free.app');
       expect(res.status).toBe(403);
     });
   });
@@ -165,14 +177,14 @@ describe('hostGuard', () => {
   describe('skip conditions', () => {
     it('skips entirely when login is enabled', async () => {
       mockAuthConfig.enabled = true;
-      const res = await request(app).get('/api/health').set('Host', 'evil.com');
+      const res = await request(fixtureServer).get('/api/health').set('Host', 'evil.com');
       expect(res.status).toBe(200);
       expect(logger.warn).not.toHaveBeenCalled();
     });
 
     it('skips entirely when DORKOS_ALLOW_INSECURE_BIND is set (Docker)', async () => {
       mockEnv.DORKOS_ALLOW_INSECURE_BIND = true;
-      const res = await request(app).get('/api/health').set('Host', 'anything.internal');
+      const res = await request(fixtureServer).get('/api/health').set('Host', 'anything.internal');
       expect(res.status).toBe(200);
     });
   });

@@ -245,7 +245,7 @@ describe('CreateAgentDialog', () => {
 
     expect(screen.getByLabelText('Name')).toHaveValue('');
     expect(
-      screen.getByText("You'll define the job together in your first conversation.")
+      screen.getByText('You’ll define the job together in your first conversation.')
     ).toBeInTheDocument();
   });
 
@@ -496,7 +496,7 @@ describe('CreateAgentDialog', () => {
     const { toast } = await import('sonner');
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        "Couldn't create that agent",
+        'Couldn’t create that agent',
         expect.objectContaining({ description: 'Agent already exists' })
       )
     );

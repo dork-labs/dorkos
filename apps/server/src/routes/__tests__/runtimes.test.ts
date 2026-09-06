@@ -30,7 +30,9 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 import express from 'express';
-import request from 'supertest';
+import type { Server } from 'node:http';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer, swappableServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import runtimesRouter from '../runtimes.js';
 import { provisionOpenCode } from '../../services/runtimes/opencode/providers/provision.js';
@@ -39,6 +41,8 @@ import { provisionClaudeCode } from '../../services/runtimes/claude-code/tooling
 import { provisionOllama } from '../../services/runtimes/opencode/providers/ollama-provision.js';
 
 const app = createApp();
+const server = listeningServer(app);
+const peerTarget = swappableServer();
 
 /**
  * A connected tunnel, whose public host the `/api` host guard trusts. That is
@@ -69,7 +73,7 @@ describe('POST /api/runtimes/opencode/provision', () => {
       return result;
     });
 
-    const res = await request(app).post('/api/runtimes/opencode/provision');
+    const res = await request(server).post('/api/runtimes/opencode/provision');
 
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('text/event-stream');
@@ -88,7 +92,7 @@ describe('POST /api/runtimes/opencode/provision', () => {
       error: 'Could not install OpenCode. Check your network and try again.',
     });
 
-    const res = await request(app).post('/api/runtimes/opencode/provision');
+    const res = await request(server).post('/api/runtimes/opencode/provision');
 
     expect(res.status).toBe(200);
     expect(res.text).toContain('event: result');
@@ -99,7 +103,7 @@ describe('POST /api/runtimes/opencode/provision', () => {
   it('rejects a non-loopback request with 403 and never provisions', async () => {
     connectTunnel();
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/runtimes/opencode/provision')
       .set('Host', TUNNEL_HOST);
 
@@ -109,7 +113,7 @@ describe('POST /api/runtimes/opencode/provision', () => {
   });
 
   it('rejects a rebound Host at the app edge, before the route runs', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/runtimes/opencode/provision')
       .set('Host', 'evil.example.com');
 
@@ -150,7 +154,7 @@ describe('X-Forwarded-Host spoofing of the loopback gate', () => {
     ['/api/runtimes/claude-code/provision', () => provisionClaudeCode],
     ['/api/runtimes/opencode/ollama/provision', () => provisionOllama],
   ])('refuses %s and never installs anything', async (path, getSpy) => {
-    const res = await request(app)
+    const res = await request(server)
       .post(path)
       .set('Host', TUNNEL_HOST)
       .set('X-Forwarded-Host', 'localhost');
@@ -161,7 +165,7 @@ describe('X-Forwarded-Host spoofing of the loopback gate', () => {
   });
 
   it('refuses the OpenRouter OAuth callback', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/runtimes/opencode/openrouter/oauth/callback?code=abc&state=xyz')
       .set('Host', TUNNEL_HOST)
       .set('X-Forwarded-Host', 'localhost');
@@ -172,7 +176,7 @@ describe('X-Forwarded-Host spoofing of the loopback gate', () => {
   it('still admits a genuine loopback request with the same header present', async () => {
     vi.mocked(provisionCodex).mockResolvedValue({ ok: true, binaryPath: '/dork/codex' });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/runtimes/codex/provision')
       .set('Host', 'localhost:4242')
       .set('X-Forwarded-Host', 'evil.example.com');
@@ -197,7 +201,7 @@ describe('X-Forwarded-Host spoofing of the loopback gate', () => {
  */
 describe('TCP peer is required to be loopback', () => {
   /** Build an app whose requests appear to arrive from `peer`. */
-  function appWithPeer(peer: string | undefined): express.Express {
+  function appWithPeer(peer: string | undefined): Server {
     const peerApp = express();
     peerApp.use((req, _res, next) => {
       Object.defineProperty(req.socket, 'remoteAddress', { value: peer, configurable: true });
@@ -205,7 +209,7 @@ describe('TCP peer is required to be loopback', () => {
     });
     peerApp.use(express.json());
     peerApp.use('/api/runtimes', runtimesRouter);
-    return peerApp;
+    return peerTarget.mount(peerApp);
   }
 
   beforeEach(() => {
@@ -290,7 +294,7 @@ describe('POST /api/runtimes/codex/provision', () => {
       return result;
     });
 
-    const res = await request(app).post('/api/runtimes/codex/provision');
+    const res = await request(server).post('/api/runtimes/codex/provision');
 
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('text/event-stream');
@@ -309,7 +313,7 @@ describe('POST /api/runtimes/codex/provision', () => {
       error: 'Could not install Codex. Check your network and try again.',
     });
 
-    const res = await request(app).post('/api/runtimes/codex/provision');
+    const res = await request(server).post('/api/runtimes/codex/provision');
 
     expect(res.status).toBe(200);
     expect(res.text).toContain('event: result');
@@ -320,7 +324,9 @@ describe('POST /api/runtimes/codex/provision', () => {
   it('rejects a non-loopback request with 403 and never provisions', async () => {
     connectTunnel();
 
-    const res = await request(app).post('/api/runtimes/codex/provision').set('Host', TUNNEL_HOST);
+    const res = await request(server)
+      .post('/api/runtimes/codex/provision')
+      .set('Host', TUNNEL_HOST);
 
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/locally/i);
@@ -346,7 +352,7 @@ describe('POST /api/runtimes/claude-code/provision', () => {
       return { ok: true, binaryPath: '/dork/claude' };
     });
 
-    const res = await request(app).post('/api/runtimes/claude-code/provision');
+    const res = await request(server).post('/api/runtimes/claude-code/provision');
 
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('text/event-stream');
@@ -365,7 +371,7 @@ describe('POST /api/runtimes/claude-code/provision', () => {
       error: 'Could not install Claude Code. Check your network and try again.',
     });
 
-    const res = await request(app).post('/api/runtimes/claude-code/provision');
+    const res = await request(server).post('/api/runtimes/claude-code/provision');
 
     expect(res.status).toBe(200);
     expect(res.text).toContain('event: result');
@@ -376,7 +382,7 @@ describe('POST /api/runtimes/claude-code/provision', () => {
   it('rejects a non-loopback request with 403 and never provisions', async () => {
     connectTunnel();
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/runtimes/claude-code/provision')
       .set('Host', TUNNEL_HOST);
 
@@ -398,7 +404,7 @@ describe('POST /api/runtimes/opencode/ollama/provision', () => {
       return { ok: true, installMethod: 'brew', status: { running: true, models: [] } };
     });
 
-    const res = await request(app).post('/api/runtimes/opencode/ollama/provision');
+    const res = await request(server).post('/api/runtimes/opencode/ollama/provision');
 
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('text/event-stream');
@@ -420,7 +426,7 @@ describe('POST /api/runtimes/opencode/ollama/provision', () => {
         'One-click install is not available on this computer. Copy the command to install Ollama yourself.',
     });
 
-    const res = await request(app).post('/api/runtimes/opencode/ollama/provision');
+    const res = await request(server).post('/api/runtimes/opencode/ollama/provision');
 
     expect(res.status).toBe(200);
     expect(res.text).toContain('event: result');
@@ -431,7 +437,7 @@ describe('POST /api/runtimes/opencode/ollama/provision', () => {
   it('rejects a non-loopback request with 403 and never installs', async () => {
     connectTunnel();
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/runtimes/opencode/ollama/provision')
       .set('Host', TUNNEL_HOST);
 

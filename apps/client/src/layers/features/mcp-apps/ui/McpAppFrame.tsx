@@ -121,7 +121,7 @@ export function McpAppFrame({
     return (
       <div className={cn('text-muted-foreground p-4 text-sm', className)}>
         {isError
-          ? `Could not load app from ${serverName}: ${error instanceof Error ? error.message : 'unknown error'}`
+          ? `Couldn’t load app from ${serverName}: ${error instanceof Error ? error.message : 'unknown error'}`
           : `This app returned no renderable content.`}
       </div>
     );

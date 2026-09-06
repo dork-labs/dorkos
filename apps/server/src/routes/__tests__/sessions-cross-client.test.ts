@@ -92,7 +92,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';

@@ -106,7 +106,7 @@ export function useOnboarding() {
         fields: Object.keys(patch),
         error: err,
       });
-      toast.error("DorkOS couldn't save where you got to in setup.", {
+      toast.error('DorkOS couldn’t save where you got to in setup.', {
         description: 'You can keep going. It will try again.',
       });
     },

@@ -91,10 +91,10 @@ describe('RestartDialog', () => {
       expect(defaultProps.onRestartComplete).toHaveBeenCalled();
     });
 
-    it("shows the shell's own words when it could not restart", async () => {
+    it('shows the shell’s own words when it could not restart', async () => {
       installShell({
         ok: false,
-        message: "DorkOS couldn't restart its server. Port 4242 is taken.",
+        message: 'DorkOS couldn’t restart its server. Port 4242 is taken.',
       });
       render(<RestartDialog {...defaultProps} />, { wrapper: Wrapper });
 
@@ -104,8 +104,8 @@ describe('RestartDialog', () => {
       // (DOR-1755). It still reaches the person verbatim — that is what this
       // test guards; only which argument carries it moved.
       await waitFor(() =>
-        expect(toast.error).toHaveBeenCalledWith("Couldn't restart DorkOS.", {
-          description: "DorkOS couldn't restart its server. Port 4242 is taken.",
+        expect(toast.error).toHaveBeenCalledWith('Couldn’t restart DorkOS.', {
+          description: 'DorkOS couldn’t restart its server. Port 4242 is taken.',
         })
       );
       expect(defaultProps.onRestartComplete).not.toHaveBeenCalled();

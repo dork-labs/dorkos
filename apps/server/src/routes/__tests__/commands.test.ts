@@ -125,12 +125,14 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 describe('Commands Routes', () => {
   beforeEach(() => {
@@ -153,7 +155,7 @@ describe('Commands Routes', () => {
       };
       mockGetCommands.mockResolvedValue(registry);
 
-      const res = await request(app).get('/api/commands');
+      const res = await request(testServer).get('/api/commands');
       expect(res.status).toBe(200);
       expect(res.body.commands).toHaveLength(1);
       expect(res.body.commands[0].fullCommand).toBe('/daily:plan');
@@ -163,7 +165,7 @@ describe('Commands Routes', () => {
     it('passes refresh=true to registry', async () => {
       mockGetCommands.mockResolvedValue({ commands: [], lastScanned: '2024-01-01' });
 
-      const res = await request(app).get('/api/commands?refresh=true');
+      const res = await request(testServer).get('/api/commands?refresh=true');
       expect(res.status).toBe(200);
       expect(mockGetCommands).toHaveBeenCalledWith(true, undefined);
     });
@@ -171,7 +173,7 @@ describe('Commands Routes', () => {
     it('returns empty when no commands exist', async () => {
       mockGetCommands.mockResolvedValue({ commands: [], lastScanned: '2024-01-01' });
 
-      const res = await request(app).get('/api/commands');
+      const res = await request(testServer).get('/api/commands');
       expect(res.status).toBe(200);
       expect(res.body.commands).toEqual([]);
     });
@@ -188,7 +190,7 @@ describe('Commands Routes', () => {
       };
       mockGetCommands.mockResolvedValue(registry);
 
-      const res = await request(app).get('/api/commands');
+      const res = await request(testServer).get('/api/commands');
       expect(res.status).toBe(200);
       expect(res.body.commands).toHaveLength(2);
       expect(res.body.commands[0]).toEqual({
@@ -214,7 +216,7 @@ describe('Commands Routes', () => {
       };
       mockGetCommands.mockResolvedValue(registry);
 
-      const res = await request(app).get('/api/commands');
+      const res = await request(testServer).get('/api/commands');
       expect(res.status).toBe(200);
       expect(res.body.commands[0].namespace).toBeUndefined();
       expect(res.body.commands[1].namespace).toBe('daily');
@@ -228,7 +230,7 @@ describe('Commands Routes', () => {
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
-      const res = await request(app).get('/api/commands').query({ cwd: '/etc/shadow' });
+      const res = await request(testServer).get('/api/commands').query({ cwd: '/etc/shadow' });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
@@ -239,7 +241,7 @@ describe('Commands Routes', () => {
     it('falls back to default runtime when no sessionId is provided (cold discovery)', async () => {
       mockGetCommands.mockResolvedValue({ commands: [], lastScanned: '2024-01-01' });
 
-      const res = await request(app).get('/api/commands');
+      const res = await request(testServer).get('/api/commands');
       expect(res.status).toBe(200);
       expect(runtimeRegistry.getDefault).toHaveBeenCalled();
       expect(runtimeRegistry.resolveForSession).not.toHaveBeenCalled();
@@ -248,7 +250,9 @@ describe('Commands Routes', () => {
     it('resolves the claude-code runtime for a claude-code session', async () => {
       mockGetCommands.mockResolvedValue({ commands: [], lastScanned: '2024-01-01' });
 
-      const res = await request(app).get('/api/commands').query({ sessionId: CLAUDE_SESSION });
+      const res = await request(testServer)
+        .get('/api/commands')
+        .query({ sessionId: CLAUDE_SESSION });
       expect(res.status).toBe(200);
       expect(runtimeRegistry.resolveForSession).toHaveBeenCalledWith(CLAUDE_SESSION);
       expect(mockGetCommands).toHaveBeenCalled();
@@ -261,7 +265,9 @@ describe('Commands Routes', () => {
         lastScanned: '2024-01-01',
       });
 
-      const res = await request(app).get('/api/commands').query({ sessionId: TEST_MODE_SESSION });
+      const res = await request(testServer)
+        .get('/api/commands')
+        .query({ sessionId: TEST_MODE_SESSION });
       expect(res.status).toBe(200);
       expect(res.body.commands).toHaveLength(1);
       expect(res.body.commands[0].fullCommand).toBe('/test-mode-cmd');
@@ -281,7 +287,7 @@ describe('Commands Routes', () => {
         lastScanned: '2024-01-01',
       });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .get('/api/commands')
         .query({ runtime: 'codex', sessionId: ROWLESS_SESSION });
 
@@ -296,7 +302,9 @@ describe('Commands Routes', () => {
     });
 
     it('returns 400 for an unknown runtime', async () => {
-      const res = await request(app).get('/api/commands').query({ runtime: 'bogus-runtime' });
+      const res = await request(testServer)
+        .get('/api/commands')
+        .query({ runtime: 'bogus-runtime' });
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/unknown runtime/i);
       expect(runtimeRegistry.get).not.toHaveBeenCalled();

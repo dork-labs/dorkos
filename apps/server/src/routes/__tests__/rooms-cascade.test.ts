@@ -15,7 +15,8 @@
  * defeated by this move, and the turn budget is what holds.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, type Db } from '@dorkos/db';
@@ -94,6 +95,7 @@ import {
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
 
 const ANA_PATH = '/agents/ana';
 
@@ -164,13 +166,13 @@ describe('/api/rooms — what a headerless caller gets', () => {
 
   /** A two-agent room where both answer everything, built headerless throughout. */
   async function loudRoom(): Promise<string> {
-    const created = await request(app)
+    const created = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Backend', agentPaths: ['/agents/ana', '/agents/bo'] });
     expect(created.status).toBe(201);
     for (const member of created.body.members) {
       if (member.author.kind !== 'agent') continue;
-      const patched = await request(app)
+      const patched = await request(testServer)
         .patch(`/api/rooms/${created.body.id}/members/${member.authorId}`)
         .send({ responseMode: 'always' });
       expect(patched.status).toBe(200);
@@ -180,14 +182,14 @@ describe('/api/rooms — what a headerless caller gets', () => {
 
   /** Post headerless and wait for whatever it set off. */
   async function post(roomId: string, text: string): Promise<void> {
-    const res = await request(app).post(`/api/rooms/${roomId}/entries`).send({ text });
+    const res = await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text });
     expect(res.status).toBe(202);
     await getRoomService().triggersIdle();
   }
 
   /** The room's whole log, as the wire returns it. */
   async function entries(roomId: string): Promise<RoomEntry[]> {
-    const res = await request(app).get(`/api/rooms/${roomId}/entries?limit=200`);
+    const res = await request(testServer).get(`/api/rooms/${roomId}/entries?limit=200`);
     return res.body.entries as RoomEntry[];
   }
 
@@ -222,7 +224,7 @@ describe('/api/rooms — what a headerless caller gets', () => {
   it('lets a headerless caller through every operator-only gate', async () => {
     // Documenting the DOR-505 residual at the surface it actually reaches, so
     // that turning login ON has a test that changes behaviour to point at.
-    const created = await request(app)
+    const created = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Two agents', agentPaths: ['/agents/ana', '/agents/bo'] });
     expect(created.status).toBe(201);
@@ -230,7 +232,7 @@ describe('/api/rooms — what a headerless caller gets', () => {
     const agentMember = created.body.members.find(
       (m: { author: { kind: string } }) => m.author.kind === 'agent'
     );
-    const patched = await request(app)
+    const patched = await request(testServer)
       .patch(`/api/rooms/${created.body.id}/members/${agentMember.authorId}`)
       .send({ responseMode: 'always' });
     expect(patched.status).toBe(200);
@@ -255,7 +257,7 @@ describe('/api/rooms — what a headerless caller gets', () => {
     for (let i = 0; i < 10; i++) await post(flooded, `spam ${i}`);
     expect(runner.turns).toHaveLength(2);
 
-    const quiet = await request(app)
+    const quiet = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'dm', title: 'Ana', agentPaths: ['/agents/ana'] });
     await post(quiet.body.id, 'are you there?');
@@ -275,8 +277,8 @@ describe('/api/rooms — what a headerless caller gets', () => {
     const roomId = await loudRoom();
 
     await Promise.all([
-      request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'first' }),
-      request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'second' }),
+      request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'first' }),
+      request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'second' }),
     ]);
     await getRoomService().triggersIdle();
 
@@ -299,7 +301,7 @@ describe('/api/rooms — what a headerless caller gets', () => {
     // global cap existed.
     wire(2, 5);
     for (let i = 0; i < 8; i++) {
-      const room = await request(app)
+      const room = await request(testServer)
         .post('/api/rooms')
         .send({
           kind: 'channel',
@@ -308,7 +310,7 @@ describe('/api/rooms — what a headerless caller gets', () => {
         });
       for (const member of room.body.members) {
         if (member.author.kind !== 'agent') continue;
-        await request(app)
+        await request(testServer)
           .patch(`/api/rooms/${room.body.id}/members/${member.authorId}`)
           .send({ responseMode: 'always' });
       }
@@ -335,7 +337,7 @@ describe('/api/rooms — what a headerless caller gets', () => {
     // the shape `turn-budget.ts` cites this test for.
     const roots: string[] = [];
     for (let i = 0; i < 5; i++) {
-      const seed = await request(app)
+      const seed = await request(testServer)
         .post(`/api/rooms/${parent}/entries`)
         .send({ text: `seed ${i}` });
       expect(seed.status).toBe(202);
@@ -347,7 +349,7 @@ describe('/api/rooms — what a headerless caller gets', () => {
     expect(runner.turns).toHaveLength(2);
 
     for (const rootEntryId of roots) {
-      const reply = await request(app)
+      const reply = await request(testServer)
         .post(`/api/rooms/${parent}/threads`)
         .send({ rootEntryId, text: 'go' });
       expect(reply.status).toBe(202);
@@ -357,7 +359,7 @@ describe('/api/rooms — what a headerless caller gets', () => {
     // Still two. Five threads bought nothing, and no second room was minted to
     // buy it in.
     expect(runner.turns).toHaveLength(2);
-    const rooms = await request(app).get('/api/rooms');
+    const rooms = await request(testServer).get('/api/rooms');
     expect(rooms.body.rooms.map((r: { id: string }) => r.id)).toEqual([parent]);
   });
 

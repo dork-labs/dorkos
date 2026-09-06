@@ -448,7 +448,7 @@ describe('SessionComposer — a failed attachment blocks the send (DOR-480)', ()
     seedQueue('first queued', 'second queued');
     render(<SessionComposerBench {...baseProps} />);
 
-    expect(lastChatInputProps().placeholder).toBe('Send a message...');
+    expect(lastChatInputProps().placeholder).toBe('Send a message…');
 
     const panelProps = vi.mocked(QueuePanel).mock.calls.at(-1)![0];
     act(() => panelProps.onEdit(panelProps.queue[1]!.id));

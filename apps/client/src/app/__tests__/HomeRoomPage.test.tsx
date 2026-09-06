@@ -18,7 +18,7 @@ import { act, fireEvent, render, screen, cleanup, waitFor } from '@testing-libra
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, mockRoomEntryPage } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import {
   REACTION_FREQUENTS_DEFAULT,
@@ -171,7 +171,7 @@ function renderHome(overrides: Partial<Transport> = {}) {
   const transport = createMockTransport({
     listRooms: vi.fn().mockResolvedValue([teamSummary()]),
     getRoom: vi.fn().mockResolvedValue(teamRoster()),
-    listRoomEntries: vi.fn().mockResolvedValue([]),
+    listRoomEntries: vi.fn().mockResolvedValue(mockRoomEntryPage()),
     subscribeRoom: vi.fn((_id: string, _cursor: number, signal: AbortSignal) => staysOpen(signal)),
     ...overrides,
   });
@@ -397,7 +397,7 @@ describe('HomeRoomPage — day one', () => {
   });
 
   it('takes them away once there is a conversation to read instead', async () => {
-    renderHome({ listRoomEntries: vi.fn().mockResolvedValue([post(1)]) });
+    renderHome({ listRoomEntries: vi.fn().mockResolvedValue(mockRoomEntryPage([post(1)])) });
     await screen.findByPlaceholderText('Message #team…');
 
     await waitFor(() =>
@@ -427,7 +427,10 @@ describe('HomeRoomPage — a quiet morning', () => {
   /** A room with a history, nothing waiting, and nobody working. */
   function renderQuietHome(overrides: Partial<Transport> = {}) {
     presence.occupied = false;
-    return renderHome({ listRoomEntries: vi.fn().mockResolvedValue([post(1)]), ...overrides });
+    return renderHome({
+      listRoomEntries: vi.fn().mockResolvedValue(mockRoomEntryPage([post(1)])),
+      ...overrides,
+    });
   }
 
   it('says so, once the room has a history and nothing needs answering', async () => {
@@ -449,7 +452,9 @@ describe('HomeRoomPage — a quiet morning', () => {
   it('stays away over a room that has been talking since the reader arrived', async () => {
     presence.occupied = false;
     // The roster says the reader had read up to seq 100; these landed after.
-    renderHome({ listRoomEntries: vi.fn().mockResolvedValue([post(101), post(102)]) });
+    renderHome({
+      listRoomEntries: vi.fn().mockResolvedValue(mockRoomEntryPage([post(101), post(102)])),
+    });
     await screen.findByPlaceholderText('Message #team…');
 
     expect(screen.queryByText('All quiet.')).toBeNull();
@@ -459,7 +464,7 @@ describe('HomeRoomPage — a quiet morning', () => {
     // The strip occupies the header, which is already telling the reader that
     // somebody is working. Two statements about one morning is one too many.
     presence.occupied = true;
-    renderHome({ listRoomEntries: vi.fn().mockResolvedValue([post(1)]) });
+    renderHome({ listRoomEntries: vi.fn().mockResolvedValue(mockRoomEntryPage([post(1)])) });
     await screen.findByTestId('presence-strip');
 
     expect(screen.queryByText('All quiet.')).toBeNull();
@@ -501,13 +506,13 @@ describe('HomeRoomPage — before there is a room', () => {
 
     expect(container.querySelector('[aria-busy]')).not.toBeNull();
     expect(screen.queryByRole('combobox')).toBeNull();
-    expect(screen.queryByText(/isn't open yet/i)).toBeNull();
+    expect(screen.queryByText(/isn’t open yet/i)).toBeNull();
   });
 
   it('says a room the server has not opened yet is not open — and offers no retry', async () => {
     renderHome({ listRooms: vi.fn().mockResolvedValue([]) });
 
-    expect(await screen.findByText(/isn't open yet/i)).toBeInTheDocument();
+    expect(await screen.findByText(/isn’t open yet/i)).toBeInTheDocument();
     // Nothing to retry: the room arrives when the server opens it, and a button
     // that re-reads the same empty list would only look like it did something.
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
@@ -517,7 +522,7 @@ describe('HomeRoomPage — before there is a room', () => {
     const listRooms = vi.fn().mockRejectedValue(new Error('offline'));
     renderHome({ listRooms });
 
-    expect(await screen.findByText(/couldn't load your team room/i)).toBeInTheDocument();
+    expect(await screen.findByText(/couldn’t load your team room/i)).toBeInTheDocument();
     const before = listRooms.mock.calls.length;
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(listRooms.mock.calls.length).toBeGreaterThan(before));

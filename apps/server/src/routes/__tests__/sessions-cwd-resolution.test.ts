@@ -141,7 +141,7 @@ vi.mock('../../services/workspace/index.js', () => ({
 
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 import { createApp, finalizeApp } from '../../app.js';
 import { disposeProjector } from '../../services/session/session-state-projector.js';
 import { logger } from '../../lib/logger.js';

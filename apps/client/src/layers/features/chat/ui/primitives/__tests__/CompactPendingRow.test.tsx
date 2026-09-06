@@ -8,14 +8,14 @@ afterEach(() => {
 });
 
 describe('CompactPendingRow', () => {
-  it('renders "Waiting for approval..." for approval type', () => {
+  it('renders "Waiting for approval…" for approval type', () => {
     render(<CompactPendingRow type="approval" />);
-    expect(screen.getByText('Waiting for approval...')).toBeDefined();
+    expect(screen.getByText('Waiting for approval…')).toBeDefined();
   });
 
-  it('renders "Answering questions..." for question type', () => {
+  it('renders "Answering questions…" for question type', () => {
     render(<CompactPendingRow type="question" />);
-    expect(screen.getByText('Answering questions...')).toBeDefined();
+    expect(screen.getByText('Answering questions…')).toBeDefined();
   });
 
   it('renders a spinning loader icon', () => {

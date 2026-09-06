@@ -47,9 +47,9 @@ describe('STATUS_BAR_REGISTRY — quiet by default', () => {
     expect(promotedKeys(restingContext())).toEqual(['agent', 'cwd', 'model']);
   });
 
-  it('never lets cache or refresh into the line', () => {
+  it('never lets cache into the line', () => {
     const neverInLine = STATUS_BAR_REGISTRY.filter((item) => item.neverInLine).map((i) => i.key);
-    expect(neverInLine).toEqual(['cache', 'polling']);
+    expect(neverInLine).toEqual(['cache']);
   });
 
   it('has a unique key per item', () => {
@@ -300,8 +300,7 @@ describe('isPinnable', () => {
     expect(isPinnable(getStatusBarItem('subagents')!)).toBe(false);
   });
 
-  it('refuses to pin controls or anything excluded from the line', () => {
-    expect(isPinnable(getStatusBarItem('polling')!)).toBe(false);
+  it('refuses to pin anything excluded from the line', () => {
     expect(isPinnable(getStatusBarItem('cache')!)).toBe(false);
   });
 });
@@ -331,12 +330,18 @@ describe('registry ↔ `ui.statusBar.pins` config schema', () => {
 });
 
 describe('getGroupedRegistryItems', () => {
-  it('returns Session, Controls, and Diagnostics in that order', () => {
-    expect(getGroupedRegistryItems().map((g) => g.group)).toEqual([
-      'session',
-      'controls',
-      'diagnostics',
-    ]);
+  it('returns Session and Diagnostics in that order', () => {
+    expect(getGroupedRegistryItems().map((g) => g.group)).toEqual(['session', 'diagnostics']);
+  });
+
+  // Both switches that ever lived in the panel's Controls section flipped a
+  // preference for every window on the machine, so both were moved to Settings
+  // (`sound` in DOR-1385, `polling` in DOR-1758) and the section went with the
+  // second one. A per-session panel may only operate per-session things.
+  it('offers no machine-wide switch as a session row', () => {
+    const keys = STATUS_BAR_REGISTRY.map((item) => item.key);
+    expect(keys).not.toContain('polling');
+    expect(keys).not.toContain('sound');
   });
 
   it('covers every registry item that has a group', () => {

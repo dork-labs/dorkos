@@ -128,7 +128,7 @@ export function createAuthRestClient(baseUrl: string): AuthClient {
     } catch {
       return {
         data: null,
-        error: { message: 'Network error. Could not reach the server.', status: 0 },
+        error: { message: 'Network error. Couldn’t reach the server.', status: 0 },
       };
     }
     if (!res.ok) {

@@ -142,7 +142,7 @@ export function ProfileTabShowcases() {
       <ShowcaseLabel>
         A name an agent suggested (DOR-1022). The description says who picked it, and Save stays
         live for the name already in the box — pressing it unchanged is how somebody who likes
-        DorkBot&rsquo;s pick claims it as their own and clears the note.
+        DorkBot’s pick claims it as their own and clears the note.
       </ShowcaseLabel>
       <ShowcaseDemo>
         <ProfilePanelDemo member={withSuggestedName(SELF, 'DorkBot')} />

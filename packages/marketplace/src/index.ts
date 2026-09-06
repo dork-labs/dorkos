@@ -36,6 +36,7 @@ export {
   MetadataSchema,
   RESERVED_MARKETPLACE_NAMES,
   DORKOS_MARKETPLACE_SOURCE_NAME,
+  isSafeGitUrl,
 } from './marketplace-json-schema.js';
 export type {
   MarketplaceJson,

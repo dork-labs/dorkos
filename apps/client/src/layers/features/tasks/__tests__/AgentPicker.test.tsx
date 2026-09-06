@@ -49,7 +49,7 @@ describe('AgentPicker', () => {
     it('shows placeholder when no agent is selected', () => {
       render(<AgentPicker agents={MOCK_AGENTS} value={undefined} onValueChange={vi.fn()} />);
 
-      expect(screen.getByText('Select an agent...')).toBeInTheDocument();
+      expect(screen.getByText('Select an agent…')).toBeInTheDocument();
     });
 
     it('shows selected agent name in trigger', () => {
@@ -96,7 +96,7 @@ describe('AgentPicker', () => {
 
       fireEvent.click(screen.getByRole('button'));
 
-      expect(screen.getByPlaceholderText('Search agents...')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('Search agents…')).toBeInTheDocument();
     });
   });
 

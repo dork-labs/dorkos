@@ -109,7 +109,7 @@ export function PaletteRootPage({
   // would be reporting a failure nobody asked about.
   const channelStatus = isRoomMode
     ? rooms.isError
-      ? 'Could not load your channels.'
+      ? 'Couldn’t load your channels.'
       : rooms.isLoading
         ? 'Loading channels…'
         : rooms.channels.length === 0

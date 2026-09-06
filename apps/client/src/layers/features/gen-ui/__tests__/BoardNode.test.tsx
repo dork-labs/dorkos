@@ -83,7 +83,7 @@ describe('BoardNode interaction latch', () => {
     await waitFor(() => expect(secondCell).toHaveAttribute('aria-disabled', 'true'));
     secondCell.focus();
     expect(
-      (await screen.findAllByText("Move sent. Waiting for the agent's reply")).length
+      (await screen.findAllByText('Move sent. Waiting for the agent’s reply')).length
     ).toBeGreaterThan(0);
     // The move posts back with its payload.
     expect(mockTransport.sendUiAction).toHaveBeenCalledWith('sess-1', {
@@ -142,7 +142,7 @@ describe('BoardNode interaction latch', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('Row 1, column 1: empty, play here')).toBeInTheDocument()
     );
-    expect(toast.error).toHaveBeenCalledWith("Couldn't send the move", expect.anything());
+    expect(toast.error).toHaveBeenCalledWith('Couldn’t send the move', expect.anything());
   });
 });
 

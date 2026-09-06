@@ -6,7 +6,8 @@
  * and the refusal a non-member gets before a single byte is written.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, type Db } from '@dorkos/db';
@@ -72,6 +73,7 @@ import {
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
 
 const ANA_PATH = '/agents/ana';
 
@@ -123,7 +125,7 @@ describe('GET /api/rooms/:id/export', () => {
     setRoomService(rooms.service);
     setReadCursorService(rooms.readCursors);
 
-    const created = await request(app)
+    const created = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Backend', topic: 'the API' });
     roomId = created.body.id;
@@ -134,10 +136,10 @@ describe('GET /api/rooms/:id/export', () => {
   });
 
   it('serves the room as newline-delimited JSON, offered as a download', async () => {
-    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'first' });
-    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'second' });
+    await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'first' });
+    await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'second' });
 
-    const res = await request(app).get(`/api/rooms/${roomId}/export`);
+    const res = await request(testServer).get(`/api/rooms/${roomId}/export`);
 
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('application/x-ndjson');
@@ -151,11 +153,11 @@ describe('GET /api/rooms/:id/export', () => {
   });
 
   it('writes one JSON object per line, and nothing else', async () => {
-    await request(app)
+    await request(testServer)
       .post(`/api/rooms/${roomId}/entries`)
       .send({ text: 'a message\nwith a break' });
 
-    const res = await request(app).get(`/api/rooms/${roomId}/export`);
+    const res = await request(testServer).get(`/api/rooms/${roomId}/export`);
 
     const lines = res.text.split('\n').filter((line) => line.length > 0);
     // Three lines for three objects: the newline inside the message must have
@@ -166,7 +168,7 @@ describe('GET /api/rooms/:id/export', () => {
   });
 
   it('answers 404 for a room the caller may not see, with no partial body', async () => {
-    const res = await request(app).get('/api/rooms/room_nope/export');
+    const res = await request(testServer).get('/api/rooms/room_nope/export');
 
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('ROOM_NOT_FOUND');
@@ -179,14 +181,14 @@ describe('GET /api/rooms/:id/export', () => {
     const identity = initAgentIdentityService(db);
     const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
 
-    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'before ana' });
-    await request(app).post(`/api/rooms/${roomId}/members`).send({ agentPath: ANA_PATH });
-    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'after ana' });
+    await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'before ana' });
+    await request(testServer).post(`/api/rooms/${roomId}/members`).send({ agentPath: ANA_PATH });
+    await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'after ana' });
 
-    const asAna = await request(app)
+    const asAna = await request(testServer)
       .get(`/api/rooms/${roomId}/export`)
       .set('X-DorkOS-Agent', token);
-    const asOperator = await request(app).get(`/api/rooms/${roomId}/export`);
+    const asOperator = await request(testServer).get(`/api/rooms/${roomId}/export`);
 
     // The token decides who is exporting, and nothing about the request does.
     // Same room, same moment, two different files.

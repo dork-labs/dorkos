@@ -158,7 +158,7 @@ describe('ResetDialog', () => {
       localStorage.clear();
     });
 
-    it("shows the shell's own words when nothing was deleted", async () => {
+    it('shows the shell’s own words when nothing was deleted', async () => {
       installShell({
         ok: false,
         message:
@@ -174,7 +174,7 @@ describe('ResetDialog', () => {
       // test guards; only which argument carries it moved.
       await waitFor(() =>
         expect(toast.error).toHaveBeenCalledWith(
-          "Couldn't reset your data.",
+          'Couldn’t reset your data.',
           expect.objectContaining({
             description: expect.stringContaining('Nothing was deleted'),
           })

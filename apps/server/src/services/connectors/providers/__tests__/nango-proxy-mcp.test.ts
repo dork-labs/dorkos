@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import type { Server } from 'node:http';
+import request, { type Response } from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { NangoProxyMcp } from '../nango-proxy-mcp.js';
 import type { NangoHttpClient, NangoProxyRequest, NangoProxyResponse } from '../nango-client.js';
+
+const target = swappableServer();
 
 /** A NangoHttpClient whose proxy surface is scripted; Auth methods are unused here. */
 function fakeClient(
@@ -33,7 +37,7 @@ function mountedAccount(proxy: (input: NangoProxyRequest) => Promise<NangoProxyR
   const http = connection as { url: string; headers: Record<string, string> };
   const path = new URL(http.url).pathname;
   const token = http.headers.authorization;
-  return { wrapper, app, path, token };
+  return { wrapper, app: target.mount(app), path, token };
 }
 
 /** The JSON-RPC body for one tools/call of proxy_request. */
@@ -47,7 +51,7 @@ function toolCall(args: Record<string, unknown>) {
 }
 
 /** POST a JSON-RPC message with MCP's required Accept header. */
-function rpc(app: express.Express, path: string, token: string | undefined, body: unknown) {
+function rpc(app: Server, path: string, token: string | undefined, body: unknown) {
   const req = request(app)
     .post(path)
     .set('accept', 'application/json, text/event-stream')
@@ -56,7 +60,7 @@ function rpc(app: express.Express, path: string, token: string | undefined, body
 }
 
 /** Parse the first JSON-RPC response out of an SSE or JSON MCP reply. */
-function parseRpcResponse(res: request.Response): {
+function parseRpcResponse(res: Response): {
   result?: { content: { type: string; text: string }[]; isError?: boolean };
 } {
   const text = res.text;

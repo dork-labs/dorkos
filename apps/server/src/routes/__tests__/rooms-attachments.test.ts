@@ -19,13 +19,17 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { mkdtemp, rm, readdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { AuthorRecord } from '../../services/rooms/author-registry.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** Who the route thinks is calling. Swapped per test. */
 let caller: AuthorRecord;
@@ -108,6 +112,8 @@ describe('/api/rooms/:id/attachments', () => {
     app = express();
     app.use(express.json());
     app.use('/api/rooms', roomsRouter);
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(async () => {
@@ -121,7 +127,7 @@ describe('/api/rooms/:id/attachments', () => {
 
   /** Upload one file as the current caller. */
   function upload(bytes: Buffer, filename: string, contentType?: string) {
-    const req = request(app).post(`/api/rooms/${roomId}/attachments`);
+    const req = request(fixtureServer).post(`/api/rooms/${roomId}/attachments`);
     return req.attach('files', bytes, { filename, contentType });
   }
 
@@ -183,7 +189,7 @@ describe('/api/rooms/:id/attachments', () => {
     });
 
     it('refuses a request with no files at all', async () => {
-      const res = await request(app).post(`/api/rooms/${roomId}/attachments`);
+      const res = await request(fixtureServer).post(`/api/rooms/${roomId}/attachments`);
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('ATTACHMENT_MISSING');
@@ -201,7 +207,7 @@ describe('/api/rooms/:id/attachments', () => {
         return realPut(room, id, extension, bytes);
       });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post(`/api/rooms/${roomId}/attachments`)
         .attach('files', TEXT, { filename: 'one.log' })
         .attach('files', TEXT, { filename: 'two.log' });
@@ -226,7 +232,7 @@ describe('/api/rooms/:id/attachments', () => {
         preview: 'image',
       });
 
-      const got = await request(app).get(posted.body.attachments[0].url);
+      const got = await request(fixtureServer).get(posted.body.attachments[0].url);
 
       expect(got.status).toBe(200);
       expect(got.headers['content-type']).toContain('image/png');
@@ -243,7 +249,7 @@ describe('/api/rooms/:id/attachments', () => {
       expect(posted.body.attachments[0].preview).toBeNull();
       expect(posted.body.attachments[0].mimeType).toBe('image/png');
 
-      const got = await request(app).get(posted.body.attachments[0].url);
+      const got = await request(fixtureServer).get(posted.body.attachments[0].url);
 
       expect(got.headers['content-type']).toContain('application/octet-stream');
       expect(got.headers['content-disposition']).toBe('attachment; filename="sneaky.png"');
@@ -256,7 +262,7 @@ describe('/api/rooms/:id/attachments', () => {
         'text/html'
       );
 
-      const got = await request(app).get(posted.body.attachments[0].url);
+      const got = await request(fixtureServer).get(posted.body.attachments[0].url);
 
       expect(posted.body.attachments[0].preview).toBeNull();
       expect(got.headers['content-type']).toContain('application/octet-stream');
@@ -274,7 +280,7 @@ describe('/api/rooms/:id/attachments', () => {
     it('round-trips the bytes', async () => {
       const posted = await upload(TEXT, 'crash.log');
 
-      const got = await request(app).get(posted.body.attachments[0].url);
+      const got = await request(fixtureServer).get(posted.body.attachments[0].url);
 
       expect(got.status).toBe(200);
       expect(Buffer.from(got.body)).toEqual(TEXT);
@@ -283,9 +289,9 @@ describe('/api/rooms/:id/attachments', () => {
 
     it('answers 304 with no body when the ETag still matches', async () => {
       const posted = await upload(TEXT, 'crash.log');
-      const first = await request(app).get(posted.body.attachments[0].url);
+      const first = await request(fixtureServer).get(posted.body.attachments[0].url);
 
-      const again = await request(app)
+      const again = await request(fixtureServer)
         .get(posted.body.attachments[0].url)
         .set('If-None-Match', first.headers.etag);
 
@@ -298,7 +304,7 @@ describe('/api/rooms/:id/attachments', () => {
     it('lets the uploader read their own unposted file', async () => {
       const posted = await upload(TEXT, 'crash.log');
 
-      expect((await request(app).get(posted.body.attachments[0].url)).status).toBe(200);
+      expect((await request(fixtureServer).get(posted.body.attachments[0].url)).status).toBe(200);
     });
 
     it('hides an unposted file from everybody else', async () => {
@@ -307,7 +313,7 @@ describe('/api/rooms/:id/attachments', () => {
       // staging area, which nobody may enumerate.
       caller = ana;
 
-      const res = await request(app).get(posted.body.attachments[0].url);
+      const res = await request(fixtureServer).get(posted.body.attachments[0].url);
 
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('ATTACHMENT_NOT_FOUND');
@@ -315,19 +321,19 @@ describe('/api/rooms/:id/attachments', () => {
 
     it('shows a POSTED file to anyone who may read the message', async () => {
       const posted = await upload(TEXT, 'crash.log');
-      await request(app)
+      await request(fixtureServer)
         .post(`/api/rooms/${roomId}/entries`)
         .send({ text: 'here it is', attachmentIds: [posted.body.attachments[0].id] });
 
       caller = ana;
-      const res = await request(app).get(posted.body.attachments[0].url);
+      const res = await request(fixtureServer).get(posted.body.attachments[0].url);
 
       expect(res.status).toBe(200);
     });
 
     it('hides a POSTED file from somebody who cannot see the room', async () => {
       const posted = await upload(TEXT, 'crash.log');
-      await request(app)
+      await request(fixtureServer)
         .post(`/api/rooms/${roomId}/entries`)
         .send({ text: 'here it is', attachmentIds: [posted.body.attachments[0].id] });
 
@@ -336,7 +342,7 @@ describe('/api/rooms/:id/attachments', () => {
       // the same as everyone, and this is the half of that rule the sibling test
       // above cannot see: with the room check removed it still passes.
       caller = authors.human('someone-else');
-      const res = await request(app).get(posted.body.attachments[0].url);
+      const res = await request(fixtureServer).get(posted.body.attachments[0].url);
 
       // 404 rather than 403: a stranger learns nothing, not even that the file
       // is real.
@@ -345,7 +351,7 @@ describe('/api/rooms/:id/attachments', () => {
     });
 
     it('404s a file that never existed', async () => {
-      const res = await request(app).get(`/api/rooms/${roomId}/attachments/nope`);
+      const res = await request(fixtureServer).get(`/api/rooms/${roomId}/attachments/nope`);
 
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('ATTACHMENT_NOT_FOUND');
@@ -361,7 +367,7 @@ describe('/api/rooms/:id/attachments', () => {
     it.each(['..%2Fsecret', '%2e%2e%2f%2e%2e%2fetc%2fpasswd', '..%2f..%2fsecret'])(
       'cannot be walked out of the room with %s',
       async (id) => {
-        const res = await request(app).get(`/api/rooms/${roomId}/attachments/${id}`);
+        const res = await request(fixtureServer).get(`/api/rooms/${roomId}/attachments/${id}`);
 
         expect(res.status).toBe(404);
         expect(res.body.code).toBe('ATTACHMENT_NOT_FOUND');
@@ -374,12 +380,12 @@ describe('/api/rooms/:id/attachments', () => {
       const posted = await upload(PNG, 'shot.png');
       const id = posted.body.attachments[0].id;
 
-      const wrote = await request(app)
+      const wrote = await request(fixtureServer)
         .post(`/api/rooms/${roomId}/entries`)
         .send({ text: 'look at this', attachmentIds: [id] });
       expect(wrote.status).toBe(202);
 
-      const listed = await request(app).get(`/api/rooms/${roomId}/entries?limit=10`);
+      const listed = await request(fixtureServer).get(`/api/rooms/${roomId}/entries?limit=10`);
       const entry = listed.body.entries.find((e: { id: string }) => e.id === wrote.body.entryId);
       expect(entry.attachments).toEqual([
         expect.objectContaining({ id, name: 'shot.png', preview: 'image' }),
@@ -389,11 +395,11 @@ describe('/api/rooms/:id/attachments', () => {
     it('refuses a second message naming the same file', async () => {
       const posted = await upload(TEXT, 'crash.log');
       const id = posted.body.attachments[0].id;
-      await request(app)
+      await request(fixtureServer)
         .post(`/api/rooms/${roomId}/entries`)
         .send({ text: 'first', attachmentIds: [id] });
 
-      const again = await request(app)
+      const again = await request(fixtureServer)
         .post(`/api/rooms/${roomId}/entries`)
         .send({ text: 'again', attachmentIds: [id] });
 
@@ -408,7 +414,7 @@ describe('/api/rooms/:id/attachments', () => {
         ids.push(posted.body.attachments[0].id);
       }
 
-      const wrote = await request(app)
+      const wrote = await request(fixtureServer)
         .post(`/api/rooms/${roomId}/entries`)
         .send({ text: 'all of them', attachmentIds: ids });
 

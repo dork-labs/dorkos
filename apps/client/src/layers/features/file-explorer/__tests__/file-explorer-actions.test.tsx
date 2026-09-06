@@ -154,7 +154,7 @@ describe('File explorer context-menu actions', () => {
     );
     fireEvent.click(await screen.findByText('Show in File Manager'));
 
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Couldn't open the file manager"));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Couldn’t open the file manager'));
   });
 
   it('copies the absolute path, and says nothing when it works', async () => {
@@ -180,7 +180,7 @@ describe('File explorer context-menu actions', () => {
     await openRowMenu();
     fireEvent.click(await screen.findByText('Copy path'));
 
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Couldn't copy to the clipboard"));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Couldn’t copy to the clipboard'));
   });
 
   it('inserts a space-terminated @reference into the composer', async () => {

@@ -229,7 +229,7 @@ app.all('/api/auth/*splat', toNodeHandler(auth)); // breaks body parsing
 ### `409 { code: 'AUTH_REQUIRED_FOR_EXPOSURE' }` when starting a tunnel
 
 **Cause:** The exposure guard blocked exposure — either `auth.enabled` is `false` or no owner account exists.
-**Fix:** Enable login and create an owner (Settings → Security, or `dorkos auth enable`), then retry.
+**Fix:** Enable login and create an owner (Settings → Access, or `dorkos auth enable`), then retry.
 
 ### Server refuses to start with a `DORKOS_HOST` bind message
 

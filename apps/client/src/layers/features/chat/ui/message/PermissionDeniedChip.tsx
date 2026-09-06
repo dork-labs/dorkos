@@ -87,9 +87,8 @@ export function PermissionDeniedChip({
         <p className="text-sm">{label}</p>
         {isBackgroundHelper ? (
           <p className="text-muted-foreground mt-0.5 text-xs">
-            Helpers running in the background can&rsquo;t ask you to approve anything, so this was
-            turned down for you. Run this step yourself, or ask the agent to do it in the
-            foreground.
+            Helpers running in the background can’t ask you to approve anything, so this was turned
+            down for you. Run this step yourself, or ask the agent to do it in the foreground.
           </p>
         ) : null}
         <p className="text-muted-foreground mt-0.5 font-mono text-xs">{toolName}</p>

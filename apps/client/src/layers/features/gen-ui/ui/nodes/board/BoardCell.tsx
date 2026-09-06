@@ -120,7 +120,7 @@ function ActionBoardCell({
     const dispatched = onAction(cell.action);
     if (cell.action.kind !== 'agent') return;
     dispatched.catch(() => {
-      toast.error("Couldn't send the move", {
+      toast.error('Couldn’t send the move', {
         description: 'The agent may be busy right now. Try again in a moment.',
       });
     });
@@ -139,8 +139,8 @@ function ActionBoardCell({
   // drawn mark IS the feedback.
   let tooltipText: string | null = null;
   if (state.superseded) tooltipText = 'This board is from an earlier turn. Play on the newest one.';
-  else if (state.unavailable) tooltipText = "Interactions aren't available here";
-  else if (state.latched) tooltipText = "Move sent. Waiting for the agent's reply";
+  else if (state.unavailable) tooltipText = 'Interactions aren’t available here';
+  else if (state.latched) tooltipText = 'Move sent. Waiting for the agent’s reply';
 
   const buttonEl = (
     <motion.button

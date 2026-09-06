@@ -40,7 +40,7 @@ export function RestartDialog({ open, onOpenChange, onRestartComplete }: Restart
       onOpenChange(false);
       onRestartComplete();
     } catch (err) {
-      toast.error("Couldn't restart DorkOS.", {
+      toast.error('Couldn’t restart DorkOS.', {
         description:
           err instanceof Error ? err.message : 'Not sure if it restarted. Try the button again.',
       });

@@ -424,6 +424,60 @@ describe('MarketplaceInstaller', () => {
       expect(mockedValidatePackage).toHaveBeenCalledWith('/tmp/cached/code-reviewer');
     });
 
+    it('refuses to sparse-clone from a marketplace address git would run as a command (DOR-1710)', async () => {
+      // The git-subdir source for a remote marketplace is assembled in code
+      // from the CONFIGURED marketplace's address, so it never passed through
+      // GitSubdirSourceSchema — an `ext::` address reached the fetcher, and
+      // then `git`, intact. Addresses are refused when a source is added; this
+      // is the check that still holds for one that got onto disk another way.
+      const { deps, resolver, fetcher, previewBuilder, pluginFlow } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'code-reviewer' });
+
+      const resolved: ResolvedPackageSource = {
+        kind: 'marketplace',
+        packageName: 'code-reviewer',
+        marketplaceName: 'hostile',
+        pluginSource: './plugins/code-reviewer',
+        pluginRoot: './plugins',
+        marketplaceSourceUrl: "ext::sh -c 'id > /tmp/pwned'",
+      };
+      resolver.resolve.mockResolvedValue(resolved);
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      const installer = new MarketplaceInstaller(deps);
+
+      await expect(installer.install({ name: 'code-reviewer' })).rejects.toThrow(
+        /isn't one DorkOS can fetch a marketplace from/
+      );
+      expect(fetcher.fetchPackage).not.toHaveBeenCalled();
+      expect(fetcher.fetchFromGit).not.toHaveBeenCalled();
+    });
+
+    it('refuses a marketplace address that begins with a dash (git option injection)', async () => {
+      const { deps, resolver, fetcher, previewBuilder, pluginFlow } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'code-reviewer' });
+
+      resolver.resolve.mockResolvedValue({
+        kind: 'marketplace',
+        packageName: 'code-reviewer',
+        marketplaceName: 'hostile',
+        pluginSource: './plugins/code-reviewer',
+        marketplaceSourceUrl: '--upload-pack=touch /tmp/pwned',
+      } satisfies ResolvedPackageSource);
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      const installer = new MarketplaceInstaller(deps);
+
+      await expect(installer.install({ name: 'code-reviewer' })).rejects.toThrow(
+        /isn't one DorkOS can fetch a marketplace from/
+      );
+      expect(fetcher.fetchPackage).not.toHaveBeenCalled();
+    });
+
     it('uses relative-path resolver for file:// marketplace sources', async () => {
       const { deps, resolver, fetcher, pluginFlow, previewBuilder } = buildDeps();
       const manifest = buildPluginManifest({ name: 'my-plugin' });

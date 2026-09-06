@@ -61,6 +61,10 @@ export function ElicitationPrompt({
   const transport = useTransport();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The raw throw, kept UNDER the authored sentence rather than in place of it
+  // (DOR-1755 finding 9.2, DOR-1756 finding 10.6). A person met a bare MCP
+  // error here and had no idea whether their answer went anywhere.
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [urlOpened, setUrlOpened] = useState(false);
 
@@ -73,6 +77,7 @@ export function ElicitationPrompt({
       if (submitting || isResolved) return;
       setSubmitting(true);
       setError(null);
+      setErrorDetail(null);
       try {
         await transport.submitElicitation(sessionId, interactionId, submitAction, content);
       } catch (err) {
@@ -80,7 +85,8 @@ export function ElicitationPrompt({
         if (code === 'INTERACTION_ALREADY_RESOLVED') {
           // Race condition — treat as success
         } else {
-          setError(err instanceof Error ? err.message : "Couldn't send that. Try again.");
+          setError('Couldn’t send your answer. Try again.');
+          setErrorDetail(err instanceof Error ? err.message : null);
           setSubmitting(false);
           return;
         }
@@ -113,7 +119,7 @@ export function ElicitationPrompt({
   const handleOpenUrl = useCallback(() => {
     if (!url) return;
     // Always leaves the app — the button promises a browser trip. Gate the
-    // "I authorized it" button on the link actually being dispatched: an
+    // "Done" button on the link actually being dispatched: an
     // MCP server can name a scheme the seam refuses (a `myapp://` desktop
     // OAuth deep link, say), and offering to confirm an authorization that
     // never opened would let someone accept a flow that never ran.
@@ -122,14 +128,16 @@ export function ElicitationPrompt({
     // and easy to miss if the reader was looking at the prompt rather than the
     // corner. This line says what the refusal MEANS here, which is the part
     // only this surface knows, and it persists next to the button it gates:
-    // "I authorized it" is absent, and this is the sentence that explains the
+    // "Done" is absent, and this is the sentence that explains the
     // absence. Restating the allowlist is what this used to do instead, and
     // that copy went stale the first time the allowlist moved.
     if (!openExternalLink(url)) {
-      setError(`Could not open ${url}. Nothing has been authorized.`);
+      setError(`Couldn’t open ${url}. Nothing has been authorized.`);
+      setErrorDetail(null);
       return;
     }
     setError(null);
+    setErrorDetail(null);
     setUrlOpened(true);
   }, [url]);
 
@@ -158,7 +166,7 @@ export function ElicitationPrompt({
         <span className="bg-muted text-3xs inline-flex items-center rounded-md px-2 py-0.5 font-mono">
           {serverName}
         </span>
-        <span>requests input</span>
+        <span>needs something from you</span>
       </div>
 
       {/* Message */}
@@ -166,7 +174,14 @@ export function ElicitationPrompt({
 
       {/* break-words: the message can carry a server-supplied URL, and browsers
           do not break long URLs at `/` or `?` on their own. */}
-      {error && <p className="text-destructive mb-2 text-xs break-words">{error}</p>}
+      {error && (
+        <div className="mb-2">
+          <p className="text-destructive text-xs break-words">{error}</p>
+          {errorDetail && (
+            <p className="text-muted-foreground/70 mt-1 text-xs break-words">{errorDetail}</p>
+          )}
+        </div>
+      )}
 
       {/* URL mode */}
       {mode === 'url' && url && (
@@ -176,7 +191,7 @@ export function ElicitationPrompt({
           </Button>
           {urlOpened && (
             <Button size="sm" onClick={handleUrlAccept} disabled={submitting}>
-              {submitting ? 'Submitting…' : 'I authorized it'}
+              {submitting ? 'Submitting…' : 'Done'}
             </Button>
           )}
           <Button size="sm" variant="ghost" onClick={handleDecline} disabled={submitting}>

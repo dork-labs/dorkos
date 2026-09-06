@@ -18,9 +18,9 @@ export function DuplicateToolWarning() {
         <p className="text-muted-foreground text-xs">
           DorkOS already provides tools to its managed agents internally. Adding DorkOS as an
           external MCP server to those same agents causes duplicate tool names. The Anthropic API
-          will return HTTP 400 &ldquo;Tool names must be unique&rdquo; and all tool calls will fail.
-          External MCP access is for agents running <strong>outside</strong> of DorkOS (standalone
-          Claude Code, Cursor, Windsurf).
+          will return HTTP 400 “Tool names must be unique” and all tool calls will fail. External
+          MCP access is for agents running <strong>outside</strong> of DorkOS (standalone Claude
+          Code, Cursor, Windsurf).
         </p>
       </div>
     </div>

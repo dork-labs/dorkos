@@ -27,7 +27,7 @@ import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 import { SettingsDialog } from '../ui/SettingsDialog';
 
 vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({ useIsMobile: () => false }));
-vi.mock('../ui/AdvancedTab', () => ({ AdvancedTab: () => null }));
+vi.mock('../ui/DangerZoneTab', () => ({ DangerZoneTab: () => null }));
 vi.mock('../ui/ServerRestartOverlay', () => ({ ServerRestartOverlay: () => null }));
 
 /** The deep link the drawer's Edit button produces: `?settings=profile`. */

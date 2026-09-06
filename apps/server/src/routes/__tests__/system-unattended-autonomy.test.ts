@@ -26,12 +26,14 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import type { UnattendedAutonomyDeps } from '../../services/core/unattended-autonomy/unattended-autonomy.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 /** A profile declaring one asking mode and one autonomy mode. */
 const CAPABILITIES = {
@@ -77,7 +79,7 @@ describe('GET /api/system/unattended-autonomy', () => {
   it('answers with nothing when neither relay nor Tasks is running', async () => {
     withProfile();
 
-    const res = await request(app).get('/api/system/unattended-autonomy');
+    const res = await request(testServer).get('/api/system/unattended-autonomy');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ drivers: [] });
@@ -121,7 +123,7 @@ describe('GET /api/system/unattended-autonomy', () => {
       agentLive: () => true,
     } satisfies UnattendedAutonomyDeps;
 
-    const res = await request(app).get('/api/system/unattended-autonomy');
+    const res = await request(testServer).get('/api/system/unattended-autonomy');
 
     expect(res.body).toEqual({
       drivers: [
@@ -152,7 +154,7 @@ describe('GET /api/system/unattended-autonomy', () => {
       // adapterLive and agentLive deliberately absent.
     } satisfies UnattendedAutonomyDeps;
 
-    const res = await request(app).get('/api/system/unattended-autonomy');
+    const res = await request(testServer).get('/api/system/unattended-autonomy');
 
     expect(res.body.drivers).toHaveLength(1);
   });
@@ -175,7 +177,7 @@ describe('GET /api/system/unattended-autonomy', () => {
       ],
     } satisfies UnattendedAutonomyDeps;
 
-    const res = await request(app).get('/api/system/unattended-autonomy');
+    const res = await request(testServer).get('/api/system/unattended-autonomy');
 
     expect(res.body).toEqual({ drivers: [] });
     expect(runtimeRegistry.get).not.toHaveBeenCalled();

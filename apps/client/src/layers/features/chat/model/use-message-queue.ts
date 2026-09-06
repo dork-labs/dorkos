@@ -200,7 +200,7 @@ export function useMessageQueue({
       if (!sessionId) return;
       mutate(
         () => transport.updateQueuedMessage(sessionId, id, { content }),
-        'Could not save that change'
+        'Couldn’t save that change'
       );
     },
     [sessionId, transport, mutate]
@@ -212,7 +212,7 @@ export function useMessageQueue({
       if (!sessionId) return;
       mutate(
         () => transport.removeQueuedMessage(sessionId, id),
-        'Could not take that message off the queue'
+        'Couldn’t take that message off the queue'
       );
     },
     [sessionId, transport, mutate]
@@ -243,7 +243,7 @@ export function useMessageQueue({
           if (head === undefined || head === id) return;
           await move(head);
         }
-      }, 'Could not move that message');
+      }, 'Couldn’t move that message');
     },
     [sessionId, transport, mutate, latestHeadId]
   );

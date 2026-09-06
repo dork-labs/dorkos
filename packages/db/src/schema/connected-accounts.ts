@@ -10,7 +10,8 @@ import { sqliteTable, text, index } from 'drizzle-orm/sqlite-core';
  * `toolServerForAccount`/`disconnect` to the backend that owns an id without
  * leaking the vendor into session code, and so `listAccounts` can aggregate
  * cheaply. Written on a successful `pollConnect` (first-write-wins, mirroring
- * `runtimeRegistry`, ADR-0255) and cleared on `disconnect`; never hand-edited.
+ * `runtimeRegistry`, ADR-0255) and retained with `revoked` status on disconnect
+ * as a credential-free ownership tombstone; never hand-edited.
  *
  * `provider` is server-only — it is stripped from the session-facing account
  * DTO so the tool surface never sees which backend is behind a connection.

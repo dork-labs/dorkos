@@ -49,7 +49,7 @@ describe('MemoryProviderBenchedBanner', () => {
   it('names a backend that never registered without claiming it faulted', () => {
     render(<MemoryProviderBenchedBanner configuredId="acme-memory" benched={false} />);
     expect(screen.getByRole('status')).toHaveTextContent(
-      "The acme-memory memory backend isn't installed or didn't register. DorkOS switched to its own local memory until you restart."
+      'The acme-memory memory backend isn’t installed or didn’t register. DorkOS switched to its own local memory until you restart.'
     );
     // "Stopped answering" claims a fault that never happened for this case.
     expect(screen.getByRole('status')).not.toHaveTextContent('stopped answering');

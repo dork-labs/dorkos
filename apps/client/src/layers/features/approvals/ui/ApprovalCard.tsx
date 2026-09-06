@@ -245,7 +245,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                   )
                 }
               >
-                Don&apos;t allow
+                Don’t allow
               </Button>
               <Button
                 size="sm"
@@ -301,8 +301,8 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                 Allow, and stop asking about this for {formatTrustWindow(windowMinutes)}
               </Button>
               <p className="text-muted-foreground text-2xs max-w-xs @[34rem]/approval:text-right">
-                Covers {agentLabel} doing &ldquo;{approval.capabilityTitle}&rdquo;, and nothing
-                else. End it any time in Settings, under Security.
+                Covers {agentLabel} doing “{approval.capabilityTitle}”, and nothing else. End it any
+                time in Settings, under Security.
               </p>
             </div>
           )}

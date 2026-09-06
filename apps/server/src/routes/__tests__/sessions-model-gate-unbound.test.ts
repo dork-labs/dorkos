@@ -60,7 +60,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import type { ModelOption, Session } from '@dorkos/shared/types';
 import { createApp, finalizeApp } from '../../app.js';
 import { projectModelOptions } from '../../services/runtimes/opencode/providers/models.js';
@@ -70,6 +71,7 @@ import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
 
 /** No row in `session_metadata` — the state a client-minted id starts in. */
 const UNBOUND = 'aaaaaaaa-0000-4000-8000-00000000000a';
@@ -131,7 +133,7 @@ function rowFor(sessionId: string) {
 
 /** PATCH the session's settings, as the cockpit's model picker does. */
 function patch(sessionId: string, body: Record<string, unknown>) {
-  return request(app).patch(`/api/sessions/${sessionId}`).send(body);
+  return request(testServer).patch(`/api/sessions/${sessionId}`).send(body);
 }
 
 describe('PATCH /api/sessions/:id — the model gate on an unbound session', () => {

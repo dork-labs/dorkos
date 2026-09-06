@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTasksRouter } from '../tasks.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore, type CreateTaskStoreInput } from '../../services/tasks/task-store.js';
@@ -22,6 +23,9 @@ import {
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/index.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** The directory a proposing agent lives in — the key its identity is stored under. */
 const AGENT_PATH = '/tmp/agents/nightly-bot';
@@ -182,6 +186,8 @@ describe('Tasks routes', () => {
         res.status(500).json({ error: err.message });
       }
     );
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -195,7 +201,7 @@ describe('Tasks routes', () => {
 
   describe('GET /api/tasks', () => {
     it('returns empty array when no schedules', async () => {
-      const res = await request(app).get('/api/tasks');
+      const res = await request(fixtureServer).get('/api/tasks');
       expect(res.status).toBe(200);
       expect(res.body).toEqual([]);
     });
@@ -203,7 +209,7 @@ describe('Tasks routes', () => {
     it('returns schedules with nextRun', async () => {
       store.createTask(taskInput({ name: 'Test', prompt: 'p', cron: '0 * * * *' }));
 
-      const res = await request(app).get('/api/tasks');
+      const res = await request(fixtureServer).get('/api/tasks');
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
       expect(res.body[0].name).toBe('Test');
@@ -216,7 +222,7 @@ describe('Tasks routes', () => {
       );
       store.updateTask(parked.id, { status: 'pending_approval' });
 
-      const res = await request(app).get('/api/tasks');
+      const res = await request(fixtureServer).get('/api/tasks');
 
       expect(res.body[0].nextRuns).toEqual(PREVIEWED_RUNS);
       // Asked with what the task actually says, not with a default — a preview
@@ -233,7 +239,7 @@ describe('Tasks routes', () => {
       // this is exactly the row where nextRun used to be null.
       vi.mocked(scheduler.getNextRun).mockReturnValue(null);
 
-      const res = await request(app).get('/api/tasks');
+      const res = await request(fixtureServer).get('/api/tasks');
 
       expect(res.body[0].nextRun).toBe(PREVIEWED_RUNS[0]);
       expect(res.body[0].nextRuns).toEqual(PREVIEWED_RUNS);
@@ -246,7 +252,7 @@ describe('Tasks routes', () => {
       // so an active task must not pay for an answer nothing reads (DOR-1394).
       store.createTask(taskInput({ name: 'Active', prompt: 'p', cron: '0 3 * * *' }));
 
-      const res = await request(app).get('/api/tasks');
+      const res = await request(fixtureServer).get('/api/tasks');
 
       expect(res.body[0].nextRuns).toEqual([]);
       expect(scheduler.previewNextRuns).not.toHaveBeenCalled();
@@ -261,7 +267,7 @@ describe('Tasks routes', () => {
       store.updateTask(paused.id, { enabled: false });
       vi.mocked(scheduler.getNextRun).mockReturnValue(null);
 
-      const res = await request(app).get('/api/tasks');
+      const res = await request(fixtureServer).get('/api/tasks');
 
       // Home reads `nextRun` to say what happens next. A time here would be a
       // promise nothing is keeping.
@@ -281,7 +287,7 @@ describe('Tasks routes', () => {
         })
       );
 
-      const res = await request(app).get('/api/tasks');
+      const res = await request(fixtureServer).get('/api/tasks');
 
       expect(res.body[0].reason).toBe('The overnight backlog needs sweeping before you start.');
       expect(res.body[0].proposedBySessionId).toBe('ses-42');
@@ -304,7 +310,7 @@ describe('Tasks routes', () => {
         })
       );
 
-      const res = await request(app).get('/api/tasks');
+      const res = await request(fixtureServer).get('/api/tasks');
 
       expect(res.body[0].proposedByName).toBe('Nightly Bot');
     });
@@ -322,7 +328,7 @@ describe('Tasks routes', () => {
         })
       );
 
-      const res = await request(app).get('/api/tasks');
+      const res = await request(fixtureServer).get('/api/tasks');
 
       // The name is never stored, so switching an agent off stops crediting it.
       expect(res.body[0].proposedByName).toBeNull();
@@ -331,7 +337,7 @@ describe('Tasks routes', () => {
 
   describe('POST /api/tasks', () => {
     it('creates a schedule', async () => {
-      const res = await request(app).post('/api/tasks').send({
+      const res = await request(fixtureServer).post('/api/tasks').send({
         name: 'New',
         description: 'do stuff',
         prompt: 'do stuff',
@@ -345,13 +351,13 @@ describe('Tasks routes', () => {
     });
 
     it('returns 400 for missing required fields', async () => {
-      const res = await request(app).post('/api/tasks').send({ name: 'No cron' });
+      const res = await request(fixtureServer).post('/api/tasks').send({ name: 'No cron' });
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
     });
 
     it('refuses a name that slugifies to the reserved templates folder', async () => {
-      const res = await request(app).post('/api/tasks').send({
+      const res = await request(fixtureServer).post('/api/tasks').send({
         name: 'Templates',
         description: 'clashes with the templates container',
         prompt: 'do stuff',
@@ -367,7 +373,7 @@ describe('Tasks routes', () => {
     });
 
     it('registers cron job for enabled active schedule', async () => {
-      await request(app).post('/api/tasks').send({
+      await request(fixtureServer).post('/api/tasks').send({
         name: 'Active',
         description: 'p',
         prompt: 'p',
@@ -379,7 +385,7 @@ describe('Tasks routes', () => {
     });
 
     it('returns nextRun in the creation response, matching the list endpoint', async () => {
-      const res = await request(app).post('/api/tasks').send({
+      const res = await request(fixtureServer).post('/api/tasks').send({
         name: 'Next Run',
         description: 'p',
         prompt: 'p',
@@ -397,7 +403,7 @@ describe('Tasks routes', () => {
     });
 
     it('carries runtime, model and effort through to the created task (DOR-1615)', async () => {
-      const res = await request(app).post('/api/tasks').send({
+      const res = await request(fixtureServer).post('/api/tasks').send({
         name: 'On codex',
         description: 'p',
         prompt: 'p',
@@ -429,7 +435,7 @@ describe('Tasks routes', () => {
         // accept the write — registration is a question for fire time, which
         // fails the run loudly and names it — and resolve power through the
         // fallback mode.
-        const res = await request(app).post('/api/tasks').send({
+        const res = await request(fixtureServer).post('/api/tasks').send({
           name: 'proto',
           description: 'p',
           prompt: 'p',
@@ -445,7 +451,7 @@ describe('Tasks routes', () => {
     );
 
     it('leaves all three null for a create that names none', async () => {
-      const res = await request(app).post('/api/tasks').send({
+      const res = await request(fixtureServer).post('/api/tasks').send({
         name: 'Plain',
         description: 'p',
         prompt: 'p',
@@ -463,7 +469,9 @@ describe('Tasks routes', () => {
 
       // `name` on an update must be a slug — it is written straight into the
       // SKILL.md frontmatter, which enforces that rule (`UpdateTaskRequest.name`).
-      const res = await request(app).patch(`/api/tasks/${sched.id}`).send({ name: 'updated' });
+      const res = await request(fixtureServer)
+        .patch(`/api/tasks/${sched.id}`)
+        .send({ name: 'updated' });
 
       expect(res.status).toBe(200);
       expect(res.body.name).toBe('updated');
@@ -481,7 +489,7 @@ describe('Tasks routes', () => {
       const sched = store.createTask(taskInput({ name: 'ToPark', prompt: 'p', cron: '0 3 * * *' }));
       vi.mocked(scheduler.getNextRun).mockReturnValue(null);
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${sched.id}`)
         .send({ status: 'pending_approval' });
 
@@ -507,7 +515,9 @@ describe('Tasks routes', () => {
         })
       );
 
-      const res = await request(app).patch(`/api/tasks/${sched.id}`).send({ enabled: false });
+      const res = await request(fixtureServer)
+        .patch(`/api/tasks/${sched.id}`)
+        .send({ enabled: false });
 
       expect(res.status).toBe(200);
       expect(res.body.proposedByName).toBe('Nightly Bot');
@@ -516,7 +526,7 @@ describe('Tasks routes', () => {
     it('keeps a reason sent with a park', async () => {
       const sched = store.createTask(taskInput({ name: 'ToPark', prompt: 'p', cron: '0 3 * * *' }));
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${sched.id}`)
         .send({ status: 'pending_approval', reason: 'Parking this until I check the cron.' });
 
@@ -526,7 +536,7 @@ describe('Tasks routes', () => {
     });
 
     it('returns 404 for nonexistent schedule', async () => {
-      const res = await request(app).patch('/api/tasks/nonexistent').send({ name: 'x' });
+      const res = await request(fixtureServer).patch('/api/tasks/nonexistent').send({ name: 'x' });
 
       expect(res.status).toBe(404);
     });
@@ -534,7 +544,7 @@ describe('Tasks routes', () => {
     it('unregisters cron when disabling', async () => {
       const sched = store.createTask(taskInput({ name: 'Dis', prompt: 'p', cron: '0 * * * *' }));
 
-      await request(app).patch(`/api/tasks/${sched.id}`).send({ enabled: false });
+      await request(fixtureServer).patch(`/api/tasks/${sched.id}`).send({ enabled: false });
 
       expect(scheduler.unregisterTask).toHaveBeenCalledWith(sched.id);
     });
@@ -549,7 +559,9 @@ describe('Tasks routes', () => {
       const escalation = wireEscalationService();
       const sched = store.createTask(taskInput({ name: 'Park', prompt: 'p', cron: '0 * * * *' }));
 
-      await request(app).patch(`/api/tasks/${sched.id}`).send({ status: 'pending_approval' });
+      await request(fixtureServer)
+        .patch(`/api/tasks/${sched.id}`)
+        .send({ status: 'pending_approval' });
 
       expect(escalation.armedSubjects()).toEqual([`schedule:${sched.id}`]);
     });
@@ -559,7 +571,9 @@ describe('Tasks routes', () => {
       const sched = store.createTask(taskInput({ name: 'Park', prompt: 'p', cron: '0 * * * *' }));
       store.updateTask(sched.id, { status: 'pending_approval' });
 
-      await request(app).patch(`/api/tasks/${sched.id}`).send({ status: 'pending_approval' });
+      await request(fixtureServer)
+        .patch(`/api/tasks/${sched.id}`)
+        .send({ status: 'pending_approval' });
 
       // Nothing armed it on the way in (this test never called the create
       // path), and an update that does not CHANGE the status is not a new
@@ -573,7 +587,7 @@ describe('Tasks routes', () => {
         taskInput({ name: 'Retarget', prompt: 'p', cron: '0 * * * *' })
       );
 
-      const set = await request(app)
+      const set = await request(fixtureServer)
         .patch(`/api/tasks/${sched.id}`)
         .send({ runtime: 'codex', model: 'gpt-5.5', effort: 'high' });
       expect(set.status).toBe(200);
@@ -586,7 +600,7 @@ describe('Tasks routes', () => {
       // `null` is how every clearable field on this route spells "go back to
       // following the agent", and it has to reach the column as null rather than
       // being dropped as a no-op.
-      const cleared = await request(app)
+      const cleared = await request(fixtureServer)
         .patch(`/api/tasks/${sched.id}`)
         .send({ runtime: null, model: null, effort: null });
       expect(cleared.status).toBe(200);
@@ -603,7 +617,9 @@ describe('Tasks routes', () => {
       // start failing the moment the two came apart, which is the point.
       const sched = store.createTask(taskInput({ name: 'Known', prompt: 'p', cron: '0 * * * *' }));
 
-      const res = await request(app).patch(`/api/tasks/${sched.id}`).send({ runtime: 'codex' });
+      const res = await request(fixtureServer)
+        .patch(`/api/tasks/${sched.id}`)
+        .send({ runtime: 'codex' });
 
       expect(res.status).not.toBe(400);
     });
@@ -613,7 +629,7 @@ describe('Tasks routes', () => {
     it('deletes a schedule', async () => {
       const sched = store.createTask(taskInput({ name: 'Del', prompt: 'p', cron: '0 * * * *' }));
 
-      const res = await request(app).delete(`/api/tasks/${sched.id}`);
+      const res = await request(fixtureServer).delete(`/api/tasks/${sched.id}`);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(scheduler.unregisterTask).toHaveBeenCalledWith(sched.id);
@@ -623,20 +639,20 @@ describe('Tasks routes', () => {
       const sched = store.createTask(taskInput({ name: 'Ran', prompt: 'p', cron: '0 * * * *' }));
       store.createRun(sched.id, 'scheduled');
 
-      const res = await request(app).delete(`/api/tasks/${sched.id}`);
+      const res = await request(fixtureServer).delete(`/api/tasks/${sched.id}`);
       expect(res.status).toBe(200);
       expect(store.getTask(sched.id)).toBeNull();
     });
 
     it('returns 404 for nonexistent schedule', async () => {
-      const res = await request(app).delete('/api/tasks/nope');
+      const res = await request(fixtureServer).delete('/api/tasks/nope');
       expect(res.status).toBe(404);
     });
   });
 
   describe('POST /api/tasks/:id/trigger', () => {
     it('returns 404 when schedule not found', async () => {
-      const res = await request(app).post('/api/tasks/nope/trigger');
+      const res = await request(fixtureServer).post('/api/tasks/nope/trigger');
       expect(res.status).toBe(404);
     });
 
@@ -657,7 +673,7 @@ describe('Tasks routes', () => {
         createdAt: new Date().toISOString(),
       });
 
-      const res = await request(app).post('/api/tasks/sched-1/trigger');
+      const res = await request(fixtureServer).post('/api/tasks/sched-1/trigger');
       expect(res.status).toBe(201);
       expect(res.body.runId).toBe('run-1');
     });
@@ -665,7 +681,7 @@ describe('Tasks routes', () => {
 
   describe('GET /api/tasks/runs', () => {
     it('returns empty array when no runs', async () => {
-      const res = await request(app).get('/api/tasks/runs');
+      const res = await request(fixtureServer).get('/api/tasks/runs');
       expect(res.status).toBe(200);
       expect(res.body).toEqual([]);
     });
@@ -676,7 +692,7 @@ describe('Tasks routes', () => {
       store.createRun(sched.id, 'scheduled');
       store.createRun(sched.id, 'scheduled');
 
-      const res = await request(app).get('/api/tasks/runs?limit=2');
+      const res = await request(fixtureServer).get('/api/tasks/runs?limit=2');
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(2);
     });
@@ -687,7 +703,7 @@ describe('Tasks routes', () => {
       store.createRun(s1.id, 'scheduled');
       store.createRun(s2.id, 'scheduled');
 
-      const res = await request(app).get(`/api/tasks/runs?scheduleId=${s1.id}`);
+      const res = await request(fixtureServer).get(`/api/tasks/runs?scheduleId=${s1.id}`);
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
       expect(res.body[0].scheduleId).toBe(s1.id);
@@ -698,27 +714,27 @@ describe('Tasks routes', () => {
     it('returns a run', async () => {
       const sched = store.createTask(taskInput({ name: 'S1', prompt: 'p', cron: '0 * * * *' }));
       const run = store.createRun(sched.id, 'scheduled');
-      const res = await request(app).get(`/api/tasks/runs/${run.id}`);
+      const res = await request(fixtureServer).get(`/api/tasks/runs/${run.id}`);
       expect(res.status).toBe(200);
       expect(res.body.id).toBe(run.id);
     });
 
     it('returns 404 for missing run', async () => {
-      const res = await request(app).get('/api/tasks/runs/nope');
+      const res = await request(fixtureServer).get('/api/tasks/runs/nope');
       expect(res.status).toBe(404);
     });
   });
 
   describe('POST /api/tasks/runs/:id/cancel', () => {
     it('returns 404 when there is no such run', async () => {
-      const res = await request(app).post('/api/tasks/runs/nope/cancel');
+      const res = await request(fixtureServer).post('/api/tasks/runs/nope/cancel');
       expect(res.status).toBe(404);
     });
 
     it('cancels an active run', async () => {
       vi.mocked(scheduler.cancelRun).mockResolvedValue({ state: 'stopping' });
 
-      const res = await request(app).post('/api/tasks/runs/run-1/cancel');
+      const res = await request(fixtureServer).post('/api/tasks/runs/run-1/cancel');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.state).toBe('stopping');
@@ -727,7 +743,7 @@ describe('Tasks routes', () => {
     it('answers 200 for a run that had already finished', async () => {
       vi.mocked(scheduler.cancelRun).mockResolvedValue({ state: 'already_finished' });
 
-      const res = await request(app).post('/api/tasks/runs/run-1/cancel');
+      const res = await request(fixtureServer).post('/api/tasks/runs/run-1/cancel');
       expect(res.status).toBe(200);
       expect(res.body.state).toBe('already_finished');
     });
@@ -738,7 +754,7 @@ describe('Tasks routes', () => {
         reason: 'nothing picked it up',
       });
 
-      const res = await request(app).post('/api/tasks/runs/run-1/cancel');
+      const res = await request(fixtureServer).post('/api/tasks/runs/run-1/cancel');
       expect(res.status).toBe(502);
       expect(res.body.error).toContain('nothing picked it up');
     });
@@ -787,6 +803,8 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
       '/api/tasks',
       createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
     );
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -797,7 +815,7 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
     const task = store.createTask(taskInput({ name: 'Relay Run', prompt: 'p', cron: '0 * * * *' }));
     const run = store.createRun(task.id, 'scheduled');
 
-    const res = await request(app).post(`/api/tasks/runs/${run.id}/cancel`);
+    const res = await request(fixtureServer).post(`/api/tasks/runs/${run.id}/cancel`);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -812,7 +830,7 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
     const task = store.createTask(taskInput({ name: 'Orphan', prompt: 'p', cron: '0 * * * *' }));
     const run = store.createRun(task.id, 'scheduled');
 
-    const res = await request(app).post(`/api/tasks/runs/${run.id}/cancel`);
+    const res = await request(fixtureServer).post(`/api/tasks/runs/${run.id}/cancel`);
 
     expect(res.status).toBe(502);
     // The run is left alone: nobody confirmed it stopped, so claiming a
@@ -825,7 +843,7 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
     const run = store.createRun(task.id, 'scheduled');
     store.updateRun(run.id, { status: 'cancelled', finishedAt: new Date().toISOString() });
 
-    const res = await request(app).post(`/api/tasks/runs/${run.id}/cancel`);
+    const res = await request(fixtureServer).post(`/api/tasks/runs/${run.id}/cancel`);
 
     expect(res.status).toBe(200);
     expect(res.body.state).toBe('already_finished');

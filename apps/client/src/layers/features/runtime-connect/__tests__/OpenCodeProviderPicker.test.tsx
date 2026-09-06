@@ -69,7 +69,7 @@ describe('OpenCodeProviderPicker — power-source list (spec §5)', () => {
     expect(screen.getByText('Best models, zero setup')).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Claude, GPT, Gemini and 300+ more, running in the cloud. Your hardware doesn't matter."
+        'Claude, GPT, Gemini and 300+ more, running in the cloud. Your hardware doesn’t matter.'
       )
     ).toBeInTheDocument();
     expect(screen.getByText('Private and free, on your computer')).toBeInTheDocument();
@@ -89,7 +89,7 @@ describe('OpenCodeProviderPicker — power-source list (spec §5)', () => {
 // waits until you have picked a path, where it is what you actually need.
 describe('OpenCodeProviderPicker — the list is short, the detail is at the step (DOR-917)', () => {
   const CLOUD_SUB = 'One OpenRouter account covers all of them. Pay only for what you use.';
-  const CLOUD_TRADE_OFF = "Your prompts and code are sent to the model's provider.";
+  const CLOUD_TRADE_OFF = 'Your prompts and code are sent to the model’s provider.';
   const LOCAL_SUB = 'Runs Quick helpers and Solid coders. Frontier models stay cloud-only.';
   const LOCAL_TRADE_OFF =
     'Smaller models: great for edits and quick help, not frontier-level reasoning.';

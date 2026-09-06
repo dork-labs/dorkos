@@ -11,12 +11,15 @@
  */
 import { describe, it, expect } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { noopLogger } from '@dorkos/shared/logger';
 
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
 import { composeDorkOsCapabilityRegistry } from '../../services/core/self-description/dorkos-registry.js';
 import { createCapabilitiesCatalogRouter } from '../capabilities-catalog.js';
+
+const fixtureTarget = swappableServer();
 
 function buildApp() {
   const registry = composeDorkOsCapabilityRegistry({
@@ -30,7 +33,7 @@ function buildApp() {
 
 describe('GET /api/capabilities/catalog', () => {
   it('defaults to a compact, bounded page carrying the version and totals', async () => {
-    const res = await request(buildApp()).get('/api/capabilities/catalog');
+    const res = await request(fixtureTarget.mount(buildApp())).get('/api/capabilities/catalog');
     expect(res.status).toBe(200);
     expect(res.body.catalogVersion).toMatch(/^[0-9a-f]{12}$/);
     expect(res.body).toHaveProperty('generatedAt');
@@ -44,7 +47,9 @@ describe('GET /api/capabilities/catalog', () => {
   });
 
   it('detail=full projects list_capabilities with its JSON Schemas and surfaces', async () => {
-    const res = await request(buildApp()).get('/api/capabilities/catalog?detail=full');
+    const res = await request(fixtureTarget.mount(buildApp())).get(
+      '/api/capabilities/catalog?detail=full'
+    );
     expect(res.body.detail).toBe('full');
     const entry = (res.body.capabilities as { id: string }[]).find(
       (c) => c.id === 'capabilities.list'
@@ -65,7 +70,9 @@ describe('GET /api/capabilities/catalog', () => {
   });
 
   it('domain filter narrows to one domain, at full detail', async () => {
-    const res = await request(buildApp()).get('/api/capabilities/catalog?domain=capabilities');
+    const res = await request(fixtureTarget.mount(buildApp())).get(
+      '/api/capabilities/catalog?domain=capabilities'
+    );
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(1);
     expect((res.body.capabilities as { id: string }[]).map((c) => c.id)).toEqual([
@@ -80,10 +87,14 @@ describe('GET /api/capabilities/catalog', () => {
     // rather than refused, so a parameter that never landed would come back as
     // the whole unfiltered catalog and look like a working request — which is
     // exactly what happened before it was wired.
-    const all = await request(buildApp()).get('/api/capabilities/catalog?limit=200');
+    const all = await request(fixtureTarget.mount(buildApp())).get(
+      '/api/capabilities/catalog?limit=200'
+    );
     expect(all.body.total).toBeGreaterThan(1);
 
-    const res = await request(buildApp()).get('/api/capabilities/catalog?toolGroup=roomsManage');
+    const res = await request(fixtureTarget.mount(buildApp())).get(
+      '/api/capabilities/catalog?toolGroup=roomsManage'
+    );
     expect(res.status).toBe(200);
     // No `roomDeps` here, so the rooms domain is not composed and nothing in
     // THIS registry declares a grant. Zero is the discriminating answer: an
@@ -92,14 +103,18 @@ describe('GET /api/capabilities/catalog', () => {
   });
 
   it('rejects an out-of-range limit with 400', async () => {
-    const res = await request(buildApp()).get('/api/capabilities/catalog?limit=abc');
+    const res = await request(fixtureTarget.mount(buildApp())).get(
+      '/api/capabilities/catalog?limit=abc'
+    );
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Validation failed');
   });
 
   it('rejects a cursor that does not decode to an offset with 400', async () => {
     const bad = Buffer.from('notanumber', 'utf8').toString('base64url');
-    const res = await request(buildApp()).get(`/api/capabilities/catalog?cursor=${bad}`);
+    const res = await request(fixtureTarget.mount(buildApp())).get(
+      `/api/capabilities/catalog?cursor=${bad}`
+    );
     expect(res.status).toBe(400);
     expect(String(res.body.error)).toContain('cursor');
   });

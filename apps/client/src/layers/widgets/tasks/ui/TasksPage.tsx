@@ -71,7 +71,7 @@ export function TasksPage() {
       <FeatureDisabledState
         icon={icons.tasks}
         name="Scheduling"
-        description="Scheduled tasks let your agents work on a timer, even when you're not here."
+        description="Scheduled tasks let your agents work on a timer, even when you’re not here."
         command="dorkos --tasks"
       />
     );
@@ -81,7 +81,7 @@ export function TasksPage() {
     return (
       <QueryErrorState
         className="h-full"
-        title="Could not load your scheduled tasks"
+        title="Couldn’t load your scheduled tasks"
         description="The scheduler is unreachable. Check that the server is running correctly."
         onRetry={() => void refetch()}
       />

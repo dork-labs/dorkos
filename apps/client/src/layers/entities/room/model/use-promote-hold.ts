@@ -45,6 +45,6 @@ export function usePromoteHold(): UseMutationResult<PromoteHoldResponse, Error, 
     // answered first — No such room". Handled here rather than at the call site
     // because the button may well be gone by the time a refusal lands: it only
     // shows while a message is waiting, and the wait can end on its own.
-    meta: { errorLabel: "Couldn't ask to be answered first" },
+    meta: { errorLabel: 'Couldn’t ask to be answered first' },
   });
 }

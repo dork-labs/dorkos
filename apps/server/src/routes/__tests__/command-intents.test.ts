@@ -4,12 +4,13 @@
  * a `FakeAgentRuntime` and asserts the three contract branches: a supported
  * runtime returns 202, drives `executeCommandIntent`, and the resulting
  * `compact_boundary` reaches the durable projector and is observable on the
- * `/events` stream (`collectDurableEvents`); an unsupported runtime returns an
+ * `/events` stream (`collectDurableEventsAt`); an unsupported runtime returns an
  * honest 422 WITHOUT calling the adapter; and an unknown `:intent` returns 422.
  * Mocking preamble mirrors `sessions-events.test.ts`.
  */
+import type { AddressInfo } from 'node:net';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { FakeAgentRuntime, collectDurableEvents } from '@dorkos/test-utils';
+import { FakeAgentRuntime, collectDurableEventsAt } from '@dorkos/test-utils';
 
 // Mock the directory boundary so the /events handler's assertBoundary against
 // the default cwd doesn't require initBoundary() at startup (mirrors
@@ -74,7 +75,8 @@ vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn(async () => null),
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
 import {
   getOrCreateProjector,
@@ -84,6 +86,12 @@ import {
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
+
+/** Base URL for raw SSE collection through the file-scoped listener. */
+function testServerBaseUrl(): string {
+  return `http://127.0.0.1:${(testServer.address() as AddressInfo).port}`;
+}
 
 /** Valid UUID for session ID params (routes validate UUID format). */
 const SESSION_ID = '00000000-0000-4000-8000-0000000000c1';
@@ -95,7 +103,7 @@ beforeEach(() => {
   // pass: report the session as present.
   fakeRuntime.hasSession.mockReturnValue(true);
   // Route /events through the SAME per-session projector the trigger feeds
-  // (mirrors TestModeRuntime.subscribeSession), so collectDurableEvents observes
+  // (mirrors TestModeRuntime.subscribeSession), so collectDurableEventsAt observes
   // the boundary the adapter produced — the fake's default stub yields nothing.
   fakeRuntime.subscribeSession = vi.fn((ctx, sessionId, sinceCursor, signal) =>
     getOrCreateProjector(sessionId, ctx.cwd).subscribe(sinceCursor, signal)
@@ -112,7 +120,9 @@ describe('POST /api/sessions/:id/command-intents/:intent', () => {
     // executeCommandIntent yields a synthetic compact_boundary), so the route
     // accepts the trigger, drives the adapter through the durable projector, and
     // the boundary is replayable on the single delivery path (/events).
-    const res = await request(app).post(`/api/sessions/${SESSION_ID}/command-intents/compact`);
+    const res = await request(testServer).post(
+      `/api/sessions/${SESSION_ID}/command-intents/compact`
+    );
 
     expect(res.status).toBe(202);
     expect(res.body).toEqual({ sessionId: SESSION_ID });
@@ -129,7 +139,7 @@ describe('POST /api/sessions/:id/command-intents/:intent', () => {
 
     // Resume connect (?after=0) replays the run from the buffer — no snapshot —
     // so the projected boundary is observable on the durable stream.
-    const collected = await collectDurableEvents(app, SESSION_ID, {
+    const collected = await collectDurableEventsAt(testServerBaseUrl(), SESSION_ID, {
       after: 0,
       until: (frames) => frames.some((f) => f.event === 'turn_end'),
     });
@@ -143,7 +153,7 @@ describe('POST /api/sessions/:id/command-intents/:intent', () => {
     // `/compact <instructions>` rides the JSON body (review Important 1): the
     // route must forward the remainder into executeCommandIntent's opts, never
     // silently drop it.
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/command-intents/compact`)
       .send({ instructions: 'focus on the API changes' });
 
@@ -162,7 +172,9 @@ describe('POST /api/sessions/:id/command-intents/:intent', () => {
   it('a body-less trigger passes no instructions (undefined) to the adapter', async () => {
     // Express 5 leaves req.body undefined on an empty POST — the bare trigger
     // must keep working and forward no instructions.
-    const res = await request(app).post(`/api/sessions/${SESSION_ID}/command-intents/compact`);
+    const res = await request(testServer).post(
+      `/api/sessions/${SESSION_ID}/command-intents/compact`
+    );
 
     expect(res.status).toBe(202);
     expect(fakeRuntime.executeCommandIntent).toHaveBeenCalledWith(
@@ -177,7 +189,7 @@ describe('POST /api/sessions/:id/command-intents/:intent', () => {
   });
 
   it('a malformed body (non-string instructions) → 400 and the adapter is NOT called', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/command-intents/compact`)
       .send({ instructions: 42 });
 
@@ -195,7 +207,9 @@ describe('POST /api/sessions/:id/command-intents/:intent', () => {
       commandIntents: { compact: { supported: false } },
     });
 
-    const res = await request(app).post(`/api/sessions/${SESSION_ID}/command-intents/compact`);
+    const res = await request(testServer).post(
+      `/api/sessions/${SESSION_ID}/command-intents/compact`
+    );
 
     expect(res.status).toBe(422);
     expect(res.body.code).toBe('COMMAND_INTENT_UNSUPPORTED');
@@ -205,7 +219,9 @@ describe('POST /api/sessions/:id/command-intents/:intent', () => {
   it('unknown :intent → 422 INVALID_COMMAND_INTENT and the adapter is NOT called', async () => {
     // A token that is not a runtime-fulfilled intent (e.g. a typo, or a
     // client-native intent that should never hit this route) is a client bug.
-    const res = await request(app).post(`/api/sessions/${SESSION_ID}/command-intents/frobnicate`);
+    const res = await request(testServer).post(
+      `/api/sessions/${SESSION_ID}/command-intents/frobnicate`
+    );
 
     expect(res.status).toBe(422);
     expect(res.body.code).toBe('INVALID_COMMAND_INTENT');

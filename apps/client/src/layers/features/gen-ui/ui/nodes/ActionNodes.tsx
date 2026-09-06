@@ -63,7 +63,7 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
     // owned by the provider.
     if (action.kind !== 'agent') return;
     dispatched.catch(() => {
-      toast.error("Couldn't send the action", {
+      toast.error('Couldn’t send the action', {
         description: 'The agent may be busy right now. Try again in a moment.',
       });
     });
@@ -73,9 +73,9 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
   // click while a dispatch is in flight gets "waiting", not silence. The
   // dispatched button itself already speaks through its spinner/check.
   let tooltipText: string | null = null;
-  if (state.superseded) tooltipText = "This one's from an earlier message.";
-  else if (state.unavailable) tooltipText = "Interactions aren't available here";
-  else if (state.latched) tooltipText = "Sent. Waiting for the agent's reply";
+  if (state.superseded) tooltipText = 'This one’s from an earlier message.';
+  else if (state.unavailable) tooltipText = 'Interactions aren’t available here';
+  else if (state.latched) tooltipText = 'Sent. Waiting for the agent’s reply';
 
   // Use aria-disabled (not the `disabled` attribute) for the inert case so the
   // button stays focusable/hoverable and its tooltip is keyboard- and

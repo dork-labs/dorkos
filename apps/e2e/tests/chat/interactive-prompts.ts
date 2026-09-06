@@ -468,7 +468,7 @@ export function registerInteractivePromptTests(deps: InteractivePromptsDeps): vo
       // The card names the server doing the asking and what it wants.
       const feed = transcript(page);
       await expect(feed.getByText('deploy-tools')).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-      await expect(feed.getByText('requests input')).toBeVisible();
+      await expect(feed.getByText('needs something from you')).toBeVisible();
       await expect(feed.getByText('Which environment should this release go to?')).toBeVisible();
 
       await expect(feed).not.toContainText('ELICITATION-ACCEPTED');
@@ -490,7 +490,7 @@ export function registerInteractivePromptTests(deps: InteractivePromptsDeps): vo
       await chatPage.sendAndLand('deploy the release');
 
       const feed = transcript(page);
-      await expect(feed.getByText('requests input')).toBeVisible({
+      await expect(feed.getByText('needs something from you')).toBeVisible({
         timeout: SERVER_ROUND_TRIP_MS,
       });
       await page.getByRole('button', { name: /^Decline\b/ }).click();

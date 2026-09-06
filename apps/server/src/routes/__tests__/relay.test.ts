@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createRelayRouter, buildConversations } from '../relay.js';
 import type { RelayCore, AdapterRegistry, WebhookAdapter, DeadLetterEntry } from '@dorkos/relay';
