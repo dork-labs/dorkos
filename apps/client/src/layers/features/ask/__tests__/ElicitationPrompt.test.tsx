@@ -157,4 +157,17 @@ describe('ElicitationPrompt — URL mode', () => {
     });
     expect(openSpy).not.toHaveBeenCalled();
   });
+
+  it('shows the authored sentence and the raw MCP error when submit fails', async () => {
+    submitElicitation.mockRejectedValueOnce(new Error('MCP server rejected the request'));
+    renderPrompt();
+    fireEvent.click(screen.getByRole('button', { name: 'Open authorization page' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+
+    expect(await screen.findByText('Couldn’t send your answer. Try again.')).toBeInTheDocument();
+    expect(screen.getByText('MCP server rejected the request')).toBeInTheDocument();
+    // Submitting must reset so the person can retry rather than being stuck
+    // behind a disabled button forever.
+    expect(screen.getByRole('button', { name: 'Done' })).not.toBeDisabled();
+  });
 });

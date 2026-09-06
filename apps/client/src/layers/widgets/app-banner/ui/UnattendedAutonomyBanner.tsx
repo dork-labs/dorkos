@@ -114,7 +114,7 @@ export function UnattendedAutonomyBanner({ drivers }: UnattendedAutonomyBannerPr
             )}
             {kinds.has('task') && (
               <Button variant="outline" size="sm" onClick={() => navigate({ to: '/tasks' })}>
-                Scheduled tasks
+                Schedules
               </Button>
             )}
           </>

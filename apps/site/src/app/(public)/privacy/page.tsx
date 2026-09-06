@@ -27,8 +27,7 @@ export default function PrivacyPolicyPage() {
           <h1 className="text-charcoal font-mono text-3xl font-bold">Privacy Policy</h1>
           <p className="text-warm-gray text-lg">Last updated: July 13, 2026</p>
           <p className="text-warm-gray leading-relaxed">
-            DorkOS is made by Blaze Ventures, LLC. When this page says &quot;we,&quot; that is who
-            we mean.
+            DorkOS is made by Blaze Ventures, LLC. When this page says “we,” that is who we mean.
           </p>
         </header>
 

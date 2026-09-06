@@ -59,7 +59,7 @@ describe('CanvasErrorBoundary', () => {
         <Boom />
       </CanvasErrorBoundary>
     );
-    expect(screen.getByText('This tab hit a problem.')).toBeInTheDocument();
+    expect(screen.getByText('This tab hit a problem')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
     // A generic (non-chunk) error never offers the app reload.
     expect(screen.queryByRole('button', { name: /reload dorkos/i })).not.toBeInTheDocument();
@@ -81,7 +81,7 @@ describe('CanvasErrorBoundary', () => {
         <MaybeThrow />
       </CanvasErrorBoundary>
     );
-    expect(screen.getByText('This tab hit a problem.')).toBeInTheDocument();
+    expect(screen.getByText('This tab hit a problem')).toBeInTheDocument();
     expect(screen.queryByText('viewer recovered')).not.toBeInTheDocument();
 
     // The underlying failure clears, then the user retries.
@@ -89,7 +89,7 @@ describe('CanvasErrorBoundary', () => {
     await user.click(screen.getByRole('button', { name: /try again/i }));
 
     expect(screen.getByText('viewer recovered')).toBeInTheDocument();
-    expect(screen.queryByText('This tab hit a problem.')).not.toBeInTheDocument();
+    expect(screen.queryByText('This tab hit a problem')).not.toBeInTheDocument();
   });
 
   it('offers a Reload DorkOS affordance for a stale-chunk dynamic-import error', async () => {
@@ -103,7 +103,7 @@ describe('CanvasErrorBoundary', () => {
       </CanvasErrorBoundary>
     );
 
-    expect(screen.getByText('This tab hit a problem.')).toBeInTheDocument();
+    expect(screen.getByText('This tab hit a problem')).toBeInTheDocument();
     // The chunk-specific hint + reload button appear only for import failures.
     expect(screen.getByText(/app may have updated/i)).toBeInTheDocument();
     // Try again is NOT offered for a stale chunk — React caches the rejected import,

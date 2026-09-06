@@ -115,7 +115,7 @@ describe('UnattendedAutonomyBanner', () => {
 
   it('offers only the surfaces it actually named', () => {
     render(<UnattendedAutonomyBanner drivers={[cleanup_task]} />);
-    expect(screen.getByRole('button', { name: 'Scheduled tasks' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Schedules' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Connections' })).not.toBeInTheDocument();
   });
 
@@ -132,7 +132,7 @@ describe('UnattendedAutonomyBanner', () => {
 
   it('sends a person to the tasks page', async () => {
     render(<UnattendedAutonomyBanner drivers={[cleanup_task]} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Scheduled tasks' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Schedules' }));
 
     expect(navigate).toHaveBeenCalledWith({ to: '/tasks' });
   });

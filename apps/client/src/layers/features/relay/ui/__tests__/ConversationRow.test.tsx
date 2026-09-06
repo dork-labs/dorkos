@@ -173,7 +173,7 @@ describe('ConversationRow', () => {
         wrapper,
       });
 
-      expect(screen.getByText(/"Hello world"/)).toBeInTheDocument();
+      expect(screen.getByText('“Hello world”')).toBeInTheDocument();
     });
   });
 

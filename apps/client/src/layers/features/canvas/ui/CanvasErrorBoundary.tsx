@@ -18,7 +18,7 @@ function CanvasErrorFallback({
   const staleChunk = isDynamicImportError(error);
   return (
     <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-      <p>This tab hit a problem.</p>
+      <p>This tab hit a problem</p>
       {staleChunk ? (
         <>
           <p className="text-sm">

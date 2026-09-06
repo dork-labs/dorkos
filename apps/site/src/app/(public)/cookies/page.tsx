@@ -26,8 +26,7 @@ export default function CookiePolicyPage() {
           <h1 className="text-charcoal font-mono text-3xl font-bold">Cookie Policy</h1>
           <p className="text-warm-gray text-lg">Last updated: July 13, 2026</p>
           <p className="text-warm-gray leading-relaxed">
-            This site is run by Blaze Ventures, LLC. When this page says &quot;we,&quot; that is who
-            we mean.
+            This site is run by Blaze Ventures, LLC. When this page says “we,” that is who we mean.
           </p>
         </header>
 

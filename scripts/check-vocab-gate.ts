@@ -97,7 +97,12 @@ function toPosixRelative(from: string, to: string): string {
 
 /** One retired word and the wave that retired it. */
 export interface BannedTerm {
-  /** Matched as a whole word, case-insensitive. */
+  /**
+   * Matched case-insensitively; word-bounded on whichever ends are word
+   * characters, so a punctuation term like `...` or `&quot;` matches wherever
+   * it appears in a copy position rather than needing a word boundary it can
+   * never have. See {@link termMatcher}.
+   */
   term: string;
   /** Which wave banned it, for reporting. */
   wave: string;

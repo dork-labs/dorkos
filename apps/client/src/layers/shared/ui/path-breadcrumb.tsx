@@ -6,7 +6,7 @@ import { cn } from '@/layers/shared/lib/utils';
 export interface PathBreadcrumbProps extends React.ComponentProps<'div'> {
   /** Absolute path to display */
   path: string | null;
-  /** Max segments to show; earlier segments are replaced with "..." */
+  /** Max segments to show; earlier segments are replaced with "…" */
   maxSegments?: number;
   /** When provided, each segment becomes a clickable button that receives the full path up to that segment */
   onSegmentClick?: (segmentPath: string) => void;

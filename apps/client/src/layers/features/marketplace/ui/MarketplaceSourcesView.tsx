@@ -202,7 +202,7 @@ export function MarketplaceSourcesView() {
         </div>
         <Button onClick={() => setDialogOpen(true)} size="sm">
           <Plus className="mr-1.5 size-4" />
-          Add source
+          Add marketplace source
         </Button>
       </div>
 
@@ -224,7 +224,7 @@ export function MarketplaceSourcesView() {
           </p>
           <Button className="mt-4" size="sm" onClick={() => setDialogOpen(true)}>
             <Plus className="mr-1.5 size-4" />
-            Add source
+            Add marketplace source
           </Button>
         </div>
       )}

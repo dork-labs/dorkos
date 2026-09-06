@@ -125,7 +125,7 @@ describe('Canvas per-document error containment', () => {
     expect(goodTab).toBeInTheDocument();
 
     // The failure is contained to the body as a friendly card with Retry.
-    expect(screen.getByText('This tab hit a problem.')).toBeInTheDocument();
+    expect(screen.getByText('This tab hit a problem')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
 
     // Switching to the sibling tab still works.
@@ -140,12 +140,12 @@ describe('Canvas per-document error containment', () => {
   it('clears the error fallback when the active document switches to a healthy tab', async () => {
     setBrokenPlusHealthy();
     const { rerender } = render(<CanvasContent />);
-    expect(screen.getByText('This tab hit a problem.')).toBeInTheDocument();
+    expect(screen.getByText('This tab hit a problem')).toBeInTheDocument();
 
     // The keyed boundary resets on a tab switch — the healthy document renders.
     mockState.activeDocumentId = 'd2';
     rerender(<CanvasContent />);
-    expect(screen.queryByText('This tab hit a problem.')).not.toBeInTheDocument();
+    expect(screen.queryByText('This tab hit a problem')).not.toBeInTheDocument();
     expect(await screen.findByTestId('blintz-canvas')).toBeInTheDocument();
   });
 });

@@ -16,8 +16,8 @@
     {
       "id": "wave-3",
       "issue": "DOR-1756",
-      "note": "Typography, not vocabulary — but the same failure and the same fix. The app shipped 161 strings spelling an ellipsis \"…\" and 40 spelling it \"...\", and 88 apostrophes as `&apos;` beside 72 as `&rsquo;`, which render at different widths and read as two products. The house rule is one character each, written literally: `…`, `’`, `“`, `”` (contributing/design-system.md, \"Punctuation\"). A term here is matched literally, not as a whole word — see termMatcher() in check-vocab-gate.ts.",
-      "terms": ["...", "&apos;", "&rsquo;", "&ldquo;", "&rdquo;"]
+      "note": "Typography, not vocabulary — but the same failure and the same fix. The app shipped 161 strings spelling an ellipsis \"…\" and 40 spelling it \"...\", and 88 apostrophes as `&apos;` beside 72 as `&rsquo;`, which render at different widths and read as two products. The house rule is one character each, written literally: `…`, `’`, `“`, `”` (contributing/design-system.md, \"Punctuation\"). `&quot;` joined the ban after review found it live in production copy (`&quot;{name}&quot; will stop working…`, `MessagingConnections.tsx`) — it is the escape `react/no-unescaped-entities` actually pushes authors toward for a straight `\"`, not `&ldquo;`/`&rdquo;`, which nobody in this codebase writes. A term here is matched literally, not as a whole word — see termMatcher() in check-vocab-gate.ts.",
+      "terms": ["...", "&apos;", "&rsquo;", "&ldquo;", "&rdquo;", "&quot;"]
     }
   ]
 }

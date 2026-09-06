@@ -115,8 +115,8 @@ export default function SecurityPage() {
             same computer. It refuses the agent that asked, and it records who answered, so nothing
             happens quietly. But a program on your machine that deliberately hides what it is looks
             like you. Turning on login is what closes that, and then only your signed-in account can
-            answer a card. We would rather write that down than let the word &quot;approval&quot; do
-            work it cannot do.
+            answer a card. We would rather write that down than let the word “approval” do work it
+            cannot do.
           </p>
         </section>
 
@@ -144,7 +144,7 @@ export default function SecurityPage() {
             >
               security@dorkos.ai
             </a>{' '}
-            or use the private &quot;Report a vulnerability&quot; button on our{' '}
+            or use the private “Report a vulnerability” button on our{' '}
             <a
               href="https://github.com/dork-labs/dorkos/security"
               target="_blank"
