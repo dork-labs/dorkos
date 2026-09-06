@@ -100,8 +100,17 @@ export const SkillFrontmatterSchema = z.object({
   /** Environment requirements (intended product, system packages, network access). */
   compatibility: z.string().max(500).optional(),
 
-  /** Arbitrary key-value metadata for client-specific extensions. */
-  metadata: z.record(z.string(), z.string()).optional(),
+  /**
+   * Arbitrary key-value metadata for client-specific extensions.
+   *
+   * Values are deliberately unconstrained: third-party skills nest whole
+   * config objects here (ClawHub skills carry `metadata.openclaw: { emoji,
+   * requires }`), and a string-only map rejected the file outright, which
+   * dropped the skill from the registry. The one DorkOS reader (the
+   * operating-skills seeder's `dorkosPackVersion` stamp) narrows what it
+   * reads, so the map itself only has to survive validation.
+   */
+  metadata: z.record(z.string(), z.unknown()).optional(),
 
   /**
    * Tools the agent may use without asking, while this skill is active.
