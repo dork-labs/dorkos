@@ -190,6 +190,33 @@ describe('who the Activity feed says changed an extension', () => {
       expect(JSON.stringify(emitted)).not.toContain(KNOWN_TOKEN);
     });
 
+    it('never writes a REAL-SHAPED token into the feed either', async () => {
+      // `tok_…` is an artificially distinctive string, and a probe that only
+      // ever searches for one is weaker than it looks: it would still pass if
+      // the route wrote some transformed slice of the credential. A token in
+      // the shape agent identity actually mints — bare hex, no prefix — is the
+      // honest input for this assertion, and the individual halves are checked
+      // too so a split or truncated copy cannot hide inside JSON escaping.
+      const REAL_SHAPED = 'a3f9c1e2b70d48a6915ce4d2f8b03c7e';
+
+      await request(fixtureServer)
+        .put('/api/extensions/test-ext/secrets/api_key')
+        .set('x-dorkos-agent', REAL_SHAPED)
+        .send({ value: 'sk-test' });
+
+      const serialized = JSON.stringify(emitted);
+      expect(serialized).not.toContain(REAL_SHAPED);
+      expect(serialized).not.toContain(REAL_SHAPED.slice(0, 16));
+      expect(serialized).not.toContain(REAL_SHAPED.slice(-16));
+      // It still lands as an unidentified caller, so the absence above is the
+      // route declining to name the token — not the route emitting nothing.
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]).toMatchObject({
+        actorType: 'system',
+        actorLabel: 'Unidentified caller',
+      });
+    });
+
     it('records a token that resolves to nothing as an unidentified caller', async () => {
       // The header is there, so a machine is calling — DorkOS just cannot say
       // which one. Answering `You` here would be the same lie in a rarer case,
