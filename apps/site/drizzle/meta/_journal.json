@@ -71,6 +71,13 @@
       "when": 1788133179862,
       "tag": "0009_handy_impossible_man",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788716497596,
+      "tag": "0010_tearful_captain_cross",
+      "breakpoints": true
     }
   ]
 }
