@@ -63,10 +63,27 @@ export interface EventStreamSubscription {
 }
 
 /** First reconnect delay after the stream drops. */
-const RECONNECT_BASE_MS = 1_000;
+export const RECONNECT_BASE_MS = 1_000;
 
 /** Ceiling on the exponential reconnect backoff. */
 const RECONNECT_MAX_MS = 15_000;
+
+/**
+ * How long to wait before the attempt after one that waited `previousDelayMs`.
+ *
+ * The ladder is the whole of the backoff policy, and it is user-visible: a
+ * desktop app whose tray stops counting the moment the server restarts, and
+ * then takes minutes to notice it is back, reads as broken. So it lives here,
+ * as a pure function of the last delay, where a test can walk it exactly rather
+ * than infer it from how long a real reconnect happened to take on the machine
+ * it ran on (DOR-1727).
+ *
+ * @param previousDelayMs - The delay the last attempt waited.
+ * @returns Double that, capped at {@link RECONNECT_MAX_MS}.
+ */
+export function nextReconnectDelayMs(previousDelayMs: number): number {
+  return Math.min(previousDelayMs * 2, RECONNECT_MAX_MS);
+}
 
 /** The server's own SSE heartbeat is every 15s; a stream silent for much longer than that is gone. */
 const STREAM_IDLE_TIMEOUT_MS = 45_000;
@@ -194,7 +211,7 @@ function scheduleReconnect(): void {
   }, retryDelayMs);
   // Never let the retry timer be the reason the process stays alive.
   retryTimer.unref();
-  retryDelayMs = Math.min(retryDelayMs * 2, RECONNECT_MAX_MS);
+  retryDelayMs = nextReconnectDelayMs(retryDelayMs);
 }
 
 /**
