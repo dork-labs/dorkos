@@ -13,14 +13,16 @@
  * `logger.error(msg, err)` and `logger.error(msg, { err })` is covered without
  * anyone remembering to wrap.
  *
- * Two consumers share the walk and the size bounds below, because a runaway
- * error is a runaway on either destination:
+ * Three consumers share the size bounds below, because a runaway error is a
+ * runaway on either destination:
  *
  * - {@link normalizeLogContext} — the NDJSON file reporter, which needs Errors
  *   turned into plain JSON-able objects.
  * - {@link clipLogArgs} — the console reporter, which needs Errors left as
  *   Errors so consola still renders them as errors, and only wants them cut
  *   down to size (DOR-1728).
+ * - {@link clipFlattenedError} — the one call site that flattens an error into
+ *   strings BEFORE either walk runs, and so has to bound it itself (DOR-1827).
  *
  * @module lib/serialize-error
  */
@@ -317,6 +319,17 @@ const clipStep: ErrorStep = (err, depth) => {
  *
  * Values that need no change come back by identity, so a line whose context
  * holds nothing oversized and no Error is emitted byte-for-byte as it was.
+ *
+ * **A plain string is never clipped here, on purpose.** The bounds in this
+ * module are error bounds: an error's `message` and `stack` have a known shape
+ * and a known useful size, so cutting one at 4 KB loses nothing an operator
+ * wanted. A string field does not — an operator who logs a request body, a
+ * config dump or a diff is logging it precisely to read or `grep` it back, and
+ * a cap that silently ate the tail would be a worse bug than the one this
+ * module fixes. So the fix for a runaway error is applied where it can tell an
+ * error from a payload, which includes {@link clipFlattenedError} for the one
+ * helper that flattens an error into strings before this walk ever sees it
+ * (DOR-1827). If a bare string ever does flood a log, bound THAT call site.
  */
 function walkValue(value: unknown, depth: number, onError: ErrorStep): unknown {
   if (value instanceof Error) return onError(value, depth);
@@ -395,12 +408,14 @@ export function normalizeLogContext(context: Record<string, unknown>): Record<st
  * dump printed the whole thing — megabytes down a terminal, and down a CI log,
  * where a single line that size cost one run ten minutes of serialization
  * (DOR-1726). This applies the SAME bounds the NDJSON file reporter applies, so
- * for an Error handed to the logger the two destinations agree on what is too
- * big and say so identically. That agreement covers the Error itself and
- * anything nested in the context around it; it does NOT cover a call site that
- * pre-flattens an error into raw strings of its own, which neither destination
- * can recognise as an error afterwards — `logError()` is the one such helper in
- * the repo, and its output is unbounded on both paths.
+ * the two destinations agree on what is too big and say so identically.
+ *
+ * That agreement covers every Error the logger is handed — as the context
+ * argument, nested anywhere inside it, or already flattened to strings by
+ * {@link clipFlattenedError}. What it does not cover is a bare string a call
+ * site built itself: a hand-rolled `String(err)` folded into a context object,
+ * or a stringified response body logged as an ordinary field. Those are left
+ * alone deliberately — see the note in {@link walkValue}.
  *
  * Unlike {@link normalizeLogContext}, Errors stay Errors. The reporter formats
  * an error very differently from a plain object — indented frames, `[cause]:`
@@ -421,4 +436,40 @@ export function clipLogArgs(args: unknown[]): unknown[] {
     return next;
   });
   return changed ? clipped : args;
+}
+
+/**
+ * Bound an error a call site is about to fold into a wider log context.
+ *
+ * Both walks above recognise an error by its type, and everything they do
+ * follows from that. `logError()` in `lib/logger.ts` hands them a shape they
+ * cannot recognise: it flattens the error into `{ error, stack }` — plain
+ * strings — and the call site folds THAT into a context object, so by the time
+ * either destination looks there is no Error left to clip. Measured, a
+ * subprocess dump logged as `logger.error(msg, { ...logError(err) })` wrote a
+ * 1,201,085-byte NDJSON line where the same error handed straight to the logger
+ * wrote 9,368 (DOR-1827).
+ *
+ * Clipping at the moment of flattening is what fixes that for every one of the
+ * ~92 call sites without touching any of them. The bounds, the marker and the
+ * message/frames boundary are the ones the rest of this module uses — the whole
+ * point is that the two destinations agree, so there is exactly one
+ * implementation to agree with.
+ *
+ * @param err - Whatever was caught.
+ * @returns `error` — the message, or `String(err)` for a thrown non-Error —
+ *   plus `stack` for an Error that has one. Each is returned unchanged when it
+ *   was already within bounds, which is every ordinary error.
+ */
+export function clipFlattenedError(err: unknown): { error: string; stack?: string } {
+  if (err instanceof Error) {
+    return {
+      error: clip(err.message, MAX_MESSAGE_LEN),
+      stack: err.stack === undefined ? undefined : clipStack(err.stack, err.message),
+    };
+  }
+  // A thrown non-Error stands in for the message, so it gets the message bound.
+  // This is not the general string cap `walkValue` declines to apply: the call
+  // site has already told us this value is a failure reason, not a payload.
+  return { error: clip(String(err), MAX_MESSAGE_LEN) };
 }

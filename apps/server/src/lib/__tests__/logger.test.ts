@@ -361,6 +361,57 @@ describe('logger module', () => {
       expect(loggerModule.logError(42)).toEqual({ error: '42' });
       expect(loggerModule.logError(null)).toEqual({ error: 'null' });
     });
+
+    /**
+     * ~92 call sites fold this return value into a wider log context, so the
+     * clipping added for the runaway case (DOR-1827) may not change a single
+     * byte of the ordinary one — which is every error the server actually logs.
+     */
+    it('returns an ordinary error’s own message and stack strings, unchanged', () => {
+      const err = new Error('ENOENT: no such file or directory');
+
+      const result = loggerModule.logError(err);
+
+      expect(result.error).toBe(err.message);
+      expect(result.stack).toBe(err.stack);
+      expect(result.error).not.toContain('[truncated');
+      expect(result.stack).not.toContain('[truncated');
+    });
+
+    it('clips a message far past the bound, naming its true length', () => {
+      const huge = 'y'.repeat(600_000);
+
+      const { error } = loggerModule.logError(new Error(huge));
+
+      expect(error.length).toBeLessThan(8 * 1024);
+      expect(error).toContain(`[truncated, ${huge.length} characters total]`);
+      // The head is kept, so the failure is still identifiable.
+      expect(error.startsWith('y'.repeat(1000))).toBe(true);
+    });
+
+    it('clips a thrown non-Error that is huge in its own right', () => {
+      const huge = 'z'.repeat(600_000);
+
+      const { error } = loggerModule.logError(huge);
+
+      expect(error.length).toBeLessThan(8 * 1024);
+      expect(error).toContain(`[truncated, ${huge.length} characters total]`);
+    });
+
+    it('keeps our stack frames when the message embeds someone else’s', () => {
+      // A subprocess dump: the message carries the CHILD's `    at …` lines, so
+      // locating the frames by searching for the first one spends the whole
+      // budget on quoted child lines and returns not one frame of ours.
+      const childFrame = '    at Unpacker.finish (/usr/lib/node_modules/npm/unpack.js:220:17)\n';
+      const err = new Error(`child process failed:\n${childFrame.repeat(9000)}`);
+
+      const { stack } = loggerModule.logError(err);
+
+      expect(stack).toBeDefined();
+      expect(stack!.length).toBeLessThan(32 * 1024);
+      expect(stack).toContain('logger.test.ts');
+      expect(stack).toContain('child process failed:');
+    });
   });
 
   // ---------------------------------------------------------------------------

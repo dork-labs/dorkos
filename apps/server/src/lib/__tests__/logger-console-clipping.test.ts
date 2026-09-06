@@ -105,6 +105,80 @@ describe('console reporter clipping', () => {
     });
   });
 
+  describe('an error a call site flattened with logError() before logging it', () => {
+    /**
+     * The shape ~92 call sites use: the error is folded into a wider context
+     * object as `{ error, stack }`, so neither reporter's walk can see an Error
+     * to clip any more (DOR-1827). Before the clip moved into `logError` itself
+     * this wrote 1.2 MB where handing the same error to the logger wrote 9 KB.
+     */
+    function flattened(err: unknown): Record<string, unknown> {
+      return { workspaceId: 'demo', ...loggerModule.logError(err) };
+    }
+
+    /**
+     * The terminal was never as loud as the file for this shape, and not for a
+     * reason worth relying on: `util.inspect` truncates a string nested in an
+     * object at its own default of 10,000 characters, so a flattened error
+     * arrived as ~20 KB of two half-strings and Node's own
+     * `... 590000 more characters` note. That is an accident of a default we do
+     * not set, it does not say what the caps elsewhere say, and it scales with
+     * however many string fields a context carries. So the assertion is that
+     * the terminal now carries OUR bound and OUR marker.
+     */
+    it('bounds the terminal with the shared marker, not Node’s inspect default', () => {
+      loggerModule.logger.error('[Workspaces] scan failed', flattened(new Error('y'.repeat(HUGE))));
+
+      expect(output().length).toBeLessThan(64 * 1024);
+      expect(output()).toContain(`[truncated, ${HUGE} characters total]`);
+      expect(output()).not.toContain('more characters');
+    });
+
+    it('bounds the NDJSON line too, with the same marker', () => {
+      loggerModule.logger.error('[Workspaces] scan failed', flattened(new Error('y'.repeat(HUGE))));
+
+      const marker = `[truncated, ${HUGE} characters total]`;
+      const line = fs.readFileSync(path.join(logDir, 'dorkos.log'), 'utf8');
+      expect(line.length).toBeLessThan(64 * 1024);
+      expect(line).toContain(marker);
+      expect(output()).toContain(marker);
+    });
+
+    it('keeps the call site’s own context fields beside the clipped error', () => {
+      loggerModule.logger.error('[Workspaces] scan failed', flattened(new Error('y'.repeat(HUGE))));
+
+      const [entry] = fs
+        .readFileSync(path.join(logDir, 'dorkos.log'), 'utf8')
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l) as Record<string, unknown>);
+      expect(entry.workspaceId).toBe('demo');
+      expect(String(entry.error)).toContain('y'.repeat(1000));
+      // The frames are what say where in DorkOS this happened.
+      expect(String(entry.stack)).toContain('logger-console-clipping.test.ts');
+    });
+
+    it('leaves an ordinary flattened error byte-for-byte as it was', () => {
+      const err = new Error('boom');
+      const context = flattened(err);
+
+      const plainChunks: string[] = [];
+      const plain = createConsola({ level: 5 });
+      plain.options.stdout = sink(plainChunks);
+      plain.options.stderr = sink(plainChunks);
+
+      loggerModule.logger.error('[Extensions] Failed to initialize', context);
+      plain.error('[Extensions] Failed to initialize', {
+        workspaceId: 'demo',
+        error: err.message,
+        stack: err.stack,
+      });
+
+      expect(output()).toBe(plainChunks.join(''));
+      expect(output()).not.toContain('[truncated');
+    });
+  });
+
   describe('an error whose message contains someone else’s stack trace', () => {
     /**
      * The shape this exists for: a subprocess dump. `git clone` stderr, a failed
