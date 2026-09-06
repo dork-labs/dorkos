@@ -1,10 +1,11 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { Logger } from '@dorkos/shared/logger';
 import type { MarketplaceJson } from '@dorkos/marketplace';
+import { initBoundary } from '../../../lib/boundary.js';
 import { PackageFetcher } from '../package-fetcher.js';
 import type { MarketplaceCache, CachedPackage, CachedMarketplace } from '../marketplace-cache.js';
 import type { TemplateDownloader } from '../../core/template-downloader.js';
@@ -372,7 +373,12 @@ describe('PackageFetcher', () => {
     });
 
     it('fetchFromGit returns the local directory immediately when gitUrl is file://', async () => {
-      workDir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-'));
+      // Realpath'd and made the boundary root: a `file://` install is confined
+      // to the directory boundary (DOR-1825), so a suite exercising the happy
+      // path has to say which directory it is installing from within. What the
+      // boundary REFUSES is `install-address-policy.test.ts`'s subject.
+      workDir = await realpath(await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-')));
+      await initBoundary(workDir);
       const pkgDir = path.join(workDir, 'packages', 'my-plugin');
       await mkdir(pkgDir, { recursive: true });
 
@@ -397,7 +403,8 @@ describe('PackageFetcher', () => {
       // node:url's fileURLToPath decodes percent-escapes (e.g. %20 -> ' ');
       // new URL(source).pathname does not, and previously left the encoded
       // form in the returned path (DOR-412).
-      workDir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-'));
+      workDir = await realpath(await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-')));
+      await initBoundary(workDir);
       const pkgDir = path.join(workDir, 'my plugin');
       await mkdir(pkgDir, { recursive: true });
 

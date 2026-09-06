@@ -20,7 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { initBoundary } from '../../../lib/boundary.js';
 import type { MarketplaceInstaller } from '../marketplace-installer.js';
 import { ADAPTER_PROJECT_PATH_IGNORED_WARNING } from '../flows/install-adapter.js';
@@ -109,6 +109,32 @@ describe('marketplace install pipeline — integration', () => {
 
     // The template downloader must not have been invoked: local paths
     // resolve via `kind: 'local'` and skip the fetcher entirely.
+    expect(spies.templateClone).not.toHaveBeenCalled();
+  });
+
+  it('installs the same plugin end-to-end from its file:// spelling', async () => {
+    // The other local spelling of the install above. It takes a different route
+    // — the resolver reads `name@file:///…` as a git-shaped address and the
+    // fetcher serves it from disk — and since DOR-1825 both routes ask the
+    // directory boundary the same question. This is the half that has to keep
+    // WORKING: a genuine local install inside the boundary, whichever way it is
+    // spelled.
+    const { installer, spies } = buildInstallerForTests(dorkHome);
+
+    const result = await installer.install({
+      name: 'valid-plugin',
+      source: pathToFileURL(fixturePath('valid-plugin')).href,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.type).toBe('plugin');
+    expect(result.packageName).toBe('valid-plugin');
+    expect(result.installPath).toBe(path.join(dorkHome, 'plugins', 'valid-plugin'));
+    expect(
+      await pathExists(path.join(dorkHome, 'plugins', 'valid-plugin', '.dork', 'manifest.json'))
+    ).toBe(true);
+
+    // Served from disk, never cloned — the `file://` branch of the fetcher.
     expect(spies.templateClone).not.toHaveBeenCalled();
   });
 

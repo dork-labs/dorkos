@@ -22,6 +22,11 @@
  * module will not hand to `git` throws `UnsupportedSourceUrlError` and stops
  * the fetch (DOR-1799).
  *
+ * A `file://` address never reaches `git`, so it answers the other question
+ * instead: the directory boundary, which is what `PackageResolver` already
+ * asks of the `./some/path` spelling of the same install (DOR-1825). Two local
+ * spellings, one answer.
+ *
  * @module services/marketplace/package-fetcher
  */
 import { execFile } from 'node:child_process';
@@ -50,6 +55,7 @@ import { gitSubdirResolver } from './source-resolvers/git-subdir.js';
 import { hardenedGitEnv } from '../../lib/git-safety.js';
 import { npmResolver } from './source-resolvers/npm.js';
 import { assertSafeGitRemote } from './source-url-policy.js';
+import { validateBoundary } from '../../lib/boundary.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -161,7 +167,8 @@ export class PackageFetcher {
    * for the same SHA are no-ops.
    *
    * Algorithm:
-   *   1. Serve a `file://` gitUrl straight from disk and return.
+   *   1. Serve a `file://` gitUrl from disk once the directory boundary allows
+   *      it, and return (DOR-1825).
    *   2. Refuse an address this fetcher will not hand to `git` (DOR-1799).
    *   3. Resolve commit SHA from gitUrl + ref via `git ls-remote` (with a
    *      deterministic fallback when git/network is unavailable).
@@ -176,6 +183,8 @@ export class PackageFetcher {
    * @throws {UnsupportedSourceUrlError} When `opts.gitUrl` is a remote address
    *   {@link assertSafeGitRemote} refuses. Nothing is fetched, and no git
    *   subprocess starts.
+   * @throws {BoundaryError} When `opts.gitUrl` is a `file://` address outside
+   *   the configured directory boundary (DOR-1825).
    */
   async fetchFromGit(opts: FetchPackageOptions): Promise<FetchedPackage> {
     const gitUrl = opts.gitUrl;
@@ -187,6 +196,7 @@ export class PackageFetcher {
 
     if (isFileUrl(gitUrl)) {
       const localPath = fileUrlToPath(gitUrl);
+      await this.assertLocalPathAllowed(localPath, gitUrl);
       this.logger.debug('package-fetcher: serving local file:// package', {
         packageName: opts.packageName,
         path: localPath,
@@ -513,6 +523,48 @@ export class PackageFetcher {
       assertSafeGitRemote(gitUrl);
     } catch (err) {
       this.logger.warn('package-fetcher: refused an unsupported git address', { gitUrl });
+      throw err;
+    }
+  }
+
+  /**
+   * Confine a `file://` install address to the configured directory boundary.
+   *
+   * The local counterpart of {@link assertRemoteAllowed}, and the reason it
+   * exists is symmetry rather than a new policy: an install address has two
+   * local spellings, `./some/path` and `file:///some/path`, and only the first
+   * one was bounded. `PackageResolver`'s `resolveLocal` runs `validateBoundary`
+   * on the relative form; the `file://` form skipped it because it takes the
+   * git-shaped branch through the resolver — `new URL()` parses it, so it
+   * arrives here as a `gitUrl` — and then never reaches `git` at all
+   * (DOR-1825). Same route, same directory, two different answers.
+   *
+   * The boundary is what the rest of the server enforces on every raw-path
+   * surface, and `resolveLocal`'s own comment states the stakes: a directory
+   * that happens to carry a package manifest gets a full recursive file listing
+   * returned by the install preview, before anyone has consented to an install.
+   *
+   * The validated path is deliberately discarded rather than returned in place
+   * of `localPath`: `resolveLocal` hands the pre-canonical path downstream too,
+   * and a `file://` install that resolved to a *different* directory than the
+   * one the person named would be a surprise this change has no business
+   * introducing. What the boundary refuses is unchanged either way — it
+   * canonicalizes before judging, so a symlink out of the boundary is refused
+   * even though the symlink's own path is what gets returned.
+   *
+   * @param localPath - The filesystem path the `file://` address converts to.
+   * @param gitUrl - The original address, logged on refusal because the
+   *   operator-facing `BoundaryError` deliberately omits it.
+   * @throws {BoundaryError} When the path falls outside the boundary.
+   * @internal
+   */
+  private async assertLocalPathAllowed(localPath: string, gitUrl: string): Promise<void> {
+    try {
+      await validateBoundary(localPath);
+    } catch (err) {
+      this.logger.warn('package-fetcher: refused a file:// address outside the boundary', {
+        gitUrl,
+      });
       throw err;
     }
   }

@@ -147,7 +147,11 @@ function isInstallableGitRemote(url: string): boolean {
  * `file://` addresses do not reach here, so this predicate does not allow them
  * and does not need to: `fetchFromGit` branches on `file://` first and reads
  * the directory, and the git-subdir path never carries one — a `file://`
- * marketplace resolves through the relative-path resolver instead.
+ * marketplace resolves through the relative-path resolver instead. That branch
+ * is not unguarded, it is guarded by a different question: nothing is handed to
+ * `git`, so what confines it is the directory boundary, the same one
+ * `PackageResolver.resolveLocal` runs on the `./some/path` spelling of the same
+ * install (DOR-1825).
  *
  * @param url - The address about to be handed to `git`.
  * @throws {UnsupportedSourceUrlError} When the transport is not one
