@@ -58,18 +58,24 @@ See [Securing your instance](/docs/self-hosting/securing-your-instance) for the 
 
 ## What the MCP and agent endpoints expose
 
-DorkOS ships a tool endpoint at `/mcp` so external agents and scripts can drive it. What it exposes depends entirely on whether you have exposed the server:
+DorkOS ships a tool endpoint at `/mcp` so external agents and scripts can drive it. **It is closed by default, on localhost too.** What you send to open it depends on whether you have turned on login:
 
-- **On localhost with no key set** (the default), the endpoint is open to your own machine, the same as the rest of the local app. That includes tools that install packages, create agents, and run extension code. In the local trust model this is fine, because those callers already run as you.
-- **The instant you expose the server, that endpoint is gated** by the same login the rest of the API uses, plus per-user API keys and optional rate limits. The exposure guard is what keeps the open-on-localhost surface off the network: the server refuses to bind to a public address without a login. Two things get past that, and both are worth knowing: the official Docker image opts out of the guard on purpose (the callout above), and a reverse proxy in front of a loopback bind is a path the guard never sees, because it only inspects the address DorkOS itself binds to.
+- **Login off (the default).** Anything that changes something on your machine — installing a package, creating an agent, running extension code — needs your **local MCP token**, a file only someone signed in to your computer can read. Without it, those calls come back `401`. What still answers with no token is the handshake and read-only checks: listing the tools, `ping`, `get_server_info`. A tool DorkOS does not recognise is refused rather than allowed, so a tool added later starts out closed.
+- **Login on.** The login gate covers `/mcp` like the rest of the API, so every call needs a session or a per-user API key, and the local token steps aside.
+- **Exposing the server** does not loosen either rule; it adds the exposure guard on top. The server refuses to bind to a public address without a login. Two things get past that guard, and both are worth knowing: the official Docker image opts out of it on purpose (the callout above), and a reverse proxy in front of a loopback bind is a path it never sees, because it only inspects the address DorkOS itself binds to.
 
 <Callout type="warn">
-  Because localhost MCP tools include package installs and extension code, treat any local software
-  you do not trust as able to drive your fleet. That is the same risk you take with any local tool
-  that has a control socket. If that matters for your setup, set an `MCP_API_KEY` and require it.
+  **The honest limit of the local token.** While login is off, any program running on your computer
+  can read the token file the same way the app does. The token stops callers that have no token at
+  all, and it guards the endpoint anywhere the port is reachable from outside — a tunnel or a proxy.
+  It does not stand between you and other software running as you, which can still drive tools that
+  install packages and run extension code. [Turning on
+  login](/docs/self-hosting/securing-your-instance) is the boundary that closes that. `MCP_API_KEY`
+  is not: it is the fixed key for a server nobody signs into, not the thing standing between you and
+  an open endpoint.
 </Callout>
 
-The A2A agent endpoints follow the same rule: unauthenticated only on a loopback bind, gated the moment you go wider.
+The A2A agent endpoints work the same way, with one difference: while login is off, reading an Agent Card needs no token, because a card is public metadata — but every JSON-RPC call, which runs a prompt against one of your agents, is gated. Turn login on and card reads need a credential too.
 
 ## Agent-to-agent messaging and budgets
 

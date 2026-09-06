@@ -141,7 +141,7 @@ It is still early alpha. Only turn it on when you know what is on the other side
   type={{
     DORKOS_A2A_ENABLED: {
       description:
-        'Enable the A2A external gateway for cross-vendor agent communication. Requires `DORKOS_RELAY_ENABLED=true`. Auth reuses `MCP_API_KEY`. When set, it overrules the `a2a.enabled` setting in both directions.',
+        'Enable the A2A external gateway for cross-vendor agent communication. Requires `DORKOS_RELAY_ENABLED=true`. Auth reuses the MCP credentials — the local token, a per-user API key, or the `MCP_API_KEY` override. When set, it overrules the `a2a.enabled` setting in both directions.',
       type: 'boolean',
       default: 'false',
     },

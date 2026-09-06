@@ -1452,13 +1452,18 @@ The server operates in **stateless mode** — each POST request creates a fresh 
 
 ### Authentication
 
-Optional API key authentication via the `MCP_API_KEY` environment variable. When set, all requests must include:
+`/mcp` is **fail-closed**, with or without `MCP_API_KEY`. `createMcpAuth({ surface: 'mcp' })` (`middleware/mcp-auth.ts`) tries four credentials in order and allows on the first match: the `MCP_API_KEY` env override, a per-user Better Auth API key or session cookie via `verifyRequestAuth`, the not-yet-seeded legacy `config.mcp.apiKey`, and — only while login is off — this instance's per-instance local MCP token. Each is sent the same way:
 
 ```
-Authorization: Bearer <MCP_API_KEY>
+Authorization: Bearer <token>
 ```
 
-When `MCP_API_KEY` is not set, authentication is disabled (localhost-only access assumed). Generate a key with `openssl rand -hex 32`.
+When none matches, the posture decides:
+
+- **Login off** (the default): the read-only carve-out applies to the parsed JSON-RPC body. Tokenless access is a closed allowlist — exactly `initialize`, `ping`, `tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`, any `notifications/*` method, and `tools/call`s naming a tool in `READ_ONLY_MCP_TOOL_NAMES`. Everything else — mutating tools, unknown tools, `resources/read`, unknown methods, a batch with any guarded element, an unparseable body — is a `401`. A tool is guarded until it is explicitly admitted to that set, so a newly added tool defaults to token-required.
+- **Login on**: no tokenless path. The app-wide `sessionGate` runs before the `/mcp` mount and answers first, so a session cookie or per-user API key is the only credential that reaches the router — the local token and the `MCP_API_KEY` override alone are both refused here (`middleware/__tests__/mcp-auth.integration.test.ts`). The `/a2a` gateway is not under `sessionGate`, so the override still works there.
+
+Which component answers decides the `401` shape. A refusal from this middleware — the login-off case — is a JSON-RPC 2.0 error envelope naming the local-token file path and the `Authorization: Bearer` header, never the token value. A refusal from `sessionGate` — the login-on case, which is reached first — is the app's REST shape, `{ error: 'Unauthorized', code: 'AUTH_REQUIRED' }`, and names no token path. Generate a static key with `openssl rand -hex 32`.
 
 ### Origin Validation
 
@@ -1471,8 +1476,12 @@ Since DOR-1711 the decision is `isTrustedBrowserOrigin` in `apps/server/src/lib/
 Requests to `/mcp` pass through this middleware chain in order:
 
 1. `validateMcpOrigin` — DNS rebinding protection (checks `Origin` header)
-2. `mcpApiKeyAuth` — API key authentication (checks `Authorization` header)
-3. `mcpRouter` — Streamable HTTP transport handler
+2. `requireMcpEnabled` — clean `503` when the MCP surface is switched off
+3. `createMcpAuth({ surface: 'mcp' })` — credential resolution + the login-off carve-out (checks `Authorization` header, then the parsed body)
+4. `mcpRateLimiter` — per-connection rate limiting
+5. `createMcpRouter(...)` — Streamable HTTP transport handler
+
+The app-wide `sessionGate` sits ahead of all five (mounted in `app.ts`), which is why it, not `createMcpAuth`, answers an uncredentialed request once login is on.
 
 ### Available Tools
 
@@ -1500,7 +1509,7 @@ Item templates (`{id}`/`{name}`) are not enumerated into `resources/list` — th
 
 Neither server pushes `notifications/resources/list_changed`: the external one is stateless (a fresh `McpServer` per request, see above) and so cannot outlive the response it was created for, and the in-session one registers a fixed set that never changes during a query. Both `initialize` responses accordingly advertise `resources: { listChanged: false }`, which `registerDorkOsResources` sets explicitly because the MCP SDK's `registerResource()` otherwise advertises `true` with no opt-out. Resource _subscriptions_ (`resources/subscribe`) are not implemented at all, so that capability is never advertised either.
 
-On `/mcp`, session and agent data flows through the same auth middleware chain as every tool (`validateMcpOrigin` → `mcpApiKeyAuth` → the MCP router), so a resource read is authorized identically to a tool call — no separate resource-level auth gate. `dorkos://sessions` and `dorkos://sessions/{id}` include each session's `cwd`, matching what `GET /api/sessions` already returns to the same authenticated caller — not a new exposure, but called out here since it's the one field in these resources that names a filesystem path. Agent manifests (`dorkos://agents`, `dorkos://agents/{id}`) never include a filesystem path (`AgentManifest` has no `projectPath` field), matching `mesh_list`/`mesh_inspect`. The in-session surface is deliberately not gated further: those tools run in-process inside a session the user started, there is no HTTP hop to carry a token, and every payload is data the same agent can already reach through `mesh_list`, `GET /api/sessions`, or its own filesystem.
+On `/mcp`, session and agent data flows through the same auth middleware chain as every tool (`validateMcpOrigin` → `requireMcpEnabled` → `createMcpAuth` → `mcpRateLimiter` → the MCP router), so a resource read is authorized by that one chain — there is no separate resource-level auth gate. The login-off carve-out does not reach it: `resources/read` requires a credential even though a read-only `tools/call` does not. `dorkos://sessions` and `dorkos://sessions/{id}` include each session's `cwd`, matching what `GET /api/sessions` already returns to the same authenticated caller — not a new exposure, but called out here since it's the one field in these resources that names a filesystem path. Agent manifests (`dorkos://agents`, `dorkos://agents/{id}`) never include a filesystem path (`AgentManifest` has no `projectPath` field), matching `mesh_list`/`mesh_inspect`. The in-session surface is deliberately not gated further: those tools run in-process inside a session the user started, there is no HTTP hop to carry a token, and every payload is data the same agent can already reach through `mesh_list`, `GET /api/sessions`, or its own filesystem.
 
 ### Extension MCP Tools
 
@@ -1629,7 +1638,12 @@ Like the MCP endpoint, A2A is a protocol endpoint — it speaks JSON-RPC, not RE
 
 ### Authentication
 
-Same as MCP: optional `MCP_API_KEY` via `Authorization: Bearer <key>` (or a per-user Better Auth API key when login is enabled). When nothing is configured, requests pass through unauthenticated — permitted only on a loopback bind (see Deployment security). Agent Cards advertise the spec-standard `http`/`bearer` security scheme, with a `security` requirement present only when the server actually enforces auth.
+A2A rides the same middleware as `/mcp` — `createMcpAuth({ surface: 'a2a' })` — so the four credential acceptors are identical (the `MCP_API_KEY` override, a per-user Better Auth key or session, the legacy compat key, and the per-instance local token while login is off), all sent as `Authorization: Bearer <token>`. Only the no-match fallback differs, because A2A has no read/write annotation to carve on:
+
+- **Login off:** an Agent Card `GET` passes tokenless — public discovery metadata, the `tools/list` analogue. Every JSON-RPC `POST` is `401` without a credential; **execution is always gated**, and has been since DOR-278 (`middleware/__tests__/mcp-auth.test.ts`).
+- **Login on:** both are `401` without a credential — card discovery closes too. Unlike `/mcp`, `/a2a` is not an `isGatedPath` prefix, so `sessionGate` never runs on it and the `MCP_API_KEY` override does reach this surface.
+
+Agent Cards always describe the spec-standard `http`/`bearer` scheme. The `security` **requirement**, though, is advertised only when a network-reachable credential is configured — `MCP_API_KEY`, the legacy compat key, or login (`authConfigured` in `index.ts`) — because the local token is a loopback-trust signal, the same one the exposure guard keys on. So in the default login-off posture a card advertises no requirement even though a `POST` does require the local token; a client that trusts the card alone will get a `401`.
 
 ### Deployment security
 
