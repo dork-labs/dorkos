@@ -34,6 +34,8 @@ const BOOT_DEADLINE_MS = 10_000;
 const BOOT_CEILING_MS = 60_000;
 /** How long after an uncaught error the sentinel waits before deciding it was fatal. */
 const ERROR_GRACE_MS = 3_000;
+/** How often the watchdog looks at the page while a boot is in flight. */
+const LOADING_RECHECK_MS = 1_000;
 /** How long a copy-button label stays swapped before returning to rest. */
 const COPY_FEEDBACK_MS = 2_000;
 /** The headline the failure surface leads with. */
@@ -238,6 +240,29 @@ describe('boot sentinel', () => {
     expect(surfacePainted()).toBe(false);
   });
 
+  // The watchdog stops for a mounted app, and "mounted" used to be forever: one
+  // early return and the polling chain was never scheduled again, so content
+  // that appeared and then vanished while the document was still loading
+  // switched the whole thing off permanently. Nothing produces that today —
+  // `main.tsx` mounts and calls `done()` in the same breath — but the guard is
+  // one condition, and a latent hole in a watchdog is worth closing rather than
+  // arguing about.
+  it('keeps watching when content appears and vanishes while the document is still loading', () => {
+    setReadyState('interactive');
+    installSentinel();
+    const root = document.getElementById('root')!;
+
+    root.innerHTML = '<main>a flash of something</main>';
+    vi.advanceTimersByTime(LOADING_RECHECK_MS * 2);
+    root.innerHTML = '';
+
+    // The bundle turns out to be broken after all.
+    setReadyState('complete');
+    vi.advanceTimersByTime(BOOT_DEADLINE_MS);
+
+    expect(rootText()).toContain(HEADLINE);
+  });
+
   it('does not paint over an app that mounted without calling done()', () => {
     installSentinel();
     document.getElementById('root')!.innerHTML = '<main>the app</main>';
@@ -277,6 +302,68 @@ describe('boot sentinel', () => {
 
     vi.advanceTimersByTime(1);
     expect(rootText()).toContain(HEADLINE);
+  });
+
+  // DOR-1771, the other half of "a slow load is not a failed boot". The grace
+  // used to paint three seconds after ANY error, with no gate of its own — and
+  // three seconds is less than a cold boot takes on a busy machine (measured:
+  // 3.3s to 13.1s for the dev module graph). One harmless rejection therefore
+  // condemned a page that was still downloading the module that mounts it, and
+  // a capture run driving the phone surfaces hit exactly that in 1 run of 9.
+  it('does not condemn a document that is still loading when an error arrives', () => {
+    setReadyState('interactive');
+    installSentinel();
+
+    throwUncaught('a picture that did not load');
+    vi.advanceTimersByTime(ERROR_GRACE_MS * 4);
+
+    expect(surfacePainted()).toBe(false);
+  });
+
+  it('does not condemn a still-loading document over an unhandled rejection either', () => {
+    setReadyState('interactive');
+    installSentinel();
+
+    const event = new Event('unhandledrejection') as Event & { reason?: unknown };
+    event.reason = new Error('a boot fetch nobody awaited');
+    window.dispatchEvent(event);
+    vi.advanceTimersByTime(BOOT_DEADLINE_MS * 2);
+
+    expect(surfacePainted()).toBe(false);
+  });
+
+  // The error still has to be worth something: it brings the verdict forward
+  // from ten seconds to three, the moment loading actually stops.
+  it('paints as soon as a document that errored finishes loading', () => {
+    setReadyState('interactive');
+    installSentinel();
+    throwUncaught('Uncaught ReferenceError: __APP_VERSION__ is not defined');
+
+    vi.advanceTimersByTime(ERROR_GRACE_MS * 4);
+    expect(surfacePainted()).toBe(false);
+
+    setReadyState('complete');
+    vi.advanceTimersByTime(LOADING_RECHECK_MS);
+
+    expect(rootText()).toContain(HEADLINE);
+    expect(technicalDetails()).toContain('__APP_VERSION__ is not defined');
+  });
+
+  // The panel keeps the stack in a collapsed <details>, which is invisible to
+  // anything reading the page as text — which is how DOR-1771 was filed with a
+  // headline and no stack. The console is the channel every watcher records.
+  it('logs what it knows to the console when it gives up', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    installSentinel();
+    throwUncaught('createBootCache is not defined');
+
+    vi.advanceTimersByTime(ERROR_GRACE_MS);
+
+    expect(error).toHaveBeenCalledTimes(1);
+    const logged = String(error.mock.calls[0][0]);
+    expect(logged).toContain('[dorkos:boot-failed]');
+    expect(logged).toContain('createBootCache is not defined');
+    expect(logged).toContain('ReferenceError');
   });
 
   it('lets a mid-boot error pass when React mounts anyway', () => {

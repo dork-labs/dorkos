@@ -4,6 +4,7 @@ import type { RunRecorder } from './library.js';
 import {
   attempt,
   isShotSkipped,
+  newCaptureContext,
   patch,
   seedThemeOnContext,
   shoot,
@@ -178,7 +179,7 @@ export async function captureFullPowerDoor(browser: Browser, rec: RunRecorder): 
   try {
     await attempt('full-power-door-light', async () => {
       await unanswerPowerDecision();
-      const ctx = await browser.newContext({
+      const ctx = await newCaptureContext(browser, {
         viewport: DESKTOP_VIEWPORT,
         deviceScaleFactor: DEVICE_SCALE_FACTOR,
         reducedMotion: 'reduce',
