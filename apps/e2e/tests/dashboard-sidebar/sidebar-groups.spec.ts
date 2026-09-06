@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { SOLE_SIDEBAR_TAG } from '../../fixtures/sole-access';
 import { describeViolation, runAxe } from '../../axe';
+import { openRadixSubmenu } from '../../radix-menu';
 
 /**
  * What the a11y sweep below is pointed at: the sidebar panel, and none of the
@@ -82,6 +83,15 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
    */
   const secondAgentName = `E2E Sidebar Codex ${runId}`;
   const groupName = `E2E Group ${runId}`;
+  /**
+   * A second hand-made section, for the one test that reorders the panel.
+   *
+   * Made only by that test — a section costs a menu, an inline editor and a
+   * config write, and every other test here needs exactly one. Teardown removes
+   * both names either way, because a teardown that has to know which test ran is
+   * a teardown that leaks the day somebody adds a third.
+   */
+  const secondGroupName = `E2E Group B ${runId}`;
   /** The path the server canonicalized on registration — what `items` stores. */
   let agentProjectPath: string;
 
@@ -115,7 +125,8 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     const config = (await res.json()) as {
       ui: { sidebar: { groups: { name: string }[] } };
     };
-    const groups = config.ui.sidebar.groups.filter((g) => g.name !== groupName);
+    const mine = new Set([groupName, secondGroupName]);
+    const groups = config.ui.sidebar.groups.filter((g) => !mine.has(g.name));
     if (groups.length === config.ui.sidebar.groups.length) return;
     await request.patch('/api/config', { data: { ui: { sidebar: { groups } } } }).catch(() => {});
   });
@@ -136,6 +147,18 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     // DOM: the agent row now renders inside the group's own member list.
     await expect(group).toContainText(agentName);
     await expect(group).not.toContainText(EMPTY_GROUP_PLACEHOLDER);
+
+    // **And the MOUSE does not move the keyboard** (DOR-1790). The focus
+    // restore that follows a keyboard drop is deliberately keyboard-only —
+    // moving focus because a pointer drag happened would be the mouse taking
+    // the keyboard's place, and it is the line dnd-kit draws too
+    // (`isKeyboardEvent(previousActivatorEvent)`). Asserted here, in the
+    // pointer test, because the guard has no other witness: drop it and this
+    // is the only thing that goes red.
+    await expect(
+      group.locator('[data-sidebar-row]').filter({ hasText: agentName }),
+      'a pointer drop moved the keyboard onto the row it dragged'
+    ).not.toBeFocused();
 
     // …and it sits on the SAME x as a row in Channels. Sections are peers now
     // (D3), so the panel is two levels — one header x, one row x — and a
@@ -206,6 +229,19 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     // The row moved, and the panel says so out loud.
     await expect(group).toContainText(agentName);
     await expect(group).not.toContainText(EMPTY_GROUP_PLACEHOLDER);
+
+    // **And the keyboard came with it** (DOR-1790). A row that changes section
+    // is unmounted and drawn again under a new dnd id, which is the one case
+    // dnd-kit's own `RestoreFocus` cannot answer: it looks the OLD id up, finds
+    // nothing, and returns. Measured before the fix, in this browser: focus was
+    // on `<body>` immediately after the drop and still on `<body>` a second
+    // later — no ring anywhere, and the next Tab starting again from the top of
+    // the document. Scoped to the group so this cannot pass on the copy the row
+    // left behind.
+    await expect(
+      group.locator('[data-sidebar-row]').filter({ hasText: agentName }),
+      'a keyboard drop left the reader on nothing'
+    ).toBeFocused();
 
     // …and the move persisted, which is the same proof the pointer drag above
     // takes: the config, not the DOM.
@@ -318,6 +354,90 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     await expect(header).toHaveAttribute('aria-expanded', 'true');
   });
 
+  test('reorders one section past another with the keyboard, and keeps the order (DOR-1790)', async ({
+    page,
+    request,
+    basePage,
+    dashboardSidebar,
+  }) => {
+    // **The other half of "a section header is a drag source".** DOR-1746
+    // proved a header can be LIFTED with Space and put back with Escape; no
+    // test, pointer or keyboard, had ever carried one past another and asked
+    // whether the panel kept the new order. So this is the whole gesture —
+    // lift, move, drop — and the proof is the PERSISTED order rather than the
+    // DOM: `ui.sidebar.groups` is the array the panel is drawn from, and a DOM
+    // check alone would pass on a reorder that never reached the server.
+    await dashboardSidebar.createGroup(groupName);
+
+    /** Every stored section, as the config keeps it — shape included. */
+    const storedGroups = async (): Promise<({ id: string; name: string } & object)[]> => {
+      const config = (await (await request.get('/api/config')).json()) as {
+        ui: { sidebar: { groups: ({ id: string; name: string } & object)[] } };
+      };
+      return config.ui.sidebar.groups;
+    };
+    /** This test's two sections, in the order the config keeps them. */
+    const persistedOrder = async (): Promise<string[]> =>
+      (await storedGroups())
+        .map((g) => g.name)
+        .filter((name) => name === groupName || name === secondGroupName);
+
+    // **The second section is SEEDED, not made through the menu.** Making one
+    // is proved by the six tests around this one; making a second immediately
+    // after the first buys a dependency on a window this test is not about —
+    // measured, right after a section commits, the next click on "New" is
+    // swallowed and only the one after it opens the menu (one click is enough
+    // again a second and a half later — DOR-1834). The shape is CLONED from the section
+    // just made rather than restated here, so a seed cannot drift from the
+    // schema, and the clone is appended so the pair starts in a known order.
+    const groups = await storedGroups();
+    const made = groups.find((g) => g.name === groupName);
+    expect(made, 'the section that was just made was never stored').toBeDefined();
+    await request.patch('/api/config', {
+      data: {
+        ui: {
+          sidebar: { groups: [...groups, { ...made, id: `${made!.id}-b`, name: secondGroupName }] },
+        },
+      },
+    });
+
+    // The panel reads `ui.sidebar` from a query it has already answered, so the
+    // seed reaches the screen on the next load rather than by itself.
+    await page.reload();
+    await basePage.waitForAppReady();
+    await basePage.ensureSidebarOpen();
+
+    // Asserted rather than assumed, because the whole test is about a CHANGE
+    // to it.
+    expect(await persistedOrder()).toEqual([groupName, secondGroupName]);
+
+    const second = dashboardSidebar.librarySectionToggle(secondGroupName);
+    await expect(second).toBeVisible();
+
+    // Tab in, Space lifts, arrows carry it over the first section, Space drops.
+    // Nothing is focused programmatically: a keyboard reorder that only works
+    // from a `.focus()` is a reorder nobody can perform.
+    await dashboardSidebar.tabToSectionHeader(secondGroupName);
+    await dashboardSidebar.keyboardDragSectionOverSection(second, groupName);
+
+    // The array flipped, on the server. Polled rather than read once — the write
+    // is optimistic, so the PATCH lands a beat after the drop.
+    await expect
+      .poll(persistedOrder, { message: 'the keyboard reorder never reached the config' })
+      .toEqual([secondGroupName, groupName]);
+
+    // …and the panel agrees after a reload, which is the reader's own proof:
+    // the section they moved is drawn first the next time they open the app.
+    await page.reload();
+    await basePage.waitForAppReady();
+    await basePage.ensureSidebarOpen();
+    const sections = dashboardSidebar.panel.locator(
+      '[data-sidebar-zone="library"] [data-sidebar-section^="group:"]'
+    );
+    await expect(sections.first()).toContainText(secondGroupName);
+    await expect(sections.nth(1)).toContainText(groupName);
+  });
+
   test('takes a CHANNEL into a section, and files it there', async ({
     request,
     roomsApi,
@@ -397,11 +517,11 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     // blur-cancelled itself in the same frame, and the item read as inert while
     // the "⋮" beside it worked (DOR-1371). Only a browser can see that. The
     // submenu is opened with the keyboard rather than a hover, which has its own
-    // delay and races.
+    // delay and races — through `openRadixSubmenu`, because the sub-open key is
+    // dropped when the menu's own opening focus has not landed yet (DOR-1800).
     await channel.click({ button: 'right' });
     const moveTo = page.getByRole('menuitem', { name: 'Move to section' });
-    await moveTo.waitFor({ state: 'visible' });
-    await moveTo.press('ArrowRight');
+    await openRadixSubmenu(page, moveTo, 'Move to section');
     await page.getByRole('menuitem', { name: 'New section…' }).click();
 
     const input = page.getByRole('textbox', { name: 'New section name' });

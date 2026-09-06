@@ -16,7 +16,11 @@ import { toast } from 'sonner';
 import { useIsMobile } from '@/layers/shared/model';
 import { useSidebarPrefs, useUpdateSidebarPrefs } from '@/layers/entities/config';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
-import type { SidebarPrefs, SidebarItemRef } from '@dorkos/shared/config-schema';
+import {
+  sameSidebarItem,
+  type SidebarPrefs,
+  type SidebarItemRef,
+} from '@dorkos/shared/config-schema';
 import {
   buildSidebarAnnouncements,
   classifySidebarDrop,
@@ -26,9 +30,11 @@ import {
   toDragDescriptor,
   toDropDescriptor,
   type SidebarDndData,
+  type SidebarDropOp,
 } from '../../model/use-sidebar-dnd';
 import { DragLiftChip } from '../motion/DragLiftChip';
-import { SidebarDndEnabledProvider } from './SidebarDndPrimitives';
+import { SidebarDndEnabledProvider, sidebarRowDndId } from './SidebarDndPrimitives';
+import { focusRowOnArrival } from './restore-drop-focus';
 import { useLatest } from '@/layers/shared/lib';
 
 interface SidebarDndProps {
@@ -65,6 +71,41 @@ const DRAG_KEYS: KeyboardCodes = {
   cancel: ['Escape'],
   end: ['Space', 'Enter', 'Tab'],
 };
+
+/**
+ * The dnd id the moved row will be drawn under once a drop has been applied, or
+ * `null` when the drop leaves the row where it already was.
+ *
+ * The three operations named here are the ones that take the row out of the
+ * container it was lifted from, so the node dnd-kit was carrying is unmounted
+ * and its `RestoreFocus` finds nothing (see `restore-drop-focus.ts`). Everything
+ * else — the reorders, and `pin`, which COPIES a row into Pins and leaves the
+ * original where it is — keeps that node, so dnd-kit restores focus itself and
+ * this must not fight it.
+ *
+ * `unpin` reads its destination from the prefs rather than naming one: it takes
+ * the row out of Pins, and where the row then lives is wherever it already
+ * belonged — a section, or the ungrouped list it came from.
+ *
+ * @param prefs - The prefs the drop was classified against.
+ * @param op - The classified drop.
+ */
+function movedRowDndId(prefs: SidebarPrefs, op: SidebarDropOp): string | null {
+  switch (op.kind) {
+    case 'move-to-group':
+      return sidebarRowDndId(op.groupId, op.ref);
+    case 'remove-from-group':
+      return sidebarRowDndId('ungrouped', op.ref);
+    case 'unpin': {
+      const home = prefs.groups.find((group) =>
+        group.items.some((item) => sameSidebarItem(item, op.ref))
+      );
+      return sidebarRowDndId(home?.id ?? 'ungrouped', op.ref);
+    }
+    default:
+      return null;
+  }
+}
 
 /** The floating label shown under the cursor while dragging. */
 function DragOverlayContent({
@@ -173,6 +214,20 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
     // a row and putting it straight back down should cost the server nothing.
     if (op.kind === 'none') return;
     update((prev) => resolveSidebarDrop(prev, drag, drop));
+
+    // **A keyboard drop that relocates the row has to hand the keyboard back**
+    // (DOR-1790). The row is about to be unmounted and drawn again under a new
+    // dnd id, which is the one case dnd-kit's own `RestoreFocus` cannot answer —
+    // it looks the old id up and finds nothing, leaving a reader on `<body>`.
+    //
+    // **Keyboard only, deliberately.** A drop made with the mouse leaves focus
+    // where the reader put it, and moving it because a drag happened would be
+    // the pointer stealing the keyboard's place. dnd-kit draws the same line
+    // (`isKeyboardEvent(previousActivatorEvent)`), and this is the same rule
+    // applied to the rows it cannot reach.
+    if (!(event.activatorEvent instanceof KeyboardEvent)) return;
+    const landing = movedRowDndId(latestPrefs.read(), op);
+    if (landing !== null) focusRowOnArrival(landing);
   };
 
   return (
