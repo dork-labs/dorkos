@@ -39,7 +39,7 @@ import { InstallConfirmationDialog } from '@/layers/features/marketplace/ui/Inst
 import { PermissionPreviewSection } from '@/layers/features/marketplace/ui/PermissionPreviewSection';
 import { MarketplaceToolbar } from '@/layers/features/marketplace/ui/MarketplaceToolbar';
 
-import { marketplaceKeys } from '@/layers/entities/marketplace/api/query-keys';
+import { marketplaceKeys } from '@/layers/entities/marketplace';
 
 import {
   MOCK_PACKAGES,

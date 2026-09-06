@@ -41,7 +41,7 @@ import { useTasksEnabled } from '@/layers/entities/tasks';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { useToolNamesForGroup } from '@/layers/entities/capability';
 import { useUpdateAgent } from '@/layers/entities/mesh';
-import { useAgentContextConfig } from '@/layers/entities/config/model/use-agent-context-config';
+import { useAgentContextConfig } from '@/layers/entities/config';
 import { agentKeys } from '@/layers/entities/agent';
 import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
 import { TooltipProvider } from '@/layers/shared/ui';

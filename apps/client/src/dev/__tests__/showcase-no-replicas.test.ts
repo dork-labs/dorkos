@@ -143,8 +143,11 @@ describe('the Composer showcase renders the real components', () => {
   it('imports the real Conversation.Composer and QueuePanel', () => {
     expect(source).toMatch(/import \{ Conversation \} from '@\/layers\/features\/conversation'/);
     // Both through their slice barrels — `features/chat` exports `QueuePanel`,
-    // so the playground asks for it there (DOR-1765).
-    expect(source).toMatch(/import \{ QueuePanel \} from '@\/layers\/features\/chat'/);
+    // so the playground asks for it there (DOR-1765). Tolerant of other names
+    // sharing the same barrel import, the same shape as the ErrorMessageBlock
+    // assertion above — a second chat symbol folding into this import is the
+    // batch's own barrel-first rule working as intended, not a regression.
+    expect(source).toMatch(/import \{[^}]*\bQueuePanel\b[^}]*\} from '@\/layers\/features\/chat'/);
   });
 
   it('drives every disposition through the real Conversation.Composer, not a hand-rolled replica', () => {

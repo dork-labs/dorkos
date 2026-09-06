@@ -509,7 +509,7 @@ function PaletteAnchor({ hint, children }: { hint: string; children: React.React
 }
 
 /** The slash-command dropdown the composer's overlay lane opens on `/`. */
-export function CommandPaletteShowcase() {
+export function SlashCommandListShowcase() {
   return (
     <PlaygroundSection
       title="SlashCommandList"
