@@ -139,10 +139,11 @@ export function isSafeguardRefusal(noticeText: string | undefined): boolean {
 /**
  * What the card says when the API's safeguard declined a message.
  *
- * Carries the policy link on purpose: the client shows a runtime message on its
- * own line only when it contains a URL (`ErrorMessageBlock`), so the link is
- * what keeps this sentence visible instead of folded into Details. The
- * request id stays in Details, where the raw notice is kept verbatim.
+ * Filed under `execution_error`, so `ErrorMessageBlock` prints this sentence
+ * as the card's own text; it does not depend on the link to stay visible. The
+ * link is there because it is the one thing the person may want to read next
+ * and a paraphrase cannot carry it. The request id stays in Details, where the
+ * raw notice is kept verbatim.
  */
 export const SAFEGUARD_REFUSAL_MESSAGE =
   'Claude’s safety filter flagged this message. It sometimes flags ordinary coding work. ' +
