@@ -175,7 +175,7 @@ describe('IdentityHoverCard', () => {
     expect(activeElementAtCallTime).toBe(trigger);
   });
 
-  it("shows an agent's runtime/model and working chips, never a person's", async () => {
+  it('shows an agent’s runtime/model and working chips, never a person’s', async () => {
     await openOn({
       kind: 'agent',
       displayName: 'Warden',
@@ -222,7 +222,7 @@ describe('IdentityHoverCard', () => {
     });
   });
 
-  it("draws the identity's photo on the card's disc, and the emoji when there is none", async () => {
+  it('draws the identity’s photo on the card’s disc, and the emoji when there is none', async () => {
     // The descriptor field the one production caller (`MentionPillRenderer`)
     // fills. Red if the card stops passing it down: the message gutter reads
     // the same render cache, so a card that dropped the photo would describe
@@ -242,7 +242,7 @@ describe('IdentityHoverCard', () => {
     expect(without).toHaveTextContent('🐙');
   });
 
-  it("shows a person's origin chip, and an external platform name for a bridged person", async () => {
+  it('shows a person’s origin chip, and an external platform name for a bridged person', async () => {
     await openOn({ kind: 'human', displayName: 'Priya', origin: { platform: 'Telegram' } });
     expect(screen.getByText('Telegram')).toBeInTheDocument();
 

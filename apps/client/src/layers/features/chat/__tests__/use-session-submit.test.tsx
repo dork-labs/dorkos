@@ -720,7 +720,7 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     });
   });
 
-  it("stop() carries the runtime's receipt through rather than flattening it (DOR-1300)", async () => {
+  it('stop() carries the runtime’s receipt through rather than flattening it (DOR-1300)', async () => {
     // A caller (the composer) decides whether to re-offer Stop off THIS receipt
     // — if `stop()` reduced `unconfirmed` to a same-shaped success, a turn that
     // is still running would never be told apart from one that actually
@@ -961,7 +961,7 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
 
   it('a failed KICKOFF raises no error banner (no dead Retry) and marks the greeting failed', async () => {
     // The birth session's auto-first-turn: the person typed nothing, so a
-    // "Could not send message" banner with a Retry (which would find no user
+    // "Couldn’t send message" banner with a Retry (which would find no user
     // message to resend) would be dishonest AND dead. The failure instead
     // surfaces via the empty session's honest greeting-failed line.
     const kickoff = wrapKickoff('introduce yourself from SOUL.md');

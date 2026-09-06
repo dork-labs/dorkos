@@ -194,11 +194,11 @@ describe('buildHeaderBlockMenuNodes', () => {
 
 describe('teamNameFor', () => {
   it('names the cockpit after the operator', () => {
-    expect(teamNameFor('Dorian')).toBe("Dorian's team");
+    expect(teamNameFor('Dorian')).toBe('Dorian’s team');
   });
 
   it('does not double the s on a name that already ends in one', () => {
-    expect(teamNameFor('Chris')).toBe("Chris' team");
+    expect(teamNameFor('Chris')).toBe('Chris’ team');
   });
 
   it('falls back to a name it can say honestly when the roster is empty', () => {
@@ -216,9 +216,9 @@ describe('teamNameFor', () => {
 describe('SidebarHeaderBlock', () => {
   it('is a button named after the operator, with the New button and the ⌘K pill beside it', () => {
     renderBlock();
-    const block = screen.getByRole('button', { name: /Dorian's team/ });
+    const block = screen.getByRole('button', { name: /Dorian’s team/ });
     expect(block.tagName).toBe('BUTTON');
-    expect(block).toHaveTextContent("Dorian's team");
+    expect(block).toHaveTextContent('Dorian’s team');
     expect(screen.getByTestId('new-menu')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar-search-pill')).toBeInTheDocument();
   });
@@ -290,7 +290,7 @@ describe('SidebarHeaderBlock', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /v0\.58\.0 beta/ }));
 
     await waitFor(() => expect(mockGetConfig.mock.calls.length).toBeGreaterThan(asked));
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("You're up to date"));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('You’re up to date'));
   });
 
   it('names the newer release when the server has one', async () => {
@@ -317,7 +317,7 @@ describe('the team name while the roster is still coming (spec `sidebar-simplifi
 
     expect(screen.getByTestId('sidebar-team-name-skeleton')).toBeInTheDocument();
     expect(screen.queryByText('Your team')).toBeNull();
-    expect(screen.queryByText("Dorian's team")).toBeNull();
+    expect(screen.queryByText('Dorian’s team')).toBeNull();
     // …and the control is still named for a screen reader while it waits.
     expect(screen.getByTestId('sidebar-header-block')).toHaveAttribute('aria-label', 'Team menu');
   });
@@ -327,7 +327,7 @@ describe('the team name while the roster is still coming (spec `sidebar-simplifi
     renderBlock();
 
     expect(screen.queryByTestId('sidebar-team-name-skeleton')).toBeNull();
-    expect(screen.getByText("Dorian's team")).toBeInTheDocument();
+    expect(screen.getByText('Dorian’s team')).toBeInTheDocument();
   });
 
   it('still says "Your team" for an install that genuinely has no name', () => {

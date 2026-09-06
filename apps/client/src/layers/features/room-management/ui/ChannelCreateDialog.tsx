@@ -172,7 +172,7 @@ export function ChannelCreateDialog({ open, onOpenChange, onCreated }: ChannelCr
           </div>
 
           <section aria-label="Agents in this channel" className="space-y-2 border-t pt-4">
-            <h3 className="text-sm font-medium">Who&apos;s in it</h3>
+            <h3 className="text-sm font-medium">Who’s in it</h3>
             <p className="text-muted-foreground text-xs">
               They join when the channel is made and can read everything said in it. In a channel an
               agent replies when you @mention it, until you say otherwise.

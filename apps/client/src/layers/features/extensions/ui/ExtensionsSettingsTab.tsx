@@ -44,7 +44,7 @@ export function ExtensionsSettingsTab() {
         );
       },
       onError: (err) => {
-        toast.error(approve ? "Couldn't let it run." : "Couldn't stop it running.", {
+        toast.error(approve ? 'Couldn’t let it run.' : 'Couldn’t stop it running.', {
           description: err.message,
         });
       },
@@ -60,7 +60,7 @@ export function ExtensionsSettingsTab() {
       // reload needed. No success toast either: the card's own Switch already
       // reads on/off, so a toast beside it would say the same thing twice.
       onError: (err) => {
-        toast.error(enabled ? "Couldn't turn that on." : "Couldn't turn that off.", {
+        toast.error(enabled ? 'Couldn’t turn that on.' : 'Couldn’t turn that off.', {
           description: err.message,
         });
       },
@@ -70,10 +70,10 @@ export function ExtensionsSettingsTab() {
   function handleReload() {
     reloadMutation.mutate(undefined, {
       onSuccess: (updated) => {
-        toast.success(`Reloaded ${updated.length} extension(s)`);
+        toast.success(`Reloaded ${updated.length} extension${updated.length === 1 ? '' : 's'}`);
       },
       onError: (err) => {
-        toast.error("Couldn't reload your extensions.", { description: err.message });
+        toast.error('Couldn’t reload your extensions.', { description: err.message });
       },
     });
   }

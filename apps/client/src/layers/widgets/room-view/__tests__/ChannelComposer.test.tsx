@@ -300,7 +300,7 @@ describe('ChannelComposer', () => {
     // `expect.anything()` covers the shared "Report" action that cache adds;
     // its content is query-client.test.ts's subject, not this file's.
     expect(toastError).toHaveBeenCalledWith(
-      "Couldn't send your message",
+      'Couldn’t send your message',
       expect.objectContaining({ description: 'This room is archived' })
     );
   });
@@ -412,7 +412,7 @@ describe('ChannelComposer — a room you are not in (DOR-1233)', () => {
     mountComposer(createMockTransport(), leftRoom());
 
     expect(
-      screen.getByText("You're not in this channel. You can read it, but not add to it.")
+      screen.getByText('You’re not in this channel. You can read it, but not add to it.')
     ).toBeInTheDocument();
   });
 
@@ -458,7 +458,7 @@ describe('ChannelComposer — a room you are not in (DOR-1233)', () => {
 
     expect(screen.getByRole('combobox')).toBeInTheDocument();
     expect(
-      screen.queryByText("You're not in this channel. You can read it, but not add to it.")
+      screen.queryByText('You’re not in this channel. You can read it, but not add to it.')
     ).not.toBeInTheDocument();
   });
 
@@ -516,7 +516,7 @@ describe('ChannelComposer — a room you are not in (DOR-1233)', () => {
     }
     render(<Harness />, { wrapper });
 
-    await screen.findByText("You're not in this channel. You can read it, but not add to it.");
+    await screen.findByText('You’re not in this channel. You can read it, but not add to it.');
 
     fireEvent.click(screen.getByRole('button', { name: 'Join' }));
 

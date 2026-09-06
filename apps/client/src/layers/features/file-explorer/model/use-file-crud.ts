@@ -173,7 +173,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
           return true;
         } catch (err) {
           if (isNew) cache.restore(parent, prev);
-          toastCrudError(err, `Couldn't create ${type === 'dir' ? 'folder' : 'file'}`);
+          toastCrudError(err, `Couldn’t create ${type === 'dir' ? 'folder' : 'file'}`);
           return false;
         } finally {
           cache.invalidate(parent);
@@ -204,7 +204,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
           return true;
         } catch (err) {
           if (!collides) cache.restore(parent, prev);
-          toastCrudError(err, "Couldn't rename");
+          toastCrudError(err, 'Couldn’t rename');
           return false;
         } finally {
           cache.invalidate(parent);
@@ -224,7 +224,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
           useFileExplorerStore.getState().dropExpandedPaths(entry.path);
         } catch (err) {
           cache.restore(parent, prev);
-          toastCrudError(err, "Couldn't delete");
+          toastCrudError(err, 'Couldn’t delete');
         } finally {
           cache.invalidate(parent);
         }
@@ -244,7 +244,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
             useFileExplorerStore.getState().dropExpandedPaths(entry.path);
           } catch (err) {
             cache.restore(parent, prev);
-            toastCrudError(err, "Couldn't delete");
+            toastCrudError(err, 'Couldn’t delete');
           } finally {
             cache.invalidate(parent);
           }
@@ -262,7 +262,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
             setPendingRecursiveDelete(entry);
             return;
           }
-          toastCrudError(err, "Couldn't delete");
+          toastCrudError(err, 'Couldn’t delete');
         }
       }),
     [transport, cwd, cache, guard]
@@ -307,7 +307,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
         } catch (err) {
           cache.restore(fromParent, prevFrom);
           if (destShown && !destCollides) cache.restore(toDir, prevTo);
-          toastCrudError(err, "Couldn't move");
+          toastCrudError(err, 'Couldn’t move');
         } finally {
           cache.invalidate(fromParent);
           if (destShown) cache.invalidate(toDir);
@@ -332,7 +332,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
         try {
           taken = await cache.takenNames(toDir);
         } catch (err) {
-          toastCrudError(err, "Couldn't copy");
+          toastCrudError(err, 'Couldn’t copy');
           return;
         }
         const name = freeCopyName({
@@ -363,7 +363,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
           await transport.copyEntry(cwd, from.path, newPath);
         } catch (err) {
           if (destShown) cache.restore(toDir, prev);
-          toastCrudError(err, "Couldn't copy");
+          toastCrudError(err, 'Couldn’t copy');
         } finally {
           cache.invalidate(toDir);
         }

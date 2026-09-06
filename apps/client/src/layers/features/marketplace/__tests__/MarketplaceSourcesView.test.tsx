@@ -120,9 +120,9 @@ describe('MarketplaceSourcesView', () => {
 
       expect(screen.getByRole('heading', { name: /marketplace sources/i })).toBeInTheDocument();
       // Empty state renders the Add button twice (header + CTA).
-      expect(screen.getAllByRole('button', { name: /add source/i }).length).toBeGreaterThanOrEqual(
-        1
-      );
+      expect(
+        screen.getAllByRole('button', { name: /add marketplace source/i }).length
+      ).toBeGreaterThanOrEqual(1);
     });
 
     it('renders the empty state when no sources are configured', () => {
@@ -130,7 +130,7 @@ describe('MarketplaceSourcesView', () => {
 
       render(<MarketplaceSourcesView />);
 
-      expect(screen.getByText(/no sources configured/i)).toBeInTheDocument();
+      expect(screen.getByText(/no marketplaces added yet/i)).toBeInTheDocument();
       expect(screen.getByText(/add a git registry/i)).toBeInTheDocument();
     });
 
@@ -180,10 +180,10 @@ describe('MarketplaceSourcesView', () => {
       // Dialog is not mounted by default.
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
-      await user.click(screen.getByRole('button', { name: /add source/i }));
+      await user.click(screen.getByRole('button', { name: /add marketplace source/i }));
 
       expect(await screen.findByRole('dialog')).toBeInTheDocument();
-      expect(screen.getByLabelText(/git url/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/repository link/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/^name$/i)).toBeInTheDocument();
     });
 
@@ -194,13 +194,16 @@ describe('MarketplaceSourcesView', () => {
       render(<MarketplaceSourcesView />);
 
       // Use the header button (first Add Source) to open the dialog.
-      await user.click(screen.getAllByRole('button', { name: /add source/i })[0]);
+      await user.click(screen.getAllByRole('button', { name: /add marketplace source/i })[0]);
 
       const submit = await screen.findByRole('button', { name: /^add source$/i });
       expect(submit).toBeDisabled();
 
       // Fill only the URL — still disabled.
-      await user.type(screen.getByLabelText(/git url/i), 'https://github.com/org/marketplace');
+      await user.type(
+        screen.getByLabelText(/repository link/i),
+        'https://github.com/org/marketplace'
+      );
       expect(submit).toBeDisabled();
 
       // Fill the name — now enabled.
@@ -214,9 +217,12 @@ describe('MarketplaceSourcesView', () => {
 
       render(<MarketplaceSourcesView />);
 
-      await user.click(screen.getAllByRole('button', { name: /add source/i })[0]);
+      await user.click(screen.getAllByRole('button', { name: /add marketplace source/i })[0]);
 
-      await user.type(screen.getByLabelText(/git url/i), 'https://github.com/org/marketplace');
+      await user.type(
+        screen.getByLabelText(/repository link/i),
+        'https://github.com/org/marketplace'
+      );
       await user.type(screen.getByLabelText(/^name$/i), 'my-registry');
 
       await user.click(screen.getByRole('button', { name: /^add source$/i }));
@@ -235,9 +241,12 @@ describe('MarketplaceSourcesView', () => {
 
       render(<MarketplaceSourcesView />);
 
-      await user.click(screen.getAllByRole('button', { name: /add source/i })[0]);
+      await user.click(screen.getAllByRole('button', { name: /add marketplace source/i })[0]);
 
-      await user.type(screen.getByLabelText(/git url/i), '  https://github.com/org/marketplace  ');
+      await user.type(
+        screen.getByLabelText(/repository link/i),
+        '  https://github.com/org/marketplace  '
+      );
       await user.type(screen.getByLabelText(/^name$/i), '  my-registry  ');
 
       await user.click(screen.getByRole('button', { name: /^add source$/i }));
@@ -264,7 +273,7 @@ describe('MarketplaceSourcesView', () => {
 
       render(<MarketplaceSourcesView />);
 
-      await user.click(screen.getAllByRole('button', { name: /add source/i })[0]);
+      await user.click(screen.getAllByRole('button', { name: /add marketplace source/i })[0]);
 
       expect(screen.getByRole('alert')).toHaveTextContent(
         /isn't one DorkOS can fetch a marketplace from/
@@ -278,7 +287,7 @@ describe('MarketplaceSourcesView', () => {
 
       render(<MarketplaceSourcesView />);
 
-      await user.click(screen.getAllByRole('button', { name: /add source/i })[0]);
+      await user.click(screen.getAllByRole('button', { name: /add marketplace source/i })[0]);
       await user.click(screen.getByRole('button', { name: /cancel/i }));
 
       expect(addReset).toHaveBeenCalled();

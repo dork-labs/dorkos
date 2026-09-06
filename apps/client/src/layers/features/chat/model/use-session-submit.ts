@@ -305,7 +305,7 @@ export function useSessionSubmit({
         // an ordinary send destroyed the message outright (DOR-480).
         if (opts.kickoff) throw err;
         setError({
-          heading: 'Could not send message',
+          heading: 'Couldn’t send message',
           message: (err as Error).message || 'The attachment did not upload. Please try again.',
           // The words are still in the composer (or back in the queue row), so
           // the retry is a keystroke away. A Retry button here would re-send the
@@ -468,14 +468,14 @@ export function useSessionSubmit({
 
         // A failed kickoff propagates to useAutoKickoff, which retries once and
         // — if that is also spent — surfaces an honest greeting-failed line on
-        // the empty session. Deliberately NO "Could not send message" banner:
+        // the empty session. Deliberately NO "Couldn’t send message" banner:
         // the person typed nothing, so that copy (and its Retry, which would
         // find no user message to resend) would be dishonest and dead. The
         // composer stays fully usable — a rejected trigger started no turn.
         if (opts.kickoff) throw err;
 
         setError({
-          heading: 'Could not send message',
+          heading: 'Couldn’t send message',
           message: (err as Error).message || 'The request failed. Please try again.',
           retryable: true,
         });
@@ -627,21 +627,21 @@ export function useSessionSubmit({
   /** Put a message on the session's queue, behind the running turn. */
   const enqueueContent = useCallback(
     (content: string): Promise<boolean> =>
-      deliverWithDisposition(content, 'queue', 'Could not queue message'),
+      deliverWithDisposition(content, 'queue', 'Couldn’t queue message'),
     [deliverWithDisposition]
   );
 
   /** Send a message into the running turn now (steer), so the agent changes course. */
   const steerContent = useCallback(
     (content: string): Promise<boolean> =>
-      deliverWithDisposition(content, 'steer', 'Could not steer the agent'),
+      deliverWithDisposition(content, 'steer', 'Couldn’t steer the agent'),
     [deliverWithDisposition]
   );
 
   /** Add context the agent uses next, without cutting into the running turn (stage). */
   const addContextContent = useCallback(
     (content: string): Promise<boolean> =>
-      deliverWithDisposition(content, 'stage', 'Could not add context'),
+      deliverWithDisposition(content, 'stage', 'Couldn’t add context'),
     [deliverWithDisposition]
   );
 

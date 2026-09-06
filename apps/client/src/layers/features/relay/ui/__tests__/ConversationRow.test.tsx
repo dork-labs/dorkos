@@ -173,7 +173,7 @@ describe('ConversationRow', () => {
         wrapper,
       });
 
-      expect(screen.getByText(/"Hello world"/)).toBeInTheDocument();
+      expect(screen.getByText('“Hello world”')).toBeInTheDocument();
     });
   });
 
@@ -227,14 +227,14 @@ describe('ConversationRow', () => {
       });
     });
 
-    it('shows "More options..." link in the popover', async () => {
+    it('shows "More options…" link in the popover', async () => {
       const { wrapper } = createWrapper();
       render(<ConversationRow conversation={makeConversation()} />, { wrapper });
 
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
 
       await waitFor(() => {
-        expect(screen.getByText('More options...')).toBeInTheDocument();
+        expect(screen.getByText('More options…')).toBeInTheDocument();
       });
     });
 
@@ -350,16 +350,16 @@ describe('ConversationRow', () => {
   });
 
   describe('"More options" advanced route', () => {
-    it('opens BindingDialog in create mode when "More options..." is clicked', async () => {
+    it('opens BindingDialog in create mode when "More options…" is clicked', async () => {
       const { wrapper } = createWrapper();
       render(<ConversationRow conversation={makeConversation()} />, { wrapper });
 
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
       await waitFor(() => {
-        expect(screen.getByText('More options...')).toBeInTheDocument();
+        expect(screen.getByText('More options…')).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByText('More options...'));
+      fireEvent.click(screen.getByText('More options…'));
 
       await waitFor(() => {
         expect(screen.getByTestId('binding-dialog')).toBeInTheDocument();
@@ -376,9 +376,9 @@ describe('ConversationRow', () => {
 
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
       await waitFor(() => {
-        expect(screen.getByText('More options...')).toBeInTheDocument();
+        expect(screen.getByText('More options…')).toBeInTheDocument();
       });
-      fireEvent.click(screen.getByText('More options...'));
+      fireEvent.click(screen.getByText('More options…'));
 
       await waitFor(() => {
         const dialog = screen.getByTestId('binding-dialog');
@@ -393,9 +393,9 @@ describe('ConversationRow', () => {
 
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
       await waitFor(() => {
-        expect(screen.getByText('More options...')).toBeInTheDocument();
+        expect(screen.getByText('More options…')).toBeInTheDocument();
       });
-      fireEvent.click(screen.getByText('More options...'));
+      fireEvent.click(screen.getByText('More options…'));
 
       await waitFor(() => {
         expect(screen.getByTestId('binding-dialog')).toBeInTheDocument();
@@ -418,9 +418,9 @@ describe('ConversationRow', () => {
 
       fireEvent.click(screen.getByRole('button', { name: /route to agent/i }));
       await waitFor(() => {
-        expect(screen.getByText('More options...')).toBeInTheDocument();
+        expect(screen.getByText('More options…')).toBeInTheDocument();
       });
-      fireEvent.click(screen.getByText('More options...'));
+      fireEvent.click(screen.getByText('More options…'));
 
       await waitFor(() => {
         expect(screen.getByTestId('binding-dialog')).toBeInTheDocument();

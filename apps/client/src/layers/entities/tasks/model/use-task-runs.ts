@@ -127,6 +127,6 @@ export function useCancelTaskRun() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...TASK_RUNS_KEY] });
     },
-    meta: { errorLabel: "Couldn't stop the run" },
+    meta: { errorLabel: 'Couldn’t stop the run' },
   });
 }

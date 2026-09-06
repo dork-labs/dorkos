@@ -99,7 +99,7 @@ export function ClaimFeed({ enabled }: { enabled: boolean }) {
                     return;
                   }
                   toast.error(
-                    error instanceof Error ? error.message : "Couldn't set an agent to answer"
+                    error instanceof Error ? error.message : 'Couldn’t set an agent to answer'
                   );
                 },
               }

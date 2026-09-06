@@ -252,8 +252,8 @@ export function OneBarShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>
-          The same bar on Scheduled — no members chip (that is Home&apos;s room), a page action
-          instead, and the dot stays exactly where it was
+          The same bar on Scheduled — no members chip (that is Home’s room), a page action instead,
+          and the dot stays exactly where it was
         </ShowcaseLabel>
         <ShowcaseDemo>
           <BarFrame>
@@ -323,8 +323,8 @@ export function OneBarShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>
-          The channel bar — the room&apos;s only masthead now. Name, topic, and the chips that say
-          what is true of it
+          The channel bar — the room’s only masthead now. Name, topic, and the chips that say what
+          is true of it
         </ShowcaseLabel>
         <ShowcaseDemo>
           <ChannelBarFrame room={CHANNEL_ROOM} />
@@ -349,7 +349,7 @@ export function OneBarShowcases() {
 
         <ShowcaseLabel>
           Mid-run: the working count and Stop light up in space that was already theirs, so nothing
-          beside them moves (I3). Compare the room name&apos;s position with the quiet bar above
+          beside them moves (I3). Compare the room name’s position with the quiet bar above
         </ShowcaseLabel>
         <ShowcaseDemo>
           <ChannelBarFrame room={BUSY_ROOM} working={3} />
@@ -365,8 +365,8 @@ export function OneBarShowcases() {
 
         <ShowcaseLabel>
           The channel bar in a 390px-wide frame. Note what this CANNOT show: hiding the topic and
-          dropping Stop&apos;s label are `sm:` rules, which answer to the VIEWPORT, not to this box
-          — so on a real phone this row is narrower still. Resize the window to see it
+          dropping Stop’s label are `sm:` rules, which answer to the VIEWPORT, not to this box — so
+          on a real phone this row is narrower still. Resize the window to see it
         </ShowcaseLabel>
         <ShowcaseDemo>
           <ChannelBarFrame room={BUSY_PHONE_ROOM} working={2} width={390} />
@@ -580,7 +580,7 @@ export function OneBarShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>
-          The phone's action — `New Agent` becomes a labelled `+`. This one is composed by hand
+          The phone’s action — `New Agent` becomes a labelled `+`. This one is composed by hand
           because the collapse follows the VIEWPORT (`useIsMobile`), not the frame: narrow the
           browser to see the bar above do it for real.
         </ShowcaseLabel>

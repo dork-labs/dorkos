@@ -111,7 +111,7 @@ describe('heldSentence', () => {
     // With two there is more than one conversation in the way, and naming one of
     // them would be picking a favourite that the sentence cannot justify.
     expect(heldSentence(['Mio Clicker PM', 'Ana'], '#mio-engagement')).toBe(
-      "Mio Clicker PM and Ana will pick this up when they're free"
+      'Mio Clicker PM and Ana will pick this up when they’re free'
     );
   });
 
@@ -132,7 +132,7 @@ describe('heldSentence', () => {
 describe('heldCountSentence', () => {
   it('counts past the naming limit', () => {
     expect(heldCountSentence(PRESENCE_NAME_LIMIT + 1)).toBe(
-      "4 agents will pick this up when they're free"
+      '4 agents will pick this up when they’re free'
     );
   });
 });

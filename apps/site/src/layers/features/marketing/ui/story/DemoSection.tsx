@@ -32,7 +32,7 @@ export function DemoSection({ slideId = 'demo' }: DemoSectionProps) {
           variants={REVEAL}
           className="text-cream-white text-[clamp(22px,3vw,36px)] leading-[1.4] font-light"
         >
-          Let me show you...
+          Let me show you…
         </motion.p>
       </motion.div>
     </section>

@@ -469,8 +469,8 @@ export const RoomRow = memo(function RoomRow({
           <AlertDialogHeader>
             <AlertDialogTitle>Leave {title}?</AlertDialogTitle>
             <AlertDialogDescription>
-              You can still read what&rsquo;s here, but you won&rsquo;t be able to post again. You
-              can join it again from this menu any time.
+              You can still read what’s here, but you won’t be able to post again. You can join it
+              again from this menu any time.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

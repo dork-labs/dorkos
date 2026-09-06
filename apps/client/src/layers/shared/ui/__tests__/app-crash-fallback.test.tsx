@@ -37,7 +37,7 @@ describe('AppCrashFallback', () => {
   it('leads with a plain sentence and files the raw error under Details', () => {
     render(<AppCrashFallback error={new Error('Provider crashed')} resetErrorBoundary={vi.fn()} />);
 
-    expect(screen.getByText('DorkOS stopped. Sorry about that.')).toBeTruthy();
+    expect(screen.getByText('DorkOS ran into a problem')).toBeTruthy();
     expect(screen.getByText(/Reload to pick up where you left off/)).toBeTruthy();
     expect(screen.getByText('Details')).toBeTruthy();
   });

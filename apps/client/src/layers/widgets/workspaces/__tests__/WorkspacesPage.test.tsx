@@ -158,7 +158,7 @@ describe('WorkspacesPage', () => {
 
     // The unreadable folder is the one most worth seeing, so it gets a row.
     expect(await screen.findByText('broken')).toBeInTheDocument();
-    expect(screen.getByText(/Can't read/)).toBeInTheDocument();
+    expect(screen.getByText(/Can’t read/)).toBeInTheDocument();
     // And it claims nothing it does not know.
     expect(screen.queryByText('Clean')).not.toBeInTheDocument();
   });
@@ -167,7 +167,7 @@ describe('WorkspacesPage', () => {
     renderWithScan({ worktrees: [makeWorktree({ branch: null, readable: true })] });
 
     expect(await screen.findByText('No branch')).toBeInTheDocument();
-    expect(screen.queryByText(/Can't read/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Can’t read/)).not.toBeInTheDocument();
   });
 
   it('offers no way to create, pin, or delete a checkout', async () => {

@@ -82,7 +82,7 @@ test.describe('Rooms — the owner sees every room, on or off its roster @smoke'
     // future default that mutes a freshly-seeded room would fail this exact
     // string for a reason that has nothing to do with membership. A red here
     // is worth checking against mute state before assuming this guarantee broke.
-    await expect(row).toHaveAccessibleName(`#${slug} You're not in this channel`);
+    await expect(row).toHaveAccessibleName(`#${slug} You’re not in this channel`);
 
     await row.click();
     await expect(page).toHaveURL(new RegExp(`id=${room.id}`));
@@ -97,7 +97,7 @@ test.describe('Rooms — the owner sees every room, on or off its roster @smoke'
     // back onto the roster right where the composer would be.
     await expect(page.getByRole('combobox', { name: `Message #${slug}…` })).toHaveCount(0);
     await expect(
-      page.getByText("You're not in this channel. You can read it, but not add to it.")
+      page.getByText('You’re not in this channel. You can read it, but not add to it.')
     ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Join' })).toBeVisible();
   });

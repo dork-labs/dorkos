@@ -41,7 +41,7 @@ const TRANSPORT_ERRORS: readonly { label: string; error: TransportErrorInfo }[] 
     label: "Can't reach DorkOS (retryable)",
     error: {
       heading: "Can't reach DorkOS",
-      message: 'Could not reach the server. Check your network and try again.',
+      message: 'Couldn’t reach the server. Check your network and try again.',
       retryable: true,
     },
   },
@@ -185,7 +185,7 @@ export function StatusShowcases() {
 
         <ShowcaseLabel>Streaming cursor active</ShowcaseLabel>
         <ShowcaseDemo>
-          <StreamingText content="Working on it..." isStreaming />
+          <StreamingText content="Working on it…" isStreaming />
         </ShowcaseDemo>
       </PlaygroundSection>
 

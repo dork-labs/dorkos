@@ -181,7 +181,7 @@ describe('File explorer clipboard (DOR-1032)', () => {
 
     fireEvent.click(await screen.findByText('Duplicate'));
 
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Couldn't copy"));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Couldn’t copy'));
     await waitFor(() => expect(screen.queryByText('README copy.md')).not.toBeInTheDocument());
   });
 
@@ -223,7 +223,7 @@ describe('File explorer clipboard (DOR-1032)', () => {
     fireEvent.click(await screen.findByRole('treeitem', { name: 'src' }));
     fireEvent.keyDown(screen.getByRole('tree'), { key: 'v', metaKey: true });
 
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Can't copy a folder into itself"));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Can’t copy a folder into itself'));
     expect(copyEntry).not.toHaveBeenCalled();
   });
 
@@ -236,7 +236,7 @@ describe('File explorer clipboard (DOR-1032)', () => {
 
     fireEvent.click(await screen.findByText('Duplicate'));
 
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Can't copy a folder into itself"));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Can’t copy a folder into itself'));
   });
 
   it('empties the clipboard when the working directory changes', () => {

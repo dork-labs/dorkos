@@ -135,7 +135,7 @@ describe('QuickBindingPopover', () => {
     });
   });
 
-  it('calls onAdvanced when "Advanced..." is clicked', async () => {
+  it('calls onAdvanced when "Advanced…" is clicked', async () => {
     const onAdvanced = vi.fn();
 
     render(
@@ -149,11 +149,11 @@ describe('QuickBindingPopover', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Advanced...')).toBeInTheDocument();
+      expect(screen.getByText('Advanced…')).toBeInTheDocument();
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText('Advanced...'));
+      fireEvent.click(screen.getByText('Advanced…'));
     });
 
     expect(onAdvanced).toHaveBeenCalledTimes(1);

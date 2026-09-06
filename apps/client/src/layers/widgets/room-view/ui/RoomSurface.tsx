@@ -307,7 +307,7 @@ export function RoomSurface({
   if (roomQuery.isError || !room) {
     return (
       <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 p-10 text-center text-sm">
-        <p className="text-foreground font-medium">That conversation isn&apos;t here</p>
+        <p className="text-foreground font-medium">That conversation isn’t here</p>
         <p className="max-w-sm">
           It may have been archived, or the link may be out of date. Pick another one from the
           sidebar.

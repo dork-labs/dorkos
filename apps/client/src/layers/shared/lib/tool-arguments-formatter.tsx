@@ -60,7 +60,7 @@ function renderValue(value: unknown, maxLen: number): React.ReactNode {
           <div key={k} className="border-border/40 border-l pl-2">
             <span className="text-muted-foreground text-xs">{humanizeKey(k)}: </span>
             {typeof v === 'object' && v !== null ? (
-              <span className="text-muted-foreground italic">{'{...'}</span>
+              <span className="text-muted-foreground italic">{'{…}'}</span>
             ) : (
               renderValue(v, 80)
             )}

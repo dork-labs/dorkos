@@ -8,11 +8,16 @@ import { stashPendingFeedback } from '@/layers/shared/lib/pending-feedback';
  * Uses inline styles only — no shadcn, no Tailwind, no app context.
  * If providers crashed, any dependency on them would also crash.
  *
- * Two recovery actions: a full page reload, and "Report this crash", which
- * stashes a prefilled bug report (message stubbed from the error, stack folded
- * into diagnostics) and reloads — the dialog's host picks it up on the next boot
+ * Two recovery actions: a full page reload, and "Report this", which stashes a
+ * prefilled bug report (message stubbed from the error, stack folded into
+ * diagnostics) and reloads — the dialog's host picks it up on the next boot
  * (`shared/lib/pending-feedback.ts`). The dialog itself cannot render here: the
  * whole app tree, its host included, has already unmounted.
+ *
+ * Says "DorkOS ran into a problem" / "Reload DorkOS" / "Report this" because
+ * this screen, `RouteErrorFallback` and `NotFoundFallback` are one family and
+ * used to invent three vocabularies for the same two actions (DOR-1756 finding
+ * 10.4): "Reload DorkOS" and "Reload app" were the same button under two names.
  */
 export function AppCrashFallback({ error }: FallbackProps) {
   const message = error instanceof Error ? error.message : String(error);
@@ -42,7 +47,7 @@ export function AppCrashFallback({ error }: FallbackProps) {
       }}
     >
       <p style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-        DorkOS stopped. Sorry about that.
+        DorkOS ran into a problem
       </p>
       <p
         style={{
@@ -126,7 +131,7 @@ export function AppCrashFallback({ error }: FallbackProps) {
             (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent';
           }}
         >
-          Report this crash
+          Report this
         </button>
         <button
           type="button"

@@ -112,7 +112,7 @@ describe('ApprovalCard', () => {
       denyApproval: vi.fn().mockResolvedValue({ ok: true, outcome: 'denied' }),
     });
 
-    await userEvent.click(screen.getByRole('button', { name: "Don't allow" }));
+    await userEvent.click(screen.getByRole('button', { name: 'Don’t allow' }));
 
     expect(await screen.findByText('Not allowed')).toBeInTheDocument();
   });
@@ -145,7 +145,7 @@ describe('ApprovalCard', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Allow' })).toBeInTheDocument());
     expect(screen.queryByText('Allowed')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: "Don't allow" })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Don’t allow' })).toBeInTheDocument();
   });
 
   it('draws the receipt on a card that did not itself answer', async () => {
@@ -190,7 +190,7 @@ describe('ApprovalCard', () => {
 
     expect(screen.getByText('Not allowed')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: "Don't allow" })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Don’t allow' })).not.toBeInTheDocument();
     // The standing-grant offer is the loudest of the three and the easiest to
     // leave behind: it is gated on `!decision`, not on the buttons above it.
     expect(
@@ -209,8 +209,8 @@ describe('ApprovalCard', () => {
       renderCard(
         buildApproval({
           capabilityId: 'operator.update_agent_boundaries',
-          capabilityTitle: "Change an agent's safety boundaries",
-          summary: '"Warden" wants to run "Change an agent\'s safety boundaries"',
+          capabilityTitle: 'Change an agent’s safety boundaries',
+          summary: '"Warden" wants to run "Change an agent’s safety boundaries"',
           detail: BOUNDARIES,
         })
       );

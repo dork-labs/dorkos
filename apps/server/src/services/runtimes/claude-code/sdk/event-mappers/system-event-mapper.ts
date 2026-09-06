@@ -290,7 +290,7 @@ export async function* mapSystemEvent(
       } else {
         yield {
           type: 'system_status',
-          data: { message: `Running hook "${msg.hook_name as string}"...` },
+          data: { message: `Running hook "${msg.hook_name as string}"…` },
         };
       }
       return;

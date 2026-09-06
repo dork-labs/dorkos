@@ -182,7 +182,7 @@ export function SessionComposer({
   // The box's own words, and how many are held behind it — both read off the
   // conversation's target, which is the one place either fact lives.
   const { target } = useConversation();
-  const defaultPlaceholder = target?.placeholder ?? 'Send a message...';
+  const defaultPlaceholder = target?.placeholder ?? 'Send a message…';
   const awaitingDecision = useSessionAwaitingDecision(sessionId);
 
   // What THIS session's runtime can do with a message sent mid-task. Steer and

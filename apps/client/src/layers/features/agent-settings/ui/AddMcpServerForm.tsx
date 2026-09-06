@@ -200,7 +200,7 @@ export function AddMcpServerForm({
       if (result.status === 'approval_required') setPending(result.approval);
       else settleAdded(result, input);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add the server.');
+      setError(err instanceof Error ? err.message : 'Couldn’t add the server.');
     }
   }, [addServer, buildInput, settleAdded]);
 
@@ -213,7 +213,7 @@ export function AddMcpServerForm({
       if (result.status === 'ok') settleAdded(result, input);
       else setError('The server still needs approval. Try again.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add the server.');
+      setError(err instanceof Error ? err.message : 'Couldn’t add the server.');
     }
   }, [addServer, buildInput, pending, settleAdded]);
 

@@ -14,6 +14,6 @@ export function useDeleteBinding() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...BINDINGS_QUERY_KEY] });
     },
-    meta: { errorLabel: "Couldn't remove that connection" },
+    meta: { errorLabel: 'Couldn’t remove that connection' },
   });
 }

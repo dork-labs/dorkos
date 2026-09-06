@@ -60,7 +60,7 @@ describe('ElicitationPrompt — URL mode', () => {
     expect(screen.queryByRole('button', { name: /Done/ })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Open authorization page' }));
-    expect(screen.getByRole('button', { name: 'I authorized it' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
   });
 
   it('refuses a scheme the link seam does not dispatch, and says so', () => {
@@ -72,11 +72,11 @@ describe('ElicitationPrompt — URL mode', () => {
 
     expect(openSpy).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: /Done/ })).not.toBeInTheDocument();
-    expect(screen.getByText(/Could not open myapp:\/\/authorize/)).toBeInTheDocument();
+    expect(screen.getByText(/Couldn’t open myapp:\/\/authorize/)).toBeInTheDocument();
     // The half that matters for the flow, and the half the seam's own toast
     // cannot say: the authorization did not happen (DOR-547). The toast says
     // why the link was refused; this says what that means here, and unlike the
-    // toast it persists beside the missing "I authorized it" button.
+    // toast it persists beside the missing "Done" button.
     expect(screen.getByText(/Nothing has been authorized\./)).toBeInTheDocument();
   });
 
@@ -89,7 +89,7 @@ describe('ElicitationPrompt — URL mode', () => {
 
     expect(openSpy).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: /Done/ })).not.toBeInTheDocument();
-    expect(screen.getByText(/Could not open/)).toBeInTheDocument();
+    expect(screen.getByText(/Couldn’t open/)).toBeInTheDocument();
   });
 
   it('never submits an acceptance for a link that never opened', () => {
@@ -107,7 +107,7 @@ describe('ElicitationPrompt — URL mode', () => {
   it('clears a previous refusal once a link does open', () => {
     const { rerender } = renderPrompt({ url: 'myapp://authorize' });
     fireEvent.click(screen.getByRole('button', { name: 'Open authorization page' }));
-    expect(screen.getByText(/Could not open/)).toBeInTheDocument();
+    expect(screen.getByText(/Couldn’t open/)).toBeInTheDocument();
 
     rerender(
       <TransportProvider transport={transport}>
@@ -124,14 +124,14 @@ describe('ElicitationPrompt — URL mode', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Open authorization page' }));
 
-    expect(screen.queryByText(/Could not open/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'I authorized it' })).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn’t open/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
   });
 
   it('submits the acceptance once the user confirms a real open', async () => {
     renderPrompt();
     fireEvent.click(screen.getByRole('button', { name: 'Open authorization page' }));
-    fireEvent.click(screen.getByRole('button', { name: 'I authorized it' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
 
     await waitFor(() => {
       expect(submitElicitation).toHaveBeenCalledWith(
@@ -156,5 +156,18 @@ describe('ElicitationPrompt — URL mode', () => {
       );
     });
     expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it('shows the authored sentence and the raw MCP error when submit fails', async () => {
+    submitElicitation.mockRejectedValueOnce(new Error('MCP server rejected the request'));
+    renderPrompt();
+    fireEvent.click(screen.getByRole('button', { name: 'Open authorization page' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+
+    expect(await screen.findByText('Couldn’t send your answer. Try again.')).toBeInTheDocument();
+    expect(screen.getByText('MCP server rejected the request')).toBeInTheDocument();
+    // Submitting must reset so the person can retry rather than being stuck
+    // behind a disabled button forever.
+    expect(screen.getByRole('button', { name: 'Done' })).not.toBeDisabled();
   });
 });

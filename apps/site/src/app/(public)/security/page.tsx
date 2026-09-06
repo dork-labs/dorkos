@@ -88,9 +88,9 @@ export default function SecurityPage() {
           </h2>
           <p className="text-warm-gray leading-relaxed">
             Agents can read and write files and run commands inside the boundary you give them.
-            Installing a package from the Marketplace runs that package&apos;s code on your machine.
-            We fetch packages over safe channels and roll back a failed install cleanly, but we do
-            not yet verify a package signature for you. Install packages the way you would run any
+            Installing a package from the Marketplace runs that package’s code on your machine. We
+            fetch packages over safe channels and roll back a failed install cleanly, but we do not
+            yet verify a package signature for you. Install packages the way you would run any
             script from the internet: only from authors you trust.
           </p>
         </section>
@@ -103,11 +103,11 @@ export default function SecurityPage() {
             Your agents can operate DorkOS itself, not just write code. Most of what they do is easy
             to take back, so it just happens and lands in your activity feed. Four things are not
             easy to take back, and DorkOS stops and asks first: removing an installed package,
-            deleting a scheduled task, removing an agent, and changing an agent&apos;s safety
-            boundaries. Installing a package or creating one asks too, because both bring new code
-            onto your machine. You get a card describing exactly what would run, written by DorkOS
-            rather than by the agent, and an agent that identifies itself is refused when it tries
-            to answer its own card.
+            deleting a scheduled task, removing an agent, and changing an agent’s safety boundaries.
+            Installing a package or creating one asks too, because both bring new code onto your
+            machine. You get a card describing exactly what would run, written by DorkOS rather than
+            by the agent, and an agent that identifies itself is refused when it tries to answer its
+            own card.
           </p>
           <p className="text-warm-gray leading-relaxed">
             Here is the limit, because it matters more than the feature. With no login, which is how
@@ -115,8 +115,8 @@ export default function SecurityPage() {
             same computer. It refuses the agent that asked, and it records who answered, so nothing
             happens quietly. But a program on your machine that deliberately hides what it is looks
             like you. Turning on login is what closes that, and then only your signed-in account can
-            answer a card. We would rather write that down than let the word &quot;approval&quot; do
-            work it cannot do.
+            answer a card. We would rather write that down than let the word “approval” do work it
+            cannot do.
           </p>
         </section>
 
@@ -144,7 +144,7 @@ export default function SecurityPage() {
             >
               security@dorkos.ai
             </a>{' '}
-            or use the private &quot;Report a vulnerability&quot; button on our{' '}
+            or use the private “Report a vulnerability” button on our{' '}
             <a
               href="https://github.com/dork-labs/dorkos/security"
               target="_blank"

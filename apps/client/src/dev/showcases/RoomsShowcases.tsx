@@ -115,8 +115,8 @@ function RoomPanelShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        A bridged Telegram channel — Miguel&apos;s origin mark, and Telegram&apos;s own name for the
-        chat, drifted from the room&apos;s (chats-as-channels §3.4, §4.3, DOR-879)
+        A bridged Telegram channel — Miguel’s origin mark, and Telegram’s own name for the chat,
+        drifted from the room’s (chats-as-channels §3.4, §4.3, DOR-879)
       </ShowcaseLabel>
       <ShowcaseDemo>
         <RoomPanelDemo
@@ -289,7 +289,7 @@ export function RoomAvatarShowcase() {
       title="RoomAvatar"
       description="What a room looks like before you read its name. A place gets a #; a one-to-one gets the agent it is with — the same filled square with the bot mark that agent wears everywhere else, rather than the round person disc it used to draw. A group stacks up to three faces. A conversation nobody could resolve a face for falls back to a letter, and keeps the agent shape as long as it still knows who the room is with."
     >
-      <ShowcaseLabel>The four faces, at the sidebar&apos;s size</ShowcaseLabel>
+      <ShowcaseLabel>The four faces, at the sidebar’s size</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="flex flex-wrap items-start gap-6">
           <MarkDemo label="A channel">
@@ -604,7 +604,7 @@ function AgentRosterPickerShowcase() {
         <Picker isLoading />
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Could not read it — and the button that would fix that</ShowcaseLabel>
+      <ShowcaseLabel>Couldn’t read it — and the button that would fix that</ShowcaseLabel>
       <ShowcaseDemo>
         <Picker isError />
       </ShowcaseDemo>

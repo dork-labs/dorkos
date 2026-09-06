@@ -28,7 +28,7 @@ export function JustPromptsSection({ slideId = 'prompts' }: JustPromptsSectionPr
             variants={REVEAL}
             className="text-brand-orange mb-4 font-mono text-[9px] tracking-[0.2em] uppercase"
           >
-            Here&apos;s the Thing
+            Here’s the Thing
           </motion.div>
           <motion.h2
             variants={REVEAL}
@@ -37,7 +37,7 @@ export function JustPromptsSection({ slideId = 'prompts' }: JustPromptsSectionPr
             Platforms will just be prompts.
           </motion.h2>
           <motion.p variants={REVEAL} className="text-cream-tertiary/60 text-[13px]">
-            All open source. Here&apos;s what it actually is.
+            All open source. Here’s what it actually is.
           </motion.p>
         </motion.div>
 
@@ -82,7 +82,7 @@ export function JustPromptsSection({ slideId = 'prompts' }: JustPromptsSectionPr
             variants={REVEAL}
             className="text-cream-tertiary/60 text-[14px] leading-relaxed"
           >
-            Code isn&apos;t the scarce thing anymore. Knowing what to ask &mdash;&mdash; and what to
+            Code isn’t the scarce thing anymore. Knowing what to ask &mdash;&mdash; and what to
             remember &mdash;&mdash; is.
           </motion.p>
         </motion.div>

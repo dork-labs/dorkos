@@ -160,7 +160,7 @@ export function RuntimeItem({
       <Tooltip>
         <TooltipTrigger asChild>{chip}</TooltipTrigger>
         <TooltipContent side="top">
-          {"The runtime is set when a session starts and can't be changed afterward."}
+          {'The runtime is set when a session starts and can’t be changed afterward.'}
         </TooltipContent>
       </Tooltip>
     );

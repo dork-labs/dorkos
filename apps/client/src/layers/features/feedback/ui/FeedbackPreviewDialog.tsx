@@ -130,9 +130,7 @@ function ConversationPreview({
     );
   }
   if (isError) {
-    return (
-      <p className="text-muted-foreground text-xs">Couldn&apos;t load the conversation preview.</p>
-    );
+    return <p className="text-muted-foreground text-xs">Couldn’t load the conversation preview.</p>;
   }
   if (!text) {
     return <p className="text-muted-foreground text-xs">No recent conversation to attach.</p>;

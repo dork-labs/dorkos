@@ -43,9 +43,9 @@ describe('RouteErrorFallback', () => {
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
   });
 
-  it('renders Retry button', () => {
+  it('renders a Try again button', () => {
     render(<RouteErrorFallback {...makeErrorProps()} />);
-    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
   });
 
   it('renders "Back to home" button', () => {
@@ -53,11 +53,11 @@ describe('RouteErrorFallback', () => {
     expect(screen.getByRole('button', { name: /back to home/i })).toBeInTheDocument();
   });
 
-  it('calls router.invalidate() when Retry is clicked', async () => {
+  it('calls router.invalidate() when Try again is clicked', async () => {
     const user = userEvent.setup();
     render(<RouteErrorFallback {...makeErrorProps()} />);
 
-    await user.click(screen.getByRole('button', { name: /retry/i }));
+    await user.click(screen.getByRole('button', { name: /try again/i }));
     expect(mockInvalidate).toHaveBeenCalledOnce();
   });
 
@@ -69,7 +69,7 @@ describe('RouteErrorFallback', () => {
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/' });
   });
 
-  it('renders a "Reload app" affordance and reloads for a dynamic-import error', async () => {
+  it('renders a "Reload DorkOS" affordance and reloads for a dynamic-import error', async () => {
     const reload = vi.fn();
     const originalLocation = window.location;
     Object.defineProperty(window, 'location', {
@@ -88,9 +88,9 @@ describe('RouteErrorFallback', () => {
         />
       );
 
-      const reloadButton = screen.getByRole('button', { name: /reload app/i });
+      const reloadButton = screen.getByRole('button', { name: /reload dorkos/i });
       expect(reloadButton).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument();
 
       await user.click(reloadButton);
       expect(reload).toHaveBeenCalledOnce();
@@ -103,10 +103,10 @@ describe('RouteErrorFallback', () => {
     }
   });
 
-  it('renders "Retry" and not "Reload app" for a non-dynamic-import error', () => {
+  it('renders "Try again" and not "Reload DorkOS" for a non-dynamic-import error', () => {
     render(<RouteErrorFallback {...makeErrorProps({ message: 'Test failure' })} />);
-    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /reload app/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reload dorkos/i })).not.toBeInTheDocument();
   });
 
   it('shows stack trace in dev mode', () => {

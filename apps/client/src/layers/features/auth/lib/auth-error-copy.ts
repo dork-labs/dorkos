@@ -33,10 +33,10 @@ export interface AuthErrorCopy {
  * @param appOrigin - Where this app is served from (`window.location.origin`).
  */
 function mismatchedOriginMessage(appOrigin: string | undefined): string {
-  const address = appOrigin ?? "this app's address";
+  const address = appOrigin ?? 'this app’s address';
   return (
     'The app and the server disagree about where this request came from, so the server ' +
-    `turned it down and nothing changed. To fix it, add ${address} to the server's ` +
+    `turned it down and nothing changed. To fix it, add ${address} to the server’s ` +
     'DORKOS_CORS_ORIGIN setting and restart it.'
   );
 }

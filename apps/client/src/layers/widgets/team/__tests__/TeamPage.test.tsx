@@ -364,7 +364,7 @@ describe('TeamPage — the empty and degraded states', () => {
     });
 
     expect(
-      await screen.findByText("Couldn't read your agents. Showing who we could.")
+      await screen.findByText('Couldn’t read your agents. Showing who we could.')
     ).toBeInTheDocument();
     expect(cardNames()).toEqual(['Dorian', 'Miguel Ferreira-Santos']);
   });
@@ -392,7 +392,7 @@ describe('TeamPage — the empty and degraded states', () => {
       warnings: [{ source: 'community:acme', message: 'timed out' }],
     });
 
-    expect(await screen.findByText("Some of your team couldn't be loaded.")).toBeInTheDocument();
+    expect(await screen.findByText('Some of your team couldn’t be loaded.')).toBeInTheDocument();
     expect(screen.queryByText(/community:acme/)).toBeNull();
     // The diagnostic message is for a log, not for this page.
     expect(screen.queryByText(/timed out/)).toBeNull();

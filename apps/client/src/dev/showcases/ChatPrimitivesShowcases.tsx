@@ -90,7 +90,7 @@ function CollapsibleCardShowcase() {
         <CollapsibleCard
           expanded={thinkingExpanded}
           onToggle={() => setThinkingExpanded((v) => !v)}
-          header={<span className="text-sm font-medium">Thinking...</span>}
+          header={<span className="text-sm font-medium">Thinking…</span>}
           variant="thinking"
         >
           <p className="text-muted-foreground text-sm">

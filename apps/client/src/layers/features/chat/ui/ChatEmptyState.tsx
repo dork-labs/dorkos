@@ -43,7 +43,7 @@ export function ChatEmptyState({ birthRecord, firstLightRecord }: ChatEmptyState
     return (
       <div className="text-center" data-testid="greeting-failed-empty">
         <p className="text-muted-foreground text-base">
-          {birthRecord.displayName} couldn&rsquo;t say hello just now
+          {birthRecord.displayName} couldn’t say hello just now
         </p>
         <p className="text-muted-foreground/60 mt-2 text-sm">Send a message to get started.</p>
       </div>
@@ -58,7 +58,7 @@ export function ChatEmptyState({ birthRecord, firstLightRecord }: ChatEmptyState
   return (
     <div className="text-center">
       <p className="text-muted-foreground text-base">Start a conversation</p>
-      <p className="text-muted-foreground/60 mt-2 text-sm">Type a message below to begin</p>
+      <p className="text-muted-foreground/60 mt-2 text-sm">Type a message below to begin.</p>
     </div>
   );
 }

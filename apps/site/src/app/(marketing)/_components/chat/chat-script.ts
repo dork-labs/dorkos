@@ -46,7 +46,7 @@ export const CHAT_SCRIPT: readonly ChatLine[] = [
   { from: 'otto', text: 'Morning, Dave. Tests are green. Want me to deploy?', time: '9:41' },
   { from: 'dave', text: 'Go ahead.', time: '9:42' },
   { from: 'pip', text: 'Heyheyhey! I can double-check it after!', time: '9:42' },
-  { from: 'hal', text: 'Good morning... Dave.', time: '9:42' },
+  { from: 'hal', text: 'Good morning… Dave.', time: '9:42' },
   { from: 'otto', text: 'Want the release-notes skill for this?', time: '9:43', dockApp: 'skills' },
   { from: 'dave', text: 'Yes.', time: '9:43' },
   {

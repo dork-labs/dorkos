@@ -82,7 +82,7 @@ export function TimezoneCombobox({ value, onChange }: TimezoneComboboxProps) {
       {open && (
         <div className="bg-popover text-popover-foreground absolute top-full left-0 z-50 mt-1 w-full rounded-md border shadow-md">
           <Command>
-            <CommandInput placeholder="Search timezone..." />
+            <CommandInput placeholder="Search timezone…" />
             <CommandList className="max-h-60">
               <CommandEmpty>No timezone found.</CommandEmpty>
               <CommandGroup heading="Default">

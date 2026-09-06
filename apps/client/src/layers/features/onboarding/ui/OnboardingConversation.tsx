@@ -344,14 +344,14 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
     ? DORKBOT_ONBOARDING_LINES.composerHandoffPlaceholder
     : DORKBOT_ONBOARDING_LINES.composerSetupPlaceholder;
 
-  let confirmLabel = "That's the one";
+  let confirmLabel = 'That’s the one';
   if (convo.saving) {
     confirmLabel = 'Saving…';
   } else if (convo.saveError) {
     confirmLabel = 'Try again';
   }
 
-  let profileConfirmLabel = "That's us";
+  let profileConfirmLabel = 'That’s us';
   if (convo.saving) {
     profileConfirmLabel = 'Saving…';
   } else if (convo.saveError) {

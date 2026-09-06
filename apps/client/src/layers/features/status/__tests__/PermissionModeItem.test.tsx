@@ -210,7 +210,7 @@ const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
         stop: 'act',
         asks: 'when-risky',
         reach: 'edit',
-        promise: "Answers each request the way the test scenario's script says.",
+        promise: 'Answers each request the way the test scenario’s script says.',
       },
     ],
   },
@@ -257,7 +257,7 @@ const CODEX_CAPABILITIES: RuntimeCapabilities = {
         stop: 'act',
         asks: 'never',
         reach: 'workspace',
-        promise: "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
+        promise: 'Edits files and runs commands inside the workspace — Codex can’t pause to ask.',
         native: 'workspace-write',
       },
       {
@@ -410,7 +410,7 @@ describe('PermissionModeItem', () => {
   });
 
   describe('the word in the status line', () => {
-    it("shows the runtime's own label for the current mode", () => {
+    it('shows the runtime’s own label for the current mode', () => {
       mockCapabilitiesForRuntime.mockReturnValue(CODEX_CAPABILITIES);
       render(<PermissionModeItem mode="acceptEdits" onChangeMode={vi.fn()} runtime="codex" />);
 
@@ -422,9 +422,9 @@ describe('PermissionModeItem', () => {
       mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
       render(<PermissionModeItem mode={'dontAsk' as never} onChangeMode={vi.fn()} />);
 
-      expect(screen.getByTestId('popover-trigger')).toHaveTextContent("Don't Ask");
+      expect(screen.getByTestId('popover-trigger')).toHaveTextContent('Don’t Ask');
       // …and the dial admits it has nowhere to point.
-      expect(screen.getByTestId('trust-dial-stranded')).toHaveTextContent("Don't Ask");
+      expect(screen.getByTestId('trust-dial-stranded')).toHaveTextContent('Don’t Ask');
     });
   });
 
@@ -443,7 +443,7 @@ describe('PermissionModeItem', () => {
       expect(triggerClasses()).toContain('text-status-success');
     });
 
-    it("reads green on Codex's full access too, under its own label", () => {
+    it('reads green on Codex’s full access too, under its own label', () => {
       // NOT the id-independence case: DorkOS normalizes Codex's
       // `danger-full-access` to the same `bypassPermissions` id Claude uses, so
       // this pair would pass an implementation keyed on that string. What it
@@ -473,7 +473,7 @@ describe('PermissionModeItem', () => {
       expect(triggerClasses()).toContain('text-status-success');
     });
 
-    it("leaves Codex's workspace-write plain, loud as its caption is", () => {
+    it('leaves Codex’s workspace-write plain, loud as its caption is', () => {
       mockCapabilitiesForRuntime.mockReturnValue(CODEX_CAPABILITIES);
       render(<PermissionModeItem mode="acceptEdits" onChangeMode={vi.fn()} runtime="codex" />);
 

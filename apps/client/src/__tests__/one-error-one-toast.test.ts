@@ -219,7 +219,7 @@ describe('the detector itself', () => {
     const snippet = `
       useMutation({
         onError: () => toast.error('Could not save'),
-        meta: { errorLabel: "Couldn't save that" },
+        meta: { errorLabel: "Couldn’t save that" },
       });
     `;
     expect(findViolations('fixture.ts', snippet)).toEqual(['fixture.ts:2']);

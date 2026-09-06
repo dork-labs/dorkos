@@ -48,7 +48,7 @@ const OFFER_MS = 6_000;
 
 /** Turn a failed config write into one sentence a person can act on. */
 function describeWriteFailure(err: unknown): string {
-  return (err instanceof Error && err.message) || 'Could not save that. Try again.';
+  return (err instanceof Error && err.message) || 'Couldn’t save that. Try again.';
 }
 
 /** What {@link useMakeDefaultStop} hands back. */

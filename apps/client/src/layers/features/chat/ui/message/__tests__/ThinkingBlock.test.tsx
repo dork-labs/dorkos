@@ -11,11 +11,11 @@ describe('ThinkingBlock', () => {
     cleanup();
   });
 
-  it('renders "Thinking..." label during streaming', () => {
-    // Purpose: During active streaming, the label should show "Thinking..."
+  it('renders "Thinking…" label during streaming', () => {
+    // Purpose: During active streaming, the label should show "Thinking…"
     render(<ThinkingBlock text="reasoning" isStreaming={true} />);
 
-    expect(screen.getByText('Thinking...')).toBeInTheDocument();
+    expect(screen.getByText('Thinking…')).toBeInTheDocument();
   });
 
   it('renders "Thought for Xs" label after streaming completes', () => {
@@ -103,10 +103,10 @@ describe('ThinkingBlock', () => {
     expect(screen.getByText('Thought for 2m 5s')).toBeInTheDocument();
   });
 
-  it('falls back to "Thinking..." when no elapsedMs provided', () => {
+  it('falls back to "Thinking…" when no elapsedMs provided', () => {
     // Purpose: When thinking is done but elapsedMs wasn't tracked, show generic label.
     render(<ThinkingBlock text="thinking" isStreaming={false} />);
 
-    expect(screen.getByText('Thinking...')).toBeInTheDocument();
+    expect(screen.getByText('Thinking…')).toBeInTheDocument();
   });
 });

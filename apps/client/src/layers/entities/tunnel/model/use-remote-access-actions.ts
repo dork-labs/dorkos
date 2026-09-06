@@ -85,7 +85,7 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
 
       useRemoteAccessStore
         .getState()
-        .failStart(err instanceof Error ? err.message : "Couldn't open your link. Try again.");
+        .failStart(err instanceof Error ? err.message : 'Couldn’t open your link. Try again.');
     }
   }, [transport, queryClient]);
 
@@ -108,7 +108,7 @@ export function useRemoteAccessActions(): RemoteAccessActionHandlers {
         .failStop(
           err instanceof Error
             ? err.message
-            : "Couldn't close your link. Not sure if it's still on."
+            : 'Couldn’t close your link. Not sure if it’s still on.'
         );
     }
   }, [transport, queryClient]);

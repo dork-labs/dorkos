@@ -200,7 +200,7 @@ describe('AgentGallery', () => {
     renderGallery();
 
     expect(screen.getByTestId('gallery-templates-note')).toHaveTextContent(
-      /could not load ready-made agents/i
+      /couldn’t load ready-made agents/i
     );
     expect(screen.getByTestId('gallery-design-your-own')).toBeInTheDocument();
   });

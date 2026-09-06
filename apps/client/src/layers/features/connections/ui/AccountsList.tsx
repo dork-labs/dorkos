@@ -51,7 +51,7 @@ export function AccountsList() {
   if (isError) {
     return (
       <p role="alert" className="text-destructive text-sm">
-        Could not load connected accounts: {error.message}
+        Couldn’t load connected accounts: {error.message}
       </p>
     );
   }

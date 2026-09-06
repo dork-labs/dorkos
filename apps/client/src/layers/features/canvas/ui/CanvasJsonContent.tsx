@@ -65,7 +65,7 @@ function JsonNode({ value, depth, keyName }: JsonNodeProps) {
         {keyName != null && <span className="text-foreground">{keyName}: </span>}
         <span className="text-muted-foreground">
           {openBracket}
-          {collapsed && ` ... ${entries.length} items `}
+          {collapsed && ` … ${entries.length} items `}
           {collapsed && closeBracket}
         </span>
       </button>

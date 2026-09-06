@@ -77,7 +77,7 @@ export function useProvisionOllama(): UseProvisionOllama {
     provision: () => mutation.mutate(),
     isPending: mutation.isPending,
     isError: failed,
-    errorMessage: failed ? (errorMessage ?? 'Could not install Ollama.') : null,
+    errorMessage: failed ? (errorMessage ?? 'Couldn’t install Ollama.') : null,
     progress,
     result: mutation.data,
   };

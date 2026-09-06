@@ -104,7 +104,7 @@ describe('memory-provider-benched descriptor', () => {
 
     render(findMemoryDescriptor(result.current)!.render());
     expect(screen.getByRole('status')).toHaveTextContent(
-      "The acme-memory memory backend isn't installed or didn't register."
+      'The acme-memory memory backend isn’t installed or didn’t register.'
     );
   });
 

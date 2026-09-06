@@ -321,7 +321,7 @@ describe('OnboardingFlow', () => {
     await expectWayBackToast();
   });
 
-  it("the skip-all toast's action deep-links Settings to the Replay setup control", async () => {
+  it('the skip-all toast’s action deep-links Settings to the Replay setup control', async () => {
     const harness = await renderFlow('/');
     fireEvent.click(screen.getByText('Skip all setup welcome'));
     await expectWayBackToast();

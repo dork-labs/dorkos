@@ -112,7 +112,7 @@ function SubmitButtonFixture() {
   const form = useAppForm({ defaultValues: { name: '' } });
   return (
     <form.AppForm>
-      <form.SubmitButton label="Save" pendingLabel="Saving..." />
+      <form.SubmitButton label="Save" pendingLabel="Saving…" />
     </form.AppForm>
   );
 }

@@ -156,7 +156,7 @@ describe('RoomAvatar', () => {
     square(letterDisc);
   });
 
-  it("falls back to the room's own letter when no agent is on the roster", () => {
+  it('falls back to the room’s own letter when no agent is on the roster', () => {
     // A DM whose join never completed holds only the human. Hashing the room id
     // is stable and honest; picking the human would name the wrong person.
     const { container } = render(

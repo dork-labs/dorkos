@@ -266,7 +266,7 @@ describe('RightPanelContainer', () => {
     }
   );
 
-  it("renders the active tab's headerActions in the shared header", () => {
+  it('renders the active tab’s headerActions in the shared header', () => {
     mockRightPanelOpen = true;
     mockActiveRightPanelTab = 'files';
     mockContributions = [

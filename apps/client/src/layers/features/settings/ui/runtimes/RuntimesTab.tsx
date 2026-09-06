@@ -45,7 +45,7 @@ import { GlobalTrustRow, type GlobalTrustRowRuntime } from './GlobalTrustRow';
 
 /** Turn a failed config write into one sentence a person can act on. */
 function describeWriteFailure(err: unknown): string {
-  return (err instanceof Error && err.message) || 'Could not save that. Try again.';
+  return (err instanceof Error && err.message) || 'Couldn’t save that. Try again.';
 }
 
 /**

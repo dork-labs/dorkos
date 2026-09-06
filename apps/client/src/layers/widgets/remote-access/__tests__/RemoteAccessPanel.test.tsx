@@ -150,7 +150,7 @@ describe('the panel', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'Remote access' }));
 
     const error = await screen.findByTestId('remote-access-panel-error');
-    expect(error).toHaveTextContent("Couldn't reach your DorkOS server. Make sure it's running.");
+    expect(error).toHaveTextContent('Couldn’t reach your DorkOS server. Make sure it’s running.');
     expect(error).toHaveAttribute('role', 'alert');
     // Remote access is still on: the panel is not claiming the stop worked.
     expect(screen.getByRole('switch', { name: 'Remote access' })).toBeChecked();

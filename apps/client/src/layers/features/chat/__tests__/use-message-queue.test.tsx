@@ -113,7 +113,7 @@ describe('useMessageQueue — the chips', () => {
     sync();
 
     expect(view.result.current.queue[0]!.notice).toBe(
-      "Queued. This agent can't take a message mid-task."
+      'Queued. This agent can’t take a message mid-task.'
     );
   });
 
@@ -272,7 +272,7 @@ describe('useMessageQueue — removing', () => {
     act(() => view.result.current.removeFromQueue('q1'));
 
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith('Could not take that message off the queue')
+      expect(toast.error).toHaveBeenCalledWith('Couldn’t take that message off the queue')
     );
   });
 });

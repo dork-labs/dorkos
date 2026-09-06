@@ -245,7 +245,7 @@ describe('AgentExecutionRows', () => {
   it('says a model does not take an effort, in the model’s own words', async () => {
     renderRows(manifest({ model: 'haiku' }));
     expect(await screen.findByTestId('agent-effort-unsupported-model')).toHaveTextContent(
-      "This model doesn't take an effort setting"
+      'This model doesn’t take an effort setting'
     );
   });
 

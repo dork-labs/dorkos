@@ -14,7 +14,7 @@ import { EmptyState } from './empty-state';
 
 /** Everything a failed-load panel renders. */
 export interface QueryErrorStateProps {
-  /** What failed, in one short line — "Could not load your team". */
+  /** What failed, in one short line — "Couldn’t load your team". */
   title: string;
   /** Why, and what to check, in one more line. */
   description: string;

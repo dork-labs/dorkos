@@ -584,12 +584,12 @@ export function CommandPaletteDialog() {
               leading={scope && !page ? <PaletteScopeChip scope={scope} /> : undefined}
               placeholder={
                 page === 'agent-actions'
-                  ? `${subMenuAgent?.name ?? 'Agent'} actions...`
+                  ? `${subMenuAgent?.name ?? 'Agent'} actions…`
                   : scope && !page
                     ? // The chip beside it already says what is being searched,
                       // so the placeholder says the one thing left to say.
                       'Search within…'
-                    : 'Search rooms, agents, commands...'
+                    : 'Search rooms, agents, commands…'
               }
               value={search}
               onValueChange={setSearch}

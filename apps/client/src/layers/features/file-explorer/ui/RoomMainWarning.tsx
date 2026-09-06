@@ -169,7 +169,7 @@ export function RoomMainWarning({ roomId }: RoomMainWarningProps) {
       <div className="flex gap-2">
         <AlertTriangle className="text-muted-foreground mt-0.5 size-(--size-icon-sm) flex-shrink-0" />
         <div className="min-w-0 space-y-1">
-          <p className="font-medium">Somebody changed this room&apos;s files outside DorkOS</p>
+          <p className="font-medium">Somebody changed this room’s files outside DorkOS</p>
           <p className="text-muted-foreground text-xs">
             {wrongBranch
               ? `This room’s files are on ${main.branch ?? 'no branch'} instead of main. Nobody can save a file here and no agent can merge into it until they are back on main. DorkOS will not move a branch it did not move, in case there is work on it.`

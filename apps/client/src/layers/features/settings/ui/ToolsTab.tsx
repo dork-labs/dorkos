@@ -150,7 +150,7 @@ export function ToolsTab() {
         <FieldCardContent>
           <SettingRow
             label="Core tools"
-            description="Let agents check the app, know who they are, and read what you're previewing."
+            description="Let agents check the app, know who they are, and read what you’re previewing."
           >
             <div className="flex items-center gap-2">
               <ToolCountBadge tools={TOOL_INVENTORY.core} />
@@ -206,7 +206,7 @@ export function ToolsTab() {
               person is where to go, and it says that. */}
           <p className="text-muted-foreground text-sm">
             Unlike the groups above, this one blocks: an agent without it is refused and told to ask
-            you. Turn it on for an agent in that agent&rsquo;s own Tools settings.
+            you. Turn it on for an agent in that agent’s own Tools settings.
           </p>
         </FieldCardContent>
       </FieldCard>

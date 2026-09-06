@@ -26,7 +26,7 @@ export function TunnelLanding({ onGetStarted }: TunnelLandingProps) {
 
       <p className="text-muted-foreground/60 mx-auto max-w-[280px] text-center text-xs">
         One-time setup, about 2 minutes: paste a free ngrok token, then create your owner login if
-        you don&apos;t have one yet.
+        you don’t have one yet.
       </p>
     </div>
   );

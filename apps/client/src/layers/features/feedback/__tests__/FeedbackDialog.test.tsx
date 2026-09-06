@@ -115,7 +115,7 @@ describe('FeedbackDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
 
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("Couldn't send. Try the GitHub option.")
+      expect(toast.error).toHaveBeenCalledWith('Couldn’t send. Try the GitHub option.')
     );
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });

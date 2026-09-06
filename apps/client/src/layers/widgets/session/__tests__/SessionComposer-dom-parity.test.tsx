@@ -528,9 +528,9 @@ describe('SessionComposer — the flag-on reference tree', () => {
     // Chat idle draws an ANIMATED placeholder overlay, so the field's own
     // placeholder is empty on both paths and the name comes from `aria-label` —
     // exactly as the flag-off idle baseline records it (`placeholder: ""`,
-    // `aria-label: "Send a message..."`). Delta 2 is visible in case 2 below,
+    // `aria-label: "Send a message…"`). Delta 2 is visible in case 2 below,
     // where the queue-aware placeholder is real text.
-    expect(field.getAttribute('aria-label')).toBe('Send a message...');
+    expect(field.getAttribute('aria-label')).toBe('Send a message…');
     expect(container.querySelector('textarea')).toBeNull();
     // Delta 4: nothing imperatively sizes this field.
     expect(field.getAttribute('style') ?? '').not.toContain('height');

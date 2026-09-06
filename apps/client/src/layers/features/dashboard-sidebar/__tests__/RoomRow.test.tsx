@@ -605,7 +605,7 @@ describe('RoomRow leave', () => {
     });
     renderRow(channel({ unreadCount: null }), { transport });
 
-    const hint = screen.getByLabelText("You're not in this channel");
+    const hint = screen.getByLabelText('You’re not in this channel');
     expect(hint).toHaveTextContent('Read only');
     // The hint is what says so, NOT a dimming (DOR-1098): the room's name stays
     // at full contrast, because a room you cannot post in is still one you read.
@@ -636,7 +636,7 @@ describe('RoomRow leave', () => {
     // reader who cannot see the pill — and matched loosely on purpose: the
     // point is which words are in it, not the spacing jsdom's own name
     // computation happens to produce between the title and the mark.
-    const row = screen.getByRole('button', { name: /You're not in this channel/ });
+    const row = screen.getByRole('button', { name: /You’re not in this channel/ });
     expect(row).toHaveAccessibleName(/#general/);
     expect(row).not.toHaveAccessibleName(/left/i);
     expect(screen.queryByLabelText(/left this channel/i)).not.toBeInTheDocument();

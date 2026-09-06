@@ -91,7 +91,7 @@ describe('resolveIdentityFace', () => {
   });
 
   describe('the photo, the fourth cached field', () => {
-    it("carries the record's photo through beside its emoji", () => {
+    it('carries the record’s photo through beside its emoji', () => {
       // Both travel: this resolver decides nothing about which face wins — the
       // disc does — so an identity with a photo AND an emoji must arrive with
       // both intact.

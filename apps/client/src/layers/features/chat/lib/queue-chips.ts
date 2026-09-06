@@ -54,11 +54,11 @@ const DOWNGRADE_NOTICE: Record<
 > = {
   // "It ran immediately" is not a loss, and nobody needs telling about it.
   'session-idle': null,
-  unsupported: "Queued. This agent can't take a message mid-task.",
+  unsupported: 'Queued. This agent can’t take a message mid-task.',
   // Deliberately not "queued as your next message": it lands BEHIND whatever is
   // already waiting, and naming a position the chip cannot know would be a
   // second small lie in the sentence written to stop the first one.
-  'not-steerable': "Couldn't cut in. It's waiting in line.",
+  'not-steerable': 'Couldn’t cut in. It’s waiting in line.',
   // Quiet on purpose, like `session-idle` and for the same reason: nothing was
   // lost, and the person has ALREADY been told. A stage that folds joins no
   // queue — it has no row for a chip to hang on — and the transcript says
@@ -77,7 +77,7 @@ const DOWNGRADE_NOTICE: Record<
   // under the embedded transport's. Naming a window would put back exactly the
   // kind of unchecked claim this line was rewritten to remove.
   'turn-owned-elsewhere':
-    "Couldn't cut in. Something else is running this task, so it's waiting in line.",
+    'Couldn’t cut in. Something else is running this task, so it’s waiting in line.',
   'pending-interaction': 'Queued. The agent needs your answer first.',
 };
 

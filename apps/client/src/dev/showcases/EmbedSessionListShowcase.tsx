@@ -31,7 +31,7 @@ export function EmbedSessionListShowcase() {
       title="EmbedSessionList"
       description="The Obsidian embed's roster, in the shared sidebar row grammar (DOR-1080)."
     >
-      <ShowcaseLabel>Grouped list — 320px, the embed drawer&apos;s width</ShowcaseLabel>
+      <ShowcaseLabel>Grouped list — 320px, the embed drawer’s width</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="bg-sidebar h-80 w-80 overflow-hidden rounded-lg">
           <EmbedSessionList

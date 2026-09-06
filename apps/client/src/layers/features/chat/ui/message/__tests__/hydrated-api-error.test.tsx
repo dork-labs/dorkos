@@ -117,7 +117,7 @@ const limitNoticeHistory: HistoryMessage = {
   id: 'limit-1',
   role: 'assistant',
   content: '',
-  parts: [{ type: 'error', message: "You've hit your weekly limit · resets Aug 24 at 8pm" }],
+  parts: [{ type: 'error', message: 'You’ve hit your weekly limit · resets Aug 24 at 8pm' }],
 };
 
 describe('a hydrated API-error notice', () => {
@@ -149,7 +149,7 @@ describe('a hydrated API-error notice', () => {
 
     expect(screen.getByTestId('error-message-block')).toBeInTheDocument();
     expect(
-      screen.getByText("You've hit your weekly limit · resets Aug 24 at 8pm")
+      screen.getByText('You’ve hit your weekly limit · resets Aug 24 at 8pm')
     ).toBeInTheDocument();
   });
 
@@ -167,7 +167,7 @@ describe('a hydrated API-error notice', () => {
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
     // The card is still there, and the words still lead.
     expect(
-      screen.getByText("You've hit your weekly limit · resets Aug 24 at 8pm")
+      screen.getByText('You’ve hit your weekly limit · resets Aug 24 at 8pm')
     ).toBeInTheDocument();
   });
 

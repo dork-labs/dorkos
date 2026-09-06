@@ -180,7 +180,7 @@ describe('useSessionRuntime', () => {
     mockSessionId = null;
   });
 
-  it("returns the session row's runtime", async () => {
+  it('returns the session row’s runtime', async () => {
     const transport = createMockTransport({
       listSessions: vi.fn().mockResolvedValue({ sessions }),
     });

@@ -347,7 +347,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
       // Try again." would talk over the reason and invite a retry of the same
       // broken input.
       await expect(page.getByText(/expected JSON/)).toBeVisible();
-      await expect(page.getByText("That didn't work. Try again.")).toHaveCount(0);
+      await expect(page.getByText('That didn’t work. Try again.')).toHaveCount(0);
 
       // The stored rules are still there.
       const saved = (await fetchCatalog(page))

@@ -33,7 +33,7 @@ export function sessionActivitySummary(dailyCounts: number[], degraded: boolean)
   if (degraded) {
     // Zero here is not a quiet week and not a busy one — with a runtime unread
     // we know nothing about how many sessions started, so we claim nothing.
-    if (total === 0) return "This week's count is incomplete";
+    if (total === 0) return 'This week’s count is incomplete';
     return `Your agents started at least ${total} ${noun} this week`;
   }
 

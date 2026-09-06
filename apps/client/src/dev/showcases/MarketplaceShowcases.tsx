@@ -195,7 +195,7 @@ function PackageGridShowcase() {
       <ShowcaseLabel>Error state</ShowcaseLabel>
       <ShowcaseDemo>
         <PackageErrorState
-          error={new Error('Failed to fetch packages — server unreachable')}
+          error={new Error('The DorkOS server did not answer')}
           onRetry={() => {}}
         />
       </ShowcaseDemo>

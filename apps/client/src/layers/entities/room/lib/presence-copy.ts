@@ -132,7 +132,7 @@ export function heldSentence(names: readonly string[], behind: string | null): s
   if (names.length <= 1) {
     return `${names[0] ?? 'An agent'} will pick this up when it finishes in ${behind ?? 'another conversation'}`;
   }
-  return `${readAsList(names)} will pick this up when they're free`;
+  return `${readAsList(names)} will pick this up when they’re free`;
 }
 
 /**
@@ -145,7 +145,7 @@ export function heldSentence(names: readonly string[], behind: string | null): s
  *   {@link PRESENCE_NAME_LIMIT} wherever this is called from.
  */
 export function heldCountSentence(count: number): string {
-  return `${count} agents will pick this up when they're free`;
+  return `${count} agents will pick this up when they’re free`;
 }
 
 /**

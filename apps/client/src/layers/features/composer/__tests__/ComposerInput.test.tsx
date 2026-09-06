@@ -249,7 +249,7 @@ describe('ComposerInput', () => {
 
   it('uses default placeholder when not provided', () => {
     render(<ComposerInput {...defaultProps} />);
-    expect(screen.getByPlaceholderText('Send a message...')).toBeDefined();
+    expect(screen.getByPlaceholderText('Send a message…')).toBeDefined();
   });
 
   it('calls onChange when typing', () => {

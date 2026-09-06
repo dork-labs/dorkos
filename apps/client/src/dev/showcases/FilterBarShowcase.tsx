@@ -278,7 +278,7 @@ export function FilterBarShowcase() {
         <ShowcaseDemo responsive>
           <div className="border-border rounded-lg border">
             <FilterBar state={filterState}>
-              <FilterBar.Search placeholder="Filter agents..." />
+              <FilterBar.Search placeholder="Filter agents…" />
               <FilterBar.Primary name="status" />
               <FilterBar.AddFilter dynamicOptions={{ namespace: namespaceOptions }} />
               <FilterBar.Sort options={agentSortOptions} defaultField={DEMO_DEFAULT_SORT_FIELD} />
@@ -336,7 +336,7 @@ export function FilterBarShowcase() {
         <ShowcaseDemo responsive>
           <div className="border-border rounded-lg border">
             <FilterBar state={filterState}>
-              <FilterBar.Search placeholder="Filter agents..." />
+              <FilterBar.Search placeholder="Filter agents…" />
               <FilterBar.Primary name="status" />
               <FilterBar.AddFilter dynamicOptions={{ namespace: namespaceOptions }} />
               <FilterBar.Sort options={agentSortOptions} defaultField={DEMO_DEFAULT_SORT_FIELD} />
@@ -359,7 +359,7 @@ export function FilterBarShowcase() {
         <ShowcaseDemo>
           <div className="border-border rounded-lg border">
             <FilterBar state={filterState}>
-              <FilterBar.Search placeholder="Filter agents..." />
+              <FilterBar.Search placeholder="Filter agents…" />
               <FilterBar.Primary name="status" />
               <FilterBar.ActiveFilters />
             </FilterBar>
@@ -369,7 +369,7 @@ export function FilterBarShowcase() {
                   <p className="text-muted-foreground text-sm">
                     No agents match{' '}
                     <span className="text-foreground font-medium">
-                      &ldquo;{filterState.describeActive()}&rdquo;
+                      “{filterState.describeActive()}”
                     </span>
                     .
                   </p>

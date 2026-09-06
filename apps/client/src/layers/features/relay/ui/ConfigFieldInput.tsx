@@ -251,7 +251,7 @@ export function ConfigFieldInput({
               aria-invalid={!!displayError || undefined}
               aria-required={field.required || undefined}
             >
-              <SelectValue placeholder={field.placeholder ?? 'Select...'} />
+              <SelectValue placeholder={field.placeholder ?? 'Select…'} />
             </SelectTrigger>
             <SelectContent>
               {field.options?.map((opt) => (

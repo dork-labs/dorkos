@@ -506,13 +506,13 @@ describe('HomeRoomPage — before there is a room', () => {
 
     expect(container.querySelector('[aria-busy]')).not.toBeNull();
     expect(screen.queryByRole('combobox')).toBeNull();
-    expect(screen.queryByText(/isn't open yet/i)).toBeNull();
+    expect(screen.queryByText(/isn’t open yet/i)).toBeNull();
   });
 
   it('says a room the server has not opened yet is not open — and offers no retry', async () => {
     renderHome({ listRooms: vi.fn().mockResolvedValue([]) });
 
-    expect(await screen.findByText(/isn't open yet/i)).toBeInTheDocument();
+    expect(await screen.findByText(/isn’t open yet/i)).toBeInTheDocument();
     // Nothing to retry: the room arrives when the server opens it, and a button
     // that re-reads the same empty list would only look like it did something.
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
@@ -522,7 +522,7 @@ describe('HomeRoomPage — before there is a room', () => {
     const listRooms = vi.fn().mockRejectedValue(new Error('offline'));
     renderHome({ listRooms });
 
-    expect(await screen.findByText(/couldn't load your team room/i)).toBeInTheDocument();
+    expect(await screen.findByText(/couldn’t load your team room/i)).toBeInTheDocument();
     const before = listRooms.mock.calls.length;
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(listRooms.mock.calls.length).toBeGreaterThan(before));

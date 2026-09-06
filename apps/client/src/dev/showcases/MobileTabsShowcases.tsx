@@ -85,9 +85,9 @@ export function MobileTabBarShowcase() {
       </div>
       <p className="text-muted-foreground max-w-prose text-sm">
         In <b>busy</b> the Now zone holds four rows and three of them need you — the fourth is the
-        &ldquo;N working&rdquo; rollup, which reports rather than asks. In <b>power</b> Now is
-        capped at five rows while seven things need you. Both numbers come off the model, so the
-        badge and the screen reader can never disagree.
+        “N working” rollup, which reports rather than asks. In <b>power</b> Now is capped at five
+        rows while seven things need you. Both numbers come off the model, so the badge and the
+        screen reader can never disagree.
       </p>
     </PlaygroundSection>
   );
@@ -183,7 +183,7 @@ export function MobileLongPressSheetShowcase() {
       <p className="text-muted-foreground max-w-prose text-sm">
         Every row here is 44px tall. The <b>Move to group</b> and <b>Sort by</b> headings are
         labels, not controls — their contents are already on screen, which is what makes the
-        flattening honest: the sheet offers exactly the leaves the &ldquo;⋮&rdquo; hides.
+        flattening honest: the sheet offers exactly the leaves the “⋮” hides.
       </p>
     </PlaygroundSection>
   );

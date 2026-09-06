@@ -490,7 +490,7 @@ export function TrustDialShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>
-          Codex&rsquo;s middle stop — amber, keeps the dial&rsquo;s word, says what the word hides
+          Codex’s middle stop — amber, keeps the dial’s word, says what the word hides
         </ShowcaseLabel>
         <ShowcaseDemo>
           <LiveAutonomyDialog descriptor={CODEX[1]!} trigger="Choose Act (Codex)" />

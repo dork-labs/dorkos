@@ -339,9 +339,9 @@ describe('PackageDetailSheet', () => {
 
     render(<PackageDetailSheet />);
 
-    // The "Permissions & Effects" heading is the section wrapper rendered by
+    // The "What this can do" heading is the section wrapper rendered by
     // the sheet around PermissionPreviewSection.
-    expect(screen.getByText('Permissions & Effects')).toBeInTheDocument();
+    expect(screen.getByText('What this can do')).toBeInTheDocument();
     // formatPermissionPreview emits one headline per file group naming the
     // shared folder and a count per action; the paths themselves sit behind a
     // disclosure.
@@ -393,7 +393,7 @@ describe('PackageDetailSheet', () => {
     expect(screen.getByText('Installed')).toBeInTheDocument();
     expect(screen.getByText('All agents (global)')).toBeInTheDocument();
     expect(screen.getByText('Provides 3 commands · 2 skills · hooks')).toBeInTheDocument();
-    expect(screen.queryByText('Permissions & Effects')).not.toBeInTheDocument();
+    expect(screen.queryByText('What this can do')).not.toBeInTheDocument();
     expect(screen.queryByText('No special permissions required.')).not.toBeInTheDocument();
 
     // The footer offers "Install…" (add another scope); the bare Install
@@ -552,7 +552,7 @@ describe('PackageDetailSheet', () => {
 
     // DetailSkeleton renders Skeleton placeholders with aria-busy implied.
     // The permissions section should not render until preview resolves.
-    expect(screen.queryByText('Permissions & Effects')).not.toBeInTheDocument();
+    expect(screen.queryByText('What this can do')).not.toBeInTheDocument();
   });
 
   it('holds the skeleton (no install preview) while the installed list is still loading', () => {
@@ -568,7 +568,7 @@ describe('PackageDetailSheet', () => {
 
     render(<PackageDetailSheet />);
 
-    expect(screen.queryByText('Permissions & Effects')).not.toBeInTheDocument();
+    expect(screen.queryByText('What this can do')).not.toBeInTheDocument();
     expect(screen.queryByText('No special permissions required.')).not.toBeInTheDocument();
     expect(screen.queryByText(/^Installed/)).not.toBeInTheDocument();
   });

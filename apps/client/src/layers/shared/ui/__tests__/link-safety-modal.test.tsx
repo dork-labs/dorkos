@@ -71,9 +71,9 @@ describe('LinkSafetyModal — a link the seam refuses (DOR-547)', () => {
     );
 
     expect(screen.getByRole('dialog', { name: /cannot be opened/i })).toBeInTheDocument();
-    expect(screen.getByText("DorkOS doesn't open irc: links")).toBeInTheDocument();
+    expect(screen.getByText('DorkOS doesn’t open irc: links')).toBeInTheDocument();
     expect(
-      screen.getByText("irc: links don't open from DorkOS, so nothing would happen.")
+      screen.getByText('irc: links don’t open from DorkOS, so nothing would happen.')
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /open link/i })).toBeNull();
     expect(screen.getByRole('button', { name: /copy link/i })).toHaveClass(PRIMARY_CLASS);
@@ -130,7 +130,7 @@ describe('LinkSafetyModal — a link only THIS surface refuses (DOR-547 delta)',
 
     expect(screen.queryByRole('button', { name: /open link/i })).toBeNull();
     expect(screen.getByRole('button', { name: /copy link/i })).toHaveClass(PRIMARY_CLASS);
-    expect(screen.getByText("The desktop app can't open mailto: links")).toBeInTheDocument();
+    expect(screen.getByText('The desktop app can’t open mailto: links')).toBeInTheDocument();
     // Names the right policy. "DorkOS doesn't open mailto: links" would be
     // false — the web app does.
     expect(

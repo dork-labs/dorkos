@@ -38,7 +38,7 @@ export function CastGallery() {
       </ul>
       <p className="text-warm-gray mt-6 max-w-2xl text-sm">
         Dave carries a lit ring with no glow, which is the mark that says he is the user rather than
-        an agent. An agent&rsquo;s ring lights and glows only while it is the one talking.
+        an agent. An agent’s ring lights and glows only while it is the one talking.
       </p>
     </div>
   );

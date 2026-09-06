@@ -36,7 +36,7 @@ function ControlledField({
       onKeyDown={props.onKeyDown ?? (() => {})}
       onFocus={props.onFocus ?? (() => {})}
       onBlur={props.onBlur ?? (() => {})}
-      placeholder={props.placeholder ?? 'Send a message...'}
+      placeholder={props.placeholder ?? 'Send a message…'}
       placeholderOverlay={props.placeholderOverlay}
       isPaletteOpen={props.isPaletteOpen}
       paletteListboxId={props.paletteListboxId}
@@ -54,7 +54,7 @@ describe('LexicalField', () => {
   // move.
   it('is a combobox named by its placeholder, and literally contenteditable="true"', async () => {
     render(<ControlledField />);
-    const field = await screen.findByRole('combobox', { name: 'Send a message...' });
+    const field = await screen.findByRole('combobox', { name: 'Send a message…' });
     expect(field.getAttribute('contenteditable')).toBe('true');
   });
 
@@ -66,7 +66,7 @@ describe('LexicalField', () => {
     expect(field.getAttribute('aria-expanded')).toBe('true');
     expect(field.getAttribute('aria-controls')).toBe('lb');
     expect(field.getAttribute('aria-activedescendant')).toBe('opt-1');
-    expect(field.getAttribute('aria-label')).toBe('Send a message...');
+    expect(field.getAttribute('aria-label')).toBe('Send a message…');
     expect(field.getAttribute('aria-multiline')).toBe('true');
   });
 
@@ -90,7 +90,7 @@ describe('LexicalField', () => {
     render(<ControlledField placeholderOverlay={<span>animated hint</span>} />);
     await screen.findByRole('combobox');
     expect(screen.getByText('animated hint')).toBeInTheDocument();
-    expect(screen.queryByText('Send a message...')).toBeNull();
+    expect(screen.queryByText('Send a message…')).toBeNull();
   });
 
   it('hands its editing surface up once the editor exists', async () => {

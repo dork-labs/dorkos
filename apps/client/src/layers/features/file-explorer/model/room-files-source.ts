@@ -70,8 +70,8 @@ function toExplorerEntry(entry: RoomFileEntry): ExplorerEntry {
  * into a "preview" of a function.
  */
 const NOT_READABLE_COPY = new Map<string, string>([
-  ['ROOM_FILE_NOT_READABLE', "This isn't a file that can be shown here."],
-  ['ROOM_FILE_NOT_FOUND', "This file isn't in the room's files any more."],
+  ['ROOM_FILE_NOT_READABLE', 'This isn’t a file that can be shown here.'],
+  ['ROOM_FILE_NOT_FOUND', 'This file isn’t in the room’s files any more.'],
 ]);
 
 /**

@@ -157,8 +157,8 @@ function ThreadReplyRowShowcase() {
       <ShowcaseLabel>The count flip — press &quot;Add a reply&quot; to watch it snap</ShowcaseLabel>
       <p className="text-muted-foreground mb-2 text-xs">
         The number is the only thing animated (design record §5.5): a scale snap on the whole
-        sentence would shift the row&apos;s width and nudge its neighbours. The row is drawn at rest
-        on mount — only a genuine increment moves it.
+        sentence would shift the row’s width and nudge its neighbours. The row is drawn at rest on
+        mount — only a genuine increment moves it.
       </p>
       <ShowcaseDemo>
         <GrowingReplyRowDemo />
@@ -319,7 +319,7 @@ function ArrivalDemo() {
           1. Kai starts working
         </Button>
         <Button variant="outline" size="sm" onClick={landKaisReply}>
-          2. Land Kai&apos;s reply — hands off
+          2. Land Kai’s reply — hands off
         </Button>
         <Button variant="ghost" size="sm" onClick={reset}>
           Reset

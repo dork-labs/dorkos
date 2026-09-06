@@ -51,7 +51,7 @@ export function SessionListWarningNotice({ warning }: { warning: SessionListWarn
       data-testid={`session-list-warning-${warningKey(warning)}`}
     >
       <CircleAlert className="mt-px size-3 shrink-0" aria-hidden />
-      <span>Couldn&apos;t load {subject}</span>
+      <span>Couldn’t load {subject}</span>
     </p>
   );
 }

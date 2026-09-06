@@ -578,7 +578,7 @@ function resolvePill(counts: {
     return {
       tone: 'waiting',
       glyph: 'waiting',
-      text: "can't check approvals",
+      text: 'can’t check approvals',
       label: 'DorkOS could not check for approvals. Open for details.',
     };
   }
@@ -588,7 +588,7 @@ function resolvePill(counts: {
     return {
       tone: 'neutral',
       glyph: 'untrusted',
-      text: "can't check permissions",
+      text: 'can’t check permissions',
       label: 'DorkOS could not check which standing permissions are live. Open for details.',
     };
   }

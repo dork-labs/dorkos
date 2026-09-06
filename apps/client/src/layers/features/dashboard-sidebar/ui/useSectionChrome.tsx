@@ -362,7 +362,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
           <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Delete section &ldquo;{group.name}&rdquo;?</AlertDialogTitle>
+                <AlertDialogTitle>Delete section “{group.name}”?</AlertDialogTitle>
                 <AlertDialogDescription>
                   Its {section.rows.length}{' '}
                   {section.rows.length === 1 ? 'member moves' : 'members move'} back where they came

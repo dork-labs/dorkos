@@ -619,7 +619,7 @@ describe('session permission mode: the fresher answer wins', () => {
                 },
                 {
                   id: 'dontAsk',
-                  label: "Don't Ask",
+                  label: 'Don’t Ask',
                   stop: 'autonomy',
                   asks: 'never',
                   reach: 'everything',

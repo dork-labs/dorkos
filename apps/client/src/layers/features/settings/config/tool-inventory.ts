@@ -79,7 +79,7 @@ export const TOOL_GROUPS: ToolGroupDef[] = [
   {
     key: 'mesh',
     label: 'Agent discovery',
-    description: "Let agents find and register other agents, and see who's available.",
+    description: 'Let agents find and register other agents, and see who’s available.',
     tools: TOOL_INVENTORY.mesh,
   },
   {

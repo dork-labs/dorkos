@@ -22,7 +22,7 @@ export function useSaveConnectorCredential() {
 
   return useMutation<ConnectorProviderStatus, Error, SaveConnectorCredentialArgs>({
     mutationFn: ({ provider, secret }) => transport.putConnectorCredential(provider, secret),
-    meta: { errorLabel: "Couldn't save the provider key" },
+    meta: { errorLabel: 'Couldn’t save the provider key' },
     onSuccess: () => invalidateProviderScope(queryClient),
   });
 }
@@ -37,7 +37,7 @@ export function useDeleteConnectorCredential() {
 
   return useMutation<ConnectorProviderStatus, Error, { provider: string }>({
     mutationFn: ({ provider }) => transport.deleteConnectorCredential(provider),
-    meta: { errorLabel: "Couldn't remove the provider key" },
+    meta: { errorLabel: 'Couldn’t remove the provider key' },
     onSuccess: () => invalidateProviderScope(queryClient),
   });
 }

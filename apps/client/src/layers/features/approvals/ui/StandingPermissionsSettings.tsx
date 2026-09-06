@@ -152,8 +152,8 @@ export function StandingPermissionsSettings() {
               <StandingPermissionsUnavailable onRetry={retry} />
             ) : liveCount === 0 ? (
               <p className="text-muted-foreground text-xs">
-                When you answer &ldquo;stop asking about this&rdquo; on an approval card, it shows
-                up here until it runs out.
+                When you answer “stop asking about this” on an approval card, it shows up here until
+                it runs out.
               </p>
             ) : (
               <StandingPermissionList permissions={permissions} />

@@ -222,7 +222,7 @@ describe('parseMcpToolName', () => {
     expect(parseMcpToolName('mcp__context7__get_context')?.serverLabel).toBe('Context7');
   });
 
-  it("reads OpenCode's single-underscore spelling of a DorkOS tool (DOR-1613)", () => {
+  it('reads OpenCode’s single-underscore spelling of a DorkOS tool (DOR-1613)', () => {
     // What this catches: OpenCode does not spell an MCP tool `mcp__server__tool`
     // — it builds `sanitize(server) + '_' + sanitize(tool)` and hands that key
     // straight through. Keyed on `mcp__` alone, every DorkOS tool an OpenCode

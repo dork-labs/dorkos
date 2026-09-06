@@ -498,7 +498,7 @@ describe('useChatQueue — switching sessions mid-edit (DOR-480 duplicate send)'
     return view;
   }
 
-  it("leaves A's composer holding A's draft, not A's queued message", async () => {
+  it('leaves A’s composer holding A’s draft, not A’s queued message', async () => {
     const view = await openSessionAWithEditInFlight();
 
     view.rerender({ sessionId: 'B' });
@@ -512,7 +512,7 @@ describe('useChatQueue — switching sessions mid-edit (DOR-480 duplicate send)'
     expect(view.result.current.editingIndex).toBeNull();
   });
 
-  it("commits an in-flight rewrite into A's queue on the way out", async () => {
+  it('commits an in-flight rewrite into A’s queue on the way out', async () => {
     const view = await openSessionAWithEditInFlight();
 
     act(() => view.result.current.setInput('deploy to production instead'));

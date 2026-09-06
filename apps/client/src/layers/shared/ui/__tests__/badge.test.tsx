@@ -68,10 +68,10 @@ describe('Badge', () => {
   it('paints a tone from the shared status tokens', () => {
     render(
       <Badge variant="outline" tone="warning">
-        No auth
+        Not protected
       </Badge>
     );
-    expect(screen.getByText('No auth')).toHaveClass(STATUS_TONE_TEXT.warning);
+    expect(screen.getByText('Not protected')).toHaveClass(STATUS_TONE_TEXT.warning);
   });
 
   // Declaration order is load-bearing: `tone` is a colour correction on top of

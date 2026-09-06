@@ -139,6 +139,6 @@ export function usePostToRoom(): UseMutationResult<PostToRoomResponse, Error, Po
     // "Couldn't send your message — This room is archived". Suppressing that
     // toast and raising our own at the call site was the earlier shape, and it
     // lost the message entirely in exactly the cases this hook now survives.
-    meta: { errorLabel: "Couldn't send your message" },
+    meta: { errorLabel: 'Couldn’t send your message' },
   });
 }

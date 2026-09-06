@@ -151,7 +151,7 @@ describe('SessionsView', () => {
         { wrapper: Wrapper }
       );
       const notice = screen.getByTestId('session-list-warning-opencode');
-      expect(notice.textContent).toContain("Couldn't load OpenCode sessions");
+      expect(notice.textContent).toContain('Couldn’t load OpenCode sessions');
       expect(notice.getAttribute('title')).toBe('OpenCode server is starting');
       // The rest of the list still renders — warnings are non-blocking.
       expect(screen.getByText('Test conversation')).toBeDefined();
@@ -171,10 +171,10 @@ describe('SessionsView', () => {
         { wrapper: Wrapper }
       );
       expect(screen.getByTestId('session-list-warning-codex').textContent).toContain(
-        "Couldn't load Codex sessions"
+        'Couldn’t load Codex sessions'
       );
       expect(screen.getByTestId('session-list-warning-opencode').textContent).toContain(
-        "Couldn't load OpenCode sessions"
+        'Couldn’t load OpenCode sessions'
       );
       // The empty state still shows alongside the notices.
       expect(screen.getByText('No conversations yet')).toBeDefined();

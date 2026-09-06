@@ -65,7 +65,7 @@ export class MarkdownErrorBoundary extends Component<
     if (this.state.hasError) {
       return (
         this.props.fallback ?? (
-          <p className="text-muted-foreground text-sm">This content couldn&rsquo;t be displayed.</p>
+          <p className="text-muted-foreground text-sm">This content couldn’t be displayed.</p>
         )
       );
     }

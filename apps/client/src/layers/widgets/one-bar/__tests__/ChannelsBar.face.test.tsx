@@ -148,8 +148,8 @@ function markGlyph(): string {
   return document.querySelector('[data-slot="room-avatar"]')?.textContent ?? '';
 }
 
-describe("the bar's room mark, joined for real", () => {
-  it("wears the agent's own emoji for a one-to-one", async () => {
+describe('the bar’s room mark, joined for real', () => {
+  it('wears the agent’s own emoji for a one-to-one', async () => {
     renderBar(fleetAnswering());
 
     await waitFor(() => expect(markGlyph()).toContain(ANA_EMOJI));

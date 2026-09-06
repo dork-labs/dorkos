@@ -26,7 +26,7 @@ export function ActivityErrorState({ onRetry, className }: ActivityErrorStatePro
         <TriangleAlert className="text-destructive size-6" aria-hidden="true" />
       </div>
       <div className="space-y-1">
-        <p className="text-foreground text-sm font-medium">Couldn&rsquo;t load your activity</p>
+        <p className="text-foreground text-sm font-medium">Couldn’t load your activity</p>
         <p className="text-muted-foreground max-w-xs text-xs">
           The DorkOS server did not answer. Check that it is still running.
         </p>

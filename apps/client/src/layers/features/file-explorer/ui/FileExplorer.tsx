@@ -170,7 +170,7 @@ export function FileExplorer({ source: sourceProp, className }: FileExplorerProp
           </div>
         ) : rootError && rows.length === 0 ? (
           <div className="text-muted-foreground flex h-20 flex-col items-center justify-center gap-2 text-xs">
-            <span>Couldn&apos;t load files.</span>
+            <span>Couldn’t load files.</span>
             <Button variant="outline" size="xs" onClick={explorer.reload}>
               <RotateCw />
               Retry
@@ -240,8 +240,8 @@ export function FileExplorer({ source: sourceProp, className }: FileExplorerProp
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this folder?</AlertDialogTitle>
             <AlertDialogDescription>
-              &ldquo;{explorer.pendingRecursiveDelete?.name}&rdquo; isn&apos;t empty. Deleting it
-              removes everything inside. This can&apos;t be undone.
+              “{explorer.pendingRecursiveDelete?.name}” isn’t empty. Deleting it removes everything
+              inside. This can’t be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -65,7 +65,7 @@ export function useStoreOpenRouterKey(): UseStoreOpenRouterKey {
     isPending: mutation.isPending,
     isSuccess: mutation.data?.ok === true,
     isError: failed,
-    errorMessage: failed ? (rawError ?? 'Could not save the OpenRouter key.') : null,
+    errorMessage: failed ? (rawError ?? 'Couldn’t save the OpenRouter key.') : null,
   };
 }
 
@@ -109,13 +109,12 @@ export function useOpenRouterOAuth(): UseOpenRouterOAuth {
       // the status poll once the page actually opened — otherwise the UI sits
       // waiting for a sign-in the user was never shown.
       if (!openExternalLink(authorizeUrl)) {
-        setStartError('Could not open the OpenRouter sign-in page.');
+        setStartError('Couldn’t open the OpenRouter sign-in page.');
         return;
       }
       setFlowState(state);
     },
-    onError: (err) =>
-      setStartError((err as Error).message ?? 'Could not start OpenRouter sign-in.'),
+    onError: (err) => setStartError((err as Error).message ?? 'Couldn’t start OpenRouter sign-in.'),
   });
 
   const statusQuery = useQuery({

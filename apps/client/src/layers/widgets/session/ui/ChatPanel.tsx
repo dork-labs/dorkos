@@ -539,8 +539,8 @@ export function ChatPanel({
   // names it; without one it is the generic invitation.
   const { data: composerAgent } = useCurrentAgent(cwd);
   const defaultPlaceholder = composerAgent
-    ? `Message ${getAgentDisplayName(composerAgent)}...`
-    : 'Send a message...';
+    ? `Message ${getAgentDisplayName(composerAgent)}…`
+    : 'Send a message…';
 
   // Where this session's words go, and the files staged against them. Built
   // here rather than inside the composer so the whole conversation can publish

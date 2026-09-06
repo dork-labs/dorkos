@@ -86,7 +86,7 @@ function CopyTextRowDemo() {
       {copied ? (
         <span className="text-xs">Copied</span>
       ) : failed ? (
-        <span className="text-destructive text-xs">Couldn&apos;t copy</span>
+        <span className="text-destructive text-xs">Couldn’t copy</span>
       ) : (
         <span className="font-mono text-xs">~/.dork/logs</span>
       )}
@@ -325,7 +325,7 @@ export function FeedbackShowcases() {
           <div className="border-border/60 rounded-md border border-dashed p-3">
             <PermissionModeScopeNote mode="default" />
             <p className="text-muted-foreground text-xs italic">
-              (nothing rendered above — the border is the demo&rsquo;s)
+              (nothing rendered above — the border is the demo’s)
             </p>
           </div>
         </ShowcaseDemo>

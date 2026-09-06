@@ -94,7 +94,7 @@ export function useIgnoreUnclaimedChat() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => transport.ignoreUnclaimedChat(id),
-    meta: { errorLabel: "Couldn't ignore this chat" },
+    meta: { errorLabel: 'Couldn’t ignore this chat' },
     onSuccess: () => invalidateFeed(queryClient),
   });
 }
@@ -105,7 +105,7 @@ export function useBlockUnclaimedChat() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => transport.blockUnclaimedChat(id),
-    meta: { errorLabel: "Couldn't block this chat" },
+    meta: { errorLabel: 'Couldn’t block this chat' },
     onSuccess: () => invalidateFeed(queryClient),
   });
 }
@@ -123,7 +123,7 @@ export function useLeaveUnclaimedChat() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => transport.leaveUnclaimedChat(id),
-    meta: { errorLabel: "Couldn't leave this chat" },
+    meta: { errorLabel: 'Couldn’t leave this chat' },
     onSuccess: () => invalidateFeed(queryClient),
   });
 }

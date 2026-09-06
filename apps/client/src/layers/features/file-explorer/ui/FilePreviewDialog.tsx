@@ -370,7 +370,7 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
               <Loader2 className="text-muted-foreground size-(--size-icon-md) animate-spin" />
             </div>
           ) : query.isError || file === undefined ? (
-            <PreviewNote>This file couldn&apos;t be read.</PreviewNote>
+            <PreviewNote>This file couldn’t be read.</PreviewNote>
           ) : editing ? (
             <textarea
               ref={editorRef}
@@ -532,7 +532,7 @@ function PreviewBody({ file }: { file: ExplorerFile }) {
         <MarkdownContent
           content={file.body.text}
           className="text-sm"
-          errorFallback="This file couldn't be displayed."
+          errorFallback="This file couldn’t be displayed."
         />
       ) : (
         // `<pre>` renders the bytes as the characters they are — no
@@ -542,11 +542,11 @@ function PreviewBody({ file }: { file: ExplorerFile }) {
         </pre>
       );
     case 'binary':
-      return <PreviewNote>This isn&apos;t text, so there&apos;s nothing to show here.</PreviewNote>;
+      return <PreviewNote>This isn’t text, so there’s nothing to show here.</PreviewNote>;
     case 'too-large':
       return (
         <PreviewNote>
-          This file is larger than {formatBytes(file.body.maxBytes)}, so it isn&apos;t shown here.
+          This file is larger than {formatBytes(file.body.maxBytes)}, so it isn’t shown here.
         </PreviewNote>
       );
     case 'not-readable':

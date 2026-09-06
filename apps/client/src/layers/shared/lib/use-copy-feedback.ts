@@ -89,7 +89,7 @@ export function useCopyFeedback(options: UseCopyFeedbackOptions = {}): UseCopyFe
         ok = false;
         setCopied(false);
         setFailed(true);
-        if (toastOnSettle) toast.error("Couldn't copy to the clipboard");
+        if (toastOnSettle) toast.error('Couldn’t copy to the clipboard');
       }
       if (revertTimeoutRef.current !== null) clearTimeout(revertTimeoutRef.current);
       revertTimeoutRef.current = setTimeout(() => {

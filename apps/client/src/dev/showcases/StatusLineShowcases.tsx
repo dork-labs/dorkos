@@ -249,13 +249,12 @@ export function StatusLineShowcases() {
         </ShowcaseDemo>
         <p className="text-muted-foreground text-xs">
           Before the fix, this exact reproduction — reconnecting, 92% context, planning — put the
-          permission item and the composer&apos;s Plan switch at the same severity (40). The
-          tie-break in <code>applyStatusBudget</code> is a stable sort over registry order, and the
-          registry lists <code>permission</code> before <code>plan</code>, so the contested slot at
-          these two narrow widths went to a permission chip with nothing to report while the Plan
-          chip — the one that IS news — landed under the <code>⋯</code>. The permission item now
-          omits its node entirely while Plan holds the session, so there is nothing left to contest
-          the slot with.
+          permission item and the composer’s Plan switch at the same severity (40). The tie-break in{' '}
+          <code>applyStatusBudget</code> is a stable sort over registry order, and the registry
+          lists <code>permission</code> before <code>plan</code>, so the contested slot at these two
+          narrow widths went to a permission chip with nothing to report while the Plan chip — the
+          one that IS news — landed under the <code>⋯</code>. The permission item now omits its node
+          entirely while Plan holds the session, so there is nothing left to contest the slot with.
         </p>
 
         <ShowcaseLabel>What every width affords</ShowcaseLabel>
@@ -279,15 +278,14 @@ export function StatusLineShowcases() {
           <code>overflow-hidden</code> row with shrinkable clusters whether the content fit or was
           absorbed — so the guard is geometric instead:{' '}
           <code>apps/e2e/tests/chat/status-line-fit.spec.ts</code> measures these rows and fails
-          when two items&apos; painted extents intersect.
+          when two items’ painted extents intersect.
         </p>
         <p className="text-muted-foreground text-xs">
           The single row under the second heading is the same 640px carrying the longest permission
           label DorkOS ships. A slot is priced at 13 characters (<code>STATUS_VALUE_MAX_CHARS</code>
           ) and this tier draws the label whole, so <code>Bypass permissions</code> at 18 takes a
-          92px slot where Codex&apos;s <code>Full access</code> takes 63 — which is why the floor
-          sells three right-cluster slots rather than four, and reports the rest on the{' '}
-          <code>⋯</code>.
+          92px slot where Codex’s <code>Full access</code> takes 63 — which is why the floor sells
+          three right-cluster slots rather than four, and reports the rest on the <code>⋯</code>.
         </p>
       </PlaygroundSection>
 

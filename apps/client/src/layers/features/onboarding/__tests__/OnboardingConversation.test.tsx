@@ -389,7 +389,7 @@ describe('OnboardingConversation', () => {
     expect(screen.getByTestId('confirm-profile')).toHaveProperty('disabled', true);
   });
 
-  it(`"That's us" saves the picked roles as { profile: { roles } } and moves to discovery`, async () => {
+  it(`"That’s us" saves the picked roles as { profile: { roles } } and moves to discovery`, async () => {
     render(<OnboardingConversation onComplete={vi.fn()} />);
     await reachProfile();
 
@@ -472,7 +472,7 @@ describe('OnboardingConversation', () => {
   // Two literals here used to say `claude-code` no matter what the server's
   // default was, so a person who had chosen Codex was told their very first
   // session ran on something it did not.
-  it("names the server's default runtime on the first session, not a hardcoded one", async () => {
+  it('names the server’s default runtime on the first session, not a hardcoded one', async () => {
     mockOnboardingConfig = {
       agents: { defaultDirectory: '/home/kai/.dork/agents', defaultAgent: 'dorkbot' },
       executionDefaults: { runtime: 'codex' },
@@ -564,7 +564,7 @@ describe('OnboardingConversation', () => {
     expect(onComplete).toHaveBeenCalled();
   });
 
-  describe("DorkBot's face", () => {
+  describe('DorkBot’s face', () => {
     /** Drive the dissolve and hand back the birth record it registered. */
     async function dissolveIntoSession() {
       await reachDiscovery();

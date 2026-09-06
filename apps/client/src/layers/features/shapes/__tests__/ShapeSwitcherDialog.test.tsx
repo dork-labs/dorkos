@@ -49,7 +49,7 @@ vi.mock('sonner', async (importOriginal) => {
 });
 
 /** The app-wide fallback the fork must never fall back to (DOR-402/DOR-453). */
-const GENERIC_MUTATION_TOAST = "That didn't work. Try again.";
+const GENERIC_MUTATION_TOAST = 'That didn’t work. Try again.';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -324,7 +324,7 @@ describe('ShapeSwitcherDialog', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("shows the offered agent's schedule in plain words when the Shape declares one", async () => {
+  it('shows the offered agent’s schedule in plain words when the Shape declares one', async () => {
     const transport = createMockTransport({
       listShapes: vi.fn().mockResolvedValue(SHAPES),
       applyShape: vi.fn().mockResolvedValue(unsatisfiedResult()),
@@ -520,7 +520,7 @@ describe('ShapeSwitcherDialog', () => {
     expect(applyShape).not.toHaveBeenCalled();
   });
 
-  it("surfaces the server's 409 message inline — and only there — keeping the form open", async () => {
+  it('surfaces the server’s 409 message inline — and only there — keeping the form open', async () => {
     const forkShape = vi
       .fn()
       .mockRejectedValue(new Error("A Shape named 'my-board' already exists"));
@@ -552,7 +552,7 @@ describe('ShapeSwitcherDialog', () => {
 
     // Still exactly one report, and it still names the actual problem.
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("Couldn't save your version", {
+      expect(toast.error).toHaveBeenCalledWith('Couldn’t save your version', {
         description: "A Shape named 'my-board' already exists",
       })
     );
@@ -695,7 +695,7 @@ describe('ShapeSwitcherDialog', () => {
     reject(new Error("A Shape named 'my-board' already exists"));
 
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith("Couldn't save your version", {
+      expect(toast.error).toHaveBeenCalledWith('Couldn’t save your version', {
         description: "A Shape named 'my-board' already exists",
       })
     );

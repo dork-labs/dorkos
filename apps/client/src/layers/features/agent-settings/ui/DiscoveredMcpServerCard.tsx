@@ -103,7 +103,7 @@ export function DiscoveredMcpServerCard({
       const result = await importServer.mutateAsync({ input: { agentId, name: entry.name } });
       if (result.status === 'approval_required') setPending(result.approval);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add the server.');
+      setError(err instanceof Error ? err.message : 'Couldn’t add the server.');
     }
   }, [importServer, agentId, entry.name]);
 
@@ -119,7 +119,7 @@ export function DiscoveredMcpServerCard({
       // to reset here because this component unmounts with the discovered list.
       if (result.status !== 'ok') setError('Adding it still needs approval. Try again.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add the server.');
+      setError(err instanceof Error ? err.message : 'Couldn’t add the server.');
     }
   }, [importServer, agentId, entry.name, pending]);
 
@@ -145,7 +145,7 @@ export function DiscoveredMcpServerCard({
           <ShieldAlert className="text-status-warning mt-0.5 size-4 shrink-0" aria-hidden />
           <div className="space-y-1">
             <p className="text-sm font-medium">
-              Add &ldquo;{parsed.displayName}&rdquo; to {agentLabel}?
+              Add “{parsed.displayName}” to {agentLabel}?
             </p>
             <p className="text-muted-foreground text-xs leading-relaxed">
               {confirmSentence({

@@ -281,12 +281,12 @@ describe('FullPowerDoor', () => {
 
   it('surfaces a config-write failure inline and leaves the choice on offer', async () => {
     const user = userEvent.setup();
-    configMutateAsync.mockRejectedValue(new Error('Could not save that. Try again.'));
+    configMutateAsync.mockRejectedValue(new Error('Couldn’t save that. Try again.'));
     renderDoor();
 
     await user.click(screen.getByRole('button', { name: ACCEPT }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/could not save that/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/couldn’t save that/i);
     // Still answerable — the failure is a prompt to retry, not a dead end.
     expect(screen.getByRole('button', { name: ACCEPT })).toBeEnabled();
     expect(screen.getByRole('button', { name: DECLINE })).toBeEnabled();

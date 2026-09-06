@@ -48,7 +48,7 @@ describe('LivePeek', () => {
     }
   });
 
-  it("presses with THAT row's author id", () => {
+  it('presses with THAT row’s author id', () => {
     // Red if the handler closes over the wrong row, which a `.map` makes easy
     // and which no snapshot would catch.
     const onStopAgent = vi.fn();
