@@ -11,13 +11,19 @@
  * token→agent lookup faked, because the subject is a seam: what the middleware
  * leaves on `res.locals`, and what the route then writes into the feed.
  *
+ * DOR-1829 added the other half of each pair: the two DELETE routes recorded
+ * nothing at all, so removing a secret — at least as worth knowing as setting one
+ * — left no trace. They emit only when something was actually removed, which is
+ * asserted here too: `delete` is idempotent, and a feed line about a secret that
+ * was never set is a lie about the verb rather than the actor.
+ *
+ * The shape guard that used to live at the bottom of this file moved to
+ * `route-activity-actor.test.ts`, which enumerates the WHOLE `routes/` directory
+ * and so covers `extensions*.ts` as a strict superset.
+ *
  * @module routes/__tests__/extensions-activity-actor
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import path from 'node:path';
-import { readFile } from 'node:fs/promises';
-import { readdirSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 
 /** The one token the faked identity service knows about. */
 const KNOWN_TOKEN = 'tok_known_agent';
@@ -275,45 +281,138 @@ describe('who the Activity feed says changed an extension', () => {
     });
   });
 
-  // The defect was one hardcoded pair copied into four more routes, so pinning
-  // the six cases above would leave the seventh free to be written the old way.
-  // This asserts the SHAPE instead: nothing on this router names an actor by
-  // hand, whether or not a person bar makes it true today.
-  //
-  // Both halves of this guard are the way they are because an adversarial review
-  // walked past the first version of it:
-  //
-  //  - The pattern is UNANCHORED. A line-anchored `^\s*actorType:` sees the
-  //    formatted multi-line `emit({ … })` call and nothing else, so a one-line
-  //    `emit({ actorType: 'user', actorLabel: 'You', … })` and a
-  //    `const actor = { actorType: 'user' … }` spread in later both slid
-  //    straight through it. What is forbidden is a quoted actor literal
-  //    anywhere, so that is what it matches.
-  //  - The file list is READ FROM THE DIRECTORY, not written out. Two literals
-  //    guard the two files that exist today and say nothing about
-  //    `extensions-<next-thing>.ts`, which is precisely the route that would
-  //    copy the old shape.
-  it('leaves no route on this router asserting its own actor', async () => {
-    const routesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-    const files = readdirSync(routesDir).filter((name) => /^extensions.*\.ts$/.test(name));
-
-    // A filter that silently matched nothing would pass this test forever.
-    expect(files.length).toBeGreaterThanOrEqual(2);
-
-    for (const file of files) {
-      const source = await readFile(path.join(routesDir, file), 'utf-8');
-      const hardcoded = source
-        .split('\n')
-        .filter((line) => /actor(Type|Label|Id)\s*:\s*['"`]/.test(line));
-      expect(hardcoded, `${file} names an Activity actor by hand`).toEqual([]);
-
-      // Only the files that actually record something have to read the caller —
-      // `extensions-person-bar.ts` writes no Activity at all.
-      if (source.includes('activityService.emit(')) {
-        expect(source, `${file} writes Activity without reading the caller`).toContain(
-          'readActivityActor(req, res)'
-        );
-      }
+  describe('DELETE /api/extensions/:id/secrets/:key', () => {
+    /** Put the secret in place so the DELETE has something to remove. */
+    async function setSecret(): Promise<void> {
+      await request(fixtureServer)
+        .put('/api/extensions/test-ext/secrets/api_key')
+        .send({ value: 'sk-test' });
+      emitted = [];
     }
+
+    it('records a browser deletion as the person', async () => {
+      await setSecret();
+
+      const res = await request(fixtureServer).delete('/api/extensions/test-ext/secrets/api_key');
+
+      expect(res.status).toBe(200);
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]).toMatchObject({ actorType: 'user', actorLabel: 'You' });
+      expect(emitted[0].summary).toContain('Removed secret');
+    });
+
+    it('records an identified agent as that agent', async () => {
+      await setSecret();
+
+      const res = await request(fixtureServer)
+        .delete('/api/extensions/test-ext/secrets/api_key')
+        .set('x-dorkos-agent', KNOWN_TOKEN);
+
+      expect(res.status).toBe(200);
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]).toMatchObject({
+        actorType: 'agent',
+        actorId: IDENTITY.agentPath,
+        actorLabel: 'Researcher',
+      });
+    });
+
+    it('records an unresolvable token as an unidentified caller', async () => {
+      await setSecret();
+
+      const res = await request(fixtureServer)
+        .delete('/api/extensions/test-ext/secrets/api_key')
+        .set('x-dorkos-agent', 'tok_nobody_knows');
+
+      expect(res.status).toBe(200);
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]).toMatchObject({
+        actorType: 'system',
+        actorLabel: 'Unidentified caller',
+      });
+      expect(JSON.stringify(emitted)).not.toContain('tok_nobody_knows');
+    });
+
+    it('says nothing when the secret was never set', async () => {
+      const res = await request(fixtureServer).delete('/api/extensions/test-ext/secrets/api_key');
+
+      expect(res.status).toBe(200);
+      expect(emitted).toEqual([]);
+    });
+  });
+
+  describe('DELETE /api/extensions/:id/settings/:key', () => {
+    /** Store the setting so the DELETE resets something real. */
+    async function setSetting(): Promise<void> {
+      await request(fixtureServer)
+        .put('/api/extensions/test-ext/settings/interval')
+        .send({ value: 60 });
+      emitted = [];
+    }
+
+    it('records a browser reset as the person', async () => {
+      await setSetting();
+
+      const res = await request(fixtureServer).delete('/api/extensions/test-ext/settings/interval');
+
+      expect(res.status).toBe(200);
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]).toMatchObject({ actorType: 'user', actorLabel: 'You' });
+      expect(emitted[0].summary).toContain('Reset setting');
+    });
+
+    it('records an identified agent as that agent', async () => {
+      await setSetting();
+
+      const res = await request(fixtureServer)
+        .delete('/api/extensions/test-ext/settings/interval')
+        .set('x-dorkos-agent', KNOWN_TOKEN);
+
+      expect(res.status).toBe(200);
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]).toMatchObject({
+        actorType: 'agent',
+        actorId: IDENTITY.agentPath,
+        actorLabel: 'Researcher',
+      });
+    });
+
+    it('records an unresolvable token as an unidentified caller', async () => {
+      await setSetting();
+
+      const res = await request(fixtureServer)
+        .delete('/api/extensions/test-ext/settings/interval')
+        .set('x-dorkos-agent', 'tok_nobody_knows');
+
+      expect(res.status).toBe(200);
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]).toMatchObject({
+        actorType: 'system',
+        actorLabel: 'Unidentified caller',
+      });
+    });
+
+    it('says nothing when the setting was already at its default', async () => {
+      const res = await request(fixtureServer).delete('/api/extensions/test-ext/settings/interval');
+
+      expect(res.status).toBe(200);
+      expect(emitted).toEqual([]);
+    });
+  });
+
+  // `PUT /:id/data` is the one write on this router that stays silent, and the
+  // silence is a decision rather than an oversight (DOR-1829): it is the
+  // extension API's `saveData`, called by extension CODE at whatever rate that
+  // code likes — the shipped `hello-world` extension writes on every activation —
+  // so a row per call would drown the feed. Pinned so the decision is visible if
+  // somebody later "completes" the router.
+  it('deliberately records nothing for a blob write', async () => {
+    const res = await request(fixtureServer)
+      .put('/api/extensions/test-ext/data')
+      .set('x-dorkos-agent', KNOWN_TOKEN)
+      .send({ visits: 1 });
+
+    expect(res.status).toBe(200);
+    expect(emitted).toEqual([]);
   });
 });

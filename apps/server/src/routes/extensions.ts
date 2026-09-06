@@ -16,6 +16,10 @@
  * `user` / `'You'` before DOR-1801, so an agent setting an API key showed up in
  * the feed as the operator's own action.
  *
+ * The two DELETE routes joined them in DOR-1829: removing a secret is at least as
+ * worth recording as setting one, and they were silent. `PUT /:id/data` is the
+ * one write here that stays silent on purpose — the reason is at that route.
+ *
  * @module routes/extensions
  */
 import { Router } from 'express';
@@ -353,6 +357,18 @@ export function createExtensionsRouter(
   });
 
   // PUT /api/extensions/:id/data -- Write extension's persistent data
+  //
+  // **Deliberately writes no Activity, unlike every other write on this router**
+  // (DOR-1829 considered it and declined). The secrets and settings routes each
+  // record one line per deliberate act by a person or an agent. This one is the
+  // extension API's `saveData`, called by extension CODE at whatever rate that
+  // code likes: the shipped `hello-world` extension writes its visit counter on
+  // every single activation, so an unconditional emit here would put a row in the
+  // operator's feed each time they open a page. A feed nobody can read is worth
+  // less than a quieter one, and the write itself is bounded — an extension can
+  // only ever overwrite its OWN blob, under its own scope-resolved directory.
+  // If this ever needs recording, it needs collapsing (one line per extension per
+  // window) rather than one line per call, and that is its own piece of work.
   router.put('/:id/data', async (req, res) => {
     try {
       const { id } = req.params;
@@ -465,7 +481,27 @@ export function createExtensionsRouter(
       }
 
       const store = new ExtensionSecretStore(id, dorkHome);
+      // Asked BEFORE the delete, because `delete` is idempotent and says nothing
+      // about whether anything was there. A feed line reading "Removed secret X"
+      // for a secret that was never set is the same small lie this route family
+      // was fixed for in DOR-1801 — one about the verb rather than the actor.
+      const wasSet = await store.has(key);
       await store.delete(key);
+
+      const activityService = req.app.locals.activityService as ActivityService | undefined;
+      if (activityService && wasSet) {
+        await activityService.emit({
+          // Ungated like its `PUT` twin, and attributed the same way (DOR-1829).
+          ...readActivityActor(req, res),
+          category: 'config',
+          eventType: 'config.extension_updated',
+          resourceType: 'extension',
+          resourceId: id,
+          resourceLabel: record.manifest.name,
+          summary: `Removed secret "${key}" from extension ${record.manifest.name}`,
+        });
+      }
+
       res.json({ ok: true });
     } catch (err) {
       logger.error(`[Extensions] Failed to delete secret for ${req.params.id}`, err);
@@ -574,7 +610,26 @@ export function createExtensionsRouter(
       }
 
       const store = new ExtensionSettingsStore(dorkHome, id);
+      // Read first, for the reason the secrets route above states: resetting a
+      // setting that was already at its default changed nothing, and a feed that
+      // reports it is padding.
+      const hadStoredValue = (await store.get(key)) !== null;
       await store.delete(key);
+
+      const activityService = req.app.locals.activityService as ActivityService | undefined;
+      if (activityService && hadStoredValue) {
+        await activityService.emit({
+          // Ungated like its `PUT` twin, and attributed the same way (DOR-1829).
+          ...readActivityActor(req, res),
+          category: 'config',
+          eventType: 'config.extension_updated',
+          resourceType: 'extension',
+          resourceId: id,
+          resourceLabel: record.manifest.name,
+          summary: `Reset setting "${key}" to its default for extension ${record.manifest.name}`,
+        });
+      }
+
       res.json({ ok: true });
     } catch (err) {
       logger.error(`[Extensions] Failed to delete setting for ${req.params.id}`, err);

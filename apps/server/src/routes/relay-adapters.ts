@@ -4,6 +4,21 @@
  *
  * Extracted from {@link module:routes/relay} to keep route files under 500 lines.
  *
+ * ## Who the Activity feed says changed a connection or a route
+ *
+ * Every Activity write here reads the caller (`readActivityActor`) rather than
+ * asserting the person did it. Until DOR-1829 all six hardcoded `user` / `'You'`,
+ * so an agent adding a Telegram connection or re-pointing somebody's chat route
+ * showed up in the operator's own feed as their own action.
+ *
+ * No person bar was added, deliberately. `binding_create`, `binding_delete`,
+ * `relay_enable_adapter` and `relay_disable_adapter` are all tier `act` in
+ * `MCP_TOOL_TIERS` — the repo has already decided an agent may do this work —
+ * and unlike the extensions toggles (DOR-1507) none of it writes a leaf of the
+ * `operator-only` `extensions` section of `~/.dork/config.json`; adapters and
+ * bindings live in Relay's own store. Barring the HTTP door would refuse what
+ * the MCP door grants, which is a policy change rather than an attribution fix.
+ *
  * @module routes/relay-adapters
  */
 import { Router } from 'express';
@@ -29,6 +44,7 @@ import { BindingConflictError, type BindingUpdate } from '../services/relay/bind
 import { RoomError } from '../services/rooms/room-errors.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
+import { readActivityActor } from '../services/activity/activity-actor.js';
 
 /** Map adapter error codes to HTTP status codes. */
 const ADAPTER_ERROR_STATUS: Record<string, number> = {
@@ -226,8 +242,7 @@ export function createAdapterRouter(
       if (activityService) {
         const adapterName = adapterManager.resolveAdapterName(id);
         await activityService.emit({
-          actorType: 'user',
-          actorLabel: 'You',
+          ...readActivityActor(req, res),
           category: 'relay',
           eventType: 'relay.adapter_added',
           resourceType: 'adapter',
@@ -255,8 +270,7 @@ export function createAdapterRouter(
       const activityService = req.app.locals.activityService as ActivityService | undefined;
       if (activityService) {
         await activityService.emit({
-          actorType: 'user',
-          actorLabel: 'You',
+          ...readActivityActor(req, res),
           category: 'relay',
           eventType: 'relay.adapter_removed',
           resourceType: 'adapter',
@@ -384,8 +398,7 @@ export function createAdapterRouter(
       if (activityService) {
         const adapterName = resolveAdapterName(adapterManager, binding.adapterId);
         await activityService.emit({
-          actorType: 'user',
-          actorLabel: 'You',
+          ...readActivityActor(req, res),
           category: 'config',
           eventType: 'config.binding_created',
           resourceType: 'binding',
@@ -453,8 +466,7 @@ export function createAdapterRouter(
     if (activityService) {
       const adapterName = resolveAdapterName(adapterManager, moved.adapterId);
       await activityService.emit({
-        actorType: 'user',
-        actorLabel: 'You',
+        ...readActivityActor(req, res),
         category: 'config',
         eventType: 'config.binding_updated',
         resourceType: 'binding',
@@ -633,8 +645,7 @@ export function createAdapterRouter(
     if (activityService) {
       const adapterName = resolveAdapterName(adapterManager, updated.adapterId);
       await activityService.emit({
-        actorType: 'user',
-        actorLabel: 'You',
+        ...readActivityActor(req, res),
         category: 'config',
         eventType: 'config.binding_updated',
         resourceType: 'binding',
@@ -671,8 +682,7 @@ export function createAdapterRouter(
     if (activityService && binding) {
       const adapterName = resolveAdapterName(adapterManager, binding.adapterId);
       await activityService.emit({
-        actorType: 'user',
-        actorLabel: 'You',
+        ...readActivityActor(req, res),
         category: 'config',
         eventType: 'config.binding_deleted',
         resourceType: 'binding',

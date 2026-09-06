@@ -8,6 +8,17 @@
  * `meshCore.syncFromDisk()` after writing the manifest to keep the
  * Mesh DB cache in sync without waiting for the 5-min reconciler.
  *
+ * ## Who the Activity feed says registered an agent
+ *
+ * Both creation routes are open to agents on purpose — `create_agent` is tier
+ * `act` in `MCP_TOOL_TIERS`, and `dorkos agent create` reaches `POST /create`
+ * over HTTP carrying the caller's `X-DorkOS-Agent` token whenever DorkOS spawned
+ * it. So they read WHO asked (`readActivityActor`) rather than asserting the
+ * person did it; before DOR-1829 both hardcoded `user` / `'You'`, and an agent
+ * that registered another agent appeared in the operator's own feed as something
+ * they had done themselves. No person bar was added here for the same reason the
+ * attribution had to be fixed: the caller may legitimately be a machine.
+ *
  * @module routes/agents
  */
 import { Router } from 'express';
@@ -33,6 +44,7 @@ import { updateAgentManifest, AgentUpdateError } from '../services/core/operator
 import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import { logger } from '../lib/logger.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
+import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
 
 /** Minimal MeshCore interface for sync-on-write. */
@@ -183,8 +195,9 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       const activityService = req.app.locals.activityService as ActivityService | undefined;
       if (activityService) {
         await activityService.emit({
-          actorType: 'user',
-          actorLabel: 'You',
+          // Ungated, so this genuinely varies: an agent that identified itself is
+          // named, and the feed stops crediting the person with a machine's write.
+          ...readActivityActor(req, res),
           category: 'agent',
           eventType: 'agent.registered',
           resourceType: 'agent',
@@ -229,8 +242,9 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       const activityService = req.app.locals.activityService as ActivityService | undefined;
       if (activityService) {
         await activityService.emit({
-          actorType: 'user',
-          actorLabel: 'You',
+          // `dorkos agent create` is the busiest caller of this route and runs
+          // inside spawned agent sessions, so read the caller rather than assume.
+          ...readActivityActor(req, res),
           category: 'agent',
           eventType: 'agent.registered',
           resourceType: 'agent',

@@ -5,6 +5,24 @@
  * then sync to the DB for immediate consistency. The watcher/reconciler
  * handles external file changes.
  *
+ * ## Who the Activity feed says did it
+ *
+ * Every Activity write here reads the caller (`readActivityActor`) instead of
+ * asserting the person did it. This router has bars of its own, but none of them
+ * makes the person the only possible caller, so the four hardcoded `user` /
+ * `'You'` pairs it carried until DOR-1829 were wrong in practice, not merely
+ * stylistically inconsistent:
+ *
+ * - `POST /` accepts an agent's request and PROPOSES the schedule
+ *   (`pending_approval`, clamped) rather than refusing it — {@link clearsTheAgentBar}
+ *   returns a boolean the create path branches on, it does not answer the request.
+ *   The feed entry was written either way.
+ * - `PATCH /:id` refuses only the operator-only FIELDS; an agent pausing a
+ *   schedule (`enabled: false`) went through and was recorded as the person.
+ * - `DELETE /:id` and `POST /runs/:id/cancel` run
+ *   `requireOperatorCookieUnderLogin`, which is a deliberate no-op in the shipped
+ *   login-off posture (the documented DOR-505 residual).
+ *
  * @module routes/tasks
  */
 import { Router, type Request, type Response } from 'express';
@@ -19,6 +37,7 @@ import { createScheduledTask } from '../services/tasks/lifecycle/create-task.js'
 import { removeScheduledTaskFile } from '../services/tasks/lifecycle/delete-task.js';
 import { applyTaskFileUpdate } from '../services/tasks/lifecycle/update-task-file.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
+import { readActivityActor } from '../services/activity/activity-actor.js';
 import { loadTemplates } from '../services/tasks/task-templates.js';
 import { parseBody } from '../lib/route-utils.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
@@ -265,8 +284,9 @@ export function createTasksRouter(
     const schedule = outcome.task;
 
     activityService?.emit({
-      actorType: 'user',
-      actorLabel: 'You',
+      // An untrusted caller reaches here too — its schedule is parked and clamped,
+      // not refused — so the proposer is named rather than assumed (DOR-1829).
+      ...readActivityActor(req, res),
       category: 'tasks',
       eventType: 'tasks.task_created',
       resourceType: 'schedule',
@@ -434,8 +454,8 @@ export function createTasksRouter(
 
     if (data.enabled === false && activityService) {
       activityService.emit({
-        actorType: 'user',
-        actorLabel: 'You',
+        // `enabled` is agent-writable, so an agent can pause somebody's schedule.
+        ...readActivityActor(req, res),
         category: 'tasks',
         eventType: 'tasks.task_paused',
         resourceType: 'schedule',
@@ -517,8 +537,9 @@ export function createTasksRouter(
     registrar.syncTask(id);
 
     activityService?.emit({
-      actorType: 'user',
-      actorLabel: 'You',
+      // The cookie bar above allows everything in the shipped login-off posture,
+      // so this is not always the person.
+      ...readActivityActor(req, res),
       category: 'tasks',
       eventType: 'tasks.task_deleted',
       resourceType: 'schedule',
@@ -634,8 +655,8 @@ export function createTasksRouter(
     if (activityService && run) {
       const schedule = store.getTask(run.scheduleId);
       activityService.emit({
-        actorType: 'user',
-        actorLabel: 'You',
+        // Same login-off residual as DELETE above.
+        ...readActivityActor(req, res),
         category: 'tasks',
         eventType: 'tasks.run_cancelled',
         resourceType: 'schedule',
