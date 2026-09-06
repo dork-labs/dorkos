@@ -19,6 +19,7 @@ import { mkdtemp, rm, readdir, readFile, utimes, writeFile, mkdir } from 'fs/pro
 import { tmpdir } from 'os';
 import path from 'path';
 import type { Readable } from 'stream';
+import { discardStream } from '../../../../lib/route-utils.js';
 import { InvalidRoomAttachmentIdError } from '../room-attachment-store.js';
 import { LocalRoomAttachmentStore } from '../local-room-attachment-store.js';
 
@@ -32,22 +33,17 @@ async function drain(stream: NodeJS.ReadableStream): Promise<Buffer> {
 }
 
 /**
- * Let go of a `get` this test never reads.
+ * Let go of a `get` this test never reads — the production
+ * {@link discardStream}, with the `null` a `get` may answer folded in.
  *
- * Attachments are streamed from disk rather than read into memory — they are
- * unbounded in size and their ETag comes from one `stat` — so every `get` hands
- * back a `createReadStream` whose `fs.open` is still in flight. The `error`
- * listener is the load-bearing half: `destroy()` does NOT cancel that open, so
- * a file removed before it lands still emits `error`, and with nobody listening
- * that is a process-level uncaught exception rather than a failed test. It ends
- * a run with every test green and the shard red, which is how DOR-1830 ejected
- * unrelated PRs from the merge queue. The `destroy()` only closes the
- * descriptor promptly once the open has landed.
+ * Deliberately the same code the 304 path runs rather than a test-local copy of
+ * it: what makes abandoning one of these streams safe is subtle enough
+ * (`destroy()` does not defuse the `fs.open` already in flight — DOR-1830,
+ * DOR-1831) that a second implementation of it would only be a second thing to
+ * get wrong.
  */
 function release(stream: Readable | undefined): void {
-  if (!stream) return;
-  stream.on('error', () => {});
-  stream.destroy();
+  if (stream) discardStream(stream);
 }
 
 describe('LocalRoomAttachmentStore', () => {

@@ -20,7 +20,7 @@
 import path from 'path';
 import type { Request, Response } from 'express';
 import { tryGetSessionAttachmentStore } from '../services/session/attachments/index.js';
-import { parseSessionId, sendError } from '../lib/route-utils.js';
+import { parseSessionId, sendError, discardStream } from '../lib/route-utils.js';
 import { logger } from '../lib/logger.js';
 
 /**
@@ -72,8 +72,10 @@ export async function sessionAttachmentHandler(req: Request, res: Response): Pro
     res.setHeader('Content-Length', String(stored.size));
 
     if (req.headers['if-none-match'] === stored.etag) {
-      // Destroyed rather than piped, so the file handle does not leak.
-      stored.stream.destroy();
+      // Discarded rather than piped, so the file handle does not leak — and
+      // discarded rather than merely destroyed, because destroying does not
+      // defuse the `fs.open` already in flight (see `discardStream`).
+      discardStream(stored.stream);
       res.status(304).end();
       return;
     }

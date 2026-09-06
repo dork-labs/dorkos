@@ -70,7 +70,7 @@ import { sniffImageContentType } from '../services/identity/image-sniff.js';
 import { storedExtension } from '../services/rooms/attachments/attachment-paths.js';
 import { sweepUnboundAttachments } from '../services/rooms/attachments/unbound-sweep.js';
 import { configManager } from '../services/core/config-manager.js';
-import { parseBody, sendError } from '../lib/route-utils.js';
+import { parseBody, sendError, discardStream } from '../lib/route-utils.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import { resolveCaller } from './room-caller.js';
 import { sendRoomError } from './room-error-response.js';
@@ -596,8 +596,10 @@ router.get('/:id/attachments/:attachmentId', async (req, res) => {
     res.setHeader('Content-Length', String(stored.size));
 
     if (req.headers['if-none-match'] === stored.etag) {
-      // Destroyed rather than piped, so the file handle does not leak.
-      stored.stream.destroy();
+      // Discarded rather than piped, so the file handle does not leak — and
+      // discarded rather than merely destroyed, because destroying does not
+      // defuse the `fs.open` already in flight (see `discardStream`).
+      discardStream(stored.stream);
       return res.status(304).end();
     }
 
