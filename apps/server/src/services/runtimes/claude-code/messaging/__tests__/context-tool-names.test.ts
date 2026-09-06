@@ -404,8 +404,22 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // names it, so it stays deferred; the one place it IS named is
     // `update_agent`'s own description, which the case below governs and which
     // names it as a searchable ending for exactly that reason.
-    expect(advertised.size).toBe(96);
+    //
+    // 96 → 91 when P2 removed the five legacy connector account/connect-flow
+    // capabilities. Principal-bound connector discovery and execution live on
+    // the private runtime listener, so the ordinary prompt must not advertise
+    // or teach these retired authority surfaces.
+    expect(advertised.size).toBe(91);
     expect(advertised.has('react_to_room_entry')).toBe(true);
+    expect(
+      [
+        'connector_list_accounts',
+        'connector_start_connect',
+        'connector_poll_connect',
+        'connector_attach_account',
+        'connector_detach_account',
+      ].filter((name) => advertised.has(name))
+    ).toEqual([]);
 
     const { prose } = await claudeCodeProse();
     const bare = [

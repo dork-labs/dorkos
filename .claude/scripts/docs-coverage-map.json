@@ -519,7 +519,7 @@
     },
     {
       "doc": "docs/connections/index.mdx",
-      "description": "Connections page (Accounts half): multi-account, custody, routing",
+      "description": "Connections page (Accounts half): multi-account, custody, owner-reviewed exact agent access",
       "patterns": [
         "apps/server/src/services/connectors/",
         "connector-provider"
@@ -527,7 +527,7 @@
     },
     {
       "doc": "docs/connections/composio.mdx",
-      "description": "Composio managed connector setup + custody disclosure",
+      "description": "Composio managed connector setup, custody disclosure, and brokered exact operation grants",
       "patterns": [
         "apps/server/src/services/connectors/providers/composio",
         "custody-disclosure"
@@ -535,14 +535,14 @@
     },
     {
       "doc": "docs/connections/raw-mcp.mdx",
-      "description": "Raw MCP connector setup (external custody)",
+      "description": "Raw MCP verification and inventory (external custody; execution unavailable)",
       "patterns": [
         "apps/server/src/services/connectors/providers/raw-mcp"
       ]
     },
     {
       "doc": "docs/connections/nango.mdx",
-      "description": "Nango self-host connector stub (mandatory NANGO_ENCRYPTION_KEY)",
+      "description": "Nango self-host account management (mandatory encryption key; execution unavailable)",
       "patterns": [
         "apps/server/src/services/connectors/providers/nango",
         "NANGO_ENCRYPTION_KEY"

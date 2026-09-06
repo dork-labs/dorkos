@@ -53,6 +53,12 @@ import {
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
 import { NotifyBudget } from '../../../../relay/notify-budget.js';
 import type { McpToolDeps } from '../types.js';
+import { CONNECTOR_RUNTIME_CAPABILITY_IDS } from '../../../../connectors/runtime-capability-scope.js';
+import { createServerPrincipal } from '../../../../connectors/principal/server-principal.js';
+import { composeDorkOsCapabilityRegistry } from '../../../../core/self-description/dorkos-registry.js';
+import { noopLogger } from '@dorkos/shared/logger';
+import type { CapabilityRegistry } from '../../../../core/capabilities/index.js';
+import type { ServerPrincipalProof } from '../../../../connectors/principal/server-principal.js';
 
 /** The SDK's private spelling of the two loading controls. */
 const ALWAYS_LOAD_META = 'anthropic/alwaysLoad';
@@ -83,6 +89,7 @@ function createFullDeps(): McpToolDeps {
 
 interface AdvertisedTool {
   name: string;
+  inputSchema?: Record<string, unknown>;
   _meta?: Record<string, unknown>;
 }
 
@@ -95,15 +102,20 @@ interface AdvertisedTool {
  * @param deps - Dependency override, for the mesh/relay wiring cases.
  */
 async function advertisedTools(
-  session?: { cwd?: string },
-  deps: McpToolDeps = createFullDeps()
+  session?: { cwd?: string; connectorTurn?: unknown },
+  deps: McpToolDeps = createFullDeps(),
+  registry: CapabilityRegistry = composeCapabilityRegistryForDocs()
 ): Promise<AdvertisedTool[]> {
   const server = createDorkOsToolServer(
     deps,
-    session as Parameters<typeof createDorkOsToolServer>[1],
+    session
+      ? ({ eventQueue: [], ...session } as unknown as NonNullable<
+          Parameters<typeof createDorkOsToolServer>[1]
+        >)
+      : undefined,
     undefined,
     undefined,
-    composeCapabilityRegistryForDocs()
+    registry
   );
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'dor-1292-exposure-probe', version: '0.0.0' });
@@ -133,7 +145,140 @@ function createAgentSessionDeps(overrides: Partial<McpToolDeps> = {}): McpToolDe
   };
 }
 
+function runtimePrincipal(bindingId: string): ServerPrincipalProof {
+  return createServerPrincipal({
+    kind: 'runtime',
+    owner: { kind: 'local_install', installationId: 'install-a' },
+    bindingId,
+    runtime: 'claude-code',
+    canonicalSessionId: 'session-a',
+    agentId: 'agent-a',
+    agentPath: '/agents/alpha',
+    canonicalCwd: '/agents/alpha',
+  });
+}
+
+function connectorRegistry(access = vi.fn().mockResolvedValue({ connections: [] })) {
+  return composeDorkOsCapabilityRegistry({
+    logger: noopLogger,
+    connectorExecutionDeps: {
+      authorization: { assertAvailable: vi.fn() } as never,
+      broker: {} as never,
+      access: { listRuntimeConnections: access } as never,
+    },
+  });
+}
+
 describe('in-session tool exposure', () => {
+  it('adds exactly five strict connector tools to an authenticated runtime turn', async () => {
+    const resolvePrincipal = vi.fn().mockResolvedValue(runtimePrincipal('binding-a'));
+    const registry = connectorRegistry();
+    const tools = await advertisedTools(
+      {
+        cwd: '/agents/alpha',
+        connectorTurn: {
+          isConnectorCapabilityId: (id: string) =>
+            CONNECTOR_RUNTIME_CAPABILITY_IDS.some((candidate) => candidate === id),
+          resolvePrincipal,
+          cancel: vi.fn().mockResolvedValue(undefined),
+          revoke: vi.fn().mockResolvedValue(undefined),
+          cancelled: false,
+        },
+      },
+      createAgentSessionDeps(),
+      registry
+    );
+
+    const connectorTools = tools.filter((tool) =>
+      CONNECTOR_RUNTIME_CAPABILITY_IDS.some((candidate) => candidate === tool.name)
+    );
+    expect(connectorTools.map((tool) => tool.name)).toEqual(CONNECTOR_RUNTIME_CAPABILITY_IDS);
+    expect(connectorTools.every((tool) => tool.inputSchema?.additionalProperties === false)).toBe(
+      true
+    );
+    expect(
+      connectorTools.find((tool) => tool.name === 'connectors.execute_destructive')?.inputSchema
+    ).toMatchObject({ properties: { approvalToken: { type: 'string' } } });
+    expect(resolvePrincipal).not.toHaveBeenCalled();
+  });
+
+  it('rejects private selectors on all five Claude tools before resolving a principal', async () => {
+    const resolvePrincipal = vi.fn().mockResolvedValue(runtimePrincipal('binding-a'));
+    const session = {
+      cwd: '/agents/alpha',
+      connectorTurn: {
+        isConnectorCapabilityId: (id: string) =>
+          CONNECTOR_RUNTIME_CAPABILITY_IDS.some((candidate) => candidate === id),
+        resolvePrincipal,
+      },
+    };
+    const server = createDorkOsToolServer(
+      createAgentSessionDeps(),
+      session as unknown as NonNullable<Parameters<typeof createDorkOsToolServer>[1]>,
+      undefined,
+      undefined,
+      connectorRegistry()
+    );
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'connector-strict-schema-probe', version: '0.0.0' });
+    await Promise.all([server.instance.connect(serverTransport), client.connect(clientTransport)]);
+
+    const forbidden = [
+      { name: 'connectors.list_granted_connections', arguments: { ownerId: 'install-b' } },
+      {
+        name: 'connectors.list_granted_operations',
+        arguments: { connectionId: 'connection-a', providerInstanceId: 'provider-b' },
+      },
+      ...(['read', 'write', 'destructive'] as const).map((classification) => ({
+        name: `connectors.execute_${classification}`,
+        arguments: {
+          connectionId: 'connection-a',
+          operationRevisionId: 'revision-a',
+          arguments: {},
+          agentId: 'agent-b',
+        },
+      })),
+    ];
+    for (const request of forbidden) {
+      await expect(client.callTool(request)).resolves.toMatchObject({ isError: true });
+    }
+    expect(resolvePrincipal).not.toHaveBeenCalled();
+    await Promise.all([client.close(), server.instance.close()]);
+  });
+
+  it('resolves the current Claude turn on every call from one warm SDK server', async () => {
+    const first = vi.fn().mockResolvedValue(runtimePrincipal('binding-first'));
+    const second = vi.fn().mockResolvedValue(runtimePrincipal('binding-second'));
+    const session = {
+      cwd: '/agents/alpha',
+      connectorTurn: {
+        isConnectorCapabilityId: () => true,
+        resolvePrincipal: first,
+      },
+    };
+    const server = createDorkOsToolServer(
+      createAgentSessionDeps(),
+      session as unknown as NonNullable<Parameters<typeof createDorkOsToolServer>[1]>,
+      undefined,
+      undefined,
+      connectorRegistry()
+    );
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'connector-warm-turn-probe', version: '0.0.0' });
+    await Promise.all([server.instance.connect(serverTransport), client.connect(clientTransport)]);
+
+    await client.callTool({ name: 'connectors.list_granted_connections', arguments: {} });
+    session!.connectorTurn = {
+      isConnectorCapabilityId: () => true,
+      resolvePrincipal: second,
+    };
+    await client.callTool({ name: 'connectors.list_granted_connections', arguments: {} });
+
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+    await Promise.all([client.close(), server.instance.close()]);
+  });
+
   it('always-loads exactly the eight a turn cannot search for first', async () => {
     const tools = await advertisedTools();
     const eager = tools
@@ -199,8 +344,24 @@ describe('in-session tool exposure', () => {
     // it can afford the ToolSearch hop — and no prompt block names it, which is
     // the rule `context-tool-names.test.ts` owns. Both counts moving by one is
     // what says it did not quietly join the always-loaded set.
-    expect(tools).toHaveLength(96);
-    expect(deferred).toHaveLength(88);
+    //
+    // 96 → 91 when brokered connector execution retired the five account,
+    // connect-flow, and attachment capabilities from this general-purpose MCP
+    // server. Their replacements live only on principal-bound runtime
+    // projections; they must never reappear as deferred tools an ordinary
+    // session or external projection can call.
+    expect(tools).toHaveLength(91);
+    expect(deferred).toHaveLength(83);
+    const retiredConnectorTools = [
+      'connector_list_accounts',
+      'connector_start_connect',
+      'connector_poll_connect',
+      'connector_attach_account',
+      'connector_detach_account',
+    ];
+    expect(
+      tools.map((tool) => tool.name).filter((name) => retiredConnectorTools.includes(name))
+    ).toEqual([]);
   });
 
   it('gives every advertised tool something to be found by', async () => {

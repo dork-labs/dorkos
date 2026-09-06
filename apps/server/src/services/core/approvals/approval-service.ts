@@ -153,6 +153,26 @@ export interface ApprovalRequestInput {
    * the agent path, so the card has to carry the real one. Never rendered.
    */
   requestedByPath?: string;
+  /** Authenticated connector scope; absent for every ordinary capability. */
+  connectorAuthority?: ApprovalConnectorAuthority;
+}
+
+/** Exact indexed connector authority frozen beside one approval. */
+export interface ApprovalConnectorAuthority {
+  /** Stable digest over owner, actor, runtime context, target, and parsed input. */
+  readonly digest: string;
+  /** Owner kind established by connector preflight. */
+  readonly ownerKind: 'user' | 'local_install';
+  /** Stable owner identifier established by connector preflight. */
+  readonly ownerId: string;
+  /** Stable agent whose exact operation grant applies. */
+  readonly agentId?: string;
+  /** Canonical session whose exact operation grant applies. */
+  readonly sessionId?: string;
+  /** Stable connection selected by the invocation. */
+  readonly connectionId: string;
+  /** Immutable operation revision selected by the invocation. */
+  readonly operationRevisionId: string;
 }
 
 /**
@@ -210,6 +230,8 @@ export interface ApprovalBinding {
   capabilityId: string;
   /** Canonical hash of the input the caller is about to invoke it with. */
   inputHash: string;
+  /** Current authenticated connector binding; absent for ordinary capabilities. */
+  authorityBindingDigest?: string;
 }
 
 /**
@@ -225,7 +247,13 @@ export interface ApprovalBinding {
  *   spent: the approval stays available for the action it was granted for.
  */
 export type ApprovalConsumeResult =
-  | { outcome: 'granted'; approvalId: string; capabilityId: string; requestedBy?: string }
+  | {
+      outcome: 'granted';
+      approvalId: string;
+      capabilityId: string;
+      requestedBy?: string;
+      authorityBindingDigest?: string;
+    }
   | { outcome: 'pending'; approvalId: string; expiresAt: string }
   | { outcome: 'denied'; approvalId: string; reason?: string }
   | { outcome: 'expired'; approvalId: string }
@@ -388,6 +416,13 @@ export class ApprovalService {
       capabilityTitle: descriptor?.title ?? input.capabilityId,
       tier: descriptor?.tier ?? ('destructive' as const),
       inputHash: input.inputHash,
+      authorityBindingDigest: input.connectorAuthority?.digest ?? null,
+      connectorOwnerKind: input.connectorAuthority?.ownerKind ?? null,
+      connectorOwnerId: input.connectorAuthority?.ownerId ?? null,
+      connectorAgentId: input.connectorAuthority?.agentId ?? null,
+      connectorSessionId: input.connectorAuthority?.sessionId ?? null,
+      connectorConnectionId: input.connectorAuthority?.connectionId ?? null,
+      connectorOperationRevisionId: input.connectorAuthority?.operationRevisionId ?? null,
       summary: storableSummary(input.summary),
       // Absent for every capability that declares no detail field, which is all
       // but one — `null` rather than `undefined` so the column is written.
@@ -476,7 +511,11 @@ export class ApprovalService {
       return { outcome: 'expired', approvalId: row.id };
     }
 
-    if (row.capabilityId !== binding.capabilityId || row.inputHash !== binding.inputHash) {
+    if (
+      row.capabilityId !== binding.capabilityId ||
+      row.inputHash !== binding.inputHash ||
+      (row.authorityBindingDigest ?? undefined) !== binding.authorityBindingDigest
+    ) {
       return { outcome: 'mismatched', approvalId: row.id };
     }
 
@@ -500,6 +539,7 @@ export class ApprovalService {
       approvalId: row.id,
       capabilityId: row.capabilityId,
       ...(row.requestedBy ? { requestedBy: row.requestedBy } : {}),
+      ...(row.authorityBindingDigest ? { authorityBindingDigest: row.authorityBindingDigest } : {}),
     };
   }
 

@@ -172,6 +172,7 @@ import {
   renderRequesterLabel,
   summaryFields,
   type ApprovalConsumeResult,
+  type ApprovalConnectorAuthority,
   type ApprovalService,
   type ApprovalTicket,
 } from '../approvals/index.js';
@@ -385,7 +386,7 @@ export interface TierDeniedPayload {
  */
 export type GrantedApproval =
   /** A person decided THIS call, and the approval was spent to allow it. */
-  | { via: 'approval'; approvalId: string }
+  | { via: 'approval'; approvalId: string; authorityBindingDigest?: string }
   /** A standing permission the operator opened earlier allowed it, with no card. */
   | { via: 'standing-grant'; grantId: string };
 
@@ -491,6 +492,10 @@ export interface TierEnforcementRequest {
    * wording.
    */
   interactive?: boolean;
+  /** Authenticated connector scope bound to any approval request or retry. */
+  connectorAuthority?: ApprovalConnectorAuthority;
+  /** Whether the path-only standing permission lookup may run. Defaults true. */
+  standingGrantEligible?: boolean;
 }
 
 /** What {@link initCapabilityTierGate} wires the gate to at boot. */
@@ -885,7 +890,16 @@ function denied(
  * @returns What the gate decided.
  */
 export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnforcementDecision {
-  const { action, identity, approvalToken, input, retryChannel, interactive = false } = request;
+  const {
+    action,
+    identity,
+    approvalToken,
+    input,
+    retryChannel,
+    interactive = false,
+    connectorAuthority,
+    standingGrantEligible = true,
+  } = request;
 
   // The TIER decides whether to gate — never whether the caller identified
   // itself. Anything else is a bypass an agent with shell access can reach by
@@ -928,7 +942,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   // above, so it can never lift one; BEFORE the `act` early-return below, so the
   // marketplace's own confirmation step honors the same answer (see the module
   // TSDoc).
-  const standingGrant = resolveStandingGrant(action, identity);
+  const standingGrant = standingGrantEligible ? resolveStandingGrant(action, identity) : undefined;
 
   // `act` is allowed and audited — by the attribution observer on invoke, so
   // exactly one Activity record describes the call. A permission changes nothing
@@ -981,9 +995,17 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   // An input that cannot be canonicalized without losing information cannot be
   // bound, and an approval whose hash ignores part of the action is worse than no
   // approval at all — so refuse instead of asking about something inexact.
-  let binding: { capabilityId: string; inputHash: string };
+  let binding: {
+    capabilityId: string;
+    inputHash: string;
+    authorityBindingDigest?: string;
+  };
   try {
-    binding = { capabilityId: action.id, inputHash: hashApprovalInput(input) };
+    binding = {
+      capabilityId: action.id,
+      inputHash: hashApprovalInput(input),
+      ...(connectorAuthority ? { authorityBindingDigest: connectorAuthority.digest } : {}),
+    };
   } catch (err) {
     logger.error('[capabilities] destructive input could not be bound to an approval', {
       capabilityId: action.id,
@@ -1033,11 +1055,12 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
         summary: describeGatedAttempt(action, input, identity),
         ...(detail !== undefined ? { detail } : {}),
         ...(requestedBy ? { requestedBy } : {}),
+        ...(connectorAuthority ? { connectorAuthority } : {}),
         // The raw path alongside the display label, because a standing
         // permission keys on the agent and a label is not a key. An anonymous
         // caller records none, which is what makes its approval ineligible to be
         // made standing.
-        ...(identity ? { requestedByPath: identity.agentPath } : {}),
+        ...(identity && standingGrantEligible ? { requestedByPath: identity.agentPath } : {}),
       });
     } catch (err) {
       auditStoreFailure();
@@ -1070,7 +1093,16 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   }
   switch (result.outcome) {
     case 'granted':
-      return { outcome: 'allowed', approval: { via: 'approval', approvalId: result.approvalId } };
+      return {
+        outcome: 'allowed',
+        approval: {
+          via: 'approval',
+          approvalId: result.approvalId,
+          ...(result.authorityBindingDigest
+            ? { authorityBindingDigest: result.authorityBindingDigest }
+            : {}),
+        },
+      };
 
     case 'pending': {
       // Still undecided: echo the SAME approval back rather than stacking a

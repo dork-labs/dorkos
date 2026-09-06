@@ -68,11 +68,9 @@ import {
  * An arranged memory that cannot be read — the input to the `'error'` third of
  * the three-way honest read.
  *
- * Bundles the provider and the ref together for the same reason
- * `connector-conformance`'s {@link UnexposableAccount} does: different backends
- * reach "unreadable" differently (a file that is really a directory, a fake's
- * own switch), and the arrangement has to be read back on the same instance it
- * was made on.
+ * Bundles the provider and ref because different backends reach "unreadable"
+ * differently (a file that is really a directory, a fake's own switch), and
+ * the arrangement has to be read back on the same instance that created it.
  */
 export interface UnreadableMemory {
   /** The provider holding the unreadable memory. */

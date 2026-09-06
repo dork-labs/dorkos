@@ -70,6 +70,7 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
   let ownerId: string;
   let cookies: string[];
   let apiKey: string;
+  let apiKeyId: string;
 
   beforeAll(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-gate-'));
@@ -101,6 +102,7 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       body: { userId: ownerId, name: 'gate-test-key' },
     });
     apiKey = created.key;
+    apiKeyId = created.id;
   });
 
   afterEach(() => {
@@ -258,7 +260,11 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
         .get('/api/sessions')
         .set('Authorization', `Bearer ${apiKey}`);
       expect(res.status).toBe(200);
-      expect(res.body.user).toEqual({ userId: ownerId, credential: 'api-key' });
+      expect(res.body.user).toEqual({
+        userId: ownerId,
+        credential: 'api-key',
+        credentialId: apiKeyId,
+      });
     });
 
     it('returns 401 AUTH_REQUIRED with an invalid API key Bearer', async () => {
@@ -287,7 +293,11 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       const req = {
         headers: { authorization: `Bearer ${apiKey}` },
       } as unknown as express.Request;
-      expect(await verifyRequestAuth(req)).toEqual({ userId: ownerId, credential: 'api-key' });
+      expect(await verifyRequestAuth(req)).toEqual({
+        userId: ownerId,
+        credential: 'api-key',
+        credentialId: apiKeyId,
+      });
     });
 
     it('never labels an x-api-key caller a cookie caller (pins a Better Auth default)', async () => {

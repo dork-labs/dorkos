@@ -41,6 +41,10 @@ import type { AgentRegistryPort, ManagedMcpServerResolver } from '@dorkos/shared
 import { logger, logError } from '../../../../lib/logger.js';
 import { resolveDorkosMcpInjection } from '../../shared/dorkos-mcp-injection.js';
 import { DORKOS_MCP_SERVER_NAME } from '../../shared/dorkos-tool-names.js';
+import {
+  CONNECTOR_RUNTIME_MCP_SERVER_NAME,
+  type ConnectorRuntimeMcpInjection,
+} from '../../connector-tools.js';
 import { enumerateOpenCodeMcpServers } from './mcp-status.js';
 import { toOpenCodeMcpServers, type OpenCodeMcpServerConfig } from './mcp-server-config.js';
 import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
@@ -68,9 +72,11 @@ export interface EnsureManagedResult {
    * Whether the `dorkos` tool server is registered on this sidecar for this
    * directory right now. `false` covers every way it is absent: the experiment
    * is off, the directory hosts no agent, a user's own server owns the name, or
-   * the add threw.
+   * the add did not report a connected status.
    */
   dorkosApplied: boolean;
+  /** Whether this turn's connector-only server registered successfully. */
+  connectorApplied: boolean;
 }
 
 /** What we last registered into a live sidecar instance for one directory. */
@@ -78,13 +84,15 @@ interface InjectedRecord {
   /** The client instance we injected into — a NEW one means the sidecar restarted. */
   client: OpencodeClient;
   /**
-   * Managed server names WE actually registered (a successful `mcp.add`), for
-   * targeted disconnect on removal. A name a user configured, a name we skipped
-   * as a collision, and a name whose add failed are all absent — so the
-   * disconnect loop can only ever touch servers we own, and a failed add is
-   * retried next turn.
+   * Server names whose dynamic registration belongs to DorkOS, for targeted
+   * disconnect on removal and collision-safe retries. A non-connected HTTP
+   * response still proves ownership because the sidecar accepted and retained
+   * the named registration; a transport error on a previously owned name keeps
+   * that ownership until a later reconcile settles it.
    */
   names: Set<string>;
+  /** Names whose most recent add response reported `connected`. */
+  appliedNames: Set<string>;
   /** Signature of the desired set, so an unchanged turn is a cheap no-op. */
   signature: string;
   /**
@@ -145,18 +153,19 @@ export class OpenCodeMcpManager {
    * that has to know BEFORE the turn rather than during it — a room deciding
    * whether that turn's own words are posted for it. It is the strongest signal
    * there is on this runtime: it accounts for a user's own server owning the name
-   * (a collision is never overwritten and never lands in `names`) and for an add
-   * that threw, neither of which a configuration read could see.
+   * (a collision is never overwritten and never lands in `appliedNames`) and
+   * for any non-connected add result, neither of which a configuration read
+   * could see.
    *
    * `false` before the first reconcile in a directory, which is correct rather
    * than pessimistic: nothing has been registered yet, so nothing is known to be
    * reachable, and the room keeps posting the turn's text until one turn has run.
    *
    * @param cwd - The session/agent working directory (the `directory` scope).
-   * @returns Whether we registered `dorkos` here and have not removed it.
+   * @returns Whether the latest `dorkos` add reported a connected status.
    */
   dorkosApplied(cwd: string): boolean {
-    return this.injectedByCwd.get(cwd)?.names.has(DORKOS_MCP_SERVER_NAME) === true;
+    return this.injectedByCwd.get(cwd)?.appliedNames.has(DORKOS_MCP_SERVER_NAME) === true;
   }
 
   /**
@@ -264,8 +273,8 @@ export class OpenCodeMcpManager {
    * server (present in the live `GET /mcp` set but never injected by us) is a
    * COLLISION: it is skipped, logged, and surfaced as a `failed` conflict via
    * {@link getStatus} — never `mcp.add`-ed over the user's server. And the
-   * disconnect loop iterates only {@link InjectedRecord.names} (servers WE
-   * registered), so a user's server can never be disconnected either.
+   * disconnect loop iterates only `appliedNames` (servers WE most recently
+   * connected), so a user's server can never be disconnected either.
    *
    * ## Cheap hot path, honest failure handling
    *
@@ -273,18 +282,24 @@ export class OpenCodeMcpManager {
    * AND a previous run that fully applied is a no-op (no round trip). A new
    * client instance means the sidecar restarted and dropped its in-memory
    * registry, so everything is re-added and nothing is removed. Adds are
-   * best-effort and never fail the turn, but only names that ACTUALLY registered
-   * are recorded — a transient add failure leaves `complete: false`, so the next
-   * turn retries it instead of stranding it. A server whose add threw is absent
-   * from `GET /mcp` and therefore renders as MISSING (not `failed`) in the
-   * roster until it registers; only a name collision renders as `failed`.
+   * best-effort and never fail the turn, but only names that ACTUALLY connected
+   * are recorded — a transport failure or non-connected response leaves
+   * `complete: false`, so the next turn retries it instead of stranding it. A
+   * non-connected HTTP response remains DorkOS-owned for collision-safe retry
+   * while staying out of the applied signal; a transport failure on a new name
+   * records no ownership.
    *
    * @param client - The live sidecar client for this turn.
    * @param cwd - The session/agent working directory (the `directory` scope).
    */
-  async ensureManaged(client: OpencodeClient, cwd: string): Promise<EnsureManagedResult> {
+  async ensureManaged(
+    client: OpencodeClient,
+    cwd: string,
+    connectorTools?: ConnectorRuntimeMcpInjection,
+    agentCwd = cwd
+  ): Promise<EnsureManagedResult> {
     const managed = this.resolver
-      ? toOpenCodeMcpServers(this.resolver.injectableServersForCwd(cwd))
+      ? toOpenCodeMcpServers(this.resolver.injectableServersForCwd(agentCwd))
       : { servers: {}, skipped: [] };
     if (managed.skipped.length > 0) {
       logger.debug(
@@ -298,7 +313,17 @@ export class OpenCodeMcpManager {
     // is written LAST so a managed server can never shadow the name DorkOS owns.
     const servers: Record<string, OpenCodeMcpServerConfig> = {
       ...managed.servers,
-      ...(await this.resolveDorkosServer(cwd)),
+      ...(await this.resolveDorkosServer(agentCwd)),
+      ...(connectorTools
+        ? {
+            [CONNECTOR_RUNTIME_MCP_SERVER_NAME]: {
+              type: 'remote' as const,
+              url: connectorTools.url,
+              headers: connectorTools.headers,
+              enabled: true,
+            },
+          }
+        : {}),
     };
 
     // A re-minted token changes `headers`, so it changes this signature, so the
@@ -315,20 +340,23 @@ export class OpenCodeMcpManager {
     // tools switched on. That is the common case, and it used to be served by an
     // early return on a missing resolver, which the `dorkos` entry made wrong.
     if (Object.keys(servers).length === 0 && prev === undefined) {
-      return { dorkosApplied: false };
+      return { dorkosApplied: false, connectorApplied: false };
     }
     const sameInstance = prev !== undefined && prev.client === client;
     // Same live instance, identical desired set, AND everything applied last
     // run → nothing to do. A prior partial failure (`complete: false`) falls
     // through so the failed add is retried.
     if (sameInstance && prev.signature === signature && prev.complete) {
-      return { dorkosApplied: prev.names.has(DORKOS_MCP_SERVER_NAME) };
+      return {
+        dorkosApplied: prev.appliedNames.has(DORKOS_MCP_SERVER_NAME),
+        connectorApplied: prev.appliedNames.has(CONNECTOR_RUNTIME_MCP_SERVER_NAME),
+      };
     }
 
     // Names WE own on THIS live instance. On a new instance the sidecar's
     // in-memory registry was wiped, so we own nothing yet (and any name already
     // present is a user-configured server reloaded from its own config).
-    const ownedNames = sameInstance ? prev.names : new Set<string>();
+    const previouslyOwnedNames = sameInstance ? prev.names : new Set<string>();
     // The live server set, to tell a user-configured collision from a name we
     // own. Best-effort: a failed read (usually an unreachable sidecar, where
     // `mcp.add` would fail too and record nothing) yields an empty set, so we
@@ -336,22 +364,25 @@ export class OpenCodeMcpManager {
     const liveNames = await this.readLiveServerNames(client, cwd);
 
     const desiredNames = new Set(Object.keys(servers));
-    // Disconnect only names WE injected that are no longer desired — never a
-    // user's server, because `prev.names` holds only servers we registered.
+    // Disconnect only currently-connected names WE injected that are no longer
+    // desired — never a user's server. OpenCode retains disconnected dynamic
+    // config as `disabled`, so ownership persists for this client instance even
+    // though the name leaves `appliedNames` below.
     if (sameInstance) {
-      for (const name of prev.names) {
+      for (const name of prev.appliedNames) {
         if (!desiredNames.has(name)) await this.disconnect(client, cwd, name);
       }
     }
 
+    const ownedNames = new Set(previouslyOwnedNames);
     const appliedNames = new Set<string>();
     const conflicts: McpServerEntry[] = [];
     let complete = true;
     for (const [name, config] of Object.entries(servers)) {
       // A name already on the sidecar that we did NOT inject belongs to the
       // user — skip it rather than overwrite their server (and it stays out of
-      // `appliedNames`, so we never disconnect it later).
-      if (liveNames.has(name) && !ownedNames.has(name)) {
+      // `ownedNames`, so we never disconnect it later).
+      if (liveNames.has(name) && !previouslyOwnedNames.has(name)) {
         conflicts.push({
           name,
           type: config.type === 'remote' ? 'http' : 'stdio',
@@ -378,6 +409,13 @@ export class OpenCodeMcpManager {
         if (result.error !== undefined) {
           throw new Error(JSON.stringify(result.error));
         }
+        const status = result.data?.[name];
+        if (status !== undefined) ownedNames.add(name);
+        if (status?.status !== 'connected') {
+          throw new Error(
+            `OpenCode reported MCP server status "${status?.status ?? 'missing'}" after registration`
+          );
+        }
         appliedNames.add(name);
       } catch (err) {
         complete = false;
@@ -387,13 +425,17 @@ export class OpenCodeMcpManager {
         );
       }
     }
-    this.injectedByCwd.set(cwd, { client, names: appliedNames, signature, complete });
+    this.injectedByCwd.set(cwd, { client, names: ownedNames, appliedNames, signature, complete });
     if (conflicts.length > 0) this.conflictsByCwd.set(cwd, conflicts);
     else this.conflictsByCwd.delete(cwd);
-    // Only a name that ACTUALLY registered is in `appliedNames`, so a collision
-    // and a thrown add both report `false` here — which is the point: the caller
-    // uses this to decide whether to tell the agent it has room tools.
-    return { dorkosApplied: appliedNames.has(DORKOS_MCP_SERVER_NAME) };
+    // Only a name whose add reported `connected` is in `appliedNames`, so a
+    // collision, transport error, and non-connected status all report `false`
+    // here — which is the point: the caller uses this to decide whether to tell
+    // the agent it has room tools.
+    return {
+      dorkosApplied: appliedNames.has(DORKOS_MCP_SERVER_NAME),
+      connectorApplied: appliedNames.has(CONNECTOR_RUNTIME_MCP_SERVER_NAME),
+    };
   }
 
   /**

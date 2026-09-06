@@ -11,15 +11,10 @@
  * provider's behavior (id mapping, connect flow, degrade matrix) is verified
  * hermetically with no network.
  *
- * **Free Auth+Proxy only — never Enterprise MCP (spike §1.3).** Free self-hosted
- * Nango (docker-compose) gives OAuth (Auth) and a credentialed HTTP proxy, and
- * nothing else — functions, syncs, webhooks, AND Nango's own MCP server are all
- * Enterprise-gated. This client wraps exactly those two free surfaces: the Auth
- * operations (connect, connections, delete) and the credentialed proxy
- * ({@link NangoHttpClient.proxyRequest}), which the DorkOS-built Proxy→MCP
- * wrapper (`nango-proxy-mcp.ts`, DOR-415) turns into a per-account tool server.
- * It deliberately exposes no MCP-session operation, so nothing here can
- * accidentally depend on Nango's paid MCP.
+ * This client wraps only Nango's account-management operations. It exposes no
+ * generic credentialed proxy or MCP-session operation; exact operation
+ * execution remains typed unsupported until Nango can provide trusted narrow
+ * operation metadata.
  *
  * **Unverified against live Nango.** The concrete REST endpoints, request
  * bodies, and response fields in {@link FetchNangoHttpClient} are shaped from
@@ -91,50 +86,11 @@ export interface NangoConnectionState {
   error?: string;
 }
 
-/** HTTP methods the Nango credentialed proxy forwards. */
-export type NangoProxyMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-
-/**
- * One request forwarded through Nango's credentialed proxy: the upstream call
- * (method/path/query/body/headers) plus the connection routing Nango needs to
- * inject the stored credentials (`integration` + `connectionId`).
- */
-export interface NangoProxyRequest {
-  /** Upstream HTTP method. */
-  method: NangoProxyMethod;
-  /** Upstream API path (relative to the connected service's API base). */
-  path: string;
-  /** Integration (provider config key) the connection belongs to. */
-  integration: string;
-  /** Raw Nango `connectionId` whose stored credentials authenticate the call. */
-  connectionId: string;
-  /** Optional query parameters appended to the proxied path. */
-  query?: Record<string, string>;
-  /** Optional JSON request body. */
-  body?: unknown;
-  /** Optional extra upstream headers (credential headers are stripped; Nango injects auth). */
-  headers?: Record<string, string>;
-}
-
-/**
- * The proxied upstream response, passed through honestly: the upstream HTTP
- * status plus the raw response text. Never carries the Nango secret key or any
- * stored credential — those never leave the request headers.
- */
-export interface NangoProxyResponse {
-  /** The upstream HTTP status Nango relayed. */
-  status: number;
-  /** The raw upstream response body text (size-capped by the MCP wrapper, not here). */
-  body: string;
-}
-
 /**
  * The narrow Nango operations the provider needs — the free Auth surface plus
- * the credentialed proxy. The single seam a live verification swaps; the
- * provider is written entirely against this interface. Note the absence of any
- * MCP-session method: Nango's MCP server is Enterprise-gated, so tool exposure
- * is out of this seam by design — the DorkOS Proxy→MCP wrapper builds on
- * {@link proxyRequest} instead.
+ * account-management API. The single seam a live verification swaps; the
+ * provider is written entirely against this interface. Provider execution is
+ * unavailable rather than approximated with an arbitrary method/path proxy.
  */
 export interface NangoHttpClient {
   /** List the integrations (configured providers) this Nango server exposes. */
@@ -167,15 +123,6 @@ export interface NangoHttpClient {
    * @param connectionId - The raw `connectionId` to revoke.
    */
   deleteConnection(connectionId: string): Promise<void>;
-  /**
-   * Forward one HTTP request to the connected service through Nango's
-   * credentialed proxy. The upstream status/body are returned honestly (a 4xx/5xx
-   * is a result, not a throw — the tool caller needs to see it); only a transport
-   * failure (timeout, unreachable Nango) rejects.
-   *
-   * @param input - The upstream call plus its connection routing.
-   */
-  proxyRequest(input: NangoProxyRequest): Promise<NangoProxyResponse>;
 }
 
 /** Construction options for {@link FetchNangoHttpClient}. */
@@ -310,41 +257,6 @@ export class FetchNangoHttpClient implements NangoHttpClient {
     } catch (err) {
       if (err instanceof NangoApiError && err.status === 404) return;
       throw err;
-    }
-  }
-
-  async proxyRequest(input: NangoProxyRequest): Promise<NangoProxyResponse> {
-    // ASSUMPTION (live-unverified): {method} /proxy/{path} with
-    // `Provider-Config-Key` + `Connection-Id` headers routes the call through
-    // the connection's stored credentials; the secret key rides as the bearer.
-    const query = new URLSearchParams(input.query ?? {});
-    const suffix = query.toString() ? `?${query.toString()}` : '';
-    const cleanPath = input.path.replace(/^\/+/, '');
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this._timeoutMs);
-    try {
-      const response = await this._fetch(`${this._baseUrl}/proxy/${cleanPath}${suffix}`, {
-        method: input.method,
-        headers: {
-          // Caller headers first, then the credential/routing headers — so a
-          // caller-supplied `authorization` (or routing header) can never
-          // displace the ones this client owns.
-          ...(input.headers ?? {}),
-          authorization: `Bearer ${this._secretKey}`,
-          'provider-config-key': input.integration,
-          'connection-id': input.connectionId,
-          ...(input.body !== undefined && { 'content-type': 'application/json' }),
-        },
-        ...(input.body !== undefined && { body: JSON.stringify(input.body) }),
-        signal: controller.signal,
-      });
-      // Upstream status is a RESULT, not an error: the tool caller needs to see
-      // a 404 or 429 from the connected service honestly.
-      const text = await response.text();
-      return { status: response.status, body: text };
-    } finally {
-      clearTimeout(timer);
     }
   }
 

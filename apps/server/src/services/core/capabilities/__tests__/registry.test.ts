@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { noopLogger } from '@dorkos/shared/logger';
 import type { SerializedCapability } from '@dorkos/shared/capabilities';
+import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
+import { createCapabilityAuthorityBinding } from '../../../connectors/principal/capability-authority-binding.js';
 
 import {
   defineCapability,
@@ -79,6 +81,120 @@ describe('composeRegistry — composition', () => {
 });
 
 describe('composeRegistry — invoke', () => {
+  it('forwards an authentic principal and per-call signal through live preflight', async () => {
+    const controller = new AbortController();
+    const principal = createServerPrincipal({
+      kind: 'runtime',
+      owner: { kind: 'local_install', installationId: 'install-a' },
+      bindingId: 'binding-a',
+      runtime: 'codex',
+      canonicalSessionId: 'session-a',
+      agentId: 'agent-a',
+      agentPath: '/agents/a',
+    });
+    const authorityBinding = createCapabilityAuthorityBinding({
+      digest: 'authority-a',
+      ownerKind: 'local_install',
+      ownerId: 'install-a',
+      agentId: 'agent-a',
+      sessionId: 'session-a',
+      connectionId: 'connection-a',
+      operationRevisionId: 'revision-a',
+    });
+    const seen: unknown[] = [];
+    const probe = defineCapability({
+      id: 'probe.authority',
+      title: 'Probe authority',
+      description: 'Records authenticated invocation authority.',
+      tier: 'observe',
+      input: z.object({}),
+      output: z.object({ ok: z.boolean() }),
+      surfaces: {},
+      preflight: async (_deps, _input, context) => {
+        seen.push(['preflight', context.serverPrincipal, context.signal]);
+        return { authorityBinding };
+      },
+      invoke: async (_deps, _input, context) => {
+        seen.push([
+          'invoke',
+          context.serverPrincipal,
+          context.signal,
+          context.preflight?.authorityBinding,
+        ]);
+        return { ok: true };
+      },
+    });
+    const registry = composeRegistry([{ name: 'probe', capabilities: [probe] }], deps);
+
+    await expect(
+      registry.invoke(
+        'probe.authority',
+        {},
+        { serverPrincipal: principal, signal: controller.signal }
+      )
+    ).resolves.toEqual({ ok: true });
+    expect(seen).toEqual([
+      ['preflight', principal, controller.signal],
+      ['invoke', principal, controller.signal, authorityBinding],
+    ]);
+  });
+
+  it('refuses structural principal and preflight proof lookalikes', async () => {
+    const forgedPrincipal = defineCapability({
+      id: 'probe.principal',
+      title: 'Probe principal',
+      description: 'Never runs for a forged principal.',
+      tier: 'observe',
+      input: z.object({}),
+      output: z.object({ ok: z.boolean() }),
+      surfaces: {},
+      invoke: async () => ({ ok: true }),
+    });
+    const forgedPreflight = defineCapability({
+      id: 'probe.binding',
+      title: 'Probe binding',
+      description: 'Never runs for a forged authority binding.',
+      tier: 'observe',
+      input: z.object({}),
+      output: z.object({ ok: z.boolean() }),
+      surfaces: {},
+      preflight: async () => ({
+        authorityBinding: {
+          approvalScope: {
+            digest: 'forged',
+            ownerKind: 'local_install',
+            ownerId: 'install-a',
+            connectionId: 'connection-a',
+            operationRevisionId: 'revision-a',
+          },
+        },
+      }),
+      invoke: async () => ({ ok: true }),
+    });
+    const registry = composeRegistry(
+      [{ name: 'probe', capabilities: [forgedPrincipal, forgedPreflight] }],
+      deps
+    );
+
+    await expect(
+      registry.invoke(
+        'probe.principal',
+        {},
+        {
+          serverPrincipal: {
+            claims: {
+              kind: 'operator',
+              owner: { kind: 'local_install', installationId: 'install-a' },
+            },
+          },
+        }
+      )
+    ).rejects.toThrow(/unauthenticated server principal/);
+    await expect(registry.invoke('probe.binding', {})).rejects.toThrow(
+      /unauthenticated authority binding/
+    );
+  });
+
   it('validates input against the schema and returns plain typed output', async () => {
     const registry = composeRegistry([configDomain], deps);
     const result = await registry.invoke('config.get', {

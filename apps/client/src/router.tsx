@@ -552,7 +552,10 @@ const workspacesRoute = createRoute({
  * rendered, and this only says where to start.
  */
 const connectionsSearchSchema = mergeDialogSearch(
-  z.object({ region: z.enum(['messaging', 'accounts']).optional() })
+  z.object({
+    region: z.enum(['messaging', 'accounts']).optional(),
+    review: z.string().min(1).optional(),
+  })
 );
 
 const connectionsRoute = createRoute({

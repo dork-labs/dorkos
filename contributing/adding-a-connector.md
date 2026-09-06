@@ -24,7 +24,7 @@ The current contract is defined by the [Connections specification](../specs/whit
 | Instance registry and stable connection store         | `apps/server/src/services/connectors/registry.ts`, `apps/server/src/services/connectors/connection-store.ts` |
 | Durable database schema                               | `packages/db/src/schema/connectors/connections.ts`, `packages/db/src/schema/connectors/connector-events.ts`  |
 | SDK import guard                                      | `scripts/__tests__/composio-sdk-import-boundary.test.ts`                                                     |
-| Temporary MCP compatibility seam                      | `apps/server/src/services/connectors/session-exposure.ts`                                                    |
+| Broker and authorization                              | `apps/server/src/services/connectors/execution/`                                                             |
 
 ## The provider contract
 
@@ -35,16 +35,16 @@ The capability descriptor states whether this instance supports catalog discover
 The main methods are:
 
 - `listToolkitPage(request)` returns one bounded catalog page, a cursor when more results exist, and an honest `truncated` value.
+- `resolveToolkitVersion(toolkit, signal)` returns the exact trusted version that every following operation page must use. It never infers `latest`.
 - `listOperationSchemas(request)` returns one bounded page of immutable operation metadata. Each operation includes the provider instance, toolkit, stable operation slug, toolkit version, input schema and hash, and `read`, `write`, or `destructive` classification.
 - `startConnect()` and `pollConnect()` perform the reference-only connect flow. Secrets remain behind the adapter.
 - `listAccounts()` and `disconnect(externalAccountRef)` address exact private provider accounts.
 - `execute(command)` receives the exact private account reference and immutable operation revision selected by DorkOS. It must honor the supplied abort signal and return a normalized, secret-free envelope.
 - `listTriggerTypes(toolkit)` returns stable event names, display names, and a JSON Schema for subscription filters.
-- `toolServerForAccount(externalAccountRef)` is a temporary compatibility projection for live session consumers. P2 replaces it with the policy-enforced execution service.
 
 ### Stable identity and lifecycle
 
-The provider reports authentication status for its private account. DorkOS separately owns the stable connection ID, operator pause, disconnect tombstone, attachments, and grants. Provider inventory must not resume a paused connection or reactivate a disconnected connection. Only an explicit reconnect may restore the same stable ID, and it must return through the same provider instance and private account binding.
+The provider reports authentication status for its private account. DorkOS separately owns the stable connection ID, operator pause, disconnect tombstone, attachments, and grants. Provider inventory must not resume a paused connection or reactivate a disconnected connection. Reusing a disconnected stable ID requires validated upstream identity evidence; a label, email address, or matching credential is never enough. When an adapter cannot prove that identity, reconnect creates a new ungranted connection and leaves the old one disconnected.
 
 The registry may contain several instances of one type. Route active work by `instanceId`, not by `type`. Removing one instance must leave its same-type siblings registered and routable.
 
@@ -63,12 +63,6 @@ Use a provider's trustworthy operation metadata to classify an operation. If tha
 - `external`: the remote service handles authentication outside the gateway.
 
 `mode` and custody answer different questions. A Composio instance configured with the operator's own key is `mode: 'byo'` and still has `custody: 'managed'` because Composio holds the end-user token.
-
-### Temporary MCP projection
-
-`toolServerForAccount` returns `McpAppServerConnection | null`. Return `null` when an account cannot be exposed, including expired or revoked authentication, a missing live URL, or a routine provider transport failure. The session service turns `null` into a per-account warning. A routine failure thrown through this method becomes a 500.
-
-This method is a compatibility seam for current consumers. It does not replace exact-account authorization, revision validation, or usage accounting.
 
 ## Add a provider
 
@@ -94,6 +88,8 @@ Map the vendor's account handle to `ConnectorExternalAccountRef` in one adapter 
 
 Provider account responses must not contain credentials, authorization headers, connect URLs, or session URLs. Public REST and Transport DTOs use `ConnectionId` and omit provider instance IDs and external references.
 
+An authenticated runtime receives five private DorkOS tools. Two read-only tools list only its currently executable connections and the exact immutable schemas already granted to its agent or session. Three classified tools execute read, write, or destructive revisions from that list. The runtime never supplies an owner, agent, session, provider instance, or external account selector; DorkOS derives those facts from its turn-bound principal and rechecks them before returning discovery data or dispatching work. The ordinary and external MCP projections do not expose these private tools.
+
 ### 4. Declare capabilities honestly
 
 Return every capability in `getCapabilities()`. When a capability is unavailable, return typed unsupported results from the matching method. Paginate catalog and operation discovery to a configured ceiling and surface truncation; do not silently use a vendor's default subset as the complete catalog.
@@ -114,18 +110,6 @@ connectorConformance(
   {
     name: 'MyProvider — ConnectorProvider conformance',
     toolkit: 'gmail',
-    makeUnexposableAccount: async () => {
-      const provider = new MyProvider({
-        instanceId: 'provider-my-unexposable',
-        client: new FakeMyClient(),
-      });
-      const { flowId } = await provider.startConnect('gmail');
-      const poll = await provider.pollConnect(flowId);
-      return {
-        provider,
-        externalAccountRef: poll.account!.externalAccountRef,
-      };
-    },
   }
 );
 ```
@@ -137,9 +121,9 @@ The suite checks:
 - immutable schema version, hash, and classification metadata;
 - exact private-account authentication, listing, execution, and disconnect;
 - abort behavior before and during execution;
-- result envelopes that exclude secrets, authorization data, and URLs;
+- result envelopes that exclude credentials, vendor execution URLs, private references, and transport metadata while preserving legitimate service content such as document links;
 - trigger metadata and typed unsupported behavior;
-- multi-account behavior and the temporary nullable MCP projection.
+- multi-account behavior and exact-account disconnect.
 
 Declare legitimate provider differences through the conformance options. Do not weaken the shared assertions.
 
@@ -181,7 +165,7 @@ No CI test may require a live vendor account. Put any real-provider smoke behind
 - Mutating an operation revision after it has been reviewed.
 - Treating missing classification or incomplete discovery as read access.
 - Calling a vendor SDK outside its adapter root.
-- Throwing routine transport errors from `toolServerForAccount`.
+- Exposing a provider MCP endpoint or arbitrary credentialed method/path proxy to a runtime.
 - Storing upstream OAuth tokens while declaring managed custody.
 - Returning a default provider subset as a complete catalog.
 

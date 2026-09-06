@@ -12,8 +12,8 @@
  * Schemas are the authoritative contract (the repo is Zod-first); TS types
  * derive via `z.infer`. The port interface itself is a runtime port (not a
  * serializable DTO), so it is a TS interface over the derived types, reusing the
- * existing {@link McpAppServerConnection} only for the legacy execution
- * projection that remains until the execution service replaces it in P2.
+ * provider-neutral execution commands and results. Provider transports remain
+ * confined to their adapters and never cross this port.
  *
  * See spec `specs/connector-gateway/02-specification.md` §Detailed Design 1 and
  * ADR `260718-045630` (the custody stance).
@@ -21,7 +21,6 @@
  * @module shared/connector-provider
  */
 import { z } from 'zod';
-import type { McpAppServerConnection } from './agent-runtime.js';
 import {
   ConnectionIdSchema,
   ConnectorExternalAccountRefSchema,
@@ -36,6 +35,7 @@ import {
   type ConnectorProviderExecuteResult,
   type ConnectorProviderInstanceId,
   type ConnectorTriggerType,
+  type ConnectorToolkitVersionResult,
   type ConnectorUnsupportedResult,
 } from './connector-schemas.js';
 
@@ -79,8 +79,6 @@ export const ConnectorCapabilitiesSchema = z.object({
   supportsMultiAccount: z.boolean(),
   /** Custody stance — the honest disclosure the UI renders before connect. */
   custody: ConnectorCustodySchema,
-  /** Can the backend expose connected tools to a session over MCP? */
-  exposesOverMcp: z.boolean(),
   /** Capability availability declared without optimistic inference. */
   capabilities: ConnectorProviderCapabilitySetSchema,
   /** Backend-specific metadata that doesn't merit a first-class field (cf. `RuntimeCapabilities.features`). */
@@ -122,15 +120,14 @@ export type ConnectedAccountStatus = z.infer<typeof ConnectedAccountStatusSchema
 /**
  * One connected account, provider-neutral.
  *
- * `provider` is SERVER-ONLY (the registry needs it to route
- * `toolServerForAccount`/`disconnect` to the owning backend); it is stripped
- * from any session-facing view — the session tool surface never sees which
- * vendor is behind a connection (spec §Detailed Design 2, Security).
+ * `provider` is SERVER-ONLY (the registry needs it to route management and
+ * brokered execution to the owning backend). It is stripped from every public
+ * account view (spec §Detailed Design 2, Security).
  */
 export const ConnectedAccountSchema = z.object({
   /** Stable DorkOS connection id. */
   id: ConnectedAccountIdSchema,
-  /** Owning backend type — SERVER-ONLY, never in the session tool surface. */
+  /** Owning backend type — SERVER-ONLY, never in a public account DTO. */
   provider: z.string(),
   /** Service slug this account belongs to, e.g. `'gmail'`. */
   toolkit: z.string(),
@@ -199,9 +196,7 @@ export type ConnectPoll = z.infer<typeof ConnectPollSchema>;
  * Every method earns its place: discovery (`listToolkits`) drives the connect
  * picker; `startConnect`/`pollConnect` are the reference-not-secret connect flow
  * (the `Transport` PKCE-loopback pair); `listAccounts`/`disconnect` are
- * multi-account management. `toolServerForAccount` is a temporary compatibility
- * projection for the current session consumer; P2 removes it after every call
- * uses exact-account {@link execute} through DorkOS policy.
+ * multi-account management; and {@link execute} is the only execution path.
  */
 export interface ConnectorProvider {
   /** Stable configured instance identifier; multiple instances may share one type. */
@@ -219,6 +214,12 @@ export interface ConnectorProvider {
     | { status: 'ok'; toolkits: ConnectorToolkit[]; nextCursor?: string; truncated: boolean }
     | ConnectorUnsupportedResult
   >;
+
+  /** Resolve the exact provider version to hold fixed through schema discovery. */
+  resolveToolkitVersion(
+    toolkit: string,
+    signal: AbortSignal
+  ): Promise<ConnectorToolkitVersionResult | ConnectorUnsupportedResult>;
 
   /** Discover one bounded page of immutable operation schemas. */
   listOperationSchemas(
@@ -271,27 +272,6 @@ export interface ConnectorProvider {
    * @param externalAccountRef - The private provider account reference to disconnect.
    */
   disconnect(externalAccountRef: ConnectorExternalAccountRef): Promise<void>;
-
-  /**
-   * Legacy P1 projection that exposes a connected account's tools to a session
-   * as MCP. Returns
-   * runtime-neutral connection details (the exact {@link McpAppServerConnection}
-   * the runtime already injects), selected BY id — so two Gmail accounts become
-   * two addressable tool servers.
-   *
-   * Returns `null` when the account cannot be exposed right now: `expired`/
-   * `revoked` status, a provider that momentarily has no live session URL, or a
-   * transport this host cannot independently reconnect. Callers MUST handle
-   * `null` (spec §Detailed Design 3) — it is a surfaced, per-account warning,
-   * never a thrown error and never a silent drop. This mirrors
-   * `AgentRuntime.getMcpServerConfig?`, which is itself optional and nullable
-   * (`agent-runtime.ts`).
-   *
-   * @param externalAccountRef - The private provider account reference to expose.
-   */
-  toolServerForAccount(
-    externalAccountRef: ConnectorExternalAccountRef
-  ): Promise<McpAppServerConnection | null>;
 }
 
 /**
@@ -465,35 +445,41 @@ export const ConnectorConnectPollResponseSchema = z.object({
 /** Pollable public flow state. See {@link ConnectorConnectPollResponseSchema}. */
 export type ConnectorConnectPollResponse = z.infer<typeof ConnectorConnectPollResponseSchema>;
 
-/**
- * Why an attached account is not currently exposed as a tool server — the
- * surfaced form of the `toolServerForAccount` null branch (never a throw,
- * never a silent drop).
- */
+/** Why a connection with retained session access is not currently usable. */
 export const SessionConnectorUnavailableReasonSchema = z.enum([
   'expired',
   'revoked',
   'paused',
   'unavailable',
 ]);
-/** Null-branch reason. See {@link SessionConnectorUnavailableReasonSchema}. */
+/** Unavailable connection reason. See {@link SessionConnectorUnavailableReasonSchema}. */
 export type SessionConnectorUnavailableReason = z.infer<
   typeof SessionConnectorUnavailableReasonSchema
 >;
 
-/** A per-account notice that an attached account could not be exposed right now. */
+/** A per-account notice that retained access cannot currently be used. */
 export const SessionConnectorWarningSchema = z.object({
   /** The attached account this warning is about. */
   accountId: ConnectedAccountIdSchema,
   /** The account's user-facing label, for a "reconnect {label}" affordance. */
   label: z.string(),
-  /** Why it is not exposed (drives the reconnect prompt copy). */
+  /** Why the connection cannot currently be used. */
   reason: SessionConnectorUnavailableReasonSchema,
 });
 /** One null-branch warning. See {@link SessionConnectorWarningSchema}. */
 export type SessionConnectorWarning = z.infer<typeof SessionConnectorWarningSchema>;
 
-/** One attached account's status in a session's connector surface. */
+/** How a session's durable override relates to an agent's connector access. */
+export const SessionConnectorAccessSchema = z.enum([
+  'inherited',
+  'session_allowed',
+  'session_blocked',
+  'needs_reconciliation',
+]);
+/** Durable session-level connector access state. See {@link SessionConnectorAccessSchema}. */
+export type SessionConnectorAccess = z.infer<typeof SessionConnectorAccessSchema>;
+
+/** One connection's durable access status for a session. */
 export const SessionConnectorAccountStatusSchema = z.object({
   /** The attached account id. */
   accountId: ConnectedAccountIdSchema,
@@ -503,39 +489,37 @@ export const SessionConnectorAccountStatusSchema = z.object({
   label: z.string(),
   /** Lifecycle status echoed from the routing binding. */
   status: ConnectedAccountStatusSchema,
-  /** The provider-neutral MCP server name this account is exposed under, when exposed. */
-  serverName: z.string().optional(),
-  /** Whether the account is currently exposed as a tool server. */
-  exposed: z.boolean(),
+  /** Whether access is inherited, explicitly allowed, blocked, or awaits owner review. */
+  access: SessionConnectorAccessSchema,
 });
 /** One attached account's session status. See {@link SessionConnectorAccountStatusSchema}. */
 export type SessionConnectorAccountStatus = z.infer<typeof SessionConnectorAccountStatusSchema>;
 
 /**
  * Response of `GET /api/sessions/:id/connectors` — the session's connector
- * surface: what is attached, and what degraded.
+ * access state. Connector operations execute through the DorkOS broker and no
+ * provider MCP endpoint is exposed to the session.
  */
 export const SessionConnectorStatusSchema = z.object({
-  /** Every account attached to this session, each with its exposure state. */
+  /** Every connection with inherited or explicit session access state. */
   accounts: z.array(SessionConnectorAccountStatusSchema),
-  /** Per-account warnings for attached accounts that could not be exposed. */
+  /** Per-account warnings for retained access that cannot currently be used. */
   warnings: z.array(SessionConnectorWarningSchema),
 });
 /** One session's connector surface. See {@link SessionConnectorStatusSchema}. */
 export type SessionConnectorStatus = z.infer<typeof SessionConnectorStatusSchema>;
 
 /**
- * Response of `POST /api/sessions/:id/connectors/:accountId` — the consent
- * point's receipt: the attached account's row, the custody disclosure re-shown
- * at attach, and the null-branch warning when the account attached but is not
- * exposable right now.
+ * Legacy session-attach receipt retained for transport compatibility while P3
+ * removes old attachment consumers. P2 refuses the retired mutation route and
+ * grants connection access only through owner review and exact reconciliation.
  */
 export const SessionConnectorAttachResultSchema = z.object({
   /** The attached account's session-facing status row. */
   account: SessionConnectorAccountStatusSchema,
   /** The custody disclosure to re-show at the consent point. */
   disclosure: z.string(),
-  /** Present when the account attached but is not exposable right now (null branch). */
+  /** Historical warning carried by older attach receipts. */
   warning: SessionConnectorWarningSchema.optional(),
 });
 /** The attach receipt. See {@link SessionConnectorAttachResultSchema}. */

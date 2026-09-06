@@ -19,12 +19,10 @@ import {
 /** Poll attempts allowed before a connect flow is deemed stuck. */
 const MAX_POLL_ATTEMPTS = 10;
 
-/** An arranged account that cannot be exposed through the compatibility MCP seam. */
-export interface UnexposableAccount {
-  /** Provider holding the account. */
-  provider: ConnectorProvider;
-  /** Private provider account reference. */
-  externalAccountRef: ConnectorExternalAccountRef;
+/** Tuning knobs and required hooks for connector conformance. */
+export interface SlowExecutingConnectorProvider extends ConnectorProvider {
+  /** Resolve after the provider has crossed its final dispatch boundary. */
+  waitForDispatch(): Promise<void>;
 }
 
 /** Tuning knobs and required hooks for connector conformance. */
@@ -33,10 +31,8 @@ export interface ConnectorConformanceOpts {
   name?: string;
   /** Toolkit exercised by the suite. */
   toolkit?: string;
-  /** Arrange an account that the compatibility MCP seam cannot expose. */
-  makeUnexposableAccount: () => Promise<UnexposableAccount>;
   /** Optional executing provider that stays pending until a deadline aborts it. */
-  makeSlowExecutingProvider?: () => ConnectorProvider;
+  makeSlowExecutingProvider?: () => SlowExecutingConnectorProvider;
 }
 
 /** Register the provider-neutral conformance suite for one backend. */
@@ -47,7 +43,6 @@ export function connectorConformance(
   const {
     name = 'ConnectorProvider conformance',
     toolkit = 'gmail',
-    makeUnexposableAccount,
     makeSlowExecutingProvider,
   } = opts;
 
@@ -80,7 +75,18 @@ export function connectorConformance(
   }
 
   async function firstOperation(provider: ConnectorProvider): Promise<ConnectorOperationRevision> {
-    const result = await provider.listOperationSchemas({ toolkit, limit: 1 });
+    const resolvedVersion = await provider.resolveToolkitVersion(
+      toolkit,
+      new AbortController().signal
+    );
+    expect(resolvedVersion.status).toBe('ok');
+    if (resolvedVersion.status !== 'ok') throw new Error(resolvedVersion.reason);
+    const result = await provider.listOperationSchemas({
+      toolkit,
+      toolkitVersion: resolvedVersion.toolkitVersion,
+      limit: 1,
+      signal: new AbortController().signal,
+    });
     expect(result.status).toBe('ok');
     if (result.status !== 'ok') throw new Error(result.reason);
     const operation = result.page.operations[0];
@@ -101,6 +107,7 @@ export function connectorConformance(
       toolkitVersion: '2026-09-01',
       schemaHash: 'sha256:conformance-read-v1',
       capabilityClassification: 'read',
+      retryPolicy: 'never',
       inputSchema: { type: 'object', additionalProperties: false },
       discoveredAt: new Date(0).toISOString(),
     };
@@ -124,7 +131,10 @@ export function connectorConformance(
 
     it('returns a bounded catalog page and well-formed legacy aggregate', async () => {
       const provider = makeProvider();
-      const page = await provider.listToolkitPage({ limit: 1 });
+      const page = await provider.listToolkitPage({
+        limit: 1,
+        signal: new AbortController().signal,
+      });
       expect(page.status).toBe('ok');
       if (page.status === 'ok') {
         expect(page.toolkits.length).toBeLessThanOrEqual(1);
@@ -135,10 +145,60 @@ export function connectorConformance(
       expect(all.map((entry) => entry.slug)).toContain(toolkit);
     });
 
+    it('consumes server cancellation on every versioned discovery step', async () => {
+      const provider = makeProvider();
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(
+        provider.listToolkitPage({ limit: 1, signal: controller.signal })
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      await expect(
+        provider.resolveToolkitVersion(toolkit, controller.signal)
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      await expect(
+        provider.listOperationSchemas({
+          toolkit,
+          toolkitVersion: 'must-not-dispatch',
+          limit: 1,
+          signal: controller.signal,
+        })
+      ).rejects.toMatchObject({ name: 'AbortError' });
+    });
+
     it('surfaces operation pagination, immutable metadata, and truncation', async () => {
       const provider = makeProvider();
-      const first = await provider.listOperationSchemas({ toolkit, limit: 1 });
+      const version = await provider.resolveToolkitVersion(toolkit, new AbortController().signal);
       const operationCapability = provider.getCapabilities().capabilities.operations;
+      if (operationCapability.status === 'unsupported') {
+        ConnectorUnsupportedResultSchema.parse(version);
+        expect(version.status).toBe('unsupported');
+        const unsupportedPage = await provider.listOperationSchemas({
+          toolkit,
+          toolkitVersion: 'unsupported',
+          limit: 1,
+          signal: new AbortController().signal,
+        });
+        ConnectorUnsupportedResultSchema.parse(unsupportedPage);
+        expect(unsupportedPage).toMatchObject({
+          status: 'unsupported',
+          reason: operationCapability.reason,
+        });
+        expect(JSON.stringify(unsupportedPage)).not.toMatch(/authorization|headers|https?:\/\//i);
+      } else {
+        expect(version).toMatchObject({
+          status: 'ok',
+          toolkit,
+          toolkitVersion: expect.any(String),
+        });
+      }
+      if (version.status !== 'ok') return;
+      const first = await provider.listOperationSchemas({
+        toolkit,
+        toolkitVersion: version.toolkitVersion,
+        limit: 1,
+        signal: new AbortController().signal,
+      });
       if (operationCapability.status === 'unsupported') {
         ConnectorUnsupportedResultSchema.parse(first);
         expect(first).toMatchObject({
@@ -155,7 +215,7 @@ export function connectorConformance(
       expect(first.page.operations[0]).toMatchObject({
         providerInstanceId: provider.instanceId,
         toolkit,
-        toolkitVersion: expect.any(String),
+        toolkitVersion: version.toolkitVersion,
         schemaHash: expect.any(String),
         capabilityClassification: expect.stringMatching(/^(read|write|destructive)$/),
       });
@@ -163,8 +223,10 @@ export function connectorConformance(
       expect(first.page.nextCursor).toBeDefined();
       const second = await provider.listOperationSchemas({
         toolkit,
+        toolkitVersion: version.toolkitVersion,
         cursor: first.page.nextCursor,
         limit: 1,
+        signal: new AbortController().signal,
       });
       expect(second.status).toBe('ok');
       if (second.status === 'ok') {
@@ -197,6 +259,7 @@ export function connectorConformance(
       if (executionCapability.status === 'unsupported') {
         const unsupported = await provider.execute({
           externalAccountRef: selected.externalAccountRef,
+          authorizeDispatch: () => true,
           operation: operationFixture(provider),
           arguments: { query: 'hello' },
           logicalOperationId: 'logical-unsupported',
@@ -218,6 +281,7 @@ export function connectorConformance(
       const operation = await firstOperation(provider);
       const result = await provider.execute({
         externalAccountRef: selected.externalAccountRef,
+        authorizeDispatch: () => true,
         operation,
         arguments: { query: 'hello' },
         logicalOperationId: 'logical-1',
@@ -231,8 +295,24 @@ export function connectorConformance(
       expect(serialized).not.toContain(selected.externalAccountRef);
       expect(serialized).not.toMatch(/authorization|headers|https?:\/\//i);
 
+      const refusedDispatch = await provider.execute({
+        externalAccountRef: selected.externalAccountRef,
+        authorizeDispatch: () => false,
+        operation,
+        arguments: { query: 'must-not-run' },
+        logicalOperationId: 'logical-refused-dispatch',
+        attemptId: 'attempt-refused-dispatch',
+        signal: new AbortController().signal,
+      });
+      expect(refusedDispatch).toMatchObject({
+        status: 'error',
+        code: 'AUTHORITY_CHANGED_BEFORE_DISPATCH',
+        retryable: false,
+      });
+
       const unknownAccount = await provider.execute({
         externalAccountRef: '__missing_private_account__' as ConnectorExternalAccountRef,
+        authorizeDispatch: () => true,
         operation,
         arguments: { query: 'hello' },
         logicalOperationId: 'logical-missing-account',
@@ -250,13 +330,17 @@ export function connectorConformance(
       controller.abort();
       const result = await provider.execute({
         externalAccountRef: account.externalAccountRef,
+        authorizeDispatch: () => true,
         operation: await firstOperation(provider),
         arguments: {},
         logicalOperationId: 'logical-abort',
         attemptId: 'attempt-abort',
         signal: controller.signal,
       });
-      expect(result).toMatchObject({ status: 'error', code: 'aborted' });
+      expect(result).toMatchObject({
+        status: 'cancelled',
+        code: 'CANCELLED_BEFORE_DISPATCH',
+      });
     });
 
     if (makeSlowExecutingProvider) {
@@ -266,14 +350,19 @@ export function connectorConformance(
         const controller = new AbortController();
         const pending = provider.execute({
           externalAccountRef: account.externalAccountRef,
+          authorizeDispatch: () => true,
           operation: await firstOperation(provider),
           arguments: {},
           logicalOperationId: 'logical-timeout',
           attemptId: 'attempt-timeout',
           signal: controller.signal,
         });
+        await provider.waitForDispatch();
         controller.abort();
-        await expect(pending).resolves.toMatchObject({ status: 'error', code: 'aborted' });
+        await expect(pending).resolves.toMatchObject({
+          status: 'outcome_unknown',
+          code: 'ABORTED_AFTER_DISPATCH',
+        });
       });
     }
 
@@ -288,19 +377,6 @@ export function connectorConformance(
       } else {
         expect(result.status).toBe('ok');
       }
-    });
-
-    it('keeps compatibility MCP exposure exact-account and nullable', async () => {
-      const provider = makeProvider();
-      const account = await connectOk(provider);
-      const connection = await provider.toolServerForAccount(account.externalAccountRef);
-      if (provider.getCapabilities().exposesOverMcp) expect(connection).not.toBeNull();
-      else expect(connection).toBeNull();
-
-      const unexposable = await makeUnexposableAccount();
-      await expect(
-        unexposable.provider.toolServerForAccount(unexposable.externalAccountRef)
-      ).resolves.toBeNull();
     });
   });
 }

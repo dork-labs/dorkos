@@ -109,6 +109,40 @@ describe('listToolkits — the real v3.1 envelope', () => {
     expect(calls[1]!.url).toContain('cursor=cursor-2');
   });
 
+  it('fails closed when Composio repeats a toolkit cursor', async () => {
+    const { client, calls } = clientWith([
+      { body: { items: [toolkitItem('gmail')], next_cursor: 'cursor-2' } },
+      { body: { items: [toolkitItem('slack')], next_cursor: 'cursor-2' } },
+    ]);
+
+    await expect(client.listToolkits()).rejects.toMatchObject({
+      name: 'ComposioApiError',
+      status: 502,
+      message: 'Composio repeated a toolkit catalog cursor.',
+    });
+    expect(calls).toHaveLength(2);
+  });
+
+  it('fails closed when the toolkit catalog exceeds the page safety limit', async () => {
+    const { client, calls } = clientWith((url) => {
+      const cursor = new URL(url).searchParams.get('cursor');
+      const page = cursor ? Number(cursor.slice('cursor-'.length)) : 1;
+      return {
+        body: {
+          items: [toolkitItem(`toolkit-${page}`)],
+          next_cursor: `cursor-${page + 1}`,
+        },
+      };
+    });
+
+    await expect(client.listToolkits()).rejects.toMatchObject({
+      name: 'ComposioApiError',
+      status: 502,
+      message: 'Composio toolkit catalog exceeds the 20-page safety limit.',
+    });
+    expect(calls).toHaveLength(20);
+  });
+
   it('throws a ComposioApiError carrying the API message on a 401 — never an empty list', async () => {
     // Byte-shaped like the LIVE 401 observed on first contact (2026-07-29):
     // the composio CLI's uak_… user key is not a project API key.
@@ -386,44 +420,6 @@ describe('listConnectedAccounts — the plural v3.1 filter params', () => {
     expect(url.searchParams.get('toolkit_slugs')).toBe('gmail');
     expect(url.searchParams.get('user_id')).toBeNull();
     expect(url.searchParams.get('toolkit')).toBeNull();
-  });
-});
-
-describe('mcpSessionForAccount — the Tool Router session', () => {
-  it('pins the session to the account and returns the mcp url', async () => {
-    const { client, calls } = clientWith([
-      { body: { id: 'ca_1', status: 'ACTIVE', toolkit: { slug: 'gmail' } } },
-      {
-        body: {
-          session_id: 'trs_1',
-          mcp: { type: 'http', url: 'https://mcp.composio.example/trs_1' },
-        },
-      },
-    ]);
-    const session = await client.mcpSessionForAccount('ca_1');
-    expect(session).toEqual({
-      url: 'https://mcp.composio.example/trs_1',
-      headers: { 'x-api-key': 'ak-project-key' },
-    });
-    expect(calls[1]!.url).toContain('/api/v3.1/tool_router/session');
-    expect(JSON.parse(String(calls[1]!.init.body))).toEqual({
-      user_id: 'dorkos-operator',
-      toolkits: ['gmail'],
-      connected_accounts: { gmail: ['ca_1'] },
-    });
-  });
-
-  it('resolves null for a non-ACTIVE account without minting a session', async () => {
-    const { client, calls } = clientWith([
-      { body: { id: 'ca_1', status: 'EXPIRED', toolkit: { slug: 'gmail' } } },
-    ]);
-    await expect(client.mcpSessionForAccount('ca_1')).resolves.toBeNull();
-    expect(calls).toHaveLength(1);
-  });
-
-  it('degrades a 404 to null (no session for this account), never a throw', async () => {
-    const { client } = clientWith([{ status: 404, body: { error: { message: 'not found' } } }]);
-    await expect(client.mcpSessionForAccount('ca_gone')).resolves.toBeNull();
   });
 });
 

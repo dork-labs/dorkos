@@ -41,6 +41,12 @@ const PRE_MESSAGE_QUEUE_MIGRATION_IDX = 63;
  */
 const PRE_WORKSPACE_OWNER_IDX = 81;
 
+/** Last migration before P2 split immutable intents from terminal receipts. */
+const PRE_CONNECTOR_EXECUTION_IDX = 86;
+
+/** Shipped main schema after Better Auth account issuers, before P2 execution state. */
+const SHIPPED_ACCOUNT_ISSUER_IDX = 87;
+
 /** Temp migration folders to remove after each test. */
 const tempMigrationDirs: string[] = [];
 
@@ -151,8 +157,14 @@ describe('Database Migrations', () => {
       'connector_legacy_agent_revocations',
       'connector_operation_revisions',
       'connector_provider_instances',
+      'connector_reconciliation_agents',
+      'connector_reconciliation_candidates',
+      'connector_reconciliation_defaults',
+      'connector_reconciliation_previews',
       'connector_review_requests',
+      'connector_runtime_bindings',
       'connector_usage_attempts',
+      'connector_usage_terminal_receipts',
       'handle_tombstones',
       'mesh_namespace_rules',
       // The message-search index and its frontier: a derived, rebuildable
@@ -833,6 +845,153 @@ describe('Database Migrations', () => {
         )
         .get()
     ).toBeDefined();
+  });
+
+  it('migration 0088 preserves P1 terminal evidence without inventing missing attribution', () => {
+    const db = createDb(':memory:');
+    migrate(db, { migrationsFolder: migrationsFolderThrough(PRE_CONNECTOR_EXECUTION_IDX) });
+    const raw = db.$client;
+    raw
+      .prepare(
+        `INSERT INTO connector_provider_instances
+          (id, type, mode, display_name, custody, capability_json, status, created_at, updated_at)
+         VALUES ('provider-a', 'composio', 'byo', 'Composio', 'managed', '{}', 'available', ?, ?)`
+      )
+      .run('2026-09-05T00:00:00.000Z', '2026-09-05T00:00:00.000Z');
+    raw
+      .prepare(
+        `INSERT INTO connections
+          (id, provider_instance_id, external_account_ref, toolkit, label, status, created_at, updated_at)
+         VALUES ('connection-a', 'provider-a', 'private-a', 'gmail', 'Work', 'active', ?, ?)`
+      )
+      .run('2026-09-05T00:00:00.000Z', '2026-09-05T00:00:00.000Z');
+    raw
+      .prepare(
+        `INSERT INTO connector_operation_revisions
+          (id, provider_instance_id, toolkit, operation_slug, toolkit_version, schema_hash,
+           capability_classification, input_schema_json, discovered_at)
+         VALUES ('revision-a', 'provider-a', 'gmail', 'gmail.list', 'v1', 'hash-a',
+                 'read', '{}', ?)`
+      )
+      .run('2026-09-05T00:00:00.000Z');
+    const insertAttempt = raw.prepare(
+      `INSERT INTO connector_usage_attempts
+        (attempt_id, logical_operation_id, attempt_index, surface, actor_kind, actor_id,
+         connection_id, provider_instance_id, provider_type, payer, operation_revision_id,
+         outcome, provider_log_id, started_at, completed_at, error_code)
+       VALUES (?, ?, ?, 'mcp', 'agent', 'agent-a', 'connection-a', 'provider-a',
+               'composio', 'operator_byo', 'revision-a', ?, ?, ?, ?, ?)`
+    );
+    insertAttempt.run(
+      'attempt-success',
+      'logical-success',
+      0,
+      'success',
+      'safe-log-a',
+      '2026-09-05T00:00:00.000Z',
+      '2026-09-05T00:00:01.000Z',
+      null
+    );
+    insertAttempt.run(
+      'attempt-legacy-unknown',
+      'logical-unknown',
+      0,
+      'legacy_timeout',
+      null,
+      '2026-09-05T00:00:02.000Z',
+      null,
+      'OLD_TIMEOUT'
+    );
+
+    runMigrations(db);
+
+    expect(
+      raw
+        .prepare(
+          `SELECT attempt_id, outcome, provider_log_id, error_code, source_outcome, completed_at,
+                  recorded_at, provenance
+           FROM connector_usage_terminal_receipts ORDER BY attempt_id`
+        )
+        .all()
+    ).toEqual([
+      {
+        attempt_id: 'attempt-legacy-unknown',
+        outcome: 'outcome_unknown',
+        provider_log_id: null,
+        error_code: 'OLD_TIMEOUT',
+        source_outcome: 'legacy_timeout',
+        completed_at: null,
+        recorded_at: '2026-09-05T00:00:02.000Z',
+        provenance: 'migrated_p1',
+      },
+      {
+        attempt_id: 'attempt-success',
+        outcome: 'success',
+        provider_log_id: 'safe-log-a',
+        error_code: null,
+        source_outcome: null,
+        completed_at: '2026-09-05T00:00:01.000Z',
+        recorded_at: '2026-09-05T00:00:01.000Z',
+        provenance: 'migrated_p1',
+      },
+    ]);
+    expect(
+      raw
+        .prepare('SELECT owner_kind, owner_id FROM connector_usage_attempts ORDER BY attempt_id')
+        .all()
+    ).toEqual([
+      { owner_kind: null, owner_id: null },
+      { owner_kind: null, owner_id: null },
+    ]);
+    expect(raw.prepare('SELECT retry_policy FROM connector_operation_revisions').get()).toEqual({
+      retry_policy: 'never',
+    });
+  });
+
+  it('applies the P2 chain after shipped migration 0087 without losing account issuers', () => {
+    const db = createDb(':memory:');
+    migrate(db, { migrationsFolder: migrationsFolderThrough(SHIPPED_ACCOUNT_ISSUER_IDX) });
+    const raw = db.$client;
+
+    raw
+      .prepare(
+        `INSERT INTO user
+          (id, name, email, email_verified, created_at, updated_at)
+         VALUES ('owner-a', 'Owner', 'owner@example.com', 1, 1788700000000, 1788700000000)`
+      )
+      .run();
+    raw
+      .prepare(
+        `INSERT INTO account
+          (id, issuer, account_id, provider_id, user_id, password, created_at, updated_at)
+         VALUES ('account-a', 'local:credential', 'owner-a', 'credential', 'owner-a',
+                 'password-hash', 1788700000000, 1788700000000)`
+      )
+      .run();
+    expect(
+      raw
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'connector_runtime_bindings'"
+        )
+        .get()
+    ).toBeUndefined();
+
+    expect(() => runMigrations(db)).not.toThrow();
+
+    expect(
+      raw.prepare('SELECT issuer, account_id FROM account WHERE id = ?').get('account-a')
+    ).toEqual({ issuer: 'local:credential', account_id: 'owner-a' });
+    expect(
+      raw
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'connector_runtime_bindings'"
+        )
+        .get()
+    ).toEqual({ name: 'connector_runtime_bindings' });
+    expect(
+      raw.prepare("SELECT name FROM pragma_table_info('connector_review_requests')").all()
+    ).toContainEqual({ name: 'review_context_json' });
+    expect(raw.pragma('foreign_key_check')).toEqual([]);
   });
 
   it('unique constraint on relay_traces.message_id is enforced', () => {

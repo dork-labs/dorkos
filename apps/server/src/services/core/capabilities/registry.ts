@@ -33,6 +33,12 @@ import {
 } from './tier-enforcement.js';
 import { isTrustedCaller, type TrustedCaller } from './trusted-caller.js';
 import { enforceToolGroupGrant } from './tool-group-enforcement.js';
+import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
+import { isServerPrincipal } from '../../connectors/principal/server-principal.js';
+import {
+  isCapabilityAuthorityBinding,
+  type CapabilityAuthorityBindingProof,
+} from '../../connectors/principal/capability-authority-binding.js';
 
 /**
  * What a transport adapter supplies to {@link CapabilityRegistry.invoke}.
@@ -138,6 +144,26 @@ export interface CapabilityInvocationContext {
    * authorization: it says where the caller is, not what it may do.
    */
   cwd?: string;
+  /** Process-authenticated caller resolved by a server-owned boundary. */
+  serverPrincipal?: ServerPrincipalProof;
+  /** Abort only this capability call; never reused as a turn-lifetime signal. */
+  signal?: AbortSignal;
+  /**
+   * Stable agent deliberately selected by a verified program connector route.
+   *
+   * This is server-derived adapter context, never part of a public capability
+   * input and never forwarded by an MCP projection. Runtime principals already
+   * carry their canonical agent and therefore cannot set it.
+   */
+  connectorAgentId?: string;
+  /** Server-known connector entry surface used only for immutable usage attribution. */
+  connectorSurface?: 'mcp' | 'rest' | 'cli';
+}
+
+/** Live domain authorization resolved between parsing and tier approval. */
+export interface CapabilityPreflightResult {
+  /** Process-authenticated binding over authority, target, and parsed input. */
+  readonly authorityBinding: CapabilityAuthorityBindingProof;
 }
 
 /**
@@ -182,9 +208,8 @@ export interface CapabilityHandlerContext {
   trusted?: TrustedCaller;
   /**
    * The invoking session, when the call arrived through a surface that has one
-   * (the in-session `dorkos` server). Session-scoped capabilities (connector
-   * attach/detach) default to it; absent on the external `/mcp` and HTTP
-   * surfaces, where the caller must name a session explicitly.
+   * (the in-session `dorkos` server). Resumable flows may bind to this verified
+   * session; it is absent on external `/mcp` and ordinary HTTP surfaces.
    */
   sessionId?: string;
   /**
@@ -194,6 +219,16 @@ export interface CapabilityHandlerContext {
    * a restart still resumes the agent in the right place (DOR-981).
    */
   cwd?: string;
+  /** Process-authenticated caller resolved by the server boundary. */
+  serverPrincipal?: ServerPrincipalProof;
+  /** Abort only this capability call. */
+  signal?: AbortSignal;
+  /** Authenticated live authority established before approval and invocation. */
+  preflight?: CapabilityPreflightResult;
+  /** Verified program-selected agent; absent for runtime and public MCP callers. */
+  connectorAgentId?: string;
+  /** Server-known connector entry surface used only for immutable usage attribution. */
+  connectorSurface?: 'mcp' | 'rest' | 'cli';
 }
 
 /**
@@ -461,6 +496,12 @@ export function composeRegistry(
         );
       }
 
+      if (supplied.serverPrincipal !== undefined && !isServerPrincipal(supplied.serverPrincipal)) {
+        throw new Error(
+          `Capability registry: "${id}" was invoked with an unauthenticated server principal.`
+        );
+      }
+
       // Parse ONCE, then gate on exactly the value that will execute — defaults
       // applied, unknown keys stripped. The approval binds to a hash of this
       // value, so hashing anything else (the raw body, or a re-parse) would make
@@ -480,13 +521,18 @@ export function composeRegistry(
         ...(supplied.userId ? { userId: supplied.userId } : {}),
         ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
         ...(supplied.cwd ? { cwd: supplied.cwd } : {}),
+        ...(supplied.serverPrincipal ? { serverPrincipal: supplied.serverPrincipal } : {}),
+        ...(supplied.signal ? { signal: supplied.signal } : {}),
+        ...(supplied.connectorAgentId ? { connectorAgentId: supplied.connectorAgentId } : {}),
+        ...(supplied.connectorSurface ? { connectorSurface: supplied.connectorSurface } : {}),
       };
       const invocationContext: CapabilityHandlerContext = supplied.trusted
         ? { trusted: supplied.trusted, ...surface }
         : { ...(supplied.identity ? { identity: supplied.identity } : {}), ...surface };
 
-      // The gates. A trusted caller skips both, having already proved it may
-      // decide the very approval the tier gate would ask for.
+      // The generic tool-group gate stays unchanged for trusted callers. Domain
+      // preflight runs after it and for EVERY caller, because trust may decide an
+      // ordinary approval but cannot stand in for live connector authority.
       if (!supplied.trusted) {
         // The per-agent tool-group grant, BEFORE the tier gate on purpose: a
         // capability this caller may never reach must not mint an approval card
@@ -498,13 +544,34 @@ export function composeRegistry(
           ...(supplied.identity ? { identity: supplied.identity } : {}),
         });
         if (grant.outcome !== 'allowed') throw new CapabilityGateRefusal(grant);
+      }
 
+      const preflight = capability.preflight
+        ? await capability.preflight(deps, parsed, supplied)
+        : undefined;
+      if (preflight && !isCapabilityAuthorityBinding(preflight.authorityBinding)) {
+        throw new Error(
+          `Capability registry: "${id}" preflight returned an unauthenticated authority binding.`
+        );
+      }
+      if (preflight) invocationContext.preflight = preflight;
+
+      // Existing trusted callers retain their ordinary bypass. A capability with
+      // live preflight always reaches the tier gate, so destructive connector
+      // execution still consumes a bound approval even for a trusted operator.
+      if (!supplied.trusted || preflight) {
         const decision = enforceCapabilityTier({
           action: capability,
           input: parsed,
           ...(supplied.identity ? { identity: supplied.identity } : {}),
           ...(supplied.approvalToken ? { approvalToken: supplied.approvalToken } : {}),
           retryChannel: supplied.retryChannel ?? 'http-header',
+          ...(preflight
+            ? {
+                connectorAuthority: preflight.authorityBinding.approvalScope,
+                standingGrantEligible: false,
+              }
+            : {}),
         });
         if (decision.outcome !== 'allowed') throw new CapabilityGateRefusal(decision);
         if (decision.approval) invocationContext.approval = decision.approval;

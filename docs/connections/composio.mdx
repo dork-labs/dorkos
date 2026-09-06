@@ -35,7 +35,9 @@ DorkOS keeps only your Composio key, saved in its encrypted secret store (never 
 
 ### Get a Composio API key
 
-Create an account at Composio and copy an API key. Any Composio key works — the project API key from your dashboard, or the account key the `composio` command-line tool signs in with. DorkOS figures out which kind you pasted. This one key lets DorkOS reach every service you connect through Composio.
+Create an account at Composio and copy a project API key from its dashboard. This key lets DorkOS connect accounts and execute the exact actions you grant through the broker.
+
+A Composio user account key that begins with `uak_` can still manage existing connections, but the SDK cannot provide DorkOS with pinned action schemas for that key type. DorkOS therefore reports action discovery and execution as unavailable instead of sending an unverified action.
 
 </Step>
 
@@ -43,7 +45,7 @@ Create an account at Composio and copy an API key. Any Composio key works — th
 
 ### Give the key to DorkOS
 
-Open **Connections** in the sidebar and scroll to the **Composio & Nango** section. Paste the key into the Composio card and click **Save key**. The card shows **Ready** right away, and the services Composio can reach appear in the grid above. Removing the key later turns the provider off again, and any sessions using its accounts are told, not left guessing.
+Open **Connections** in the sidebar and scroll to the **Composio & Nango** section. Paste the key into the Composio card and click **Save key**. The card shows **Ready** right away, and the services Composio can reach appear in the grid above. Removing the key later turns the provider off again and stops brokered execution for its accounts.
 
 </Step>
 
@@ -52,8 +54,6 @@ Open **Connections** in the sidebar and scroll to the **Composio & Nango** secti
 ### Connect a service
 
 Click **Connect** on a service tile (for example, Gmail). DorkOS shows the custody sentence first, then a button that opens the service's sign-in page in a new tab. You sign in there, not in DorkOS. When the sign-in completes, the account shows up under **Connected accounts**.
-
-You can also do this from a chat: ask your agent to connect the service, and it replies with the sign-in link and the same custody sentence.
 
 </Step>
 
@@ -67,6 +67,8 @@ Connect the same service again and give it a label, like "personal". DorkOS sugg
 
 </Steps>
 
-## Use it in a session
+## Give an agent access
 
-Attach a connected account to a session to let that session's agent use it. In the session view, open the right panel's **Session** tab and use the **Connections** group. Only accounts you attach are available to that session. If an account's login has expired, its row says so and the session view tells you to reconnect it under Connections, instead of quietly dropping it.
+Open the account under **Connections**, choose **Agent access**, and select a named agent. Review the exact actions and versions before saving. DorkOS executes only those pinned actions through its broker. If Composio later reports a changed action or schema, the new version stays off until you review it.
+
+If an account expires, connect it again and review access for the new connection. If you paused it yourself, resume it under **Connections**. DorkOS refuses execution until that owner action is complete.

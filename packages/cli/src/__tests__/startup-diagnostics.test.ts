@@ -3,7 +3,7 @@ import {
   checkNodeVersion,
   diagnoseStartupError,
   formatDiagnostic,
-  MIN_NODE_MAJOR,
+  MIN_NODE_VERSION,
 } from '../startup-diagnostics.js';
 
 describe('startup-diagnostics', () => {
@@ -11,13 +11,20 @@ describe('startup-diagnostics', () => {
   // checkNodeVersion
   // ---------------------------------------------------------------------------
   describe('checkNodeVersion', () => {
-    it('returns null for current Node.js (which is >= MIN_NODE_MAJOR)', () => {
+    it('returns null for the current supported Node.js runtime', () => {
       // Test is running on a supported Node.js version
       expect(checkNodeVersion()).toBeNull();
     });
 
-    it('exports MIN_NODE_MAJOR as 20', () => {
-      expect(MIN_NODE_MAJOR).toBe(20);
+    it('requires the first Node release supported by the Composio SDK', () => {
+      expect(MIN_NODE_VERSION).toBe('22.22.3');
+      expect(checkNodeVersion('22.21.9')).toMatchObject({ category: 'node-version' });
+      expect(checkNodeVersion('22.22.2')).toMatchObject({
+        category: 'node-version',
+        headline: 'Node.js 22.22.2 is not supported',
+      });
+      expect(checkNodeVersion('22.22.3')).toBeNull();
+      expect(checkNodeVersion('24.14.1')).toBeNull();
     });
   });
 

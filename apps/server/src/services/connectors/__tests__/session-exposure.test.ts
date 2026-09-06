@@ -1,597 +1,197 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createDb, runMigrations, sessionConnectionOverrides, type Db } from '@dorkos/db';
+import { beforeEach, describe, expect, it } from 'vitest';
+import {
+  connectionOperationGrants,
+  connectorOperationRevisions,
+  createDb,
+  runMigrations,
+  type Db,
+} from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
-import type {
-  ConnectedAccount,
-  ConnectedAccountId,
-  ConnectorExternalAccountRef,
-} from '@dorkos/shared/connector-provider';
-import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
-import { ConnectorRegistry } from '../registry.js';
-import { SessionConnectorService } from '../session-exposure.js';
+import type { ConnectedAccount } from '@dorkos/shared/connector-provider';
 import {
   AgentConnectorAttachmentStore,
   SessionConnectorAttachmentStore,
 } from '../attachment-store.js';
+import { ConnectorRegistry } from '../registry.js';
+import { SessionConnectorService } from '../session-exposure.js';
 
-/**
- * A gateway provider named `'composio'` whose account ids and connection URLs
- * carry NO provider identity — modeling a real managed gateway (Composio's Rube
- * MCP URLs are `rube.app/...`, never `composio`). Used to prove the session
- * tool surface adds no provider leakage even when the owning backend IS Composio.
- */
-class CleanComposioProvider extends FakeConnectorProvider {
-  private readonly _live = new Set<string>();
-
-  constructor() {
-    super({ type: 'composio' });
-  }
-
-  /** Register an opaque account id as having a live tool server. */
-  addLive(accountId: string): void {
-    this._live.add(accountId);
-  }
-
-  override toolServerForAccount(
-    accountId: ConnectorExternalAccountRef
-  ): Promise<McpAppServerConnection | null> {
-    if (!this._live.has(accountId)) return Promise.resolve(null);
-    // A clean Rube-style URL: no vendor name, no account-id echo of the provider.
-    return Promise.resolve({ transport: 'http', url: `https://rube.example/mcp/${accountId}` });
-  }
-}
-
-/** Connect one account on a fake provider and persist its routing binding. */
 async function connectAndRecord(
   registry: ConnectorRegistry,
   provider: FakeConnectorProvider,
-  toolkit: string,
-  label: string
+  label = 'work'
 ): Promise<ConnectedAccount> {
-  const { flowId } = await provider.startConnect(toolkit, { label });
-  const { account } = await provider.pollConnect(flowId);
-  return registry.recordConnect(provider, account!);
+  const { flowId } = await provider.startConnect('gmail', { label });
+  const poll = await provider.pollConnect(flowId);
+  return registry.recordConnect(provider, poll.account!);
 }
 
-describe('SessionConnectorService', () => {
+function grant(
+  db: Db,
+  provider: FakeConnectorProvider,
+  account: ConnectedAccount,
+  subjectType: 'agent' | 'session',
+  subjectId: string
+): void {
+  const operationRevisionId = `revision-${account.id}`;
+  db.insert(connectorOperationRevisions)
+    .values({
+      id: operationRevisionId,
+      providerInstanceId: provider.instanceId,
+      toolkit: account.toolkit,
+      operationSlug: `${account.toolkit}.read`,
+      toolkitVersion: 'test-v1',
+      schemaHash: `sha256:${account.id}`,
+      capabilityClassification: 'read',
+      retryPolicy: 'never',
+      inputSchemaJson: JSON.stringify({ type: 'object', properties: {} }),
+      discoveredAt: '2026-09-06T12:00:00.000Z',
+    })
+    .onConflictDoNothing()
+    .run();
+  db.insert(connectionOperationGrants)
+    .values({
+      id: `grant-${subjectType}-${subjectId}-${account.id}`,
+      subjectType,
+      subjectId,
+      agentId: 'agent-a',
+      connectionId: account.id,
+      operationRevisionId,
+      createdBy: 'owner',
+      createdAt: '2026-09-06T12:00:00.000Z',
+    })
+    .run();
+}
+
+describe('SessionConnectorService read-only durable projection', () => {
   let db: Db;
   let registry: ConnectorRegistry;
   let provider: FakeConnectorProvider;
+  let agents: AgentConnectorAttachmentStore;
+  let sessions: SessionConnectorAttachmentStore;
   let service: SessionConnectorService;
 
   beforeEach(() => {
     db = createDb(':memory:');
     runMigrations(db);
     registry = new ConnectorRegistry({ db });
-    provider = new FakeConnectorProvider({ type: 'fake-connector', custody: 'managed' });
+    provider = new FakeConnectorProvider();
     registry.register(provider);
+    agents = new AgentConnectorAttachmentStore(db);
+    sessions = new SessionConnectorAttachmentStore(db, () => 'agent-a');
     service = new SessionConnectorService({
+      db,
       registry,
-      agentAttachments: new AgentConnectorAttachmentStore(db),
-      sessionAttachments: new SessionConnectorAttachmentStore(db, () => 'agent-a'),
+      agentAttachments: agents,
+      sessionAttachments: sessions,
     });
   });
 
-  it('attaches two Gmail accounts as two distinct named tool servers', async () => {
-    const personal = await connectAndRecord(registry, provider, 'gmail', 'personal');
-    const work = await connectAndRecord(registry, provider, 'gmail', 'work');
+  it('reports inherited agent access without resolving a provider endpoint', async () => {
+    const account = await connectAndRecord(registry, provider);
+    agents.attach('agent-a', account.id);
+    grant(db, provider, account, 'agent', 'agent-a');
 
-    await service.attach('session-a', personal.id);
-    await service.attach('session-a', work.id);
-
-    const { servers, warnings } = service.mcpServersForSession('session-a');
-    expect(warnings).toEqual([]);
-    expect(Object.keys(servers).sort()).toEqual(['gmail-personal', 'gmail-work']);
-    // Two distinct servers, each an addressable MCP connection.
-    expect(servers['gmail-personal']).toBeDefined();
-    expect(servers['gmail-work']).toBeDefined();
-    expect(servers['gmail-personal']).not.toEqual(servers['gmail-work']);
-  });
-
-  it('disambiguates two accounts with the same toolkit and label', async () => {
-    const first = await connectAndRecord(registry, provider, 'gmail', 'shared');
-    const second = await connectAndRecord(registry, provider, 'gmail', 'shared');
-
-    await service.attach('s', first.id);
-    await service.attach('s', second.id);
-
-    const { servers } = service.mcpServersForSession('s');
-    expect(Object.keys(servers).sort()).toEqual(['gmail-shared', 'gmail-shared-2']);
-  });
-
-  it('pins a server name for the session lifetime — a sibling detach never renames it', async () => {
-    const first = await connectAndRecord(registry, provider, 'gmail', 'shared');
-    const second = await connectAndRecord(registry, provider, 'gmail', 'shared');
-    await service.attach('s', first.id);
-    await service.attach('s', second.id);
-    expect(Object.keys(service.mcpServersForSession('s').servers).sort()).toEqual([
-      'gmail-shared',
-      'gmail-shared-2',
-    ]);
-
-    // Detach the account that owns the base name; the sibling keeps `-2`.
-    service.detach('s', first.id);
-    expect(Object.keys(service.mcpServersForSession('s').servers)).toEqual(['gmail-shared-2']);
-  });
-
-  it('never mints a connector server named after a built-in (no shadowing)', async () => {
-    // A toolkit literally named 'dorkos' must not take the built-in server name,
-    // or it would shadow the built-in `dorkos` server in the factory spread.
-    const composio = new CleanComposioProvider();
-    registry.register(composio);
-    const externalRef = 'acct-dorkos' as ConnectorExternalAccountRef;
-    composio.addLive(externalRef);
-    const connected = registry.recordConnect(composio, {
-      externalAccountRef: externalRef,
-      toolkit: 'dorkos',
-      label: '',
-      status: 'active',
-      custody: 'managed',
+    expect(service.status('session-a')).toEqual({
+      accounts: [
+        {
+          accountId: account.id,
+          toolkit: 'gmail',
+          label: 'work',
+          status: 'active',
+          access: 'inherited',
+        },
+      ],
+      warnings: [],
     });
-    await service.attach('s', connected.id);
-
-    const names = Object.keys(service.mcpServersForSession('s').servers);
-    expect(names).not.toContain('dorkos');
-    expect(names).toEqual(['dorkos-2']);
   });
 
-  it('surfaces the null branch as a warning and never injects the account', async () => {
-    const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
-    // Drive the account into the null branch: an expired account resolves null
-    // from toolServerForAccount rather than throwing.
-    const externalRef = registry.accountBinding(account.id)!.externalAccountRef;
-    provider.setStatus(externalRef, 'expired');
+  it('keeps an explicit detached override visible and dominant over agent access', async () => {
+    const account = await connectAndRecord(registry, provider);
+    agents.attach('agent-a', account.id);
+    grant(db, provider, account, 'agent', 'agent-a');
+    sessions.setState('session-a', account.id, 'detached', 'agent-a');
 
-    const result = await service.attach('s', account.id);
-    expect(result).toBeDefined();
-    expect(result!.account.exposed).toBe(false);
-    expect(result!.account.serverName).toBeUndefined();
-    expect(result!.warning).toEqual({
+    expect(service.status('session-a').accounts[0]).toMatchObject({
       accountId: account.id,
-      label: 'personal',
-      reason: 'unavailable',
-    });
-
-    const { servers, warnings } = service.mcpServersForSession('s');
-    expect(servers).toEqual({});
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]!.accountId).toBe(account.id);
-  });
-
-  it('maps an expired routing binding to an expired warning reason', async () => {
-    // A binding the provider no longer knows (its tool server resolves null),
-    // whose cached status is 'expired' — the reason is echoed from the binding.
-    const stale = registry.recordConnect(provider, {
-      externalAccountRef: 'fake-connector:gmail:stale' as ConnectorExternalAccountRef,
-      toolkit: 'gmail',
-      label: 'stale',
-      status: 'expired',
-      custody: 'managed',
-    });
-
-    const result = await service.attach('s', stale.id);
-    expect(result!.warning?.reason).toBe('expired');
-  });
-
-  it('does not ask a provider for endpoints after local pause or disconnect', async () => {
-    const paused = await connectAndRecord(registry, provider, 'gmail', 'paused');
-    const revoked = await connectAndRecord(registry, provider, 'slack', 'revoked');
-    const resolveEndpoint = vi.spyOn(provider, 'toolServerForAccount');
-    registry.setPaused(paused.id, true);
-    registry.recordDisconnect(revoked.id);
-
-    const pausedResult = await service.attach('paused-session', paused.id);
-    const revokedResult = await service.attach('revoked-session', revoked.id);
-
-    expect(resolveEndpoint).not.toHaveBeenCalled();
-    expect(pausedResult).toMatchObject({
-      account: { exposed: false, status: 'paused' },
-      warning: { accountId: paused.id, reason: 'paused' },
-    });
-    expect(revokedResult).toMatchObject({
-      account: { exposed: false, status: 'revoked' },
-      warning: { accountId: revoked.id, reason: 'revoked' },
-    });
-    expect(service.mcpServersForSession('paused-session').servers).toEqual({});
-    expect(service.mcpServersForSession('revoked-session').servers).toEqual({});
-  });
-
-  it('returns undefined for an unknown account id (routes map to 404)', async () => {
-    const result = await service.attach('s', 'nope' as ConnectedAccountId);
-    expect(result).toBeUndefined();
-  });
-
-  it('does not cache a live provider endpoint when session ownership cannot be persisted', async () => {
-    const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
-    const strictService = new SessionConnectorService({
-      registry,
-      agentAttachments: new AgentConnectorAttachmentStore(db),
-      sessionAttachments: new SessionConnectorAttachmentStore(db),
-    });
-
-    await expect(strictService.attach('ownerless-session', account.id)).rejects.toThrow(
-      /no agent owner/i
-    );
-    expect(strictService.mcpServersForSession('ownerless-session').servers).toEqual({});
-  });
-
-  it('re-shows the custody disclosure at attach', async () => {
-    const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
-    const result = await service.attach('s', account.id);
-    // Managed custody → the canonical ADR sentence appears in the disclosure.
-    expect(result!.disclosure).toContain('secure vault');
-  });
-
-  it('does not reactivate an unresolved migrated attached override during hydration', async () => {
-    const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
-    db.insert(sessionConnectionOverrides)
-      .values({
-        sessionId: 'legacy-unresolved',
-        connectionId: account.id,
-        state: 'attached',
-        needsReconciliation: true,
-        updatedAt: new Date(0).toISOString(),
-      })
-      .run();
-
-    await service.hydrateSession('legacy-unresolved', 'agent-a');
-
-    expect(service.mcpServersForSession('legacy-unresolved').servers).toEqual({});
-    expect(db.select().from(sessionConnectionOverrides).get()).toMatchObject({
-      agentId: null,
-      needsReconciliation: true,
+      access: 'session_blocked',
     });
   });
 
-  it('does not apply a session override owned by a different agent', async () => {
-    const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
-    db.insert(sessionConnectionOverrides)
-      .values({
-        sessionId: 'reused-session',
-        agentId: 'agent-b',
-        connectionId: account.id,
-        state: 'attached',
-        needsReconciliation: false,
-        updatedAt: new Date(0).toISOString(),
-      })
-      .run();
+  it('distinguishes session-scoped access and rows that need owner reconciliation', async () => {
+    const attached = await connectAndRecord(registry, provider, 'attached');
+    const uncertain = await connectAndRecord(registry, provider, 'uncertain');
+    sessions.setState('session-a', attached.id, 'attached', 'agent-a');
+    sessions.setState('session-a', uncertain.id, 'attached', 'agent-a');
+    grant(db, provider, attached, 'session', 'session-a');
+    grant(db, provider, uncertain, 'session', 'session-a');
+    db.$client
+      .prepare(
+        'UPDATE session_connection_overrides SET needs_reconciliation = 1 WHERE connection_id = ?'
+      )
+      .run(uncertain.id);
 
-    await service.hydrateSession('reused-session', 'agent-a');
-
-    expect(service.mcpServersForSession('reused-session').servers).toEqual({});
-  });
-
-  it('detaches an account so it is no longer injected (idempotent)', async () => {
-    const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
-    await service.attach('s', account.id);
-    expect(Object.keys(service.mcpServersForSession('s').servers)).toEqual(['gmail-personal']);
-
-    service.detach('s', account.id);
-    expect(service.mcpServersForSession('s').servers).toEqual({});
-    // Detaching again is a no-op, not a throw.
-    expect(() => service.detach('s', account.id)).not.toThrow();
-    expect(() => service.detach('unknown-session', account.id)).not.toThrow();
-  });
-
-  it('migrates the attach set across a canonical-id remap (tools do not vanish)', async () => {
-    const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
-    // Attach BEFORE the id stabilizes — under the request UUID.
-    await service.attach('req-uuid', account.id);
-    expect(Object.keys(service.mcpServersForSession('req-uuid').servers)).toEqual([
-      'gmail-personal',
+    expect(service.status('session-a').accounts).toEqual([
+      expect.objectContaining({ accountId: attached.id, access: 'session_allowed' }),
+      expect.objectContaining({ accountId: uncertain.id, access: 'needs_reconciliation' }),
     ]);
+  });
 
-    // The runtime rekeys the session to its canonical id mid-first-turn.
-    service.migrateSession('req-uuid', 'canonical-id');
+  it('surfaces lifecycle warnings without exposing provider transport', async () => {
+    const account = await connectAndRecord(registry, provider);
+    agents.attach('agent-a', account.id);
+    grant(db, provider, account, 'agent', 'agent-a');
+    registry.setPaused(account.id, true);
 
-    // The account now rides the canonical id, and the old id is empty.
-    expect(service.status('canonical-id').accounts.map((a) => a.accountId)).toEqual([account.id]);
-    expect(Object.keys(service.mcpServersForSession('canonical-id').servers)).toEqual([
-      'gmail-personal',
+    const status = service.status('session-a');
+    expect(status.accounts[0]).toMatchObject({ status: 'paused', access: 'inherited' });
+    expect(status.warnings).toEqual([{ accountId: account.id, label: 'work', reason: 'paused' }]);
+    expect(JSON.stringify(status)).not.toMatch(/url|headers|command|provider/i);
+  });
+
+  it('moves durable overrides when a runtime assigns the canonical session id', async () => {
+    const account = await connectAndRecord(registry, provider);
+    sessions.setState('request-id', account.id, 'detached', 'agent-a');
+
+    service.migrateSession('request-id', 'canonical-id');
+
+    expect(sessions.listForSession('request-id')).toEqual([]);
+    expect(service.status('canonical-id').accounts[0]).toMatchObject({
+      accountId: account.id,
+      access: 'session_blocked',
+    });
+  });
+
+  it('reports legacy rows and attached overrides without canonical grants as reconciliation needs', async () => {
+    const legacy = await connectAndRecord(registry, provider, 'legacy');
+    const attached = await connectAndRecord(registry, provider, 'attached');
+    agents.attach('agent-a', legacy.id);
+    sessions.setState('session-a', attached.id, 'attached', 'agent-a');
+
+    expect(service.status('session-a').accounts).toEqual([
+      expect.objectContaining({ accountId: attached.id, access: 'needs_reconciliation' }),
+      expect.objectContaining({ accountId: legacy.id, access: 'needs_reconciliation' }),
     ]);
-    expect(service.status('req-uuid').accounts).toEqual([]);
-    expect(service.mcpServersForSession('req-uuid').servers).toEqual({});
   });
 
-  it('merges into an existing new-id attach set on migrate (existing wins a conflict)', async () => {
-    const a = await connectAndRecord(registry, provider, 'gmail', 'old');
-    const b = await connectAndRecord(registry, provider, 'slack', 'new');
-    await service.attach('old-id', a.id);
-    await service.attach('canonical', b.id);
+  it('reports canonical agent grants even when no legacy attachment row remains', async () => {
+    const account = await connectAndRecord(registry, provider);
+    grant(db, provider, account, 'agent', 'agent-a');
 
-    service.migrateSession('old-id', 'canonical');
-
-    const ids = service
-      .status('canonical')
-      .accounts.map((acc) => acc.accountId)
-      .sort();
-    expect(ids).toEqual([a.id, b.id].sort());
-    expect(service.status('old-id').accounts).toEqual([]);
-  });
-
-  it('migrateSession is a no-op when ids match or nothing is attached', async () => {
-    const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
-    await service.attach('same', account.id);
-    service.migrateSession('same', 'same');
-    expect(service.status('same').accounts).toHaveLength(1);
-    // Nothing attached under the old id → no-op, no throw.
-    expect(() => service.migrateSession('empty', 'target')).not.toThrow();
-    expect(service.status('target').accounts).toEqual([]);
-  });
-
-  it('only injects accounts attached to THIS session', async () => {
-    const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
-    await service.attach('session-a', account.id);
-
-    expect(Object.keys(service.mcpServersForSession('session-a').servers)).toEqual([
-      'gmail-personal',
+    expect(service.status('session-a').accounts).toEqual([
+      expect.objectContaining({ accountId: account.id, access: 'inherited' }),
     ]);
-    // A different session never sees an account it did not attach.
-    expect(service.mcpServersForSession('session-b').servers).toEqual({});
   });
 
-  it('reports the full connector status for a session', async () => {
-    const active = await connectAndRecord(registry, provider, 'gmail', 'personal');
-    const other = await connectAndRecord(registry, provider, 'slack', 'team');
-    provider.setStatus(registry.accountBinding(other.id)!.externalAccountRef, 'revoked');
+  it('does not report a session grant through an override owned by another agent', async () => {
+    const account = await connectAndRecord(registry, provider);
+    sessions.setState('session-a', account.id, 'attached', 'agent-a');
+    grant(db, provider, account, 'session', 'session-a');
+    db.$client
+      .prepare('UPDATE session_connection_overrides SET agent_id = ? WHERE session_id = ?')
+      .run('agent-b', 'session-a');
 
-    await service.attach('s', active.id);
-    await service.attach('s', other.id);
-
-    const status = service.status('s');
-    expect(status.accounts).toHaveLength(2);
-    const activeRow = status.accounts.find((a) => a.accountId === active.id)!;
-    expect(activeRow.exposed).toBe(true);
-    expect(activeRow.serverName).toBe('gmail-personal');
-    const revokedRow = status.accounts.find((a) => a.accountId === other.id)!;
-    expect(revokedRow.exposed).toBe(false);
-    expect(status.warnings.map((w) => w.accountId)).toEqual([other.id]);
-  });
-
-  it('leaks no provider identity into server names or config, even for Composio', async () => {
-    const composio = new CleanComposioProvider();
-    registry.register(composio);
-    // Persist two provider-neutral bindings owned by 'composio'.
-    for (const label of ['personal', 'work']) {
-      const externalAccountRef = `acct-${label}` as ConnectorExternalAccountRef;
-      composio.addLive(externalAccountRef);
-      const connected = registry.recordConnect(composio, {
-        externalAccountRef,
-        toolkit: 'gmail',
-        label,
-        status: 'active',
-        custody: 'managed',
-      });
-      await service.attach('s', connected.id);
-    }
-
-    const { servers } = service.mcpServersForSession('s');
-    expect(Object.keys(servers).sort()).toEqual(['gmail-personal', 'gmail-work']);
-    // No provider identity anywhere in the injected surface — names or config.
-    const surface = JSON.stringify({ names: Object.keys(servers), config: servers });
-    expect(surface).not.toContain('composio');
-    expect(surface).not.toContain('nango');
-  });
-
-  describe('agent-level attachment (connection-scoping spec §Part 1)', () => {
-    let agentAttachments: AgentConnectorAttachmentStore;
-    let sessionAttachments: SessionConnectorAttachmentStore;
-
-    beforeEach(() => {
-      agentAttachments = new AgentConnectorAttachmentStore(db);
-      sessionAttachments = new SessionConnectorAttachmentStore(db, () => 'agent-a');
-      service = new SessionConnectorService({ registry, agentAttachments, sessionAttachments });
-    });
-
-    it('AC1.1: a fresh SessionConnectorService instance (simulated restart) still exposes an agent-standingly-attached account on a new session', async () => {
-      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
-      agentAttachments.attach('agent-a', gmail.id);
-
-      // A brand-new instance over the SAME persisted stores/db — the
-      // in-memory `_sessions` cache starts empty, exactly as a process
-      // restart would leave it.
-      const restarted = new SessionConnectorService({
-        registry,
-        agentAttachments,
-        sessionAttachments,
-      });
-      await restarted.hydrateSession('session-1', 'agent-a');
-
-      const { servers } = restarted.mcpServersForSession('session-1');
-      expect(Object.keys(servers)).toEqual(['gmail-personal']);
-    });
-
-    it('AC1.2: a session-level detach suppresses an agent-standing account for that session only', async () => {
-      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
-      agentAttachments.attach('agent-a', gmail.id);
-
-      await service.hydrateSession('session-1', 'agent-a');
-      service.detach('session-1', gmail.id);
-      expect(Object.keys(service.mcpServersForSession('session-1').servers)).toEqual([]);
-
-      // A sibling session of the SAME agent still inherits it.
-      await service.hydrateSession('session-2', 'agent-a');
-      expect(Object.keys(service.mcpServersForSession('session-2').servers)).toEqual([
-        'gmail-personal',
-      ]);
-    });
-
-    it('AC1.2 (restart): the detach override persists — re-hydrating the same session after a simulated restart still suppresses it', async () => {
-      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
-      agentAttachments.attach('agent-a', gmail.id);
-      await service.hydrateSession('session-1', 'agent-a');
-      service.detach('session-1', gmail.id);
-
-      const restarted = new SessionConnectorService({
-        registry,
-        agentAttachments,
-        sessionAttachments,
-      });
-      await restarted.hydrateSession('session-1', 'agent-a');
-      expect(Object.keys(restarted.mcpServersForSession('session-1').servers)).toEqual([]);
-    });
-
-    it('AC1.3: a session-level attach exposes an account the agent has NOT standingly attached, for that session only', async () => {
-      const slack = await connectAndRecord(registry, provider, 'slack', 'team');
-      // No agentAttachments.attach() call — the agent has no standing consent.
-      await service.attach('session-1', slack.id);
-      expect(Object.keys(service.mcpServersForSession('session-1').servers)).toEqual([
-        'slack-team',
-      ]);
-
-      await service.hydrateSession('session-2', 'agent-a');
-      expect(Object.keys(service.mcpServersForSession('session-2').servers)).toEqual([]);
-    });
-
-    it('negative control: hydrating a session for an agent with NO standing attachments and NO overrides exposes nothing', async () => {
-      await connectAndRecord(registry, provider, 'gmail', 'personal'); // connected, never attached
-      await service.hydrateSession('session-1', 'agent-with-nothing');
-      expect(Object.keys(service.mcpServersForSession('session-1').servers)).toEqual([]);
-    });
-
-    it('AC1.5: disconnecting an account cascades — removed from every agent/session attachment and every live in-memory cache', async () => {
-      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
-      agentAttachments.attach('agent-a', gmail.id);
-      await service.hydrateSession('session-1', 'agent-a');
-      expect(Object.keys(service.mcpServersForSession('session-1').servers)).toEqual([
-        'gmail-personal',
-      ]);
-
-      // The cascade the connectors route performs on disconnect.
-      registry.recordDisconnect(gmail.id);
-      service.invalidateAccount(gmail.id);
-
-      expect(Object.keys(service.mcpServersForSession('session-1').servers)).toEqual([]);
-      expect(agentAttachments.listForAgent('agent-a')).toEqual([]);
-      expect(sessionAttachments.listForSession('session-1')).toEqual([]);
-
-      // And a fresh hydration (simulated restart) has nothing left to inherit.
-      const restarted = new SessionConnectorService({
-        registry,
-        agentAttachments,
-        sessionAttachments,
-      });
-      await restarted.hydrateSession('session-2', 'agent-a');
-      expect(Object.keys(restarted.mcpServersForSession('session-2').servers)).toEqual([]);
-    });
-
-    it('hydrateSession is idempotent per process: a second call does not re-resolve any account (MINOR 8 — a call-count assertion, not just the resulting empty set)', async () => {
-      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
-      agentAttachments.attach('agent-a', gmail.id);
-      const resolveSpy = vi.spyOn(provider, 'toolServerForAccount');
-
-      await service.hydrateSession('session-1', 'agent-a');
-      expect(resolveSpy).toHaveBeenCalledTimes(1);
-
-      // A second hydration of the SAME session must be a pure no-op — the
-      // `_hydrated` guard, not the (unrelated) fact that re-deriving the
-      // effective set would happen to land on the same answer. The previous
-      // version of this test only asserted the resulting exposed-account set,
-      // which cannot tell a working guard apart from a guard that silently
-      // never engaged (the override table alone would have produced the same
-      // empty result either way) — this call-count assertion can.
-      await service.hydrateSession('session-1', 'agent-a');
-      expect(resolveSpy).toHaveBeenCalledTimes(1);
-    });
-
-    it('a session-detached account inherited from the agent is still suppressed after a second hydration call (the property the removed assertion was trying to protect)', async () => {
-      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
-      agentAttachments.attach('agent-a', gmail.id);
-      await service.hydrateSession('session-1', 'agent-a');
-      service.detach('session-1', gmail.id);
-
-      await service.hydrateSession('session-1', 'agent-a');
-      expect(Object.keys(service.mcpServersForSession('session-1').servers)).toEqual([]);
-    });
-  });
-
-  describe('hydrateSession resilience to a third-party provider failure (MAJOR 2)', () => {
-    it('a rejected provider call during hydration does not throw, and the account resolves on a LATER hydrate', async () => {
-      const flaky = new FakeConnectorProvider({ type: 'flaky', custody: 'managed' });
-      registry.register(flaky);
-      const gmail = await connectAndRecord(registry, flaky, 'gmail', 'personal');
-      // Reject exactly the first call — a stand-in for one transient
-      // network failure — then let every subsequent call behave normally.
-      vi.spyOn(flaky, 'toolServerForAccount').mockImplementationOnce(
-        () => Promise.reject(new Error('simulated network failure')) as Promise<null>
-      );
-      const agentAttachments = new AgentConnectorAttachmentStore(db);
-      const sessionAttachments = new SessionConnectorAttachmentStore(db, () => 'agent-a');
-      agentAttachments.attach('agent-a', gmail.id);
-      const flakyService = new SessionConnectorService({
-        registry,
-        agentAttachments,
-        sessionAttachments,
-      });
-
-      // First turn: the provider rejects. hydrateSession must not throw —
-      // this IS "the turn still streams," since ClaudeCodeRuntime awaits
-      // hydrateSession before starting the SDK query.
-      await expect(flakyService.hydrateSession('session-1', 'agent-a')).resolves.toBeUndefined();
-      expect(Object.keys(flakyService.mcpServersForSession('session-1').servers)).toEqual([]);
-
-      // Second turn: same session, same call — the failed pass did NOT latch
-      // `_hydrated`, so this retries and now succeeds (FlakyProvider only
-      // rejects once).
-      await flakyService.hydrateSession('session-1', 'agent-a');
-      expect(Object.keys(flakyService.mcpServersForSession('session-1').servers)).toEqual([
-        'gmail-personal',
-      ]);
-    });
-  });
-
-  describe('migrateSession carries persisted overrides across a rekey (MAJOR 3)', () => {
-    let agentAttachments: AgentConnectorAttachmentStore;
-    let sessionAttachments: SessionConnectorAttachmentStore;
-
-    beforeEach(() => {
-      agentAttachments = new AgentConnectorAttachmentStore(db);
-      sessionAttachments = new SessionConnectorAttachmentStore(db, () => 'agent-a');
-      service = new SessionConnectorService({ registry, agentAttachments, sessionAttachments });
-    });
-
-    it('a detach tombstone written pre-remap still suppresses the account after the rekey and a fresh hydration', async () => {
-      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
-      agentAttachments.attach('agent-a', gmail.id);
-
-      // Pre-remap: hydrate under the request-id session, then explicitly
-      // detach — the tombstone this whole fix is about.
-      await service.hydrateSession('old-id', 'agent-a');
-      service.detach('old-id', gmail.id);
-      expect(sessionAttachments.listForSession('old-id')).toMatchObject([
-        { accountId: gmail.id, state: 'detached' },
-      ]);
-
-      service.migrateSession('old-id', 'new-id');
-
-      // The persisted override moved with the rekey, not just the (now
-      // empty, since detach cleared it) in-memory cache.
-      expect(sessionAttachments.listForSession('old-id')).toEqual([]);
-      expect(sessionAttachments.listForSession('new-id')).toMatchObject([
-        { accountId: gmail.id, state: 'detached' },
-      ]);
-
-      // The property that actually matters: a SECOND turn re-hydrating under
-      // the canonical id must not re-inherit the agent's standing attachment.
-      await service.hydrateSession('new-id', 'agent-a');
-      expect(Object.keys(service.mcpServersForSession('new-id').servers)).toEqual([]);
-    });
-
-    it("when the new id already has its own override for an account, the new id's override wins and the old row is dropped", async () => {
-      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
-      // Old id explicitly attaches (would expose it)...
-      await service.attach('old-id', gmail.id);
-      // ...but the new id independently already recorded an explicit detach
-      // for the same account (e.g. a client raced the rekey).
-      sessionAttachments.setState('new-id', gmail.id, 'detached');
-
-      service.migrateSession('old-id', 'new-id');
-
-      expect(sessionAttachments.listForSession('new-id')).toMatchObject([
-        { accountId: gmail.id, state: 'detached' },
-      ]);
-      // Only one row for (new-id, gmail.id) — no primary-key collision.
-      expect(sessionAttachments.listForSession('new-id')).toHaveLength(1);
-    });
+    expect(service.status('session-a').accounts).toEqual([
+      expect.objectContaining({ accountId: account.id, access: 'needs_reconciliation' }),
+    ]);
   });
 });

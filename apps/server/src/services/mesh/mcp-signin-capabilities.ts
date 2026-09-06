@@ -63,7 +63,7 @@ export const mcpSigninCapabilities: CapabilityDefinition[] = [
     // `act`, not `destructive`: the operator already approved this server at
     // `mcp.add` (a command-diff gate). Sign-in introduces no new command — it
     // only stores a token for a server that is already trusted — so it needs no
-    // second approval, exactly like connector.start_connect.
+    // second approval.
     tier: 'act',
     input: AgentServerInput,
     output: z.object({

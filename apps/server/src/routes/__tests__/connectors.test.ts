@@ -9,17 +9,18 @@ import { custodyDisclosure } from '../../services/connectors/custody-disclosure.
 import { ConnectorRegistry } from '../../services/connectors/registry.js';
 import { ConnectorFlowBindings } from '../../services/connectors/flow-bindings.js';
 import { RawMcpConnectorProvider } from '../../services/connectors/providers/raw-mcp.js';
-import { SessionConnectorService } from '../../services/connectors/session-exposure.js';
-import {
-  AgentConnectorAttachmentStore,
-  SessionConnectorAttachmentStore,
-} from '../../services/connectors/attachment-store.js';
 import type { RelayAdapterCatalog } from '../../services/connectors/routing.js';
-import { createConnectorsRouter } from '../connectors.js';
+import { createConnectorsRouter, type ConnectorsRouterDeps } from '../connectors.js';
 import { logger } from '../../lib/logger.js';
+import { resolveConnectorOperator } from '../connector-management.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
+const authorityCleanup = {
+  revokeAgent: vi.fn(),
+  revokeAgentConnection: vi.fn(),
+  revokeConnection: vi.fn(),
+};
 
 /** A relay catalog with a purpose-built adapter only for the given slugs. */
 function relayWith(slugs: Record<string, string>): RelayAdapterCatalog {
@@ -49,31 +50,46 @@ describe('connectors router', () => {
   /** Build an app wired to a registry with a managed composio fake registered. */
   function buildApp(
     relay?: RelayAdapterCatalog,
-    flowBindings: ConnectorFlowBindings = new ConnectorFlowBindings()
+    flowBindings: ConnectorFlowBindings = new ConnectorFlowBindings(),
+    authorizeOwnerAction: ConnectorsRouterDeps['authorizeOwnerAction'] = () => true
   ) {
     const app = express();
     app.use(express.json());
     app.use(
       '/api/connectors',
       createConnectorsRouter({
+        authorizeOwnerAction,
         registry,
         flowBindings,
-        sessionConnectors: new SessionConnectorService({
-          registry,
-          agentAttachments: new AgentConnectorAttachmentStore(db),
-          sessionAttachments: new SessionConnectorAttachmentStore(db, () => 'agent-a'),
-        }),
         relay,
+        authorityCleanup,
       })
     );
     return app;
   }
 
   beforeEach(() => {
+    vi.clearAllMocks();
     db = createDb(':memory:');
     runMigrations(db);
     registry = new ConnectorRegistry({ db });
     registry.register(new FakeConnectorProvider({ type: 'composio', custody: 'managed' }));
+  });
+
+  it.each([
+    ['post', '/api/connectors/composio/connect'],
+    ['get', '/api/connectors/flows/flow-a'],
+    ['get', '/api/connectors/accounts'],
+    ['delete', '/api/connectors/accounts/account-a'],
+  ] as const)('requires owner authority before private legacy %s %s', async (method, path) => {
+    const app = fixtureTarget.mount(
+      buildApp(undefined, new ConnectorFlowBindings(), (_req, res) => {
+        res.status(403).end();
+        return false;
+      })
+    );
+    const response = await request(app)[method](path);
+    expect(response.status).toBe(403);
   });
 
   it('GET /toolkits returns the aggregated connectable services', async () => {
@@ -113,13 +129,10 @@ describe('connectors router', () => {
     app.use(
       '/api/connectors',
       createConnectorsRouter({
+        authorizeOwnerAction: () => true,
         registry: bounded,
         flowBindings: new ConnectorFlowBindings(),
-        sessionConnectors: new SessionConnectorService({
-          registry: bounded,
-          agentAttachments: new AgentConnectorAttachmentStore(db),
-          sessionAttachments: new SessionConnectorAttachmentStore(db, () => 'agent-a'),
-        }),
+        authorityCleanup,
       })
     );
 
@@ -148,13 +161,10 @@ describe('connectors router', () => {
     app.use(
       '/api/connectors',
       createConnectorsRouter({
+        authorizeOwnerAction: () => true,
         registry: bounded,
         flowBindings: new ConnectorFlowBindings(),
-        sessionConnectors: new SessionConnectorService({
-          registry: bounded,
-          agentAttachments: new AgentConnectorAttachmentStore(db),
-          sessionAttachments: new SessionConnectorAttachmentStore(db, () => 'agent-a'),
-        }),
+        authorityCleanup,
       })
     );
 
@@ -197,6 +207,42 @@ describe('connectors router', () => {
     const replay = await request(fixtureServer).get(`/api/connectors/flows/${start.body.flowId}`);
     expect(replay.status).toBe(200);
     expect(replay.body).toEqual(poll.body);
+  });
+
+  it('runs the injected owner bar before direct connect and disconnect effects', async () => {
+    const provider = registry.resolveProvider('composio')!;
+    const startConnect = vi.spyOn(provider, 'startConnect');
+    const recordDisconnect = vi.spyOn(registry, 'recordDisconnect');
+    const app = express();
+    app.use(express.json());
+    app.use(
+      '/api/connectors',
+      createConnectorsRouter({
+        registry,
+        flowBindings: new ConnectorFlowBindings(),
+        authorityCleanup,
+        authorizeOwnerAction: (req, res) =>
+          Boolean(
+            resolveConnectorOperator(req, res, {
+              resolveOwner: () => ({ kind: 'local_install', installationId: 'install-a' }),
+              loginEnabled: () => false,
+              trustedOrigins: () => [],
+            })
+          ),
+      })
+    );
+
+    await request(fixtureTarget.mount(app))
+      .post('/api/connectors/composio/connect')
+      .set('Authorization', 'Bearer program-key')
+      .send({ toolkit: 'gmail' })
+      .expect(403);
+    await request(fixtureServer)
+      .delete('/api/connectors/accounts/connection-a')
+      .set('Authorization', 'Bearer program-key')
+      .expect(403);
+    expect(startConnect).not.toHaveBeenCalled();
+    expect(recordDisconnect).not.toHaveBeenCalled();
   });
 
   it('polls the exact provider object that started a flow after its registry slot is replaced', async () => {
@@ -389,6 +435,10 @@ describe('connectors router', () => {
       `/api/connectors/accounts/${encodeURIComponent(accountId)}`
     );
     expect(first.status).toBe(204);
+    expect(authorityCleanup.revokeConnection).toHaveBeenCalledWith({
+      connectionId: accountId,
+      reason: 'connection_removed',
+    });
     // Gone from the aggregate now.
     const after = await request(fixtureServer).get('/api/connectors/accounts');
     expect(after.body.accounts).toHaveLength(0);

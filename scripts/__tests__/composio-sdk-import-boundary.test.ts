@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const ALLOWED_COMPOSIO_SDK_ROOTS = [
-  'apps/server/src/services/connectors/providers/composio.ts',
   'apps/server/src/services/connectors/providers/composio/',
   'apps/site/src/lib/connectors/composio/',
 ] as const;

@@ -1,8 +1,8 @@
 /**
- * Connector Transport methods factory (HTTP adapter) — provider setup, the
- * connect flow, connected accounts, and session attach/detach (connector-
- * completion spec §Detailed Design 5). Talks to the Express
- * `/api/connectors/*` and `/api/sessions/:id/connectors` routes.
+ * Connector Transport methods factory (HTTP adapter) — provider setup,
+ * connected accounts, reviewed access, exact execution, usage, and read-only
+ * session status. The retained attach/detach methods call retired compatibility
+ * routes that direct operators to the Connections access editor.
  *
  * Everything here is reference-shaped: vendor secrets travel once (into
  * `putConnectorCredential`) and never come back; account rows carry the
@@ -24,6 +24,22 @@ import type {
   AgentConnectorAttachResult,
   AgentConnectorListResponse,
 } from '@dorkos/shared/connector-provider';
+import type {
+  ConnectionId,
+  ConnectorAccessibleConnectionsResponse,
+  ConnectorAccessibleOperationsResponse,
+  ConnectorExecutionResponse,
+  ConnectorManagementReviewCreateRequest,
+  ConnectorManagementReviewDecision,
+  ConnectorManagementReviewDecisionResult,
+  ConnectorManagementReviewItem,
+  ConnectorProgramExecutionRequest,
+  ConnectorReconciliationApplyRequest,
+  ConnectorReconciliationApplyResponse,
+  ConnectorReconciliationPreview,
+  ConnectorReconciliationPreviewRequest,
+  ConnectorUsagePage,
+} from '@dorkos/shared/connector-schemas';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 
 /** Create the connector methods bound to a base URL. */
@@ -138,6 +154,108 @@ export function createConnectorMethods(baseUrl: string) {
         baseUrl,
         `/agents/${encodeURIComponent(agentId)}/connectors/${encodeURIComponent(accountId)}`,
         { method: 'DELETE' }
+      );
+    },
+
+    getAccessibleConnectorConnections(
+      agentId: string
+    ): Promise<ConnectorAccessibleConnectionsResponse> {
+      return fetchJSON<ConnectorAccessibleConnectionsResponse>(
+        baseUrl,
+        `/connectors/accessible?agentId=${encodeURIComponent(agentId)}`
+      );
+    },
+
+    getAccessibleConnectorOperations(
+      agentId: string,
+      connectionId: ConnectionId
+    ): Promise<ConnectorAccessibleOperationsResponse> {
+      const qs = buildQueryString({ agentId });
+      return fetchJSON<ConnectorAccessibleOperationsResponse>(
+        baseUrl,
+        `/connectors/accessible/${encodeURIComponent(connectionId)}/operations${qs}`
+      );
+    },
+
+    executeConnector(input: ConnectorProgramExecutionRequest): Promise<ConnectorExecutionResponse> {
+      return fetchJSON<ConnectorExecutionResponse>(baseUrl, '/connectors/executions', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      });
+    },
+
+    getAgentConnectorUsage(input: {
+      agentId: string;
+      cursor?: string;
+      limit?: number;
+    }): Promise<ConnectorUsagePage> {
+      const qs = buildQueryString(input);
+      return fetchJSON<ConnectorUsagePage>(baseUrl, `/connectors/usage/agent${qs}`);
+    },
+
+    getOperatorConnectorUsage(input: {
+      connectionId?: ConnectionId;
+      cursor?: string;
+      limit?: number;
+    }): Promise<ConnectorUsagePage> {
+      const qs = buildQueryString(input);
+      return fetchJSON<ConnectorUsagePage>(baseUrl, `/connectors/usage/operator${qs}`);
+    },
+
+    previewConnectorReconciliation(
+      input: ConnectorReconciliationPreviewRequest
+    ): Promise<ConnectorReconciliationPreview> {
+      return fetchJSON<ConnectorReconciliationPreview>(
+        baseUrl,
+        '/connectors/reconciliation/previews',
+        { method: 'POST', body: JSON.stringify(input) }
+      );
+    },
+
+    applyConnectorReconciliation(
+      input: ConnectorReconciliationApplyRequest
+    ): Promise<ConnectorReconciliationApplyResponse> {
+      return fetchJSON<ConnectorReconciliationApplyResponse>(
+        baseUrl,
+        '/connectors/reconciliation/apply',
+        { method: 'POST', body: JSON.stringify(input) }
+      );
+    },
+
+    createConnectorManagementReview(
+      input: ConnectorManagementReviewCreateRequest
+    ): Promise<ConnectorManagementReviewItem> {
+      return fetchJSON<ConnectorManagementReviewItem>(baseUrl, '/connectors/reviews', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      });
+    },
+
+    getConnectorManagementReviews(
+      state?: 'pending' | 'resolved'
+    ): Promise<ConnectorManagementReviewItem[]> {
+      const qs = buildQueryString({ state });
+      return fetchJSON<{ reviews: ConnectorManagementReviewItem[] }>(
+        baseUrl,
+        `/connectors/reviews${qs}`
+      ).then((response) => response.reviews);
+    },
+
+    getConnectorManagementReview(reviewRequestId: string): Promise<ConnectorManagementReviewItem> {
+      return fetchJSON<ConnectorManagementReviewItem>(
+        baseUrl,
+        `/connectors/reviews/${encodeURIComponent(reviewRequestId)}`
+      );
+    },
+
+    resolveConnectorManagementReview(
+      reviewRequestId: string,
+      input: ConnectorManagementReviewDecision
+    ): Promise<ConnectorManagementReviewDecisionResult> {
+      return fetchJSON<ConnectorManagementReviewDecisionResult>(
+        baseUrl,
+        `/connectors/reviews/${encodeURIComponent(reviewRequestId)}/decision`,
+        { method: 'POST', body: JSON.stringify(input) }
       );
     },
   };

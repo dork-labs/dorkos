@@ -8,17 +8,19 @@
  *
  * ## Credentials
  *
- * Every `/api/*` path is gated when the instance has login turned on
- * (`config.auth.enabled`), and the only credentials that gate accepts are a
- * Better Auth session cookie (browsers) or a personal API key as
- * `Authorization: Bearer <key>`. The CLI has no cookie, so it presents a key,
+ * When login is on, the app-wide `/api/*` gate accepts a Better Auth session
+ * cookie (browsers) or a personal API key as `Authorization: Bearer <key>`.
+ * Individual routes can require that API-key program identity even when the
+ * app-wide gate is transparent. The CLI has no cookie, so it presents a key
  * resolved by {@link resolveApiKey}: `DORKOS_API_KEY` first, then a key saved in
  * `<dork home>/api-key`. Note the branch is on key PRESENCE, not on server state
  * (which the CLI cannot know before it calls): with no key set up nothing is sent,
- * and a key that IS set up rides along even to a login-off server, which ignores it.
+ * and a key that IS set up rides along on every call. Each route then decides
+ * whether that credential is required, accepted, or deliberately refused.
  *
- * The agent identity token (`X-DorkOS-Agent`) is attribution, not authorization:
- * it is resolved *after* the login gate, so it can never stand in for a key.
+ * The agent identity token (`X-DorkOS-Agent`) is independent from the API key:
+ * it identifies an inherited agent context and never stands in for a key. Some
+ * strict owner/program boundaries deliberately refuse calls that carry it.
  *
  * @module lib/api-client
  */
@@ -35,8 +37,8 @@ const API_KEY_ENV_VAR = 'DORKOS_API_KEY';
 /**
  * File under the dork home holding that same key, so it survives a new shell and
  * so agent subprocesses (which inherit the server's env, not the person's) can
- * reach a login-on instance. A sibling of `mcp-local-token`; the operator saves
- * their key here once, owner-only.
+ * reach API-key program routes and a login-on instance. A sibling of
+ * `mcp-local-token`; the operator saves their key here once, owner-only.
  */
 const API_KEY_FILE_NAME = 'api-key';
 
@@ -136,10 +138,9 @@ function readConfigPort(): number | null {
  * it is. The server resolves the token to an agent identity and attributes the
  * resulting Activity events to that agent.
  *
- * The header is purely additive: a server without the resolution middleware, an
- * older server, or any other HTTP endpoint simply ignores an unknown header, so
- * attaching it can never break a call. Absent the env var, nothing is sent and
- * the request is byte-identical to before.
+ * The header remains attached to every call so a command cannot silently escape
+ * its inherited agent context. A route may use that identity for attribution or
+ * refuse it at a stricter authority boundary. Absent the env var, nothing is sent.
  *
  * @returns The identity header, or an empty object when no token is present.
  */
@@ -161,8 +162,8 @@ function apiKeyFilePath(): string {
  * nothing). There is deliberately no config.json entry: raw secrets never live in
  * `config.json` (ADR-0315), so the key sits in its own file instead.
  *
- * Returns `null` when no key is available, which is the normal case: with login
- * off the server asks for no credential at all.
+ * Returns `null` when no key is available. Login-off read routes may accept that;
+ * routes requiring a program identity return their own credential error.
  *
  * @returns The trimmed key, or `null` when neither source has one.
  */
@@ -219,9 +220,9 @@ function buildUnauthorizedMessage(presentedKey: boolean): string {
  * Make a JSON HTTP call against the DorkOS server.
  *
  * Presents the personal API key from {@link resolveApiKey} as
- * `Authorization: Bearer <key>` when one is available, so the same command works
- * whether or not the instance has login turned on. A caller-supplied
- * `Authorization` header still wins (it is merged last).
+ * `Authorization: Bearer <key>` when one is available, so a route can verify a
+ * program identity or satisfy the login-on gate. A caller-supplied `Authorization`
+ * header still wins (it is merged last).
  *
  * Throws an {@link ApiError} on non-2xx responses. The error carries the
  * full parsed body so callers can read structured fields like

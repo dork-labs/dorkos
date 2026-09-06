@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import * as React from 'react';
 import {
@@ -20,6 +20,10 @@ import {
 // Mock useIsMobile to control desktop/mobile rendering.
 // The component imports from '../model' which resolves to the shared/model barrel.
 const mockUseIsMobile = vi.fn(() => false);
+const primitiveOpenChange = vi.hoisted(() => ({
+  dialog: undefined as ((open: boolean) => void) | undefined,
+  drawer: undefined as ((open: boolean) => void) | undefined,
+}));
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useIsMobile: () => mockUseIsMobile(),
@@ -27,8 +31,18 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
 
 // Mock Radix Dialog to render simple DOM elements for testing
 vi.mock('../dialog', () => ({
-  Dialog: ({ children, open }: { children: React.ReactNode; open?: boolean }) =>
-    open !== false ? <div data-testid="dialog-root">{children}</div> : null,
+  Dialog: ({
+    children,
+    open,
+    onOpenChange,
+  }: {
+    children: React.ReactNode;
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+  }) => {
+    primitiveOpenChange.dialog = onOpenChange;
+    return open !== false ? <div data-testid="dialog-root">{children}</div> : null;
+  },
   DialogTrigger: ({
     children,
     ...props
@@ -78,8 +92,18 @@ vi.mock('../dialog', () => ({
 
 // Mock Vaul Drawer to render simple DOM elements for testing
 vi.mock('../drawer', () => ({
-  Drawer: ({ children, open }: { children: React.ReactNode; open?: boolean }) =>
-    open !== false ? <div data-testid="drawer-root">{children}</div> : null,
+  Drawer: ({
+    children,
+    open,
+    onOpenChange,
+  }: {
+    children: React.ReactNode;
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+  }) => {
+    primitiveOpenChange.drawer = onOpenChange;
+    return open !== false ? <div data-testid="drawer-root">{children}</div> : null;
+  },
   DrawerTrigger: ({
     children,
     ...props
@@ -144,9 +168,46 @@ afterEach(() => {
 
 beforeEach(() => {
   mockUseIsMobile.mockReturnValue(false);
+  primitiveOpenChange.dialog = undefined;
+  primitiveOpenChange.drawer = undefined;
 });
 
 describe('ResponsiveDialog', () => {
+  it.each([
+    ['desktop', false, 'dialog'],
+    ['mobile', true, 'drawer'],
+  ] as const)(
+    'honors defaultOpen and can close and reopen on %s',
+    (_label, isMobile, primitive) => {
+      mockUseIsMobile.mockReturnValue(isMobile);
+      render(
+        <ResponsiveDialog defaultOpen>
+          <ResponsiveDialogContent>content</ResponsiveDialogContent>
+        </ResponsiveDialog>
+      );
+
+      expect(screen.getByTestId(`${primitive}-root`)).toBeInTheDocument();
+      act(() => primitiveOpenChange[primitive]?.(false));
+      expect(screen.queryByTestId(`${primitive}-root`)).not.toBeInTheDocument();
+      act(() => primitiveOpenChange[primitive]?.(true));
+      expect(screen.getByTestId(`${primitive}-root`)).toBeInTheDocument();
+    }
+  );
+
+  it('gives a controlled false open prop precedence over defaultOpen', () => {
+    const onOpenChange = vi.fn();
+    render(
+      <ResponsiveDialog open={false} defaultOpen onOpenChange={onOpenChange}>
+        <ResponsiveDialogContent>content</ResponsiveDialogContent>
+      </ResponsiveDialog>
+    );
+
+    expect(screen.queryByTestId('dialog-root')).not.toBeInTheDocument();
+    act(() => primitiveOpenChange.dialog?.(true));
+    expect(onOpenChange).toHaveBeenCalledWith(true);
+    expect(screen.queryByTestId('dialog-root')).not.toBeInTheDocument();
+  });
+
   it('renders Dialog on desktop', () => {
     mockUseIsMobile.mockReturnValue(false);
     render(
@@ -161,6 +222,38 @@ describe('ResponsiveDialog', () => {
   it('renders Drawer on mobile', () => {
     mockUseIsMobile.mockReturnValue(true);
     render(
+      <ResponsiveDialog open>
+        <ResponsiveDialogContent>content</ResponsiveDialogContent>
+      </ResponsiveDialog>
+    );
+    expect(screen.getByTestId('drawer-root')).toBeInTheDocument();
+    expect(screen.queryByTestId('dialog-root')).not.toBeInTheDocument();
+  });
+
+  it('keeps the open primitive stable across a breakpoint and adapts after close', () => {
+    mockUseIsMobile.mockReturnValue(false);
+    const { rerender } = render(
+      <ResponsiveDialog open>
+        <ResponsiveDialogContent>content</ResponsiveDialogContent>
+      </ResponsiveDialog>
+    );
+    expect(screen.getByTestId('dialog-root')).toBeInTheDocument();
+
+    mockUseIsMobile.mockReturnValue(true);
+    rerender(
+      <ResponsiveDialog open>
+        <ResponsiveDialogContent>content</ResponsiveDialogContent>
+      </ResponsiveDialog>
+    );
+    expect(screen.getByTestId('dialog-root')).toBeInTheDocument();
+    expect(screen.queryByTestId('drawer-root')).not.toBeInTheDocument();
+
+    rerender(
+      <ResponsiveDialog open={false}>
+        <ResponsiveDialogContent>content</ResponsiveDialogContent>
+      </ResponsiveDialog>
+    );
+    rerender(
       <ResponsiveDialog open>
         <ResponsiveDialogContent>content</ResponsiveDialogContent>
       </ResponsiveDialog>

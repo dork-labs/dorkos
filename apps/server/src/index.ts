@@ -1,4 +1,5 @@
 import path from 'path';
+import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
 import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
@@ -106,19 +107,42 @@ import { createConnectorsRouter } from './routes/connectors.js';
 import { createConnectorProvidersRouter } from './routes/connector-providers.js';
 import { createSessionConnectorsRouter } from './routes/session-connectors.js';
 import { createAgentConnectorsRouter } from './routes/agent-connectors.js';
+import { createConnectorExecutionRouter } from './routes/connector-execution.js';
+import {
+  createConnectorManagementRouter,
+  resolveConnectorOperator,
+} from './routes/connector-management.js';
 import { UnclaimedChatStore } from './services/relay/unclaimed-chat-store.js';
 import { createUnclaimedChatsRouter } from './routes/unclaimed-chats.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
 import { ConnectorFlowBindings } from './services/connectors/flow-bindings.js';
 import { ConnectorProviderBootstrapper } from './services/connectors/bootstrap.js';
-import { NangoProxyMcp } from './services/connectors/providers/nango-proxy-mcp.js';
-import { NANGO_PROVIDER_TYPE } from './services/connectors/providers/nango.js';
 import { SessionConnectorService } from './services/connectors/session-exposure.js';
 import {
   AgentConnectorAttachmentStore,
   SessionConnectorAttachmentStore,
 } from './services/connectors/attachment-store.js';
 import { registerConnectorAgentCleanup } from './services/connectors/agent-access-cleanup.js';
+import { ConnectorAuthorityCleanupService } from './services/connectors/authority-cleanup-service.js';
+import { ConnectorManagementActionService } from './services/connectors/management-action-service.js';
+import { ConnectorManagementReviewService } from './services/connectors/management-review-service.js';
+import { ConnectorReconciliationService } from './services/connectors/reconciliation-service.js';
+import { ConnectorExecutionAuthorizationService } from './services/connectors/execution/authorization-service.js';
+import { ConnectorExecutionBroker } from './services/connectors/execution/execution-broker.js';
+import { ConnectorUsageStore } from './services/connectors/execution/usage-store.js';
+import { ConnectorAccessQueryService } from './services/connectors/execution/access-query-service.js';
+import { ConnectorProgramPrincipalService } from './services/connectors/principal/program-principal-service.js';
+import type { ConnectorOwnerAuthority } from './services/connectors/principal/server-principal.js';
+import { ConnectorRuntimePrincipalService } from './services/connectors/principal/runtime-principal-service.js';
+import { CanonicalConnectorRuntimeAuthorityResolver } from './services/connectors/principal/runtime-authority-resolver.js';
+import { createConnectorRuntimeMcpServer } from './services/connectors/execution/runtime-mcp-server.js';
+import { isConnectorRuntimeCapabilityId } from './services/connectors/runtime-capability-scope.js';
+import {
+  startConnectorRuntimeMcpListener,
+  type ConnectorRuntimeMcpListener,
+} from './services/runtimes/connector-mcp/index.js';
+import type { ConnectorRuntimeToolConsumer } from './services/runtimes/connector-tools.js';
+import { getOrCreateInstanceId } from './lib/instance-id.js';
 import {
   toSdkMcpServers,
   mergeSessionMcpServers,
@@ -412,6 +436,20 @@ let meshCore: MeshCore | undefined;
 let agentMcpServerService: AgentMcpServerService | undefined;
 let agentMcpOAuthService: AgentMcpOAuthService | undefined;
 let extensionManager: ExtensionManager | undefined;
+let connectorRuntimeMcpListener: ConnectorRuntimeMcpListener | undefined;
+
+function connectorRuntimeConsumer(runtime: unknown): ConnectorRuntimeToolConsumer | undefined {
+  if (
+    typeof runtime === 'object' &&
+    runtime !== null &&
+    'setConnectorRuntimeTools' in runtime &&
+    typeof (runtime as { setConnectorRuntimeTools?: unknown }).setConnectorRuntimeTools ===
+      'function'
+  ) {
+    return runtime as ConnectorRuntimeToolConsumer;
+  }
+  return undefined;
+}
 /**
  * Every registered agent that has a project on disk, as the legacy migration
  * wants them.
@@ -646,10 +684,21 @@ async function start() {
   // can reconcile any agent away. The unregister callback is installed as soon
   // as MeshCore exists below, before its first startup pass. Provider bootstrap
   // and connector routes remain later in startup, after their other dependencies.
-  const connectorRegistry = new ConnectorRegistry({ db });
+  const connectorInstallationId = await getOrCreateInstanceId(dorkHome);
+  const connectorOwner = {
+    kind: 'local_install',
+    installationId: connectorInstallationId,
+  } as const;
+  const connectorRegistry = new ConnectorRegistry({
+    db,
+    configuredOwner: { ownerKind: 'local_install', ownerId: connectorInstallationId },
+  });
+  const connectorAuthorityCleanup = new ConnectorAuthorityCleanupService({ db });
+  const connectorBootEpoch = randomUUID();
   const agentConnectorAttachmentStore = new AgentConnectorAttachmentStore(db);
   const sessionConnectorAttachmentStore = new SessionConnectorAttachmentStore(db);
   const sessionConnectorService = new SessionConnectorService({
+    db,
     registry: connectorRegistry,
     agentAttachments: agentConnectorAttachmentStore,
     sessionAttachments: sessionConnectorAttachmentStore,
@@ -1603,7 +1652,7 @@ async function start() {
     registerConnectorAgentCleanup({
       mesh: meshCore,
       registry: connectorRegistry,
-      sessions: sessionConnectorService,
+      authorityCleanup: connectorAuthorityCleanup,
       logger,
     });
 
@@ -2163,19 +2212,9 @@ async function start() {
   // ONE flow → provider binding map for the whole process, shared by the REST
   // router and the agent-facing connector capabilities so a connect flow
   // started on either surface can be polled on the other.
-  const connectorFlowBindings = new ConnectorFlowBindings();
-  // The Nango Proxy→MCP wrapper (DOR-415): per-account bearer-gated MCP
-  // endpoints over Nango's credentialed proxy, mounted below beside the
-  // connector routes. Created before the bootstrapper because every Nango
-  // provider instance (boot and reload alike) exposes tools through it.
-  // Minted from the DIAL form of the bind host, not `127.0.0.1`: the server
-  // binds env.DORKOS_HOST (default `localhost`), which Node resolves to ONE
-  // family — on hosts where that is ::1, a 127.0.0.1 URL is connection-refused
-  // (proven by the connections browser spec against the test-mode provider).
-  // `localDialHost` also keeps the URL honest where the bind host itself is
-  // not dialable: Docker's 0.0.0.0 wildcard, and bare IPv6 literals.
-  const localOrigin = `http://${localDialHost(env.DORKOS_HOST)}:${PORT}`;
-  const nangoProxyMcp = new NangoProxyMcp({ localOrigin });
+  const connectorFlowBindings = new ConnectorFlowBindings(undefined, undefined, (provider) =>
+    connectorRegistry.providerExecutionConfigGeneration(provider)
+  );
   // Provider lifecycle is owned by ONE place (connector-completion spec §1):
   // boot registers raw-MCP always (from `connectors.rawMcpServers` config; the
   // empty list is valid) plus Composio/Nango when configured — silent-null when
@@ -2186,6 +2225,7 @@ async function start() {
   // exercise the save-key step; its scripted provider is dynamic-imported
   // inside the factory (same pattern as TestModeRuntime above) so the
   // production module graph never loads it.
+  const localOrigin = `http://${localDialHost(env.DORKOS_HOST)}:${PORT}`;
   const connectorBootstrapper = new ConnectorProviderBootstrapper({
     registry: connectorRegistry,
     credentials: credentialProvider,
@@ -2193,7 +2233,6 @@ async function start() {
       ...(env.NANGO_BASE_URL !== undefined && { baseUrl: env.NANGO_BASE_URL }),
       ...(env.NANGO_ENCRYPTION_KEY !== undefined && { encryptionKey: env.NANGO_ENCRYPTION_KEY }),
     }),
-    nangoProxy: nangoProxyMcp,
     rawMcpServers: () =>
       configManager.get('connectors').rawMcpServers.map((server) => ({
         slug: server.slug,
@@ -2207,21 +2246,91 @@ async function start() {
             await import('./services/connectors/providers/test-mode.js');
           return maybeCreateTestModeConnectorProvider({
             credentials: credentialProvider,
-            // Same dial origin as the Nango proxy — see localOrigin above.
+            // Test-mode connect flows use the actual dial origin of this server.
             localOrigin,
           });
         },
       },
     }),
-    // Deleting a key (or a reload that refuses) revokes LIVE surfaces too:
-    // cached session attachments stop injecting the provider's tool servers,
-    // and the Nango proxy forgets its per-account tokens so the endpoint 401s.
-    onUnregistered: (providerInstanceId, providerType) => {
-      sessionConnectorService.invalidateProviderInstance(providerInstanceId);
-      if (providerType === NANGO_PROVIDER_TYPE) nangoProxyMcp.clear();
-    },
   });
   await connectorBootstrapper.registerBootProviders();
+  const connectorManagementActions = new ConnectorManagementActionService({
+    db,
+    registry: connectorRegistry,
+    flowBindings: connectorFlowBindings,
+    authorityCleanup: connectorAuthorityCleanup,
+  });
+  const connectorManagementReviews = new ConnectorManagementReviewService({
+    db,
+    registry: connectorRegistry,
+    flowBindings: connectorFlowBindings,
+    actions: connectorManagementActions,
+    bootEpoch: connectorBootEpoch,
+    resolveAgent: (_owner, agentId) => {
+      if (!meshCore?.getProjectPath(agentId)) return undefined;
+      const agent = meshCore.get(agentId);
+      return agent ? { displayName: agent.displayName ?? agent.name } : undefined;
+    },
+  });
+  const connectorReconciliation = new ConnectorReconciliationService({
+    db,
+    registry: connectorRegistry,
+    bootEpoch: connectorBootEpoch,
+    listAgents: () =>
+      (meshCore?.list() ?? []).map((agent) => ({
+        agentId: agent.id,
+        displayName: agent.displayName ?? agent.name,
+      })),
+  });
+  const connectorUsage = new ConnectorUsageStore(db);
+  const recoveredConnectorAttempts = connectorUsage.recoverPending(new Date().toISOString());
+  if (recoveredConnectorAttempts > 0) {
+    logger.warn('[Connectors] Recovered interrupted execution attempts', {
+      count: recoveredConnectorAttempts,
+    });
+  }
+  const connectorOwnsAgent = (owner: ConnectorOwnerAuthority, agentId: string): boolean =>
+    owner.kind === connectorOwner.kind &&
+    owner.kind === 'local_install' &&
+    owner.installationId === connectorOwner.installationId &&
+    meshCore?.getProjectPath(agentId) !== undefined;
+  const connectorAuthorization = new ConnectorExecutionAuthorizationService(db, connectorRegistry, {
+    ownsAgent: connectorOwnsAgent,
+  });
+  const connectorProgramPrincipals = new ConnectorProgramPrincipalService(db);
+  const connectorRuntimePrincipals = meshCore
+    ? new ConnectorRuntimePrincipalService({
+        db,
+        authority: new CanonicalConnectorRuntimeAuthorityResolver({
+          sessions: runtimeRegistry,
+          mesh: meshCore,
+          owner: connectorOwner,
+        }),
+      })
+    : undefined;
+  if (connectorRuntimePrincipals) await connectorRuntimePrincipals.initializeBoot();
+  const connectorAccess = new ConnectorAccessQueryService(
+    db,
+    {
+      ownsAgent: connectorOwnsAgent,
+    },
+    connectorRegistry,
+    {
+      revalidatePrincipal: async (principal) =>
+        connectorRuntimePrincipals?.revalidatePrincipal(principal) ?? false,
+    }
+  );
+  const connectorBroker = new ConnectorExecutionBroker(connectorAuthorization, connectorUsage, {
+    revalidate: (principal) => {
+      if (principal.claims.kind === 'runtime') {
+        return connectorRuntimePrincipals?.revalidatePrincipal(principal) ?? false;
+      }
+      if (principal.claims.kind === 'program') {
+        return connectorProgramPrincipals.revalidate(principal);
+      }
+      return false;
+    },
+  });
   // A brand-new session is rekeyed to its canonical id mid-first-turn. Move any
   // connector attach set across the same remap so tools attached under the
   // request id are not stranded on the pre-remap id (mirrors the projector +
@@ -2337,10 +2446,6 @@ async function start() {
     }
   }
   if (claudeRuntime) {
-    // Connector attachment hydration is claude-code-only today, mirroring
-    // `setMcpServerFactory` below — codex/opencode don't implement the MCP
-    // seam this feeds (connection-scoping spec §Non-goals).
-    claudeRuntime.setSessionConnectors(sessionConnectorService);
     mcpToolDeps = {
       transcriptReader: claudeRuntime.getTranscriptReader(),
       defaultCwd: env.DORKOS_DEFAULT_CWD ?? process.cwd(),
@@ -2381,8 +2486,8 @@ async function start() {
       ...(notifyDm && { notifyDm }),
     };
     claudeRuntime.setMcpServerFactory((session, sessionId) =>
-      // Managed servers first, connectors second, `dorkos` last so it can never
-      // be shadowed — the ordering guarantee lives in `mergeSessionMcpServers`
+      // Managed servers first and `dorkos` last so it can never be shadowed —
+      // the ordering guarantee lives in `mergeSessionMcpServers`
       // (spec `mcp-server-management` §6).
       mergeSessionMcpServers({
         // The agent's ENABLED managed servers, injected inline so no `.mcp.json`
@@ -2392,14 +2497,6 @@ async function start() {
           session.cwd && agentMcpServerService
             ? toSdkMcpServers(agentMcpServerService.injectableServersForCwd(session.cwd))
             : {},
-        // Connected accounts explicitly attached to this session become named
-        // MCP tool servers (`gmail-personal`, `gmail-work`). The connection
-        // details are provider-neutral; the SDK-shape conversion is confined to
-        // the claude-code runtime. Null-branch accounts (expired/revoked) are
-        // skipped and surfaced via the session connector status.
-        connectors: toSdkMcpServers(
-          sessionConnectorService.mcpServersForSession(sessionId).servers
-        ),
         // `marketplaceMcpDeps` is populated later in boot (the relay-enabled
         // marketplace-wiring block). This factory closure runs per query, so it
         // reads the captured binding lazily — by the time any session dispatches
@@ -2639,38 +2736,53 @@ async function start() {
       credentialStore,
     })
   );
-  // The Nango Proxy→MCP endpoint (DOR-415): stateless MCP per request, gated by
-  // per-account process-scoped bearer tokens minted at toolServerForAccount
-  // time. Origin validation rides in front for the same DNS-rebinding posture
-  // as /mcp; a dedicated rate limiter is deliberately omitted — the endpoint is
-  // unreachable without a minted bearer, so its callers are DorkOS's own
-  // runtimes, not the open network.
-  app.use('/api/connectors/nango/mcp', validateMcpOrigin, nangoProxyMcp.createRouter());
+  app.use(
+    '/api/connectors',
+    createConnectorManagementRouter({
+      registry: connectorRegistry,
+      reviews: connectorManagementReviews,
+      reconciliation: connectorReconciliation,
+      resolveOwner: () => connectorOwner,
+      loginEnabled: () => configManager.get('auth').enabled,
+    })
+  );
+  const authorizeConnectorOwnerAction = (
+    req: Parameters<typeof resolveConnectorOperator>[0],
+    res: Parameters<typeof resolveConnectorOperator>[1]
+  ) =>
+    Boolean(
+      resolveConnectorOperator(req, res, {
+        resolveOwner: () => connectorOwner,
+        loginEnabled: () => configManager.get('auth').enabled,
+      })
+    );
   app.use(
     '/api/connectors',
     createConnectorsRouter({
       registry: connectorRegistry,
       flowBindings: connectorFlowBindings,
-      sessionConnectors: sessionConnectorService,
+      authorityCleanup: connectorAuthorityCleanup,
+      authorizeOwnerAction: authorizeConnectorOwnerAction,
       ...(adapterManager && { relay: adapterManager }),
     })
   );
-  // The attach/detach consent routes ride under `/api/sessions` (a sibling of
-  // the static sessions router; the `/:id/connectors[...]` paths do not collide
-  // with its single-segment `/:id` routes). The binder itself was created up
-  // front so the MCP factory closure could reference it.
-  app.use('/api/sessions', createSessionConnectorsRouter({ service: sessionConnectorService }));
-  // Standing agent-level attach/detach (connection-scoping spec §Part 1) — a
-  // sibling of `/api/agents` the same way the session route is a sibling of
-  // `/api/sessions`, mounted here (rather than inside `createAgentsRouter`)
-  // because it needs the connector registry/store first and foremost.
+  // The retained session connector route reports durable override state. Its
+  // mutation methods now return 410 and direct the operator to Connections.
+  app.use(
+    '/api/sessions',
+    createSessionConnectorsRouter({
+      service: sessionConnectorService,
+      authorizeOwnerAction: authorizeConnectorOwnerAction,
+    })
+  );
+  // The retained agent connector route reports migration-era standing access.
+  // Its mutation methods now return 410 and direct the operator to Connections.
   app.use(
     '/api/agents',
     createAgentConnectorsRouter({
       store: agentConnectorAttachmentStore,
       registry: connectorRegistry,
-      sessions: sessionConnectorService,
-      ...(meshCore && { meshCore }),
+      authorizeOwnerAction: authorizeConnectorOwnerAction,
     })
   );
   mountedRouters.push('connectors');
@@ -3476,14 +3588,17 @@ async function start() {
       logger,
       ...(mcpToolDeps && { operatorDeps: mcpToolDeps }),
       ...(marketplaceMcpDeps && { marketplaceDeps: marketplaceMcpDeps }),
-      // The connector domain (connector-completion spec §2): seven agent-facing
-      // tools over the always-constructed connector services. The flow bindings
-      // are the SAME instance the REST router holds — one map, both surfaces.
+      // Ordinary MCP surfaces expose only provider-neutral discovery. Private
+      // account management stays in owner routes, while exact operation calls
+      // use the authenticated internal connector listener below.
       connectorDeps: {
         registry: connectorRegistry,
-        sessionConnectors: sessionConnectorService,
-        flowBindings: connectorFlowBindings,
         ...(adapterManager && { relay: adapterManager }),
+      },
+      connectorExecutionDeps: {
+        authorization: connectorAuthorization,
+        broker: connectorBroker,
+        access: connectorAccess,
       },
       // The MCP-server-management domain — its deps are built above so the
       // `mcp.import` fallback closure narrows `meshCore`.
@@ -3533,6 +3648,32 @@ async function start() {
     grants: manifestToolGroupGrants(),
     onAttempt: createCapabilityGateAuditObserver(activityService),
   });
+  if (connectorRuntimePrincipals) {
+    connectorRuntimeMcpListener = await startConnectorRuntimeMcpListener({
+      principals: connectorRuntimePrincipals,
+      serverFactory: (principal) => createConnectorRuntimeMcpServer(capabilityRegistry!, principal),
+    });
+    for (const runtime of runtimeRegistry.listRuntimes()) {
+      connectorRuntimeConsumer(runtime)?.setConnectorRuntimeTools({
+        principals: connectorRuntimePrincipals,
+        listenerUrl: connectorRuntimeMcpListener.url,
+        isConnectorCapabilityId: isConnectorRuntimeCapabilityId,
+      });
+    }
+    logger.info('[Connectors] Runtime execution listener initialized');
+  }
+  app.use(
+    '/api/connectors',
+    createConnectorExecutionRouter({
+      connectorRegistry,
+      capabilities: capabilityRegistry,
+      authorization: connectorAuthorization,
+      access: connectorAccess,
+      programPrincipals: connectorProgramPrincipals,
+      resolveOwner: () => connectorOwner,
+      loginEnabled: () => configManager.get('auth').enabled,
+    })
+  );
   // GET /api/capabilities/catalog — the self-description catalog. (The bare
   // `/api/capabilities` path already serves the per-runtime capability matrix, a
   // different, client-facing contract; the registry catalog lives one segment
@@ -3759,6 +3900,8 @@ async function start() {
 // Extracted so the admin router can invoke it before a restart.
 async function shutdownServices() {
   logger.info('[DorkOS] shutting down services');
+  await connectorRuntimeMcpListener?.close();
+  connectorRuntimeMcpListener = undefined;
   if (healthCheckInterval) {
     clearInterval(healthCheckInterval);
   }

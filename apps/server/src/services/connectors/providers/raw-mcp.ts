@@ -1,12 +1,11 @@
 /**
  * The raw-MCP baseline {@link ConnectorProvider} — the single-account,
  * no-custody adapter that connects a DorkOS agent to a preconfigured remote MCP
- * server. It is the first connector to land because it exercises the whole
- * `ConnectorProvider` seam against machinery that already exists
- * (`McpAppServerConnection` / the runtime MCP seam), with no vendor dependency.
+ * server. It retains the configured transport inside the provider boundary for
+ * connection probes; exact operation execution remains typed unsupported.
  *
  * Capabilities: `type: 'mcp'`, `supportsMultiAccount: false`,
- * `custody: 'external'`, `exposesOverMcp: true`. Custody is `external` because
+ * `custody: 'external'`. Custody is `external` because
  * the gateway keeps no tokens. This adapter neither runs OAuth nor persists a
  * secret. Each configured server maps to at most one account.
  *
@@ -15,7 +14,6 @@
  *
  * @module services/connectors/providers/raw-mcp
  */
-import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type {
   ConnectorCapabilities,
   ConnectorExternalAccountRef,
@@ -26,6 +24,7 @@ import type {
   ConnectStart,
   ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
+import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type { ConnectorProviderExecuteCommand } from '@dorkos/shared/connector-schemas';
 import { legacyDefaultProviderInstanceId } from '../legacy-connection-migration.js';
 import { runProbe, type ProbeOutcome } from '../../mesh/agent-mcp-probe.js';
@@ -39,7 +38,7 @@ export interface RawMcpServerDescriptor {
   slug: string;
   /** Human-facing name shown in the connect picker. */
   displayName: string;
-  /** The runtime-neutral connection details injected once connected. */
+  /** The remote connection used only inside this provider's probe boundary. */
   connection: RemoteMcpConnection;
   /** How the preconfigured connection authenticates. Defaults to `'none'`. */
   authKind?: ConnectorToolkit['authKind'];
@@ -49,14 +48,6 @@ export interface RawMcpServerDescriptor {
 export interface RawMcpConnectorProviderOpts {
   /** The remote MCP servers this adapter exposes as toolkits. */
   servers: RawMcpServerDescriptor[];
-  /**
-   * Liveness probe for a configured server — when it resolves falsy,
-   * `toolServerForAccount` returns `null` (the server is momentarily
-   * unreachable). Defaults to always-reachable.
-   *
-   * @param slug - The server slug being probed.
-   */
-  isReachable?: (slug: string) => boolean | Promise<boolean>;
   /** Stable configured provider instance id. */
   instanceId?: ConnectorProviderInstanceId;
   /**
@@ -110,7 +101,6 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
   readonly type = 'mcp';
 
   private readonly _servers = new Map<string, RawMcpServerDescriptor>();
-  private readonly _isReachable: (slug: string) => boolean | Promise<boolean>;
   private readonly _probe: (connection: RemoteMcpConnection) => Promise<ProbeOutcome>;
   /** Accounts keyed by their opaque id; the derived registry, held in memory. */
   private readonly _accounts = new Map<string, ProviderConnectedAccount>();
@@ -128,7 +118,6 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
       opts.instanceId ??
       (legacyDefaultProviderInstanceId(this.type) as ConnectorProviderInstanceId);
     for (const server of opts.servers) this._servers.set(server.slug, server);
-    this._isReachable = opts.isReachable ?? (() => true);
     this._probe =
       opts.probe ??
       ((connection) => runProbe({ ...connection, headers: connection.headers ?? {} }));
@@ -140,7 +129,6 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
       type: this.type,
       supportsMultiAccount: false,
       custody: 'external',
-      exposesOverMcp: true,
       capabilities: {
         catalog: { status: 'available' },
         authentication: { status: 'available' },
@@ -151,7 +139,7 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
         },
         execution: {
           status: 'unsupported',
-          reason: 'Raw MCP remains on the compatibility exposure seam until P2.',
+          reason: 'Raw MCP does not expose trusted exact-revision operations to the broker.',
         },
         triggers: { status: 'unsupported', reason: 'Raw MCP trigger discovery is unavailable.' },
       },
@@ -159,7 +147,13 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
     };
   }
 
-  async listToolkitPage(request: { cursor?: string; query?: string; limit: number }) {
+  async listToolkitPage(request: {
+    cursor?: string;
+    query?: string;
+    limit: number;
+    signal: AbortSignal;
+  }) {
+    request.signal.throwIfAborted();
     const all = (await this.listToolkits()).filter((toolkit) =>
       request.query ? toolkit.displayName.toLowerCase().includes(request.query.toLowerCase()) : true
     );
@@ -174,7 +168,22 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
     };
   }
 
-  listOperationSchemas(_request: { toolkit: string; cursor?: string; limit: number }) {
+  async resolveToolkitVersion(_toolkit: string, _signal: AbortSignal) {
+    _signal.throwIfAborted();
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Raw MCP does not expose a trusted immutable toolkit version.',
+    });
+  }
+
+  async listOperationSchemas(_request: {
+    toolkit: string;
+    toolkitVersion: string;
+    cursor?: string;
+    limit: number;
+    signal: AbortSignal;
+  }) {
+    _request.signal.throwIfAborted();
     return Promise.resolve({
       status: 'unsupported' as const,
       reason: 'Raw MCP has no trustworthy operation schema catalog.',
@@ -184,7 +193,7 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
   execute(_command: ConnectorProviderExecuteCommand) {
     return Promise.resolve({
       status: 'unsupported' as const,
-      reason: 'Raw MCP remains on the compatibility exposure seam until P2.',
+      reason: 'Raw MCP does not expose trusted exact-revision operations to the broker.',
     });
   }
 
@@ -322,19 +331,5 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
       }
     }
     return Promise.resolve();
-  }
-
-  async toolServerForAccount(
-    accountId: ConnectorExternalAccountRef
-  ): Promise<McpAppServerConnection | null> {
-    const account = this._accounts.get(accountId);
-    if (!account || account.status !== 'active') return null;
-    const server = this._servers.get(account.toolkit);
-    if (!server) return null;
-    // Null (never a throw) when the remote server is momentarily unreachable —
-    // the surfaced per-account warning path (spec §Detailed Design 3).
-    const reachable = await this._isReachable(server.slug);
-    if (!reachable) return null;
-    return server.connection;
   }
 }

@@ -940,6 +940,21 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getAgentConnectors: vi.fn().mockResolvedValue([]),
     attachAgentConnector: vi.fn(),
     detachAgentConnector: vi.fn().mockResolvedValue(undefined),
+    getAccessibleConnectorConnections: vi.fn().mockResolvedValue({ connections: [] }),
+    getAccessibleConnectorOperations: vi
+      .fn()
+      .mockImplementation((_agentId: string, connectionId: string) =>
+        Promise.resolve({ connectionId, operations: [] })
+      ),
+    executeConnector: vi.fn(),
+    getAgentConnectorUsage: vi.fn().mockResolvedValue({ items: [] }),
+    getOperatorConnectorUsage: vi.fn().mockResolvedValue({ items: [] }),
+    previewConnectorReconciliation: vi.fn(),
+    applyConnectorReconciliation: vi.fn(),
+    createConnectorManagementReview: vi.fn(),
+    getConnectorManagementReviews: vi.fn().mockResolvedValue([]),
+    getConnectorManagementReview: vi.fn(),
+    resolveConnectorManagementReview: vi.fn(),
     // Managed per-agent MCP servers (spec `mcp-server-management`, DOR-891).
     // The list reads honest-empty; the writes must be stated by a test that
     // exercises them (an add can resolve to `{ status: 'approval_required' }`).

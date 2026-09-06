@@ -3,12 +3,12 @@
  * {@link ./composio.js | ComposioConnectorProvider} and Composio's cloud API.
  *
  * The provider depends only on the narrow {@link ComposioHttpClient} interface,
- * expressed in Composio-flavored domain shapes (a nanoid connected-account id,
- * an `ACTIVE`/`INITIALIZING` status, a Tool Router MCP url). The default
+ * expressed in Composio-flavored domain shapes (a nanoid connected-account id
+ * and an `ACTIVE`/`INITIALIZING` status). The default
  * {@link FetchComposioHttpClient} maps those operations onto Composio's v3.1
  * REST API with the API key on every request. Tests inject a fake client, so
- * the provider's behavior (id mapping, connect flow, the null branch, the MCP
- * connection shape) is verified hermetically with no network.
+ * the provider's account mapping and connect behavior are verified hermetically
+ * with no network.
  *
  * **Verification status (first real API contact, DOR-703 follow-up).** The
  * endpoint paths, request bodies, and response envelopes below were re-derived
@@ -122,18 +122,6 @@ export interface ComposioConnectionState {
 }
 
 /**
- * A Tool Router MCP session for one account — the session's MCP url plus any
- * auth headers. `null` from {@link ComposioHttpClient.mcpSessionForAccount}
- * means the account has no live session right now (the surfaced null branch).
- */
-export interface ComposioMcpSession {
-  /** The Tool Router MCP endpoint url for the session. */
-  url: string;
-  /** Auth headers to send with the MCP connection, when the url is not self-authorizing. */
-  headers?: Record<string, string>;
-}
-
-/**
  * The narrow Composio operations the provider needs. The single seam a live
  * verification swaps; the provider is written entirely against this interface.
  */
@@ -174,13 +162,6 @@ export interface ComposioHttpClient {
    * @param connectedAccountId - The raw nanoid to revoke.
    */
   deleteConnectedAccount(connectedAccountId: string): Promise<void>;
-  /**
-   * Mint (or fetch) the Tool Router MCP session for one account, or `null` when
-   * the account has no live session (unusable status, no url minted).
-   *
-   * @param connectedAccountId - The raw nanoid to expose over MCP.
-   */
-  mcpSessionForAccount(connectedAccountId: string): Promise<ComposioMcpSession | null>;
 }
 
 /** Construction options for {@link FetchComposioHttpClient}. */
@@ -282,6 +263,7 @@ export class FetchComposioHttpClient implements ComposioHttpClient {
     // max-accounts field (both wrong in the original spike-derived shape).
     // Composio hosts 800+ toolkits, so the listing paginates by cursor.
     const toolkits: ComposioToolkitInfo[] = [];
+    const seenCursors = new Set<string>();
     let cursor: string | undefined;
     for (let page = 0; page < MAX_TOOLKIT_PAGES; page += 1) {
       const query = new URLSearchParams({ limit: String(TOOLKIT_PAGE_LIMIT) });
@@ -298,10 +280,18 @@ export class FetchComposioHttpClient implements ComposioHttpClient {
           ...(authScheme && { authScheme }),
         });
       }
-      if (!body.next_cursor) break;
-      cursor = body.next_cursor;
+      const nextCursor = body.next_cursor ?? undefined;
+      if (!nextCursor) return toolkits;
+      if (nextCursor === cursor || seenCursors.has(nextCursor)) {
+        throw new ComposioApiError(502, 'Composio repeated a toolkit catalog cursor.');
+      }
+      seenCursors.add(nextCursor);
+      cursor = nextCursor;
     }
-    return toolkits;
+    throw new ComposioApiError(
+      502,
+      `Composio toolkit catalog exceeds the ${MAX_TOOLKIT_PAGES}-page safety limit.`
+    );
   }
 
   async initiateConnection(input: {
@@ -374,44 +364,6 @@ export class FetchComposioHttpClient implements ComposioHttpClient {
       );
     } catch (err) {
       if (err instanceof ComposioApiError && err.status === 404) return;
-      throw err;
-    }
-  }
-
-  async mcpSessionForAccount(connectedAccountId: string): Promise<ComposioMcpSession | null> {
-    // VERIFIED-DOCS (2026-07-29): POST /api/v3.1/tool_router/session
-    //   { user_id, toolkits: [slug], connected_accounts: { [slug]: [nanoid] } }
-    // → { session_id, mcp: { type, url } }. The `connected_accounts` map pins
-    // the session to THIS account, which is what makes two Gmail accounts two
-    // addressable tool servers. When Composio cannot mint a session for the
-    // account (404, or a session with no url), this resolves null — the
-    // surfaced null branch, never a throw.
-    try {
-      const account = await this._request<RawConnectedAccount>(
-        'GET',
-        `/api/v3.1/connected_accounts/${encodeURIComponent(connectedAccountId)}`
-      );
-      const toolkit = typeof account.toolkit === 'string' ? account.toolkit : account.toolkit?.slug;
-      if (!toolkit || normalizeStatus(account.status) !== 'ACTIVE') return null;
-
-      const session = await this._request<{ mcp?: { url?: string } }>(
-        'POST',
-        '/api/v3.1/tool_router/session',
-        {
-          user_id: this._userId,
-          toolkits: [toolkit],
-          connected_accounts: { [toolkit]: [connectedAccountId] },
-        }
-      );
-      const url = session.mcp?.url;
-      if (!url) return null;
-      // The session url is minted per user/session; the key rides under
-      // whichever header kind validated for this instance. VERIFIED-DOCS:
-      // header carriage is the SDK's `session.mcp.headers` behavior.
-      return { url, headers: this._authHeaders(this._headerKind) };
-    } catch (err) {
-      // A 404 (no session for this account) degrades to null, not an error.
-      if (err instanceof ComposioApiError && err.status === 404) return null;
       throw err;
     }
   }

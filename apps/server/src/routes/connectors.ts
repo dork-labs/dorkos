@@ -9,21 +9,17 @@
  * - `GET  /api/connectors/accounts?toolkit=<slug>` — aggregated accounts.
  * - `DELETE /api/connectors/accounts/:accountId` — disconnect (idempotent).
  *
- * SECURITY (spec §Security Considerations): the server-only `provider` field is
- * stripped from the accounts DTO, and no `McpAppServerConnection` (stdio
- * command/env or session URL) ever travels to the client — these routes carry
- * only reference-shaped account metadata and connect statuses.
+ * SECURITY (spec §Security Considerations): the server-only provider identity
+ * and private account reference are stripped from public DTOs. These owner-only
+ * routes carry reference-shaped account metadata and connect status only.
  *
- * The router holds no I/O of its own; every real collaborator is injected, so
- * it is driven with fakes in tests and the real singletons in `index.ts`. The
- * bounded recent-flow bindings live in the injected
- * {@link ConnectorFlowBindings}, SHARED with the agent-facing connector
- * capabilities — one map, so a flow started in chat can be polled here and vice
- * versa (connector-completion spec §Detailed Design 2/3).
+ * The router holds no I/O of its own; every collaborator is injected for
+ * hermetic route tests. Its bounded flow map is shared with durable owner-review
+ * handling so an approved connect has one idempotent poll path.
  *
  * @module routes/connectors
  */
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
 import { parseBody } from '../lib/route-utils.js';
@@ -31,7 +27,7 @@ import { custodyDisclosure } from '../services/connectors/custody-disclosure.js'
 import { recommendConnector, type RelayAdapterCatalog } from '../services/connectors/routing.js';
 import type { ConnectorRegistry } from '../services/connectors/registry.js';
 import type { ConnectorFlowBindings } from '../services/connectors/flow-bindings.js';
-import type { SessionConnectorService } from '../services/connectors/session-exposure.js';
+import type { ConnectorAuthorityCleanupPort } from '../services/connectors/authority-cleanup-port.js';
 import { toPublicAccount } from '../services/connectors/public-account.js';
 
 /** Constructor dependencies for {@link createConnectorsRouter}. */
@@ -42,13 +38,10 @@ export interface ConnectorsRouterDeps {
   flowBindings: ConnectorFlowBindings;
   /** Optional relay adapter catalog for relay-adapter-first routing; absent when relay is off. */
   relay?: RelayAdapterCatalog;
-  /**
-   * The per-account → session tool-server binder, so a disconnect can purge
-   * every live in-memory cache entry for the account immediately
-   * (connection-scoping spec §Part 1 Revocation), not just the persisted
-   * rows `registry.recordDisconnect` already clears.
-   */
-  sessionConnectors: SessionConnectorService;
+  /** Owner bar for private account, flow, connect, and disconnect routes. */
+  authorizeOwnerAction: (req: Request, res: Response) => boolean;
+  /** Pending authority cleanup invoked synchronously on exact disconnect. */
+  authorityCleanup: ConnectorAuthorityCleanupPort;
 }
 
 /** Body for `POST /:provider/connect`. */
@@ -65,7 +58,7 @@ const ConnectRequestSchema = z.object({
  */
 export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
   const router = Router();
-  const { registry, flowBindings, sessionConnectors } = deps;
+  const { registry, flowBindings } = deps;
 
   router.use((_req, res, next) => {
     const health = registry.migrationHealth();
@@ -95,6 +88,7 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
   });
 
   router.post('/:provider/connect', async (req, res) => {
+    if (!deps.authorizeOwnerAction(req, res)) return;
     const providerType = req.params.provider;
     const provider = registry.resolveProvider(providerType);
     if (!provider) {
@@ -114,6 +108,7 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
       const flowId = flowBindings.record(
         start.flowId,
         provider,
+        registry.providerExecutionConfigGeneration(provider) ?? -1,
         registry.disconnectedConnectionFor(provider, body.toolkit, body.label)
       );
       // A full binding registry can reject after the provider creates private flow state. The
@@ -136,6 +131,7 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
   });
 
   router.get('/flows/:flowId', async (req, res) => {
+    if (!deps.authorizeOwnerAction(req, res)) return;
     const flowId = req.params.flowId;
     const response = await flowBindings.poll(
       flowId,
@@ -160,12 +156,14 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
   });
 
   router.get('/accounts', async (req, res) => {
+    if (!deps.authorizeOwnerAction(req, res)) return;
     const toolkit = typeof req.query.toolkit === 'string' ? req.query.toolkit : undefined;
     const { accounts, warnings } = await registry.listAccounts(toolkit ? { toolkit } : undefined);
     res.json({ accounts: accounts.map(toPublicAccount), warnings });
   });
 
   router.delete('/accounts/:accountId', async (req, res) => {
+    if (!deps.authorizeOwnerAction(req, res)) return;
     const accountId = req.params.accountId as ConnectedAccountId;
     const binding = registry.accountBinding(accountId);
     const provider = binding
@@ -180,7 +178,10 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
     // marks the routing row revoked. The in-memory half of the cascade below
     // only needs the account id, not the freshly-cleared attachment rows.
     registry.recordDisconnect(accountId);
-    sessionConnectors.invalidateAccount(accountId);
+    deps.authorityCleanup.revokeConnection({
+      connectionId: accountId,
+      reason: 'connection_removed',
+    });
     await providerDisconnect;
     res.status(204).end();
   });

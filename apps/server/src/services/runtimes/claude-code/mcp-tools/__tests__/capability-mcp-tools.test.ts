@@ -124,6 +124,18 @@ describe('in-session capability attribution', () => {
     expect(JSON.parse(result.content[0].text)).toEqual({ ok: true });
   });
 
+  it('passes the exact capability id and per-call signal to the context resolver', async () => {
+    const signal = new AbortController().signal;
+    const resolveContext = vi.fn(async () => undefined);
+    const [projected] = capabilityMcpTools(registry, 'in-session', resolveContext);
+
+    await (
+      projected as unknown as { handler: (args: unknown, extra: unknown) => Promise<unknown> }
+    ).handler({}, { signal });
+
+    expect(resolveContext).toHaveBeenCalledWith('demo.patch', signal);
+  });
+
   // ── Unattributed in-session calls stay exactly as they were ──────────────
 
   it('writes nothing when the session has no agent path', async () => {

@@ -1,9 +1,9 @@
 /**
  * Connectors entity — domain hooks for connector provider setup, the connect
- * flow (disclosure-before-URL), connected accounts, and session attach/detach
- * (connector-completion spec §Detailed Design 5). All server I/O rides the
- * Transport's connector methods; custody disclosure copy is always the
- * server's, never composed here.
+ * flow (disclosure-before-URL), connected accounts, owner management reviews,
+ * and exact agent-access reconciliation. All server I/O rides the Transport's
+ * connector methods; custody disclosure copy is always the server's, never
+ * composed here.
  *
  * @module entities/connectors
  */
@@ -17,7 +17,6 @@ export { useConnectorToolkits } from './model/use-connector-toolkits';
 export { useConnectorAccounts } from './model/use-connector-accounts';
 export { useConnectorRecommendation } from './model/use-connector-recommendation';
 export { useSessionConnectors } from './model/use-session-connectors';
-export { useAgentConnectors } from './model/use-agent-connectors';
 
 // --- The connect flow state machine ---
 export { useConnectFlow } from './model/use-connect-flow';
@@ -35,10 +34,13 @@ export {
 export type { SaveConnectorCredentialArgs } from './model/use-connector-credential';
 export { useDisconnectConnectorAccount } from './model/use-connector-accounts';
 export {
-  useAttachSessionConnector,
-  useDetachSessionConnector,
-} from './model/use-session-connectors';
-export { useAttachAgentConnector, useDetachAgentConnector } from './model/use-agent-connectors';
+  useConnectorManagementReviews,
+  useConnectorManagementReview,
+  useResolveConnectorManagementReview,
+  usePreviewConnectorReconciliation,
+  useApplyConnectorReconciliation,
+  useConnectorReviewAuthentication,
+} from './model/use-connector-management';
 
 // --- Shared DTO types, re-exported for feature layers ---
 export type {
@@ -54,6 +56,11 @@ export type {
   SessionConnectorAccountStatus,
   SessionConnectorAttachResult,
   SessionConnectorWarning,
-  AgentConnectorAttachment,
-  AgentConnectorAttachResult,
 } from '@dorkos/shared/connector-provider';
+export type {
+  ConnectorManagementReviewItem,
+  ConnectorManagementReviewContext,
+  ConnectorReconciliationPreview,
+  ConnectorReconciliationCandidate,
+  ConnectorReconciliationGrantSelection,
+} from '@dorkos/shared/connector-schemas';

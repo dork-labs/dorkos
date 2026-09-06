@@ -19,6 +19,12 @@ export const connectorProviderInstances = sqliteTable(
     custody: text('custody', { enum: ['managed', 'self-host', 'external'] }).notNull(),
     capabilityJson: text('capability_json').notNull(),
     credentialRef: text('credential_ref'),
+    executionConfigDigest: text('execution_config_digest'),
+    executionConfigGeneration: integer('execution_config_generation').notNull().default(0),
+    /** Verified account or installation that owns this configured instance. */
+    ownerKind: text('owner_kind', { enum: ['user', 'local_install'] }),
+    /** Stable user or installation id; null only on unresolved historical rows. */
+    ownerId: text('owner_id'),
     status: text('status', { enum: ['available', 'unavailable', 'migration_failed'] }).notNull(),
     error: text('error'),
     createdAt: text('created_at').notNull(),
@@ -82,6 +88,11 @@ export const connectorOperationRevisions = sqliteTable(
     capabilityClassification: text('capability_classification', {
       enum: ['read', 'write', 'destructive'],
     }).notNull(),
+    retryPolicy: text('retry_policy', {
+      enum: ['never', 'provider_idempotency_key'],
+    })
+      .notNull()
+      .default('never'),
     inputSchemaJson: text('input_schema_json').notNull(),
     discoveredAt: text('discovered_at').notNull(),
   },
@@ -92,7 +103,8 @@ export const connectorOperationRevisions = sqliteTable(
       table.operationSlug,
       table.toolkitVersion,
       table.schemaHash,
-      table.capabilityClassification
+      table.capabilityClassification,
+      table.retryPolicy
     ),
   ]
 );

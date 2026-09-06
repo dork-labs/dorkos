@@ -1,10 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { connectorConformance } from '@dorkos/test-utils';
 import type { ConnectorExternalAccountRef } from '@dorkos/shared/connector-provider';
 import type {
   CredentialProvider,
   CredentialResolution,
 } from '../../../core/credential-provider.js';
+import type {
+  ConnectorOperationPageRequest,
+  ConnectorOperationRevision,
+  ConnectorProviderExecuteResult,
+  ConnectorProviderInstanceId,
+  ConnectorToolkitVersionResult,
+} from '@dorkos/shared/connector-schemas';
 import {
   ComposioApiError,
   type ComposioAccountStatus,
@@ -12,31 +19,32 @@ import {
   type ComposioConnectionRequest,
   type ComposioConnectionState,
   type ComposioHttpClient,
-  type ComposioMcpSession,
   type ComposioToolkitInfo,
 } from '../composio-client.js';
 import {
   ComposioConnectorProvider,
   COMPOSIO_API_KEY_REF,
+  COMPOSIO_UAK_OPERATIONS_UNSUPPORTED_REASON,
   maybeCreateComposioProvider,
   toComposioAccountId,
   toExternalAccountRef,
 } from '../composio.js';
+import type { ComposioOperationClient, ComposioSdkExecuteInput } from '../composio/sdk-client.js';
 
 /**
  * In-memory {@link ComposioHttpClient} — the fake Composio cloud the provider is
- * verified against (no network, no key). Mints `ca_…` handles, resolves connect
- * requests to ACTIVE on first poll, and exposes a Rube MCP session per active
- * account. `setStatus`/`setLiveSessions` drive the null branch.
+ * verified against (no network, no key). Mints `ca_…` handles and resolves
+ * connect requests to ACTIVE on first poll. `setStatus` drives lifecycle
+ * transitions.
  */
 class FakeComposioClient implements ComposioHttpClient {
+  readonly stateLookups: string[] = [];
   private readonly _accounts = new Map<string, ComposioConnectedAccount>();
   private readonly _requests = new Map<
     string,
     { toolkit: string; alias?: string; caId?: string }
   >();
   private _counter = 0;
-  private _liveSessions = true;
   private _failure: Error | null = null;
 
   private readonly _toolkits: ComposioToolkitInfo[] = [
@@ -64,8 +72,13 @@ class FakeComposioClient implements ComposioHttpClient {
   }
 
   getConnectionState(connectionRequestId: string): Promise<ComposioConnectionState> {
+    this.stateLookups.push(connectionRequestId);
     if (this._failure) return Promise.reject(this._failure);
     const request = this._requests.get(connectionRequestId);
+    const existingAccount = this._accounts.get(connectionRequestId);
+    if (existingAccount) {
+      return Promise.resolve({ status: existingAccount.status, account: existingAccount });
+    }
     if (!request) {
       return Promise.resolve({
         status: 'FAILED',
@@ -102,32 +115,74 @@ class FakeComposioClient implements ComposioHttpClient {
     return Promise.resolve();
   }
 
-  mcpSessionForAccount(connectedAccountId: string): Promise<ComposioMcpSession | null> {
-    if (this._failure) return Promise.reject(this._failure);
-    const account = this._accounts.get(connectedAccountId);
-    if (!account || account.status !== 'ACTIVE' || !this._liveSessions) {
-      return Promise.resolve(null);
-    }
-    return Promise.resolve({
-      url: `https://rube.app/mcp/${connectedAccountId}`,
-      headers: { 'x-api-key': 'test-key' },
-    });
-  }
-
   /** Force a connected account's Composio status (drives the null branch). */
   setStatus(caId: string, status: ComposioAccountStatus): void {
     const account = this._accounts.get(caId);
     if (account) account.status = status;
   }
 
-  /** Toggle whether Rube MCP sessions are available for active accounts. */
-  setLiveSessions(live: boolean): void {
-    this._liveSessions = live;
-  }
-
   /** Make every Composio call reject with `err` (drives the transport-degrade path). */
   failWith(err: Error | null): void {
     this._failure = err;
+  }
+}
+
+/** Exact-version operation fake used to exercise the available capability path. */
+class FakeComposioOperationClient implements ComposioOperationClient {
+  readonly executions: ComposioSdkExecuteInput[] = [];
+
+  resolveToolkitVersion(
+    toolkit: string,
+    signal: AbortSignal
+  ): Promise<ConnectorToolkitVersionResult> {
+    signal.throwIfAborted();
+    return Promise.resolve({ status: 'ok', toolkit, toolkitVersion: '2026-09-02' });
+  }
+
+  listOperationSchemas(
+    providerInstanceId: ConnectorProviderInstanceId,
+    request: ConnectorOperationPageRequest
+  ) {
+    request.signal.throwIfAborted();
+    const operationSlug = request.cursor ? `${request.toolkit}.write` : `${request.toolkit}.read`;
+    const operation: Omit<ConnectorOperationRevision, 'id' | 'discoveredAt'> = {
+      providerInstanceId,
+      toolkit: request.toolkit,
+      operationSlug,
+      toolkitVersion: request.toolkitVersion,
+      schemaHash: `sha256:${operationSlug}`,
+      capabilityClassification: request.cursor ? 'write' : 'read',
+      retryPolicy: 'never',
+      inputSchema: { type: 'object', additionalProperties: false },
+    };
+    return Promise.resolve({
+      status: 'ok' as const,
+      page: {
+        operations: [operation],
+        ...(!request.cursor && { nextCursor: 'page-2' }),
+        truncated: !request.cursor,
+      },
+    });
+  }
+
+  async execute(input: ComposioSdkExecuteInput): Promise<ConnectorProviderExecuteResult> {
+    if (input.signal.aborted) {
+      return {
+        status: 'cancelled',
+        code: 'CANCELLED_BEFORE_DISPATCH',
+        message: 'cancelled',
+      };
+    }
+    if (!(await input.authorizeDispatch())) {
+      return {
+        status: 'error',
+        code: 'AUTHORITY_CHANGED_BEFORE_DISPATCH',
+        message: 'Connector authority changed before dispatch.',
+        retryable: false,
+      };
+    }
+    this.executions.push(input);
+    return { status: 'success', data: { ok: true } };
   }
 }
 
@@ -138,36 +193,32 @@ function abortError(): Error {
   return err;
 }
 
+function providerWith(
+  client: ComposioHttpClient,
+  operationClient: ComposioOperationClient | null = new FakeComposioOperationClient()
+): ComposioConnectorProvider {
+  return new ComposioConnectorProvider({ client, operationClient });
+}
+
 function makeProvider(): ComposioConnectorProvider {
-  return new ComposioConnectorProvider({ client: new FakeComposioClient() });
+  return providerWith(new FakeComposioClient());
 }
 
 // The flagship managed adapter clears the same behavioral gate every backend
 // does. Multi-account (supportsMultiAccount:true), so the suite's two-distinct-
-// ids branch runs. The null branch is arranged by expiring a connected account.
+// ids branch runs.
 connectorConformance(makeProvider, {
   name: 'ComposioConnectorProvider — conformance',
   toolkit: 'gmail',
-  makeUnexposableAccount: async () => {
-    const client = new FakeComposioClient();
-    const provider = new ComposioConnectorProvider({ client });
-    const { flowId } = await provider.startConnect('gmail', { label: 'personal' });
-    const { account } = await provider.pollConnect(flowId);
-    // Expire the underlying Composio account: its Rube session goes away, so
-    // toolServerForAccount must resolve null rather than throw.
-    client.setStatus(toComposioAccountId(account!.externalAccountRef), 'EXPIRED');
-    return { provider, externalAccountRef: account!.externalAccountRef };
-  },
 });
 
 describe('ComposioConnectorProvider — managed-custody semantics', () => {
-  it('declares the managed, multi-account, MCP-exposing capability shape', () => {
+  it('declares the managed, multi-account, brokered-execution capability shape', () => {
     const caps = makeProvider().getCapabilities();
     expect(caps).toMatchObject({
       type: 'composio',
       supportsMultiAccount: true,
       custody: 'managed',
-      exposesOverMcp: true,
     });
   });
 
@@ -201,37 +252,6 @@ describe('ComposioConnectorProvider — managed-custody semantics', () => {
     expect(personal.externalAccountRef).not.toBe(work.externalAccountRef);
     const accounts = await provider.listAccounts({ toolkit: 'gmail' });
     expect(new Set(accounts.map((a) => a.externalAccountRef)).size).toBe(2);
-
-    // Both are addressable to their own Rube MCP tool server.
-    const personalServer = await provider.toolServerForAccount(personal.externalAccountRef);
-    const workServer = await provider.toolServerForAccount(work.externalAccountRef);
-    expect(personalServer).not.toBeNull();
-    expect(workServer).not.toBeNull();
-    expect(personalServer).not.toEqual(workServer);
-  });
-
-  it('exposes an active account as a Rube MCP http connection', async () => {
-    const provider = makeProvider();
-    const { flowId } = await provider.startConnect('gmail', { label: 'personal' });
-    const account = (await provider.pollConnect(flowId)).account!;
-
-    const connection = await provider.toolServerForAccount(account.externalAccountRef);
-    expect(connection).toMatchObject({
-      transport: 'http',
-      url: expect.stringContaining('rube.app/mcp'),
-    });
-    // The injected connection carries NO provider identity in its shape.
-    expect(JSON.stringify(connection)).not.toContain('composio');
-  });
-
-  it('returns null (never throws) when Composio has no live MCP session', async () => {
-    const client = new FakeComposioClient();
-    const provider = new ComposioConnectorProvider({ client });
-    const { flowId } = await provider.startConnect('gmail');
-    const account = (await provider.pollConnect(flowId)).account!;
-
-    client.setLiveSessions(false);
-    await expect(provider.toolServerForAccount(account.externalAccountRef)).resolves.toBeNull();
   });
 
   it('surfaces a failed Composio connect as a typed failure, never a throw', async () => {
@@ -247,15 +267,151 @@ describe('ComposioConnectorProvider — managed-custody semantics', () => {
       provider.disconnect('composio:ca_nope' as ConnectorExternalAccountRef)
     ).resolves.toBeUndefined();
   });
+
+  it('routes execution to the exact active private account and immutable provider revision', async () => {
+    const operationClient = new FakeComposioOperationClient();
+    const managementClient = new FakeComposioClient();
+    const provider = providerWith(managementClient, operationClient);
+    const { flowId } = await provider.startConnect('gmail', { label: 'personal' });
+    const account = (await provider.pollConnect(flowId)).account!;
+    const operationPage = await provider.listOperationSchemas({
+      toolkit: 'gmail',
+      toolkitVersion: '2026-09-02',
+      limit: 1,
+      signal: new AbortController().signal,
+    });
+    expect(operationPage.status).toBe('ok');
+    if (operationPage.status !== 'ok') throw new Error(operationPage.reason);
+
+    await expect(
+      provider.execute({
+        externalAccountRef: account.externalAccountRef,
+        authorizeDispatch: () => true,
+        operation: {
+          ...operationPage.page.operations[0]!,
+          id: 'revision-gmail-read',
+          discoveredAt: '2026-09-02T00:00:00.000Z',
+        },
+        arguments: { query: 'hello' },
+        logicalOperationId: 'logical-1',
+        attemptId: 'attempt-1',
+        signal: new AbortController().signal,
+      })
+    ).resolves.toMatchObject({ status: 'success' });
+
+    expect(operationClient.executions).toHaveLength(1);
+    expect(managementClient.stateLookups.at(-1)).toBe(
+      toComposioAccountId(account.externalAccountRef)
+    );
+    expect(operationClient.executions[0]).toMatchObject({
+      connectedAccountId: toComposioAccountId(account.externalAccountRef),
+      arguments: { query: 'hello' },
+      operation: {
+        providerInstanceId: provider.instanceId,
+        toolkitVersion: '2026-09-02',
+      },
+    });
+  });
+
+  it('checks server authority after the account lookup and before operation dispatch', async () => {
+    const operationClient = new FakeComposioOperationClient();
+    const managementClient = new FakeComposioClient();
+    const provider = providerWith(managementClient, operationClient);
+    const { flowId } = await provider.startConnect('gmail', { label: 'personal' });
+    const account = (await provider.pollConnect(flowId)).account!;
+    const operationPage = await provider.listOperationSchemas({
+      toolkit: 'gmail',
+      toolkitVersion: '2026-09-02',
+      limit: 1,
+      signal: new AbortController().signal,
+    });
+    if (operationPage.status !== 'ok') throw new Error(operationPage.reason);
+    const authorizeDispatch = vi.fn().mockResolvedValue(false);
+
+    await expect(
+      provider.execute({
+        externalAccountRef: account.externalAccountRef,
+        authorizeDispatch,
+        operation: {
+          ...operationPage.page.operations[0]!,
+          id: 'revision-gmail-read',
+          discoveredAt: '2026-09-02T00:00:00.000Z',
+        },
+        arguments: {},
+        logicalOperationId: 'logical-refused',
+        attemptId: 'attempt-refused',
+        signal: new AbortController().signal,
+      })
+    ).resolves.toMatchObject({
+      status: 'error',
+      code: 'AUTHORITY_CHANGED_BEFORE_DISPATCH',
+    });
+    expect(managementClient.stateLookups.at(-1)).toBe(
+      toComposioAccountId(account.externalAccountRef)
+    );
+    expect(authorizeDispatch).toHaveBeenCalledTimes(1);
+    expect(operationClient.executions).toEqual([]);
+  });
+
+  it('rejects an unknown account, another instance, and retryable metadata before SDK dispatch', async () => {
+    const operationClient = new FakeComposioOperationClient();
+    const provider = providerWith(new FakeComposioClient(), operationClient);
+    const { flowId } = await provider.startConnect('gmail', { label: 'must-not-be-selected' });
+    await provider.pollConnect(flowId);
+    const baseOperation: ConnectorOperationRevision = {
+      id: 'revision-gmail-read',
+      providerInstanceId: provider.instanceId,
+      toolkit: 'gmail',
+      operationSlug: 'gmail.read',
+      toolkitVersion: '2026-09-02',
+      schemaHash: 'sha256:gmail.read',
+      capabilityClassification: 'read',
+      retryPolicy: 'never',
+      inputSchema: { type: 'object' },
+      discoveredAt: '2026-09-02T00:00:00.000Z',
+    };
+    const command = {
+      externalAccountRef: 'composio:ca_missing' as ConnectorExternalAccountRef,
+      authorizeDispatch: () => true,
+      operation: baseOperation,
+      arguments: {},
+      logicalOperationId: 'logical-guard',
+      attemptId: 'attempt-guard',
+      signal: new AbortController().signal,
+    };
+
+    await expect(provider.execute(command)).resolves.toMatchObject({
+      status: 'error',
+      code: 'ACCOUNT_UNAVAILABLE',
+    });
+    await expect(
+      provider.execute({
+        ...command,
+        operation: {
+          ...baseOperation,
+          providerInstanceId: 'composio:another' as ConnectorProviderInstanceId,
+        },
+      })
+    ).resolves.toMatchObject({ status: 'error', code: 'PROVIDER_INSTANCE_MISMATCH' });
+    await expect(
+      provider.execute({
+        ...command,
+        operation: { ...baseOperation, toolkitVersion: 'latest' },
+      })
+    ).resolves.toMatchObject({ status: 'error', code: 'INVALID_TOOLKIT_VERSION' });
+    await expect(
+      provider.execute({
+        ...command,
+        upstreamIdempotencyKey: 'must-not-forward',
+      })
+    ).resolves.toMatchObject({ status: 'error', code: 'UNSUPPORTED_RETRY_POLICY' });
+    expect(operationClient.executions).toHaveLength(0);
+  });
 });
 
 // The mock suite structurally can't catch this: the fake client never errors on
 // its own, so these lock the degrade contract by forcing the client to reject.
-// Session-exposure awaits toolServerForAccount UNGUARDED — a throw here would 500
-// the attach route instead of degrading to attach-recorded-with-warning. The two
-// LIST reads are the opposite: they must PROPAGATE, because the registry turns a
-// rejection into a per-provider warning and a swallowed 401 renders as a silent,
-// dead /connections grid (DOR-703 live verification).
+// Provider inventory reads must propagate transport failures so aggregation can surface warnings.
 describe('ComposioConnectorProvider — degrade contract on transport failure', () => {
   const errors: Array<{ label: string; err: () => Error }> = [
     {
@@ -270,34 +426,24 @@ describe('ComposioConnectorProvider — degrade contract on transport failure', 
   ];
 
   for (const { label, err } of errors) {
-    it(`toolServerForAccount resolves null on ${label}`, async () => {
-      const client = new FakeComposioClient();
-      const provider = new ComposioConnectorProvider({ client });
-      const { flowId } = await provider.startConnect('gmail');
-      const account = (await provider.pollConnect(flowId)).account!;
-
-      client.failWith(err());
-      await expect(provider.toolServerForAccount(account.externalAccountRef)).resolves.toBeNull();
-    });
-
     it(`listToolkits PROPAGATES ${label} (the registry turns it into a warning)`, async () => {
       const client = new FakeComposioClient();
       client.failWith(err());
-      const provider = new ComposioConnectorProvider({ client });
+      const provider = providerWith(client);
       await expect(provider.listToolkits()).rejects.toThrow();
     });
 
     it(`listAccounts PROPAGATES ${label} (never a silent empty list)`, async () => {
       const client = new FakeComposioClient();
       client.failWith(err());
-      const provider = new ComposioConnectorProvider({ client });
+      const provider = providerWith(client);
       await expect(provider.listAccounts()).rejects.toThrow();
     });
 
     it(`pollConnect maps ${label} to a failure-typed result`, async () => {
       const client = new FakeComposioClient();
       client.failWith(err());
-      const provider = new ComposioConnectorProvider({ client });
+      const provider = providerWith(client);
       const poll = await provider.pollConnect('cr_anything');
       expect(poll.status).toBe('failed');
       expect(poll.error).toBeTruthy();
@@ -313,16 +459,15 @@ describe('ComposioConnectorProvider — degrade contract on transport failure', 
       getConnectionState: () => Promise.resolve({ status: 'INITIATED' }),
       listConnectedAccounts: () => Promise.resolve([]),
       deleteConnectedAccount: () => Promise.resolve(),
-      mcpSessionForAccount: () => Promise.resolve(null),
     };
-    const provider = new ComposioConnectorProvider({ client });
+    const provider = providerWith(client);
     await expect(provider.startConnect('gmail')).rejects.toThrow(/no authorize URL/);
   });
 
   it('does NOT swallow a non-transport error (a genuine bug still surfaces)', async () => {
     const client = new FakeComposioClient();
     client.failWith(new TypeError('bug in mapping'));
-    const provider = new ComposioConnectorProvider({ client });
+    const provider = providerWith(client);
     await expect(provider.listToolkits()).rejects.toThrow(/bug in mapping/);
   });
 });
@@ -348,11 +493,16 @@ describe('maybeCreateComposioProvider — the configured-only registry gate', ()
 
   it('builds the provider when the API key resolves, holding the key only in the client', async () => {
     let seenKey: string | undefined;
+    let seenSdkKey: string | undefined;
     const provider = await maybeCreateComposioProvider({
       credentials: fakeCredentials({ [COMPOSIO_API_KEY_REF]: 'sk-composio-test' }),
       makeClient: (opts) => {
         seenKey = opts.apiKey;
         return new FakeComposioClient();
+      },
+      makeOperationClient: (opts) => {
+        seenSdkKey = opts.apiKey;
+        return new FakeComposioOperationClient();
       },
     });
 
@@ -360,18 +510,82 @@ describe('maybeCreateComposioProvider — the configured-only registry gate', ()
     expect(provider?.type).toBe('composio');
     // The resolved key reaches the HTTP client seam, not the provider surface.
     expect(seenKey).toBe('sk-composio-test');
+    expect(seenSdkKey).toBe('sk-composio-test');
+    expect(provider?.executionConfigDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.stringify(provider)).not.toContain('sk-composio-test');
+    expect(JSON.stringify(provider)).not.toContain(provider!.executionConfigDigest);
   });
 
   it('scopes the client to the configured Composio user_id', async () => {
     let seenUserId: string | undefined;
-    await maybeCreateComposioProvider({
+    let seenSdkUserId: string | undefined;
+    const instanceId = 'composio:operator-42' as ConnectorProviderInstanceId;
+    const provider = await maybeCreateComposioProvider({
       credentials: fakeCredentials({ [COMPOSIO_API_KEY_REF]: 'sk-test' }),
       userId: 'operator-42',
+      instanceId,
       makeClient: (opts) => {
         seenUserId = opts.userId;
         return new FakeComposioClient();
       },
+      makeOperationClient: (opts) => {
+        seenSdkUserId = opts.serverUserId;
+        return new FakeComposioOperationClient();
+      },
     });
     expect(seenUserId).toBe('operator-42');
+    expect(seenSdkUserId).toBe('operator-42');
+    expect(provider?.instanceId).toBe(instanceId);
+  });
+
+  it('keeps legacy UAK management usable without constructing or calling the SDK', async () => {
+    let sdkConstructions = 0;
+    const provider = await maybeCreateComposioProvider({
+      credentials: fakeCredentials({ [COMPOSIO_API_KEY_REF]: 'uak_legacy_cli_key' }),
+      makeClient: () => new FakeComposioClient(),
+      makeOperationClient: () => {
+        sdkConstructions += 1;
+        return new FakeComposioOperationClient();
+      },
+    });
+
+    expect(provider).not.toBeNull();
+    await expect(provider!.listToolkits()).resolves.toHaveLength(2);
+    expect(provider!.getCapabilities().capabilities.operations).toEqual({
+      status: 'unsupported',
+      reason: COMPOSIO_UAK_OPERATIONS_UNSUPPORTED_REASON,
+    });
+    await expect(
+      provider!.resolveToolkitVersion('gmail', new AbortController().signal)
+    ).resolves.toEqual({
+      status: 'unsupported',
+      reason: COMPOSIO_UAK_OPERATIONS_UNSUPPORTED_REASON,
+    });
+    await expect(
+      provider!.execute({
+        externalAccountRef: 'composio:ca_legacy' as ConnectorExternalAccountRef,
+        authorizeDispatch: () => true,
+        operation: {
+          id: 'revision-legacy',
+          providerInstanceId: provider!.instanceId,
+          toolkit: 'gmail',
+          operationSlug: 'gmail.read',
+          toolkitVersion: '2026-09-02',
+          schemaHash: 'sha256:legacy',
+          capabilityClassification: 'read',
+          retryPolicy: 'never',
+          inputSchema: { type: 'object' },
+          discoveredAt: '2026-09-02T00:00:00.000Z',
+        },
+        arguments: {},
+        logicalOperationId: 'logical-legacy',
+        attemptId: 'attempt-legacy',
+        signal: new AbortController().signal,
+      })
+    ).resolves.toEqual({
+      status: 'unsupported',
+      reason: COMPOSIO_UAK_OPERATIONS_UNSUPPORTED_REASON,
+    });
+    expect(sdkConstructions).toBe(0);
   });
 });

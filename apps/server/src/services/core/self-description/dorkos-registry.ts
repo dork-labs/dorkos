@@ -31,6 +31,7 @@ import {
 import { operatorDomain } from '../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilities.js';
 import { connectorDomain } from '../../connectors/connector-capabilities.js';
+import { connectorExecutionDomain } from '../../connectors/execution/execution-capabilities.js';
 import { mcpDomain } from '../../mesh/mcp-capabilities.js';
 import { roomsDomain } from '../../rooms/room-capabilities.js';
 import { memoryDomain } from '../../memory/memory-capabilities.js';
@@ -58,6 +59,7 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.operatorDeps) domains.push(operatorDomain);
   if (deps.marketplaceDeps) domains.push(marketplaceDomain);
   if (deps.connectorDeps) domains.push(connectorDomain);
+  if (deps.connectorExecutionDeps) domains.push(connectorExecutionDomain);
   if (deps.mcpDeps) domains.push(mcpDomain);
   if (deps.roomDeps) domains.push(roomsDomain);
   // Unconditional, unlike every domain above it: memory has no service handle to

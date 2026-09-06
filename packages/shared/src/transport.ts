@@ -167,6 +167,22 @@ import type {
   AgentConnectorAttachment,
   AgentConnectorAttachResult,
 } from './connector-provider.js';
+import type {
+  ConnectionId,
+  ConnectorAccessibleConnectionsResponse,
+  ConnectorAccessibleOperationsResponse,
+  ConnectorExecutionResponse,
+  ConnectorManagementReviewCreateRequest,
+  ConnectorManagementReviewDecision,
+  ConnectorManagementReviewDecisionResult,
+  ConnectorManagementReviewItem,
+  ConnectorProgramExecutionRequest,
+  ConnectorReconciliationApplyRequest,
+  ConnectorReconciliationApplyResponse,
+  ConnectorReconciliationPreview,
+  ConnectorReconciliationPreviewRequest,
+  ConnectorUsagePage,
+} from './connector-schemas.js';
 import type { SearchQuery, SearchResponse } from './search-schemas.js';
 
 /** A single entry in the adapter list — config plus live status. */
@@ -2491,10 +2507,9 @@ export interface Transport extends RoomTransport {
   getSessionConnectors(sessionId: string): Promise<SessionConnectorStatus>;
 
   /**
-   * Attach a connected account to a session — the consent point. The result
-   * re-shows the custody disclosure and surfaces the null-branch warning when
-   * the account attached but is not exposable right now. Rejects (404) for an
-   * unknown account id.
+   * Retired session-access mutation retained until P3 removes the compatibility
+   * Transport surface. The HTTP adapter rejects it and directs the operator to
+   * the Connections access editor.
    *
    * @param sessionId - The session the account is being attached to.
    * @param accountId - The opaque account id to attach.
@@ -2505,8 +2520,9 @@ export interface Transport extends RoomTransport {
   ): Promise<SessionConnectorAttachResult>;
 
   /**
-   * Detach an account from a session. Idempotent — detaching an unattached
-   * account is a no-op.
+   * Retired session-access mutation retained until P3 removes the compatibility
+   * Transport surface. The HTTP adapter rejects it and directs the operator to
+   * the Connections access editor.
    *
    * @param sessionId - The session to detach from.
    * @param accountId - The opaque account id to detach.
@@ -2524,9 +2540,9 @@ export interface Transport extends RoomTransport {
   getAgentConnectors(agentId: string): Promise<AgentConnectorAttachment[]>;
 
   /**
-   * Attach an account to an agent for good — the standing consent point. The
-   * result re-shows the custody disclosure, exactly as the session-level
-   * attach does. Rejects for an unknown agent (400) or account (404).
+   * Retired agent-access mutation retained until P3 removes the compatibility
+   * Transport surface. The HTTP adapter rejects it and directs the operator to
+   * the Connections access editor.
    *
    * @param agentId - The agent gaining the standing attachment.
    * @param accountId - The opaque account id to attach.
@@ -2534,13 +2550,71 @@ export interface Transport extends RoomTransport {
   attachAgentConnector(agentId: string, accountId: string): Promise<AgentConnectorAttachResult>;
 
   /**
-   * Remove an agent's standing attachment. Idempotent. Sessions that already
-   * resolved the account keep it until they restart.
+   * Retired agent-access mutation retained until P3 removes the compatibility
+   * Transport surface. The HTTP adapter rejects it and directs the operator to
+   * the Connections access editor.
    *
    * @param agentId - The agent losing the standing attachment.
    * @param accountId - The opaque account id to detach.
    */
   detachAgentConnector(agentId: string, accountId: string): Promise<void>;
+
+  /** List the exact connections currently usable by one owned agent. */
+  getAccessibleConnectorConnections(
+    agentId: string
+  ): Promise<ConnectorAccessibleConnectionsResponse>;
+
+  /** List exact granted operation revisions for one owned agent and connection. */
+  getAccessibleConnectorOperations(
+    agentId: string,
+    connectionId: ConnectionId
+  ): Promise<ConnectorAccessibleOperationsResponse>;
+
+  /** Execute one exact connection revision as a program acting for an owned agent. */
+  executeConnector(input: ConnectorProgramExecutionRequest): Promise<ConnectorExecutionResponse>;
+
+  /** Read connector usage restricted to one owned agent. */
+  getAgentConnectorUsage(input: {
+    agentId: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<ConnectorUsagePage>;
+
+  /** Read owner-wide usage without implying program authority by agent omission. */
+  getOperatorConnectorUsage(input: {
+    connectionId?: ConnectionId;
+    cursor?: string;
+    limit?: number;
+  }): Promise<ConnectorUsagePage>;
+
+  /** Create a complete, owner-bound operation and current-access snapshot. */
+  previewConnectorReconciliation(
+    input: ConnectorReconciliationPreviewRequest
+  ): Promise<ConnectorReconciliationPreview>;
+
+  /** Atomically consume a preview and replace only the explicitly named agents. */
+  applyConnectorReconciliation(
+    input: ConnectorReconciliationApplyRequest
+  ): Promise<ConnectorReconciliationApplyResponse>;
+
+  /** Submit a strict connector management action for an owner decision. */
+  createConnectorManagementReview(
+    input: ConnectorManagementReviewCreateRequest
+  ): Promise<ConnectorManagementReviewItem>;
+
+  /** List owner-visible connector management reviews by lifecycle group. */
+  getConnectorManagementReviews(
+    state?: 'pending' | 'resolved'
+  ): Promise<ConnectorManagementReviewItem[]>;
+
+  /** Read one exact owner-visible management review for a deep link. */
+  getConnectorManagementReview(reviewRequestId: string): Promise<ConnectorManagementReviewItem>;
+
+  /** Resolve one pending management review as the authenticated owner. */
+  resolveConnectorManagementReview(
+    reviewRequestId: string,
+    input: ConnectorManagementReviewDecision
+  ): Promise<ConnectorManagementReviewDecisionResult>;
 
   // --- The claim feed (connection-scoping spec §Part 3) ---
 

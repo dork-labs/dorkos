@@ -108,6 +108,12 @@ import type {
   AgentConnectorAttachResult,
 } from '@dorkos/shared/connector-provider';
 import type {
+  ConnectionId,
+  ConnectorAccessibleConnectionsResponse,
+  ConnectorAccessibleOperationsResponse,
+  ConnectorUsagePage,
+} from '@dorkos/shared/connector-schemas';
+import type {
   TraceSpan,
   DeliveryMetrics,
   CatalogEntry,
@@ -1022,11 +1028,10 @@ async function* emptyRoomEvents(): AsyncIterable<RoomEvent> {}
 /**
  * Connector stubs — the connector gateway (provider registry, credential
  * store, connect flows, session tool exposure) is a server-owned subsystem the
- * in-process embed has no services for (connector-completion spec OQ4). Reads
- * answer honestly empty, so the Connections surface renders its real empty
- * state; credential and connect writes refuse with a clear pointer at the web
- * cockpit — never a silent failure. Session attach reads answer "nothing
- * attached" for the same reason.
+ * in-process embed has no services for (connector-completion spec OQ4). Legacy
+ * discovery reads answer honestly empty, while authority-sensitive P2 reads
+ * and every mutation refuse with a clear pointer to the DorkOS app. Session
+ * attach reads answer "nothing attached" for the same reason.
  */
 export const connectorStubs = {
   async getConnectorProviders(): Promise<ConnectorProviderStatus[]> {
@@ -1098,6 +1103,53 @@ export const connectorStubs = {
   },
 
   async detachAgentConnector(_agentId: string, _accountId: string): Promise<void> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async getAccessibleConnectorConnections(): Promise<ConnectorAccessibleConnectionsResponse> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async getAccessibleConnectorOperations(
+    _agentId: string,
+    _connectionId: ConnectionId
+  ): Promise<ConnectorAccessibleOperationsResponse> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async executeConnector(): Promise<never> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async getAgentConnectorUsage(): Promise<ConnectorUsagePage> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async getOperatorConnectorUsage(): Promise<ConnectorUsagePage> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async previewConnectorReconciliation(): Promise<never> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async applyConnectorReconciliation(): Promise<never> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async createConnectorManagementReview(): Promise<never> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async getConnectorManagementReviews(): Promise<never> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async getConnectorManagementReview(): Promise<never> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async resolveConnectorManagementReview(): Promise<never> {
     throw new Error(EMBEDDED_CONNECTORS_NOTICE);
   },
 };

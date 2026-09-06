@@ -5,7 +5,6 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { describe, expect, it, vi } from 'vitest';
 import { connectorConformance } from '@dorkos/test-utils';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import type { ConnectorExternalAccountRef } from '@dorkos/shared/connector-provider';
 import type { ProbeOutcome } from '../../../mesh/agent-mcp-probe.js';
 import type { RemoteMcpConnection } from '../raw-mcp.js';
 import { RawMcpConnectorProvider } from '../raw-mcp.js';
@@ -66,26 +65,15 @@ function makeProvider(): RawMcpConnectorProvider {
 connectorConformance(makeProvider, {
   name: 'RawMcpConnectorProvider — conformance',
   toolkit: 'notion',
-  makeUnexposableAccount: async () => {
-    const provider = new RawMcpConnectorProvider({
-      servers: [NOTION],
-      isReachable: () => false,
-      probe: successfulProbe,
-    });
-    const { flowId } = await provider.startConnect('notion');
-    const { account } = await provider.pollConnect(flowId);
-    return { provider, externalAccountRef: account!.externalAccountRef };
-  },
 });
 
 describe('RawMcpConnectorProvider — baseline semantics', () => {
-  it('declares the external, single-account, MCP-exposing capability shape', () => {
+  it('declares the external, single-account, brokered-execution capability shape', () => {
     const caps = makeProvider().getCapabilities();
     expect(caps).toMatchObject({
       type: 'mcp',
       supportsMultiAccount: false,
       custody: 'external',
-      exposesOverMcp: true,
     });
   });
 
@@ -124,9 +112,6 @@ describe('RawMcpConnectorProvider — baseline semantics', () => {
 
     expect(poll).toMatchObject({ status: 'connected', account: { status: 'active' } });
     expect(receivedMethods).toEqual(['initialize', 'notifications/initialized', 'tools/list']);
-    await expect(provider.toolServerForAccount(poll.account!.externalAccountRef)).resolves.toEqual(
-      connection
-    );
   });
 
   it('returns a safe unauthorized failure and creates no account when credentials are rejected', async () => {
@@ -256,27 +241,6 @@ describe('RawMcpConnectorProvider — baseline semantics', () => {
     );
   });
 
-  it('exposes the configured http connection for a reachable, active account', async () => {
-    const provider = makeProvider();
-    const { flowId } = await provider.startConnect('notion');
-    const { account } = await provider.pollConnect(flowId);
-
-    const connection = await provider.toolServerForAccount(account!.externalAccountRef);
-    expect(connection).toEqual(NOTION.connection);
-  });
-
-  it('returns null when the remote server is unreachable', async () => {
-    const provider = new RawMcpConnectorProvider({
-      servers: [NOTION],
-      isReachable: () => false,
-      probe: successfulProbe,
-    });
-    const { flowId } = await provider.startConnect('notion');
-    const { account } = await provider.pollConnect(flowId);
-
-    await expect(provider.toolServerForAccount(account!.externalAccountRef)).resolves.toBeNull();
-  });
-
   it('cancels a reconnect before an account row has been recreated', async () => {
     const provider = makeProvider();
     const first = await provider.startConnect('notion');
@@ -317,12 +281,5 @@ describe('RawMcpConnectorProvider — baseline semantics', () => {
     const poll = await provider.pollConnect(slackFlow.flowId);
     expect(poll.status).toBe('connected');
     expect(poll.account?.toolkit).toBe('slack');
-  });
-
-  it('returns null for an unknown account id rather than throwing', async () => {
-    const provider = makeProvider();
-    await expect(
-      provider.toolServerForAccount('mcp:nope' as ConnectorExternalAccountRef)
-    ).resolves.toBeNull();
   });
 });

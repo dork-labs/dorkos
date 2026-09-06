@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useSearch } from '@tanstack/react-router';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { PageContainer } from '@/layers/shared/ui';
 import { MessagingRegion } from './MessagingRegion';
 import { AccountsRegion } from './AccountsRegion';
@@ -16,7 +16,8 @@ import { AccountsRegion } from './AccountsRegion';
  * where every retired deep link into the old messaging dialog now lands.
  */
 export function ConnectionsPage() {
-  const { region } = useSearch({ from: '/_shell/connections' });
+  const { region, review } = useSearch({ from: '/_shell/connections' });
+  const navigate = useNavigate({ from: '/connections' });
   const messagingRef = useRef<HTMLDivElement>(null);
   const accountsRef = useRef<HTMLDivElement>(null);
 
@@ -47,7 +48,20 @@ export function ConnectionsPage() {
           <MessagingRegion />
         </div>
         <div ref={accountsRef} className="scroll-mt-6">
-          <AccountsRegion />
+          <AccountsRegion
+            selectedReviewId={review ?? null}
+            onSelectReview={(reviewRequestId) =>
+              void navigate({ search: (previous) => ({ ...previous, review: reviewRequestId }) })
+            }
+            onCloseReview={() =>
+              void navigate({
+                search: (previous) => {
+                  const { review: _review, ...rest } = previous;
+                  return rest;
+                },
+              })
+            }
+          />
         </div>
       </div>
     </PageContainer>

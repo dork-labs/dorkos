@@ -30,6 +30,7 @@ export {
   type CapabilityHandlerContext,
   type CapabilityInvocationContext,
   type CapabilityInvocationObserver,
+  type CapabilityPreflightResult,
 } from './registry.js';
 export { isTrustedCaller, trustedCaller, type TrustedCaller } from './trusted-caller.js';
 export {

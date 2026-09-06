@@ -4,6 +4,7 @@ set -euo pipefail
 # ─── Configuration ────────────────────────────────────────────────
 DORKOS_VERSION="latest"
 DORKOS_NO_PROMPT="${DORKOS_NO_PROMPT:-0}"
+MIN_NODE_VERSION="22.22.3"
 DRY_RUN=0
 
 # Parse arguments: first non-flag arg is the version
@@ -35,16 +36,24 @@ done
 if ! command -v node &>/dev/null; then
   echo "Error: Node.js is required but not installed."
   echo ""
-  echo "Install Node.js 22+ from https://nodejs.org"
+  echo "Install Node.js ${MIN_NODE_VERSION} or later from https://nodejs.org"
   echo "Or use nvm:"
   echo "  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash"
   echo "  nvm install 22"
   exit 1
 fi
 
-NODE_MAJOR=$(node -e "console.log(process.version.split('.')[0].slice(1))")
-if [ "$NODE_MAJOR" -lt 22 ]; then
-  echo "Error: Node.js 22+ is required. Current version: $(node --version)"
+NODE_VERSION=$(node --version | sed 's/^v//')
+if ! node -e '
+  const parse = (value) => value.split(".").map(Number);
+  const current = parse(process.argv[1]);
+  const minimum = parse(process.argv[2]);
+  for (let i = 0; i < minimum.length; i += 1) {
+    if ((current[i] ?? 0) > minimum[i]) process.exit(0);
+    if ((current[i] ?? 0) < minimum[i]) process.exit(1);
+  }
+' "$NODE_VERSION" "$MIN_NODE_VERSION"; then
+  echo "Error: Node.js ${MIN_NODE_VERSION} or later is required. Current version: v${NODE_VERSION}"
   echo ""
   echo "Upgrade Node.js: https://nodejs.org"
   exit 1

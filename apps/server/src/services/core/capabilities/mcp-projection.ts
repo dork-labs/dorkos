@@ -232,7 +232,8 @@ export async function invokeCapabilityAsMcpResult(
   id: string,
   args: unknown,
   context?: CapabilityInvocationContext,
-  surface?: InSessionSurface
+  surface?: InSessionSurface,
+  signal?: AbortSignal
 ): Promise<CallToolResult> {
   const capability = registry.get(id);
   // Only a destructive tool advertises `approvalToken`, so only a destructive
@@ -244,7 +245,14 @@ export async function invokeCapabilityAsMcpResult(
       : { approvalToken: undefined, input: args };
 
   try {
-    const plain = await invokeThroughRegistry(registry, id, input, context, approvalToken);
+    const plain = await invokeThroughRegistry(
+      registry,
+      id,
+      input,
+      context,
+      approvalToken,
+      signal ?? surface?.signal
+    );
     // The card is drawn from the SUCCESSFUL result and nothing else: a refusal
     // or a throw produced no sign-in link, so there is nothing to put on screen.
     if (surface && capability?.inSessionCard) {
@@ -315,13 +323,17 @@ function invokeThroughRegistry(
   id: string,
   input: unknown,
   context: CapabilityInvocationContext | undefined,
-  approvalToken: string | undefined
+  approvalToken: string | undefined,
+  signal?: AbortSignal
 ): Promise<unknown> {
   return registry.invoke(id, input, {
     ...(context?.identity ? { identity: context.identity } : {}),
     ...(context?.agentIdentityPresented ? { agentIdentityPresented: true } : {}),
     ...(context?.userId ? { userId: context.userId } : {}),
     ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
+    ...(context?.cwd ? { cwd: context.cwd } : {}),
+    ...(context?.serverPrincipal ? { serverPrincipal: context.serverPrincipal } : {}),
+    ...((signal ?? context?.signal) ? { signal: signal ?? context?.signal } : {}),
     ...(approvalToken ? { approvalToken } : {}),
     retryChannel: 'mcp-argument',
   });
@@ -348,7 +360,7 @@ async function holdAndResume(
   if (outcome !== 'granted' && outcome !== 'denied') return textResult(payload);
   try {
     return textResult(
-      await invokeThroughRegistry(registry, id, input, context, payload.approvalToken)
+      await invokeThroughRegistry(registry, id, input, context, payload.approvalToken, hold.signal)
     );
   } catch (err) {
     if (err instanceof CapabilityGateRefusal) return textResult(err.decision.payload);

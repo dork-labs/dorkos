@@ -72,9 +72,9 @@
  * - **Code the server loads or runs, and the tool endpoints it attaches.**
  *   `extensions.*` decides which extension code is compiled into the server
  *   process, and the two `binaryPath` fields name executables the server spawns.
- *   `connectors.rawMcpServers[]` sits here rather than with exposure: it is a tool
- *   endpoint sessions can attach, so writing one grants a capability outward, and
- *   nothing about it lets anybody in.
+ *   `connectors.rawMcpServers[]` sits here because it makes the server contact an
+ *   operator-chosen endpoint during connector verification. It is not an
+ *   agent-writable destination.
  * - **How far DorkOS reaches on disk.** `server.boundary` is the containment line
  *   itself (the CLI reads it at next launch, `cli.ts`), and `workspace.rootPath`
  *   and `relay.dataDir` are roots DorkOS resolves and writes under with no

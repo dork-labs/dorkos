@@ -89,6 +89,9 @@ import { mcpAuthEvidenceFrom } from '../../mesh/mcp-revocation.js';
 import type { McpAuthEvidencePort } from '../../mesh/mcp-revocation.js';
 import { editBaselineStore } from '../../diff/index.js';
 import type { SessionStateProjector } from '../../session/index.js';
+import type { ConnectorRuntimeTools } from '../connector-tools.js';
+import type { RevokeConnectorTurnReason } from '../../connectors/runtime-principal-port.js';
+import { ClaudeConnectorTurnContext } from './connector-turn-context.js';
 
 export { buildTaskEvent } from './sdk/build-task-event.js';
 
@@ -146,8 +149,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private mcpServerFactory:
     ((session: AgentSession, sessionId: string) => Record<string, McpServerConfig>) | null = null;
   private meshCore: AgentRegistryPort | null = null;
-  private sessionConnectors:
-    import('../../connectors/session-exposure.js').SessionConnectorService | null = null;
+  /** Internal connector tool boundary, installed after boot opens its listener. */
+  private connectorRuntimeTools: ConnectorRuntimeTools | undefined;
   private mcpAuthEvidence: McpAuthEvidencePort | undefined;
   private bindingRouter: import('../../relay/binding-router.js').BindingRouter | undefined;
   private bindingStore: import('../../relay/binding-store.js').BindingStore | undefined;
@@ -286,16 +289,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     this.meshCore = meshCore;
   }
 
-  /**
-   * Inject the per-account → session tool-server binder so a session's first
-   * turn after process start can hydrate its connector attachments from
-   * persisted state (connection-scoping spec `specs/connection-scoping/`
-   * §Part 1 Restart semantics) before the MCP factory reads its cache.
-   */
-  setSessionConnectors(
-    sessionConnectors: import('../../connectors/session-exposure.js').SessionConnectorService
-  ): void {
-    this.sessionConnectors = sessionConnectors;
+  /** Install the internal connector tool boundary after its listener starts. */
+  setConnectorRuntimeTools(tools: ConnectorRuntimeTools): void {
+    this.connectorRuntimeTools = tools;
   }
 
   /**
@@ -481,54 +477,50 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
     const cwdKey = opts?.cwd || session.cwd || this.cwd;
 
-    // Bring this session's connector tool exposure up to date with persisted
-    // agent/session attachments before the MCP factory reads its cache
-    // (connection-scoping spec §Part 1 Restart semantics). Hydration is
-    // idempotent and a no-op after the first call in this process, so it is
-    // safe to await unconditionally on every turn. Silently skipped when
-    // there is no agent owning this cwd (e.g. an unregistered scratch
-    // directory) — there is no standing consent to inherit.
-    //
-    // `hydrateSession`'s own per-account resolution already catches a
-    // rejected provider call (a real risk — it is third-party HTTP) so it
-    // does not throw in the ordinary case. This try/catch is the second,
-    // defense-in-depth layer for the turn path specifically: a turn must
-    // NEVER fail because a connector could not be resolved — connector tools
-    // are additive to a turn, never load-bearing for it — so even an
-    // unexpected throw out of hydration (a future implementation swap, a bug)
-    // is logged and skipped here rather than aborting the message the user
-    // actually asked for.
-    const agentId = this.meshCore?.getByPath(cwdKey)?.id;
-    if (this.sessionConnectors && agentId) {
-      try {
-        await this.sessionConnectors.hydrateSession(sessionId, agentId);
-      } catch (err) {
-        logger.warn(`[hydrateSession] failed for session '${sessionId}'; continuing without it`, {
-          error: err instanceof Error ? err.message : String(err),
-        });
+    const meshAgent = this.meshCore?.getByPath(cwdKey);
+
+    const connectorTurn =
+      this.connectorRuntimeTools && meshAgent
+        ? new ClaudeConnectorTurnContext({
+            tools: this.connectorRuntimeTools,
+            canonicalSessionId: () => session.sdkSessionId || sessionId,
+            agentPath: cwdKey,
+            cwd: cwdKey,
+          })
+        : undefined;
+    session.connectorTurn = connectorTurn;
+    let connectorRevokeReason: RevokeConnectorTurnReason = 'setup_failed';
+    let observedEvent = false;
+    let sawRuntimeError = false;
+    try {
+      const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey);
+      const stream = this.persistent.shouldDispatch(sessionId)
+        ? this.persistent.dispatch({
+            sessionId,
+            content,
+            session,
+            opts: senderOpts,
+            ...(opts !== undefined ? { messageOpts: opts } : {}),
+          })
+        : executeSdkQuery(sessionId, content, session, senderOpts, opts);
+
+      for await (const event of stream) {
+        observedEvent = true;
+        if (event.type === 'error') sawRuntimeError = true;
+        yield event;
+      }
+      connectorRevokeReason = sawRuntimeError ? 'runtime_failed' : 'turn_terminal';
+    } catch (error) {
+      connectorRevokeReason = observedEvent ? 'runtime_failed' : 'setup_failed';
+      throw error;
+    } finally {
+      if (connectorTurn) {
+        if (session.connectorTurn === connectorTurn) session.connectorTurn = undefined;
+        await connectorTurn.revoke(
+          connectorTurn.cancelled ? 'turn_cancelled' : connectorRevokeReason
+        );
       }
     }
-
-    const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey);
-
-    // The one branch. A session that already holds a process stays on this path
-    // whatever the setting says now, and a session that holds none reads the
-    // opt-in here — the asymmetry is `persistent-dispatch.ts`'s module doc, and
-    // P5's comparison runs depend on knowing it. With the flag off and no
-    // process held, the `executeSdkQuery` call below is reached with exactly the
-    // arguments it has always been reached with.
-    if (this.persistent.shouldDispatch(sessionId)) {
-      yield* this.persistent.dispatch({
-        sessionId,
-        content,
-        session,
-        opts: senderOpts,
-        ...(opts !== undefined ? { messageOpts: opts } : {}),
-      });
-      return;
-    }
-
-    yield* executeSdkQuery(sessionId, content, session, senderOpts, opts);
   }
 
   /**
@@ -842,7 +834,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** @inheritdoc */
   async interruptQuery(sessionId: string): Promise<InterruptReceipt> {
+    const connectorCancellation = this.sessionStore.findSession(sessionId)?.connectorTurn?.cancel();
     const receipt = await this.sessionStore.interruptQuery(sessionId);
+    await connectorCancellation;
     // Only `not-running` falls through. A stop that reached a live query and
     // then failed is a fact about THAT query, and re-aiming it at the booting
     // one would report the second attempt's ending for the first attempt's turn.

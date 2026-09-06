@@ -13,11 +13,8 @@
  *   test mode only), and the first poll resolves `connected` — so the browser
  *   walks the REAL consent sequence (disclosure → open link → poll → account)
  *   with no vendor involved.
- * - `toolServerForAccount` returns a stub HTTP {@link McpAppServerConnection}
- *   pointing at the local server, so an attached account reads as exposed
- *   (`tools on`) in the session's connector surface. Nothing dials it in test
- *   mode — the test-mode runtime has no MCP server factory — so a stub URL is
- *   honest here.
+ * - Exact account execution returns deterministic, secret-free data so owner
+ *   reconciliation and brokered execution can be proved without a vendor.
  *
  * The provider is credential-gated like the real backends: the bootstrapper
  * registers it only after a key is saved for provider type `test-connector` via
@@ -26,7 +23,6 @@
  *
  * @module services/connectors/providers/test-mode
  */
-import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type {
   ConnectorCapabilities,
   ConnectorExternalAccountRef,
@@ -47,6 +43,70 @@ const TEST_TOOLKITS: ConnectorToolkit[] = [
   { slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' },
   { slug: 'slack', displayName: 'Slack', authKind: 'oauth2' },
 ];
+
+/** Trusted concrete catalog versions served by the deterministic provider. */
+const TEST_TOOLKIT_VERSIONS: Record<string, string> = {
+  gmail: '2026-09-01',
+  slack: '2026-08-15',
+};
+
+/** Offline operation metadata used by real reconciliation and execution routes. */
+const TEST_OPERATIONS = {
+  gmail: [
+    {
+      operationSlug: 'gmail.messages.list',
+      schemaHash: 'test-gmail-list-v1',
+      capabilityClassification: 'read' as const,
+      retryPolicy: 'never' as const,
+      inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
+    },
+    {
+      operationSlug: 'gmail.messages.send',
+      schemaHash: 'test-gmail-send-v1',
+      capabilityClassification: 'write' as const,
+      retryPolicy: 'provider_idempotency_key' as const,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          to: { type: 'string' },
+          subject: { type: 'string' },
+        },
+        required: ['to'],
+      },
+    },
+    {
+      operationSlug: 'gmail.messages.delete',
+      schemaHash: 'test-gmail-delete-v1',
+      capabilityClassification: 'destructive' as const,
+      retryPolicy: 'never' as const,
+      inputSchema: {
+        type: 'object',
+        properties: { messageId: { type: 'string' } },
+        required: ['messageId'],
+      },
+    },
+  ],
+  slack: [
+    {
+      operationSlug: 'slack.messages.list',
+      schemaHash: 'test-slack-list-v1',
+      capabilityClassification: 'read' as const,
+      retryPolicy: 'never' as const,
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      operationSlug: 'slack.messages.send',
+      schemaHash: 'test-slack-send-v1',
+      capabilityClassification: 'write' as const,
+      retryPolicy: 'provider_idempotency_key' as const,
+      inputSchema: {
+        type: 'object',
+        properties: { channel: { type: 'string' }, text: { type: 'string' } },
+        required: ['channel', 'text'],
+      },
+    },
+  ],
+} as const;
 
 /** One in-flight connect flow, resolved to a stable account on first poll. */
 interface TestFlow {
@@ -97,26 +157,25 @@ export class TestModeConnectorProvider implements ConnectorProvider {
       type: this.type,
       supportsMultiAccount: true,
       custody: 'managed',
-      exposesOverMcp: true,
       capabilities: {
         catalog: { status: 'available' },
         authentication: { status: 'available' },
         accounts: { status: 'available' },
-        operations: {
-          status: 'unsupported',
-          reason: 'Test mode keeps execution on the P1 compatibility seam.',
-        },
-        execution: {
-          status: 'unsupported',
-          reason: 'Test mode keeps execution on the P1 compatibility seam.',
-        },
+        operations: { status: 'available' },
+        execution: { status: 'available' },
         triggers: { status: 'unsupported', reason: 'Test mode triggers are unavailable.' },
       },
       features: {},
     };
   }
 
-  async listToolkitPage(request: { cursor?: string; query?: string; limit: number }) {
+  async listToolkitPage(request: {
+    cursor?: string;
+    query?: string;
+    limit: number;
+    signal: AbortSignal;
+  }) {
+    request.signal.throwIfAborted();
     const all = (await this.listToolkits()).filter((toolkit) =>
       request.query ? toolkit.displayName.toLowerCase().includes(request.query.toLowerCase()) : true
     );
@@ -131,18 +190,98 @@ export class TestModeConnectorProvider implements ConnectorProvider {
     };
   }
 
-  listOperationSchemas(_request: { toolkit: string; cursor?: string; limit: number }) {
-    return Promise.resolve({
-      status: 'unsupported' as const,
-      reason: 'Test mode keeps execution on the P1 compatibility seam.',
-    });
+  async resolveToolkitVersion(toolkit: string, signal: AbortSignal) {
+    signal.throwIfAborted();
+    const toolkitVersion = TEST_TOOLKIT_VERSIONS[toolkit];
+    if (!toolkitVersion) {
+      return { status: 'unsupported' as const, reason: `Unknown test service '${toolkit}'.` };
+    }
+    return { status: 'ok' as const, toolkit, toolkitVersion };
   }
 
-  execute(_command: ConnectorProviderExecuteCommand) {
-    return Promise.resolve({
-      status: 'unsupported' as const,
-      reason: 'Test mode keeps execution on the P1 compatibility seam.',
-    });
+  async listOperationSchemas(request: {
+    toolkit: string;
+    toolkitVersion: string;
+    cursor?: string;
+    limit: number;
+    signal: AbortSignal;
+  }) {
+    request.signal.throwIfAborted();
+    const expectedVersion = TEST_TOOLKIT_VERSIONS[request.toolkit];
+    const definitions = TEST_OPERATIONS[request.toolkit as keyof typeof TEST_OPERATIONS];
+    if (!expectedVersion || expectedVersion !== request.toolkitVersion || !definitions) {
+      return {
+        status: 'unsupported' as const,
+        reason: 'The requested test catalog version is unavailable.',
+      };
+    }
+    const offset = request.cursor ? Number(request.cursor) : 0;
+    const pageDefinitions = definitions.slice(offset, offset + request.limit);
+    const next = offset + pageDefinitions.length;
+    return {
+      status: 'ok' as const,
+      page: {
+        operations: pageDefinitions.map((definition) => ({
+          providerInstanceId: this.instanceId,
+          toolkit: request.toolkit,
+          toolkitVersion: request.toolkitVersion,
+          ...definition,
+        })),
+        ...(next < definitions.length && { nextCursor: String(next) }),
+        truncated: next < definitions.length,
+      },
+    };
+  }
+
+  async execute(command: ConnectorProviderExecuteCommand) {
+    if (command.signal.aborted) {
+      return {
+        status: 'cancelled' as const,
+        code: 'CANCELLED_BEFORE_DISPATCH' as const,
+        message: 'The test operation was cancelled before it was sent.',
+      };
+    }
+    const account = this._accounts.get(command.externalAccountRef);
+    const version = TEST_TOOLKIT_VERSIONS[command.operation.toolkit];
+    const definitions =
+      TEST_OPERATIONS[command.operation.toolkit as keyof typeof TEST_OPERATIONS] ?? [];
+    const definition = definitions.find(
+      (candidate) => candidate.operationSlug === command.operation.operationSlug
+    );
+    if (
+      !account ||
+      account.status !== 'active' ||
+      account.toolkit !== command.operation.toolkit ||
+      command.operation.providerInstanceId !== this.instanceId ||
+      command.operation.toolkitVersion !== version ||
+      !definition ||
+      definition.schemaHash !== command.operation.schemaHash ||
+      definition.capabilityClassification !== command.operation.capabilityClassification
+    ) {
+      return {
+        status: 'error' as const,
+        code: 'TEST_OPERATION_MISMATCH',
+        message: 'The test account and exact operation revision did not match.',
+        retryable: false,
+      };
+    }
+    if (!(await command.authorizeDispatch())) {
+      return {
+        status: 'error' as const,
+        code: 'AUTHORITY_CHANGED_BEFORE_DISPATCH',
+        message: 'Access changed before the operation was sent.',
+        retryable: false,
+      };
+    }
+    return {
+      status: 'success' as const,
+      data: {
+        ok: true,
+        operation: command.operation.operationSlug,
+        accountLabel: account.label,
+      },
+      providerLogId: `test-log-${command.attemptId}`,
+    };
   }
 
   listTriggerTypes(_toolkit: string) {
@@ -205,25 +344,8 @@ export class TestModeConnectorProvider implements ConnectorProvider {
     return Promise.resolve();
   }
 
-  toolServerForAccount(
-    accountId: ConnectorExternalAccountRef
-  ): Promise<McpAppServerConnection | null> {
-    const account = this._accounts.get(accountId);
-    // The documented null branch: unknown or non-active accounts are surfaced
-    // as unexposable, never thrown.
-    if (!account || account.status !== 'active') {
-      return Promise.resolve(null);
-    }
-    return Promise.resolve({
-      transport: 'http' as const,
-      url: `${this._localOrigin}/api/test/connectors/mcp/${encodeURIComponent(accountId)}`,
-      headers: {},
-    });
-  }
-
   /**
-   * Force an account's lifecycle status — drives the null branch of
-   * {@link toolServerForAccount} in the conformance suite.
+   * Force an account's lifecycle status for management and execution tests.
    *
    * @param accountId - The account to mutate.
    * @param status - The status to set.

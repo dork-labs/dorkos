@@ -624,6 +624,13 @@
       "when": 1788740049095,
       "tag": "0088_premium_liz_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "6",
+      "when": 1788784424138,
+      "tag": "0089_foamy_vision",
+      "breakpoints": true
     }
   ]
 }

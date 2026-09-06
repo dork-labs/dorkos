@@ -18,6 +18,11 @@ import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 import { DORKOS_MCP_SERVER_NAME } from '../shared/dorkos-tool-names.js';
 import { type DorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
 import { dorkosHeaderEnv, dorkosHeaderEnvNames } from './dorkos-header-env.js';
+import {
+  CONNECTOR_RUNTIME_MCP_SERVER_NAME,
+  type ConnectorRuntimeMcpInjection,
+} from '../connector-tools.js';
+import { connectorHeaderEnv, connectorHeaderEnvNames } from './connector-header-env.js';
 import { type CodexManagedMcpServers, type CodexMcpServerRecord } from './mcp-server-config.js';
 
 /**
@@ -27,22 +32,23 @@ import { type CodexManagedMcpServers, type CodexMcpServerRecord } from './mcp-se
  * caller now gives one ({@link CodexRuntime} resolves it through the shared
  * ladder first) — leaving it unset falls back to the SDK's own binary discovery,
  * which THROWS when it finds nothing rather than reporting it.
- * `config.mcp_servers` carries three contributors: the agent's enabled managed
+ * `config.mcp_servers` carries four contributors: the agent's enabled managed
  * servers (`managedServers`, spec `mcp-server-management`), the scoped
  * `dorkos_ui` bridge when a UI MCP URL is provided, and the `dorkos` tool server
- * when one is injected (`dorkosTools`, spec `tool-only-room-replies`) — see
- * {@link buildMcpServersConfig} for the merge and the shadowing guarantee.
+ * when one is injected (`dorkosTools`, spec `tool-only-room-replies`), plus the
+ * turn-bound connector server — see {@link buildMcpServersConfig} for the merge
+ * and the shadowing guarantee.
  * `config` is omitted entirely when no source contributes a server.
  *
- * `CodexOptions.env` has three sources, and every one of them is a secret that
+ * `CodexOptions.env` has four sources, and every one of them is a secret that
  * must not travel any other way: `extraEnv` (the agent's `DORKOS_AGENT_TOKEN`),
  * the `dorkos` server's two header values, and every HTTP header the agent's own
- * managed servers carry (DOR-993) — all placed under the variable names their
- * `env_http_headers` entries point Codex at. Setting `env` at all stops the SDK
- * inheriting `process.env` wholesale, so this function spreads the parent
- * environment back in explicitly (see {@link inheritedEnv}) before layering
- * those on top. With no source at all, `env` stays unset — the SDK's own
- * inherit-everything path.
+ * managed servers carry (DOR-993), plus the connector server's turn bearer and
+ * context headers — all placed under the variable names their `env_http_headers`
+ * entries point Codex at. Setting `env` at all stops the SDK inheriting
+ * `process.env` wholesale, so this function spreads the parent environment back
+ * in explicitly (see {@link inheritedEnv}) before layering those on top. With
+ * no source at all, `env` stays unset — the SDK's own inherit-everything path.
  *
  * @param binaryPath - Absolute path to the `codex` binary, or null/undefined
  * @param mcpUiUrl - Loopback URL of the scoped `dorkos_ui` MCP server, or undefined
@@ -54,21 +60,25 @@ import { type CodexManagedMcpServers, type CodexMcpServerRecord } from './mcp-se
  * @param dorkosTools - The resolved `dorkos` tool server, or null/undefined to
  *   inject none. Its URL goes into `config`; its header VALUES go into `env`,
  *   never into `config`, because `config` becomes visible argv.
+ * @param connectorTools - Turn-bound connector-only server. Header values use
+ *   the same environment indirection and never enter visible config arguments.
  */
 export function buildCodexOptions(
   binaryPath?: string | null,
   mcpUiUrl?: string,
   extraEnv?: Record<string, string>,
   managed?: CodexManagedMcpServers,
-  dorkosTools?: DorkosMcpInjection | null
+  dorkosTools?: DorkosMcpInjection | null,
+  connectorTools?: ConnectorRuntimeMcpInjection | null
 ): CodexOptions {
   const env = {
     ...(extraEnv ?? {}),
     ...(managed?.env ?? {}),
     ...dorkosHeaderEnv(dorkosTools),
+    ...connectorHeaderEnv(connectorTools),
   };
   const hasExtraEnv = Object.keys(env).length > 0;
-  const mcpServers = buildMcpServersConfig(mcpUiUrl, managed?.servers, dorkosTools);
+  const mcpServers = buildMcpServersConfig(mcpUiUrl, managed?.servers, dorkosTools, connectorTools);
   return {
     ...(binaryPath ? { codexPathOverride: binaryPath } : {}),
     ...(mcpServers ? { config: { mcp_servers: mcpServers } } : {}),
@@ -77,12 +87,13 @@ export function buildCodexOptions(
 }
 
 /**
- * Merge the agent's managed MCP servers with the two servers DorkOS owns — the
- * scoped `dorkos_ui` bridge and the `dorkos` tool server — into one
- * `mcp_servers` config record, or `undefined` when none contributes.
+ * Merge the agent's managed MCP servers with the three servers DorkOS owns —
+ * the scoped `dorkos_ui` bridge, the `dorkos` tool server, and the turn-bound
+ * connector server — into one `mcp_servers` config record, or `undefined` when
+ * none contributes.
  *
- * Both DorkOS entries are written LAST, so a managed server can never shadow
- * either whatever its name — the same ordering guarantee the claude-code
+ * All DorkOS entries are written LAST, so a managed server can never shadow
+ * any of them whatever its name — the same ordering guarantee the claude-code
  * adapter's `mergeSessionMcpServers` gives, and defense in depth on top of the
  * converter already dropping (and now reporting) the reserved names.
  *
@@ -96,11 +107,13 @@ export function buildCodexOptions(
  * @param mcpUiUrl - Loopback URL of the `dorkos_ui` server, or undefined.
  * @param managedServers - Enabled managed servers in Codex config shape.
  * @param dorkosTools - The resolved `dorkos` entry, or null/undefined to inject none.
+ * @param connectorTools - Turn-bound connector-only entry, when available.
  */
 function buildMcpServersConfig(
   mcpUiUrl?: string,
   managedServers?: CodexMcpServerRecord,
-  dorkosTools?: DorkosMcpInjection | null
+  dorkosTools?: DorkosMcpInjection | null,
+  connectorTools?: ConnectorRuntimeMcpInjection | null
 ): CodexMcpServerRecord | undefined {
   const servers: CodexMcpServerRecord = { ...(managedServers ?? {}) };
   if (mcpUiUrl) servers[CODEX_UI_MCP_SERVER] = { url: mcpUiUrl };
@@ -116,6 +129,12 @@ function buildMcpServersConfig(
       // variables holding them, and Codex resolves the values inside the
       // subprocess. `buildCodexOptions` puts them there.
       env_http_headers: dorkosHeaderEnvNames(dorkosTools),
+    };
+  }
+  if (connectorTools) {
+    servers[CONNECTOR_RUNTIME_MCP_SERVER_NAME] = {
+      url: connectorTools.url,
+      env_http_headers: connectorHeaderEnvNames(connectorTools),
     };
   }
   return Object.keys(servers).length > 0 ? servers : undefined;

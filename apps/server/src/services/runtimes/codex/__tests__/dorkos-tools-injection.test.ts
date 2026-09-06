@@ -33,6 +33,7 @@ import {
 import { CodexRuntime } from '../codex-runtime.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { codexSimpleTurn, makeMockThread } from './codex-scenarios.js';
+import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
 
 vi.mock('../check-dependencies.js', () => ({ checkCodexDependencies: vi.fn(() => []) }));
 vi.mock('../enumerate-mcp-servers.js', () => ({
@@ -80,6 +81,8 @@ vi.mock('../../../../lib/logger.js', async (importOriginal) => {
 const sdkMocks = vi.hoisted(() => ({
   constructorOptions: [] as (Record<string, unknown> | undefined)[],
   prompts: [] as string[],
+  behavior: 'complete' as 'complete' | 'fail' | 'wait-for-abort' | 'park-past-abort',
+  releaseParked: undefined as (() => void) | undefined,
 }));
 
 vi.mock('@openai/codex-sdk', () => ({
@@ -90,8 +93,27 @@ vi.mock('@openai/codex-sdk', () => ({
     startThread(): unknown {
       return {
         id: 'codex-thread-0001',
-        runStreamed: async (prompt: string) => {
+        runStreamed: async (prompt: string, options?: { signal?: AbortSignal }) => {
           sdkMocks.prompts.push(prompt);
+          if (sdkMocks.behavior === 'fail') throw new Error('codex runtime failed');
+          if (sdkMocks.behavior === 'wait-for-abort') {
+            await new Promise<never>((_resolve, reject) => {
+              options?.signal?.addEventListener(
+                'abort',
+                () => {
+                  const error = new Error('aborted');
+                  error.name = 'AbortError';
+                  reject(error);
+                },
+                { once: true }
+              );
+            });
+          }
+          if (sdkMocks.behavior === 'park-past-abort') {
+            await new Promise<void>((resolve) => {
+              sdkMocks.releaseParked = resolve;
+            });
+          }
           return { events: makeMockThread(codexSimpleTurn('ok')).runStreamed() };
         },
       };
@@ -135,6 +157,8 @@ describe('the dorkos tool server on a Codex turn', () => {
   beforeEach(async () => {
     sdkMocks.constructorOptions.length = 0;
     sdkMocks.prompts.length = 0;
+    sdkMocks.behavior = 'complete';
+    sdkMocks.releaseParked = undefined;
     loggerMocks.warn.mockClear();
     envState.DORKOS_HOST = 'localhost';
     envState.DORKOS_PORT = 4242;
@@ -296,6 +320,178 @@ describe('the dorkos tool server on a Codex turn', () => {
       expect(warned.some((line) => line.includes('"dorkos"') && line.includes('reserve'))).toBe(
         true
       );
+    });
+  });
+
+  describe('connector runtime binding', () => {
+    function connectorPort(): ConnectorRuntimePrincipalPort {
+      return {
+        openTurn: vi.fn().mockResolvedValue({
+          bindingId: 'binding-1',
+          bearer: 'connector-turn-secret',
+          expiresAt: '2099-01-01T00:00:00.000Z',
+        }),
+        resolve: vi.fn(),
+        revoke: vi.fn().mockResolvedValue(undefined),
+      };
+    }
+
+    it('injects independently of external MCP posture and revokes on terminal completion', async () => {
+      configState.value = { runtimes: { dorkosTools: false }, mcp: { enabled: false } };
+      const principals = connectorPort();
+      const runtime = makeRuntime();
+      runtime.setConnectorRuntimeTools({
+        principals,
+        listenerUrl: 'http://127.0.0.1:4341/mcp',
+        isConnectorCapabilityId: (id) =>
+          new Set([
+            'connectors.execute_read',
+            'connectors.execute_write',
+            'connectors.execute_destructive',
+          ]).has(id),
+      });
+
+      await drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));
+
+      expect(principals.openTurn).toHaveBeenCalledWith({
+        runtime: 'codex',
+        canonicalSessionId: 's1',
+        agentPath: agentDir,
+        canonicalCwd: agentDir,
+        signal: expect.any(AbortSignal),
+      });
+      expect(lastMcpServers()['dorkos_connections']?.['url']).toBe('http://127.0.0.1:4341/mcp');
+      const options = sdkMocks.constructorOptions.at(-1) as {
+        config?: unknown;
+        env?: Record<string, string>;
+      };
+      expect(JSON.stringify(options.config)).not.toContain('connector-turn-secret');
+      expect(options.env?.['DORKOS_CONNECTOR_MCP_AUTHORIZATION']).toBe(
+        'Bearer connector-turn-secret'
+      );
+      expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_terminal');
+    });
+
+    it('revokes a binding when setup fails after minting', async () => {
+      const principals = connectorPort();
+      const runtime = new CodexRuntime({
+        threadMap: new CodexThreadMap(db),
+        resolveBinary: async () => {
+          throw new Error('binary setup failed');
+        },
+        defaultCwd: agentDir,
+      });
+      runtime.setMeshCore(meshWithAgent(agentDir));
+      runtime.setConnectorRuntimeTools({
+        principals,
+        listenerUrl: 'http://127.0.0.1:4341/mcp',
+        isConnectorCapabilityId: (id) =>
+          new Set([
+            'connectors.execute_read',
+            'connectors.execute_write',
+            'connectors.execute_destructive',
+          ]).has(id),
+      });
+
+      await expect(drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }))).rejects.toThrow(
+        'binary setup failed'
+      );
+      expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'setup_failed');
+    });
+
+    it('revokes runtime failures after dispatch', async () => {
+      const principals = connectorPort();
+      const runtime = makeRuntime();
+      runtime.setConnectorRuntimeTools({
+        principals,
+        listenerUrl: 'http://127.0.0.1:4341/mcp',
+        isConnectorCapabilityId: (id) =>
+          new Set([
+            'connectors.execute_read',
+            'connectors.execute_write',
+            'connectors.execute_destructive',
+          ]).has(id),
+      });
+      sdkMocks.behavior = 'fail';
+
+      await expect(drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }))).rejects.toThrow(
+        'codex runtime failed'
+      );
+      expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'runtime_failed');
+    });
+
+    it('uses the turn controller to revoke an interrupted turn', async () => {
+      const principals = connectorPort();
+      const runtime = makeRuntime();
+      runtime.setConnectorRuntimeTools({
+        principals,
+        listenerUrl: 'http://127.0.0.1:4341/mcp',
+        isConnectorCapabilityId: (id) =>
+          new Set([
+            'connectors.execute_read',
+            'connectors.execute_write',
+            'connectors.execute_destructive',
+          ]).has(id),
+      });
+      sdkMocks.behavior = 'wait-for-abort';
+
+      const turn = drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));
+      await vi.waitFor(() => expect(sdkMocks.prompts).toHaveLength(1));
+      expect(await runtime.interruptQuery('s1')).toEqual({ outcome: 'closed', runtime: 'codex' });
+      await expect(turn).rejects.toMatchObject({ name: 'AbortError' });
+      expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_cancelled');
+    });
+
+    it('revokes immediately when the SDK iterator remains parked after interruption', async () => {
+      const principals = connectorPort();
+      const runtime = makeRuntime();
+      runtime.setConnectorRuntimeTools({
+        principals,
+        listenerUrl: 'http://127.0.0.1:4341/mcp',
+        isConnectorCapabilityId: (id) =>
+          ['connectors.list_granted_connections', 'connectors.execute_read'].includes(id),
+      });
+      sdkMocks.behavior = 'park-past-abort';
+
+      const turn = drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));
+      await vi.waitFor(() => expect(sdkMocks.prompts).toHaveLength(1));
+      await expect(runtime.interruptQuery('s1')).resolves.toEqual({
+        outcome: 'closed',
+        runtime: 'codex',
+      });
+      expect(principals.revoke).toHaveBeenCalledTimes(1);
+      expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_cancelled');
+
+      sdkMocks.releaseParked?.();
+      await turn;
+      expect(principals.revoke).toHaveBeenCalledTimes(1);
+    });
+
+    it('still closes the Codex process when durable connector revoke reports failure', async () => {
+      const principals = connectorPort();
+      vi.mocked(principals.revoke).mockRejectedValueOnce(new Error('durable revoke failed'));
+      const runtime = makeRuntime();
+      runtime.setConnectorRuntimeTools({
+        principals,
+        listenerUrl: 'http://127.0.0.1:4341/mcp',
+        isConnectorCapabilityId: (id) =>
+          ['connectors.list_granted_connections', 'connectors.execute_read'].includes(id),
+      });
+      sdkMocks.behavior = 'park-past-abort';
+
+      const turn = drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));
+      await vi.waitFor(() => expect(sdkMocks.prompts).toHaveLength(1));
+      await expect(runtime.interruptQuery('s1')).resolves.toEqual({
+        outcome: 'closed',
+        runtime: 'codex',
+      });
+      expect(loggerMocks.warn).toHaveBeenCalledWith(
+        '[CodexRuntime] failed to persist interrupted connector binding revoke',
+        expect.objectContaining({ sessionId: 's1' })
+      );
+
+      sdkMocks.releaseParked?.();
+      await turn;
     });
   });
 

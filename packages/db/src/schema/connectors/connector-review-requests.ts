@@ -10,9 +10,20 @@ export const connectorReviewRequests = sqliteTable(
     actionVersion: integer('action_version').notNull(),
     requesterKind: text('requester_kind', { enum: ['agent', 'program', 'operator'] }).notNull(),
     requesterId: text('requester_id').notNull(),
+    ownerKind: text('owner_kind', { enum: ['user', 'local_install'] }),
+    ownerId: text('owner_id'),
+    agentId: text('agent_id'),
+    sessionId: text('session_id'),
+    connectionId: text('connection_id'),
+    providerInstanceId: text('provider_instance_id'),
+    executionConfigGeneration: integer('execution_config_generation'),
+    authorityBindingDigest: text('authority_binding_digest'),
+    actionHash: text('action_hash'),
     targetKind: text('target_kind').notNull(),
     targetId: text('target_id').notNull(),
     actionPayloadJson: text('action_payload_json').notNull(),
+    /** Immutable owner-visible context captured before the review is created. */
+    reviewContextJson: text('review_context_json'),
     state: text('state', { enum: ['pending', 'approved', 'denied', 'expired'] }).notNull(),
     expiresAt: text('expires_at').notNull(),
     idempotencyKey: text('idempotency_key').notNull(),
@@ -20,6 +31,9 @@ export const connectorReviewRequests = sqliteTable(
     resolvedAt: text('resolved_at'),
     resolvedBy: text('resolved_by'),
     resolutionSummary: text('resolution_summary'),
+    resolutionJson: text('resolution_json'),
+    authorityRevokedAt: text('authority_revoked_at'),
+    authorityRevokeReason: text('authority_revoke_reason'),
   },
   (table) => [
     uniqueIndex('connector_review_request_idempotency_unique').on(
@@ -28,6 +42,13 @@ export const connectorReviewRequests = sqliteTable(
       table.idempotencyKey
     ),
     index('connector_review_requests_state_idx').on(table.state, table.expiresAt),
+    index('connector_review_requests_owner_state_idx').on(
+      table.ownerKind,
+      table.ownerId,
+      table.state,
+      table.expiresAt
+    ),
+    index('connector_review_requests_agent_connection_idx').on(table.agentId, table.connectionId),
   ]
 );
 

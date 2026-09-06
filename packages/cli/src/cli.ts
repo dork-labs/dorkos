@@ -350,7 +350,7 @@ if (process.argv[2] === 'telemetry') {
   process.exit(await runTelemetryDispatcher(DORK_HOME, process.argv[3], process.argv.slice(4)));
 }
 
-// Operator verbs (`agent`, `task`, `activity`, `version`). Each has its own flag
+// Operator verbs (`agent`, `task`, `activity`, `connections`, `version`). Each has its own flag
 // namespace (`--json` plus per-verb fields), so intercept before the top-level
 // parseArgs call. They call the running server's HTTP API via the shared
 // api-client (server-discovery + local port resolution) — the CLI is the only
@@ -363,6 +363,7 @@ if (
   process.argv[2] === 'task' ||
   process.argv[2] === 'room' ||
   process.argv[2] === 'activity' ||
+  process.argv[2] === 'connections' ||
   process.argv[2] === 'capabilities' ||
   process.argv[2] === 'call' ||
   process.argv[2] === 'debug' ||
@@ -395,6 +396,10 @@ if (
       console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
     }
+  }
+  if (process.argv[2] === 'connections') {
+    const { runConnectionsDispatcher } = await import('./commands/connections.js');
+    process.exit(await runConnectionsDispatcher(subArgs));
   }
   if (process.argv[2] === 'capabilities') {
     if (subArgs[0] === '--help' || subArgs[0] === '-h') {
@@ -524,6 +529,7 @@ Commands:
   task <sub>           Manage scheduled tasks (list|create|trigger|runs)
   room export <room>   Save a channel or DM's history as a file (--out|--force)
   activity             Show the activity feed (--actor|--category|--type|--limit)
+  connections <sub>    Use scoped connector access (list|schema|call|usage|request|status)
   capabilities         List capabilities you can invoke by id (--json for raw catalog)
   call <capability-id> Invoke any capability by id (--input <json>; prints JSON)
   debug <subject>      Read live state: dispatches|refusals|projectors|session|room|trace

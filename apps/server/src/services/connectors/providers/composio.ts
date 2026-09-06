@@ -2,10 +2,10 @@
  * The Composio managed-custody {@link ConnectorProvider} — the flagship gateway
  * backend (spec §Detailed Design 1, spike §1.3). It connects a DorkOS agent to
  * any Composio toolkit (Gmail, Slack, …), holds N accounts of one service, and
- * exposes each account's tools to a session as Composio's Rube MCP endpoint.
+ * executes exact pinned account operations through DorkOS's broker.
  *
  * Capabilities: `type: 'composio'`, `supportsMultiAccount: true`,
- * `custody: 'managed'`, `exposesOverMcp: true`. Custody is `managed` because the
+ * `custody: 'managed'`. Custody is `managed` because the
  * upstream OAuth tokens live in Composio's cloud vault, never in DorkOS's store —
  * the only DorkOS-held secret is the Composio API key (a `file:` credential
  * reference), and the only per-account state is the opaque `ca_…` handle. That is
@@ -21,7 +21,7 @@
  *
  * @module services/connectors/providers/composio
  */
-import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
+import { createHash } from 'node:crypto';
 import type {
   ConnectorCapabilities,
   ConnectorExternalAccountRef,
@@ -33,9 +33,14 @@ import type {
   ConnectStart,
   ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
-import type { ConnectorProviderExecuteCommand } from '@dorkos/shared/connector-schemas';
+import type {
+  ConnectorCatalogPageRequest,
+  ConnectorOperationPageRequest,
+  ConnectorProviderExecuteCommand,
+  ConnectorProviderExecuteResult,
+  ConnectorUnsupportedResult,
+} from '@dorkos/shared/connector-schemas';
 import type { CredentialProvider } from '../../core/credential-provider.js';
-import { logger } from '../../../lib/logger.js';
 import {
   ComposioApiError,
   FetchComposioHttpClient,
@@ -43,6 +48,7 @@ import {
   type ComposioConnectedAccount,
   type ComposioHttpClient,
 } from './composio-client.js';
+import { ComposioSdkClient, type ComposioOperationClient } from './composio/sdk-client.js';
 import { legacyDefaultProviderInstanceId } from '../legacy-connection-migration.js';
 
 /** The backend type identifier this provider registers and reports under. */
@@ -65,6 +71,10 @@ export const DEFAULT_COMPOSIO_USER_ID = 'dorkos-operator';
 export const COMPOSIO_CREDENTIAL_NAME = 'composio-api-key';
 /** The `file:` credential reference for {@link COMPOSIO_CREDENTIAL_NAME}. */
 export const COMPOSIO_API_KEY_REF = `file:${COMPOSIO_CREDENTIAL_NAME}`;
+
+/** Safe reason returned while a legacy user key awaits explicit project-key migration. */
+export const COMPOSIO_UAK_OPERATIONS_UNSUPPORTED_REASON =
+  'Direct operations require a verified Composio project key. Replace the legacy user key, then reconcile this provider.';
 
 /**
  * Wrap a raw Composio `ca_…` handle as a private, provider-scoped
@@ -132,8 +142,12 @@ function toPortStatus(status: ComposioAccountStatus): ProviderConnectedAccount['
 export interface ComposioConnectorProviderOpts {
   /** The Composio HTTP boundary (a fake in tests, {@link FetchComposioHttpClient} in prod). */
   client: ComposioHttpClient;
+  /** Exact-version operation boundary, absent for legacy user-key configurations. */
+  operationClient: ComposioOperationClient | null;
   /** Stable configured provider instance id. */
   instanceId?: ConnectorProviderInstanceId;
+  /** Digest of the exact secret and server-owned SDK construction values. */
+  executionConfigDigest?: string;
 }
 
 /**
@@ -151,10 +165,6 @@ export interface ComposioConnectorProviderOpts {
  *   from a wrong-kind API key render as a silently dead /connections grid
  *   (DOR-703 live verification) — an empty success and a failure must never be
  *   indistinguishable.
- * - `toolServerForAccount` — throw-free; a transport failure resolves `null` (the
- *   surfaced per-account null branch), because its consumer
- *   (`session-exposure.attach`) awaits it unguarded and a throw would 500 the
- *   attach route instead of recording attach-with-warning.
  * - `pollConnect` — throw-free; maps a transport failure to a failure-typed
  *   `{ status: 'failed' }`.
  * - `disconnect` — idempotent: the client swallows a 404 (an unknown/already-
@@ -174,6 +184,8 @@ export class ComposioConnectorProvider implements ConnectorProvider {
   readonly type = COMPOSIO_PROVIDER_TYPE;
 
   private readonly _client: ComposioHttpClient;
+  private readonly _operationClient: ComposioOperationClient | null;
+  readonly #executionConfigDigest: string | undefined;
 
   /**
    * Construct the provider over an injected Composio HTTP client.
@@ -182,9 +194,16 @@ export class ComposioConnectorProvider implements ConnectorProvider {
    */
   constructor(opts: ComposioConnectorProviderOpts) {
     this._client = opts.client;
+    this._operationClient = opts.operationClient;
+    this.#executionConfigDigest = opts.executionConfigDigest;
     this.instanceId =
       opts.instanceId ??
       (legacyDefaultProviderInstanceId(this.type) as ConnectorProviderInstanceId);
+  }
+
+  /** Server-only evidence for the exact configuration used to construct this instance. */
+  get executionConfigDigest(): string | undefined {
+    return this.#executionConfigDigest;
   }
 
   /**
@@ -197,28 +216,31 @@ export class ComposioConnectorProvider implements ConnectorProvider {
   }
 
   getCapabilities(): ConnectorCapabilities {
+    const operations = this._operationClient
+      ? ({ status: 'available' } as const)
+      : ({
+          status: 'unsupported',
+          reason: COMPOSIO_UAK_OPERATIONS_UNSUPPORTED_REASON,
+        } as const);
     return {
       instanceId: this.instanceId,
       type: this.type,
       supportsMultiAccount: true,
       custody: 'managed',
-      exposesOverMcp: true,
       capabilities: {
         catalog: { status: 'available' },
         authentication: { status: 'available' },
         accounts: { status: 'available' },
-        operations: {
-          status: 'unsupported',
-          reason: 'Direct operation discovery activates in P2.',
-        },
-        execution: { status: 'unsupported', reason: 'Brokered execution activates in P2.' },
+        operations,
+        execution: operations,
         triggers: { status: 'unsupported', reason: 'Trigger support is not configured.' },
       },
       features: {},
     };
   }
 
-  async listToolkitPage(request: { cursor?: string; query?: string; limit: number }) {
+  async listToolkitPage(request: ConnectorCatalogPageRequest) {
+    request.signal.throwIfAborted();
     const all = (await this.listToolkits()).filter((toolkit) =>
       request.query ? toolkit.displayName.toLowerCase().includes(request.query.toLowerCase()) : true
     );
@@ -233,17 +255,87 @@ export class ComposioConnectorProvider implements ConnectorProvider {
     };
   }
 
-  listOperationSchemas(_request: { toolkit: string; cursor?: string; limit: number }) {
-    return Promise.resolve({
-      status: 'unsupported' as const,
-      reason: 'Direct operation discovery activates in P2.',
-    });
+  async resolveToolkitVersion(toolkit: string, signal: AbortSignal) {
+    signal.throwIfAborted();
+    if (!this._operationClient) return this._operationsUnsupported();
+    return this._operationClient.resolveToolkitVersion(toolkit, signal);
   }
 
-  execute(_command: ConnectorProviderExecuteCommand) {
-    return Promise.resolve({
-      status: 'unsupported' as const,
-      reason: 'Brokered execution activates in P2.',
+  async listOperationSchemas(request: ConnectorOperationPageRequest) {
+    request.signal.throwIfAborted();
+    if (!this._operationClient) return this._operationsUnsupported();
+    return this._operationClient.listOperationSchemas(this.instanceId, request);
+  }
+
+  async execute(command: ConnectorProviderExecuteCommand): Promise<ConnectorProviderExecuteResult> {
+    if (command.signal.aborted) {
+      return {
+        status: 'cancelled',
+        code: 'CANCELLED_BEFORE_DISPATCH',
+        message: 'The operation was cancelled before it was sent.',
+      };
+    }
+    if (!this._operationClient) return this._operationsUnsupported();
+    if (command.operation.providerInstanceId !== this.instanceId) {
+      return this._executionError(
+        'PROVIDER_INSTANCE_MISMATCH',
+        'The operation belongs to a different connector provider.'
+      );
+    }
+    if (!command.operation.toolkitVersion || command.operation.toolkitVersion === 'latest') {
+      return this._executionError(
+        'INVALID_TOOLKIT_VERSION',
+        'The operation does not have a concrete provider version.'
+      );
+    }
+    if (command.operation.retryPolicy !== 'never' || command.upstreamIdempotencyKey !== undefined) {
+      return this._executionError(
+        'UNSUPPORTED_RETRY_POLICY',
+        'This provider only supports operations that cannot be retried automatically.'
+      );
+    }
+
+    let account: ProviderConnectedAccount | undefined;
+    try {
+      const state = await this._client.getConnectionState(
+        toComposioAccountId(command.externalAccountRef)
+      );
+      if (state.status === 'ACTIVE' && state.account) account = this._toPortAccount(state.account);
+    } catch (error) {
+      if (error instanceof ComposioApiError && error.status === 404) {
+        return this._executionError(
+          'ACCOUNT_UNAVAILABLE',
+          'The selected connection is not active for this operation.'
+        );
+      }
+      return this._executionError(
+        'ACCOUNT_CHECK_FAILED',
+        'DorkOS could not verify the selected connection before sending the operation.'
+      );
+    }
+    if (
+      !account ||
+      account.status !== 'active' ||
+      account.externalAccountRef !== command.externalAccountRef
+    ) {
+      return this._executionError(
+        'ACCOUNT_UNAVAILABLE',
+        'The selected connection is not active for this operation.'
+      );
+    }
+    if (account.toolkit !== command.operation.toolkit) {
+      return this._executionError(
+        'ACCOUNT_TOOLKIT_MISMATCH',
+        'The selected connection belongs to a different service.'
+      );
+    }
+
+    return this._operationClient.execute({
+      connectedAccountId: toComposioAccountId(command.externalAccountRef),
+      operation: command.operation,
+      arguments: command.arguments,
+      signal: command.signal,
+      authorizeDispatch: command.authorizeDispatch,
     });
   }
 
@@ -320,32 +412,6 @@ export class ComposioConnectorProvider implements ConnectorProvider {
     await this._client.deleteConnectedAccount(toComposioAccountId(accountId));
   }
 
-  async toolServerForAccount(
-    accountId: ConnectorExternalAccountRef
-  ): Promise<McpAppServerConnection | null> {
-    // Route the opaque id back to its Composio handle and mint the Rube MCP
-    // session. A null session (unusable account, no live url) surfaces as null —
-    // the per-account warning path (spec §Detailed Design 3), never a throw.
-    // Its consumer (session-exposure attach) awaits this UNGUARDED, so a stale
-    // key's 401, a 5xx, or a timeout must also resolve null (attach-recorded,
-    // surfaced-as-warning), not throw a 500 out of the attach route.
-    try {
-      const session = await this._client.mcpSessionForAccount(toComposioAccountId(accountId));
-      if (!session) return null;
-      return {
-        transport: 'http',
-        url: session.url,
-        ...(session.headers && { headers: session.headers }),
-      };
-    } catch (err) {
-      if (isTransportError(err)) {
-        logger.warn(`[Connectors] composio toolServerForAccount degraded to null: ${errText(err)}`);
-        return null;
-      }
-      throw err;
-    }
-  }
-
   /** Map a Composio domain account onto private provider account metadata. */
   private _toPortAccount(account: ComposioConnectedAccount): ProviderConnectedAccount {
     return {
@@ -355,6 +421,19 @@ export class ComposioConnectorProvider implements ConnectorProvider {
       status: toPortStatus(account.status),
       custody: 'managed',
     };
+  }
+
+  /** Return the shared safe envelope for a legacy user-key operation request. */
+  private _operationsUnsupported(): ConnectorUnsupportedResult {
+    return {
+      status: 'unsupported',
+      reason: COMPOSIO_UAK_OPERATIONS_UNSUPPORTED_REASON,
+    };
+  }
+
+  /** Return one terminal provider validation error without private routing data. */
+  private _executionError(code: string, message: string): ConnectorProviderExecuteResult {
+    return { status: 'error', code, message, retryable: false };
   }
 }
 
@@ -368,6 +447,8 @@ export interface MaybeCreateComposioProviderDeps {
   userId?: string;
   /** Override the Composio API origin. */
   baseUrl?: string;
+  /** Stable configured provider instance id. */
+  instanceId?: ConnectorProviderInstanceId;
   /**
    * Build the HTTP client from the resolved key (tests inject a fake, bypassing
    * `fetch`). Defaults to {@link FetchComposioHttpClient}.
@@ -375,6 +456,32 @@ export interface MaybeCreateComposioProviderDeps {
    * @param opts - The resolved API key, `user_id`, and optional origin.
    */
   makeClient?: (opts: { apiKey: string; userId: string; baseUrl?: string }) => ComposioHttpClient;
+  /** Build the confined SDK client after the key is proven to be a project key. */
+  makeOperationClient?: (opts: {
+    apiKey: string;
+    serverUserId: string;
+    baseUrl?: string;
+  }) => ComposioOperationClient;
+}
+
+/** Hash exact SDK construction values without exposing the resolved secret. */
+function executionConfigDigest(input: {
+  apiKey: string;
+  serverUserId: string;
+  providerInstanceId: ConnectorProviderInstanceId;
+  baseUrl?: string;
+}): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        provider: COMPOSIO_PROVIDER_TYPE,
+        apiKey: input.apiKey,
+        serverUserId: input.serverUserId,
+        providerInstanceId: input.providerInstanceId,
+        baseUrl: input.baseUrl ?? null,
+      })
+    )
+    .digest('hex');
 }
 
 /**
@@ -404,10 +511,35 @@ export async function maybeCreateComposioProvider(
         ...(opts.baseUrl !== undefined && { baseUrl: opts.baseUrl }),
       }));
 
-  const client = makeClient({
+  const serverUserId = deps.userId ?? DEFAULT_COMPOSIO_USER_ID;
+  const providerInstanceId =
+    deps.instanceId ??
+    (legacyDefaultProviderInstanceId(COMPOSIO_PROVIDER_TYPE) as ConnectorProviderInstanceId);
+  const construction = {
     apiKey: resolution.secret,
-    userId: deps.userId ?? DEFAULT_COMPOSIO_USER_ID,
+    serverUserId,
+    providerInstanceId,
     ...(deps.baseUrl !== undefined && { baseUrl: deps.baseUrl }),
+  };
+  const client = makeClient({
+    apiKey: construction.apiKey,
+    userId: construction.serverUserId,
+    ...(construction.baseUrl !== undefined && { baseUrl: construction.baseUrl }),
   });
-  return new ComposioConnectorProvider({ client });
+  // The SDK does not accept the CLI's legacy user-account credential. Keep
+  // management available while exposing direct operations as typed unsupported
+  // until an operator supplies and reconciles a verified project key.
+  const operationClient = resolution.secret.startsWith('uak_')
+    ? null
+    : (deps.makeOperationClient ?? ((opts) => new ComposioSdkClient(opts)))({
+        apiKey: construction.apiKey,
+        serverUserId: construction.serverUserId,
+        ...(construction.baseUrl !== undefined && { baseUrl: construction.baseUrl }),
+      });
+  return new ComposioConnectorProvider({
+    client,
+    operationClient,
+    instanceId: providerInstanceId,
+    executionConfigDigest: executionConfigDigest(construction),
+  });
 }

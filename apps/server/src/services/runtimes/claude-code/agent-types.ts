@@ -9,6 +9,7 @@ import type {
 } from '@dorkos/shared/types';
 import type { PendingInteraction } from './messaging/interaction-wait.js';
 import { createToolResultImageState, type ToolResultImageState } from './tool-result-images.js';
+import type { ClaudeConnectorTurnContext } from './connector-turn-context.js';
 
 /** Input-side token usage of a single model request (one API round-trip). */
 export interface RequestUsage {
@@ -36,6 +37,8 @@ export interface AgentSession {
   effort?: EffortLevel;
   fastMode?: boolean;
   cwd?: string;
+  /** Connector authority for the active DorkOS turn, never the warm process. */
+  connectorTurn?: ClaudeConnectorTurnContext;
   /**
    * The Claude Code account this session belongs to: the absolute Claude CONFIG
    * directory its transcript lives under (`~/.claude`, `~/.claude2`, …). Not

@@ -109,6 +109,16 @@ import { OpenCodeMcpManager } from './mcp/mcp-manager.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import { captureOpenCodeMedia } from './events/media-capture.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
+import {
+  connectorRuntimeHeaders,
+  type ConnectorRuntimeMcpInjection,
+  type ConnectorRuntimeTools,
+} from '../connector-tools.js';
+import type {
+  OpenConnectorTurnResult,
+  RevokeConnectorTurnReason,
+} from '../../connectors/runtime-principal-port.js';
+import { ConnectorTurnLeaseManager, type ConnectorTurnLease } from './mcp/connector-turn-lease.js';
 
 /** Constructor dependencies for {@link OpenCodeRuntime} (composition root). */
 export interface OpenCodeRuntimeOptions {
@@ -137,6 +147,10 @@ export interface OpenCodeRuntimeOptions {
 interface ActiveTurn {
   ocSessionId: string;
   cwd: string;
+  controller: AbortController;
+  phase: 'waiting' | 'setup' | 'running';
+  connectorBinding?: OpenConnectorTurnResult;
+  connectorRevocation?: Promise<void>;
 }
 
 /**
@@ -163,6 +177,10 @@ export class OpenCodeRuntime implements AgentRuntime {
   private readonly directoryByOcId = new Map<string, string>();
   /** MCP status + managed injection, keyed by directory (DOR-893). */
   private readonly mcp: OpenCodeMcpManager;
+  /** Per-directory serialization for turns that can reconcile session-bound connector state. */
+  private readonly connectorLeases = new ConnectorTurnLeaseManager();
+  /** Internal connector tool boundary, installed after boot opens its listener. */
+  private connectorRuntimeTools: ConnectorRuntimeTools | undefined;
   private settingsPort: SessionSettingsPort | undefined;
   /**
    * The agent registry, when the composition root injected it. Used only to
@@ -183,6 +201,11 @@ export class OpenCodeRuntime implements AgentRuntime {
       approvals: this.approvals,
       registry: this.registry,
     };
+  }
+
+  /** Install the internal connector tool boundary after its listener starts. */
+  setConnectorRuntimeTools(tools: ConnectorRuntimeTools): void {
+    this.connectorRuntimeTools = tools;
   }
 
   // --- Session lifecycle ---
@@ -296,30 +319,14 @@ export class OpenCodeRuntime implements AgentRuntime {
       ...(opts?.title !== undefined ? { title: opts.title } : {}),
     });
 
-    // Reconcile the sidecar's MCP servers BEFORE the prompt is assembled, so the
-    // room verbs are named only when the `dorkos` server really registered.
-    // Gating on an intention instead would tell the agent it can post whenever
-    // the experiment is on — including the turns where a user's own server owns
-    // the name, or the add threw — and it would spend itself finding out.
-    //
-    // This is why the reconcile moved out of `runOpenCodeTurn`: the answer has
-    // to exist before the prompt, and re-running it there would mint a second
-    // token, change the signature, and re-add the server every single turn.
-    const mcpClient = await this.provider.getClient(cwd);
-    const { dorkosApplied } = await this.mcp.ensureManaged(mcpClient, cwd);
-
-    // The system context: the runtime-neutral blocks plus, when this turn really
-    // carries them, the room verbs. It rides `body.system`, which the sidecar
-    // appends to the model's system prompt and never persists as a message — so
-    // it neither renders as user-authored text nor accumulates in history
-    // (DOR-477).
-    const agentContext = await buildOpenCodeTurnContext(cwd, dorkosApplied);
-
     yield* this.runOpenCodeTurn(
       sessionId,
       cwd,
       opts?.title,
-      async (client, ocSessionId) => {
+      async (client, ocSessionId, dorkosApplied) => {
+        // Build the prompt only after the leased MCP reconcile, so the room
+        // verbs describe what this exact turn can actually call.
+        const agentContext = await buildOpenCodeTurnContext(cwd, dorkosApplied);
         const model = parseModelSelection(settings.model);
         const system = buildOpenCodeSystem(opts, agentContext);
         const prompted = await client.session.promptAsync({
@@ -334,8 +341,7 @@ export class OpenCodeRuntime implements AgentRuntime {
           throw new Error(`OpenCode session.promptAsync failed: ${JSON.stringify(prompted.error)}`);
         }
       },
-      // Already reconciled above, to gate the prompt on the real outcome.
-      { alreadyReconciled: true }
+      { connectorTurn: true }
     );
   }
 
@@ -399,57 +405,102 @@ export class OpenCodeRuntime implements AgentRuntime {
    * @param sessionId - DorkOS session id.
    * @param cwd - Working directory used to resolve the client and session.
    * @param title - Optional title used only when a new OpenCode session is created.
-   * @param trigger - Fires the turn against the resolved client + `ses_*` id.
-   * @param opts - `alreadyReconciled` when the caller ran
-   *   {@link OpenCodeMcpManager.ensureManaged} itself. `sendMessage` does,
-   *   because it has to know whether the `dorkos` server registered before it
-   *   can write the prompt — and reconciling twice would mint a second identity
-   *   token, change the desired-set signature, and re-add every server on every
-   *   turn.
+   * @param trigger - Fires the turn after MCP registration settles, receiving
+   *   whether the room-tool server was actually applied.
+   * @param opts - Marks a model prompt that receives connector runtime tools.
    */
   private async *runOpenCodeTurn(
     sessionId: string,
     cwd: string,
     title: string | undefined,
-    trigger: (client: OpencodeClient, ocSessionId: string) => Promise<void>,
-    opts?: { alreadyReconciled?: boolean }
+    trigger: (client: OpencodeClient, ocSessionId: string, dorkosApplied: boolean) => Promise<void>,
+    opts?: { connectorTurn?: boolean }
   ): AsyncGenerator<StreamEvent> {
     const ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
     const client = await this.provider.getClient(cwd);
-    // Register the agent's enabled managed MCP servers into the live sidecar for
-    // this directory BEFORE the prompt, so their tools are available this turn
-    // (spec `mcp-server-management` §6, DOR-893). Ephemeral: the sidecar's
-    // `POST /mcp` mutates only its in-memory per-directory registry — no
-    // `opencode.json` write — so this never pollutes the user's config.
-    if (opts?.alreadyReconciled !== true) await this.mcp.ensureManaged(client, cwd);
     const directory = await this.resolveSessionDirectory(client, ocSessionId);
 
-    const ctx = createOpenCodeEventContext(sessionId);
-    const queue = new TurnEventQueue<OpenCodeWireEvent>();
-    const subscription = this.hub.subscribe({
+    const controller = new AbortController();
+    const turn: ActiveTurn = {
+      ocSessionId,
       cwd,
-      onEvent: (event) => {
-        // The turn's own session, plus any child session a `task` tool part has
-        // revealed — that is how a subagent's activity reaches its parent card.
-        const admit =
-          matchesOpenCodeSession(event, directory, ocSessionId) ||
-          matchesOpenCodeSubagentSession(event, directory, ctx);
-        if (admit) queue.push(event.payload as OpenCodeWireEvent);
-      },
-      onStreamDrop: (error) => queue.fail(error),
-    });
-
-    const turn: ActiveTurn = { ocSessionId, cwd };
+      controller,
+      phase: this.connectorRuntimeTools ? 'waiting' : 'setup',
+    };
     this.activeTurns.set(sessionId, turn);
+    let lease: ConnectorTurnLease | undefined;
+    let connectorInjection: ConnectorRuntimeMcpInjection | undefined;
+    let connectorRevokeReason: RevokeConnectorTurnReason = 'setup_failed';
+    let subscription: ReturnType<OpenCodeGlobalEventHub['subscribe']> | undefined;
+
     try {
+      // Once connector tools are installed, every path below can reconcile a
+      // directory map that contains session-bound connector state. Hold the
+      // same canonical-directory lease for the whole turn so an unbound path
+      // such as compaction cannot remove or replace another live turn's
+      // registration. There is exactly one acquisition per turn, which also
+      // keeps waiting visible and cancellable. Installs without connector tools
+      // retain the runtime's established same-session overlap behavior.
+      if (this.connectorRuntimeTools) {
+        lease = await this.connectorLeases.acquire(directory, controller.signal);
+        turn.phase = 'setup';
+      }
+
+      const meshAgent = opts?.connectorTurn ? this.meshCore?.getByPath(cwd) : undefined;
+      if (this.connectorRuntimeTools && meshAgent) {
+        turn.connectorBinding = await this.connectorRuntimeTools.principals.openTurn({
+          runtime: this.type,
+          canonicalSessionId: sessionId,
+          agentPath: cwd,
+          canonicalCwd: directory,
+          signal: controller.signal,
+        });
+        controller.signal.throwIfAborted();
+        connectorInjection = {
+          url: this.connectorRuntimeTools.listenerUrl,
+          headers: connectorRuntimeHeaders({
+            bearer: turn.connectorBinding.bearer,
+            runtime: this.type,
+            canonicalCwd: directory,
+          }),
+        };
+      }
+
+      // Registration and the lease use the sidecar's canonical directory. The
+      // original cwd remains the agent lookup key when symlinks differ.
+      const mcpResult = await this.mcp.ensureManaged(client, directory, connectorInjection, cwd);
+      if (connectorInjection && !mcpResult.connectorApplied) {
+        await this.revokeConnectorTurn(turn, 'setup_failed');
+      }
+      controller.signal.throwIfAborted();
+
+      const ctx = createOpenCodeEventContext(sessionId);
+      const queue = new TurnEventQueue<OpenCodeWireEvent>();
+      subscription = this.hub.subscribe({
+        cwd,
+        onEvent: (event) => {
+          // The turn's own session, plus any child session a `task` tool part has
+          // revealed — that is how a subagent's activity reaches its parent card.
+          const admit =
+            matchesOpenCodeSession(event, directory, ocSessionId) ||
+            matchesOpenCodeSubagentSession(event, directory, ctx);
+          if (admit) queue.push(event.payload as OpenCodeWireEvent);
+        },
+        onStreamDrop: (error) => queue.fail(error),
+      });
+
+      turn.phase = 'running';
+      connectorRevokeReason = 'runtime_failed';
+      let sawRuntimeError = false;
       // Trigger only once the stream is observably live (or the bounded wait
       // elapses) — a fast turn must not complete before we can see its idle.
       await Promise.race([subscription.live, delay(STREAM_LIVE_TIMEOUT_MS)]);
 
-      await trigger(client, ocSessionId);
+      await trigger(client, ocSessionId, mcpResult.dorkosApplied);
 
       const routing: ApprovalRouting = { sessionId, ocSessionId, cwd, permissions: ctx };
       for await (const event of mapOpenCodeTurn(queue, ctx)) {
+        if (event.type === 'error') sawRuntimeError = true;
         yield* enforceApprovals(this.approvalGate, routing, event);
         // The async half of media mapping. `mapOpenCodeTurn` is pure and cannot
         // store bytes, so it records what it saw on `ctx` and this drains it
@@ -457,16 +508,31 @@ export class OpenCodeRuntime implements AgentRuntime {
         // transcript exactly where the tool result that produced it did.
         yield* captureOpenCodeMedia(this.attachments, sessionId, ctx);
       }
+      connectorRevokeReason = sawRuntimeError ? 'runtime_failed' : 'turn_terminal';
     } finally {
-      subscription.unsubscribe();
-      // Identity guard: only the session's ACTIVE turn may tear down shared
-      // per-session state. A stale turn racing a newer one must clear neither
-      // the newer turn's record nor its pending approvals — unconditionally
-      // clearing would disarm the newer turn's auto-deny timers and dead-end
-      // its approveTool() calls.
-      if (this.activeTurns.get(sessionId) === turn) {
-        this.approvals.clearSession(sessionId);
-        this.activeTurns.delete(sessionId);
+      if (controller.signal.aborted) connectorRevokeReason = 'turn_cancelled';
+      try {
+        await this.revokeConnectorTurn(turn, connectorRevokeReason);
+      } catch (err) {
+        // The principal port invalidates the bearer in-process before a durable
+        // write can reject. Contain persistence failure here so the terminal
+        // stream still settles and the safely tombstoned directory can hand off.
+        logger.warn('[OpenCodeRuntime] connector revocation persistence failed at teardown', {
+          sessionId,
+          ...logError(err),
+        });
+      } finally {
+        lease?.release();
+        subscription?.unsubscribe();
+        // Identity guard: only the session's ACTIVE turn may tear down shared
+        // per-session state. A stale turn racing a newer one must clear neither
+        // the newer turn's record nor its pending approvals — unconditionally
+        // clearing would disarm the newer turn's auto-deny timers and dead-end
+        // its approveTool() calls.
+        if (this.activeTurns.get(sessionId) === turn) {
+          this.approvals.clearSession(sessionId);
+          this.activeTurns.delete(sessionId);
+        }
       }
     }
   }
@@ -640,6 +706,25 @@ export class OpenCodeRuntime implements AgentRuntime {
   async interruptQuery(sessionId: string): Promise<InterruptReceipt> {
     const turn = this.activeTurns.get(sessionId);
     if (!turn) return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
+    turn.controller.abort();
+    try {
+      await this.revokeConnectorTurn(turn, 'turn_cancelled');
+    } catch (err) {
+      // A rejection means durable persistence failed after the port's
+      // fail-closed in-process tombstone. The independent sidecar abort still
+      // has to run so Stop reaches the agent; terminal teardown retries the
+      // durable revoke because the rejected in-flight promise was cleared.
+      logger.warn(
+        '[OpenCodeRuntime] connector revocation persistence failed during interrupt; continuing with sidecar abort',
+        { sessionId, ...logError(err) }
+      );
+    }
+    if (turn.phase !== 'running') {
+      logger.debug('[OpenCodeRuntime] cancelled turn before sidecar trigger', {
+        sessionId,
+      });
+      return { outcome: 'closed', runtime: this.type };
+    }
     const ack = await awaitAbortAck(async () => {
       const client = await this.provider.getClient(turn.cwd);
       return (
@@ -669,6 +754,33 @@ export class OpenCodeRuntime implements AgentRuntime {
       case 'unacked':
         logger.warn('[OpenCodeRuntime] interrupt timed out waiting for an ack', { sessionId });
         return { outcome: 'unconfirmed', reason: 'ack-timeout', runtime: this.type };
+    }
+  }
+
+  /**
+   * Revoke one connector binding at most once concurrently across interrupt and
+   * teardown. A rejected persistence attempt is cleared so terminal teardown can
+   * retry; the principal port has already tombstoned the bearer before rejecting.
+   *
+   * @param turn - Active turn carrying the optional binding.
+   * @param reason - First terminal reason observed for that binding.
+   */
+  private async revokeConnectorTurn(
+    turn: ActiveTurn,
+    reason: RevokeConnectorTurnReason
+  ): Promise<void> {
+    if (!turn.connectorBinding || !this.connectorRuntimeTools) return;
+    if (turn.connectorRevocation) return turn.connectorRevocation;
+
+    const bindingId = turn.connectorBinding.bindingId;
+    const principals = this.connectorRuntimeTools.principals;
+    const revocation = Promise.resolve().then(() => principals.revoke(bindingId, reason));
+    turn.connectorRevocation = revocation;
+    try {
+      await revocation;
+    } catch (err) {
+      if (turn.connectorRevocation === revocation) turn.connectorRevocation = undefined;
+      throw err;
     }
   }
 
@@ -1006,11 +1118,12 @@ export class OpenCodeRuntime implements AgentRuntime {
    * on text-as-reply rather than betting an answer on a registration that has not
    * happened yet.
    *
-   * @param session.cwd - The session's working directory.
+   * @param session.cwd - The session's working directory, canonicalized to the
+   * key used by MCP reconciliation.
    * @returns Whether the tools are reachable from a turn there.
    */
   async carriesRoomTools(session: { cwd: string }): Promise<boolean> {
-    return this.mcp.dorkosApplied(session.cwd);
+    return this.mcp.dorkosApplied(canonicalDirectory(session.cwd));
   }
 
   // --- Lifecycle ---

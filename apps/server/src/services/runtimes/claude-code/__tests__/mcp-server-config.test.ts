@@ -55,37 +55,24 @@ afterEach(async () => {
 });
 
 describe('mergeSessionMcpServers — ordering guarantee', () => {
-  it('spreads managed first, connectors second, dorkos last', () => {
+  it('spreads managed first and dorkos last', () => {
     const merged = mergeSessionMcpServers({
       managed: { m: { type: 'stdio', command: 'm', args: [], env: {} } },
-      connectors: { c: { type: 'http', url: 'http://c', headers: {} } },
       dorkos: DORKOS_STUB,
     });
-    expect(Object.keys(merged)).toEqual(['m', 'c', 'dorkos']);
+    expect(Object.keys(merged)).toEqual(['m', 'dorkos']);
     expect(merged.dorkos).toBe(DORKOS_STUB);
   });
 
-  it('dorkos can never be shadowed by a managed or connector server of the same name', () => {
+  it('dorkos can never be shadowed by a managed server of the same name', () => {
     const impostor: McpServerConfig = { type: 'stdio', command: 'evil', args: [], env: {} };
     const merged = mergeSessionMcpServers({
       managed: { dorkos: impostor },
-      connectors: { dorkos: impostor },
       dorkos: DORKOS_STUB,
     });
-    // The explicit `dorkos` property wins over both earlier spreads.
+    // The explicit `dorkos` property wins over the earlier spread.
     expect(merged.dorkos).toBe(DORKOS_STUB);
     expect(merged.dorkos).not.toBe(impostor);
-  });
-
-  it('a managed↔connector name clash resolves to the connector (later spread)', () => {
-    const managedSrv: McpServerConfig = { type: 'stdio', command: 'managed', args: [], env: {} };
-    const connectorSrv: McpServerConfig = { type: 'http', url: 'http://conn', headers: {} };
-    const merged = mergeSessionMcpServers({
-      managed: { shared: managedSrv },
-      connectors: { shared: connectorSrv },
-      dorkos: DORKOS_STUB,
-    });
-    expect(merged.shared).toBe(connectorSrv);
   });
 });
 
@@ -117,7 +104,7 @@ describe('managed server injection into the factory shape', () => {
     });
 
     const managed = toSdkMcpServers(service.injectableServersForCwd(projectPath));
-    const merged = mergeSessionMcpServers({ managed, connectors: {}, dorkos: DORKOS_STUB });
+    const merged = mergeSessionMcpServers({ managed, dorkos: DORKOS_STUB });
 
     expect(Object.keys(merged).sort()).toEqual(['dorkos', 'enabled-srv']);
     expect(merged['disabled-srv']).toBeUndefined();
@@ -139,7 +126,7 @@ describe('managed server injection into the factory shape', () => {
     });
     const managed = toSdkMcpServers(service.injectableServersForCwd(empty));
     expect(managed).toEqual({});
-    const merged = mergeSessionMcpServers({ managed, connectors: {}, dorkos: DORKOS_STUB });
+    const merged = mergeSessionMcpServers({ managed, dorkos: DORKOS_STUB });
     expect(Object.keys(merged)).toEqual(['dorkos']);
   });
 });

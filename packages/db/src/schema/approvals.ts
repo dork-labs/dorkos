@@ -54,6 +54,21 @@ export const approvals = sqliteTable(
     /** Canonical hash of the invocation input this approval is bound to. */
     inputHash: text('input_hash').notNull(),
 
+    /** Authenticated connector preflight digest, null for non-connector approvals. */
+    authorityBindingDigest: text('authority_binding_digest'),
+    /** Owner kind frozen by connector preflight, null for non-connector approvals. */
+    connectorOwnerKind: text('connector_owner_kind', { enum: ['user', 'local_install'] }),
+    /** Owner id frozen by connector preflight, null for non-connector approvals. */
+    connectorOwnerId: text('connector_owner_id'),
+    /** Stable agent frozen by connector preflight, null when no agent is involved. */
+    connectorAgentId: text('connector_agent_id'),
+    /** Canonical session frozen by connector preflight, null when no session is involved. */
+    connectorSessionId: text('connector_session_id'),
+    /** Exact connection frozen by connector preflight, null for non-connector approvals. */
+    connectorConnectionId: text('connector_connection_id'),
+    /** Exact operation revision frozen by connector preflight. */
+    connectorOperationRevisionId: text('connector_operation_revision_id'),
+
     /** One plain sentence describing what the operator is about to allow. */
     summary: text('summary').notNull(),
 
@@ -113,5 +128,10 @@ export const approvals = sqliteTable(
   (table) => [
     index('idx_approvals_state').on(table.state),
     index('idx_approvals_expires_at').on(table.expiresAt),
+    index('approvals_connector_agent_connection_idx').on(
+      table.connectorAgentId,
+      table.connectorConnectionId,
+      table.consumedAt
+    ),
   ]
 );
