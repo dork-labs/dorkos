@@ -42,6 +42,7 @@ import {
 import {
   GATED_PROBES,
   PAGE_SIZE,
+  WIDE_PAGE,
   assertImported,
   nextEvent,
   pageAllEntries,
@@ -618,7 +619,13 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
       // whose replay walks the other is internally consistent on each surface
       // and shows a reader a conversation in two different orders.
       const { adapter, caps, roomId } = await arrange();
-      const paged = (await pageAllEntries(adapter, roomId)).entries.map((e) => e.id);
+      // **A WIDE page, deliberately — the opposite of U8's page of one.** With a
+      // page size of one, the order this walk returns is the order the CURSORS
+      // step in, and the order inside a page is never observed at all: an
+      // adapter that reversed every page it emits would satisfy this case
+      // completely. One page holding every entry is the only read that puts the
+      // adapter's own intra-page order in front of an assertion.
+      const paged = (await pageAllEntries(adapter, roomId, WIDE_PAGE)).entries.map((e) => e.id);
 
       const iterator = adapter.subscribeRoom(roomId)[Symbol.asyncIterator]();
       let replayed: string[] = [];
@@ -646,7 +653,7 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
       // reads can know.
       const first = await adapter.post(roomId, { text: 'written first' });
       const second = await adapter.post(roomId, { text: 'written second' });
-      const after = (await pageAllEntries(adapter, roomId)).entries.map((e) => e.id);
+      const after = (await pageAllEntries(adapter, roomId, WIDE_PAGE)).entries.map((e) => e.id);
       expect(after, 'both posts must be readable').toContain(first.entryId);
       expect(
         after.indexOf(first.entryId),

@@ -127,6 +127,60 @@ describe('BuzzRelayClient reconnection', () => {
     client.disconnect();
   });
 
+  it('survives a retry that throws, and arms the next one', async () => {
+    // **A retry runs with nobody holding its promise.** `connect()` opens the
+    // socket inside a promise executor, so a factory that throws — a DNS
+    // resolver that raises synchronously, a `ws` constructor refusing a URL that
+    // has become invalid — rejects a promise nothing is awaiting. Node's default
+    // for that is to kill the process, which would make an unreachable relay a
+    // way to take the whole server down from the outside.
+    //
+    // And a throw must not end the loop either: it is a failed attempt, so it
+    // behaves like any other failed attempt and schedules the next one.
+    const identity = deriveBuzzIdentity(CREDENTIAL);
+    const relay = new FakeBuzzRelay({ requireRelayMembership: true });
+    relay.admitToRelay(identity.pubkey);
+    let throwOnOpen = false;
+    const client = new BuzzRelayClient({
+      community: 'buzz-throwing-socket' as CommunityRef,
+      relayUrl: 'ws://fake-relay.test/',
+      identity,
+      openSocket: (url, handlers) => {
+        if (throwOnOpen) throw new Error('the socket factory gave out');
+        return relay.socketFactory()(url, handlers);
+      },
+      connectTimeoutMs: 500,
+      reconnectBaseDelayMs: RECONNECT_BASE_MS,
+    });
+
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => void unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      expect((await client.connect()).status).toBe('connected');
+      throwOnOpen = true;
+      relay.dropConnections();
+      // Long enough for several backoff steps to have fired and thrown.
+      await new Promise((resolve) => setTimeout(resolve, RECONNECT_BASE_MS * 20));
+
+      expect(
+        unhandled,
+        'a retry that throws must not become an unhandled rejection — Node kills the process for one'
+      ).toEqual([]);
+
+      // The loop is still alive: with the factory working again, the client
+      // comes back on its own rather than staying down because one attempt threw.
+      throwOnOpen = false;
+      await until(
+        'the client to reconnect once the socket factory works again',
+        () => client.connected
+      );
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+      client.disconnect();
+    }
+  });
+
   it('does not reconnect after the caller disconnected', async () => {
     const { relay, client } = connectable();
     await client.connect();

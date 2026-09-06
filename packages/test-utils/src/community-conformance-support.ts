@@ -30,6 +30,17 @@ export const QUIET_WINDOW_MS = 60;
 export const PAGE_SIZE = 1;
 
 /**
+ * A page big enough to hold a whole fixture room, for the assertions about what
+ * is INSIDE a page rather than about how pages follow one another.
+ *
+ * {@link PAGE_SIZE} is its opposite and both are load-bearing: a walk in pages
+ * of one proves the cursor chain and observes no intra-page order at all, so an
+ * adapter that reversed every page it emits would pass an ordering case written
+ * against it (DOR-792 review).
+ */
+export const WIDE_PAGE = 500;
+
+/**
  * Guard a `toThrow(SomeClass)` assertion against a stale `@dorkos/shared` dist.
  *
  * Vite's SSR interop does not enforce named-export existence the way Node's

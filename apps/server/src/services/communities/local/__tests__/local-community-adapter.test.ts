@@ -35,6 +35,9 @@ import { localCommunityIdentity } from '../register-local-community.js';
 /** The one agent this file can put on a roster, for the cases that need a second member. */
 const AGENT_PATH = '/Users/planted/agents/ana';
 
+/** A second agent, for the cases that need a room the identity under test is NOT in. */
+const OTHER_AGENT_PATH = '/Users/planted/agents/other';
+
 /** One adapter over one fresh in-memory install. */
 function setup(): { adapter: LocalCommunityAdapter; harness: RoomHarness; store: RoomStore } {
   const harness = createRoomHarness({
@@ -623,13 +626,98 @@ describe('LocalCommunityAdapter room list', () => {
     }
   });
 
+  it('says nothing about a room this identity has never been able to see', async () => {
+    // **The refusal machinery, re-opened on the room-list stream.** Visibility
+    // read at the moment of a removal answers `null` for a room this identity
+    // was never in — identically to one it was just ejected from — so an adapter
+    // that emits on "invisible now" tells every listener the id of every room on
+    // the machine the moment anybody leaves one. That is the same probe
+    // `CommunityRoomNotFoundError` carries no reason field to keep closed, and
+    // it leaks the one thing an id is not allowed to confirm: that somebody
+    // else's room exists.
+    //
+    // The fix is a TRANSITION, not a state: only a room that left a view this
+    // adapter had already reported is a room that went away.
+    const { harness, adapter, roomId } = asAgentIn('Mine');
+    await adapter.connect();
+    const theirs = harness.service.createRoom(
+      { kind: 'channel', title: 'Theirs', members: [], agentPaths: [] },
+      harness.human
+    );
+    const stranger = harness.authors.resolveAgent(OTHER_AGENT_PATH, 'Other').id;
+    harness.service.addMember(theirs.id, harness.human, { authorId: stranger });
+    expect(
+      (await adapter.listRooms()).map((room) => room.roomId),
+      'the arrangement is only meaningful while the other room is invisible here'
+    ).toEqual([roomId]);
+
+    const iterator = adapter.subscribeRoomList()[Symbol.asyncIterator]();
+    try {
+      harness.service.removeMember(theirs.id, harness.human, stranger);
+
+      await expect(
+        nextListEvent(iterator, 'nothing at all'),
+        'a room this identity never had cannot be a room it has lost — naming it is the probe'
+      ).rejects.toThrow(/timed out/);
+    } finally {
+      await iterator.return?.();
+    }
+  });
+
+  it('reports a room entering this identity’s view as added', async () => {
+    // The other half of the same transition. A view is a membership here, so a
+    // room arrives the moment this identity is put on its roster — and an
+    // adapter that only ever watched `room_created` would never mention a room
+    // that already existed when the invitation came.
+    const { harness, adapter, agentId } = asAgentIn('Mine');
+    await adapter.connect();
+    const later = harness.service.createRoom(
+      { kind: 'channel', title: 'Later', members: [], agentPaths: [] },
+      harness.human
+    );
+    const iterator = adapter.subscribeRoomList()[Symbol.asyncIterator]();
+    try {
+      harness.service.addMember(later.id, harness.human, { authorId: agentId });
+
+      const event = await nextListEvent(iterator, 'the room_added event');
+      expect(event.type).toBe('room_added');
+      expect(event.type === 'room_added' && event.room.roomId).toBe(later.id);
+    } finally {
+      await iterator.return?.();
+    }
+  });
+
+  it('never reports a room this identity cannot see, however it changed', async () => {
+    // `room_created` and `room_updated` rode the store rather than the
+    // visibility rule, so a listener was told about every room on the machine —
+    // the operator's direct messages included — with its title and topic
+    // attached. Worse than the id leak above, and the same fix closes it.
+    const { harness, adapter } = asAgentIn('Mine');
+    await adapter.connect();
+    const iterator = adapter.subscribeRoomList()[Symbol.asyncIterator]();
+    try {
+      const theirs = harness.service.createRoom(
+        { kind: 'channel', title: 'Payroll', members: [], agentPaths: [] },
+        harness.human
+      );
+      harness.service.updateRoom(theirs.id, harness.human, { title: 'Payroll v2' });
+
+      await expect(
+        nextListEvent(iterator, 'nothing at all'),
+        'a room this identity cannot list must not arrive on its stream either'
+      ).rejects.toThrow(/timed out/);
+    } finally {
+      await iterator.return?.();
+    }
+  });
+
   it('says nothing when a removal leaves this identity’s view unchanged', async () => {
     // Somebody else leaving a room is not this identity losing it. An adapter
     // that emitted `room_removed` on every membership change would empty a
     // sidebar the first time an agent was taken off a roster.
     const { harness, adapter, roomId } = asAgentIn('Backend');
     await adapter.connect();
-    const other = harness.authors.resolveAgent('/Users/planted/agents/other', 'Other').id;
+    const other = harness.authors.resolveAgent(OTHER_AGENT_PATH, 'Other').id;
     harness.service.addMember(roomId, harness.human, { authorId: other });
     const iterator = adapter.subscribeRoomList()[Symbol.asyncIterator]();
     try {

@@ -5740,17 +5740,27 @@ function slugify(title: string): string | null {
  * that has already resolved who it addressed is exactly the case a text scan
  * cannot cover, because there may be no `@` in the message at all.
  *
- * **A supplied id must be somebody this room can actually address**, and that is
- * the whole safety property here: without the filter, a caller could name a
- * member of a room it cannot see and have this room deliver to them. With it,
- * the reachable set is identical to the set a person typing an `@` could have
- * reached — the same `live` roster, in the same call. An id outside it is
- * dropped rather than refused, exactly as an unresolvable `@name` is: it is not
- * an error, it is a name this room has nobody for.
+ * **The bound is MEMBERSHIP of this room, and the parameter name is the honest
+ * one.** `candidates.live` is every member whose author row still exists — not
+ * every member an `@` can reach. The two differ by exactly one population: a
+ * member whose agent is gone stays in `live` carrying an EMPTY name list, so it
+ * claims no name and no typed `@` resolves to it (ADR `260801-003051`, and
+ * `rosterMentionCandidates` is where the release happens). Supplying that
+ * member's id here DOES address them, where typing their old handle no longer
+ * does. That is a superset of the text path and it is the right one: the
+ * question a supplied id asks is "is this somebody in this room", and the
+ * released-name machinery exists to stop a NAME silently changing hands, not to
+ * make a member unaddressable by the id a caller already holds.
+ *
+ * What the filter is actually for is the other thing entirely: without it a
+ * caller could name a member of a room it cannot see and have this room deliver
+ * to them. An id outside the room is dropped rather than refused, exactly as an
+ * unresolvable `@name` is — it is not an error, it is a name this room has
+ * nobody for.
  *
  * @param resolved - What the text named, in the order it named them.
  * @param supplied - What the caller resolved, if anything.
- * @param live - Who an `@` may reach in this room.
+ * @param live - This room's members, as `rosterMentionCandidates` reports them.
  */
 function withCallerMentions(
   resolved: readonly string[],

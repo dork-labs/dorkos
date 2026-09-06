@@ -75,32 +75,51 @@ describe('resolveCommunityCredential', () => {
     // ENOENT is the ONLY reading failure that means "there is nothing here yet".
     // Every other one — a permission problem, a directory where a file should
     // be, a filesystem that gave out — means there IS something here and we
-    // could not read it, which is the state where minting a replacement would
-    // change this install's identity in a community it is already a member of.
-    // The error a person is shown must be the one that happened.
+    // could not read it.
+    //
+    // **A REAL unreadable file, not a mocked read**, and the difference is not
+    // pedantic: `secret-file.ts` imports `readFileSync` by NAME, so a spy on the
+    // `fs` default export reaches this module and not the one underneath it, and
+    // a test built that way narrates a journey through a code path it never
+    // drove (DOR-792 review). `chmod 000` is unfaked all the way down.
+    //
+    // **What this does and does not claim.** The file was never actually at risk
+    // of being overwritten: `claimSecretText` refuses to publish over a file it
+    // cannot read, and did so before this change (DOR-712). What was wrong is
+    // what a person was TOLD — a warning announcing a replacement that was not
+    // being made, and then a refusal from the publish step describing the wrong
+    // problem. The fix is that the read error is raised where it happened.
+    if (process.platform === 'win32') return;
     const credential = resolveCommunityCredential(dorkHome, COMMUNITY);
     const file = path.join(communityDir(dorkHome, COMMUNITY), 'credential');
+    fs.chmodSync(file, 0o000);
+    // Root reads a `000` file anyway, so on such a machine there is no
+    // unreadable file to arrange and nothing here to assert.
+    try {
+      fs.readFileSync(file, 'utf8');
+      fs.chmodSync(file, 0o600);
+      return;
+    } catch {
+      // Unreadable, as arranged — carry on.
+    }
+
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
-    vi.spyOn(fs, 'readFileSync').mockImplementation(((target: fs.PathOrFileDescriptor) => {
-      if (String(target) === file) {
-        throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
-      }
-      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
-    }) as typeof fs.readFileSync);
+    try {
+      expect(
+        () => resolveCommunityCredential(dorkHome, COMMUNITY),
+        'the refusal must be the read error that actually happened'
+      ).toThrow(/EACCES|permission denied/);
+      expect(
+        JSON.stringify(warn.mock.calls),
+        'and nothing may announce a replacement that is not being generated'
+      ).not.toMatch(/generating a new one/);
+    } finally {
+      fs.chmodSync(file, 0o600);
+    }
 
-    expect(
-      () => resolveCommunityCredential(dorkHome, COMMUNITY),
-      'the refusal must name what actually went wrong, not a story about the file'
-    ).toThrow(/EACCES/);
-    expect(
-      JSON.stringify(warn.mock.calls),
-      'and it must not have announced that it was generating a replacement'
-    ).not.toMatch(/generating a new one/);
-
-    vi.restoreAllMocks();
     expect(
       resolveCommunityCredential(dorkHome, COMMUNITY),
-      'the file is untouched: whatever holds it, the community may already know it'
+      'and the credential itself is exactly what it was — the community may already know it'
     ).toBe(credential);
   });
 

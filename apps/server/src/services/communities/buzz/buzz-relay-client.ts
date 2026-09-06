@@ -476,10 +476,23 @@ export class BuzzRelayClient {
     const timer = setTimeout(() => {
       this.reconnectTimer = null;
       if (this.closedByCaller) return;
-      void this.connect().then((connection) => {
-        if (connection.status !== 'unreachable') return;
-        this.scheduleReconnect(connection.error ?? 'the relay did not answer');
-      });
+      void this.connect()
+        .then((connection) => {
+          if (connection.status !== 'unreachable') return;
+          this.scheduleReconnect(connection.error ?? 'the relay did not answer');
+        })
+        // **Nobody is holding this promise**, so an unhandled rejection here is
+        // a process exit under Node's default — an unreachable relay would
+        // become a way to take the server down from the outside. `connect`
+        // types its connection outcomes on the result and never rejects for
+        // one, but it opens the socket inside a promise executor, so a factory
+        // that throws (a resolver raising synchronously, a URL that has become
+        // invalid) rejects a promise with no reader. A throw is a failed
+        // attempt like any other, so it schedules the next one rather than
+        // ending the loop.
+        .catch((err: unknown) => {
+          this.scheduleReconnect(err instanceof Error ? err.message : String(err));
+        });
     }, delay);
     // Never the reason a process stays alive: a retry nobody is waiting for
     // must not keep the event loop from draining.

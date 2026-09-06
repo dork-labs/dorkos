@@ -188,6 +188,23 @@ export class LocalCommunityAdapter implements CommunityAdapter {
   readonly community: CommunityRef = LOCAL_COMMUNITY;
 
   private readonly listStreams = new Set<PushStream<CommunityRoomListEvent>>();
+  /**
+   * The rooms this identity can see, as the room-list stream has already
+   * reported them.
+   *
+   * It exists so a lifecycle event is answered by a TRANSITION rather than by a
+   * state, and that distinction is a disclosure rule rather than a tidiness one.
+   * Visibility read at the moment of a removal answers `null` for a room this
+   * identity was never in exactly as it does for one it has just been ejected
+   * from — so an adapter that emitted on "invisible now" would name every room
+   * on this machine, to everybody, the moment anybody left one. Only a room that
+   * leaves a view this adapter had already reported is a room that went away.
+   *
+   * Held only while somebody is listening: seeded when the first room-list
+   * stream opens and dropped when the last one closes, so an idle adapter
+   * carries no snapshot of who could see what.
+   */
+  private readonly visible = new Set<string>();
   private readonly roomStreams = new Map<string, Set<RoomSubscription>>();
   private unsubscribeLifecycle: (() => void) | null = null;
 
@@ -283,8 +300,14 @@ export class LocalCommunityAdapter implements CommunityAdapter {
   subscribeRoomList(signal?: AbortSignal): AsyncIterable<CommunityRoomListEvent> {
     const stream = new PushStream<CommunityRoomListEvent>(() => {
       this.listStreams.delete(stream);
+      if (this.listStreams.size === 0) this.visible.clear();
       this.releaseLifecycle();
     });
+    // Seeded BEFORE the stream is registered, so the very first event this
+    // reader sees is measured against a view that was read before it could
+    // change. A second subscriber joins the first one's seed rather than
+    // re-reading: they are the same identity looking at the same rooms.
+    if (this.listStreams.size === 0) this.seedVisible();
     this.listStreams.add(stream);
     this.holdLifecycle();
     bindAbort(signal, stream);
@@ -466,10 +489,13 @@ export class LocalCommunityAdapter implements CommunityAdapter {
    * with no `@` in the text at all.
    *
    * What stops that becoming a way to address a stranger is `RoomService`, not
-   * this wrapper: a supplied id is filtered to the room's own addressable roster
-   * there, so the reachable set is exactly the set a person typing an `@` could
-   * have reached. An id outside it is dropped, the same answer an unresolvable
-   * `@name` gets.
+   * this wrapper: a supplied id is filtered to THIS ROOM'S MEMBERS there, so an
+   * id naming somebody in a room the caller cannot see reaches nobody. That
+   * bound is membership rather than addressability, and the difference is one
+   * population: a member whose agent is gone can still be addressed by id here
+   * while no typed `@` resolves to their old handle — see `withCallerMentions`,
+   * which argues why that is the right superset. An id outside the room is
+   * dropped, the same answer an unresolvable `@name` gets.
    *
    * @param roomId - The room to post into.
    * @param input - What to say, what it replies to, and who it addresses.
@@ -841,23 +867,90 @@ export class LocalCommunityAdapter implements CommunityAdapter {
    * honest — a room this store does not hold is not this community's room, and
    * is ignored.
    *
-   * **`room_member_removed` is watched too, and it is the third event rather
-   * than a fourth kind of update**: it is the only thing on this install that
-   * takes a room OUT of an identity's view, which is what the port's
-   * `room_removed` reports. Without it an ejected room sat in a sidebar until
-   * the process restarted — listed, clickable, and refused on read.
+   * **The membership events are watched too**, and they are what the port's
+   * `room_removed` reports: a room leaving an identity's view. Nothing else on
+   * this install does that — archiving is a state a room carries, and an
+   * archived room still lists and still reads.
    */
   private onLifecycleEvent(eventName: string, data: unknown): void {
     const roomId = (data as { roomId?: unknown } | null)?.roomId;
     if (typeof roomId !== 'string') return;
-    if (eventName === 'room_member_removed') {
-      this.onMemberRemoved(roomId);
+    if (eventName === 'room_member_added' || eventName === 'room_member_removed') {
+      this.onMembershipChanged(roomId);
       return;
     }
     if (eventName !== 'room_created' && eventName !== 'room_updated') return;
-    const room = this.deps.store.getRoom(roomId);
+    // **Visibility, not existence.** This read used to go straight to the store,
+    // which answers for every room on the machine — so a listener was told the
+    // id, title and topic of rooms it cannot list, the operator's own direct
+    // messages included. `service.getRoom` is the shipped visibility rule and it
+    // keeps the stream inside the same fence `listRooms` draws.
+    const room = this.deps.service.getRoom(roomId, this.identity());
     if (!room) return;
+    this.announce(roomId, room);
 
+    // An archived room accepts no further entry — not from a member and not in
+    // the room's own voice — so every reader of it is holding a stream that can
+    // never deliver again. Terminating it with the honest reason beats leaving a
+    // subscription open forever on a conversation that has been put away.
+    if (eventName === 'room_updated' && room.archived) this.closeRoom(roomId, 'archived');
+  }
+
+  /**
+   * A roster changed: report the room added or removed when THIS identity's view
+   * of it changed, and say nothing when it did not.
+   *
+   * **Both halves are transitions**, for the reason {@link LocalCommunityAdapter.visible}
+   * gives at length: "this identity cannot see it now" is true of a room it was
+   * ejected from and of every room it was never in, and only the second kind
+   * must stay unmentioned. Comparing the removed author against the connected
+   * identity would not do instead — the operator sees every room whether or not
+   * she is on its roster, so her own removal takes nothing away, and another
+   * member's removal can be the moment a room stops being visible to somebody
+   * whose view is its memberships.
+   *
+   * The live subscriptions go with it, with the port's own honest reason, and
+   * that half runs whether or not anybody is watching the room list. A reader
+   * ejected from a room is holding a stream the broadcaster will happily keep
+   * feeding — it fans out per room and knows nothing about who may see one — so
+   * leaving it open would keep delivering entries from a room this identity may
+   * no longer read.
+   *
+   * @param roomId - The room whose roster changed.
+   */
+  private onMembershipChanged(roomId: string): void {
+    const room = this.deps.service.getRoom(roomId, this.identity());
+    if (!room && this.roomStreams.has(roomId)) this.closeRoom(roomId, 'access-revoked');
+    if (this.listStreams.size === 0) return;
+
+    if (room) {
+      // Already reported: a roster change inside a room this identity still has
+      // is not news about the room itself.
+      if (this.visible.has(roomId)) return;
+      this.announce(roomId, room);
+      return;
+    }
+    // Never reported, so there is nothing to report gone. This line IS the fence.
+    if (!this.visible.delete(roomId)) return;
+    const event: CommunityRoomListEvent = {
+      type: 'room_removed',
+      community: this.community,
+      roomId,
+    };
+    for (const stream of [...this.listStreams]) stream.push(event);
+  }
+
+  /**
+   * Tell every room-list reader about a room this identity can see — added the
+   * first time, updated afterwards.
+   *
+   * @param roomId - The room.
+   * @param room - Its current row, already known visible to this identity.
+   */
+  private announce(roomId: string, room: Room): void {
+    if (this.listStreams.size === 0) return;
+    const known = this.visible.has(roomId);
+    this.visible.add(roomId);
     // The room is projected ONCE and the same event object goes to every
     // subscriber — the fan-out's own aliasing hazard, one layer up, and stated
     // before there is a consumer to be surprised by it. **A room-list event is
@@ -868,48 +961,33 @@ export class LocalCommunityAdapter implements CommunityAdapter {
     // streams to do it, which is the trade this comment exists to make visible
     // rather than to quietly reverse.
     const projected = this.projectRoom(room);
-    const event: CommunityRoomListEvent =
-      eventName === 'room_created'
-        ? { type: 'room_added', room: projected }
-        : { type: 'room_updated', room: projected };
+    const event: CommunityRoomListEvent = known
+      ? { type: 'room_updated', room: projected }
+      : { type: 'room_added', room: projected };
     for (const stream of [...this.listStreams]) stream.push(event);
-
-    // An archived room accepts no further entry — not from a member and not in
-    // the room's own voice — so every reader of it is holding a stream that can
-    // never deliver again. Terminating it with the honest reason beats leaving a
-    // subscription open forever on a conversation that has been put away.
-    if (eventName === 'room_updated' && room.archived) this.closeRoom(roomId, 'archived');
   }
 
   /**
-   * Somebody left a room: report it removed when the room has left THIS
-   * identity's view.
+   * Read what this identity can see right now, as the baseline every later
+   * transition is measured against.
    *
-   * **Visibility is re-read, never inferred from who was removed.** The payload
-   * names an author, and comparing it against the connected identity would be
-   * wrong in both directions: the operator sees every room on her own machine
-   * whether or not she is on its roster, so her own removal takes nothing away,
-   * and another member's removal can be the moment a room stops being visible
-   * to a caller whose view is its memberships. `getRoom` is the shipped
-   * visibility rule and it answers both cases in one indexed read.
-   *
-   * The live subscriptions go with it, with the port's own honest reason. A
-   * reader ejected from a room is holding a stream the broadcaster will happily
-   * keep feeding — the broadcaster fans out per room and knows nothing about who
-   * may see one — so leaving it open would not merely be untidy, it would keep
-   * delivering entries from a room this identity may no longer read.
-   *
-   * @param roomId - The room whose roster changed.
+   * A failure here is not allowed to escape: `subscribeRoomList` returns a
+   * stream and promises no throw, and a store that will not answer is already
+   * reported by `connect` as `'unreachable'`. An empty baseline is the safe way
+   * to be wrong — it makes this adapter say nothing rather than say something
+   * about a room it has not confirmed.
    */
-  private onMemberRemoved(roomId: string): void {
-    if (this.deps.service.getRoom(roomId, this.identity())) return;
-    const event: CommunityRoomListEvent = {
-      type: 'room_removed',
-      community: this.community,
-      roomId,
-    };
-    for (const stream of [...this.listStreams]) stream.push(event);
-    this.closeRoom(roomId, 'access-revoked');
+  private seedVisible(): void {
+    this.visible.clear();
+    try {
+      for (const room of this.deps.service.listRooms(this.identity(), { includeArchived: true })) {
+        this.visible.add(room.id);
+      }
+    } catch (err) {
+      logger.warn('[LocalCommunity] could not read what this identity can see', {
+        error: errorMessage(err),
+      });
+    }
   }
 
   /** End every subscription to one room with a terminal reason. */
