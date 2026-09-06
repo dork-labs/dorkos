@@ -1,4 +1,5 @@
-import type { Locator, Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
+import { openRadixSubmenu } from '../radix-menu';
 
 /**
  * The sidebar's one create surface (spec `sidebar-now-today-library` BC-45).
@@ -84,11 +85,29 @@ export class NewMenuPage {
   }
 
   /**
-   * Open "Agent group" — a submenu, because a group is made by hand or from
-   * rules — and take one of its entries.
+   * Take "Section" and end up at the by-hand entry — whichever of its two
+   * shapes this install is currently drawing.
    *
-   * `ArrowRight` rather than a hover: it is the Radix LTR sub-open key, and it
-   * is what the rest of this repo's menu tests use.
+   * **"Section" is a submenu only for a fleet big enough for rules** (DOR-1800).
+   * `buildNewMenuNodes` renders `new-group` as a submenu — Empty section, the
+   * presets, Custom rules — above the smart-preset gate, and as a plain ACTION
+   * below it, where the action IS the by-hand entry that the submenu's
+   * `new-group-empty` would have run. The gate is `offersGroupAffordances`:
+   * eight agents, or two runtimes.
+   *
+   * And which side of it a run is on is decided by data that arrives after the
+   * panel does. Each candidate's runtime is read from its MANIFEST, with
+   * `?? 'claude-code'` while that query is in flight — so a two-runtime fleet
+   * reads as single-runtime until the second agent's manifest lands, and the
+   * menu opened in that window offers "Section" as an action with no
+   * `new-group-empty` anywhere under it. That is the whole of the flake this
+   * helper was blamed for: the spec seeds a codex agent, waits only for the
+   * FIRST agent's row, and one run in five spent its 30s waiting for a submenu
+   * row that was never going to be rendered.
+   *
+   * So the shape is read rather than assumed. Both roads end at the same inline
+   * name field, which is what every caller is actually after — and the shape
+   * itself stays pinned where it is decided, by `NewMenu.test.tsx`.
    *
    * The entry is addressed by id like everything else here. `renderNodes`
    * recurses into a submenu with the same walk, so its rows carry
@@ -98,11 +117,28 @@ export class NewMenuPage {
    *
    * @param entryId - The submenu row's id, e.g. `'new-group-empty'`.
    */
-  async chooseGroupSubmenu(entryId: string): Promise<void> {
+  async chooseSectionEntry(entryId: string): Promise<void> {
     await this.trigger.click();
     const group = this.item('new-group');
-    await group.waitFor({ state: 'visible' });
-    await group.press('ArrowRight');
+    await expect(group).toBeVisible();
+
+    // Radix stamps `aria-haspopup="menu"` on a sub trigger and on nothing else
+    // in this list, so it is the shape's own answer rather than an inference
+    // from what happens to be on screen.
+    if ((await group.getAttribute('aria-haspopup')) !== 'menu') {
+      expect(
+        entryId,
+        'this fleet is below the smart-preset gate, so "Section" is the by-hand entry ' +
+          'and there is no submenu to take a preset from'
+      ).toBe('new-group-empty');
+      await group.click();
+      return;
+    }
+
+    // `ArrowRight` rather than a hover: it is the Radix LTR sub-open key, and it
+    // is what the rest of this repo's menu tests use. {@link openRadixSubmenu}
+    // is what makes that key land rather than being silently dropped.
+    await openRadixSubmenu(this.page, group, 'Section');
     await this.item(entryId).click();
   }
 }

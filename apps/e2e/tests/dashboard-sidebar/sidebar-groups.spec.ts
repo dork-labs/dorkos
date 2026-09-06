@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { SOLE_SIDEBAR_TAG } from '../../fixtures/sole-access';
 import { describeViolation, runAxe } from '../../axe';
+import { openRadixSubmenu } from '../../radix-menu';
 
 /**
  * What the a11y sweep below is pointed at: the sidebar panel, and none of the
@@ -397,11 +398,11 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     // blur-cancelled itself in the same frame, and the item read as inert while
     // the "⋮" beside it worked (DOR-1371). Only a browser can see that. The
     // submenu is opened with the keyboard rather than a hover, which has its own
-    // delay and races.
+    // delay and races — through `openRadixSubmenu`, because the sub-open key is
+    // dropped when the menu's own opening focus has not landed yet (DOR-1800).
     await channel.click({ button: 'right' });
     const moveTo = page.getByRole('menuitem', { name: 'Move to section' });
-    await moveTo.waitFor({ state: 'visible' });
-    await moveTo.press('ArrowRight');
+    await openRadixSubmenu(page, moveTo, 'Move to section');
     await page.getByRole('menuitem', { name: 'New section…' }).click();
 
     const input = page.getByRole('textbox', { name: 'New section name' });
