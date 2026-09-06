@@ -17,7 +17,7 @@ import { soleAccess } from './sole-access';
 
 type DorkOSFixtures = {
   /**
-   * Sole access to the shared cockpit sidebar, for the tests that asked for it.
+   * Sole access to the shared sidebar panel, for the tests that asked for it.
    *
    * Automatic rather than requested, so a spec that wears the tag cannot forget
    * to take the lock — see `fixtures/sole-access.ts` for what is shared and why
