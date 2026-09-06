@@ -145,6 +145,23 @@ describe('the watchdog keeps the properties the gate depends on', () => {
     expect(watchdogText.match(/exit 124/g)).toHaveLength(2);
   });
 
+  it('stops the run when it is interrupted, not only when it times out', () => {
+    // Ctrl-C is the likeliest way this gate ever ends — it is what everyone did
+    // for the whole life of the bug. bash sets SIGINT to SIG_IGN in a command
+    // started with `&`, so without these traps an interrupt kills the watchdog
+    // and reparents the live turbo+vitest tree to init, and SIGTERM exits 143
+    // while leaving the run alive. Measured 5/5 in both directions on the
+    // version before them. The fixture suite proves the behaviour; this asserts
+    // the traps have not simply been deleted as redundant-looking lines.
+    for (const signal of ['INT', 'TERM', 'HUP']) {
+      expect(
+        new RegExp(`^trap .* ${signal}$`, 'm').test(watchdogText),
+        `pre-push-watchdog.sh no longer traps SIG${signal}; an interrupted push ` +
+          'leaks the whole test run (DOR-473 review).'
+      ).toBe(true);
+    }
+  });
+
   it('never kills by name or by process group (Hard Rule 7)', () => {
     // The script stops the process tree it started. Signalling a process GROUP
     // or a name would reach processes it never forked — on this machine, other

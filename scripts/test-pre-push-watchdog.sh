@@ -33,8 +33,22 @@
 #     least afford one.
 #
 # Every case is hermetic — throwaway temp dirs and shell fixtures, never turbo,
-# vitest or this repo's real suites — so it runs in a few seconds, needs no
-# `pnpm install`, and keeps passing when the real gate's contents change.
+# vitest or this repo's real suites — so it needs no `pnpm install` and keeps
+# passing when the real gate's contents change.
+#
+# WHAT IT COSTS, and why that is accepted. This suite runs in `test:scripts`,
+# so it is roughly half a minute added to every `pnpm verify`. Almost all of
+# that is deliberate waiting: the thing under test is a clock, and a bound
+# cannot be shown to fire without letting time pass. The bounds were driven down
+# as far as they can go while still proving what each case claims — a stall bound
+# of 2s, a run that talks every 0.5s for 4s, a 3s ceiling — and the remainder is
+# the irreducible part.
+#
+# The alternative was not running it locally, which is precisely the hole
+# `shell-suite-parity.test.ts` beside it exists to document: the process-guard
+# fixtures sat in CI and not in `test:scripts`, so `pnpm verify` came back green
+# having never executed the guard that stops one agent killing another's dev
+# server. Half a minute is the price of this one not being in that position.
 
 set -uo pipefail
 
@@ -124,14 +138,15 @@ echo "== the case the whole design turns on: slow is not stalled =="
 
 # The gate's slowest legitimate run is minutes long. A duration-based timeout
 # tuned to catch a hang promptly would kill it, so the primary bound is silence
-# instead. This case is what makes that claim testable: six seconds of work
-# under a three-second bound, surviving only because it keeps talking.
+# instead. This case is what makes that claim testable: four seconds of work
+# under a two-second bound, surviving only because it never stops talking for
+# more than half of one.
 #
 # If this ever goes red, the watchdog has started failing honest pushes and the
 # right response is to widen the bound, never to delete the case.
-run_watchdog 3 60 60 bash -c 'for i in 1 2 3 4 5 6; do echo "suite $i passed"; sleep 1; done'
+run_watchdog 2 60 60 bash -c 'for i in 1 2 3 4 5 6 7 8; do echo "suite $i passed"; sleep 0.5; done'
 check_eq 'a slow but talking run is left alone' 0 "$status"
-check_contains 'a slow but talking run finishes its work' 'suite 6 passed' "$out"
+check_contains 'a slow but talking run finishes its work' 'suite 8 passed' "$out"
 
 echo ""
 echo "== a stall must be stopped, and must say what it was stopped on =="
@@ -219,6 +234,120 @@ else
 fi
 
 echo ""
+echo "== Ctrl-C must stop the run too, not just abandon it =="
+
+# The most likely way this gate ever ends, because it is what everyone did for
+# the whole life of the bug: interrupt it at the terminal. bash sets SIGINT to
+# SIG_IGN in a command started with `&` when job control is off, so a Ctrl-C
+# that kills the watchdog does NOT reach the gate it forked — turbo and every
+# vitest under it get reparented to init and keep running invisibly. Against the
+# version before the traps: signal the watchdog, and the child shell and its
+# grandchildren are all still alive three seconds later.
+#
+# `set -m` before backgrounding is what makes this a faithful model rather than
+# a convenient one: with job control on, the watchdog gets its own process group
+# and therefore actually RECEIVES SIGINT, exactly as it would from a terminal.
+# Without it bash hands the watchdog the very SIG_IGN the bug is about, so the
+# watchdog's own INT trap can never fire and the case cannot go green at all —
+# measured by deleting the line: the signal is swallowed, the command runs to
+# completion, and the case fails with exit 0 against the 130 it wants. It is a
+# precondition for the test being runnable, not a subtle correctness trap.
+#
+#   $1 signal name  $2 expected exit code
+run_interrupt_case() {
+  local signal="$1" want_status="$2"
+  local pidfile="$work/interrupt-$signal.pid"
+  rm -f "$pidfile"
+
+  set -m
+  DORKOS_PREPUSH_STALL_SECONDS=120 DORKOS_PREPUSH_MAX_SECONDS=120 \
+    DORKOS_PREPUSH_HEARTBEAT_SECONDS=120 DORKOS_PREPUSH_POLL_SECONDS=0.2 \
+    bash "$CHECK" bash -c "sleep 60 >/dev/null 2>&1 & echo \$! > '$pidfile'; sleep 60" \
+    >/dev/null 2>&1 &
+  local watchdog=$!
+  set +m
+
+  # Wait for the fixture to have forked its grandchild, so the case can never
+  # pass by signalling a tree that does not exist yet.
+  local waited=0
+  while [ ! -s "$pidfile" ] && [ "$waited" -lt 100 ]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  local grandchild
+  grandchild=$(cat "$pidfile" 2>/dev/null || echo '')
+  if [ -z "$grandchild" ]; then
+    fail=$((fail + 1))
+    printf 'FAIL SIG%s — the fixture never forked a grandchild to orphan\n' "$signal"
+    kill "$watchdog" 2>/dev/null
+    return
+  fi
+
+  kill -"$signal" "$watchdog" 2>/dev/null
+  wait "$watchdog" 2>/dev/null
+  local got=$?
+  sleep 1
+
+  check_eq "SIG$signal exits $want_status, not silently" "$want_status" "$got"
+
+  if kill -0 "$grandchild" 2>/dev/null; then
+    fail=$((fail + 1))
+    printf 'FAIL SIG%s left the run orphaned (pid %s still alive)\n' "$signal" "$grandchild"
+    kill "$grandchild" 2>/dev/null
+  else
+    pass=$((pass + 1))
+    printf 'ok   SIG%s stops the whole run instead of orphaning it\n' "$signal"
+  fi
+}
+
+# BOTH SIGNALS ARE RUN because they fail the old code in DIFFERENT PLACES, and
+# each one alone would look like a passing case. Measured five trials each
+# against the version before the traps, stable 5/5 in both directions:
+#
+#   SIGINT  — exits 0 and leaves nothing behind. Exit 0 is the serious half: a
+#             Ctrl-C'd push reported SUCCESS, which is the fail-open outcome the
+#             whole design refuses everywhere else. Its orphan assertion passes.
+#   SIGTERM — exits 143 correctly but orphans the run every single time. Its
+#             exit-code assertion passes.
+#
+# So the exit-code half carries SIGINT and the orphan half carries SIGTERM.
+# Deleting either signal would leave a case that still reads as thorough while
+# no longer noticing one of the two real defects.
+run_interrupt_case INT 130
+run_interrupt_case TERM 143
+
+echo ""
+echo "== forwarded output must be byte-exact, not merely present =="
+
+# The log is appended to by a live process while the watchdog reads it, so a
+# naive "print everything past the last offset" re-prints whatever arrived
+# between sampling the size and doing the read. It fails intermittently and
+# quietly: measured on the version before the fix, one run in three of a
+# 10000-line command came out at 10728 lines and the other two were exact.
+#
+# Duplication is worse than it sounds. Nothing crashes; a developer just sees a
+# test failure printed twice, or a suite that appears to have run twice, and has
+# no reason to suspect the hook rather than their own code.
+#
+# Repeated because the bug is a RACE — a single exact run proves nothing, since
+# two of every three were already exact while it was broken. A tight poll and a
+# large line count maximise the number of reads that can straddle a write.
+lines=10000
+volume_ok=1
+volume_seen=''
+for _ in 1 2 3; do
+  got_lines=$(
+    DORKOS_PREPUSH_STALL_SECONDS=60 DORKOS_PREPUSH_MAX_SECONDS=60 \
+      DORKOS_PREPUSH_HEARTBEAT_SECONDS=60 DORKOS_PREPUSH_POLL_SECONDS=0.05 \
+      bash "$CHECK" bash -c "for i in \$(seq $lines); do echo \"line-\$i\"; done" 2>/dev/null | wc -l
+  )
+  got_lines=$((got_lines))
+  volume_seen="${volume_seen:+$volume_seen, }$got_lines"
+  [ "$got_lines" -eq "$lines" ] || volume_ok=0
+done
+check_eq "every byte is forwarded exactly once (3 runs of $lines lines: $volume_seen)" 1 "$volume_ok"
+
+echo ""
 echo "== a run in progress must look like a run in progress =="
 
 # lefthook buffers a command's output until the command exits, so the terminal
@@ -229,15 +358,15 @@ echo "== a run in progress must look like a run in progress =="
 stream_out="$work/stream.log"
 DORKOS_PREPUSH_STALL_SECONDS=30 DORKOS_PREPUSH_MAX_SECONDS=60 \
   DORKOS_PREPUSH_HEARTBEAT_SECONDS=60 DORKOS_PREPUSH_POLL_SECONDS=0.2 \
-  bash "$CHECK" bash -c 'echo EARLY-LINE; sleep 6' >"$stream_out" 2>&1 &
+  bash "$CHECK" bash -c 'echo EARLY-LINE; sleep 3' >"$stream_out" 2>&1 &
 streamer=$!
-sleep 2
+sleep 1
 if grep -qF EARLY-LINE "$stream_out" 2>/dev/null; then
   pass=$((pass + 1))
   printf 'ok   output is forwarded while the command is still running\n'
 else
   fail=$((fail + 1))
-  printf 'FAIL nothing was forwarded 2s in; a stall would look identical to progress\n'
+  printf 'FAIL nothing was forwarded 1s in; a stall would look identical to progress\n'
 fi
 wait "$streamer" 2>/dev/null
 
@@ -247,10 +376,10 @@ echo "== a quiet run must announce itself before any bound fires =="
 # The heartbeat is what makes a stall legible in the first seconds rather than
 # at the timeout, which for the real bounds is minutes away. It must name the
 # command, or it is just a spinner.
-run_watchdog 8 60 1 bash -c 'echo starting-up; sleep 4'
+run_watchdog 6 60 1 bash -c 'echo starting-up; sleep 3'
 check_eq 'a quiet run that recovers still exits 0' 0 "$status"
 check_contains 'a quiet run is reported while it is still allowed to be quiet' '[pre-push]' "$out"
-check_contains 'the heartbeat names the command it is waiting on' 'sleep 4' "$out"
+check_contains 'the heartbeat names the command it is waiting on' 'sleep 3' "$out"
 
 echo ""
 echo "== misuse must be loud =="

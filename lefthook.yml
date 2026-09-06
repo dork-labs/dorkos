@@ -72,7 +72,7 @@ pre-commit:
 pre-push:
   # STREAM THE GATE'S OUTPUT AS IT ARRIVES (DOR-473). Without this, lefthook
   # buffers a command's output and prints it only once the command has
-  # finished. Measured against lefthook 2.1.10: a command that echoes at t+0 and
+  # finished. Measured against lefthook 2.1.12: a command that echoes at t+0 and
   # exits at t+8 has its echo appear at t+8, not before. So for the whole of a
   # healthy four-minute run the terminal showed the lefthook banner and nothing
   # else — and a run that had wedged looked exactly the same, forever. That is

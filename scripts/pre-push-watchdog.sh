@@ -29,7 +29,7 @@
 #      chain.
 #
 #   2. NOTHING SHOWED THE RUN. lefthook buffers a command's output and prints it
-#      only once the command finishes. Measured against lefthook 2.1.10: a
+#      only once the command finishes. Measured against lefthook 2.1.12: a
 #      command that echoes at t+0 and exits at t+8 has its echo appear at t+8.
 #      So for the whole of a healthy run — ten minutes and counting, in the
 #      measurement below — the terminal shows the lefthook banner and nothing
@@ -107,6 +107,22 @@
 # (scripts/test-pre-push-watchdog.sh) drives every path through them with
 # second-scale values.
 #
+# WHAT THE WRAPPED COMMAND GETS, which is not quite what it would get unwrapped
+#
+#   * stdin is /dev/null. The command runs as a background job (`&`) with job
+#     control off, which is how bash detaches it from the terminal. Nothing in
+#     the gate reads stdin today — the hook's `run:` block drains git's ref list
+#     in its own `while read` loop BEFORE reaching this script, so by then there
+#     is nothing left to read anyway — but anyone moving this wrapper above that
+#     loop would find the loop reading EOF immediately and the delete-only
+#     skip silently never triggering. Move the loop, not the wrapper.
+#   * stderr is merged into stdout. Both go to one log so the forwarded stream
+#     preserves the interleaving a reader expects, and turbo's output arrives in
+#     the order it was written. lefthook merges the two anyway, so this changes
+#     nothing about what reaches the terminal; it does mean a caller cannot
+#     separate the streams by redirecting one of them.
+#   * exit code and output are otherwise passed through untouched.
+#
 # PROCESS CLEANUP, AND HARD RULE 7
 #
 # It kills the process TREE it started, never a name. The pids come from walking
@@ -118,6 +134,11 @@
 # them alive was never an option: the whole failure being fixed is a wedged
 # vitest, and abandoning it would leak a stuck process per push on the machine
 # least able to afford one.
+#
+# That reaper runs on EVERY exit this script can take other than the command's
+# own — both timeouts and the INT/TERM/HUP traps installed after the fork. The
+# traps are not decoration: without them Ctrl-C leaked the entire run, which is
+# documented where they are installed.
 
 set -uo pipefail
 
@@ -153,12 +174,28 @@ forwarded=0
 # Print whatever the command has written since the last call, and report
 # whether there was anything. Callers use the answer to decide whether the run
 # is making progress; nothing else in this script looks at the log's size.
+#
+# THE `head -c` IS LOAD-BEARING, and its absence is a bug that hides for a long
+# time. The log is being appended to by a live process while this reads it, so
+# the size sampled on the line above is already stale: `tail -c "+N"` reads to
+# the CURRENT end of file, which may be past `size` by whatever the command
+# wrote in between. Those extra bytes get printed AND left uncounted, because
+# `forwarded` is then set to the stale `size` — so the next call re-prints them.
+# Measured on a command emitting 10000 lines under a 0.05s poll: one run in
+# three came out at 10728 lines, a 7.3% duplication, and the other two were
+# exact. That intermittency is the whole problem — it looks fine most of the
+# time, and when it does not, a developer reading a doubled test failure has no
+# reason to suspect the hook rather than their own code.
+#
+# Bounding the read to exactly the bytes that were counted makes the forwarded
+# stream byte-exact regardless of what arrives mid-read; the remainder is simply
+# picked up by the next poll, which is what `forwarded` is for.
 flush_output() {
   local size
   size=$(wc -c <"$log")
   size=$((size))
   if [ "$size" -gt "$forwarded" ]; then
-    tail -c "+$((forwarded + 1))" "$log"
+    tail -c "+$((forwarded + 1))" "$log" | head -c "$((size - forwarded))"
     forwarded=$size
     return 0
   fi
@@ -288,6 +325,38 @@ report_timeout() {
 
 "$@" >"$log" 2>&1 &
 child=$!
+
+# STOP THE RUN WHEN THIS SCRIPT IS INTERRUPTED, not just when it times out.
+#
+# Ctrl-C at the terminal is the single most likely way this gate ends, because
+# it is what everyone did for the whole life of the bug. Without these traps it
+# is also the one exit that leaks: bash sets SIGINT and SIGQUIT to SIG_IGN in a
+# command started with `&` when job control is off, so a Ctrl-C that kills this
+# script does NOT reach the gate it forked — turbo and every vitest under it are
+# reparented to init and keep running, invisibly, on the machine least able to
+# afford it. Measured on the version before these lines: signal the watchdog,
+# and the child shell and its grandchildren are all still alive three seconds
+# later. That is precisely the leak the PROCESS CLEANUP note above calls "never
+# an option", and it was true of the timeout path only.
+#
+# Installed here rather than beside the EXIT trap because `stop_run_quietly`
+# reads `$child`, and under `set -u` a signal arriving before the fork would
+# abort in the handler. Nothing before this point has started anything to clean
+# up, so the EXIT trap alone covers that window.
+#
+# Each signal keeps its own conventional status (128 + signal number) rather
+# than collapsing to one code: a caller that distinguishes them should get the
+# truth, and "interrupted" must never be mistaken for "timed out" (124) or
+# "tests failed".
+on_signal() {
+  local name=$1 code=$2
+  stop_run_quietly
+  echo "[pre-push] interrupted (SIG${name}) — stopped the test run it had started." >&2
+  exit "$code"
+}
+trap 'on_signal INT 130' INT
+trap 'on_signal TERM 143' TERM
+trap 'on_signal HUP 129' HUP
 
 started=$(date +%s)
 last_progress=$started
