@@ -18,6 +18,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, readdir, readFile, utimes, writeFile, mkdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
+import type { Readable } from 'stream';
 import { InvalidRoomAttachmentIdError } from '../room-attachment-store.js';
 import { LocalRoomAttachmentStore } from '../local-room-attachment-store.js';
 
@@ -28,6 +29,25 @@ async function drain(stream: NodeJS.ReadableStream): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of stream) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks);
+}
+
+/**
+ * Let go of a `get` this test never reads.
+ *
+ * Attachments are streamed from disk rather than read into memory — they are
+ * unbounded in size and their ETag comes from one `stat` — so every `get` hands
+ * back a `createReadStream` whose `fs.open` is still in flight. The `error`
+ * listener is the load-bearing half: `destroy()` does NOT cancel that open, so
+ * a file removed before it lands still emits `error`, and with nobody listening
+ * that is a process-level uncaught exception rather than a failed test. It ends
+ * a run with every test green and the shard red, which is how DOR-1830 ejected
+ * unrelated PRs from the merge queue. The `destroy()` only closes the
+ * descriptor promptly once the open has landed.
+ */
+function release(stream: Readable | undefined): void {
+  if (!stream) return;
+  stream.on('error', () => {});
+  stream.destroy();
 }
 
 describe('LocalRoomAttachmentStore', () => {
@@ -81,6 +101,8 @@ describe('LocalRoomAttachmentStore', () => {
     const second = await store.get('room1', 'att1', 'log', 'text/plain');
 
     expect(second?.etag).not.toBe(first?.etag);
+    release(first?.stream);
+    release(second?.stream);
   });
 
   it('derives the validator from the file’s metadata, not from its content', async () => {
@@ -98,6 +120,8 @@ describe('LocalRoomAttachmentStore', () => {
 
     expect(await readFile(file)).toEqual(BYTES);
     expect(after?.etag).not.toBe(before?.etag);
+    release(before?.stream);
+    release(after?.stream);
   });
 
   it('hands the stream over unread, so a 304 pays for nothing', async () => {
@@ -107,7 +131,7 @@ describe('LocalRoomAttachmentStore', () => {
 
     // Draining is the caller's choice; the conditional path destroys it instead.
     expect(stored?.stream.readableEnded).toBe(false);
-    stored?.stream.destroy();
+    release(stored?.stream);
   });
 
   it('answers a real path from localPath, which really opens', async () => {
@@ -144,8 +168,12 @@ describe('LocalRoomAttachmentStore', () => {
 
     await store.delete('room1', 'att1', 'log');
 
-    expect(await store.get('room1', 'att2', 'log', 'text/plain')).not.toBeNull();
-    expect(await store.get('room2', 'att3', 'log', 'text/plain')).not.toBeNull();
+    const survivor = await store.get('room1', 'att2', 'log', 'text/plain');
+    const otherRoom = await store.get('room2', 'att3', 'log', 'text/plain');
+    expect(survivor).not.toBeNull();
+    expect(otherRoom).not.toBeNull();
+    release(survivor?.stream);
+    release(otherRoom?.stream);
   });
 
   it('treats an unusable id as nothing to delete rather than an error', async () => {
