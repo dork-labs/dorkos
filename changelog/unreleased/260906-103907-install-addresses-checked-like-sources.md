@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(marketplace): direct installs check their address like sources do (DOR-1799)'
+  - 'fix(marketplace): refuse git:// installs, and cover the ls-remote door (DOR-1799)'
 ---
 
 ### Fixed

@@ -35,6 +35,25 @@
  * descriptor the same way a source is, skips the same schema, and reached
  * `git ls-remote` unchecked for the same reason (DOR-1799).
  *
+ * That door is narrower than {@link isSafeGitUrl} in one deliberate way: it
+ * refuses `git://`. What is fetched through it is executed on this machine, and
+ * `git://` is unauthenticated, cleartext and integrity-free — anyone on the
+ * path chooses what gets installed. `https://`, `ssh://` and `git@host:path`
+ * all authenticate the server and protect the bytes; the refusal costs an
+ * install nothing but the scheme it was typed with. Same reasoning DOR-1710
+ * used to narrow marketplace sources to `https://`.
+ *
+ * `isSafeGitUrl` itself is deliberately left alone, and the honest consequence
+ * is worth stating rather than implying: a package author's `git://` entry in
+ * a `marketplace.json` still parses and still lists, and then cannot be
+ * installed by either route — the url resolver and the git-subdir resolver
+ * both come through this door. It is a dead entry, and the refusal a person
+ * sees is written for the operator ("use an https:// address"), which is not
+ * advice the author of that entry can act on. Narrowing the schema so such an
+ * entry is skipped at parse time, with a message aimed at its author, is the
+ * follow-up; it belongs to `@dorkos/marketplace` and to every other consumer
+ * of that schema, not here.
+ *
  * @module services/marketplace/source-url-policy
  */
 import { fileURLToPath } from 'node:url';
@@ -58,8 +77,9 @@ export const UNSUPPORTED_SOURCE_URL_MESSAGE =
  * accepted set is genuinely different, and a refusal that names the wrong set
  * sends people down a dead end. A marketplace source has to serve its listing
  * over HTTP, so it is `https://` or a local folder. An install address is only
- * ever cloned, so every transport {@link isSafeGitUrl} allows works here —
- * `ssh://` and `git@host:path` included.
+ * ever cloned, so `ssh://` and `git@host:path` work here too — and it names
+ * every form that works, which is why `git://` is absent (see the module
+ * comment).
  */
 export const UNSUPPORTED_GIT_REMOTE_MESSAGE =
   "That address isn't one DorkOS can install a package from. Use an https://, ssh:// or " +
@@ -93,16 +113,36 @@ export class UnsupportedSourceUrlError extends Error {
 }
 
 /**
- * Refuse an address that is about to become argv for `git`.
+ * True when an address may be cloned to install a package: a transport
+ * {@link isSafeGitUrl} allows, minus `git://` for the integrity reason in the
+ * module comment.
+ *
+ * @param url - The candidate address.
+ * @returns `true` when the install door will hand it to `git`.
+ */
+function isInstallableGitRemote(url: string): boolean {
+  return isSafeGitUrl(url) && !url.startsWith('git://');
+}
+
+/**
+ * Refuse an address that is about to become argv for `git` on the install path.
  *
  * The question {@link isSafeGitUrl} answers — may this string be handed to
  * `git` — asked at the seam rather than at one of the several doors that reach
- * it. A package author's URL is checked by `marketplace.json` parsing, and a
- * configured source's by the add route, but a `name@<url>` install spec is
- * typed by an operator and hand-built into a source descriptor that no schema
- * ever sees (DOR-1799). Defense in depth rather than a patched hole: git's own
- * `GIT_ALLOW_PROTOCOL` confinement (`hardenedGitEnv`) already stands behind
- * this, and git 2.53 refuses `ext::` on its own.
+ * it, and narrowed by the `git://` rule above. A package author's URL is
+ * checked by `marketplace.json` parsing, and a configured source's by the add
+ * route, but a `name@<url>` install spec is typed by an operator and
+ * hand-built into a source descriptor that no schema ever sees (DOR-1799).
+ * Defense in depth rather than a patched hole: git's own `GIT_ALLOW_PROTOCOL`
+ * confinement (`hardenedGitEnv`) already stands behind this, and git 2.53
+ * refuses `ext::` on its own.
+ *
+ * Two more measured git behaviours stand behind the `ssh://` arm, and are
+ * recorded here so nobody "fixes" the regex by loosening it: git refuses a
+ * strange hostname outright (`ssh://-oProxyCommand=…` dies with "strange
+ * hostname … blocked"), and every helper here passes the destination as one
+ * argv element after `--end-of-options`, so an address cannot split into extra
+ * flags. The predicate is the near layer, not the only one.
  *
  * `file://` addresses do not reach here, so this predicate does not allow them
  * and does not need to: `fetchFromGit` branches on `file://` first and reads
@@ -111,10 +151,11 @@ export class UnsupportedSourceUrlError extends Error {
  *
  * @param url - The address about to be handed to `git`.
  * @throws {UnsupportedSourceUrlError} When the transport is not one
- *   {@link isSafeGitUrl} accepts, or the address begins with `-`.
+ *   {@link isSafeGitUrl} accepts, when it is `git://`, or when the address
+ *   begins with `-`.
  */
 export function assertSafeGitRemote(url: string): void {
-  if (!isSafeGitUrl(url)) {
+  if (!isInstallableGitRemote(url)) {
     throw new UnsupportedSourceUrlError(url, UNSUPPORTED_GIT_REMOTE_MESSAGE);
   }
 }

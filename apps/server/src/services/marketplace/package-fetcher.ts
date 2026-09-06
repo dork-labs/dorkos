@@ -16,8 +16,11 @@
  * This module is intentionally side-effect light — all disk I/O is
  * delegated to {@link MarketplaceCache} and all git I/O to the injected
  * downloader. The only system call made directly here is `git ls-remote`
- * via `execFile`, which is wrapped in a try/catch and degrades to a
- * deterministic placeholder SHA so the cache miss path always executes.
+ * via `execFile`. A FAILED `ls-remote` (no git, no network, unparseable
+ * output) is caught and degraded to a deterministic placeholder SHA so the
+ * cache miss path still executes; a REFUSED address is not — an address this
+ * module will not hand to `git` throws `UnsupportedSourceUrlError` and stops
+ * the fetch (DOR-1799).
  *
  * @module services/marketplace/package-fetcher
  */
@@ -124,7 +127,11 @@ export interface FetcherDeps {
     packageName: string;
     force?: boolean;
   }): Promise<FetchedPackage>;
-  /** Resolve a commit SHA for the given clone URL + ref via `git ls-remote`. */
+  /**
+   * Resolve a commit SHA for the given clone URL + ref via `git ls-remote`.
+   * Throws `UnsupportedSourceUrlError` for an address the fetcher will not hand
+   * to `git`, rather than returning a placeholder SHA (DOR-1799).
+   */
   resolveCommitSha(cloneUrl: string, ref: string): Promise<string>;
 }
 
@@ -154,15 +161,21 @@ export class PackageFetcher {
    * for the same SHA are no-ops.
    *
    * Algorithm:
-   *   1. Resolve commit SHA from gitUrl + ref via `git ls-remote` (with a
+   *   1. Serve a `file://` gitUrl straight from disk and return.
+   *   2. Refuse an address this fetcher will not hand to `git` (DOR-1799).
+   *   3. Resolve commit SHA from gitUrl + ref via `git ls-remote` (with a
    *      deterministic fallback when git/network is unavailable).
-   *   2. Consult `cache.getPackage(packageName, sha)`; return on hit unless
+   *   4. Consult `cache.getPackage(packageName, sha)`; return on hit unless
    *      `opts.force` is set.
-   *   3. Reserve a cache directory via `cache.putPackage()`.
-   *   4. Delegate the actual clone to `templateDownloader.cloneRepository`.
-   *   5. Return the cached path, SHA, and `fromCache: false`.
+   *   5. Clone into a temp dir and let `cache.materializePackage()` rename it
+   *      onto the final path, so concurrent fetches of one SHA cannot collide.
+   *   6. Delegate the actual clone to `templateDownloader.cloneRepository`.
+   *   7. Return the cached path, SHA, and `fromCache: false`.
    *
    * @param opts - Package identity and fetch options.
+   * @throws {UnsupportedSourceUrlError} When `opts.gitUrl` is a remote address
+   *   {@link assertSafeGitRemote} refuses. Nothing is fetched, and no git
+   *   subprocess starts.
    */
   async fetchFromGit(opts: FetchPackageOptions): Promise<FetchedPackage> {
     const gitUrl = opts.gitUrl;
@@ -505,11 +518,19 @@ export class PackageFetcher {
   }
 
   /**
-   * Resolve a commit SHA for `${gitUrl}#${ref}` via `git ls-remote`. Falls
-   * back to a deterministic `tmp-${Date.now()}` placeholder on any failure
-   * (missing git binary, no network, malformed output). The actual clone
-   * downstream may still fail — that's fine, the cache miss path always
-   * executes regardless of this return value.
+   * Resolve a commit SHA for `${gitUrl}#${ref}` via `git ls-remote`.
+   *
+   * Falls back to a deterministic `tmp-${Date.now()}` placeholder when the
+   * LOOKUP fails (missing git binary, no network, malformed output). The actual
+   * clone downstream may still fail — that's fine, the cache miss path executes
+   * regardless of this return value.
+   *
+   * It does NOT swallow everything: an address this fetcher will not hand to
+   * `git` is refused before the lookup is attempted and the refusal propagates,
+   * so callers cannot treat this method as total (DOR-1799).
+   *
+   * @throws {UnsupportedSourceUrlError} When `gitUrl` is a remote address
+   *   {@link assertSafeGitRemote} refuses.
    */
   private async resolveCommitSha(gitUrl: string, ref?: string): Promise<string> {
     // Its own door, not a duplicate of `fetchFromGit`'s: `gitSubdirResolver`

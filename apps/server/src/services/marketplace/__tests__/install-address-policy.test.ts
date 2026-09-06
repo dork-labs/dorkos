@@ -83,8 +83,9 @@ vi.mock('node:child_process', async () => {
 
 /**
  * The shapes a hostile or malformed address arrives in. `ext::` is the one that
- * runs a command; the rest are the neighbours DOR-1710's review probed, kept
- * here so the two doors refuse the same set.
+ * runs a command; the rest are the neighbours DOR-1710's review probed, plus
+ * the two cleartext transports — `http://` and `git://` — that authenticate
+ * nobody and protect nothing, which is not a transport to execute code from.
  */
 const REFUSED_ADDRESSES = [
   "ext::sh -c 'id > /tmp/dorkos-dor-1799'",
@@ -93,14 +94,21 @@ const REFUSED_ADDRESSES = [
   '-upload-pack=touch /tmp/dorkos-dor-1799',
   '--upload-pack=touch /tmp/dorkos-dor-1799',
   'http://example.com/repo.git',
+  'git://example.com/foo/bar.git',
 ];
+
+/**
+ * The one address the install door refuses that {@link isSafeGitUrl} allows.
+ * Kept separate so the divergence is stated once, on purpose, instead of
+ * quietly weakening the agreement check below.
+ */
+const NARROWED_BEYOND_SCHEMA = 'git://example.com/foo/bar.git';
 
 /** The addresses people really install from, none of which may regress. */
 const ALLOWED_ADDRESSES = [
   'https://github.com/foo/bar.git',
   'git@github.com:foo/bar.git',
   'ssh://git@example.com/foo/bar.git',
-  'git://example.com/foo/bar.git',
 ];
 
 /** Fake logger that records nothing but satisfies the constructor. */
@@ -228,8 +236,17 @@ describe('install addresses — the git seam in PackageFetcher', () => {
     expect(vi.mocked(downloader.cloneRepository).mock.calls[0]?.[0]).toBe(address);
   });
 
-  it('refuses the same set `isSafeGitUrl` refuses, and no other', () => {
+  it('the fixture lists agree with `isSafeGitUrl`, except the one deliberate narrowing', () => {
+    // Not a test of the guard — it never calls it. It is what keeps the two
+    // lists above honest: every refused address is one the shared predicate
+    // also refuses, so this file cannot drift into asserting a policy the rest
+    // of the marketplace does not hold. `git://` is the single exception, and
+    // naming it here is how the divergence stays a decision rather than a bug.
     for (const address of REFUSED_ADDRESSES) {
+      if (address === NARROWED_BEYOND_SCHEMA) {
+        expect(isSafeGitUrl(address), address).toBe(true);
+        continue;
+      }
       expect(isSafeGitUrl(address), address).toBe(false);
     }
     for (const address of ALLOWED_ADDRESSES) {
@@ -257,6 +274,43 @@ describe('install addresses — the git seam in PackageFetcher', () => {
     await expect(
       fetcher.fetchFromGit({ packageName: 'x', gitUrl: 'ext::sh -c id' })
     ).rejects.toThrow(UNSUPPORTED_GIT_REMOTE_MESSAGE);
+  });
+
+  describe('the `resolveCommitSha` door on its own', () => {
+    /**
+     * The door a resolver reaches without passing through `fetchFromGit` —
+     * `FetcherDeps.resolveCommitSha`, which is what `gitSubdirResolver` calls.
+     * Exercised directly because every path that reaches it today is stopped
+     * earlier by another guard, so without this the line could be deleted with
+     * the whole suite still green.
+     */
+    function buildDeps(): FetcherDeps {
+      return (fetcher as unknown as { buildFetcherDeps(): FetcherDeps }).buildFetcherDeps();
+    }
+
+    it('refuses a hostile address instead of degrading to a placeholder SHA', async () => {
+      const { execFile } = await import('node:child_process');
+
+      await expect(buildDeps().resolveCommitSha('ext::sh -c id', 'HEAD')).rejects.toBeInstanceOf(
+        UnsupportedSourceUrlError
+      );
+
+      expect(vi.mocked(execFile)).not.toHaveBeenCalled();
+    });
+
+    it('still resolves an allowed address through `git ls-remote`', async () => {
+      const { execFile } = await import('node:child_process');
+
+      // The mocked `ls-remote` returns empty stdout, so the method takes its
+      // placeholder-SHA path. This half is what distinguishes "the guard fired"
+      // from "the method is broken" — without it, a method that threw for
+      // everything would pass the case above.
+      await expect(
+        buildDeps().resolveCommitSha('https://example.com/foo/bar.git', 'HEAD')
+      ).resolves.toMatch(/^tmp-\d+$/);
+
+      expect(vi.mocked(execFile)).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
