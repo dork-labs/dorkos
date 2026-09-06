@@ -2,6 +2,28 @@
  * Mesh agent discovery and registry routes — discover agents, manage registrations,
  * maintain the denial list, and query network topology.
  *
+ * ## Who the Activity feed says did it
+ *
+ * Register, remove, and remove-with-data all read the caller
+ * (`readActivityActor`) instead of asserting the person did it. Until DOR-1829
+ * they hardcoded `user` / `'You'`, so an agent that removed another agent was
+ * recorded in the operator's own feed as the operator's own doing — the exact
+ * lie DOR-1801 fixed one router over.
+ *
+ * They are NOT person-barred, and that is a decision rather than an omission.
+ * `MCP_TOOL_TIERS` already classifies these verbs for agents: `mesh_register` is
+ * `act` and `mesh_unregister` is `destructive` (an approval card, not a
+ * prohibition). A bar here would make the HTTP door refuse outright what the
+ * sanctioned agent door allows with a person's consent — a policy change, not an
+ * attribution fix. What the HTTP routes lack is the tier gate the MCP twins run,
+ * which is a separate piece of work; recording who acted is the part that can be
+ * true today.
+ *
+ * The heartbeat route's `agent.status_changed` event is the one actor here that
+ * is NOT the caller: it records DorkOS noticing a health transition, so it stays
+ * `system` / `System`. See `routes/__tests__/route-activity-actor.test.ts`,
+ * which exempts that one site by name.
+ *
  * @module routes/mesh
  */
 import path from 'path';
@@ -24,6 +46,7 @@ import { logger } from '../lib/logger.js';
 import { logOrphanedInstalls } from '../services/mesh/orphaned-installs.js';
 import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
+import { readActivityActor } from '../services/activity/activity-actor.js';
 
 /**
  * Canonical UUID regex — used to exclude session-ID-shaped subject segments
@@ -344,8 +367,10 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
       if (activityService) {
         try {
           await activityService.emit({
-            actorType: 'user',
-            actorLabel: 'You',
+            // Read, never asserted: this route is reachable by an agent, and a
+            // feed that credits the person with a machine's registration is
+            // believed (DOR-1829).
+            ...readActivityActor(req, res),
             category: 'agent',
             eventType: 'agent.registered',
             resourceType: 'agent',
@@ -475,6 +500,11 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
       const activityService = req.app.locals.activityService as ActivityService | undefined;
       if (activityService) {
         await activityService.emit({
+          // The one emit on this router that must NOT read the caller. Nobody
+          // asked for this line: the caller sent a heartbeat, and DorkOS is the
+          // one that noticed the health transition and is reporting it. Naming
+          // the heartbeat's sender would say an agent changed its own status,
+          // which is not what happened.
           actorType: 'system',
           actorLabel: 'System',
           category: 'agent',
@@ -603,8 +633,10 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     const activityService = req.app.locals.activityService as ActivityService | undefined;
     if (activityService) {
       await activityService.emit({
-        actorType: 'user',
-        actorLabel: 'You',
+        // The highest-stakes verb on this router — it removes another agent AND
+        // its data — so naming the wrong actor here is the worst version of the
+        // DOR-1801 defect. Read the caller.
+        ...readActivityActor(req, res),
         category: 'agent',
         eventType: 'agent.deleted',
         resourceType: 'agent',
@@ -643,8 +675,9 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     const activityService = req.app.locals.activityService as ActivityService | undefined;
     if (activityService) {
       await activityService.emit({
-        actorType: 'user',
-        actorLabel: 'You',
+        // Same as the delete-with-data route above: an agent may reach this, so
+        // who removed whom is read rather than assumed.
+        ...readActivityActor(req, res),
         category: 'agent',
         eventType: 'agent.removed',
         resourceType: 'agent',
