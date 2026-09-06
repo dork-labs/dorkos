@@ -493,16 +493,24 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: 'puts somebody in a room, beneath every rule about who may be in one together',
     call: 'roster.add(',
     allowed: {
-      'services/rooms/room-service.ts':
-        'the only caller, and the one that carries the guards: `requireRosterWriteAllowed`, the three-way rule, the bridged-room refusal and the seeding gate all run above this line',
+      // Was `room-service.ts` until DOR-1697 split that file. The guards did not
+      // move — `addMemberTo` still runs every one of them directly above this
+      // line — only the file they live in did.
+      'services/rooms/manage/room-membership.ts':
+        'the roster verbs, and the module that carries the guards: `requireRosterWriteAllowed`, the three-way rule and the bridged-room refusal all run above this line',
+      'services/rooms/manage/room-bridge-lifecycle.ts':
+        "the agent swap in `rebridge`, operator-gated at the top of that method and seeding the new agent's mode atomically in this call (chats-as-channels §3.5, A3.6b)",
     },
   },
   {
     what: 'takes somebody out of a room, beneath the rules about who may take whom',
     call: 'roster.remove(',
     allowed: {
-      'services/rooms/room-service.ts':
-        "the only caller, and the one that carries the guards: an agent may never remove the person, a system room keeps its owner, and the removed member's fallback seat and held turns are cleared with them",
+      // Same split as `roster.add(` above, and the same guards in the same order.
+      'services/rooms/manage/room-membership.ts':
+        "the roster verbs, and the module that carries the guards: an agent may never remove the person, a system room keeps its owner, and the removed member's fallback seat and held turns are cleared with them",
+      'services/rooms/manage/room-bridge-lifecycle.ts':
+        'the agent swap in `rebridge`, operator-gated at the top of that method — the old agent leaves so exactly one agent is ever bound to a chat (D-6 Q3)',
     },
   },
 ];

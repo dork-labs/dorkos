@@ -61,7 +61,7 @@ export interface Bridge {
   /**
    * The platform chat's sanitized title, as recorded when this room was
    * bridged (spec §3.4) — `null` for a bridged DM. Read by
-   * {@link RoomService.withRoster} for the room sheet's subtitle; never
+   * {@link RoomProjection.withRoster} for the room sheet's subtitle; never
    * updated by a room rename, which is the whole point of it.
    */
   platformTitle: string | null;

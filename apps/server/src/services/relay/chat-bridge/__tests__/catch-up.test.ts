@@ -142,8 +142,7 @@ describe('BridgeCatchUp (chats-as-channels §6.1)', () => {
     // A live-stream subscriber that is DROPPED before the entry commits: with no
     // subscriber, `RoomBroadcaster.publish` drops the event, so the live fan-out
     // cannot be what carries this delivery — only the scan can.
-    const broadcaster = (harness.service as unknown as { broadcaster: RoomBroadcaster })
-      .broadcaster;
+    const broadcaster: RoomBroadcaster = harness.service.stream;
     const ac = new AbortController();
     void broadcaster.subscribe(room.id, ac.signal);
     ac.abort();
