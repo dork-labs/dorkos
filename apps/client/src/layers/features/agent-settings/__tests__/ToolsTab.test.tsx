@@ -10,7 +10,7 @@ vi.mock('@/layers/entities/relay', () => ({
 vi.mock('@/layers/entities/tasks', () => ({
   useTasksEnabled: vi.fn(() => true),
 }));
-vi.mock('../model/use-agent-context-config', () => ({
+vi.mock('@/layers/entities/config/model/use-agent-context-config', () => ({
   useAgentContextConfig: vi.fn(() => ({
     config: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
     updateConfig: vi.fn(),
@@ -41,7 +41,7 @@ import { useTasksEnabled } from '@/layers/entities/tasks';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { useToolNamesForGroup } from '@/layers/entities/capability';
 import { useUpdateAgent } from '@/layers/entities/mesh';
-import { useAgentContextConfig } from '../model/use-agent-context-config';
+import { useAgentContextConfig } from '@/layers/entities/config/model/use-agent-context-config';
 import { agentKeys } from '@/layers/entities/agent';
 import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -150,7 +150,7 @@ describe('ToolsTab', () => {
     it('writes a toggle through the OPERATOR route, never the agent self-edit route', () => {
       // DOR-1506: `PATCH /api/agents/current` now refuses all five keys of this
       // object, because a per-agent value BEATS the global `agentContext.*`
-      // switch a person set. The cockpit is the person, so it uses the mesh
+      // switch a person set. The app is the person, so it uses the mesh
       // route — the same split the grant and the ceiling below already use.
       const mutate = vi.fn();
       vi.mocked(useUpdateAgent).mockReturnValue({
@@ -280,7 +280,7 @@ describe('ToolsTab', () => {
     it('writes through the OPERATOR route, never the agent self-edit route', () => {
       // The half that would silently break the feature. `PATCH
       // /api/agents/current` refuses this field by design, because a grant the
-      // governed agent can set for itself is not a grant. The cockpit is the
+      // governed agent can set for itself is not a grant. The app is the
       // person, so it must use the mesh route.
       const mutate = vi.fn();
       vi.mocked(useUpdateAgent).mockReturnValue({

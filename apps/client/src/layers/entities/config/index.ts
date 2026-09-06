@@ -9,6 +9,8 @@
 
 export { configKeys, CONFIG_STALE_TIME_MS } from './api/query-keys';
 export { useConfig } from './model/use-config';
+export { useAgentContextConfig } from './model/use-agent-context-config';
+export type { AgentContextConfig } from './model/use-agent-context-config';
 export { useLocalCaller } from './model/use-local-caller';
 export { useEngagedWindow } from './model/use-engaged-window';
 export { useRoomTurnLimits } from './model/use-room-turn-limits';

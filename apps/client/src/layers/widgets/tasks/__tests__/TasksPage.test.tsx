@@ -19,9 +19,6 @@ vi.mock('@/layers/entities/mesh', () => ({
 vi.mock('@/layers/features/tasks', () => ({
   TasksEmptyState: () => <div data-testid="empty-state">No schedules yet.</div>,
   CreateTaskDialog: () => null,
-}));
-
-vi.mock('@/layers/features/tasks/ui/TasksList', () => ({
   TasksList: () => <div data-testid="tasks-list" />,
 }));
 
