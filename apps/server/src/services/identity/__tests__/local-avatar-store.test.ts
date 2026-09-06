@@ -13,6 +13,7 @@ import { mkdtemp, rm, readdir, readFile, writeFile, mkdir, utimes } from 'fs/pro
 import { tmpdir } from 'os';
 import path from 'path';
 import { logger } from '../../../lib/logger.js';
+import { discardStream } from '../../../lib/route-utils.js';
 import { InvalidAvatarIdError } from '../avatar-store.js';
 import { LocalAvatarStore } from '../local-avatar-store.js';
 
@@ -104,7 +105,7 @@ describe('LocalAvatarStore', () => {
     const stored = await store.get('author-1');
 
     expect(stored?.etag).toBe(`"${url.split('?v=')[1]}"`);
-    stored?.stream.destroy();
+    discardStream(stored!.stream);
   });
 
   it('answers with bytes that no longer need the file, so a read cannot fault after it returns', async () => {
@@ -138,7 +139,7 @@ describe('LocalAvatarStore', () => {
     expect(await readdir(path.join(dorkHome, 'avatars'))).toEqual(['author-1.png']);
     const stored = await store.get('author-1');
     expect(stored?.contentType).toBe('image/png');
-    stored?.stream.destroy();
+    discardStream(stored!.stream);
   });
 
   it('keeps the old photo when committing the new one fails', async () => {

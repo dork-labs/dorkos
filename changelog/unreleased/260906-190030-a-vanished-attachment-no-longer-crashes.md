@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): a vanished attachment file no longer crashes the server (DOR-1831)'
+  - 'fix(server): the vanished-attachment seam cannot go vacuous, and the avatar test uses the shared discard (DOR-1831)'
 ---
 
 ### Fixed

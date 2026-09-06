@@ -32,18 +32,19 @@ import {
 const fsControl = vi.hoisted(() => ({ deleteAfterNextStat: false }));
 vi.mock('fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs/promises')>();
-  return {
-    ...actual,
-    default: actual,
-    stat: async (...args: Parameters<typeof actual.stat>) => {
-      const info = await actual.stat(...args);
-      if (fsControl.deleteAfterNextStat) {
-        fsControl.deleteAfterNextStat = false;
-        await actual.rm(args[0] as string, { force: true });
-      }
-      return info;
-    },
+  const stat = async (...args: Parameters<typeof actual.stat>) => {
+    const info = await actual.stat(...args);
+    if (fsControl.deleteAfterNextStat) {
+      fsControl.deleteAfterNextStat = false;
+      await actual.rm(args[0] as string, { force: true });
+    }
+    return info;
   };
+  // Both import forms route through the override. Spreading the untouched
+  // `actual` as `default` would leave `fsp.stat(...)` on the real filesystem,
+  // and this seam would go silently vacuous the day a store switched to a
+  // default import — a test that cannot fail rather than a test that failed.
+  return { ...actual, stat, default: { ...actual, stat } };
 });
 
 const SESSION = '11111111-2222-4333-8444-555555555555';
