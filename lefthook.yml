@@ -70,6 +70,20 @@ pre-commit:
       fail_text: 'Typecheck failed — see the errors above, or turbo could not resolve the diff base / is not installed.'
 
 pre-push:
+  # STREAM THE GATE'S OUTPUT AS IT ARRIVES (DOR-473). Without this, lefthook
+  # buffers a command's output and prints it only once the command has
+  # finished. Measured against lefthook 2.1.12: a command that echoes at t+0 and
+  # exits at t+8 has its echo appear at t+8, not before. So for the whole of a
+  # healthy four-minute run the terminal showed the lefthook banner and nothing
+  # else — and a run that had wedged looked exactly the same, forever. That is
+  # the "two minutes with an empty log" in DOR-473: there was no way to tell
+  # "compiling" from "stuck" by looking, so the only move available was to kill
+  # it and re-push with --no-verify, which is what everyone learned to do.
+  #
+  # `follow` only decides whether lefthook relays what it receives; the gate
+  # below still has to PRODUCE output incrementally for there to be anything to
+  # relay, which is the other half of scripts/pre-push-watchdog.sh's job.
+  follow: true
   commands:
     tests:
       # DOR-116 — delete-only pushes (e.g. `git push origin --delete <branch>`)
@@ -173,6 +187,32 @@ pre-push:
       #     exactly why it is not one — so a retried pass is still silent here.
       #     A commit can therefore pass here and be named as a flake there; when
       #     that happens the test is flaky and the CI verdict is the honest one.
+      #
+      # THE WATCHDOG WRAPPER (DOR-473). Everything above makes the gate run the
+      # RIGHT suites; none of it bounds how long they may take. Under
+      # `--concurrency=1` one vitest that never exits — an unclosed handle, a
+      # worker starved on a box already running several agents — stops the whole
+      # gate forever, because nothing in git → lefthook → turbo → vitest has a
+      # timeout anywhere in it. Paired with lefthook's output buffering (see
+      # `follow` on the hook above) that produced the reported symptom exactly:
+      # a push that sat for minutes with an empty terminal and no way to tell
+      # what it was doing, until it was killed and re-run with --no-verify.
+      #
+      # scripts/pre-push-watchdog.sh wraps the run without altering it: same
+      # command, same output, same exit code, so the cache-key constraint above
+      # is untouched — the turbo invocation and its `-- --run` passthrough are
+      # byte-for-byte what they were, merely passed as arguments rather than
+      # executed directly. What it adds is a heartbeat while the run is quiet,
+      # and a bound after which it stops the run and prints what it was running
+      # (the last output, which turbo prefixes with the package and task, plus
+      # the live process tree). A timeout FAILS the push — exit 124, distinct
+      # from a test failure's exit 1 — because "the gate did not answer" is not
+      # "the gate said yes"; the header of that script argues the case at
+      # length, and `git push --no-verify` remains the deliberate way out.
+      #
+      # It reads its bounds from DORKOS_PREPUSH_* and defaults them, so nothing
+      # is configured here. Its own fixture suite is scripts/test-pre-push-
+      # watchdog.sh, named in `test:scripts` and in scripts-test.yml.
       use_stdin: true
       run: |
         saw_ref=0
@@ -186,5 +226,6 @@ pre-push:
           exit 0
         fi
         export TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)"
-        VITEST_RETRY=2 pnpm exec dotenv -- turbo test --affected --concurrency=1 -- --run
-      fail_text: 'Tests failed — fix them before pushing, or turbo could not resolve the diff base.'
+        VITEST_RETRY=2 bash scripts/pre-push-watchdog.sh \
+          pnpm exec dotenv -- turbo test --affected --concurrency=1 -- --run
+      fail_text: 'Tests failed — fix them before pushing, or turbo could not resolve the diff base. A "pre-push gate stopped" block above instead means the run stalled and was cut short, not that a test went red.'
