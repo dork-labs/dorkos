@@ -356,12 +356,14 @@
     },
     {
       "guide": "authentication.md",
-      "description": "Local Better Auth: session-gate, owner identity + the single-user rule, exposure-guard, per-user API keys + MCP, config + migrations",
+      "description": "Local and hosted Better Auth: session-gate, owner identity, account issuers, exposure-guard, per-user API keys + MCP, config + migrations",
       "patterns": [
         "apps/server/src/services/core/auth/",
         "middleware/mcp-auth",
         "apps/client/src/layers/features/auth/",
         "packages/db/src/schema/auth",
+        "apps/site/src/db/auth-schema",
+        "apps/site/drizzle",
         "apps/server/src/services/rooms/author-registry"
       ]
     },

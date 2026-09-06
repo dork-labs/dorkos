@@ -276,6 +276,26 @@ They are **orthogonal**: `auth.enabled` (local) and being linked to a DorkOS acc
 
 The Next.js handler mounts at `apps/site/src/app/api/auth/[...all]/route.ts` via `toNextJsHandler(auth)`.
 
+### Cloud account identity key
+
+Better Auth 1.7 identifies a provider account by `(issuer, accountId)`. The
+hosted `account` table therefore requires `issuer` and enforces that pair with
+the `account_issuer_accountId_unique` index. The issuer comes from the
+authentication method, not from a blanket `providerId` prefix:
+
+| Existing `providerId` | Backfilled issuer             |
+| --------------------- | ----------------------------- |
+| `credential`          | `local:credential`            |
+| `github`              | `local:oauth:github`          |
+| `google`              | `https://accounts.google.com` |
+
+`apps/site/drizzle/0010_tearful_captain_cross.sql` validates every legacy row
+before adding the column. An unknown provider, a null provider, or two rows
+that would become the same `(issuer, accountId)` aborts the migration without
+changing the old table. Do not reuse the local SQLite migration's
+`local:<providerId>` backfill here: the local server has no social-provider
+rows, while the hosted database does.
+
 ### Device-link sequence
 
 A local instance links via `cloud-link.ts` + `CloudLinkManager` (or `dorkos cloud login` / the Settings panel). The cloud base URL is `resolveCloudBaseUrl()` (`env.DORKOS_CLOUD_URL`, default `https://dorkos.ai`; override for local dev against the site):
