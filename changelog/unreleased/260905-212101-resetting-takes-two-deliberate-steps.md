@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server,client): resetting DorkOS requires a fresh one-time token (DOR-1707)'
+  - 'fix(server,client): a refused reset costs nothing, and its deadline is stated once (DOR-1707)'
 ---
 
 ### Security
