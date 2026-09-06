@@ -1,0 +1,11 @@
+{
+  "id": "260906-164422",
+  "slug": "gate-bypass-surfaces",
+  "title": "Routes that mount outside the session gate and the host guard: gate them, or pin the assumption",
+  "created": "2026-09-06",
+  "status": "ideation",
+  "linearIssue": "DOR-1708",
+  "artifacts": {
+    "ideation": "01-ideation.md"
+  }
+}
