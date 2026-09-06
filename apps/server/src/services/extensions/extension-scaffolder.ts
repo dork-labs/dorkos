@@ -44,6 +44,28 @@ function resolveExtensionDir(root: string, name: string): string {
 }
 
 /**
+ * Whether `dir` exists, as a plain yes/no.
+ *
+ * Replaces the `fs.access` + throw-and-catch dance this file used to run inline,
+ * which threw the "already exists" error INSIDE its own `try` and then had to
+ * recognise its own message in the `catch` to avoid swallowing it. That worked
+ * for one path and does not generalise to the two this now checks.
+ *
+ * Any error other than "not there" answers `true`: a directory this process
+ * cannot stat is not a directory it may scaffold over.
+ *
+ * @param dir - Absolute path to test.
+ */
+async function directoryExists(dir: string): Promise<boolean> {
+  try {
+    await fs.access(dir);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException)?.code !== 'ENOENT';
+  }
+}
+
+/**
  * Scaffold a new extension directory with manifest and starter code.
  *
  * @param options - Creation parameters
@@ -70,23 +92,63 @@ export async function scaffoldExtension(options: {
   }
 
   // Resolve target directory
+  const globalRoot = path.join(dorkHome, 'extensions');
+  const localRoot = currentCwd ? path.join(currentCwd, '.dork', 'extensions') : null;
+
   let extensionsRoot: string;
   if (scope === 'local') {
-    if (!currentCwd) {
+    if (!localRoot) {
       throw new Error('Cannot create local extension: no working directory is active');
     }
-    extensionsRoot = path.join(currentCwd, '.dork', 'extensions');
+    extensionsRoot = localRoot;
   } else {
-    extensionsRoot = path.join(dorkHome, 'extensions');
+    extensionsRoot = globalRoot;
   }
   const targetDir = resolveExtensionDir(extensionsRoot, name);
 
-  // Check directory does not exist
-  try {
-    await fs.access(targetDir);
-    throw new Error(`Extension '${name}' already exists at ${targetDir}`);
-  } catch (err) {
-    if (err instanceof Error && err.message.includes('already exists')) throw err;
+  // The id must be free in BOTH roots, not merely in the one this scope writes
+  // to (DOR-1507). `scope` comes from the CALLER — it is an argument of the
+  // `create_extension` MCP tool, which is tier `act` and shows no approval card
+  // — so a per-scope check is a check the caller chooses the outcome of: ask for
+  // the scope the name is free in and the collision is never seen.
+  //
+  // Two things went wrong with that, and neither is theoretical — both were
+  // reproduced:
+  //
+  //  1. **Re-arm.** A person approves `foo`, then turns it off. An agent
+  //     scaffolds `foo` in the OTHER scope; `createExtension` enables the id it
+  //     was given, and the person's own approved server half starts again. The
+  //     planted copy does not even have to win discovery for this to work — the
+  //     write to `extensions.enabled` is the whole effect.
+  //  2. **Squat.** The discovery merge ignores a project copy whose id is core
+  //     or currently approved (`extension-discovery.ts`) — but that guard is
+  //     conditional on the very approval it protects. Once the person REVOKES,
+  //     the id is no longer approved, the planted local copy wins the merge, and
+  //     a person who later re-approves the name they recognise approves the
+  //     agent's code instead. That is the "different code under a familiar name"
+  //     trap `forgetRunApproval` exists to close on the uninstall path, reached
+  //     by another road.
+  //
+  // Refusing the collision at the root closes both, and costs nothing real: a
+  // project copy that OVERRIDES a global extension is still supported and is
+  // what the local scope is for — it is authored, or copied, or installed. This
+  // refuses only minting a fresh template over a name already spoken for, which
+  // was never a way to produce a useful override anyway.
+  // The target scope first, so a same-scope collision keeps naming its own path.
+  const rootsToCheck = [extensionsRoot];
+  const otherRoot = scope === 'local' ? globalRoot : localRoot;
+  // Skipped when the two resolve to one directory — the working directory IS the
+  // DorkOS home, which `extension-discovery.ts` handles for the same reason
+  // (DOR-1336). Checking it twice would only repeat the same answer.
+  if (otherRoot && path.resolve(otherRoot) !== path.resolve(extensionsRoot)) {
+    rootsToCheck.push(otherRoot);
+  }
+
+  for (const root of rootsToCheck) {
+    const candidate = resolveExtensionDir(root, name);
+    if (await directoryExists(candidate)) {
+      throw new Error(`Extension '${name}' already exists at ${candidate}`);
+    }
   }
 
   // Create directory and write files

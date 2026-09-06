@@ -12,6 +12,22 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
+/**
+ * The write routes here run the person bar (DOR-1507), whose cookie half reads
+ * `auth.enabled` off the config manager. The real singleton is `undefined` until
+ * `initConfigManager` runs at server boot, and `loginEnabledFromConfig` throws on
+ * it deliberately rather than guessing a posture — so without this stub every
+ * enable/disable case below answers 500.
+ *
+ * Login OFF is the shipped default and the posture this file's cases are about;
+ * who the bar refuses in each posture is exercised in
+ * `extensions-enable-gate.test.ts`, which drives the posture from a mutable
+ * fixture.
+ */
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: (key: string) => (key === 'auth' ? { enabled: false } : undefined) },
+}));
+
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import express from 'express';

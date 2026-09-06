@@ -1032,7 +1032,7 @@ This replaced the previous pattern where each route computed its own fallback pa
 
 The server reads `DORKOS_CORS_ORIGIN` from the environment — a comma-separated list of extra origins. It is ADDITIVE (DOR-1711): the listed origins join the loopback dev origins, the live tunnel and the same-origin branch rather than replacing them, so naming a production origin never locks the operator out of `localhost` or out of the port their container is published on. A `*` is not an allowlist and is ignored with a warning, on every surface.
 
-Every surface honours the variable through one parser (`parseConfiguredOrigins`): CORS, the three MCP mounts and the WebSocket upgrade all reach it as branch 3 of `isTrustedBrowserOrigin` — the single origin policy since DOR-1711 — and Better Auth's CSRF allowlist reads it separately (`resolveAuthTrustedOrigins`, DOR-1744). The auth list drops wildcard-pattern and empty entries so it can never be wider than the CORS one. `resolveTrustedOrigins()` itself is deliberately unchanged: `routes/extensions-approval.ts` reads it and must not consult the operator's CORS list.
+Every surface honours the variable through one parser (`parseConfiguredOrigins`): CORS, the three MCP mounts and the WebSocket upgrade all reach it as branch 3 of `isTrustedBrowserOrigin` — the single origin policy since DOR-1711 — and Better Auth's CSRF allowlist reads it separately (`resolveAuthTrustedOrigins`, DOR-1744). The auth list drops wildcard-pattern and empty entries so it can never be wider than the CORS one. `resolveTrustedOrigins()` itself is deliberately unchanged: `routes/extensions-person-bar.ts` reads it and must not consult the operator's CORS list.
 
 ### Dynamic Model List (`GET /api/models`)
 

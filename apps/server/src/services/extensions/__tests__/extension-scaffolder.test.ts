@@ -133,4 +133,119 @@ describe('scaffoldExtension', () => {
       })
     ).rejects.toThrow("Extension 'twice' already exists");
   });
+
+  /**
+   * An id must be free in BOTH scopes, because `scope` is an argument of the
+   * `create_extension` MCP tool (tier `act`, no approval card) — so a per-scope
+   * check is one the caller picks the outcome of by naming the scope the id
+   * happens to be free in (DOR-1507).
+   *
+   * Both cases below were reproduced against the per-scope check before it was
+   * widened, and each is the setup half of a distinct attack that the widened
+   * refusal denies at the root:
+   *
+   * - **Re-arm** — the person's `foo` is approved and switched OFF.
+   *   `createExtension` enables whatever id it scaffolds, so planting `foo` in
+   *   the other scope turns the person's own approved server half back on. The
+   *   planted copy never has to win discovery; the config write is the effect.
+   * - **Squat** — the discovery merge ignores a project copy whose id is core or
+   *   currently approved, but that guard is conditional on the approval it
+   *   protects. After a REVOKE the planted copy wins the id, so re-approving the
+   *   familiar name approves the agent's code.
+   *
+   * Both are refused by the same sentence, which is why they are asserted here
+   * rather than at the manager: no directory is created, so neither attack has a
+   * setup step at all.
+   */
+  describe('an id already taken in the other scope', () => {
+    it('refuses a local extension when the name exists globally, and writes nothing', async () => {
+      await scaffoldExtension({
+        name: 'foo',
+        template: 'dashboard-card',
+        scope: 'global',
+        dorkHome,
+        currentCwd: projectDir,
+      });
+      const before = await listTree(tmpRoot);
+
+      await expect(
+        scaffoldExtension({
+          name: 'foo',
+          template: 'dashboard-card',
+          scope: 'local',
+          dorkHome,
+          currentCwd: projectDir,
+        })
+      ).rejects.toThrow("Extension 'foo' already exists");
+
+      // The decisive half: no project copy on disk means no squat waiting for a
+      // revoke, and nothing for a later re-approval to bind to.
+      expect(await listTree(tmpRoot)).toEqual(before);
+      await expect(
+        fs.access(path.join(projectDir, '.dork', 'extensions', 'foo'))
+      ).rejects.toThrow();
+    });
+
+    it('refuses a global extension when the name exists in the project, and writes nothing', async () => {
+      // The mirror direction. Asserted because the check is written per-scope and
+      // a one-directional fix would pass the case above while leaving the other
+      // road open.
+      await scaffoldExtension({
+        name: 'bar',
+        template: 'dashboard-card',
+        scope: 'local',
+        dorkHome,
+        currentCwd: projectDir,
+      });
+      const before = await listTree(tmpRoot);
+
+      await expect(
+        scaffoldExtension({
+          name: 'bar',
+          template: 'dashboard-card',
+          scope: 'global',
+          dorkHome,
+          currentCwd: projectDir,
+        })
+      ).rejects.toThrow("Extension 'bar' already exists");
+
+      expect(await listTree(tmpRoot)).toEqual(before);
+    });
+
+    it('still scaffolds a genuinely new name, in either scope', async () => {
+      // The positive control. A refusal that also refused new names would pass
+      // both cases above and break the tool this exists to keep useful.
+      const global = await scaffoldExtension({
+        name: 'brand-new',
+        template: 'dashboard-card',
+        scope: 'global',
+        dorkHome,
+        currentCwd: projectDir,
+      });
+      expect(await listTree(global.targetDir)).toEqual(['extension.json', 'index.ts']);
+
+      const local = await scaffoldExtension({
+        name: 'also-new',
+        template: 'command',
+        scope: 'local',
+        dorkHome,
+        currentCwd: projectDir,
+      });
+      expect(await listTree(local.targetDir)).toEqual(['extension.json', 'index.ts']);
+    });
+
+    it('checks only the target scope when no working directory is active', async () => {
+      // With no cwd there is no project root to collide with, and a global
+      // create must not start failing because one could not be resolved.
+      const result = await scaffoldExtension({
+        name: 'no-cwd',
+        template: 'dashboard-card',
+        scope: 'global',
+        dorkHome,
+        currentCwd: null,
+      });
+
+      expect(result.targetDir).toBe(path.join(dorkHome, 'extensions', 'no-cwd'));
+    });
+  });
 });

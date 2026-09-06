@@ -594,8 +594,14 @@ export const CONFIG_WRITE_POLICY = {
   'agents.defaultDirectory': 'operator-only',
   'agents.defaultAgent': 'agent-writable',
 
-  // Which extension code is compiled and loaded into the server process. The
-  // cockpit toggles these through `/api/extensions`, not through a config patch.
+  // Which extension code is compiled and loaded into the server process. The app
+  // toggles these through `POST /api/extensions/:id/enable` and `/disable`, not
+  // through a config patch — so this verdict is only worth what THAT route
+  // enforces, and until DOR-1507 it enforced nothing. It now runs the same two
+  // bars this file's verdict earns on `PATCH /api/config`
+  // (`routes/extensions-person-bar.ts`), in both directions: turning an
+  // extension off is a write to one of these paths too, and the operator-only
+  // rule reads paths, never values.
   'extensions.enabled': 'operator-only',
   'extensions.disabled': 'operator-only',
   // The standing consent that lets one extension's code execute INSIDE the server

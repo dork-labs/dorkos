@@ -5,7 +5,13 @@
  * Extracted from {@link module:routes/extensions} to keep route files under 500
  * lines, and because these two are a different KIND of route from the rest of
  * that file: everything there manages extensions, while these two record a human
- * security decision and therefore carry a bar none of the others do.
+ * security decision.
+ *
+ * They used to be the only routes on this router carrying a person bar, which is
+ * how DOR-1507 got filed: `/enable` and `/disable` write the same `operator-only`
+ * section and ran nothing at all. The bar now lives in
+ * {@link module:routes/extensions-person-bar} and all four run it, so this file
+ * keeps only the words it says when refusing.
  *
  * The record they write is `extensions.approvedToRun` in `~/.dork/config.json`,
  * classified `operator-only`. Why that home and not a project file, why not a
@@ -18,126 +24,41 @@
  *
  * @module routes/extensions-approval
  */
-import type { Router, Request, Response } from 'express';
+import type { Router } from 'express';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { logger } from '../lib/logger.js';
 import { broadcastExtensionReloaded } from './extensions.js';
-import { trustedCaller } from '../services/core/capabilities/index.js';
-import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
-import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
+import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import {
   EXTENSION_NOT_APPROVED_CODE,
   EXTENSION_NOT_APPROVED_ERROR,
 } from '../services/extensions/extension-load-policy.js';
 
 /**
- * Refuse a caller that is not a person, for the two write routes that record or
- * withdraw a load approval.
+ * What the two approval routes say when a bar refuses them.
  *
- * Deliberately the SAME two bars, in the same order, as an `operator-only` setting
- * on `PATCH /api/config` — because that is exactly what this writes
- * (`extensions.approvedToRun`). Keeping them identical is the point: the record of
- * a human decision has one bar wherever it is written, and adding a friendlier
- * route must not quietly become the cheap way in. That is the DOR-467 failure
- * shape, where a gate sat on a tool and the route walked around it.
- *
- * 1. **The cookie bar** — with login on, prove you are a person in the cockpit.
- *    Allows everyone while login is off, because then nobody has a cookie.
- * 2. **The agent bar** — anything presenting agent identity or an approval token is
- *    refused in every posture. In the login-off posture this is the only bar left,
- *    so the honest guarantee is "an agent that names itself cannot approve its own
- *    extension", not "only a proven person can". A caller that omits its
- *    `X-DorkOS-Agent` header is trusted here, exactly as it is on `PATCH
- *    /api/config` (DOR-505's documented residual). Turning on Require login closes
- *    it.
- *
- * Plus one bar the config route does not need, because these two routes are
- * reachable by a plain cross-site `fetch`: a browser that sends an `Origin` must
- * send one DorkOS trusts. Without it, any web page a person visits could POST this
- * approval through their browser — no cookie required in the default posture, and
- * CORS does not help, since it withholds the RESPONSE while the write has already
- * happened.
- *
- * The allowlist is the SERVER's own static set (`resolveTrustedOrigins`), and
- * membership is exact. This route deliberately does NOT use
- * `isTrustedBrowserOrigin` — the repo's single origin policy, which every other
- * surface reads (DOR-1711) — and the reason is its branch 4: that policy accepts
- * an `Origin` equal to the request's own `<scheme>://<Host>`, which is exactly
- * what DNS rebinding produces. The browser sends `Host: evil.example` AND
- * `Origin: http://evil.example`, they match, and a bar built on them never runs.
- * An expected value taken from the request cannot judge the request.
- *
- * That branch is safe where it lives because it is PAIRED with the host
- * allowlist (on the MCP mounts and the socket) or backed by `hostGuard` a few
- * handlers later (on `/api`). This bar wants something stricter than "not
- * rebound": it wants "served by DorkOS itself", because what it records is a
- * person's security decision. So it stays on the static set, and this paragraph
- * is here so nobody unifies it onto the shared predicate for the sake of
- * consistency.
- *
- * The cost, stated: a deployment that serves the cockpit on an origin other than
- * DorkOS's own port (a container published on a different host port) is refused
- * here even though CORS lets it through. Every documented Docker invocation
- * publishes `4242:4242`, and the tunnel origin is in the trusted set, so the
- * shipped paths are covered. `DORKOS_CORS_ORIGIN` is NOT consulted on purpose:
- * "which sites may read my responses" is a different question from "which page may
- * record a person's security decision", and quietly answering the second with the
- * first is how a convenience setting becomes an authorization one.
- *
- * Requests with no `Origin` (curl, the CLI, the desktop shell) pass, the same
- * allowance `validateMcpOrigin` makes for the same reason: only browsers send the
- * header, so only browsers can be judged by it. Both routes are POST-only, and
- * browsers have sent `Origin` on every POST — `fetch`, `XMLHttpRequest`, and plain
- * form submission — for years, so a browser cannot reach that branch.
- *
- * @param req - The request, read for the `Origin` header and the agent-identity and
- *   approval-token headers.
- * @param res - The response, read for a resolved session user and written on refusal.
- * @returns `true` when the request was already answered with a refusal, so the
- *   caller must return immediately.
+ * The three bars themselves live in {@link module:routes/extensions-person-bar},
+ * shared with `/enable` and `/disable` on the same router, because all four write
+ * a leaf of the same `operator-only` section and a gate that covers two of four
+ * is a gate an agent routes around (DOR-1507). What stays here is only the
+ * VOCABULARY: approving is a security decision, so it answers with
+ * `extension_not_approved_to_run` and says who may make that decision, where
+ * turning an extension on answers with the plain operator-only config code.
  */
-function refuseIfNotAPerson(req: Request, res: Response): boolean {
-  const origin = req.headers.origin;
-  if (origin && !resolveTrustedOrigins().includes(origin)) {
-    res.status(403).json({
-      error: EXTENSION_NOT_APPROVED_ERROR,
-      code: EXTENSION_NOT_APPROVED_CODE,
-      message:
-        `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
-        `Allowing an extension to run code inside DorkOS is something a person does in ` +
-        `their own copy of the app, not something another site can ask for on their behalf.`,
-    });
-    return true;
-  }
-
-  const cookieRefusal = requireOperatorCookieUnderLogin(
-    res,
-    'which extensions may run code inside DorkOS'
-  );
-  if (cookieRefusal) {
-    res.status(cookieRefusal.status).json({
-      error: EXTENSION_NOT_APPROVED_ERROR,
-      code: cookieRefusal.code,
-      message: cookieRefusal.error,
-    });
-    return true;
-  }
-
-  if (!trustedCaller(readCallerAuthority(req, res))) {
-    res.status(403).json({
-      error: EXTENSION_NOT_APPROVED_ERROR,
-      code: EXTENSION_NOT_APPROVED_CODE,
-      message:
-        `DorkOS changed nothing. Approving an extension to run code inside the DorkOS ` +
-        `server is a decision only a person makes, and you are the code being approved. ` +
-        `Ask the person to open Settings > Extensions in DorkOS and approve it there.`,
-    });
-    return true;
-  }
-
-  return false;
-}
+const APPROVAL_BAR: PersonBarCopy = {
+  error: EXTENSION_NOT_APPROVED_ERROR,
+  code: EXTENSION_NOT_APPROVED_CODE,
+  subject: 'which extensions may run code inside DorkOS',
+  crossSite: (origin) =>
+    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
+    `Allowing an extension to run code inside DorkOS is something a person does in ` +
+    `their own copy of the app, not something another site can ask for on their behalf.`,
+  agent:
+    `DorkOS changed nothing. Approving an extension to run code inside the DorkOS ` +
+    `server is a decision only a person makes, and you are the code being approved. ` +
+    `Ask the person to open Settings > Extensions in DorkOS and approve it there.`,
+};
 
 /**
  * Mount the approve and revoke routes onto the extensions router.
@@ -158,7 +79,7 @@ export function registerExtensionApprovalRoutes(
     try {
       const { id } = req.params;
       if (!safeExtId.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
-      if (refuseIfNotAPerson(req, res)) return undefined;
+      if (refuseIfNotAPerson(req, res, APPROVAL_BAR)) return undefined;
 
       const record = extensionManager.get(id);
       if (!record) return res.status(404).json({ error: `Extension '${id}' not found` });
@@ -205,7 +126,7 @@ export function registerExtensionApprovalRoutes(
     try {
       const { id } = req.params;
       if (!safeExtId.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
-      if (refuseIfNotAPerson(req, res)) return undefined;
+      if (refuseIfNotAPerson(req, res, APPROVAL_BAR)) return undefined;
 
       const record = extensionManager.get(id);
       if (!record) return res.status(404).json({ error: `Extension '${id}' not found` });

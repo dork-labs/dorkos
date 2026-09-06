@@ -59,6 +59,13 @@ export function ExtensionsSettingsTab() {
       // (contributions are hot-loaded/removed via the SSE handler) — no page
       // reload needed. No success toast either: the card's own Switch already
       // reads on/off, so a toast beside it would say the same thing twice.
+      // The refusal rides in `description`, never concatenated into the
+      // headline. The hook returns the server's own sentence when there is one —
+      // the person bar's refusal says what DorkOS did not do and who can do it
+      // (DOR-1507) — and an earlier version prefixed it into "Failed to enable
+      // extension: DorkOS changed nothing…", which said the failure twice and
+      // buried the half that tells the reader what to do. Headline plus
+      // description keeps both, in the shape the approval toggle above uses.
       onError: (err) => {
         toast.error(enabled ? 'Couldn’t turn that on.' : 'Couldn’t turn that off.', {
           description: err.message,
