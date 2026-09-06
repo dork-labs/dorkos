@@ -55,8 +55,8 @@
  *
  * @module services/core/agent-identity/capability-gate-audit
  */
-import path from 'node:path';
 import type { ActivityService } from '../../activity/activity-service.js';
+import { activityActorForIdentity } from '../../activity/activity-actor.js';
 import type { TierEnforcementAttempt } from '../capabilities/index.js';
 
 /**
@@ -81,9 +81,10 @@ export function createCapabilityGateAuditObserver(
   activityService: ActivityService
 ): (attempt: TierEnforcementAttempt) => void {
   return ({ action, identity, decision }) => {
-    const label = identity
-      ? identity.displayName || path.basename(identity.agentPath)
-      : 'Unidentified caller';
+    // One naming of an actor, shared with the attribution observer next door and
+    // the extension write routes (`services/activity/activity-actor.ts`).
+    const actor = activityActorForIdentity(identity);
+    const label = actor.actorLabel;
 
     // The one allowed decision the gate reports: a destructive call a standing
     // permission let through with no card. Recording it is what keeps a window in
@@ -93,9 +94,7 @@ export function createCapabilityGateAuditObserver(
     // agent path and an anonymous caller can never match one.
     if (decision.outcome === 'allowed') {
       void activityService.emit({
-        actorType: 'agent',
-        ...(identity ? { actorId: identity.agentPath } : {}),
-        actorLabel: label,
+        ...actor,
         category: 'agent',
         eventType: 'capability.auto_approved',
         resourceType: 'capability',
@@ -117,9 +116,7 @@ export function createCapabilityGateAuditObserver(
     void activityService.emit({
       // An anonymous attempt is recorded as `system`, not as a nameless agent:
       // the feed must not imply DorkOS knows who asked when it does not.
-      actorType: identity ? 'agent' : 'system',
-      ...(identity ? { actorId: identity.agentPath } : {}),
-      actorLabel: label,
+      ...actor,
       category: 'agent',
       eventType: waiting ? 'capability.approval_required' : 'capability.denied',
       resourceType: 'capability',

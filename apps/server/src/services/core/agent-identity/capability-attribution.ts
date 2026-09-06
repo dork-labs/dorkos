@@ -26,8 +26,8 @@
  *
  * @module services/core/agent-identity/capability-attribution
  */
-import path from 'node:path';
 import type { ActivityService } from '../../activity/activity-service.js';
+import { activityActorForIdentity } from '../../activity/activity-actor.js';
 import type { CapabilityInvocationObserver } from '../capabilities/index.js';
 
 /**
@@ -49,18 +49,15 @@ export function createCapabilityAttributionObserver(
     // action does not (see the module TSDoc).
     if (!identity && capability.tier !== 'destructive') return;
 
-    // The agent's directory name is the legible handle; the full path is the
-    // stable id, and the feed links on ids, not labels.
-    const label = identity
-      ? identity.displayName || path.basename(identity.agentPath)
-      : 'Unidentified caller';
+    // One naming of an actor, shared with the gate audit and the extension write
+    // routes: an agent by its name and path, and an unidentified caller as
+    // `system` rather than a nameless agent, because the feed must not imply
+    // DorkOS knows who acted when it does not.
+    const actor = activityActorForIdentity(identity);
+    const label = actor.actorLabel;
 
     void activityService.emit({
-      // `system` rather than a nameless agent: the feed must not imply DorkOS
-      // knows who acted when it does not.
-      actorType: identity ? 'agent' : 'system',
-      ...(identity ? { actorId: identity.agentPath } : {}),
-      actorLabel: label,
+      ...actor,
       category: 'agent',
       eventType: ok ? 'capability.invoked' : 'capability.failed',
       resourceType: 'capability',
