@@ -398,6 +398,72 @@ describe('logger module', () => {
       expect(error).toContain(`[truncated, ${huge.length} characters total]`);
     });
 
+    /**
+     * Totality. Every one of these call sites is inside a `catch`, and the
+     * call happens at the CALL SITE — outside the logger, so outside the
+     * try/catch the reporters run under. A throw here does not lose a log
+     * line, it replaces the failure being reported with one of its own, in
+     * the middle of a recovery path. Reading a field off a malformed error is
+     * exactly where that risk lives: an `Error` whose `message` was reassigned
+     * to a non-string has no `.length` and no `.slice`, and a hostile one
+     * throws on the property read itself.
+     *
+     * `packages/relay/src/lib/describe-error.ts` states the same rule for the
+     * same reason, down to the sentinel this returns.
+     */
+    describe('malformed errors it must survive rather than report', () => {
+      /** An Error whose `message`/`stack` were replaced with the given values. */
+      function malformed(fields: { message?: unknown; stack?: unknown }): Error {
+        const err = new Error('original');
+        for (const [key, value] of Object.entries(fields)) {
+          Object.defineProperty(err, key, { value, writable: true, configurable: true });
+        }
+        return err;
+      }
+
+      it('survives a numeric message', () => {
+        const err = malformed({ message: 12345 });
+
+        expect(() => loggerModule.logError(err)).not.toThrow();
+        expect(loggerModule.logError(err).error).toBe('12345');
+      });
+
+      it('survives an object message', () => {
+        const err = malformed({ message: { big: 'payload' } });
+
+        expect(() => loggerModule.logError(err)).not.toThrow();
+        expect(loggerModule.logError(err).error).toBe('[object Object]');
+      });
+
+      it('survives a numeric stack', () => {
+        const err = malformed({ stack: 999 });
+
+        expect(() => loggerModule.logError(err)).not.toThrow();
+        expect(loggerModule.logError(err).stack).toBe('999');
+      });
+
+      it('survives a message getter that throws, without losing the line', () => {
+        const err = new Error('unused');
+        Object.defineProperty(err, 'message', {
+          get(): string {
+            throw new Error('getter exploded');
+          },
+          configurable: true,
+        });
+
+        expect(() => loggerModule.logError(err)).not.toThrow();
+        // The same sentinel `describeError` collapses to, for the same reason.
+        expect(loggerModule.logError(err)).toEqual({ error: 'unserializable error' });
+      });
+
+      it('survives a thrown object whose toString throws', () => {
+        const hostile = Object.create(null) as object;
+
+        expect(() => loggerModule.logError(hostile)).not.toThrow();
+        expect(loggerModule.logError(hostile).error).toBe('unserializable error');
+      });
+    });
+
     it('keeps our stack frames when the message embeds someone else’s', () => {
       // A subprocess dump: the message carries the CHILD's `    at …` lines, so
       // locating the frames by searching for the first one spends the whole

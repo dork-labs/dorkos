@@ -21,8 +21,9 @@
  * - {@link clipLogArgs} — the console reporter, which needs Errors left as
  *   Errors so consola still renders them as errors, and only wants them cut
  *   down to size (DOR-1728).
- * - {@link clipFlattenedError} — the one call site that flattens an error into
- *   strings BEFORE either walk runs, and so has to bound it itself (DOR-1827).
+ * - {@link clipFlattenedError} — the shared helper for a call site that
+ *   flattens an error into strings BEFORE either walk runs, and so has to
+ *   bound it itself (DOR-1827).
  *
  * @module lib/serialize-error
  */
@@ -327,9 +328,10 @@ const clipStep: ErrorStep = (err, depth) => {
  * config dump or a diff is logging it precisely to read or `grep` it back, and
  * a cap that silently ate the tail would be a worse bug than the one this
  * module fixes. So the fix for a runaway error is applied where it can tell an
- * error from a payload, which includes {@link clipFlattenedError} for the one
- * helper that flattens an error into strings before this walk ever sees it
- * (DOR-1827). If a bare string ever does flood a log, bound THAT call site.
+ * error from a payload — which includes {@link clipFlattenedError}, for a call
+ * site that flattens an error into `message`/`stack` strings before this walk
+ * ever sees it (DOR-1827). If a bare string ever does flood a log, bound THAT
+ * call site; if it is really an error in disguise, hand over the Error itself.
  */
 function walkValue(value: unknown, depth: number, onError: ErrorStep): unknown {
   if (value instanceof Error) return onError(value, depth);
@@ -413,9 +415,13 @@ export function normalizeLogContext(context: Record<string, unknown>): Record<st
  * That agreement covers every Error the logger is handed — as the context
  * argument, nested anywhere inside it, or already flattened to strings by
  * {@link clipFlattenedError}. What it does not cover is a bare string a call
- * site built itself: a hand-rolled `String(err)` folded into a context object,
- * or a stringified response body logged as an ordinary field. Those are left
- * alone deliberately — see the note in {@link walkValue}.
+ * site built itself: a hand-rolled `String(err)`, a hand-picked `err.message`
+ * or `err.stack`, or a stringified response body logged as an ordinary field.
+ * Nothing downstream can tell any of those from ordinary text, so bounding
+ * them is the call site's job — and the way to get the bound for free is to
+ * hand the Error over whole instead. The repo's two hand-flattened crash
+ * handlers were converted to exactly that (`index.ts`, DOR-1827); ordinary
+ * long strings are left alone deliberately, per the note in {@link walkValue}.
  *
  * Unlike {@link normalizeLogContext}, Errors stay Errors. The reporter formats
  * an error very differently from a plain object — indented frames, `[cause]:`
@@ -456,20 +462,63 @@ export function clipLogArgs(args: unknown[]): unknown[] {
  * point is that the two destinations agree, so there is exactly one
  * implementation to agree with.
  *
- * @param err - Whatever was caught.
+ * **Total, by construction**, and this one matters more than it does for the
+ * two walks above. They run inside the reporters, which already refuse to
+ * throw back at a caller; this runs at the CALL SITE, inside the `catch` block
+ * that is handling something else. A throw here would not cost a log line, it
+ * would replace the failure being reported with one of its own, part-way
+ * through a recovery path, at 97 call sites. Two shapes make that a live risk
+ * rather than a theoretical one: an `Error` whose `message` or `stack` was
+ * reassigned to a non-string — no `.length`, no `.slice`, no `.indexOf` — and
+ * one that throws on the property read itself. The type guards keep the first
+ * out of the `catch` entirely; the `catch` collapses anything left to the same
+ * sentinel `describeError` uses (`packages/relay/src/lib/describe-error.ts`),
+ * which states this rule for the same reason.
+ *
+ * **The `error` field can end up on screen.** Two call sites in `index.ts`
+ * pass it to `setTasksInitError`/`setMeshInitError`, which surface it as
+ * `features.*.initError` on the config route and render it in Settings →
+ * Tools. So the marker below is not only log text: in the overflow case a
+ * person reads it, which is why it says what it says in words rather than
+ * trailing off into an ellipsis.
+ *
+ * @param err - Whatever was caught, however malformed.
  * @returns `error` — the message, or `String(err)` for a thrown non-Error —
  *   plus `stack` for an Error that has one. Each is returned unchanged when it
  *   was already within bounds, which is every ordinary error.
  */
 export function clipFlattenedError(err: unknown): { error: string; stack?: string } {
-  if (err instanceof Error) {
+  try {
+    if (!(err instanceof Error)) {
+      // A thrown non-Error stands in for the message, so it gets the message
+      // bound. This is not the general string cap `walkValue` declines to
+      // apply: the call site has already told us this value is a failure
+      // reason, not a payload.
+      return { error: clip(asString(err), MAX_MESSAGE_LEN) };
+    }
+
+    const message = asString(err.message);
+    const stack = err.stack === undefined ? undefined : asString(err.stack);
     return {
-      error: clip(err.message, MAX_MESSAGE_LEN),
-      stack: err.stack === undefined ? undefined : clipStack(err.stack, err.message),
+      error: clip(message, MAX_MESSAGE_LEN),
+      stack: stack === undefined ? undefined : clipStack(stack, message),
     };
+  } catch {
+    // Reading this error's own fields is what failed, so there is nothing
+    // partial worth salvaging — and the caller is already mid-recovery from a
+    // different failure. Say that much and let their line be written.
+    return { error: 'unserializable error' };
   }
-  // A thrown non-Error stands in for the message, so it gets the message bound.
-  // This is not the general string cap `walkValue` declines to apply: the call
-  // site has already told us this value is a failure reason, not a payload.
-  return { error: clip(String(err), MAX_MESSAGE_LEN) };
+}
+
+/**
+ * A string, from a value that is supposed to be one but need not be.
+ *
+ * `message` and `stack` are ordinary writable properties, so anything can end
+ * up on them — and everything downstream here is string work. A string passes
+ * through by identity, so the ordinary path is untouched; `String()` may throw
+ * for a hostile value, which is what the caller's `catch` is for.
+ */
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value : String(value);
 }
