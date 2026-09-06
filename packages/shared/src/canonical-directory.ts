@@ -2,7 +2,8 @@
  * The ONE spelling of a working directory, for the places that have to compare
  * one against another.
  *
- * Two seams need it, which is why it lives in `lib/` rather than beside either.
+ * Two server seams need it, which is why it lives here — reached as
+ * `@dorkos/shared/canonical-directory` — rather than inside either of them.
  *
  * **The OpenCode sidecar** answers about directories inconsistently: `POST
  * /session` canonicalizes the `directory` it is given (real path) and stores

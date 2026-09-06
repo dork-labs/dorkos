@@ -109,6 +109,20 @@ describe('agent session fan-out across directory spellings (DOR-695)', () => {
     await expect(membersFor(linkedProject, [session('s1', realWorktree)])).resolves.toEqual(['s1']);
   });
 
+  it('attributes a session whose OWN cwd is the symlink, to an agent registered by the real path', async () => {
+    // The reverse direction, and it is producible: a session tracked in memory
+    // carries the cwd it was created with, and `sendMessage` falls back to
+    // `DEFAULT_CWD` — `DORKOS_DEFAULT_CWD` taken verbatim. So the row the
+    // OpenCode adapter now returns can be the one spelling the folder the
+    // symlinked way, against a root spelled the real way.
+    await expect(membersFor(realProject, [session('s1', linkedProject)])).resolves.toEqual(['s1']);
+  });
+
+  it('attributes a session in a SUBFOLDER reached through the symlink', async () => {
+    const subViaLink = path.join(linkedProject, 'packages', 'api');
+    await expect(membersFor(realProject, [session('s1', subViaLink)])).resolves.toEqual(['s1']);
+  });
+
   it('still attributes a session whose cwd matches the registered spelling exactly', async () => {
     // The pre-fix behaviour, which must survive: a session tracked in memory
     // carries the cwd it was created with, not a resolved one.
