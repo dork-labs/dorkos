@@ -113,7 +113,7 @@ export function ExternalMcpCard({ mcp, authEnabled }: ExternalMcpCardProps) {
       </Badge>
     ) : (
       <Badge variant="outline" tone="warning">
-        No auth
+        Not protected
       </Badge>
     )
   ) : (
@@ -244,10 +244,10 @@ function McpAuthRow({
     return (
       <SettingRow
         label="Authentication"
-        description="Couldn't generate a local token for this instance. External MCP clients won't be able to authenticate until you restart DorkOS or turn on login."
+        description="Couldn’t generate a local token for this instance. External MCP clients won’t be able to authenticate until you restart DorkOS or turn on login."
       >
         <Badge variant="outline" tone="warning">
-          No token
+          No key yet
         </Badge>
       </SettingRow>
     );
@@ -292,7 +292,7 @@ function LocalTokenAuthRow({
     try {
       await onReveal();
     } catch (err) {
-      toast.error("Couldn't show the token.", {
+      toast.error('Couldn’t show the token.', {
         description: err instanceof Error ? err.message : 'Try again in a moment.',
       });
     } finally {
@@ -306,7 +306,7 @@ function LocalTokenAuthRow({
       await onRotate();
       setConfirmOpen(false);
     } catch (err) {
-      toast.error("Couldn't make a new token.", {
+      toast.error('Couldn’t make a new token.', {
         description: err instanceof Error ? err.message : 'The old one still works.',
       });
     } finally {

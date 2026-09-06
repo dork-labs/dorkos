@@ -76,7 +76,7 @@ describe('UnattendedAutonomyBanner', () => {
   it('names both drivers when two are running', () => {
     render(<UnattendedAutonomyBanner drivers={[deploys, cleanup_task]} />);
     expect(screen.getByRole('status')).toHaveTextContent(
-      'Running unattended at full power: the Deploys integration and the Nightly cleanup scheduled task.'
+      'Running unattended at full power: the Deploys connection and the Nightly cleanup scheduled task.'
     );
   });
 
@@ -92,7 +92,7 @@ describe('UnattendedAutonomyBanner', () => {
       />
     );
     expect(screen.getByRole('status')).toHaveTextContent(
-      'Running unattended at full power: the Deploys integration, the Nightly cleanup scheduled task and 2 more.'
+      'Running unattended at full power: the Deploys connection, the Nightly cleanup scheduled task and 2 more.'
     );
   });
 
@@ -115,25 +115,24 @@ describe('UnattendedAutonomyBanner', () => {
 
   it('offers only the surfaces it actually named', () => {
     render(<UnattendedAutonomyBanner drivers={[cleanup_task]} />);
-    expect(screen.getByRole('button', { name: 'Schedules' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Integrations' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Scheduled tasks' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Connections' })).not.toBeInTheDocument();
   });
 
-  it('sends a person to the integrations dialog', async () => {
+  // Lands on the Connections page's messaging half. It used to push
+  // `?relay=open`, a search param nothing has read since Messaging stopped
+  // being a dialog, so the button did nothing at all (DOR-1756).
+  it('sends a person to the messaging half of Connections', async () => {
     render(<UnattendedAutonomyBanner drivers={[deploys]} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Integrations' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Connections' }));
 
     expect(navigate).toHaveBeenCalledTimes(1);
-    const arg = navigate.mock.calls[0]![0] as {
-      to: string;
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(arg.search({})).toEqual({ relay: 'open' });
+    expect(navigate).toHaveBeenCalledWith({ to: '/connections', search: { region: 'messaging' } });
   });
 
   it('sends a person to the tasks page', async () => {
     render(<UnattendedAutonomyBanner drivers={[cleanup_task]} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Schedules' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Scheduled tasks' }));
 
     expect(navigate).toHaveBeenCalledWith({ to: '/tasks' });
   });

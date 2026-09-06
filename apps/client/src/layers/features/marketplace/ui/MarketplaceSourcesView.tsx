@@ -100,12 +100,13 @@ function AddSourceDialog({ open, onOpenChange, isPending, error, onSubmit }: Add
         <DialogHeader>
           <DialogTitle>Add a marketplace source</DialogTitle>
           <DialogDescription>
-            Enter a git URL and friendly name for a registry that publishes marketplace packages.
+            Paste the link to a git repository that publishes marketplace packages, and give it a
+            name.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
-            <Label htmlFor="source-url">Git URL</Label>
+            <Label htmlFor="source-url">Repository link</Label>
             <Input
               id="source-url"
               value={source}
@@ -217,7 +218,7 @@ export function MarketplaceSourcesView() {
       {/* Empty state */}
       {isEmpty && (
         <div className="rounded-xl border border-dashed p-10 text-center">
-          <p className="text-sm font-medium">No sources configured</p>
+          <p className="text-sm font-medium">No marketplaces added yet</p>
           <p className="text-muted-foreground mt-1 text-xs">
             Add a git registry to browse and install marketplace packages.
           </p>

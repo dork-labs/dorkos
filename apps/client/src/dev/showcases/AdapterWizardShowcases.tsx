@@ -181,7 +181,7 @@ function ConfirmStepShowcase() {
       title="ConfirmStep"
       description="Review summary before saving. Passwords are masked with partial reveal."
     >
-      <ShowcaseLabel>Add mode (shows adapter ID)</ShowcaseLabel>
+      <ShowcaseLabel>Add mode (shows the connection ID)</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="mx-auto max-w-sm">
           <ConfirmStep
@@ -193,7 +193,7 @@ function ConfirmStepShowcase() {
         </div>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Edit mode (hides adapter ID)</ShowcaseLabel>
+      <ShowcaseLabel>Edit mode (hides the connection ID)</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="mx-auto max-w-sm">
           <ConfirmStep

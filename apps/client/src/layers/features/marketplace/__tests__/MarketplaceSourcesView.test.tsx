@@ -130,7 +130,7 @@ describe('MarketplaceSourcesView', () => {
 
       render(<MarketplaceSourcesView />);
 
-      expect(screen.getByText(/no sources configured/i)).toBeInTheDocument();
+      expect(screen.getByText(/no marketplaces added yet/i)).toBeInTheDocument();
       expect(screen.getByText(/add a git registry/i)).toBeInTheDocument();
     });
 
@@ -183,7 +183,7 @@ describe('MarketplaceSourcesView', () => {
       await user.click(screen.getByRole('button', { name: /add source/i }));
 
       expect(await screen.findByRole('dialog')).toBeInTheDocument();
-      expect(screen.getByLabelText(/git url/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/repository link/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/^name$/i)).toBeInTheDocument();
     });
 
@@ -200,7 +200,10 @@ describe('MarketplaceSourcesView', () => {
       expect(submit).toBeDisabled();
 
       // Fill only the URL — still disabled.
-      await user.type(screen.getByLabelText(/git url/i), 'https://github.com/org/marketplace');
+      await user.type(
+        screen.getByLabelText(/repository link/i),
+        'https://github.com/org/marketplace'
+      );
       expect(submit).toBeDisabled();
 
       // Fill the name — now enabled.
@@ -216,7 +219,10 @@ describe('MarketplaceSourcesView', () => {
 
       await user.click(screen.getAllByRole('button', { name: /add source/i })[0]);
 
-      await user.type(screen.getByLabelText(/git url/i), 'https://github.com/org/marketplace');
+      await user.type(
+        screen.getByLabelText(/repository link/i),
+        'https://github.com/org/marketplace'
+      );
       await user.type(screen.getByLabelText(/^name$/i), 'my-registry');
 
       await user.click(screen.getByRole('button', { name: /^add source$/i }));
@@ -237,7 +243,10 @@ describe('MarketplaceSourcesView', () => {
 
       await user.click(screen.getAllByRole('button', { name: /add source/i })[0]);
 
-      await user.type(screen.getByLabelText(/git url/i), '  https://github.com/org/marketplace  ');
+      await user.type(
+        screen.getByLabelText(/repository link/i),
+        '  https://github.com/org/marketplace  '
+      );
       await user.type(screen.getByLabelText(/^name$/i), '  my-registry  ');
 
       await user.click(screen.getByRole('button', { name: /^add source$/i }));

@@ -272,15 +272,20 @@ export function ApprovalPrompt({
   // asked to re-read it with nothing there. Bands also survive a skipped second
   // — a backgrounded tab that jumps 121 → 119 still gets the warning, where an
   // exact match got silence.
+  //
+  // All three sentences speak in one voice: plain, an actor, no "tool approval"
+  // (a phrase the visible card never uses) and no telegraphic "Urgent:"
+  // (DOR-1756 finding 10.5). A screen-reader user used to get the LEAST plain
+  // sentence at the moment they had the most time to act.
   const announcement =
     decided || secondsRemaining === null
       ? ''
       : secondsRemaining <= 0
         ? 'Nobody answered. The agent is waiting for you.'
         : secondsRemaining <= URGENT_AT_S
-          ? 'Urgent: 1 minute to approve or deny.'
+          ? 'One minute left to answer.'
           : secondsRemaining <= WARN_AT_S
-            ? 'Tool approval required. 2 minutes remaining.'
+            ? 'Two minutes left to answer.'
             : '';
 
   // NOTE: the RESOLUTION is deliberately not announced from here. Answering

@@ -572,14 +572,14 @@ describe('ApprovalPrompt', () => {
       await renderAsync({ ...baseProps, timeoutMs: 600_000 });
       await act(async () => vi.advanceTimersByTime(480_000)); // 8 minutes elapsed, 2 minutes remaining
       const liveRegion = screen.getByRole('status');
-      expect(liveRegion.textContent).toBe('Tool approval required. 2 minutes remaining.');
+      expect(liveRegion.textContent).toBe('Two minutes left to answer.');
     });
 
     it('announces at urgent threshold for screen readers', async () => {
       await renderAsync({ ...baseProps, timeoutMs: 600_000 });
       await act(async () => vi.advanceTimersByTime(540_000)); // 9 minutes elapsed, 1 minute remaining
       const liveRegion = screen.getByRole('status');
-      expect(liveRegion.textContent).toBe('Urgent: 1 minute to approve or deny.');
+      expect(liveRegion.textContent).toBe('One minute left to answer.');
     });
 
     it('counts the words down as time passes', async () => {

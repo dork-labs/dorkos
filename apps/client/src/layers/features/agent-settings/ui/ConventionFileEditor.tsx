@@ -78,7 +78,7 @@ export function ConventionFileEditor({
               'border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring w-full resize-none rounded-md border px-3 py-2 font-mono text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
               fill && 'min-h-40 flex-1'
             )}
-            placeholder={enabled ? 'Write markdown content...' : 'Toggle on to enable injection'}
+            placeholder={enabled ? 'Write markdown here…' : 'Turn this on to use it'}
           />
           <p className="text-muted-foreground text-right text-xs">
             {charCount ?? content.length} / {maxChars.toLocaleString()}
