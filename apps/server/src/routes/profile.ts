@@ -27,7 +27,7 @@ import {
   type ProfileUpdateResponse,
 } from '@dorkos/shared/team-schemas';
 import { logError, logger } from '../lib/logger.js';
-import { parseBody, sendError } from '../lib/route-utils.js';
+import { parseBody, sendError, discardStream } from '../lib/route-utils.js';
 import type { AuthorRecord, AuthorRegistry } from '../services/rooms/author-registry.js';
 import { sendRoomError } from './room-error-response.js';
 import { OPERATOR_SAVE_SOURCE } from '../services/identity/display-name-provenance.js';
@@ -343,7 +343,13 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
     );
 
     if (req.headers['if-none-match'] === stored.etag) {
-      stored.stream.destroy();
+      // Programmed against the PORT, not against today's one implementation of
+      // it: `StoredAvatar.stream` is documented as "a local store opens a file;
+      // a remote one opens a response", and a lazily-opened stream abandoned
+      // with no `error` listener faults at the process rather than at the
+      // request (see `discardStream`). `LocalAvatarStore` happens to hand back
+      // bytes already in memory today (DOR-1830), which makes this free.
+      discardStream(stored.stream);
       return res.status(304).end();
     }
 

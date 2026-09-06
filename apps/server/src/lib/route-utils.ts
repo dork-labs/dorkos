@@ -1,9 +1,11 @@
 /**
- * Shared route handler utilities for validation, error extraction, and boundary checks.
+ * Shared route handler utilities for validation, error extraction, boundary
+ * checks, and letting go of a body nobody is going to read.
  *
  * @module lib/route-utils
  */
 import type { Response } from 'express';
+import type { Readable } from 'stream';
 import type { ZodSchema } from 'zod';
 import { z } from 'zod';
 import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from './boundary.js';
@@ -63,6 +65,36 @@ export function parseSessionId(id: unknown): string | null {
  */
 export function sendError(res: Response, status: number, message: string, code: string): void {
   res.status(status).json({ error: message, code });
+}
+
+/**
+ * Abandon a readable body the handler decided not to send — the 304 path of
+ * every route that streams stored bytes.
+ *
+ * **The `error` listener is the load-bearing half, not the `destroy()`.** These
+ * bodies are opened lazily: an attachment store hands back an
+ * `fs.createReadStream` over a path, because attachments are unbounded in size
+ * and their validator comes from one `stat`, so answering a conditional request
+ * must not cost a read. `createReadStream` submits its `fs.open` at
+ * construction and `destroy()` does NOT cancel it — a file unlinked before that
+ * open lands still emits `error`, and an `error` with no listener on it is a
+ * process-level uncaught exception rather than a failed request. The window is
+ * real: a delete or the retention sweep can unlink the file between the store's
+ * `stat` and the open, so a plain `stream.destroy()` on a 304 path means a
+ * conditional GET can take the whole server down (DOR-1831). The same fault
+ * inside a test run ends a shard red with every test green, which is how
+ * DOR-1830 ejected unrelated PRs from the merge queue.
+ *
+ * The listener is deliberately a no-op: this is a body nobody wanted, so
+ * whatever it failed at cannot affect the answer already being sent. The
+ * `destroy()` still earns its place — it closes the descriptor promptly once
+ * the open has landed instead of waiting for garbage collection.
+ *
+ * @param stream - The stream to let go of.
+ */
+export function discardStream(stream: Readable): void {
+  stream.on('error', () => {});
+  stream.destroy();
 }
 
 /** Options for {@link assertBoundary}. */

@@ -27,6 +27,30 @@ import path from 'path';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { AuthorRecord } from '../../services/rooms/author-registry.js';
+import { captureUncaughtExceptions } from './uncaught-exceptions.js';
+
+/**
+ * Lets one file vanish between the store's `stat` and the `createReadStream`
+ * that follows it — the window a delete or the retention sweep really opens,
+ * made deterministic. Everything else passes straight through to the real
+ * filesystem.
+ */
+const fsControl = vi.hoisted(() => ({ deleteAfterNextStat: false }));
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  return {
+    ...actual,
+    default: actual,
+    stat: async (...args: Parameters<typeof actual.stat>) => {
+      const info = await actual.stat(...args);
+      if (fsControl.deleteAfterNextStat) {
+        fsControl.deleteAfterNextStat = false;
+        await actual.rm(args[0] as string, { force: true });
+      }
+      return info;
+    },
+  };
+});
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -83,6 +107,7 @@ describe('/api/rooms/:id/attachments', () => {
   let authors: ReturnType<typeof createRoomSubsystem>['authors'];
 
   beforeEach(async () => {
+    fsControl.deleteAfterNextStat = false;
     uploadConfig = { maxFileSize: 1024, maxFiles: 3, allowedTypes: ['*/*'] };
     db = createTestDb();
     dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-room-attachments-route-'));
@@ -297,8 +322,33 @@ describe('/api/rooms/:id/attachments', () => {
 
       expect(again.status).toBe(304);
       // No bytes on the wire — the point of the 304, and what proves the stream
-      // was destroyed rather than piped.
+      // was discarded rather than piped.
       expect(Buffer.from(again.body).byteLength).toBe(0);
+    });
+
+    it('survives the file being deleted while it is answering a 304', async () => {
+      const posted = await upload(TEXT, 'crash.log');
+      const first = await request(fixtureServer).get(posted.body.attachments[0].url);
+      // A delete or the retention sweep landing between the `stat` that produced
+      // the validator and the `fs.open` the returned stream submitted. The 304
+      // path never reads that stream, and `destroy()` does not cancel an open
+      // already in flight, so the ENOENT arrives with nobody listening — a
+      // process-level uncaught exception that takes the server down on a
+      // conditional GET (DOR-1831).
+      fsControl.deleteAfterNextStat = true;
+
+      const capture = captureUncaughtExceptions();
+      try {
+        const again = await request(fixtureServer)
+          .get(posted.body.attachments[0].url)
+          .set('If-None-Match', first.headers.etag);
+        expect(again.status).toBe(304);
+        await capture.settle();
+      } finally {
+        capture.stop();
+      }
+
+      expect(capture.errors).toEqual([]);
     });
 
     it('lets the uploader read their own unposted file', async () => {

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, readdir, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { discardStream } from '../../../../lib/route-utils.js';
 import { LocalSessionAttachmentStore } from '../local-session-attachment-store.js';
 import { UnsupportedSessionMediaError } from '../session-attachment-store.js';
 import { MAX_SESSION_ATTACHMENT_BYTES } from '../session-media-types.js';
@@ -55,13 +56,11 @@ describe('LocalSessionAttachmentStore', () => {
     expect(stored!.contentType).toBe('image/png');
     expect(stored!.size).toBe(PNG.byteLength);
     expect(stored!.etag.startsWith('W/"')).toBe(true);
-    // The `error` listener, not the `destroy()`, is what makes letting go of an
-    // unread `get` safe: the `fs.open` behind the stream is already in flight
-    // and destroying does not cancel it, so a file gone before it lands still
-    // emits `error` — a process-level uncaught exception when nobody is
-    // listening, which fails the shard with every test green (DOR-1830).
-    stored!.stream.on('error', () => {});
-    stored!.stream.destroy();
+    // The production helper, not a test-local copy of it: what makes letting go
+    // of an unread `get` safe is the `error` listener rather than the
+    // `destroy()`, and that is subtle enough to be worth having in exactly one
+    // place (DOR-1830, DOR-1831).
+    discardStream(stored!.stream);
   });
 
   it('is idempotent on a deterministic id — a second put replaces, never duplicates', async () => {

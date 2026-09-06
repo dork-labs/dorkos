@@ -8,19 +8,43 @@
  * is the unit under test, and `createApp()` would drag in the entire service
  * graph to assert a `Content-Type` header.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { mkdir, mkdtemp, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { captureUncaughtExceptions } from './uncaught-exceptions.js';
 import { sessionAttachmentHandler } from '../session-attachments-handler.js';
 import {
   LocalSessionAttachmentStore,
   resetSessionAttachmentStore,
   setSessionAttachmentStore,
 } from '../../services/session/attachments/index.js';
+
+/**
+ * Lets one file vanish between the store's `stat` and the `createReadStream`
+ * that follows it — the window a delete or the retention sweep really opens,
+ * made deterministic. Everything else passes straight through to the real
+ * filesystem.
+ */
+const fsControl = vi.hoisted(() => ({ deleteAfterNextStat: false }));
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  return {
+    ...actual,
+    default: actual,
+    stat: async (...args: Parameters<typeof actual.stat>) => {
+      const info = await actual.stat(...args);
+      if (fsControl.deleteAfterNextStat) {
+        fsControl.deleteAfterNextStat = false;
+        await actual.rm(args[0] as string, { force: true });
+      }
+      return info;
+    },
+  };
+});
 
 const SESSION = '11111111-2222-4333-8444-555555555555';
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -34,6 +58,7 @@ describe('GET /api/sessions/:id/attachments/:file', () => {
   let store: LocalSessionAttachmentStore;
 
   beforeEach(async () => {
+    fsControl.deleteAfterNextStat = false;
     dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-attachment-route-'));
     store = new LocalSessionAttachmentStore(dorkHome);
     setSessionAttachmentStore(store);
@@ -63,6 +88,29 @@ describe('GET /api/sessions/:id/attachments/:file', () => {
     const second = await request(testServer).get(url).set('If-None-Match', first.headers.etag);
 
     expect(second.status).toBe(304);
+  });
+
+  it('survives the image being deleted while it is answering a 304', async () => {
+    const { url } = await store.put(SESSION, 'abc123', 'image/png', PNG);
+    const first = await request(testServer).get(url);
+    // A delete or the retention sweep landing between the `stat` that produced
+    // the validator and the `fs.open` the returned stream submitted. The 304
+    // path never reads that stream, and `destroy()` does not cancel an open
+    // already in flight, so the ENOENT arrives with nobody listening — a
+    // process-level uncaught exception that takes the server down on a
+    // conditional GET (DOR-1831).
+    fsControl.deleteAfterNextStat = true;
+
+    const capture = captureUncaughtExceptions();
+    try {
+      const second = await request(testServer).get(url).set('If-None-Match', first.headers.etag);
+      expect(second.status).toBe(304);
+      await capture.settle();
+    } finally {
+      capture.stop();
+    }
+
+    expect(capture.errors).toEqual([]);
   });
 
   it('keeps the ETag stable across the touch that retention depends on', async () => {
