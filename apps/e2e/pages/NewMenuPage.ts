@@ -109,6 +109,14 @@ export class NewMenuPage {
    * name field, which is what every caller is actually after — and the shape
    * itself stays pinned where it is decided, by `NewMenu.test.tsx`.
    *
+   * **Which road a given run takes stays undetermined, by design.** The spec's
+   * `beforeEach` waits only for the FIRST agent's row, so nothing establishes
+   * that the codex agent's manifest has landed by the time a menu opens — and
+   * making it wait would pin the GATE rather than the section, which is not
+   * what any of these tests are about. Both roads are pinned at the renderer by
+   * the unit suite, and both were driven in a real browser with the gate forced
+   * each way, so neither is a path this suite has only reasoned about.
+   *
    * The entry is addressed by id like everything else here. `renderNodes`
    * recurses into a submenu with the same walk, so its rows carry
    * `data-menu-item-id` too — and reaching for `'Empty group…'` by name would

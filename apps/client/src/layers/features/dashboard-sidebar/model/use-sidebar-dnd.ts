@@ -103,8 +103,15 @@ export type SidebarDropDescriptor =
   | { type: 'group-header'; groupId: string }
   | { type: 'container'; container: SidebarContainer };
 
-/** The named operation a drop resolves to (also the announcement subject). */
-type SidebarDropOp =
+/**
+ * The named operation a drop resolves to (also the announcement subject).
+ *
+ * Exported because the drag layer decides where to put the KEYBOARD from it as
+ * well as what to write: only some of these take the row out of the container it
+ * was lifted from, and only those need focus restoring by hand (DOR-1790, and
+ * `ui/dnd/restore-drop-focus.ts`).
+ */
+export type SidebarDropOp =
   | { kind: 'none' }
   | { kind: 'reorder-group'; groupId: string; from: number; to: number }
   | { kind: 'move-to-group'; ref: SidebarItemRef; groupId: string; toIndex: number | null }

@@ -29,6 +29,20 @@ const TAB_WALK_LIMIT = 250;
 const ARROW_PRESSES = 20;
 /** How many arrow presses a lifted row gets to find the section it is aimed at. */
 const KEYBOARD_DRAG_PRESSES = 15;
+/**
+ * How long one step of a lifted SECTION's walk waits for the drop ring.
+ *
+ * A section header is a single step of that walk, so the ring has to be given
+ * React's next commit to appear before the next key is sent — see
+ * {@link DashboardSidebarPage.keyboardDragSectionOverSection}. Short, because
+ * every step but the last one pays it.
+ *
+ * **The first suspect if the reorder test ever flakes in the merge queue.** A
+ * queue runner is slower and busier than this machine, and every failure mode
+ * that is left here is one where a commit did not land inside this window —
+ * check the deadline before reading anything else into it.
+ */
+const DROP_RING_SETTLE_MS = 400;
 
 /**
  * Page Object for the web cockpit's left sidebar — the DashboardSidebar agent
@@ -284,7 +298,7 @@ export class DashboardSidebarPage {
     // Two steps, and they are the product's: the New menu's "Section" is a
     // submenu — by hand, or from rules — and "Empty section" is the by-hand
     // entry that mounts the inline editor at the top of Library (BC-45, D3).
-    await this.newMenu.chooseGroupSubmenu('new-group-empty');
+    await this.newMenu.chooseSectionEntry('new-group-empty');
     const input = this.page.getByRole('textbox', { name: 'New section name' });
     await input.fill(name);
     await input.press('Enter');
@@ -510,6 +524,79 @@ export class DashboardSidebarPage {
   }
 
   /**
+   * Pick a SECTION HEADER up, walk it past another section, and put it down —
+   * keyboard only (DOR-1790).
+   *
+   * The same gesture as {@link keyboardDragRowIntoGroup} on a different subject,
+   * and it is a real one: a user-made section's header is a drag source (D3), so
+   * reordering the panel is something a keyboard has to be able to do. What
+   * lands is a `reorder-group`, which is the only drop `classifySidebarDrop`
+   * answers for a header.
+   *
+   * **It converges on the RING, not on the live region**, which is the one
+   * difference from the row version and the reason this is not a one-line
+   * delegation. A section's header and a section's body are two different drop
+   * targets, and `describeSidebarDragOver` calls them both "Over <name>" —
+   * quite correctly, since a reader is being told where they are rather than
+   * which node dnd-kit resolved. Only the header resolves to a reorder, so a
+   * loop that stopped at the announcement stopped one target early: the drop
+   * classified as `none`, the config was never written, and the failure read as
+   * "the reorder never reached the config" about a gesture that had never
+   * arrived. The drop ring is drawn by the element that is actually `isOver`,
+   * so it can tell the two apart.
+   *
+   * @param header - The section toggle to lift. Must already have focus.
+   * @param overGroupName - The section to drop it over.
+   */
+  async keyboardDragSectionOverSection(header: Locator, overGroupName: string) {
+    await expect(
+      header,
+      'the section header has to hold focus before a keyboard drag can lift it'
+    ).toBeFocused();
+
+    // The other section's own header wrapper — first in its subtree, because a
+    // section draws its header before its body.
+    const target = this.groupContainer(overGroupName).locator('[data-sidebar-drag-root]').first();
+    const headerBox = await header.boundingBox();
+    const targetBox = await this.groupHeader(overGroupName).boundingBox();
+    const key = (targetBox?.y ?? 0) < (headerBox?.y ?? 0) ? 'ArrowUp' : 'ArrowDown';
+
+    await this.page.keyboard.press('Space');
+    await expect(
+      this.page.locator('[data-sidebar-dragging]'),
+      'Space on the focused section header picked nothing up'
+    ).toHaveCount(1);
+
+    // **One press, then WAIT for the answer.** A section header is a single
+    // step of the walk, unlike a section body, so reading the ring the instant
+    // the key is sent is how a run steps straight over the one target that
+    // matters: the class arrives on React's next commit, the read misses it,
+    // and the loop presses again — measured, a lifted section walked all the
+    // way up into Heads up and reported "15 presses never brought it over".
+    // The short deadline per step is what makes each press a question with an
+    // answer rather than a guess.
+    for (let press = 0; press < KEYBOARD_DRAG_PRESSES; press++) {
+      const arrived = await expect(target)
+        .toHaveClass(/sidebar-drop-ring/, { timeout: DROP_RING_SETTLE_MS })
+        .then(() => true)
+        .catch(() => false);
+      if (arrived) break;
+      await this.page.keyboard.press(key);
+    }
+    await expect(
+      target,
+      `${KEYBOARD_DRAG_PRESSES} presses of ${key} never brought the section over ${overGroupName}'s ` +
+        `header — the panel last said "${await this.dndLiveRegion.textContent()}"`
+    ).toHaveClass(/sidebar-drop-ring/);
+
+    await this.page.keyboard.press('Space');
+    await expect(
+      this.page.locator('[data-sidebar-dragging]'),
+      'the section never came back down'
+    ).toHaveCount(0);
+  }
+
+  /**
    * Pick a row up, walk it to a section, and put it down — keyboard only.
    *
    * The keyboard equivalent of {@link dragRowIntoGroup}, and it converges the
@@ -519,16 +606,23 @@ export class DashboardSidebarPage {
    * place to read what a drag is over, and the wrong place to read whether one
    * STARTED — see the pick-up below.
    *
-   * @param row - The row to lift. Must already have focus.
-   * @param groupName - The section header to drop it on.
+   * A SECTION is carried by {@link keyboardDragSectionOverSection}, which is the
+   * same gesture reading a different signal — see its header for why the live
+   * region cannot answer that one.
+   *
+   * @param source - The row to lift. Must already have focus.
+   * @param groupName - The section to bring it over.
    */
-  async keyboardDragRowIntoGroup(row: Locator, groupName: string) {
-    await expect(row, 'the row has to hold focus before a keyboard drag can lift it').toBeFocused();
+  async keyboardDragRowIntoGroup(source: Locator, groupName: string) {
+    await expect(
+      source,
+      'the row has to hold focus before a keyboard drag can lift it'
+    ).toBeFocused();
 
     // Which way the section lies, read off the page rather than assumed: a
     // hand-made section sorts wherever the panel puts it. Measured BEFORE the
     // lift, while both boxes are still where a reader last saw them.
-    const rowBox = await row.boundingBox();
+    const rowBox = await source.boundingBox();
     const targetBox = await this.groupHeader(groupName).boundingBox();
     const key = (targetBox?.y ?? 0) < (rowBox?.y ?? 0) ? 'ArrowUp' : 'ArrowDown';
 

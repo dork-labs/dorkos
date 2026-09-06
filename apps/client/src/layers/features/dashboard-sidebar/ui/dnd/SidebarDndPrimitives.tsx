@@ -84,6 +84,13 @@ const SORTABLE_ROOT_TAB_INDEX = -1;
  * moved to the row in DOR-1746 (it is announced on focus, and the row is what
  * takes focus), so the wrapper needed a name of its own rather than borrowing a
  * screen-reader attribute to be findable — which is what it had been doing.
+ *
+ * **Its VALUE is the sortable's dnd id**, which used to be the empty string. A
+ * row that moves between sections is unmounted and mounted again under a new id
+ * (`sidebarRowDndId` prefixes with the home container), so after such a drop
+ * there is no other way to find the row that just moved: it is a different
+ * element with the same words in it. `restore-drop-focus.ts` is the one reader,
+ * and the id is what it asks for (DOR-1790).
  */
 export const SIDEBAR_DRAG_ROOT_ATTRIBUTE = 'data-sidebar-drag-root';
 
@@ -200,14 +207,15 @@ function SortableInner({
     return {
       ...root,
       // What names a drag root, now that the sortable roledescription no longer
-      // does. Page objects and the axe sweep locate the wrapper by this.
-      [SIDEBAR_DRAG_ROOT_ATTRIBUTE]: '',
+      // does. Page objects and the axe sweep locate the wrapper by this; the
+      // focus restore reads its value.
+      [SIDEBAR_DRAG_ROOT_ATTRIBUTE]: id,
       // Read by `useRovingFocus`, which stands its arrow traversal down while a
       // row is off the ground. Stamped here rather than by each call site: a
       // section that forgot it would fight the drag it is hosting.
       ...(isDragging ? { [SIDEBAR_DRAGGING_ATTRIBUTE]: '' } : {}),
     } as HTMLAttributes<HTMLElement>;
-  }, [attributes, isDragging]);
+  }, [attributes, id, isDragging]);
   // The activators ride the ROW, not the root that wraps it. KeyboardSensor
   // starts a drag only when the keydown target is the registered activator node,
   // and the listeners are on the row itself, so a keypress on any of the row's
