@@ -125,12 +125,15 @@ describe('who may turn an extension on or off', () => {
   };
   /** Stands in for `sessionGate`'s resolved user, when login is on. */
   let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
+  /** Every Activity event the router emitted during one case. */
+  let emitted: Array<{ actorType: string; actorLabel: string }>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     state.authEnabled = false;
     state.extensions = { enabled: [], disabled: [], approvedToRun: [] };
     signedInUser = undefined;
+    emitted = [];
 
     manager = {
       get: vi.fn().mockReturnValue(stubRecord()),
@@ -164,6 +167,15 @@ describe('who may turn an extension on or off', () => {
       if (signedInUser) res.locals.user = signedInUser;
       next();
     });
+    // Wired so the refusal cases can assert what the FEED was told, not only
+    // what the config holds. A route that refused the write but still recorded
+    // "You turned this on" would pass every other assertion in this file
+    // (DOR-1801).
+    app.locals.activityService = {
+      emit: vi.fn(async (event: { actorType: string; actorLabel: string }) => {
+        emitted.push(event);
+      }),
+    };
     app.use(
       '/api/extensions',
       createExtensionsRouter(
@@ -201,6 +213,11 @@ describe('who may turn an extension on or off', () => {
       expect(res.body.code).toBe(OPERATOR_ONLY_CONFIG_CODE);
       expect(manager.enable).not.toHaveBeenCalled();
       expect(state.extensions.enabled).toEqual([]);
+      // And the feed is told NOTHING — a refused attempt must not leave a line
+      // claiming the person did it. This is the half a spy on `enable` cannot
+      // see: the emission sits after the write, so a bar that let the request
+      // reach it would record a lie about an effect that never happened.
+      expect(emitted).toEqual([]);
     });
 
     it('CANNOT turn one off either — operator-only reads paths, never values', async () => {
@@ -297,6 +314,10 @@ describe('who may turn an extension on or off', () => {
 
       expect(res.status).toBe(200);
       expect(manager.enable).toHaveBeenCalledWith('my-ext');
+      // The positive half of the refusal assertions above: the feed DOES record
+      // this one, as the person. Without it, `expect(emitted).toEqual([])` would
+      // pass just as happily against a spy that was never wired up at all.
+      expect(emitted).toEqual([expect.objectContaining({ actorType: 'user', actorLabel: 'You' })]);
     });
 
     it('turns one off with a session cookie while login is on', async () => {

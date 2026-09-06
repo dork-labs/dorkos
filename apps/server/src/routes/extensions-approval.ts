@@ -28,6 +28,7 @@ import type { Router } from 'express';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { logger } from '../lib/logger.js';
+import { readActivityActor } from '../services/activity/activity-actor.js';
 import { broadcastExtensionReloaded } from './extensions.js';
 import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import {
@@ -98,8 +99,10 @@ export function registerExtensionApprovalRoutes(
       const activityService = req.app.locals.activityService as ActivityService | undefined;
       if (activityService) {
         await activityService.emit({
-          actorType: 'user',
-          actorLabel: 'You',
+          // Always the person — the bar above refuses any caller naming itself an
+          // agent — and read from the caller anyway, so every Activity entry on
+          // this router derives who acted rather than asserting it (DOR-1801).
+          ...readActivityActor(req, res),
           category: 'config',
           eventType: 'config.extension_updated',
           resourceType: 'extension',
@@ -142,8 +145,10 @@ export function registerExtensionApprovalRoutes(
       const activityService = req.app.locals.activityService as ActivityService | undefined;
       if (activityService) {
         await activityService.emit({
-          actorType: 'user',
-          actorLabel: 'You',
+          // Always the person — the bar above refuses any caller naming itself an
+          // agent — and read from the caller anyway, so every Activity entry on
+          // this router derives who acted rather than asserting it (DOR-1801).
+          ...readActivityActor(req, res),
           category: 'config',
           eventType: 'config.extension_updated',
           resourceType: 'extension',
