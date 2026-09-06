@@ -67,7 +67,7 @@ export interface RoomCollaborators {
   readonly bridgeLifecycle: RoomBridgeLifecycle;
   /** Who is in a room. */
   readonly membership: RoomMembership;
-  /** The lists a cockpit draws, and where each reader has got to in them. */
+  /** The lists the app draws, and where each reader has got to in them. */
   readonly directory: RoomDirectory;
   /** The rooms an agent can find its own way around. */
   readonly memberDirectory: RoomMemberDirectory;

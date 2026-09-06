@@ -4,8 +4,8 @@
  * spec D6, spec `rooms-management-tools` §D8).
  *
  * **Membership, not visibility, and the owner is not exempt.** These are
- * `listRoomsForMember` for every caller, deliberately unlike the cockpit's own
- * room list, which short-circuits to every room on the machine for whoever
+ * `listRoomsForMember` for every caller, deliberately unlike the room list the
+ * app draws, which short-circuits to every room on the machine for whoever
  * owns it. Each verb is named for what it answers — "the rooms you belong
  * to" — and a version that quietly meant "every room on this machine" when the
  * caller happened to be the owner would be a different question wearing the

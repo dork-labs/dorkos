@@ -1,6 +1,6 @@
 /**
- * The lists a person's cockpit draws — their rooms, their threads, one room —
- * and where each reader has got to in them.
+ * The lists the app draws for a person — their rooms, their threads, one
+ * room — and where each reader has got to in them.
  *
  * **Two cursors live behind one number, and which one answers depends on who
  * is asking** (team-room-home spec §D4). A person's place in a room is a row

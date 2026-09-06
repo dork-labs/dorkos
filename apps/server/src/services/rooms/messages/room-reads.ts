@@ -1,5 +1,5 @@
 /**
- * Reading a room's log: the cockpit's page, the agent's history tool, the SSE
+ * Reading a room's log: the app's own page, the agent's history tool, the SSE
  * snapshot and replay, and the whole-room export.
  *
  * Every one of them goes out through {@link RoomProjection.withRollups}, so a
