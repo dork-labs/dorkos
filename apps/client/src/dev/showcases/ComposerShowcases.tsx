@@ -21,7 +21,7 @@ import type {
 } from '@/layers/features/conversation';
 import { SESSION_CAPABILITIES } from '@/layers/widgets/session';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
-import { QueuePanel } from '@/layers/features/chat/ui/input/QueuePanel';
+import { QueuePanel } from '@/layers/features/chat';
 import { ApprovalPrompt, QuestionPrompt } from '@/layers/features/ask';
 import { SlashCommandList } from '@/layers/features/slash-commands';
 import { FilePalette } from '@/layers/features/files';
