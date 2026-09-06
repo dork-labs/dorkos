@@ -36,6 +36,17 @@ describe('the capture stack boots isolated', () => {
     // operator's home regardless of where the data directory points.
     expect(baseEnv().DORKOS_SEARCH_NO_EXTERNAL_HISTORY).toBe('true');
   });
+
+  it('runs its Vite with hot replacement off, like the Playwright legs', () => {
+    // A build landing mid-run rewrites `packages/*/dist`, which this client
+    // imports, and Vite hot-replaces the modules above it while a page is
+    // still booting (DOR-1412). Measured on the capture stack for DOR-1771: 30
+    // cold mobile boots with nothing rewriting that directory came up 30 times;
+    // 9 with one rewrite landing mid-boot failed 5 times. Same silent-deletion
+    // problem as the lines above — the run goes green either way, and the
+    // screenshots only stop arriving on the runs that flake.
+    expect(baseEnv().DORKOS_E2E_NO_HMR).toBe('true');
+  });
 });
 
 describe('the capture data directory is private', () => {

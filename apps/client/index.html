@@ -49,13 +49,25 @@
       the download from zero, so the watchdog made a slow load unloadable. The
       timeout path therefore requires `document.readyState === 'complete'`
       before it counts as evidence.
+
+      AND NEITHER IS ONE ERROR, which is the same trap wearing the other hat
+      (DOR-1771). The error path used to paint three seconds after ANY `error`
+      or `unhandledrejection` — a picture that 404s, a boot fetch nobody
+      awaited, anything at all — with no gate of its own. Three seconds is less
+      than a cold boot takes on a busy machine: measured here, a cold load of
+      the dev module graph reached React between 3.3s and 13.1s. So one
+      harmless rejection during a slow boot condemned a page that came up nine
+      seconds later, and a capture run driving the phone surfaces saw exactly
+      that in 1 run of 9. Both give-up paths now decide in one place, from the
+      same evidence — loading has STOPPED — so an error can only ever bring the
+      verdict forward, never accuse a document that is still arriving.
     -->
     <script data-boot-sentinel>
       (function () {
         // How long a healthy boot may take to reach `main.tsx`'s render call,
         // counted only against a document that has finished loading (checkBoot).
         var BOOT_DEADLINE_MS = 10000;
-        // How often to look again while the document is still loading.
+        // How often the watchdog looks at the page, for the whole boot window.
         var LOADING_RECHECK_MS = 1000;
         // Backstop for a fetch that neither finishes nor fails: a hung
         // connection leaves readyState at 'interactive' for good, so the
@@ -74,6 +86,7 @@
         var waitedMs = 0;
         var copyTimer = null;
         var graceArmed = false;
+        var graceExpired = false;
         var painted = false;
         var disarmed = false;
 
@@ -131,30 +144,87 @@
           if (!target) return;
           painted = true;
           paint(target);
+          report();
           reportAlive();
         }
 
-        function scheduleCheck(ms) {
-          waitedMs += ms;
-          later(ms, checkBoot);
+        // Say it out loud as well as on screen. The panel keeps the stack in a
+        // collapsed `<details>`, which is invisible to anything reading the
+        // page as text — and that is how DOR-1771 arrived with no stack: an
+        // automated harness read the visible copy, saw the headline, and had
+        // nothing else to report. The console is the channel a watcher CAN keep
+        // without opening anything, so this puts it there and the watchers do
+        // the keeping: the capture harness now listens on every context it
+        // makes (`newCaptureContext` in `apps/e2e/capture/lib.ts`), and a person
+        // with devtools open gets it for free. Wrapped because a console that
+        // throws must not change what the page does.
+        function report() {
+          try {
+            if (window.console && window.console.error) {
+              window.console.error('[dorkos:boot-failed]\n' + detailsText());
+            }
+          } catch (err) {
+            /* Nothing to fall back to, and the panel is already up. */
+          }
         }
 
-        // The pure-timeout path, which has no evidence of its own that anything
-        // went wrong. A slow network is not a failed boot: on a throttled
-        // connection the bundle is still arriving at the deadline, so painting
-        // here would replace a perfectly healthy boot mid-download — and "Try
-        // again" would cancel the in-flight request and restart it from zero.
-        // The timeout therefore only counts once the document says loading
-        // STOPPED. readyState still reaches 'complete' when the bundle 404s or
-        // throws at module scope, so every real failure mode survives the gate;
-        // the ceiling covers the fetch that hangs instead of failing.
+        // One look per interval for the whole boot window, and the only thing
+        // that schedules. `waitedMs` is the time the NEXT poll is due at, so on
+        // the poll path a deadline compared against it is compared against wall
+        // time. The grace callback calls checkBoot directly, off this chain, so
+        // there `waitedMs` is the next poll's time and reads up to one interval
+        // AHEAD of the clock — which only ever makes an error-driven give-up
+        // arrive early, never late, and the deadline it beats is the ten-second
+        // one it was already allowed to beat.
+        //
+        // A mounted app is a working app and stops the chain — but only once
+        // loading has stopped too. Content that appears and then disappears
+        // while the document is still arriving must not switch the watchdog off
+        // for good; the early return used to do exactly that, permanently.
+        function scheduleCheck() {
+          if (disarmed || painted) return;
+          if (mountedAlready() && document.readyState === 'complete') return;
+          waitedMs += LOADING_RECHECK_MS;
+          later(LOADING_RECHECK_MS, function () {
+            checkBoot();
+            scheduleCheck();
+          });
+        }
+
+        // The single decision point, and both ways of reaching it need the same
+        // thing first: evidence that loading STOPPED.
+        //
+        // A slow network is not a failed boot. On a throttled connection the
+        // bundle is still arriving at the deadline, so painting would replace a
+        // perfectly healthy boot mid-download — and "Try again" would cancel the
+        // in-flight request and restart it from zero. One error is not a failed
+        // boot either: a picture that 404s or a rejected boot fetch says nothing
+        // about whether the bundle is going to arrive, and a cold load takes
+        // longer than the grace on a busy machine (DOR-1771). So an error only
+        // brings the verdict FORWARD — from the ten-second deadline to three —
+        // and never lowers the bar for reaching one.
+        //
+        // readyState still reaches 'complete' when the bundle 404s or throws at
+        // module scope, so every real failure mode survives the gate; the
+        // ceiling covers the fetch that hangs instead of failing.
+        //
+        // THE TRADE, taken deliberately: a dev server or tunnel that stalls
+        // mid-download now shows a blank window until the 60s ceiling, where it
+        // used to accuse itself at 3s. That is the better of the two, because
+        // the 3s panel was lying — it named a crash that had not happened, and
+        // its "Try again" cancelled the in-flight download and restarted it from
+        // zero, which is the DOR-1451 anti-pattern this file already refuses on
+        // the timeout path. Sixty seconds is also what the desktop shell's
+        // renderer-health watchdog waits before it acts on a window that has not
+        // painted (`LOADING_CEILING_MS` in `main/renderer-health/`), so the two
+        // now agree about how long "still loading" is allowed to last.
         function checkBoot() {
           if (disarmed || painted || mountedAlready()) return;
-          if (document.readyState !== 'complete' && waitedMs < BOOT_CEILING_MS) {
-            scheduleCheck(LOADING_RECHECK_MS);
+          if (document.readyState !== 'complete') {
+            if (waitedMs >= BOOT_CEILING_MS) giveUp();
             return;
           }
-          giveUp();
+          if (graceExpired || waitedMs >= BOOT_DEADLINE_MS) giveUp();
         }
 
         function onError(event) {
@@ -178,10 +248,17 @@
           armGrace();
         }
 
+        // Something failed; give the page three seconds to mount anyway, then
+        // hand the decision to checkBoot rather than painting outright. React
+        // may still be mid-mount when something unrelated throws, and the
+        // document may still be downloading the module that mounts it.
         function armGrace() {
           if (graceArmed) return;
           graceArmed = true;
-          later(ERROR_GRACE_MS, giveUp);
+          later(ERROR_GRACE_MS, function () {
+            graceExpired = true;
+            checkBoot();
+          });
         }
 
         function detailsText() {
@@ -409,7 +486,7 @@
 
         window.addEventListener('error', onError, true);
         window.addEventListener('unhandledrejection', onRejection);
-        scheduleCheck(BOOT_DEADLINE_MS);
+        scheduleCheck();
 
         window.__dorkosBoot = {
           done: function () {

@@ -5,6 +5,7 @@ import {
   attempt,
   attemptShot,
   isShotSkipped,
+  newCaptureContext,
   openLiveTurn,
   patch,
   recordLoop,
@@ -577,7 +578,7 @@ export async function captureAgentDiscovery(browser: Browser, rec: RunRecorder):
   try {
     await attempt('agent-discovery-light', async () => {
       await reopenOnboarding();
-      const ctx = await browser.newContext({
+      const ctx = await newCaptureContext(browser, {
         viewport: DESKTOP_VIEWPORT,
         deviceScaleFactor: DEVICE_SCALE_FACTOR,
         reducedMotion: 'reduce',
@@ -612,7 +613,7 @@ export async function captureAgentDiscovery(browser: Browser, rec: RunRecorder):
  */
 export async function captureLightStills(browser: Browser, rec: RunRecorder): Promise<void> {
   const theme: Theme = 'light';
-  const ctx = await browser.newContext({
+  const ctx = await newCaptureContext(browser, {
     viewport: DESKTOP_VIEWPORT,
     deviceScaleFactor: DEVICE_SCALE_FACTOR,
     reducedMotion: 'reduce',
