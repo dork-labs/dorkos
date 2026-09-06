@@ -273,7 +273,7 @@ describe('MarketplaceSourcesView', () => {
 
       render(<MarketplaceSourcesView />);
 
-      await user.click(screen.getAllByRole('button', { name: /add source/i })[0]);
+      await user.click(screen.getAllByRole('button', { name: /add marketplace source/i })[0]);
 
       expect(screen.getByRole('alert')).toHaveTextContent(
         /isn't one DorkOS can fetch a marketplace from/
@@ -287,7 +287,7 @@ describe('MarketplaceSourcesView', () => {
 
       render(<MarketplaceSourcesView />);
 
-      await user.click(screen.getAllByRole('button', { name: /add source/i })[0]);
+      await user.click(screen.getAllByRole('button', { name: /add marketplace source/i })[0]);
       await user.click(screen.getByRole('button', { name: /cancel/i }));
 
       expect(addReset).toHaveBeenCalled();
