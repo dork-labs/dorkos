@@ -69,7 +69,7 @@ export function createMeshMethods(baseUrl: string) {
       });
     },
 
-    updateMeshAgent(id: string, updates: Partial<AgentManifest>): Promise<AgentManifest> {
+    updateMeshAgent(id: string, updates: AgentManifestUpdate): Promise<AgentManifest> {
       return fetchJSON(baseUrl, `/mesh/agents/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(updates),

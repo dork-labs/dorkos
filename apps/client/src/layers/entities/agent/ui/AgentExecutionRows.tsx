@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useCallback, useId, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { AgentManifest, AgentManifestUpdate } from '@dorkos/shared/mesh-schemas';
 import type { EffortLevel } from '@dorkos/shared/types';
@@ -22,6 +22,7 @@ import {
   UnverifiedCatalogNotice,
 } from '@/layers/shared/ui';
 import { useConfig } from '@/layers/entities/config';
+import { useUpdateAgent as useUpdateMeshAgent } from '@/layers/entities/mesh';
 import {
   getRuntimeDescriptor,
   settingsForRuntime,
@@ -187,8 +188,14 @@ export interface AgentExecutionRowsProps {
   /** The agent being configured. */
   agent: AgentManifest;
   /**
-   * Persist a manifest change. `null` on either key means "go back to
+   * Persist a change to Model or Effort. `null` on either key means "go back to
    * inheriting", which is exactly what the wire's `null` means.
+   *
+   * **The Account row does not come through here** (DOR-1736). Both of these
+   * are `agent-writable`, so the agent self-edit route a caller wires this to
+   * accepts them; `account` is `operator-only` and that route refuses it. The
+   * row writes itself, through `PATCH /api/mesh/agents/:id` — see the callback
+   * inside {@link AgentExecutionRows}.
    */
   onUpdate: (updates: AgentManifestUpdate) => void;
   /**
@@ -220,6 +227,9 @@ export interface AgentExecutionRowsProps {
  * a runtime that has no such thing as an account, or a machine with only one, is
  * not a setting waiting to be explained — it is not a setting at all. It appears
  * the moment there is a choice, or the moment this agent has already made one.
+ * It is also the one row that saves ITSELF rather than through `onUpdate`,
+ * because billing is operator-only and the self-edit route refuses it
+ * (DOR-1736) — see `writeAccount` below.
  *
  * @param props - See {@link AgentExecutionRowsProps}.
  */
@@ -290,6 +300,41 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   const serverDefaultAccount = config?.claudeCode
     ? claudeAccountName(config.claudeCode.resolvedAccount, accountRows ?? [])
     : null;
+
+  // **The Account row writes through the OPERATOR's route, never the agent
+  // self-edit route** (DOR-1736) — the same split the Tools page's toggles took
+  // in DOR-1506, and for the same reason.
+  //
+  // `agent-write-policy.ts` classifies `account` as `operator-only`: whose
+  // subscription an agent's work bills to is a person's decision, so
+  // `PATCH /api/agents/current` refuses ANY body naming it — 403, whole patch,
+  // whatever the value. This row sent exactly that body, so on the only machines
+  // that draw it (more than one registered account) every pick failed. Model and
+  // effort beside it stay on `onUpdate`, because that route still accepts them.
+  //
+  // No optimistic write: the row is drawn entirely from the stored manifest, so
+  // the re-read `useUpdateAgent` runs on settle is the only thing that ever moves
+  // it — and after a REFUSED write it is the only thing that proves it did not.
+  //
+  // **No `onSettled` here either, deliberately.** The manifest sweep this row
+  // needs (`agentKeys.byPath` in this popover, `agentKeys.resolved` behind the
+  // Settings exceptions strip) lives at MUTATION level inside the hook, because
+  // a callback passed to `mutate` dies with the observer — and a person picks an
+  // account and closes the popover in the same breath. The hook's own doc has
+  // the full reasoning. The team roster is swept by nobody on purpose:
+  // `TeamAgentFacts` carries `runtime` and `model` and no account, so a refetch
+  // there could not change anything on screen.
+  //
+  // The label is the headline the app-wide mutation handler puts the server's
+  // own sentence under, so a refusal here reads like the ones Model and Effort
+  // get rather than the generic "That didn’t work. Try again."
+  const updateAgent = useUpdateMeshAgent({ errorLabel: 'Couldn’t change this agent’s account' });
+  const writeAccount = useCallback(
+    (account: string | null) => {
+      updateAgent.mutate({ id: agent.id, updates: { account } });
+    },
+    [agent.id, updateAgent]
+  );
 
   // One report, the same rules the exceptions strip and the sidebar read, so a
   // row that wears a warning chip here is a row that is named there.
@@ -460,8 +505,8 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
           isSetHere={accountIsSetHere}
           serverDefault={serverDefaultAccount}
           warning={accountWarning}
-          onSelect={(value) => onUpdate({ account: value })}
-          onInherit={() => onUpdate({ account: null })}
+          onSelect={(value) => writeAccount(value)}
+          onInherit={() => writeAccount(null)}
           testId="agent-account-row"
           className="col-span-full"
         />

@@ -1636,8 +1636,18 @@ export interface Transport extends RoomTransport {
     approver?: string,
     scanRoot?: string
   ): Promise<AgentManifest>;
-  /** Update an existing mesh agent's metadata. */
-  updateMeshAgent(id: string, updates: Partial<AgentManifest>): Promise<AgentManifest>;
+  /**
+   * Update an existing mesh agent's metadata — the OPERATOR's write path
+   * (`PATCH /api/mesh/agents/:id`).
+   *
+   * `AgentManifestUpdate`, not `Partial<AgentManifest>`, because the route's
+   * own schema ({@link UpdateAgentRequestSchema}) accepts `null` on `model`,
+   * `effort`, `account`, `tierCeiling`, `color` and `icon` to mean "go back to
+   * inheriting" — and `undefined` cannot travel over JSON. The narrower type
+   * left the one surface that has to say it (the profile's Account row) unable
+   * to spell its own restore action.
+   */
+  updateMeshAgent(id: string, updates: AgentManifestUpdate): Promise<AgentManifest>;
   /**
    * Unregister a mesh agent by ID.
    *
