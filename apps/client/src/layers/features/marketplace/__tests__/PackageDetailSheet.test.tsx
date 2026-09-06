@@ -352,7 +352,6 @@ describe('PackageDetailSheet', () => {
     await user.click(screen.getByText('What this package will do').closest('button')!);
     await user.click(screen.getByText('Secrets required').closest('button')!);
 
-
     // formatPermissionPreview emits one headline per file group naming the
     // shared folder and a count per action; the paths themselves sit behind a
     // disclosure.
