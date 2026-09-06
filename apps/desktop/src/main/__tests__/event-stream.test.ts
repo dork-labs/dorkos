@@ -125,6 +125,9 @@ afterEach(async () => {
   notificationsWatch = null;
   // Unsubscribing twice is a no-op, so tests that let go mid-test still land here.
   for (const subscription of subscriptions.splice(0)) subscription.unsubscribe();
+  // A no-op unless a test installed them; the one that does must not leave them
+  // behind for the socket tests that follow it.
+  vi.useRealTimers();
   await stream.close();
 });
 
@@ -316,6 +319,25 @@ describe('event-stream reconnection (DOR-1727)', () => {
     while (ladder.length < 8) ladder.push(nextReconnectDelayMs(ladder[ladder.length - 1] ?? 0));
 
     expect(ladder).toEqual([1_000, 2_000, 4_000, 8_000, 15_000, 15_000, 15_000, 15_000]);
+  });
+
+  it('leaves no reconnect armed once the last subscriber lets go', () => {
+    // With no port there is no socket in this test at all: the only thing
+    // `connect()` can do is arm a retry, which makes the count of armed timers
+    // the whole of what there is to observe — and observing it is why the
+    // timers are faked here and nowhere else in this file.
+    vi.useFakeTimers();
+
+    const subscription = subscribe(() => null, { onFrame: () => {} });
+    expect(vi.getTimerCount()).toBe(1);
+
+    subscription.unsubscribe();
+
+    // A retry still armed after the last subscriber has gone is a reconnect
+    // nobody asked for, to a port nobody is watching any more. `teardown()`
+    // clearing it is what makes an unsubscribe final, and nothing else in this
+    // file could tell whether it did.
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 

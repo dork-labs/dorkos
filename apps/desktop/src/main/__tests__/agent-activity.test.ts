@@ -139,17 +139,25 @@ class FakeEventSource {
 
 let source: FakeEventSource;
 let watch: AgentActivityWatch | null = null;
+/** The real HTTP stream, for the one test at the bottom that opens one. */
+let socket: FakeEventStream | null = null;
 
 beforeEach(() => {
   source = new FakeEventSource();
   seam.subscribe = source.subscribe;
 });
 
-afterEach(() => {
+afterEach(async () => {
   // `stop()` is also what clears the module-level session map between tests.
   watch?.stop();
   watch = null;
   seam.subscribe = null;
+  // Cleaning up here rather than in the socket test's own `finally` is what
+  // keeps a test that never settles from leaving a live server (and a live
+  // subscription to it) behind for whatever runs next: a `finally` inside a
+  // hung test never runs, and `afterEach` runs regardless.
+  await socket?.close();
+  socket = null;
 });
 
 /**
@@ -338,25 +346,22 @@ describe('watchAgentActivity over a real socket', () => {
    */
   it('counts an agent off a real SSE connection', async () => {
     seam.subscribe = null;
+    // Handed to `afterEach` before anything can throw, so the server is closed
+    // even if this test never reaches its end.
     const stream = new FakeEventStream();
+    socket = stream;
     await stream.listen();
     const counted = deferred();
     const onChange = vi.fn((counts: AgentActivityCounts) => {
       if (counts.streaming === 1) counted.resolve();
     });
 
-    try {
-      watch = watchAgentActivity({ getPort: () => stream.port, onChange });
-      await stream.connected();
+    watch = watchAgentActivity({ getPort: () => stream.port, onChange });
+    await stream.connected();
 
-      stream.sendStatus('session-a', 'streaming');
+    stream.sendStatus('session-a', 'streaming');
 
-      await counted.promise;
-      expect(getActiveAgentCount()).toBe(1);
-    } finally {
-      watch?.stop();
-      watch = null;
-      await stream.close();
-    }
+    await counted.promise;
+    expect(getActiveAgentCount()).toBe(1);
   });
 });
