@@ -17,7 +17,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { Task } from '@dorkos/shared/schemas';
@@ -89,6 +90,9 @@ import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
+
 function createMockScheduler(): TaskSchedulerService {
   return {
     isStarted: true,
@@ -146,6 +150,8 @@ describe('operator-only task fields on the REST routes', () => {
       '/api/tasks',
       createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
     );
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -154,7 +160,7 @@ describe('operator-only task fields on the REST routes', () => {
 
   describe('an agent that names itself', () => {
     it('is refused permissionMode on PATCH, and NOTHING ELSE from the call lands', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${existing.id}`)
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({
@@ -176,7 +182,7 @@ describe('operator-only task fields on the REST routes', () => {
 
     it('cannot approve its own pending task by setting status', async () => {
       const parked = store.updateTask(existing.id, { status: 'pending_approval' })!;
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${parked.id}`)
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({ status: 'active', enabled: true });
@@ -188,7 +194,7 @@ describe('operator-only task fields on the REST routes', () => {
 
     it('is refused permissionMode on POST, and no task is created', async () => {
       const before = store.getTasks().length;
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/tasks')
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({
@@ -211,7 +217,7 @@ describe('operator-only task fields on the REST routes', () => {
       // paths hardcode `status: 'active'`, so this route (which is what
       // `dorkos task create` calls) armed a live cron task with no `status` field
       // sent at all. There is no field to refuse here; the task must simply park.
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/tasks')
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({
@@ -242,7 +248,7 @@ describe('operator-only task fields on the REST routes', () => {
       const before = store.getTasks().length;
 
       for (const reason of [undefined, '', '   ']) {
-        const res = await request(app)
+        const res = await request(fixtureServer)
           .post('/api/tasks')
           .set('x-dorkos-agent', 'agent-token-abc')
           .send({
@@ -264,7 +270,7 @@ describe('operator-only task fields on the REST routes', () => {
     });
 
     it('keeps the reason it gave, on the parked row', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/tasks')
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({
@@ -290,7 +296,7 @@ describe('operator-only task fields on the REST routes', () => {
     it('is credited by its RESOLVED identity, never by anything it sent', async () => {
       resolvedAgentIdentity = { agentPath: '/tmp/agents/nightly-bot', displayName: 'Nightly Bot' };
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/tasks')
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({
@@ -314,7 +320,7 @@ describe('operator-only task fields on the REST routes', () => {
     it('may still write the ordinary fields', async () => {
       // The guard has to be provably narrow, or refusing everything would pass
       // every test above.
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${existing.id}`)
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({ prompt: 'an updated prompt', enabled: false });
@@ -333,7 +339,7 @@ describe('operator-only task fields on the REST routes', () => {
       // is asking; a person creating their own task is asking nobody, and their
       // task does not park. Requiring one here would be a form to fill in for
       // no reader.
-      const res = await request(app).post('/api/tasks').send({
+      const res = await request(fixtureServer).post('/api/tasks').send({
         name: 'my-own-task',
         description: 'mine',
         prompt: 'do a thing',
@@ -352,7 +358,7 @@ describe('operator-only task fields on the REST routes', () => {
       // identity and no approval token clears `trustedCaller`, exactly as on
       // PATCH /api/config. This is the flow the Approve button drives.
       const parked = store.updateTask(existing.id, { status: 'pending_approval' })!;
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${parked.id}`)
         .send({ status: 'active', enabled: true, permissionMode: 'bypassPermissions' });
 
@@ -389,7 +395,7 @@ describe('operator-only task fields on the REST routes', () => {
         },
       } as unknown as ReturnType<typeof parseSkillFile>);
 
-      const res = await request(app).post('/api/tasks').send({
+      const res = await request(fixtureServer).post('/api/tasks').send({
         name: 'full-autonomy',
         description: 'mine',
         prompt: 'do a thing',
@@ -407,7 +413,7 @@ describe('operator-only task fields on the REST routes', () => {
     it('creates a live task straight away, without the parking an agent gets', async () => {
       // The other half of the parking change: a person creating a task in their
       // own cockpit must not be made to approve their own request.
-      const res = await request(app).post('/api/tasks').send({
+      const res = await request(fixtureServer).post('/api/tasks').send({
         name: 'my-own-task',
         description: 'mine',
         prompt: 'do a thing',
@@ -433,7 +439,7 @@ describe('operator-only task fields on the REST routes', () => {
       // `trustedCaller` requires an authenticated user rather than the absence of
       // a credential.
       signedInUser = undefined;
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${existing.id}`)
         .send({ permissionMode: 'bypassPermissions' });
 
@@ -444,7 +450,7 @@ describe('operator-only task fields on the REST routes', () => {
 
     it('allows a signed-in person', async () => {
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${existing.id}`)
         .send({ permissionMode: 'bypassPermissions' });
 
@@ -457,7 +463,7 @@ describe('operator-only task fields on the REST routes', () => {
       // (DOR-474), so the agent header is what separates an honest agent holding
       // a credential from the person. Both checks have to hold, not either one.
       signedInUser = { userId: 'user_cockpit', credential: 'api-key' };
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${existing.id}`)
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({ permissionMode: 'bypassPermissions' });
@@ -495,7 +501,7 @@ describe('operator-only task fields on the REST routes', () => {
 
       it('is refused an operator-only field on PATCH, exactly as a named agent is', async () => {
         signedInUser = API_KEY_CALLER;
-        const res = await request(app)
+        const res = await request(fixtureServer)
           .patch(`/api/tasks/${existing.id}`)
           .send({ permissionMode: 'bypassPermissions' });
 
@@ -507,7 +513,7 @@ describe('operator-only task fields on the REST routes', () => {
       it('cannot approve a parked task by setting status through an API key', async () => {
         signedInUser = API_KEY_CALLER;
         const parked = store.updateTask(existing.id, { status: 'pending_approval' })!;
-        const res = await request(app)
+        const res = await request(fixtureServer)
           .patch(`/api/tasks/${parked.id}`)
           .send({ status: 'active', enabled: true });
 
@@ -522,7 +528,7 @@ describe('operator-only task fields on the REST routes', () => {
         // create is refused at the field gate and nothing is written.
         signedInUser = API_KEY_CALLER;
         const before = store.getTasks().length;
-        const res = await request(app).post('/api/tasks').send({
+        const res = await request(fixtureServer).post('/api/tasks').send({
           name: 'from-a-stolen-key',
           description: 'fires later, unattended',
           prompt: 'do a thing',
@@ -543,7 +549,7 @@ describe('operator-only task fields on the REST routes', () => {
         // parks at `pending_approval` for a person to see, and is never handed to
         // the scheduler.
         signedInUser = API_KEY_CALLER;
-        const res = await request(app).post('/api/tasks').send({
+        const res = await request(fixtureServer).post('/api/tasks').send({
           name: 'from-a-stolen-key',
           description: 'fires later, unattended',
           prompt: 'do a thing',
@@ -565,7 +571,7 @@ describe('operator-only task fields on the REST routes', () => {
 
       it('cannot trigger a run on demand through an API key', async () => {
         signedInUser = API_KEY_CALLER;
-        const res = await request(app).post(`/api/tasks/${existing.id}/trigger`);
+        const res = await request(fixtureServer).post(`/api/tasks/${existing.id}/trigger`);
 
         expect(res.status).toBe(403);
         expect(res.body.code).toBe('operator_only_task_field');
@@ -579,7 +585,7 @@ describe('operator-only task fields on the REST routes', () => {
     // agent that tried to file a task under itself was told that worked. It did not.
 
     it('refuses agentId by name, and applies nothing else from the call', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${existing.id}`)
         .send({ prompt: 'an updated prompt', agentId: 'nightly-bot' });
 
@@ -595,14 +601,16 @@ describe('operator-only task fields on the REST routes', () => {
     });
 
     it('refuses target, the create-only field, with the same answer', async () => {
-      const res = await request(app).patch(`/api/tasks/${existing.id}`).send({ target: 'global' });
+      const res = await request(fixtureServer)
+        .patch(`/api/tasks/${existing.id}`)
+        .send({ target: 'global' });
 
       expect(res.status).toBe(400);
       expect(res.body.fields).toEqual(['target']);
     });
 
     it('names every unknown field at once, and lists what does work', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${existing.id}`)
         .send({ agentId: 'x', nonsense: 1 });
 
@@ -620,7 +628,9 @@ describe('operator-only task fields on the REST routes', () => {
       state.authEnabled = true;
       signedInUser = { userId: 'user_1', credential: 'cookie' };
 
-      const res = await request(app).patch(`/api/tasks/${existing.id}`).send({ promt: 'typo' });
+      const res = await request(fixtureServer)
+        .patch(`/api/tasks/${existing.id}`)
+        .send({ promt: 'typo' });
 
       expect(res.status).toBe(400);
       expect(res.body.fields).toEqual(['promt']);
@@ -629,7 +639,7 @@ describe('operator-only task fields on the REST routes', () => {
     it('lets an ordinary partial edit straight through', async () => {
       // The guard has to be provably narrow: a PATCH of two real fields, and only
       // those, must still work exactly as it did.
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${existing.id}`)
         .send({ prompt: 'an updated prompt', enabled: false });
 

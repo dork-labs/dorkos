@@ -12,8 +12,10 @@
  * kinds of surface that need it: the endpoints that DECIDE an approval
  * (`routes/approvals.ts`), and the mutation routes that must act without one when
  * the caller is a person (`routes/config.ts`, `routes/marketplace.ts`,
- * `routes/tasks.ts`, `routes/extensions-approval.ts` — the first two reach it both
- * directly and through `trustedCaller`, the last two through one path each).
+ * `routes/tasks.ts`, `routes/extensions-person-bar.ts` — the first two reach it both
+ * directly and through `trustedCaller`, the last two through one path each. The
+ * extensions one is a shared bar serving four write routes since DOR-1507, not a
+ * single route).
  *
  * They share this reader rather than each pulling headers off a request, because
  * the failure that matters here is not a wrong answer but a DIVERGENT one: if the

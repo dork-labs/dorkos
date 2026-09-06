@@ -170,7 +170,7 @@ export function BindingAdvancedSection({
         {/* Session strategy selector — replaced by a note once bridged (§7.2) */}
         {bridged ? (
           <div className="space-y-1.5 px-4 py-3">
-            <Label>Session Strategy</Label>
+            <Label>Session strategy</Label>
             <p className="text-muted-foreground text-xs">
               A bridged chat keeps its history in the channel, so it does not use a session
               strategy.
@@ -178,7 +178,7 @@ export function BindingAdvancedSection({
           </div>
         ) : (
           <div className="space-y-1.5 px-4 py-3">
-            <Label htmlFor="binding-session-strategy">Session Strategy</Label>
+            <Label htmlFor="binding-session-strategy">Session strategy</Label>
             <Select value={strategy} onValueChange={(v) => onStrategyChange(v as SessionStrategy)}>
               <SelectTrigger id="binding-session-strategy" className="w-full">
                 <SelectValue />
@@ -211,7 +211,7 @@ export function BindingAdvancedSection({
               className="text-muted-foreground px-1 text-xs leading-relaxed"
             >
               This connection is set to “{modeLabel}”. The agent behind it hasn’t said what it can
-              do, so there is nothing to choose from yet — saving keeps it as it is.
+              do, so there is nothing to choose from yet. Saving keeps it as it is.
             </p>
           ) : (
             <>
@@ -225,7 +225,7 @@ export function BindingAdvancedSection({
                 strandedNote={
                   <>
                     This connection is set to “{modeLabel}”, which is not one of these. Saving keeps
-                    it as it is — pick a stop to change it.
+                    it as it is. Pick a stop to change it.
                   </>
                 }
               />
@@ -240,7 +240,7 @@ export function BindingAdvancedSection({
 
         {/* Message direction toggles */}
         <div className="space-y-2.5 px-4 py-3">
-          <p className="text-muted-foreground text-xs font-medium">Message Direction</p>
+          <p className="text-muted-foreground text-xs font-medium">Message direction</p>
           <div className="flex cursor-pointer items-center justify-between gap-3">
             <Label
               htmlFor="perm-initiate"
@@ -301,7 +301,7 @@ export function BindingAdvancedSection({
           </p>
           {notifyBootstrapHint && (
             <p className="text-muted-foreground text-xs">
-              Message your bot once to activate notifications — bots can’t text you first.
+              Message your bot once to activate notifications. Bots can’t text you first.
             </p>
           )}
         </div>
@@ -316,7 +316,7 @@ export function BindingAdvancedSection({
             where your integration can show buttons, it arrives in the chat as Approve and Deny, and
             only the people on the approver list may answer. Either way an ask nobody answers is
             refused after 10 minutes and the agent carries on without it. Here nothing is asked at
-            all — anyone who can send a message through this integration sets off whatever the agent
+            all. Anyone who can send a message through this integration sets off whatever the agent
             decides to do.
           </>
         }

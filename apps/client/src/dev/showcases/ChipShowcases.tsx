@@ -161,9 +161,9 @@ export function ChipShowcases() {
         <ShowcaseLabel>Reduced motion</ShowcaseLabel>
         <ShowcaseDemo>
           <p className="text-muted-foreground text-sm">
-            Turn on the system&apos;s reduce-motion setting and reload: every signature above stops,
-            and a working chip keeps only the app&apos;s quiet breath — the same one the thinking
-            label wears. There is no in-app toggle for this on purpose; the browser has to be asked,
+            Turn on the system’s reduce-motion setting and reload: every signature above stops, and
+            a working chip keeps only the app’s quiet breath — the same one the thinking label
+            wears. There is no in-app toggle for this on purpose; the browser has to be asked,
             because that is what the real setting does.
           </p>
         </ShowcaseDemo>

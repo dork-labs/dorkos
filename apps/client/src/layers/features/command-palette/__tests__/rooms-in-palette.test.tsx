@@ -250,7 +250,7 @@ vi.mock('@/layers/shared/model', () => ({
     },
     {
       id: 'theme',
-      label: 'Toggle Theme',
+      label: 'Toggle theme',
       icon: 'Moon',
       action: 'toggleTheme',
       category: 'quick-action',
@@ -341,7 +341,7 @@ vi.mock('motion/react', () => ({
 
 // --- Helpers ---
 
-const searchInput = () => screen.getByPlaceholderText('Search rooms, agents, commands...');
+const searchInput = () => screen.getByPlaceholderText('Search rooms, agents, commands…');
 
 const type = (value: string) => fireEvent.change(searchInput(), { target: { value } });
 
@@ -447,7 +447,7 @@ describe('rooms in the command palette', () => {
       // Not rooms: the agent, the feature, the quick action.
       expect(screen.queryByText('Ana')).not.toBeInTheDocument();
       expect(screen.queryByText('Settings')).not.toBeInTheDocument();
-      expect(screen.queryByText('Toggle Theme')).not.toBeInTheDocument();
+      expect(screen.queryByText('Toggle theme')).not.toBeInTheDocument();
     });
 
     it('draws no badge for a channel the reader is not a member of', async () => {
@@ -510,7 +510,7 @@ describe('rooms in the command palette', () => {
       await waitFor(() =>
         expect(screen.getByText('Open conversation with Ana')).toBeInTheDocument()
       );
-      // The agent row, which drills into "New Session" and the rest.
+      // The agent row, which drills into "New session" and the rest.
       expect(screen.getByRole('option', { name: /^Ana/ })).toBeInTheDocument();
       // And the DM row never says "Message Ana". Pressing it opens the
       // conversation that already exists and shows what is in it; it writes
@@ -572,7 +572,7 @@ describe('rooms in the command palette', () => {
       render(<CommandPaletteDialog />);
       type('#');
 
-      expect(await screen.findByText('Could not load your channels.')).toBeInTheDocument();
+      expect(await screen.findByText('Couldn’t load your channels.')).toBeInTheDocument();
     });
 
     it('says there are none when the list is genuinely empty', async () => {
@@ -597,12 +597,12 @@ describe('rooms in the command palette', () => {
       vi.mocked(mockTransport.listRooms).mockRejectedValue(new Error('offline'));
       render(<CommandPaletteDialog />);
       type('#');
-      expect(await screen.findByText('Could not load your channels.')).toBeInTheDocument();
+      expect(await screen.findByText('Couldn’t load your channels.')).toBeInTheDocument();
 
       type('');
 
       await waitFor(() =>
-        expect(screen.queryByText('Could not load your channels.')).not.toBeInTheDocument()
+        expect(screen.queryByText('Couldn’t load your channels.')).not.toBeInTheDocument()
       );
       // The zero-query list is still drawn — this is a message that left, not a
       // palette that emptied. The prefix legend closes that list and is drawn

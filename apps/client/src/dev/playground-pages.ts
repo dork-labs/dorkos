@@ -20,7 +20,7 @@ import { ComponentsPage } from './pages/ComponentsPage';
 import { ConversationPage } from './pages/ConversationPage';
 import { EntryActionsPage } from './pages/EntryActionsPage';
 import { ErrorStatesPage } from './pages/ErrorStatesPage';
-import { FeaturesPage } from './pages/FeaturesPage';
+import { FeaturesPage, HomeInboxPage } from './pages/FeaturesPage';
 import { FilterBarPage } from './pages/FilterBarPage';
 import { FormsPage } from './pages/FormsPage';
 import { GenUiPage } from './pages/GenUiPage';
@@ -61,6 +61,7 @@ export const PAGE_COMPONENTS: Record<string, ComponentType<PlaygroundPageProps>>
   conversation: ConversationPage,
   'entry-actions': EntryActionsPage,
   features: FeaturesPage,
+  'home-inbox': HomeInboxPage,
   identity: IdentityPage,
   topology: TopologyPage,
   promos: PromosPage,

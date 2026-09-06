@@ -70,7 +70,7 @@ export function TourSpotlightShowcases() {
       title="Tour Spotlight"
       description="The DorkBot spotlight primitive over @reactour/tour: async anchors, custom caption, full a11y bar, reduced-motion and mobile branches."
     >
-      <ShowcaseLabel>Run the three-step tour over the showcase&apos;s own anchors</ShowcaseLabel>
+      <ShowcaseLabel>Run the three-step tour over the showcase’s own anchors</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap gap-2">

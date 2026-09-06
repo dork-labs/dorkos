@@ -333,7 +333,7 @@ describe('parseConfiguredOrigins', () => {
  * Better Auth's CSRF allowlist (DOR-1744).
  *
  * It is `resolveTrustedOrigins()` plus the operator's `DORKOS_CORS_ORIGIN` list,
- * and it is a SEPARATE function on purpose: `routes/extensions-approval.ts`
+ * and it is a SEPARATE function on purpose: `routes/extensions-person-bar.ts`
  * reads `resolveTrustedOrigins()` and documents that it does not consult
  * `DORKOS_CORS_ORIGIN`, because "which sites may read my responses" is not
  * "which page may record a person's security decision". Widening the shared
@@ -494,8 +494,8 @@ describe('resolveAuthTrustedOrigins', () => {
     expect(origins).toEqual(getStaticLocalOrigins());
   });
 
-  it('leaves `resolveTrustedOrigins` itself untouched, so the approval route is unchanged', () => {
-    // The whole reason this is a second function. `extensions-approval.ts`
+  it('leaves `resolveTrustedOrigins` itself untouched, so the extensions bar is unchanged', () => {
+    // The whole reason this is a second function. `extensions-person-bar.ts`
     // refuses an operator-listed origin on purpose; if this assertion ever
     // fails, that refusal has quietly stopped being true.
     setCorsOrigin('https://dorkos.example.com');

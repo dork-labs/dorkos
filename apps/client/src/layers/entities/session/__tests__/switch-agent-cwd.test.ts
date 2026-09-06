@@ -9,7 +9,7 @@ import {
   type DispatcherStore,
 } from '@/layers/shared/lib';
 import { switchAgentCwd, type SwitchAgentCwdStore } from '../lib/switch-agent-cwd';
-import type { CockpitLocation } from '../lib/session-navigation-intent';
+import type { AppLocation } from '../lib/session-navigation-intent';
 import { sessionKeys } from '../api/query-keys';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -115,7 +115,7 @@ describe('switchAgentCwd', () => {
     expect(order).toEqual(['store', 'navigate']);
   });
 
-  it('leaves the cockpit where it is when the lookup fails', async () => {
+  it('leaves the app where it is when the lookup fails', async () => {
     const store = makeStore();
     const navigate = vi.fn();
     const transport = createMockTransport({
@@ -134,13 +134,13 @@ describe('switchAgentCwd', () => {
     expect(store.setSelectedCwd).not.toHaveBeenCalled();
   });
 
-  it('does nothing when the cockpit navigated elsewhere while the lookup was out', async () => {
+  it('does nothing when the app navigated elsewhere while the lookup was out', async () => {
     // The switch does not have to be told; it reads the router's own location,
     // so ANY navigation — a channel, a thread, a Recent row — cancels it.
     const store = makeStore();
     const navigate = vi.fn();
     let answer!: (value: { sessions: Session[] }) => void;
-    let location: CockpitLocation = {
+    let location: AppLocation = {
       pathname: '/session',
       search: { dir: '/home/user/old' },
     };
@@ -175,7 +175,7 @@ describe('switchAgentCwd', () => {
     const store = makeStore();
     const navigate = vi.fn();
     let answer!: (value: { sessions: Session[] }) => void;
-    let location: CockpitLocation = {
+    let location: AppLocation = {
       pathname: '/session',
       search: { dir: '/home/user/old' },
     };

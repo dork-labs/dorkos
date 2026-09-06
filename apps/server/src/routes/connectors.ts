@@ -16,7 +16,7 @@
  *
  * The router holds no I/O of its own; every real collaborator is injected, so
  * it is driven with fakes in tests and the real singletons in `index.ts`. The
- * in-flight flow → provider bindings live in the injected
+ * bounded recent-flow bindings live in the injected
  * {@link ConnectorFlowBindings}, SHARED with the agent-facing connector
  * capabilities — one map, so a flow started in chat can be polled here and vice
  * versa (connector-completion spec §Detailed Design 2/3).
@@ -38,7 +38,7 @@ import { toPublicAccount } from '../services/connectors/public-account.js';
 export interface ConnectorsRouterDeps {
   /** The registry holding the connector backends + id → provider routing. */
   registry: ConnectorRegistry;
-  /** The shared in-flight flow → provider map (one instance per process). */
+  /** The shared bounded recent-flow store (one instance per process). */
   flowBindings: ConnectorFlowBindings;
   /** Optional relay adapter catalog for relay-adapter-first routing; absent when relay is off. */
   relay?: RelayAdapterCatalog;
@@ -66,6 +66,15 @@ const ConnectRequestSchema = z.object({
 export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
   const router = Router();
   const { registry, flowBindings, sessionConnectors } = deps;
+
+  router.use((_req, res, next) => {
+    const health = registry.migrationHealth();
+    if (health.status === 'migration_failed') {
+      res.status(503).json({ status: health.status, error: health.error });
+      return;
+    }
+    next();
+  });
 
   router.get('/toolkits', async (_req, res) => {
     const { toolkits, warnings } = await registry.listToolkits();
@@ -102,14 +111,21 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
         body.toolkit,
         body.label ? { label: body.label } : undefined
       );
-      flowBindings.record(start.flowId, providerType);
+      const flowId = flowBindings.record(
+        start.flowId,
+        provider,
+        registry.disconnectedConnectionFor(provider, body.toolkit, body.label)
+      );
+      // A full binding registry can reject after the provider creates private flow state. The
+      // provider owns and expires that bounded state: the port has no flow-cancel operation, and
+      // no account identity exists yet that could be disconnected safely.
       // The custody sentence rides the start response so the client can render
       // it BEFORE opening the auth URL — server-owned copy, never composed
       // client-side (connector-completion spec §Detailed Design 5).
       const disclosure = custodyDisclosure(provider.getCapabilities().custody, {
         service: body.toolkit,
       });
-      res.json({ ...start, disclosure });
+      res.json({ ...start, flowId, disclosure });
     } catch (err) {
       // A rejected startConnect is a bad request (unknown toolkit, or a second
       // connect on a single-account backend) — surfaced, never a 500.
@@ -121,29 +137,26 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
 
   router.get('/flows/:flowId', async (req, res) => {
     const flowId = req.params.flowId;
-    const providerType = flowBindings.providerFor(flowId);
-    const provider = providerType ? registry.resolveProvider(providerType) : undefined;
-    if (!provider) {
+    const response = await flowBindings.poll(
+      flowId,
+      (binding) => binding.provider.pollConnect(binding.providerFlowId),
+      ({ provider, result: providerResult }) => {
+        const account =
+          providerResult.status === 'connected' && providerResult.account
+            ? registry.recordConnect(provider, providerResult.account)
+            : undefined;
+        return {
+          status: providerResult.status,
+          ...(account && { account: toPublicAccount(account) }),
+          ...(providerResult.error && { error: providerResult.error }),
+        };
+      }
+    );
+    if (!response) {
       res.status(404).json({ error: `Unknown connect flow '${flowId}'` });
       return;
     }
-    const poll = await provider.pollConnect(flowId);
-    // On success, bind the account id → provider so toolServerForAccount /
-    // disconnect can route it later (first-write-wins; re-polling is harmless).
-    if (poll.status === 'connected' && poll.account) {
-      registry.recordConnect(poll.account);
-    }
-    // A terminal poll releases the binding (pending keeps it for the next poll).
-    if (poll.status === 'connected' || poll.status === 'failed') {
-      flowBindings.release(flowId);
-    }
-    // The provider's poll result carries the FULL account (including the
-    // server-only `provider` field) — publicize it before it crosses out.
-    res.json({
-      status: poll.status,
-      ...(poll.account && { account: toPublicAccount(poll.account) }),
-      ...(poll.error && { error: poll.error }),
-    });
+    res.json(response);
   });
 
   router.get('/accounts', async (req, res) => {
@@ -154,17 +167,21 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
 
   router.delete('/accounts/:accountId', async (req, res) => {
     const accountId = req.params.accountId as ConnectedAccountId;
-    const provider = registry.providerForAccount(accountId);
-    // Idempotent: disconnect the owning provider if we can route the id, then
-    // clear the binding. An unknown/already-removed id still resolves 204.
-    if (provider) {
-      await provider.disconnect(accountId);
-    }
+    const binding = registry.accountBinding(accountId);
+    const provider = binding
+      ? registry.resolveProviderInstance(binding.providerInstanceId)
+      : undefined;
+    // Invalidate active reconnects synchronously before awaiting provider I/O,
+    // so a late poll cannot restore local lifecycle while DELETE is in flight.
+    const providerDisconnect = binding
+      ? flowBindings.disconnectAccount(accountId, binding.externalAccountRef, provider)
+      : Promise.resolve(flowBindings.invalidateAccount(accountId));
     // Clears BOTH persisted connector-attachment tables (agent + session) and
-    // the routing cache row; the in-memory half of the cascade below only
-    // needs the account id, not the freshly-cleared rows.
+    // marks the routing row revoked. The in-memory half of the cascade below
+    // only needs the account id, not the freshly-cleared attachment rows.
     registry.recordDisconnect(accountId);
     sessionConnectors.invalidateAccount(accountId);
+    await providerDisconnect;
     res.status(204).end();
   });
 

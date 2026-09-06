@@ -46,15 +46,15 @@ function loadErrorMessage(error: unknown): string {
   const code = (error as { code?: string } | null)?.code;
   switch (code) {
     case 'NOT_FOUND':
-      return "This file doesn't exist.";
+      return 'This file doesn’t exist.';
     case 'NOT_A_FILE':
       return 'This path is a directory, not a file.';
     case 'TOO_LARGE':
       return 'This file is too large to open here.';
     case 'BINARY_FILE':
-      return "This file isn't text and can't be shown in the editor.";
+      return 'This file isn’t text and can’t be shown in the editor.';
     default:
-      return "This file couldn't be loaded.";
+      return 'This file couldn’t be loaded.';
   }
 }
 
@@ -66,7 +66,7 @@ function saveStatusLabel(status: ReturnType<typeof useCanvasFileSave>['status'])
     case 'saved':
       return 'Saved';
     case 'error':
-      return "Couldn't save";
+      return 'Couldn’t save';
     default:
       return null;
   }

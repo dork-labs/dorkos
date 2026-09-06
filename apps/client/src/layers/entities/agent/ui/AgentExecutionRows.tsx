@@ -174,8 +174,8 @@ function ExecutionRow({
             data-testid={`${testId}-inherit`}
           >
             {serverDefault
-              ? `Using server default: ${serverDefault} — tap to restore`
-              : 'Use server default — the runtime picks'}
+              ? `Using server default: ${serverDefault}. Tap to restore`
+              : 'Use server default: the runtime picks'}
           </button>
         </ResponsivePopoverContent>
       </ResponsivePopover>
@@ -459,7 +459,7 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
         ) : !effortIsChoosable ? (
           <EffortNote
             testId="agent-effort-unsupported-model"
-            text="This model doesn't take an effort setting"
+            text="This model doesn’t take an effort setting"
             warning={breakageFor(['effort-unsupported-model'])}
           />
         ) : (

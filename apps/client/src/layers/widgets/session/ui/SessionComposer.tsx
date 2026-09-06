@@ -40,7 +40,7 @@ import {
   type SyncPresenceProps,
   type useInputAutocomplete,
 } from '@/layers/features/chat';
-import { CommandPalette } from '@/layers/features/commands';
+import { SlashCommandList } from '@/layers/features/slash-commands';
 import { FilePalette } from '@/layers/features/files';
 import { ScanLine } from '@/layers/shared/ui';
 import { useAppStore, useTransport } from '@/layers/shared/model';
@@ -97,6 +97,10 @@ interface SessionComposerProps {
    * so nothing else stops a second Enter re-dispatching it.
    */
   commandPending: boolean;
+  /** Whether the selected directory's registered-agent lookup is still unresolved. */
+  agentLookupPending?: boolean;
+  /** Whether that lookup failed and needs an explicit retry before first send. */
+  agentLookupError?: boolean;
   status: 'idle' | 'streaming' | 'error';
   /**
    * Interrupt the running turn and empty its queue. Resolves with the server's
@@ -156,6 +160,8 @@ export function SessionComposer({
   addContextContent,
   tryNativeCommand,
   commandPending,
+  agentLookupPending = false,
+  agentLookupError = false,
   status,
   stop,
   setInput,
@@ -182,7 +188,7 @@ export function SessionComposer({
   // The box's own words, and how many are held behind it — both read off the
   // conversation's target, which is the one place either fact lives.
   const { target } = useConversation();
-  const defaultPlaceholder = target?.placeholder ?? 'Send a message...';
+  const defaultPlaceholder = target?.placeholder ?? 'Send a message…';
   const awaitingDecision = useSessionAwaitingDecision(sessionId);
 
   // What THIS session's runtime can do with a message sent mid-task. Steer and
@@ -630,7 +636,7 @@ export function SessionComposer({
         <>
           <AnimatePresence>
             {autocomplete.commands.show && (
-              <CommandPalette
+              <SlashCommandList
                 filteredCommands={autocomplete.commands.filtered}
                 selectedIndex={autocomplete.commands.selectedIndex}
                 onSelect={autocomplete.handleCommandSelect}
@@ -693,6 +699,14 @@ export function SessionComposer({
       input={{
         isStreaming,
         commandPending,
+        ...(agentLookupPending || agentLookupError
+          ? {
+              canSubmit: false,
+              canSubmitReason: agentLookupError
+                ? 'Try checking this directory again before starting the session.'
+                : 'Checking this directory before starting the session…',
+            }
+          : {}),
         onStop: handleStop,
         stopPending,
         onEscape: autocomplete.dismissPalettes,

@@ -40,9 +40,11 @@ export default defineConfig([
     rules: { 'max-lines': 'off' },
   },
 
-  // process.env carve-outs (client-specific)
+  // process.env carve-outs (client-specific). `**/*.config.ts` was here until
+  // DOR-1785 — the shared preset now carves out every build/tool config file
+  // repo-wide, so only the client's own exemptions remain.
   {
-    files: ['**/env.ts', '**/*.config.ts', '**/__tests__/**', '**/*.test.ts'],
+    files: ['**/env.ts', '**/__tests__/**', '**/*.test.ts'],
     rules: { 'no-restricted-syntax': 'off' },
   },
 

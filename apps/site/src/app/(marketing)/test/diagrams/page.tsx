@@ -19,7 +19,7 @@ function lazyVariant(
       .catch(() => ({
         default: () => (
           <div className="text-warm-gray flex h-64 items-center justify-center font-mono text-sm">
-            Loading... (agent still working)
+            Loading… (agent still working)
           </div>
         ),
       }))
@@ -137,7 +137,7 @@ const variants = [
 function DiagramFallback() {
   return (
     <div className="text-warm-gray animate-tasks flex h-64 items-center justify-center font-mono text-sm">
-      Loading diagram...
+      Loading diagram…
     </div>
   );
 }

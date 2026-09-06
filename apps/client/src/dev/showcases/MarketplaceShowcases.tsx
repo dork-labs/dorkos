@@ -18,8 +18,16 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 
-// Marketplace UI components — direct imports are fine inside dev/
-import { PackageCard } from '@/layers/features/marketplace/ui/PackageCard';
+// The barrel first, then the leaves it does not carry — see the import rule in
+// `.claude/skills/maintaining-dev-playground/SKILL.md`.
+import {
+  InstalledPackagesView,
+  MarketplaceSidebar,
+  MarketplaceSourcesView,
+  PackageCard,
+  useMarketplaceParams,
+  useMarketplaceStore,
+} from '@/layers/features/marketplace';
 import { PackageTypeBadge } from '@/layers/features/marketplace/ui/PackageTypeBadge';
 import { PackageGrid } from '@/layers/features/marketplace/ui/PackageGrid';
 import { PackageLoadingSkeleton } from '@/layers/features/marketplace/ui/PackageLoadingSkeleton';
@@ -29,14 +37,9 @@ import { FeaturedRail } from '@/layers/features/marketplace/ui/FeaturedRail';
 import { PackageDetailSheet } from '@/layers/features/marketplace/ui/PackageDetailSheet';
 import { InstallConfirmationDialog } from '@/layers/features/marketplace/ui/InstallConfirmationDialog';
 import { PermissionPreviewSection } from '@/layers/features/marketplace/ui/PermissionPreviewSection';
-import { InstalledPackagesView } from '@/layers/features/marketplace/ui/InstalledPackagesView';
-import { MarketplaceSourcesView } from '@/layers/features/marketplace/ui/MarketplaceSourcesView';
 import { MarketplaceToolbar } from '@/layers/features/marketplace/ui/MarketplaceToolbar';
-import { MarketplaceSidebar } from '@/layers/features/marketplace/ui/MarketplaceSidebar';
-import { useMarketplaceStore } from '@/layers/features/marketplace/model/marketplace-store';
-import { useMarketplaceParams } from '@/layers/features/marketplace/model/use-marketplace-params';
 
-import { marketplaceKeys } from '@/layers/entities/marketplace/api/query-keys';
+import { marketplaceKeys } from '@/layers/entities/marketplace';
 
 import {
   MOCK_PACKAGES,
@@ -44,6 +47,7 @@ import {
   MOCK_PKG_FEATURED_DEPLOY,
   MOCK_PKG_FEATURED_DOCS,
   MOCK_PKG_PLUGIN,
+  MOCK_PKG_LONG_PROVENANCE,
   MOCK_PKG_SKILL_PACK_NO_DESC,
   MOCK_PKG_ADAPTER_LONG_DESC,
   MOCK_PERMISSION_PREVIEW_MINIMAL,
@@ -94,12 +98,12 @@ function IsolatedQueryProvider({
 // PackageCard showcase
 // ---------------------------------------------------------------------------
 
-/** PackageCard in four states: default, featured, installed, long description. */
+/** PackageCard in six states: default, featured, installed, long description, no description, long provenance. */
 function PackageCardShowcase() {
   return (
     <PlaygroundSection
       title="PackageCard"
-      description="Grid card for a single marketplace package. Variants: default, featured, installed, long description."
+      description="Grid card for a single marketplace package. Variants: default, featured, installed, long description, no description, and a narrow card whose author and source wrap onto two lines."
     >
       <ShowcaseLabel>Default (plugin, no icon)</ShowcaseLabel>
       <ShowcaseDemo>
@@ -133,6 +137,13 @@ function PackageCardShowcase() {
       <ShowcaseDemo>
         <div className="max-w-xs">
           <PackageCard pkg={MOCK_PKG_SKILL_PACK_NO_DESC} onClick={() => {}} />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Long author and source, on a narrow card (the row wraps)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-64">
+          <PackageCard pkg={MOCK_PKG_LONG_PROVENANCE} onClick={() => {}} />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>
@@ -195,7 +206,7 @@ function PackageGridShowcase() {
       <ShowcaseLabel>Error state</ShowcaseLabel>
       <ShowcaseDemo>
         <PackageErrorState
-          error={new Error('Failed to fetch packages — server unreachable')}
+          error={new Error('The DorkOS server did not answer')}
           onRetry={() => {}}
         />
       </ShowcaseDemo>

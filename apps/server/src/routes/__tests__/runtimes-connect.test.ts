@@ -50,7 +50,7 @@ vi.mock('../../services/runtimes/opencode/providers/ollama.js', () => ({
 }));
 
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 import type { Server } from 'node:http';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';

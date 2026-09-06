@@ -30,20 +30,22 @@ vi.mock('../../lib/boundary.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import express from 'express';
 import { createDiscoveryRouter } from '../discovery.js';
 
 /** Mock MeshCore with a controllable discover() async generator. */
 const mockDiscover = vi.fn();
 const mockMeshCore = { discover: mockDiscover } as unknown as MeshCore;
+const target = swappableServer();
 
 /** Helper to create a minimal Express app with the discovery router mounted. */
 function createTestApp() {
   const app = express();
   app.use(express.json());
   app.use('/api/discovery', createDiscoveryRouter(mockMeshCore));
-  return app;
+  return target.mount(app);
 }
 
 /**
@@ -52,7 +54,7 @@ function createTestApp() {
  * Supertest's default parser doesn't handle SSE streams, so we use a custom
  * parser that collects all chunks into a single string.
  */
-async function postScan(app: express.Express, body: Record<string, unknown> = {}) {
+async function postScan(app: ReturnType<typeof createTestApp>, body: Record<string, unknown> = {}) {
   return request(app)
     .post('/api/discovery/scan')
     .send(body)

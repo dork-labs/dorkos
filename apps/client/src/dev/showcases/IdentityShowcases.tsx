@@ -317,7 +317,7 @@ export function IdentityShowcases() {
           <Trigger identity={MOCK_IDENTITIES.photographed} />
         </ShowcaseDemo>
 
-        <ShowcaseLabel>System — the room&apos;s own voice, no chips, no handle</ShowcaseLabel>
+        <ShowcaseLabel>System — the room’s own voice, no chips, no handle</ShowcaseLabel>
         <ShowcaseDemo>
           <Trigger identity={MOCK_IDENTITIES.roomNotice} />
         </ShowcaseDemo>

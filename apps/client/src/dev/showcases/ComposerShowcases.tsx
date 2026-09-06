@@ -21,9 +21,9 @@ import type {
 } from '@/layers/features/conversation';
 import { SESSION_CAPABILITIES } from '@/layers/widgets/session';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
-import { QueuePanel } from '@/layers/features/chat/ui/input/QueuePanel';
+import { QueuePanel } from '@/layers/features/chat';
 import { ApprovalPrompt, QuestionPrompt } from '@/layers/features/ask';
-import { CommandPalette } from '@/layers/features/commands';
+import { SlashCommandList } from '@/layers/features/slash-commands';
 import { FilePalette } from '@/layers/features/files';
 import { MentionPalette, type MentionRow } from '@/layers/features/mentions';
 import { TransportProvider } from '@/layers/shared/model';
@@ -509,16 +509,16 @@ function PaletteAnchor({ hint, children }: { hint: string; children: React.React
 }
 
 /** The slash-command dropdown the composer's overlay lane opens on `/`. */
-export function CommandPaletteShowcase() {
+export function SlashCommandListShowcase() {
   return (
     <PlaygroundSection
-      title="CommandPalette"
+      title="SlashCommandList"
       description="Dropdown autocomplete for slash commands, triggered by typing / in the input. Stacks in Conversation.Composer's overlay lane, above the field."
     >
       <ShowcaseLabel>With commands</ShowcaseLabel>
       <ShowcaseDemo>
         <PaletteAnchor hint="/">
-          <CommandPalette
+          <SlashCommandList
             filteredCommands={SAMPLE_COMMANDS}
             selectedIndex={1}
             onSelect={() => {}}
@@ -529,7 +529,7 @@ export function CommandPaletteShowcase() {
       <ShowcaseLabel>Long text (real-world commands)</ShowcaseLabel>
       <ShowcaseDemo>
         <PaletteAnchor hint="/debug:">
-          <CommandPalette
+          <SlashCommandList
             filteredCommands={SAMPLE_COMMANDS_LONG}
             selectedIndex={2}
             onSelect={() => {}}
@@ -540,7 +540,7 @@ export function CommandPaletteShowcase() {
       <ShowcaseLabel>Filtered (single namespace)</ShowcaseLabel>
       <ShowcaseDemo>
         <PaletteAnchor hint="/linear:">
-          <CommandPalette
+          <SlashCommandList
             filteredCommands={SAMPLE_COMMANDS.filter((c) => c.namespace === 'linear')}
             selectedIndex={0}
             onSelect={() => {}}
@@ -551,7 +551,7 @@ export function CommandPaletteShowcase() {
       <ShowcaseLabel>Empty state</ShowcaseLabel>
       <ShowcaseDemo>
         <PaletteAnchor hint="/xyz">
-          <CommandPalette filteredCommands={[]} selectedIndex={0} onSelect={() => {}} />
+          <SlashCommandList filteredCommands={[]} selectedIndex={0} onSelect={() => {}} />
         </PaletteAnchor>
       </ShowcaseDemo>
     </PlaygroundSection>

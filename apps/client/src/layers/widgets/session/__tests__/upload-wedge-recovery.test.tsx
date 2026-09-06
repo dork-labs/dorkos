@@ -28,7 +28,7 @@ vi.mock('@/layers/features/chat/model/use-background-tasks', () => ({
   useBackgroundTasks: () => [],
 }));
 
-vi.mock('@/layers/features/commands', () => ({ CommandPalette: () => null }));
+vi.mock('@/layers/features/slash-commands', () => ({ SlashCommandList: () => null }));
 vi.mock('@/layers/features/files', () => ({ FilePalette: () => null }));
 
 vi.mock('react-dropzone', () => ({

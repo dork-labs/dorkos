@@ -244,7 +244,7 @@ describe('RoomLimitsSection', () => {
     expect(screen.getByRole('button', { name: /Automatic replies/ })).toBeInTheDocument();
   });
 
-  describe("through the room's own cache — what the reader sees while a write is in flight", () => {
+  describe('through the room’s own cache — what the reader sees while a write is in flight', () => {
     /** The section reading its room the way the panel does: from the query. */
     function LiveSection({ roomId }: { roomId: string }) {
       const { data } = useRoom(roomId);

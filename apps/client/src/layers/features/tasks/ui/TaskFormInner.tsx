@@ -350,7 +350,7 @@ export function ScheduleForm({
                   onChange={(e) => field.handleChange(e.target.value)}
                   onBlur={field.handleBlur}
                   rows={4}
-                  placeholder="Review all pending PRs and summarize findings..."
+                  placeholder="Review all pending PRs and summarize findings…"
                 />
                 {field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
                   <p className="text-destructive text-xs">{String(field.state.meta.errors[0])}</p>
@@ -466,7 +466,7 @@ export function ScheduleForm({
                           className="text-muted-foreground px-1 text-xs leading-relaxed"
                         >
                           This scheduled task is set to “{modeLabel}”. The agent that runs it hasn’t
-                          said what it can do, so there is nothing to choose from yet — saving keeps
+                          said what it can do, so there is nothing to choose from yet. Saving keeps
                           it as it is.
                         </p>
                       </fieldset>
@@ -498,7 +498,7 @@ export function ScheduleForm({
                         strandedNote={
                           <>
                             This scheduled task is set to “{modeLabel}”, which is not one of these.
-                            Saving keeps it as it is — pick a stop to change it.
+                            Saving keeps it as it is. Pick a stop to change it.
                           </>
                         }
                       />
@@ -627,7 +627,7 @@ export function ScheduleForm({
               form="schedule-form"
               disabled={!isFormValid || isPending}
             >
-              {isPending ? 'Saving...' : editTask ? 'Save' : 'Create'}
+              {isPending ? 'Saving…' : editTask ? 'Save' : 'Create'}
             </Button>
           )}
         </form.Subscribe>

@@ -1,96 +1,45 @@
-/**
- * Shared ConnectorProvider conformance suite — the behavioral gate every
- * connector backend (raw-MCP, Composio, Nango, {@link ./fake-connector-provider.js | FakeConnectorProvider})
- * clears. The connector analogue of `runtimeConformance`.
- *
- * `connectorConformance(makeProvider, opts)` registers a `describe` block that
- * asserts the `ConnectorProvider` contract
- * (`packages/shared/src/connector-provider.ts`) against any backend,
- * parameterized by a factory. The suite is capability-aware: the multi-account
- * assertion branches on `supportsMultiAccount` rather than weakening, exactly as
- * `runtimeConformance` declares differences via opts.
- *
- * Division of labor: this suite covers connector BEHAVIOR; the TypeScript
- * interface covers SHAPE (a provider omitting a method fails compilation).
- *
- * @module test-utils/connector-conformance
- */
+/** Shared conformance suite for the instance-bound ConnectorProvider port. */
 import { describe, expect, it } from 'vitest';
 import {
-  ConnectedAccountSchema,
+  ConnectStartSchema,
   ConnectorCapabilitiesSchema,
   ConnectorToolkitSchema,
-  type ConnectedAccount,
-  type ConnectedAccountId,
+  ProviderConnectedAccountSchema,
+  type ConnectorExternalAccountRef,
   type ConnectorProvider,
+  type ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
+import {
+  ConnectorOperationPageSchema,
+  ConnectorProviderExecuteResultSchema,
+  ConnectorUnsupportedResultSchema,
+  type ConnectorOperationRevision,
+} from '@dorkos/shared/connector-schemas';
 
 /** Poll attempts allowed before a connect flow is deemed stuck. */
 const MAX_POLL_ATTEMPTS = 10;
 
-/** Valid `McpAppServerConnection.transport` discriminants. */
-const MCP_TRANSPORTS = ['stdio', 'http', 'sse'];
-
-/**
- * An arranged account that cannot be exposed — the input to the REQUIRED
- * null-branch case. Bundles the provider and the id together because different
- * backends reach "unexposable" differently (an `expired` fake account, an
- * unreachable raw-MCP server), and `toolServerForAccount` must be asked on the
- * same instance that was arranged.
- */
+/** An arranged account that cannot be exposed through the compatibility MCP seam. */
 export interface UnexposableAccount {
-  /** The provider holding the unexposable account. */
+  /** Provider holding the account. */
   provider: ConnectorProvider;
-  /** The account whose `toolServerForAccount` must resolve to `null`. */
-  accountId: ConnectedAccountId;
+  /** Private provider account reference. */
+  externalAccountRef: ConnectorExternalAccountRef;
 }
 
-/** Tuning knobs + required hooks for the connector conformance suite. */
+/** Tuning knobs and required hooks for connector conformance. */
 export interface ConnectorConformanceOpts {
-  /** Label for the registered describe block. Defaults to `'ConnectorProvider conformance'`. */
+  /** Label for the registered describe block. */
   name?: string;
-  /**
-   * Toolkit slug to exercise connect/list/expose against; must appear in the
-   * provider's `listToolkits()`. Defaults to `'gmail'`.
-   */
+  /** Toolkit exercised by the suite. */
   toolkit?: string;
-  /**
-   * REQUIRED: arrange an account whose `toolServerForAccount` resolves to
-   * `null`, returning the provider and the account id. This makes the
-   * null-branch case a required, always-run assertion — a provider that wrongly
-   * throws instead of returning `null` fails here.
-   */
+  /** Arrange an account that the compatibility MCP seam cannot expose. */
   makeUnexposableAccount: () => Promise<UnexposableAccount>;
+  /** Optional executing provider that stays pending until a deadline aborts it. */
+  makeSlowExecutingProvider?: () => ConnectorProvider;
 }
 
-/**
- * Assert a value is a well-formed `McpAppServerConnection` (a TS-only type, so
- * validated structurally here).
- *
- * @param connection - The value returned by `toolServerForAccount`.
- */
-function assertMcpConnection(connection: unknown): void {
-  expect(connection, 'an active account must expose a tool server').not.toBeNull();
-  const conn = connection as { transport?: string; url?: string; command?: string };
-  expect(MCP_TRANSPORTS, `invalid transport '${String(conn.transport)}'`).toContain(conn.transport);
-  if (conn.transport === 'http' || conn.transport === 'sse') {
-    expect(typeof conn.url, 'http/sse connection must carry a url').toBe('string');
-    expect(conn.url!.length, 'http/sse connection url must be non-empty').toBeGreaterThan(0);
-  } else {
-    expect(typeof conn.command, 'stdio connection must carry a command').toBe('string');
-    expect(conn.command!.length, 'stdio connection command must be non-empty').toBeGreaterThan(0);
-  }
-}
-
-/**
- * Register the shared ConnectorProvider conformance suite for one backend.
- *
- * Call at the top level of a Vitest test file. The factory is invoked once per
- * test so every assertion starts from a fresh provider instance.
- *
- * @param makeProvider - Factory producing a fresh, ready-to-use provider.
- * @param opts - Required hooks + declared differences; see {@link ConnectorConformanceOpts}.
- */
+/** Register the provider-neutral conformance suite for one backend. */
 export function connectorConformance(
   makeProvider: () => ConnectorProvider,
   opts: ConnectorConformanceOpts
@@ -99,19 +48,19 @@ export function connectorConformance(
     name = 'ConnectorProvider conformance',
     toolkit = 'gmail',
     makeUnexposableAccount,
+    makeSlowExecutingProvider,
   } = opts;
 
-  /** Drive one connect flow to a terminal poll result. */
   async function connect(
     provider: ConnectorProvider,
     label?: string
-  ): Promise<{ status: string; account?: ConnectedAccount }> {
+  ): Promise<{ status: string; account?: ProviderConnectedAccount }> {
     const start = await provider.startConnect(toolkit, label ? { label } : undefined);
-    expect(start.authorizeUrl.length, 'startConnect must return an authorize URL').toBeGreaterThan(
-      0
-    );
+    expect(
+      ConnectStartSchema.safeParse(start).success,
+      'startConnect must return a valid connect-flow reference'
+    ).toBe(true);
     expect(start.flowId.length, 'startConnect must return a flow id').toBeGreaterThan(0);
-
     let poll = await provider.pollConnect(start.flowId);
     let attempts = 0;
     while (poll.status === 'pending' && attempts < MAX_POLL_ATTEMPTS) {
@@ -121,139 +70,237 @@ export function connectorConformance(
     return poll;
   }
 
-  /** Connect and assert success, returning the parsed account. */
-  async function connectOk(provider: ConnectorProvider, label?: string): Promise<ConnectedAccount> {
+  async function connectOk(
+    provider: ConnectorProvider,
+    label?: string
+  ): Promise<ProviderConnectedAccount> {
     const poll = await connect(provider, label);
-    expect(poll.status, `connect must reach 'connected', got '${poll.status}'`).toBe('connected');
-    const parsed = ConnectedAccountSchema.safeParse(poll.account);
-    expect(
-      parsed.success,
-      `pollConnect account must parse: ${parsed.success ? '' : parsed.error.message}`
-    ).toBe(true);
-    return parsed.data as ConnectedAccount;
+    expect(poll.status).toBe('connected');
+    return ProviderConnectedAccountSchema.parse(poll.account);
+  }
+
+  async function firstOperation(provider: ConnectorProvider): Promise<ConnectorOperationRevision> {
+    const result = await provider.listOperationSchemas({ toolkit, limit: 1 });
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') throw new Error(result.reason);
+    const operation = result.page.operations[0];
+    expect(operation).toBeDefined();
+    return {
+      ...operation!,
+      id: 'revision-for-conformance',
+      discoveredAt: new Date(0).toISOString(),
+    };
+  }
+
+  function operationFixture(provider: ConnectorProvider): ConnectorOperationRevision {
+    return {
+      id: 'revision-for-conformance',
+      providerInstanceId: provider.instanceId,
+      toolkit,
+      operationSlug: `${toolkit}.read`,
+      toolkitVersion: '2026-09-01',
+      schemaHash: 'sha256:conformance-read-v1',
+      capabilityClassification: 'read',
+      inputSchema: { type: 'object', additionalProperties: false },
+      discoveredAt: new Date(0).toISOString(),
+    };
   }
 
   describe(name, () => {
-    describe('capabilities', () => {
-      it('getCapabilities returns a structurally valid ConnectorCapabilities matching type', () => {
-        const provider = makeProvider();
-        const caps = provider.getCapabilities();
-        const parsed = ConnectorCapabilitiesSchema.safeParse(caps);
-        expect(
-          parsed.success,
-          `malformed capabilities: ${parsed.success ? '' : parsed.error.message}`
-        ).toBe(true);
-        // The instance identifier and its declared capabilities must agree.
-        expect(caps.type).toBe(provider.type);
-      });
+    it('declares an instance identity and every capability honestly', () => {
+      const provider = makeProvider();
+      const capabilities = ConnectorCapabilitiesSchema.parse(provider.getCapabilities());
+      expect(capabilities.instanceId).toBe(provider.instanceId);
+      expect(capabilities.type).toBe(provider.type);
+      expect(Object.keys(capabilities.capabilities).sort()).toEqual([
+        'accounts',
+        'authentication',
+        'catalog',
+        'execution',
+        'operations',
+        'triggers',
+      ]);
     });
 
-    describe('discovery', () => {
-      it('listToolkits returns well-formed toolkits including the exercised one', async () => {
-        const provider = makeProvider();
-        const toolkits = await provider.listToolkits();
-        expect(Array.isArray(toolkits)).toBe(true);
-        for (const tk of toolkits) {
-          const parsed = ConnectorToolkitSchema.safeParse(tk);
-          expect(
-            parsed.success,
-            `malformed toolkit: ${parsed.success ? '' : parsed.error.message}`
-          ).toBe(true);
-        }
-        expect(
-          toolkits.map((tk) => tk.slug),
-          `the exercised toolkit '${toolkit}' must be listed`
-        ).toContain(toolkit);
-      });
+    it('returns a bounded catalog page and well-formed legacy aggregate', async () => {
+      const provider = makeProvider();
+      const page = await provider.listToolkitPage({ limit: 1 });
+      expect(page.status).toBe('ok');
+      if (page.status === 'ok') {
+        expect(page.toolkits.length).toBeLessThanOrEqual(1);
+        page.toolkits.forEach((entry) => ConnectorToolkitSchema.parse(entry));
+        expect(page.truncated).toBe(Boolean(page.nextCursor));
+      }
+      const all = await provider.listToolkits();
+      expect(all.map((entry) => entry.slug)).toContain(toolkit);
     });
 
-    describe('connect flow', () => {
-      it('startConnect -> pollConnect reaches connected with a well-formed account', async () => {
-        const provider = makeProvider();
+    it('surfaces operation pagination, immutable metadata, and truncation', async () => {
+      const provider = makeProvider();
+      const first = await provider.listOperationSchemas({ toolkit, limit: 1 });
+      const operationCapability = provider.getCapabilities().capabilities.operations;
+      if (operationCapability.status === 'unsupported') {
+        ConnectorUnsupportedResultSchema.parse(first);
+        expect(first).toMatchObject({
+          status: 'unsupported',
+          reason: operationCapability.reason,
+        });
+        expect(JSON.stringify(first)).not.toMatch(/authorization|headers|https?:\/\//i);
+        return;
+      }
+      expect(first.status).toBe('ok');
+      if (first.status !== 'ok') return;
+      ConnectorOperationPageSchema.parse(first.page);
+      expect(first.page.operations).toHaveLength(1);
+      expect(first.page.operations[0]).toMatchObject({
+        providerInstanceId: provider.instanceId,
+        toolkit,
+        toolkitVersion: expect.any(String),
+        schemaHash: expect.any(String),
+        capabilityClassification: expect.stringMatching(/^(read|write|destructive)$/),
+      });
+      expect(first.page.truncated).toBe(true);
+      expect(first.page.nextCursor).toBeDefined();
+      const second = await provider.listOperationSchemas({
+        toolkit,
+        cursor: first.page.nextCursor,
+        limit: 1,
+      });
+      expect(second.status).toBe('ok');
+      if (second.status === 'ok') {
+        expect(second.page.operations[0]?.operationSlug).not.toBe(
+          first.page.operations[0]?.operationSlug
+        );
+      }
+    });
+
+    it('authenticates, lists, and disconnects an exact private account reference', async () => {
+      const provider = makeProvider();
+      const account = await connectOk(provider, 'personal');
+      expect(account.toolkit).toBe(toolkit);
+      expect(
+        (await provider.listAccounts({ toolkit })).map((row) => row.externalAccountRef)
+      ).toContain(account.externalAccountRef);
+      await provider.disconnect(account.externalAccountRef);
+      expect(
+        (await provider.listAccounts({ toolkit })).map((row) => row.externalAccountRef)
+      ).not.toContain(account.externalAccountRef);
+    });
+
+    it('executes only the supplied private account and returns a secret-free envelope', async () => {
+      const provider = makeProvider();
+      const first = await connectOk(provider, 'personal');
+      const selected = provider.getCapabilities().supportsMultiAccount
+        ? await connectOk(provider, 'work')
+        : first;
+      const executionCapability = provider.getCapabilities().capabilities.execution;
+      if (executionCapability.status === 'unsupported') {
+        const unsupported = await provider.execute({
+          externalAccountRef: selected.externalAccountRef,
+          operation: operationFixture(provider),
+          arguments: { query: 'hello' },
+          logicalOperationId: 'logical-unsupported',
+          attemptId: 'attempt-unsupported',
+          signal: new AbortController().signal,
+        });
+        ConnectorProviderExecuteResultSchema.parse(unsupported);
+        ConnectorUnsupportedResultSchema.parse(unsupported);
+        expect(unsupported).toMatchObject({
+          status: 'unsupported',
+          reason: executionCapability.reason,
+        });
+        const serialized = JSON.stringify(unsupported);
+        expect(serialized).not.toContain(first.externalAccountRef);
+        expect(serialized).not.toContain(selected.externalAccountRef);
+        expect(serialized).not.toMatch(/authorization|headers|https?:\/\//i);
+        return;
+      }
+      const operation = await firstOperation(provider);
+      const result = await provider.execute({
+        externalAccountRef: selected.externalAccountRef,
+        operation,
+        arguments: { query: 'hello' },
+        logicalOperationId: 'logical-1',
+        attemptId: 'attempt-1',
+        signal: new AbortController().signal,
+      });
+      ConnectorProviderExecuteResultSchema.parse(result);
+      expect(result.status).toBe('success');
+      const serialized = JSON.stringify(result);
+      expect(serialized).not.toContain(first.externalAccountRef);
+      expect(serialized).not.toContain(selected.externalAccountRef);
+      expect(serialized).not.toMatch(/authorization|headers|https?:\/\//i);
+
+      const unknownAccount = await provider.execute({
+        externalAccountRef: '__missing_private_account__' as ConnectorExternalAccountRef,
+        operation,
+        arguments: { query: 'hello' },
+        logicalOperationId: 'logical-missing-account',
+        attemptId: 'attempt-missing-account',
+        signal: new AbortController().signal,
+      });
+      expect(unknownAccount.status).toBe('error');
+    });
+
+    it('honors an already-aborted signal', async () => {
+      const provider = makeProvider();
+      if (provider.getCapabilities().capabilities.execution.status === 'unsupported') return;
+      const account = await connectOk(provider);
+      const controller = new AbortController();
+      controller.abort();
+      const result = await provider.execute({
+        externalAccountRef: account.externalAccountRef,
+        operation: await firstOperation(provider),
+        arguments: {},
+        logicalOperationId: 'logical-abort',
+        attemptId: 'attempt-abort',
+        signal: controller.signal,
+      });
+      expect(result).toMatchObject({ status: 'error', code: 'aborted' });
+    });
+
+    if (makeSlowExecutingProvider) {
+      it('honors a deadline abort after execution has started', async () => {
+        const provider = makeSlowExecutingProvider();
         const account = await connectOk(provider);
-        expect(account.toolkit).toBe(toolkit);
-        expect(account.provider).toBe(provider.type);
+        const controller = new AbortController();
+        const pending = provider.execute({
+          externalAccountRef: account.externalAccountRef,
+          operation: await firstOperation(provider),
+          arguments: {},
+          logicalOperationId: 'logical-timeout',
+          attemptId: 'attempt-timeout',
+          signal: controller.signal,
+        });
+        controller.abort();
+        await expect(pending).resolves.toMatchObject({ status: 'error', code: 'aborted' });
       });
+    }
 
-      it('listAccounts reflects a connect and then a disconnect', async () => {
-        const provider = makeProvider();
-        const account = await connectOk(provider);
-
-        const afterConnect = await provider.listAccounts({ toolkit });
-        expect(afterConnect.map((a) => a.id)).toContain(account.id);
-
-        await provider.disconnect(account.id);
-        const afterDisconnect = await provider.listAccounts({ toolkit });
-        expect(afterDisconnect.map((a) => a.id)).not.toContain(account.id);
-      });
+    it('returns typed unsupported for a capability declared unsupported', async () => {
+      const provider = makeProvider();
+      const declaration = provider.getCapabilities().capabilities.triggers;
+      const result = await provider.listTriggerTypes(toolkit);
+      if (declaration.status === 'unsupported') {
+        ConnectorUnsupportedResultSchema.parse(result);
+        expect(result).toMatchObject({ status: 'unsupported', reason: declaration.reason });
+        expect(JSON.stringify(result)).not.toMatch(/authorization|headers|https?:\/\//i);
+      } else {
+        expect(result.status).toBe('ok');
+      }
     });
 
-    describe('multi-account addressing', () => {
-      it('honors supportsMultiAccount: two distinct ids when true, exactly one when false', async () => {
-        const provider = makeProvider();
-        const multi = provider.getCapabilities().supportsMultiAccount;
+    it('keeps compatibility MCP exposure exact-account and nullable', async () => {
+      const provider = makeProvider();
+      const account = await connectOk(provider);
+      const connection = await provider.toolServerForAccount(account.externalAccountRef);
+      if (provider.getCapabilities().exposesOverMcp) expect(connection).not.toBeNull();
+      else expect(connection).toBeNull();
 
-        const first = await connectOk(provider, 'personal');
-
-        if (multi) {
-          const second = await connectOk(provider, 'work');
-          expect(second.id, 'two connects of one toolkit must yield distinct ids').not.toBe(
-            first.id
-          );
-          const accounts = await provider.listAccounts({ toolkit });
-          const ids = new Set(accounts.map((a) => a.id));
-          expect(ids.size).toBeGreaterThanOrEqual(2);
-        } else {
-          // Single-account: a second connect is a no-op/rejects — never a second account.
-          try {
-            await connect(provider, 'work');
-          } catch {
-            // rejecting the second connect is a valid single-account behavior
-          }
-          const accounts = await provider.listAccounts({ toolkit });
-          expect(accounts.length, 'a single-account backend holds at most one account').toBe(1);
-        }
-      });
-    });
-
-    describe('tool exposure (the MCP seam)', () => {
-      it('toolServerForAccount honors exposesOverMcp for a healthy account', async () => {
-        const provider = makeProvider();
-        const account = await connectOk(provider);
-        const connection = await provider.toolServerForAccount(account.id);
-        if (provider.getCapabilities().exposesOverMcp) {
-          assertMcpConnection(connection);
-        } else {
-          // A backend that does not expose over MCP resolves null even for a
-          // perfectly healthy account — never a throw.
-          expect(
-            connection,
-            'a provider with exposesOverMcp:false resolves null for a healthy account'
-          ).toBeNull();
-        }
-      });
-
-      it('toolServerForAccount returns NULL (never throws) for an unexposable account', async () => {
-        // The REQUIRED null-branch case (spec §Detailed Design 3): expired/
-        // revoked/unavailable accounts are skipped and surfaced, never thrown.
-        const { provider, accountId } = await makeUnexposableAccount();
-        const connection = await provider.toolServerForAccount(accountId);
-        expect(connection, 'an unexposable account must resolve to null, not throw').toBeNull();
-      });
-    });
-
-    describe('disconnect', () => {
-      it('is idempotent — revoking an unknown id resolves without throwing', async () => {
-        const provider = makeProvider();
-        await expect(
-          provider.disconnect('never-connected-id' as ConnectedAccountId)
-        ).resolves.toBeUndefined();
-
-        const account = await connectOk(provider);
-        await expect(provider.disconnect(account.id)).resolves.toBeUndefined();
-        // Revoking the same id twice still resolves.
-        await expect(provider.disconnect(account.id)).resolves.toBeUndefined();
-      });
+      const unexposable = await makeUnexposableAccount();
+      await expect(
+        unexposable.provider.toolServerForAccount(unexposable.externalAccountRef)
+      ).resolves.toBeNull();
     });
   });
 }

@@ -76,7 +76,7 @@ vi.mock('@/layers/shared/model/extension-registry', () => ({
       onClick: mockAgentDialog,
       priority: 1,
     },
-    { id: 'theme', icon: MockIcon, label: 'Toggle Theme', onClick: () => {}, priority: 3 },
+    { id: 'theme', icon: MockIcon, label: 'Toggle theme', onClick: () => {}, priority: 3 },
     {
       id: 'devtools',
       icon: MockIcon,

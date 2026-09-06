@@ -130,7 +130,7 @@ export function OllamaLocalPath({ active, onConnected, onConnectDirectly }: Olla
         data-testid="guided-pull-connected"
       >
         <Check className="size-3.5 shrink-0" />
-        <span>Connected —</span>
+        <span>Connected:</span>
         <RuntimeIdentity runtime="opencode" model={pull.result.model} className="text-xs" />
       </div>
     );
@@ -241,7 +241,7 @@ function InstalledList({
           else if (failed) {
             action = (
               <ConnectErrorRow
-                message={connect.errorMessage ?? 'Could not connect to Ollama.'}
+                message={connect.errorMessage ?? 'Couldn’t connect to Ollama.'}
                 onRetry={handleUse}
               />
             );

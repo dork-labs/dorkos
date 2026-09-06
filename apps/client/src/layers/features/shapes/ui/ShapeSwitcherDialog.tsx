@@ -242,7 +242,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
             </div>
           ) : isError ? (
             <p className="text-muted-foreground px-3 py-6 text-center text-sm">
-              Couldn&rsquo;t load your Shapes. Check that the DorkOS server is running.
+              Couldn’t load your Shapes. Check that the DorkOS server is running.
             </p>
           ) : !shapes || shapes.length === 0 ? (
             <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">

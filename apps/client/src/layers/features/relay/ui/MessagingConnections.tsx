@@ -111,7 +111,7 @@ export function MessagingConnections({ enabled }: MessagingConnectionsProps) {
         setConflict(found);
         return;
       }
-      toast.error(err instanceof Error ? err.message : "Couldn't save that");
+      toast.error(err instanceof Error ? err.message : 'Couldn’t save that');
     }
   }
 
@@ -297,8 +297,8 @@ export function MessagingConnections({ enabled }: MessagingConnectionsProps) {
             <AlertDialogHeader>
               <AlertDialogTitle>Remove this connection?</AlertDialogTitle>
               <AlertDialogDescription>
-                &quot;{dialogs.removeTarget.name}&quot; will stop working and its settings are
-                deleted. Messages sent to it after that reach nobody.
+                “{dialogs.removeTarget.name}” will stop working and its settings are deleted.
+                Messages sent to it after that reach nobody.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

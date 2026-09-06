@@ -24,12 +24,14 @@ vi.mock('../../lib/reveal-in-file-manager.js', () => ({
   revealInFileManager: vi.fn().mockResolvedValue(undefined),
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { initBoundary } from '../../lib/boundary.js';
 import { revealInFileManager } from '../../lib/reveal-in-file-manager.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 describe('Workbench file routes — real boundary + symlink escapes', () => {
   let root: string; // the global boundary
@@ -52,7 +54,7 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
   });
 
   it('POST create through a symlinked parent cannot escape cwd (403)', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/files')
       .send({ cwd, path: 'link/pwned.txt', type: 'file', content: 'x' });
     expect(res.status).toBe(403);
@@ -63,7 +65,7 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
 
   it('POST rename with a target through a symlinked parent cannot escape cwd (403)', async () => {
     await fs.writeFile(path.join(cwd, 'src.txt'), 'x\n');
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/files/rename')
       .send({ cwd, from: 'src.txt', to: 'link/pwned.txt' });
     expect(res.status).toBe(403);
@@ -75,7 +77,7 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
 
   it('GET content through a symlinked parent cannot read outside cwd (403)', async () => {
     await fs.writeFile(path.join(outside, 'secret.txt'), 'top secret\n');
-    const res = await request(app)
+    const res = await request(testServer)
       .get('/api/files/content')
       .query({ cwd, path: 'link/secret.txt' });
     expect(res.status).toBe(403);
@@ -84,7 +86,9 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
 
   it('DELETE through a symlinked parent cannot remove outside cwd (403)', async () => {
     await fs.writeFile(path.join(outside, 'keep.txt'), 'keep\n');
-    const res = await request(app).delete('/api/files').query({ cwd, path: 'link/keep.txt' });
+    const res = await request(testServer)
+      .delete('/api/files')
+      .query({ cwd, path: 'link/keep.txt' });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
     // The outside file survives.
@@ -93,7 +97,7 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
 
   it('GET tree does not recurse THROUGH a symlinked directory (no metadata disclosure)', async () => {
     await fs.writeFile(path.join(outside, 'secret.txt'), 'top secret\n');
-    const res = await request(app).get('/api/files/tree').query({ cwd, depth: '3' });
+    const res = await request(testServer).get('/api/files/tree').query({ cwd, depth: '3' });
     expect(res.status).toBe(200);
     const paths = res.body.entries.map((e: { path: string }) => e.path);
     // The symlink itself is listed at the top level...
@@ -105,7 +109,7 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
   });
 
   it('GET tree with a ../ path param is rejected (403)', async () => {
-    const res = await request(app).get('/api/files/tree').query({ cwd, path: '../outside' });
+    const res = await request(testServer).get('/api/files/tree').query({ cwd, path: '../outside' });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
   });
@@ -114,14 +118,14 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
     // Build the query by hand — a literal %00 in the path that Express decodes to
     // a NUL byte, which validateBoundary must reject.
     const qs = `cwd=${encodeURIComponent(cwd)}&path=a%00b.txt`;
-    const res = await request(app).get(`/api/files/content?${qs}`);
+    const res = await request(testServer).get(`/api/files/content?${qs}`);
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('NULL_BYTE');
   });
 
   it('POST copy with a target through a symlinked parent cannot escape cwd (403)', async () => {
     await fs.writeFile(path.join(cwd, 'src.txt'), 'x\n');
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/files/copy')
       .send({ cwd, from: 'src.txt', to: 'link/pwned.txt' });
     expect(res.status).toBe(403);
@@ -133,7 +137,7 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
 
   it('POST copy with a ../ source cannot read outside cwd (403)', async () => {
     await fs.writeFile(path.join(outside, 'secret.txt'), 'top secret\n');
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/files/copy')
       .send({ cwd, from: '../outside/secret.txt', to: 'stolen.txt' });
     expect(res.status).toBe(403);
@@ -143,7 +147,9 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
 
   it('POST reveal through a symlinked parent never reaches the file manager (403)', async () => {
     await fs.writeFile(path.join(outside, 'secret.txt'), 'top secret\n');
-    const res = await request(app).post('/api/files/reveal').send({ cwd, path: 'link/secret.txt' });
+    const res = await request(testServer)
+      .post('/api/files/reveal')
+      .send({ cwd, path: 'link/secret.txt' });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
     // The boundary is what stops it — the launcher is never handed a path.
@@ -151,14 +157,16 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
   });
 
   it('POST reveal with a ../ path never reaches the file manager (403)', async () => {
-    const res = await request(app).post('/api/files/reveal').send({ cwd, path: '../outside' });
+    const res = await request(testServer)
+      .post('/api/files/reveal')
+      .send({ cwd, path: '../outside' });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
     expect(revealInFileManager).not.toHaveBeenCalled();
   });
 
   it('allows a legitimate create inside cwd (control: boundary is not over-eager)', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/files')
       .send({ cwd, path: 'nested/ok.txt', type: 'file', content: 'fine' });
     expect(res.status).toBe(201);

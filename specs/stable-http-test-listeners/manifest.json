@@ -1,0 +1,15 @@
+{
+  "id": "260906-000529",
+  "slug": "stable-http-test-listeners",
+  "title": "Stable HTTP listeners for server test fixtures",
+  "created": "2026-09-06",
+  "status": "implemented",
+  "linearIssue": "DOR-1804",
+  "artifacts": {
+    "ideation": "01-ideation.md",
+    "specification": "02-specification.md",
+    "tasks": "03-tasks.json",
+    "tasksReadable": "03-tasks.md",
+    "implementation": "04-implementation.md"
+  }
+}

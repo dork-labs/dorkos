@@ -217,6 +217,27 @@ A test that cannot fail is worse than no test: it reports safety it never checke
 
 ## Mock AgentRuntime (Server Tests)
 
+### Stable HTTP listeners for server route tests
+
+Server route tests import the request builder and its types through the stable-target facade:
+
+```typescript
+import request, { type Response, type Test } from '@dorkos/test-utils/supertest';
+import { listeningServer, swappableServer } from '@dorkos/test-utils/listening-server';
+```
+
+Pass `request()` only an already-listening `http.Server` or an explicit HTTP(S) URL. For a
+fixed module or `describe` app, call `listeningServer(app)` once at the same scope and use its
+returned Server. For an app rebuilt by `beforeEach` or a local factory, create one
+`swappableServer()` at the owning scope and explicitly `mount(app)` when that logical app
+begins. The swappable helper retains its last mount; remount it whenever a new logical app
+begins, while keeping dependent multi-request sequences on the same mount.
+
+When a raw SSE or HTTP client exercises the same app as Supertest, give it the file-owned
+server's URL or port. Keep a separate explicit listener only for a distinct upstream, probe,
+provider, preview server, or listener that is itself under test. Those fixtures own and close
+their listeners directly rather than routing them through the facade.
+
 Server route tests that touch session endpoints need a mock `AgentRuntime`. Use `FakeAgentRuntime` from `@dorkos/test-utils` instead of hand-rolling a mock object:
 
 ```typescript

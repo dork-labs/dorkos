@@ -17,7 +17,8 @@
  * registry — in a shared file it would leak into every later test.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { FakeCommunityAdapter } from '@dorkos/test-utils/fake-community-adapter';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -68,6 +69,7 @@ import { resetAgentIdentityService } from '../../services/core/agent-identity/ag
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
 
 /** A second community, addressed by a ULID the way a real one would be. */
 const REMOTE = '01K1BXCQ4M7GKZ9V0S2R7XQ3AB' as CommunityRef;
@@ -88,7 +90,7 @@ describe('GET /api/rooms with a second community registered', () => {
 
   /** Open a channel so the local half of the list is never trivially empty. */
   async function createChannel(title = 'Backend'): Promise<{ id: string }> {
-    const res = await request(app).post('/api/rooms').send({ kind: 'channel', title });
+    const res = await request(testServer).post('/api/rooms').send({ kind: 'channel', title });
     expect(res.status).toBe(201);
     return res.body;
   }
@@ -100,7 +102,7 @@ describe('GET /api/rooms with a second community registered', () => {
     remote.seedRoom({ entries: 1 });
     communityRegistry.register(remote, 'Dork Labs');
 
-    const res = await request(app).get('/api/rooms');
+    const res = await request(testServer).get('/api/rooms');
 
     expect(res.status).toBe(200);
     expect(res.body.rooms, "this machine's rooms are unaffected").toHaveLength(1);
@@ -119,7 +121,7 @@ describe('GET /api/rooms with a second community registered', () => {
     vi.spyOn(broken, 'listRooms').mockRejectedValue(new Error('relay closed the socket'));
     communityRegistry.register(broken, 'Dork Labs');
 
-    const res = await request(app).get('/api/rooms');
+    const res = await request(testServer).get('/api/rooms');
 
     expect(res.status, 'one broken community is not a failed request').toBe(200);
     expect(res.body.rooms).toHaveLength(1);

@@ -15,7 +15,7 @@ export function FeedbackRequestsPage() {
             `nav` landmark, not a heading. */}
         <h1 className="sr-only">Product feedback</h1>
         <p className="text-muted-foreground text-sm">
-          What you&apos;ve sent the DorkOS team, and where it stands.
+          What you’ve sent the DorkOS team, and where it stands.
         </p>
       </header>
       <div className="min-h-0 flex-1">

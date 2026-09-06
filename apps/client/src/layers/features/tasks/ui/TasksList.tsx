@@ -96,7 +96,7 @@ export function TasksList({ tasks, isLoading, agentMap, onEditTask, agentId }: T
           PageContainer, TasksDialog via DialogContent's own padding — so the
           bar keeps only its vertical rhythm and nothing double-pads. */}
       <FilterBar state={filterState} className="px-0">
-        <FilterBar.Search placeholder="Filter tasks..." />
+        <FilterBar.Search placeholder="Filter tasks…" />
         <FilterBar.Primary name="status" />
         <FilterBar.AddFilter dynamicOptions={{ agent: agentOptions }} />
         <FilterBar.Sort options={taskSortOptions} defaultField={TASK_DEFAULT_SORT_FIELD} />

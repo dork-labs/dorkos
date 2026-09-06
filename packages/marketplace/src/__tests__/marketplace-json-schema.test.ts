@@ -4,6 +4,7 @@ import {
   MarketplaceJsonEntrySchema,
   PluginSourceSchema,
   RESERVED_MARKETPLACE_NAMES,
+  isSafeGitUrl,
 } from '../marketplace-json-schema.js';
 
 const validOwner = { name: 'Test Owner' };
@@ -344,6 +345,37 @@ describe('MarketplaceJsonSchema — top-level document', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect((result.data as Record<string, unknown>).publisherBadge).toBe('verified');
+    }
+  });
+});
+
+describe('isSafeGitUrl — the exported predicate', () => {
+  // Exported so the server can ask the same question of the marketplace
+  // addresses an operator adds by hand (DOR-1710). These cases pin the answer
+  // for that caller, independent of the schemas that also use it.
+  it('accepts the transports git may be handed', () => {
+    for (const url of [
+      'https://github.com/dork-labs/marketplace',
+      'git://example.com/repo.git',
+      'ssh://git@example.com/repo.git',
+      'git@github.com:dork-labs/marketplace.git',
+    ]) {
+      expect(isSafeGitUrl(url), url).toBe(true);
+    }
+  });
+
+  it('refuses command-running transports, unknown schemes, and option-shaped values', () => {
+    for (const url of [
+      "ext::sh -c 'id > /tmp/pwned'",
+      'fd::0/foo',
+      'file:///etc',
+      'http://example.com/repo.git',
+      'github.com/dork-labs/marketplace',
+      '--upload-pack=touch /tmp/pwned',
+      '-oProxyCommand=touch /tmp/pwned',
+      '',
+    ]) {
+      expect(isSafeGitUrl(url), url).toBe(false);
     }
   });
 });

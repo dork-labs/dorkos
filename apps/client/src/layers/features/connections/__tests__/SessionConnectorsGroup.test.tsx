@@ -94,7 +94,7 @@ describe('SessionConnectorsGroup', () => {
     renderGroup(transport);
 
     expect(await screen.findByText('no tools')).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('expired — reconnect');
+    expect(screen.getByRole('alert')).toHaveTextContent('expired. Reconnect');
   });
 
   it('shows the custody disclosure before the attach consent click', async () => {
@@ -144,7 +144,11 @@ describe('SessionConnectorsGroup', () => {
     await user.click(screen.getByRole('button', { name: 'Gmail (work)' }));
     await user.click(screen.getByRole('button', { name: 'Attach' }));
 
-    expect(await screen.findByText(/attached, but not available right now/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        /Attached, but there is a problem\. This account is not available right now\./i
+      )
+    ).toBeInTheDocument();
   });
 
   it('detaches an account with one action', async () => {

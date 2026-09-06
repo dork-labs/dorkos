@@ -9,7 +9,8 @@
  * wired app without reaching for one.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, type Db } from '@dorkos/db';
@@ -69,6 +70,7 @@ import { initToolGroupGate, resetToolGroupGate } from '../../services/core/capab
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
 
 const ANA_PATH = '/agents/ana';
 const BO_PATH = '/agents/bo';
@@ -92,7 +94,7 @@ function registerAgent(db: Db, name: string, projectPath: string): void {
 
 /** Create a channel and return its body. */
 async function createChannel(title = 'Backend'): Promise<Record<string, never> & { id: string }> {
-  const res = await request(app).post('/api/rooms').send({ kind: 'channel', title });
+  const res = await request(testServer).post('/api/rooms').send({ kind: 'channel', title });
   expect(res.status).toBe(201);
   return res.body;
 }
@@ -124,7 +126,7 @@ describe('/api/rooms', () => {
 
   describe('POST /', () => {
     it('creates a channel and returns it with its roster', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/rooms')
         .send({ kind: 'channel', title: 'Backend', topic: 'the API' });
 
@@ -135,13 +137,13 @@ describe('/api/rooms', () => {
     });
 
     it('rejects a body with neither a title nor a slug', async () => {
-      const res = await request(app).post('/api/rooms').send({ kind: 'channel' });
+      const res = await request(testServer).post('/api/rooms').send({ kind: 'channel' });
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
     });
 
     it('seeds a direct message with several agents in one call', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .post('/api/rooms')
         .send({ kind: 'dm', title: 'Ana and Bo', agentPaths: [ANA_PATH, BO_PATH] });
 
@@ -155,10 +157,10 @@ describe('/api/rooms', () => {
     });
 
     it('answers a repeated direct message with the room that already holds those people', async () => {
-      const first = await request(app)
+      const first = await request(testServer)
         .post('/api/rooms')
         .send({ kind: 'dm', title: 'Ana and Bo', agentPaths: [ANA_PATH, BO_PATH] });
-      const again = await request(app)
+      const again = await request(testServer)
         .post('/api/rooms')
         .send({ kind: 'dm', title: 'Ana and Bo again', agentPaths: [BO_PATH, ANA_PATH] });
 
@@ -167,16 +169,16 @@ describe('/api/rooms', () => {
       expect(first.status).toBe(201);
       expect(again.status).toBe(200);
       expect(again.body.id).toBe(first.body.id);
-      expect((await request(app).get('/api/rooms').query({ kind: 'dm' })).body.rooms).toHaveLength(
-        1
-      );
+      expect(
+        (await request(testServer).get('/api/rooms').query({ kind: 'dm' })).body.rooms
+      ).toHaveLength(1);
     });
 
     it('serializes the same body on both paths, with no bookkeeping field on the wire', async () => {
-      const created = await request(app)
+      const created = await request(testServer)
         .post('/api/rooms')
         .send({ kind: 'dm', title: 'Ana', agentPaths: [ANA_PATH] });
-      const matched = await request(app)
+      const matched = await request(testServer)
         .post('/api/rooms')
         .send({ kind: 'dm', title: 'Ana', agentPaths: [ANA_PATH] });
 
@@ -188,30 +190,36 @@ describe('/api/rooms', () => {
     });
 
     it('answers 201 for a channel every time, since only a DM dedupes', async () => {
-      const first = await request(app).post('/api/rooms').send({ kind: 'channel', title: 'One' });
-      const second = await request(app).post('/api/rooms').send({ kind: 'channel', title: 'Two' });
+      const first = await request(testServer)
+        .post('/api/rooms')
+        .send({ kind: 'channel', title: 'One' });
+      const second = await request(testServer)
+        .post('/api/rooms')
+        .send({ kind: 'channel', title: 'Two' });
       expect(first.status).toBe(201);
       expect(second.status).toBe(201);
     });
 
     it('still opens a separate conversation for a subset of a group', async () => {
-      const group = await request(app)
+      const group = await request(testServer)
         .post('/api/rooms')
         .send({ kind: 'dm', title: 'Ana and Bo', agentPaths: [ANA_PATH, BO_PATH] });
-      const alone = await request(app)
+      const alone = await request(testServer)
         .post('/api/rooms')
         .send({ kind: 'dm', title: 'Ana', agentPaths: [ANA_PATH] });
 
       expect(alone.status).toBe(201);
       expect(alone.body.id).not.toBe(group.body.id);
-      expect((await request(app).get('/api/rooms').query({ kind: 'dm' })).body.rooms).toHaveLength(
-        2
-      );
+      expect(
+        (await request(testServer).get('/api/rooms').query({ kind: 'dm' })).body.rooms
+      ).toHaveLength(2);
     });
 
     it('409s a duplicate live channel slug', async () => {
-      await request(app).post('/api/rooms').send({ kind: 'channel', slug: 'general', title: 'G' });
-      const res = await request(app)
+      await request(testServer)
+        .post('/api/rooms')
+        .send({ kind: 'channel', slug: 'general', title: 'G' });
+      const res = await request(testServer)
         .post('/api/rooms')
         .send({ kind: 'channel', slug: 'general', title: 'G' });
 
@@ -223,9 +231,9 @@ describe('/api/rooms', () => {
   describe('GET /', () => {
     it('lists rooms with the caller unread count', async () => {
       const room = await createChannel();
-      await request(app).post(`/api/rooms/${room.id}/entries`).send({ text: 'hello' });
+      await request(testServer).post(`/api/rooms/${room.id}/entries`).send({ text: 'hello' });
 
-      const res = await request(app).get('/api/rooms');
+      const res = await request(testServer).get('/api/rooms');
       expect(res.status).toBe(200);
       expect(res.body.rooms).toHaveLength(1);
       expect(res.body.rooms[0].unreadCount).toBe(1);
@@ -233,18 +241,20 @@ describe('/api/rooms', () => {
 
     it('filters by kind', async () => {
       await createChannel();
-      await request(app).post('/api/rooms').send({ kind: 'dm', title: 'Ana' });
+      await request(testServer).post('/api/rooms').send({ kind: 'dm', title: 'Ana' });
 
-      const res = await request(app).get('/api/rooms').query({ kind: 'dm' });
+      const res = await request(testServer).get('/api/rooms').query({ kind: 'dm' });
       expect(res.body.rooms.map((r: { kind: string }) => r.kind)).toEqual(['dm']);
     });
 
     it('hides archived rooms unless asked', async () => {
       const room = await createChannel();
-      await request(app).patch(`/api/rooms/${room.id}`).send({ archived: true });
+      await request(testServer).patch(`/api/rooms/${room.id}`).send({ archived: true });
 
-      expect((await request(app).get('/api/rooms')).body.rooms).toHaveLength(0);
-      const withArchived = await request(app).get('/api/rooms').query({ includeArchived: 'true' });
+      expect((await request(testServer).get('/api/rooms')).body.rooms).toHaveLength(0);
+      const withArchived = await request(testServer)
+        .get('/api/rooms')
+        .query({ includeArchived: 'true' });
       expect(withArchived.body.rooms).toHaveLength(1);
     });
 
@@ -256,19 +266,19 @@ describe('/api/rooms', () => {
       // activity, so ordering and the DM-only `participants` field both vary
       // and a reshape cannot hide behind a single row.
       const first = await createChannel('Backend');
-      await request(app)
+      await request(testServer)
         .post('/api/rooms')
         .send({ kind: 'dm', title: 'Ana', agentPaths: [ANA_PATH] });
       const last = await createChannel('Design');
-      await request(app).post(`/api/rooms/${first.id}/entries`).send({ text: 'hello' });
-      await request(app).post(`/api/rooms/${last.id}/entries`).send({ text: 'hi' });
+      await request(testServer).post(`/api/rooms/${first.id}/entries`).send({ text: 'hello' });
+      await request(testServer).post(`/api/rooms/${last.id}/entries`).send({ text: 'hi' });
 
       // Whoever the server resolved this request as — the same author the route
       // lists for, read off a room rather than assumed.
-      const viewer = (await request(app).get(`/api/rooms/${first.id}`)).body.viewerAuthorId;
+      const viewer = (await request(testServer).get(`/api/rooms/${first.id}`)).body.viewerAuthorId;
       const direct = getRoomService().listRooms(viewer, {});
 
-      const res = await request(app).get('/api/rooms');
+      const res = await request(testServer).get('/api/rooms');
       expect(res.status).toBe(200);
       expect(res.body.rooms).toEqual(JSON.parse(JSON.stringify(direct)));
     });
@@ -277,7 +287,7 @@ describe('/api/rooms', () => {
       // Present, not absent: a client reading `warnings` must never have to tell
       // "no community degraded" apart from "this server does not report it".
       await createChannel();
-      const res = await request(app).get('/api/rooms');
+      const res = await request(testServer).get('/api/rooms');
       expect(res.body.warnings).toEqual([]);
     });
   });
@@ -285,13 +295,13 @@ describe('/api/rooms', () => {
   describe('GET /:id', () => {
     it('returns one room with its roster', async () => {
       const room = await createChannel();
-      const res = await request(app).get(`/api/rooms/${room.id}`);
+      const res = await request(testServer).get(`/api/rooms/${room.id}`);
       expect(res.status).toBe(200);
       expect(res.body.id).toBe(room.id);
     });
 
     it('404s an unknown room', async () => {
-      const res = await request(app).get('/api/rooms/nope');
+      const res = await request(testServer).get('/api/rooms/nope');
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('ROOM_NOT_FOUND');
     });
@@ -301,7 +311,7 @@ describe('/api/rooms', () => {
       // author kind, which stops being the reader the moment two people share
       // a room (spec `invites` §4.5).
       const room = await createChannel();
-      const res = await request(app).get(`/api/rooms/${room.id}`);
+      const res = await request(testServer).get(`/api/rooms/${room.id}`);
       const me = res.body.viewerAuthorId;
       expect(me).toEqual(expect.any(String));
       expect(res.body.members.map((m: { authorId: string }) => m.authorId)).toContain(me);
@@ -311,10 +321,12 @@ describe('/api/rooms', () => {
       const room = await createChannel();
       const identity = initAgentIdentityService(db);
       const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
-      await request(app).post(`/api/rooms/${room.id}/members`).send({ agentPath: ANA_PATH });
+      await request(testServer).post(`/api/rooms/${room.id}/members`).send({ agentPath: ANA_PATH });
 
-      const asHuman = await request(app).get(`/api/rooms/${room.id}`);
-      const asAgent = await request(app).get(`/api/rooms/${room.id}`).set('X-DorkOS-Agent', token);
+      const asHuman = await request(testServer).get(`/api/rooms/${room.id}`);
+      const asAgent = await request(testServer)
+        .get(`/api/rooms/${room.id}`)
+        .set('X-DorkOS-Agent', token);
 
       expect(asAgent.body.viewerAuthorId).not.toBe(asHuman.body.viewerAuthorId);
     });
@@ -339,7 +351,9 @@ describe('/api/rooms', () => {
 
     it('flips the override on a bridged room and it sticks', async () => {
       const room = bridgeRoom('900', true);
-      const res = await request(app).patch(`/api/rooms/${room.id}`).send({ deliverNotices: true });
+      const res = await request(testServer)
+        .patch(`/api/rooms/${room.id}`)
+        .send({ deliverNotices: true });
       expect(res.status).toBe(200);
 
       const { bridges } = createRoomSubsystem({ db });
@@ -348,7 +362,9 @@ describe('/api/rooms', () => {
 
     it('flips it off on a bridged dm and it sticks', async () => {
       const room = bridgeRoom('901');
-      const res = await request(app).patch(`/api/rooms/${room.id}`).send({ deliverNotices: false });
+      const res = await request(testServer)
+        .patch(`/api/rooms/${room.id}`)
+        .send({ deliverNotices: false });
       expect(res.status).toBe(200);
 
       const { bridges } = createRoomSubsystem({ db });
@@ -357,14 +373,16 @@ describe('/api/rooms', () => {
 
     it('refuses NOT_A_BRIDGED_ROOM (409) on a plain channel', async () => {
       const room = await createChannel();
-      const res = await request(app).patch(`/api/rooms/${room.id}`).send({ deliverNotices: true });
+      const res = await request(testServer)
+        .patch(`/api/rooms/${room.id}`)
+        .send({ deliverNotices: true });
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('NOT_A_BRIDGED_ROOM');
     });
 
     it('leaves a title/topic patch on an unbridged room unaffected when deliverNotices is absent', async () => {
       const room = await createChannel();
-      const res = await request(app).patch(`/api/rooms/${room.id}`).send({ topic: 'hello' });
+      const res = await request(testServer).patch(`/api/rooms/${room.id}`).send({ topic: 'hello' });
       expect(res.status).toBe(200);
       expect(res.body.topic).toBe('hello');
     });
@@ -375,13 +393,13 @@ describe('/api/rooms', () => {
     async function anaIn(roomId: string): Promise<string> {
       const identity = initAgentIdentityService(db);
       const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
-      await request(app).post(`/api/rooms/${roomId}/members`).send({ agentPath: ANA_PATH });
+      await request(testServer).post(`/api/rooms/${roomId}/members`).send({ agentPath: ANA_PATH });
       return token;
     }
 
     it('stores the four overrides and hands them straight back', async () => {
       const room = await createChannel();
-      const res = await request(app).patch(`/api/rooms/${room.id}`).send({
+      const res = await request(testServer).patch(`/api/rooms/${room.id}`).send({
         turnLimitsEnabled: false,
         maxAgentDepth: 4,
         maxTurnsPerAgentPerCascade: 2,
@@ -395,13 +413,13 @@ describe('/api/rooms', () => {
         maxAutoTurnsPerHour: 12,
       });
       // And on the read path, so a client can draw what is set.
-      const read = await request(app).get(`/api/rooms/${room.id}`);
+      const read = await request(testServer).get(`/api/rooms/${room.id}`);
       expect(read.body.maxAgentDepth).toBe(4);
     });
 
     it('leaves a room inheriting when nothing was ever set', async () => {
       const room = await createChannel();
-      const read = await request(app).get(`/api/rooms/${room.id}`);
+      const read = await request(testServer).get(`/api/rooms/${room.id}`);
       expect(read.body).toMatchObject({
         turnLimitsEnabled: null,
         maxAgentDepth: null,
@@ -412,8 +430,10 @@ describe('/api/rooms', () => {
 
     it('leaves an override alone when the field is absent from the patch', async () => {
       const room = await createChannel();
-      await request(app).patch(`/api/rooms/${room.id}`).send({ maxAgentDepth: 4 });
-      const res = await request(app).patch(`/api/rooms/${room.id}`).send({ topic: 'unrelated' });
+      await request(testServer).patch(`/api/rooms/${room.id}`).send({ maxAgentDepth: 4 });
+      const res = await request(testServer)
+        .patch(`/api/rooms/${room.id}`)
+        .send({ topic: 'unrelated' });
       expect(res.status).toBe(200);
       expect(res.body.maxAgentDepth).toBe(4);
     });
@@ -422,8 +442,8 @@ describe('/api/rooms', () => {
       // Absent means "do not touch" and `null` means "go back to inheriting" —
       // the distinction this route exists to carry.
       const room = await createChannel();
-      await request(app).patch(`/api/rooms/${room.id}`).send({ maxAgentDepth: 4 });
-      const cleared = await request(app)
+      await request(testServer).patch(`/api/rooms/${room.id}`).send({ maxAgentDepth: 4 });
+      const cleared = await request(testServer)
         .patch(`/api/rooms/${room.id}`)
         .send({ maxAgentDepth: null });
       expect(cleared.status).toBe(200);
@@ -432,8 +452,8 @@ describe('/api/rooms', () => {
 
     it('clears the toggle with an explicit null, which is not the same as false', async () => {
       const room = await createChannel();
-      await request(app).patch(`/api/rooms/${room.id}`).send({ turnLimitsEnabled: false });
-      const cleared = await request(app)
+      await request(testServer).patch(`/api/rooms/${room.id}`).send({ turnLimitsEnabled: false });
+      const cleared = await request(testServer)
         .patch(`/api/rooms/${room.id}`)
         .send({ turnLimitsEnabled: null });
       expect(cleared.body.turnLimitsEnabled).toBeNull();
@@ -446,21 +466,21 @@ describe('/api/rooms', () => {
       // half this route cannot reach, a human who is not the owner.
       const room = await createChannel();
       const token = await anaIn(room.id);
-      const res = await request(app)
+      const res = await request(testServer)
         .patch(`/api/rooms/${room.id}`)
         .set('X-DorkOS-Agent', token)
         .send({ maxAgentDepth: 99 });
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OPERATOR_ONLY');
-      const read = await request(app).get(`/api/rooms/${room.id}`);
+      const read = await request(testServer).get(`/api/rooms/${room.id}`);
       expect(read.body.maxAgentDepth).toBeNull();
     });
 
     it('refuses an agent CLEARING one too — a clear is a write', async () => {
       const room = await createChannel();
-      await request(app).patch(`/api/rooms/${room.id}`).send({ maxAgentDepth: 4 });
+      await request(testServer).patch(`/api/rooms/${room.id}`).send({ maxAgentDepth: 4 });
       const token = await anaIn(room.id);
-      const res = await request(app)
+      const res = await request(testServer)
         .patch(`/api/rooms/${room.id}`)
         .set('X-DorkOS-Agent', token)
         .send({ maxAgentDepth: null });
@@ -477,11 +497,11 @@ describe('/api/rooms', () => {
       const token = await anaIn(room.id);
 
       const [limit, topic] = await Promise.all([
-        request(app)
+        request(testServer)
           .patch(`/api/rooms/${room.id}`)
           .set('X-DorkOS-Agent', token)
           .send({ maxAgentDepth: 99 }),
-        request(app)
+        request(testServer)
           .patch(`/api/rooms/${room.id}`)
           .set('X-DorkOS-Agent', token)
           .send({ topic: 'what we are working on' }),
@@ -501,7 +521,7 @@ describe('/api/rooms', () => {
       const room = await createChannel();
       const identity = initAgentIdentityService(db);
       const token = await identity.mint({ agentPath: BO_PATH, displayName: 'Bo' });
-      const res = await request(app)
+      const res = await request(testServer)
         .patch(`/api/rooms/${room.id}`)
         .set('X-DorkOS-Agent', token)
         .send({ maxAgentDepth: 99 });
@@ -512,20 +532,28 @@ describe('/api/rooms', () => {
       const room = await createChannel();
       // 100 is the shared ceiling; 101 is one past it.
       expect(
-        (await request(app).patch(`/api/rooms/${room.id}`).send({ maxAgentDepth: 101 })).status
+        (await request(testServer).patch(`/api/rooms/${room.id}`).send({ maxAgentDepth: 101 }))
+          .status
       ).toBe(400);
       // The per-agent counter's floor is 1 — zero would mean "never answer",
       // which is what the toggle is for.
       expect(
-        (await request(app).patch(`/api/rooms/${room.id}`).send({ maxTurnsPerAgentPerCascade: 0 }))
-          .status
+        (
+          await request(testServer)
+            .patch(`/api/rooms/${room.id}`)
+            .send({ maxTurnsPerAgentPerCascade: 0 })
+        ).status
       ).toBe(400);
       expect(
-        (await request(app).patch(`/api/rooms/${room.id}`).send({ maxAutoTurnsPerHour: 10_001 }))
-          .status
+        (
+          await request(testServer)
+            .patch(`/api/rooms/${room.id}`)
+            .send({ maxAutoTurnsPerHour: 10_001 })
+        ).status
       ).toBe(400);
       expect(
-        (await request(app).patch(`/api/rooms/${room.id}`).send({ maxAgentDepth: 2.5 })).status
+        (await request(testServer).patch(`/api/rooms/${room.id}`).send({ maxAgentDepth: 2.5 }))
+          .status
       ).toBe(400);
     });
   });
@@ -550,7 +578,7 @@ describe('/api/rooms', () => {
       });
       const plain = await createChannel();
 
-      const res = await request(app).get('/api/rooms');
+      const res = await request(testServer).get('/api/rooms');
       expect(res.status).toBe(200);
       const byId = new Map<string, { bridge?: unknown }>(
         res.body.rooms.map((room: { id: string }) => [room.id, room])
@@ -567,7 +595,9 @@ describe('/api/rooms', () => {
   describe('POST /:id/entries', () => {
     it('accepts with 202 and returns the entry identity, not the entry', async () => {
       const room = await createChannel();
-      const res = await request(app).post(`/api/rooms/${room.id}/entries`).send({ text: 'hello' });
+      const res = await request(testServer)
+        .post(`/api/rooms/${room.id}/entries`)
+        .send({ text: 'hello' });
 
       // Trigger-only, mirroring POST /api/sessions/:id/messages: delivery is
       // the SSE stream's job, so the body carries identity — plus who the
@@ -588,27 +618,31 @@ describe('/api/rooms', () => {
 
     it('rejects an empty message', async () => {
       const room = await createChannel();
-      const res = await request(app).post(`/api/rooms/${room.id}/entries`).send({ text: '' });
+      const res = await request(testServer)
+        .post(`/api/rooms/${room.id}/entries`)
+        .send({ text: '' });
       expect(res.status).toBe(400);
     });
 
     it('409s a post into an archived room', async () => {
       const room = await createChannel();
-      await request(app).patch(`/api/rooms/${room.id}`).send({ archived: true });
+      await request(testServer).patch(`/api/rooms/${room.id}`).send({ archived: true });
 
-      const res = await request(app).post(`/api/rooms/${room.id}/entries`).send({ text: 'hi' });
+      const res = await request(testServer)
+        .post(`/api/rooms/${room.id}/entries`)
+        .send({ text: 'hi' });
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('ROOM_ARCHIVED');
     });
 
     it('does not let the body choose an author', async () => {
       const room = await createChannel();
-      await request(app)
+      await request(testServer)
         .post(`/api/rooms/${room.id}/entries`)
         .send({ text: 'hi', authorId: 'somebody-else' });
 
-      const entries = await request(app).get(`/api/rooms/${room.id}/entries`);
-      const roster = await request(app).get(`/api/rooms/${room.id}`);
+      const entries = await request(testServer).get(`/api/rooms/${room.id}/entries`);
+      const roster = await request(testServer).get(`/api/rooms/${room.id}`);
       expect(entries.body.entries[0].authorId).toBe(roster.body.members[0].authorId);
     });
   });
@@ -630,7 +664,7 @@ describe('/api/rooms', () => {
     it('sets a handle, and gives it back on the author it reaches', async () => {
       const authorId = await operatorAuthorId();
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch(`/api/rooms/authors/${authorId}/handle`)
         .send({ handle: '  Dorian  ' });
 
@@ -644,7 +678,7 @@ describe('/api/rooms', () => {
     it('400s a spelling the grammar rejects', async () => {
       const authorId = await operatorAuthorId();
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch(`/api/rooms/authors/${authorId}/handle`)
         .send({ handle: 'not a handle' });
 
@@ -657,9 +691,9 @@ describe('/api/rooms', () => {
     it('409s a handle live on another author', async () => {
       const room = await createChannel('Taken');
       const me = memberIds(room)[0];
-      await request(app).post(`/api/rooms/${room.id}/members`).send({ agentPath: ANA_PATH });
+      await request(testServer).post(`/api/rooms/${room.id}/members`).send({ agentPath: ANA_PATH });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch(`/api/rooms/authors/${me}/handle`)
         .send({ handle: 'ana' });
 
@@ -670,15 +704,17 @@ describe('/api/rooms', () => {
     it('409s a handle reserved to somebody else', async () => {
       const room = await createChannel('Reserved');
       const me = memberIds(room)[0];
-      await request(app).post(`/api/rooms/${room.id}/members`).send({ agentPath: ANA_PATH });
-      const anaId = (await request(app).get(`/api/rooms/${room.id}`)).body.members.find(
+      await request(testServer).post(`/api/rooms/${room.id}/members`).send({ agentPath: ANA_PATH });
+      const anaId = (await request(testServer).get(`/api/rooms/${room.id}`)).body.members.find(
         (m: { author: { displayName: string } }) => m.author.displayName === 'Ana'
       ).authorId as string;
 
       // Ana releases `ana`. It stays hers, forever.
-      await request(app).patch(`/api/rooms/authors/${anaId}/handle`).send({ handle: 'ana-pm' });
+      await request(testServer)
+        .patch(`/api/rooms/authors/${anaId}/handle`)
+        .send({ handle: 'ana-pm' });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch(`/api/rooms/authors/${me}/handle`)
         .send({ handle: 'ana' });
 
@@ -695,7 +731,7 @@ describe('/api/rooms', () => {
       const identity = initAgentIdentityService(db);
       const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch(`/api/rooms/authors/${me}/handle`)
         .set('X-DorkOS-Agent', token)
         .send({ handle: 'stolen' });
@@ -705,7 +741,7 @@ describe('/api/rooms', () => {
     });
 
     it('404s an author that does not exist', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .patch('/api/rooms/authors/01NOSUCHAUTHOR/handle')
         .send({ handle: 'nobody' });
 
@@ -718,13 +754,13 @@ describe('/api/rooms', () => {
     it('answers with how many turns it stopped, and writes the room a notice', async () => {
       const room = await createChannel();
 
-      const res = await request(app).post(`/api/rooms/${room.id}/halt`);
+      const res = await request(testServer).post(`/api/rooms/${room.id}/halt`);
 
       // Nothing was running, and that is a real answer rather than a failure —
       // pressing stop in a quiet room is a question, and the room answers it.
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ stopped: 0 });
-      const entries = await request(app).get(`/api/rooms/${room.id}/entries`);
+      const entries = await request(testServer).get(`/api/rooms/${room.id}/entries`);
       expect(entries.body.entries.at(-1).body.notice).toBe('halted');
     });
 
@@ -732,11 +768,11 @@ describe('/api/rooms', () => {
       // Express 5 leaves `req.body` undefined on an empty POST, so a handler
       // that parsed one would refuse every honest caller.
       const room = await createChannel();
-      expect((await request(app).post(`/api/rooms/${room.id}/halt`)).status).toBe(200);
+      expect((await request(testServer).post(`/api/rooms/${room.id}/halt`)).status).toBe(200);
     });
 
     it('404s a room that is not there', async () => {
-      const res = await request(app).post('/api/rooms/no-such-room/halt');
+      const res = await request(testServer).post('/api/rooms/no-such-room/halt');
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('ROOM_NOT_FOUND');
     });
@@ -747,9 +783,9 @@ describe('/api/rooms', () => {
       // archived is still running, and refusing here would put the only way to
       // stop it behind a door that has just been shut.
       const room = await createChannel();
-      await request(app).patch(`/api/rooms/${room.id}`).send({ archived: true });
+      await request(testServer).patch(`/api/rooms/${room.id}`).send({ archived: true });
 
-      const res = await request(app).post(`/api/rooms/${room.id}/halt`);
+      const res = await request(testServer).post(`/api/rooms/${room.id}/halt`);
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ stopped: 0 });
     });
@@ -765,8 +801,9 @@ describe('/api/rooms', () => {
       title = 'Stop one'
     ): Promise<{ id: string; ana: string; me: string }> {
       const room = await createChannel(title);
-      await request(app).post(`/api/rooms/${room.id}/members`).send({ agentPath: ANA_PATH });
-      const roster = (await request(app).get(`/api/rooms/${room.id}`)).body.members as Array<{
+      await request(testServer).post(`/api/rooms/${room.id}/members`).send({ agentPath: ANA_PATH });
+      const roster = (await request(testServer).get(`/api/rooms/${room.id}`)).body
+        .members as Array<{
         authorId: string;
         author: { kind: string; displayName: string };
       }>;
@@ -779,7 +816,7 @@ describe('/api/rooms', () => {
 
     /** Every `halted` notice stored in a room. */
     async function haltedIn(roomId: string): Promise<Array<{ body: Record<string, string> }>> {
-      const entries = (await request(app).get(`/api/rooms/${roomId}/entries`)).body
+      const entries = (await request(testServer).get(`/api/rooms/${roomId}/entries`)).body
         .entries as Array<{ body: Record<string, string> }>;
       return entries.filter((entry) => entry.body.notice === 'halted');
     }
@@ -787,7 +824,7 @@ describe('/api/rooms', () => {
     it('answers whether a turn was stopped, and names the agent in the room', async () => {
       const room = await channelWithAna();
 
-      const res = await request(app).post(`/api/rooms/${room.id}/halt/${room.ana}`);
+      const res = await request(testServer).post(`/api/rooms/${room.id}/halt/${room.ana}`);
 
       // Nothing was running, and that is a real answer rather than a failure:
       // pressing Stop is a question, and the room answers it either way.
@@ -809,7 +846,7 @@ describe('/api/rooms', () => {
       const identity = initAgentIdentityService(db);
       const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/rooms/${room.id}/halt/${room.ana}`)
         .set('X-DorkOS-Agent', token);
 
@@ -826,10 +863,10 @@ describe('/api/rooms', () => {
       const identity = initAgentIdentityService(db);
       const token = await identity.mint({ agentPath: BO_PATH, displayName: 'Bo' });
 
-      const unseen = await request(app)
+      const unseen = await request(testServer)
         .post(`/api/rooms/${room.id}/halt/${room.ana}`)
         .set('X-DorkOS-Agent', token);
-      const missing = await request(app)
+      const missing = await request(testServer)
         .post(`/api/rooms/no-such-room/halt/${room.ana}`)
         .set('X-DorkOS-Agent', token);
 
@@ -845,13 +882,13 @@ describe('/api/rooms', () => {
       // client bug behind a success.
       const room = await channelWithAna('No such member');
 
-      const stranger = await request(app).post(`/api/rooms/${room.id}/halt/01NOSUCHAUTHOR`);
+      const stranger = await request(testServer).post(`/api/rooms/${room.id}/halt/01NOSUCHAUTHOR`);
       expect(stranger.status).toBe(404);
       expect(stranger.body.code).toBe('MEMBER_NOT_FOUND');
 
       // A PERSON on the roster is refused by the same code, and the sentence is
       // literally true: there is no agent by that id here.
-      const person = await request(app).post(`/api/rooms/${room.id}/halt/${room.me}`);
+      const person = await request(testServer).post(`/api/rooms/${room.id}/halt/${room.me}`);
       expect(person.status).toBe(404);
       expect(person.body.code).toBe('MEMBER_NOT_FOUND');
       expect(await haltedIn(room.id)).toHaveLength(0);
@@ -863,9 +900,9 @@ describe('/api/rooms', () => {
       // it was archived is still running. Red if somebody adds an archive guard
       // here by symmetry with `post`.
       const room = await channelWithAna('Archived');
-      await request(app).patch(`/api/rooms/${room.id}`).send({ archived: true });
+      await request(testServer).patch(`/api/rooms/${room.id}`).send({ archived: true });
 
-      const res = await request(app).post(`/api/rooms/${room.id}/halt/${room.ana}`);
+      const res = await request(testServer).post(`/api/rooms/${room.id}/halt/${room.ana}`);
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ stopped: 0 });
@@ -876,10 +913,10 @@ describe('/api/rooms', () => {
     it('pages backwards from a seq', async () => {
       const room = await createChannel();
       for (const text of ['one', 'two', 'three']) {
-        await request(app).post(`/api/rooms/${room.id}/entries`).send({ text });
+        await request(testServer).post(`/api/rooms/${room.id}/entries`).send({ text });
       }
 
-      const page = await request(app)
+      const page = await request(testServer)
         .get(`/api/rooms/${room.id}/entries`)
         .query({ before: 3, limit: 2 });
       expect(page.body.entries.map((e: { seq: number }) => e.seq)).toEqual([1, 2]);
@@ -887,8 +924,132 @@ describe('/api/rooms', () => {
 
     it('rejects an out-of-range limit rather than clamping it silently', async () => {
       const room = await createChannel();
-      const res = await request(app).get(`/api/rooms/${room.id}/entries`).query({ limit: 5000 });
+      const res = await request(testServer)
+        .get(`/api/rooms/${room.id}/entries`)
+        .query({ limit: 5000 });
       expect(res.status).toBe(400);
+    });
+
+    /**
+     * The cursor a reader scrolls back on (DOR-1734).
+     *
+     * The route has served `?before=` since rooms shipped; what it had never
+     * been asked is whether the answers a CLIENT paging backwards depends on
+     * hold — that consecutive pages tile the room without gaps or repeats, that
+     * the beginning of a room is a distinguishable answer rather than a silent
+     * repeat of the same page, and that a cursor nobody could have meant is
+     * refused rather than coerced into one.
+     */
+    describe('?before= — reading past the page the room opened on', () => {
+      /** A room with `count` posts in it, written through the real route. */
+      async function roomOf(count: number): Promise<string> {
+        const room = await createChannel();
+        for (let i = 1; i <= count; i++) {
+          await request(testServer)
+            .post(`/api/rooms/${room.id}/entries`)
+            .send({ text: `line ${i}` });
+        }
+        return room.id;
+      }
+
+      /** The seqs one page carries. */
+      function seqs(body: { entries: { seq: number }[] }): number[] {
+        return body.entries.map((entry) => entry.seq);
+      }
+
+      it('tiles the room exactly: consecutive pages meet, with no gap and no repeat', async () => {
+        // The property a reader actually has, stated over the whole room rather
+        // than over one page: page backwards to the beginning and you have read
+        // every entry, once. A cursor that was inclusive at either end would
+        // repeat a line here, and one that stepped by the wrong amount would
+        // lose one.
+        const roomId = await roomOf(12);
+
+        const collected: number[] = [];
+        let cursor: number | undefined;
+        for (let read = 0; read < 10; read++) {
+          const res = await request(testServer)
+            .get(`/api/rooms/${roomId}/entries`)
+            .query(cursor === undefined ? { limit: 5 } : { before: cursor, limit: 5 });
+          expect(res.status).toBe(200);
+          const page = seqs(res.body);
+          if (page.length === 0) break;
+          collected.unshift(...page);
+          cursor = page[0];
+        }
+
+        expect(collected).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+      });
+
+      it('answers an empty page below the oldest entry, rather than the same page again', async () => {
+        // How a reader learns it has reached the beginning. An answer that
+        // clamped to the oldest entry instead would hand back a page the client
+        // already holds, forever, with a control that never goes away.
+        const roomId = await roomOf(3);
+
+        const res = await request(testServer)
+          .get(`/api/rooms/${roomId}/entries`)
+          .query({ before: 1, limit: 5 });
+
+        expect(res.status).toBe(200);
+        expect(res.body.entries).toEqual([]);
+        expect(res.body.threadRoots).toEqual([]);
+      });
+
+      it('resolves the roots of the page it is asked for, not of the newest one', async () => {
+        // `threadRoots` is per PAGE (DOR-690), and paging is where that stops
+        // being a distinction without a difference: the page under test is in
+        // the middle of the room, and the root it reaches back for is one no
+        // trailing page would have named.
+        const roomId = await createChannel().then((room) => room.id);
+        const root = await request(testServer)
+          .post(`/api/rooms/${roomId}/entries`)
+          .send({ text: 'why is the build slow?' });
+        for (let i = 0; i < 4; i++) {
+          await request(testServer)
+            .post(`/api/rooms/${roomId}/threads`)
+            .send({ rootEntryId: root.body.entryId, text: `answer ${i}` });
+        }
+        for (let i = 0; i < 4; i++) {
+          await request(testServer)
+            .post(`/api/rooms/${roomId}/entries`)
+            .send({ text: `later ${i}` });
+        }
+
+        // The trailing page holds only the four later posts and reaches back
+        // for nothing.
+        const trailing = await request(testServer)
+          .get(`/api/rooms/${roomId}/entries`)
+          .query({ limit: 4 });
+        expect(trailing.body.threadRoots).toEqual([]);
+
+        // The page before it is the four replies, and every one of them answers
+        // an entry the page does not hold.
+        const older = await request(testServer)
+          .get(`/api/rooms/${roomId}/entries`)
+          .query({ before: seqs(trailing.body)[0], limit: 4 });
+        expect(older.body.entries).toHaveLength(4);
+        expect((older.body.threadRoots as { id: string }[]).map((held) => held.id)).toEqual([
+          root.body.entryId,
+        ]);
+      });
+
+      it.each([
+        ['a word', 'oldest'],
+        ['a negative seq', '-5'],
+        ['zero, which is below every seq a room allocates', '0'],
+        ['a fraction, which is not a position in a log', '1.5'],
+      ])('refuses %s rather than reading something else', async (_case, before) => {
+        // Coerced silently, each of these is a DIFFERENT page: `NaN` and `0`
+        // both read as "no filter" in a hand-rolled parse and would answer the
+        // NEWEST page to a request for the oldest. The route's own idiom is a
+        // 400, the same one an out-of-range `limit` gets.
+        const roomId = await roomOf(3);
+
+        const res = await request(testServer).get(`/api/rooms/${roomId}/entries`).query({ before });
+
+        expect(res.status).toBe(400);
+      });
     });
 
     /**
@@ -909,11 +1070,11 @@ describe('/api/rooms', () => {
        */
       async function roomWithABuriedRoot(): Promise<{ id: string; rootEntryId: string }> {
         const room = await createChannel();
-        const root = await request(app)
+        const root = await request(testServer)
           .post(`/api/rooms/${room.id}/entries`)
           .send({ text: 'why is the build slow?' });
         for (let i = 0; i < 60; i++) {
-          const reply = await request(app)
+          const reply = await request(testServer)
             .post(`/api/rooms/${room.id}/threads`)
             .send({ rootEntryId: root.body.entryId, text: `answer ${i}` });
           expect(reply.status).toBe(202);
@@ -923,7 +1084,7 @@ describe('/api/rooms', () => {
 
       it('answers with the root the page replies to but does not hold', async () => {
         const room = await roomWithABuriedRoot();
-        const res = await request(app).get(`/api/rooms/${room.id}/entries`);
+        const res = await request(testServer).get(`/api/rooms/${room.id}/entries`);
 
         const entries = res.body.entries as { id: string; seq: number }[];
         const roots = res.body.threadRoots as { id: string; seq: number }[];
@@ -945,7 +1106,7 @@ describe('/api/rooms', () => {
         // room would draw "50 replies" under a thread the Threads list calls
         // sixty — one app disagreeing with itself about one conversation.
         const room = await roomWithABuriedRoot();
-        const res = await request(app).get(`/api/rooms/${room.id}/entries`);
+        const res = await request(testServer).get(`/api/rooms/${room.id}/entries`);
 
         const [root] = res.body.threadRoots as { threadReplyCount: number }[];
         expect(root.threadReplyCount).toBe(60);
@@ -958,28 +1119,28 @@ describe('/api/rooms', () => {
         // after it and the page runs to the newest entry, so a second number
         // here could only ever disagree with what is on screen.
         const room = await createChannel();
-        const root = await request(app)
+        const root = await request(testServer)
           .post(`/api/rooms/${room.id}/entries`)
           .send({ text: 'why is the build slow?' });
-        await request(app)
+        await request(testServer)
           .post(`/api/rooms/${room.id}/threads`)
           .send({ rootEntryId: root.body.entryId, text: 'the cache is cold' });
 
-        const res = await request(app).get(`/api/rooms/${room.id}/entries`);
+        const res = await request(testServer).get(`/api/rooms/${room.id}/entries`);
         const entries = res.body.entries as { threadReplyCount?: number }[];
         expect(entries.every((entry) => entry.threadReplyCount === undefined)).toBe(true);
       });
 
       it('says nothing when the page holds every root it points at', async () => {
         const room = await createChannel();
-        const root = await request(app)
+        const root = await request(testServer)
           .post(`/api/rooms/${room.id}/entries`)
           .send({ text: 'why is the build slow?' });
-        await request(app)
+        await request(testServer)
           .post(`/api/rooms/${room.id}/threads`)
           .send({ rootEntryId: root.body.entryId, text: 'the cache is cold' });
 
-        const res = await request(app).get(`/api/rooms/${room.id}/entries`);
+        const res = await request(testServer).get(`/api/rooms/${room.id}/entries`);
 
         // The self-contained page is the common one, and it costs nothing: no
         // extra rows on the wire and no second read behind them.
@@ -993,11 +1154,11 @@ describe('/api/rooms', () => {
         // because a root drawn without the reactions it had in the flow is a
         // message that changes when you scroll to it.
         const room = await roomWithABuriedRoot();
-        await request(app)
+        await request(testServer)
           .post(`/api/rooms/${room.id}/entries/${room.rootEntryId}/reactions`)
           .send({ emoji: '🎉' });
 
-        const res = await request(app).get(`/api/rooms/${room.id}/entries`);
+        const res = await request(testServer).get(`/api/rooms/${room.id}/entries`);
         const [rootBack] = res.body.threadRoots as { reactions: { emoji: string }[] }[];
         expect(rootBack.reactions.map((pill) => pill.emoji)).toEqual(['🎉']);
       });
@@ -1007,7 +1168,7 @@ describe('/api/rooms', () => {
   describe('members', () => {
     it('adds an agent by its directory and seeds a channel to engaged', async () => {
       const room = await createChannel();
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/rooms/${room.id}/members`)
         .send({ agentPath: ANA_PATH });
 
@@ -1018,7 +1179,7 @@ describe('/api/rooms', () => {
 
     it('never puts the agent directory on the wire', async () => {
       const room = await createChannel();
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/rooms/${room.id}/members`)
         .send({ agentPath: ANA_PATH });
       expect(JSON.stringify(res.body)).not.toContain(ANA_PATH);
@@ -1026,7 +1187,7 @@ describe('/api/rooms', () => {
 
     it('404s an agent path nothing is registered at', async () => {
       const room = await createChannel();
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/rooms/${room.id}/members`)
         .send({ agentPath: '/agents/ghost' });
 
@@ -1036,11 +1197,11 @@ describe('/api/rooms', () => {
 
     it('changes a response mode', async () => {
       const room = await createChannel();
-      const added = await request(app)
+      const added = await request(testServer)
         .post(`/api/rooms/${room.id}/members`)
         .send({ agentPath: ANA_PATH });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch(`/api/rooms/${room.id}/members/${added.body.authorId}`)
         .send({ responseMode: 'always' });
 
@@ -1050,11 +1211,11 @@ describe('/api/rooms', () => {
 
     it('rejects a response mode outside the shared enum', async () => {
       const room = await createChannel();
-      const added = await request(app)
+      const added = await request(testServer)
         .post(`/api/rooms/${room.id}/members`)
         .send({ agentPath: ANA_PATH });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .patch(`/api/rooms/${room.id}/members/${added.body.authorId}`)
         .send({ responseMode: 'sometimes' });
       expect(res.status).toBe(400);
@@ -1062,14 +1223,16 @@ describe('/api/rooms', () => {
 
     it('removes a member with 204', async () => {
       const room = await createChannel();
-      const added = await request(app)
+      const added = await request(testServer)
         .post(`/api/rooms/${room.id}/members`)
         .send({ agentPath: ANA_PATH });
 
-      const res = await request(app).delete(`/api/rooms/${room.id}/members/${added.body.authorId}`);
+      const res = await request(testServer).delete(
+        `/api/rooms/${room.id}/members/${added.body.authorId}`
+      );
       expect(res.status).toBe(204);
 
-      const again = await request(app).delete(
+      const again = await request(testServer).delete(
         `/api/rooms/${room.id}/members/${added.body.authorId}`
       );
       expect(again.status).toBe(404);
@@ -1084,22 +1247,22 @@ describe('/api/rooms', () => {
       // "restore the old endpoint for compatibility" honest — a second URL onto
       // one implementation is still a second thing to keep true.
       const room = await createChannel();
-      await request(app).post(`/api/rooms/${room.id}/entries`).send({ text: 'hello' });
+      await request(testServer).post(`/api/rooms/${room.id}/entries`).send({ text: 'hello' });
 
-      const gone = await request(app)
+      const gone = await request(testServer)
         .put(`/api/rooms/${room.id}/read-cursor`)
         .send({ lastReadSeq: 1 });
       expect(gone.status).toBe(404);
 
       // And the room's unread count still clears, through the one route there
       // is — so the 404 above is a removal and not a regression.
-      const res = await request(app)
+      const res = await request(testServer)
         .put(`/api/read-cursors/room/${room.id}`)
         .send({ lastReadSeq: 1 });
       expect(res.status).toBe(200);
       expect(res.body.lastReadSeq).toBe(1);
 
-      const list = await request(app).get('/api/rooms');
+      const list = await request(testServer).get('/api/rooms');
       expect(list.body.rooms[0].unreadCount).toBe(0);
     });
   });
@@ -1107,11 +1270,11 @@ describe('/api/rooms', () => {
   describe('POST /:id/threads', () => {
     it('accepts a reply and writes it into this room, not a new one', async () => {
       const room = await createChannel();
-      const posted = await request(app)
+      const posted = await request(testServer)
         .post(`/api/rooms/${room.id}/entries`)
         .send({ text: 'why is the build slow?' });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/rooms/${room.id}/threads`)
         .send({ rootEntryId: posted.body.entryId, text: 'the cache is cold' });
 
@@ -1120,7 +1283,7 @@ describe('/api/rooms', () => {
       expect(res.status).toBe(202);
       expect(res.body.accepted).toBe(true);
 
-      const entries = await request(app).get(`/api/rooms/${room.id}/entries?limit=50`);
+      const entries = await request(testServer).get(`/api/rooms/${room.id}/entries?limit=50`);
       const reply = entries.body.entries.find((e: { id: string }) => e.id === res.body.entryId) as {
         parentEntryId: string;
         threadRootEntryId: string;
@@ -1129,20 +1292,20 @@ describe('/api/rooms', () => {
       expect(reply.threadRootEntryId).toBe(posted.body.entryId);
 
       // And no room was minted. The room list is the channel and nothing else.
-      const rooms = await request(app).get('/api/rooms');
+      const rooms = await request(testServer).get('/api/rooms');
       expect(rooms.body.rooms.map((r: { id: string }) => r.id)).toEqual([room.id]);
     });
 
     it('400s a reply whose root is itself a reply', async () => {
       const room = await createChannel();
-      const posted = await request(app)
+      const posted = await request(testServer)
         .post(`/api/rooms/${room.id}/entries`)
         .send({ text: 'why is the build slow?' });
-      const reply = await request(app)
+      const reply = await request(testServer)
         .post(`/api/rooms/${room.id}/threads`)
         .send({ rootEntryId: posted.body.entryId, text: 'the cache is cold' });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/rooms/${room.id}/threads`)
         .send({ rootEntryId: reply.body.entryId, text: 'deeper' });
 
@@ -1152,7 +1315,7 @@ describe('/api/rooms', () => {
 
     it('404s a reply to an entry this room does not hold', async () => {
       const room = await createChannel();
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/rooms/${room.id}/threads`)
         .send({ rootEntryId: 'no-such-entry', text: 'orphan' });
 
@@ -1166,12 +1329,12 @@ describe('/api/rooms', () => {
       // thread answers to every rule an ordinary post does, and the OpenAPI
       // registration says so.
       const room = await createChannel();
-      const posted = await request(app)
+      const posted = await request(testServer)
         .post(`/api/rooms/${room.id}/entries`)
         .send({ text: 'why is the build slow?' });
-      await request(app).patch(`/api/rooms/${room.id}`).send({ archived: true });
+      await request(testServer).patch(`/api/rooms/${room.id}`).send({ archived: true });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/rooms/${room.id}/threads`)
         .send({ rootEntryId: posted.body.entryId, text: 'too late' });
 
@@ -1181,11 +1344,11 @@ describe('/api/rooms', () => {
 
     it('400s a reply with no text, because it writes a message', async () => {
       const room = await createChannel();
-      const posted = await request(app)
+      const posted = await request(testServer)
         .post(`/api/rooms/${room.id}/entries`)
         .send({ text: 'why is the build slow?' });
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/rooms/${room.id}/threads`)
         .send({ rootEntryId: posted.body.entryId });
 
@@ -1196,8 +1359,8 @@ describe('/api/rooms', () => {
   describe('GET /threads', () => {
     /** Open a thread in `room` and answer with its root entry id. */
     async function startThread(roomId: string, text: string): Promise<string> {
-      const root = await request(app).post(`/api/rooms/${roomId}/entries`).send({ text });
-      await request(app)
+      const root = await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text });
+      await request(testServer)
         .post(`/api/rooms/${roomId}/threads`)
         .send({ rootEntryId: root.body.entryId, text: 'on it' });
       return root.body.entryId as string;
@@ -1209,7 +1372,7 @@ describe('/api/rooms', () => {
       const older = await startThread(backend.id, 'older question');
       const newer = await startThread(design.id, 'newer question');
 
-      const res = await request(app).get('/api/rooms/threads');
+      const res = await request(testServer).get('/api/rooms/threads');
       expect(res.status).toBe(200);
       expect(res.body.threads.map((t: { rootEntryId: string }) => t.rootEntryId)).toEqual([
         newer,
@@ -1227,14 +1390,14 @@ describe('/api/rooms', () => {
       // The ordering hazard this route is written around: `/:id` above it would
       // take `threads` for a room id and answer 404. A room-shaped 404 body here
       // is the failure mode, so the assertion is on the SHAPE of a 200.
-      const res = await request(app).get('/api/rooms/threads');
+      const res = await request(testServer).get('/api/rooms/threads');
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ threads: [] });
       expect(res.body).not.toHaveProperty('members');
     });
 
     it('400s a limit outside the allowed range', async () => {
-      const res = await request(app).get('/api/rooms/threads').query({ limit: 5000 });
+      const res = await request(testServer).get('/api/rooms/threads').query({ limit: 5000 });
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
     });
@@ -1256,7 +1419,7 @@ describe('/api/rooms', () => {
       await createChannel('Private');
       const token = await outsiderToken();
 
-      const res = await request(app).get('/api/rooms').set('X-DorkOS-Agent', token);
+      const res = await request(testServer).get('/api/rooms').set('X-DorkOS-Agent', token);
       expect(res.status).toBe(200);
       expect(res.body.rooms).toEqual([]);
     });
@@ -1265,20 +1428,22 @@ describe('/api/rooms', () => {
       const room = await createChannel();
       const token = await outsiderToken();
 
-      const res = await request(app).get(`/api/rooms/${room.id}`).set('X-DorkOS-Agent', token);
+      const res = await request(testServer)
+        .get(`/api/rooms/${room.id}`)
+        .set('X-DorkOS-Agent', token);
       expect(res.status).toBe(404);
       // Same code as a genuinely unknown id: probing cannot confirm existence.
       expect(res.body.code).toBe('ROOM_NOT_FOUND');
-      const unknown = await request(app).get('/api/rooms/does-not-exist');
+      const unknown = await request(testServer).get('/api/rooms/does-not-exist');
       expect(res.body.code).toBe(unknown.body.code);
     });
 
     it('404s the history of a room the caller is not in', async () => {
       const room = await createChannel();
-      await request(app).post(`/api/rooms/${room.id}/entries`).send({ text: 'private' });
+      await request(testServer).post(`/api/rooms/${room.id}/entries`).send({ text: 'private' });
       const token = await outsiderToken();
 
-      const res = await request(app)
+      const res = await request(testServer)
         .get(`/api/rooms/${room.id}/entries`)
         .set('X-DorkOS-Agent', token);
       expect(res.status).toBe(404);
@@ -1289,7 +1454,7 @@ describe('/api/rooms', () => {
       const room = await createChannel();
       const token = await outsiderToken();
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/rooms/${room.id}/entries`)
         .set('X-DorkOS-Agent', token)
         .send({ text: 'let me in' });
@@ -1300,13 +1465,13 @@ describe('/api/rooms', () => {
       const room = await createChannel();
       const token = await outsiderToken();
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/rooms/${room.id}/members`)
         .set('X-DorkOS-Agent', token)
         .send({ agentPath: '/agents/outsider' });
       expect(res.status).toBe(404);
 
-      const roster = await request(app).get(`/api/rooms/${room.id}`);
+      const roster = await request(testServer).get(`/api/rooms/${room.id}`);
       expect(roster.body.members).toHaveLength(1);
     });
 
@@ -1335,7 +1500,7 @@ describe('/api/rooms', () => {
     describe('the roster routes are operator-only, grant or no grant', () => {
       /** Ana, put on the room's roster by the person, holding a valid token. */
       async function memberAgent(roomId: string): Promise<{ token: string; authorId: string }> {
-        const added = await request(app)
+        const added = await request(testServer)
           .post(`/api/rooms/${roomId}/members`)
           .send({ agentPath: ANA_PATH });
         expect(added.status).toBe(201);
@@ -1350,7 +1515,7 @@ describe('/api/rooms', () => {
         const room = await createChannel();
         const { token } = await memberAgent(room.id);
 
-        const res = await request(app)
+        const res = await request(testServer)
           .post(`/api/rooms/${room.id}/members`)
           .set('X-DorkOS-Agent', token)
           .send({ agentPath: BO_PATH });
@@ -1358,7 +1523,7 @@ describe('/api/rooms', () => {
         expect(res.status).toBe(403);
         expect(res.body.code).toBe('OPERATOR_ONLY');
         expect(res.body.error).toBe('Only you can change who is in a room');
-        const roster = await request(app).get(`/api/rooms/${room.id}`);
+        const roster = await request(testServer).get(`/api/rooms/${room.id}`);
         expect(roster.body.members).toHaveLength(2);
       });
 
@@ -1368,14 +1533,14 @@ describe('/api/rooms', () => {
 
         // Ana removing HERSELF, which is the shape the capability's `leave_room`
         // is allowed to do — and must not be reachable from here.
-        const res = await request(app)
+        const res = await request(testServer)
           .delete(`/api/rooms/${room.id}/members/${authorId}`)
           .set('X-DorkOS-Agent', token);
 
         expect(res.status).toBe(403);
         expect(res.body.code).toBe('OPERATOR_ONLY');
         expect(res.body.error).toBe('Only you can change who is in a room');
-        const after = await request(app).get(`/api/rooms/${room.id}`);
+        const after = await request(testServer).get(`/api/rooms/${room.id}`);
         expect(after.body.members).toHaveLength(2);
       });
 
@@ -1390,11 +1555,11 @@ describe('/api/rooms', () => {
         const room = await createChannel();
         const { token, authorId } = await memberAgent(room.id);
 
-        const added = await request(app)
+        const added = await request(testServer)
           .post(`/api/rooms/${room.id}/members`)
           .set('X-DorkOS-Agent', token)
           .send({ agentPath: BO_PATH });
-        const removed = await request(app)
+        const removed = await request(testServer)
           .delete(`/api/rooms/${room.id}/members/${authorId}`)
           .set('X-DorkOS-Agent', token);
 
@@ -1403,7 +1568,9 @@ describe('/api/rooms', () => {
         expect(removed.status).toBe(403);
         expect(removed.body.code).toBe('OPERATOR_ONLY');
         // Nothing moved on either route.
-        expect((await request(app).get(`/api/rooms/${room.id}`)).body.members).toHaveLength(2);
+        expect((await request(testServer).get(`/api/rooms/${room.id}`)).body.members).toHaveLength(
+          2
+        );
       });
 
       it('still lets the operator add and remove on both routes', async () => {
@@ -1411,17 +1578,21 @@ describe('/api/rooms', () => {
         // calling, so the person's own surface has to keep working.
         const room = await createChannel();
 
-        const added = await request(app)
+        const added = await request(testServer)
           .post(`/api/rooms/${room.id}/members`)
           .send({ agentPath: ANA_PATH });
         expect(added.status).toBe(201);
-        expect((await request(app).get(`/api/rooms/${room.id}`)).body.members).toHaveLength(2);
+        expect((await request(testServer).get(`/api/rooms/${room.id}`)).body.members).toHaveLength(
+          2
+        );
 
-        const removed = await request(app).delete(
+        const removed = await request(testServer).delete(
           `/api/rooms/${room.id}/members/${added.body.authorId}`
         );
         expect(removed.status).toBe(204);
-        expect((await request(app).get(`/api/rooms/${room.id}`)).body.members).toHaveLength(1);
+        expect((await request(testServer).get(`/api/rooms/${room.id}`)).body.members).toHaveLength(
+          1
+        );
       });
     });
 
@@ -1430,17 +1601,21 @@ describe('/api/rooms', () => {
       const identity = initAgentIdentityService(db);
       const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
 
-      const before = await request(app).get(`/api/rooms/${room.id}`).set('X-DorkOS-Agent', token);
+      const before = await request(testServer)
+        .get(`/api/rooms/${room.id}`)
+        .set('X-DorkOS-Agent', token);
       expect(before.status).toBe(404);
 
       // The human, who IS a member, adds her.
-      await request(app).post(`/api/rooms/${room.id}/members`).send({ agentPath: ANA_PATH });
+      await request(testServer).post(`/api/rooms/${room.id}/members`).send({ agentPath: ANA_PATH });
 
-      const after = await request(app).get(`/api/rooms/${room.id}`).set('X-DorkOS-Agent', token);
+      const after = await request(testServer)
+        .get(`/api/rooms/${room.id}`)
+        .set('X-DorkOS-Agent', token);
       expect(after.status).toBe(200);
       expect(after.body.id).toBe(room.id);
 
-      const listed = await request(app).get('/api/rooms').set('X-DorkOS-Agent', token);
+      const listed = await request(testServer).get('/api/rooms').set('X-DorkOS-Agent', token);
       expect(listed.body.rooms.map((r: { id: string }) => r.id)).toEqual([room.id]);
     });
   });

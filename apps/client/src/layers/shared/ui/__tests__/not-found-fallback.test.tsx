@@ -33,10 +33,10 @@ describe('NotFoundFallback', () => {
 
   it('renders description text', () => {
     render(<NotFoundFallback />);
-    expect(screen.getByText(/the page you're looking for/i)).toBeInTheDocument();
+    expect(screen.getByText(/the page you’re looking for/i)).toBeInTheDocument();
   });
 
-  it('renders "Back to Home" link pointing to "/"', () => {
+  it('renders "Back to home" link pointing to "/"', () => {
     render(<NotFoundFallback />);
     const link = screen.getByRole('link', { name: /back to home/i });
     expect(link).toBeInTheDocument();

@@ -183,10 +183,10 @@ export function ActivityFeed({
               setChoice({ open: !showFailures, afterAutoShow: autoShowFailures ?? false });
             }}
             aria-pressed={showFailures}
-            aria-label="Show dead letters"
+            aria-label="Show messages that never arrived"
           >
             <AlertTriangle className="mr-1 size-3.5" />
-            Dead Letters
+            Never arrived
             {deadLetterGroups.length > 0 && !showFailures && userToggled && (
               <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-red-500" />
             )}
@@ -194,7 +194,7 @@ export function ActivityFeed({
 
           <Input
             className="h-9 w-44"
-            placeholder="Filter by agent or message..."
+            placeholder="Filter by agent or message…"
             value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)}
             aria-label="Search conversations"

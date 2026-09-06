@@ -15,7 +15,7 @@ const QUICK_ACTIONS = [
     description: 'Render a document',
     action: (): UiCanvasContent => ({
       type: 'markdown',
-      content: '# Untitled\n\nStart writing...',
+      content: '# Untitled\n\nStart writing…',
       title: 'Document',
     }),
   },

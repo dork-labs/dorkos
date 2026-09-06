@@ -39,7 +39,7 @@ export function useAttachAgentConnector() {
   const queryClient = useQueryClient();
   return useMutation<AgentConnectorAttachResult, Error, { agentId: string; accountId: string }>({
     mutationFn: ({ agentId, accountId }) => transport.attachAgentConnector(agentId, accountId),
-    meta: { errorLabel: "Couldn't attach the account" },
+    meta: { errorLabel: 'Couldn’t attach the account' },
     onSuccess: (_result, { agentId }) => {
       void queryClient.invalidateQueries({ queryKey: connectorKeys.agent(agentId) });
     },
@@ -56,7 +56,7 @@ export function useDetachAgentConnector() {
   const queryClient = useQueryClient();
   return useMutation<void, Error, { agentId: string; accountId: string }>({
     mutationFn: ({ agentId, accountId }) => transport.detachAgentConnector(agentId, accountId),
-    meta: { errorLabel: "Couldn't remove the account" },
+    meta: { errorLabel: 'Couldn’t remove the account' },
     onSuccess: (_result, { agentId }) => {
       void queryClient.invalidateQueries({ queryKey: connectorKeys.agent(agentId) });
     },

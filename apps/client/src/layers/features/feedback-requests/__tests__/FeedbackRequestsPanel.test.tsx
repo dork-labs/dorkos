@@ -74,7 +74,7 @@ describe('FeedbackRequestsPanel', () => {
     render(<FeedbackRequestsPanel />, { wrapper: createWrapper(transport) });
 
     await waitFor(() => {
-      expect(screen.getByText("Couldn't load your reports")).toBeTruthy();
+      expect(screen.getByText('Couldn’t load your reports')).toBeTruthy();
     });
 
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));

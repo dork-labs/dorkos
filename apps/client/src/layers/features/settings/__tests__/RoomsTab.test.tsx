@@ -113,7 +113,7 @@ describe('RoomsTab', () => {
     renderTab({ engagedWindowMinutes: 10, engagedWindowPosts: 5 });
 
     expect(
-      await screen.findByText(/This server doesn't report these settings yet/)
+      await screen.findByText(/This server doesn’t report these settings yet/)
     ).toBeInTheDocument();
     expect(screen.queryAllByRole('spinbutton')).toHaveLength(0);
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
@@ -184,8 +184,8 @@ describe('RoomsTab', () => {
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        "Couldn't change that limit — Only a person can change those settings",
-        expect.anything()
+        'Couldn’t change that limit',
+        expect.objectContaining({ description: 'Only a person can change those settings' })
       )
     );
     await waitFor(() => expect(master).toBeChecked());

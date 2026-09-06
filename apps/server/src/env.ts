@@ -230,6 +230,17 @@ export const serverEnvSchema = z.object({
   // are already origin-scoped. Set this when a login-off reverse proxy forwards
   // its own `Host` to DorkOS. See middleware/host-guard.ts.
   DORKOS_TRUSTED_HOSTS: z.string().optional(),
+  // Whether `X-Forwarded-For` may name the client for RATE LIMITING (DOR-1711).
+  // Off by default: the header is free for anyone to write, so trusting it on a
+  // direct bind lets a caller rotate it and land in a fresh bucket every
+  // request, which silently disables the sign-in brute-force brake. Left off,
+  // every limiter keys on the TCP peer address instead. Turn it on only when a
+  // proxy YOU control is the only way in and you need per-client buckets behind
+  // it — everyone who can reach that proxy's upstream can then write the key.
+  // Note this does NOT change `trust proxy` itself: `req.protocol` still sees
+  // through a forwarded hop so proxied deployments keep secure cookies. See
+  // middleware/rate-limit-key.ts.
+  DORKOS_TRUST_PROXY: boolFlag,
   // Set by a supervising process that owns the server's lifecycle (DOR-532).
   // `desktop` means the Electron shell started this server as a utility process,
   // so the admin restart/reset endpoints refuse (409) rather than exit into a

@@ -25,6 +25,7 @@ const STATUS_BADGE_VARIANT: Record<
   'secondary' | 'outline' | 'destructive'
 > = {
   active: 'secondary',
+  paused: 'outline',
   pending: 'outline',
   expired: 'destructive',
   revoked: 'destructive',
@@ -51,7 +52,7 @@ export function AccountsList() {
   if (isError) {
     return (
       <p role="alert" className="text-destructive text-sm">
-        Could not load connected accounts: {error.message}
+        Couldn’t load connected accounts: {error.message}
       </p>
     );
   }

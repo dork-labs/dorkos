@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
-import { createDb, runMigrations, type Db } from '@dorkos/db';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { agents, createDb, runMigrations, type Db } from '@dorkos/db';
 import type {
   CredentialProvider,
   CredentialResolution,
@@ -22,6 +23,9 @@ import {
 } from '../../services/connectors/attachment-store.js';
 import { createConnectorProvidersRouter } from '../connector-providers.js';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 const SECRET = 'ck-super-secret-composio-key';
 
@@ -112,7 +116,7 @@ describe('connector-providers router', () => {
   }
 
   it('GET / lists both credential-gated providers, unconfigured on a bare install', async () => {
-    const res = await request(buildApp()).get('/api/connectors/providers');
+    const res = await request(fixtureTarget.mount(buildApp())).get('/api/connectors/providers');
     expect(res.status).toBe(200);
     expect(res.body.providers.map((p: { type: string }) => p.type).sort()).toEqual([
       'composio',
@@ -129,7 +133,7 @@ describe('connector-providers router', () => {
     const app = buildApp();
     expect(registry.resolveProvider('composio')).toBeUndefined();
 
-    const res = await request(app)
+    const res = await request(fixtureTarget.mount(app))
       .put('/api/connectors/providers/composio/credential')
       .send({ secret: SECRET });
 
@@ -138,25 +142,61 @@ describe('connector-providers router', () => {
     // The registry now serves the provider — the same seam a session reads.
     expect(registry.resolveProvider('composio')).toBeDefined();
     // The status list agrees.
-    const list = await request(app).get('/api/connectors/providers');
+    const list = await request(fixtureServer).get('/api/connectors/providers');
     const composio = list.body.providers.find((p: { type: string }) => p.type === 'composio');
     expect(composio).toMatchObject({ configured: true, registered: true });
   });
 
+  it('blocks provider reads and credential writes when the canonical migration failed', async () => {
+    db = createDb(':memory:');
+    runMigrations(db);
+    db.insert(agents)
+      .values({
+        id: 'agent-a',
+        name: 'Agent A',
+        runtime: 'claude-code',
+        projectPath: '/agents/a',
+        registeredAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      })
+      .run();
+    db.$client
+      .prepare(
+        'INSERT INTO agent_connector_attachments(agent_id, account_id, attached_at) VALUES (?, ?, ?)'
+      )
+      .run('agent-a', 'private-provider-ref', new Date(0).toISOString());
+    registry = new ConnectorRegistry({ db });
+    const app = buildApp();
+
+    const get = await request(fixtureTarget.mount(app)).get('/api/connectors/providers');
+    const put = await request(fixtureServer)
+      .put('/api/connectors/providers/composio/credential')
+      .send({ secret: SECRET });
+
+    expect(get.status).toBe(503);
+    expect(put.status).toBe(503);
+    expect(await store.get('composio-api-key')).toBeNull();
+    expect(JSON.stringify([get.body, put.body])).not.toContain('private-provider-ref');
+  });
+
   it('DELETE credential unregisters the provider and is idempotent (missing key still 200)', async () => {
     const app = buildApp();
-    await request(app)
+    await request(fixtureTarget.mount(app))
       .put('/api/connectors/providers/composio/credential')
       .send({ secret: SECRET });
     expect(registry.resolveProvider('composio')).toBeDefined();
 
-    const first = await request(app).delete('/api/connectors/providers/composio/credential');
+    const first = await request(fixtureServer).delete(
+      '/api/connectors/providers/composio/credential'
+    );
     expect(first.status).toBe(200);
     expect(first.body).toMatchObject({ type: 'composio', configured: false, registered: false });
     expect(registry.resolveProvider('composio')).toBeUndefined();
 
     // Deleting again (nothing stored) still answers 200 with the same status.
-    const again = await request(app).delete('/api/connectors/providers/composio/credential');
+    const again = await request(fixtureServer).delete(
+      '/api/connectors/providers/composio/credential'
+    );
     expect(again.status).toBe(200);
     expect(again.body).toMatchObject({ configured: false, registered: false });
   });
@@ -164,7 +204,7 @@ describe('connector-providers router', () => {
   it('surfaces the Nango configured-but-refused error text on the status', async () => {
     const app = buildApp({ nangoEnv: () => ({ baseUrl: 'http://localhost:3003' }) });
 
-    const res = await request(app)
+    const res = await request(fixtureTarget.mount(app))
       .put('/api/connectors/providers/nango/credential')
       .send({ secret: 'sk-nango-secret' });
 
@@ -176,32 +216,34 @@ describe('connector-providers router', () => {
   it('400s an unknown provider and an empty secret (Express 5 empty body)', async () => {
     const app = buildApp();
 
-    const unknown = await request(app)
+    const unknown = await request(fixtureTarget.mount(app))
       .put('/api/connectors/providers/gmail/credential')
       .send({ secret: SECRET });
     expect(unknown.status).toBe(400);
 
-    const emptyBody = await request(app)
+    const emptyBody = await request(fixtureServer)
       .put('/api/connectors/providers/composio/credential')
       .send();
     expect(emptyBody.status).toBe(400);
 
-    const emptySecret = await request(app)
+    const emptySecret = await request(fixtureServer)
       .put('/api/connectors/providers/composio/credential')
       .send({ secret: '' });
     expect(emptySecret.status).toBe(400);
 
-    const unknownDelete = await request(app).delete('/api/connectors/providers/gmail/credential');
+    const unknownDelete = await request(fixtureServer).delete(
+      '/api/connectors/providers/gmail/credential'
+    );
     expect(unknownDelete.status).toBe(400);
   });
 
   it('accepts test-connector only when the test-mode spec is wired', async () => {
-    const withoutTestMode = await request(buildApp())
+    const withoutTestMode = await request(fixtureTarget.mount(buildApp()))
       .put(`/api/connectors/providers/${TEST_CONNECTOR_PROVIDER_TYPE}/credential`)
       .send({ secret: 'test-key' });
     expect(withoutTestMode.status).toBe(400);
 
-    const withTestMode = await request(buildApp({ testConnector: true }))
+    const withTestMode = await request(fixtureTarget.mount(buildApp({ testConnector: true })))
       .put(`/api/connectors/providers/${TEST_CONNECTOR_PROVIDER_TYPE}/credential`)
       .send({ secret: 'test-key' });
     expect(withTestMode.status).toBe(200);
@@ -218,7 +260,7 @@ describe('connector-providers router', () => {
     const sessionConnectors = new SessionConnectorService({
       registry,
       agentAttachments: new AgentConnectorAttachmentStore(db),
-      sessionAttachments: new SessionConnectorAttachmentStore(db),
+      sessionAttachments: new SessionConnectorAttachmentStore(db, () => 'agent-a'),
     });
     const bootstrapper = new ConnectorProviderBootstrapper({
       registry,
@@ -227,7 +269,8 @@ describe('connector-providers router', () => {
       nangoProxy: new NangoProxyMcp({ localOrigin: 'http://127.0.0.1:4242' }),
       rawMcpServers: () => [],
       ...hermeticClients,
-      onUnregistered: (providerType) => sessionConnectors.invalidateProvider(providerType),
+      onUnregistered: (providerInstanceId) =>
+        sessionConnectors.invalidateProviderInstance(providerInstanceId),
     });
     const app = express();
     app.use(express.json());
@@ -238,22 +281,28 @@ describe('connector-providers router', () => {
 
     // Save the key (registers the real provider), then swap a fake in under the
     // same type so the connect flow stays hermetic — no Composio network call.
-    await request(app)
+    await request(fixtureTarget.mount(app))
       .put('/api/connectors/providers/composio/credential')
       .send({ secret: SECRET });
     expect(registry.resolveProvider('composio')).toBeDefined();
-    const provider = new FakeConnectorProvider({ type: 'composio', custody: 'managed' });
+    const provider = new FakeConnectorProvider({
+      type: 'composio',
+      custody: 'managed',
+      instanceId: registry.resolveProvider('composio')!.instanceId,
+    });
     registry.register(provider);
     const { flowId } = await provider.startConnect('gmail', { label: 'work' });
     const account = (await provider.pollConnect(flowId)).account!;
-    registry.recordConnect(account);
-    const attached = await sessionConnectors.attach('session-1', account.id);
+    const connected = registry.recordConnect(provider, account);
+    const attached = await sessionConnectors.attach('session-1', connected.id);
     expect(attached!.account.exposed).toBe(true);
 
     // Delete the key: the reload unregisters the provider AND the session's
     // cached exposure is dropped — the account reports unexposed with a
     // warning, and the MCP factory stops injecting its server.
-    const res = await request(app).delete('/api/connectors/providers/composio/credential');
+    const res = await request(fixtureServer).delete(
+      '/api/connectors/providers/composio/credential'
+    );
     expect(res.status).toBe(200);
     const status = sessionConnectors.status('session-1');
     expect(status.accounts[0]!.exposed).toBe(false);
@@ -264,13 +313,17 @@ describe('connector-providers router', () => {
   it('never echoes the secret in any response', async () => {
     const app = buildApp({ nangoEnv: () => ({ baseUrl: 'http://localhost:3003' }) });
     const responses = [
-      await request(app)
+      await request(fixtureTarget.mount(app))
         .put('/api/connectors/providers/composio/credential')
         .send({ secret: SECRET }),
-      await request(app).put('/api/connectors/providers/nango/credential').send({ secret: SECRET }),
-      await request(app).get('/api/connectors/providers'),
-      await request(app).delete('/api/connectors/providers/composio/credential'),
-      await request(app).put('/api/connectors/providers/composio/credential').send({ secret: '' }),
+      await request(fixtureServer)
+        .put('/api/connectors/providers/nango/credential')
+        .send({ secret: SECRET }),
+      await request(fixtureServer).get('/api/connectors/providers'),
+      await request(fixtureServer).delete('/api/connectors/providers/composio/credential'),
+      await request(fixtureServer)
+        .put('/api/connectors/providers/composio/credential')
+        .send({ secret: '' }),
     ];
     for (const res of responses) {
       expect(JSON.stringify(res.body)).not.toContain(SECRET);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { connectorConformance } from '@dorkos/test-utils';
-import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
+import type { ConnectorExternalAccountRef } from '@dorkos/shared/connector-provider';
 import type {
   CredentialProvider,
   CredentialResolution,
@@ -20,7 +20,7 @@ import {
   COMPOSIO_API_KEY_REF,
   maybeCreateComposioProvider,
   toComposioAccountId,
-  toConnectedAccountId,
+  toExternalAccountRef,
 } from '../composio.js';
 
 /**
@@ -155,8 +155,8 @@ connectorConformance(makeProvider, {
     const { account } = await provider.pollConnect(flowId);
     // Expire the underlying Composio account: its Rube session goes away, so
     // toolServerForAccount must resolve null rather than throw.
-    client.setStatus(toComposioAccountId(account!.id), 'EXPIRED');
-    return { provider, accountId: account!.id };
+    client.setStatus(toComposioAccountId(account!.externalAccountRef), 'EXPIRED');
+    return { provider, externalAccountRef: account!.externalAccountRef };
   },
 });
 
@@ -172,7 +172,7 @@ describe('ComposioConnectorProvider — managed-custody semantics', () => {
   });
 
   it('wraps the Composio ca_ handle as an opaque, provider-scoped id and back', () => {
-    const id = toConnectedAccountId('ca_abc123');
+    const id = toExternalAccountRef('ca_abc123');
     expect(id).toBe('composio:ca_abc123');
     expect(toComposioAccountId(id)).toBe('ca_abc123');
   });
@@ -185,9 +185,9 @@ describe('ComposioConnectorProvider — managed-custody semantics', () => {
     expect(poll.status).toBe('connected');
     expect(poll.account?.label).toBe('work');
     expect(poll.account?.custody).toBe('managed');
-    expect(poll.account?.provider).toBe('composio');
-    // No raw ca_ handle leaks past the port — the id is the wrapped form.
-    expect(poll.account?.id.startsWith('composio:')).toBe(true);
+    // The provider boundary returns only its private reference; the registry
+    // assigns the public DorkOS connection id.
+    expect(poll.account?.externalAccountRef.startsWith('composio:')).toBe(true);
   });
 
   it('yields two distinct, independently-addressable ids for two connects of one toolkit', async () => {
@@ -198,13 +198,13 @@ describe('ComposioConnectorProvider — managed-custody semantics', () => {
     const second = await provider.startConnect('gmail', { label: 'work' });
     const work = (await provider.pollConnect(second.flowId)).account!;
 
-    expect(personal.id).not.toBe(work.id);
+    expect(personal.externalAccountRef).not.toBe(work.externalAccountRef);
     const accounts = await provider.listAccounts({ toolkit: 'gmail' });
-    expect(new Set(accounts.map((a) => a.id)).size).toBe(2);
+    expect(new Set(accounts.map((a) => a.externalAccountRef)).size).toBe(2);
 
     // Both are addressable to their own Rube MCP tool server.
-    const personalServer = await provider.toolServerForAccount(personal.id);
-    const workServer = await provider.toolServerForAccount(work.id);
+    const personalServer = await provider.toolServerForAccount(personal.externalAccountRef);
+    const workServer = await provider.toolServerForAccount(work.externalAccountRef);
     expect(personalServer).not.toBeNull();
     expect(workServer).not.toBeNull();
     expect(personalServer).not.toEqual(workServer);
@@ -215,7 +215,7 @@ describe('ComposioConnectorProvider — managed-custody semantics', () => {
     const { flowId } = await provider.startConnect('gmail', { label: 'personal' });
     const account = (await provider.pollConnect(flowId)).account!;
 
-    const connection = await provider.toolServerForAccount(account.id);
+    const connection = await provider.toolServerForAccount(account.externalAccountRef);
     expect(connection).toMatchObject({
       transport: 'http',
       url: expect.stringContaining('rube.app/mcp'),
@@ -231,7 +231,7 @@ describe('ComposioConnectorProvider — managed-custody semantics', () => {
     const account = (await provider.pollConnect(flowId)).account!;
 
     client.setLiveSessions(false);
-    await expect(provider.toolServerForAccount(account.id)).resolves.toBeNull();
+    await expect(provider.toolServerForAccount(account.externalAccountRef)).resolves.toBeNull();
   });
 
   it('surfaces a failed Composio connect as a typed failure, never a throw', async () => {
@@ -244,7 +244,7 @@ describe('ComposioConnectorProvider — managed-custody semantics', () => {
   it('disconnect is idempotent for an unknown/already-revoked id', async () => {
     const provider = makeProvider();
     await expect(
-      provider.disconnect('composio:ca_nope' as ConnectedAccountId)
+      provider.disconnect('composio:ca_nope' as ConnectorExternalAccountRef)
     ).resolves.toBeUndefined();
   });
 });
@@ -277,7 +277,7 @@ describe('ComposioConnectorProvider — degrade contract on transport failure', 
       const account = (await provider.pollConnect(flowId)).account!;
 
       client.failWith(err());
-      await expect(provider.toolServerForAccount(account.id)).resolves.toBeNull();
+      await expect(provider.toolServerForAccount(account.externalAccountRef)).resolves.toBeNull();
     });
 
     it(`listToolkits PROPAGATES ${label} (the registry turns it into a warning)`, async () => {

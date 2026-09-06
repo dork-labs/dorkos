@@ -449,6 +449,11 @@ jobs:
       - name: os.homedir() ban fixtures
         run: bash scripts/test-homedir-guard.sh
 
+      # Uses the real server flat config to prove direct Supertest imports stay
+      # banned without weakening any owner directory's SDK confinement.
+      - name: Stable Supertest import guard fixtures
+        run: bash scripts/test-supertest-import-guard.sh
+
       # In `harness` for the same reason as the suite above it: it is the only
       # job with a node_modules, and this suite needs the REAL prettier. A stub
       # could prove the hook called something, but not that eligible files come

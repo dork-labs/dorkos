@@ -71,10 +71,12 @@ interface AddSourceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   isPending: boolean;
+  /** Why the last attempt was refused, or `null` when there was none. */
+  error: string | null;
   onSubmit: (name: string, source: string) => void;
 }
 
-function AddSourceDialog({ open, onOpenChange, isPending, onSubmit }: AddSourceDialogProps) {
+function AddSourceDialog({ open, onOpenChange, isPending, error, onSubmit }: AddSourceDialogProps) {
   const [name, setName] = useState('');
   const [source, setSource] = useState('');
 
@@ -96,14 +98,15 @@ function AddSourceDialog({ open, onOpenChange, isPending, onSubmit }: AddSourceD
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Marketplace Source</DialogTitle>
+          <DialogTitle>Add a marketplace source</DialogTitle>
           <DialogDescription>
-            Enter a git URL and friendly name for a registry that publishes marketplace packages.
+            Paste the link to a git repository that publishes marketplace packages, and give it a
+            name.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
-            <Label htmlFor="source-url">Git URL</Label>
+            <Label htmlFor="source-url">Repository link</Label>
             <Input
               id="source-url"
               value={source}
@@ -122,13 +125,21 @@ function AddSourceDialog({ open, onOpenChange, isPending, onSubmit }: AddSourceD
               autoComplete="off"
             />
           </div>
+          {/* The server refuses an address it cannot fetch from and says which
+              forms do work (DOR-1710). Without this the dialog just sat there
+              on a refusal, which reads as a broken button. */}
+          {error && (
+            <p role="alert" className="text-destructive text-sm">
+              {error}
+            </p>
+          )}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => handleOpenChange(false)} disabled={isPending}>
             Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={!isValid || isPending}>
-            {isPending ? 'Adding…' : 'Add Source'}
+            {isPending ? 'Adding…' : 'Add source'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -165,6 +176,15 @@ export function MarketplaceSourcesView() {
     );
   };
 
+  // Closing the dialog drops the last refusal with it — reopening to try again
+  // should not open onto the previous attempt's error.
+  const handleDialogOpenChange = (next: boolean) => {
+    if (!next) {
+      addSource.reset();
+    }
+    setDialogOpen(next);
+  };
+
   const isEmpty = !isLoading && (!sources || sources.length === 0);
 
   return (
@@ -175,14 +195,14 @@ export function MarketplaceSourcesView() {
           {/* Not drawn (design decision E1): the bar overhead already says
               "Marketplace Sources". Kept for the outline — the bar's title is
               a `nav` landmark, not a heading. */}
-          <h1 className="sr-only">Marketplace Sources</h1>
+          <h1 className="sr-only">Marketplace sources</h1>
           <p className="text-muted-foreground text-sm">
             Git registries that publish marketplace packages.
           </p>
         </div>
         <Button onClick={() => setDialogOpen(true)} size="sm">
           <Plus className="mr-1.5 size-4" />
-          Add Source
+          Add marketplace source
         </Button>
       </div>
 
@@ -198,13 +218,13 @@ export function MarketplaceSourcesView() {
       {/* Empty state */}
       {isEmpty && (
         <div className="rounded-xl border border-dashed p-10 text-center">
-          <p className="text-sm font-medium">No sources configured</p>
+          <p className="text-sm font-medium">No marketplaces added yet</p>
           <p className="text-muted-foreground mt-1 text-xs">
             Add a git registry to browse and install marketplace packages.
           </p>
           <Button className="mt-4" size="sm" onClick={() => setDialogOpen(true)}>
             <Plus className="mr-1.5 size-4" />
-            Add Source
+            Add marketplace source
           </Button>
         </div>
       )}
@@ -229,8 +249,9 @@ export function MarketplaceSourcesView() {
       {/* Add dialog */}
       <AddSourceDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        onOpenChange={handleDialogOpenChange}
         isPending={addSource.isPending}
+        error={addSource.error?.message ?? null}
         onSubmit={handleAdd}
       />
     </div>

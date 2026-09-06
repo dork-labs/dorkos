@@ -30,7 +30,7 @@ export function CanvasVideoContent({ content }: CanvasVideoContentProps) {
   if (resolved.url === null) {
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center p-8 text-center">
-        <p>This video can&rsquo;t be played here.</p>
+        <p>This video can’t be played here.</p>
       </div>
     );
   }
@@ -45,7 +45,7 @@ export function CanvasVideoContent({ content }: CanvasVideoContentProps) {
         className="max-h-full w-full max-w-full object-contain"
       >
         <p className="text-muted-foreground p-8 text-sm">
-          Your browser can&rsquo;t play this video.{' '}
+          Your browser can’t play this video.{' '}
           <a href={resolved.url} className="text-foreground underline underline-offset-4">
             Download {label}
           </a>

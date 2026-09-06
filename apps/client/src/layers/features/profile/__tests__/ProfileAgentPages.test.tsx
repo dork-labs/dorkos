@@ -476,7 +476,7 @@ describe('Instructions and Boundaries', () => {
   it('edits SOUL.md’s prose and saves the whole file around the traits', async () => {
     const { transport } = await renderProfile(MANAGED, { start: 'instructions' });
 
-    const editor = await screen.findByPlaceholderText('Write markdown content...');
+    const editor = await screen.findByPlaceholderText('Write markdown here…');
     expect(editor).toHaveValue('Be careful.');
     // `clear` + `type` rather than `type` alone: the caret's starting position
     // is not something this test should be asserting about, and typing into an
@@ -509,7 +509,7 @@ describe('Instructions and Boundaries', () => {
     });
     await renderProfile(MANAGED, { start: 'instructions', transport });
 
-    const editor = await screen.findByPlaceholderText('Write markdown content...');
+    const editor = await screen.findByPlaceholderText('Write markdown here…');
     await userEvent.type(editor, ' More.');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
 
@@ -533,7 +533,7 @@ describe('Instructions and Boundaries', () => {
     });
     await renderProfile(MANAGED, { start: 'instructions', transport });
 
-    const editor = await screen.findByPlaceholderText('Write markdown content...');
+    const editor = await screen.findByPlaceholderText('Write markdown here…');
     await userEvent.type(editor, ' More.');
     const button = screen.getByRole('button', { name: 'Save' });
     await userEvent.click(button);
@@ -543,13 +543,16 @@ describe('Instructions and Boundaries', () => {
 
     // ONE toast, not two. The page used to toast for itself beside the app-wide
     // mutation handler, so a refusal was reported twice in two different voices
-    // — the page's precise sentence and a generic "Action failed. Please try
-    // again." The page now names the action through `meta.errorLabel` and the
-    // one handler composes it with the server's own sentence.
+    // — the page's precise sentence and a generic "That didn't work. Try
+    // again." The page now names the action through `meta.errorLabel`, which
+    // becomes the toast's headline, and the server's own sentence sits under it
+    // as the description (DOR-1755).
     await waitFor(() => expect(toasts.error).toHaveBeenCalledTimes(1));
     expect(toasts.error).toHaveBeenCalledWith(
-      'Couldn’t save your instructions — SOUL.md is too long: the whole file has to fit in 4,000 characters.',
-      expect.anything()
+      'Couldn’t save your instructions',
+      expect.objectContaining({
+        description: 'SOUL.md is too long: the whole file has to fit in 4,000 characters.',
+      })
     );
     expect(toasts.success).not.toHaveBeenCalled();
     // The draft survives the rollback, and stays dirty — a refusal is a reason
@@ -573,7 +576,7 @@ describe('Instructions and Boundaries', () => {
     });
     await renderProfile(MANAGED, { start: 'instructions', transport });
 
-    const editor = await screen.findByPlaceholderText('Write markdown content...');
+    const editor = await screen.findByPlaceholderText('Write markdown here…');
     await userEvent.type(editor, 'yyy');
 
     const save = screen.getByRole('button', { name: 'Save' });
@@ -587,15 +590,13 @@ describe('Instructions and Boundaries', () => {
   it('asks before Back throws away what you wrote', async () => {
     await renderProfile(MANAGED, { start: 'instructions' });
 
-    const editor = await screen.findByPlaceholderText('Write markdown content...');
+    const editor = await screen.findByPlaceholderText('Write markdown here…');
     await userEvent.type(editor, ' More.');
     await userEvent.click(screen.getByRole('button', { name: 'Back to profile' }));
 
     expect(await screen.findByText('Discard your changes?')).toBeInTheDocument();
     // Still on the page, with the text intact.
-    expect(screen.getByPlaceholderText('Write markdown content...')).toHaveValue(
-      'Be careful. More.'
-    );
+    expect(screen.getByPlaceholderText('Write markdown here…')).toHaveValue('Be careful. More.');
 
     await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
 
@@ -605,7 +606,7 @@ describe('Instructions and Boundaries', () => {
   it('does not ask when there is nothing unsaved', async () => {
     await renderProfile(MANAGED, { start: 'instructions' });
 
-    await screen.findByPlaceholderText('Write markdown content...');
+    await screen.findByPlaceholderText('Write markdown here…');
     await userEvent.click(screen.getByRole('button', { name: 'Back to profile' }));
 
     expect(screen.queryByText('Discard your changes?')).toBeNull();
@@ -616,9 +617,7 @@ describe('Instructions and Boundaries', () => {
     await renderProfile(MANAGED, { start: 'boundaries' });
 
     expect(await screen.findByText(/not enforced at the tool level/)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Write markdown content...')).toHaveValue(
-      'Never force-push.'
-    );
+    expect(screen.getByPlaceholderText('Write markdown here…')).toHaveValue('Never force-push.');
   });
 
   // ── The preview: what the agent will actually read (DOR-1255) ──
@@ -665,7 +664,7 @@ describe('Instructions and Boundaries', () => {
     // you no longer had it.
     await renderProfile(MANAGED, { start: 'instructions' });
 
-    const editor = await screen.findByPlaceholderText('Write markdown content...');
+    const editor = await screen.findByPlaceholderText('Write markdown here…');
     await userEvent.clear(editor);
     await userEvent.type(editor, 'Say what broke first.');
 
@@ -680,7 +679,7 @@ describe('Instructions and Boundaries', () => {
   it('follows the draft on the Boundaries page too', async () => {
     await renderProfile(MANAGED, { start: 'boundaries' });
 
-    const editor = await screen.findByPlaceholderText('Write markdown content...');
+    const editor = await screen.findByPlaceholderText('Write markdown here…');
     await userEvent.clear(editor);
     await userEvent.type(editor, 'Never touch main.');
 
@@ -814,7 +813,7 @@ describe('Memory, where an agent’s notes can be read and corrected', () => {
   it('opens the file the agent writes, and saves an edit to it', async () => {
     const { transport } = await renderProfile(MANAGED, { start: 'memory' });
 
-    const editor = await screen.findByPlaceholderText('Write markdown content...');
+    const editor = await screen.findByPlaceholderText('Write markdown here…');
     expect(editor).toHaveValue('- Deploys go out on Tuesdays. (noted in #product, 2026-08-24)');
 
     await userEvent.clear(editor);
@@ -852,7 +851,7 @@ describe('Memory, where an agent’s notes can be read and corrected', () => {
     });
     await renderProfile(MANAGED, { start: 'memory', transport });
 
-    const editor = await screen.findByPlaceholderText('Write markdown content...');
+    const editor = await screen.findByPlaceholderText('Write markdown here…');
     await userEvent.type(editor, '{backspace}');
 
     const save = screen.getByRole('button', { name: 'Save' });
@@ -1056,7 +1055,7 @@ describe('the kebab', () => {
   it('passes the server’s refusal through when the files belong to a repo', async () => {
     // The 409 this route can answer carries the only instruction the person
     // gets. Without `meta.errorLabel` the shared mutation toast throws that
-    // sentence away and says "Action failed. Please try again." (DOR-1019).
+    // sentence away and says "That didn't work. Try again." (DOR-1019).
     const transport = mockTransport();
     transport.deleteAgentData = vi
       .fn()
@@ -1070,15 +1069,13 @@ describe('the kebab', () => {
     await userEvent.type(screen.getByTestId('delete-confirm-input'), 'Warden');
     await userEvent.click(screen.getByRole('button', { name: 'Delete agent and data' }));
 
+    // Both halves still reach the person, in their own slots since DOR-1755:
+    // the authored line is the headline, the server's sentence the description.
     await waitFor(() =>
       expect(toasts.error).toHaveBeenCalledWith(
-        expect.stringContaining('tracked by git'),
-        expect.anything()
+        expect.stringContaining(`Couldn’t delete this agent’s files`),
+        expect.objectContaining({ description: expect.stringContaining('tracked by git') })
       )
-    );
-    expect(toasts.error).toHaveBeenCalledWith(
-      expect.stringContaining(`Couldn't delete this agent's files`),
-      expect.anything()
     );
   });
 

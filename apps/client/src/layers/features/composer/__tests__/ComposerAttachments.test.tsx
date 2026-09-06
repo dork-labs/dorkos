@@ -180,7 +180,7 @@ describe('ComposerAttachments', () => {
 
     render(<ComposerAttachments files={files} onRemove={vi.fn()} />);
 
-    expect(screen.getByText("This file didn't upload")).toBeInTheDocument();
+    expect(screen.getByText('This file didn’t upload')).toBeInTheDocument();
   });
 
   it('offers a retry on a failed chip, addressed by file id', () => {

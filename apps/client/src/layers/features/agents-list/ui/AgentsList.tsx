@@ -247,7 +247,7 @@ export function AgentsList({ agents, isLoading, rosterFilters }: AgentsListProps
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <FilterBar state={filterState} className="sm:px-6">
-        <FilterBar.Search placeholder="Filter agents..." />
+        <FilterBar.Search placeholder="Filter agents…" />
         <FilterBar.Primary name="status" />
         <FilterBar.AddFilter dynamicOptions={{ namespace: namespaceOptions }} />
         <FilterBar.Sort options={agentSortMenuOptions} defaultField={ATTENTION_SORT_FIELD} />

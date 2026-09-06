@@ -27,8 +27,7 @@ export default function PrivacyPolicyPage() {
           <h1 className="text-charcoal font-mono text-3xl font-bold">Privacy Policy</h1>
           <p className="text-warm-gray text-lg">Last updated: July 13, 2026</p>
           <p className="text-warm-gray leading-relaxed">
-            DorkOS is made by Blaze Ventures, LLC. When this page says &quot;we,&quot; that is who
-            we mean.
+            DorkOS is made by Blaze Ventures, LLC. When this page says “we,” that is who we mean.
           </p>
         </header>
 
@@ -176,10 +175,10 @@ export default function PrivacyPolicyPage() {
             <p className="text-warm-gray leading-relaxed">
               Here is the honest part: if you decline, ignore the banner, or turn analytics off, we
               still count your visit, but anonymously. No cookies, no stored ID, and no way to
-              connect today&apos;s visit to tomorrow&apos;s. We use a privacy-preserving code that
-              is reshuffled every day, so the count cannot be traced back to you. We also honor your
-              browser&apos;s Do Not Track and Global Privacy Control signals: if either is on, the
-              cookie version stays off automatically.
+              connect today’s visit to tomorrow’s. We use a privacy-preserving code that is
+              reshuffled every day, so the count cannot be traced back to you. We also honor your
+              browser’s Do Not Track and Global Privacy Control signals: if either is on, the cookie
+              version stays off automatically.
             </p>
 
             <AnalyticsPreferenceControl />

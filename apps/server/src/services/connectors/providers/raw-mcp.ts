@@ -1,15 +1,14 @@
 /**
  * The raw-MCP baseline {@link ConnectorProvider} — the single-account,
- * no-custody adapter that connects a DorkOS agent to a remote MCP server over
- * OAuth 2.1. It is the first connector to land because it exercises the whole
+ * no-custody adapter that connects a DorkOS agent to a preconfigured remote MCP
+ * server. It is the first connector to land because it exercises the whole
  * `ConnectorProvider` seam against machinery that already exists
  * (`McpAppServerConnection` / the runtime MCP seam), with no vendor dependency.
  *
  * Capabilities: `type: 'mcp'`, `supportsMultiAccount: false`,
  * `custody: 'external'`, `exposesOverMcp: true`. Custody is `external` because
- * the gateway keeps NO tokens — the remote server holds its own credentials, so
- * this adapter never persists a secret. Each configured server maps to at most
- * one account.
+ * the gateway keeps no tokens. This adapter neither runs OAuth nor persists a
+ * secret. Each configured server maps to at most one account.
  *
  * See spec `specs/connector-gateway/02-specification.md` §Detailed Design 1 and
  * §Non-Goals (baseline = single-account).
@@ -18,14 +17,18 @@
  */
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type {
-  ConnectedAccount,
-  ConnectedAccountId,
   ConnectorCapabilities,
+  ConnectorExternalAccountRef,
   ConnectorProvider,
+  ConnectorProviderInstanceId,
   ConnectorToolkit,
   ConnectPoll,
   ConnectStart,
+  ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
+import type { ConnectorProviderExecuteCommand } from '@dorkos/shared/connector-schemas';
+import { legacyDefaultProviderInstanceId } from '../legacy-connection-migration.js';
+import { runProbe, type ProbeOutcome } from '../../mesh/agent-mcp-probe.js';
 
 /** The remote-server subset of {@link McpAppServerConnection} (no stdio for a raw remote MCP). */
 export type RemoteMcpConnection = Extract<McpAppServerConnection, { transport: 'http' | 'sse' }>;
@@ -38,7 +41,7 @@ export interface RawMcpServerDescriptor {
   displayName: string;
   /** The runtime-neutral connection details injected once connected. */
   connection: RemoteMcpConnection;
-  /** How the server authenticates. Defaults to `'oauth2'` (remote MCP over OAuth 2.1). */
+  /** How the preconfigured connection authenticates. Defaults to `'none'`. */
   authKind?: ConnectorToolkit['authKind'];
 }
 
@@ -54,11 +57,47 @@ export interface RawMcpConnectorProviderOpts {
    * @param slug - The server slug being probed.
    */
   isReachable?: (slug: string) => boolean | Promise<boolean>;
+  /** Stable configured provider instance id. */
+  instanceId?: ConnectorProviderInstanceId;
+  /**
+   * MCP initialize + tools/list probe. Production uses the shared real-client
+   * probe; tests may replace it without changing the provider's decisions.
+   *
+   * @param connection - The exact connection a runtime would receive, including headers.
+   */
+  probe?: (connection: RemoteMcpConnection) => Promise<ProbeOutcome>;
+}
+
+/** Safe failure copy. Probe errors may contain URLs, headers, or vendor response bodies. */
+const PROBE_FAILURE = {
+  unauthorized: 'The MCP server rejected the configured credentials. Check them and try again.',
+  timeout: 'The MCP server did not respond before the connection check timed out. Try again.',
+  failed:
+    'DorkOS could not verify the MCP server. Check its address and availability, then try again.',
+  cancelled: 'This connection check is no longer active. Start again to retry.',
+} as const;
+
+/** Prefix emitted by the shared probe when its bounded round trip expires. */
+const PROBE_TIMEOUT_PREFIX = 'MCP server probe timed out after ';
+
+/** Maximum retained flow records; old inactive flows are evicted before new work starts. */
+const MAX_CONNECT_FLOWS = 100;
+
+/** One raw-MCP connect flow, including its single-flight and terminal poll result. */
+interface RawMcpFlow {
+  /** Toolkit being verified. */
+  slug: string;
+  /** Optional account label requested by the caller. */
+  label?: string;
+  /** Shared work for concurrent polls. */
+  inFlight?: Promise<ConnectPoll>;
+  /** Cached terminal result, which makes repeat polls idempotent. */
+  result?: ConnectPoll;
 }
 
 /** Deterministic single account id for one configured server. */
-function accountIdForSlug(slug: string): ConnectedAccountId {
-  return `mcp:${slug}` as ConnectedAccountId;
+function accountIdForSlug(slug: string): ConnectorExternalAccountRef {
+  return `mcp:${slug}` as ConnectorExternalAccountRef;
 }
 
 /**
@@ -67,14 +106,16 @@ function accountIdForSlug(slug: string): ConnectedAccountId {
  * of an already-connected toolkit rejects rather than duplicating.
  */
 export class RawMcpConnectorProvider implements ConnectorProvider {
+  readonly instanceId: ConnectorProviderInstanceId;
   readonly type = 'mcp';
 
   private readonly _servers = new Map<string, RawMcpServerDescriptor>();
   private readonly _isReachable: (slug: string) => boolean | Promise<boolean>;
+  private readonly _probe: (connection: RemoteMcpConnection) => Promise<ProbeOutcome>;
   /** Accounts keyed by their opaque id; the derived registry, held in memory. */
-  private readonly _accounts = new Map<string, ConnectedAccount>();
+  private readonly _accounts = new Map<string, ProviderConnectedAccount>();
   /** Pending connect flows keyed by opaque flow id. */
-  private readonly _flows = new Map<string, { slug: string; label?: string }>();
+  private readonly _flows = new Map<string, RawMcpFlow>();
   private _counter = 0;
 
   /**
@@ -83,18 +124,75 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
    * @param opts - Configured remote servers + optional reachability probe.
    */
   constructor(opts: RawMcpConnectorProviderOpts) {
+    this.instanceId =
+      opts.instanceId ??
+      (legacyDefaultProviderInstanceId(this.type) as ConnectorProviderInstanceId);
     for (const server of opts.servers) this._servers.set(server.slug, server);
     this._isReachable = opts.isReachable ?? (() => true);
+    this._probe =
+      opts.probe ??
+      ((connection) => runProbe({ ...connection, headers: connection.headers ?? {} }));
   }
 
   getCapabilities(): ConnectorCapabilities {
     return {
+      instanceId: this.instanceId,
       type: this.type,
       supportsMultiAccount: false,
       custody: 'external',
       exposesOverMcp: true,
+      capabilities: {
+        catalog: { status: 'available' },
+        authentication: { status: 'available' },
+        accounts: { status: 'available' },
+        operations: {
+          status: 'unsupported',
+          reason: 'Raw MCP has no trustworthy operation schema catalog.',
+        },
+        execution: {
+          status: 'unsupported',
+          reason: 'Raw MCP remains on the compatibility exposure seam until P2.',
+        },
+        triggers: { status: 'unsupported', reason: 'Raw MCP trigger discovery is unavailable.' },
+      },
       features: {},
     };
+  }
+
+  async listToolkitPage(request: { cursor?: string; query?: string; limit: number }) {
+    const all = (await this.listToolkits()).filter((toolkit) =>
+      request.query ? toolkit.displayName.toLowerCase().includes(request.query.toLowerCase()) : true
+    );
+    const offset = request.cursor ? Number(request.cursor) : 0;
+    const toolkits = all.slice(offset, offset + request.limit);
+    const next = offset + toolkits.length;
+    return {
+      status: 'ok' as const,
+      toolkits,
+      ...(next < all.length && { nextCursor: String(next) }),
+      truncated: next < all.length,
+    };
+  }
+
+  listOperationSchemas(_request: { toolkit: string; cursor?: string; limit: number }) {
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Raw MCP has no trustworthy operation schema catalog.',
+    });
+  }
+
+  execute(_command: ConnectorProviderExecuteCommand) {
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Raw MCP remains on the compatibility exposure seam until P2.',
+    });
+  }
+
+  listTriggerTypes(_toolkit: string) {
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Raw MCP trigger discovery is unavailable.',
+    });
   }
 
   listToolkits(): Promise<ConnectorToolkit[]> {
@@ -102,7 +200,7 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
       [...this._servers.values()].map((server) => ({
         slug: server.slug,
         displayName: server.displayName,
-        authKind: server.authKind ?? 'oauth2',
+        authKind: server.authKind ?? 'none',
         // Single-account by construction — the primitive raw MCP cannot exceed.
         maxAccountsPerUser: 1,
       }))
@@ -120,56 +218,114 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
         new Error(`'${toolkit}' is already connected (raw MCP is single-account)`)
       );
     }
+    if (!this._makeRoomForFlow()) {
+      return Promise.reject(
+        new Error('Too many MCP connection checks are already in progress. Try again shortly.')
+      );
+    }
     this._counter += 1;
     const flowId = `mcp-flow-${this._counter}`;
     this._flows.set(flowId, { slug: toolkit, label: opts?.label });
-    // Reference-not-secret: return the server's authorize URL to open; the
-    // remote server owns the OAuth 2.1 exchange and keeps its own tokens.
-    return Promise.resolve({ authorizeUrl: server.connection.url, flowId });
+    // This adapter has no OAuth exchange and therefore no consent URL. The
+    // configured connection is verified directly when the caller polls.
+    return Promise.resolve({ flowId });
   }
 
-  pollConnect(flowId: string): Promise<ConnectPoll> {
+  /** Keep flow bookkeeping bounded without cancelling a probe already on the wire. */
+  private _makeRoomForFlow(): boolean {
+    if (this._flows.size < MAX_CONNECT_FLOWS) return true;
+    for (const [flowId, flow] of this._flows) {
+      if (!flow.inFlight) {
+        this._flows.delete(flowId);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async pollConnect(flowId: string): Promise<ConnectPoll> {
     const flow = this._flows.get(flowId);
     if (!flow) {
-      return Promise.resolve({ status: 'failed', error: `unknown flow '${flowId}'` });
+      return { status: 'failed', error: `unknown flow '${flowId}'` };
     }
-    const id = accountIdForSlug(flow.slug);
-    if (!this._accounts.has(id)) {
-      this._accounts.set(id, {
-        id,
-        provider: this.type,
+    if (flow.result) return flow.result;
+    if (flow.inFlight) return flow.inFlight;
+
+    const verification = this._verifyFlow(flowId, flow).then((result) => {
+      flow.result = result;
+      flow.inFlight = undefined;
+      return result;
+    });
+    flow.inFlight = verification;
+    return verification;
+  }
+
+  /** Verify one flow before creating its active account. */
+  private async _verifyFlow(flowId: string, flow: RawMcpFlow): Promise<ConnectPoll> {
+    const server = this._servers.get(flow.slug);
+    if (!server) return { status: 'failed', error: PROBE_FAILURE.failed };
+
+    const outcome = await this._probe(server.connection).catch((): ProbeOutcome => ({
+      kind: 'failed',
+      error: 'probe rejected',
+    }));
+    if (outcome.kind === 'unauthorized') {
+      return { status: 'failed', error: PROBE_FAILURE.unauthorized };
+    }
+    if (outcome.kind === 'failed') {
+      const error = outcome.error.startsWith(PROBE_TIMEOUT_PREFIX)
+        ? PROBE_FAILURE.timeout
+        : PROBE_FAILURE.failed;
+      return { status: 'failed', error };
+    }
+    // Disconnect removes every flow for the account's toolkit. A probe that
+    // was already in flight must observe that cancellation before it can write
+    // the account back and undo the disconnect.
+    if (this._flows.get(flowId) !== flow) {
+      return { status: 'failed', error: PROBE_FAILURE.cancelled };
+    }
+
+    const externalAccountRef = accountIdForSlug(flow.slug);
+    const account =
+      this._accounts.get(externalAccountRef) ??
+      ({
+        externalAccountRef,
         toolkit: flow.slug,
         label: flow.label ?? flow.slug,
         status: 'active',
-        // External custody: DorkOS holds no tokens; the server manages sign-in.
         custody: 'external',
-      });
-    }
-    return Promise.resolve({ status: 'connected', account: this._accounts.get(id) });
+      } satisfies ProviderConnectedAccount);
+    this._accounts.set(externalAccountRef, account);
+    return { status: 'connected', account };
   }
 
-  listAccounts(opts?: { toolkit?: string }): Promise<ConnectedAccount[]> {
+  listAccounts(opts?: { toolkit?: string }): Promise<ProviderConnectedAccount[]> {
     const all = [...this._accounts.values()];
     return Promise.resolve(opts?.toolkit ? all.filter((a) => a.toolkit === opts.toolkit) : all);
   }
 
-  disconnect(accountId: ConnectedAccountId): Promise<void> {
+  disconnect(accountId: ConnectorExternalAccountRef): Promise<void> {
     const account = this._accounts.get(accountId);
     this._accounts.delete(accountId);
-    // Drop only THIS toolkit's resolved flow — leaving a pending flow for
-    // another toolkit (e.g. slack) untouched. Scoped, not a blanket clear: a
-    // lingering resolved flow for the disconnected toolkit would otherwise let
-    // a stale pollConnect resurrect the account we just removed.
-    if (account) {
+    // A repeated disconnect can arrive while a reconnect has no account row
+    // yet. Raw MCP's private reference has the `mcp:<toolkit>` shape, so
+    // it can still cancel only that toolkit's flows without guessing from a
+    // public DorkOS connection id. Flows for other toolkits remain active.
+    const toolkit =
+      account?.toolkit ??
+      (accountId.startsWith('mcp:') && accountId.length > 'mcp:'.length
+        ? accountId.slice('mcp:'.length)
+        : undefined);
+    if (toolkit && accountIdForSlug(toolkit) === accountId) {
       for (const [flowId, flow] of this._flows) {
-        if (flow.slug === account.toolkit) this._flows.delete(flowId);
+        if (flow.slug === toolkit) this._flows.delete(flowId);
       }
     }
     return Promise.resolve();
   }
 
   async toolServerForAccount(
-    accountId: ConnectedAccountId
+    accountId: ConnectorExternalAccountRef
   ): Promise<McpAppServerConnection | null> {
     const account = this._accounts.get(accountId);
     if (!account || account.status !== 'active') return null;

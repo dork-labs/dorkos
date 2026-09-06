@@ -30,8 +30,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, type Db } from '@dorkos/db';
 
@@ -91,6 +92,7 @@ import {
 
 const app = createApp();
 finalizeApp(app);
+const server = listeningServer(app);
 
 const ANA_PATH = '/agents/ana';
 
@@ -150,7 +152,7 @@ describe('an unverifiable agent token on a room route', () => {
 
   /** A channel with Ana in it, and the ids a caller needs to address it. */
   async function room(): Promise<{ id: string; ownerAuthorId: string; anaAuthorId: string }> {
-    const created = await request(app)
+    const created = await request(server)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Release train', agentPaths: [ANA_PATH] });
     expect(created.status).toBe(201);
@@ -172,7 +174,7 @@ describe('an unverifiable agent token on a room route', () => {
     it('refuses it, where the same upload with no header stores the file', async () => {
       const { id } = await room();
 
-      const refused = await request(app)
+      const refused = await request(server)
         .post(`/api/rooms/${id}/attachments`)
         .set('X-DorkOS-Agent', UNVERIFIABLE)
         .attach('files', Buffer.from('notes'), 'notes.txt');
@@ -183,7 +185,7 @@ describe('an unverifiable agent token on a room route', () => {
 
       // The header is the ONLY difference. Without this half the 401 above would
       // also pass for an upload that was broken for everybody.
-      const allowed = await request(app)
+      const allowed = await request(server)
         .post(`/api/rooms/${id}/attachments`)
         .attach('files', Buffer.from('notes'), 'notes.txt');
       expect(allowed.status).toBe(200);
@@ -194,7 +196,7 @@ describe('an unverifiable agent token on a room route', () => {
       const { id } = await room();
       const token = await anaToken();
 
-      const res = await request(app)
+      const res = await request(server)
         .post(`/api/rooms/${id}/attachments`)
         .set('X-DorkOS-Agent', token)
         .attach('files', Buffer.from('notes'), 'notes.txt');
@@ -208,7 +210,7 @@ describe('an unverifiable agent token on a room route', () => {
     it('refuses it, where the same rename with no header succeeds', async () => {
       const { ownerAuthorId } = await room();
 
-      const refused = await request(app)
+      const refused = await request(server)
         .patch(`/api/rooms/authors/${ownerAuthorId}/handle`)
         .set('X-DorkOS-Agent', UNVERIFIABLE)
         .send({ handle: 'stolen' });
@@ -218,7 +220,7 @@ describe('an unverifiable agent token on a room route', () => {
       // The rename did not happen under another name either.
       expect(refused.body).not.toHaveProperty('handle');
 
-      const allowed = await request(app)
+      const allowed = await request(server)
         .patch(`/api/rooms/authors/${ownerAuthorId}/handle`)
         .send({ handle: 'dorian' });
       expect(allowed.status).toBe(200);
@@ -229,7 +231,7 @@ describe('an unverifiable agent token on a room route', () => {
       const { ownerAuthorId } = await room();
       const token = await anaToken();
 
-      const res = await request(app)
+      const res = await request(server)
         .patch(`/api/rooms/authors/${ownerAuthorId}/handle`)
         .set('X-DorkOS-Agent', token)
         .send({ handle: 'stolen' });
@@ -243,7 +245,7 @@ describe('an unverifiable agent token on a room route', () => {
     it('refuses it, where the same stop with no header is accepted', async () => {
       const { id } = await room();
 
-      const refused = await request(app)
+      const refused = await request(server)
         .post(`/api/rooms/${id}/halt`)
         .set('X-DorkOS-Agent', UNVERIFIABLE);
 
@@ -251,7 +253,7 @@ describe('an unverifiable agent token on a room route', () => {
       expect(refused.body.code).toBe(REFUSAL_CODE);
       expect(refused.body).not.toHaveProperty('stopped');
 
-      const allowed = await request(app).post(`/api/rooms/${id}/halt`);
+      const allowed = await request(server).post(`/api/rooms/${id}/halt`);
       expect(allowed.status).toBe(200);
       expect(allowed.body.stopped).toBe(0);
     });
@@ -264,7 +266,7 @@ describe('an unverifiable agent token on a room route', () => {
       const { id } = await room();
       const token = await anaToken();
 
-      const res = await request(app).post(`/api/rooms/${id}/halt`).set('X-DorkOS-Agent', token);
+      const res = await request(server).post(`/api/rooms/${id}/halt`).set('X-DorkOS-Agent', token);
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('PEOPLE_ONLY');
@@ -279,7 +281,7 @@ describe('an unverifiable agent token on a room route', () => {
       // refusal" from a claim into a fact after the merge.
       const { id, anaAuthorId } = await room();
 
-      const refused = await request(app)
+      const refused = await request(server)
         .post(`/api/rooms/${id}/halt/${anaAuthorId}`)
         .set('X-DorkOS-Agent', UNVERIFIABLE);
 
@@ -289,7 +291,7 @@ describe('an unverifiable agent token on a room route', () => {
 
       // Nothing is running, so the person's answer is `stopped: 0` — a normal
       // answer, and the negative control that keeps the 401 above about the token.
-      const allowed = await request(app).post(`/api/rooms/${id}/halt/${anaAuthorId}`);
+      const allowed = await request(server).post(`/api/rooms/${id}/halt/${anaAuthorId}`);
       expect(allowed.status).toBe(200);
       expect(allowed.body.stopped).toBe(0);
     });
@@ -303,7 +305,7 @@ describe('an unverifiable agent token on a room route', () => {
       // pinned here so the inheritance is a fact rather than a claim.
       const { id, anaAuthorId } = await room();
 
-      const refused = await request(app)
+      const refused = await request(server)
         .post(`/api/rooms/${id}/holds/${anaAuthorId}/promote`)
         .set('X-DorkOS-Agent', UNVERIFIABLE);
 
@@ -313,7 +315,7 @@ describe('an unverifiable agent token on a room route', () => {
 
       // Nothing is waiting, so the person's answer is `false` — a normal answer,
       // and the negative control that keeps the 401 above about the token.
-      const allowed = await request(app).post(`/api/rooms/${id}/holds/${anaAuthorId}/promote`);
+      const allowed = await request(server).post(`/api/rooms/${id}/holds/${anaAuthorId}/promote`);
       expect(allowed.status).toBe(200);
       expect(allowed.body.promoted).toBe(false);
     });
@@ -327,7 +329,7 @@ describe('an unverifiable agent token on a room route', () => {
       // is a strictly narrower disclosure, not a wider one.
       const { id } = await room();
 
-      const refused = await request(app)
+      const refused = await request(server)
         .get(`/api/rooms/${id}/sessions`)
         .set('X-DorkOS-Agent', UNVERIFIABLE);
 
@@ -337,14 +339,14 @@ describe('an unverifiable agent token on a room route', () => {
 
       // Still not the operator's read: a room nobody could see answers the same
       // 401, so a junk token cannot be used to learn which room ids exist.
-      const unknownRoom = await request(app)
+      const unknownRoom = await request(server)
         .get('/api/rooms/01NOSUCHROOM/sessions')
         .set('X-DorkOS-Agent', UNVERIFIABLE);
       expect(unknownRoom.status).toBe(401);
       expect(unknownRoom.body.code).toBe(REFUSAL_CODE);
 
       // And the un-headered read still works, so the refusal is about the token.
-      const allowed = await request(app).get(`/api/rooms/${id}/sessions`);
+      const allowed = await request(server).get(`/api/rooms/${id}/sessions`);
       expect(allowed.status).toBe(200);
       expect(allowed.body.bindings).toEqual([]);
     });
@@ -357,13 +359,13 @@ describe('an unverifiable agent token on a room route', () => {
       const { id, ownerAuthorId, anaAuthorId } = await room();
       const token = await anaToken();
 
-      const posted = await request(app)
+      const posted = await request(server)
         .post(`/api/rooms/${id}/entries`)
         .set('X-DorkOS-Agent', token)
         .send({ text: 'on it' });
       expect(posted.status).toBe(202);
 
-      const entries = await request(app).get(`/api/rooms/${id}/entries`);
+      const entries = await request(server).get(`/api/rooms/${id}/entries`);
       const mine = entries.body.entries.find(
         (e: { id: string }) => e.id === posted.body.entryId
       ) as { authorId: string };
@@ -374,7 +376,7 @@ describe('an unverifiable agent token on a room route', () => {
     it('lets a request with no header at all be the person, as it always was', async () => {
       const { id } = await room();
 
-      const posted = await request(app)
+      const posted = await request(server)
         .post(`/api/rooms/${id}/entries`)
         .send({ text: 'from the keyboard' });
 
@@ -386,7 +388,7 @@ describe('an unverifiable agent token on a room route', () => {
     it('refuses an unverifiable token on a plain room read', async () => {
       const { id } = await room();
 
-      const res = await request(app).get(`/api/rooms/${id}`).set('X-DorkOS-Agent', UNVERIFIABLE);
+      const res = await request(server).get(`/api/rooms/${id}`).set('X-DorkOS-Agent', UNVERIFIABLE);
 
       expect(res.status).toBe(401);
       expect(res.body.code).toBe(REFUSAL_CODE);
@@ -397,7 +399,7 @@ describe('an unverifiable agent token on a room route', () => {
       // agent subscribed to every room the person is in.
       const { id } = await room();
 
-      const res = await request(app)
+      const res = await request(server)
         .get(`/api/rooms/${id}/events`)
         .set('X-DorkOS-Agent', UNVERIFIABLE);
 
@@ -408,7 +410,7 @@ describe('an unverifiable agent token on a room route', () => {
     it('refuses one on a read cursor, which is not a room route but shares the seam', async () => {
       const { id } = await room();
 
-      const res = await request(app)
+      const res = await request(server)
         .put(`/api/read-cursors/room/${id}`)
         .set('X-DorkOS-Agent', UNVERIFIABLE)
         .send({ lastReadSeq: 1 });

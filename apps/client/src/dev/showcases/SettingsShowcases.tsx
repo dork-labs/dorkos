@@ -5,6 +5,8 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import {
   Button,
+  CollapsibleFieldCard,
+  CopyButton,
   FieldCard,
   FieldCardContent,
   SettingRow,
@@ -18,20 +20,24 @@ import {
   NavigationLayoutPanelHeader,
   NavigationLayoutDialogHeader,
 } from '@/layers/shared/ui';
-import { SettingsDialog } from '@/layers/features/settings';
+import {
+  ClaudeAccountsSection,
+  ExecutionExceptionsStrip,
+  PreferencesTab,
+  SettingsDialog,
+} from '@/layers/features/settings';
 import {
   AppearanceResetAction,
   AppearanceTab,
 } from '@/layers/features/settings/ui/tabs/AppearanceTab';
-import { PreferencesTab } from '@/layers/features/settings/ui/tabs/PreferencesTab';
 import { NotificationsTab } from '@/layers/features/settings/ui/tabs/NotificationsTab';
 import { RoomsTab } from '@/layers/features/settings/ui/tabs/RoomsTab';
 import { ServerTab } from '@/layers/features/settings/ui/ServerTab';
 import { ToolsResetAction, ToolsTab } from '@/layers/features/settings/ui/ToolsTab';
-import { AdvancedTab } from '@/layers/features/settings/ui/AdvancedTab';
+import { DangerZoneTab } from '@/layers/features/settings/ui/DangerZoneTab';
+import { RemoteAccessTab } from '@/layers/features/settings/ui/RemoteAccessTab';
 import { ExperimentsTab } from '@/layers/features/settings/ui/ExperimentsTab';
 import { BackgroundSystemsCard } from '@/layers/features/settings/ui/tools/BackgroundSystemsCard';
-import { ClaudeAccountsSection, ExecutionExceptionsStrip } from '@/layers/features/settings';
 import { ControlCenterBody } from '@/layers/widgets/control-center';
 import {
   LiveRuntimeCard,
@@ -319,10 +325,24 @@ function IndividualTabsSection() {
         </MockedQueryProvider>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Advanced Tab</ShowcaseLabel>
+      {/* A tab since DOR-1758, not a sidebar button that opened a second
+          dialog. `RemoteAccessTab` reads the shared `entities/tunnel` store
+          (DOR-1743) — a module-scope Zustand store, not a React context — so
+          no extra provider is needed here; `useRemoteAccess` feeds it from
+          THIS showcase's own `MockedQueryProvider` config on mount. */}
+      <ShowcaseLabel>Remote Access Tab</ShowcaseLabel>
       <ShowcaseDemo>
-        <TabShell value="advanced" title="Advanced">
-          <AdvancedTab />
+        <MockedQueryProvider>
+          <TabShell value="remote-access" title="Remote access">
+            <RemoteAccessTab />
+          </TabShell>
+        </MockedQueryProvider>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Danger Zone Tab</ShowcaseLabel>
+      <ShowcaseDemo>
+        <TabShell value="danger" title="Danger zone">
+          <DangerZoneTab />
         </TabShell>
       </ShowcaseDemo>
 
@@ -453,10 +473,11 @@ function LoadingEmptyStatesSection() {
 function PrimitivesSection() {
   const [toggleA, setToggleA] = useState(true);
   const [toggleB, setToggleB] = useState(false);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   return (
     <PlaygroundSection
       title="Settings Primitives"
-      description="Building blocks used by every settings tab — FieldCard wraps groups of rows, SettingRow is the horizontal label/description/control row."
+      description="Building blocks used by every settings tab — FieldCard wraps groups of rows, SettingRow is the horizontal label/description/control row, and CollapsibleFieldCard folds the rows you only want when something is wrong."
     >
       <ShowcaseLabel>FieldCard with SettingRows</ShowcaseLabel>
       <ShowcaseDemo>
@@ -476,7 +497,7 @@ function PrimitivesSection() {
       <ShowcaseDemo>
         <FieldCard>
           <FieldCardContent>
-            <SettingRow label="Theme" description="Choose your preferred color scheme">
+            <SettingRow label="Theme">
               <Button variant="outline" size="sm">
                 System
               </Button>
@@ -487,9 +508,28 @@ function PrimitivesSection() {
 
       <ShowcaseLabel>SettingRow — disabled</ShowcaseLabel>
       <ShowcaseDemo>
-        <SettingRow label="Background sync" description="Requires premium plan">
+        <SettingRow label="Background sync" description="Needs a paid plan.">
           <Switch checked={false} disabled />
         </SettingRow>
+      </ShowcaseDemo>
+
+      {/* The Server tab's Diagnostics section, which is where the header action
+          came from: rows nobody needs until something is wrong, behind one
+          disclosure, with a copy-the-lot control that must NOT toggle the
+          section when clicked. */}
+      <ShowcaseLabel>CollapsibleFieldCard — badge and header action</ShowcaseLabel>
+      <ShowcaseDemo>
+        <CollapsibleFieldCard
+          open={diagnosticsOpen}
+          onOpenChange={setDiagnosticsOpen}
+          trigger="Diagnostics"
+          badge={<span className="text-muted-foreground text-xs">4 details</span>}
+          action={<CopyButton value="Node.js v22.11.0" label="Copy all diagnostics" />}
+        >
+          <SettingRow label="Node.js" description="The runtime this server is on">
+            <span className="font-mono text-sm">v22.11.0</span>
+          </SettingRow>
+        </CollapsibleFieldCard>
       </ShowcaseDemo>
     </PlaygroundSection>
   );

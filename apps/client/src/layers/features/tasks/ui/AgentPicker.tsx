@@ -38,7 +38,7 @@ function AgentCommandList({
 }) {
   return (
     <Command>
-      <CommandInput placeholder="Search agents..." />
+      <CommandInput placeholder="Search agents…" />
       <CommandList className="!max-h-60 !overflow-y-auto">
         <CommandEmpty>No agents found.</CommandEmpty>
         <CommandGroup>
@@ -94,7 +94,7 @@ function AgentPickerTrigger({
           <span className="truncate">{getAgentDisplayName(selectedAgent)}</span>
         </span>
       ) : (
-        <span className="text-muted-foreground">Select an agent...</span>
+        <span className="text-muted-foreground">Select an agent…</span>
       )}
       <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
     </button>

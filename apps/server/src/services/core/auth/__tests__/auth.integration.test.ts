@@ -6,13 +6,17 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, user, apikey, eq, type Db } from '@dorkos/db';
 import { defaultKeyHasher } from '@better-auth/api-key';
 import { createAuth, toNodeHandler, isBetterAuthBaseUrlAdvisory } from '../index.js';
 import { initConfigManager } from '../../config-manager.js';
 import { env } from '../../../../env.js';
 import { logger } from '../../../../lib/logger.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /**
  * Mounts the Better Auth handler over a throwaway temp SQLite database exactly
@@ -50,6 +54,8 @@ describe('Better Auth — local identity core (integration)', () => {
     db = createDb(path.join(tmpDir, 'auth-test.db'));
     runMigrations(db);
     app = buildApp(db, tmpDir);
+
+    fixtureTarget.mount(app);
   });
 
   afterAll(() => {
@@ -57,7 +63,7 @@ describe('Better Auth — local identity core (integration)', () => {
   });
 
   it('creates the first user with role "owner" on sign-up', async () => {
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post('/api/auth/sign-up/email')
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD, name: OWNER_NAME });
@@ -70,7 +76,7 @@ describe('Better Auth — local identity core (integration)', () => {
   });
 
   it('rejects a second sign-up once an owner exists (registration is owner-only)', async () => {
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post('/api/auth/sign-up/email')
       .set('Origin', ORIGIN)
       .send({ email: SECOND_EMAIL, password: 'another-strong-password', name: 'Second' });
@@ -84,7 +90,7 @@ describe('Better Auth — local identity core (integration)', () => {
   });
 
   it('returns a session cookie on sign-in', async () => {
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post('/api/auth/sign-in/email')
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
@@ -96,13 +102,13 @@ describe('Better Auth — local identity core (integration)', () => {
   });
 
   it('round-trips the session cookie via get-session', async () => {
-    const signIn = await request(app)
+    const signIn = await request(fixtureServer)
       .post('/api/auth/sign-in/email')
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
     const cookies = signIn.headers['set-cookie'] as unknown as string[];
 
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .get('/api/auth/get-session')
       .set('Origin', ORIGIN)
       .set('Cookie', cookies);

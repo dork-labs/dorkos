@@ -28,7 +28,7 @@ const DAY_MS = 86_400_000;
  * @returns A sentence like `At 03:00 AM, Monday through Friday (America/Chicago)`.
  */
 export function formatCadence(cron: string | null, timezone: string | null): string {
-  if (!cron) return 'On demand — it only runs when something asks it to';
+  if (!cron) return 'On demand. It only runs when something asks it to';
   let words: string;
   try {
     words = cronstrue.toString(cron);

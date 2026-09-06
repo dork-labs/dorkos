@@ -102,6 +102,203 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     },
   },
   {
+    // The RAW writer, one layer beneath both entries above, added by DOR-1507.
+    //
+    // `configManager.set` takes a section and replaces it, with no policy, no
+    // consent door and no audit line of its own. `config-write.ts` calls that
+    // shape a **purpose-built writer** and licenses it deliberately: a writer
+    // that moves one known setting as part of doing something else sits behind
+    // its own feature's gate, which is often stricter than the config policy,
+    // and re-running the path bars there would refuse it its own job. The
+    // bargain is that it owes two things instead — its own gate, and
+    // `logConfigWrite`. `contributing/configuration.md` carries the same list
+    // as a table under "Who writes your config".
+    //
+    // So this entry is not "nobody may call it". It is **the list itself**,
+    // pinned. DOR-1507 was filed because `extensions.enabled` / `disabled` /
+    // `approvedToRun` are all `operator-only` in `config-write-policy.ts` and
+    // the extensions manager writes them straight through here — true, and by
+    // design, but nothing anywhere could tell that from a check. The real
+    // defect that shape hides is at the DOOR: `POST /api/extensions/:id/enable`
+    // and `/disable` ran no bar at all, so an agent could flip an operator-only
+    // setting through a plain HTTP call while the config route refused it the
+    // same write. Exactly the DOR-1738 tunnel shape, one router over.
+    //
+    // A new writer landing here is therefore not automatically wrong — it has
+    // to answer, in review, the two questions the bargain asks: which gate
+    // stands in front of it, and does it leave a line. That is the whole value;
+    // before this entry, a new one landed silently.
+    what: 'replaces a whole config section with no policy and no consent door, which is why every writer that does it owes its own gate and an audit line',
+    call: 'configManager.set(',
+    allowed: {
+      'services/core/operator/config-patch.ts':
+        'the one general-purpose merge, reached only through applyGuardedConfigWrite — the two entries above are what pin that',
+      'index.ts':
+        'the first-run telemetry notice and the profile route setter, both at boot or behind the profile route (logConfigWrite: "the first-run telemetry notice" / "the profile route")',
+      'routes/config.ts':
+        'PUT /agents/defaultAgent — a name, not a posture, and the operator-only paths on this router go through the guarded step instead (logConfigWrite: "the default-agent route")',
+      'routes/tunnel.ts':
+        'start/stop — `tunnel.*` IS operator-only, so start runs the cookie bar then the agent bar before reaching here; stop runs neither on purpose, because stopping only narrows exposure (DOR-1738)',
+      'services/core/agent-creator.ts':
+        'records the agent it just created as the default (logConfigWrite: "the agent creator")',
+      'services/core/auth/cloud-link.ts':
+        'stores the token this instance was linked with, behind the link flow (logConfigWrite: "the account link" / "unlinking this instance")',
+      'services/core/auth/seed-legacy-mcp-key.ts':
+        'a boot migration that CLEARS a legacy key — narrowing only, and no request reaches it (logConfigWrite: "the MCP key migration")',
+      'services/shapes/shape-services.ts':
+        'records which Shape is active, reachable only through applyShape, which is itself on this list and tier-gated at routes/shapes.ts (DOR-625)',
+      'services/harness/hook-approval.ts':
+        'records a package hook a PERSON just approved on the approval card; `harness.approvedHooks` is operator-only and the approval route is the gate (DOR-522)',
+      'services/extensions/extension-manager.ts':
+        'four writes into `extensions`, all three of whose leaves are operator-only, so each is listed with the gate that stands in front of it: enable/disable are reached only from the three callers on the `extensionManager.enable(` and `.disable(` entries below, every one of them gated; approveToRun only from `routes/extensions-approval.ts`, which runs the strictest bar in this file; forgetRunApproval only from that same route and from a marketplace uninstall, and it only ever REMOVES an approval (logConfigWrite: "the extensions manager" / "approving an extension to run" / "withdrawing an extension run approval")',
+    },
+  },
+  {
+    // The sibling `configManager.set` has, and the more dangerous one: it takes
+    // a dotted PATH from its caller, which makes it a general-purpose door in
+    // the exact sense `config-write.ts` defines — it can be pointed at
+    // `auth.enabled`, at `extensions.approvedToRun`, at anything. It carries no
+    // policy, no consent door and no audit line.
+    //
+    // No production module under `apps/server/src` calls it today; its callers
+    // are `dorkos config set` and `dorkos config edit`, out in `packages/cli`,
+    // which this scan cannot read (and which are covered instead by the
+    // LOCAL_OPERATOR_AUTHORITY entry above, plus `configManager.setDot`'s own
+    // place in the CLI's flow). So the allowlist is empty ON PURPOSE, the same
+    // way `sourceManager.setEnabled(` is: the obvious next route on any router
+    // — "let me just set this one path" — arrives ungated and, without this
+    // entry, invisible. With it, it turns this red until its author says which
+    // door it is and what refuses an agent at it.
+    what: 'writes ANY config path the caller names, with no bar, no consent door and no audit line — a general-purpose door with none of what a door owes',
+    call: 'configManager.setDot(',
+    allowed: {},
+  },
+  {
+    // Same reasoning, opposite verb. `reset` puts a section — or the whole file
+    // — back to defaults, which `safe-defaults/protected-state.ts` makes mostly
+    // protective but not entirely: `reset('telemetry')` is documented as
+    // literal, so a named section really does go back, and a caller that could
+    // name one could undo a person's answer. No server module reaches it; the
+    // CLI's `dorkos config reset` does, and is listed in
+    // `contributing/configuration.md` under "what still writes without a line".
+    what: 'puts a config section, or the whole file, back to defaults — including the one section whose reset is documented as literal',
+    call: 'configManager.reset(',
+    allowed: {},
+  },
+  {
+    // Watched from DOR-1507, one layer above `configManager.set(`, because the
+    // section that write lands in is `operator-only` in all three of its leaves
+    // and the gate that makes each caller safe lives at the caller, not here.
+    //
+    // The severity is capped and should be stated that way rather than
+    // inflated: turning an extension ON does not by itself run its code.
+    // `extension-server-lifecycle.ts` re-asks `mayRunExtensionCode` against
+    // `extensions.approvedToRun`, which only a person writes (DOR-516). What it
+    // DOES do is re-arm an extension whose code a person approved once and then
+    // switched off — approval survives a disable — so an ungated enable is a
+    // real reversal of a human decision, just not an arbitrary code-execution
+    // primitive.
+    what: 'turns extension code on or off, writing the operator-only `extensions.enabled` / `extensions.disabled` around the door that enforces that; re-enabling an already-approved extension starts its server half again',
+    call: 'extensionManager.enable(',
+    allowed: {
+      'routes/extensions.ts':
+        'the cockpit REST route — runs the same person bar as the approval routes beside it (DOR-1507): the trusted-Origin bar, the cookie bar under login, then the agent bar in both postures',
+      'services/marketplace/flows/install-plugin.ts':
+        'turns on the extensions a package it just installed brought with it; reaching it at all means already having cleared the install tier gate at routes/marketplace.ts',
+      'services/shapes/apply-shape.ts':
+        'applies a Shape that DECLARES which extensions it wants; the ids come from installed content, not from a caller, and applyShape is itself on this list and tier-gated (DOR-625)',
+    },
+  },
+  {
+    // Split from `enable` rather than folded into it, because the two are NOT
+    // symmetric in who calls them and a shared entry would hide that: uninstall
+    // reaches `disable` and nothing else.
+    //
+    // Gated in the narrowing direction too, and that is a decision. The tunnel
+    // route leaves `/stop` ungated because stopping only narrows exposure; the
+    // approval route gates `revoke` anyway, "so nothing can be silently
+    // switched off". Extensions follow the approval route, because
+    // `operator-only` is a rule about PATHS and never about values —
+    // `config-write-policy.ts` says so and its drift guard pins it — so an
+    // agent may not turn a person's extensions off on their behalf either.
+    what: 'turns extension code off, writing the same operator-only leaves; refused for an agent in this direction too, because operator-only reads paths and never values',
+    call: 'extensionManager.disable(',
+    allowed: {
+      'routes/extensions.ts': 'the same route, behind the same person bar — see the enable entry',
+      'services/marketplace/flows/install-plugin.ts':
+        'rolls back extensions it turned on when the rest of an install failed',
+      'services/marketplace/flows/uninstall.ts':
+        'turns off the extensions a package being removed brought with it, behind the uninstall tier gate (uninstallFlow.uninstall is itself on this list)',
+      'services/shapes/apply-shape.ts':
+        'turns off the extensions the PREVIOUS Shape turned on; same gate as the enable entry',
+    },
+  },
+  {
+    // Listed separately because it reaches `enable` through `this.`, which the
+    // entry above cannot see — the scan matches a receiver, and an internal call
+    // has none. Found by tracing callers for DOR-1507, not by the scan, which is
+    // the module TSDoc's point about what a list of effects can and cannot buy.
+    //
+    // This is the ONE agent-reachable write to `extensions.enabled` that
+    // survives DOR-1507, and it survives on a single load-bearing mechanism.
+    // Name that mechanism exactly, because the first version of this entry named
+    // the wrong one and the entry was false as written.
+    //
+    // **The mechanism: `scaffoldExtension` refuses an id that is taken in EITHER
+    // scope.** Not "an id that already exists" — that was the false claim. The
+    // check used to run against the one root the caller's `scope` selected, and
+    // `scope` is an argument of this very tool, so the caller picked which root
+    // got checked. Both consequences were reproduced:
+    //
+    //  - **Re-arm.** Person approves `foo`, then turns it off. The agent
+    //    scaffolds `foo` in the OTHER scope and `createExtension` enables that
+    //    id — restarting the person's own approved server half. The planted copy
+    //    never had to win discovery; the config write was the whole effect.
+    //  - **Squat.** `extension-discovery.ts` ignores a project copy whose id is
+    //    core or currently approved — but that guard is conditional on the very
+    //    approval it protects. After a REVOKE the planted copy wins the id, so a
+    //    person re-approving the name they recognise approves the agent's code.
+    //    Exactly the "different code under a familiar name" trap that
+    //    `forgetRunApproval` closes on the uninstall path, reached by another
+    //    road.
+    //
+    // With the either-scope refusal in place the id really is new, and only then
+    // does the rest of the argument hold: a new id is absent from
+    // `extensions.approvedToRun`, so `mayRunExtensionCode` refuses its server
+    // half and `readBundle` refuses to serve its browser half. What the agent
+    // gets is a row in the person's list saying "on", waiting for the approval
+    // only they can give. The tool stays tier `act` because the dev loop is edit
+    // → test → reload and a card per compile error is the routine-card harm this
+    // repo refused on DOR-504/506.
+    //
+    // **Invalidation conditions — redo this argument if any of these changes:**
+    //  1. `scaffoldExtension` stops refusing an id taken in the other scope, or
+    //     grows a third root that is not checked (a new scope, a plugin dir).
+    //  2. `createExtension` stops calling `scaffoldExtension` first, or starts
+    //     enabling an id it did not itself create.
+    //  3. Enabling starts implying anything about RUNNING — i.e. ANY
+    //     `mayRunExtensionCode` call site stops gating. Enumerate them from the
+    //     source rather than from this list, which is a snapshot: today there are
+    //     three, one per place code could execute — `extension-server-lifecycle.ts`
+    //     (the server half), `extension-manager.ts` `readBundle` (the browser
+    //     half, withheld so agent-authored JavaScript never runs on the page and
+    //     spends the session it finds there) and `extension-test-harness.ts` (the
+    //     `test_extension` tool, refused ahead of the compile). A fourth use in
+    //     `extension-manager-types.ts` is the `toPublic` projection, which
+    //     reports the verdict rather than enforcing it.
+    //  4. The discovery merge starts letting a project copy win an id that is
+    //     core or approved.
+    // Pinned by `extension-scaffolder.test.ts` → "an id already taken in the
+    // other scope", which fails on condition 1 directly.
+    what: 'scaffolds an extension and turns it on in one step, which is the one path to `extensions.enabled` an agent can reach unaided',
+    call: 'createExtension(',
+    allowed: {
+      'services/runtimes/claude-code/mcp-tools/extension-tools.ts':
+        'the `create_extension` MCP tool, tier `act`. Ungated, and safe ONLY because `scaffoldExtension` refuses an id taken in either scope (DOR-1507) — so the id it enables is genuinely new, therefore never in `extensions.approvedToRun`, therefore unable to run. Read the invalidation conditions above this entry before adding a second caller or a third scope',
+      'services/extensions/extension-manager.ts': 'the definition itself',
+    },
+  },
+  {
     // The one entry here whose allowlist holds nothing but the definition, and
     // the reason is worth stating: it is watched for who must NEVER reach it.
     //
@@ -233,8 +430,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'routes/config.ts': 'a person changing their own settings in their own cockpit',
       'routes/shapes.ts':
         'a person clicking a Shape in their own cockpit — applying one writes files, rewrites config and creates and deletes scheduled work, so an agent is asked first (DOR-625)',
-      'routes/extensions-approval.ts':
-        'a person allowing an extension to run its code inside DorkOS, in their own cockpit (DOR-516). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because the field it writes (`extensions.approvedToRun`) IS operator-only, plus a trusted-`Origin` bar the config route does not need because these two routes are reachable by a plain cross-site POST. There is no MCP twin to walk around, by design',
+      'routes/extensions-person-bar.ts':
+        'the one person bar every WRITE on the extensions router runs — approving an extension to run its code inside DorkOS (DOR-516) and, since DOR-1507, turning one on or off. Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because every leaf those four routes write (`extensions.approvedToRun`, `extensions.enabled`, `extensions.disabled`) IS operator-only, plus a trusted-`Origin` bar the config route does not need because these routes are reachable by a plain cross-site POST. It is ONE module rather than a copy per route file precisely so a fifth write route cannot arrive with two of the three bars',
       'routes/tunnel.ts':
         'a person turning Remote Access on in their own cockpit, which publishes this machine and writes `tunnel.enabled` (DOR-1738). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because `tunnel.*` IS operator-only in config-write-policy and this route writes the flag straight through `configManager`, around the door that enforces that. `POST /api/tunnel/stop` deliberately runs neither bar and reaches no effect on this list: stopping only ever narrows exposure, and gating it stranded a running tunnel once already (DOR-574)',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',

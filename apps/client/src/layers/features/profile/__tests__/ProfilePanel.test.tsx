@@ -75,7 +75,7 @@ describe('ProfilePanel — the handle’s three refusals', () => {
   }
 
   it('says three different things for HANDLE_TAKEN, HANDLE_RESERVED and INVALID_HANDLE', async () => {
-    const taken = await messageFor('HANDLE_TAKEN', "@taken is already somebody else's handle.");
+    const taken = await messageFor('HANDLE_TAKEN', '@taken is already somebody else’s handle.');
     cleanup();
     const reserved = await messageFor('HANDLE_RESERVED', '@taken is reserved.');
     cleanup();

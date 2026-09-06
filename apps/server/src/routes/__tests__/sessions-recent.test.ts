@@ -42,13 +42,15 @@ vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn(async () => null),
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
 
 function makeSession(id: string, updatedAt: string, cwd: string): Session {
   return {
@@ -108,7 +110,7 @@ describe('GET /api/sessions/recent', () => {
       Promise.resolve(dir === '/p1' ? [makeSession('s1', '2026-03-01T00:00:00.000Z', '/p1')] : [])
     );
 
-    const res = await request(app).get('/api/sessions/recent');
+    const res = await request(testServer).get('/api/sessions/recent');
 
     expect(res.status).toBe(200);
     expect(res.body.sessions.map((s: Session) => s.id)).toEqual(['s1']);
@@ -123,7 +125,7 @@ describe('GET /api/sessions/recent', () => {
       Promise.resolve([makeSession(`s-${dir}`, `2026-03-${dir.slice(-2)}T00:00:00.000Z`, dir)])
     );
 
-    const res = await request(app).get('/api/sessions/recent');
+    const res = await request(testServer).get('/api/sessions/recent');
 
     expect(res.status).toBe(200);
     // 15 agents each with a session, trimmed to the default limit of 10.
@@ -139,30 +141,30 @@ describe('GET /api/sessions/recent', () => {
       Promise.resolve([makeSession(`s-${dir}`, `2026-03-0${dir.slice(-1)}T00:00:00.000Z`, dir)])
     );
 
-    const res = await request(app).get('/api/sessions/recent?limit=3');
+    const res = await request(testServer).get('/api/sessions/recent?limit=3');
 
     expect(res.status).toBe(200);
     expect(res.body.sessions).toHaveLength(3);
   });
 
   it('rejects a limit below 1', async () => {
-    const res = await request(app).get('/api/sessions/recent?limit=0');
+    const res = await request(testServer).get('/api/sessions/recent?limit=0');
     expect(res.status).toBe(400);
   });
 
   it('rejects a limit above 50', async () => {
-    const res = await request(app).get('/api/sessions/recent?limit=100');
+    const res = await request(testServer).get('/api/sessions/recent?limit=100');
     expect(res.status).toBe(400);
   });
 
   it('rejects a non-numeric limit', async () => {
-    const res = await request(app).get('/api/sessions/recent?limit=abc');
+    const res = await request(testServer).get('/api/sessions/recent?limit=abc');
     expect(res.status).toBe(400);
   });
 
   it('returns an empty envelope when no agents are registered', async () => {
     setAgentPaths([]);
-    const res = await request(app).get('/api/sessions/recent');
+    const res = await request(testServer).get('/api/sessions/recent');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ sessions: [], agentActivity: {}, warnings: [] });
   });
@@ -178,7 +180,7 @@ describe('GET /api/sessions/recent', () => {
     app.locals.resolveTaskOrigins = (sessionIds: string[]) =>
       sessionIds.includes('s1') ? new Map([['s1', { taskName: 'daily-digest' }]]) : new Map();
 
-    const res = await request(app).get('/api/sessions/recent');
+    const res = await request(testServer).get('/api/sessions/recent');
 
     expect(res.status).toBe(200);
     const session = res.body.sessions.find((s: Session) => s.id === 's1');
@@ -206,7 +208,7 @@ describe('GET /api/sessions/recent', () => {
         ? new Map([['s1', { roomLabel: '#general', roomId: 'room-1' }]])
         : new Map();
 
-    const res = await request(app).get('/api/sessions/recent');
+    const res = await request(testServer).get('/api/sessions/recent');
 
     expect(res.status).toBe(200);
     const bound = res.body.sessions.find((s: Session) => s.id === 's1');
@@ -245,7 +247,7 @@ describe('GET /api/sessions/recent', () => {
     ]);
     broken.listSessions.mockRejectedValue(new Error('backend down'));
 
-    const res = await request(app).get('/api/sessions/recent');
+    const res = await request(testServer).get('/api/sessions/recent');
 
     expect(res.status).toBe(200);
     const knows = res.body.sessions.find((s: Session) => s.id === 's-knows');
@@ -279,7 +281,7 @@ describe('GET /api/sessions/recent', () => {
       new Map([['s-room', { roomLabel: '#general', roomId: 'room-1' }]]);
     app.locals.resolveTaskOrigins = () => new Map([['s-task', { taskName: 'nightly-sync' }]]);
 
-    const res = await request(app).get('/api/sessions/recent');
+    const res = await request(testServer).get('/api/sessions/recent');
 
     expect(res.status).toBe(200);
     const byId = new Map(res.body.sessions.map((s: Session) => [s.id, s]));
@@ -299,7 +301,7 @@ describe('GET /api/sessions/recent', () => {
       new Map([['s1', { roomLabel: '#general', roomId: 'room-1' }]]);
     app.locals.resolveTaskOrigins = () => new Map([['s1', { taskName: 'daily-digest' }]]);
 
-    const res = await request(app).get('/api/sessions/recent');
+    const res = await request(testServer).get('/api/sessions/recent');
 
     expect(res.body.sessions[0].origin).toBe('task');
     expect(res.body.sessions[0].originLabel).toBe('Scheduled task · daily-digest');

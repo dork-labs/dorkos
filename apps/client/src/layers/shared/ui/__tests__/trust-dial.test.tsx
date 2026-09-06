@@ -72,7 +72,7 @@ const CODEX: PermissionModeDescriptor[] = [
     stop: 'act',
     asks: 'never',
     reach: 'workspace',
-    promise: "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
+    promise: 'Edits files and runs commands inside the workspace — Codex can’t pause to ask.',
     native: 'workspace-write',
   },
   {
@@ -294,7 +294,7 @@ describe('TrustDial', () => {
     it('rewrites itself for a runtime that means something else by the same stop', () => {
       render(<TrustDial mode="acceptEdits" descriptors={CODEX} onChangeMode={vi.fn()} />);
 
-      expect(screen.getByText(/Codex can't pause to ask/)).toBeInTheDocument();
+      expect(screen.getByText(/Codex can’t pause to ask/)).toBeInTheDocument();
     });
 
     it('warms to amber when the runtime cannot keep the stop’s promise', () => {
@@ -373,7 +373,7 @@ describe('TrustDial', () => {
       const note = screen.getByTestId('trust-dial-stranded');
       // Named by the shared fallback label, the same words every other surface
       // uses for a mode with no descriptor in hand.
-      expect(note).toHaveTextContent(/Don't Ask/);
+      expect(note).toHaveTextContent(/Don’t Ask/);
       expect(note).toHaveAttribute('role', 'status');
       expect(within(dial()).queryAllByRole('radio', { checked: true })).toHaveLength(0);
     });

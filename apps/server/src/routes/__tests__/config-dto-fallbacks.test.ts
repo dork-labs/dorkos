@@ -27,8 +27,12 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: { status: { enabled: false, connected: false, url: null } },
@@ -56,6 +60,8 @@ describe('GET /api/config falls back to the schema, not to a retyped literal', (
     app = express();
     app.use(express.json());
     app.use('/api/config', configRouter);
+
+    fixtureTarget.mount(app);
   });
 
   it('reports the schema scheduler defaults, including the raised concurrency', () => {
@@ -65,7 +71,7 @@ describe('GET /api/config falls back to the schema, not to a retyped literal', (
   });
 
   it('answers with the schema scheduler block when the section cannot be read', async () => {
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(fixtureServer).get('/api/config').expect(200);
 
     expect(res.body.scheduler).toMatchObject({
       maxConcurrentRuns: USER_CONFIG_DEFAULTS.scheduler.maxConcurrentRuns,
@@ -76,7 +82,7 @@ describe('GET /api/config falls back to the schema, not to a retyped literal', (
   it('answers with the schema logging block when the section cannot be read', async () => {
     // The one still written out by hand in the route. If this goes red, the
     // literal there has drifted from the schema — fix the route, not this test.
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(fixtureServer).get('/api/config').expect(200);
 
     expect(res.body.logging).toEqual({
       level: USER_CONFIG_DEFAULTS.logging.level,

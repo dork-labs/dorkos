@@ -1,5 +1,5 @@
 /**
- * Whether a navigation the cockpit started is still the one it wants.
+ * Whether a navigation the app started is still the one it wants.
  *
  * Deciding where a click leads became asynchronous once resolution learned to
  * ask the server (DOR-928), and an async decision can be overtaken. Two things
@@ -40,7 +40,7 @@ import type { InPlaceNavigationState } from '@/layers/shared/model';
 let latestLookup = 0;
 
 /** The part of the router's location this module reads. */
-export interface CockpitLocation {
+export interface AppLocation {
   /** Route path, e.g. `/session` or `/channels`. */
   pathname: string;
   /** Parsed search params. */
@@ -57,12 +57,12 @@ export interface CockpitLocation {
 }
 
 /** Read the in-place declaration a rewrite stamped onto a location, if any. */
-function inPlaceBaseOf(location: CockpitLocation): InPlaceNavigationState['inPlaceBase'] {
+function inPlaceBaseOf(location: AppLocation): InPlaceNavigationState['inPlaceBase'] {
   return (location.state as InPlaceNavigationState | undefined)?.inPlaceBase;
 }
 
 /**
- * Where the cockpit is pointed, as one comparable string.
+ * Where the app is pointed, as one comparable string.
  *
  * **Not the href, and not name-matched.** An in-place rewrite carries, in its
  * own history state, the destination it hangs off ({@link InPlaceNavigationState}
@@ -81,7 +81,7 @@ function inPlaceBaseOf(location: CockpitLocation): InPlaceNavigationState['inPla
  * @param location - The router's current location.
  * @returns A key equal for two locations that mean the same destination.
  */
-export function sessionDestination(location: CockpitLocation): string {
+export function sessionDestination(location: AppLocation): string {
   // An in-place rewrite reports the destination it hangs off; everything else
   // reports where it actually is.
   const base = inPlaceBaseOf(location) ?? location;
@@ -104,11 +104,11 @@ export function sessionDestination(location: CockpitLocation): string {
  *   `() => router.state.location`. Read again on each check, so any navigation
  *   by anyone is visible without that caller knowing this exists.
  * @returns A predicate answering whether this navigation is still wanted. Check
- *   it after every `await` and before acting; `false` means the cockpit has
+ *   it after every `await` and before acting; `false` means the app has
  *   moved on, and the right move is to do nothing at all — not even to explain
  *   yourself, since the person is somewhere else now.
  */
-export function beginSessionNavigation(readLocation: () => CockpitLocation): () => boolean {
+export function beginSessionNavigation(readLocation: () => AppLocation): () => boolean {
   const startedAt = sessionDestination(readLocation());
   const mine = ++latestLookup;
   return () => mine === latestLookup && sessionDestination(readLocation()) === startedAt;

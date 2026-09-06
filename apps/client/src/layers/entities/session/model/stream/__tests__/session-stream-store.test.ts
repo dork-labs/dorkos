@@ -402,7 +402,7 @@ describe('useSessionStreamStore', () => {
     useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
     const store = useSessionStreamStore.getState();
     store.applyEvent(SID, { type: 'turn_start', seq: 1 });
-    store.applyEvent(SID, { type: 'system_status', seq: 2, message: 'Running hook "pre"...' });
+    store.applyEvent(SID, { type: 'system_status', seq: 2, message: 'Running hook "pre"…' });
     store.applyEvent(SID, {
       type: 'operation_progress',
       seq: 3,
@@ -1047,7 +1047,7 @@ describe('useSessionStreamStore', () => {
     });
   });
 
-  describe("queue_update (the server's queue, projected)", () => {
+  describe('queue_update (the server’s queue, projected)', () => {
     it('hydrates the queue from the snapshot, so a refresh shows what is waiting', () => {
       useSessionStreamStore
         .getState()

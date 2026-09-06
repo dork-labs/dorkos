@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 // Mock dependencies before importing the router
 vi.mock('../../services/core/config-manager.js', () => {
@@ -99,6 +100,9 @@ import { env } from '../../env.js';
 import { hasAnyApiKey } from '../../services/core/auth/index.js';
 import { getMcpLocalToken, rotateMcpLocalToken } from '../../services/core/auth/mcp-local-token.js';
 
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
+
 function createTestApp() {
   const app = express();
   app.use(express.json());
@@ -122,6 +126,8 @@ describe('Config MCP endpoints', () => {
     // Set DORK_HOME for the GET handler
     process.env.DORK_HOME = '/tmp/dork-test';
     app = createTestApp();
+
+    fixtureTarget.mount(app);
   });
 
   describe('GET /api/config — mcp section', () => {
@@ -129,7 +135,7 @@ describe('Config MCP endpoints', () => {
       // Purpose: with no env key, no user keys, and no local token (the
       // can't-generate fallback that should not occur in a normal boot), the
       // surface reports 'none' / not-configured and emits no token.
-      const res = await request(app).get('/api/config').expect(200);
+      const res = await request(fixtureServer).get('/api/config').expect(200);
       expect(res.body.mcp).toBeDefined();
       expect(res.body.mcp.enabled).toBe(true);
       expect(res.body.mcp.authConfigured).toBe(false);
@@ -149,7 +155,7 @@ describe('Config MCP endpoints', () => {
       // token value never rides this sessionGate-passthrough GET: it is only
       // available through the purpose-built POST reveal endpoint.
       vi.mocked(getMcpLocalToken).mockReturnValue('dork_mcp_local_abc123');
-      const res = await request(app).get('/api/config').expect(200);
+      const res = await request(fixtureServer).get('/api/config').expect(200);
       expect(res.body.mcp.authSource).toBe('local-token');
       expect(res.body.mcp.authConfigured).toBe(true);
       expect(res.body.mcp).not.toHaveProperty('localToken');
@@ -161,7 +167,7 @@ describe('Config MCP endpoints', () => {
       // never applies and the config GET carries no token field.
       (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-secret';
       vi.mocked(getMcpLocalToken).mockReturnValue('dork_mcp_local_abc123');
-      const res = await request(app).get('/api/config').expect(200);
+      const res = await request(fixtureServer).get('/api/config').expect(200);
       expect(res.body.mcp.authConfigured).toBe(true);
       expect(res.body.mcp.authSource).toBe('env');
       expect(res.body.mcp).not.toHaveProperty('localToken');
@@ -171,7 +177,7 @@ describe('Config MCP endpoints', () => {
       // Purpose: login-on / per-user keys take precedence over the local token,
       // which is inactive in that mode (ADR-0320); no token field is emitted.
       vi.mocked(hasAnyApiKey).mockReturnValue(true);
-      const res = await request(app).get('/api/config').expect(200);
+      const res = await request(fixtureServer).get('/api/config').expect(200);
       expect(res.body.mcp.authConfigured).toBe(true);
       expect(res.body.mcp.authSource).toBe('user-keys');
       expect(res.body.mcp).not.toHaveProperty('localToken');
@@ -187,7 +193,7 @@ describe('Config MCP endpoints', () => {
           };
         return undefined;
       });
-      const res = await request(app).get('/api/config').expect(200);
+      const res = await request(fixtureServer).get('/api/config').expect(200);
       expect(res.body.mcp.authConfigured).toBe(true);
       expect(res.body.mcp.authSource).toBe('user-keys');
     });
@@ -195,7 +201,7 @@ describe('Config MCP endpoints', () => {
     it('prefers authSource "env" over user keys when MCP_API_KEY is set', async () => {
       (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-secret';
       vi.mocked(hasAnyApiKey).mockReturnValue(true);
-      const res = await request(app).get('/api/config').expect(200);
+      const res = await request(fixtureServer).get('/api/config').expect(200);
       expect(res.body.mcp.authSource).toBe('env');
     });
 
@@ -206,7 +212,7 @@ describe('Config MCP endpoints', () => {
       // could actually use.
       (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = '   ';
       vi.mocked(getMcpLocalToken).mockReturnValue('dork_mcp_local_abc123');
-      const res = await request(app).get('/api/config').expect(200);
+      const res = await request(fixtureServer).get('/api/config').expect(200);
       expect(res.body.mcp.authSource).toBe('local-token');
     });
   });
@@ -216,7 +222,7 @@ describe('Config MCP endpoints', () => {
       // Purpose: the happy path — a fresh token is minted and returned so the
       // settings tab can show the new value.
       vi.mocked(rotateMcpLocalToken).mockReturnValue('dork_mcp_local_newvalue');
-      const res = await request(app).post('/api/config/mcp/rotate-token').expect(200);
+      const res = await request(fixtureServer).post('/api/config/mcp/rotate-token').expect(200);
       expect(res.body.localToken).toBe('dork_mcp_local_newvalue');
       expect(rotateMcpLocalToken).toHaveBeenCalledWith('/tmp/dork-test');
     });
@@ -225,7 +231,7 @@ describe('Config MCP endpoints', () => {
       // Purpose: the local token does not apply under an env override, so
       // rotating it is refused rather than minting a token nothing honors.
       (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-secret';
-      const res = await request(app).post('/api/config/mcp/rotate-token').expect(409);
+      const res = await request(fixtureServer).post('/api/config/mcp/rotate-token').expect(409);
       expect(res.body.error).toMatch(/MCP_API_KEY/);
       expect(rotateMcpLocalToken).not.toHaveBeenCalled();
     });
@@ -236,7 +242,7 @@ describe('Config MCP endpoints', () => {
       vi.mocked(configManager.get).mockImplementation((key: string) =>
         key === 'auth' ? { enabled: true } : undefined
       );
-      const res = await request(app).post('/api/config/mcp/rotate-token').expect(409);
+      const res = await request(fixtureServer).post('/api/config/mcp/rotate-token').expect(409);
       expect(res.body.error).toMatch(/login is on/i);
       expect(rotateMcpLocalToken).not.toHaveBeenCalled();
     });
@@ -247,7 +253,7 @@ describe('Config MCP endpoints', () => {
       // Purpose: the settings tab fetches the token via this POST instead of it
       // riding GET /api/config, keeping the value out of GET caches and logs.
       vi.mocked(getMcpLocalToken).mockReturnValue('dork_mcp_local_abc123');
-      const res = await request(app).post('/api/config/mcp/reveal-token').expect(200);
+      const res = await request(fixtureServer).post('/api/config/mcp/reveal-token').expect(200);
       expect(res.body.localToken).toBe('dork_mcp_local_abc123');
     });
 
@@ -256,7 +262,7 @@ describe('Config MCP endpoints', () => {
       // is nothing meaningful to reveal.
       (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-secret';
       vi.mocked(getMcpLocalToken).mockReturnValue('dork_mcp_local_abc123');
-      const res = await request(app).post('/api/config/mcp/reveal-token').expect(409);
+      const res = await request(fixtureServer).post('/api/config/mcp/reveal-token').expect(409);
       expect(res.body.error).toMatch(/MCP_API_KEY/);
       expect(JSON.stringify(res.body)).not.toContain('dork_mcp_local_abc123');
     });
@@ -268,7 +274,7 @@ describe('Config MCP endpoints', () => {
         key === 'auth' ? { enabled: true } : undefined
       );
       vi.mocked(getMcpLocalToken).mockReturnValue('dork_mcp_local_abc123');
-      const res = await request(app).post('/api/config/mcp/reveal-token').expect(409);
+      const res = await request(fixtureServer).post('/api/config/mcp/reveal-token').expect(409);
       expect(res.body.error).toMatch(/login is on/i);
       expect(JSON.stringify(res.body)).not.toContain('dork_mcp_local_abc123');
     });
@@ -276,18 +282,18 @@ describe('Config MCP endpoints', () => {
     it('404s in the degenerate no-token state', async () => {
       // Purpose: if no token resolved at boot (should not occur normally), the
       // reveal endpoint says so honestly instead of returning an empty value.
-      const res = await request(app).post('/api/config/mcp/reveal-token').expect(404);
+      const res = await request(fixtureServer).post('/api/config/mcp/reveal-token').expect(404);
       expect(res.body.error).toMatch(/no local mcp token/i);
     });
   });
 
   describe('removed key-management endpoints', () => {
     it('no longer exposes POST /api/config/mcp/generate-key', async () => {
-      await request(app).post('/api/config/mcp/generate-key').expect(404);
+      await request(fixtureServer).post('/api/config/mcp/generate-key').expect(404);
     });
 
     it('no longer exposes DELETE /api/config/mcp/api-key', async () => {
-      await request(app).delete('/api/config/mcp/api-key').expect(404);
+      await request(fixtureServer).delete('/api/config/mcp/api-key').expect(404);
     });
   });
 });

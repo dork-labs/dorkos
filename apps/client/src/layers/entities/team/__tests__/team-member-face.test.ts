@@ -98,7 +98,7 @@ describe('an agent on the roster always has a face (DOR-1122)', () => {
     );
   });
 
-  it("lets the agent's own icon beat the hash", () => {
+  it('lets the agent’s own icon beat the hash', () => {
     // A hash is the weakest source there is. Red if this is ever routed through
     // the `override` slot, which outranks a record's own emoji.
     expect(teamMemberFace({ ...AGENT, emoji: '🛡️' }).emoji).toBe('🛡️');

@@ -33,7 +33,7 @@ interface QuickBindingPopoverProps {
  *
  * Shows a searchable list of registered agents, excluding agents that already
  * have a binding to this adapter. Selecting one fires `onQuickBind` to create
- * a binding with all defaults. An "Advanced..." link opens the full
+ * a binding with all defaults. An "Advanced…" link opens the full
  * BindingDialog for detailed configuration.
  */
 export function QuickBindingPopover({
@@ -74,7 +74,7 @@ export function QuickBindingPopover({
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent className="w-56 p-0" align="start">
         <Command>
-          <CommandInput placeholder="Search agents..." />
+          <CommandInput placeholder="Search agents…" />
           <CommandList>
             <CommandEmpty>No agents registered</CommandEmpty>
             {availableAgents.map((agent) => (
@@ -100,7 +100,7 @@ export function QuickBindingPopover({
             className="text-muted-foreground w-full text-xs"
             onClick={handleAdvanced}
           >
-            Advanced...
+            Advanced…
           </Button>
         </div>
       </PopoverContent>

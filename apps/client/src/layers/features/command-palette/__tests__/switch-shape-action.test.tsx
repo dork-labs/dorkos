@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * The "Switch Shape" command-palette entry (DOR-355 §5): the contribution is
+ * The "Switch shape" command-palette entry (DOR-355 §5): the contribution is
  * registered, and selecting it opens the Shape switcher.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -51,11 +51,11 @@ afterEach(() => {
   useAppStore.getState().setShapeSwitcherOpen(false);
 });
 
-describe('Switch Shape palette entry', () => {
-  it('registers a "Switch Shape" quick action wired to the switchShape action', () => {
+describe('Switch shape palette entry', () => {
+  it('registers a "Switch shape" quick action wired to the switchShape action', () => {
     const entry = PALETTE_QUICK_ACTIONS.find((a) => a.id === 'switch-shape');
     expect(entry).toMatchObject({
-      label: 'Switch Shape',
+      label: 'Switch shape',
       action: 'switchShape',
       icon: 'Shapes',
       category: 'quick-action',

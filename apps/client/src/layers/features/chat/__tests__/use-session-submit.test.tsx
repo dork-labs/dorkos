@@ -430,6 +430,45 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(postMessage.mock.calls[1][3]).not.toHaveProperty('runtime');
   });
 
+  it('passes exact selected-agent ownership on the session-creating first send only', async () => {
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    const { result } = renderHook(
+      () => useChatSession('s1', { agentPath: '/projects/registered-agent' }),
+      { wrapper: createWrapper(transport, queryClient) }
+    );
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => result.current.setInput('Hello'));
+    await waitFor(() => expect(result.current.input).toBe('Hello'));
+    await act(async () => result.current.handleSubmit());
+
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage.mock.calls[0][3]).toMatchObject({
+      agentPath: '/projects/registered-agent',
+    });
+
+    act(() => {
+      const store = useSessionStreamStore.getState();
+      store.applyEvent('s1', { seq: 1, type: 'turn_start' });
+      store.applyEvent('s1', { seq: 2, type: 'turn_end' });
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => result.current.setInput('Second'));
+    await waitFor(() => expect(result.current.input).toBe('Second'));
+    await act(async () => result.current.handleSubmit());
+
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage.mock.calls[1][3]).not.toHaveProperty('agentPath');
+  });
+
   it('omits the runtime hint when no launch runtime is selected', async () => {
     const postMessage = vi
       .fn()
@@ -720,7 +759,7 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     });
   });
 
-  it("stop() carries the runtime's receipt through rather than flattening it (DOR-1300)", async () => {
+  it('stop() carries the runtime’s receipt through rather than flattening it (DOR-1300)', async () => {
     // A caller (the composer) decides whether to re-offer Stop off THIS receipt
     // — if `stop()` reduced `unconfirmed` to a same-shaped success, a turn that
     // is still running would never be told apart from one that actually
@@ -961,7 +1000,7 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
 
   it('a failed KICKOFF raises no error banner (no dead Retry) and marks the greeting failed', async () => {
     // The birth session's auto-first-turn: the person typed nothing, so a
-    // "Could not send message" banner with a Retry (which would find no user
+    // "Couldn’t send message" banner with a Retry (which would find no user
     // message to resend) would be dishonest AND dead. The failure instead
     // surfaces via the empty session's honest greeting-failed line.
     const kickoff = wrapKickoff('introduce yourself from SOUL.md');

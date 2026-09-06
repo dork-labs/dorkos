@@ -62,11 +62,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 describe('MCP Config Routes', () => {
   beforeEach(() => {
@@ -75,7 +77,7 @@ describe('MCP Config Routes', () => {
   });
 
   it('GET /api/mcp-config?runtime=codex returns the codex runtime servers, not claude cache', async () => {
-    const res = await request(app).get('/api/mcp-config?path=/projects/demo&runtime=codex');
+    const res = await request(testServer).get('/api/mcp-config?path=/projects/demo&runtime=codex');
 
     expect(res.status).toBe(200);
     expect(res.body.servers).toEqual(codexServers);
@@ -88,7 +90,7 @@ describe('MCP Config Routes', () => {
   it('GET /api/mcp-config?runtime=codex never reads the Claude-format .mcp.json fallback', async () => {
     codexRuntime.getMcpStatus.mockReturnValueOnce(null);
 
-    const res = await request(app).get('/api/mcp-config?path=/projects/demo&runtime=codex');
+    const res = await request(testServer).get('/api/mcp-config?path=/projects/demo&runtime=codex');
 
     expect(res.status).toBe(200);
     // Honest "no MCP servers" for a non-claude runtime with no live status.
@@ -101,7 +103,7 @@ describe('MCP Config Routes', () => {
       JSON.stringify({ mcpServers: { linear: { type: 'http' }, fs: {} } })
     );
 
-    const res = await request(app).get('/api/mcp-config?path=/projects/demo');
+    const res = await request(testServer).get('/api/mcp-config?path=/projects/demo');
 
     expect(res.status).toBe(200);
     expect(runtimeRegistry.getDefault).toHaveBeenCalled();
@@ -116,7 +118,7 @@ describe('MCP Config Routes', () => {
   });
 
   it('GET /api/mcp-config?runtime=<unknown> returns 400', async () => {
-    const res = await request(app).get('/api/mcp-config?path=/projects/demo&runtime=bogus');
+    const res = await request(testServer).get('/api/mcp-config?path=/projects/demo&runtime=bogus');
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/unknown runtime/i);
   });

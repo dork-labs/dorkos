@@ -249,7 +249,7 @@ describe('AgentExecutionRows', () => {
   it('says a model does not take an effort, in the model’s own words', async () => {
     renderRows(manifest({ model: 'haiku' }));
     expect(await screen.findByTestId('agent-effort-unsupported-model')).toHaveTextContent(
-      "This model doesn't take an effort setting"
+      'This model doesn’t take an effort setting'
     );
   });
 
@@ -509,7 +509,7 @@ describe('AgentExecutionRows — the Account row', () => {
     );
     await userEvent.click(await screen.findByTestId('agent-account-row'));
     const inherit = await screen.findByTestId('agent-account-row-inherit');
-    expect(inherit).toHaveTextContent('Using server default: .claude — tap to restore');
+    expect(inherit).toHaveTextContent('Using server default: .claude. Tap to restore');
     await userEvent.click(inherit);
     // `null`, not `undefined`: omitting the key would leave the override in
     // place on the manifest. The mesh route turns it back into a deletion.

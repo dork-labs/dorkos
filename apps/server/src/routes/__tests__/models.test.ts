@@ -88,11 +88,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 describe('Models Routes', () => {
   beforeEach(() => {
@@ -100,7 +102,7 @@ describe('Models Routes', () => {
   });
 
   it('GET /api/models with no sessionId falls back to default runtime (cold discovery)', async () => {
-    const res = await request(app).get('/api/models');
+    const res = await request(testServer).get('/api/models');
     expect(res.status).toBe(200);
     expect(res.body.models).toEqual(claudeModels);
     expect(runtimeRegistry.getDefault).toHaveBeenCalledOnce();
@@ -108,7 +110,7 @@ describe('Models Routes', () => {
   });
 
   it('GET /api/models?sessionId=<claude-session> resolves the claude-code runtime', async () => {
-    const res = await request(app).get(`/api/models?sessionId=${CLAUDE_SESSION}`);
+    const res = await request(testServer).get(`/api/models?sessionId=${CLAUDE_SESSION}`);
     expect(res.status).toBe(200);
     expect(res.body.models).toEqual(claudeModels);
     expect(runtimeRegistry.resolveForSession).toHaveBeenCalledWith(CLAUDE_SESSION);
@@ -116,7 +118,7 @@ describe('Models Routes', () => {
   });
 
   it('GET /api/models?sessionId=<test-mode-session> resolves the test-mode runtime', async () => {
-    const res = await request(app).get(`/api/models?sessionId=${TEST_MODE_SESSION}`);
+    const res = await request(testServer).get(`/api/models?sessionId=${TEST_MODE_SESSION}`);
     expect(res.status).toBe(200);
     expect(res.body.models).toEqual(testModeModels);
     expect(runtimeRegistry.resolveForSession).toHaveBeenCalledWith(TEST_MODE_SESSION);
@@ -127,7 +129,9 @@ describe('Models Routes', () => {
     // A row-less Codex session: `resolveForSession` would infer claude-code and
     // wrongly return Anthropic models. The explicit `runtime` param must win and
     // short-circuit session resolution entirely.
-    const res = await request(app).get(`/api/models?runtime=codex&sessionId=${ROWLESS_SESSION}`);
+    const res = await request(testServer).get(
+      `/api/models?runtime=codex&sessionId=${ROWLESS_SESSION}`
+    );
     expect(res.status).toBe(200);
     expect(res.body.models).toEqual(codexModels);
     expect(runtimeRegistry.get).toHaveBeenCalledWith('codex');
@@ -136,7 +140,7 @@ describe('Models Routes', () => {
   });
 
   it('GET /api/models?runtime=<unknown> returns 400', async () => {
-    const res = await request(app).get('/api/models?runtime=bogus-runtime');
+    const res = await request(testServer).get('/api/models?runtime=bogus-runtime');
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/unknown runtime/i);
     expect(runtimeRegistry.get).not.toHaveBeenCalled();

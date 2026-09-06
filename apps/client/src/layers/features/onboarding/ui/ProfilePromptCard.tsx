@@ -64,7 +64,7 @@ export function ProfilePromptCard({ prompt }: ProfilePromptCardProps) {
             onConfirm={prompt.save}
             confirmLabel={confirmLabel}
             onSkip={prompt.skip}
-            skipLabel="Don't ask again"
+            skipLabel="Don’t ask again"
             busy={phase === 'saving'}
             error={errorMessage}
           />

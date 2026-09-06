@@ -72,7 +72,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 import express from 'express';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createAgentsRouter } from '../agents.js';

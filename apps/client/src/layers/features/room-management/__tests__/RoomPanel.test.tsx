@@ -386,8 +386,8 @@ describe('RoomPanel', () => {
       transport: createMockTransport({ getRoom: vi.fn().mockRejectedValue(new Error('offline')) }),
     });
 
-    expect(await screen.findByText("That room isn't here")).toBeInTheDocument();
-    expect(screen.queryByText(/Couldn't read who is in here/i)).not.toBeInTheDocument();
+    expect(await screen.findByText('That room isn’t here')).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn’t read who is in here/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Current members' })).not.toBeInTheDocument();
   });
 
@@ -505,7 +505,7 @@ describe('RoomPanel', () => {
     // a person. Red if the button goes, or stops actually re-reading.
     const getRoom = vi.fn().mockRejectedValue(new Error('offline'));
     const { transport } = renderPanel({ transport: createMockTransport({ getRoom }) });
-    await screen.findByText("That room isn't here");
+    await screen.findByText('That room isn’t here');
     // And it says why it might have happened, rather than only that it did.
     expect(screen.getByText(/deleted, or the link may be out of date/i)).toBeInTheDocument();
 
@@ -745,7 +745,7 @@ describe('RoomPanel', () => {
       fireEvent.click(within(openScale()).getByRole('radio', { name: 'Everything' }));
 
       expect(
-        await screen.findByText("That didn't save — Only you can change that")
+        await screen.findByText('That didn’t save. Only you can change that')
       ).toBeInTheDocument();
       expect(pill()).toHaveTextContent('@only');
       expect(pill()).not.toHaveAttribute('aria-busy');
@@ -767,11 +767,11 @@ describe('RoomPanel', () => {
 
       fireEvent.click(within(openScale('Bo')).getByRole('radio', { name: 'Everything' }));
 
-      await screen.findByText("That didn't save — Only you can change that");
+      await screen.findByText('That didn’t save. Only you can change that');
       const rows = within(section).getAllByRole('listitem');
       const ana = rows.find((row) => within(row).queryByText('Ana') !== null);
       expect(ana).toBeDefined();
-      expect(within(ana!).queryByText(/didn't save/)).not.toBeInTheDocument();
+      expect(within(ana!).queryByText(/didn’t save/)).not.toBeInTheDocument();
     });
 
     it.each(['channel', 'dm'] as const)(

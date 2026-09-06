@@ -96,7 +96,7 @@ export function useForkShape({ isInlineErrorVisible }: UseForkShapeOptions) {
       // stay quiet. With the field gone (you left while the copy was in flight)
       // a toast is all that is left, and it still names the real problem.
       if (isInlineErrorVisible()) return;
-      toast.error("Couldn't save your version", { description: error.message });
+      toast.error('Couldn’t save your version', { description: error.message });
     },
   });
 }

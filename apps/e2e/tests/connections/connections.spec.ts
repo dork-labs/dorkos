@@ -133,6 +133,38 @@ async function connectWorkAccountViaApi(request: APIRequestContext): Promise<voi
 }
 
 test.describe('Connections — save key, connect, multi-account', () => {
+  test('shows a verification-only connection without a sign-in claim', async ({
+    page,
+  }, testInfo) => {
+    await gotoConnections(page);
+    await saveKeyThroughUi(page);
+    await page.route(`**/api/connectors/${PROVIDER}/connect`, async (route) => {
+      await route.fulfill({
+        json: {
+          flowId: 'e2e-verification-only-flow',
+          disclosure: 'This connection uses the server already configured in DorkOS.',
+        },
+      });
+    });
+    await page.route('**/api/connectors/flows/e2e-verification-only-flow', async (route) => {
+      await route.fulfill({ json: { status: 'pending' } });
+    });
+
+    await page.locator('[data-testid="service-tile-gmail"]').getByRole('button').click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('button', { name: 'Continue' }).click();
+
+    await expect(dialog.getByText('Checking the configured server…')).toBeVisible();
+    await expect(dialog.getByRole('link', { name: /sign-in/i })).toHaveCount(0);
+    await expect(
+      dialog.getByText(/only if the server accepts the configured connection/i)
+    ).toBeVisible();
+    await testInfo.attach('verification-only-connect-dialog.png', {
+      body: await dialog.screenshot(),
+      contentType: 'image/png',
+    });
+  });
+
   test('walks unconfigured → key saved → connect Gmail twice with custody disclosed before every auth step', async ({
     page,
   }) => {

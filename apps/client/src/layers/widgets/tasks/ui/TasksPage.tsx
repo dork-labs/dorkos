@@ -7,8 +7,7 @@ import type { TaskTemplate } from '@/layers/entities/tasks';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import type { Task } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import { TasksList } from '@/layers/features/tasks/ui/TasksList';
-import { TasksEmptyState, CreateTaskDialog } from '@/layers/features/tasks';
+import { CreateTaskDialog, TasksEmptyState, TasksList } from '@/layers/features/tasks';
 
 /** Tasks page -- full-viewport task management surface at /tasks. */
 export function TasksPage() {
@@ -70,8 +69,8 @@ export function TasksPage() {
     return (
       <FeatureDisabledState
         icon={icons.tasks}
-        name="Scheduled tasks"
-        description="Scheduled tasks run your agents on a timer. Start DorkOS with the --tasks flag to turn them on."
+        name="Scheduling"
+        description="Scheduled tasks let your agents work on a timer, even when you’re not here."
         command="dorkos --tasks"
       />
     );
@@ -81,7 +80,7 @@ export function TasksPage() {
     return (
       <QueryErrorState
         className="h-full"
-        title="Could not load your scheduled tasks"
+        title="Couldn’t load your scheduled tasks"
         description="The scheduler is unreachable. Check that the server is running correctly."
         onRetry={() => void refetch()}
       />

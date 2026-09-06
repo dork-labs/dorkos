@@ -170,7 +170,7 @@ describe('frecency and recency each move rank', () => {
     expect(rows).toEqual(['zz-habit', 'aa-rare']);
   });
 
-  it("puts what MOVED recently above what has not, on the thing's own clock", () => {
+  it('puts what MOVED recently above what has not, on the thing’s own clock', () => {
     // Nothing has been opened by anyone here: this is the row's own freshness,
     // which is a different fact from the operator's history.
     const rows = order([

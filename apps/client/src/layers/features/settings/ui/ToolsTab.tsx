@@ -6,7 +6,6 @@ import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { useToolNamesForGroup } from '@/layers/entities/capability';
 import { FieldCard, FieldCardContent, SettingRow } from '@/layers/shared/ui';
 import { useDeepLinkScroll, useSettingsDeepLink, useTransport } from '@/layers/shared/model';
-import { useAgentContextConfig } from '@/layers/features/agent-settings/model/use-agent-context-config';
 import {
   TOOL_INVENTORY,
   TOOL_GROUPS,
@@ -19,7 +18,7 @@ import { SchedulerSettings } from './tools/SchedulerSettings';
 import { BackgroundSystemsCard } from './tools/BackgroundSystemsCard';
 import { ExternalMcpCard } from './external-mcp/ExternalMcpCard';
 import { ResetToDefaultsButton } from './ResetToDefaultsButton';
-import { configKeys } from '@/layers/entities/config';
+import { configKeys, useAgentContextConfig } from '@/layers/entities/config';
 
 /**
  * Header action for the Tools panel — turns every tool group back on.
@@ -121,7 +120,7 @@ export function ToolsTab() {
 
   // The background-system switches send the ONE key they change. `PATCH
   // /api/config` deep-merges, so the rest of each block is left alone — which
-  // matters here because the cockpit is not sent every field of these blocks and
+  // matters here because the app is not sent every field of these blocks and
   // could not round-trip them faithfully if it tried.
   const setTasksEnabled = useCallback(
     async (enabled: boolean) => {
@@ -142,16 +141,15 @@ export function ToolsTab() {
   return (
     <div className="space-y-4">
       <p className="text-muted-foreground text-sm">
-        Choose which tool groups your agents are told about by default. Turning a group off leaves
-        it out of an agent&rsquo;s instructions, so agents stop reaching for it. It is guidance, not
-        a lock &mdash; an agent that asks for one anyway still gets it. Individual agents can
-        override these in their own Tools tab.
+        Choose which tools your agents hear about by default. Turning a group off keeps it out of
+        their instructions, so they stop reaching for it. This is a hint, not a lock: an agent that
+        asks for one anyway still gets it. Each agent can set its own list in its Tools tab.
       </p>
       <FieldCard>
         <FieldCardContent>
           <SettingRow
-            label="Core Tools"
-            description="Server info, agent identity, app controls, and preview reads"
+            label="Core tools"
+            description="Let agents check the app, know who they are, and read what you’re previewing."
           >
             <div className="flex items-center gap-2">
               <ToolCountBadge tools={TOOL_INVENTORY.core} />
@@ -207,7 +205,7 @@ export function ToolsTab() {
               person is where to go, and it says that. */}
           <p className="text-muted-foreground text-sm">
             Unlike the groups above, this one blocks: an agent without it is refused and told to ask
-            you. Turn it on for an agent in that agent&rsquo;s own Tools settings.
+            you. Turn it on for an agent in that agent’s own Tools settings.
           </p>
         </FieldCardContent>
       </FieldCard>

@@ -28,7 +28,7 @@ interface OwnerSetupScreenProps {
 
 /**
  * First-run owner-account creation form (email + password + confirm). Reused by
- * the Settings → Security "Require login" flow and the tunnel exposure flow.
+ * the Settings → Access "Require login" flow and the tunnel exposure flow.
  * The email is a local identifier only — never verified, no email is ever sent.
  */
 export function OwnerSetupScreen({
@@ -107,7 +107,7 @@ export function OwnerSetupScreen({
             autoFocus
           />
           <p className="text-muted-foreground text-xs">
-            A local identifier only — it is never verified and no email is ever sent.
+            A local identifier only. It is never verified and no email is ever sent.
           </p>
         </div>
         <div className="space-y-1.5">

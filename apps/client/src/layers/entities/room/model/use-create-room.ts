@@ -129,7 +129,7 @@ export function useCreateChannel({
     meta: { suppressErrorToast: true },
     onError: (error) => {
       if (isChannelNameConflict(error) && isInlineErrorVisible()) return;
-      toast.error(`Couldn't create that channel — ${error.message}`);
+      toast.error('Couldn’t create that channel.', { description: error.message });
     },
   });
 }
@@ -172,6 +172,6 @@ export function useStartDirectMessage(): UseMutationResult<
     mutationFn: ({ agentPaths, title }: StartDirectMessageInput) =>
       transport.createRoom({ kind: 'dm', title, members: [], agentPaths }),
     onSettled: () => invalidateRoomReads(queryClient),
-    meta: { errorLabel: "Couldn't start that conversation" },
+    meta: { errorLabel: 'Couldn’t start that conversation' },
   });
 }

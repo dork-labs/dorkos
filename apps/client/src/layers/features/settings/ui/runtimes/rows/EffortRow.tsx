@@ -125,7 +125,7 @@ export function EffortRow({
           data-testid={`runtime-effort-model-unsupported-${runtimeType}`}
         >
           <p className="text-muted-foreground text-xs">
-            {selectedModel?.displayName ?? configuredModelId} doesn&apos;t take an effort setting
+            {selectedModel?.displayName ?? configuredModelId} doesn’t take an effort setting
           </p>
           {value && (
             <button
@@ -135,7 +135,7 @@ export function EffortRow({
               className="focus-ring self-start rounded-sm text-xs text-amber-700 underline-offset-2 hover:underline disabled:pointer-events-none disabled:opacity-50 dark:text-amber-400"
               data-testid={`runtime-effort-clear-${runtimeType}`}
             >
-              {effortLabel(value)} is saved here and does nothing — clear it
+              {effortLabel(value)} is saved here and does nothing. Clear it
             </button>
           )}
         </div>

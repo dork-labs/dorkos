@@ -64,7 +64,7 @@ export function OpenRouterGatewayPath({
                 Connect OpenRouter
               </Button>
               <p className="text-muted-foreground text-xs">
-                Creates a scoped key automatically — no copy-paste.
+                Creates a scoped key automatically. No copy-paste.
               </p>
             </>
           )}

@@ -109,10 +109,10 @@ export function NotificationsTab() {
         trigger="Get these on your phone"
       >
         <ol className="text-muted-foreground list-decimal space-y-1.5 pl-4 text-xs">
-          <li>Open DorkOS on your phone, at your Remote Access address.</li>
+          <li>Open DorkOS on your phone, at your Remote access address.</li>
           <li>
-            Choose &ldquo;Add to Home Screen&rdquo;. On iPhone this step is required before
-            notifications work at all.
+            Choose “Add to Home Screen”. On iPhone this step is required before notifications work
+            at all.
           </li>
           <li>Open Settings there and add it as a device above.</li>
         </ol>

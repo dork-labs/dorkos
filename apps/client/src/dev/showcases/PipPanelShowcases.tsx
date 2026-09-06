@@ -46,7 +46,7 @@ export function PipPanelShowcases() {
               Open Demo A, then Open Demo B — the second call replaces the first, since only one
               panel shows at a time. Drag the panel by its header and resize it from the
               bottom-right corner to check that it clamps against the viewport edges. Reload the{' '}
-              <code className="bg-muted rounded px-1 py-0.5 text-xs">/dev/features</code> page
+              <code className="bg-muted rounded px-1 py-0.5 text-xs">/dev/home-inbox</code> page
               afterward to confirm the position survives: geometry persists to localStorage, the
               same way it does in the real app.
             </p>
@@ -57,8 +57,8 @@ export function PipPanelShowcases() {
               peek to minimize into the 64px mini-bar (tap it to restore; its X closes). The content
               behind the sheet stays scrollable and clickable (no overlay, no background scaling),
               and the mini-bar pads the page bottom via --pip-dock so the routed page clears it. In
-              the real app the mini-bar also docks above the phone&apos;s bottom tab bar rather than
-              on the screen edge, which this page has no tab bar to show (DOR-1177).
+              the real app the mini-bar also docks above the phone’s bottom tab bar rather than on
+              the screen edge, which this page has no tab bar to show (DOR-1177).
             </p>
           </div>
         </ShowcaseDemo>

@@ -34,9 +34,9 @@ export function ThreadNotice({ kind }: { kind: ThreadNoticeKind }) {
         data-testid="room-thread-error"
         className="text-muted-foreground flex flex-col items-center gap-2 px-[var(--msg-padding-x)] py-6 text-center text-sm"
       >
-        <p className="text-foreground font-medium">Couldn&rsquo;t load this thread</p>
+        <p className="text-foreground font-medium">Couldn’t load this thread</p>
         <p className="max-w-sm text-xs">
-          Nothing was lost — a room keeps everything that was said. Reload to try again.
+          Nothing was lost. A room keeps everything that was said. Reload to try again.
         </p>
       </div>
     );

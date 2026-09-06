@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { connectorConformance } from '@dorkos/test-utils';
-import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
+import type { ConnectorExternalAccountRef } from '@dorkos/shared/connector-provider';
 import type {
   CredentialProvider,
   CredentialResolution,
@@ -23,7 +23,7 @@ import {
   NANGO_SECRET_KEY_REF,
   assertNangoEncryptionKey,
   maybeCreateNangoProvider,
-  toConnectedAccountId,
+  toExternalAccountRef,
   toNangoConnectionId,
 } from '../nango.js';
 
@@ -162,8 +162,8 @@ connectorConformance(makeProvider, {
     const { account } = await provider.pollConnect(flowId);
     // Expire the connection: a non-ACTIVE account must resolve null (the
     // documented null branch), never throw.
-    client.setStatus(toNangoConnectionId(account!.id), 'EXPIRED');
-    return { provider, accountId: account!.id };
+    client.setStatus(toNangoConnectionId(account!.externalAccountRef), 'EXPIRED');
+    return { provider, externalAccountRef: account!.externalAccountRef };
   },
 });
 
@@ -181,7 +181,7 @@ describe('NangoConnectorProvider — self-host-custody semantics', () => {
   });
 
   it('wraps the Nango connectionId as an opaque, provider-scoped id and back', () => {
-    const id = toConnectedAccountId('conn_abc123');
+    const id = toExternalAccountRef('conn_abc123');
     expect(id).toBe('nango:conn_abc123');
     expect(toNangoConnectionId(id)).toBe('conn_abc123');
   });
@@ -194,9 +194,7 @@ describe('NangoConnectorProvider — self-host-custody semantics', () => {
     expect(poll.status).toBe('connected');
     expect(poll.account?.label).toBe('work');
     expect(poll.account?.custody).toBe('self-host');
-    expect(poll.account?.provider).toBe('nango');
-    // No raw connectionId leaks past the port — the id is the wrapped form.
-    expect(poll.account?.id.startsWith('nango:')).toBe(true);
+    expect(poll.account?.externalAccountRef.startsWith('nango:')).toBe(true);
   });
 
   it('yields two distinct, independently-addressable ids for two connects of one integration', async () => {
@@ -207,9 +205,9 @@ describe('NangoConnectorProvider — self-host-custody semantics', () => {
     const second = await provider.startConnect('gmail', { label: 'work' });
     const work = (await provider.pollConnect(second.flowId)).account!;
 
-    expect(personal.id).not.toBe(work.id);
+    expect(personal.externalAccountRef).not.toBe(work.externalAccountRef);
     const accounts = await provider.listAccounts({ toolkit: 'gmail' });
-    expect(new Set(accounts.map((a) => a.id)).size).toBe(2);
+    expect(new Set(accounts.map((a) => a.externalAccountRef)).size).toBe(2);
   });
 
   it('exposes an ACTIVE account as the wrapper connection (bearer-gated local endpoint)', async () => {
@@ -217,13 +215,13 @@ describe('NangoConnectorProvider — self-host-custody semantics', () => {
     const { flowId } = await provider.startConnect('gmail', { label: 'personal' });
     const account = (await provider.pollConnect(flowId)).account!;
 
-    const connection = await provider.toolServerForAccount(account.id);
+    const connection = await provider.toolServerForAccount(account.externalAccountRef);
     expect(connection).not.toBeNull();
     expect(connection).toMatchObject({ transport: 'http' });
     const http = connection as { url: string; headers?: Record<string, string> };
     // The wrapper's local endpoint, addressed by the opaque account id…
     expect(http.url).toBe(
-      `http://127.0.0.1:4242/api/connectors/nango/mcp/${encodeURIComponent(account.id)}`
+      `http://127.0.0.1:4242/api/connectors/nango/mcp/${encodeURIComponent(account.externalAccountRef)}`
     );
     // …gated by a per-account bearer token (never the Nango secret key).
     expect(http.headers?.authorization).toMatch(/^Bearer [0-9a-f]{64}$/);
@@ -235,8 +233,8 @@ describe('NangoConnectorProvider — self-host-custody semantics', () => {
     const { flowId } = await provider.startConnect('gmail', { label: 'personal' });
     const account = (await provider.pollConnect(flowId)).account!;
 
-    client.setStatus(toNangoConnectionId(account.id), 'EXPIRED');
-    await expect(provider.toolServerForAccount(account.id)).resolves.toBeNull();
+    client.setStatus(toNangoConnectionId(account.externalAccountRef), 'EXPIRED');
+    await expect(provider.toolServerForAccount(account.externalAccountRef)).resolves.toBeNull();
   });
 
   it('resolves null on a transport failure while resolving the account, never a throw', async () => {
@@ -246,7 +244,7 @@ describe('NangoConnectorProvider — self-host-custody semantics', () => {
     const account = (await provider.pollConnect(flowId)).account!;
 
     client.failWith(new NangoApiError(401, 'unauthorized'));
-    await expect(provider.toolServerForAccount(account.id)).resolves.toBeNull();
+    await expect(provider.toolServerForAccount(account.externalAccountRef)).resolves.toBeNull();
   });
 
   it('surfaces a failed Nango connect as a typed failure, never a throw', async () => {
@@ -259,7 +257,7 @@ describe('NangoConnectorProvider — self-host-custody semantics', () => {
   it('disconnect is idempotent for an unknown/already-revoked id', async () => {
     const provider = makeProvider();
     await expect(
-      provider.disconnect('nango:conn_nope' as ConnectedAccountId)
+      provider.disconnect('nango:conn_nope' as ConnectorExternalAccountRef)
     ).resolves.toBeUndefined();
   });
 });

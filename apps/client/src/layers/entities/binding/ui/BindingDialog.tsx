@@ -205,7 +205,7 @@ export function BindingDialog({
             {isEdit ? 'Edit connection' : 'Add connection'}
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription className="sr-only">
-            {isEdit ? "Edit this connection's settings" : 'Add a new connection for this agent'}
+            {isEdit ? 'Edit this connection’s settings' : 'Add a new connection for this agent'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
@@ -243,7 +243,7 @@ export function BindingDialog({
                       channelType:
                         values.channelType !== SELECT_ANY ? values.channelType : undefined,
                     });
-                    return `${sentence} — routed to ${resolvedAgentName}.`;
+                    return `${sentence}. Routed to ${resolvedAgentName}.`;
                   })()
                 : null;
             // SELECT_ANY means "no filter selected" — used for badge and clear button visibility.
@@ -502,7 +502,7 @@ export function BindingDialog({
                   </Button>
                   <Button size="sm" onClick={() => form.handleSubmit()} disabled={isSubmitDisabled}>
                     {isLoading && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-                    {isLoading ? 'Saving...' : isEdit ? 'Save Changes' : 'Add connection'}
+                    {isLoading ? 'Saving…' : isEdit ? 'Save changes' : 'Add connection'}
                   </Button>
                 </ResponsiveDialogFooter>
               </>

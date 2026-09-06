@@ -43,6 +43,6 @@ export function useHaltAgent(): UseMutationResult<HaltRoomResponse, Error, HaltA
     // agent — No such agent in this room." Handled here rather than at the call
     // site because the row that was pressed may already be gone by the time a
     // refusal lands: the peek draws only the agents that are working.
-    meta: { errorLabel: "Couldn't stop this agent" },
+    meta: { errorLabel: 'Couldn’t stop this agent' },
   });
 }

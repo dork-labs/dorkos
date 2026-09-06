@@ -51,18 +51,18 @@ export function stopNotice(receipt: InterruptReceipt): StopNotice {
       return { message: 'You stopped this reply.', isFailure: false };
     case 'closed':
       return {
-        message: "You stopped this reply. The agent didn't answer, so DorkOS ended it.",
+        message: 'You stopped this reply. The agent didn’t answer, so DorkOS ended it.',
         isFailure: false,
       };
     case 'not-running':
       return { message: null, isFailure: false };
     case 'unconfirmed':
       return {
-        message: `Stop requested. ${runtimeLabel(receipt.runtime)} didn't confirm it — the agent may still be working.`,
+        message: `Stop requested. ${runtimeLabel(receipt.runtime)} didn’t confirm it. The agent may still be working.`,
         isFailure: false,
       };
     case 'failed':
-      return { message: "Couldn't stop it. Try again.", isFailure: true };
+      return { message: 'Couldn’t stop it. Try again.', isFailure: true };
   }
 }
 

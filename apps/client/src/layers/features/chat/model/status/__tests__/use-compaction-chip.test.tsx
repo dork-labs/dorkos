@@ -205,7 +205,7 @@ describe('useCompactionChip', () => {
       result.current.onCompact();
     });
     await waitFor(() => expect(result.current.pending).toBe(false));
-    expect(toastError).toHaveBeenCalledWith("Couldn't compact the conversation.");
+    expect(toastError).toHaveBeenCalledWith('Couldn’t compact the conversation.');
   });
 
   it('ignores a second click while a dispatch is already pending', async () => {

@@ -93,7 +93,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
 // Dynamically import after mocks are set up
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 import { createApp, finalizeApp } from '../../app.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import {
@@ -173,6 +173,7 @@ describe('Sessions Routes', () => {
     vi.mocked(runtimeRegistry.has).mockReset().mockReturnValue(true);
     vi.mocked(runtimeRegistry.getDefaultType).mockReset().mockReturnValue('fake');
     mockReadManifest.mockReset().mockResolvedValue(null);
+    delete app.locals.meshCore;
   });
 
   afterEach(() => {
@@ -1123,6 +1124,9 @@ describe('Sessions Routes', () => {
     });
 
     it('passes agentPath to persistSessionRuntime', async () => {
+      app.locals.meshCore = {
+        listWithPaths: () => [{ projectPath: '/projects/my-agent' }],
+      };
       await sendMessageOnce(S1, {
         content: 'hi',
         runtime: 'test-mode',
@@ -1135,6 +1139,27 @@ describe('Sessions Routes', () => {
         '/projects/my-agent',
         { interactive: true }
       );
+    });
+
+    it('refuses unregistered agent ownership provenance before persisting the session', async () => {
+      app.locals.meshCore = {
+        listWithPaths: () => [{ projectPath: '/projects/registered-agent' }],
+      };
+
+      const res = await sendMessageOnce(S1, {
+        content: 'hi',
+        runtime: 'test-mode',
+        cwd: '/projects/arbitrary-directory',
+        agentPath: '/projects/arbitrary-directory',
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({
+        error: 'Choose a registered agent before starting this session',
+        code: 'INVALID_AGENT_PATH',
+      });
+      expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
+      expect(fakeRuntime.sendMessage).not.toHaveBeenCalled();
     });
 
     it('refuses a room context a caller tried to supply', async () => {

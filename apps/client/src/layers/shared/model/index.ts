@@ -165,10 +165,12 @@ export type {
 export {
   useRovingFocus,
   SIDEBAR_ACTIONS_ATTRIBUTE,
+  SIDEBAR_DRAGGING_ATTRIBUTE,
   SIDEBAR_GLYPH_ACTION_ATTRIBUTE,
   SIDEBAR_ROW_ATTRIBUTE,
   SIDEBAR_SECTION_ACTION_ATTRIBUTE,
   SIDEBAR_SECTION_TOGGLE_ATTRIBUTE,
   SIDEBAR_TRAILING_ACTION_ATTRIBUTE,
 } from './interaction/use-roving-focus';
+export type { SidebarDragActivatorProps } from './interaction/use-roving-focus';
 export { useRovingGrid } from './interaction/use-roving-grid';

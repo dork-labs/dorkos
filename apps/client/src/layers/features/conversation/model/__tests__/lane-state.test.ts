@@ -296,8 +296,8 @@ describe('deriveLaneState — the priority stack', () => {
     );
 
     expect(state).toMatchObject({
-      line: 'Kai is still working — this is taking longer than usual',
-      sentence: 'Kai is still working — this is taking longer than usual',
+      line: 'Kai is still working, this is taking longer than usual',
+      sentence: 'Kai is still working, this is taking longer than usual',
     });
   });
 
@@ -336,8 +336,8 @@ describe('deriveLaneState — the priority stack', () => {
 
     expect(state).toEqual({
       kind: 'presence',
-      sentence: 'Kai and Ana are still working — this is taking longer than usual',
-      line: 'Kai and Ana are still working — this is taking longer than usual',
+      sentence: 'Kai and Ana are still working, this is taking longer than usual',
+      line: 'Kai and Ana are still working, this is taking longer than usual',
       authorIds: ['kai', 'ana'],
       since: new Date(NOW - 12 * 60_000).toISOString(),
       late: true,
@@ -357,7 +357,7 @@ describe('deriveLaneState — the priority stack', () => {
     );
 
     expect(state).toMatchObject({
-      sentence: '4 agents are still working — this is taking longer than usual',
+      sentence: '4 agents are still working, this is taking longer than usual',
       late: true,
     });
   });
@@ -509,7 +509,7 @@ describe('deriveLaneState — a message that has not started', () => {
 
     expect(state).toEqual({
       kind: 'held',
-      sentence: "Mio Clicker PM and Ana will pick this up when they're free",
+      sentence: 'Mio Clicker PM and Ana will pick this up when they’re free',
       authorIds: ['mio clicker pm', 'ana'],
       // **The OLDEST wait**, which is the longest anybody here has been waiting.
       // Reading the last one instead reports the shortest, and the number beside
@@ -573,7 +573,7 @@ describe('deriveLaneState — a message that has not started', () => {
   it('counts past the naming limit instead of listing everybody', () => {
     const many = ['A', 'B', 'C', 'D'].map((name) => waiting(name, 1, null));
     expect(deriveLaneState(input({ held: many }))).toMatchObject({
-      sentence: "4 agents will pick this up when they're free",
+      sentence: '4 agents will pick this up when they’re free',
     });
   });
 });
@@ -581,12 +581,12 @@ describe('deriveLaneState — a message that has not started', () => {
 describe('deriveLaneState — a turn that released with nothing to show', () => {
   it('says who, past tense, when a silent release is the only thing to report', () => {
     // The exact words spec `tool-only-room-replies` §D7 asks for: the pill
-    // releasing into "finished — nothing to add".
+    // releasing into "finished, nothing to add".
     const state = deriveLaneState(input({ silentFinish: released('Kai') }));
 
     expect(state).toEqual({
       kind: 'silent-finish',
-      sentence: 'Kai finished — nothing to add',
+      sentence: 'Kai finished, nothing to add',
       authorId: 'kai',
     });
   });

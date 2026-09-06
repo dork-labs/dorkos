@@ -98,7 +98,8 @@ vi.mock('../../env.js', () => ({ env: { DORKOS_PORT: 7777 } }));
  */
 vi.stubEnv('VITE_PORT', '7779');
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import express from 'express';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import { createExtensionsRouter } from '../extensions.js';
@@ -106,6 +107,9 @@ import {
   findOperatorOnlyPaths,
   OPERATOR_ONLY_CONFIG_PATHS,
 } from '../../services/core/operator/config-write-policy.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** The literal port `resolveTrustedOrigins()` is pinned to above. */
 const TRUSTED_PORT = 7777;
@@ -196,11 +200,13 @@ describe('POST /api/extensions/:id/approve', () => {
         () => null
       )
     );
+
+    fixtureTarget.mount(app);
   });
 
   describe('an agent that names itself', () => {
     it('CANNOT approve its own extension, and nothing is written', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({});
@@ -216,7 +222,7 @@ describe('POST /api/extensions/:id/approve', () => {
     it('CANNOT withdraw an approval either', async () => {
       state.extensions = { ...state.extensions, approvedToRun: ['my-ext'] };
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/revoke')
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({});
@@ -230,7 +236,7 @@ describe('POST /api/extensions/:id/approve', () => {
       state.authEnabled = true;
       signedInUser = { userId: 'u1', credential: 'cookie' };
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('x-dorkos-agent', 'agent-token-abc')
         .send({});
@@ -244,7 +250,7 @@ describe('POST /api/extensions/:id/approve', () => {
 
   describe('a caller that strips its agent header', () => {
     it('IS ALLOWED while login is off — the documented residual, not an oversight', async () => {
-      const res = await request(app).post('/api/extensions/my-ext/approve').send({});
+      const res = await request(fixtureServer).post('/api/extensions/my-ext/approve').send({});
 
       expect(res.status).toBe(200);
       expect(state.extensions.approvedToRun).toEqual(['my-ext']);
@@ -259,7 +265,7 @@ describe('POST /api/extensions/:id/approve', () => {
       state.authEnabled = true;
       signedInUser = undefined;
 
-      const res = await request(app).post('/api/extensions/my-ext/approve').send({});
+      const res = await request(fixtureServer).post('/api/extensions/my-ext/approve').send({});
 
       // 403, not 401: `requireOperatorCookieUnderLogin` answers "only a person
       // signed in to DorkOS can change this" for every non-cookie caller, whether
@@ -274,7 +280,7 @@ describe('POST /api/extensions/:id/approve', () => {
       state.authEnabled = true;
       signedInUser = { userId: 'u1', credential: 'api-key' };
 
-      const res = await request(app).post('/api/extensions/my-ext/approve').send({});
+      const res = await request(fixtureServer).post('/api/extensions/my-ext/approve').send({});
 
       // An API key is something a program can hold. A session cookie is the one
       // signal a header-stripping caller cannot fake.
@@ -285,7 +291,7 @@ describe('POST /api/extensions/:id/approve', () => {
 
   describe('a person in the cockpit', () => {
     it('approves with one click while login is off', async () => {
-      const res = await request(app).post('/api/extensions/my-ext/approve').send({});
+      const res = await request(fixtureServer).post('/api/extensions/my-ext/approve').send({});
 
       expect(res.status).toBe(200);
       expect(res.body.extension.approvedToRun).toBe(true);
@@ -296,7 +302,7 @@ describe('POST /api/extensions/:id/approve', () => {
       state.authEnabled = true;
       signedInUser = { userId: 'u1', credential: 'cookie' };
 
-      const res = await request(app).post('/api/extensions/my-ext/approve').send({});
+      const res = await request(fixtureServer).post('/api/extensions/my-ext/approve').send({});
 
       expect(res.status).toBe(200);
       expect(state.extensions.approvedToRun).toEqual(['my-ext']);
@@ -312,7 +318,7 @@ describe('POST /api/extensions/:id/approve', () => {
    */
   describe('a page on another site, posting through the person browser', () => {
     it('is refused, and nothing is written', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', 'https://evil.example')
         .send({});
@@ -325,7 +331,7 @@ describe('POST /api/extensions/:id/approve', () => {
     it('is refused on revoke too, so nothing can be silently switched off', async () => {
       state.extensions = { ...state.extensions, approvedToRun: ['my-ext'] };
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/revoke')
         .set('origin', 'https://evil.example')
         .send({});
@@ -340,7 +346,7 @@ describe('POST /api/extensions/:id/approve', () => {
       state.authEnabled = true;
       signedInUser = { userId: 'u1', credential: 'cookie' };
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', 'https://evil.example')
         .send({});
@@ -357,7 +363,7 @@ describe('POST /api/extensions/:id/approve', () => {
       // An expected value derived from the request cannot judge the request. The
       // allowlist has to be the server's own, which is what `validateMcpOrigin`
       // does, and its docstring names this attack.
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('host', 'evil.example')
         .set('origin', 'http://evil.example')
@@ -373,7 +379,7 @@ describe('POST /api/extensions/:id/approve', () => {
       // would not — that's this direction of "starts with" done wrong. The
       // mirror direction, `some(t => t.startsWith(origin))`, is covered by the
       // next test.
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', `http://localhost:${TRUSTED_PORT}.evil.example`)
         .send({});
@@ -392,7 +398,7 @@ describe('POST /api/extensions/:id/approve', () => {
       // attacker-controlled service actually listening on a matching prefix
       // port on this machine — but `startsWith` is the wrong operation in
       // either direction, and the suite should say so in both.
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', 'http://127.0.0.1:7')
         .send({});
@@ -404,7 +410,7 @@ describe('POST /api/extensions/:id/approve', () => {
     it('refuses the opaque `null` origin a sandboxed frame sends', async () => {
       // A sandboxed iframe or a `data:` URL sends the literal string `null`. It is
       // an Origin header, so it is judged, and it is in no allowlist.
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', 'null')
         .send({});
@@ -414,7 +420,7 @@ describe('POST /api/extensions/:id/approve', () => {
     });
 
     it('lets the cockpit through on its own origin', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', `http://127.0.0.1:${TRUSTED_PORT}`)
         .send({});
@@ -429,7 +435,7 @@ describe('POST /api/extensions/:id/approve', () => {
       // their address bar, so it earns its own assertion rather than riding
       // on the 127.0.0.1 case above — dropping it from the trusted set would
       // otherwise leave this whole file green while breaking real cockpits.
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', `http://localhost:${TRUSTED_PORT}`)
         .send({});
@@ -444,7 +450,7 @@ describe('POST /api/extensions/:id/approve', () => {
       // port off the one DorkOS actually trusts. Accepting it would mean the
       // comparison ignores the port (or compares it loosely) rather than
       // matching the exact origin the server itself composed.
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', `http://127.0.0.1:${TRUSTED_PORT + 1}`)
         .send({});
@@ -459,7 +465,7 @@ describe('POST /api/extensions/:id/approve', () => {
       // their page on port 7777 would sail through. `evil.example:7777` is
       // exactly that — the right port, the wrong host — and it must be
       // refused for the port-adjacency test above to mean what it claims.
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', `http://evil.example:${TRUSTED_PORT}`)
         .send({});
@@ -472,7 +478,7 @@ describe('POST /api/extensions/:id/approve', () => {
       // curl, the CLI, and the desktop shell send no Origin. Refusing them would
       // block the person without stopping the attack, since the header is set by the
       // browser and cannot be forged by the page.
-      const res = await request(app).post('/api/extensions/my-ext/approve').send({});
+      const res = await request(fixtureServer).post('/api/extensions/my-ext/approve').send({});
 
       expect(res.status).toBe(200);
     });
@@ -480,20 +486,20 @@ describe('POST /api/extensions/:id/approve', () => {
 
   describe('inputs that are not an approvable extension', () => {
     it('rejects an id that is not a valid extension id', async () => {
-      const res = await request(app).post('/api/extensions/..%2Fetc/approve').send({});
+      const res = await request(fixtureServer).post('/api/extensions/..%2Fetc/approve').send({});
       expect(res.status).toBe(400);
       expect(manager.approveToRun).not.toHaveBeenCalled();
     });
 
     it('404s an extension that does not exist', async () => {
       manager.get.mockReturnValue(undefined);
-      const res = await request(app).post('/api/extensions/my-ext/approve').send({});
+      const res = await request(fixtureServer).post('/api/extensions/my-ext/approve').send({});
       expect(res.status).toBe(404);
     });
 
     it('409s a core extension, which is exempt by origin and has nothing to approve', async () => {
       manager.get.mockReturnValue(stubRecord({ origin: 'core' }));
-      const res = await request(app).post('/api/extensions/my-ext/approve').send({});
+      const res = await request(fixtureServer).post('/api/extensions/my-ext/approve').send({});
       expect(res.status).toBe(409);
       expect(manager.approveToRun).not.toHaveBeenCalled();
     });
@@ -534,10 +540,12 @@ describe('GET /api/extensions/:id/bundle', () => {
         () => null
       )
     );
+
+    fixtureTarget.mount(app);
   });
 
   it('serves nothing for an extension the person has not approved', async () => {
-    const res = await request(app).get('/api/extensions/my-ext/bundle');
+    const res = await request(fixtureServer).get('/api/extensions/my-ext/bundle');
 
     expect(res.status).toBe(404);
     expect(res.text).not.toContain('activate');
@@ -546,7 +554,7 @@ describe('GET /api/extensions/:id/bundle', () => {
   it('serves it once the person approves', async () => {
     state.extensions = { ...state.extensions, approvedToRun: ['my-ext'] };
 
-    const res = await request(app).get('/api/extensions/my-ext/bundle');
+    const res = await request(fixtureServer).get('/api/extensions/my-ext/bundle');
 
     expect(res.status).toBe(200);
     expect(res.text).toContain('activate');

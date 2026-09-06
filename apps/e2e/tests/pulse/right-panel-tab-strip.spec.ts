@@ -13,9 +13,9 @@ import type { RightPanelPage } from '../../pages/RightPanelPage';
  * focuses — which is why nothing a person did by hand ever showed the bug.
  * Everything else did: a tab selected by a server `ui_command` (the agent opening
  * the canvas), or by a restored per-agent layout, was left cut off at the strip's
- * edge with its label half-drawn (DOR-471). So the selection here is made the way
- * the app's own code makes it — a synthetic `click()`, which fires the handler
- * without focusing — and the reveal has to do the work on its own.
+ * edge with its label half-drawn (DOR-471). So the selection here is dispatched
+ * programmatically without focus or native scrolling, and the reveal has to do
+ * the work on its own.
  *
  * Every reading is taken inside a poll that first re-opens the panel and re-selects
  * the tab. That is not the assertion going soft: the panel restores its own

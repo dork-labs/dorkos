@@ -107,9 +107,8 @@ export function HowItBuiltSection({ slideId = 'timeline' }: HowItBuiltSectionPro
                 className="border-cream-tertiary mt-8 border-t pt-6"
               >
                 <p className="text-warm-gray text-[13px] leading-relaxed italic">
-                  &ldquo;Total calendar time from &lsquo;I want a to-do list&rsquo; to &lsquo;my
-                  agents coordinate while I sleep&rsquo; &mdash;&mdash; about two months of
-                  evenings.&rdquo;
+                  “Total calendar time from &lsquo;I want a to-do list’ to &lsquo;my agents
+                  coordinate while I sleep’ &mdash;&mdash; about two months of evenings.”
                 </p>
               </motion.div>
             )}

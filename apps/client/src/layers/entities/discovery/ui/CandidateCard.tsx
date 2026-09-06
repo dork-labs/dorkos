@@ -14,10 +14,10 @@ import type { DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 
 // Human-readable descriptions for known detection strategies
 const STRATEGY_DESCRIPTIONS: Record<string, string> = {
-  'claude-code': 'Detected a AGENTS.md file — this is a Claude Code project.',
-  cursor: 'Detected a .cursor/ directory — this is a Cursor project.',
-  codex: 'Detected a .codex/ directory — this is a Codex project.',
-  'dork-manifest': 'Found an existing .dork/agent.json — already configured as a DorkOS agent.',
+  'claude-code': 'Detected a AGENTS.md file. This is a Claude Code project.',
+  cursor: 'Detected a .cursor/ directory. This is a Cursor project.',
+  codex: 'Detected a .codex/ directory. This is a Codex project.',
+  'dork-manifest': 'Found an existing .dork/agent.json. Already configured as a DorkOS agent.',
 };
 
 function strategyDescription(strategy: string): string {
@@ -71,15 +71,25 @@ export function CandidateCard({
       className={cn('flex items-start justify-between rounded-xl border p-4', className)}
     >
       <div className="min-w-0 flex-1 space-y-2">
-        {/* Name */}
-        <p className="text-sm leading-tight font-semibold">
+        {/* Name. `truncate` because the last fallback is the whole path, which
+            is one unbroken string and would run out of the card (DOR-1747).
+            `title` carries the full value forward for a long suggested name
+            (a `truncate` this charter adds must keep the hover fallback it
+            requires — a truncated string with no way to read it whole is not
+            containment, it's data loss). */}
+        <p
+          className="truncate text-sm leading-tight font-semibold"
+          title={hints.suggestedName || path.split('/').pop() || path}
+        >
           {hints.suggestedName || path.split('/').pop() || path}
         </p>
 
         {/* Path */}
         <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
           <Folder className="size-3 shrink-0" />
-          <span className="truncate font-mono">{path}</span>
+          <span className="truncate font-mono" title={path}>
+            {path}
+          </span>
         </div>
 
         {/* Runtime with HoverCard showing detection strategy */}

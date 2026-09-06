@@ -174,7 +174,7 @@ export function ConfigFieldInput({
               }}
               onFocus={() => onChange(field.key, '')}
               onBlur={handleBlur}
-              placeholder="Saved — enter a new one to replace"
+              placeholder="Saved. Enter a new one to replace"
               // Sentinel already holds a saved value, so "required" doesn't apply here —
               // matches the label, which also suppresses the asterisk in this state.
             />
@@ -251,7 +251,7 @@ export function ConfigFieldInput({
               aria-invalid={!!displayError || undefined}
               aria-required={field.required || undefined}
             >
-              <SelectValue placeholder={field.placeholder ?? 'Select...'} />
+              <SelectValue placeholder={field.placeholder ?? 'Select…'} />
             </SelectTrigger>
             <SelectContent>
               {field.options?.map((opt) => (

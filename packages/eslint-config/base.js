@@ -121,7 +121,14 @@ export default [
     },
   },
 
-  // Env var discipline: no raw process.env access outside env.ts
+  // Env var discipline: no raw process.env access outside env.ts.
+  //
+  // This rule carries exactly ONE restriction, which is what makes the
+  // config-file carve-out below safe to spell as `'off'`. If a second
+  // restriction is ever added here, that block stops being "config files may
+  // read process.env" and becomes "config files are exempt from every syntax
+  // restriction" — at that point it must restate the restrictions it keeps
+  // instead of switching the rule off.
   {
     files: ['**/*.ts', '**/*.tsx'],
     rules: {
@@ -134,6 +141,31 @@ export default [
         },
       ],
     },
+  },
+
+  // ...except in a build/tool config file, where process.env IS the interface.
+  //
+  // A `vite.config.ts`, `vitest.config.ts`, `playwright.config.ts`,
+  // `drizzle.config.ts` or `next.config.ts` runs in the tool's own process
+  // before any application module loads, so the app's `env.ts` is not merely
+  // unavailable — importing it would be wrong, since these files configure the
+  // build, not the running app. Most packages carrying one have no `env.ts` at
+  // all.
+  //
+  // Repo-wide (DOR-1785) because the shape is repo-wide. DOR-1772 wired
+  // `VITEST_RETRY` into all 21 vitest configs and paid for it with 16 identical
+  // inline `eslint-disable` comments, each restating the same rationale, on top
+  // of the three packages (`apps/server`, `apps/client`, `packages/cli`) that
+  // had already copied the same `**/*.config.ts` carve-out into their own
+  // configs. Every one of those is gone; the exemption is stated once, here.
+  //
+  // Note this must be a full `'off'` and not `['warn']` with an empty option
+  // list: ESLint keeps the PREVIOUS options when a rule is reconfigured with a
+  // severity alone, so `['warn']` would inherit the restriction above and this
+  // block would silently do nothing.
+  {
+    files: ['**/*.config.ts'],
+    rules: { 'no-restricted-syntax': 'off' },
   },
 
   // Prettier must be last — disables all formatting rules

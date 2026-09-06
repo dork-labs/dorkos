@@ -26,7 +26,8 @@
  *   outsider that a room it cannot see exists.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, type Db } from '@dorkos/db';
@@ -74,6 +75,7 @@ import {
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
 
 const ANA_PATH = '/agents/ana';
 
@@ -117,7 +119,7 @@ describe('PATCH /api/rooms/:id — the owner writes a room, a member agent does 
    * `resolveCaller` stamps it with the install's owner exactly as the app does.
    */
   async function ownersChannel(title = 'Backend'): Promise<string> {
-    const created = await request(app)
+    const created = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title, agentPaths: [ANA_PATH] });
     expect(created.status).toBe(201);
@@ -131,7 +133,7 @@ describe('PATCH /api/rooms/:id — the owner writes a room, a member agent does 
 
   /** The stored room, read back as the owner. */
   async function readBack(roomId: string): Promise<Record<string, unknown>> {
-    const res = await request(app).get(`/api/rooms/${roomId}`);
+    const res = await request(testServer).get(`/api/rooms/${roomId}`);
     expect(res.status).toBe(200);
     return res.body as Record<string, unknown>;
   }
@@ -139,10 +141,12 @@ describe('PATCH /api/rooms/:id — the owner writes a room, a member agent does 
   it('lets the owner rename, describe and archive her own channel', async () => {
     const roomId = await ownersChannel();
 
-    const renamed = await request(app)
+    const renamed = await request(testServer)
       .patch(`/api/rooms/${roomId}`)
       .send({ title: 'Backend two', topic: 'the release train' });
-    const archived = await request(app).patch(`/api/rooms/${roomId}`).send({ archived: true });
+    const archived = await request(testServer)
+      .patch(`/api/rooms/${roomId}`)
+      .send({ archived: true });
 
     expect(renamed.status).toBe(200);
     expect(renamed.body.slug).toBe('backend-two');
@@ -154,7 +158,7 @@ describe('PATCH /api/rooms/:id — the owner writes a room, a member agent does 
     const roomId = await ownersChannel();
     const token = await anaToken();
 
-    const res = await request(app)
+    const res = await request(testServer)
       .patch(`/api/rooms/${roomId}`)
       .set('X-DorkOS-Agent', token)
       .send({ title: 'Ana speaks for this room now' });
@@ -170,7 +174,7 @@ describe('PATCH /api/rooms/:id — the owner writes a room, a member agent does 
     const roomId = await ownersChannel();
     const token = await anaToken();
 
-    const res = await request(app)
+    const res = await request(testServer)
       .patch(`/api/rooms/${roomId}`)
       .set('X-DorkOS-Agent', token)
       .send({ archived: true });
@@ -186,7 +190,7 @@ describe('PATCH /api/rooms/:id — the owner writes a room, a member agent does 
     const roomId = await ownersChannel();
     const token = await anaToken();
 
-    const res = await request(app)
+    const res = await request(testServer)
       .patch(`/api/rooms/${roomId}`)
       .set('X-DorkOS-Agent', token)
       .send({ topic: 'whatever I decide it is about' });
@@ -208,7 +212,10 @@ describe('PATCH /api/rooms/:id — the owner writes a room, a member agent does 
 
     const answers = await Promise.all(
       [roomId, '01NOSUCHROOM'].map((id) =>
-        request(app).patch(`/api/rooms/${id}`).set('X-DorkOS-Agent', token).send({ title: 'Mine' })
+        request(testServer)
+          .patch(`/api/rooms/${id}`)
+          .set('X-DorkOS-Agent', token)
+          .send({ title: 'Mine' })
       )
     );
 
@@ -224,17 +231,17 @@ describe('PATCH /api/rooms/:id — the owner writes a room, a member agent does 
     // `POST /api/rooms`, whose idempotent DM branch un-archives what it matched.
     // That write is a non-owner's, and it must still go through.
     const token = await anaToken();
-    const opened = await request(app)
+    const opened = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'dm', title: 'Ana', agentPaths: [ANA_PATH] });
     expect(opened.status).toBe(201);
     const roomId = opened.body.id as string;
     const owner = opened.body.viewerAuthorId as string;
-    expect((await request(app).patch(`/api/rooms/${roomId}`).send({ archived: true })).status).toBe(
-      200
-    );
+    expect(
+      (await request(testServer).patch(`/api/rooms/${roomId}`).send({ archived: true })).status
+    ).toBe(200);
 
-    const reopened = await request(app)
+    const reopened = await request(testServer)
       .post('/api/rooms')
       .set('X-DorkOS-Agent', token)
       .send({ kind: 'dm', title: 'Ana', members: [owner], agentPaths: [ANA_PATH] });

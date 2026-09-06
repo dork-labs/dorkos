@@ -22,8 +22,8 @@ export function TunnelSetup({
     <div data-testid="tunnel-setup" className="space-y-4">
       <p className="text-muted-foreground text-xs leading-relaxed">
         DorkOS opens the tunnel through ngrok, a free tunneling service. Paste your ngrok auth token
-        below — a one-time step. If your DorkOS has no owner login yet, you&apos;ll be asked to
-        create one before the tunnel starts.
+        below, a one-time step. If your DorkOS has no owner login yet, you’ll be asked to create one
+        before the tunnel starts.
       </p>
       <Field data-invalid={tokenError ? true : undefined}>
         <FieldLabel htmlFor="tunnel-auth-token" className="text-xs font-medium">
@@ -69,7 +69,7 @@ export function TunnelSetup({
       </Button>
 
       <p className="text-muted-foreground text-xs">
-        Don&apos;t have a token?{' '}
+        Don’t have a token?{' '}
         <a
           href="https://dashboard.ngrok.com/signup"
           target="_blank"
@@ -78,8 +78,8 @@ export function TunnelSetup({
         >
           Sign up for ngrok
           <ArrowUpRight className="size-3 transition-transform duration-100 group-hover:-translate-x-0.5" />
-        </a>{' '}
-        — free tier is sufficient.
+        </a>
+        . The free tier is enough.
       </p>
     </div>
   );

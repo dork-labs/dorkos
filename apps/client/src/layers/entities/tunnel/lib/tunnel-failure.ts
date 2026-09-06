@@ -40,7 +40,7 @@ export function friendlyErrorMessage(raw: string): string {
     return 'Feature requires a paid ngrok plan.';
   }
   if (/ECONNREFUSED/i.test(raw)) {
-    return "Couldn't reach your DorkOS server. Make sure it's running.";
+    return 'Couldn’t reach your DorkOS server. Make sure it’s running.';
   }
   return raw;
 }

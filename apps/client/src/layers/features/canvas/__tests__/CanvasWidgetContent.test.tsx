@@ -70,14 +70,14 @@ describe('CanvasWidgetContent', () => {
     } as unknown as Extract<UiCanvasContent, { type: 'widget' }>;
 
     expect(() => render(<CanvasWidgetContent content={content} />)).not.toThrow();
-    expect(screen.getByText("This widget couldn't be rendered")).toBeInTheDocument();
+    expect(screen.getByText('This widget couldn’t be rendered')).toBeInTheDocument();
   });
 
   it('survives an undefined definition', () => {
     const content = { type: 'widget' } as unknown as Extract<UiCanvasContent, { type: 'widget' }>;
 
     expect(() => render(<CanvasWidgetContent content={content} />)).not.toThrow();
-    expect(screen.getByText("This widget couldn't be rendered")).toBeInTheDocument();
+    expect(screen.getByText('This widget couldn’t be rendered')).toBeInTheDocument();
   });
 });
 
@@ -105,14 +105,14 @@ describe('CanvasWidgetContent action latch across definition changes', () => {
       wrapper: Wrapper,
     });
 
-    await user.click(screen.getByLabelText('Row 1, column 1: empty — play here'));
+    await user.click(screen.getByLabelText('Row 1, column 1: empty, play here'));
     // The click latches this provider instance — the cell shows its optimistic mark.
     expect(screen.getByLabelText('Row 1, column 1: X')).toBeInTheDocument();
 
     // An update_canvas swap to a DIFFERENT definition is a new turn: the key
     // changes, the subtree remounts, and the fresh board is playable again.
     rerender(<CanvasWidgetContent content={boardContent('Board B')} />);
-    expect(screen.getByLabelText('Row 1, column 1: empty — play here')).toBeInTheDocument();
+    expect(screen.getByLabelText('Row 1, column 1: empty, play here')).toBeInTheDocument();
   });
 
   it('keeps the latch when the definition is unchanged (no spurious remount)', async () => {
@@ -122,7 +122,7 @@ describe('CanvasWidgetContent action latch across definition changes', () => {
       wrapper: Wrapper,
     });
 
-    await user.click(screen.getByLabelText('Row 1, column 1: empty — play here'));
+    await user.click(screen.getByLabelText('Row 1, column 1: empty, play here'));
     expect(screen.getByLabelText('Row 1, column 1: X')).toBeInTheDocument();
 
     // Re-rendering the same definition yields the same key, so the provider is

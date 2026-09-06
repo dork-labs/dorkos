@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
 import { openCockpit } from './open-cockpit';
@@ -403,5 +404,129 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     await roomsApi.postEntries(room.id, ['said after reconnecting']);
     await expect(roomsPage.entries).toHaveCount(3, { timeout: SERVER_ROUND_TRIP_MS });
     await expect(roomsPage.entry('said after reconnecting')).toBeVisible();
+  });
+});
+
+/**
+ * Reading a room past the page it opened on (DOR-1734).
+ *
+ * Every assertion here needs a room BIGGER than one page, which is why it lives
+ * in a browser suite rather than jsdom: the control only exists over a room the
+ * first read could not finish, the reader's place after a page lands is
+ * geometry, and the landing that puts a room at its newest message is an effect
+ * that runs against a virtualizer with real measurements.
+ */
+test.describe('Rooms — reading past the page a room opens on', () => {
+  // Seeding sixty-two entries one POST at a time is the slow part, so these get
+  // more room than the file's own budget — same reasoning, more messages.
+  test.describe.configure({ mode: 'default', timeout: 120_000 });
+
+  /** One page, plus enough on top of it that a second page is a real page. */
+  const PAGE = 50;
+  const SEEDED = 62;
+
+  /**
+   * Take the reader to the ceiling of the loaded history.
+   *
+   * Necessary rather than decorative: the list is virtualized, so the control at
+   * the top of a room that opened at its NEWEST message is not in the document
+   * at all. An assertion that found it without scrolling first could only pass
+   * while the room was landing in the wrong place — which is the bug the first
+   * test here is about.
+   *
+   * @param page - The page under test.
+   */
+  async function scrollToCeiling(page: Page): Promise<void> {
+    const scroller = page.locator('.chat-scroll-area').first();
+    // Polled rather than set once: rows above are measured lazily, so the first
+    // write to `scrollTop` lands in a list that is still growing upward.
+    await expect
+      .poll(async () => {
+        await scroller.evaluate((el) => el.scrollTo({ top: 0 }));
+        return scroller.evaluate((el) => el.scrollTop);
+      })
+      .toBeLessThanOrEqual(64);
+  }
+
+  test('opens at the newest message, with older history behind it', async ({
+    page,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The regression this exists to catch. The "Older messages" row is an extra
+    // row at index 0 that does NOT come from history, and it used to reach the
+    // timeline while the room was still drawing its skeleton — consuming the
+    // one-shot landing against a list with no scroller, which left every paged
+    // room open at its oldest loaded message instead of its newest. Measured in
+    // Chromium before the fix: one `notice` row, skeleton on screen, scrollTop 0.
+    const room = await roomsApi.createChannel(`e2e-paging-open-${roomsApi.runId}`);
+    await roomsApi.postEntries(
+      room.id,
+      Array.from({ length: SEEDED }, (_, i) => `history line ${i + 1}`)
+    );
+
+    await page.goto(`/channels?id=${room.id}`);
+    await roomsPage.waitForHistory(PAGE, SERVER_ROUND_TRIP_MS);
+
+    await expect.poll(() => roomsPage.isAtBottom()).toBe(true);
+    await expect(roomsPage.entry(`history line ${SEEDED}`)).toBeVisible();
+
+    // …and the way further back is there when the reader goes looking for it.
+    await scrollToCeiling(page);
+    await expect(page.getByTestId('room-load-older')).toBeVisible();
+  });
+
+  test('reads the page before the one it opened on, and holds the reader there', async ({
+    page,
+    roomsApi,
+    roomsPage,
+  }) => {
+    const room = await roomsApi.createChannel(`e2e-paging-read-${roomsApi.runId}`);
+    await roomsApi.postEntries(
+      room.id,
+      Array.from({ length: SEEDED }, (_, i) => `history line ${i + 1}`)
+    );
+
+    await page.goto(`/channels?id=${room.id}`);
+    await roomsPage.waitForHistory(PAGE, SERVER_ROUND_TRIP_MS);
+
+    // The oldest line the first page holds — the boundary the reader is standing
+    // at when they press, and where they must still be standing afterwards.
+    const boundary = `history line ${SEEDED - PAGE + 1}`;
+    await scrollToCeiling(page);
+    await page.getByTestId('room-load-older').click();
+
+    // The twelve older lines are now in the room, and the room is one array in
+    // its own order — the oldest line in it is line 1.
+    await expect(roomsPage.entry('history line 1')).toBeAttached({
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    // …and the reader is left on the boundary, not thrown to either end of it.
+    await expect(roomsPage.entry(boundary)).toBeVisible();
+    expect(await roomsPage.isAtBottom()).toBe(false);
+
+    // The room has nothing older left, so the control has nothing left to offer.
+    await expect(page.getByTestId('room-load-older')).toHaveCount(0);
+  });
+
+  test('offers nothing over a room smaller than one page', async ({
+    page,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The overwhelmingly common room. A first read that comes back short IS the
+    // beginning of the room on this route, so the control must never be drawn
+    // here — not drawn-and-then-dead on the first press.
+    const room = await roomsApi.createChannel(`e2e-paging-small-${roomsApi.runId}`);
+    await roomsApi.postEntries(
+      room.id,
+      Array.from({ length: 5 }, (_, i) => `history line ${i + 1}`)
+    );
+
+    await page.goto(`/channels?id=${room.id}`);
+    await roomsPage.waitForHistory(5, SERVER_ROUND_TRIP_MS);
+
+    await expect(page.getByTestId('room-load-older')).toHaveCount(0);
+    await expect.poll(() => roomsPage.isAtBottom()).toBe(true);
   });
 });

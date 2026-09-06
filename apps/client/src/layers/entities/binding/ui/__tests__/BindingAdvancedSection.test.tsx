@@ -43,7 +43,7 @@ const CODEX_MODES = [
     stop: 'act' as const,
     asks: 'never' as const,
     reach: 'workspace' as const,
-    promise: "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
+    promise: 'Edits files and runs commands inside the workspace — Codex can’t pause to ask.',
   },
 ];
 
@@ -136,7 +136,7 @@ describe('BindingAdvancedSection permissions', () => {
       renderSection({ permissionMode: 'acceptEdits' }, transport);
 
       await waitFor(() =>
-        expect(screen.getByTestId('trust-dial-caption')).toHaveTextContent(/can't pause to ask/)
+        expect(screen.getByTestId('trust-dial-caption')).toHaveTextContent(/can’t pause to ask/)
       );
       expect(screen.getByTestId('trust-dial-caption').className).toContain('amber');
     });
@@ -252,7 +252,7 @@ describe('BindingAdvancedSection permissions', () => {
   describe('session strategy when bridged (chats-as-channels §7.2)', () => {
     it('shows the session-strategy selector for an unbridged binding', () => {
       renderSection({ bridged: false });
-      expect(screen.getByLabelText('Session Strategy')).toBeInTheDocument();
+      expect(screen.getByLabelText('Session strategy')).toBeInTheDocument();
       expect(screen.queryByText(/keeps its history in the channel/i)).not.toBeInTheDocument();
     });
 
@@ -314,7 +314,7 @@ describe('BindingAdvancedSection permissions', () => {
       // And not run into the sentence before it when read out: the accessible
       // description comes from text content, which ignores the line break.
       expect(description?.textContent).toMatch(/pause to ask\.\sThis stop never pauses/);
-      expect(alert).toHaveTextContent(/can't pause to ask/);
+      expect(alert).toHaveTextContent(/can’t pause to ask/);
       // The correction the strongest sentence has to arrive with (DOR-816).
       expect(alert).toHaveTextContent(/Actions on DorkOS itself/);
     });

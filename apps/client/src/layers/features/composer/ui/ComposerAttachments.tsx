@@ -10,7 +10,7 @@ function isImageFile(file: File): boolean {
 }
 
 /** Fallback reason for a failed upload that carried no message. */
-const GENERIC_UPLOAD_ERROR = "This file didn't upload";
+const GENERIC_UPLOAD_ERROR = 'This file didn’t upload';
 
 interface ComposerAttachmentsProps {
   files: PendingFile[];

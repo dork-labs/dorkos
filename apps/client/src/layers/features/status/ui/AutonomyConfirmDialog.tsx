@@ -201,7 +201,7 @@ export function AutonomyConfirmDialog({
               onCheckedChange={(checked) => setRememberChoice(checked === true)}
             />
             <Label htmlFor="autonomy-remember-choice" className="text-muted-foreground text-sm">
-              Don&apos;t show this again
+              Don’t show this again
             </Label>
           </div>
         )}

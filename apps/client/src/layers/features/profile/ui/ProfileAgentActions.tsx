@@ -128,7 +128,7 @@ export function ProfileAgentActions({
         const kept = result.blockedFromDiscovery === true;
         toast(
           kept
-            ? `${name} unregistered — its agent file belongs to a git repo, so it stayed put and the folder is blocked from scans`
+            ? `${name} unregistered. Its agent file belongs to a git repo, so it stayed put and the folder is blocked from scans`
             : `${name} unregistered`,
           {
             action: { label: 'Undo', onClick: () => registerAgent.mutate({ path: projectPath }) },

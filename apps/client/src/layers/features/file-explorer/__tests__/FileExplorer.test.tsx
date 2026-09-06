@@ -129,7 +129,7 @@ describe('FileExplorer', () => {
     );
   });
 
-  it("lazily fetches and renders a directory's children when it is expanded", async () => {
+  it('lazily fetches and renders a directory’s children when it is expanded', async () => {
     const transport = createMockTransport();
     transport.readFileTree = vi.fn(async (_cwd, opts?: { path?: string }) => {
       if (!opts?.path) return { entries: [dir('src'), file('README.md')] };
@@ -182,7 +182,7 @@ describe('FileExplorer', () => {
     await screen.findByRole('treeitem', { name: 'existing.ts' });
 
     // Start a new file, name it, and commit.
-    fireEvent.click(screen.getByRole('button', { name: 'New File' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New file' }));
     const input = screen.getByRole('textbox', { name: 'New file name' });
     fireEvent.change(input, { target: { value: 'new.ts' } });
     fireEvent.keyDown(input, { key: 'Enter' });
@@ -383,7 +383,7 @@ describe('FileExplorer', () => {
     // The row comes back AND is still selected — the prune never fired mid-delete.
     const restored = await screen.findByRole('treeitem', { name: 'README.md' });
     expect(restored).toHaveAttribute('aria-selected', 'true');
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Couldn't delete"));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Couldn’t delete'));
   });
 
   it('keeps a directory expanded when its optimistic recursive delete fails', async () => {

@@ -2,6 +2,21 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260905-205123",
+      "slug": "dorkos-brokers-connector-calls-and-may-host-a-managed-provider",
+      "title": "DorkOS brokers connector calls and may host a tenant-scoped managed provider",
+      "status": "proposed",
+      "created": "2026-09-05",
+      "specSlug": "white-label-connections",
+      "amends": ["260729-234626", "260718-045630"],
+      "supersedes": null,
+      "affects": [
+        "packages/shared/src/connector-provider.ts",
+        "apps/server/src/services/connectors/**",
+        "apps/site/src/lib/connectors/**"
+      ]
+    },
+    {
       "id": "260829-115621",
       "slug": "a-rooms-files-are-a-git-repo-with-one-integration-tree-and-a-worktree-per-agent",
       "title": "A room's files are a git repo with one integration tree and a standing worktree per agent",

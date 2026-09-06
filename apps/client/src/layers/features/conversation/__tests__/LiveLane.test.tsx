@@ -159,15 +159,15 @@ describe('LiveLane', () => {
     // full one, so nothing is lost to a reader who cannot see the line.
     render(<LiveLane state={{ kind: 'stalled' }} onRetry={vi.fn()} />);
 
-    const narrow = screen.getByText('Reconnecting — you can still send');
+    const narrow = screen.getByText('Reconnecting. You can still send');
     expect(narrow).toHaveClass('sm:hidden');
     // The announcer carries the same words, so the visible one is found by its
     // own class rather than by text.
     const wide = document.querySelector('[data-testid="room-stalled"] span.hidden')!;
     expect(wide).toHaveClass('sm:inline');
-    expect(wide.textContent).toContain("New messages aren't coming through right now");
+    expect(wide.textContent).toContain('New messages aren’t coming through right now');
     expect(screen.getByRole('status').textContent).toContain(
-      "New messages aren't coming through right now"
+      'New messages aren’t coming through right now'
     );
     expect(screen.getByRole('button', { name: 'Reconnect' })).toBeInTheDocument();
   });

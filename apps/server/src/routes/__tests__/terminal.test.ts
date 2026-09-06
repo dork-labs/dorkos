@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express, { type Express } from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -10,6 +11,9 @@ import {
   type PtyLike,
   type SpawnPtyOptions,
 } from '../../services/terminal/index.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /**
  * Terminal REST route tests. The routes are the auth-gated entry point that
@@ -44,37 +48,39 @@ describe('terminal routes', () => {
     app = express();
     app.use(express.json());
     app.use('/api/terminal', createTerminalRouter(manager));
+
+    fixtureTarget.mount(app);
   });
 
   it('returns 400 for a missing/invalid body', async () => {
-    const res = await request(app).post('/api/terminal').send({});
+    const res = await request(fixtureServer).post('/api/terminal').send({});
     expect(res.status).toBe(400);
   });
 
   it('returns 403 when cwd escapes the boundary', async () => {
-    const res = await request(app).post('/api/terminal').send({ cwd: '/etc' });
+    const res = await request(fixtureServer).post('/api/terminal').send({ cwd: '/etc' });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
   });
 
   it('returns 201 with an id for a valid cwd', async () => {
-    const res = await request(app).post('/api/terminal').send({ cwd: boundary });
+    const res = await request(fixtureServer).post('/api/terminal').send({ cwd: boundary });
     expect(res.status).toBe(201);
     expect(typeof res.body.id).toBe('string');
   });
 
   it('returns 429 once the concurrency cap is reached', async () => {
-    await request(app).post('/api/terminal').send({ cwd: boundary }).expect(201);
-    const res = await request(app).post('/api/terminal').send({ cwd: boundary });
+    await request(fixtureServer).post('/api/terminal').send({ cwd: boundary }).expect(201);
+    const res = await request(fixtureServer).post('/api/terminal').send({ cwd: boundary });
     expect(res.status).toBe(429);
     expect(res.body.code).toBe('TERMINAL_LIMIT');
   });
 
   it('returns 204 on teardown (idempotent)', async () => {
-    const created = await request(app).post('/api/terminal').send({ cwd: boundary });
+    const created = await request(fixtureServer).post('/api/terminal').send({ cwd: boundary });
     const id = created.body.id as string;
-    await request(app).delete(`/api/terminal/${id}`).expect(204);
+    await request(fixtureServer).delete(`/api/terminal/${id}`).expect(204);
     // Deleting an unknown id is still a clean 204 (idempotent).
-    await request(app).delete('/api/terminal/nonexistent').expect(204);
+    await request(fixtureServer).delete('/api/terminal/nonexistent').expect(204);
   });
 });

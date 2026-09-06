@@ -99,7 +99,7 @@ Agents can build and install extensions that add new features. Each extension br
 
 ### Connect other AI tools (MCP)
 
-DorkOS speaks MCP (the open standard that lets AI tools share tools with each other), so other agents like Claude Code and Cursor can use the DorkOS tools directly. You can lock it behind a key with `MCP_API_KEY`.
+DorkOS speaks MCP (the open standard that lets AI tools share tools with each other), so other agents like Claude Code and Cursor can use the DorkOS tools directly. Anything that changes something on your machine needs your local MCP token, which you can copy from Settings → Tools. On a server nobody signs into, set `MCP_API_KEY` and give that fixed key to every client instead.
 
 ```bash
 claude mcp add dorkos --transport http http://localhost:4242/mcp
@@ -233,7 +233,7 @@ None are required if you already have the [Claude Code CLI](https://docs.anthrop
 
 **Optional**
 
-`DORKOS_BOUNDARY` limits which folders DorkOS may touch. `DORKOS_CORS_ORIGIN` sets which websites are allowed to call your server (an advanced setting; the default is safe for local use).
+`DORKOS_BOUNDARY` limits which folders DorkOS may touch. `DORKOS_CORS_ORIGIN` adds websites that are allowed to call your server, on top of the ones DorkOS already trusts (an advanced setting; the default is safe for local use).
 
 | Variable               | Default           | What it does                                   |
 | ---------------------- | ----------------- | ---------------------------------------------- |
@@ -246,8 +246,9 @@ None are required if you already have the [Claude Code CLI](https://docs.anthrop
 | `DORKOS_TASKS_ENABLED` | `true`            | Turn the Tasks scheduler on or off             |
 | `DORKOS_OPEN`          | `true`            | Open the browser on startup                    |
 | `DORKOS_RELAY_ENABLED` | `true`            | Turn agent messaging (Relay) on or off         |
-| `DORKOS_CORS_ORIGIN`   | `localhost`       | Which websites may call your server (advanced) |
-| `MCP_API_KEY`          | (none)            | Require a key to use the MCP server            |
+| `DORKOS_CORS_ORIGIN`   | (none)            | Extra websites allowed to call your server     |
+| `DORKOS_TRUST_PROXY`   | `false`           | Count rate limits per client behind your proxy |
+| `MCP_API_KEY`          | (none)            | A fixed MCP key for servers nobody signs into  |
 
 **Remote access**
 

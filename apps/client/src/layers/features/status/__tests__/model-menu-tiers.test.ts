@@ -47,7 +47,7 @@ function groupOf(m: ModelOption): string {
 describe('capability flags are tri-state, and absent is not "no"', () => {
   // ---- supportsToolUse: the grouping decision ----
 
-  it('keeps a model whose tool support is UNREPORTED out of "Can\'t do agent work"', () => {
+  it('keeps a model whose tool support is UNREPORTED out of "Can’t do agent work"', () => {
     // The claude-code / codex shape before this ticket: no flag at all. Mutating
     // `canDoAgentWork` to `Boolean(model.supportsToolUse)` (or `!!`, or
     // `model.supportsToolUse === true`) makes this red — and that mutation is
@@ -112,7 +112,7 @@ describe('capability flags are tri-state, and absent is not "no"', () => {
     expect(modelLimitationNote(model({ value: 'm', supportsToolUse: undefined }))).toBeNull();
     expect(modelLimitationNote(model({ value: 'm', supportsToolUse: true }))).toBeNull();
     expect(modelLimitationNote(model({ value: 'm', supportsToolUse: false }))).toBe(
-      "Can't use tools, so it can't read files or run commands."
+      'Can’t use tools, so it can’t read files or run commands.'
     );
   });
 });

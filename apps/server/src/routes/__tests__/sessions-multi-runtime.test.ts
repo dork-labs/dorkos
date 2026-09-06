@@ -15,8 +15,9 @@
  *    relevant to routing and would require filesystem setup.
  *  - The runtime registry, both runtime classes, and the DB are real.
  */
+import type { AddressInfo } from 'node:net';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { collectDurableEvents, mockInterruptReceipt } from '@dorkos/test-utils';
+import { collectDurableEventsAt, mockInterruptReceipt } from '@dorkos/test-utils';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { ControlRequestTimeoutError } from '../../services/runtimes/claude-code/sessions/bounded-control.js';
 
@@ -61,7 +62,8 @@ vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn(async () => null),
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, eq } from '@dorkos/db';
@@ -75,6 +77,12 @@ import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
+
+/** Base URL for raw SSE collection through the file-scoped listener. */
+function testServerBaseUrl(): string {
+  return `http://127.0.0.1:${(testServer.address() as AddressInfo).port}`;
+}
 
 const CLAUDE_SESSION = '11111111-1111-4111-8111-111111111111';
 const TEST_MODE_SESSION = '22222222-2222-4222-8222-222222222222';
@@ -114,7 +122,7 @@ async function postMessage(
   sessionId: string,
   body: Record<string, unknown>
 ): Promise<{ status: number; body: Record<string, unknown> }> {
-  const res = await request(app).post(`/api/sessions/${sessionId}/messages`).send(body);
+  const res = await request(testServer).post(`/api/sessions/${sessionId}/messages`).send(body);
   return { status: res.status, body: res.body as Record<string, unknown> };
 }
 
@@ -130,6 +138,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
   });
 
   afterEach(() => {
+    delete app.locals.meshCore;
     // The projector registry is a process singleton; a triggered turn leaves
     // per-session projector state. Drop it so accumulated turns don't leak across
     // tests (e.g. an earlier "Echo: hi" turn surfacing in a later assertion).
@@ -234,7 +243,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         yield { type: 'done', data: { sessionId: CLAUDE_SESSION } } as StreamEvent;
       });
 
-      await request(app)
+      await request(testServer)
         .patch(`/api/sessions/${CLAUDE_SESSION}`)
         .send({ model: 'sonnet' })
         .expect(200);
@@ -266,7 +275,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         },
       };
 
-      await request(app)
+      await request(testServer)
         .patch(`/api/sessions/${TEST_MODE_SESSION}`)
         .send({ effort: 'low' })
         .expect(200);
@@ -348,6 +357,9 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
     });
 
     it('records agentPath on first message for provenance', async () => {
+      app.locals.meshCore = {
+        listWithPaths: () => [{ projectPath: '/projects/my-agent' }],
+      };
       await postMessage(TEST_MODE_SESSION, {
         content: 'hi',
         runtime: 'test-mode',
@@ -364,7 +376,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
     });
 
     it('returns 400 UNKNOWN_RUNTIME for an unregistered hint and persists no row', async () => {
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/sessions/${TEST_MODE_SESSION}/messages`)
         .send({ content: 'hi', runtime: 'nonexistent-runtime' });
 
@@ -384,7 +396,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       // the pre-launch picker's normal move — and the row it minted used to say
       // claude-code, which the first-write-wins binding then made permanent. A
       // person who had chosen another runtime got a session on the wrong one.
-      await request(app)
+      await request(testServer)
         .patch(`/api/sessions/${TEST_MODE_SESSION}`)
         .send({ model: 'sonnet' })
         .expect(200);
@@ -416,16 +428,16 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       // exactly as it does for a session with no row at all: it accepts a mode
       // the inferred runtime declares and refuses one it does not. Unbound must
       // never mean unusable.
-      await request(app)
+      await request(testServer)
         .patch(`/api/sessions/${TEST_MODE_SESSION}`)
         .send({ model: 'sonnet' })
         .expect(200);
-      await request(app)
+      await request(testServer)
         .patch(`/api/sessions/${TEST_MODE_SESSION}`)
         .send({ permissionMode: 'plan' })
         .expect(200);
 
-      const refused = await request(app)
+      const refused = await request(testServer)
         .patch(`/api/sessions/${TEST_MODE_SESSION}`)
         .send({ permissionMode: 'dontAsk' });
       expect(refused.status).toBe(400);
@@ -452,7 +464,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       // report a safety posture its runtime is not running (#674).
       runtimesConfig = { ...USER_CONFIG_DEFAULTS.runtimes, defaultTrustStop: 'act' };
 
-      await request(app)
+      await request(testServer)
         .patch(`/api/sessions/${TEST_MODE_SESSION}`)
         .send({ permissionMode: 'plan' })
         .expect(200);
@@ -477,7 +489,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         yield { type: 'done', data: { sessionId: CLAUDE_SESSION } } as StreamEvent;
       });
 
-      await request(app)
+      await request(testServer)
         .patch(`/api/sessions/${CLAUDE_SESSION}`)
         .send({ permissionMode: 'plan' })
         .expect(200);
@@ -598,7 +610,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       // global error middleware recognizes RuntimeNotRegisteredError and maps
       // it to a 503 with a stable code so the client can render a targeted
       // "runtime not available on this server" message instead of a generic 500.
-      const res = await request(app).get(`/api/sessions/${CODEX_ORPHAN_SESSION}/messages`);
+      const res = await request(testServer).get(`/api/sessions/${CODEX_ORPHAN_SESSION}/messages`);
 
       expect(res.status).toBe(503);
       expect(res.body.code).toBe('RUNTIME_NOT_AVAILABLE');
@@ -627,7 +639,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const testModeSpy = vi.spyOn(testMode, 'getSession');
       const claudeSpy = vi.spyOn(claude, 'getSession');
 
-      const res = await request(app).get(`/api/sessions/${TEST_MODE_SESSION}`);
+      const res = await request(testServer).get(`/api/sessions/${TEST_MODE_SESSION}`);
 
       expect(testModeSpy).toHaveBeenCalled();
       expect(claudeSpy).not.toHaveBeenCalled();
@@ -639,7 +651,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const testModeSpy = vi.spyOn(testMode, 'getSessionTasks');
       const claudeSpy = vi.spyOn(claude, 'getSessionTasks');
 
-      const res = await request(app).get(`/api/sessions/${TEST_MODE_SESSION}/tasks`);
+      const res = await request(testServer).get(`/api/sessions/${TEST_MODE_SESSION}/tasks`);
 
       expect(testModeSpy).toHaveBeenCalled();
       expect(claudeSpy).not.toHaveBeenCalled();
@@ -651,7 +663,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const testModeSpy = vi.spyOn(testMode, 'getMessageHistory');
       const claudeSpy = vi.spyOn(claude, 'getMessageHistory');
 
-      const res = await request(app).get(`/api/sessions/${TEST_MODE_SESSION}/messages`);
+      const res = await request(testServer).get(`/api/sessions/${TEST_MODE_SESSION}/messages`);
 
       expect(testModeSpy).toHaveBeenCalled();
       expect(claudeSpy).not.toHaveBeenCalled();
@@ -668,7 +680,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       // owning runtime never declared (that gate is covered in sessions.test.ts).
       // TestModeRuntime.updateSession answers `{ updated: false }` because no
       // _sessions entry exists — the route should respond with 404.
-      const res = await request(app)
+      const res = await request(testServer)
         .patch(`/api/sessions/${TEST_MODE_SESSION}`)
         .send({ model: 'scripted-model' });
 
@@ -682,7 +694,9 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const testModeSpy = vi.spyOn(testMode, 'forkSession');
       const claudeSpy = vi.spyOn(claude, 'forkSession');
 
-      const res = await request(app).post(`/api/sessions/${TEST_MODE_SESSION}/fork`).send({});
+      const res = await request(testServer)
+        .post(`/api/sessions/${TEST_MODE_SESSION}/fork`)
+        .send({});
 
       expect(testModeSpy).toHaveBeenCalled();
       expect(claudeSpy).not.toHaveBeenCalled();
@@ -694,7 +708,9 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const testModeSpy = vi.spyOn(testMode, 'reloadPlugins');
       const claudeSpy = vi.spyOn(claude, 'reloadPlugins');
 
-      const res = await request(app).post(`/api/sessions/${TEST_MODE_SESSION}/reload-plugins`);
+      const res = await request(testServer).post(
+        `/api/sessions/${TEST_MODE_SESSION}/reload-plugins`
+      );
 
       expect(testModeSpy).toHaveBeenCalled();
       expect(claudeSpy).not.toHaveBeenCalled();
@@ -711,7 +727,9 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         new ControlRequestTimeoutError('reloadPlugins', 8_000)
       );
 
-      const res = await request(app).post(`/api/sessions/${TEST_MODE_SESSION}/reload-plugins`);
+      const res = await request(testServer).post(
+        `/api/sessions/${TEST_MODE_SESSION}/reload-plugins`
+      );
 
       expect(res.status).toBe(504);
       expect(res.body.code).toBe('RELOAD_TIMEOUT');
@@ -749,7 +767,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       });
 
       // Cold connect: the snapshot carries the EventLog-reconstructed history.
-      const cold = await collectDurableEvents(app, TEST_MODE_SESSION, {
+      const cold = await collectDurableEventsAt(testServerBaseUrl(), TEST_MODE_SESSION, {
         until: (frames) => frames.some((f) => f.event === 'snapshot'),
       });
       const snapshot = cold.frames.find((f) => f.event === 'snapshot')!.data as SessionSnapshot;
@@ -766,7 +784,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       expect(snapshot.cursor).toBeGreaterThan(0);
 
       // Resume connect: ?after replays the gap from the log — no snapshot frame.
-      const resumed = await collectDurableEvents(app, TEST_MODE_SESSION, {
+      const resumed = await collectDurableEventsAt(testServerBaseUrl(), TEST_MODE_SESSION, {
         until: (frames) => frames.some((f) => f.event === 'turn_end'),
         after: snapshot.cursor - 2,
       });
@@ -778,7 +796,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const testModeSpy = vi.spyOn(testMode, 'approveTool');
       const claudeSpy = vi.spyOn(claude, 'approveTool');
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/sessions/${TEST_MODE_SESSION}/approve`)
         .send({ toolCallId: 'tc-1' });
 
@@ -792,7 +810,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const testModeSpy = vi.spyOn(testMode, 'approveTool');
       const claudeSpy = vi.spyOn(claude, 'approveTool');
 
-      await request(app)
+      await request(testServer)
         .post(`/api/sessions/${TEST_MODE_SESSION}/deny`)
         .send({ toolCallId: 'tc-1' });
 
@@ -804,7 +822,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const testModeSpy = vi.spyOn(testMode, 'approveTool');
       const claudeSpy = vi.spyOn(claude, 'approveTool');
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/sessions/${TEST_MODE_SESSION}/batch-approve`)
         .send({ toolCallIds: ['tc-1', 'tc-2'] });
 
@@ -817,7 +835,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const testModeSpy = vi.spyOn(testMode, 'approveTool');
       const claudeSpy = vi.spyOn(claude, 'approveTool');
 
-      const res = await request(app)
+      const res = await request(testServer)
         .post(`/api/sessions/${TEST_MODE_SESSION}/batch-deny`)
         .send({ toolCallIds: ['tc-1'] });
 
@@ -830,7 +848,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const testModeSpy = vi.spyOn(testMode, 'submitAnswers');
       const claudeSpy = vi.spyOn(claude, 'submitAnswers');
 
-      await request(app)
+      await request(testServer)
         .post(`/api/sessions/${TEST_MODE_SESSION}/submit-answers`)
         .send({ toolCallId: 'tc-1', answers: { '0': 'A' } });
 
@@ -842,7 +860,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const testModeSpy = vi.spyOn(testMode, 'submitElicitation');
       const claudeSpy = vi.spyOn(claude, 'submitElicitation');
 
-      await request(app)
+      await request(testServer)
         .post(`/api/sessions/${TEST_MODE_SESSION}/submit-elicitation`)
         .send({ interactionId: 'e-1', action: 'accept' });
 
@@ -854,7 +872,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const testModeSpy = vi.spyOn(testMode, 'stopTask');
       const claudeSpy = vi.spyOn(claude, 'stopTask');
 
-      await request(app).post(`/api/sessions/${TEST_MODE_SESSION}/tasks/task-1/stop`);
+      await request(testServer).post(`/api/sessions/${TEST_MODE_SESSION}/tasks/task-1/stop`);
 
       expect(testModeSpy).toHaveBeenCalled();
       expect(claudeSpy).not.toHaveBeenCalled();
@@ -864,7 +882,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const testModeSpy = vi.spyOn(testMode, 'interruptQuery');
       const claudeSpy = vi.spyOn(claude, 'interruptQuery');
 
-      const res = await request(app).post(`/api/sessions/${TEST_MODE_SESSION}/interrupt`);
+      const res = await request(testServer).post(`/api/sessions/${TEST_MODE_SESSION}/interrupt`);
 
       expect(testModeSpy).toHaveBeenCalled();
       expect(claudeSpy).not.toHaveBeenCalled();
@@ -896,7 +914,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const claudeSpy = vi.spyOn(claude, 'getSession');
       const testModeSpy = vi.spyOn(testMode, 'getSession');
 
-      await request(app).get(`/api/sessions/${CLAUDE_SESSION}`);
+      await request(testServer).get(`/api/sessions/${CLAUDE_SESSION}`);
 
       expect(claudeSpy).toHaveBeenCalled();
       expect(testModeSpy).not.toHaveBeenCalled();
@@ -908,7 +926,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         .mockResolvedValue(mockInterruptReceipt('not-running'));
       const testModeSpy = vi.spyOn(testMode, 'interruptQuery');
 
-      await request(app).post(`/api/sessions/${CLAUDE_SESSION}/interrupt`);
+      await request(testServer).post(`/api/sessions/${CLAUDE_SESSION}/interrupt`);
 
       expect(claudeSpy).toHaveBeenCalled();
       expect(testModeSpy).not.toHaveBeenCalled();

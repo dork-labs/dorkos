@@ -242,6 +242,7 @@ export function createDirectSessionMethods(
         clientMessageId?: string;
         context?: ClientContext;
         runtime?: string;
+        agentPath?: string;
         account?: string;
         seedContext?: string;
         disposition?: MessageDisposition;

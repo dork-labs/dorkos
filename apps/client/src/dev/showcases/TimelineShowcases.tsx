@@ -80,7 +80,7 @@ function LoadingDemo() {
           >
             <div className="text-muted-foreground flex items-center gap-2 text-sm">
               <TypingDots />
-              Loading conversation...
+              Loading conversation…
             </div>
           </Feed>
         </TimelineFrame>
@@ -223,8 +223,8 @@ function PendingListDemo() {
   return (
     <>
       <ShowcaseLabel>
-        Pending — sent, not yet echoed back. Outside the feed&apos;s own numbering: a message the
-        server has not accepted is not one of its articles yet
+        Pending — sent, not yet echoed back. Outside the feed’s own numbering: a message the server
+        has not accepted is not one of its articles yet
       </ShowcaseLabel>
       <ShowcaseDemo>
         <TimelineFrame height={260}>
@@ -294,8 +294,8 @@ function ThreadGroupingDemo() {
   return (
     <>
       <ShowcaseLabel>
-        Thread grouping — the root, then the quiet reply line beneath it (&ldquo;&#8627; 3 replies ·
-        last &hellip;&rdquo;)
+        Thread grouping — the root, then the quiet reply line beneath it (“&#8627; 3 replies · last
+        &hellip;”)
       </ShowcaseLabel>
       <ShowcaseDemo>
         <Conversation.Root surface="room" capabilities={ROOM_CAPABILITIES} anchor="rail">

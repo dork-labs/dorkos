@@ -468,7 +468,7 @@ describe('link dispatch', () => {
       // The surface decides, not who registered an adapter. `main.tsx` only
       // registers an opener on the desktop, but that gate reads as redundant
       // beside `registerLinkNavigator` — and if it were the only thing enforcing
-      // the surface, deleting it would turn every "Open in New Tab" in the
+      // the surface, deleting it would turn every "Open in a new tab" in the
       // browser into an in-place navigation into a strip nothing renders, with
       // the whole suite still green.
       const opened = captureTabOpens();
@@ -646,7 +646,7 @@ describe('link dispatch', () => {
         // would have said "DorkOS doesn't open mailto: links", which is false
         // on the web app and self-contradicting beside "opens web, email and
         // phone links".
-        expect(toast.error).toHaveBeenCalledWith("The desktop app can't open mailto: links", {
+        expect(toast.error).toHaveBeenCalledWith('The desktop app can’t open mailto: links', {
           id: 'dorkos-link-refused',
           description:
             'mailto: links open in a browser, but not in the desktop app, so nothing would happen.',
@@ -682,7 +682,7 @@ describe('link dispatch', () => {
         openExternalLink('https://dorkos.ai/docs');
         await Promise.resolve();
         await Promise.resolve();
-        expect(toast.error).toHaveBeenCalledWith("The desktop app couldn't open that link", {
+        expect(toast.error).toHaveBeenCalledWith('The desktop app couldn’t open that link', {
           id: 'dorkos-link-refused',
           description: 'The desktop app would not hand this one to your browser.',
         });
@@ -726,16 +726,16 @@ describe('link dispatch', () => {
       // identical, from their side, to a link that was simply broken.
       openExternalLink('irc://irc.example.com/dorkos');
 
-      expect(toast.error).toHaveBeenCalledWith("DorkOS doesn't open irc: links", {
+      expect(toast.error).toHaveBeenCalledWith('DorkOS doesn’t open irc: links', {
         id: 'dorkos-link-refused',
-        description: "irc: links don't open from DorkOS, so nothing would happen.",
+        description: 'irc: links don’t open from DorkOS, so nothing would happen.',
       });
     });
 
     it('says something different when the address is broken rather than refused', () => {
       openExternalLink('http://');
 
-      expect(toast.error).toHaveBeenCalledWith("DorkOS couldn't open that link", {
+      expect(toast.error).toHaveBeenCalledWith('DorkOS couldn’t open that link', {
         id: 'dorkos-link-refused',
         description: 'That address is incomplete, so there is nowhere to send you.',
       });
@@ -757,7 +757,7 @@ describe('link dispatch', () => {
       // falls back to the same sentence a broken address gets. An explicit one
       // is named.
       openExternalLink('app://obsidian.md/team');
-      expect(toast.error).toHaveBeenCalledWith("DorkOS doesn't open app: links", expect.anything());
+      expect(toast.error).toHaveBeenCalledWith('DorkOS doesn’t open app: links', expect.anything());
     });
 
     it('reuses one toast slot, so a second refused click replaces the first message', () => {
@@ -778,28 +778,28 @@ describe('link dispatch', () => {
     it('drops the scheme from the message when it is too long to be one', () => {
       openExternalLink(`${'a'.repeat(302)}://payload`);
 
-      expect(toast.error).toHaveBeenCalledWith("DorkOS couldn't open that link", expect.anything());
+      expect(toast.error).toHaveBeenCalledWith('DorkOS couldn’t open that link', expect.anything());
     });
 
     it('refuses every hostile spelling by name, on one message shape', () => {
       // The adversarial probe set, kept permanently. Each of these reaches the
       // seam from something an agent or a remote server authored.
       const probes: [href: string, title: string][] = [
-        ['javascript:alert(1)', "DorkOS doesn't open javascript: links"],
-        ['  JavaScript:alert(1)', "DorkOS doesn't open javascript: links"],
-        ['JaVaScRiPt:alert(1)', "DorkOS doesn't open javascript: links"],
-        ['java\tscript:alert(1)', "DorkOS doesn't open javascript: links"],
-        ['data:text/html,<script>alert(1)</script>', "DorkOS doesn't open data: links"],
-        ['vbscript:msgbox(1)', "DorkOS doesn't open vbscript: links"],
-        ['file:///etc/passwd', "DorkOS doesn't open file: links"],
-        ['blob:http://localhost:4242/9f2c', "DorkOS doesn't open blob: links"],
-        ['filesystem:http://localhost:4242/temporary/x', "DorkOS doesn't open filesystem: links"],
-        ['dorkos://session/abc', "DorkOS doesn't open dorkos: links"],
-        ['myapp://authorize', "DorkOS doesn't open myapp: links"],
-        ['irc://irc.example.com/dorkos', "DorkOS doesn't open irc: links"],
-        ['ircs://irc.example.com', "DorkOS doesn't open ircs: links"],
-        ['xmpp:someone@example.com', "DorkOS doesn't open xmpp: links"],
-        ['http://', "DorkOS couldn't open that link"],
+        ['javascript:alert(1)', 'DorkOS doesn’t open javascript: links'],
+        ['  JavaScript:alert(1)', 'DorkOS doesn’t open javascript: links'],
+        ['JaVaScRiPt:alert(1)', 'DorkOS doesn’t open javascript: links'],
+        ['java\tscript:alert(1)', 'DorkOS doesn’t open javascript: links'],
+        ['data:text/html,<script>alert(1)</script>', 'DorkOS doesn’t open data: links'],
+        ['vbscript:msgbox(1)', 'DorkOS doesn’t open vbscript: links'],
+        ['file:///etc/passwd', 'DorkOS doesn’t open file: links'],
+        ['blob:http://localhost:4242/9f2c', 'DorkOS doesn’t open blob: links'],
+        ['filesystem:http://localhost:4242/temporary/x', 'DorkOS doesn’t open filesystem: links'],
+        ['dorkos://session/abc', 'DorkOS doesn’t open dorkos: links'],
+        ['myapp://authorize', 'DorkOS doesn’t open myapp: links'],
+        ['irc://irc.example.com/dorkos', 'DorkOS doesn’t open irc: links'],
+        ['ircs://irc.example.com', 'DorkOS doesn’t open ircs: links'],
+        ['xmpp:someone@example.com', 'DorkOS doesn’t open xmpp: links'],
+        ['http://', 'DorkOS couldn’t open that link'],
       ];
 
       for (const [href, title] of probes) {
@@ -836,7 +836,7 @@ describe('link dispatch', () => {
 
   describe('supportsSeparateWindow', () => {
     it('is true in the desktop app and false in the browser', () => {
-      // A browser's "new window" is the tab "Open in New Tab" already offers,
+      // A browser's "new window" is the tab "Open in a new tab" already offers,
       // so the second row is not offered there (DOR-568).
       expect(supportsSeparateWindow()).toBe(false);
       enterDesktopShell();

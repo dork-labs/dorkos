@@ -64,7 +64,7 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
     <Sheet open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <SheetContent side="right">
         <SheetHeader>
-          <SheetTitle>Failed Run</SheetTitle>
+          <SheetTitle>Run that didn’t finish</SheetTitle>
           <SheetDescription>{itemId ? itemId.slice(0, 8) : 'Unknown'}</SheetDescription>
         </SheetHeader>
 
@@ -78,7 +78,7 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
           )}
 
           {isError && (
-            <p className="text-destructive py-8 text-center text-sm">Failed to load run details.</p>
+            <p className="text-destructive py-8 text-center text-sm">Couldn’t load this run.</p>
           )}
 
           {!isLoading && !isError && !run && (
@@ -149,7 +149,7 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
               onClick={handleCancel}
               disabled={cancelMutation.isPending}
             >
-              {cancelMutation.isPending ? 'Cancelling...' : 'Cancel'}
+              {cancelMutation.isPending ? 'Cancelling…' : 'Cancel'}
             </Button>
           )}
           <Button variant="outline" onClick={onClose}>

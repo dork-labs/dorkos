@@ -1867,16 +1867,6 @@ body {
   text-decoration: underline;
 }
 
-/* Streamdown link-safety modal: fix scrim and constrain width */
-[data-streamdown='link-safety-modal'] {
-  background: hsl(var(--background) / 0.5);
-  backdrop-filter: blur(4px);
-}
-
-[data-streamdown='link-safety-modal'] > [role='presentation'] {
-  max-width: 28rem; /* max-w-md */
-}
-
 .msg-assistant code {
   color: hsl(var(--ring));
 }

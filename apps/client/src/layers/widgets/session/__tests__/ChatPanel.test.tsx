@@ -224,8 +224,8 @@ vi.mock('@/layers/features/chat/ui/tasks/TaskListPanel', () => ({
   TaskListPanel: vi.fn(() => null),
 }));
 
-vi.mock('@/layers/features/commands', () => ({
-  CommandPalette: vi.fn(() => null),
+vi.mock('@/layers/features/slash-commands', () => ({
+  SlashCommandList: vi.fn(() => null),
 }));
 
 vi.mock('@/layers/features/files', () => ({

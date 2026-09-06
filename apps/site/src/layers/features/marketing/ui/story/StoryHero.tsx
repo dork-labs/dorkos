@@ -26,7 +26,7 @@ export function StoryHero({ slideId = 'hero' }: StoryHeroProps) {
           variants={REVEAL}
           className="text-brand-orange mb-6 font-mono text-[9px] tracking-[0.2em] uppercase"
         >
-          What If...
+          What If…
         </motion.div>
 
         <motion.p

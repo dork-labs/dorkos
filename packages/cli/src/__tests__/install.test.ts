@@ -149,6 +149,27 @@ describe('runInstall', () => {
     expect(allLogs).toContain('Install cancelled.');
   });
 
+  it('prints the server refusal for an address DorkOS will not install from (DOR-1799)', async () => {
+    // `dorkos install 'x@ext::sh -c id'` — parsed into name `x` + "marketplace"
+    // `ext::sh -c id`, which the server resolves as a direct address and
+    // refuses at the git seam. The sentence is written for the person reading
+    // it, so the CLI prints it as sent rather than summarising it.
+    const refusal =
+      "That address isn't one DorkOS can install a package from. Use an https://, ssh:// or " +
+      'git@host:path address for a git repository, or a file:// path to a folder on this machine.';
+    const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(400, { error: refusal }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const code = await runInstall({ name: 'x', marketplace: "ext::sh -c 'id'", yes: true });
+
+    expect(code).toBe(1);
+    // The refusal came from the PREVIEW call — nothing was installed, and no
+    // second request was made.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allErr).toBe(`Error: ${refusal}`);
+  });
+
   it('blocks install on error-level conflicts unless --force', async () => {
     const previewWithConflict = {
       ...PREVIEW_BODY,

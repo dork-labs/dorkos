@@ -71,7 +71,7 @@ function readAsList(names: readonly string[]): string {
 export function presenceSentence(names: readonly string[], state: PresenceCopyState): string {
   const who = readAsList(names);
   const be = names.length === 1 ? 'is' : 'are';
-  if (state === 'working_late') return `${who} ${be} still working — ${TAKING_LONGER}`;
+  if (state === 'working_late') return `${who} ${be} still working, ${TAKING_LONGER}`;
   return `${who} ${be} working on it`;
 }
 
@@ -87,7 +87,7 @@ export function presenceSentence(names: readonly string[], state: PresenceCopySt
  * @param state - Where the room's wait is, from the oldest claim.
  */
 export function presenceCountSentence(count: number, state: PresenceCopyState): string {
-  if (state === 'working_late') return `${count} agents are still working — ${TAKING_LONGER}`;
+  if (state === 'working_late') return `${count} agents are still working, ${TAKING_LONGER}`;
   return `${count} agents are working on it`;
 }
 
@@ -132,7 +132,7 @@ export function heldSentence(names: readonly string[], behind: string | null): s
   if (names.length <= 1) {
     return `${names[0] ?? 'An agent'} will pick this up when it finishes in ${behind ?? 'another conversation'}`;
   }
-  return `${readAsList(names)} will pick this up when they're free`;
+  return `${readAsList(names)} will pick this up when they’re free`;
 }
 
 /**
@@ -145,7 +145,7 @@ export function heldSentence(names: readonly string[], behind: string | null): s
  *   {@link PRESENCE_NAME_LIMIT} wherever this is called from.
  */
 export function heldCountSentence(count: number): string {
-  return `${count} agents will pick this up when they're free`;
+  return `${count} agents will pick this up when they’re free`;
 }
 
 /**
@@ -209,7 +209,7 @@ export function presenceRow(name: string, detail: string | null, state: Presence
  * @param name - The agent's display name.
  */
 export function silentFinishSentence(name: string): string {
-  return `${name} finished — nothing to add`;
+  return `${name} finished, nothing to add`;
 }
 
 /**

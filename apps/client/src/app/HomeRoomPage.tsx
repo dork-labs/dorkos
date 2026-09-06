@@ -152,7 +152,7 @@ export function HomeRoomPage() {
   if (team.status === 'error') {
     return (
       <HomeNotice
-        title="Couldn't load your team room"
+        title="Couldn’t load your team room"
         action={
           <Button variant="outline" size="sm" className="mt-2" onClick={team.retry}>
             Try again
@@ -166,7 +166,7 @@ export function HomeRoomPage() {
 
   if (team.status === 'missing') {
     return (
-      <HomeNotice title="Your team room isn't open yet">
+      <HomeNotice title="Your team room isn’t open yet">
         DorkOS opens #team when the server starts. If this stays here, restart the server and it
         will be waiting for you.
       </HomeNotice>

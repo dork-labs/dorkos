@@ -46,6 +46,15 @@ export function createConnectorProvidersRouter(deps: ConnectorProvidersRouterDep
   const router = Router();
   const { bootstrapper, credentialStore } = deps;
 
+  router.use((_req, res, next) => {
+    const health = bootstrapper.migrationHealth();
+    if (health.status === 'migration_failed') {
+      res.status(503).json({ status: health.status, error: health.error });
+      return;
+    }
+    next();
+  });
+
   router.get('/', async (_req, res) => {
     res.json({ providers: await bootstrapper.listStatuses() });
   });

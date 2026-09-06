@@ -420,7 +420,7 @@ describe('ModelConfigPopover', () => {
       }));
       render(<ModelConfigPopover {...defaultProps()} />);
       expect(screen.getByTestId('model-load-error')).toBeInTheDocument();
-      expect(screen.getByText('Failed to load models')).toBeInTheDocument();
+      expect(screen.getByText(/Couldn’t load the model list/)).toBeInTheDocument();
       expect(screen.getByText('Retry')).toBeInTheDocument();
     });
 
@@ -804,18 +804,18 @@ describe('ModelConfigPopover', () => {
         // Offered, not hidden — someone looking for it can still find it.
         expect(screen.getByTestId('model-card-list')).toHaveTextContent('Lyria');
         const group = screen.getByTestId('model-group-no-tools');
-        expect(group).toHaveTextContent("Can't do agent work");
+        expect(group).toHaveTextContent('Can’t do agent work');
         // And it is NOT sitting in Frontier alongside the models that work.
         const text = screen.getByTestId('model-card-list').textContent ?? '';
-        expect(text.indexOf('Nova')).toBeLessThan(text.indexOf("Can't do agent work"));
-        expect(text.indexOf("Can't do agent work")).toBeLessThan(text.indexOf('Lyria'));
+        expect(text.indexOf('Nova')).toBeLessThan(text.indexOf('Can’t do agent work'));
+        expect(text.indexOf('Can’t do agent work')).toBeLessThan(text.indexOf('Lyria'));
       });
 
       it('says on the card why a tool-less model will not work', () => {
         render(<ModelConfigPopover {...defaultProps({ model: 'model-frontier-a' })} />);
 
         expect(screen.getByTestId('model-limitation-model-chat-only')).toHaveTextContent(
-          "Can't use tools, so it can't read files or run commands."
+          'Can’t use tools, so it can’t read files or run commands.'
         );
       });
 
@@ -829,7 +829,7 @@ describe('ModelConfigPopover', () => {
         expect(screen.getByTestId('model-group-solid-coders')).toBeInTheDocument();
       });
 
-      it('does not warn that OpenRouter\'s router "makes images"', () => {
+      it('does not warn that OpenRouter’s router "makes images"', () => {
         // `openrouter/auto` declares image among its outputs because that is the
         // union of everything it might route to. On a coding prompt it returns
         // text every time, so an amber warning at the moment of choice would be
@@ -863,7 +863,7 @@ describe('ModelConfigPopover', () => {
         render(<ModelConfigPopover {...defaultProps({ model: 'openrouter/auto' })} />);
 
         expect(screen.getByTestId('model-limitation-openrouter/auto')).toHaveTextContent(
-          "Can't use tools"
+          'Can’t use tools'
         );
       });
 
@@ -1032,7 +1032,7 @@ describe('ModelConfigPopover', () => {
       expect(banner).toHaveTextContent('ollama/gone:7b');
       expect(banner).toHaveTextContent('(not available)');
       expect(
-        screen.getByText("This model isn't available anymore. Pick another.")
+        screen.getByText('This model isn’t available anymore. Pick another.')
       ).toBeInTheDocument();
       // Never auto-switch: the component only reflects the prop.
       expect(onChangeModel).not.toHaveBeenCalled();

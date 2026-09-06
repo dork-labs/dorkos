@@ -198,8 +198,8 @@ describe('TaskRunHistoryPanel', () => {
       // server's own sentence, same as every other failed mutation.
       await waitFor(() => {
         expect(toast.error).toHaveBeenCalledWith(
-          "Couldn't stop the run — Nothing picked up the stop request",
-          expect.anything()
+          'Couldn’t stop the run',
+          expect.objectContaining({ description: 'Nothing picked up the stop request' })
         );
       });
       expect(toast).not.toHaveBeenCalled();
@@ -477,7 +477,7 @@ describe('TaskRunHistoryPanel', () => {
     );
 
     // Loading state now renders skeleton rows instead of text
-    expect(screen.getByLabelText('Loading runs...')).toBeTruthy();
+    expect(screen.getByLabelText('Loading runs…')).toBeTruthy();
   });
 
   // What a run RAN on, stamped at dispatch — not what the task says today

@@ -9,7 +9,8 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { AddressInfo } from 'node:net';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { openSseStream, type OpenSseStream, type SseFrame } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
@@ -71,14 +72,11 @@ function openRoomStream(
   return openSseStream(port, `/api/rooms/${roomId}/events${query}`, opts);
 }
 
-/** Start the app on an ephemeral port for one test. */
-async function listen(): Promise<{ port: number; close: () => void }> {
-  const server = app.listen(0);
-  await new Promise<void>((resolve) => server.once('listening', resolve));
-  return {
-    port: (server.address() as AddressInfo).port,
-    close: () => server.close(),
-  };
+const testServer = listeningServer(app);
+
+/** Port of the file-scoped listener shared by Supertest and the raw SSE client. */
+function testServerPort(): number {
+  return (testServer.address() as AddressInfo).port;
 }
 
 describe('GET /api/rooms/:id/events', () => {
@@ -89,29 +87,27 @@ describe('GET /api/rooms/:id/events', () => {
     vi.clearAllMocks();
     db = createTestDb();
     setRoomService(createRoomSubsystem({ db }).service);
-    const created = await request(app)
+    const created = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Backend' });
     roomId = created.body.id;
   });
 
   it('404s an unknown room before any header flushes, so the client can read it', async () => {
-    const res = await request(app).get('/api/rooms/nope/events');
+    const res = await request(testServer).get('/api/rooms/nope/events');
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('ROOM_NOT_FOUND');
   });
 
   it('opens a cold connect with the room, its roster and its history', async () => {
     for (const text of ['one', 'two']) {
-      await request(app).post(`/api/rooms/${roomId}/entries`).send({ text });
+      await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text });
     }
 
-    const server = await listen();
-    const stream = openRoomStream(server.port, roomId, {
+    const stream = openRoomStream(testServerPort(), roomId, {
       until: (frames) => frames.some((f) => f.event === 'snapshot'),
     });
     const frames = await stream.frames;
-    server.close();
 
     const snapshot = frames.find((f) => f.event === 'snapshot')?.data as {
       room: { id: string; members: unknown[] };
@@ -125,16 +121,14 @@ describe('GET /api/rooms/:id/events', () => {
   });
 
   it('delivers a post made while the stream is open, framed with a resumable id', async () => {
-    const server = await listen();
-    const stream = openRoomStream(server.port, roomId, {
+    const stream = openRoomStream(testServerPort(), roomId, {
       until: (frames) => frames.some((f) => f.event === 'entry'),
     });
     await stream.ready;
 
-    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'live one' });
+    await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'live one' });
 
     const frames = await stream.frames;
-    server.close();
 
     const entry = frames.find((f) => f.event === 'entry');
     expect(entry?.id).toBe(`${roomId}-${STREAM_EPOCH}-1`);
@@ -143,16 +137,14 @@ describe('GET /api/rooms/:id/events', () => {
 
   it('replays only the gap on a Last-Event-ID resume, with no snapshot', async () => {
     for (const text of ['one', 'two', 'three']) {
-      await request(app).post(`/api/rooms/${roomId}/entries`).send({ text });
+      await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text });
     }
 
-    const server = await listen();
-    const stream = openRoomStream(server.port, roomId, {
+    const stream = openRoomStream(testServerPort(), roomId, {
       lastEventId: `${roomId}-${STREAM_EPOCH}-1`,
       until: (frames) => frames.filter((f) => f.event === 'entry').length >= 2,
     });
     const frames = await stream.frames;
-    server.close();
 
     expect(frames.some((f) => f.event === 'snapshot')).toBe(false);
     expect(frames.map((f) => f.id)).toEqual([
@@ -163,49 +155,43 @@ describe('GET /api/rooms/:id/events', () => {
 
   it('replays from ?after= too', async () => {
     for (const text of ['one', 'two']) {
-      await request(app).post(`/api/rooms/${roomId}/entries`).send({ text });
+      await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text });
     }
 
-    const server = await listen();
-    const stream = openRoomStream(server.port, roomId, {
+    const stream = openRoomStream(testServerPort(), roomId, {
       after: 1,
       until: (frames) => frames.some((f) => f.event === 'entry'),
     });
     const frames = await stream.frames;
-    server.close();
 
     expect(frames.some((f) => f.event === 'snapshot')).toBe(false);
     expect(frames.map((f) => f.id)).toEqual([`${roomId}-${STREAM_EPOCH}-2`]);
   });
 
   it('treats a cursor from a dead process as a cold connect rather than mis-replaying', async () => {
-    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'one' });
+    await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'one' });
 
-    const server = await listen();
-    const stream = openRoomStream(server.port, roomId, {
+    const stream = openRoomStream(testServerPort(), roomId, {
       // A cursor minted by a previous process: same shape, foreign epoch.
       lastEventId: `${roomId}-${STREAM_EPOCH - 1}-1`,
       until: (frames) => frames.some((f) => f.event === 'snapshot'),
     });
     const frames = await stream.frames;
-    server.close();
 
     expect(frames.some((f) => f.event === 'snapshot')).toBe(true);
   });
 
   it('goes straight to live with no gap when the replay is already current', async () => {
-    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'one' });
+    await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'one' });
 
-    const server = await listen();
-    const stream = openRoomStream(server.port, roomId, {
+    const stream = openRoomStream(testServerPort(), roomId, {
       lastEventId: `${roomId}-${STREAM_EPOCH}-1`,
       until: (frames) => frames.some((f) => f.event === 'entry'),
     });
     await stream.ready;
-    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'two' });
+    await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'two' });
 
     const frames = await stream.frames;
-    server.close();
 
     // Exactly one entry: the gap was empty, and seq 1 is not re-sent.
     const entries = frames.filter((f) => f.event === 'entry');
@@ -214,19 +200,16 @@ describe('GET /api/rooms/:id/events', () => {
   });
 
   it('sets the headers that keep a long-lived stream from being buffered', async () => {
-    const server = await listen();
-    const stream = openRoomStream(server.port, roomId, {
+    const stream = openRoomStream(testServerPort(), roomId, {
       until: (frames) => frames.some((f) => f.event === 'snapshot'),
     });
     expect(await stream.status).toBe(200);
     await stream.frames;
-    server.close();
   });
 
   it('delivers an ephemeral signal live, with no id line and no log entry', async () => {
     const { getRoomService } = await import('../../services/rooms/index.js');
-    const server = await listen();
-    const stream = openRoomStream(server.port, roomId, {
+    const stream = openRoomStream(testServerPort(), roomId, {
       until: (frames) => frames.some((f) => f.event === 'signal'),
     });
     await stream.ready;
@@ -235,14 +218,13 @@ describe('GET /api/rooms/:id/events', () => {
     getRoomService().publishSignal(roomId, 'typing', author);
 
     const frames = await stream.frames;
-    server.close();
 
     const signal = frames.find((f) => f.event === 'signal');
     expect(signal?.id).toBeUndefined();
     expect((signal?.data as { signal: string }).signal).toBe('typing');
 
     // Nothing ephemeral reached the durable log, so nothing replays it.
-    const entries = await request(app).get(`/api/rooms/${roomId}/entries`);
+    const entries = await request(testServer).get(`/api/rooms/${roomId}/entries`);
     expect(entries.body.entries).toHaveLength(0);
   });
 
@@ -253,10 +235,11 @@ describe('GET /api/rooms/:id/events', () => {
     // for work that finished while the client was away: there is nothing to
     // resurrect. The republish loop repaints the ones that are still true.
     const { getRoomService } = await import('../../services/rooms/index.js');
-    const first = await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'one' });
+    const first = await request(testServer)
+      .post(`/api/rooms/${roomId}/entries`)
+      .send({ text: 'one' });
 
-    const server = await listen();
-    const live = openRoomStream(server.port, roomId, {
+    const live = openRoomStream(testServerPort(), roomId, {
       until: (frames) => frames.some((f) => f.event === 'signal'),
     });
     await live.ready;
@@ -282,52 +265,51 @@ describe('GET /api/rooms/:id/events', () => {
 
     // A second entry, then a resume from before the signal: the gap comes off
     // the durable log, which never held it.
-    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'two' });
-    const resumed = openRoomStream(server.port, roomId, {
+    await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'two' });
+    const resumed = openRoomStream(testServerPort(), roomId, {
       lastEventId: `${roomId}-${STREAM_EPOCH}-1`,
       until: (frames) => frames.some((f) => f.event === 'entry'),
     });
     const replayed = await resumed.frames;
-    server.close();
 
     expect(replayed.some((f) => f.event === 'signal')).toBe(false);
     expect(replayed.map((f) => f.id)).toEqual([`${roomId}-${STREAM_EPOCH}-2`]);
   });
 
   it('ignores an out-of-range ?after= instead of going deaf for the connection', async () => {
-    const server = await listen();
     // A cursor past the end used to set the live-dedupe watermark above every
     // seq this room will ever issue, silently suppressing every entry for the
     // life of the connection. Past the end is a cold connect, not a resume.
-    const stream = openRoomStream(server.port, roomId, {
+    const stream = openRoomStream(testServerPort(), roomId, {
       after: 99_999,
       until: (frames) => frames.some((f) => f.event === 'entry'),
     });
     await stream.ready;
-    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'still delivered' });
+    await request(testServer)
+      .post(`/api/rooms/${roomId}/entries`)
+      .send({ text: 'still delivered' });
 
     const frames = await stream.frames;
-    server.close();
 
     expect(frames.some((f) => f.event === 'snapshot')).toBe(true);
     expect(frames.find((f) => f.event === 'entry')?.id).toBe(`${roomId}-${STREAM_EPOCH}-1`);
   });
 
   it('refuses a cursor minted for a different room', async () => {
-    const other = await request(app).post('/api/rooms').send({ kind: 'channel', title: 'Other' });
+    const other = await request(testServer)
+      .post('/api/rooms')
+      .send({ kind: 'channel', title: 'Other' });
     for (const text of ['one', 'two']) {
-      await request(app).post(`/api/rooms/${roomId}/entries`).send({ text });
+      await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text });
     }
 
-    const server = await listen();
     // Room seqs are per-room and durable, so another room's cursor is a
     // plausible number that would silently skip real entries here.
-    const stream = openRoomStream(server.port, roomId, {
+    const stream = openRoomStream(testServerPort(), roomId, {
       lastEventId: `${other.body.id}-${STREAM_EPOCH}-1`,
       until: (frames) => frames.some((f) => f.event === 'snapshot'),
     });
     const frames = await stream.frames;
-    server.close();
 
     const snapshot = frames.find((f) => f.event === 'snapshot')?.data as {
       entries: Array<{ seq: number }>;
@@ -344,7 +326,9 @@ describe('GET /api/rooms/:id/events', () => {
       displayName: 'Outsider',
     });
 
-    const res = await request(app).get(`/api/rooms/${roomId}/events`).set('X-DorkOS-Agent', token);
+    const res = await request(testServer)
+      .get(`/api/rooms/${roomId}/events`)
+      .set('X-DorkOS-Agent', token);
 
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('ROOM_NOT_FOUND');
@@ -365,7 +349,7 @@ describe('PUT /api/read-cursors/room/:id on the global stream', () => {
     const rooms = createRoomSubsystem({ db: createTestDb() });
     setRoomService(rooms.service);
     setReadCursorService(rooms.readCursors);
-    const created = await request(app)
+    const created = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Backend' });
     roomId = created.body.id;
@@ -378,28 +362,32 @@ describe('PUT /api/read-cursors/room/:id on the global stream', () => {
     // other screen, and a service-level assertion sees none of them.
     const { getRoomService } = await import('../../services/rooms/index.js');
     for (const text of ['one', 'two', 'three']) {
-      await request(app).post(`/api/rooms/${roomId}/entries`).send({ text });
+      await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text });
     }
 
-    const server = await listen();
     // Stop on the sentinel post at the end rather than on the cursor event
     // itself. Absence is never the condition: waiting for the thing that happens
     // INSTEAD is what makes "and then nothing" provable, where a timer would
     // only prove the test was patient.
-    const stream = openSseStream(server.port, '/api/events', {
+    const stream = openSseStream(testServerPort(), '/api/events', {
       until: (frames) => frames.some((f) => f.event === 'room_activity'),
     });
     await stream.ready;
 
-    await request(app).put(`/api/read-cursors/room/${roomId}`).send({ lastReadSeq: 3 }).expect(200);
+    await request(testServer)
+      .put(`/api/read-cursors/room/${roomId}`)
+      .send({ lastReadSeq: 3 })
+      .expect(200);
     // The same cursor again: monotonic, so it writes nothing and must therefore
     // say nothing. Opening a room already read is the common case, and an event
     // per no-op would be the loudest name on this stream.
-    await request(app).put(`/api/read-cursors/room/${roomId}`).send({ lastReadSeq: 3 }).expect(200);
-    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'sentinel' });
+    await request(testServer)
+      .put(`/api/read-cursors/room/${roomId}`)
+      .send({ lastReadSeq: 3 })
+      .expect(200);
+    await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'sentinel' });
 
     const frames = await stream.frames;
-    server.close();
 
     const cursors = frames.filter((f) => f.event === 'read_cursor');
     expect(cursors).toHaveLength(1);
@@ -424,22 +412,26 @@ describe('PUT /api/read-cursors/room/:id on the global stream', () => {
     const { getRoomService } = await import('../../services/rooms/index.js');
     const me = getRoomService().authorRegistry.localHuman().id;
     for (const text of ['one', 'two', 'three']) {
-      await request(app).post(`/api/rooms/${roomId}/entries`).send({ text });
+      await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text });
     }
 
-    await request(app).put(`/api/rooms/${roomId}/read-cursor`).send({ lastReadSeq: 1 }).expect(404);
+    await request(testServer)
+      .put(`/api/rooms/${roomId}/read-cursor`)
+      .send({ lastReadSeq: 1 })
+      .expect(404);
 
-    const server = await listen();
-    const stream = openSseStream(server.port, '/api/events', {
+    const stream = openSseStream(testServerPort(), '/api/events', {
       until: (frames) => frames.some((f) => f.event === 'room_activity'),
     });
     await stream.ready;
 
-    await request(app).put(`/api/read-cursors/room/${roomId}`).send({ lastReadSeq: 2 }).expect(200);
-    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'sentinel' });
+    await request(testServer)
+      .put(`/api/read-cursors/room/${roomId}`)
+      .send({ lastReadSeq: 2 })
+      .expect(200);
+    await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'sentinel' });
 
     const frames = await stream.frames;
-    server.close();
 
     // `unreadCount` included, because the generic route delegates room writes
     // into `RoomService` rather than dropping a bare number on the table. The
@@ -452,7 +444,7 @@ describe('PUT /api/read-cursors/room/:id on the global stream', () => {
 
     // One stored cursor, read back through the ROOM's own vocabulary: the
     // membership the room detail reports carries what the cursor table holds.
-    const room = await request(app).get(`/api/rooms/${roomId}`).expect(200);
+    const room = await request(testServer).get(`/api/rooms/${roomId}`).expect(200);
     expect(room.body.members.find((m: { authorId: string }) => m.authorId === me).lastReadSeq).toBe(
       2
     );
@@ -463,7 +455,7 @@ describe('PUT /api/read-cursors/room/:id on the global stream', () => {
     // happily store a cursor for a room this caller cannot see, and answer 200.
     // 404 rather than 403 because it is the rooms domain answering, in the words
     // the rest of the room surface uses.
-    const res = await request(app)
+    const res = await request(testServer)
       .put('/api/read-cursors/room/01JQZZZZZZZZZZZZZZZZZZZZZZ')
       .send({ lastReadSeq: 1 })
       .expect(404);

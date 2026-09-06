@@ -481,7 +481,7 @@ test.describe('The pinned triage header @smoke', () => {
     // them, so `/?detail=…` has to keep working — it is a URL somebody pasted.
     await page.goto('/?detail=offline-agent');
     await basePage.waitForAppReady();
-    await expect(page.getByRole('dialog').getByText('Offline Agents')).toBeVisible({
+    await expect(page.getByRole('dialog').getByText('Agents that aren’t answering')).toBeVisible({
       timeout: SERVER_ROUND_TRIP_MS,
     });
   });

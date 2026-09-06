@@ -40,7 +40,7 @@ interface ExternalMcpCardProps {
   /**
    * Whether local login is on (`ServerConfig.auth.enabled`). Needed to tell the
    * two `authSource === 'none'` causes apart: login-on with no personal API keys
-   * minted yet (point at Settings → Security) vs the login-off degenerate
+   * minted yet (point at Settings → Access) vs the login-off degenerate
    * couldn't-generate-a-token state.
    */
   authEnabled: boolean;
@@ -56,9 +56,9 @@ interface ExternalMcpCardProps {
  * an agent tools from other MCP servers, on that agent's own Tools & MCP page — plan D7).
  *
  * MCP clients authenticate with a personal API key (Better Auth `apiKey` plugin),
- * created and revoked in Settings → Security → API keys, or via the `MCP_API_KEY`
+ * created and revoked in Settings → Access → API keys, or via the `MCP_API_KEY`
  * environment override for headless deployments. This card no longer mints a single
- * global key — key lifecycle lives in the Security section.
+ * global key — key lifecycle lives in the Access tab's "On this machine" section.
  */
 export function ExternalMcpCard({ mcp, authEnabled }: ExternalMcpCardProps) {
   const transport = useTransport();
@@ -113,7 +113,7 @@ export function ExternalMcpCard({ mcp, authEnabled }: ExternalMcpCardProps) {
       </Badge>
     ) : (
       <Badge variant="outline" tone="warning">
-        No auth
+        Not protected
       </Badge>
     )
   ) : (
@@ -190,7 +190,7 @@ function OutboundToolsCrossLink() {
   return (
     <p className="text-muted-foreground text-xs leading-relaxed">
       Want to give one of your agents tools from another MCP server instead? That is the other
-      direction — open the agent’s profile and go to Tools & MCP.{' '}
+      direction. Open the agent’s profile and go to Tools & MCP.{' '}
       <Button
         variant="link"
         size="sm"
@@ -244,10 +244,10 @@ function McpAuthRow({
     return (
       <SettingRow
         label="Authentication"
-        description="Couldn't generate a local token for this instance. External MCP clients won't be able to authenticate until you restart DorkOS or turn on login."
+        description="Couldn’t generate a local token for this instance. External MCP clients won’t be able to authenticate until you restart DorkOS or turn on login."
       >
         <Badge variant="outline" tone="warning">
-          No token
+          No key yet
         </Badge>
       </SettingRow>
     );
@@ -292,7 +292,9 @@ function LocalTokenAuthRow({
     try {
       await onReveal();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to fetch the local MCP token');
+      toast.error('Couldn’t show the token.', {
+        description: err instanceof Error ? err.message : 'Try again in a moment.',
+      });
     } finally {
       setIsRevealing(false);
     }
@@ -304,7 +306,9 @@ function LocalTokenAuthRow({
       await onRotate();
       setConfirmOpen(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to rotate the local MCP token');
+      toast.error('Couldn’t make a new token.', {
+        description: err instanceof Error ? err.message : 'The old one still works.',
+      });
     } finally {
       setIsRotating(false);
     }

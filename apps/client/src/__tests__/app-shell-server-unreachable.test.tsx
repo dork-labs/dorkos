@@ -209,7 +209,7 @@ vi.mock('sonner', () => ({
 import { AppShell } from '../AppShell';
 
 /** The headline, spelled with the typographic apostrophe the screen renders. */
-const HEADLINE = 'DorkOS can’t reach its server.';
+const HEADLINE = 'DorkOS can’t reach its server';
 
 /** The shell's own escape hatch for a config read that never lands. */
 const LOADING_TIMEOUT_MS = 3000;

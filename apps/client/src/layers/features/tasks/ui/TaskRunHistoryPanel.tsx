@@ -91,7 +91,7 @@ function StatusIcon({ status }: { status: TaskRun['status'] }) {
       // DorkOS was already running as many tasks as it is allowed to, so this
       // occurrence was recorded and not run. The row's error text says so.
       return (
-        <span title="Skipped — DorkOS was busy" aria-label="Skipped">
+        <span title="Skipped: DorkOS was busy" aria-label="Skipped">
           <SkipForward className="text-muted-foreground size-3.5" />
         </span>
       );
@@ -356,7 +356,7 @@ export function TaskRunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
 
   if (isLoading && allRuns.length === 0) {
     return (
-      <div className="space-y-0.5" aria-label="Loading runs...">
+      <div className="space-y-0.5" aria-label="Loading runs…">
         <RunRowSkeleton />
         <RunRowSkeleton />
         <RunRowSkeleton />
@@ -372,7 +372,7 @@ export function TaskRunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
       <div className="space-y-2">
         <StatusFilterSelect value={statusFilter} onChange={handleFilterChange} />
         <div className="py-4 text-center">
-          <p className="text-muted-foreground text-xs">Couldn&rsquo;t load this run history.</p>
+          <p className="text-muted-foreground text-xs">Couldn’t load this run history.</p>
           <button
             type="button"
             onClick={() => void refetch()}
@@ -439,7 +439,7 @@ export function TaskRunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
           disabled={isFetchingNextPage}
           className="text-muted-foreground hover:bg-muted/50 hover:text-foreground mt-1 w-full rounded-md py-1.5 text-xs transition-colors disabled:opacity-50"
         >
-          {isFetchingNextPage ? 'Loading...' : 'Load more'}
+          {isFetchingNextPage ? 'Loading…' : 'Load more'}
         </button>
       )}
     </div>

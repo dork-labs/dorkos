@@ -8,8 +8,8 @@
  * `custody: 'self-host'`, **`exposesOverMcp: true`**. Custody is `self-host`
  * because DorkOS holds only a `file:` reference to the Nango secret key + the
  * self-host base URL; the upstream tokens live in the operator's Nango, never in
- * DorkOS's store. The `connectionId ↔ ConnectedAccountId` normalization is
- * confined to this file ({@link toConnectedAccountId} / {@link toNangoConnectionId}).
+ * DorkOS's store. The `connectionId ↔ ConnectorExternalAccountRef` normalization is
+ * confined to this file ({@link toExternalAccountRef} / {@link toNangoConnectionId}).
  *
  * **How tools are exposed (DOR-415).** Free self-hosted Nango gives Auth + a
  * credentialed HTTP proxy and *no MCP server* — Nango's own MCP server is
@@ -37,15 +37,16 @@
  */
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type {
-  ConnectedAccount,
-  ConnectedAccountId,
-  ConnectedAccountStatus,
   ConnectorCapabilities,
+  ConnectorExternalAccountRef,
   ConnectorProvider,
+  ConnectorProviderInstanceId,
   ConnectorToolkit,
   ConnectPoll,
   ConnectStart,
+  ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
+import type { ConnectorProviderExecuteCommand } from '@dorkos/shared/connector-schemas';
 import type { CredentialProvider } from '../../core/credential-provider.js';
 import { logger } from '../../../lib/logger.js';
 import {
@@ -56,6 +57,7 @@ import {
   type NangoHttpClient,
 } from './nango-client.js';
 import type { NangoProxyMcp } from './nango-proxy-mcp.js';
+import { legacyDefaultProviderInstanceId } from '../legacy-connection-migration.js';
 
 /** The backend type identifier this provider registers and reports under. */
 export const NANGO_PROVIDER_TYPE = 'nango';
@@ -94,25 +96,23 @@ export class NangoEncryptionKeyError extends Error {
 }
 
 /**
- * Wrap a raw Nango `connectionId` as an opaque, provider-scoped
- * {@link ConnectedAccountId}. The `nango:` prefix namespaces the id (mirrors
- * `composio:`/`mcp:`) and makes the inverse deterministic; session code treats
- * it as opaque and never parses it.
+ * Wrap a raw Nango `connectionId` as a private, provider-scoped
+ * {@link ConnectorExternalAccountRef}. The prefix makes the inverse deterministic.
  *
  * @param connectionId - The raw Nango `connectionId` (random UUID).
  */
-export function toConnectedAccountId(connectionId: string): ConnectedAccountId {
-  return `${NANGO_PROVIDER_TYPE}:${connectionId}` as ConnectedAccountId;
+export function toExternalAccountRef(connectionId: string): ConnectorExternalAccountRef {
+  return `${NANGO_PROVIDER_TYPE}:${connectionId}` as ConnectorExternalAccountRef;
 }
 
 /**
- * Unwrap a {@link ConnectedAccountId} back to the raw Nango `connectionId` for a
- * vendor API call. The inverse of {@link toConnectedAccountId}; confined to this
+ * Unwrap a {@link ConnectorExternalAccountRef} back to the raw Nango `connectionId` for a
+ * vendor API call. The inverse of {@link toExternalAccountRef}; confined to this
  * adapter so no raw handle leaks outside it.
  *
- * @param accountId - An opaque account id minted by this provider.
+ * @param accountId - A private account reference minted by this provider.
  */
-export function toNangoConnectionId(accountId: ConnectedAccountId): string {
+export function toNangoConnectionId(accountId: ConnectorExternalAccountRef): string {
   const prefix = `${NANGO_PROVIDER_TYPE}:`;
   return accountId.startsWith(prefix) ? accountId.slice(prefix.length) : accountId;
 }
@@ -168,7 +168,7 @@ function toAuthKind(authMode: string | undefined): ConnectorToolkit['authKind'] 
 }
 
 /** Map a Nango connection status onto the port's {@link ConnectedAccountStatus}. */
-function toPortStatus(status: NangoConnectionStatus): ConnectedAccountStatus {
+function toPortStatus(status: NangoConnectionStatus): ProviderConnectedAccount['status'] {
   switch (status) {
     case 'ACTIVE':
       return 'active';
@@ -187,12 +187,14 @@ export interface NangoConnectorProviderOpts {
   client: NangoHttpClient;
   /** The Proxy→MCP wrapper that mints per-account tool-server endpoints (DOR-415). */
   proxy: NangoProxyMcp;
+  /** Stable configured provider instance id. */
+  instanceId?: ConnectorProviderInstanceId;
 }
 
 /**
  * Self-host-custody connector over Nango. Multi-account by construction:
  * distinct connects of one integration yield distinct `connectionId`s, each an
- * independently-addressable {@link ConnectedAccountId}, disambiguated by a label
+ * independently addressable private provider reference, disambiguated by a label
  * carried as a Nango tag.
  *
  * **Degrade contract** (a Nango API call can fail — a stale key's 401, a 5xx,
@@ -218,6 +220,7 @@ export interface NangoConnectorProviderOpts {
  * swallowed — it surfaces from every method.
  */
 export class NangoConnectorProvider implements ConnectorProvider {
+  readonly instanceId: ConnectorProviderInstanceId;
   readonly type = NANGO_PROVIDER_TYPE;
 
   private readonly _client: NangoHttpClient;
@@ -232,18 +235,69 @@ export class NangoConnectorProvider implements ConnectorProvider {
   constructor(opts: NangoConnectorProviderOpts) {
     this._client = opts.client;
     this._proxy = opts.proxy;
+    this.instanceId =
+      opts.instanceId ??
+      (legacyDefaultProviderInstanceId(this.type) as ConnectorProviderInstanceId);
   }
 
   getCapabilities(): ConnectorCapabilities {
     return {
+      instanceId: this.instanceId,
       type: this.type,
       supportsMultiAccount: true,
       custody: 'self-host',
       // Tools ride the DorkOS-built Proxy→MCP wrapper (DOR-415) — never Nango's
       // Enterprise-gated MCP server.
       exposesOverMcp: true,
+      capabilities: {
+        catalog: { status: 'available' },
+        authentication: { status: 'available' },
+        accounts: { status: 'available' },
+        operations: {
+          status: 'unsupported',
+          reason: 'Direct operation discovery activates in P2.',
+        },
+        execution: { status: 'unsupported', reason: 'Brokered execution activates in P2.' },
+        triggers: { status: 'unsupported', reason: 'Trigger support is not configured.' },
+      },
       features: {},
     };
+  }
+
+  async listToolkitPage(request: { cursor?: string; query?: string; limit: number }) {
+    const all = (await this.listToolkits()).filter((toolkit) =>
+      request.query ? toolkit.displayName.toLowerCase().includes(request.query.toLowerCase()) : true
+    );
+    const offset = request.cursor ? Number(request.cursor) : 0;
+    const toolkits = all.slice(offset, offset + request.limit);
+    const next = offset + toolkits.length;
+    return {
+      status: 'ok' as const,
+      toolkits,
+      ...(next < all.length && { nextCursor: String(next) }),
+      truncated: next < all.length,
+    };
+  }
+
+  listOperationSchemas(_request: { toolkit: string; cursor?: string; limit: number }) {
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Direct operation discovery activates in P2.',
+    });
+  }
+
+  execute(_command: ConnectorProviderExecuteCommand) {
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Brokered execution activates in P2.',
+    });
+  }
+
+  listTriggerTypes(_toolkit: string) {
+    return Promise.resolve({
+      status: 'unsupported' as const,
+      reason: 'Trigger support is not configured.',
+    });
   }
 
   async listToolkits(): Promise<ConnectorToolkit[]> {
@@ -298,7 +352,7 @@ export class NangoConnectorProvider implements ConnectorProvider {
     }
   }
 
-  async listAccounts(opts?: { toolkit?: string }): Promise<ConnectedAccount[]> {
+  async listAccounts(opts?: { toolkit?: string }): Promise<ProviderConnectedAccount[]> {
     // Propagates on failure — see listToolkits.
     const connections = await this._client.listConnections(
       opts?.toolkit ? { integration: opts.toolkit } : undefined
@@ -306,14 +360,14 @@ export class NangoConnectorProvider implements ConnectorProvider {
     return connections.map((connection) => this._toPortAccount(connection));
   }
 
-  async disconnect(accountId: ConnectedAccountId): Promise<void> {
+  async disconnect(accountId: ConnectorExternalAccountRef): Promise<void> {
     // Idempotent: the client swallows a 404, so revoking an unknown/already-
     // revoked id resolves without throwing (conformance requires this).
     await this._client.deleteConnection(toNangoConnectionId(accountId));
   }
 
   async toolServerForAccount(
-    accountId: ConnectedAccountId
+    accountId: ConnectorExternalAccountRef
   ): Promise<McpAppServerConnection | null> {
     // Resolve the account and register it with the Proxy→MCP wrapper. Only an
     // ACTIVE connection is exposable — anything else resolves null (the port's
@@ -343,11 +397,10 @@ export class NangoConnectorProvider implements ConnectorProvider {
     }
   }
 
-  /** Map a Nango domain connection onto the provider-neutral {@link ConnectedAccount}. */
-  private _toPortAccount(connection: NangoConnection): ConnectedAccount {
+  /** Map a Nango connection onto private provider account metadata. */
+  private _toPortAccount(connection: NangoConnection): ProviderConnectedAccount {
     return {
-      id: toConnectedAccountId(connection.connectionId),
-      provider: this.type,
+      externalAccountRef: toExternalAccountRef(connection.connectionId),
       toolkit: connection.integration,
       label: connection.label ?? connection.integration,
       status: toPortStatus(connection.status),

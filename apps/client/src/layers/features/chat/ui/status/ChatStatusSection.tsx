@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { SessionStatusEvent, ConnectionState } from '@dorkos/shared/types';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { useAppStore } from '@/layers/shared/model';
 import {
   useSessionStatus,
   useSessionChatStore,
@@ -99,10 +98,6 @@ export function ChatStatusSection({
   const runtimeChip = useRuntimeChip(sessionId);
   const status = useSessionStatus(sessionId, sessionStatus, isStreaming, runtimeChip.runtime);
 
-  // Per-field selectors, never a bare `useAppStore()`: the status bar and its
-  // ~11 children would otherwise re-render on every unrelated store write.
-  const enableMessagePolling = useAppStore((s) => s.enableMessagePolling);
-  const setEnableMessagePolling = useAppStore((s) => s.setEnableMessagePolling);
   const { pins } = useStatusBarPins();
 
   // The one session snapshot, shared with the right panel's Session tab. Every
@@ -512,8 +507,6 @@ export function ChatStatusSection({
             onOpenChange={setSessionOpen}
             diagnostics={diagnostics}
             controls={{
-              refresh: enableMessagePolling,
-              onToggleRefresh: () => setEnableMessagePolling(!enableMessagePolling),
               // The same switch the line's chip carries, so a bar too narrow to
               // hold the chip cannot take planning away.
               plan: workingMode ? { active: planActive, onToggle: handleTogglePlan } : null,

@@ -12,7 +12,8 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vites
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { SessionEvent, SessionSnapshot } from '@dorkos/shared/session-stream';
 
@@ -72,6 +73,9 @@ import { configManager, initConfigManager } from '../../config-manager.js';
 import { createApp, finalizeApp } from '../../../../app.js';
 import { env } from '../../../../env.js';
 
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
+
 /** Valid UUID for the session id param (routes validate UUID format). */
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 
@@ -125,11 +129,12 @@ describe('sessionGate on GET /api/sessions/:id/events (SSE, integration)', () =>
 
     // Owner + a real session cookie (auth off during setup so sign-up is clean).
     setAuthEnabled(false);
-    await request(app)
+    fixtureTarget.mount(app);
+    await request(fixtureServer)
       .post('/api/auth/sign-up/email')
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD, name: 'Owner' });
-    const signIn = await request(app)
+    const signIn = await request(fixtureServer)
       .post('/api/auth/sign-in/email')
       .set('Origin', ORIGIN)
       .send({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
@@ -156,21 +161,23 @@ describe('sessionGate on GET /api/sessions/:id/events (SSE, integration)', () =>
 
   it('streams the durable SSE snapshot when login is disabled (pass-through)', async () => {
     setAuthEnabled(false);
-    const res = await request(app).get(`/api/sessions/${SESSION_ID}/events`);
+    const res = await request(fixtureServer).get(`/api/sessions/${SESSION_ID}/events`);
     expect(res.status).toBe(200);
     expect(res.text).toContain('event: snapshot');
   });
 
   it('401s the SSE endpoint with no credentials when login is enabled', async () => {
     setAuthEnabled(true);
-    const res = await request(app).get(`/api/sessions/${SESSION_ID}/events`);
+    const res = await request(fixtureServer).get(`/api/sessions/${SESSION_ID}/events`);
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
   });
 
   it('authenticates the SSE endpoint via a session cookie and streams', async () => {
     setAuthEnabled(true);
-    const res = await request(app).get(`/api/sessions/${SESSION_ID}/events`).set('Cookie', cookies);
+    const res = await request(fixtureServer)
+      .get(`/api/sessions/${SESSION_ID}/events`)
+      .set('Cookie', cookies);
     expect(res.status).toBe(200);
     expect(res.text).toContain('event: snapshot');
     expect(res.text).toContain('event: turn_start');
@@ -181,7 +188,7 @@ describe('sessionGate on GET /api/sessions/:id/events (SSE, integration)', () =>
     // gate must be transparent: the request reaches the route rather than being
     // 401'd — the only thing this auth-gate test needs to prove.
     setAuthEnabled(false);
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .send({ content: 'hello' });
     expect(res.status).not.toBe(401);

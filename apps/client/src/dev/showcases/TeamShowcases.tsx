@@ -92,7 +92,7 @@ export function TeamShowcases() {
     <>
       <PlaygroundSection
         title="Team Roster"
-        description="Every person and agent on this install, in one grid. Driven by a two-people / four-agent / two-owner fixture the product cannot produce yet — the shape the cards, chips and grouping have to already work for. Try the chips, the search, an agent's 'by @handle' attribution, and Group: manager."
+        description="Every person and agent on this install, in one grid. Driven by a two-people / four-agent / two-owner fixture the product cannot produce yet — the shape the cards, chips and grouping have to already work for. Try the chips, the search, an agent's 'by @handle' attribution, and Group by owner."
       >
         <ShowcaseLabel>Two people, four agents, two owners</ShowcaseLabel>
         <ShowcaseDemo responsive>
@@ -105,8 +105,8 @@ export function TeamShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>
-          Loading — mirrors TeamMemberCard&rsquo;s own dimensions so the grid does not jump when the
-          real roster lands (batch 06, finding 6.5)
+          Loading — mirrors TeamMemberCard’s own dimensions so the grid does not jump when the real
+          roster lands (batch 06, finding 6.5)
         </ShowcaseLabel>
         <ShowcaseDemo>
           <TeamRosterSkeleton />

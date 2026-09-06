@@ -30,7 +30,7 @@ export function CanvasAudioContent({ content }: CanvasAudioContentProps) {
   if (resolved.url === null) {
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center p-8 text-center">
-        <p>This audio can&rsquo;t be played here.</p>
+        <p>This audio can’t be played here.</p>
       </div>
     );
   }
@@ -40,7 +40,7 @@ export function CanvasAudioContent({ content }: CanvasAudioContentProps) {
       {/* eslint-disable-next-line jsx-a11y/media-has-caption -- user media, no caption track available */}
       <audio controls src={resolved.url} aria-label={label} className="w-full max-w-2xl">
         <p className="text-muted-foreground text-sm">
-          Your browser can&rsquo;t play this audio.{' '}
+          Your browser can’t play this audio.{' '}
           <a href={resolved.url} className="text-foreground underline underline-offset-4">
             Download {label}
           </a>

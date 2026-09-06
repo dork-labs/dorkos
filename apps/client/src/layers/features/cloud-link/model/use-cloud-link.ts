@@ -59,7 +59,7 @@ export interface UseCloudLink {
 /** Extract a friendly message from a transport error. */
 function cloudErrorMessage(err: unknown): string {
   if (err instanceof Error && err.message) return err.message;
-  return 'Could not reach the DorkOS cloud. Try again shortly.';
+  return 'Couldn’t reach the DorkOS cloud. Try again shortly.';
 }
 
 /**

@@ -23,13 +23,17 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { testControlRouter } from '../test-control.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { heldProcesses } from '../../services/runtimes/test-mode/held-process.js';
 import { TestModeRuntime } from '../../services/runtimes/test-mode/test-mode-runtime.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 const SESSION = 'aaaaaaa1-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const NEIGHBOUR = 'bbbbbbb1-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -46,6 +50,8 @@ describe('the held-process controls', () => {
     app = express();
     app.use(express.json());
     app.use('/api/test', testControlRouter);
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -54,7 +60,7 @@ describe('the held-process controls', () => {
 
   /** What the runtime says about a session, as the browser leg reads it. */
   async function readState(sessionId: string) {
-    const res = await request(app).get('/api/test/persistent').query({ sessionId });
+    const res = await request(fixtureServer).get('/api/test/persistent').query({ sessionId });
     expect(res.status).toBe(200);
     return res.body as {
       enabled: boolean;
@@ -74,7 +80,7 @@ describe('the held-process controls', () => {
   });
 
   it('turns the held path on for the named session and nobody else', async () => {
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post('/api/test/persistent')
       .send({ sessionId: SESSION, enabled: true });
     expect(res.status).toBe(200);
@@ -95,7 +101,9 @@ describe('the held-process controls', () => {
   });
 
   it('reports the warmth a completed turn left behind, and gives it back on a reap', async () => {
-    await request(app).post('/api/test/persistent').send({ sessionId: SESSION, enabled: true });
+    await request(fixtureServer)
+      .post('/api/test/persistent')
+      .send({ sessionId: SESSION, enabled: true });
 
     const runtime = runtimeRegistry.getDefault();
     for await (const _event of runtime.sendMessage(SESSION, 'hello', { cwd: '/projects/test' })) {
@@ -103,7 +111,7 @@ describe('the held-process controls', () => {
     }
     expect(await readState(SESSION)).toMatchObject({ warmth: 'warm' });
 
-    const reaped = await request(app).post('/api/test/reap').send({ sessionId: SESSION });
+    const reaped = await request(fixtureServer).post('/api/test/reap').send({ sessionId: SESSION });
     expect(reaped.status).toBe(200);
     // Cold again, without a test having to wait out an idle window nothing can
     // hurry — and still on the path, so the next message boots a fresh process.
@@ -118,7 +126,7 @@ describe('the held-process controls', () => {
     runtimeRegistry.register(new FakeAgentRuntime('not-test-mode'));
     await runtimeRegistry.persistSessionRuntime(FOREIGN, 'not-test-mode');
 
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post('/api/test/persistent')
       .send({ sessionId: FOREIGN, enabled: true });
 
@@ -128,18 +136,19 @@ describe('the held-process controls', () => {
     // The read and the reap refuse it on the same terms, so the three controls
     // can never disagree about which runtime they are speaking for.
     expect(
-      (await request(app).get('/api/test/persistent').query({ sessionId: FOREIGN })).status
+      (await request(fixtureServer).get('/api/test/persistent').query({ sessionId: FOREIGN }))
+        .status
     ).toBe(400);
-    expect((await request(app).post('/api/test/reap').send({ sessionId: FOREIGN })).status).toBe(
-      400
-    );
+    expect(
+      (await request(fixtureServer).post('/api/test/reap').send({ sessionId: FOREIGN })).status
+    ).toBe(400);
   });
 
   it('refuses a request that names no session', async () => {
-    expect((await request(app).post('/api/test/persistent').send({ enabled: true })).status).toBe(
-      400
-    );
-    expect((await request(app).get('/api/test/persistent')).status).toBe(400);
-    expect((await request(app).post('/api/test/reap').send({})).status).toBe(400);
+    expect(
+      (await request(fixtureServer).post('/api/test/persistent').send({ enabled: true })).status
+    ).toBe(400);
+    expect((await request(fixtureServer).get('/api/test/persistent')).status).toBe(400);
+    expect((await request(fixtureServer).post('/api/test/reap').send({})).status).toBe(400);
   });
 });

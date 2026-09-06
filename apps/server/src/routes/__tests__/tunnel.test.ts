@@ -60,7 +60,8 @@ vi.mock('../../services/core/auth/exposure-guard.js', () => ({
 }));
 
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer, swappableServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { env } from '../../env.js';
 import { logger } from '../../lib/logger.js';
@@ -71,6 +72,8 @@ import { canExpose } from '../../services/core/auth/exposure-guard.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 
 const app = createApp();
+const server = listeningServer(app);
+const callerTarget = swappableServer();
 
 /**
  * The tunnel router alone, behind a fixture that stands in for what
@@ -92,7 +95,7 @@ function appWithCaller(user: RequestUser | undefined) {
     next();
   });
   fixture.use('/api/tunnel', tunnelRouter);
-  return fixture;
+  return callerTarget.mount(fixture);
 }
 
 /**
@@ -200,7 +203,7 @@ describe('Tunnel Route', () => {
         return 'https://test.ngrok.io';
       });
 
-      const res = await request(app).post('/api/tunnel/start');
+      const res = await request(server).post('/api/tunnel/start');
 
       expect(res.status).toBe(200);
       expect(res.body.url).toBe('https://test.ngrok.io');
@@ -225,7 +228,7 @@ describe('Tunnel Route', () => {
         return 'https://test.ngrok.io';
       });
 
-      const res = await request(app).post('/api/tunnel/start');
+      const res = await request(server).post('/api/tunnel/start');
 
       expect(res.status).toBe(200);
       expect(tunnelManager.start).toHaveBeenCalledWith(
@@ -240,7 +243,7 @@ describe('Tunnel Route', () => {
       setConfig(undefined);
       mockTunnelStart.mockResolvedValue('https://test.ngrok.io');
 
-      await request(app).post('/api/tunnel/start');
+      await request(server).post('/api/tunnel/start');
 
       expect(tunnelManager.start).toHaveBeenCalledWith(expect.objectContaining({ port: 9999 }));
     });
@@ -251,7 +254,7 @@ describe('Tunnel Route', () => {
       setConfig(undefined);
       mockTunnelStart.mockResolvedValue('https://test.ngrok.io');
 
-      await request(app).post('/api/tunnel/start');
+      await request(server).post('/api/tunnel/start');
 
       expect(tunnelManager.start).toHaveBeenCalledWith(expect.objectContaining({ port: 6241 }));
     });
@@ -262,7 +265,7 @@ describe('Tunnel Route', () => {
       setConfig(undefined);
       mockTunnelStart.mockResolvedValue('https://test.ngrok.io');
 
-      await request(app).post('/api/tunnel/start');
+      await request(server).post('/api/tunnel/start');
 
       expect(tunnelManager.start).toHaveBeenCalledWith(expect.objectContaining({ port: 4241 }));
     });
@@ -270,7 +273,7 @@ describe('Tunnel Route', () => {
     it('returns 400 when no auth token is configured', async () => {
       setConfig(undefined);
 
-      const res = await request(app).post('/api/tunnel/start');
+      const res = await request(server).post('/api/tunnel/start');
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('No ngrok auth token configured');
@@ -286,7 +289,7 @@ describe('Tunnel Route', () => {
         url: 'https://already-running.ngrok.io',
       };
 
-      const res = await request(app).post('/api/tunnel/start');
+      const res = await request(server).post('/api/tunnel/start');
 
       expect(res.status).toBe(409);
       expect(res.body.error).toBe('Tunnel is already running');
@@ -310,7 +313,7 @@ describe('Tunnel Route', () => {
         url: 'https://reconnecting.ngrok.io',
       };
 
-      const res = await request(app).post('/api/tunnel/start');
+      const res = await request(server).post('/api/tunnel/start');
 
       expect(res.status).toBe(409);
       expect(res.body.error).toBe('Tunnel is already running');
@@ -323,7 +326,7 @@ describe('Tunnel Route', () => {
       setConfig(undefined);
       mockCanExpose.mockReturnValue(false);
 
-      const res = await request(app).post('/api/tunnel/start');
+      const res = await request(server).post('/api/tunnel/start');
 
       expect(res.status).toBe(409);
       expect(res.body).toEqual({
@@ -339,7 +342,7 @@ describe('Tunnel Route', () => {
       setConfig(undefined);
       mockTunnelStart.mockRejectedValue(new Error('Connection failed'));
 
-      const res = await request(app).post('/api/tunnel/start');
+      const res = await request(server).post('/api/tunnel/start');
 
       expect(res.status).toBe(500);
       expect(res.body.error).toBe('Connection failed');
@@ -354,7 +357,7 @@ describe('Tunnel Route', () => {
       setConfig(undefined);
       mockTunnelStart.mockRejectedValue(new Error('failed to bind: ERR_NGROK_108'));
 
-      await request(app).post('/api/tunnel/start');
+      await request(server).post('/api/tunnel/start');
 
       expect(loggedErrors).toHaveBeenCalledWith(
         expect.stringContaining('[Tunnel]'),
@@ -384,7 +387,7 @@ describe('Tunnel Route', () => {
         return 'https://my.domain.io';
       });
 
-      await request(app).post('/api/tunnel/start');
+      await request(server).post('/api/tunnel/start');
 
       expect(configManager.set).toHaveBeenCalledWith(
         'tunnel',
@@ -404,7 +407,7 @@ describe('Tunnel Route', () => {
       setConfig({ enabled: false, domain: null, authtoken: null, auth: null });
       mockTunnelStart.mockResolvedValue('https://env.ngrok.app');
 
-      await request(app).post('/api/tunnel/start');
+      await request(server).post('/api/tunnel/start');
 
       expect(tunnelManager.start).toHaveBeenCalledWith(
         expect.objectContaining({ basicAuth: 'user:pass', domain: 'env.ngrok.app' })
@@ -420,7 +423,7 @@ describe('Tunnel Route', () => {
         mutableEnv.NGROK_AUTHTOKEN = 'test-token-123';
         setConfig(undefined);
 
-        const res = await request(app)
+        const res = await request(server)
           .post('/api/tunnel/start')
           .set('x-dorkos-agent', 'agent-token-abc');
 
@@ -447,7 +450,7 @@ describe('Tunnel Route', () => {
         setConfig(undefined);
         mockTunnelStart.mockResolvedValue('https://test.ngrok.io');
 
-        const res = await request(app).post('/api/tunnel/start');
+        const res = await request(server).post('/api/tunnel/start');
 
         expect(res.status).toBe(200);
         expect(tunnelManager.start).toHaveBeenCalled();
@@ -474,7 +477,7 @@ describe('Tunnel Route', () => {
           url: 'https://already-running.ngrok.io',
         };
 
-        const res = await request(app)
+        const res = await request(server)
           .post('/api/tunnel/start')
           .set('x-dorkos-agent', 'agent-token-abc');
 
@@ -524,7 +527,7 @@ describe('Tunnel Route', () => {
         vi.mocked(tunnelManager.stop).mockResolvedValue(undefined);
         setConfig({ enabled: true, domain: null, authtoken: null, auth: null });
 
-        const res = await request(app)
+        const res = await request(server)
           .post('/api/tunnel/stop')
           .set('x-dorkos-agent', 'agent-token-abc');
 
@@ -543,7 +546,7 @@ describe('Tunnel Route', () => {
         url: 'https://abc.ngrok.io',
       };
 
-      const res = await request(app).get('/api/tunnel/status');
+      const res = await request(server).get('/api/tunnel/status');
 
       expect(res.status).toBe(200);
       expect(res.body.enabled).toBe(true);
@@ -552,7 +555,7 @@ describe('Tunnel Route', () => {
     });
 
     it('returns default status when tunnel is not started', async () => {
-      const res = await request(app).get('/api/tunnel/status');
+      const res = await request(server).get('/api/tunnel/status');
 
       expect(res.status).toBe(200);
       expect(res.body.enabled).toBe(false);
@@ -573,7 +576,7 @@ describe('Tunnel Route', () => {
         url: 'https://reconnecting.ngrok.io',
       };
 
-      const res = await request(app).get('/api/tunnel/status');
+      const res = await request(server).get('/api/tunnel/status');
 
       expect(res.status).toBe(200);
       expect(res.body.isRunning).toBe(true);
@@ -591,7 +594,7 @@ describe('Tunnel Route', () => {
         auth: null,
       });
 
-      const res = await request(app).post('/api/tunnel/stop');
+      const res = await request(server).post('/api/tunnel/stop');
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
@@ -607,7 +610,7 @@ describe('Tunnel Route', () => {
         auth: null,
       });
 
-      await request(app).post('/api/tunnel/stop');
+      await request(server).post('/api/tunnel/stop');
 
       expect(configManager.set).toHaveBeenCalledWith(
         'tunnel',
@@ -619,7 +622,7 @@ describe('Tunnel Route', () => {
       vi.mocked(tunnelManager.stop).mockRejectedValue(new Error('Disconnect failed'));
       setConfig(undefined);
 
-      const res = await request(app).post('/api/tunnel/stop');
+      const res = await request(server).post('/api/tunnel/stop');
 
       expect(res.status).toBe(500);
       expect(res.body.error).toBe('Disconnect failed');
@@ -629,7 +632,7 @@ describe('Tunnel Route', () => {
       vi.mocked(tunnelManager.stop).mockRejectedValue(new Error('Disconnect failed'));
       setConfig(undefined);
 
-      await request(app).post('/api/tunnel/stop');
+      await request(server).post('/api/tunnel/stop');
 
       expect(loggedErrors).toHaveBeenCalledWith(
         expect.stringContaining('[Tunnel]'),
@@ -646,7 +649,7 @@ describe('Tunnel Route', () => {
       setConfig({ enabled: true, domain: null, authtoken: null, auth: null });
       mockCanExpose.mockReturnValue(false);
 
-      const res = await request(app).post('/api/tunnel/stop');
+      const res = await request(server).post('/api/tunnel/stop');
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });

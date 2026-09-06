@@ -10,7 +10,8 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { messages, roomEntries, roomMembers, rooms, searchSources, eq, type Db } from '@dorkos/db';
 import {
@@ -27,6 +28,8 @@ import {
 import { SearchIndexer } from '../../services/search/index.js';
 import { roomsSource } from '../../services/search/registry.js';
 import { createSearchRouter } from '../search.js';
+
+const fixtureTarget = swappableServer();
 
 const AT = '2026-07-29T09:00:00.000Z';
 const ANA: AgentIdentity = { agentPath: '/agents/ana', displayName: 'Ana' } as AgentIdentity;
@@ -138,7 +141,9 @@ beforeEach(async () => {
 
 describe('GET /api/search', () => {
   it('answers with the envelope, ranked, with the match marked', async () => {
-    const res = await request(buildApp()).get('/api/search').query({ q: 'scheduler' });
+    const res = await request(fixtureTarget.mount(buildApp()))
+      .get('/api/search')
+      .query({ q: 'scheduler' });
 
     expect(res.status).toBe(200);
     expect(SearchResponseSchema.safeParse(res.body).success).toBe(true);
@@ -152,7 +157,9 @@ describe('GET /api/search', () => {
   });
 
   it('carries what a hit needs to be opened', async () => {
-    const res = await request(buildApp()).get('/api/search').query({ q: 'scheduler' });
+    const res = await request(fixtureTarget.mount(buildApp()))
+      .get('/api/search')
+      .query({ q: 'scheduler' });
     const session = res.body.results.find(
       (hit: { source: string }) => hit.source === 'claude-code'
     );
@@ -169,7 +176,9 @@ describe('GET /api/search', () => {
   });
 
   it('sends warnings as an empty array rather than leaving it out', async () => {
-    const res = await request(buildApp()).get('/api/search').query({ q: 'scheduler' });
+    const res = await request(fixtureTarget.mount(buildApp()))
+      .get('/api/search')
+      .query({ q: 'scheduler' });
     expect(res.body.warnings).toEqual([]);
   });
 
@@ -180,7 +189,9 @@ describe('GET /api/search', () => {
       .set({ lastError: 'ENOENT: the transcript moved' })
       .where(eq(searchSources.sourceId, 'claude-code'))
       .run();
-    const res = await request(buildApp()).get('/api/search').query({ q: 'scheduler' });
+    const res = await request(fixtureTarget.mount(buildApp()))
+      .get('/api/search')
+      .query({ q: 'scheduler' });
 
     expect(res.status).toBe(200);
     expect(res.body.warnings).toEqual([{ source: 'claude-code', message: expect.any(String) }]);
@@ -197,7 +208,7 @@ describe('GET /api/search', () => {
 
 describe('the calling contract', () => {
   it('refuses a query shorter than the minimum', async () => {
-    const res = await request(buildApp())
+    const res = await request(fixtureTarget.mount(buildApp()))
       .get('/api/search')
       .query({ q: 'x'.repeat(SEARCH_MIN_QUERY_LENGTH - 1) });
 
@@ -206,7 +217,7 @@ describe('the calling contract', () => {
   });
 
   it('refuses a request with no query at all', async () => {
-    const res = await request(buildApp()).get('/api/search');
+    const res = await request(fixtureTarget.mount(buildApp())).get('/api/search');
     expect(res.status).toBe(400);
   });
 
@@ -216,7 +227,7 @@ describe('the calling contract', () => {
     // and `%20a` were 200s that ran a one-letter ranked search until the floor
     // moved onto the tokenizer.
     for (const q of ['a,', ' a', 'a.', '! a !', '  ']) {
-      const res = await request(buildApp()).get('/api/search').query({ q });
+      const res = await request(fixtureTarget.mount(buildApp())).get('/api/search').query({ q });
       expect(res.status, `q=${JSON.stringify(q)} must be refused`).toBe(400);
       expect(res.body.code).toBe('INVALID_SEARCH_QUERY');
     }
@@ -225,7 +236,7 @@ describe('the calling contract', () => {
   it('accepts a long-enough word however much punctuation rides with it', () => {
     // The other half of the pair: the floor is on the longest WORD, so a real
     // search is not refused for the company it keeps.
-    return request(buildApp())
+    return request(fixtureTarget.mount(buildApp()))
       .get('/api/search')
       .query({ q: '"scheduler"?!' })
       .expect(200)
@@ -235,8 +246,10 @@ describe('the calling contract', () => {
   });
 
   it('says which field was wrong, not just that something was', async () => {
-    const short = await request(buildApp()).get('/api/search').query({ q: 'a' });
-    const badLimit = await request(buildApp())
+    const short = await request(fixtureTarget.mount(buildApp()))
+      .get('/api/search')
+      .query({ q: 'a' });
+    const badLimit = await request(fixtureTarget.mount(buildApp()))
       .get('/api/search')
       .query({ q: 'scheduler', limit: 0 });
 
@@ -250,7 +263,7 @@ describe('the calling contract', () => {
 
   it('accepts a query exactly at the minimum', async () => {
     // The floor is a floor, not a fence: the shortest allowed search still runs.
-    const res = await request(buildApp())
+    const res = await request(fixtureTarget.mount(buildApp()))
       .get('/api/search')
       .query({ q: 'x'.repeat(SEARCH_MIN_QUERY_LENGTH) });
     expect(res.status).toBe(200);
@@ -262,13 +275,17 @@ describe('the calling contract', () => {
     }
     await new SearchIndexer(db, [roomsSource]).sweep();
 
-    const res = await request(buildApp()).get('/api/search').query({ q: 'scheduler', limit: 5000 });
+    const res = await request(fixtureTarget.mount(buildApp()))
+      .get('/api/search')
+      .query({ q: 'scheduler', limit: 5000 });
     expect(res.status).toBe(200);
     expect(res.body.results).toHaveLength(SEARCH_MAX_LIMIT);
   });
 
   it('returns what was asked for when the limit is sensible', async () => {
-    const res = await request(buildApp()).get('/api/search').query({ q: 'scheduler', limit: 1 });
+    const res = await request(fixtureTarget.mount(buildApp()))
+      .get('/api/search')
+      .query({ q: 'scheduler', limit: 1 });
     expect(res.body.results).toHaveLength(1);
   });
 
@@ -278,7 +295,7 @@ describe('the calling contract', () => {
     // green for the wrong reason the moment OpenCode joined the registry
     // (DOR-688) — the route's 400 and a registered source's empty result set
     // are different answers, and only one of them is what this asserts.
-    const res = await request(buildApp())
+    const res = await request(fixtureTarget.mount(buildApp()))
       .get('/api/search')
       .query({ q: 'scheduler', source: 'not-a-source' });
 
@@ -289,7 +306,9 @@ describe('the calling contract', () => {
 
 describe('who is asking', () => {
   it('gives the operator every room and every session', async () => {
-    const res = await request(buildApp()).get('/api/search').query({ q: 'scheduler' });
+    const res = await request(fixtureTarget.mount(buildApp()))
+      .get('/api/search')
+      .query({ q: 'scheduler' });
     const sources = new Set(res.body.results.map((hit: { source: string }) => hit.source));
     const containers = new Set(res.body.results.map((hit: { container: string }) => hit.container));
 
@@ -298,7 +317,9 @@ describe('who is asking', () => {
   });
 
   it('gives an agent its own rooms and no session at all', async () => {
-    const res = await request(buildApp(ANA)).get('/api/search').query({ q: 'scheduler' });
+    const res = await request(fixtureTarget.mount(buildApp(ANA)))
+      .get('/api/search')
+      .query({ q: 'scheduler' });
 
     expect(res.status).toBe(200);
     expect(res.body.results).toEqual([
@@ -307,7 +328,7 @@ describe('who is asking', () => {
   });
 
   it('gives an agent asking for sessions by name exactly nothing', async () => {
-    const res = await request(buildApp(ANA))
+    const res = await request(fixtureTarget.mount(buildApp(ANA)))
       .get('/api/search')
       .query({ q: 'scheduler', source: 'claude-code' });
 
@@ -323,8 +344,12 @@ describe('who is asking', () => {
     // Both halves are asserted, because either alone is satisfied by the wrong
     // order: the refusal is the identity one, AND the identical query from a
     // caller who IS identified still gets the 400 it deserves.
-    const stranger = await request(buildApp(undefined, true)).get('/api/search').query({ q: 'a' });
-    const owner = await request(buildApp()).get('/api/search').query({ q: 'a' });
+    const stranger = await request(fixtureTarget.mount(buildApp(undefined, true)))
+      .get('/api/search')
+      .query({ q: 'a' });
+    const owner = await request(fixtureTarget.mount(buildApp()))
+      .get('/api/search')
+      .query({ q: 'a' });
 
     expect(stranger.status).toBe(401);
     expect(stranger.body.code).toBe('AGENT_IDENTITY_UNVERIFIED');
@@ -339,7 +364,7 @@ describe('who is asking', () => {
     // The header is there and nothing resolved it — a revoked or expired agent.
     // It is refused rather than quietly treated as the person at the keyboard,
     // which is what would otherwise hand it the whole install.
-    const res = await request(buildApp(undefined, true))
+    const res = await request(fixtureTarget.mount(buildApp(undefined, true)))
       .get('/api/search')
       .query({ q: 'scheduler' });
 
@@ -354,15 +379,21 @@ describe('who is asking', () => {
     say('closed', 2, 'a pelican, said where Ana cannot see it');
     await new SearchIndexer(db, [roomsSource]).sweep();
 
-    const hidden = await request(buildApp(ANA)).get('/api/search').query({ q: 'pelican' });
-    const unsaid = await request(buildApp(ANA)).get('/api/search').query({ q: 'narwhal' });
+    const hidden = await request(fixtureTarget.mount(buildApp(ANA)))
+      .get('/api/search')
+      .query({ q: 'pelican' });
+    const unsaid = await request(fixtureTarget.mount(buildApp(ANA)))
+      .get('/api/search')
+      .query({ q: 'narwhal' });
 
     expect(hidden.status).toBe(unsaid.status);
     expect(hidden.body).toEqual(unsaid.body);
     expect(hidden.body).toEqual({ results: [], warnings: [] });
 
     // The positive control: the row is really there and really matches.
-    const owner = await request(buildApp()).get('/api/search').query({ q: 'pelican' });
+    const owner = await request(fixtureTarget.mount(buildApp()))
+      .get('/api/search')
+      .query({ q: 'pelican' });
     expect(owner.body.results).toHaveLength(1);
   });
 });

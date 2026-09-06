@@ -801,9 +801,8 @@ export const SendMessageRequestSchema = z
      */
     account: z.string().min(1).optional(),
     /**
-     * Path to the agent directory whose `.dork/agent.json` manifest seeded this
-     * session. Recorded on first message for provenance. Ignored on subsequent
-     * calls (session ownership is immutable).
+     * Exact registered agent directory selected for this session. The server
+     * verifies it against Mesh and records it on the first message only.
      */
     agentPath: z.string().optional(),
     /**

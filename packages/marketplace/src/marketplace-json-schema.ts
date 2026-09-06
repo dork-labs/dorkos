@@ -73,8 +73,16 @@ const SAFE_GIT_URL_RE = /^(https:\/\/|git:\/\/|ssh:\/\/|git@[\w.-]+:)/;
  * True when `url` is a git remote we are willing to hand to `git`. Rejects any
  * value beginning with `-` (git would read it as an option) and any transport
  * outside {@link SAFE_GIT_URL_RE}.
+ *
+ * Exported because the same question is asked outside this schema: the server
+ * asks it of the marketplace source addresses an operator adds by hand, which
+ * never pass through `marketplace.json` parsing but end up in front of `git`
+ * all the same (DOR-1710). One predicate, so the two answers cannot drift.
+ *
+ * @param url - The candidate git remote.
+ * @returns `true` when the URL is safe to hand to `git`.
  */
-function isSafeGitUrl(url: string): boolean {
+export function isSafeGitUrl(url: string): boolean {
   return !url.startsWith('-') && SAFE_GIT_URL_RE.test(url);
 }
 

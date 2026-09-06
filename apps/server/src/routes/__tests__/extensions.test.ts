@@ -12,13 +12,33 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-import request from 'supertest';
+/**
+ * The write routes here run the person bar (DOR-1507), whose cookie half reads
+ * `auth.enabled` off the config manager. The real singleton is `undefined` until
+ * `initConfigManager` runs at server boot, and `loginEnabledFromConfig` throws on
+ * it deliberately rather than guessing a posture — so without this stub every
+ * enable/disable case below answers 500.
+ *
+ * Login OFF is the shipped default and the posture this file's cases are about;
+ * who the bar refuses in each posture is exercised in
+ * `extensions-enable-gate.test.ts`, which drives the posture from a mutable
+ * fixture.
+ */
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: (key: string) => (key === 'auth' ? { enabled: false } : undefined) },
+}));
+
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import express from 'express';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import { createExtensionsRouter } from '../extensions.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 let DORK_HOME: string;
 let TEST_CWD: string;
@@ -123,6 +143,8 @@ describe('Extension Routes', () => {
     TEST_CWD = await fs.mkdtemp(path.join(os.tmpdir(), 'ext-routes-cwd-'));
     manager = createMockManager();
     app = createApp(manager);
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(async () => {
@@ -140,7 +162,7 @@ describe('Extension Routes', () => {
       const records = [stubPublicRecord(), stubPublicRecord({ id: 'ext-2' })];
       manager.listPublic.mockReturnValue(records);
 
-      const res = await request(app).get('/api/extensions');
+      const res = await request(fixtureServer).get('/api/extensions');
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(2);
@@ -149,7 +171,7 @@ describe('Extension Routes', () => {
     });
 
     it('returns empty array when no extensions discovered', async () => {
-      const res = await request(app).get('/api/extensions');
+      const res = await request(fixtureServer).get('/api/extensions');
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual([]);
@@ -161,7 +183,7 @@ describe('Extension Routes', () => {
       const result = { extension: stubPublicRecord({ status: 'compiled' }), reloadRequired: true };
       manager.enable.mockResolvedValue(result);
 
-      const res = await request(app).post('/api/extensions/test-ext/enable');
+      const res = await request(fixtureServer).post('/api/extensions/test-ext/enable');
 
       expect(res.status).toBe(200);
       expect(res.body.extension.status).toBe('compiled');
@@ -179,7 +201,7 @@ describe('Extension Routes', () => {
       };
       manager.enable.mockResolvedValue(result);
 
-      const res = await request(app).post('/api/extensions/marketplace/enable');
+      const res = await request(fixtureServer).post('/api/extensions/marketplace/enable');
 
       expect(res.status).toBe(200);
       expect(res.body.extension.origin).toBe('core');
@@ -189,7 +211,7 @@ describe('Extension Routes', () => {
     it('returns 404 when extension not found or not enableable', async () => {
       manager.enable.mockResolvedValue(null);
 
-      const res = await request(app).post('/api/extensions/missing/enable');
+      const res = await request(fixtureServer).post('/api/extensions/missing/enable');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toContain('missing');
@@ -201,7 +223,7 @@ describe('Extension Routes', () => {
       const result = { extension: stubPublicRecord({ status: 'disabled' }), reloadRequired: true };
       manager.disable.mockResolvedValue(result);
 
-      const res = await request(app).post('/api/extensions/test-ext/disable');
+      const res = await request(fixtureServer).post('/api/extensions/test-ext/disable');
 
       expect(res.status).toBe(200);
       expect(res.body.extension.status).toBe('disabled');
@@ -211,7 +233,7 @@ describe('Extension Routes', () => {
     it('returns 404 when extension not found', async () => {
       manager.disable.mockResolvedValue(null);
 
-      const res = await request(app).post('/api/extensions/missing/disable');
+      const res = await request(fixtureServer).post('/api/extensions/missing/disable');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toContain('missing');
@@ -226,7 +248,7 @@ describe('Extension Routes', () => {
       manager.disable.mockResolvedValue(null);
       manager.get.mockReturnValue(stubRecord({ id: 'locked-core', origin: 'core' }));
 
-      const res = await request(app).post('/api/extensions/locked-core/disable');
+      const res = await request(fixtureServer).post('/api/extensions/locked-core/disable');
 
       expect(res.status).toBe(409);
       expect(res.body.error).toContain('required');
@@ -239,7 +261,7 @@ describe('Extension Routes', () => {
       const records = [stubPublicRecord()];
       manager.reload.mockResolvedValue(records);
 
-      const res = await request(app).post('/api/extensions/reload');
+      const res = await request(fixtureServer).post('/api/extensions/reload');
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
@@ -251,7 +273,7 @@ describe('Extension Routes', () => {
     it('returns JavaScript with correct Content-Type and Cache-Control', async () => {
       manager.readBundle.mockResolvedValue('console.log("hello");');
 
-      const res = await request(app).get('/api/extensions/test-ext/bundle');
+      const res = await request(fixtureServer).get('/api/extensions/test-ext/bundle');
 
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toContain('application/javascript');
@@ -262,7 +284,7 @@ describe('Extension Routes', () => {
     it('returns 404 when bundle not available', async () => {
       manager.readBundle.mockResolvedValue(null);
 
-      const res = await request(app).get('/api/extensions/missing/bundle');
+      const res = await request(fixtureServer).get('/api/extensions/missing/bundle');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toContain('missing');
@@ -275,7 +297,7 @@ describe('Extension Routes', () => {
       await fs.mkdir(path.dirname(globalBlobPath()), { recursive: true });
       await fs.writeFile(globalBlobPath(), JSON.stringify({ theme: 'dark' }));
 
-      const res = await request(app).get('/api/extensions/test-ext/data');
+      const res = await request(fixtureServer).get('/api/extensions/test-ext/data');
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ theme: 'dark' });
@@ -284,7 +306,7 @@ describe('Extension Routes', () => {
     it('returns 204 when no data file exists', async () => {
       manager.get.mockReturnValue(stubRecord({ scope: 'global' }));
 
-      const res = await request(app).get('/api/extensions/test-ext/data');
+      const res = await request(fixtureServer).get('/api/extensions/test-ext/data');
 
       expect(res.status).toBe(204);
     });
@@ -292,7 +314,7 @@ describe('Extension Routes', () => {
     it('returns 404 when extension not found', async () => {
       manager.get.mockReturnValue(undefined);
 
-      const res = await request(app).get('/api/extensions/missing/data');
+      const res = await request(fixtureServer).get('/api/extensions/missing/data');
 
       expect(res.status).toBe(404);
     });
@@ -303,7 +325,7 @@ describe('Extension Routes', () => {
       await fs.mkdir(path.dirname(localPath), { recursive: true });
       await fs.writeFile(localPath, JSON.stringify({ setting: true }));
 
-      const res = await request(app).get('/api/extensions/test-ext/data');
+      const res = await request(fixtureServer).get('/api/extensions/test-ext/data');
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ setting: true });
@@ -315,7 +337,7 @@ describe('Extension Routes', () => {
       manager.get.mockReturnValue(stubRecord({ scope: 'global' }));
 
       const payload = { theme: 'dark', fontSize: 14 };
-      const res = await request(app).put('/api/extensions/test-ext/data').send(payload);
+      const res = await request(fixtureServer).put('/api/extensions/test-ext/data').send(payload);
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
@@ -325,7 +347,9 @@ describe('Extension Routes', () => {
     it('creates the data directory when it does not exist yet', async () => {
       manager.get.mockReturnValue(stubRecord({ scope: 'global' }));
 
-      const res = await request(app).put('/api/extensions/test-ext/data').send({ key: 'value' });
+      const res = await request(fixtureServer)
+        .put('/api/extensions/test-ext/data')
+        .send({ key: 'value' });
 
       expect(res.status).toBe(200);
       expect(JSON.parse(await fs.readFile(globalBlobPath(), 'utf-8'))).toEqual({ key: 'value' });
@@ -334,7 +358,9 @@ describe('Extension Routes', () => {
     it('returns 404 when extension not found', async () => {
       manager.get.mockReturnValue(undefined);
 
-      const res = await request(app).put('/api/extensions/missing/data').send({ key: 'value' });
+      const res = await request(fixtureServer)
+        .put('/api/extensions/missing/data')
+        .send({ key: 'value' });
 
       expect(res.status).toBe(404);
     });
@@ -348,7 +374,7 @@ describe('Extension Routes', () => {
 
         const responses = await Promise.all(
           Array.from({ length: N }, (_, i) =>
-            request(app)
+            request(fixtureServer)
               .put('/api/extensions/test-ext/data')
               .send({ writer: i, pad: 'x'.repeat(i * 64) })
           )
@@ -366,7 +392,7 @@ describe('Extension Routes', () => {
         // landed belong to a single writer.
         await Promise.all(
           Array.from({ length: N }, (_, i) =>
-            request(app)
+            request(fixtureServer)
               .put('/api/extensions/test-ext/data')
               .send({ writer: i, pad: 'x'.repeat(i * 64) })
           )
@@ -384,7 +410,7 @@ describe('Extension Routes', () => {
 
         await Promise.all(
           Array.from({ length: 20 }, (_, i) =>
-            request(app).put('/api/extensions/test-ext/data').send({ writer: i })
+            request(fixtureServer).put('/api/extensions/test-ext/data').send({ writer: i })
           )
         );
 
@@ -398,7 +424,7 @@ describe('Extension Routes', () => {
     it('returns changed=true when extensions differ after CWD switch', async () => {
       manager.updateCwd.mockResolvedValue({ added: ['ext-new'], removed: ['ext-old'] });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/cwd-changed')
         .send({ cwd: '/new/project' });
 
@@ -414,7 +440,7 @@ describe('Extension Routes', () => {
     it('returns changed=false when extension set is unchanged', async () => {
       manager.updateCwd.mockResolvedValue({ added: [], removed: [] });
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/extensions/cwd-changed')
         .send({ cwd: '/same/project' });
 
@@ -429,7 +455,9 @@ describe('Extension Routes', () => {
     it('accepts null cwd to clear working directory', async () => {
       manager.updateCwd.mockResolvedValue({ added: [], removed: ['ext-local'] });
 
-      const res = await request(app).post('/api/extensions/cwd-changed').send({ cwd: null });
+      const res = await request(fixtureServer)
+        .post('/api/extensions/cwd-changed')
+        .send({ cwd: null });
 
       expect(res.status).toBe(200);
       expect(res.body.changed).toBe(true);
@@ -437,7 +465,9 @@ describe('Extension Routes', () => {
     });
 
     it('returns 400 when body is invalid', async () => {
-      const res = await request(app).post('/api/extensions/cwd-changed').send({ invalid: true });
+      const res = await request(fixtureServer)
+        .post('/api/extensions/cwd-changed')
+        .send({ invalid: true });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');

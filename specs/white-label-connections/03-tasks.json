@@ -1,0 +1,136 @@
+{
+  "spec": "specs/white-label-connections/02-specification.md",
+  "slug": "white-label-connections",
+  "generatedAt": "2026-09-05T15:53:32-05:00",
+  "mode": "full",
+  "lastDecomposeDate": "2026-09-05T21:05:38.998942+00:00",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Contracts and migration",
+      "subject": "[white-label-connections] [P1] Stable provider-instance, connection, grant, and migration contracts",
+      "description": "Replace provider-type-as-instance and provider-account-as-public-identity with shared Zod contracts for stable ConnectorProviderInstanceId and ConnectionId. Make ConnectorProvider instance-bound and capability-declared for catalog, paginated operation schemas, exact-account execution, auth, and optional triggers. Define allowed @composio/core adapter roots and a falsifiable import guard without requiring this foundation branch to introduce the SDK. Add local SQLite/Drizzle tables for provider instances, connections/private external bindings, immutable operation revisions (toolkit, slug, provider version, schema hash/input schema, classification), grants that reference exact revisions, event subscriptions, durable protected event inbox plus audit receipts, versioned discriminated connector review requests, linked agent resume records, and usage attempts that reference the executed revision. Use numbered Drizzle schema migrations plus an application-migration ledger. Resolve operation metadata outside the database transaction, then atomically claim/backfill/verify the ledgered version; unavailable metadata produces migration_needs_reconcile and no broad grant. Generate stable IDs, rewrite all agent/session attachments, preserve the attached/detached ladder exactly, and make new storage authoritative while retaining only mechanically adapted projections needed by live consumers. Keep legacy tables read-only, install no dormant destructive boot migration, and leave each projection/table deletion to the workstream that cuts over its last consumer. Agent removal must revoke its session grants/overrides and subscriptions by default. Acceptance: no-SDK conformance covers pagination/truncation, exact account and immutable revision metadata, abort/timeout, capabilities, and secret/URL exclusion; an old-shape fixture with multiple accounts for one toolkit covers expired/missing configuration, no-network atomic backfill, rollback, exact overrides, fail-closed grants, and idempotent second boot; a separate new-shape test permits the same external reference under two provider instances; typed review payloads reject unknown kinds/versions/fields; durable inbox rows retain normalized minimized/encrypted payload and claim/retry/expiry state across restart while receipts remain payload-free audit; existing paths work through identified boundary projections and writes have one source of truth.",
+      "activeForm": "Establishing stable connector contracts and migration",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": "DOR-1793",
+      "parentIssue": "DOR-1792"
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 — Authorization, execution, and usage",
+      "subject": "[white-label-connections] [P2] Enforced connector execution across DorkOS MCP, REST, and CLI",
+      "description": "Build one ConnectorAuthorizationService and ConnectorExecutionService used by DorkOS MCP capabilities, REST execution, and CLI calls. Every call resolves the authenticated owner and declared agent/session before the stable connection, then checks provider-instance health, connection status, session precedence, the exact unrevoked operation-revision grant, its immutable schema/version/classification, and existing approval/autonomy policy. A slug executes only through that granted revision; new or reclassified revisions default denied pending user review. Nango generic proxy requests are write-capable unless a provider proves a narrower class. Introduce the Composio SDK adapter here: execute the exact connectedAccountId and granted toolkit version, follow every catalog/tool cursor to a bounded ceiling, use explicit search/limit or important:false for complete raw-tool enumeration, and never enable the dangerous latest-version bypass or most-recent-account fallback. Cut every execution consumer to this service and remove toolServerForAccount/provider-MCP execution fields and their execution-only projection. Runtimes receive only DorkOS MCP tools. The API-key CLI requires --agent for scoped list/schema/call/usage and cannot become an operator by omission; management commands create a validated connector review request and open/print a browser URL. Record BYO attempts and managed mirror receipts with logical-operation IDs, attempts, payer, actor/surface/outcome, provider log ID, and operationRevisionId while excluding inputs/results/secrets; retry only acknowledged-idempotent operations and return outcome_unknown for ambiguous writes. Acceptance: public REST/MCP/CLI seams prove exact-revision/account success and reject foreign owner, arbitrary session, bridged caller, program self-grant, missing --agent, revoked/paused/detached access, and new/reclassified revisions; mutation tests fail when each guard is removed; safe retries share one logical ID while ambiguous writes do not retry; usage resolves the immutable executed snapshot; searches prove no provider-MCP execution consumer remains; selected SDK engine support and imports pass across supported CLI/server/desktop/CI and hosted Node runtimes.",
+      "activeForm": "Enforcing connector calls and usage accounting",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1794",
+      "parentIssue": "DOR-1792"
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "P3 — Complete local experience",
+      "subject": "[white-label-connections] [P3] Complete Connections management, access, usage, and CLI review UX",
+      "description": "Ship shared schemas, resource-oriented operator REST routes, Transport/HttpTransport/DirectTransport coverage, CLI presentation, and FSD client features for one searchable catalog and full connection lifecycle. Cut all management/client consumers to stable connection IDs, then remove boundary projections/routes/old tables with the last consumer. Managed and configured BYO routes coexist per service with custody, payer, capability-specific health, and honest branding. The happy path is service → sign in → choose agents: use one healthy default with a short custody line, expose alternatives through Change provider, keep BYO setup advanced, and keep inventory rows concise with details in a drawer. Support several accounts, labels/edit, reconnect, pause/resume, disconnect impact review, bidirectional agent access, session override explanation, typed review requests, subscriptions summary, and logical-operation/attempt usage. Read and Read + write presets resolve to explicit operationRevisionIds; advanced selection edits individual revisions/events, and new/reclassified revisions stay off until reviewed. CLI management actions encode only the versioned discriminated action payload, requester, target, expiry, and idempotency key, then surface browser review/deny/expiry without applying the mutation. Acceptance: mock Transport tests cover every lifecycle/error/capability state, multi-account, access presets versus advanced revisions, typed review action validation, and session labels; desktop/mobile flows prove the three-step path, provider disclosure, detail drawer, exact revision grants, usage, pause/revoke, CLI review deep link, keyboard/accessibility, and light/dark screenshots; searches prove no management legacy consumer/table remains and no raw fetch, FSD internal import, or secret-bearing public DTO/OpenAPI field remains.",
+      "activeForm": "Completing the Connections management experience",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "2.1"
+      ],
+      "parallelWith": [
+        "4.1"
+      ],
+      "issue": "DOR-1795",
+      "parentIssue": "DOR-1792"
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "P4 — Managed tenant service",
+      "subject": "[white-label-connections] [P4] Tenant-scoped managed connector service in apps/site",
+      "description": "Add Node.js connector routes and Neon/Drizzle tables inside apps/site; do not create a new app or identity system. Reuse Better Auth, device linking, scoped instance keys, instance-service ownership/revocation, the local cloud-link client, and workstream 2's execution/authorization/usage contracts. Hosted middleware derives owner from verified key.referenceId, matches the linked instance registry, then derives one random tenant and server-side provider user; request bodies cannot select owner, tenant, provider user, external account, auth config, or execution URL. Implement managed catalog/auth/reconnect/execution/usage plus local managed provider-instance mirroring with exact connectedAccountId, immutable operation revisions, per-capability availability, and no SDK session leakage. Account linking creates an expiring single-use flow bound to signed-in owner, browser state/CSRF-PKCE verifier, provider instance, server-derived provider user, auth config, and session_uri; the HTTPS callback requires the same Better Auth owner, consumes the flow atomically, and ignores caller callbackUrl when project verification is enabled. Validate enable flag, project key, custom-auth map, callback origin, webhook secret, and SDK settings; missing webhook disables events only. Acceptance: two-user/three-instance route tests reject revoked/wrong-owner/program/absent keys and identifier substitution; every table/query is tenant scoped; callback tests reject replay, signed-out, wrong user/browser, altered/expired state/verifier, changed provider user/auth config, and callback substitution; valid execution uses the exact reviewed revision, produces hosted and mirrored usage that references it, then instance/grant revocation denies the next call; migrations run before site build; code/deploy readiness remains distinct from real provisioning evidence.",
+      "activeForm": "Building the managed tenant connector service",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [
+        "3.1"
+      ],
+      "issue": "DOR-1796",
+      "parentIssue": "DOR-1792"
+    },
+    {
+      "id": "5.1",
+      "phase": 5,
+      "phaseName": "P5 — Managed and BYO events",
+      "subject": "[white-label-connections] [P5] Signed managed and BYO event ingress with durable routing",
+      "description": "Implement explicit event subscriptions with exact connection, event type, validated filter, receive authorization, agent, and agent/room/channel destination; operation grants never imply event receipt. Managed subscriptions create tenant-owned triggers and accept signed webhooks into a hosted inbox unique by tenant/subscription/provider event. The inbox owns normalized minimized/encrypted payload plus state, attemptCount, nextAttemptAt, expiresAt, leaseOwner/leasedUntil; atomic bounded claims prevent two active dispatchers and append payload-free receipts for transitions/destination acknowledgements. BYO provider instances accept signed webhooks at a local route exposed through the existing tunnel or configured endpoint, validate owner/provider instance/subscription, persist the same local durable inbox before ACK, and require no cloud link. Both paths share dedupe and routing for agent turns, rooms, and supported channels. Managed relay for BYO is opt-in; direct BYO offline behavior follows provider retry metadata. Subscription/receive revocation, subscription or connection pause/revoke, provider-instance revoke, or destination deletion stops dispatch explicitly. Removing an operation-only grant leaves an independently authorized event active; agent-wide connection removal revokes both. Acceptance: signed fixtures cover invalid/stale/replayed/duplicate/oversized/cross-scope inputs, protected payload recovery after restart, atomic claim, lease expiry/two workers/offline relink/retry ceiling/TTL/persist-before-ACK crash/dedupe and each destination; exact assertions prove the separate operation/event revocation rules, BYO without cloud, managed offline recovery, polling cadence copy, payload-free receipts/logs, and expired payload deletion.",
+      "activeForm": "Building durable managed and BYO event routing",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": [
+        "2.1",
+        "4.1"
+      ],
+      "parallelWith": [
+        "6.1"
+      ],
+      "issue": "DOR-1797",
+      "parentIssue": "DOR-1792"
+    },
+    {
+      "id": "6.1",
+      "phase": 6,
+      "phaseName": "P6 — Agent request, grant, and resume",
+      "subject": "[white-label-connections] [P6] Respec DOR-740 for private agent requests and restart-safe resume",
+      "description": "Complete DOR-740 by replacing raw agent start-connect instructions with a durable request/operator-auth/grant/resume flow while retaining its Connections discovery affordances: real service naming and tool guidance, nonempty session connector group, Ask your agent with a prefilled session, and useful notification/empty-account entry points where the simpler UX warrants them. An agent submits service slug, reason, requested operations, and optional events without seeing private accounts. The server validates a versioned agent_connection_request action into connector_review_requests and links connector_agent_requests for agent/session intent plus resume state/token; the review idempotency key returns the unresolved duplicate, and no arbitrary JSON action is accepted. The operator chooses an exact connection or completes managed/BYO auth, reviews custody, resolves scope to exact operation revisions/events, and alone writes grants. A live capability uses existing approval-hold machinery; otherwise a reconciler claims one resume token and sends exactly one follow-up turn. Denial, expiry, deleted agent/session, and auth failure end without grants. Acceptance: capability-to-browser-to-grant tests prove typed action validation, no account enumeration/self-grant, exact owner/agent/session/request target, safe operator URL/custody, and live continuation; restart tests prove one follow-up despite duplicate reconcilers; unknown action kinds/versions/fields, requester substitution, replay/expiry, and foreign records fail safely; Ask your agent targets the intended session; obsolete raw-start behavior is removed or consciously replaced.",
+      "activeForm": "Completing durable agent connection requests and resume",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": [
+        "2.1",
+        "3.1",
+        "4.1"
+      ],
+      "parallelWith": [
+        "5.1"
+      ],
+      "issue": "DOR-740",
+      "parentIssue": "DOR-1792"
+    },
+    {
+      "id": "7.1",
+      "phase": 7,
+      "phaseName": "P7 — Rollout and production evidence",
+      "subject": "[white-label-connections] [P7] Remove legacy paths, verify all surfaces, and gate managed availability",
+      "description": "Integrate all six workstreams, migrate every active consumer, and delete provider-MCP execution, legacy provider-type/account attachment DTOs, temporary boundary aliases, memory-only connect bindings, unused endpoints, and dead copy. Preserve raw MCP as a BYO provider only after DOR-738 proves authenticated initialization; depend on that issue and do not duplicate its fix. Run provider/runtime conformance, public-seam security matrix and mutations, REST/MCP/CLI parity, migration fixtures, hosted tenant/callback tests, both event paths, agent live/restart resume, client units, and responsive browser/accessibility/visual review. Regenerate OpenAPI, update connector/operator/CLI/hosted operations/adding-a-connector docs and ADR references, accept proposed ADR 260905-205123 only after code confirms it, update both parent Status sections to name the then-retired clauses, and add changelog fragments without claiming billing or exactly-once behavior. Separately provision the real DorkOS Composio project/key, configured custom OAuth apps/auth configs, callback verifier, and webhook signing/registration; deploy site migrations/routes, link a real instance, connect an account, perform one harmless read, reconcile hosted/local usage, revoke, and prove immediate denial. Acceptance: repository searches find no superseded path or secret-bearing public DTO; targeted/full required checks are green on supported Node versions; DOR-738 is green; every managed capability reports unavailable until its own configuration and smoke evidence pass; absent OAuth approval or external provisioning is recorded as the exact remaining gate and no mock evidence marks production ready.",
+      "activeForm": "Hardening rollout and proving production availability",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "2.1",
+        "3.1",
+        "4.1",
+        "5.1",
+        "6.1"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-1798",
+      "parentIssue": "DOR-1792"
+    }
+  ]
+}

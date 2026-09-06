@@ -160,8 +160,8 @@ export function GlobalTrustRow({
           <span>
             {sharedAtAutonomy
               ? 'New sessions run at full power'
-              : `New sessions on ${listRuntimes(overriddenToAutonomy)} run at full power`}{' '}
-            —{' '}
+              : `New sessions on ${listRuntimes(overriddenToAutonomy)} run at full power`}
+            .{' '}
             <button
               type="button"
               className="focus-ring rounded-sm underline underline-offset-2"

@@ -110,10 +110,10 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
       'tunnel.authtoken: Expected string, received number'
     );
     expect(machine.setTokenError).not.toHaveBeenCalledWith('Validation failed');
-    expect(machine.setTokenError).not.toHaveBeenCalledWith('Could not save token. Try again.');
+    expect(machine.setTokenError).not.toHaveBeenCalledWith('Couldn’t save token. Try again.');
   });
 
-  it("shows a 4xx's own sentence when it wrote one instead of details", async () => {
+  it('shows a 4xx’s own sentence when it wrote one instead of details', async () => {
     const { transport, machine, actions } = setup();
     // `applyConfigPatch`'s other 400, and the 428 autonomy gate, both send a
     // real sentence and no `details`.
@@ -140,7 +140,7 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
 
     await actions.current.handleSaveToken();
 
-    expect(machine.setTokenError).toHaveBeenLastCalledWith('Could not save token. Try again.');
+    expect(machine.setTokenError).toHaveBeenLastCalledWith('Couldn’t save token. Try again.');
   });
 
   it('does not repeat a raw network failure at a person', async () => {
@@ -151,7 +151,7 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
 
     await actions.current.handleSaveToken();
 
-    expect(machine.setTokenError).toHaveBeenLastCalledWith('Could not save token. Try again.');
+    expect(machine.setTokenError).toHaveBeenLastCalledWith('Couldn’t save token. Try again.');
   });
 
   it('tells a caller with no session cookie to sign in', async () => {
@@ -161,7 +161,7 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
     await actions.current.handleSaveToken();
 
     expect(machine.setTokenError).toHaveBeenLastCalledWith(
-      'Sign in to DorkOS first — only a signed-in person can change Remote Access settings.'
+      'Sign in to DorkOS first. Only a signed-in person can change Remote access settings.'
     );
   });
 
@@ -172,7 +172,7 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
     await actions.current.handleSaveToken();
 
     expect(machine.setTokenError).toHaveBeenLastCalledWith(
-      'Only you can change Remote Access settings — an agent cannot. Nothing changed.'
+      'Only you can change Remote access settings, not an agent. Nothing changed.'
     );
   });
 
@@ -203,7 +203,7 @@ describe('useTunnelActions — handleSaveToken surfaces why the save failed', ()
 
     await actions.current.handleSaveToken();
 
-    expect(machine.setTokenError).toHaveBeenLastCalledWith('Could not save token. Try again.');
+    expect(machine.setTokenError).toHaveBeenLastCalledWith('Couldn’t save token. Try again.');
   });
 });
 
@@ -275,7 +275,7 @@ describe('useTunnelActions — handleSaveDomain no longer swallows failures', ()
     await actions.current.handleSaveDomain();
 
     expect(machine.setDomainError).toHaveBeenLastCalledWith(
-      'Sign in to DorkOS first — only a signed-in person can change Remote Access settings.'
+      'Sign in to DorkOS first. Only a signed-in person can change Remote access settings.'
     );
   });
 
@@ -285,6 +285,6 @@ describe('useTunnelActions — handleSaveDomain no longer swallows failures', ()
 
     await actions.current.handleSaveDomain();
 
-    expect(machine.setDomainError).toHaveBeenLastCalledWith('Could not save domain. Try again.');
+    expect(machine.setDomainError).toHaveBeenLastCalledWith('Couldn’t save domain. Try again.');
   });
 });

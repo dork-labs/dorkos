@@ -111,7 +111,7 @@ describe('ProfilePromptCard', () => {
     expect(await screen.findByTestId('profile-prompt-card')).toBeTruthy();
     expect(screen.getByText(DORKBOT_ONBOARDING_LINES.profileCardPrompt)).toBeTruthy();
     // Non-modal, DorkBot-voiced chip group with one-tap dismissal.
-    expect(screen.getByTestId('skip-profile').textContent).toBe("Don't ask again");
+    expect(screen.getByTestId('skip-profile').textContent).toBe('Don’t ask again');
   });
 
   it('never renders while onboarding is still in progress', async () => {
@@ -134,7 +134,7 @@ describe('ProfilePromptCard', () => {
     expect(screen.queryByTestId('profile-prompt-card')).toBeNull();
   });
 
-  it('never renders after "Don\'t ask again" was recorded', async () => {
+  it('never renders after "Don’t ask again" was recorded', async () => {
     await renderCard({ profile: { rolePromptDismissedAt: '2026-01-03T00:00:00.000Z' } });
     expect(screen.queryByTestId('profile-prompt-card')).toBeNull();
   });
@@ -184,7 +184,7 @@ describe('ProfilePromptCard', () => {
     expect(screen.getByTestId('confirm-profile').textContent).toBe('Try again');
   });
 
-  it('"Don\'t ask again" writes rolePromptDismissedAt and removes the card', async () => {
+  it('"Don’t ask again" writes rolePromptDismissedAt and removes the card', async () => {
     await renderCard();
     await screen.findByTestId('profile-prompt-card');
 

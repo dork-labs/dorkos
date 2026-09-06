@@ -48,7 +48,7 @@ describe('ApiKeysSection', () => {
 
     // The plaintext secret is shown once, with the "won't be shown again" copy.
     expect(await screen.findByText('dork_mcp_secret_value')).toBeInTheDocument();
-    expect(screen.getByText(/won't be shown again/i)).toBeInTheDocument();
+    expect(screen.getByText(/won’t be shown again/i)).toBeInTheDocument();
 
     // Dismissing the reveal returns to the create form (secret no longer visible).
     await user.click(screen.getByRole('button', { name: /done/i }));

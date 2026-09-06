@@ -1,6 +1,13 @@
 /**
  * Extension management routes -- discovery, enable/disable, bundle serving, and data storage.
  *
+ * The two WRITE routes here (`/:id/enable`, `/:id/disable`) run the same person
+ * bar as the approval routes mounted alongside them, because they move the same
+ * `operator-only` config section — see
+ * {@link module:routes/extensions-person-bar} for the three bars, the residual
+ * they leave in the login-off posture, and why the narrowing direction is barred
+ * too (DOR-1507).
+ *
  * @module routes/extensions
  */
 import { Router } from 'express';
@@ -16,6 +23,11 @@ import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
 import { resolveBlobPath } from '../services/extensions/extension-data-paths.js';
 import { registerExtensionApprovalRoutes } from './extensions-approval.js';
+import { refuseIfNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import {
+  OPERATOR_ONLY_CONFIG_CODE,
+  OPERATOR_ONLY_CONFIG_ERROR,
+} from '../services/core/operator/config-write-policy.js';
 
 /** Connected SSE clients for extension lifecycle events. */
 const sseClients = new Set<Response>();
@@ -65,6 +77,34 @@ const SetSettingBodySchema = z.object({
 
 /** Validates extension IDs match the manifest schema pattern (kebab-case alphanumeric). */
 const SAFE_EXT_ID = /^[a-z0-9][a-z0-9-]*$/;
+
+/**
+ * What `/enable` and `/disable` say when a bar refuses them (DOR-1507).
+ *
+ * They write `extensions.enabled` / `extensions.disabled`, both `operator-only`
+ * in `config-write-policy.ts`, straight through `configManager` — around the
+ * door that enforces that classification. So they answer with that door's own
+ * code and headline: one setting, one refusal, wherever a caller meets it.
+ *
+ * The messages talk about which code DorkOS runs rather than about a config
+ * key, because that is what a person reading a refusal actually needs to know.
+ * The three bars themselves live in
+ * {@link module:routes/extensions-person-bar}, shared with the approval routes.
+ */
+const EXTENSION_TOGGLE_BAR: PersonBarCopy = {
+  error: OPERATOR_ONLY_CONFIG_ERROR,
+  code: OPERATOR_ONLY_CONFIG_CODE,
+  subject: 'which extensions are turned on',
+  crossSite: (origin) =>
+    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
+    `Turning an extension on or off changes which code this copy of DorkOS runs, and ` +
+    `that is something a person does in their own app — not something another site ` +
+    `can ask for on their behalf.`,
+  agent:
+    `DorkOS changed nothing. Turning an extension on or off decides which code runs ` +
+    `inside DorkOS, so it is a decision only a person makes. Ask them to open ` +
+    `Settings > Extensions and make the change there.`,
+};
 
 /**
  * Create the extensions router.
@@ -117,6 +157,10 @@ export function createExtensionsRouter(
     try {
       const { id } = req.params;
       if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
+      // Identity before the state of the world, matching the order the tunnel
+      // and approval routes use: a caller that may not do this at all is told
+      // so, rather than being told whether the extension exists.
+      if (refuseIfNotAPerson(req, res, EXTENSION_TOGGLE_BAR)) return undefined;
       const result = await extensionManager.enable(id);
       if (!result) {
         return res.status(404).json({ error: `Extension '${id}' not found or cannot be enabled` });
@@ -153,6 +197,13 @@ export function createExtensionsRouter(
     try {
       const { id } = req.params;
       if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
+      // Barred in this direction too, unlike `POST /api/tunnel/stop`, which runs
+      // nothing because stopping only narrows exposure. `operator-only` is a rule
+      // about PATHS and never about values (`config-write-policy.ts`, pinned by
+      // its own drift guard), and silently switching off the extension somebody's
+      // work depends on is not a favour. The approval routes beside this one gate
+      // `revoke` for the same reason.
+      if (refuseIfNotAPerson(req, res, EXTENSION_TOGGLE_BAR)) return undefined;
       const result = await extensionManager.disable(id);
       if (!result) {
         // `disable()` returns null for two distinct reasons: the extension does

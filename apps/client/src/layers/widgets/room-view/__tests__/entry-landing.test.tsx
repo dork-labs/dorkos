@@ -14,7 +14,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, cleanup } from '@testing-library/react';
 import type { RoomEntry } from '@/layers/entities/room';
-import { flowRowForEntry } from '../lib/room-timeline';
+import { flowRowForEntry, olderPageAnchor } from '../lib/room-timeline';
 import { useEntryLanding } from '../model/use-entry-landing';
 
 const toastInfo = vi.hoisted(() => vi.fn());
@@ -85,6 +85,54 @@ describe('which row draws an entry', () => {
   });
 });
 
+describe('which row holds a reader when older history lands (DOR-1734)', () => {
+  /**
+   * The shape that makes this a real question, and the reason the fixture above
+   * cannot answer it: a page whose replies point at a root far behind it, with
+   * that root riding at index 0 of the merged history (DOR-690).
+   *
+   * The page floor is `boundary` at seq 400. `buried` is at seq 3 — three
+   * hundred and ninety-seven messages earlier, and FIRST in the array.
+   */
+  const BURIED = entry('buried', 3);
+  const BOUNDARY = entry('boundary', 400, 'buried');
+  const AFTER = entry('after', 401, 'buried');
+  const PAGED = [BURIED, BOUNDARY, AFTER];
+
+  it('holds the reader at the page floor, not at the root riding in front of it', () => {
+    // **Seeded defect:** anchor on `entries[0]` → red, and in production that is
+    // a reader who pressed "Older messages" at message 400 and was dropped at
+    // message 3, days earlier, with no way to tell what had happened. It is the
+    // identical trap `olderCursor` keeps the READ out of; the scroll has to be
+    // kept out of it too.
+    //
+    // The boundary is a thread REPLY here, so the honest answer is its thread's
+    // own row — the room's flow does not draw replies at all. That is
+    // `flowRowForEntry`'s rule, reused rather than restated.
+    expect(olderPageAnchor(PAGED, 400)).toEqual({
+      rowId: 'thread-buried',
+      domId: 'thread-row-buried',
+    });
+  });
+
+  it('anchors a top-level boundary on its own row', () => {
+    expect(olderPageAnchor([BURIED, entry('floor', 400), AFTER], 400)).toEqual({
+      rowId: 'floor',
+      domId: 'room-entry-floor',
+    });
+  });
+
+  it('leaves the scroll alone when there is no cursor to page from', () => {
+    // A room whose first read has not landed. Scrolling somewhere on a guess
+    // would be worse than not scrolling at all.
+    expect(olderPageAnchor(PAGED, null)).toBeNull();
+  });
+
+  it('leaves the scroll alone when the boundary is not in the loaded history', () => {
+    expect(olderPageAnchor(PAGED, 399)).toBeNull();
+  });
+});
+
 describe('what a room does with ?entry=', () => {
   /** Mount the hook the way `RoomSurface` does. */
   function landing(overrides: Partial<Parameters<typeof useEntryLanding>[0]> = {}) {
@@ -125,7 +173,7 @@ describe('what a room does with ?entry=', () => {
     expect(result.current.roomRow?.()).toBeUndefined();
     expect(toastInfo).toHaveBeenCalledTimes(1);
     expect(toastInfo).toHaveBeenCalledWith(
-      "DorkOS can't find that message in what's open here",
+      'DorkOS can’t find that message in what’s open here',
       expect.objectContaining({ description: expect.any(String) as string })
     );
   });

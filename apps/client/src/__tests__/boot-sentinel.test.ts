@@ -37,7 +37,7 @@ const ERROR_GRACE_MS = 3_000;
 /** How long a copy-button label stays swapped before returning to rest. */
 const COPY_FEEDBACK_MS = 2_000;
 /** The headline the failure surface leads with. */
-const HEADLINE = "DorkOS couldn't finish starting.";
+const HEADLINE = 'DorkOS couldn’t finish starting';
 
 /**
  * The sentinel's source, lifted out of the document that ships it.

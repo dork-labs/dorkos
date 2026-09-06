@@ -12,8 +12,8 @@
  * Schemas are the authoritative contract (the repo is Zod-first); TS types
  * derive via `z.infer`. The port interface itself is a runtime port (not a
  * serializable DTO), so it is a TS interface over the derived types, reusing the
- * existing {@link McpAppServerConnection} — connected tools always reach a
- * session through the one MCP seam, never a new mechanism.
+ * existing {@link McpAppServerConnection} only for the legacy execution
+ * projection that remains until the execution service replaces it in P2.
  *
  * See spec `specs/connector-gateway/02-specification.md` §Detailed Design 1 and
  * ADR `260718-045630` (the custody stance).
@@ -22,6 +22,25 @@
  */
 import { z } from 'zod';
 import type { McpAppServerConnection } from './agent-runtime.js';
+import {
+  ConnectionIdSchema,
+  ConnectorExternalAccountRefSchema,
+  ConnectorProviderInstanceIdSchema,
+  ConnectorProviderCapabilitySetSchema,
+  type ConnectionId,
+  type ConnectorCatalogPageRequest,
+  type ConnectorExternalAccountRef,
+  type ConnectorOperationPage,
+  type ConnectorOperationPageRequest,
+  type ConnectorProviderExecuteCommand,
+  type ConnectorProviderExecuteResult,
+  type ConnectorProviderInstanceId,
+  type ConnectorTriggerType,
+  type ConnectorUnsupportedResult,
+} from './connector-schemas.js';
+
+export { ConnectionIdSchema, ConnectorExternalAccountRefSchema, ConnectorProviderInstanceIdSchema };
+export type { ConnectionId, ConnectorExternalAccountRef, ConnectorProviderInstanceId };
 
 /**
  * Where a provider keeps end-user OAuth tokens at rest — the field that drives
@@ -38,14 +57,13 @@ export const ConnectorCustodySchema = z.enum(['managed', 'self-host', 'external'
 export type ConnectorCustody = z.infer<typeof ConnectorCustodySchema>;
 
 /**
- * Opaque, provider-scoped handle for ONE account of one service — the addressing
- * primitive raw MCP lacks. A backend maps it to its own handle (Composio's
- * `ca_…`, Nango's `connectionId`); the session tool surface never sees the
- * vendor. Branded so a bare string cannot be passed where an account id is due.
+ * Stable DorkOS connection id for one account of one service. The provider's
+ * own handle stays in a separate private binding. Branded so a bare string
+ * cannot be passed where a connection id is due.
  */
-export const ConnectedAccountIdSchema = z.string().min(1).brand('ConnectedAccountId');
-/** Opaque, provider-scoped id for one connected account. See {@link ConnectedAccountIdSchema}. */
-export type ConnectedAccountId = z.infer<typeof ConnectedAccountIdSchema>;
+export const ConnectedAccountIdSchema = ConnectionIdSchema;
+/** Stable DorkOS id for one connected account. See {@link ConnectedAccountIdSchema}. */
+export type ConnectedAccountId = ConnectionId;
 
 /**
  * Static capability + custody descriptor for one backend (mirrors
@@ -53,6 +71,8 @@ export type ConnectedAccountId = z.infer<typeof ConnectedAccountIdSchema>;
  * differences so there is no forked code across providers.
  */
 export const ConnectorCapabilitiesSchema = z.object({
+  /** Stable configured provider instance, distinct from its implementation type. */
+  instanceId: ConnectorProviderInstanceIdSchema,
   /** Backend type identifier, e.g. `'composio' | 'nango' | 'mcp'`. */
   type: z.string(),
   /** Can one user hold N accounts of the same service? Raw-MCP: `false`. */
@@ -61,6 +81,8 @@ export const ConnectorCapabilitiesSchema = z.object({
   custody: ConnectorCustodySchema,
   /** Can the backend expose connected tools to a session over MCP? */
   exposesOverMcp: z.boolean(),
+  /** Capability availability declared without optimistic inference. */
+  capabilities: ConnectorProviderCapabilitySetSchema,
   /** Backend-specific metadata that doesn't merit a first-class field (cf. `RuntimeCapabilities.features`). */
   features: z.record(z.string(), z.unknown()).default(() => ({})),
 });
@@ -87,7 +109,13 @@ export const ConnectorToolkitSchema = z.object({
 export type ConnectorToolkit = z.infer<typeof ConnectorToolkitSchema>;
 
 /** Lifecycle status of one connected account. */
-export const ConnectedAccountStatusSchema = z.enum(['active', 'expired', 'revoked', 'pending']);
+export const ConnectedAccountStatusSchema = z.enum([
+  'active',
+  'expired',
+  'revoked',
+  'pending',
+  'paused',
+]);
 /** Lifecycle status of a connected account. See {@link ConnectedAccountStatusSchema}. */
 export type ConnectedAccountStatus = z.infer<typeof ConnectedAccountStatusSchema>;
 
@@ -100,7 +128,7 @@ export type ConnectedAccountStatus = z.infer<typeof ConnectedAccountStatusSchema
  * vendor is behind a connection (spec §Detailed Design 2, Security).
  */
 export const ConnectedAccountSchema = z.object({
-  /** Opaque, provider-scoped account handle. */
+  /** Stable DorkOS connection id. */
   id: ConnectedAccountIdSchema,
   /** Owning backend type — SERVER-ONLY, never in the session tool surface. */
   provider: z.string(),
@@ -116,15 +144,29 @@ export const ConnectedAccountSchema = z.object({
 /** One connected account, provider-neutral. See {@link ConnectedAccountSchema}. */
 export type ConnectedAccount = z.infer<typeof ConnectedAccountSchema>;
 
+/** Provider-owned account metadata before the registry assigns a stable DorkOS id. */
+export const ProviderConnectedAccountSchema = ConnectedAccountSchema.omit({
+  id: true,
+  provider: true,
+  status: true,
+}).extend({
+  /** Private provider account reference; the registry never returns it publicly. */
+  externalAccountRef: ConnectorExternalAccountRefSchema,
+  /** Provider-reported authentication state; operator pause is stored separately by DorkOS. */
+  status: z.enum(['active', 'expired', 'revoked', 'pending']),
+});
+/** Provider-owned account metadata before stable DorkOS reconciliation. */
+export type ProviderConnectedAccount = z.infer<typeof ProviderConnectedAccountSchema>;
+
 /**
- * The reference-shaped result of beginning a connect flow — mirrors
- * `startOpenRouterOAuth`'s loopback-PKCE shape. Carries only a URL and an opaque
- * flow id to poll; `code_verifier`/secrets stay server-side and never cross the
- * port.
+ * The reference-shaped result of beginning a connect flow. Browser-based flows
+ * carry an authorization URL; flows that verify an already-configured connection
+ * omit it and can be polled immediately. Secrets stay server-side and never cross
+ * the port.
  */
 export const ConnectStartSchema = z.object({
-  /** Vendor consent screen or loopback authorize URL to open. */
-  authorizeUrl: z.string().url(),
+  /** Vendor consent screen or loopback authorize URL to open, when browser action is required. */
+  authorizeUrl: z.string().url().optional(),
   /** Opaque flow id to poll with {@link ConnectorProvider.pollConnect}. */
   flowId: z.string().min(1),
 });
@@ -137,10 +179,10 @@ export type ConnectStart = z.infer<typeof ConnectStartSchema>;
  * `status`, they do not catch.
  */
 export const ConnectPollSchema = z.object({
-  /** `'pending'` while awaiting consent; terminal `'connected'` or `'failed'`. */
+  /** `'pending'` while awaiting browser action or verification; terminal otherwise. */
   status: z.enum(['pending', 'connected', 'failed']),
   /** The new account handle, present once `status === 'connected'`. */
-  account: ConnectedAccountSchema.optional(),
+  account: ProviderConnectedAccountSchema.optional(),
   /** Failure detail, present on `status === 'failed'` — failure-typed, never thrown. */
   error: z.string().optional(),
 });
@@ -157,23 +199,47 @@ export type ConnectPoll = z.infer<typeof ConnectPollSchema>;
  * Every method earns its place: discovery (`listToolkits`) drives the connect
  * picker; `startConnect`/`pollConnect` are the reference-not-secret connect flow
  * (the `Transport` PKCE-loopback pair); `listAccounts`/`disconnect` are
- * multi-account management; `toolServerForAccount` is the single unification
- * point — every provider ultimately exposes tools as MCP, so its output plugs
- * straight into `setMcpServerFactory`.
+ * multi-account management. `toolServerForAccount` is a temporary compatibility
+ * projection for the current session consumer; P2 removes it after every call
+ * uses exact-account {@link execute} through DorkOS policy.
  */
 export interface ConnectorProvider {
+  /** Stable configured instance identifier; multiple instances may share one type. */
+  readonly instanceId: ConnectorProviderInstanceId;
   /** Backend type identifier; must equal `getCapabilities().type`. */
   readonly type: string;
 
   /** Return this backend's static capability + custody descriptor. */
   getCapabilities(): ConnectorCapabilities;
 
+  /** Discover one bounded, cursor-addressed page of the account-free catalog. */
+  listToolkitPage(
+    request: ConnectorCatalogPageRequest
+  ): Promise<
+    | { status: 'ok'; toolkits: ConnectorToolkit[]; nextCursor?: string; truncated: boolean }
+    | ConnectorUnsupportedResult
+  >;
+
+  /** Discover one bounded page of immutable operation schemas. */
+  listOperationSchemas(
+    request: ConnectorOperationPageRequest
+  ): Promise<{ status: 'ok'; page: ConnectorOperationPage } | ConnectorUnsupportedResult>;
+
+  /** Execute one exact provider account and immutable operation revision. */
+  execute(command: ConnectorProviderExecuteCommand): Promise<ConnectorProviderExecuteResult>;
+
+  /** Discover trigger types, or return typed unsupported. */
+  listTriggerTypes(
+    toolkit: string
+  ): Promise<{ status: 'ok'; triggers: ConnectorTriggerType[] } | ConnectorUnsupportedResult>;
+
   /** Discovery: which services can be connected. */
   listToolkits(): Promise<ConnectorToolkit[]>;
 
   /**
-   * Begin connecting `toolkit`; returns a URL + pollable flow id (secrets stay
-   * server-side). A single-account backend (`supportsMultiAccount: false`)
+   * Begin connecting `toolkit`; returns a pollable flow id and, when browser
+   * action is required, an authorization URL. Secrets stay server-side. A
+   * single-account backend (`supportsMultiAccount: false`)
    * rejects a second connect of an already-connected toolkit rather than
    * creating a duplicate.
    *
@@ -196,18 +262,19 @@ export interface ConnectorProvider {
    *
    * @param opts - Optional filter; `toolkit` narrows to one service slug.
    */
-  listAccounts(opts?: { toolkit?: string }): Promise<ConnectedAccount[]>;
+  listAccounts(opts?: { toolkit?: string }): Promise<ProviderConnectedAccount[]>;
 
   /**
-   * Revoke one account by its opaque id. Idempotent — revoking an
-   * unknown/already-revoked id resolves without throwing.
+   * Revoke one provider account by its private reference. Idempotent — revoking
+   * an unknown/already-revoked reference resolves without throwing.
    *
-   * @param accountId - The opaque account handle to disconnect.
+   * @param externalAccountRef - The private provider account reference to disconnect.
    */
-  disconnect(accountId: ConnectedAccountId): Promise<void>;
+  disconnect(externalAccountRef: ConnectorExternalAccountRef): Promise<void>;
 
   /**
-   * Expose a connected account's tools to a session as MCP. Returns
+   * Legacy P1 projection that exposes a connected account's tools to a session
+   * as MCP. Returns
    * runtime-neutral connection details (the exact {@link McpAppServerConnection}
    * the runtime already injects), selected BY id — so two Gmail accounts become
    * two addressable tool servers.
@@ -220,9 +287,11 @@ export interface ConnectorProvider {
    * `AgentRuntime.getMcpServerConfig?`, which is itself optional and nullable
    * (`agent-runtime.ts`).
    *
-   * @param accountId - The opaque account handle to expose.
+   * @param externalAccountRef - The private provider account reference to expose.
    */
-  toolServerForAccount(accountId: ConnectedAccountId): Promise<McpAppServerConnection | null>;
+  toolServerForAccount(
+    externalAccountRef: ConnectorExternalAccountRef
+  ): Promise<McpAppServerConnection | null>;
 }
 
 /**
@@ -371,11 +440,11 @@ export type ConnectorAccountsResponse = z.infer<typeof ConnectorAccountsResponse
 
 /**
  * Response of `POST /api/connectors/:provider/connect` — the reference-shaped
- * flow start plus the custody disclosure the UI MUST render before the auth
- * URL is opened (disclosure-before-URL is a consent invariant, not styling).
+ * flow start plus the custody disclosure the UI MUST render before any auth URL
+ * is opened. A verification-only flow has no URL.
  */
 export const ConnectorConnectStartResponseSchema = ConnectStartSchema.extend({
-  /** The custody sentence to show BEFORE opening {@link ConnectStart.authorizeUrl}. */
+  /** The custody sentence to show before opening {@link ConnectStart.authorizeUrl}, when present. */
   disclosure: z.string(),
 });
 /** Flow start + pre-connect disclosure. See {@link ConnectorConnectStartResponseSchema}. */
@@ -386,7 +455,7 @@ export type ConnectorConnectStartResponse = z.infer<typeof ConnectorConnectStart
  * with the account in its public (provider-stripped, disclosure-carrying) form.
  */
 export const ConnectorConnectPollResponseSchema = z.object({
-  /** `'pending'` while awaiting consent; terminal `'connected'` or `'failed'`. */
+  /** `'pending'` while awaiting browser action or verification; terminal otherwise. */
   status: ConnectPollSchema.shape.status,
   /** The new account, present once `status === 'connected'`. */
   account: PublicConnectedAccountSchema.optional(),
@@ -404,6 +473,7 @@ export type ConnectorConnectPollResponse = z.infer<typeof ConnectorConnectPollRe
 export const SessionConnectorUnavailableReasonSchema = z.enum([
   'expired',
   'revoked',
+  'paused',
   'unavailable',
 ]);
 /** Null-branch reason. See {@link SessionConnectorUnavailableReasonSchema}. */

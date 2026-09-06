@@ -335,10 +335,17 @@ describe('ClaudeCodeAdapter — stopping a relay-dispatched run', () => {
       'run-1',
       expect.objectContaining({
         status: 'cancelled',
-        error: 'Run timed out (TTL budget expired)',
+        // The same sentence the direct-dispatch path writes, minus the duration
+        // only that path knows (DOR-1786) — asserted as a literal so a reworded
+        // run row cannot pass by calling the same helper the code does.
+        error: 'Run stopped after passing its time limit',
       })
     );
     expect(result.success).toBe(false);
+    // The delivery's own reason becomes the dead letter's, which a person reads
+    // in the relay surfaces — so it says the same thing the run row does rather
+    // than abbreviating to jargon nobody can act on.
+    expect(result.error).toBe('Run stopped after passing its time limit');
   });
 
   it('records a run that FINISHED as completed, even when a stop lands in the same instant', async () => {

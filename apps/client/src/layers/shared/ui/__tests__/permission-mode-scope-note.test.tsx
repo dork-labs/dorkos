@@ -97,7 +97,7 @@ describe('PermissionModeScopeNote', () => {
           stop: 'act',
           asks: 'never',
           reach: 'workspace',
-          promise: "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
+          promise: 'Edits files and runs commands inside the workspace — Codex can’t pause to ask.',
           native: 'workspace-write',
         }}
       />

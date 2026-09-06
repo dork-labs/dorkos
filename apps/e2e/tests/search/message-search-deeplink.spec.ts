@@ -208,7 +208,7 @@ test.describe('Landing on a searched message', () => {
     await openCockpit(basePage);
     await page.goto(`/channels?id=${room.id}&entry=999999`);
 
-    await expect(page.getByText("DorkOS can't find that message in what's open here")).toBeVisible({
+    await expect(page.getByText('DorkOS can’t find that message in what’s open here')).toBeVisible({
       timeout: SERVER_ROUND_TRIP_MS,
     });
     // And the room is where it always opens, rather than stuck waiting for a

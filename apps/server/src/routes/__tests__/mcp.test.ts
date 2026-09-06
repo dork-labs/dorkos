@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 
 // Mock the MCP SDK transport — vi.hoisted() ensures variables are initialized
 // before vi.mock factory runs (vi.mock is hoisted above all imports).

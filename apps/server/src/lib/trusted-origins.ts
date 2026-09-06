@@ -4,11 +4,17 @@
  *
  * The set of origins DorkOS accepts is dynamic: the static loopback dev origins
  * are always trusted, and the ngrok tunnel origin is added at request time once
- * a tunnel connects (so exposing the instance never needs a restart). The CORS
- * callback in `app.ts`, the `Host` allowlist in `middleware/host-guard.ts`, and
- * Better Auth's `trustedOrigins` CSRF check all read from here so there is a
- * single origin policy. {@link isLoopbackHost} lives here too, so "which names
- * mean this machine" is stated exactly once.
+ * a tunnel connects (so exposing the instance never needs a restart).
+ *
+ * {@link isTrustedBrowserOrigin} is THE origin decision — since DOR-1711 the
+ * CORS delegate in `app.ts`, the `/mcp` mounts (`middleware/mcp-origin.ts`) and
+ * the WebSocket upgrade router all call it, each passing the
+ * {@link BrowserOriginPolicy} its mount asks for, so what differs between them
+ * is readable in one place rather than inferred from three implementations. The
+ * `Host` allowlist in `middleware/host-guard.ts` and Better Auth's
+ * `trustedOrigins` CSRF check read the same underlying set.
+ * {@link isLoopbackHost} lives here too, so "which names mean this machine" is
+ * stated exactly once.
  *
  * @module lib/trusted-origins
  */
@@ -189,6 +195,19 @@ export function getLocalCockpitOrigin(): string {
  * Static loopback dev origins the server always trusts: `localhost` and
  * `127.0.0.1` on both the API port (`DORKOS_PORT`) and the Vite dev port
  * (`VITE_PORT`, default 4241).
+ *
+ * ## `[::1]` is deliberately NOT here, and DOR-553 is still fixed
+ *
+ * `::1` is loopback — {@link isLoopbackHost} says so, and the `/api` host guard
+ * has always accepted it — but nothing binds it, so an origin the server never
+ * serves would be an origin an attacker can try to forge (DOR-554 pins this
+ * list against exactly that widening). The disagreement DOR-553 filed was real
+ * all the same: a browser at `http://[::1]:4242` cleared the host guard, cleared
+ * CORS through the same-origin branch, and was refused by `/mcp`, which had no
+ * same-origin branch at all. The fix is that every surface now reads ONE policy
+ * (see {@link isTrustedBrowserOrigin}), so `[::1]` is accepted wherever it is
+ * genuinely this request's own origin — `Host: [::1]:4242` paired with
+ * `Origin: http://[::1]:4242` — and blanket-trusted nowhere.
  */
 export function getStaticLocalOrigins(): string[] {
   const port = String(env.DORKOS_PORT);
@@ -264,17 +283,17 @@ export function resolveTrustedOrigins(): string[] {
  * Parse `DORKOS_CORS_ORIGIN` — the operator's explicit allowlist — into the
  * origins it names.
  *
- * The ONE parser every surface that honours the variable reads: `buildCors` in
- * `app.ts`, branch 3 of {@link isTrustedUpgradeOrigin}, and
- * {@link resolveAuthTrustedOrigins}. Two copies of a split-and-trim are how a
- * padded `" * "` once meant the wildcard on one surface and a one-entry
- * allowlist on the next, which blacked out the app's own socket while HTTP kept
- * working. One parser cannot drift from itself.
+ * The ONE parser every surface that honours the variable reads: branch 3 of
+ * {@link isTrustedBrowserOrigin} — which is now what CORS, `/mcp` and the
+ * WebSocket upgrade all consult — and {@link resolveAuthTrustedOrigins}. Two
+ * copies of a split-and-trim are how a padded `" * "` once meant the wildcard on
+ * one surface and a one-entry allowlist on the next, which blacked out the app's
+ * own socket while HTTP kept working. One parser cannot drift from itself.
  *
  * `*` parses to NO origins, on every surface. A wildcard is not an allowlist: it
  * would hand the whole API to any page the operator visits, and login is off by
- * default so nothing else would stop it. `buildCors` warns once when it sees
- * one; this is the half that makes the warning true.
+ * default so nothing else would stop it. `buildCors` in `app.ts` warns once at
+ * boot when it sees one; this is the half that makes the warning true.
  *
  * Entries are trimmed but otherwise passed through verbatim, including empty
  * ones, so a value that reaches CORS as a list of nothing still reads as a list
@@ -301,7 +320,7 @@ export function parseConfiguredOrigins(value: string | undefined): string[] {
  * nothing". A trust branch built from operator config handed the socket guard
  * that match once already: `DORKOS_PUBLIC_URL=dorkos:4242`, a plausible typo,
  * parses with `dorkos:` as the SCHEME, serializes to `"null"`, and gave any such
- * page the embedded terminal (see {@link isTrustedUpgradeOrigin}, branch 3's
+ * page the embedded terminal (see {@link isTrustedBrowserOrigin}, branch 3's
  * note). The upgrade path refuses `"null"` before any branch runs; this list has
  * no such gate ahead of it, so the gate is here. A bare `null`, `file://`,
  * `data:…` and `javascript:…` all fail for the same reason.
@@ -358,13 +377,13 @@ function isCanonicalOrigin(entry: string): boolean {
  * from electron-vite's own port and hands the server that origin as
  * `DORKOS_CORS_ORIGIN`, so every REST call worked and the owner-setup dialog
  * died on `Invalid origin`, which blocks Remote Access setup outright. Branch 3
- * of {@link isTrustedUpgradeOrigin} settled the identical question for
+ * of {@link isTrustedBrowserOrigin} settled the identical question for
  * WebSockets and for the same reason: a surface refusing what a request accepts
  * is a silent outage rather than an error anyone can read.
  *
  * ## Why NOT fold it into `resolveTrustedOrigins` itself
  *
- * Because `routes/extensions-approval.ts` reads that function and documents, at
+ * Because `routes/extensions-person-bar.ts` reads that function and documents, at
  * length, that it does not consult `DORKOS_CORS_ORIGIN` on purpose: "which sites
  * may read my responses" is a different question from "which page may record a
  * person's security decision". Widening the shared function would answer the
@@ -403,18 +422,18 @@ export function resolveAuthTrustedOrigins(): string[] {
   return [...trusted, ...configured];
 }
 
-/** The facts {@link isTrustedUpgradeOrigin} decides on, all resolved by the caller. */
-export interface UpgradeOriginFacts {
-  /** The upgrade's `Origin` header. Absent for every non-browser client. */
+/** The facts {@link isTrustedBrowserOrigin} decides on, all resolved by the caller. */
+export interface BrowserOriginFacts {
+  /** The request's `Origin` header. Absent for every non-browser client. */
   origin: string | undefined;
-  /** The upgrade's raw `Host` header — what the caller asked for. */
+  /** The request's raw `Host` header — what the caller asked for. */
   hostHeader: string | undefined;
   /** Whether this instance answers to that `Host` (`isHostAllowed`). */
   hostAllowed: boolean;
   /**
    * `DORKOS_ALLOW_INSECURE_BIND` — the deployment declares it owns its network
    * boundary. Here it does exactly one thing: it lets an **IP-literal** `Host`
-   * satisfy the pairing. See {@link isTrustedUpgradeOrigin}.
+   * satisfy the pairing. See {@link isTrustedBrowserOrigin}.
    */
   ownsNetworkBoundary: boolean;
   /** `DORKOS_CORS_ORIGIN`, the operator's explicit allowlist (or `*`). */
@@ -482,7 +501,75 @@ function isIpLiteralHost(hostHeader: string | undefined): boolean {
 }
 
 /**
- * Whether a WebSocket upgrade's `Origin` may be trusted.
+ * What a surface asks of {@link isTrustedBrowserOrigin}. Two decisions that used
+ * to be hard-coded per surface — and disagreed, which is what DOR-1711 was.
+ */
+export interface BrowserOriginPolicy {
+  /**
+   * Whether a request carrying NO `Origin` header at all passes.
+   *
+   * Every surface in DorkOS answers `true`, and that is a decision rather than
+   * an accident, so it is written down at each mount instead of buried in the
+   * predicate. Only browsers send `Origin`, and they are forced to send it
+   * truthfully, so the header can convict a browser and can prove nothing about
+   * anyone else. Refusing its absence would refuse every legitimate non-browser
+   * caller DorkOS has: `curl`, the CLI, the desktop shell, and — decisively for
+   * `/mcp` — every MCP client. The MCP TypeScript SDK's HTTP transport sets only
+   * `Authorization`, `mcp-session-id`, `mcp-protocol-version`, `Accept` and
+   * `content-type`; Node's `fetch` adds no `Origin` of its own. DorkOS's own
+   * in-process clients ride that same branch on purpose (the Codex canvas stub
+   * at `/codex-ui-mcp`, the Nango proxy at `/api/connectors/nango/mcp`), so
+   * flipping this to `false` would break the product, not harden it.
+   *
+   * The MCP spec asks servers to validate `Origin` "on all incoming
+   * connections" — which is a rule about requests that HAVE one; a header that
+   * is absent is not a header that failed.
+   *
+   * This is NOT the same question as `Origin: null`, which is refused on every
+   * surface whatever this says. Absent means "no browser here"; the literal
+   * `null` means "a browser, from an opaque origin" — a sandboxed iframe, a
+   * `data:` document, a `file://` page. They read alike and mean opposites.
+   */
+  allowNoOrigin: boolean;
+  /**
+   * Whether the same-origin branch must be PAIRED with the host allowlist.
+   *
+   * The same-origin branch (branch 4 below) accepts an `Origin` equal to this
+   * request's own `<scheme>://<Host>`. A DNS-rebound page satisfies it for free:
+   * the browser thinks `evil.example` IS the origin, so it sends
+   * `Host: evil.example` with `Origin: http://evil.example` and they match. The
+   * pairing is what refuses it, and the only reason a surface may set this
+   * `false` is that some OTHER middleware on the same mount already refuses the
+   * `Host` — which is exactly the split on the `/api` surface, where
+   * `middleware/host-guard.ts` runs a few lines after the CORS layer.
+   *
+   * `/mcp` and its siblings have no host guard in front of them, and the
+   * WebSocket upgrade has no middleware chain at all, so both pair here.
+   */
+  pairSameOriginWithHost: boolean;
+}
+
+/**
+ * Whether a browser's `Origin` may be trusted — THE origin policy, read by every
+ * surface that judges one: the CORS delegate in `app.ts`, the `/mcp` family's
+ * `middleware/mcp-origin.ts`, and the WebSocket upgrade router.
+ *
+ * ## Why one predicate (DOR-1711)
+ *
+ * There were three, and they disagreed in ways nobody chose. `/mcp` built its
+ * own allowlist of `http://localhost:PORT` and `http://127.0.0.1:PORT` and
+ * stopped there — no `[::1]`, so an IPv6-preferring browser was refused by
+ * `/mcp` and accepted by `/api` (that disagreement was DOR-553, absorbed here);
+ * no `DORKOS_CORS_ORIGIN`, so the operator's explicit list meant nothing there;
+ * no same-origin branch, so a container published on a remapped host port
+ * answered every `/api` call and refused every MCP one. None of that was a
+ * posture anybody argued for. A surface that refuses what its neighbours accept
+ * is a silent outage, and three copies of a security decision are three chances
+ * to fix only two of them.
+ *
+ * What legitimately differs between surfaces is stated as
+ * {@link BrowserOriginPolicy} and passed in at the mount, so the difference is
+ * readable in one place instead of inferred from three implementations.
  *
  * ## Why this is not just `resolveTrustedOrigins().includes(origin)`
  *
@@ -506,20 +593,31 @@ function isIpLiteralHost(hostHeader: string | undefined): boolean {
  *    serializes an unparseable URL to the literal string `"null"`, so any branch
  *    built from operator config could hand it a match. One did (see below).
  * 1. **No `Origin` at all** — a non-browser client (CLI, tests, the desktop
- *    shell). Passes, like the CORS delegate and `validateMcpOrigin`: a header a
- *    browser is forced to send truthfully proves nothing by its absence. Note
- *    this is ABSENT, not `null`; the two are opposites here.
+ *    shell, every MCP client). Decided by `policy.allowNoOrigin`, which every
+ *    surface sets to `true` and each one says so out loud: a header a browser is
+ *    forced to send truthfully proves nothing by its absence. Note this is
+ *    ABSENT, not `null`; the two are opposites here.
  * 2. **A statically trusted origin** — loopback dev origins, the live tunnel.
- * 3. **A name in `DORKOS_CORS_ORIGIN`** — the operator's explicit list, which
- *    the HTTP path already honours; a socket refusing what a request accepts is
- *    the inconsistency that made this a silent outage rather than an error
- *    somebody could read. When set, it makes branch 4 unreachable, as it does
- *    in `buildCors`. It is NOT the whole policy the way `buildCors`'s static
- *    list is: branch 2 sits above it, so the loopback dev origins and a live
- *    tunnel still pass. That is deliberate — locking the operator out of
- *    `localhost` for setting a production allowlist would be an outage, not a
- *    boundary — but it means "exhaustive" is the wrong word and this is
- *    marginally wider than CORS in that one respect.
+ * 3. **A name in `DORKOS_CORS_ORIGIN`** — the operator's explicit list. It
+ *    ADDS to this policy and never replaces it: a miss falls through to branch
+ *    4, and branch 2 sits above it so the loopback dev origins and a live
+ *    tunnel keep passing. Setting a production allowlist must not lock the
+ *    operator out of `localhost`, or out of the address their own container is
+ *    published on; that is an outage, not a boundary.
+ *
+ *    This branch used to END the decision when the list was non-empty, on the
+ *    stated grounds that `buildCors` did the same by switching to a static
+ *    `cors({ origin: [...] })`. That premise is gone — `buildCors` now reads
+ *    this policy for every request — and following it here was measured as a
+ *    regression rather than a tightening (DOR-1711 round 2). The static `cors`
+ *    form REFUSES NOTHING: an unlisted origin merely gets no
+ *    `Access-Control-Allow-Origin`, the browser withholds the response, and the
+ *    route still runs. This function's callers turn `false` into a refusal, so
+ *    inheriting the short-circuit turned "no header" into a 500 for every
+ *    same-origin write from an address the list did not name — a remapped
+ *    container port, a LAN IP, a reverse-proxied host. Reads survived (a
+ *    same-origin GET sends no `Origin`), which is exactly the silent-outage
+ *    shape this unification exists to remove.
  *
  *    **`DORKOS_PUBLIC_URL` is deliberately NOT consulted**, and its removal is
  *    the fourth hole this function has had. It is documented as the address to
@@ -584,40 +682,49 @@ function isIpLiteralHost(hostHeader: string | undefined): boolean {
  * `http`, fail-closed. Forging the header cannot widen anything — supplying it
  * only replaces the connection default with a single equality.
  *
- * Branch 4 is additionally **paired with the host allowlist**, which is why
- * `hostAllowed` is required rather than assumed. A DNS-rebound page at
- * `evil.com` pointing at 127.0.0.1 is same-origin to the browser and sends
- * `Host: evil.com` with `Origin: http://evil.com` — an exact match, which
- * branch 4 alone would admit. `isHostAllowed` rejects the `Host`, and the
- * pairing is the same one `hostGuard` provides for requests. When the host
- * check is inert (login on, or the container escape hatch) branch 4 stands
- * alone, for the same reason `hostGuard` stands down there: auth cookies are
- * origin-scoped, so a rebound origin never presents one.
+ * Branch 4 is additionally **paired with the host allowlist** wherever
+ * `policy.pairSameOriginWithHost` says so, which is why `hostAllowed` is
+ * required rather than assumed. A DNS-rebound page at `evil.com` pointing at
+ * 127.0.0.1 is same-origin to the browser and sends `Host: evil.com` with
+ * `Origin: http://evil.com` — an exact match, which branch 4 alone would admit.
+ * `isHostAllowed` rejects the `Host`, and the pairing is the same one
+ * `hostGuard` provides for `/api` requests — which is precisely why the CORS
+ * delegate is the one caller that turns the pairing off: on that mount
+ * `hostGuard` IS the pairing, running a few lines later in the same chain. When
+ * the host check is inert (login on) branch 4 stands alone, for the same reason
+ * `hostGuard` stands down there: auth cookies are origin-scoped, so a rebound
+ * origin never presents one.
  *
- * @param facts - The resolved {@link UpgradeOriginFacts}.
+ * @param facts - The resolved {@link BrowserOriginFacts}.
+ * @param policy - What this surface asks of the decision, see
+ *   {@link BrowserOriginPolicy}.
  */
-export function isTrustedUpgradeOrigin(facts: UpgradeOriginFacts): boolean {
+export function isTrustedBrowserOrigin(
+  facts: BrowserOriginFacts,
+  policy: BrowserOriginPolicy
+): boolean {
   const { origin } = facts;
-  // ABSENT means a non-browser client and passes; the literal `null` is an
-  // OPAQUE origin (sandboxed iframe, `data:`, `file://`) and is refused outright.
-  // They read alike and mean opposite things.
-  if (origin === undefined) return true;
+  // ABSENT means a non-browser client and is decided by the surface's stated
+  // policy; the literal `null` is an OPAQUE origin (sandboxed iframe, `data:`,
+  // `file://`) and is refused outright, on every surface, whatever the policy
+  // says. They read alike and mean opposite things.
+  if (origin === undefined) return policy.allowNoOrigin;
   if (origin === '' || origin.trim().toLowerCase() === 'null') return false;
 
   if (resolveTrustedOrigins().includes(origin)) return true;
 
-  // An explicit `DORKOS_CORS_ORIGIN` list makes branch 4 unreachable, as it does
-  // in `buildCors` — which switches to a static allowlist and drops its own
-  // same-origin branch. Read through the shared {@link parseConfiguredOrigins},
-  // which is also what `buildCors` and Better Auth's allowlist read, so the same
-  // value cannot mean different things on the three surfaces that honour it.
-  const configured = parseConfiguredOrigins(facts.configuredOrigins);
-  if (configured.length > 0) return configured.includes(origin);
+  // The operator's explicit list ADDS to the policy; it does not replace it, so
+  // a miss here falls through to the same-origin branch rather than ending the
+  // decision. Read through the shared {@link parseConfiguredOrigins}, which is
+  // also what Better Auth's allowlist reads, so the same value cannot mean
+  // different things on the surfaces that honour it.
+  if (parseConfiguredOrigins(facts.configuredOrigins).includes(origin)) return true;
 
   // Same-origin as this request, gated on the host allowlist (see the doc).
   // A deployment that owns its network boundary additionally satisfies the
   // pairing with an IP-LITERAL Host, which a rebinding attack cannot produce.
   const pairingHolds =
+    !policy.pairSameOriginWithHost ||
     facts.hostAllowed ||
     facts.hostCheckInert ||
     (facts.ownsNetworkBoundary && isIpLiteralHost(facts.hostHeader));

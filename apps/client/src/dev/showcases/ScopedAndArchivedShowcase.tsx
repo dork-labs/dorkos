@@ -183,7 +183,7 @@ export function ArchivedRows() {
       </ShowcaseLabel>
       <ShowcaseDemo>
         <Command className="rounded-lg border" shouldFilter={false}>
-          <CommandInput placeholder="Search rooms, agents, commands..." value="ship" readOnly />
+          <CommandInput placeholder="Search rooms, agents, commands…" value="ship" readOnly />
           <CommandList>
             <CommandGroup heading="Channels">
               <RoomCommandItem room={liveChannel} onSelect={() => {}} />

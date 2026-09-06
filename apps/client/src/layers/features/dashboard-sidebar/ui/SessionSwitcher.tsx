@@ -188,7 +188,7 @@ export function SessionSwitcher({
         // is worth showing (a server says useful things) but is not worth
         // BEING the sentence: a fork that fails on a TypeError would otherwise
         // greet the operator with "Cannot read properties of null".
-        toast.error("Couldn't branch off this conversation.", {
+        toast.error('Couldn’t branch off this conversation.', {
           description: error instanceof Error ? error.message : 'The original is untouched.',
         });
       }
@@ -280,7 +280,7 @@ export function SessionSwitcher({
         <ResponsiveDialogHeader className="px-4 pt-4 pb-2 text-left">
           <ResponsiveDialogTitle className="flex items-center gap-2 text-sm font-semibold">
             <AgentAvatar color={agentVisual.color} emoji={agentVisual.emoji} size="xs" />
-            {agentName} — sessions
+            Sessions with {agentName}
             <span className="text-muted-foreground text-2xs ml-auto font-normal tabular-nums">
               {sessions.length} total
             </span>

@@ -115,14 +115,15 @@ export function useMarkRoomReadNow(): UseMutationResult<void, Error, string> {
 
   return useMutation({
     mutationFn: async (roomId: string) => {
-      // The LAST of what came back, never the first. History arrives oldest
-      // first, and a page can be PRECEDED by the thread roots it answers from
-      // outside itself (DOR-690) — every one of them older than the page. So
-      // `[0]` of a one-entry page is the root whenever the room's newest line
-      // is a thread reply, and marking the room read would move the cursor
-      // backwards onto a message from days ago, leaving the badge the reader
-      // just pressed exactly where it was.
-      const newest = (await transport.listRoomEntries(roomId, { limit: 1 })).at(-1);
+      // `entries`, which is the PAGE — and the thread roots this read can also
+      // answer with are not in it. That separation is the whole protection
+      // (DOR-1734): a root fetched from behind the page is older than the page
+      // by an arbitrary distance (DOR-690), and a cursor that landed on one
+      // would move BACKWARDS, leaving the badge the reader just pressed exactly
+      // where it was. There is nowhere in this expression a root can appear, so
+      // the failure is unreachable rather than avoided — which is the version
+      // that survives somebody changing the `limit` below.
+      const newest = (await transport.listRoomEntries(roomId, { limit: 1 })).entries.at(-1);
       if (!newest) return;
       await transport.setReadCursor('room', roomId, newest.seq);
     },
@@ -136,6 +137,6 @@ export function useMarkRoomReadNow(): UseMutationResult<void, Error, string> {
     // one identical toast per room. Sonner keys on the id, so the tenth failure
     // replaces the first line instead of burying the sidebar (the collapse rule
     // documented on the mutation cache in `lib/query-client.ts`).
-    meta: { errorLabel: "Couldn't mark that room as read", errorToastId: 'mark-room-read' },
+    meta: { errorLabel: 'Couldn’t mark that room as read', errorToastId: 'mark-room-read' },
   });
 }

@@ -21,6 +21,6 @@
 export const HOME_STARTER_CHIPS: readonly string[] = [
   'What can you help with?',
   'Make my first agent',
-  "What's in this project?",
+  'What’s in this project?',
   'Set up a daily run',
 ];

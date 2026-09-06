@@ -175,7 +175,7 @@ describe('SystemRequirementsStep', () => {
 
     const cta = await screen.findByTestId('onboarding-get-started');
     expect(cta).toHaveTextContent('Meet DorkBot');
-    expect(screen.getByRole('heading')).toHaveTextContent("You're ready");
+    expect(screen.getByRole('heading')).toHaveTextContent('You’re ready');
     expect(
       screen.getByText('Claude Code is connected. New chats will start with it.')
     ).toBeInTheDocument();
@@ -272,7 +272,7 @@ describe('SystemRequirementsStep', () => {
     await screen.findByRole('button', { name: 'Install OpenCode' });
     const section = within(screen.getByTestId('runtime-section-opencode'));
     // The friendly line is always visible; the raw command is not shown yet.
-    expect(section.getByText(/We'll install OpenCode for you\./)).toBeInTheDocument();
+    expect(section.getByText(/We’ll install OpenCode for you\./)).toBeInTheDocument();
     expect(section.queryByText('npm i -g opencode-ai')).not.toBeInTheDocument();
 
     // Transparency is one tap away — reveal the exact command.
@@ -346,8 +346,8 @@ describe('SystemRequirementsStep — the default runtime (spec execution-default
 
     expect(
       await screen.findByText(
-        "Codex is connected. New chats will start with Claude Code once it's connected — " +
-          "until then they'll use Codex."
+        'Codex is connected. New chats will start with Claude Code once it’s connected. ' +
+          'Until then they’ll use Codex.'
       )
     ).toBeInTheDocument();
     // Give the effect every chance to misfire before asserting it did not.
@@ -480,8 +480,8 @@ describe('SystemRequirementsStep — the default runtime (spec execution-default
     await userEvent.click(option);
     expect(
       await screen.findByText(
-        "Claude Code is connected. New chats will start with OpenCode once it's connected — " +
-          "until then they'll use Claude Code."
+        'Claude Code is connected. New chats will start with OpenCode once it’s connected. ' +
+          'Until then they’ll use Claude Code.'
       )
     ).toBeInTheDocument();
   });

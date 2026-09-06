@@ -52,7 +52,16 @@ export function useEnableExtension() {
   return useMutation<ExtensionActionResponse, Error, string>({
     mutationFn: async (id: string) => {
       const res = await fetch(extensionApiUrl(`/extensions/${id}/enable`), { method: 'POST' });
-      if (!res.ok) throw new Error(`Failed to enable extension '${id}': ${res.status}`);
+      if (!res.ok) {
+        // Read the server's sentence before falling back to a status code. The
+        // person bar on this route (DOR-1507) answers 403 with a message that
+        // says what DorkOS did not do and who can do it; a bare number would
+        // throw that away and leave "403" on screen.
+        const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+        throw new Error(
+          body.message ?? body.error ?? `Failed to enable extension '${id}': ${res.status}`
+        );
+      }
       return res.json() as Promise<ExtensionActionResponse>;
     },
     onSuccess: () => {
@@ -73,7 +82,16 @@ export function useDisableExtension() {
   return useMutation<ExtensionActionResponse, Error, string>({
     mutationFn: async (id: string) => {
       const res = await fetch(extensionApiUrl(`/extensions/${id}/disable`), { method: 'POST' });
-      if (!res.ok) throw new Error(`Failed to disable extension '${id}': ${res.status}`);
+      if (!res.ok) {
+        // Read the server's sentence before falling back to a status code. The
+        // person bar on this route (DOR-1507) answers 403 with a message that
+        // says what DorkOS did not do and who can do it; a bare number would
+        // throw that away and leave "403" on screen.
+        const body = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+        throw new Error(
+          body.message ?? body.error ?? `Failed to disable extension '${id}': ${res.status}`
+        );
+      }
       return res.json() as Promise<ExtensionActionResponse>;
     },
     onSuccess: () => {

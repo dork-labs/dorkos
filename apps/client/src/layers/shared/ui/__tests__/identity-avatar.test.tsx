@@ -150,7 +150,7 @@ describe('IdentityAvatar', () => {
       expect(disc.style.backgroundColor).toBe(probe.style.backgroundColor);
     });
 
-    it("picks the fallback letter's colour from the fill, not a fixed white", () => {
+    it('picks the fallback letter’s colour from the fill, not a fixed white', () => {
       // A light fill needs dark text — the exact case "don't assume white" is
       // guarding against.
       const { container } = render(<IdentityAvatar color="#fef3c7" fallback="A" variant="fill" />);
@@ -321,7 +321,7 @@ describe('IdentityAvatar', () => {
       }
     });
 
-    it("badges a bridged person with their platform's own brand mark", () => {
+    it('badges a bridged person with their platform’s own brand mark', () => {
       // "Someone on this machine wrote this" and "a stranger on the internet
       // wrote this" have to be legible at a glance, and the mark is the same
       // one the connection surfaces draw for that platform.
@@ -351,7 +351,7 @@ describe('IdentityAvatar', () => {
       expect(badgeOf(container)?.querySelector('.lucide-send')).not.toBeNull();
     });
 
-    it("draws the room's own voice as a plain circle — it is nobody's identity to badge", () => {
+    it('draws the room’s own voice as a plain circle — it is nobody’s identity to badge', () => {
       const { container } = render(<IdentityAvatar color="#7c3aed" fallback="G" kind="system" />);
 
       expect(discOf(container)).toHaveClass('rounded-full');

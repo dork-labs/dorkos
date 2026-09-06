@@ -96,7 +96,7 @@ export const isDesktopDarwin =
  * second strip stacked under the real one — strictly the worse of the two: our
  * tabs cannot be bookmarked one at a time, are not brought back by the browser's
  * own session restore, and cannot be dragged out into their own window. So the
- * tab strip, the tab shortcuts, and "Open in New Window" all ask this first. The
+ * tab strip, the tab shortcuts, and "Open in a new window" all ask this first. The
  * Obsidian embed has no bridge and answers `false`, which is also the right
  * answer there: one pane inside someone else's app has nowhere else to put
  * anything.

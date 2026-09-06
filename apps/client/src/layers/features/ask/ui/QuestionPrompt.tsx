@@ -152,7 +152,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
           setSubmitted(true);
           onDecided?.(answers);
         } else {
-          setError(err instanceof Error ? err.message : 'Failed to submit answers');
+          setError(err instanceof Error ? err.message : 'Couldn’t send your answers. Try again.');
         }
       } finally {
         setSubmitting(false);
@@ -291,7 +291,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                   className="overflow-hidden"
                 >
                   <textarea
-                    placeholder="Type your answer..."
+                    placeholder="Type your answer…"
                     rows={2}
                     value={otherText[qIdx] || ''}
                     disabled={submitting}
@@ -464,7 +464,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
                     className="h-7 px-2 text-xs transition-opacity duration-150"
                   >
                     <Check className="size-(--size-icon-xs)" />
-                    {submitting ? 'Submitting...' : 'Submit'}
+                    {submitting ? 'Submitting…' : 'Submit'}
                     {isActive && <Kbd className="ml-1">Enter</Kbd>}
                   </Button>
                 )}
@@ -511,7 +511,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
             className="mt-2 transition-opacity duration-150"
           >
             {submitting ? (
-              'Submitting...'
+              'Submitting…'
             ) : (
               <>
                 <Check className="size-(--size-icon-xs)" /> Submit

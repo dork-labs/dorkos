@@ -655,7 +655,7 @@ export interface Transport extends RoomTransport {
    * @param sessionId - Target session id (a client UUID for a brand-new session)
    * @param content - User message text
    * @param cwd - Optional working directory override
-   * @param options - Optional additional parameters (clientMessageId for server-echo ID, context for neutral client signals: uiState, queued, runtime as the first-turn runtime hint resolved hint > agent manifest > default and persisted first-write-wins per ADR-0255, account as the first-turn Claude Code billing hint — a `runtimes.claudeCode.accounts[].id`, resolved hint > agent manifest > server default and honored only on the session-creating send, seedContext for background the agent reads and the person never sees — see `SeedContextData`, disposition for what to do when the session is already working — absent means `queue`)
+   * @param options - Optional additional parameters (clientMessageId for server-echo ID, context for neutral client signals: uiState, queued, runtime as the first-turn runtime hint resolved hint > agent manifest > default and persisted first-write-wins per ADR-0255, agentPath as exact registered-agent provenance on that first turn, account as the first-turn Claude Code billing hint — a `runtimes.claudeCode.accounts[].id`, resolved hint > agent manifest > server default and honored only on the session-creating send, seedContext for background the agent reads and the person never sees — see `SeedContextData`, disposition for what to do when the session is already working — absent means `queue`)
    */
   postMessage(
     sessionId: string,
@@ -665,6 +665,7 @@ export interface Transport extends RoomTransport {
       clientMessageId?: string;
       context?: ClientContext;
       runtime?: string;
+      agentPath?: string;
       account?: string;
       seedContext?: string;
       disposition?: MessageDisposition;
@@ -1917,8 +1918,28 @@ export interface Transport extends RoomTransport {
    */
   asClaudePluginTransport(sessionId: string): ClaudePluginTransport | null;
 
-  /** Initiate a factory reset: delete all DorkOS data and restart the server. */
-  resetAllData(confirm: string): Promise<{ message: string }>;
+  /**
+   * Arm a factory reset, and get back the one-time token {@link resetAllData}
+   * needs (DOR-1707).
+   *
+   * Two round trips, because `confirm` is a fixed string anything can send: the
+   * token is a value a caller can only hold if it asked for one and read the
+   * answer, so a single blind request can no longer delete someone's data.
+   *
+   * Short-lived and single-use, so arm it at the moment of the press and spend
+   * it immediately — the server states the deadline in its refusal rather than
+   * handing it out here, because a caller that arms and spends in one go has no
+   * decision to make about it.
+   */
+  prepareReset(): Promise<{ token: string }>;
+
+  /**
+   * Initiate a factory reset: delete all DorkOS data and restart the server.
+   *
+   * @param confirm - The literal string `reset`.
+   * @param token - A token from {@link prepareReset}, obtained for THIS attempt.
+   */
+  resetAllData(confirm: string, token: string): Promise<{ message: string }>;
   /** Initiate a graceful server restart. */
   restartServer(): Promise<{ message: string }>;
 

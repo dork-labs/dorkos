@@ -194,7 +194,7 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
         : // Rejecting lands on the conversation's existing save-error beat, which
           // offers a retry — the right outcome for "we do not know where DorkBot
           // lives yet", and strictly better than writing somewhere we guessed.
-          Promise.reject(new Error('DorkBot’s location is still loading — try again in a moment.')),
+          Promise.reject(new Error('DorkBot’s location is still loading. Try again in a moment.')),
     // The same deep-merge write path as tours: PATCH { profile: { roles } }.
     saveProfile: (roles) => saveRoles(roles),
     completeStep,
@@ -344,14 +344,14 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
     ? DORKBOT_ONBOARDING_LINES.composerHandoffPlaceholder
     : DORKBOT_ONBOARDING_LINES.composerSetupPlaceholder;
 
-  let confirmLabel = "That's the one";
+  let confirmLabel = 'That’s the one';
   if (convo.saving) {
     confirmLabel = 'Saving…';
   } else if (convo.saveError) {
     confirmLabel = 'Try again';
   }
 
-  let profileConfirmLabel = "That's us";
+  let profileConfirmLabel = 'That’s us';
   if (convo.saving) {
     profileConfirmLabel = 'Saving…';
   } else if (convo.saveError) {

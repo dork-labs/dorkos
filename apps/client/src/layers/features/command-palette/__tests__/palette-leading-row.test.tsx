@@ -151,7 +151,7 @@ vi.mock('@/layers/shared/model', () => ({
     },
     {
       id: 'theme',
-      label: 'Toggle Theme',
+      label: 'Toggle theme',
       icon: 'Moon',
       action: 'toggleTheme',
       category: 'quick-action',
@@ -227,7 +227,7 @@ vi.mock('motion/react', () => ({
 
 // --- Helpers ---
 
-const searchInput = () => screen.getByPlaceholderText('Search rooms, agents, commands...');
+const searchInput = () => screen.getByPlaceholderText('Search rooms, agents, commands…');
 
 /** Every selectable row, in the order the list renders them. */
 const rows = () => screen.getAllByRole('option');

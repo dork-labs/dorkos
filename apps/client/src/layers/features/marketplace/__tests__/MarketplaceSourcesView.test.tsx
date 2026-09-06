@@ -24,6 +24,7 @@ vi.mock('@/layers/entities/marketplace', () => ({
 }));
 
 const addMutate = vi.fn();
+const addReset = vi.fn();
 const removeMutate = vi.fn();
 
 function setSourcesState(state: { data?: MarketplaceSource[]; isLoading?: boolean }) {
@@ -35,15 +36,15 @@ function setSourcesState(state: { data?: MarketplaceSource[]; isLoading?: boolea
   } as unknown as ReturnType<typeof useMarketplaceSources>);
 }
 
-function setAddMutationState(state: { isPending?: boolean } = {}) {
+function setAddMutationState(state: { isPending?: boolean; error?: Error } = {}) {
   vi.mocked(useAddMarketplaceSource).mockReturnValue({
     mutate: addMutate,
     mutateAsync: vi.fn(),
     isPending: state.isPending ?? false,
     isSuccess: false,
-    isError: false,
-    error: null,
-    reset: vi.fn(),
+    isError: state.error !== undefined,
+    error: state.error ?? null,
+    reset: addReset,
   } as unknown as ReturnType<typeof useAddMarketplaceSource>);
 }
 
@@ -119,9 +120,9 @@ describe('MarketplaceSourcesView', () => {
 
       expect(screen.getByRole('heading', { name: /marketplace sources/i })).toBeInTheDocument();
       // Empty state renders the Add button twice (header + CTA).
-      expect(screen.getAllByRole('button', { name: /add source/i }).length).toBeGreaterThanOrEqual(
-        1
-      );
+      expect(
+        screen.getAllByRole('button', { name: /add marketplace source/i }).length
+      ).toBeGreaterThanOrEqual(1);
     });
 
     it('renders the empty state when no sources are configured', () => {
@@ -129,7 +130,7 @@ describe('MarketplaceSourcesView', () => {
 
       render(<MarketplaceSourcesView />);
 
-      expect(screen.getByText(/no sources configured/i)).toBeInTheDocument();
+      expect(screen.getByText(/no marketplaces added yet/i)).toBeInTheDocument();
       expect(screen.getByText(/add a git registry/i)).toBeInTheDocument();
     });
 
@@ -179,10 +180,10 @@ describe('MarketplaceSourcesView', () => {
       // Dialog is not mounted by default.
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
-      await user.click(screen.getByRole('button', { name: /add source/i }));
+      await user.click(screen.getByRole('button', { name: /add marketplace source/i }));
 
       expect(await screen.findByRole('dialog')).toBeInTheDocument();
-      expect(screen.getByLabelText(/git url/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/repository link/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/^name$/i)).toBeInTheDocument();
     });
 
@@ -193,13 +194,16 @@ describe('MarketplaceSourcesView', () => {
       render(<MarketplaceSourcesView />);
 
       // Use the header button (first Add Source) to open the dialog.
-      await user.click(screen.getAllByRole('button', { name: /add source/i })[0]);
+      await user.click(screen.getAllByRole('button', { name: /add marketplace source/i })[0]);
 
       const submit = await screen.findByRole('button', { name: /^add source$/i });
       expect(submit).toBeDisabled();
 
       // Fill only the URL — still disabled.
-      await user.type(screen.getByLabelText(/git url/i), 'https://github.com/org/marketplace');
+      await user.type(
+        screen.getByLabelText(/repository link/i),
+        'https://github.com/org/marketplace'
+      );
       expect(submit).toBeDisabled();
 
       // Fill the name — now enabled.
@@ -213,9 +217,12 @@ describe('MarketplaceSourcesView', () => {
 
       render(<MarketplaceSourcesView />);
 
-      await user.click(screen.getAllByRole('button', { name: /add source/i })[0]);
+      await user.click(screen.getAllByRole('button', { name: /add marketplace source/i })[0]);
 
-      await user.type(screen.getByLabelText(/git url/i), 'https://github.com/org/marketplace');
+      await user.type(
+        screen.getByLabelText(/repository link/i),
+        'https://github.com/org/marketplace'
+      );
       await user.type(screen.getByLabelText(/^name$/i), 'my-registry');
 
       await user.click(screen.getByRole('button', { name: /^add source$/i }));
@@ -234,9 +241,12 @@ describe('MarketplaceSourcesView', () => {
 
       render(<MarketplaceSourcesView />);
 
-      await user.click(screen.getAllByRole('button', { name: /add source/i })[0]);
+      await user.click(screen.getAllByRole('button', { name: /add marketplace source/i })[0]);
 
-      await user.type(screen.getByLabelText(/git url/i), '  https://github.com/org/marketplace  ');
+      await user.type(
+        screen.getByLabelText(/repository link/i),
+        '  https://github.com/org/marketplace  '
+      );
       await user.type(screen.getByLabelText(/^name$/i), '  my-registry  ');
 
       await user.click(screen.getByRole('button', { name: /^add source$/i }));
@@ -246,6 +256,41 @@ describe('MarketplaceSourcesView', () => {
         source: 'https://github.com/org/marketplace',
         enabled: true,
       });
+    });
+
+    it('shows the server refusal in the dialog when the address is not one DorkOS can use', async () => {
+      // The server refuses an address it will not hand to `git` (DOR-1710).
+      // Without this the dialog stayed open with nothing said, which reads as
+      // a button that does not work.
+      const user = userEvent.setup();
+      setSourcesState({ data: [] });
+      setAddMutationState({
+        error: new Error(
+          "That address isn't one DorkOS can fetch a marketplace from. Use an https:// address " +
+            'for a git repository, or a file:// path to a folder on this machine.'
+        ),
+      });
+
+      render(<MarketplaceSourcesView />);
+
+      await user.click(screen.getAllByRole('button', { name: /add marketplace source/i })[0]);
+
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        /isn't one DorkOS can fetch a marketplace from/
+      );
+    });
+
+    it('clears the refusal when the dialog is closed', async () => {
+      const user = userEvent.setup();
+      setSourcesState({ data: [] });
+      setAddMutationState({ error: new Error('nope') });
+
+      render(<MarketplaceSourcesView />);
+
+      await user.click(screen.getAllByRole('button', { name: /add marketplace source/i })[0]);
+      await user.click(screen.getByRole('button', { name: /cancel/i }));
+
+      expect(addReset).toHaveBeenCalled();
     });
   });
 

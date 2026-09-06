@@ -124,7 +124,7 @@ function WidthColumn({
  * (the `maintaining-dev-playground` skill's borrow pattern) — a different
  * question from the Ask card family (may this agent do X at all, not answer
  * this one interaction), still worth seeing beside the rest of the family.
- * Its registry entry stays on Subsystems, where this page renders it.
+ * Its registry entry stays on Home, Inbox & Approvals, where this page renders it.
  */
 export function ApprovalCardShowcase() {
   return (
@@ -267,7 +267,7 @@ export function ApprovalsShowcases() {
         title="ApprovalsUnavailable"
         description="The state that must never look like silence. A failed read and 'nothing is waiting' are the same empty space on screen, and the difference is an agent sitting blocked while nobody knows to answer it."
       >
-        <ShowcaseLabel>Could not read the list</ShowcaseLabel>
+        <ShowcaseLabel>Couldn’t read the list</ShowcaseLabel>
         <ShowcaseDemo responsive>
           <ApprovalsUnavailable onRetry={() => {}} />
         </ShowcaseDemo>

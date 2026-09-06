@@ -6,7 +6,7 @@
  *
  * Every capability is a thin wrapper over the shipped connector services and
  * never bypasses the REST routes' invariants: the public account shape comes
- * from `public-account.ts`, the in-flight flow → provider bindings are the
+ * from `public-account.ts`, the bounded recent-flow bindings are the
  * SHARED {@link ConnectorFlowBindings} instance the REST router uses (a flow
  * started in chat can be polled over REST and vice versa), and a successful
  * poll records the account via `registry.recordConnect` exactly as the route
@@ -16,9 +16,9 @@
  * `readOnlyCarveOut: true`; `connector.attach_account` is the consent binding,
  * so it is a `destructive`-tier mutation — the tier gate asks a person before
  * an agent can grant itself a user's account. `start_connect` returns markdown
- * carrying the sign-in URL and the custody disclosure verbatim — the v1
- * in-chat connect experience (a custom card is a named deferred enhancement,
- * spec §Non-Goals).
+ * carrying the custody disclosure and, for browser flows, the sign-in URL —
+ * the v1 in-chat connect experience (a custom card is a named deferred
+ * enhancement, spec §Non-Goals).
  *
  * Session scoping: in-session invocations default to the invoking session
  * (`context.sessionId`, set by the in-session adapter); external `/mcp`
@@ -38,6 +38,7 @@ import { toPublicAccount } from './public-account.js';
 import type { ConnectorFlowBindings } from './flow-bindings.js';
 import type { ConnectorRegistry } from './registry.js';
 import type { SessionConnectorService } from './session-exposure.js';
+import { SessionConnectorOwnerUnavailableError } from './attachment-store.js';
 
 /** The connector service bundle the capabilities read. */
 export interface ConnectorCapabilityDeps {
@@ -45,7 +46,7 @@ export interface ConnectorCapabilityDeps {
   registry: ConnectorRegistry;
   /** The per-account → session tool-server binder (attach/detach). */
   sessionConnectors: SessionConnectorService;
-  /** The SHARED in-flight flow → provider map (same instance as the REST router). */
+  /** The shared bounded recent-flow store (same instance as the REST router). */
   flowBindings: ConnectorFlowBindings;
   /** Optional relay adapter catalog for relay-adapter-first routing. */
   relay?: RelayAdapterCatalog;
@@ -75,7 +76,15 @@ function requireConnectorDeps(deps: CapabilityDeps): ConnectorCapabilityDeps {
   if (!deps.connectorDeps) {
     throw new Error('Connector capability invoked without connectorDeps in the registry bag.');
   }
+  deps.connectorDeps.registry.assertAvailable();
   return deps.connectorDeps;
+}
+
+/** Validate connector dependency wiring without touching migration health at server boot. */
+function assertConnectorDeps(deps: CapabilityDeps): void {
+  if (!deps.connectorDeps) {
+    throw new Error('Connector capability invoked without connectorDeps in the registry bag.');
+  }
 }
 
 /**
@@ -120,7 +129,7 @@ const SessionAccountInputSchema = z.object({
  */
 export const connectorDomain: CapabilityDomain = {
   name: 'connector',
-  assertDeps: requireConnectorDeps,
+  assertDeps: assertConnectorDeps,
   capabilities: [
     // ── Read-only discovery ─────────────────────────────────────────────────
     defineCapability({
@@ -207,10 +216,10 @@ export const connectorDomain: CapabilityDomain = {
       id: 'connector.start_connect',
       title: 'Start connecting a service',
       description:
-        'Begin connecting a service account. Returns markdown with the sign-in link and the ' +
-        'custody disclosure — show BOTH to the user verbatim, then wait for them to say they ' +
-        'have signed in before checking the flow with the poll-connect tool, passing the ' +
-        'returned flowId. ' +
+        'Begin connecting a service account. Browser-based flows return a sign-in link and ' +
+        'custody disclosure. Show both to the user verbatim, then wait for them to finish. ' +
+        'A flow without a link verifies an existing server setup and can be checked at once. ' +
+        'Check either flow with the poll-connect tool, passing the returned flowId. ' +
         'Pass a label (e.g. "work") to tell two accounts of one service apart.',
       tier: 'act',
       input: z.object({
@@ -260,38 +269,47 @@ export const connectorDomain: CapabilityDomain = {
         }
 
         let start;
+        let flowId: string;
         try {
           start = await provider.startConnect(
             input.service,
             input.label ? { label: input.label } : undefined
           );
+          flowId = flowBindings.record(
+            start.flowId,
+            provider,
+            registry.disconnectedConnectionFor(provider, input.service, input.label)
+          );
         } catch (err) {
-          // A rejected startConnect (unknown toolkit, duplicate single-account
-          // connect) is a domain error the agent should relay, never a crash.
+          // A rejected start or a saturated flow store is a domain error the
+          // agent should relay, never a crash.
           throw new CapabilityToolError({
             error: err instanceof Error ? err.message : 'Failed to start the connect flow.',
           });
         }
-        flowBindings.record(start.flowId, provider.type);
-
         const disclosure = custodyDisclosure(provider.getCapabilities().custody, {
           service: input.service,
         });
         // The v1 in-chat connect experience: plain markdown the chat renders.
-        const message =
-          `[Sign in to ${input.service}](${start.authorizeUrl})\n\n` +
-          `${disclosure}\n\n` +
-          `Tell me when you've signed in, then I'll check.`;
-        return { flowId: start.flowId, authorizeUrl: start.authorizeUrl, disclosure, message };
+        const message = start.authorizeUrl
+          ? `[Sign in to ${input.service}](${start.authorizeUrl})\n\n${disclosure}\n\n` +
+            `Tell me when you've signed in, then I'll check.`
+          : `${disclosure}\n\nI'll check the configured connection now.`;
+        return {
+          flowId,
+          ...(start.authorizeUrl && { authorizeUrl: start.authorizeUrl }),
+          disclosure,
+          message,
+        };
       },
     }),
     defineCapability({
       id: 'connector.poll_connect',
       title: 'Check a connect flow',
       description:
-        'Check whether a connect flow the user was sent to sign in for has completed. ' +
-        'Returns pending, connected (with the new account), or failed. Call after the user ' +
-        'says they have signed in.',
+        'Check whether a connect flow has completed. Returns pending, connected (with the new ' +
+        'account), or failed. For a browser flow, call after the user says they have signed in. ' +
+        'For a flow without a link, call immediately.',
       tier: 'act',
       input: z.object({
         flowId: z.string().min(1).describe('The flow id the start-connecting tool returned.'),
@@ -306,25 +324,25 @@ export const connectorDomain: CapabilityDomain = {
       },
       invoke: async (deps, input) => {
         const { registry, flowBindings } = requireConnectorDeps(deps);
-        const providerType = flowBindings.providerFor(input.flowId);
-        const provider = providerType ? registry.resolveProvider(providerType) : undefined;
-        if (!provider) {
+        const response = await flowBindings.poll(
+          input.flowId,
+          (binding) => binding.provider.pollConnect(binding.providerFlowId),
+          ({ provider, result: providerResult }) => {
+            const account =
+              providerResult.status === 'connected' && providerResult.account
+                ? registry.recordConnect(provider, providerResult.account)
+                : undefined;
+            return {
+              status: providerResult.status,
+              ...(account && { account: toPublicAccount(account) }),
+              ...(providerResult.error && { error: providerResult.error }),
+            };
+          }
+        );
+        if (!response) {
           throw new CapabilityToolError({ error: `Unknown connect flow '${input.flowId}'.` });
         }
-        const poll = await provider.pollConnect(input.flowId);
-        // Exactly the REST route's bookkeeping: bind the account for routing on
-        // success, release the flow binding on any terminal state.
-        if (poll.status === 'connected' && poll.account) {
-          registry.recordConnect(poll.account);
-        }
-        if (poll.status === 'connected' || poll.status === 'failed') {
-          flowBindings.release(input.flowId);
-        }
-        return {
-          status: poll.status,
-          ...(poll.account && { account: toPublicAccount(poll.account) }),
-          ...(poll.error && { error: poll.error }),
-        };
+        return response;
       },
     }),
 
@@ -352,10 +370,17 @@ export const connectorDomain: CapabilityDomain = {
       invoke: async (deps, input, context) => {
         const { sessionConnectors } = requireConnectorDeps(deps);
         const sessionId = resolveSessionId(input.sessionId, context);
-        const result = await sessionConnectors.attach(
-          sessionId,
-          input.accountId as ConnectedAccountId
-        );
+        let result;
+        try {
+          result = await sessionConnectors.attach(sessionId, input.accountId as ConnectedAccountId);
+        } catch (error) {
+          if (error instanceof SessionConnectorOwnerUnavailableError) {
+            throw new CapabilityToolError({
+              error: 'Choose a registered agent before attaching a connection to this session.',
+            });
+          }
+          throw error;
+        }
         if (!result) {
           throw new CapabilityToolError({
             error: `Unknown connected account '${input.accountId}'.`,

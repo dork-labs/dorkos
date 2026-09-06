@@ -154,7 +154,7 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.getByText('Failed to load run details.')).toBeInTheDocument();
+    expect(screen.getByText(/Couldn’t load this run/)).toBeInTheDocument();
   });
 
   it('renders resolved message when no run data is found', () => {
@@ -304,7 +304,7 @@ describe('FailedRunDetailSheet', () => {
     renderSheet();
 
     expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Cancelling...' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancelling…' })).not.toBeInTheDocument();
   });
 
   it('Cancel button calls cancelMutation.mutate with the run id', () => {
@@ -323,7 +323,7 @@ describe('FailedRunDetailSheet', () => {
     expect(mutate).toHaveBeenCalledWith('run-abc123');
   });
 
-  it('Cancel button is disabled and shows Cancelling... when isPending', () => {
+  it('Cancel button is disabled and shows Cancelling… when isPending', () => {
     mockUseCancelRun.mockReturnValue({ mutate: vi.fn(), isPending: true });
     mockUseRun.mockReturnValue({
       data: makeRun({ status: 'running' }),
@@ -333,7 +333,7 @@ describe('FailedRunDetailSheet', () => {
 
     renderSheet();
 
-    const cancelButton = screen.getByRole('button', { name: 'Cancelling...' });
+    const cancelButton = screen.getByRole('button', { name: 'Cancelling…' });
     expect(cancelButton).toBeDisabled();
   });
 
@@ -351,7 +351,7 @@ describe('FailedRunDetailSheet', () => {
   it('renders the sheet title and itemId truncated to 8 chars', () => {
     renderSheet({ itemId: 'run-abc123-full-id' });
 
-    expect(screen.getByText('Failed Run')).toBeInTheDocument();
+    expect(screen.getByText('Run that didn’t finish')).toBeInTheDocument();
     expect(screen.getByText('run-abc1')).toBeInTheDocument();
   });
 

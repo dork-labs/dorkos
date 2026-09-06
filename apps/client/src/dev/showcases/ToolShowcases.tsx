@@ -1,7 +1,7 @@
+import { ErrorMessageBlock } from '@/layers/features/chat';
 import { ToolCallCard } from '@/layers/features/chat/ui/tools/ToolCallCard';
 import { BackgroundTaskShowcases } from './BackgroundTaskShowcases';
 import { SubagentBlock } from '@/layers/features/chat/ui/message/SubagentBlock';
-import { ErrorMessageBlock } from '@/layers/features/chat/ui/message/ErrorMessageBlock';
 import { ThinkingBlock } from '@/layers/features/chat/ui/message/ThinkingBlock';
 import { CollapsibleRun } from '@/layers/features/chat/ui/message/CollapsibleRun';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -166,7 +166,7 @@ export function ToolShowcases() {
         <ShowcaseLabel>Streaming (expanded, pulsing)</ShowcaseLabel>
         <ShowcaseDemo>
           <ThinkingBlock
-            text="Let me analyze this code carefully. The function takes a session ID and looks up the corresponding JSONL file. I need to check if there are any edge cases around file locking..."
+            text="Let me analyze this code carefully. The function takes a session ID and looks up the corresponding JSONL file. I need to check if there are any edge cases around file locking…"
             isStreaming
           />
         </ShowcaseDemo>
@@ -201,7 +201,7 @@ export function ToolShowcases() {
 
       <PlaygroundSection
         title="CollapsibleRun"
-        description="Collapses dense runs of tool/thinking blocks. Shows first 2, then 'and N more steps...' for runs of 4+. Completed cards are dimmed."
+        description="Collapses dense runs of tool/thinking blocks. Shows first 2, then 'and N more steps…' for runs of 4+. Completed cards are dimmed."
       >
         <ShowcaseLabel>Short run (3 items — no collapse, dimmed when complete)</ShowcaseLabel>
         <ShowcaseDemo>
@@ -220,7 +220,7 @@ export function ToolShowcases() {
             {[
               <ThinkingBlock
                 key="lr-1"
-                text="Analyzing the codebase..."
+                text="Analyzing the codebase…"
                 isStreaming={false}
                 elapsedMs={2000}
               />,
@@ -262,12 +262,7 @@ export function ToolShowcases() {
           <CollapsibleRun>
             {[
               <ToolCallCard key="mx-1" toolCall={TOOL_CALLS.complete} />,
-              <ThinkingBlock
-                key="mx-2"
-                text="Still thinking..."
-                isStreaming
-                elapsedMs={undefined}
-              />,
+              <ThinkingBlock key="mx-2" text="Still thinking…" isStreaming elapsedMs={undefined} />,
               <ToolCallCard key="mx-3" toolCall={TOOL_CALLS.running} />,
               <ToolCallCard key="mx-4" toolCall={{ ...TOOL_CALLS.complete, toolCallId: 'mx-4' }} />,
             ]}

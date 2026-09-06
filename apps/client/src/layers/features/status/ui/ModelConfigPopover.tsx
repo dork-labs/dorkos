@@ -17,6 +17,7 @@ import { useModels } from '@/layers/entities/session';
 import type { EffortLevel } from '@dorkos/shared/types';
 import { ModelCardsSkeleton, ModelLoadError, ModelSelectionList } from './ModelSelectionList';
 import { statusModelLabel } from '../lib/status-labels';
+import { STATUS_ITEM_TRIGGER_CLASS } from '../lib/status-item-classes';
 
 const EFFORT_LABELS: Record<EffortLevel, { label: string; description: string }> = {
   none: { label: 'None', description: 'No reasoning' },
@@ -222,7 +223,10 @@ export function ModelConfigPopover({
   const trigger = (
     <button
       disabled={disabled}
-      className="hover:text-foreground inline-flex min-w-0 items-center gap-1 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+      className={cn(
+        STATUS_ITEM_TRIGGER_CLASS,
+        'items-center gap-1 disabled:cursor-not-allowed disabled:opacity-40'
+      )}
       data-testid="model-config-trigger"
     >
       <Bot className="size-(--size-icon-xs) shrink-0" />

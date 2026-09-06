@@ -44,7 +44,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { logger } from '../../lib/logger.js';
 import {
@@ -54,6 +55,7 @@ import {
 } from '../../services/memory/registry.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 const CUSTOM = 'acme-memory';
 
 let warn: ReturnType<typeof vi.spyOn>;
@@ -103,7 +105,7 @@ afterEach(async () => {
 
 describe('GET /api/system/memory', () => {
   it('reports builtin as configured and active when nothing else is set up', async () => {
-    const res = await request(app).get('/api/system/memory');
+    const res = await request(testServer).get('/api/system/memory');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -118,7 +120,7 @@ describe('GET /api/system/memory', () => {
     registerMemoryProvider(CUSTOM, () => new FakeMemoryProvider({ id: CUSTOM }));
     configure(CUSTOM);
 
-    const res = await request(app).get('/api/system/memory');
+    const res = await request(testServer).get('/api/system/memory');
 
     expect(res.body).toEqual({
       configuredId: CUSTOM,
@@ -135,7 +137,7 @@ describe('GET /api/system/memory', () => {
     // Trigger the fault the same way an agent turn would: a read.
     await getMemoryProvider().getSnapshot(ref);
 
-    const res = await request(app).get('/api/system/memory');
+    const res = await request(testServer).get('/api/system/memory');
 
     expect(res.body).toEqual({
       configuredId: CUSTOM,

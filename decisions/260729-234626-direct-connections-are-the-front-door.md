@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Accepted
+Accepted. Proposed amendment ADR 260905-205123 would retire “Direct connection is the default lane,” “No DorkOS-held platform key,” and the consequence that the catalog must invert around direct custody upon implementation. Until then existing behavior applies; afterward, Direct OAuth/BYO and the Google, Slack, counsel-review, and direct-custody decisions would still govern those routes.
 
 ## Context
 

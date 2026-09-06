@@ -53,7 +53,7 @@ function CardAroundField({
         onKeyDown={() => {}}
         onFocus={() => {}}
         onBlur={() => {}}
-        placeholder="Send a message..."
+        placeholder="Send a message…"
         onSurfaceChange={() => {}}
       />
     </div>

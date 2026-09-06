@@ -6,14 +6,14 @@ import type {
 } from '@dorkos/shared/permission-semantics';
 
 import { Banner, Button } from '@/layers/shared/ui';
-import { useSafeNavigate } from '@/layers/shared/model';
+import { useOpenConnections, useSafeNavigate } from '@/layers/shared/model';
 
 /** How many drivers are named before the rest become a count. */
 const NAMED_LIMIT = 2;
 
 /** The word a person uses for each kind of driver, matching the surface it lives on. */
 const KIND_NOUN: Record<UnattendedDriverKind, string> = {
-  binding: 'integration',
+  binding: 'connection',
   task: 'scheduled task',
 };
 
@@ -37,7 +37,7 @@ export interface UnattendedAutonomyBannerProps {
 
 /**
  * The standing note for full power nobody is watching — an agent running behind
- * a relay integration or a scheduled task, with no one in front of it.
+ * a messaging connection or a scheduled task, with no one in front of it.
  *
  * ## Why this one survived when the session banner did not
  *
@@ -59,7 +59,7 @@ export interface UnattendedAutonomyBannerProps {
  *
  * ## Why it names things instead of counting them
  *
- * "2 agents are running at full power" is a number; "the Deploys integration and
+ * "2 agents are running at full power" is a number; "the Deploys connection and
  * the Nightly cleanup task" is something a person can act on. Naming is also
  * what keeps the row honest as it truncates: past two, the remainder becomes a
  * count rather than a wall of text, and the server's stable ordering means the
@@ -80,6 +80,10 @@ export function UnattendedAutonomyBanner({ drivers }: UnattendedAutonomyBannerPr
   // either, so this component never renders there. The actions simply drop out
   // rather than offering a control that would throw on click.
   const navigate = useSafeNavigate();
+  // The Connections half used to navigate to `?relay=open`, a search param
+  // nothing has read since Messaging became a page — so the button was inert
+  // (DOR-1756). `useOpenConnections` is the navigation that replaced it.
+  const openConnections = useOpenConnections();
   if (drivers.length === 0) return null;
 
   const named = drivers.slice(0, NAMED_LIMIT);
@@ -104,17 +108,8 @@ export function UnattendedAutonomyBanner({ drivers }: UnattendedAutonomyBannerPr
         navigate ? (
           <>
             {kinds.has('binding') && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  navigate({
-                    to: '.',
-                    search: (prev: Record<string, unknown>) => ({ ...prev, relay: 'open' }),
-                  })
-                }
-              >
-                Integrations
+              <Button variant="outline" size="sm" onClick={() => openConnections('messaging')}>
+                Connections
               </Button>
             )}
             {kinds.has('task') && (

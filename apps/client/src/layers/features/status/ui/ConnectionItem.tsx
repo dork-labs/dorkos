@@ -141,7 +141,7 @@ function HoverDescription({ connectionState }: { connectionState: ConnectionStat
   if (connectionState === 'connecting') {
     return (
       <p className={base}>
-        Opening live updates for this session. New messages and updates appear once it&apos;s open.
+        Opening live updates for this session. New messages and updates appear once it’s open.
       </p>
     );
   }
@@ -151,7 +151,7 @@ function HoverDescription({ connectionState }: { connectionState: ConnectionStat
       <div className="space-y-1.5">
         <p className={base}>
           Live updates dropped and are reconnecting automatically. Incoming messages and updates are
-          paused — nothing is lost; anything missed replays when it reconnects.
+          paused. Nothing is lost; anything missed replays when it reconnects.
         </p>
         <p className={cn(base, 'text-muted-foreground/70')}>No action needed.</p>
       </div>
@@ -162,8 +162,8 @@ function HoverDescription({ connectionState }: { connectionState: ConnectionStat
   return (
     <div className="space-y-1.5">
       <p className={base}>
-        Could not re-establish live updates after several attempts. New messages and updates will
-        not appear until it&apos;s restored.
+        Couldn’t re-establish live updates after several attempts. New messages and updates will not
+        appear until it’s restored.
       </p>
       <p className={cn(base, 'text-muted-foreground/70')}>
         Try refreshing the page. If the issue persists, check that the DorkOS server is running.

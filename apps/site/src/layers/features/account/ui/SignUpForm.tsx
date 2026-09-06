@@ -87,7 +87,7 @@ export function SignUpForm() {
         }
       >
         <p className="text-muted-foreground text-sm">
-          Didn&apos;t get it? Check your spam folder, or try signing in to resend the link.
+          Didn’t get it? Check your spam folder, or try signing in to resend the link.
         </p>
       </AuthShell>
     );

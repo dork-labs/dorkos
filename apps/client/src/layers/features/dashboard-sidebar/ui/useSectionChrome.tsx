@@ -321,7 +321,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
       }),
       adornment: isSmart ? (
         <ListFilter
-          aria-label="Smart section — membership is rule-based"
+          aria-label="Smart section: membership is rule-based"
           className="size-3 shrink-0"
         />
       ) : undefined,
@@ -362,7 +362,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
           <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Delete section &ldquo;{group.name}&rdquo;?</AlertDialogTitle>
+                <AlertDialogTitle>Delete section “{group.name}”?</AlertDialogTitle>
                 <AlertDialogDescription>
                   Its {section.rows.length}{' '}
                   {section.rows.length === 1 ? 'member moves' : 'members move'} back where they came

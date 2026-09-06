@@ -81,7 +81,7 @@ function StraddleSection() {
       description="The capsule straddles the message's top-right edge — about half of it above the block, in the air between messages — so while that edge is on screen it covers no word of what it acts on. Its rail is a band exactly one capsule tall, hung above the message's first line, which is what makes that true by construction rather than by a number somebody picked. (Scrolled past its own top, a message hands the capsule to the sticky clamp, which is the one place it sits over words — see the sticky rail below.)"
     >
       <p className="text-muted-foreground mb-2 text-xs">
-        Hover the row and read the bottom edge of the pill: it should rest ON the line the author's
+        Hover the row and read the bottom edge of the pill: it should rest ON the line the author’s
         name sits on, never over it. Move away and back to watch it arrive — a fade with a small
         rise that overshoots a pixel and settles. Leaving is a plain, faster fade with nothing
         moving.
@@ -140,11 +140,11 @@ function StickyRailSection() {
       description="A toolbar anchored to the top of the message goes off screen the moment the message is longer than the window — the hole Slack's top-anchored toolbar has. The rail is sticky instead, so the capsule straddles the message's top edge while that is on screen and clamps to the scroller's edge once the message extends above it. Past the clamp there is no edge left to straddle, so it stops straddling and rides the edge, whole and in the way of as little as possible."
     >
       <p className="text-muted-foreground mb-2 text-xs">
-        Scroll this box slowly past the message&apos;s own top, then hover. The pill should travel
-        up with the message and simply stop at the top edge — no jump at the handover — and stay
-        pinned there, still whole, still holding its buttons. Stop the scroll just as the first line
-        clears the edge and the pill sits over it: the clamp is where the no-occlusion promise runs
-        out, and it is the price of the actions staying reachable at all.
+        Scroll this box slowly past the message’s own top, then hover. The pill should travel up
+        with the message and simply stop at the top edge — no jump at the handover — and stay pinned
+        there, still whole, still holding its buttons. Stop the scroll just as the first line clears
+        the edge and the pill sits over it: the clamp is where the no-occlusion promise runs out,
+        and it is the price of the actions staying reachable at all.
       </p>
       <ShowcaseDemo>
         <div className="bg-background h-[360px] overflow-y-auto rounded-md border">
@@ -207,8 +207,8 @@ function ReactionsSection() {
         <ShowcaseLabel>One — and it is yours</ShowcaseLabel>
         <p className="text-muted-foreground mb-2 text-xs">
           The accent border and warmer fill mark the pill as yours; press it again and it goes.
-          Hover it to read who is on it. The 🙂+ at the row&apos;s end opens the same picker the
-          capsule&apos;s does.
+          Hover it to read who is on it. The 🙂+ at the row’s end opens the same picker the
+          capsule’s does.
         </p>
         <ShowcaseDemo responsive>
           <BenchRow entry={ONE_REACTION} />
@@ -240,9 +240,9 @@ function ReactionsSection() {
       <div>
         <ShowcaseLabel>A room that has stopped listening</ShowcaseLabel>
         <p className="text-muted-foreground mb-2 text-xs">
-          Reactions go with the composer (design record §4). The pill, the ghost + and the
-          capsule&apos;s quick row all refuse the press, because a write whose answer would never
-          come back is worse than a control that says it cannot be used.
+          Reactions go with the composer (design record §4). The pill, the ghost + and the capsule’s
+          quick row all refuse the press, because a write whose answer would never come back is
+          worse than a control that says it cannot be used.
         </p>
         <ShowcaseDemo responsive>
           <BenchRow entry={STALLED_REACTIONS} stalled />
@@ -403,7 +403,7 @@ function ThemeSection() {
       description="The toolbar is drawn ON TOP of a paragraph, so its surface has to be opaque and its shadow has to read against the page behind it. The first row follows the playground's own theme (the toggle at the foot of the sidebar); the second is pinned dark, so a light page can show both at once."
     >
       <div>
-        <ShowcaseLabel>The playground&apos;s theme</ShowcaseLabel>
+        <ShowcaseLabel>The playground’s theme</ShowcaseLabel>
         <ShowcaseDemo>
           <BenchRow entry={THEME_ENTRY} />
         </ShowcaseDemo>

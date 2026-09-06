@@ -109,6 +109,10 @@
       "types": "./src/connector-provider.ts",
       "default": "./dist/connector-provider.js"
     },
+    "./connector-schemas": {
+      "types": "./src/connector-schemas.ts",
+      "default": "./dist/connector-schemas.js"
+    },
     "./community-adapter": {
       "types": "./src/community-adapter.ts",
       "default": "./dist/community-adapter.js"
@@ -140,6 +144,10 @@
     "./run-outcome": {
       "types": "./src/run-outcome.ts",
       "default": "./dist/run-outcome.js"
+    },
+    "./run-time-limit": {
+      "types": "./src/run-time-limit.ts",
+      "default": "./dist/run-time-limit.js"
     },
     "./workspace": {
       "types": "./src/workspace.ts",

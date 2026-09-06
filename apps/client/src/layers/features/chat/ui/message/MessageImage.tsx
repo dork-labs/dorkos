@@ -34,7 +34,7 @@ export function MessageImage({ part }: { part: ImagePart }) {
         )}
       >
         <ImageOff aria-hidden="true" className="size-4 shrink-0" />
-        <span>{part.alt ? `${part.alt} — not available` : 'This image is not available.'}</span>
+        <span>{part.alt ? `${part.alt}, not available` : 'This image is not available.'}</span>
       </div>
     );
   }

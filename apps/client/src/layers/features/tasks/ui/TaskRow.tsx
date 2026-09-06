@@ -373,8 +373,8 @@ export function TaskRow({
             <DialogHeader>
               <DialogTitle>Delete scheduled task</DialogTitle>
               <DialogDescription>
-                Delete &ldquo;{task.name}&rdquo;? This will also remove all run history. This action
-                cannot be undone.
+                Delete “{task.name}”? This will also remove all run history. This action cannot be
+                undone.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>

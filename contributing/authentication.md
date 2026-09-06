@@ -26,18 +26,18 @@ DorkOS has one identity core — [Better Auth](https://better-auth.com) — embe
 
 ## When to Use What
 
-| You need to…                                         | Use                                                          |
-| ---------------------------------------------------- | ------------------------------------------------------------ |
-| Gate a new `/api/*` route behind login               | Nothing — the app-wide `sessionGate` already covers `/api/*` |
-| Read the authenticated user in a handler             | `res.locals.user` (`{ userId }`), set by the gate on success |
-| Verify a credential outside the gate                 | `verifyRequestAuth(req)` (cookie → Bearer API key, one path) |
-| Decide whether an instance may be exposed            | `canExpose()` / `isExposureAllowed(state)`                   |
-| Check whether an owner account exists                | `hasAnyUser()`                                               |
-| Read who the owner is (id + name)                    | `readOwnerAccount()`                                         |
-| Ask whether an AUTHOR is the owner                   | The injected `isOwnerAuthor(authorId)` — never `kind`        |
-| Accept a machine credential on `/mcp`                | `mcpApiKeyAuth` (env override → user key → legacy → open)    |
-| Create the owner from a machine (no server, no SMTP) | `dorkos auth enable`                                         |
-| Reset a lost owner password                          | `dorkos auth reset-password`                                 |
+| You need to…                                         | Use                                                                           |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Gate a new `/api/*` route behind login               | Nothing — the app-wide `sessionGate` already covers `/api/*`                  |
+| Read the authenticated user in a handler             | `res.locals.user` (`{ userId }`), set by the gate on success                  |
+| Verify a credential outside the gate                 | `verifyRequestAuth(req)` (cookie → Bearer API key, one path)                  |
+| Decide whether an instance may be exposed            | `canExpose()` / `isExposureAllowed(state)`                                    |
+| Check whether an owner account exists                | `hasAnyUser()`                                                                |
+| Read who the owner is (id + name)                    | `readOwnerAccount()`                                                          |
+| Ask whether an AUTHOR is the owner                   | The injected `isOwnerAuthor(authorId)` — never `kind`                         |
+| Accept a machine credential on `/mcp`                | `createMcpAuth` (env override → user key → legacy → local token; fail-closed) |
+| Create the owner from a machine (no server, no SMTP) | `dorkos auth enable`                                                          |
+| Reset a lost owner password                          | `dorkos auth reset-password`                                                  |
 
 ## Core Patterns
 
@@ -140,14 +140,20 @@ Do not confuse it with a locality check. `Host` says which name the caller asked
 
 ### MCP: 4-tier resolution + legacy seeding
 
-`mcpApiKeyAuth` keeps the JSON-RPC 401 shape MCP clients expect and resolves credentials in priority order:
+`createMcpAuth({ surface })` (`middleware/mcp-auth.ts`) guards both `/mcp` and `/a2a`. It keeps the JSON-RPC 401 shape those clients expect and resolves credentials in priority order, allowing on the first match:
 
-1. `env.MCP_API_KEY` — static override for headless deployments (exact match, un-revocable).
+1. `env.MCP_API_KEY` — static override for headless deployments (exact match, constant-time, un-revocable from the UI).
 2. A per-user Better Auth API key (or session cookie) via `verifyRequestAuth`.
 3. Legacy compat: a not-yet-seeded `config.mcp.apiKey`, accepted until seeding retires it.
-4. Nothing configured and login disabled → pass through (localhost-only, the historical zero-config behavior).
+4. The per-instance local MCP token (`getMcpLocalToken()`), **only while login is off** — the replacement for the deleted zero-config pass-through (`specs/mcp-local-auth-posture`). It yields to per-user keys once login is on, per ADR-0320.
 
-The old global `dork_mcp_*` key is folded into a per-user key by `seedLegacyMcpApiKey(db)`, run on the owner-creation seam and at startup. It inserts the exact key value as an owner-owned Better Auth key (via the plugin's `defaultKeyHasher`) and clears `config.mcp.apiKey` in the same operation — idempotent, so existing MCP clients keep working without a restart. The removed `POST /api/config/mcp/generate-key` and `DELETE /api/config/mcp/api-key` endpoints are replaced by the Better Auth `/api/auth/*` API-key endpoints (client UI in `features/auth`). `GET /api/config` now reports the MCP `authSource` as `'env' | 'user-keys' | 'none'`.
+**When nothing matches it fails closed** — there is no unauthenticated path left:
+
+- **Login off, `/mcp`:** only the read-only carve-out passes tokenless, and it is a closed allowlist — exactly `initialize`, `ping`, `tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`, any `notifications/*` method, and `tools/call`s naming a tool in `READ_ONLY_MCP_TOOL_NAMES` (`services/core/external-mcp/tool-security.ts`). Mutating tools, unknown tools, `resources/read`, unknown methods, a batch with any guarded element, and an unparseable body are all `401`.
+- **Login off, `/a2a`:** `GET` (agent-card discovery) passes; `POST` (JSON-RPC execution) is `401` without a credential.
+- **Login on:** no tokenless path on either surface. On `/mcp` the app-wide `sessionGate` answers before this middleware ever runs, so a session cookie or per-user API key is the only credential that gets through — **the local token and the `MCP_API_KEY` override alone are both refused there** (pinned by `middleware/__tests__/mcp-auth.integration.test.ts`). `/a2a` is not a gated path, so the override still works on it.
+
+The old global `dork_mcp_*` key is folded into a per-user key by `seedLegacyMcpApiKey(db)`, run on the owner-creation seam and at startup. It inserts the exact key value as an owner-owned Better Auth key (via the plugin's `defaultKeyHasher`) and clears `config.mcp.apiKey` in the same operation — idempotent, so existing MCP clients keep working without a restart. The removed `POST /api/config/mcp/generate-key` and `DELETE /api/config/mcp/api-key` endpoints are replaced by the Better Auth `/api/auth/*` API-key endpoints (client UI in `features/auth`). `GET /api/config` reports the MCP `authSource` as `'env' | 'user-keys' | 'local-token' | 'none'` — `'local-token'` being the normal login-off answer, and `'none'` only the degenerate case where no token could be generated. `authConfigured` is `authSource !== 'none'`, so a default install reports the surface as gated, because it is.
 
 ### Cookies, CSRF, and the tunnel hop
 
@@ -229,7 +235,7 @@ app.all('/api/auth/*splat', toNodeHandler(auth)); // breaks body parsing
 ### `409 { code: 'AUTH_REQUIRED_FOR_EXPOSURE' }` when starting a tunnel
 
 **Cause:** The exposure guard blocked exposure — either `auth.enabled` is `false` or no owner account exists.
-**Fix:** Enable login and create an owner (Settings → Security, or `dorkos auth enable`), then retry.
+**Fix:** Enable login and create an owner (Settings → Access, or `dorkos auth enable`), then retry.
 
 ### Server refuses to start with a `DORKOS_HOST` bind message
 

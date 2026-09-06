@@ -143,9 +143,7 @@ function HighlightedTextVariants() {
       <ShowcaseDemo>
         <div className="space-y-2 text-sm">
           <HighlightedText text="Frontend App" indices={[[0, 4]]} />
-          <div className="text-muted-foreground text-xs">
-            indices: [[0, 4]] — &ldquo;Front&rdquo; bolded
-          </div>
+          <div className="text-muted-foreground text-xs">indices: [[0, 4]] — “Front” bolded</div>
         </div>
       </ShowcaseDemo>
 
@@ -309,7 +307,7 @@ function EdgeCases() {
       <ShowcaseLabel>Empty search results</ShowcaseLabel>
       <ShowcaseDemo>
         <Command className="rounded-lg border">
-          <CommandInput placeholder="Search..." value="xyznonexistent" readOnly />
+          <CommandInput placeholder="Search…" value="xyznonexistent" readOnly />
           <CommandList>
             <CommandEmpty>No results found.</CommandEmpty>
           </CommandList>
@@ -424,8 +422,8 @@ const RECENT_ROWS: PaletteRecentEntry[] = [
 ];
 
 const NEW_ACTIONS = [
-  { id: 'new-session', label: 'New Session', icon: 'Plus', action: 'newSession' },
-  { id: 'create-agent', label: 'Create Agent', icon: 'Plus', action: 'createAgent' },
+  { id: 'new-session', label: 'New session', icon: 'Plus', action: 'newSession' },
+  { id: 'create-agent', label: 'Create agent', icon: 'Plus', action: 'createAgent' },
 ];
 
 /**
@@ -565,7 +563,7 @@ export function CommandPaletteShowcases() {
 
       <PlaygroundSection
         title="AgentSubMenu"
-        description="Drill-down page shown when selecting an agent. Actions (Open Here, New Tab, New Window, New Session) and recent sessions."
+        description="Drill-down page shown when selecting an agent. Actions (Open here, New Tab, New Window, New session) and recent sessions."
       >
         <SubMenuStates />
       </PlaygroundSection>

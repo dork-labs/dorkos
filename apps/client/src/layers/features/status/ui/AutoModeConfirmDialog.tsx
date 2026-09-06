@@ -49,8 +49,8 @@ export function AutoModeConfirmDialog({
             </Badge>
           </AlertDialogTitle>
           <AlertDialogDescription>
-            The agent runs on its own and only checks with you before risky actions &mdash; like
-            deleting files or running unfamiliar commands. You can switch back anytime.
+            The agent runs on its own and only checks with you before risky actions, like deleting
+            files or running unfamiliar commands. You can switch back anytime.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

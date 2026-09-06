@@ -29,11 +29,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 /** Build a fake runtime whose checkDependencies yields the given checks. */
 function fakeRuntime(type: string, deps: DependencyCheck[], delayMs = 0): FakeAgentRuntime {
@@ -67,7 +69,7 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
       ]),
     ]);
 
-    const res = await request(app).get('/api/system/requirements');
+    const res = await request(testServer).get('/api/system/requirements');
 
     expect(res.status).toBe(200);
     expect(res.body.runtimes.codex.state).toBe('ready');
@@ -79,7 +81,7 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
       fakeRuntime('codex', [dep('Codex CLI', 'missing'), dep('Codex authentication', 'missing')]),
     ]);
 
-    const res = await request(app).get('/api/system/requirements');
+    const res = await request(testServer).get('/api/system/requirements');
 
     expect(res.body.runtimes.codex.state).toBe('connect');
     expect(res.body.runtimes.codex.connect).toEqual({ kind: 'install', label: 'Install Codex' });
@@ -90,7 +92,7 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
       fakeRuntime('codex', [dep('Codex CLI', 'satisfied'), dep('Codex authentication', 'missing')]),
     ]);
 
-    const res = await request(app).get('/api/system/requirements');
+    const res = await request(testServer).get('/api/system/requirements');
 
     expect(res.body.runtimes.codex.state).toBe('connect');
     expect(res.body.runtimes.codex.connect).toEqual({ kind: 'login', label: 'Connect Codex' });
@@ -104,7 +106,7 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
       ]),
     ]);
 
-    const res = await request(app).get('/api/system/requirements');
+    const res = await request(testServer).get('/api/system/requirements');
 
     expect(res.body.runtimes.opencode.connect).toEqual({
       kind: 'provider-picker',
@@ -121,7 +123,7 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
       fakeRuntime('aider', [dep('Aider CLI', 'satisfied')]),
     ]);
 
-    const res = await request(app).get('/api/system/requirements');
+    const res = await request(testServer).get('/api/system/requirements');
 
     expect(res.body.runtimes['aider'].state).toBe('ready');
     expect(res.body.runtimes['aider'].connect).toBeUndefined();
@@ -135,7 +137,7 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
       ]),
     ]);
 
-    const res = await request(app).get('/api/system/requirements');
+    const res = await request(testServer).get('/api/system/requirements');
 
     expect(res.body.runtimes['claude-code'].state).toBe('connect');
     expect(res.body.runtimes['claude-code'].connect).toEqual({
@@ -153,7 +155,7 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
       ]),
     ]);
 
-    const res = await request(app).get('/api/system/requirements');
+    const res = await request(testServer).get('/api/system/requirements');
 
     expect(res.body.runtimes.codex.dependencies).toHaveLength(2);
     expect(res.body.runtimes.codex.dependencies[0].name).toBe('Codex CLI');
@@ -169,7 +171,7 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
       ),
     ]);
 
-    const res = await request(app).get('/api/system/requirements');
+    const res = await request(testServer).get('/api/system/requirements');
 
     expect(res.status).toBe(200);
     expect(res.body.runtimes.codex.state).toBe('ready');

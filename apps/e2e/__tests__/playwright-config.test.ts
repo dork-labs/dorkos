@@ -28,9 +28,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
  * @returns The `webServer` entries, as the config built them.
  */
 async function allLegs(): Promise<{ timeout?: number; command: string }[]> {
-  // Deliberate direct process.env access: this package has no env.ts (see
-  // playwright.config.ts's own top-of-file disable), and this sets the flags
-  // the config module itself reads, not a config read of our own.
+  // Deliberate direct process.env access: this package has no env.ts (which is
+  // why `**/*.config.ts` is carved out repo-wide in
+  // packages/eslint-config/base.js), and this sets the flags the config module
+  // itself reads, not a config read of our own. This file is not a config file,
+  // so it still states the exemption here.
   /* eslint-disable no-restricted-syntax */
   process.env.E2E_SITE = '1';
   process.env.E2E_PROD = '1';

@@ -278,7 +278,7 @@ function TopologyGraphInner({
     return (
       <QueryErrorState
         className="h-full"
-        title="Could not load the topology"
+        title="Couldn’t draw the map of your agents"
         description="The mesh API is unreachable. Check that the server is running."
         onRetry={() => void refetch()}
       />
@@ -325,8 +325,7 @@ function TopologyGraphInner({
       <div id="topology-graph-summary" className="sr-only">
         Network topology: {agentCount} agent{agentCount !== 1 ? 's' : ''}, {adapterCount} platform
         {adapterCount !== 1 ? 's' : ''}, {bindingCount} connection{bindingCount !== 1 ? 's' : ''}.
-        To connect a platform to an agent with the keyboard, use the agent&apos;s Connections
-        section.
+        To connect a platform to an agent with the keyboard, use the agent’s Connections section.
       </div>
       <ReactFlow
         nodes={layoutedNodes}
@@ -380,11 +379,11 @@ function TopologyGraphInner({
               variant="outline"
               size="xs"
               onClick={handleResetLayout}
-              title="Reset Layout"
+              title="Reset layout"
               className="shadow-sm"
             >
               <RotateCcw />
-              Reset Layout
+              Reset layout
             </Button>
           </div>
         )}

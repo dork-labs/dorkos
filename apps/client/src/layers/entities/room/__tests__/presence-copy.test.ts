@@ -16,7 +16,7 @@ describe('presenceSentence', () => {
 
   it('says a single long wait out loud', () => {
     expect(presenceSentence(['Kai'], 'working_late')).toBe(
-      'Kai is still working — this is taking longer than usual'
+      'Kai is still working, this is taking longer than usual'
     );
   });
 
@@ -33,10 +33,10 @@ describe('presenceSentence', () => {
     // the room stopped saying that anything was slow — the exact case where a
     // person most needs to be told. Red if the count decides the wording again.
     expect(presenceSentence(['Kai', 'Ana'], 'working_late')).toBe(
-      'Kai and Ana are still working — this is taking longer than usual'
+      'Kai and Ana are still working, this is taking longer than usual'
     );
     expect(presenceSentence(['Kai', 'Ana', 'Sam'], 'working_late')).toBe(
-      'Kai, Ana and Sam are still working — this is taking longer than usual'
+      'Kai, Ana and Sam are still working, this is taking longer than usual'
     );
   });
 });
@@ -50,7 +50,7 @@ describe('presenceCountSentence', () => {
 
   it('carries the long wait into the count', () => {
     expect(presenceCountSentence(4, 'working_late')).toBe(
-      '4 agents are still working — this is taking longer than usual'
+      '4 agents are still working, this is taking longer than usual'
     );
   });
 });
@@ -111,7 +111,7 @@ describe('heldSentence', () => {
     // With two there is more than one conversation in the way, and naming one of
     // them would be picking a favourite that the sentence cannot justify.
     expect(heldSentence(['Mio Clicker PM', 'Ana'], '#mio-engagement')).toBe(
-      "Mio Clicker PM and Ana will pick this up when they're free"
+      'Mio Clicker PM and Ana will pick this up when they’re free'
     );
   });
 
@@ -132,7 +132,7 @@ describe('heldSentence', () => {
 describe('heldCountSentence', () => {
   it('counts past the naming limit', () => {
     expect(heldCountSentence(PRESENCE_NAME_LIMIT + 1)).toBe(
-      "4 agents will pick this up when they're free"
+      '4 agents will pick this up when they’re free'
     );
   });
 });

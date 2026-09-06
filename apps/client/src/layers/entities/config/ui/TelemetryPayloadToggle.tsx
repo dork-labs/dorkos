@@ -33,7 +33,7 @@ export function TelemetryPayloadToggle({ open, onToggle, className }: TelemetryP
         className
       )}
     >
-      See what&apos;s sent
+      See what’s sent
       <ChevronDown
         aria-hidden
         className={cn('size-3 transition-transform duration-200', open && 'rotate-180')}

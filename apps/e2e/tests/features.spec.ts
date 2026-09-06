@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
 // The default Playwright baseURL targets apps/client; this suite overrides it to
 // hit the marketing site, where /features lives. SITE_BASE_URL lets a local run
 // point at an already-running dev server on another port.
-// eslint-disable-next-line no-restricted-syntax -- e2e harness has no env.ts; matches playwright.config.ts
+// eslint-disable-next-line no-restricted-syntax -- e2e harness has no env.ts; a spec is not a config file, so it cannot lean on the repo-wide `**/*.config.ts` carve-out
 const SITE_BASE_URL = process.env.SITE_BASE_URL ?? 'http://localhost:6244';
 
 test.use({ baseURL: SITE_BASE_URL });

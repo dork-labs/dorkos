@@ -2,164 +2,192 @@
 
 ## Overview
 
-This guide walks through adding a new connector backend behind the `ConnectorProvider` port: the third swappable seam beside `AgentRuntime` and `Transport`. A connector connects a DorkOS agent to a real third-party service (Gmail, Slack, Notion, ...) and lets the agent act for the user, including two accounts of the same service. Follow it end-to-end and your backend gets full DorkOS treatment: discovery, the reference-not-secret connect flow, multi-account addressing, per-session tool exposure over the existing MCP seam, an honest custody disclosure, and cross-provider aggregation with per-provider degradation.
+A connector provider lets DorkOS connect an agent to a service such as Gmail, Slack, or Notion. Every backend implements the instance-bound `ConnectorProvider` port. Routes and services use that port instead of importing a vendor SDK.
 
-The port mirrors `AgentRuntime` deliberately: one Zod-first contract, N backends, a server-side registry, capability flags, and a shared conformance suite that gates every implementation exactly as `runtimeConformance` gates runtimes. If you have read [adding-a-runtime.md](adding-a-runtime.md), this will feel familiar.
+Each configured provider has its own stable `instanceId`. Two instances may use the same provider type while holding different credentials, custody, or billing. A connected account also has two identities:
 
-Spec: [`specs/connector-gateway/02-specification.md`](../specs/connector-gateway/02-specification.md). Custody ADR: [`260718-045630`](../decisions/260718-045630-connector-provider-custody-composio-nango-raw-mcp.md). Related ADRs: [0255](../decisions/0255-per-session-runtime-in-session-metadata-table.md) (per-session/first-write-wins binding, mirrored by the connector registry), [0310](../decisions/0310-runtime-owned-session-storage-aggregated-listing.md) (aggregate-with-degradation), [0304](../decisions/0304-file-scoped-rollback-for-marketplace-installs.md) (the git-free install transaction connectors ship over).
+- `ConnectionId` is the stable DorkOS ID used by public APIs, attachments, grants, and usage records.
+- `ConnectorExternalAccountRef` is the provider's private account handle. It stays inside the server and provider adapter.
 
-## Key Files
+Never expose, log, or derive a public ID from a private provider reference.
 
-| Concept                            | Location                                                                                                                           |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| The contract                       | `packages/shared/src/connector-provider.ts` (`ConnectorProvider`, schemas, `ConnectorRecommendation`)                              |
-| MCP connection shape (reused)      | `packages/shared/src/agent-runtime.ts` (`McpAppServerConnection` — imported, never redefined)                                      |
-| Conformance suite + fake           | `packages/test-utils/src/connector-conformance.ts`, `packages/test-utils/src/fake-connector-provider.ts`                           |
-| Worked example: managed, flagship  | `apps/server/src/services/connectors/providers/composio.ts` (+ `composio-client.ts`)                                               |
-| Worked example: single-account     | `apps/server/src/services/connectors/providers/raw-mcp.ts`                                                                         |
-| Registry (composition + routing)   | `apps/server/src/services/connectors/registry.ts` (`ConnectorRegistry`)                                                            |
-| Routing surface                    | `apps/server/src/services/connectors/routing.ts` (`recommendConnector`)                                                            |
-| Custody disclosure (single source) | `apps/server/src/services/connectors/custody-disclosure.ts`                                                                        |
-| Session tool exposure + consent    | `apps/server/src/services/connectors/session-exposure.ts` (`SessionConnectorService`)                                              |
-| Routing-cache table                | `packages/db/src/schema/connected-accounts.ts` (`connected_accounts`, derived cache, ADR-0043)                                     |
-| REST surface                       | `apps/server/src/routes/connectors.ts`                                                                                             |
-| Credential funnel                  | `apps/server/src/services/core/credential-provider.ts` + the connect `credentials.ts` / relay `adapter-secrets.ts` DOR-280 pattern |
-| Distribution convention            | `packages/marketplace/src/manifest-schema.ts` (`CONNECTOR_ADAPTER_TYPE`)                                                           |
-| Setup docs                         | `docs/connections/*.mdx`                                                                                                           |
+The current contract is defined by the [Connections specification](../specs/white-label-connections/02-specification.md). The original provider design remains useful background in the [Connector Gateway specification](../specs/connector-gateway/02-specification.md).
 
-## The ConnectorProvider Contract
+## Key files
 
-`packages/shared/src/connector-provider.ts` is the whole surface. Routes and services depend only on this interface, never on a concrete backend. Every method earns its place:
+| Concept                                               | Location                                                                                                     |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Provider port                                         | `packages/shared/src/connector-provider.ts`                                                                  |
+| Stable IDs, operation, capability, and review schemas | `packages/shared/src/connector-schemas.ts`                                                                   |
+| Conformance suite and fake                            | `packages/test-utils/src/connector-conformance.ts`, `packages/test-utils/src/fake-connector-provider.ts`     |
+| Provider implementations                              | `apps/server/src/services/connectors/providers/`                                                             |
+| Instance registry and stable connection store         | `apps/server/src/services/connectors/registry.ts`, `apps/server/src/services/connectors/connection-store.ts` |
+| Durable database schema                               | `packages/db/src/schema/connectors/connections.ts`, `packages/db/src/schema/connectors/connector-events.ts`  |
+| SDK import guard                                      | `scripts/__tests__/composio-sdk-import-boundary.test.ts`                                                     |
+| Temporary MCP compatibility seam                      | `apps/server/src/services/connectors/session-exposure.ts`                                                    |
 
-- **`readonly type`** — the backend identifier; must equal `getCapabilities().type`.
-- **`getCapabilities()`** — a static `ConnectorCapabilities`: `type`, `supportsMultiAccount`, `custody` (`'managed' | 'self-host' | 'external'`), `exposesOverMcp`, and a typed `features` bag. These are genuinely-boolean backend differences, so there is no forked code across providers.
-- **`listToolkits()`** — discovery: which services can be connected. Drives the connect picker.
-- **`startConnect(toolkit, { label? })` / `pollConnect(flowId)`** — the reference-not-secret connect flow, modeled on `Transport`'s loopback-PKCE pair. `startConnect` returns a URL plus an opaque flow id; secrets stay server-side. `pollConnect` failure is **typed** (`status: 'failed'` with an `error`), never thrown across the port. A single-account backend rejects a second connect of an already-connected toolkit rather than minting a duplicate.
-- **`listAccounts({ toolkit? })` / `disconnect(accountId)`** — multi-account management. `disconnect` is **idempotent**: revoking an unknown or already-revoked id resolves without throwing.
-- **`toolServerForAccount(accountId)`** — the single unification point. Every provider ultimately exposes tools as MCP, so its output (`McpAppServerConnection | null`) plugs straight into `AgentRuntime.setMcpServerFactory`. **This is the trap most worth reading twice** (see [The null branch](#the-null-branch-locked)).
+## The provider contract
 
-Schemas are the authoritative contract (the repo is Zod-first); TS types derive via `z.infer`. The port itself is a runtime port (not a serializable DTO), so it is a TS interface over the derived types. Reuse `McpAppServerConnection` from `agent-runtime.ts` by importing it: never redefine it.
+`ConnectorProvider` is one configured provider instance. Its `instanceId` must equal `getCapabilities().instanceId`; its `type` must equal `getCapabilities().type`.
 
-### Capabilities set the honesty bar
+The capability descriptor states whether this instance supports catalog discovery, authentication, accounts, operation schemas, execution, and triggers. Declare unsupported behavior with `{ status: 'unsupported', reason }`. Do not infer support from the presence of a method or return an empty result that looks like a successful capability.
 
-`custody` is not cosmetic. It selects the plain-language disclosure a user sees before they connect and on every account row (`custody-disclosure.ts`). Declare it truthfully:
+The main methods are:
 
-- `managed` — the vendor holds the end-user's tokens in its cloud vault (Composio). Only DorkOS's own vendor key is stored locally.
-- `self-host` — the operator's own store holds the tokens (self-hosted Nango). Enforce the operator's encryption key or the promise is false.
-- `external` — no token custody by the gateway (raw MCP): the remote server holds its own credentials.
+- `listToolkitPage(request)` returns one bounded catalog page, a cursor when more results exist, and an honest `truncated` value.
+- `listOperationSchemas(request)` returns one bounded page of immutable operation metadata. Each operation includes the provider instance, toolkit, stable operation slug, toolkit version, input schema and hash, and `read`, `write`, or `destructive` classification.
+- `startConnect()` and `pollConnect()` perform the reference-only connect flow. Secrets remain behind the adapter.
+- `listAccounts()` and `disconnect(externalAccountRef)` address exact private provider accounts.
+- `execute(command)` receives the exact private account reference and immutable operation revision selected by DorkOS. It must honor the supplied abort signal and return a normalized, secret-free envelope.
+- `listTriggerTypes(toolkit)` returns stable event names, display names, and a JSON Schema for subscription filters.
+- `toolServerForAccount(externalAccountRef)` is a temporary compatibility projection for live session consumers. P2 replaces it with the policy-enforced execution service.
 
-`supportsMultiAccount: false` means one account per configured service. The conformance suite branches on this flag, so declare what your backend genuinely does.
+### Stable identity and lifecycle
 
-### The null branch (LOCKED)
+The provider reports authentication status for its private account. DorkOS separately owns the stable connection ID, operator pause, disconnect tombstone, attachments, and grants. Provider inventory must not resume a paused connection or reactivate a disconnected connection. Only an explicit reconnect may restore the same stable ID, and it must return through the same provider instance and private account binding.
 
-`toolServerForAccount` returns `McpAppServerConnection | null`. Return `null` — never throw, never silently drop — when the account cannot be exposed right now: `expired` / `revoked` status, no live session URL, a transport this host cannot independently reconnect, or a routine vendor transport failure. Its consumer (`session-exposure.ts` `attach`) awaits it unguarded; a throw would turn an attach-with-warning into a 500. The platform surfaces the null as a per-account warning (`{ accountId, label, reason }`) so the user can reconnect. This is a **required** conformance case, not an optional one.
+The registry may contain several instances of one type. Route active work by `instanceId`, not by `type`. Removing one instance must leave its same-type siblings registered and routable.
 
-## Step-by-Step: A New Connector
+### Operation classification
 
-### 1. Create the provider file
+Classification is part of an immutable operation revision fingerprint. A schema, toolkit version, or classification change creates a new revision and requires review before it can replace a grant.
 
-Add `apps/server/src/services/connectors/providers/<name>.ts` implementing `ConnectorProvider`. Work from `composio.ts` (managed, multi-account, an injectable HTTP boundary) or `raw-mcp.ts` (single-account, `external` custody). Keep the vendor SDK or HTTP client behind an **injectable seam** (`ComposioHttpClient` is the model) so the provider is verified hermetically against a fake, with no network and no key.
+Use a provider's trustworthy operation metadata to classify an operation. If that metadata is missing or ambiguous, report the capability as unsupported or classify the operation at the narrowest safe boundary. Never treat an unknown operation as read-only and never create a wildcard grant.
 
-### 2. Confine the vendor id mapping to one place
+### Custody
 
-Your backend has its own account handle (Composio's `ca_...`, Nango's `connectionId`). Wrap and unwrap it to the opaque, branded `ConnectedAccountId` in **one pair of functions** inside the adapter (`toConnectedAccountId` / `toComposioAccountId` in `composio.ts`). Namespace the id with your `type` prefix. No raw vendor handle may leak past the port: session code treats a `ConnectedAccountId` as opaque and never parses it.
+`custody` drives the plain-language disclosure shown before connect and on each account row:
 
-### 3. Store references, never secrets
+- `managed`: a vendor cloud vault holds the user's tokens.
+- `self-host`: the operator's own infrastructure holds the tokens.
+- `external`: the remote service handles authentication outside the gateway.
 
-Vendor keys (an API key, a base URL + secret key) go to `CredentialStore` as `file:` references before any config write, resolved in-memory only (the relay `adapter-secrets.ts` DOR-280 funnel). **On the managed path, upstream OAuth tokens never touch DorkOS's store** — that is the custody point, and the W4 Gmail eval's refined oracle asserts it (the only persisted reference is the vendor API-key ref, never a per-account token ref). Follow `maybeCreateComposioProvider`: build the provider only when its key resolves; a dangling reference returns `null` so an install without a key leaves the registry untouched.
+`mode` and custody answer different questions. A Composio instance configured with the operator's own key is `mode: 'byo'` and still has `custody: 'managed'` because Composio holds the end-user token.
 
-### 4. Wire the conformance suite
+### Temporary MCP projection
 
-Every backend must clear the shared behavioral gate before it registers. Add `apps/server/src/services/connectors/providers/__tests__/<name>.test.ts`:
+`toolServerForAccount` returns `McpAppServerConnection | null`. Return `null` when an account cannot be exposed, including expired or revoked authentication, a missing live URL, or a routine provider transport failure. The session service turns `null` into a per-account warning. A routine failure thrown through this method becomes a 500.
+
+This method is a compatibility seam for current consumers. It does not replace exact-account authorization, revision validation, or usage accounting.
+
+## Add a provider
+
+### 1. Create one instance-bound adapter
+
+Add `apps/server/src/services/connectors/providers/<name>.ts` and implement `ConnectorProvider`. Accept or create a stable instance ID in the provider constructor. Keep the provider type separate from that ID.
+
+Put vendor HTTP or SDK calls behind a small injectable client. Tests must use a fake client and no network. Provider code returns normalized shared types, never vendor response objects.
+
+### 2. Confine SDK imports
+
+Vendor SDK imports belong only in their adapter roots. For `@composio/core`, the allowed roots are:
+
+- `apps/server/src/services/connectors/providers/composio.ts`
+- `apps/server/src/services/connectors/providers/composio/`
+- `apps/site/src/lib/connectors/composio/`
+
+The import-boundary test detects static imports, dynamic imports, re-exports, and CommonJS `require`. Extend that test deliberately when adding a new approved adapter root. Do not import the SDK from routes, registry code, session code, or shared packages.
+
+### 3. Keep private references private
+
+Map the vendor's account handle to `ConnectorExternalAccountRef` in one adapter function. Return that private reference from provider methods. Let `ConnectionStore` assign and persist the stable `ConnectionId`.
+
+Provider account responses must not contain credentials, authorization headers, connect URLs, or session URLs. Public REST and Transport DTOs use `ConnectionId` and omit provider instance IDs and external references.
+
+### 4. Declare capabilities honestly
+
+Return every capability in `getCapabilities()`. When a capability is unavailable, return typed unsupported results from the matching method. Paginate catalog and operation discovery to a configured ceiling and surface truncation; do not silently use a vendor's default subset as the complete catalog.
+
+For triggers, return a stable `eventType` and `filterSchema` for each supported event. Event payloads later enter DorkOS through the protected durable inbox. Audit receipts remain payload-free, so provider-specific delivery metadata must be sufficient for deduplication and verification without copying secrets into receipts.
+
+### 5. Wire the conformance suite
+
+Every provider must pass `connectorConformance` with an injectable fake:
 
 ```typescript
-import { connectorConformance } from '@dorkos/test-utils';
-
-connectorConformance(() => new MyProvider({ client: new FakeMyClient() }), {
-  name: 'MyProvider (fake client) — ConnectorProvider conformance',
-  toolkit: 'gmail',
-  makeUnexposableAccount: async () => {
-    const provider = new MyProvider({ client: new FakeMyClient() });
-    const { flowId } = await provider.startConnect('gmail');
-    const { account } = await provider.pollConnect(flowId);
-    // Drive the account into a state where toolServerForAccount returns null.
-    return { provider, accountId: account!.id };
-  },
-});
+connectorConformance(
+  () =>
+    new MyProvider({
+      instanceId: 'provider-my-test',
+      client: new FakeMyClient(),
+    }),
+  {
+    name: 'MyProvider — ConnectorProvider conformance',
+    toolkit: 'gmail',
+    makeUnexposableAccount: async () => {
+      const provider = new MyProvider({
+        instanceId: 'provider-my-unexposable',
+        client: new FakeMyClient(),
+      });
+      const { flowId } = await provider.startConnect('gmail');
+      const poll = await provider.pollConnect(flowId);
+      return {
+        provider,
+        externalAccountRef: poll.account!.externalAccountRef,
+      };
+    },
+  }
+);
 ```
 
-`connectorConformance(makeProvider, opts)` registers a `describe` block asserting: capability shape parses and matches `type`; `startConnect`→`pollConnect` reaches `connected` with a well-formed account; `listAccounts` reflects connects and disconnects; the multi-account contract (two distinct ids when `supportsMultiAccount`, exactly one otherwise); `toolServerForAccount` returns a valid connection for an `active` account and **`null`** for an unexposable one (`makeUnexposableAccount` is a required hook); and idempotent `disconnect`. The factory runs once per test. Declare legitimate differences through `opts`, never by weakening assertions.
+The suite checks:
 
-**The mocking stance (non-negotiable): CI must never require a live vendor account.** Verify against a fake client with recorded behavior. Gate any real-provider smoke behind an env flag and the weekly deep tier (D5), not CI.
+- provider instance identity and complete capability declarations;
+- bounded catalog and operation pagination, cursors, and truncation;
+- immutable schema version, hash, and classification metadata;
+- exact private-account authentication, listing, execution, and disconnect;
+- abort behavior before and during execution;
+- result envelopes that exclude secrets, authorization data, and URLs;
+- trigger metadata and typed unsupported behavior;
+- multi-account behavior and the temporary nullable MCP projection.
 
-### 5. Register the provider (gated on configuration)
+Declare legitimate provider differences through the conformance options. Do not weaken the shared assertions.
 
-Register your provider with the `ConnectorRegistry` at the composition root (`apps/server/src/index.ts`), **only when it is configured** — mirror `maybeCreateComposioProvider` returning `null` when its key is absent. The registry gives you id → provider routing (first-write-wins on `pollConnect`, ADR-0255) and cross-provider aggregation that degrades one unreachable backend to a `warnings[]` entry (ADR-0310). You do not hand-roll routing or aggregation; the registry owns both.
+### 6. Register only configured instances
 
-### 6. Confirm routing and the session seam (usually no code)
+Create providers at the composition root and register each exact instance. A missing credential or required setting leaves that instance unavailable with a safe health message. It must not remove another instance of the same type.
 
-`recommendConnector` (`routing.ts`) already ranks a registered gateway (rank 1, `managed` before `self-host`) below any purpose-built relay adapter (rank 0) and above a raw-MCP baseline (rank 2). A standard gateway needs no routing change: it appears automatically once registered and listing the service in `listToolkits()`. Likewise `SessionConnectorService` (`session-exposure.ts`) folds your `toolServerForAccount` output into the existing `setMcpServerFactory` record, names each server from toolkit + label only (no provider identity), and enforces the null branch and per-account consent. Add nothing session-side.
+Credential references go through `CredentialStore`. End-user tokens stay wherever the custody declaration says they stay. Never persist a managed provider's upstream OAuth token in DorkOS.
 
-### 7. Declare capabilities and disclosure honestly
+### 7. Verify the public boundaries
 
-If your backend introduces a new custody stance, add its copy to `custody-disclosure.ts` (the exhaustiveness guard makes a missing class a compile error, never a blank line). Never report a capability your backend cannot honor: a false `supportsMultiAccount` or `exposesOverMcp` lights up UI that then fails.
+Add provider tests, registry tests, and public route tests. At minimum, prove:
 
-### 8. Ship it as an adapter package
+- two instances of the same type do not collide;
+- the same external reference may exist under two different instances;
+- no public DTO exposes an external reference or provider instance ID;
+- inventory cannot undo a local pause or disconnect tombstone;
+- disconnect is idempotent and invalidates any cached successful connect result;
+- operation and trigger pagination reaches its ceiling and reports truncation;
+- unknown classification and incomplete metadata fail closed;
+- SDK imports outside the adapter root fail the import guard.
 
-Distribute the provider as a marketplace **adapter** package with `type: 'adapter'` and `adapterType: 'connector'` (the well-known `CONNECTOR_ADAPTER_TYPE` in `packages/marketplace/src/manifest-schema.ts`). There is no `PackageTypeSchema` migration: `adapterType` is a free-form string on the same axis relay adapters use. Install places the provider over the git-free staged transaction (ADR-0304); connecting an account is a runtime step (`startConnect`), not an install step, so install behavior does not diverge from any other adapter. Other packages depend on it with `adapter:connector-<name>@^1.0.0`.
-
-### 9. Document the setup
-
-Add or extend a `docs/connections/<name>.mdx` setup guide, following the [`writing-for-humans`](../.claude/skills/writing-for-humans/SKILL.md) skill: state where the login lives (custody) in plain language, before the steps. **Respect the demo-claim gate** ([AGENTS.md](../AGENTS.md) §Product state): do not claim a provider works end-to-end until its evals are green. Register the new MDX file in [`contributing/INDEX.md`](INDEX.md) (External Docs Coverage + Maintenance) and regenerate the coverage map.
-
-### 10. Verify
+Use the repository's pinned Node version for local checks:
 
 ```bash
-pnpm --filter @dorkos/server typecheck
-pnpm --filter @dorkos/server lint          # SDK/HTTP-client confinement holds
-pnpm vitest run apps/server/src/services/connectors/providers/__tests__/<name>.test.ts
-pnpm --filter @dorkos/site typecheck        # docs MDX participates in the site build
+pnpm --use-node-version=24.14.1 vitest run apps/server/src/services/connectors/providers/__tests__/<name>.test.ts
+pnpm --use-node-version=24.14.1 vitest run scripts/__tests__/composio-sdk-import-boundary.test.ts
+pnpm --use-node-version=24.14.1 --filter @dorkos/server typecheck
+pnpm --use-node-version=24.14.1 --filter @dorkos/server lint
 ```
 
-## Common Traps
+No CI test may require a live vendor account. Put any real-provider smoke behind its own explicit spending or credential flag.
 
-- **Throwing from `toolServerForAccount`.** The single most important rule. A routine vendor failure (a stale key's 401, a 5xx, a timeout) must resolve `null`, because `session-exposure` awaits it unguarded. Reserve a throw for a genuine bug, never a routine transport failure. Do the same for `listToolkits` / `listAccounts` (degrade to an empty list; the registry records the warning) and `pollConnect` (map to a typed `{ status: 'failed' }`).
-- **Leaking the vendor into a session.** The injected MCP server name and config must carry no provider identity. `session-exposure` names servers from toolkit + label; keep your `toolServerForAccount` output free of any `composio` / `nango` string. Two Gmail accounts must become two independently-addressable, provider-neutral servers (`gmail-personal`, `gmail-work`).
-- **Persisting upstream tokens on the managed path.** Store only your vendor key reference. If you find yourself writing a per-account token to `CredentialStore`, you have broken the `managed` custody promise the disclosure makes.
-- **Redefining `McpAppServerConnection`.** Import it from `agent-runtime.ts`. A parallel type drifts from the one the runtime actually injects.
-- **Reading the relay catalog's private state.** Routing reads the relay adapter catalog only through the public `getManifest` / `getCatalog` accessors, never the private `manifests` field.
-- **Registering a provider whose key is absent.** Gate registration on a resolved credential (`maybeCreate...` returning `null`), so an install without configuration leaves the registry exactly as it was, with no crash.
+## Common mistakes
 
-## Anti-Patterns
+- Using provider `type` as the configured instance key.
+- Sending a private external account reference through REST, Transport, logs, or agent-visible results.
+- Letting provider inventory reactivate a locally disconnected connection.
+- Mutating an operation revision after it has been reviewed.
+- Treating missing classification or incomplete discovery as read access.
+- Calling a vendor SDK outside its adapter root.
+- Throwing routine transport errors from `toolServerForAccount`.
+- Storing upstream OAuth tokens while declaring managed custody.
+- Returning a default provider subset as a complete catalog.
 
-```typescript
-// NEVER throw a routine vendor failure through toolServerForAccount
-async toolServerForAccount(id) {
-  const s = await this.client.session(unwrap(id)); // a 401 here throws → 500s the attach route
-  return { transport: 'http', url: s.url };
-}
+## Related guides
 
-// Catch routine transport failures and resolve null (the surfaced warning path)
-async toolServerForAccount(id) {
-  try {
-    const s = await this.client.session(unwrap(id));
-    return s ? { transport: 'http', url: s.url } : null;
-  } catch (err) {
-    if (isTransportError(err)) return null;
-    throw err; // a genuine bug still surfaces
-  }
-}
-
-// NEVER report a capability the backend cannot honor
-getCapabilities() { return { ...caps, supportsMultiAccount: true }; } // backend holds one account
-
-// NEVER leak the vendor id into the session tool surface
-servers[`composio-${accountId}`] = connection; // provider identity in the server name
-```
-
-## Related Guides
-
-- [adding-a-runtime.md](adding-a-runtime.md): the sibling port (`AgentRuntime`); the same conformance-gated pattern
-- [architecture.md](architecture.md): where the swappable seams sit in the hexagonal architecture
-- [marketplace-packages.md](marketplace-packages.md): the adapter package manifest and distribution
-- [relay-adapters.md](relay-adapters.md): the purpose-built two-way adapters that outrank a generic gateway in routing
+- [Adding a Runtime](adding-a-runtime.md)
+- [Architecture](architecture.md)
+- [Marketplace Packages](marketplace-packages.md)
+- [Relay Adapters](relay-adapters.md)

@@ -68,7 +68,7 @@ describe('SessionHeader', () => {
     expect(screen.getByText('Fix the flaky test')).toBeInTheDocument();
   });
 
-  it("draws the agent's face from its resolved visual", () => {
+  it('draws the agent’s face from its resolved visual', () => {
     renderBar({ agentName: 'dorkbot', agentVisual: VISUAL, sessionTitle: 'Fix the flaky test' });
     expect(screen.getByText(VISUAL.emoji)).toBeInTheDocument();
     expect(screen.queryByTestId('session-directory-mark')).not.toBeInTheDocument();

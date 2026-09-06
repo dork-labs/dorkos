@@ -474,7 +474,7 @@ export function PackageDetailSheet() {
                 />
               ) : permissionPreview ? (
                 <section>
-                  <h3 className="mb-3 text-sm font-semibold">Permissions & Effects</h3>
+                  <h3 className="mb-3 text-sm font-semibold">What this can do</h3>
                   <PermissionPreviewSection
                     preview={permissionPreview}
                     installBase={config?.dorkHome}
@@ -501,7 +501,7 @@ export function PackageDetailSheet() {
                     className="text-sm"
                     errorFallback={
                       <p className="text-muted-foreground text-sm">
-                        This README couldn&rsquo;t be displayed.
+                        This README couldn’t be displayed.
                       </p>
                     }
                   />

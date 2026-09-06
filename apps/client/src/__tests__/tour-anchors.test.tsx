@@ -30,7 +30,7 @@ import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, mockRoomEntryPage } from '@dorkos/test-utils';
 import {
   REACTION_FREQUENTS_DEFAULT,
   TEAM_ROOM_WELL_KNOWN,
@@ -235,7 +235,7 @@ function transportWithTeamRoom() {
       viewerAuthorId: 'author-you',
       reactionFrequents: [...REACTION_FREQUENTS_DEFAULT],
     }),
-    listRoomEntries: vi.fn().mockResolvedValue([]),
+    listRoomEntries: vi.fn().mockResolvedValue(mockRoomEntryPage()),
     // A live but silent stream, so the room is not busy reconnecting.
     subscribeRoom: vi.fn(
       (_id: string, _cursor: number, signal: AbortSignal): AsyncIterable<RoomEvent> =>

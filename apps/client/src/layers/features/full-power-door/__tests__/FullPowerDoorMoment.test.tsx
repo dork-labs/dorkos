@@ -2,9 +2,10 @@
  * @vitest-environment jsdom
  *
  * The moments-rail host for existing users. Unlike the onboarding stage, the
- * Control Center IS mounted for them, so this host DOES offer "Customize…" and
- * wires it to the flyout. This pins that seam so the two hosts can't quietly
- * converge (onboarding must stay Customize-less; the moment must keep it).
+ * Control Center IS mounted for them, so this host DOES offer "Pick the pieces
+ * yourself in Settings" and wires it to the flyout. This pins that seam so the
+ * two hosts can't quietly converge (onboarding must stay without that link;
+ * the moment must keep it).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
@@ -76,12 +77,12 @@ describe('FullPowerDoorMoment', () => {
 
   afterEach(cleanup);
 
-  it('offers Customize… and opens the Control Center for existing users', async () => {
+  it('offers "Pick the pieces yourself" and opens the Control Center for existing users', async () => {
     const user = userEvent.setup();
     renderMoment();
 
     // Existing users get the link — the Control Center is mounted for them.
-    const customize = screen.getByRole('button', { name: /customize/i });
+    const customize = screen.getByRole('button', { name: /pick the pieces yourself/i });
     expect(customize).toBeInTheDocument();
 
     await user.click(customize);

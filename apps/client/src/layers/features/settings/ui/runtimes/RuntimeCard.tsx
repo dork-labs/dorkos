@@ -145,7 +145,7 @@ function selectReconnect(type: string, provider: string | undefined): CardReconn
 
 /** Turn a failed config write into one sentence a person can act on. */
 function describeWriteFailure(err: unknown): string {
-  return (err instanceof Error && err.message) || 'Could not save that. Try again.';
+  return (err instanceof Error && err.message) || 'Couldn’t save that. Try again.';
 }
 
 /**
@@ -424,7 +424,7 @@ export function RuntimeCard({
           className="text-muted-foreground px-4 text-xs"
           data-testid={`runtime-card-timing-${type}`}
         >
-          Applies to new conversations — running ones keep their settings.
+          Applies to new conversations. Running ones keep their settings.
         </p>
       )}
 

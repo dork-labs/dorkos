@@ -68,7 +68,7 @@ describe('WidgetFence streaming stability', () => {
     // JSON still truncated — mid-stream that must read as "still loading".
     render(<WidgetFence code='{"version": 1, "root": {"type"' isIncomplete={false} isStreaming />);
     expect(screen.getByLabelText('Loading widget')).toBeInTheDocument();
-    expect(screen.queryByText("This widget couldn't be rendered")).not.toBeInTheDocument();
+    expect(screen.queryByText('This widget couldn’t be rendered')).not.toBeInTheDocument();
   });
 
   it('settles a still-invalid fence into the error card once streaming ends', () => {
@@ -78,7 +78,7 @@ describe('WidgetFence streaming stability', () => {
 
     // The turn settles and the JSON never completed — now it is a real error.
     rerender(<WidgetFence code={truncated} isIncomplete={false} isStreaming={false} />);
-    expect(screen.getByText("This widget couldn't be rendered")).toBeInTheDocument();
+    expect(screen.getByText('This widget couldn’t be rendered')).toBeInTheDocument();
     expect(screen.queryByLabelText('Loading widget')).not.toBeInTheDocument();
   });
 
@@ -172,7 +172,7 @@ describe('WidgetFence pop-out (PIP) affordance', () => {
 
     expect(mockTransport.sendUiAction).not.toHaveBeenCalled();
     // The board cell underneath is untouched — still playable.
-    expect(screen.getByLabelText('Row 1, column 1: empty — play here')).toBeInTheDocument();
+    expect(screen.getByLabelText('Row 1, column 1: empty, play here')).toBeInTheDocument();
   });
 
   it('keeps the widget tree node identity stable when the affordance appears alongside it', () => {

@@ -185,7 +185,7 @@ Content-Type: application/json
   running, or see the [API Reference](/docs/api).
 </Callout>
 
-**Authentication.** By default, local login is off (`auth.enabled: false`), so a local DorkOS instance accepts these requests with no credentials, same as the web app talking to its own server. If you turn local login on, every `/api/*` and `/mcp` request needs either a Better Auth session cookie or a per-user API key sent as `Authorization: Bearer <key>`. The separate external MCP server at `/mcp` can also be locked down independently with a static `MCP_API_KEY`, which is the option to reach for in headless or CI deployments.
+**Authentication.** By default, local login is off (`auth.enabled: false`), so a local DorkOS instance accepts these requests with no credentials, same as the web app talking to its own server. If you turn local login on, every `/api/*` and `/mcp` request needs either a Better Auth session cookie or a per-user API key sent as `Authorization: Bearer <key>`. The separate external MCP server at `/mcp` is the exception to the first sentence: even with login off it wants this instance's local MCP token for anything that changes state, and only the handshake, discovery calls, and read-only tools answer without one. In headless or CI deployments you can set a static `MCP_API_KEY` and hand that to every client instead.
 
 </Tab>
 

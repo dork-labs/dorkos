@@ -61,7 +61,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
 import {
   getOrCreateProjector,
@@ -76,6 +77,7 @@ import {
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000d1';
 /** The canonical id the adapter assigns to a brand-new session mid-turn. */
@@ -123,7 +125,7 @@ describe('the dispatch id survives the detached turn', () => {
       },
     ]);
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .send({ content: 'Hello' });
     expect(res.status).toBe(202);
@@ -166,7 +168,7 @@ describe('the dispatch id survives the detached turn', () => {
       },
     ]);
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .send({ content: 'Hello' });
     await finished;
@@ -207,13 +209,13 @@ describe('the dispatch id survives the detached turn', () => {
       },
     ]);
 
-    const running = await request(app)
+    const running = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'client-a')
       .send({ content: 'the long turn' });
     expect(running.status).toBe(202);
 
-    const queued = await request(app)
+    const queued = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'client-b')
       .send({ content: 'queued behind it' });
@@ -267,7 +269,7 @@ describe('the dispatch id survives the detached turn', () => {
       },
     ]);
 
-    const running = await request(app)
+    const running = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'client-a')
       .send({ content: 'the long turn' });
@@ -276,7 +278,7 @@ describe('the dispatch id survives the detached turn', () => {
     // head of the ring is this request's own id.
     const runningDispatchId = recentDispatches(10)[0]?.dispatchId;
 
-    const queued = await request(app)
+    const queued = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'client-a')
       .send({ content: 'queued behind it' });
@@ -312,8 +314,8 @@ describe('the dispatch id survives the detached turn', () => {
     fakeRuntime.getInternalSessionId.mockImplementation((sid: string) => sid);
     getOrCreateProjector(otherSession);
 
-    await request(app).post(`/api/sessions/${SESSION_ID}/messages`).send({ content: 'a' });
-    await request(app).post(`/api/sessions/${otherSession}/messages`).send({ content: 'b' });
+    await request(testServer).post(`/api/sessions/${SESSION_ID}/messages`).send({ content: 'a' });
+    await request(testServer).post(`/api/sessions/${otherSession}/messages`).send({ content: 'b' });
 
     expect(seen).toHaveLength(2);
     expect(seen[0]).not.toBe(seen[1]);

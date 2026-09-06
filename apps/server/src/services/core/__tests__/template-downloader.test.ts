@@ -220,6 +220,8 @@ describe('execGitClone', () => {
         '1',
         '--single-branch',
         '--progress',
+        // The URL and target are values, never flags (DOR-1799).
+        '--end-of-options',
         'https://github.com/org/repo.git',
         '/tmp/target',
       ],

@@ -52,7 +52,7 @@ export class SidebarBodyErrorBoundary extends Component<
           className="flex h-full items-center justify-center p-4"
         >
           <p className="text-muted-foreground text-center text-sm">
-            This panel couldn&apos;t load. Reload the page to try again.
+            This panel couldn’t load. Reload the page to try again.
           </p>
         </div>
       );

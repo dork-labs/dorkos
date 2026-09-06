@@ -72,12 +72,12 @@ describe('QueryErrorState', () => {
     const user = userEvent.setup();
     render(
       <QueryErrorState
-        title="Could not load your team"
+        title="Couldn’t load your team"
         description="The DorkOS server did not answer."
         onRetry={onRetry}
       />
     );
-    expect(screen.getByText('Could not load your team')).toBeInTheDocument();
+    expect(screen.getByText('Couldn’t load your team')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });

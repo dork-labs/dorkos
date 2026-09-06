@@ -42,11 +42,13 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 describe('POST /api/uploads', () => {
   beforeEach(() => {
@@ -54,21 +56,21 @@ describe('POST /api/uploads', () => {
   });
 
   it('returns 400 when cwd query param is missing', async () => {
-    const res = await request(app).post('/api/uploads').send();
+    const res = await request(testServer).post('/api/uploads').send();
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/cwd/i);
   });
 
   it('returns 400 when no files are attached', async () => {
-    const res = await request(app).post('/api/uploads?cwd=/test/project').send();
+    const res = await request(testServer).post('/api/uploads?cwd=/test/project').send();
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/no files/i);
   });
 
   it('returns 200 with upload results for valid file', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/uploads?cwd=/test/project')
       .attach('files', Buffer.from('hello world'), 'test.txt');
 
@@ -81,7 +83,7 @@ describe('POST /api/uploads', () => {
   });
 
   it('returns 200 with multiple upload results', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/uploads?cwd=/test/project')
       .attach('files', Buffer.from('file one'), 'one.txt')
       .attach('files', Buffer.from('file two'), 'two.txt');
@@ -97,7 +99,7 @@ describe('POST /api/uploads', () => {
       new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
     );
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/uploads?cwd=/etc/passwd')
       .attach('files', Buffer.from('evil'), 'hack.txt');
 
@@ -110,7 +112,7 @@ describe('POST /api/uploads', () => {
       new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE')
     );
 
-    const res = await request(app)
+    const res = await request(testServer)
       .post('/api/uploads?cwd=/home/user%00')
       .attach('files', Buffer.from('data'), 'file.txt');
 
@@ -119,7 +121,7 @@ describe('POST /api/uploads', () => {
   });
 
   it('calls validateBoundary with the cwd query parameter', async () => {
-    await request(app)
+    await request(testServer)
       .post('/api/uploads?cwd=/test/project')
       .attach('files', Buffer.from('content'), 'doc.txt');
 
@@ -133,14 +135,14 @@ describe('GET /api/uploads/:filename', () => {
   });
 
   it('returns 400 when cwd query param is missing', async () => {
-    const res = await request(app).get('/api/uploads/test.png');
+    const res = await request(testServer).get('/api/uploads/test.png');
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/cwd/i);
   });
 
   it('returns 404 for nonexistent file', async () => {
-    const res = await request(app).get('/api/uploads/missing.png?cwd=/test/project');
+    const res = await request(testServer).get('/api/uploads/missing.png?cwd=/test/project');
 
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('File not found');
@@ -151,14 +153,16 @@ describe('GET /api/uploads/:filename', () => {
       new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
     );
 
-    const res = await request(app).get('/api/uploads/test.png?cwd=/etc/passwd');
+    const res = await request(testServer).get('/api/uploads/test.png?cwd=/etc/passwd');
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
   });
 
   it('strips directory traversal via path.basename and returns 404', async () => {
-    const res = await request(app).get('/api/uploads/..%2F..%2Fetc%2Fpasswd?cwd=/test/project');
+    const res = await request(testServer).get(
+      '/api/uploads/..%2F..%2Fetc%2Fpasswd?cwd=/test/project'
+    );
 
     // path.basename strips traversal, resulting in just "passwd" which won't exist
     expect(res.status).toBe(404);

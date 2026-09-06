@@ -27,9 +27,10 @@ import {
   CommandEmpty,
   CommandGroup,
   CommandItem,
+  BoundedNumberInput,
 } from '@/layers/shared/ui';
 
-/** Form component showcases: Input, Textarea, Switch, Select, Tabs, Checkbox, RadioGroup, SegmentedControl, Label, Command. */
+/** Form component showcases: Input, Textarea, Switch, Select, Tabs, Checkbox, RadioGroup, SegmentedControl, Label, Command, BoundedNumberInput. */
 export function FormShowcases() {
   const [switchOn, setSwitchOn] = useState(true);
   const [checkA, setCheckA] = useState(true);
@@ -43,7 +44,7 @@ export function FormShowcases() {
       <PlaygroundSection title="Input" description="Text input field variants.">
         <ShowcaseLabel>Default</ShowcaseLabel>
         <ShowcaseDemo>
-          <Input placeholder="Type something..." />
+          <Input placeholder="Type something…" />
         </ShowcaseDemo>
 
         <ShowcaseLabel>With Label</ShowcaseLabel>
@@ -63,7 +64,7 @@ export function FormShowcases() {
       <PlaygroundSection title="Textarea" description="Multi-line text input.">
         <ShowcaseLabel>Default</ShowcaseLabel>
         <ShowcaseDemo>
-          <Textarea placeholder="Write a message..." />
+          <Textarea placeholder="Write a message…" />
         </ShowcaseDemo>
 
         <ShowcaseLabel>With Content</ShowcaseLabel>
@@ -335,7 +336,7 @@ export function FormShowcases() {
       >
         <ShowcaseDemo>
           <Command className="border shadow-md">
-            <CommandInput placeholder="Search agents..." />
+            <CommandInput placeholder="Search agents…" />
             <CommandList>
               <CommandEmpty>No results found.</CommandEmpty>
               <CommandGroup heading="Runtimes">
@@ -351,6 +352,42 @@ export function FormShowcases() {
           </Command>
         </ShowcaseDemo>
       </PlaygroundSection>
+
+      <BoundedNumberInputShowcase />
     </>
+  );
+}
+
+/** A number field that only reports numbers its bounds accept. */
+function BoundedNumberInputShowcase() {
+  const [value, setValue] = useState(5);
+  return (
+    <PlaygroundSection
+      title="BoundedNumberInput"
+      description="A number field that only reports numbers its bounds accept. Typing is not saving — it commits on blur or Enter, and Escape puts back the server's value. Out of range is refused, never clamped."
+    >
+      <ShowcaseLabel>Default (0–10) — try typing 500 and pressing Enter</ShowcaseLabel>
+      <ShowcaseDemo>
+        <BoundedNumberInput
+          value={value}
+          min={0}
+          max={10}
+          onCommit={setValue}
+          aria-label="Retry count"
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Disabled — on hold, still shows its value</ShowcaseLabel>
+      <ShowcaseDemo>
+        <BoundedNumberInput
+          value={3}
+          min={0}
+          max={10}
+          onCommit={() => {}}
+          disabled
+          aria-label="Retry count (disabled)"
+        />
+      </ShowcaseDemo>
+    </PlaygroundSection>
   );
 }

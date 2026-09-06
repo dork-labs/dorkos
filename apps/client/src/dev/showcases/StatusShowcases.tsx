@@ -8,10 +8,8 @@ import {
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { AgentActivityBadge } from '@/layers/features/dashboard-sidebar';
-import { StreamingText } from '@/layers/features/chat/ui/message/StreamingText';
-import { ErrorMessageBlock } from '@/layers/features/chat/ui/message/ErrorMessageBlock';
+import { ErrorMessageBlock, StreamingText, TaskListPanel } from '@/layers/features/chat';
 import { UsageStatusItem } from '@/layers/features/status';
-import { TaskListPanel } from '@/layers/features/chat/ui/tasks/TaskListPanel';
 import type { TransportErrorInfo } from '@/layers/features/chat/model/chat-types';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -22,7 +20,7 @@ import { IDENTITY_STATUSES } from '../mock-samples';
 /** A fixed "three hours from now", picked once at import: a showcase reads the clock nowhere near a render. */
 const SHOWCASE_RESETS_AT = new Date(Date.now() + 3 * 3600 * 1000).toISOString();
 
-/** What each dot signal means, in the words the cockpit uses for it. */
+/** What each dot signal means, in the words the app uses for it. */
 const SIGNALS: readonly { signal: StatusSignal; means: string }[] = [
   { signal: 'working', means: 'working — a turn is streaming right now' },
   { signal: 'needs-you', means: 'needs you — approval or a question' },
@@ -41,7 +39,7 @@ const TRANSPORT_ERRORS: readonly { label: string; error: TransportErrorInfo }[] 
     label: "Can't reach DorkOS (retryable)",
     error: {
       heading: "Can't reach DorkOS",
-      message: 'Could not reach the server. Check your network and try again.',
+      message: 'Couldn’t reach the server. Check your network and try again.',
       retryable: true,
     },
   },
@@ -101,7 +99,7 @@ export function StatusShowcases() {
     <>
       <PlaygroundSection
         title="Live status dots"
-        description="One dot vocabulary, four surfaces. Green means a turn is streaming as you look at it and is the only signal that ever moves; amber means something is waiting on you; red means something broke; blue means output you have not read. Idle draws nothing at all — a cockpit where every row wears a dot has no signal left in it. Every colour here is a theme token from one map, which is what stopped the same green being bg-green-500 in the sidebar, bg-emerald-500 in an agent panel and bg-primary in a group header."
+        description="One dot vocabulary, four surfaces. Green means a turn is streaming as you look at it and is the only signal that ever moves; amber means something is waiting on you; red means something broke; blue means output you have not read. Idle draws nothing at all — a surface where every row wears a dot has no signal left in it. Every colour here is a theme token from one map, which is what stopped the same green being bg-green-500 in the sidebar, bg-emerald-500 in an agent panel and bg-primary in a group header."
       >
         <ShowcaseLabel>The vocabulary — colour, and which one moves</ShowcaseLabel>
         <ShowcaseDemo>
@@ -185,7 +183,7 @@ export function StatusShowcases() {
 
         <ShowcaseLabel>Streaming cursor active</ShowcaseLabel>
         <ShowcaseDemo>
-          <StreamingText content="Working on it..." isStreaming />
+          <StreamingText content="Working on it…" isStreaming />
         </ShowcaseDemo>
       </PlaygroundSection>
 

@@ -44,13 +44,13 @@ export function CanvasCsvContent({ content }: CanvasCsvContentProps) {
   });
 
   if (resolved.url === null) {
-    return <CsvMessage>This CSV source can&rsquo;t be displayed here.</CsvMessage>;
+    return <CsvMessage>This CSV source can’t be displayed here.</CsvMessage>;
   }
   if (isLoading) {
     return <CsvMessage>Loading CSV…</CsvMessage>;
   }
   if (error || !data || data.length === 0) {
-    return <CsvMessage>This CSV couldn&rsquo;t be loaded.</CsvMessage>;
+    return <CsvMessage>This CSV couldn’t be loaded.</CsvMessage>;
   }
 
   const [header, ...rows] = data;

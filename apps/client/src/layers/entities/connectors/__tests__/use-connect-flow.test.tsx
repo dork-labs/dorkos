@@ -92,6 +92,56 @@ describe('useConnectFlow', () => {
     expect(transport.pollConnectorFlow).not.toHaveBeenCalled();
   });
 
+  it('polls immediately when the provider has no browser step', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.startConnectorFlow).mockResolvedValue({
+      flowId: 'flow-1',
+      disclosure: 'DorkOS checks the configured server without opening a sign-in page.',
+    });
+    vi.mocked(transport.pollConnectorFlow).mockResolvedValue({
+      status: 'connected',
+      account: connectedAccount,
+    });
+
+    const { result } = renderHook(() => useConnectFlow(), {
+      wrapper: createWrapper(transport).wrapper,
+    });
+    act(() => {
+      result.current.start({ provider: 'mcp', toolkit: 'gmail' });
+    });
+
+    await waitFor(() => expect(result.current.state.step).toBe('connected'));
+    expect(transport.pollConnectorFlow).toHaveBeenCalledWith('flow-1');
+    expect(result.current.state.authorizeUrl).toBeNull();
+  });
+
+  it('ignores a verification-only start that resolves after the flow is reset', async () => {
+    const transport = createMockTransport();
+    let finishStart: ((result: { flowId: string; disclosure: string }) => void) | undefined;
+    const startRequest = new Promise<{ flowId: string; disclosure: string }>((resolve) => {
+      finishStart = resolve;
+    });
+    vi.mocked(transport.startConnectorFlow).mockReturnValue(startRequest);
+    const { result } = renderHook(() => useConnectFlow(), {
+      wrapper: createWrapper(transport).wrapper,
+    });
+
+    act(() => {
+      result.current.start({ provider: 'mcp', toolkit: 'gmail' });
+    });
+    await waitFor(() => expect(transport.startConnectorFlow).toHaveBeenCalledTimes(1));
+    act(() => result.current.reset());
+    expect(result.current.state.step).toBe('idle');
+
+    await act(async () => {
+      finishStart?.({ flowId: 'late-flow', disclosure: 'Late verification response.' });
+      await startRequest;
+    });
+
+    expect(useConnectFlowStore.getState().step).toBe('idle');
+    expect(transport.pollConnectorFlow).not.toHaveBeenCalled();
+  });
+
   it('polls after authOpened and lands on connected with the new account', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.startConnectorFlow).mockResolvedValue(startResponse);

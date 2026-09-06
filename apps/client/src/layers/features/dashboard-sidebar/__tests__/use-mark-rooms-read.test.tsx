@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
-import type { RoomEntry } from '@dorkos/shared/room-schemas';
+import type { RoomEntry, RoomEntryListResponse } from '@dorkos/shared/room-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { useMarkRoomsRead } from '../model/use-mark-rooms-read';
 
@@ -36,8 +36,8 @@ function pendingTransport() {
   const releases: (() => void)[] = [];
   const transport = createMockTransport({
     listRoomEntries: vi.fn((roomId: string) => {
-      return new Promise<RoomEntry[]>((resolve) => {
-        releases.push(() => resolve([entry(roomId, 4)]));
+      return new Promise<RoomEntryListResponse>((resolve) => {
+        releases.push(() => resolve({ entries: [entry(roomId, 4)], threadRoots: [] }));
       });
     }),
     setReadCursor: vi.fn().mockResolvedValue(undefined),
@@ -68,7 +68,9 @@ function wrapperFor(transport: Transport) {
 describe('useMarkRoomsRead', () => {
   it('runs the per-room path once per room handed in', async () => {
     const transport = createMockTransport({
-      listRoomEntries: vi.fn((roomId: string) => Promise.resolve([entry(roomId, 4)])),
+      listRoomEntries: vi.fn((roomId: string) =>
+        Promise.resolve({ entries: [entry(roomId, 4)], threadRoots: [] })
+      ),
       setReadCursor: vi.fn().mockResolvedValue(undefined),
     });
     const { result } = renderHook(() => useMarkRoomsRead(), {

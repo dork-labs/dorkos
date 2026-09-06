@@ -108,11 +108,11 @@ describe('TunnelDialog', () => {
     });
   });
 
-  it('renders "Remote Access" title when open', () => {
+  it('renders "Remote access" title when open', () => {
     render(<TunnelDialog open={true} onOpenChange={vi.fn()} />, {
       wrapper: createWrapper(),
     });
-    expect(screen.getByText('Remote Access')).toBeDefined();
+    expect(screen.getByText('Remote access')).toBeDefined();
   });
 
   it('shows landing view when tokenConfigured is false', async () => {
@@ -123,6 +123,19 @@ describe('TunnelDialog', () => {
     await waitFor(() => {
       expect(screen.getByTestId('tunnel-landing')).toBeDefined();
     });
+  });
+
+  it('says "Access DorkOS from any device" once, not in the header and the body both', async () => {
+    // The dialog's own header description used to repeat what
+    // `TunnelOnboarding` already says under the illustration — the exact
+    // duplicate `TunnelLanding.tsx` removed from its body, just missed in the
+    // header (review nit).
+    const transport = createTunnelTransport({ tokenConfigured: false });
+    render(<TunnelDialog open={true} onOpenChange={vi.fn()} />, {
+      wrapper: createWrapper(transport),
+    });
+    await screen.findByTestId('tunnel-landing');
+    expect(screen.getAllByText(/Access DorkOS from any device/)).toHaveLength(1);
   });
 
   it('shows settings view when tokenConfigured is true', async () => {

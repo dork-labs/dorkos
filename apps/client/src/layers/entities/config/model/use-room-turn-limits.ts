@@ -151,7 +151,7 @@ export function useRoomTurnLimits(): RoomTurnLimitsState {
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: configKeys.current() });
     },
-    meta: { errorLabel: "Couldn't change that limit" },
+    meta: { errorLabel: 'Couldn’t change that limit' },
   });
 
   const { mutate } = mutation;

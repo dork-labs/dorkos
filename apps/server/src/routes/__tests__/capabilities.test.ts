@@ -101,13 +101,15 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../services/runtimes/claude-code/runtime-constants.js';
 import { TEST_MODE_CAPABILITIES } from '../../services/runtimes/test-mode/runtime-constants.js';
 
 const app = createApp();
+const testServer = listeningServer(app);
 
 describe('Capabilities Route', () => {
   beforeEach(() => {
@@ -115,7 +117,7 @@ describe('Capabilities Route', () => {
   });
 
   it('GET /api/capabilities returns capabilities and defaultRuntime', async () => {
-    const res = await request(app).get('/api/capabilities');
+    const res = await request(testServer).get('/api/capabilities');
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('capabilities');
@@ -126,7 +128,7 @@ describe('Capabilities Route', () => {
   });
 
   it('calls runtimeRegistry.getAllCapabilities and getDefaultType', async () => {
-    await request(app).get('/api/capabilities');
+    await request(testServer).get('/api/capabilities');
 
     expect(runtimeRegistry.getAllCapabilities).toHaveBeenCalledOnce();
     expect(runtimeRegistry.getDefaultType).toHaveBeenCalledOnce();
@@ -136,7 +138,7 @@ describe('Capabilities Route', () => {
     vi.mocked(runtimeRegistry.getAllCapabilities).mockReturnValueOnce({});
     vi.mocked(runtimeRegistry.getDefaultType).mockReturnValueOnce('claude-code');
 
-    const res = await request(app).get('/api/capabilities');
+    const res = await request(testServer).get('/api/capabilities');
 
     expect(res.status).toBe(200);
     expect(res.body.capabilities).toEqual({});
@@ -166,7 +168,7 @@ describe('Capabilities Route', () => {
       opencode: opencodeCapabilities,
     });
 
-    const res = await request(app).get('/api/capabilities');
+    const res = await request(testServer).get('/api/capabilities');
 
     expect(res.status).toBe(200);
     expect(Object.keys(res.body.capabilities)).toHaveLength(2);
@@ -184,7 +186,7 @@ describe('Capabilities Route', () => {
       'test-mode': TEST_MODE_CAPABILITIES,
     });
 
-    const res = await request(app).get('/api/capabilities');
+    const res = await request(testServer).get('/api/capabilities');
 
     expect(res.status).toBe(200);
     expect(res.body.capabilities['claude-code'].settings).toEqual({

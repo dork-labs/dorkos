@@ -37,7 +37,8 @@ import { z } from 'zod';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { noopLogger } from '@dorkos/shared/logger';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { capabilityConformance } from '@dorkos/test-utils';
@@ -186,13 +187,49 @@ const { SessionConnectorService } = await import('../../../connectors/session-ex
 const { AgentConnectorAttachmentStore, SessionConnectorAttachmentStore } =
   await import('../../../connectors/attachment-store.js');
 const { FakeConnectorProvider } = await import('@dorkos/test-utils');
-const { runMigrations } = await import('@dorkos/db');
+const { agents, runMigrations, sessionMetadata } = await import('@dorkos/db');
 
 const connectorDb = createTestDb();
 runMigrations(connectorDb);
+const connectorFixtureCreatedAt = new Date().toISOString();
+connectorDb
+  .insert(agents)
+  .values({
+    id: 'conformance-agent',
+    name: 'conformance-agent',
+    runtime: 'test-mode',
+    projectPath: path.join(SANDBOX_CWD, 'agents', 'conformance'),
+    registeredAt: connectorFixtureCreatedAt,
+    updatedAt: connectorFixtureCreatedAt,
+  })
+  .run();
+connectorDb
+  .insert(sessionMetadata)
+  .values({
+    sessionId: 'conformance',
+    runtime: 'test-mode',
+    agentPath: path.join(SANDBOX_CWD, 'agents', 'conformance'),
+    createdAt: connectorFixtureCreatedAt,
+  })
+  .run();
 const conformanceConnectorRegistry = new ConnectorRegistry({ db: connectorDb });
-conformanceConnectorRegistry.register(
-  new FakeConnectorProvider({ type: 'composio', custody: 'managed' })
+const conformanceConnectorProvider = new FakeConnectorProvider({
+  type: 'composio',
+  custody: 'managed',
+});
+conformanceConnectorRegistry.register(conformanceConnectorProvider);
+const conformanceConnectStart = await conformanceConnectorProvider.startConnect('gmail', {
+  label: 'conformance',
+});
+const conformanceConnectPoll = await conformanceConnectorProvider.pollConnect(
+  conformanceConnectStart.flowId
+);
+if (conformanceConnectPoll.status !== 'connected' || !conformanceConnectPoll.account) {
+  throw new Error('conformance fixture: fake connector did not create its account');
+}
+const conformanceConnection = conformanceConnectorRegistry.recordConnect(
+  conformanceConnectorProvider,
+  conformanceConnectPoll.account
 );
 const connectorDeps = {
   registry: conformanceConnectorRegistry,
@@ -337,6 +374,7 @@ const DESTRUCTIVE_INPUT = { name: 'nonexistent-conformance-pkg', purge: true };
 const approvalDb = createTestDb();
 const approvalService = new ApprovalService(approvalDb);
 const approvalGrantService = new ApprovalGrantService(approvalDb);
+const requestTarget = swappableServer();
 initCapabilityTierGate({ approvals: approvalService });
 
 /** Read a plain payload back out of an MCP text-content result. */
@@ -374,7 +412,8 @@ function routeProbe(identity?: typeof PROBE_IDENTITY) {
         next();
       });
       app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
-      const res = await request(app)
+      requestTarget.mount(app);
+      const res = await request(requestTarget.server)
         .post(`/api/capabilities/${DESTRUCTIVE_ID}/invoke`)
         .send(DESTRUCTIVE_INPUT);
       expect(res.status).toBe(202);
@@ -449,8 +488,9 @@ const requesterDecideProbe = async () => {
     '/api/approvals',
     createApprovalsRouter(approvalService, approvalGrantService, { isLoginEnabled: () => false })
   );
+  requestTarget.mount(app);
 
-  const asked = await request(app)
+  const asked = await request(requestTarget.server)
     .post(`/api/capabilities/${DESTRUCTIVE_ID}/invoke`)
     .send(DESTRUCTIVE_INPUT);
   expect(asked.status).toBe(202);
@@ -459,7 +499,7 @@ const requesterDecideProbe = async () => {
     approvalToken: string;
   };
 
-  const decided = await request(app)
+  const decided = await request(requestTarget.server)
     .post(`/api/approvals/${approvalId}/grant`)
     .set(APPROVAL_TOKEN_HEADER, approvalToken)
     .send();
@@ -504,8 +544,8 @@ capabilityConformance(registry, {
     // An unknown flow: the handler answers with its structured CapabilityToolError.
     'connector.poll_connect': { flowId: 'conformance-flow' },
     // Destructive: refused by the gate before the handler runs (asserted above).
-    'connector.attach_account': { accountId: 'conformance-account', sessionId: 'conformance' },
-    'connector.detach_account': { accountId: 'conformance-account', sessionId: 'conformance' },
+    'connector.attach_account': { accountId: conformanceConnection.id, sessionId: 'conformance' },
+    'connector.detach_account': { accountId: conformanceConnection.id, sessionId: 'conformance' },
     // Every mcp verb needs a PARSEABLE fixture: the destructive writes so the gate
     // (not a ZodError) refuses them, and the observe/act verbs so they reach the
     // handler and answer with a structured AGENT_NOT_FOUND (the locator has no

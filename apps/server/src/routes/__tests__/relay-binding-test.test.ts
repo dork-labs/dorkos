@@ -6,11 +6,15 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import type { Server } from 'node:http';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createRelayRouter } from '../relay.js';
 import type { RelayCore } from '@dorkos/relay';
 import type { AdapterManager } from '../../services/relay/adapter-manager.js';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
+
+const target = swappableServer();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -75,7 +79,7 @@ function createMockAdapterManager(overrides?: Partial<AdapterManager>): AdapterM
   } as unknown as AdapterManager;
 }
 
-function createTestApp(adapterManager?: AdapterManager): express.Application {
+function createTestApp(adapterManager?: AdapterManager): Server {
   const app = express();
   app.use(express.json());
   app.use(
@@ -90,7 +94,7 @@ function createTestApp(adapterManager?: AdapterManager): express.Application {
       res.status(500).json({ error: err.message });
     }
   );
-  return app;
+  return target.mount(app);
 }
 
 // ---------------------------------------------------------------------------
@@ -98,7 +102,7 @@ function createTestApp(adapterManager?: AdapterManager): express.Application {
 // ---------------------------------------------------------------------------
 
 describe('POST /api/relay/bindings/:id/test', () => {
-  let app: express.Application;
+  let app: Server;
   let mockBindingStore: {
     getAll: ReturnType<typeof vi.fn>;
     getById: ReturnType<typeof vi.fn>;

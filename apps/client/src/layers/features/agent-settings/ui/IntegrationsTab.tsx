@@ -183,7 +183,7 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
       // only place that reports it.
       const result = await testBinding.mutateAsync(bindingId);
       if (result.ok) {
-        toast.success(`Test OK \u2014 routed in ${result.latencyMs}ms`);
+        toast.success(`Test OK: routed in ${result.latencyMs}ms`);
       } else {
         toast.error(`Test failed: ${result.reason ?? 'unknown error'}`);
       }
@@ -301,7 +301,7 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
             <p className="text-sm font-medium">No connections available</p>
             <p className="text-muted-foreground max-w-xs text-xs leading-relaxed">
               To connect this agent to Telegram, Slack, or a webhook, add a connection first. It
-              will appear here as soon as it&apos;s ready.
+              will appear here as soon as it’s ready.
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => openConnections('messaging')}>

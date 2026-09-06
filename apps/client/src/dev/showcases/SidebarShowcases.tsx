@@ -51,7 +51,7 @@ function makeIndicatorSession(id: string, title: string): Session {
 }
 
 const INDICATOR_SESSIONS: Record<keyof typeof INDICATOR_SESSION_IDS, Session> = {
-  streaming: makeIndicatorSession(INDICATOR_SESSION_IDS.streaming, 'Running agent task...'),
+  streaming: makeIndicatorSession(INDICATOR_SESSION_IDS.streaming, 'Running agent task…'),
   pendingApproval: makeIndicatorSession(
     INDICATOR_SESSION_IDS.pendingApproval,
     'Waiting for tool approval'
@@ -125,7 +125,8 @@ function SidebarRowShowcase() {
   const [dragging, setDragging] = useState(false);
   const drag: RowDragBindings = {
     setNodeRef: () => {},
-    handleProps: {},
+    rootProps: {},
+    activatorProps: { ref: () => {} },
     style: dragging ? { transform: 'translate3d(0px, 40px, 0px)' } : {},
     isDragging: false,
     isOver: false,
@@ -156,7 +157,7 @@ function SidebarRowShowcase() {
 
       <ShowcaseLabel>
         The two levels together — header at --sidebar-header-x (12), glyph at --sidebar-row-x (20),
-        label at 46. Every row in the panel, a section&rsquo;s members included, is on that one x.
+        label at 46. Every row in the panel, a section’s members included, is on that one x.
       </ShowcaseLabel>
       <ShowcaseDemo>
         {/* The whole geometry, in one frame a browser can measure. `px-2` is the
@@ -251,7 +252,7 @@ function SidebarRowShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Keyboard — the arrows walk the row&rsquo;s lane: face, row, chip, then the ⋮
+        Keyboard — the arrows walk the row’s lane: face, row, chip, then the ⋮
       </ShowcaseLabel>
       <ShowcaseDemo>
         <RowFrame width={COCKPIT_SIDEBAR_WIDTH} testId="keyboard">

@@ -14,7 +14,7 @@ export interface SubmitButtonProps {
  */
 export function SubmitButton({
   label = 'Submit',
-  pendingLabel = 'Submitting...',
+  pendingLabel = 'Submitting…',
 }: SubmitButtonProps) {
   const form = useFormContext();
   return (

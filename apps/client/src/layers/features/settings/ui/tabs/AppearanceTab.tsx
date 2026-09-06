@@ -42,7 +42,7 @@ export function AppearanceTab() {
     <div className="space-y-4">
       <FieldCard>
         <FieldCardContent>
-          <SettingRow label="Theme" description="Choose your preferred color scheme">
+          <SettingRow label="Theme">
             <Select value={theme} onValueChange={setTheme}>
               <SelectTrigger className="w-32">
                 <SelectValue />
@@ -55,7 +55,7 @@ export function AppearanceTab() {
             </Select>
           </SettingRow>
 
-          <SettingRow label="Font family" description="Choose the typeface for the interface">
+          <SettingRow label="Font family">
             <Select value={fontFamily} onValueChange={(v) => setFontFamily(v as FontFamilyKey)}>
               <SelectTrigger className="w-40">
                 <SelectValue />
@@ -63,9 +63,16 @@ export function AppearanceTab() {
               <SelectContent>
                 {FONT_CONFIGS.map((font) => (
                   <SelectItem key={font.key} value={font.key}>
-                    <div className="flex flex-col">
-                      <span>{font.displayName}</span>
-                      <span className="text-muted-foreground text-xs">{font.description}</span>
+                    {/* `min-w-0` + `truncate`: the trigger is narrower than the
+                        longest description, and without them the browser
+                        hard-clipped it mid-character — "Inter + JetBrains Mor"
+                        reads as a rendering fault, an ellipsis reads as a
+                        choice (DOR-1747). */}
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate">{font.displayName}</span>
+                      <span className="text-muted-foreground truncate text-xs">
+                        {font.description}
+                      </span>
                     </div>
                   </SelectItem>
                 ))}
@@ -73,7 +80,7 @@ export function AppearanceTab() {
             </Select>
           </SettingRow>
 
-          <SettingRow label="Font size" description="Adjust the text size across the interface">
+          <SettingRow label="Font size">
             <Select
               value={fontSize}
               onValueChange={(v) => setFontSize(v as 'small' | 'medium' | 'large')}

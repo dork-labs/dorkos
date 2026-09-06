@@ -48,7 +48,7 @@ export function ThinkingBlock({ text, isStreaming, elapsedMs }: ThinkingBlockPro
 
   const durationLabel = elapsedMs
     ? `Thought for ${formatThinkingDuration(elapsedMs)}`
-    : 'Thinking...';
+    : 'Thinking…';
 
   return (
     <CollapsibleCard

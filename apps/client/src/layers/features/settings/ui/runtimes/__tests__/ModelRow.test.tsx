@@ -61,7 +61,7 @@ describe('ModelRow', () => {
     expect(screen.queryByTestId('runtime-model-select-claude-code')).not.toBeInTheDocument();
   });
 
-  it("shows the runtime's choice when nothing is pinned", () => {
+  it('shows the runtime’s choice when nothing is pinned', () => {
     renderRow();
     expect(screen.getByTestId('runtime-model-select-claude-code')).toHaveTextContent('Automatic');
   });

@@ -111,7 +111,7 @@ export function SessionComposerBench({
     sessionId,
     // What the box says with no agent registered at the working directory,
     // which is what these suites render against.
-    placeholder: 'Send a message...',
+    placeholder: 'Send a message…',
     submit,
     enqueue,
     files,

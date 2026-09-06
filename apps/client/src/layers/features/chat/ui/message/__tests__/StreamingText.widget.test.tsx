@@ -67,7 +67,7 @@ describe('StreamingText dorkos-ui fence', () => {
     render(<StreamingText content={unclosed} isStreaming />);
     expect(await screen.findByLabelText('Loading widget')).toBeInTheDocument();
     // The partial JSON never renders as widget content or an error card.
-    expect(screen.queryByText("This widget couldn't be rendered")).not.toBeInTheDocument();
+    expect(screen.queryByText('This widget couldn’t be rendered')).not.toBeInTheDocument();
   });
 
   it('holds the skeleton for a closed-but-truncated fence while the message streams', async () => {
@@ -84,7 +84,7 @@ describe('StreamingText dorkos-ui fence', () => {
     ].join('\n');
     render(<StreamingText content={truncatedClosed} isStreaming />, { wrapper: Wrapper });
     expect(await screen.findByLabelText('Loading widget')).toBeInTheDocument();
-    expect(screen.queryByText("This widget couldn't be rendered")).not.toBeInTheDocument();
+    expect(screen.queryByText('This widget couldn’t be rendered')).not.toBeInTheDocument();
   });
 
   it('settles a closed-but-truncated fence into the error card once streaming ends', async () => {
@@ -96,7 +96,7 @@ describe('StreamingText dorkos-ui fence', () => {
 
     // The turn ends; the JSON never completed — now it is genuinely broken.
     rerender(<StreamingText content={truncatedClosed} isStreaming={false} />);
-    expect(await screen.findByText("This widget couldn't be rendered")).toBeInTheDocument();
+    expect(await screen.findByText('This widget couldn’t be rendered')).toBeInTheDocument();
   });
 
   it('keeps the widget mounted when isLatestWidgetMessage or isStreaming change', async () => {
@@ -147,7 +147,7 @@ describe('StreamingText dorkos-ui fence', () => {
 
     // No flag (default) → live, playable board.
     render(<StreamingText content={boardFence} sessionId="s-1" />, { wrapper: Wrapper });
-    expect(await screen.findByLabelText('Row 1, column 1: empty — play here')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Row 1, column 1: empty, play here')).toBeInTheDocument();
   });
 
   it('renders multiple dorkos-ui fences in one message independently', async () => {

@@ -27,7 +27,7 @@ import { useToolNamesForGroup } from '@/layers/entities/capability';
 import { useUpdateAgent as useUpdateMeshAgent } from '@/layers/entities/mesh';
 import { agentKeys } from '@/layers/entities/agent';
 import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
-import { useAgentContextConfig } from '../model/use-agent-context-config';
+import { useAgentContextConfig } from '@/layers/entities/config';
 import { AgentMcpServers } from './AgentMcpServers';
 
 type GlobalConfigKey = 'tasksTools' | 'relayTools' | 'meshTools' | 'adapterTools';
@@ -162,7 +162,7 @@ interface ToolsTabProps {
  *
  * **Written through the operator's route, never the agent self-edit route.**
  * `PATCH /api/agents/current` REFUSES this field by design: a grant the governed
- * agent can set for itself is not a grant. The cockpit is the person, so it uses
+ * agent can set for itself is not a grant. The app is the person, so it uses
  * `PATCH /api/mesh/agents/:id`, which is the only way in.
  *
  * **Rendered whatever the runtime is.** The four toggles above hide when a
@@ -239,16 +239,16 @@ function ManageRoomsCard({
         <p className="text-muted-foreground text-sm">
           <span className="text-foreground font-medium">This switch is a lock, not a hint.</span>{' '}
           Unlike the groups above, turning it off blocks the calls: the agent is refused, and told
-          to ask you. It is off until you turn it on, and only you can change it &mdash; the agent
-          cannot turn it on for itself.
+          to ask you. It is off until you turn it on, and only you can change it. The agent cannot
+          turn it on for itself.
         </p>
         <p className="text-muted-foreground text-sm">
           It can never remove you from a room, and any room holding two agents holds you too.
         </p>
         {supportsDorkTools ? null : (
           <p className="text-muted-foreground text-sm">
-            This agent&rsquo;s runtime reaches these over the external MCP server rather than
-            in-session, and the switch applies there just the same.
+            This agent’s runtime reaches these over the external MCP server rather than in-session,
+            and the switch applies there just the same.
           </p>
         )}
       </FieldCardContent>
@@ -269,7 +269,7 @@ function ManageRoomsCard({
  * the same reason the grant below it is: the self-edit route refuses any change
  * that WIDENS a ceiling, whoever sends it, so an agent cannot hand itself back
  * what a person took away. Lowering is the one direction an agent may take on
- * its own. The cockpit is the person, so it uses `PATCH /api/mesh/agents/:id`
+ * its own. The app is the person, so it uses `PATCH /api/mesh/agents/:id`
  * and can set any rung.
  *
  * The two invalidations are the ones `ManageRoomsCard` explains: this card's
@@ -329,8 +329,8 @@ function TierCeilingCard({ agent }: { agent: AgentManifest }) {
             edge is unstated reads as a sandbox, and this is not one. */}
         <p className="text-muted-foreground text-sm">
           This covers what the agent asks DorkOS to do. An agent that can run terminal commands can
-          still act outside DorkOS &mdash; turn on Require login, in Settings under Security, to
-          close that door too.
+          still act outside DorkOS. Turn on Require login, in Settings under Security, to close that
+          door too.
         </p>
       </FieldCardContent>
     </FieldCard>
@@ -364,7 +364,7 @@ export function ToolsTab({ agent, projectPath }: ToolsTabProps) {
   // BEATS the global `agentContext.*` switch (`resolveToolConfig`), and those
   // four are operator-only at the config seam, so leaving these writable there
   // let an agent undo a narrowing the person had made to its own tool context.
-  // The cockpit is the person, so it uses `PATCH /api/mesh/agents/:id`.
+  // The app is the person, so it uses `PATCH /api/mesh/agents/:id`.
   //
   // The whole stored object is sent, `roomsManage` included: the operator's
   // route carries the grant, and `deepMerge` is not in play here — the manifest
@@ -450,8 +450,8 @@ export function ToolsTab({ agent, projectPath }: ToolsTabProps) {
           <p className="text-muted-foreground text-sm">
             Choose which tool groups this agent is told about. Turn a group off and the agent stops
             being told those tools exist, so it stops reaching for them. This is guidance, not a
-            lock &mdash; an agent that asks for one anyway still gets it. Leave a group unset to
-            inherit the global default.
+            lock: an agent that asks for one anyway still gets it. Leave a group unset to inherit
+            the global default.
           </p>
 
           <FieldCard>
@@ -478,9 +478,9 @@ export function ToolsTab({ agent, projectPath }: ToolsTabProps) {
         <FieldCard>
           <FieldCardContent>
             <p className="text-muted-foreground text-sm">
-              This agent&rsquo;s runtime does not support DorkOS tool groups (Scheduling, Messaging,
-              Agent discovery, Connection management). These are delivered over MCP, which this
-              runtime cannot consume.
+              This agent’s runtime does not support DorkOS tool groups (Scheduling, Messaging, Agent
+              discovery, Connection management). These are delivered over MCP, which this runtime
+              cannot consume.
             </p>
           </FieldCardContent>
         </FieldCard>

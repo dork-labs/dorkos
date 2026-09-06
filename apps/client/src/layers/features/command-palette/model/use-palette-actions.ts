@@ -153,7 +153,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
 
   /**
    * Open a conversation the palette already names — the "Continue: …"
-   * suggestion, or a row under an agent's Recent Sessions.
+   * suggestion, or a row under an agent's Recent sessions.
    *
    * `dir` travels with it and is not optional in practice: the durable stream
    * resolves a session's history from `?cwd=`, so a session id arriving under
@@ -399,7 +399,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       // Load-bearing: it closes over the ACTIVE agent, and the palette is
       // mounted for the whole life of the app. Omit it and this handler is
       // built once at boot and keeps whatever agent was selected then, so
-      // "New Session" opens a conversation somewhere you are not (DOR-928).
+      // "New session" opens a conversation somewhere you are not (DOR-928).
       startNewSession,
     ]
   );

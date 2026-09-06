@@ -270,7 +270,7 @@ export function DiscoveryView({ fullBleed = false, onRegistered }: DiscoveryView
             </Button>
 
             <p className="text-muted-foreground/60 text-center text-xs">
-              Read-only scan — nothing changes until you approve
+              Read-only scan. Nothing changes until you approve
             </p>
 
             {advancedSection}

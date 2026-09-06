@@ -9,7 +9,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTasksRouter } from '../tasks.js';
 import { TaskStore, type CreateTaskStoreInput } from '../../services/tasks/task-store.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
@@ -77,6 +78,9 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 import { writeSkillFile } from '@dorkos/skills/writer';
 
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
+
 /** Build a minimal CreateTaskStoreInput with defaults for required fields. */
 function taskInput(
   overrides: Partial<CreateTaskStoreInput> & { name: string }
@@ -136,6 +140,8 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
         res.status(500).json({ error: err.message });
       }
     );
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -145,7 +151,7 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
 
   describe('POST /api/tasks', () => {
     it('refuses a cron croner cannot parse — 400, and nothing is written', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/tasks')
         .send(createBody({ cron: 'banana' }));
 
@@ -157,7 +163,7 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
     });
 
     it('refuses a timezone croner cannot resolve — 400, and nothing is written', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/tasks')
         .send(createBody({ timezone: 'Mars/Phobos' }));
 
@@ -168,7 +174,7 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
     });
 
     it('still accepts a schedule that reads', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/tasks')
         .send(createBody({ cron: '0 3 * * *', timezone: 'Asia/Tokyo' }));
 
@@ -183,7 +189,7 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
     // would eventually spawn a real, billed agent. Refusing this expression broke
     // those specs, and would have taken that safeguard with it.
     it('accepts a schedule that never comes round — the manual-only idiom', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/tasks')
         .send(createBody({ cron: '0 0 31 2 *' }));
 
@@ -197,7 +203,7 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
     });
 
     it('accepts the February 30th twin too', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/tasks')
         .send(createBody({ cron: '0 0 30 2 *' }));
 
@@ -205,7 +211,7 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
     });
 
     it('accepts an on-demand task, which has no cron to read', async () => {
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .post('/api/tasks')
         .send(createBody({ cron: null }));
 
@@ -217,7 +223,9 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
     it('refuses a cron croner cannot parse — 400, and the row is untouched', async () => {
       const task = store.createTask(taskInput({ name: 'nightly', cron: '0 2 * * *' }));
 
-      const res = await request(app).patch(`/api/tasks/${task.id}`).send({ cron: '99 * * * *' });
+      const res = await request(fixtureServer)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ cron: '99 * * * *' });
 
       expect(res.status).toBe(400);
       expect(store.getTask(task.id)?.cron).toBe('0 2 * * *');
@@ -228,7 +236,7 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
         taskInput({ name: 'nightly', cron: '0 2 * * *', timezone: 'UTC' })
       );
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${task.id}`)
         .send({ timezone: 'Mars/Phobos' });
 
@@ -245,7 +253,9 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
     it('lets an unrelated edit through on a task whose stored cron is already bad', async () => {
       const task = store.createTask(taskInput({ name: 'legacy-broken', cron: 'banana' }));
 
-      const res = await request(app).patch(`/api/tasks/${task.id}`).send({ enabled: false });
+      const res = await request(fixtureServer)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ enabled: false });
 
       expect(res.status).toBe(200);
       expect(store.getTask(task.id)?.enabled).toBe(false);
@@ -255,7 +265,9 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
     it('accepts a repair to a cron that was already bad', async () => {
       const task = store.createTask(taskInput({ name: 'legacy-broken', cron: 'banana' }));
 
-      const res = await request(app).patch(`/api/tasks/${task.id}`).send({ cron: '0 2 * * *' });
+      const res = await request(fixtureServer)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ cron: '0 2 * * *' });
 
       expect(res.status).toBe(200);
       expect(store.getTask(task.id)?.cron).toBe('0 2 * * *');
@@ -264,7 +276,9 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
     it('accepts an edit into a schedule that never comes round', async () => {
       const task = store.createTask(taskInput({ name: 'nightly', cron: '0 2 * * *' }));
 
-      const res = await request(app).patch(`/api/tasks/${task.id}`).send({ cron: '0 0 31 2 *' });
+      const res = await request(fixtureServer)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ cron: '0 0 31 2 *' });
 
       expect(res.status).toBe(200);
       expect(store.getTask(task.id)?.cron).toBe('0 0 31 2 *');
@@ -275,7 +289,7 @@ describe('Tasks routes — a schedule nothing can read is refused at the door', 
     it('reads the new cron against the timezone it will actually run in', async () => {
       const task = store.createTask(taskInput({ name: 'nightly', cron: '0 2 * * *' }));
 
-      const res = await request(app)
+      const res = await request(fixtureServer)
         .patch(`/api/tasks/${task.id}`)
         .send({ cron: '0 2 * * *', timezone: 'Asia/Tokyo' });
 

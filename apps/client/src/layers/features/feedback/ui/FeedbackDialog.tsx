@@ -62,7 +62,7 @@ const KINDS: { value: FeedbackSubmissionKind; label: string; icon: typeof Messag
 
 /** Placeholder text per kind — a gentle nudge toward a useful message. */
 const PLACEHOLDER: Record<FeedbackSubmissionKind, string> = {
-  feedback: 'What works, what does not, what you wish it did...',
+  feedback: 'What works, what does not, what you wish it did…',
   bug: 'What happened, and what did you expect instead?',
   idea: 'What would you like DorkOS to do?',
 };
@@ -292,8 +292,8 @@ export function FeedbackDialog({
               </div>
               {anonymous && (
                 <p className="text-muted-foreground text-xs">
-                  Your report won&apos;t include your name or email. You can still track it in this
-                  app; add a contact below if you&apos;d like a reply.
+                  Your report won’t include your name or email. You can still track it in this app;
+                  add a contact below if you’d like a reply.
                 </p>
               )}
             </div>
@@ -322,11 +322,11 @@ export function FeedbackDialog({
                   className="border-muted-foreground/25 text-muted-foreground flex items-center justify-center gap-2 rounded-md border border-dashed px-3 py-4 text-xs opacity-70"
                 >
                   <ImagePlus className="size-4" aria-hidden />
-                  Add screenshot — coming soon
+                  Add screenshot (coming soon)
                 </div>
                 <div className="text-muted-foreground flex items-center gap-1.5 text-xs opacity-70">
                   <Crosshair className="size-3.5" aria-hidden />
-                  Point at element — soon
+                  Point at element (coming soon)
                 </div>
               </div>
 
@@ -357,7 +357,7 @@ export function FeedbackDialog({
               {/* Privacy line */}
               <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
                 <Lock className="size-3 shrink-0" aria-hidden />
-                Private — only the DorkOS core team sees these. Never public.
+                Private. Only the DorkOS core team sees these. Never public.
               </p>
             </CollapsibleContent>
           </Collapsible>
@@ -371,7 +371,7 @@ export function FeedbackDialog({
               id="feedback-contact"
               value={contact}
               onChange={(e) => setContact(e.target.value)}
-              placeholder="Email or handle, if you'd like a reply"
+              placeholder="Email or handle, if you’d like a reply"
               maxLength={254}
               autoComplete="off"
             />

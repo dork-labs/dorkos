@@ -75,7 +75,7 @@ export function useStoreRuntimeCredential(type: string): UseStoreRuntimeCredenti
     isSuccess: mutation.isSuccess,
     isError: mutation.isError,
     errorMessage: mutation.isError
-      ? ((mutation.error as Error).message ?? 'Could not save the API key.')
+      ? ((mutation.error as Error).message ?? 'Couldn’t save the API key.')
       : null,
     reset: mutation.reset,
   };

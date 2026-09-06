@@ -105,7 +105,7 @@ function RosterFlipDemo() {
           aria-pressed={grouped}
           onClick={() => setGrouped((current) => !current)}
         >
-          Group: manager
+          Group by owner
         </Button>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -231,8 +231,8 @@ export function IdentityMotionShowcases() {
     >
       <ShowcaseLabel>
         Surface tier — a card whose whole area is one action lifts, deepens, and firms its border
-        into that identity&rsquo;s own colour. Hovering the attribution inside it stands the card
-        down, so one pointer never lights two affordances.
+        into that identity’s own colour. Hovering the attribution inside it stands the card down, so
+        one pointer never lights two affordances.
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="grid gap-3 md:grid-cols-2">
@@ -249,8 +249,8 @@ export function IdentityMotionShowcases() {
 
       <ShowcaseLabel>
         Mark tier — a disc that is itself a target rings itself in its own colour. The ring answers
-        the control&rsquo;s hover and its focus alike, so Tab here learns exactly what a mouse does.
-        The agent shows the spillover: the same marker also arms the badge wake, so anywhere on the
+        the control’s hover and its focus alike, so Tab here learns exactly what a mouse does. The
+        agent shows the spillover: the same marker also arms the badge wake, so anywhere on the
         control rings the disc, and landing on the disc itself additionally leans its Bot mark.
       </ShowcaseLabel>
       <ShowcaseDemo>
@@ -279,22 +279,21 @@ export function IdentityMotionShowcases() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Signature 1 — the roster FLIP. Flip Group: manager and watch cards travel from the flat grid
-        into their owner&rsquo;s cluster rather than teleporting. Narrow to People or Agents and the
+        Signature 1 — the roster FLIP. Flip Group by owner and watch cards travel from the flat grid
+        into their owner’s cluster rather than teleporting. Narrow to People or Agents and the
         leavers fade without shoving the survivors. Position only, and off entirely above 120 cards
-        or under reduced motion — switch the roster to &ldquo;Over the limit&rdquo; and the travel
-        stops.
+        or under reduced motion — switch the roster to “Over the limit” and the travel stops.
       </ShowcaseLabel>
       <ShowcaseDemo responsive>
         <RosterFlipDemo />
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Signature 2 — the owner echo. Point at (or Tab to) &ldquo;by @dorian&rdquo; and it says how
-        many agents that person has. The suffix sits outside the layout, so it costs the row nothing
-        at rest and revealing it never shoves the name out from under the cursor that asked for it.
-        Watch the card stand down at the same time: pointing here is a different verb from opening
-        the profile, so the lift, the border and the badge all calm.
+        Signature 2 — the owner echo. Point at (or Tab to) “by @dorian” and it says how many agents
+        that person has. The suffix sits outside the layout, so it costs the row nothing at rest and
+        revealing it never shoves the name out from under the cursor that asked for it. Watch the
+        card stand down at the same time: pointing here is a different verb from opening the
+        profile, so the lift, the border and the badge all calm.
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="grid gap-3 md:grid-cols-2">
@@ -319,20 +318,20 @@ export function IdentityMotionShowcases() {
 
       <ShowcaseLabel>
         Signature 3 — the drawer arrives in 300ms rather than 500. Scoped to this panel: every other
-        sheet in the app keeps the primitive&rsquo;s own timing.
+        sheet in the app keeps the primitive’s own timing.
       </ShowcaseLabel>
       <ShowcaseDemo>
         <DrawerTimingDemo />
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Signature 4 — the badge wake. An agent&rsquo;s Bot mark tilts six degrees and grows a tenth.
+        Signature 4 — the badge wake. An agent’s Bot mark tilts six degrees and grows a tenth.
         Opt-in per call site, so the twenty-plus discs in the sidebar — which are not targets — stay
         still. What counts as pointing at it depends on what owns the pixels: these bare discs and
-        the Mark-tier lockup above answer the disc&rsquo;s own hover, while a Team card answers the
-        whole card, because its stretched-link overlay covers the disc and the disc never sees a
-        hover at all. Off completely under reduced motion, tilt included: a crooked badge carries no
-        fact worth keeping.
+        the Mark-tier lockup above answer the disc’s own hover, while a Team card answers the whole
+        card, because its stretched-link overlay covers the disc and the disc never sees a hover at
+        all. Off completely under reduced motion, tilt included: a crooked badge carries no fact
+        worth keeping.
       </ShowcaseLabel>
       <ShowcaseDemo>
         <BadgeWakeRow />

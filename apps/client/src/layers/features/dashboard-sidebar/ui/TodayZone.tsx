@@ -175,7 +175,7 @@ export function CatchUpButton({ count, onCatchUp }: CatchUpButtonProps) {
         // The visible words open the accessible name, so a voice control that
         // hears "Catch up" reaches this button (WCAG 2.5.3, label in name); the
         // rest says how much it is about to do, which the words alone cannot.
-        aria-label={`Catch up — mark ${count} unread ${count === 1 ? 'conversation' : 'conversations'} in Today as read`}
+        aria-label={`Catch up: mark ${count} unread ${count === 1 ? 'conversation' : 'conversations'} in Today as read`}
         className={cn(
           'text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground focus-ring',
           // A thumb's target, the same 44px the rows under it are (P4 AC-4).

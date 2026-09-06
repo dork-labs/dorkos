@@ -93,7 +93,7 @@ interface AgentCreationState {
   close: () => void;
 }
 
-/** Global dialog state for the Create Agent dialog. */
+/** Global dialog state for the Create agent dialog. */
 export const useAgentCreationStore = create<AgentCreationState>((set) => ({
   isOpen: false,
   initialMode: 'new',

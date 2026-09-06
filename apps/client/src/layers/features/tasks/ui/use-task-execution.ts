@@ -337,9 +337,9 @@ export function useTaskExecution(input: TaskExecutionInput): TaskExecution {
     inheritedRuntime === null
       ? // Nothing has answered yet. Naming a runtime here would be a guess, and
         // the guess is wrong on exactly the machines that need it right.
-        "Agent's runtime"
+        'Agent’s runtime'
       : agentTierApplies
-        ? `Agent's runtime (${getRuntimeDescriptor(inheritedRuntime).label})`
+        ? `Agent’s runtime (${getRuntimeDescriptor(inheritedRuntime).label})`
         : `Server default (${getRuntimeDescriptor(inheritedRuntime).label})`;
 
   return {

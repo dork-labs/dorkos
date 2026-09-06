@@ -116,7 +116,9 @@ vi.mock('../../lib/boundary.js', () => ({
 }));
 
 import express from 'express';
-import request from 'supertest';
+import type { Server } from 'node:http';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import sessionRoutes from '../sessions.js';
 import {
   disposeProjector,
@@ -129,6 +131,7 @@ const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 const OTHER_SESSION_ID = '00000000-0000-4000-8000-000000000002';
 const TIMEOUT_MS = 10 * 60 * 1000;
 const PARK_CEILING_MS = 4 * 60 * 60 * 1000;
+const target = swappableServer();
 
 /**
  * Mount the REAL router behind the middleware the app puts in front of it.
@@ -149,7 +152,7 @@ function buildApp(
     agentIdentity?: { agentId: string };
     bindings?: Record<string, { roomId: string; authorId: string }>;
   } = {}
-): express.Express {
+): Server {
   const app = express();
   app.use(express.json());
   app.use((_req, res, next) => {
@@ -166,7 +169,7 @@ function buildApp(
     };
   }
   app.use('/api/sessions', sessionRoutes);
-  return app;
+  return target.mount(app);
 }
 
 /** Park a session on a permission prompt, as a runtime does. */
@@ -285,7 +288,7 @@ describe('GET /api/sessions/pending-interactions', () => {
      * @param headers - Raw headers the middleware stand-in does not cover.
      */
     async function listedFor(
-      app: express.Express,
+      app: Server,
       headers: Record<string, string> = {}
     ): Promise<{ status: number; sessionIds: string[] }> {
       const req = request(app).get('/api/sessions/pending-interactions');

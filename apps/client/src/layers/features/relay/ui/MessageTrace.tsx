@@ -54,11 +54,13 @@ export function MessageTrace({ messageId, onClose }: MessageTraceProps) {
   const { data, isLoading, error } = useMessageTrace(messageId);
 
   if (isLoading) {
-    return <div className="text-muted-foreground p-4 text-sm">Loading trace...</div>;
+    return <div className="text-muted-foreground p-4 text-sm">Loading trace…</div>;
   }
 
   if (error || !data) {
-    return <div className="text-destructive p-4 text-sm">Failed to load trace.</div>;
+    return (
+      <div className="text-destructive p-4 text-sm">Couldn’t load where this message went.</div>
+    );
   }
 
   const { traceId, spans } = data;
@@ -67,7 +69,7 @@ export function MessageTrace({ messageId, onClose }: MessageTraceProps) {
     <div className="flex flex-col gap-2 p-4">
       <div className="flex items-center justify-between">
         <span className="text-muted-foreground font-mono text-xs">
-          Trace: {traceId.slice(0, 8)}...
+          Trace: {traceId.slice(0, 8)}…
         </span>
         {onClose && (
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-xs">

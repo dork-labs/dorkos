@@ -1,14 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createDb, runMigrations, type Db } from '@dorkos/db';
+import { createDb, runMigrations, sessionConnectionOverrides, type Db } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type {
   ConnectedAccount,
   ConnectedAccountId,
-  ConnectorCapabilities,
-  ConnectorProvider,
-  ConnectorToolkit,
-  ConnectPoll,
-  ConnectStart,
+  ConnectorExternalAccountRef,
 } from '@dorkos/shared/connector-provider';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import { ConnectorRegistry } from '../registry.js';
@@ -24,40 +20,21 @@ import {
  * MCP URLs are `rube.app/...`, never `composio`). Used to prove the session
  * tool surface adds no provider leakage even when the owning backend IS Composio.
  */
-class CleanComposioProvider implements ConnectorProvider {
-  readonly type = 'composio';
+class CleanComposioProvider extends FakeConnectorProvider {
   private readonly _live = new Set<string>();
+
+  constructor() {
+    super({ type: 'composio' });
+  }
 
   /** Register an opaque account id as having a live tool server. */
   addLive(accountId: string): void {
     this._live.add(accountId);
   }
 
-  getCapabilities(): ConnectorCapabilities {
-    return {
-      type: this.type,
-      supportsMultiAccount: true,
-      custody: 'managed',
-      exposesOverMcp: true,
-      features: {},
-    };
-  }
-  listToolkits(): Promise<ConnectorToolkit[]> {
-    return Promise.resolve([{ slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' }]);
-  }
-  startConnect(): Promise<ConnectStart> {
-    return Promise.reject(new Error('not used'));
-  }
-  pollConnect(): Promise<ConnectPoll> {
-    return Promise.resolve({ status: 'failed', error: 'not used' });
-  }
-  listAccounts(): Promise<ConnectedAccount[]> {
-    return Promise.resolve([]);
-  }
-  disconnect(): Promise<void> {
-    return Promise.resolve();
-  }
-  toolServerForAccount(accountId: ConnectedAccountId): Promise<McpAppServerConnection | null> {
+  override toolServerForAccount(
+    accountId: ConnectorExternalAccountRef
+  ): Promise<McpAppServerConnection | null> {
     if (!this._live.has(accountId)) return Promise.resolve(null);
     // A clean Rube-style URL: no vendor name, no account-id echo of the provider.
     return Promise.resolve({ transport: 'http', url: `https://rube.example/mcp/${accountId}` });
@@ -73,8 +50,7 @@ async function connectAndRecord(
 ): Promise<ConnectedAccount> {
   const { flowId } = await provider.startConnect(toolkit, { label });
   const { account } = await provider.pollConnect(flowId);
-  registry.recordConnect(account!);
-  return account!;
+  return registry.recordConnect(provider, account!);
 }
 
 describe('SessionConnectorService', () => {
@@ -92,7 +68,7 @@ describe('SessionConnectorService', () => {
     service = new SessionConnectorService({
       registry,
       agentAttachments: new AgentConnectorAttachmentStore(db),
-      sessionAttachments: new SessionConnectorAttachmentStore(db),
+      sessionAttachments: new SessionConnectorAttachmentStore(db, () => 'agent-a'),
     });
   });
 
@@ -143,17 +119,16 @@ describe('SessionConnectorService', () => {
     // or it would shadow the built-in `dorkos` server in the factory spread.
     const composio = new CleanComposioProvider();
     registry.register(composio);
-    const id = 'acct-dorkos';
-    composio.addLive(id);
-    registry.recordConnect({
-      id: id as ConnectedAccountId,
-      provider: 'composio',
+    const externalRef = 'acct-dorkos' as ConnectorExternalAccountRef;
+    composio.addLive(externalRef);
+    const connected = registry.recordConnect(composio, {
+      externalAccountRef: externalRef,
       toolkit: 'dorkos',
       label: '',
       status: 'active',
       custody: 'managed',
     });
-    await service.attach('s', id as ConnectedAccountId);
+    await service.attach('s', connected.id);
 
     const names = Object.keys(service.mcpServersForSession('s').servers);
     expect(names).not.toContain('dorkos');
@@ -164,7 +139,8 @@ describe('SessionConnectorService', () => {
     const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
     // Drive the account into the null branch: an expired account resolves null
     // from toolServerForAccount rather than throwing.
-    provider.setStatus(account.id, 'expired');
+    const externalRef = registry.accountBinding(account.id)!.externalAccountRef;
+    provider.setStatus(externalRef, 'expired');
 
     const result = await service.attach('s', account.id);
     expect(result).toBeDefined();
@@ -185,18 +161,39 @@ describe('SessionConnectorService', () => {
   it('maps an expired routing binding to an expired warning reason', async () => {
     // A binding the provider no longer knows (its tool server resolves null),
     // whose cached status is 'expired' — the reason is echoed from the binding.
-    const staleId = 'fake-connector:gmail:stale' as ConnectedAccountId;
-    registry.recordConnect({
-      id: staleId,
-      provider: 'fake-connector',
+    const stale = registry.recordConnect(provider, {
+      externalAccountRef: 'fake-connector:gmail:stale' as ConnectorExternalAccountRef,
       toolkit: 'gmail',
       label: 'stale',
       status: 'expired',
       custody: 'managed',
     });
 
-    const result = await service.attach('s', staleId);
+    const result = await service.attach('s', stale.id);
     expect(result!.warning?.reason).toBe('expired');
+  });
+
+  it('does not ask a provider for endpoints after local pause or disconnect', async () => {
+    const paused = await connectAndRecord(registry, provider, 'gmail', 'paused');
+    const revoked = await connectAndRecord(registry, provider, 'slack', 'revoked');
+    const resolveEndpoint = vi.spyOn(provider, 'toolServerForAccount');
+    registry.setPaused(paused.id, true);
+    registry.recordDisconnect(revoked.id);
+
+    const pausedResult = await service.attach('paused-session', paused.id);
+    const revokedResult = await service.attach('revoked-session', revoked.id);
+
+    expect(resolveEndpoint).not.toHaveBeenCalled();
+    expect(pausedResult).toMatchObject({
+      account: { exposed: false, status: 'paused' },
+      warning: { accountId: paused.id, reason: 'paused' },
+    });
+    expect(revokedResult).toMatchObject({
+      account: { exposed: false, status: 'revoked' },
+      warning: { accountId: revoked.id, reason: 'revoked' },
+    });
+    expect(service.mcpServersForSession('paused-session').servers).toEqual({});
+    expect(service.mcpServersForSession('revoked-session').servers).toEqual({});
   });
 
   it('returns undefined for an unknown account id (routes map to 404)', async () => {
@@ -204,11 +201,64 @@ describe('SessionConnectorService', () => {
     expect(result).toBeUndefined();
   });
 
+  it('does not cache a live provider endpoint when session ownership cannot be persisted', async () => {
+    const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
+    const strictService = new SessionConnectorService({
+      registry,
+      agentAttachments: new AgentConnectorAttachmentStore(db),
+      sessionAttachments: new SessionConnectorAttachmentStore(db),
+    });
+
+    await expect(strictService.attach('ownerless-session', account.id)).rejects.toThrow(
+      /no agent owner/i
+    );
+    expect(strictService.mcpServersForSession('ownerless-session').servers).toEqual({});
+  });
+
   it('re-shows the custody disclosure at attach', async () => {
     const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
     const result = await service.attach('s', account.id);
     // Managed custody → the canonical ADR sentence appears in the disclosure.
     expect(result!.disclosure).toContain('secure vault');
+  });
+
+  it('does not reactivate an unresolved migrated attached override during hydration', async () => {
+    const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
+    db.insert(sessionConnectionOverrides)
+      .values({
+        sessionId: 'legacy-unresolved',
+        connectionId: account.id,
+        state: 'attached',
+        needsReconciliation: true,
+        updatedAt: new Date(0).toISOString(),
+      })
+      .run();
+
+    await service.hydrateSession('legacy-unresolved', 'agent-a');
+
+    expect(service.mcpServersForSession('legacy-unresolved').servers).toEqual({});
+    expect(db.select().from(sessionConnectionOverrides).get()).toMatchObject({
+      agentId: null,
+      needsReconciliation: true,
+    });
+  });
+
+  it('does not apply a session override owned by a different agent', async () => {
+    const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
+    db.insert(sessionConnectionOverrides)
+      .values({
+        sessionId: 'reused-session',
+        agentId: 'agent-b',
+        connectionId: account.id,
+        state: 'attached',
+        needsReconciliation: false,
+        updatedAt: new Date(0).toISOString(),
+      })
+      .run();
+
+    await service.hydrateSession('reused-session', 'agent-a');
+
+    expect(service.mcpServersForSession('reused-session').servers).toEqual({});
   });
 
   it('detaches an account so it is no longer injected (idempotent)', async () => {
@@ -283,7 +333,7 @@ describe('SessionConnectorService', () => {
   it('reports the full connector status for a session', async () => {
     const active = await connectAndRecord(registry, provider, 'gmail', 'personal');
     const other = await connectAndRecord(registry, provider, 'slack', 'team');
-    provider.setStatus(other.id, 'revoked');
+    provider.setStatus(registry.accountBinding(other.id)!.externalAccountRef, 'revoked');
 
     await service.attach('s', active.id);
     await service.attach('s', other.id);
@@ -298,48 +348,21 @@ describe('SessionConnectorService', () => {
     expect(status.warnings.map((w) => w.accountId)).toEqual([other.id]);
   });
 
-  it('invalidateProvider drops cached connections for ONE provider, surfacing warnings', async () => {
-    const other = new FakeConnectorProvider({ type: 'other-gateway', custody: 'managed' });
-    registry.register(other);
-    const revoked = await connectAndRecord(registry, provider, 'gmail', 'personal');
-    const kept = await connectAndRecord(registry, other, 'slack', 'team');
-    await service.attach('s', revoked.id);
-    await service.attach('s', kept.id);
-
-    // The provider's credential was deleted: its cached connections must stop
-    // serving, while the other provider's attachment is untouched.
-    service.invalidateProvider('fake-connector');
-
-    const { servers, warnings } = service.mcpServersForSession('s');
-    expect(Object.keys(servers)).toEqual(['slack-team']);
-    expect(warnings.map((w) => w.accountId)).toEqual([revoked.id]);
-    const status = service.status('s');
-    expect(status.accounts.find((a) => a.accountId === revoked.id)!.exposed).toBe(false);
-    expect(status.accounts.find((a) => a.accountId === kept.id)!.exposed).toBe(true);
-
-    // The attachment (consent) survives: a re-attach after the provider comes
-    // back re-resolves the connection under the SAME server name.
-    const reattached = await service.attach('s', revoked.id);
-    expect(reattached!.account.exposed).toBe(true);
-    expect(reattached!.account.serverName).toBe('gmail-personal');
-  });
-
   it('leaks no provider identity into server names or config, even for Composio', async () => {
     const composio = new CleanComposioProvider();
     registry.register(composio);
     // Persist two provider-neutral bindings owned by 'composio'.
     for (const label of ['personal', 'work']) {
-      const id = `acct-${label}`;
-      composio.addLive(id);
-      registry.recordConnect({
-        id: id as ConnectedAccountId,
-        provider: 'composio',
+      const externalAccountRef = `acct-${label}` as ConnectorExternalAccountRef;
+      composio.addLive(externalAccountRef);
+      const connected = registry.recordConnect(composio, {
+        externalAccountRef,
         toolkit: 'gmail',
         label,
         status: 'active',
         custody: 'managed',
       });
-      await service.attach('s', id as ConnectedAccountId);
+      await service.attach('s', connected.id);
     }
 
     const { servers } = service.mcpServersForSession('s');
@@ -356,7 +379,7 @@ describe('SessionConnectorService', () => {
 
     beforeEach(() => {
       agentAttachments = new AgentConnectorAttachmentStore(db);
-      sessionAttachments = new SessionConnectorAttachmentStore(db);
+      sessionAttachments = new SessionConnectorAttachmentStore(db, () => 'agent-a');
       service = new SessionConnectorService({ registry, agentAttachments, sessionAttachments });
     });
 
@@ -493,7 +516,7 @@ describe('SessionConnectorService', () => {
         () => Promise.reject(new Error('simulated network failure')) as Promise<null>
       );
       const agentAttachments = new AgentConnectorAttachmentStore(db);
-      const sessionAttachments = new SessionConnectorAttachmentStore(db);
+      const sessionAttachments = new SessionConnectorAttachmentStore(db, () => 'agent-a');
       agentAttachments.attach('agent-a', gmail.id);
       const flakyService = new SessionConnectorService({
         registry,
@@ -523,7 +546,7 @@ describe('SessionConnectorService', () => {
 
     beforeEach(() => {
       agentAttachments = new AgentConnectorAttachmentStore(db);
-      sessionAttachments = new SessionConnectorAttachmentStore(db);
+      sessionAttachments = new SessionConnectorAttachmentStore(db, () => 'agent-a');
       service = new SessionConnectorService({ registry, agentAttachments, sessionAttachments });
     });
 

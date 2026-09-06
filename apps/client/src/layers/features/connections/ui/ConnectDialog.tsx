@@ -39,9 +39,9 @@ interface ConnectDialogProps {
  * The connect flow dialog: an intent step for services that are two things at
  * once (Slack is both a place to talk to your agents and an account they can
  * act on), an optional account label, then the consent sequence — the server's
- * custody disclosure is rendered BEFORE the sign-in link opens anything,
- * polling runs only after the person opens it, and the new account is
- * confirmed in place.
+ * custody disclosure is rendered before a real sign-in link opens anything.
+ * Providers with an already-configured connection skip the browser step and
+ * begin verification immediately. The new account is confirmed in place.
  *
  * @param props - The service to connect and the close handler.
  */
@@ -100,7 +100,11 @@ function ConnectDialogBody({
         {!flowOwnsService && <ConnectSetupStep service={service} flow={flow} onClose={onClose} />}
         {flowOwnsService && state.step === 'disclosure' && <ConnectDisclosureStep flow={flow} />}
         {flowOwnsService && state.step === 'waiting' && (
-          <ConnectWaitingStep service={service} onClose={onClose} />
+          <ConnectWaitingStep
+            service={service}
+            verifying={state.authorizeUrl === null}
+            onClose={onClose}
+          />
         )}
         {flowOwnsService && state.step === 'connected' && (
           <ConnectConnectedStep service={service} flow={flow} onClose={onClose} />
@@ -244,7 +248,7 @@ function ConnectSetupStep({
         />
         <p className="text-muted-foreground text-xs">
           {hasAccountAlready
-            ? `You already have a ${service.displayName} account connected — a label tells them apart.`
+            ? `You already have a ${service.displayName} account connected. A label tells them apart.`
             : 'A label helps when you later connect a second account of the same service.'}
         </p>
       </div>
@@ -301,9 +305,11 @@ function ConnectDisclosureStep({ flow }: { flow: ReturnType<typeof useConnectFlo
  */
 function ConnectWaitingStep({
   service,
+  verifying,
   onClose,
 }: {
   service: ConnectorToolkit;
+  verifying: boolean;
   onClose: () => void;
 }) {
   return (
@@ -313,11 +319,14 @@ function ConnectWaitingStep({
           aria-hidden
           className="border-muted-foreground/30 border-t-foreground size-4 shrink-0 animate-spin rounded-full border-2"
         />
-        <p className="text-sm">Waiting for you to finish signing in…</p>
+        <p className="text-sm">
+          {verifying ? 'Checking the configured server…' : 'Waiting for you to finish signing in…'}
+        </p>
       </div>
       <p className="text-muted-foreground text-xs">
-        You can close this window — we keep checking, and {service.displayName} will appear in your
-        accounts once the sign-in finishes.
+        {verifying
+          ? `${service.displayName} will appear in your accounts only if the server accepts the configured connection.`
+          : `You can close this window. We keep checking, and ${service.displayName} will appear in your accounts once the sign-in finishes.`}
       </p>
       <Button variant="ghost" size="sm" onClick={onClose}>
         Close window

@@ -601,7 +601,7 @@ test.describe('Rooms — every message gets a menu', () => {
     // the room, where a second thread would have to show as a second row.
     await expect(roomsPage.replyRows).toHaveCount(1);
     // And no refusal reached the reader.
-    await expect(page.getByText("Couldn't send your reply")).toHaveCount(0);
+    await expect(page.getByText('Couldn’t send your reply')).toHaveCount(0);
 
     // The panel is a place, not an aim: it stays open and its composer keeps
     // writing here, so the exchange continues without being re-pointed. There

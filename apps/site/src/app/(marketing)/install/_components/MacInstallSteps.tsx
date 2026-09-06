@@ -81,7 +81,7 @@ export function MacInstallSteps() {
             Open DorkOS from your Applications folder, not from the window that opened in Step 1.
           </p>
           <p className="text-warm-gray-light mt-1 text-xs">
-            A copy opened from that window can&apos;t update itself later.
+            A copy opened from that window can’t update itself later.
           </p>
         </li>
       </ol>

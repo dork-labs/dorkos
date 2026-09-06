@@ -58,6 +58,7 @@ import type {
   AgentConnectorAttachmentStore,
   SessionConnectorAttachmentStore,
 } from './attachment-store.js';
+import type { ConnectorMigrationResult } from './legacy-connection-migration.js';
 
 /**
  * Server names DorkOS reserves for its own built-in MCP servers. A connector
@@ -73,7 +74,7 @@ const RESERVED_SERVER_NAMES = new Set<string>(['dorkos']);
  * Why an attached account is not currently exposed as a tool server — the
  * surfaced form of the `toolServerForAccount` null branch.
  */
-export type SessionConnectorUnavailableReason = 'expired' | 'revoked' | 'unavailable';
+export type SessionConnectorUnavailableReason = 'expired' | 'revoked' | 'paused' | 'unavailable';
 
 /** A per-account notice that an attached account could not be exposed right now. */
 export interface SessionConnectorWarning {
@@ -83,8 +84,8 @@ export interface SessionConnectorWarning {
   label: string;
   /**
    * Why it is not exposed (drives the reconnect prompt copy). Derived from the
-   * reconciled `connected_accounts` binding cache — best-effort, not
-   * authoritative; a live provider check may disagree until the cache reconciles.
+   * canonical connection binding. Local pause and disconnect are authoritative;
+   * provider authentication may remain stale until the next inventory reconciliation.
    */
   reason: SessionConnectorUnavailableReason;
 }
@@ -195,6 +196,8 @@ export class SessionConnectorService {
    * calls — is why every turn can call it unconditionally.
    */
   private readonly _hydrated = new Set<string>();
+  /** Unambiguous agent owner learned from a runtime hydration. */
+  private readonly _sessionOwners = new Map<string, string>();
 
   /**
    * Construct the binder over the connector registry and the two persisted
@@ -206,6 +209,11 @@ export class SessionConnectorService {
     this._registry = opts.registry;
     this._agentAttachments = opts.agentAttachments;
     this._sessionAttachments = opts.sessionAttachments;
+  }
+
+  /** Current connector migration health for routes and capability callers. */
+  migrationHealth(): ConnectorMigrationResult {
+    return this._registry.migrationHealth();
   }
 
   /**
@@ -227,10 +235,18 @@ export class SessionConnectorService {
     sessionId: string,
     accountId: ConnectedAccountId
   ): Promise<AttachResult | undefined> {
-    const result = await this._resolveAndCache(sessionId, accountId);
-    if (!result) return undefined;
-    this._sessionAttachments.setState(sessionId, accountId, 'attached');
-    return result;
+    this._registry.assertAvailable();
+    // Validate the stable id before persisting intent, then persist ownership
+    // before resolving any live provider endpoint. An owner-resolution failure
+    // must never leave a usable connection only in the process cache.
+    if (!this._registry.accountBinding(accountId)) return undefined;
+    this._sessionAttachments.setState(
+      sessionId,
+      accountId,
+      'attached',
+      this._sessionOwners.get(sessionId)
+    );
+    return this._resolveAndCache(sessionId, accountId);
   }
 
   /**
@@ -247,12 +263,24 @@ export class SessionConnectorService {
    * @param accountId - The opaque account handle to detach.
    */
   detach(sessionId: string, accountId: ConnectedAccountId): void {
+    this._registry.assertAvailable();
+    // Keep the session-authority check ahead of the unknown-id no-op. Otherwise
+    // an unowned caller could probe whether a stable connection exists by
+    // comparing 204 with the ownership error.
+    const owner = this._sessionAttachments.requireOwner(
+      sessionId,
+      this._sessionOwners.get(sessionId)
+    );
+    // Idempotency cannot mean inserting an FK-invalid tombstone for an id that
+    // has never existed. A known-but-unattached connection continues below and
+    // persists the detached override that suppresses later agent inheritance.
+    if (!this._registry.accountBinding(accountId)) return;
     const accounts = this._sessions.get(sessionId);
     if (accounts) {
       accounts.delete(accountId);
       if (accounts.size === 0) this._sessions.delete(sessionId);
     }
-    this._sessionAttachments.setState(sessionId, accountId, 'detached');
+    this._sessionAttachments.setState(sessionId, accountId, 'detached', owner);
   }
 
   /**
@@ -290,14 +318,24 @@ export class SessionConnectorService {
    * @param agentId - The agent this session belongs to.
    */
   async hydrateSession(sessionId: string, agentId: string): Promise<void> {
+    if (this._registry.migrationHealth().status === 'migration_failed') return;
     if (this._hydrated.has(sessionId)) return;
+    this._sessionOwners.set(sessionId, agentId);
+    this._sessionAttachments.bindOwner(sessionId, agentId);
 
     const effective = new Set<ConnectedAccountId>(
       this._agentAttachments.listForAgent(agentId).map((a) => a.accountId)
     );
     for (const override of this._sessionAttachments.listForSession(sessionId)) {
-      if (override.state === 'attached') effective.add(override.accountId);
-      else effective.delete(override.accountId);
+      if (
+        override.state === 'attached' &&
+        !override.needsReconciliation &&
+        override.agentId === agentId
+      ) {
+        effective.add(override.accountId);
+      } else if (override.agentId === agentId || override.needsReconciliation) {
+        effective.delete(override.accountId);
+      }
     }
 
     let allResolved = true;
@@ -339,20 +377,72 @@ export class SessionConnectorService {
     // Route by the owning provider (server-only) and resolve the connection.
     // A provider that is no longer registered, or a null result, means the
     // account attaches but is not exposed — surfaced, never thrown.
-    const provider = this._registry.resolveProvider(binding.provider);
-    const connection = provider ? await provider.toolServerForAccount(accountId) : null;
+    // Local pause and disconnect dominate stale provider inventory. Never ask
+    // a provider for a usable endpoint once either state is durable locally;
+    // DELETE retains the private tombstone route through accountBinding.
+    const provider =
+      binding.status === 'paused' || binding.status === 'revoked'
+        ? undefined
+        : this._registry.resolveProviderInstance(binding.providerInstanceId);
+    const connection = provider
+      ? await provider.toolServerForAccount(binding.externalAccountRef)
+      : null;
+
+    // Provider resolution crosses an async boundary. Re-read both durable
+    // consent and local lifecycle before publishing its result: an agent or
+    // session detach, disconnect, pause, or provider replacement may have
+    // completed while the endpoint request was in flight.
+    const currentBinding = this._registry.accountBinding(accountId);
+    if (
+      !currentBinding ||
+      (provider &&
+        (currentBinding.status === 'paused' ||
+          currentBinding.status === 'revoked' ||
+          this._registry.resolveProviderInstance(currentBinding.providerInstanceId) !==
+            provider)) ||
+      !this._isCurrentlyAttached(sessionId, accountId)
+    ) {
+      return undefined;
+    }
 
     const accounts = this._ensureSession(sessionId);
     // A re-attach (e.g. re-resolving after a status change) keeps the name it was
     // first given; a fresh attach mints a stable, collision-free one.
     const existing = accounts.get(accountId);
-    const serverName = existing ? existing.serverName : this._mintServerName(binding, accounts);
-    accounts.set(accountId, { binding, connection, serverName });
+    const serverName = existing
+      ? existing.serverName
+      : this._mintServerName(currentBinding, accounts);
+    accounts.set(accountId, { binding: currentBinding, connection, serverName });
 
-    const account = this._statusRow(accountId, { binding, connection, serverName });
-    const disclosure = disclosureForAccount(binding);
-    const warning = connection ? undefined : this._warningFor(accountId, binding);
+    const account = this._statusRow(accountId, {
+      binding: currentBinding,
+      connection,
+      serverName,
+    });
+    const disclosure = disclosureForAccount(currentBinding);
+    const warning = connection ? undefined : this._warningFor(accountId, currentBinding);
     return { account, disclosure, ...(warning && { warning }) };
+  }
+
+  /** Whether durable session/agent consent still selects this connection. */
+  private _isCurrentlyAttached(sessionId: string, accountId: ConnectedAccountId): boolean {
+    const owner = this._sessionOwners.get(sessionId);
+    const override = this._sessionAttachments
+      .listForSession(sessionId)
+      .find((row) => row.accountId === accountId);
+    if (override) {
+      return (
+        override.state === 'attached' &&
+        !override.needsReconciliation &&
+        (!owner || override.agentId === owner)
+      );
+    }
+    return (
+      owner !== undefined &&
+      this._agentAttachments
+        .listForAgent(owner)
+        .some((attachment) => attachment.accountId === accountId)
+    );
   }
 
   /**
@@ -401,24 +491,58 @@ export class SessionConnectorService {
   }
 
   /**
-   * Drop the cached tool-server connection of every attached account owned by
-   * `providerType`, across all sessions. Called when a provider is unregistered
-   * (its credential was deleted, or a reload refused it): the cached
-   * connections were resolved by the now-gone instance and must not keep
-   * serving. The attachments themselves survive — consent was given and a
-   * re-registered provider re-resolves on the next attach — but until then each
-   * account reports unexposed with the standard null-branch warning, and the
-   * MCP factory stops injecting its server.
+   * Drop cached tool servers owned by one exact configured provider instance.
+   * Sibling instances of the same implementation type remain live.
    *
-   * @param providerType - The backend type whose cached connections to drop.
+   * @param providerInstanceId - Exact provider instance being disabled.
    */
-  invalidateProvider(providerType: string): void {
+  invalidateProviderInstance(providerInstanceId: string): void {
     for (const accounts of this._sessions.values()) {
       for (const [accountId, attached] of accounts) {
-        if (attached.binding.provider === providerType && attached.connection !== null) {
+        if (
+          attached.binding.providerInstanceId === providerInstanceId &&
+          attached.connection !== null
+        ) {
           accounts.set(accountId, { ...attached, connection: null });
         }
       }
+    }
+  }
+
+  /** Remove every cached exposure belonging to a removed agent. */
+  invalidateAgent(agentId: string, persistedSessionIds: string[] = []): void {
+    const sessions = new Set(persistedSessionIds);
+    for (const [sessionId, owner] of this._sessionOwners) {
+      if (owner === agentId) sessions.add(sessionId);
+    }
+    for (const sessionId of sessions) {
+      this._sessions.delete(sessionId);
+      this._hydrated.delete(sessionId);
+      this._sessionOwners.delete(sessionId);
+    }
+  }
+
+  /**
+   * Remove one connection from every live session owned by one agent.
+   *
+   * @param agentId - Agent losing the connection.
+   * @param accountId - Exact stable connection being detached.
+   * @param persistedSessionIds - Owned sessions discovered during durable cleanup.
+   */
+  invalidateAgentConnection(
+    agentId: string,
+    accountId: ConnectedAccountId,
+    persistedSessionIds: string[] = []
+  ): void {
+    const sessions = new Set(persistedSessionIds);
+    for (const [sessionId, owner] of this._sessionOwners) {
+      if (owner === agentId) sessions.add(sessionId);
+    }
+    for (const sessionId of sessions) {
+      const accounts = this._sessions.get(sessionId);
+      if (!accounts) continue;
+      accounts.delete(accountId);
+      if (accounts.size === 0) this._sessions.delete(sessionId);
     }
   }
 
@@ -449,7 +573,7 @@ export class SessionConnectorService {
    * **Three things move, not just the in-memory cache** (adversarial review
    * MAJOR 3): the live `_sessions` cache (as before — without this an
    * account attached under the pre-remap id would be stranded), the
-   * PERSISTED `session_connector_attachments` overrides (without this a
+   * PERSISTED `session_connection_overrides` rows (without this a
    * `'detached'` tombstone written under the pre-remap id would be
    * invisible to `hydrateSession(newId, …)` on the session's next turn —
    * silently un-suppressing an account someone explicitly turned off, a
@@ -482,6 +606,11 @@ export class SessionConnectorService {
     this._sessionAttachments.rekey(oldId, newId);
 
     if (this._hydrated.delete(oldId)) this._hydrated.add(newId);
+    const owner = this._sessionOwners.get(oldId);
+    if (owner) {
+      if (!this._sessionOwners.has(newId)) this._sessionOwners.set(newId, owner);
+      this._sessionOwners.delete(oldId);
+    }
   }
 
   /** Lazily create and return the per-account map for a session. */
@@ -543,7 +672,9 @@ export class SessionConnectorService {
     binding: ConnectedAccountBinding
   ): SessionConnectorWarning {
     const reason: SessionConnectorUnavailableReason =
-      binding.status === 'expired' || binding.status === 'revoked' ? binding.status : 'unavailable';
+      binding.status === 'expired' || binding.status === 'revoked' || binding.status === 'paused'
+        ? binding.status
+        : 'unavailable';
     return { accountId, label: binding.label, reason };
   }
 }

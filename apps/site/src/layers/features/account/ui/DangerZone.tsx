@@ -105,8 +105,8 @@ export function DangerZone({ email }: { email: string }) {
                   <AlertDialogTitle>Delete your DorkOS account?</AlertDialogTitle>
                   <AlertDialogDescription>
                     This permanently erases your account and unlinks every connected instance. It
-                    cannot be undone. We&rsquo;ll email a confirmation link to finish — nothing is
-                    deleted until you follow it.
+                    cannot be undone. We’ll email a confirmation link to finish — nothing is deleted
+                    until you follow it.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <div className="flex flex-col gap-2">

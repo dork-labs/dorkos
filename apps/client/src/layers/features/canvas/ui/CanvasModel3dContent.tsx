@@ -50,7 +50,7 @@ export function CanvasModel3dContent({ content }: CanvasModel3dContentProps) {
   if (resolved.url === null || format === null) {
     return (
       <div className="text-muted-foreground flex h-full items-center justify-center p-8 text-center">
-        <p>This 3D model can&rsquo;t be displayed here.</p>
+        <p>This 3D model can’t be displayed here.</p>
       </div>
     );
   }

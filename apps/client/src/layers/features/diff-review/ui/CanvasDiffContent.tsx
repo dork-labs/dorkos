@@ -36,13 +36,13 @@ function loadErrorMessage(error: unknown): string {
     case 'TOO_LARGE':
       return 'This file is too large to diff here.';
     case 'BINARY_FILE':
-      return "This file isn't text, so it can't be shown as a text diff.";
+      return 'This file isn’t text, so it can’t be shown as a text diff.';
     case 'NOT_FOUND':
-      return "This file doesn't exist.";
+      return 'This file doesn’t exist.';
     case 'NOT_A_FILE':
       return 'This path is a directory, not a file.';
     default:
-      return "This file's changes couldn't be loaded.";
+      return 'This file’s changes couldn’t be loaded.';
   }
 }
 
@@ -149,7 +149,7 @@ function TextDiffReview({ content }: CanvasDiffContentProps) {
         {review.writeFailed && (
           <Banner key="write-failed" tone="error" reduceMotion={reduceMotion}>
             <span className="flex-1">
-              That change couldn&rsquo;t be written to disk. Nothing was lost — try again.
+              That change couldn’t be written to disk. Nothing was lost. Try again.
             </span>
             <Button
               type="button"
@@ -241,8 +241,8 @@ function DiffHeader({
   const disclosure =
     mode === 'session' && degraded
       ? capturedFrom === 'head'
-        ? 'No session snapshot — comparing to your last commit. Rejecting also undoes any edits you made before this session.'
-        : 'No session snapshot or commit found — the whole file shows as new. Rejecting everything would empty it.'
+        ? 'No session snapshot. Comparing to your last commit. Rejecting also undoes any edits you made before this session.'
+        : 'No session snapshot or commit found. The whole file shows as new. Rejecting everything would empty it.'
       : null;
 
   return (

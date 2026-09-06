@@ -24,6 +24,7 @@ import { Router } from 'express';
 import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
 import type { AgentConnectorAttachmentStore } from '../services/connectors/attachment-store.js';
 import type { ConnectorRegistry } from '../services/connectors/registry.js';
+import type { SessionConnectorService } from '../services/connectors/session-exposure.js';
 import { disclosureForAccount } from '../services/connectors/custody-disclosure.js';
 
 /** Minimal mesh lookup the attach route needs to validate an agent exists. */
@@ -37,6 +38,8 @@ export interface AgentConnectorsRouterDeps {
   store: AgentConnectorAttachmentStore;
   /** The registry, used to validate the account id and build the disclosure. */
   registry: ConnectorRegistry;
+  /** Durable session authority and live connector exposure cache. */
+  sessions: SessionConnectorService;
   /**
    * Mesh lookup to validate `agentId` before attaching (adversarial review
    * MAJOR 7 — mirrors `routes/unclaimed-chats.ts`'s claim route, which needs
@@ -57,7 +60,16 @@ export interface AgentConnectorsRouterDeps {
 export function createAgentConnectorsRouter(deps: AgentConnectorsRouterDeps): Router {
   // mergeParams so the mounted `:agentId` segment is visible to these handlers.
   const router = Router({ mergeParams: true });
-  const { store, registry, meshCore } = deps;
+  const { store, registry, sessions, meshCore } = deps;
+
+  router.use((_req, res, next) => {
+    const health = registry.migrationHealth();
+    if (health.status === 'migration_failed') {
+      res.status(503).json({ status: health.status, error: health.error });
+      return;
+    }
+    next();
+  });
 
   router.get('/:agentId/connectors', (req, res) => {
     res.json({ accounts: store.listForAgent(req.params.agentId) });
@@ -87,7 +99,9 @@ export function createAgentConnectorsRouter(deps: AgentConnectorsRouterDeps): Ro
   });
 
   router.delete('/:agentId/connectors/:accountId', (req, res) => {
-    store.detach(req.params.agentId, req.params.accountId as ConnectedAccountId);
+    const accountId = req.params.accountId as ConnectedAccountId;
+    const sessionIds = registry.removeAgentConnectionAccess(req.params.agentId, accountId);
+    sessions.invalidateAgentConnection(req.params.agentId, accountId, sessionIds);
     res.status(204).end();
   });
 

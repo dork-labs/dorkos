@@ -260,7 +260,7 @@ describe('RoomLiveLane', () => {
 
     renderLane();
 
-    expect(line()).toBe('Kai is still working — this is taking longer than usual · 12m');
+    expect(line()).toBe('Kai is still working, this is taking longer than usual · 12m');
   });
 
   it('names two, and counts from the one that started first', () => {
@@ -294,9 +294,9 @@ describe('RoomLiveLane', () => {
 
     renderLane();
 
-    expect(line()).toBe('Kai and Ana are still working — this is taking longer than usual · 12m');
+    expect(line()).toBe('Kai and Ana are still working, this is taking longer than usual · 12m');
     expect(screen.getByRole('status').textContent).toBe(
-      'Kai and Ana are still working — this is taking longer than usual'
+      'Kai and Ana are still working, this is taking longer than usual'
     );
   });
 
@@ -345,7 +345,7 @@ describe('RoomLiveLane', () => {
 
     renderLane();
 
-    expect(line()).toBe('4 agents are still working — this is taking longer than usual · 20m');
+    expect(line()).toBe('4 agents are still working, this is taking longer than usual · 20m');
 
     fireEvent.click(
       screen.getByRole('button', {
@@ -365,7 +365,7 @@ describe('RoomLiveLane', () => {
 
     renderLane();
 
-    expect(line()).toBe('Kai is still working — this is taking longer than usual · 12m');
+    expect(line()).toBe('Kai is still working, this is taking longer than usual · 12m');
   });
 
   it('counts up on its own, with nothing arriving — and not before ten seconds', async () => {
@@ -436,7 +436,7 @@ describe('RoomLiveLane', () => {
     expect(screen.queryByTestId('room-presence')).toBeNull();
     expect(screen.getByTestId('room-stalled')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reconnect' })).toBeInTheDocument();
-    expect(screen.getByRole('status').textContent).toContain("New messages aren't coming through");
+    expect(screen.getByRole('status').textContent).toContain('New messages aren’t coming through');
   });
 
   it('names the thread’s announcer apart from the room’s', () => {
@@ -928,7 +928,7 @@ describe('RoomLiveLane', () => {
       // crash under `rooms.toolOnlyReplies`.
       expect(screen.queryByTestId('room-presence')).toBeNull();
       expect(screen.getByTestId('lane-silent-finish').textContent).toBe(
-        'Kai finished — nothing to add'
+        'Kai finished, nothing to add'
       );
     });
 

@@ -14,6 +14,7 @@
  * @module features/settings/ui/ExperimentsTab
  */
 import { FieldCard, FieldCardContent, SwitchSettingRow } from '@/layers/shared/ui';
+import { useAppStore } from '@/layers/shared/model';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
 
 /**
@@ -66,6 +67,8 @@ function rowDescription(
 export function ExperimentsTab() {
   const { data: config, isLoading } = useConfig();
   const updateConfig = useUpdateConfig();
+  const devtoolsOpen = useAppStore((s) => s.devtoolsOpen);
+  const toggleDevtools = useAppStore((s) => s.toggleDevtools);
 
   const experiments = config?.experiments ?? [];
 
@@ -74,6 +77,23 @@ export function ExperimentsTab() {
       <p className="text-muted-foreground text-xs">
         Things we are still proving out. Not finished being proved, so you get to decide.
       </p>
+
+      {/* Pure client state — no server config in the loop — so it stays
+          reachable exactly when the Server tab (config-dependent) is not: a
+          restart, a slow boot, or the server refusing to answer at all
+          (DOR-1758 follow-up). This is the one developer-facing switch in the
+          System group that a non-dev build never needs, so it leads before the
+          server-sent list rather than waiting behind it. */}
+      <FieldCard>
+        <FieldCardContent>
+          <SwitchSettingRow
+            label="Show dev tools"
+            description="Open the developer panel for digging into what the app has loaded."
+            checked={devtoolsOpen}
+            onCheckedChange={() => toggleDevtools()}
+          />
+        </FieldCardContent>
+      </FieldCard>
 
       {/* While the config is in flight, say nothing: the empty message makes a
           claim ("nothing is waiting on you") that is false mid-fetch. */}

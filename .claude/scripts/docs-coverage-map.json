@@ -297,13 +297,15 @@
     },
     {
       "guide": "adding-a-connector.md",
-      "description": "Connector backend authoring: ConnectorProvider port, connectorConformance null branch, custody disclosure, credential-ref hygiene, adapter packaging",
+      "description": "Connector backend authoring: stable instance and account identities, capability declarations, SDK confinement, operation classification, event metadata, and conformance",
       "patterns": [
         "connector-provider",
+        "connector-schemas",
         "apps/server/src/services/connectors/",
         "connector-conformance",
         "fake-connector-provider",
-        "packages/db/src/schema/connected-accounts"
+        "packages/db/src/schema/connections",
+        "packages/db/src/schema/connector-events"
       ]
     },
     {

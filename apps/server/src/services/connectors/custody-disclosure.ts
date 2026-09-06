@@ -68,10 +68,12 @@ export function custodyDisclosure(
         'leaves your systems.'
       );
     case 'external':
-      // External (raw MCP) — the remote server holds its own credentials.
+      // External (raw MCP) — DorkOS may hold access details for the MCP
+      // endpoint, while login credentials used behind it stay with that server.
       return (
-        `This tool connects straight to ${ctx.service}. DorkOS doesn't store or see its keys, ` +
-        'that server manages its own sign-in.'
+        `This tool connects straight to ${ctx.service}. DorkOS uses the connection details you ` +
+        'configured to check the server before adding it. Any login needed by its tools stays ' +
+        'with that server.'
       );
     default:
       // Exhaustiveness guard: a new ConnectorCustody member must add its copy

@@ -23,7 +23,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agentIdentityTokens, type Db } from '@dorkos/db';
 import { testControlRouter } from '../test-control.js';
@@ -31,6 +32,9 @@ import {
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** A path the stub registry answers for. */
 const REGISTERED = '/projects/ana';
@@ -58,6 +62,8 @@ describe('POST /api/test/agent-token', () => {
         projectPath === REGISTERED ? { name: 'ana', displayName: 'Ana' } : undefined,
     };
     app.use('/api/test', testControlRouter);
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -65,7 +71,9 @@ describe('POST /api/test/agent-token', () => {
   });
 
   it('mints a resolvable identity for an agent that is really registered', async () => {
-    const res = await request(app).post('/api/test/agent-token').send({ agentPath: REGISTERED });
+    const res = await request(fixtureServer)
+      .post('/api/test/agent-token')
+      .send({ agentPath: REGISTERED });
 
     expect(res.status).toBe(200);
     expect(res.body.token).toMatch(/^[0-9a-f]{32}$/);
@@ -87,7 +95,9 @@ describe('POST /api/test/agent-token', () => {
   });
 
   it('refuses a path no agent is registered at, and mints nothing', async () => {
-    const res = await request(app).post('/api/test/agent-token').send({ agentPath: UNREGISTERED });
+    const res = await request(fixtureServer)
+      .post('/api/test/agent-token')
+      .send({ agentPath: UNREGISTERED });
 
     expect(res.status).toBe(404);
     // The message names the path, and — unlike the version this replaced —
@@ -101,7 +111,7 @@ describe('POST /api/test/agent-token', () => {
   });
 
   it('refuses a request with no path at all', async () => {
-    const res = await request(app).post('/api/test/agent-token').send({});
+    const res = await request(fixtureServer).post('/api/test/agent-token').send({});
 
     expect(res.status).toBe(400);
     expect(db.select().from(agentIdentityTokens).all()).toHaveLength(0);
@@ -113,7 +123,9 @@ describe('POST /api/test/agent-token', () => {
     // the alternative is minting for every path on a degraded boot.
     delete app.locals.meshCore;
 
-    const res = await request(app).post('/api/test/agent-token').send({ agentPath: REGISTERED });
+    const res = await request(fixtureServer)
+      .post('/api/test/agent-token')
+      .send({ agentPath: REGISTERED });
 
     expect(res.status).toBe(404);
     expect(db.select().from(agentIdentityTokens).all()).toHaveLength(0);

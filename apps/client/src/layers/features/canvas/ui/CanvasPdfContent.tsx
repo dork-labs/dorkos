@@ -38,7 +38,7 @@ export function CanvasPdfContent({ content }: CanvasPdfContentProps) {
     <object data={url} type="application/pdf" title={title} className="h-full w-full">
       {/* Shown by the browser when it can't render the PDF inline. */}
       <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-        <p>This PDF can&rsquo;t be shown here.</p>
+        <p>This PDF can’t be shown here.</p>
         <a
           href={url}
           target="_blank"

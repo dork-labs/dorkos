@@ -26,8 +26,8 @@ import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
  */
 const BRIDGE_WARNINGS = [
   'Bridging this chat lets people you may not know put text in front of your agent.',
-  'The permission mode is the real bound. A bridged chat asks before it acts by default — raising that is a decision you are making with a stranger on the other end.',
-  'The channel keeps the whole record. Every message that reached your agent is in it, kept for good and never trimmed — which the old private line never gave you.',
+  'The permission mode is the real bound. A bridged chat asks before it acts by default. Raising that is a decision you are making with a stranger on the other end.',
+  'The channel keeps the whole record. Every message that reached your agent is in it, kept for good and never trimmed, which the old private line never gave you.',
 ] as const;
 
 export interface BindingBridgeSectionProps {
@@ -49,7 +49,7 @@ export interface BindingBridgeSectionProps {
  * first.
  */
 export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionProps) {
-  const updateBinding = useUpdateBinding({ errorLabel: "Couldn't bridge that chat" });
+  const updateBinding = useUpdateBinding({ errorLabel: 'Couldn’t bridge that chat' });
   const navigate = useNavigate();
 
   if (binding.bridge === 'room') {
@@ -60,7 +60,7 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
   // become a channel. Shown as the reason, not a disabled control (§3.1).
   if (!binding.chatId) {
     return (
-      <BridgeRefusal reason="This reaches every chat here, not one in particular — so there is no single chat to turn into a channel. Point it at one chat first, then bridge it." />
+      <BridgeRefusal reason="This reaches every chat here, not one in particular, so there is no single chat to turn into a channel. Point it at one chat first, then bridge it." />
     );
   }
 
@@ -73,7 +73,7 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
   // states the reason instead of a dead button.
   if (binding.platformChatType === 'channel') {
     return (
-      <BridgeRefusal reason="This is a broadcast channel, not a two-way conversation, so it can't become a channel here: your agent would have no one to reply to." />
+      <BridgeRefusal reason="This is a broadcast channel, not a two-way conversation, so it can’t become a channel here: your agent would have no one to reply to." />
     );
   }
   const isDirectMessage = binding.channelType == null || binding.channelType === 'dm';
@@ -84,7 +84,7 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
     (binding.platformChatType == null && isDirectMessage);
   if (!bridgeable) {
     return (
-      <BridgeRefusal reason="We connected this chat before we started noting whether it's a one-to-one, a group, or a broadcast, so we can't safely turn it into a channel yet. Re-connect it from a new message and it will carry what it is." />
+      <BridgeRefusal reason="We connected this chat before we started noting whether it’s a one-to-one, a group, or a broadcast, so we can’t safely turn it into a channel yet. Re-connect it from a new message and it will carry what it is." />
     );
   }
 
@@ -142,7 +142,7 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
  * un-bridge (with its consequences stated before you confirm).
  */
 function BridgedControls({ binding, onDone }: BindingBridgeSectionProps) {
-  const updateBinding = useUpdateBinding({ errorLabel: "Couldn't un-bridge that chat" });
+  const updateBinding = useUpdateBinding({ errorLabel: 'Couldn’t un-bridge that chat' });
   const setDeliverNotices = useSetDeliverNotices();
   const { data: room } = useRoom(binding.roomId ?? null);
   // Until the room resolves we do not know the seeded value (a DM seeds true, a
@@ -224,7 +224,7 @@ function BridgeRefusal({ reason }: { reason: string }) {
     <section className="border-border/60 bg-muted/30 flex gap-2 rounded-lg border p-3">
       <Ban className="text-muted-foreground mt-0.5 size-4 shrink-0" />
       <div className="space-y-1">
-        <p className="text-sm font-medium">Can't bridge this chat</p>
+        <p className="text-sm font-medium">Can’t bridge this chat</p>
         <p className="text-muted-foreground text-xs">{reason}</p>
       </div>
     </section>

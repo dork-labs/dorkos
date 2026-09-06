@@ -39,7 +39,8 @@ vi.mock('../../services/mcp-apps/index.js', async () => {
   return { ...actual, resolveAppResource: (args: unknown) => resolveAppResource(args) };
 });
 
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
 import {
   getOrCreateProjector,
@@ -48,6 +49,7 @@ import {
 
 const app = createApp();
 finalizeApp(app);
+const testServer = listeningServer(app);
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000abc';
 const CONNECTION: McpAppServerConnection = {
@@ -77,7 +79,7 @@ afterEach(() => disposeProjector(SESSION_ID));
 
 describe('POST /api/sessions/:id/mcp-app/resource', () => {
   it('returns 200 with the resource for a known server and ui:// uri', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/mcp-app/resource`)
       .send({ serverName: 'fixture-app', uri: 'ui://dashboard/main' });
 
@@ -94,7 +96,7 @@ describe('POST /api/sessions/:id/mcp-app/resource', () => {
   });
 
   it('returns 400 for a non-ui:// uri and never calls the service', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/mcp-app/resource`)
       .send({ serverName: 'fixture-app', uri: 'file:///etc/passwd' });
 
@@ -104,7 +106,7 @@ describe('POST /api/sessions/:id/mcp-app/resource', () => {
 
   it('returns 404 when the server is not in the session MCP set', async () => {
     fakeRuntime.getMcpStatus.mockReturnValue([{ name: 'other', type: 'stdio' }]);
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/mcp-app/resource`)
       .send({ serverName: 'fixture-app', uri: 'ui://dashboard/main' });
 
@@ -114,7 +116,7 @@ describe('POST /api/sessions/:id/mcp-app/resource', () => {
 
   it('returns 404 for an unknown session', async () => {
     fakeRuntime.hasSession.mockReturnValue(false);
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/mcp-app/resource`)
       .send({ serverName: 'fixture-app', uri: 'ui://dashboard/main' });
 
@@ -122,7 +124,7 @@ describe('POST /api/sessions/:id/mcp-app/resource', () => {
   });
 
   it('returns 400 on a missing serverName', async () => {
-    const res = await request(app)
+    const res = await request(testServer)
       .post(`/api/sessions/${SESSION_ID}/mcp-app/resource`)
       .send({ uri: 'ui://dashboard/main' });
     expect(res.status).toBe(400);

@@ -434,7 +434,7 @@ import { ChatPanel } from '@/layers/features/chat'; // features is higher!
 
 // NEVER import across same-level modules
 // In features/chat/ui/ChatPanel.tsx
-import { CommandPalette } from '@/layers/features/commands'; // Cross-feature!
+import { SlashCommandList } from '@/layers/features/slash-commands'; // Cross-feature!
 // FIX: Compose both in widgets/app-layout/
 
 // NEVER import from internal paths

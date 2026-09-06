@@ -144,7 +144,7 @@ function RankedList({ corpus }: { corpus: RankCandidate<SearchResult>[] }) {
   };
   return (
     <Command className="rounded-lg border" shouldFilter={false}>
-      <CommandInput placeholder="Search rooms, agents, commands..." value="side" readOnly />
+      <CommandInput placeholder="Search rooms, agents, commands…" value="side" readOnly />
       <CommandList>
         {best && (
           <CommandGroup heading={BEST_MATCH_HEADING}>

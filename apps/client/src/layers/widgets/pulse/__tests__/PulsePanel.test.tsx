@@ -214,7 +214,7 @@ describe('PulsePanel', () => {
 
     render(<PulsePanel />);
 
-    expect(screen.getByText('All quiet — nothing needs you.')).toBeInTheDocument();
+    expect(screen.getByText('All quiet. Nothing needs you.')).toBeInTheDocument();
     // Nothing to view — the overflow link collapses too.
     expect(screen.queryByRole('button', { name: 'View all →' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('attention-row')).not.toBeInTheDocument();
@@ -234,7 +234,7 @@ describe('PulsePanel', () => {
 
     render(<PulsePanel />);
 
-    expect(screen.queryByText('All quiet — nothing needs you.')).not.toBeInTheDocument();
+    expect(screen.queryByText('All quiet. Nothing needs you.')).not.toBeInTheDocument();
     expect(screen.getByTestId('schedule-row')).toBeInTheDocument();
   });
 
@@ -264,7 +264,7 @@ describe('PulsePanel', () => {
 
     render(<PulsePanel />);
 
-    expect(screen.queryByText('All quiet — nothing needs you.')).not.toBeInTheDocument();
+    expect(screen.queryByText('All quiet. Nothing needs you.')).not.toBeInTheDocument();
   });
 
   it('deep-links each attention item through the one open-a-notification rule', async () => {

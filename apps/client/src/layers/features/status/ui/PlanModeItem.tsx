@@ -2,6 +2,7 @@ import { ClipboardList } from 'lucide-react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { cn } from '@/layers/shared/lib';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
+import { STATUS_ITEM_TRIGGER_CLASS } from '../lib/status-item-classes';
 
 export interface PlanModeItemProps {
   /** The way of working this runtime offers, as it declared it. */
@@ -39,7 +40,8 @@ export function PlanModeItem({ descriptor, active, onToggle, disabled }: PlanMod
           disabled={disabled}
           onClick={() => onToggle(!active)}
           className={cn(
-            'hover:text-foreground inline-flex min-w-0 items-center gap-1 transition-colors duration-150',
+            STATUS_ITEM_TRIGGER_CLASS,
+            'items-center gap-1',
             'disabled:cursor-not-allowed disabled:opacity-40',
             active && 'text-foreground'
           )}

@@ -13,6 +13,15 @@
  * `logger.error(msg, err)` and `logger.error(msg, { err })` is covered without
  * anyone remembering to wrap.
  *
+ * Two consumers share the walk and the size bounds below, because a runaway
+ * error is a runaway on either destination:
+ *
+ * - {@link normalizeLogContext} — the NDJSON file reporter, which needs Errors
+ *   turned into plain JSON-able objects.
+ * - {@link clipLogArgs} — the console reporter, which needs Errors left as
+ *   Errors so consola still renders them as errors, and only wants them cut
+ *   down to size (DOR-1728).
+ *
  * @module lib/serialize-error
  */
 
@@ -40,10 +49,67 @@ const MAX_MESSAGE_LEN = 4 * 1024;
 /** See {@link MAX_MESSAGE_LEN}. Stacks are legitimately longer than messages. */
 const MAX_STACK_LEN = 16 * 1024;
 
-/** Clip an over-long string, saying how much was dropped rather than trailing off silently. */
+/**
+ * Clip an over-long string, naming its true size rather than trailing off silently.
+ *
+ * The marker carries the WHOLE length, not the dropped remainder: a reader who
+ * hits it wants to know what they are dealing with — a 5 KB message they can
+ * probably find in full elsewhere, or a 2 MB subprocess dump they cannot — and
+ * making them add the cap back on to find out is a puzzle with no payoff.
+ */
 function clip(value: string, max: number): string {
   if (value.length <= max) return value;
-  return `${value.slice(0, max)}… [truncated, ${value.length - max} more characters]`;
+  return `${value.slice(0, max)}… [truncated, ${value.length} characters total]`;
+}
+
+/**
+ * A frame line, for the fallback boundary only. See {@link clipStack}.
+ */
+const STACK_FRAMES_PATTERN = /\n\s+at /;
+
+/**
+ * Clip a stack, budgeting the message header and the frames separately.
+ *
+ * A stack is `Name: message` followed by `\n    at …` lines, with the message
+ * embedded verbatim — newlines and all. So a megabyte-long message produces a
+ * megabyte-long stack, and a flat clip of that stack returns a megabyte of
+ * message and NOT ONE FRAME, which is the half an operator acts on. The header
+ * gets {@link MAX_MESSAGE_LEN} — the same allowance the message itself gets,
+ * since it is the same text — and the frames get whatever is left of
+ * {@link MAX_STACK_LEN}, so both survive.
+ *
+ * The boundary is computed from the message the caller already holds, NOT by
+ * looking for the first frame line, because the errors this exists for are
+ * exactly the ones that defeat that search: a subprocess dump — `git clone`
+ * stderr, a failed `npm install` — carries a child process's OWN stack inside
+ * the message. Searching for `\n    at ` then lands on a QUOTED line, handing
+ * the header ~60 bytes and spending the entire frame budget on the child's
+ * frames, so not one real frame survives. `indexOf` places the boundary exactly.
+ *
+ * The search is kept only as a fallback for a stack that does not embed its
+ * message (a non-V8 shape, or a reassigned `stack`), and a flat clip as the
+ * fallback to that. Both are still bounded, just less useful.
+ *
+ * @param stack - The error's `stack`.
+ * @param message - The error's `message`, used to find where the frames begin.
+ */
+function clipStack(stack: string, message: string): string {
+  if (stack.length <= MAX_STACK_LEN) return stack;
+
+  const framesAt = findFramesBoundary(stack, message);
+  if (framesAt === -1) return clip(stack, MAX_STACK_LEN);
+
+  const header = clip(stack.slice(0, framesAt), MAX_MESSAGE_LEN);
+  return header + clip(stack.slice(framesAt), Math.max(0, MAX_STACK_LEN - header.length));
+}
+
+/** Where the message ends and the frames begin, or -1 when neither can be located. */
+function findFramesBoundary(stack: string, message: string): number {
+  if (message.length > 0) {
+    const messageAt = stack.indexOf(message);
+    if (messageAt !== -1) return messageAt + message.length;
+  }
+  return stack.search(STACK_FRAMES_PATTERN);
 }
 
 /** A plain `{}` object, as opposed to a class instance, array, or null. */
@@ -52,6 +118,46 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   const proto = Object.getPrototypeOf(value) as object | null;
   return proto === Object.prototype || proto === null;
 }
+
+/** The short reason text for a thrown value. */
+function reasonOf(err: unknown): string {
+  return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+}
+
+/** One own enumerable property, and whether reading it worked. */
+type SafeEntry = readonly [key: string, value: unknown, readable: boolean];
+
+/**
+ * `Object.entries`, except one property that refuses to be read costs only itself.
+ *
+ * `Object.entries` invokes every getter in one go, so a single hostile property
+ * throws before any of its siblings have been seen — and the caller's only
+ * recourse is to abandon the whole object. That is a real loss here rather than
+ * a tidiness point: abandoning the object means abandoning its CLIPPING, so one
+ * unrelated throwing getter beside a two-megabyte error puts the whole two
+ * megabytes back on the terminal. Reading key by key contains the damage to the
+ * key that caused it, which is named in place instead.
+ */
+function safeEntries(obj: object): SafeEntry[] {
+  const out: SafeEntry[] = [];
+  for (const key of Object.keys(obj)) {
+    try {
+      out.push([key, (obj as Record<string, unknown>)[key], true]);
+    } catch (err) {
+      out.push([key, `[unreadable property: ${clip(reasonOf(err), MAX_MESSAGE_LEN)}]`, false]);
+    }
+  }
+  return out;
+}
+
+/**
+ * What a walk does when it reaches an Error.
+ *
+ * The two destinations want opposite things from the same traversal — the file
+ * wants JSON, the terminal wants an Error it can still format — so the walk is
+ * shared and only this step differs.
+ */
+type ErrorStep = (err: Error, depth: number) => unknown;
 
 /**
  * Serialize one Error into a plain object, following its `cause` chain.
@@ -69,58 +175,183 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  */
 function serializeError(err: Error, depth: number): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(err)) {
-    out[key] = normalizeValue(value, depth + 1);
+  for (const [key, value, readable] of safeEntries(err)) {
+    out[key] = readable ? walkValue(value, depth + 1, serializeStep) : value;
   }
 
   const cause: unknown = (err as { cause?: unknown }).cause;
-  if (cause !== undefined) out.cause = normalizeValue(cause, depth + 1);
+  if (cause !== undefined) out.cause = walkValue(cause, depth + 1, serializeStep);
 
   if (err instanceof AggregateError && Array.isArray(err.errors)) {
-    out.errors = (err.errors as unknown[]).map((sub) => normalizeValue(sub, depth + 1));
+    out.errors = (err.errors as unknown[]).map((sub) => walkValue(sub, depth + 1, serializeStep));
   }
 
   out.name = err.name;
   out.message = clip(err.message, MAX_MESSAGE_LEN);
-  if (err.stack !== undefined) out.stack = clip(err.stack, MAX_STACK_LEN);
+  if (err.stack !== undefined) out.stack = clipStack(err.stack, err.message);
   return out;
 }
 
 /**
- * Normalize a single context value, replacing any Error it finds or contains.
+ * How far the marker below counts before it gives up and says "or more".
+ *
+ * The count exists to size the loss, not to be exhaustive, and the walk that
+ * produced it already refused to follow this chain — so it must not be the
+ * thing that follows it forever.
+ */
+const MAX_COUNTED_CAUSES = 100;
+
+/**
+ * Summarize an Error the walk refuses to descend into, saying that it did.
+ *
+ * The depth limit replaces an Error with its `Name: message` line, which on its
+ * own reads exactly like the natural END of a `cause` chain — nothing tells the
+ * reader that seven more links were dropped, and nothing distinguishes this
+ * from an error that genuinely had no cause. The size cut has said what it
+ * dropped since DOR-802; this one now does too.
+ */
+function summarizeAtDepthLimit(err: Error): string {
+  const summary = `${err.name}: ${clip(err.message, MAX_MESSAGE_LEN)}`;
+
+  // A cause chain can be cyclic, so this is bounded twice over.
+  const seen = new Set<unknown>([err]);
+  let remaining = 0;
+  let next: unknown = (err as { cause?: unknown }).cause;
+  while (next instanceof Error && !seen.has(next) && remaining < MAX_COUNTED_CAUSES) {
+    seen.add(next);
+    remaining++;
+    next = (next as { cause?: unknown }).cause;
+  }
+
+  if (remaining === 0) return `${summary} … [truncated at depth ${MAX_DEPTH}]`;
+  const count = remaining >= MAX_COUNTED_CAUSES ? `${MAX_COUNTED_CAUSES}+` : `${remaining}`;
+  return `${summary} … [cause chain truncated at depth ${MAX_DEPTH}, ${count} more levels]`;
+}
+
+/** The NDJSON step: an Error becomes a plain object, or its summary at the depth limit. */
+const serializeStep: ErrorStep = (err, depth) => {
+  // Out of budget: keep the reason, drop the structure.
+  if (depth >= MAX_DEPTH) return summarizeAtDepthLimit(err);
+  return serializeError(err, depth);
+};
+
+/**
+ * Define an own property outright, rather than assigning it.
+ *
+ * Assignment consults the prototype chain, so `clone[key] = value` throws when
+ * the original's class declares a getter-only accessor of that name — which is
+ * the shape of half the Error subclasses that expose a computed `code` or
+ * `status`. Defining the property never looks up the chain.
+ */
+function defineOwn(target: object, key: string, value: unknown, enumerable: boolean): void {
+  Object.defineProperty(target, key, { value, enumerable, writable: true, configurable: true });
+}
+
+/** Define a property the way an Error carries `message`/`stack`/`cause`: own, but hidden. */
+function defineHidden(target: object, key: string, value: unknown): void {
+  defineOwn(target, key, value, false);
+}
+
+/**
+ * Copy one Error with its oversized parts cut down, and nothing else changed.
+ *
+ * The result is a real instance of the original's class, so `instanceof Error`
+ * still holds and consola's reporter still takes its error-formatting path —
+ * colours, indented frames, `[cause]:` chains and all. Own enumerable
+ * properties (`errno`, `code`, a subclass's assigned `name`) are copied as they
+ * were; `message`, `stack`, `cause` and `errors` are redefined hidden, which is
+ * where an Error keeps them and where every formatter looks.
+ *
+ * The original comes back by identity when nothing needed clipping, so the
+ * overwhelmingly common case — an ordinary error, well under the bounds —
+ * prints byte-for-byte as it always did.
+ */
+function clipError(err: Error, depth: number): Error {
+  const message = clip(err.message, MAX_MESSAGE_LEN);
+  const stack = err.stack === undefined ? undefined : clipStack(err.stack, err.message);
+
+  let changed = message !== err.message || stack !== err.stack;
+
+  const cause: unknown = (err as { cause?: unknown }).cause;
+  const clippedCause = cause === undefined ? undefined : walkValue(cause, depth + 1, clipStep);
+  if (clippedCause !== cause) changed = true;
+
+  let subErrors: unknown[] | undefined;
+  if (err instanceof AggregateError && Array.isArray(err.errors)) {
+    const sources = err.errors as unknown[];
+    subErrors = sources.map((sub) => walkValue(sub, depth + 1, clipStep));
+    if (subErrors.some((sub, i) => sub !== sources[i])) changed = true;
+  }
+
+  const clippedOwn = safeEntries(err).map(([key, value, readable]) => {
+    if (!readable) {
+      changed = true;
+      return [key, value] as const;
+    }
+    const next = walkValue(value, depth + 1, clipStep);
+    if (next !== value) changed = true;
+    return [key, next] as const;
+  });
+
+  if (!changed) return err;
+
+  const clone = Object.create(Object.getPrototypeOf(err) as object) as object;
+  for (const [key, value] of clippedOwn) defineOwn(clone, key, value, true);
+  defineHidden(clone, 'message', message);
+  if (stack !== undefined) defineHidden(clone, 'stack', stack);
+  if (clippedCause !== undefined) defineHidden(clone, 'cause', clippedCause);
+  if (subErrors !== undefined) defineHidden(clone, 'errors', subErrors);
+  return clone as Error;
+}
+
+/** The console step: an Error stays an Error, just a smaller one. */
+const clipStep: ErrorStep = (err, depth) => {
+  // Out of budget: keep the reason, drop the structure — the same place the
+  // NDJSON walk stops, so neither destination descends further than the other.
+  if (depth >= MAX_DEPTH) return summarizeAtDepthLimit(err);
+  return clipError(err, depth);
+};
+
+/**
+ * Walk a single log value, applying `onError` to every Error it finds or contains.
  *
  * Values that need no change come back by identity, so a line whose context
- * holds no Error is written byte-for-byte as it was before.
+ * holds nothing oversized and no Error is emitted byte-for-byte as it was.
  */
-function normalizeValue(value: unknown, depth: number): unknown {
-  if (value instanceof Error) {
-    // Out of budget: keep the reason, drop the structure.
-    if (depth >= MAX_DEPTH) return `${value.name}: ${clip(value.message, MAX_MESSAGE_LEN)}`;
-    return serializeError(value, depth);
-  }
+function walkValue(value: unknown, depth: number, onError: ErrorStep): unknown {
+  if (value instanceof Error) return onError(value, depth);
   if (depth >= MAX_DEPTH) return value;
 
   if (Array.isArray(value)) {
     let changed = false;
     const mapped = value.map((item) => {
-      const next = normalizeValue(item, depth + 1);
+      const next = walkValue(item, depth + 1, onError);
       if (next !== item) changed = true;
       return next;
     });
     return changed ? mapped : value;
   }
 
-  if (isPlainObject(value)) return normalizeObject(value, depth + 1);
+  if (isPlainObject(value)) return walkObject(value, depth + 1, onError);
 
   return value;
 }
 
-/** Normalize every value of a plain object, returning the original if nothing moved. */
-function normalizeObject(obj: Record<string, unknown>, depth: number): Record<string, unknown> {
+/** Walk every value of a plain object, returning the original if nothing moved. */
+function walkObject(
+  obj: Record<string, unknown>,
+  depth: number,
+  onError: ErrorStep
+): Record<string, unknown> {
   let changed = false;
   const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(obj)) {
-    const next = normalizeValue(value, depth);
+  for (const [key, value, readable] of safeEntries(obj)) {
+    if (!readable) {
+      changed = true;
+      out[key] = value;
+      continue;
+    }
+    const next = walkValue(value, depth, onError);
     if (next !== value) changed = true;
     out[key] = next;
   }
@@ -153,5 +384,41 @@ export function normalizeLogContext(context: Record<string, unknown>): Record<st
     const { message, ...rest } = serializeError(context, 0);
     return { ...rest, error: message };
   }
-  return normalizeObject(context, 0);
+  return walkObject(context, 0, serializeStep);
+}
+
+/**
+ * Prepare a log call's arguments for the terminal.
+ *
+ * The console reporter had no clipping at all until DOR-1728: consola's own
+ * reporter formats whatever it is handed, so one error carrying a subprocess
+ * dump printed the whole thing — megabytes down a terminal, and down a CI log,
+ * where a single line that size cost one run ten minutes of serialization
+ * (DOR-1726). This applies the SAME bounds the NDJSON file reporter applies, so
+ * for an Error handed to the logger the two destinations agree on what is too
+ * big and say so identically. That agreement covers the Error itself and
+ * anything nested in the context around it; it does NOT cover a call site that
+ * pre-flattens an error into raw strings of its own, which neither destination
+ * can recognise as an error afterwards — `logError()` is the one such helper in
+ * the repo, and its output is unbounded on both paths.
+ *
+ * Unlike {@link normalizeLogContext}, Errors stay Errors. The reporter formats
+ * an error very differently from a plain object — indented frames, `[cause]:`
+ * chains, colour — and turning it into `{ name, message, stack }` to bound it
+ * would cost dev ergonomics on every line to fix the rare huge one.
+ *
+ * @param args - The arguments of a log call, as consola assembled them.
+ * @returns The same array when nothing needed clipping; otherwise a copy in
+ *   which only the oversized, over-deep or unreadable parts were replaced.
+ */
+export function clipLogArgs(args: unknown[]): unknown[] {
+  let changed = false;
+  const clipped = args.map((arg) => {
+    // Mirrors normalizeLogContext's entry depth so a context object is walked
+    // exactly as deep on its way to the terminal as on its way to the file.
+    const next = isPlainObject(arg) ? walkObject(arg, 0, clipStep) : walkValue(arg, 0, clipStep);
+    if (next !== arg) changed = true;
+    return next;
+  });
+  return changed ? clipped : args;
 }

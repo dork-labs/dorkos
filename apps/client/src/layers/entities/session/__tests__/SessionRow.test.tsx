@@ -167,7 +167,7 @@ describe('SessionRow variant="full"', () => {
     // draws a legitimately red dot when a session is nearly out of context, and
     // a row-wide "no red" sweep would fail on that the day a fixture runs the
     // context down — for a reason that has nothing to do with permissions.
-    const mark = screen.getByRole('button', { name: 'Full power — acts without approval prompts' });
+    const mark = screen.getByRole('button', { name: 'Full power: acts without approval prompts' });
     expect(mark).toBeInTheDocument();
     expect(mark.innerHTML).toMatch(/text-status-success/);
     expect(mark.innerHTML).not.toMatch(/text-red-/);
@@ -179,7 +179,7 @@ describe('SessionRow variant="full"', () => {
       <SessionRow variant="full" session={makeSession()} isActive={false} onClick={() => {}} />
     );
     expect(
-      screen.queryByRole('button', { name: 'Full power — acts without approval prompts' })
+      screen.queryByRole('button', { name: 'Full power: acts without approval prompts' })
     ).not.toBeInTheDocument();
     expect(container.querySelector('.text-status-success')).toBeNull();
   });
@@ -244,7 +244,7 @@ describe('SessionRow variant="full"', () => {
     ['bypassPermissions', 'Full power'],
     ['plan', 'Plan Mode'],
     ['acceptEdits', 'Accept Edits'],
-    ['dontAsk', "Don't Ask"],
+    ['dontAsk', 'Don’t Ask'],
     ['auto', 'Auto'],
     ['default', 'Default'],
   ] as const)('names %s as "%s" in the details panel', (mode, label) => {
@@ -261,7 +261,7 @@ describe('SessionRow variant="full"', () => {
     expect(screen.getByText(label)).toBeDefined();
   });
 
-  it("shows a runtime's own name for a mode DorkOS has no label for", () => {
+  it('shows a runtime’s own name for a mode DorkOS has no label for', () => {
     // A made-up label would be a worse answer than the runtime's own spelling.
     renderRow(
       <SessionRow

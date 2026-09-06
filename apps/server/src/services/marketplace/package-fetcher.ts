@@ -16,8 +16,11 @@
  * This module is intentionally side-effect light — all disk I/O is
  * delegated to {@link MarketplaceCache} and all git I/O to the injected
  * downloader. The only system call made directly here is `git ls-remote`
- * via `execFile`, which is wrapped in a try/catch and degrades to a
- * deterministic placeholder SHA so the cache miss path always executes.
+ * via `execFile`. A FAILED `ls-remote` (no git, no network, unparseable
+ * output) is caught and degraded to a deterministic placeholder SHA so the
+ * cache miss path still executes; a REFUSED address is not — an address this
+ * module will not hand to `git` throws `UnsupportedSourceUrlError` and stops
+ * the fetch (DOR-1799).
  *
  * @module services/marketplace/package-fetcher
  */
@@ -46,6 +49,7 @@ import { urlResolver } from './source-resolvers/url.js';
 import { gitSubdirResolver } from './source-resolvers/git-subdir.js';
 import { hardenedGitEnv } from '../../lib/git-safety.js';
 import { npmResolver } from './source-resolvers/npm.js';
+import { assertSafeGitRemote } from './source-url-policy.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -123,7 +127,11 @@ export interface FetcherDeps {
     packageName: string;
     force?: boolean;
   }): Promise<FetchedPackage>;
-  /** Resolve a commit SHA for the given clone URL + ref via `git ls-remote`. */
+  /**
+   * Resolve a commit SHA for the given clone URL + ref via `git ls-remote`.
+   * Throws `UnsupportedSourceUrlError` for an address the fetcher will not hand
+   * to `git`, rather than returning a placeholder SHA (DOR-1799).
+   */
   resolveCommitSha(cloneUrl: string, ref: string): Promise<string>;
 }
 
@@ -153,15 +161,21 @@ export class PackageFetcher {
    * for the same SHA are no-ops.
    *
    * Algorithm:
-   *   1. Resolve commit SHA from gitUrl + ref via `git ls-remote` (with a
+   *   1. Serve a `file://` gitUrl straight from disk and return.
+   *   2. Refuse an address this fetcher will not hand to `git` (DOR-1799).
+   *   3. Resolve commit SHA from gitUrl + ref via `git ls-remote` (with a
    *      deterministic fallback when git/network is unavailable).
-   *   2. Consult `cache.getPackage(packageName, sha)`; return on hit unless
+   *   4. Consult `cache.getPackage(packageName, sha)`; return on hit unless
    *      `opts.force` is set.
-   *   3. Reserve a cache directory via `cache.putPackage()`.
-   *   4. Delegate the actual clone to `templateDownloader.cloneRepository`.
-   *   5. Return the cached path, SHA, and `fromCache: false`.
+   *   5. Clone into a temp dir and let `cache.materializePackage()` rename it
+   *      onto the final path, so concurrent fetches of one SHA cannot collide.
+   *   6. Delegate the actual clone to `templateDownloader.cloneRepository`.
+   *   7. Return the cached path, SHA, and `fromCache: false`.
    *
    * @param opts - Package identity and fetch options.
+   * @throws {UnsupportedSourceUrlError} When `opts.gitUrl` is a remote address
+   *   {@link assertSafeGitRemote} refuses. Nothing is fetched, and no git
+   *   subprocess starts.
    */
   async fetchFromGit(opts: FetchPackageOptions): Promise<FetchedPackage> {
     const gitUrl = opts.gitUrl;
@@ -179,6 +193,14 @@ export class PackageFetcher {
       });
       return { path: localPath, commitSha: 'local', fromCache: true };
     }
+
+    // Below this line the address becomes argv for `git clone`. It arrives
+    // checked when a package author wrote it (the `marketplace.json` schema)
+    // and unchecked when an operator typed `name@<url>` — the resolver builds
+    // that source descriptor by hand and no schema sees it (DOR-1799). Asked
+    // here, after the `file://` branch, so both provenances answer the same
+    // question at the same door.
+    this.assertRemoteAllowed(gitUrl);
 
     const commitSha = await this.resolveCommitSha(gitUrl, opts.ref);
 
@@ -475,13 +497,49 @@ export class PackageFetcher {
   }
 
   /**
-   * Resolve a commit SHA for `${gitUrl}#${ref}` via `git ls-remote`. Falls
-   * back to a deterministic `tmp-${Date.now()}` placeholder on any failure
-   * (missing git binary, no network, malformed output). The actual clone
-   * downstream may still fail — that's fine, the cache miss path always
-   * executes regardless of this return value.
+   * Refuse an address this fetcher will not hand to `git`, logging the address
+   * on the way out.
+   *
+   * The decision itself lives in {@link assertSafeGitRemote} so the several
+   * doors that ask it cannot drift; the logging lives here because the
+   * operator-facing message deliberately omits the address, and this warning is
+   * what answers "which one did it refuse?".
+   *
+   * @throws {UnsupportedSourceUrlError} When the address is not a safe git remote.
+   * @internal
+   */
+  private assertRemoteAllowed(gitUrl: string): void {
+    try {
+      assertSafeGitRemote(gitUrl);
+    } catch (err) {
+      this.logger.warn('package-fetcher: refused an unsupported git address', { gitUrl });
+      throw err;
+    }
+  }
+
+  /**
+   * Resolve a commit SHA for `${gitUrl}#${ref}` via `git ls-remote`.
+   *
+   * Falls back to a deterministic `tmp-${Date.now()}` placeholder when the
+   * LOOKUP fails (missing git binary, no network, malformed output). The actual
+   * clone downstream may still fail — that's fine, the cache miss path executes
+   * regardless of this return value.
+   *
+   * It does NOT swallow everything: an address this fetcher will not hand to
+   * `git` is refused before the lookup is attempted and the refusal propagates,
+   * so callers cannot treat this method as total (DOR-1799).
+   *
+   * @throws {UnsupportedSourceUrlError} When `gitUrl` is a remote address
+   *   {@link assertSafeGitRemote} refuses.
    */
   private async resolveCommitSha(gitUrl: string, ref?: string): Promise<string> {
+    // Its own door, not a duplicate of `fetchFromGit`'s: `gitSubdirResolver`
+    // reaches this method through `FetcherDeps.resolveCommitSha` without going
+    // anywhere near `fetchFromGit`. Deliberately OUTSIDE the try below — that
+    // catch turns a git failure into a placeholder SHA and carries on, which is
+    // right for "no network" and wrong for "we will not run this".
+    this.assertRemoteAllowed(gitUrl);
+
     const target = ref ?? 'HEAD';
     try {
       // `--end-of-options` so a package author's URL or ref starting with `-`

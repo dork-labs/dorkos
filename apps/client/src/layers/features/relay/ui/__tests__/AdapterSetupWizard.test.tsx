@@ -226,7 +226,7 @@ describe('AdapterSetupWizard', () => {
     // Password should be pre-filled with sentinel (edit mode: shows saved indicator)
     const tokenInput = screen.getByLabelText(/api token/i);
     expect(tokenInput).toHaveValue('***');
-    expect(tokenInput).toHaveAttribute('placeholder', 'Saved — enter a new one to replace');
+    expect(tokenInput).toHaveAttribute('placeholder', 'Saved. Enter a new one to replace');
     expect(screen.getByLabelText(/channel/i)).toHaveValue('#dev');
   });
 
@@ -324,7 +324,7 @@ describe('AdapterSetupWizard', () => {
 
     // Should show test step
     await waitFor(() => {
-      expect(screen.getByText('Trying to reach it...')).toBeInTheDocument();
+      expect(screen.getByText('Trying to reach it…')).toBeInTheDocument();
     });
 
     // After resolving, should show success
@@ -864,7 +864,7 @@ describe('AdapterSetupWizard', () => {
       // The honest toast: not "nothing was set up", but "remove it by hand".
       await waitFor(() => {
         expect(toastError).toHaveBeenCalledWith(
-          "Couldn't finish undoing",
+          'Couldn’t finish undoing',
           expect.objectContaining({
             description: expect.stringMatching(/has no agent to answer it.*by hand/i),
           })

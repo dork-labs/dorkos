@@ -45,15 +45,15 @@ export function getErrorCode(err: unknown): CrudErrorCode | undefined {
  * are the same folder. Both must read the same, or the same mistake would
  * produce two different explanations.
  */
-export const COPY_INTO_SELF_MESSAGE = "Can't copy a folder into itself";
+export const COPY_INTO_SELF_MESSAGE = 'Can’t copy a folder into itself';
 
 /** User-facing, boundary-safe message for each coded failure. */
 const MESSAGES: Record<CrudErrorCode, string> = {
   CONFLICT: 'That name already exists',
   COPY_INTO_SELF: COPY_INTO_SELF_MESSAGE,
-  DIR_NOT_EMPTY: "This folder isn't empty",
+  DIR_NOT_EMPTY: 'This folder isn’t empty',
   NOT_FOUND: 'That item no longer exists',
-  REFUSE_ROOT: "Can't modify the working directory root",
+  REFUSE_ROOT: 'Can’t modify the working directory root',
   OUTSIDE_BOUNDARY: 'That path is outside the working directory',
 };
 

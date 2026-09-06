@@ -19,7 +19,7 @@ function lazyHero(
       .catch(() => ({
         default: () => (
           <div className="text-warm-gray flex h-[60vh] items-center justify-center font-mono text-sm">
-            Loading... (agent still working)
+            Loading… (agent still working)
           </div>
         ),
       }))
@@ -110,7 +110,7 @@ const variants = [
 function HeroFallback() {
   return (
     <div className="text-warm-gray animate-tasks flex h-[60vh] items-center justify-center font-mono text-sm">
-      Loading hero...
+      Loading hero…
     </div>
   );
 }

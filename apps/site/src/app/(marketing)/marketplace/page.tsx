@@ -66,8 +66,8 @@ export default async function MarketplacePage(props: {
           <h2 className="text-charcoal font-mono text-2xl font-semibold">Launching soon</h2>
           <p className="text-warm-gray mx-auto mt-4 max-w-xl text-base leading-relaxed">
             The DorkOS community marketplace is being bootstrapped. Once the registry is live,
-            you&apos;ll be able to browse pre-built agents, plugins, and skill packs from the
-            community here.
+            you’ll be able to browse pre-built agents, plugins, and skill packs from the community
+            here.
           </p>
           <p className="text-warm-gray-light mt-6 text-sm">
             In the meantime, browse the{' '}

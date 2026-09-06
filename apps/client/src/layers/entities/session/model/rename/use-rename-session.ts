@@ -94,6 +94,6 @@ export function useRenameSession(cwd: string | null) {
     },
     // The shared mutation toast (`query-client.ts`) reports the failure now
     // — this used to show its own on top of it.
-    meta: { errorLabel: "Couldn't rename that session" },
+    meta: { errorLabel: 'Couldn’t rename that session' },
   });
 }

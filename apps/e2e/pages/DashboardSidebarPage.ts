@@ -9,6 +9,26 @@ const SETTLE_POLL_MS = 150;
 const SETTLE_ATTEMPTS = 15;
 /** How many times a held drag re-aims at a target that moved under it. */
 const REAIM_ATTEMPTS = 12;
+/**
+ * A backstop on the `Tab` walk, and nothing more.
+ *
+ * **What actually ends the walk is a full cycle of the document**, not this
+ * number — see {@link DashboardSidebarPage.tabToSectionHeader}. It used to be a
+ * ceiling of 40, which read as generous and was not: the walk begins in the
+ * #team composer (the app autofocuses it), and the path from there to the
+ * sidebar runs through the room's MEMBER ROSTER, which spends three Tab stops
+ * per member. So the distance to the sidebar grew with the number of agents the
+ * run happened to have registered — a number this spec does not control and no
+ * ceiling can be written against. Measured at 22 presses with two members and
+ * rising from there; CI ran out of ceiling and the suite read as a product bug.
+ *
+ * This value exists only so a bug in the loop cannot hang the suite forever.
+ */
+const TAB_WALK_LIMIT = 250;
+/** How many arrow presses may pass before a row inside a section has to be reached. */
+const ARROW_PRESSES = 20;
+/** How many arrow presses a lifted row gets to find the section it is aimed at. */
+const KEYBOARD_DRAG_PRESSES = 15;
 
 /**
  * Page Object for the web cockpit's left sidebar — the DashboardSidebar agent
@@ -412,5 +432,134 @@ export class DashboardSidebarPage {
       overGroup
     );
     await this.page.mouse.up();
+  }
+
+  /** dnd-kit's live region — what a screen reader is told about a drag in progress. */
+  get dndLiveRegion(): Locator {
+    return this.page.locator('[id^="DndLiveRegion"]');
+  }
+
+  /**
+   * Walk `Tab` from wherever focus is until it lands on a section's header.
+   *
+   * **Presses, not `.focus()`.** The question these helpers exist to ask is
+   * whether a keyboard can get anywhere near a sidebar row at all, and a
+   * programmatic focus answers it by assuming it (DOR-1746). The panel is a
+   * roving-tabindex list — one Tab stop per section — so the header is the stop
+   * Tab is entitled to reach.
+   *
+   * @param label - The section header to walk to, e.g. `Agents`.
+   */
+  async tabToSectionHeader(label: string) {
+    const toggle = this.librarySectionToggle(label);
+    await expect(toggle).toBeVisible();
+
+    const onTarget = () => toggle.evaluate((node) => node === document.activeElement);
+    if (await onTarget()) return;
+
+    // **The walk ends when Tab has been all the way round, not at a press
+    // count.** "Unreachable by Tab" means "a full cycle of the document never
+    // lands on it", and that is the only bound that does not depend on how much
+    // else the page happens to contain — which is exactly what a fixed ceiling
+    // got wrong here (see {@link TAB_WALK_LIMIT}).
+    const origin = await this.page.evaluateHandle(() => document.activeElement);
+    try {
+      for (let press = 0; press < TAB_WALK_LIMIT; press++) {
+        await this.page.keyboard.press('Tab');
+        if (await onTarget()) return;
+        const cycled = await this.page.evaluate(
+          (start) => start !== null && start === document.activeElement,
+          origin
+        );
+        if (cycled) break;
+      }
+    } finally {
+      await origin.dispose();
+    }
+
+    // Named rather than counted: a failure says where the walk actually ended
+    // up, which is the one fact that tells you whether the header lost its Tab
+    // stop or the walk never got near it.
+    const landed = await this.page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      if (el === null) return 'nothing';
+      const name = el.getAttribute('aria-label') ?? (el.textContent ?? '').trim().slice(0, 40);
+      return `<${el.tagName.toLowerCase()}> ${name}`;
+    });
+    await expect(
+      toggle,
+      `Tab went all the way round the document without landing on the ${label} header; it ended on ${landed}`
+    ).toBeFocused();
+  }
+
+  /**
+   * Arrow down from wherever focus is inside a section until it lands on `row`.
+   *
+   * The count is not fixed because a section's stops are its header, its `+` and
+   * then its rows, and how many rows sit above the one wanted depends on what
+   * the run seeded.
+   *
+   * @param row - The row to arrive on.
+   */
+  async arrowToRow(row: Locator) {
+    for (let press = 0; press < ARROW_PRESSES; press++) {
+      if (await row.evaluate((node) => node === document.activeElement)) return;
+      await this.page.keyboard.press('ArrowDown');
+    }
+    await expect(row, 'arrowing down the section never reached the row').toBeFocused();
+  }
+
+  /**
+   * Pick a row up, walk it to a section, and put it down — keyboard only.
+   *
+   * The keyboard equivalent of {@link dragRowIntoGroup}, and it converges the
+   * same way: dnd-kit resolves what a drag is OVER on its own collision pass, so
+   * the loop presses an arrow and re-reads the live region rather than assuming
+   * a fixed number of steps lands on the target. The live region is the right
+   * place to read what a drag is over, and the wrong place to read whether one
+   * STARTED — see the pick-up below.
+   *
+   * @param row - The row to lift. Must already have focus.
+   * @param groupName - The section header to drop it on.
+   */
+  async keyboardDragRowIntoGroup(row: Locator, groupName: string) {
+    await expect(row, 'the row has to hold focus before a keyboard drag can lift it').toBeFocused();
+
+    // Which way the section lies, read off the page rather than assumed: a
+    // hand-made section sorts wherever the panel puts it. Measured BEFORE the
+    // lift, while both boxes are still where a reader last saw them.
+    const rowBox = await row.boundingBox();
+    const targetBox = await this.groupHeader(groupName).boundingBox();
+    const key = (targetBox?.y ?? 0) < (rowBox?.y ?? 0) ? 'ArrowUp' : 'ArrowDown';
+
+    // Space lifts. Enter deliberately does not — it opens what the row points
+    // at, which is a row's first job (DOR-1746).
+    await this.page.keyboard.press('Space');
+    // **The drag's STATE, not its announcement.** The live region is a running
+    // commentary: "Picked up …" is replaced by "Over …" the instant dnd-kit's
+    // first collision pass lands, which here is the same tick. Waiting for a
+    // string that has already scrolled past is how this read as "picked nothing
+    // up" on a drag that had in fact started.
+    await expect(
+      this.page.locator('[data-sidebar-dragging]'),
+      'Space on the focused row picked nothing up'
+    ).toHaveCount(1);
+
+    const overGroup = `Over ${groupName}`;
+    for (let press = 0; press < KEYBOARD_DRAG_PRESSES; press++) {
+      if ((await this.dndLiveRegion.textContent())?.includes(overGroup)) break;
+      await this.page.keyboard.press(key);
+    }
+    await expect(
+      this.dndLiveRegion,
+      `${KEYBOARD_DRAG_PRESSES} presses of ${key} never brought the row over ${groupName}`
+    ).toContainText(overGroup);
+
+    // Space again drops it, and nothing is left in the air.
+    await this.page.keyboard.press('Space');
+    await expect(
+      this.page.locator('[data-sidebar-dragging]'),
+      'the row never came back down'
+    ).toHaveCount(0);
   }
 }

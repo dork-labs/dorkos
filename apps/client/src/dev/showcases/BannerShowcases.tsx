@@ -89,7 +89,7 @@ export function BannerShowcases() {
               aria-expanded={detailsOpen}
               className="text-foreground rounded-sm font-medium underline underline-offset-2"
             >
-              See what&apos;s sent
+              See what’s sent
             </button>
           </Banner>
         </div>

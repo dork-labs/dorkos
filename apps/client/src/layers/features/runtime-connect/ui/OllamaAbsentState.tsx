@@ -88,7 +88,7 @@ function OllamaOneClickInstall({ provision }: { provision: UseProvisionOllama })
   if (provision.isError) {
     return (
       <ConnectErrorRow
-        message={provision.errorMessage ?? 'Could not install Ollama.'}
+        message={provision.errorMessage ?? 'Couldn’t install Ollama.'}
         onRetry={provision.provision}
       />
     );

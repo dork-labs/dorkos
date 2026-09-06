@@ -3,9 +3,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockTransport, mockRoomEntryPage } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
-import type { RoomEntry, RoomEvent } from '@dorkos/shared/room-schemas';
+import type { RoomEntry, RoomEvent, RoomEntryListResponse } from '@dorkos/shared/room-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 import { usePendingPostStore, usePendingPosts } from '../model/pending-posts';
@@ -97,7 +97,7 @@ describe('a message in flight', () => {
 
   it('is retired by its own echo, and not by somebody else’s', async () => {
     const transport = createMockTransport();
-    transport.listRoomEntries = vi.fn().mockResolvedValue([]);
+    transport.listRoomEntries = vi.fn().mockResolvedValue(mockRoomEntryPage());
     transport.postToRoom = vi
       .fn()
       .mockResolvedValue({ accepted: true, entryId: 'entry-mine', seq: 9 });
@@ -177,10 +177,10 @@ describe('a message in flight', () => {
     // recorded FIRST. Without that ordering the row is retired on the way back
     // from the post (`reconcilePendingPost` checks the cache), and this file
     // would be asserting that path a second time rather than the read's.
-    let answerRead!: (entries: RoomEntry[]) => void;
+    let answerRead!: (page: RoomEntryListResponse) => void;
     transport.listRoomEntries = vi
       .fn()
-      .mockReturnValue(new Promise<RoomEntry[]>((resolve) => (answerRead = resolve)));
+      .mockReturnValue(new Promise<RoomEntryListResponse>((resolve) => (answerRead = resolve)));
     // No stream at all, so nothing but the read can possibly settle this.
     transport.subscribeRoom = vi.fn().mockImplementation(() =>
       (async function* (): AsyncIterable<RoomEvent> {
@@ -201,7 +201,7 @@ describe('a message in flight', () => {
     await waitFor(() => expect(result.current.pending[0]?.entryId).toBe('entry-mine'));
 
     // And now the page lands, carrying the entry the row is waiting for.
-    await act(async () => answerRead([entry(9, 'entry-mine')]));
+    await act(async () => answerRead(mockRoomEntryPage([entry(9, 'entry-mine')])));
 
     await waitFor(() => expect(result.current.entries.data).toHaveLength(1));
     expect(result.current.pending).toHaveLength(0);

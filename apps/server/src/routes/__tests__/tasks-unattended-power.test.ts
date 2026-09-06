@@ -18,7 +18,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
@@ -112,6 +113,9 @@ import { createTasksRouter } from '../tasks.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
 
 /** The stored `runtimes` block, with one section's fields replaced. */
 function runtimes(overrides: Partial<UserConfig['runtimes']> = {}): UserConfig['runtimes'] {
@@ -210,6 +214,8 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
       '/api/tasks',
       createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
     );
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -219,7 +225,7 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
   it('lands on exactly acceptEdits when no stop is configured', async () => {
     // The byte-for-byte regression: anybody who never answered the power door
     // gets what this route has always produced.
-    const res = await request(app).post('/api/tasks').send(createBody());
+    const res = await request(fixtureServer).post('/api/tasks').send(createBody());
 
     expect(res.status).toBe(201);
     expect(store.getTasks()[0]!.permissionMode).toBe('acceptEdits');
@@ -228,7 +234,7 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
   it('writes no `permissions:` line into the file at that level', async () => {
     // Unchanged behavior, and worth pinning: `acceptEdits` is the level the file
     // format leaves unsaid, so the default must not start writing it out.
-    await request(app).post('/api/tasks').send(createBody());
+    await request(fixtureServer).post('/api/tasks').send(createBody());
 
     const frontmatter = writtenSchedule();
     expect(frontmatter.permissions).toBeUndefined();
@@ -237,7 +243,7 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
   it("uses the runtime's own autonomy mode when the operator is at full power", async () => {
     state.runtimes = runtimes({ defaultTrustStop: 'autonomy' });
 
-    const res = await request(app).post('/api/tasks').send(createBody());
+    const res = await request(fixtureServer).post('/api/tasks').send(createBody());
 
     expect(res.status).toBe(201);
     expect(store.getTasks()[0]!.permissionMode).toBe('bypassPermissions');
@@ -248,7 +254,7 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
   it('uses an ask-first stop when that is what the operator chose', async () => {
     state.runtimes = runtimes({ defaultTrustStop: 'ask' });
 
-    await request(app).post('/api/tasks').send(createBody());
+    await request(fixtureServer).post('/api/tasks').send(createBody());
 
     expect(store.getTasks()[0]!.permissionMode).toBe('default');
   });
@@ -259,7 +265,7 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
       claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultTrustStop: 'ask' },
     });
 
-    await request(app).post('/api/tasks').send(createBody());
+    await request(fixtureServer).post('/api/tasks').send(createBody());
 
     expect(store.getTasks()[0]!.permissionMode).toBe('default');
   });
@@ -268,7 +274,7 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
     state.registered = false;
     state.runtimes = runtimes({ defaultTrustStop: 'autonomy' });
 
-    await request(app).post('/api/tasks').send(createBody());
+    await request(fixtureServer).post('/api/tasks').send(createBody());
 
     expect(store.getTasks()[0]!.permissionMode).toBe('acceptEdits');
   });
@@ -276,7 +282,7 @@ describe('POST /api/tasks resolves an omitted permission mode', () => {
   it('never touches a mode the caller named', async () => {
     state.runtimes = runtimes({ defaultTrustStop: 'autonomy' });
 
-    await request(app)
+    await request(fixtureServer)
       .post('/api/tasks')
       .send(createBody({ permissionMode: 'plan' }));
 
@@ -304,6 +310,8 @@ describe('the guards that stand between an agent and a raised task', () => {
       '/api/tasks',
       createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
     );
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -316,7 +324,7 @@ describe('the guards that stand between an agent and a raised task', () => {
       errors: ['mocked'],
     } as unknown as ReturnType<typeof parseSkillFile>);
 
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post('/api/tasks')
       .set('x-dorkos-agent', 'agent-token-abc')
       .send(createBody({ permissionMode: 'bypassPermissions', reason: 'because' }));
@@ -336,7 +344,7 @@ describe('the guards that stand between an agent and a raised task', () => {
     // built from the RESOLVED mode and only the row was clamped.
     mockParsedFile(undefined);
 
-    const res = await request(app)
+    const res = await request(fixtureServer)
       .post('/api/tasks')
       .set('x-dorkos-agent', 'agent-token-abc')
       .send(createBody({ reason: 'nightly sweep, please' }));
@@ -381,6 +389,8 @@ describe('the un-clamp, for a trusted caller who named no mode', () => {
       '/api/tasks',
       createTasksRouter(store, scheduler, new TaskRegistrar({ store, scheduler }), DORK_HOME)
     );
+
+    fixtureTarget.mount(app);
   });
 
   afterEach(() => {
@@ -394,7 +404,7 @@ describe('the un-clamp, for a trusted caller who named no mode', () => {
     // below on the frontmatter confirms it did.
     mockParsedFile('bypassPermissions');
 
-    const res = await request(app).post('/api/tasks').send(createBody());
+    const res = await request(fixtureServer).post('/api/tasks').send(createBody());
 
     expect(res.status).toBe(201);
     const frontmatter = writtenSchedule();
@@ -415,7 +425,7 @@ describe('the un-clamp, for a trusted caller who named no mode', () => {
     // format leaves unsaid — so no `permissions:` line is written at all.
     mockParsedFile(undefined);
 
-    const res = await request(app).post('/api/tasks').send(createBody());
+    const res = await request(fixtureServer).post('/api/tasks').send(createBody());
 
     expect(res.status).toBe(201);
     const frontmatter = writtenSchedule();

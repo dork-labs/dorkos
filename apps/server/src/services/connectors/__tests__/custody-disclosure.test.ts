@@ -36,11 +36,12 @@ describe('custody-disclosure', () => {
       expect(copy).toContain('leaves your systems');
     });
 
-    it('external interpolates the server name and disclaims key custody', () => {
+    it('external distinguishes configured server access from tool login custody', () => {
       const copy = custodyDisclosure('external', { service: 'Notion' });
-      expect(copy).toContain('connects straight to Notion');
-      expect(copy).toContain("DorkOS doesn't store or see its keys");
-      expect(copy).toContain('manages its own sign-in');
+      expect(copy).toBe(
+        'This tool connects straight to Notion. DorkOS uses the connection details you configured ' +
+          'to check the server before adding it. Any login needed by its tools stays with that server.'
+      );
     });
 
     it('every class returns a non-empty line', () => {

@@ -151,8 +151,8 @@ export function ScheduleApprovalShowcases() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Found in a file, not proposed by anyone — names the file, and DorkOS&rsquo;s own words are
-        not dressed as a quotation
+        Found in a file, not proposed by anyone — names the file, and DorkOS’s own words are not
+        dressed as a quotation
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-full max-w-lg">
@@ -275,8 +275,8 @@ export function ScheduleApprovalShowcases() {
           the card owns its decision and its run, so a prop that forced them
           would be a drawing of the card rather than the card. */}
       <ShowcaseLabel>
-        Press Approve for the receipt (it names the first run), or Reject for the held
-        &ldquo;Rejected · Undo&rdquo; — it takes about five seconds to pass
+        Press Approve for the receipt (it names the first run), or Reject for the held “Rejected ·
+        Undo” — it takes about five seconds to pass
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="flex w-full max-w-lg flex-col gap-3">
@@ -293,8 +293,8 @@ export function ScheduleApprovalShowcases() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Run it once — press it on each card for the strip&rsquo;s three readings: still going,
-        finished with a way into what it did, and an honest failure
+        Run it once — press it on each card for the strip’s three readings: still going, finished
+        with a way into what it did, and an honest failure
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="flex w-full max-w-lg flex-col gap-3">

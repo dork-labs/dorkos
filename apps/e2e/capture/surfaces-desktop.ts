@@ -105,15 +105,12 @@ async function shootMarketplace(page: Page, theme: Theme, rec: RunRecorder): Pro
  * without a click. `code-reviewer` is a real, on-disk fixture package (see
  * `MARKETPLACE_FIXTURE_PACKAGES`), so the sheet's permission preview is a
  * genuine `PermissionPreviewBuilder` result — not installed, so the money
- * state is the "Permissions & Effects" section (a bundled task among its
+ * state is the "What this can do" section (a bundled task among its
  * effects) plus the Install action.
  */
 async function shootMarketplaceDetail(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await page.goto(url('/marketplace?pkg=code-reviewer'));
-  await page
-    .getByText('Permissions & Effects', { exact: true })
-    .first()
-    .waitFor({ timeout: WAIT_MS });
+  await page.getByText('What this can do', { exact: true }).first().waitFor({ timeout: WAIT_MS });
   // The scheduled-job row shows the bare job name (`schedule.name`), not a
   // "Schedule task: " prefix — DOR-635 (#552) dropped the prefix in favor of a
   // "Jobs it will schedule" section heading. Filtered to the visible match: the
@@ -202,7 +199,7 @@ async function shootGenUiWidgets(page: Page, theme: Theme, rec: RunRecorder): Pr
  * (1-based, `BoardCell`'s label convention), the square that completes the
  * seeded opening board's main diagonal (`demo-scenario-tictactoe.ts`).
  */
-const TICTACTOE_WINNING_CELL_LABEL = 'Row 3, column 3: empty — play here';
+const TICTACTOE_WINNING_CELL_LABEL = 'Row 3, column 3: empty, play here';
 
 /**
  * Drive the tic-tac-toe board end to end: the intro line and the mid-game
@@ -395,9 +392,11 @@ async function shootWorkbench(page: Page, theme: Theme, rec: RunRecorder): Promi
 
 /** Open Settings → DorkOS account, link, and shoot the pending then linked states. */
 async function shootCloudLink(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
+  // `?settings=account` is a legacy id since DOR-1758 — the map lands it on the
+  // Access tab, scrolled to its account section — so the PANEL is Access and the
+  // "DorkOS account" heading is that section's.
   await page.goto(url('/team?settings=account'));
-  // One heading per settings panel since DOR-918: the dialog's own panel title.
-  const panel = page.getByRole('tabpanel', { name: 'DorkOS account' });
+  const panel = page.getByRole('tabpanel', { name: 'Access' });
   await panel.getByRole('heading', { name: 'DorkOS account' }).waitFor({ timeout: WAIT_MS });
   await panel.getByRole('button', { name: 'Link this instance' }).click({ timeout: WAIT_MS });
 

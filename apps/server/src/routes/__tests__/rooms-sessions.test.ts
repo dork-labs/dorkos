@@ -23,8 +23,9 @@
  * - Dropping `requireVisibleRoom` turns "404s a room this caller cannot see" red.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import request from 'supertest';
+import request from '@dorkos/test-utils/supertest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, type Db } from '@dorkos/db';
 
@@ -71,6 +72,7 @@ import {
 
 const app = createApp();
 finalizeApp(app);
+const server = listeningServer(app);
 
 const ANA_PATH = '/agents/ana';
 const BO_PATH = '/agents/bo';
@@ -117,7 +119,7 @@ describe('GET /api/rooms/:id/sessions', () => {
     anaAuthorId: string;
     boAuthorId: string;
   }> {
-    const created = await request(app)
+    const created = await request(server)
       .post('/api/rooms')
       .send({ kind: 'channel', title, agentPaths: [ANA_PATH, BO_PATH] });
     expect(created.status).toBe(201);
@@ -138,7 +140,7 @@ describe('GET /api/rooms/:id/sessions', () => {
     bind(room.id, room.anaAuthorId, 'session-ana');
     bind(room.id, room.boAuthorId, 'session-bo');
 
-    const res = await request(app).get(`/api/rooms/${room.id}/sessions`);
+    const res = await request(server).get(`/api/rooms/${room.id}/sessions`);
 
     expect(res.status).toBe(200);
     expect(res.body.bindings).toHaveLength(2);
@@ -155,7 +157,7 @@ describe('GET /api/rooms/:id/sessions', () => {
   it('answers an empty list for a room whose agents have never answered', async () => {
     const room = await roomWithAgents();
 
-    const res = await request(app).get(`/api/rooms/${room.id}/sessions`);
+    const res = await request(server).get(`/api/rooms/${room.id}/sessions`);
 
     expect(res.status).toBe(200);
     expect(res.body.bindings).toEqual([]);
@@ -167,7 +169,7 @@ describe('GET /api/rooms/:id/sessions', () => {
     bind(first.id, first.anaAuthorId, 'session-first');
     bind(second.id, second.anaAuthorId, 'session-second');
 
-    const res = await request(app).get(`/api/rooms/${first.id}/sessions`);
+    const res = await request(server).get(`/api/rooms/${first.id}/sessions`);
 
     expect(res.body.bindings).toEqual([
       { authorId: first.anaAuthorId, sessionId: 'session-first' },
@@ -187,7 +189,7 @@ describe('GET /api/rooms/:id/sessions', () => {
       displayName: 'Outsider',
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get(`/api/rooms/${room.id}/sessions`)
       .set('X-DorkOS-Agent', token);
 
@@ -202,7 +204,7 @@ describe('GET /api/rooms/:id/sessions', () => {
     // room nobody has ever created is exactly a room this caller cannot see,
     // and it must answer `ROOM_NOT_FOUND` rather than an empty list — an empty
     // list would confirm the id is unused.
-    const res = await request(app).get('/api/rooms/01NOSUCHROOM/sessions');
+    const res = await request(server).get('/api/rooms/01NOSUCHROOM/sessions');
 
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('ROOM_NOT_FOUND');
@@ -225,12 +227,12 @@ describe('GET /api/rooms/:id/sessions', () => {
     const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
 
     // Ana really is in this room: the same token reads it.
-    const readsTheRoom = await request(app)
+    const readsTheRoom = await request(server)
       .get(`/api/rooms/${room.id}`)
       .set('X-DorkOS-Agent', token);
     expect(readsTheRoom.status).toBe(200);
 
-    const res = await request(app)
+    const res = await request(server)
       .get(`/api/rooms/${room.id}/sessions`)
       .set('X-DorkOS-Agent', token);
 
@@ -252,7 +254,7 @@ describe('GET /api/rooms/:id/sessions', () => {
     // and could not — not one it never looked at.
     initAgentIdentityService(db);
 
-    const refused = await request(app)
+    const refused = await request(server)
       .get(`/api/rooms/${room.id}/sessions`)
       .set('X-DorkOS-Agent', 'dork_agent_this-token-resolves-to-nothing');
 
@@ -263,7 +265,7 @@ describe('GET /api/rooms/:id/sessions', () => {
     // The header is the ONLY difference: drop it and the same caller, on the
     // same room, is the operator and gets the bindings. Without this half the
     // 401 above would also pass for a room nobody could read.
-    const allowed = await request(app).get(`/api/rooms/${room.id}/sessions`);
+    const allowed = await request(server).get(`/api/rooms/${room.id}/sessions`);
     expect(allowed.status).toBe(200);
     expect(allowed.body.bindings).toEqual([
       { authorId: room.anaAuthorId, sessionId: 'session-ana' },
@@ -278,10 +280,10 @@ describe('GET /api/rooms/:id/sessions', () => {
     const room = await roomWithAgents();
     bind(room.id, room.anaAuthorId, 'session-ana');
 
-    const unknown = await request(app)
+    const unknown = await request(server)
       .get('/api/rooms/01NOSUCHROOM/sessions')
       .set('X-DorkOS-Agent', 'dork_agent_this-token-resolves-to-nothing');
-    const real = await request(app)
+    const real = await request(server)
       .get(`/api/rooms/${room.id}/sessions`)
       .set('X-DorkOS-Agent', 'dork_agent_this-token-resolves-to-nothing');
 

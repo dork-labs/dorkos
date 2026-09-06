@@ -1,10 +1,48 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createDb, runMigrations, type Db } from '@dorkos/db';
+import {
+  connections,
+  connectorProviderInstances,
+  createDb,
+  runMigrations,
+  type Db,
+} from '@dorkos/db';
 import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
 import {
   AgentConnectorAttachmentStore,
   SessionConnectorAttachmentStore,
 } from '../attachment-store.js';
+
+/** Seed the canonical parents required by attachment foreign keys. */
+function seedConnections(db: Db): void {
+  const now = new Date(0).toISOString();
+  db.insert(connectorProviderInstances)
+    .values({
+      id: 'provider_instance_test',
+      type: 'test',
+      mode: 'byo',
+      displayName: 'Test',
+      custody: 'managed',
+      capabilityJson: '{}',
+      status: 'available',
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+  for (const id of ['gmail:personal', 'slack:team']) {
+    db.insert(connections)
+      .values({
+        id,
+        providerInstanceId: 'provider_instance_test',
+        externalAccountRef: `private:${id}`,
+        toolkit: id.split(':')[0]!,
+        label: id.split(':')[1]!,
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+  }
+}
 
 describe('AgentConnectorAttachmentStore', () => {
   let db: Db;
@@ -13,6 +51,7 @@ describe('AgentConnectorAttachmentStore', () => {
   beforeEach(() => {
     db = createDb(':memory:');
     runMigrations(db);
+    seedConnections(db);
     store = new AgentConnectorAttachmentStore(db);
   });
 
@@ -31,36 +70,6 @@ describe('AgentConnectorAttachmentStore', () => {
     store.attach('agent-a', gmail);
     expect(store.listForAgent('agent-a')[0]!.attachedAt).toBe(first);
   });
-
-  it('MAJOR 6: deleteAgent clears every standing attachment for that agent, and only that agent', () => {
-    const gmail = 'gmail:personal' as ConnectedAccountId;
-    const slack = 'slack:team' as ConnectedAccountId;
-    store.attach('agent-a', gmail);
-    store.attach('agent-a', slack);
-    store.attach('agent-b', gmail);
-
-    store.deleteAgent('agent-a');
-
-    expect(store.listForAgent('agent-a')).toEqual([]);
-    // agent-b's own attachment to the SAME account survives — this is a
-    // per-agent cascade, not a per-account one (that's
-    // ConnectorRegistry.recordDisconnect's job).
-    expect(store.listForAgent('agent-b').map((a) => a.accountId)).toEqual([gmail]);
-  });
-
-  it('deleteAgent on an agent with nothing attached is a no-op', () => {
-    expect(() => store.deleteAgent('agent-with-nothing')).not.toThrow();
-  });
-
-  it('MAJOR 6 (successor scenario): re-registering an agent under the same id after deleteAgent starts with no standing consent', () => {
-    const gmail = 'gmail:personal' as ConnectedAccountId;
-    store.attach('agent-a', gmail);
-    store.deleteAgent('agent-a'); // the unregister cascade
-
-    // A "new" agent registered under the same id (same directory re-pointed,
-    // or a coincidental id collision) inherits nothing.
-    expect(store.listForAgent('agent-a')).toEqual([]);
-  });
 });
 
 describe('SessionConnectorAttachmentStore', () => {
@@ -70,7 +79,18 @@ describe('SessionConnectorAttachmentStore', () => {
   beforeEach(() => {
     db = createDb(':memory:');
     runMigrations(db);
-    store = new SessionConnectorAttachmentStore(db);
+    seedConnections(db);
+    store = new SessionConnectorAttachmentStore(db, () => 'agent-a');
+  });
+
+  it('refuses to create an ownerless canonical override', () => {
+    const strictStore = new SessionConnectorAttachmentStore(db);
+    const gmail = 'gmail:personal' as ConnectedAccountId;
+
+    expect(() => strictStore.setState('unknown-session', gmail, 'attached')).toThrow(
+      /no agent owner/i
+    );
+    expect(strictStore.listForSession('unknown-session')).toEqual([]);
   });
 
   it('setState/listForSession round-trip, and a re-set replaces the state', () => {

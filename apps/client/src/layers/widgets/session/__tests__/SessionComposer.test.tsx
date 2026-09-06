@@ -54,8 +54,8 @@ vi.mock('@/layers/features/ask', () => ({
   groupAsks: () => [],
 }));
 
-vi.mock('@/layers/features/commands', () => ({
-  CommandPalette: () => null,
+vi.mock('@/layers/features/slash-commands', () => ({
+  SlashCommandList: () => null,
 }));
 
 vi.mock('@/layers/features/files', () => ({
@@ -448,7 +448,7 @@ describe('SessionComposer — a failed attachment blocks the send (DOR-480)', ()
     seedQueue('first queued', 'second queued');
     render(<SessionComposerBench {...baseProps} />);
 
-    expect(lastChatInputProps().placeholder).toBe('Send a message...');
+    expect(lastChatInputProps().placeholder).toBe('Send a message…');
 
     const panelProps = vi.mocked(QueuePanel).mock.calls.at(-1)![0];
     act(() => panelProps.onEdit(panelProps.queue[1]!.id));
@@ -522,6 +522,14 @@ describe('SessionComposer — a failed attachment blocks the send (DOR-480)', ()
 
     expect(submit).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('keeps the first send closed until the registered-agent lookup settles', () => {
+    render(<SessionComposerBench {...baseProps} input="hello?" agentLookupPending />);
+
+    const props = lastChatInputProps();
+    expect(props.canSubmit).toBe(false);
+    expect(props.canSubmitReason).toBe('Checking this directory before starting the session…');
   });
 
   it('keeps the queue panel out of the tree entirely when nothing is queued', () => {
