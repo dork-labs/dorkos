@@ -2,7 +2,7 @@ import { createConsola, type ConsolaInstance, type ConsolaReporter, type LogObje
 import fs from 'fs';
 import path from 'path';
 import { currentDispatchId } from './dispatch-context.js';
-import { clipLogArgs, normalizeLogContext } from './serialize-error.js';
+import { clipFlattenedError, clipLogArgs, normalizeLogContext } from './serialize-error.js';
 
 /**
  * Central logger module for DorkOS server.
@@ -315,8 +315,12 @@ export function createTaggedLogger(tag: string) {
  * Handing the error straight to the logger — `logger.error(msg, err)` — now
  * writes the same `error` and `stack` fields on its own (DOR-802), so this is
  * for call sites that fold an error into a wider context object.
+ *
+ * The fields come back already clipped, because flattening an error into
+ * strings here is what puts it out of reach of the clipping both reporters do
+ * later — they can only bound what they can still recognise as an error
+ * (DOR-1827). An error of ordinary size comes back untouched.
  */
 export function logError(err: unknown): { error: string; stack?: string } {
-  if (err instanceof Error) return { error: err.message, stack: err.stack };
-  return { error: String(err) };
+  return clipFlattenedError(err);
 }

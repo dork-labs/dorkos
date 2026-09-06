@@ -3833,11 +3833,14 @@ process.on('SIGTERM', shutdown);
 // silently crashing. These should never fire if route-level error handling is
 // correct, but they prevent data loss if something slips through.
 process.on('uncaughtException', (err) => {
-  logger.error('[DorkOS] Uncaught exception — shutting down', {
-    message: err.message,
-    stack: err.stack,
-    name: err.name,
-  });
+  // The Error goes over whole, deliberately. Flattening it here — the
+  // `{ message, stack, name }` this used to build — put it out of reach of the
+  // clipping both reporters do, because both recognise an error by its type: a
+  // crash carrying a subprocess dump wrote a 1,200,561-byte NDJSON line where
+  // this shape writes 8,820 (DOR-1827). The serializer writes the same three
+  // fields — the message as `error`, which is what every other error line in
+  // the file calls it — plus `cause` and any `errno`/`code` the error carries.
+  logger.error('[DorkOS] Uncaught exception — shutting down', err);
   // Fatal path: bounded-await the crash report so it actually reaches the
   // network before we exit (a bare fire-and-forget would be dropped when the
   // event loop stops on the next line). The timeout guards against a hung
@@ -3846,9 +3849,11 @@ process.on('uncaughtException', (err) => {
 });
 
 process.on('unhandledRejection', (reason) => {
-  logger.error('[DorkOS] Unhandled promise rejection', {
-    reason: reason instanceof Error ? { message: reason.message, stack: reason.stack } : reason,
-  });
+  // Nested, but still whole — see the uncaughtException handler above. The
+  // serializer walks into `reason` and writes `name`, `message` and `stack`
+  // there, bounded; hand-flattening it wrote 1,200,550 bytes where this
+  // writes 8,826 (DOR-1827). A non-Error reason is passed through as it was.
+  logger.error('[DorkOS] Unhandled promise rejection', { reason });
   // Non-fatal (we don't exit), so fire-and-forget is fine here.
   void captureServerError(reason);
 });

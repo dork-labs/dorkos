@@ -361,6 +361,123 @@ describe('logger module', () => {
       expect(loggerModule.logError(42)).toEqual({ error: '42' });
       expect(loggerModule.logError(null)).toEqual({ error: 'null' });
     });
+
+    /**
+     * ~92 call sites fold this return value into a wider log context, so the
+     * clipping added for the runaway case (DOR-1827) may not change a single
+     * byte of the ordinary one — which is every error the server actually logs.
+     */
+    it('returns an ordinary error’s own message and stack strings, unchanged', () => {
+      const err = new Error('ENOENT: no such file or directory');
+
+      const result = loggerModule.logError(err);
+
+      expect(result.error).toBe(err.message);
+      expect(result.stack).toBe(err.stack);
+      expect(result.error).not.toContain('[truncated');
+      expect(result.stack).not.toContain('[truncated');
+    });
+
+    it('clips a message far past the bound, naming its true length', () => {
+      const huge = 'y'.repeat(600_000);
+
+      const { error } = loggerModule.logError(new Error(huge));
+
+      expect(error.length).toBeLessThan(8 * 1024);
+      expect(error).toContain(`[truncated, ${huge.length} characters total]`);
+      // The head is kept, so the failure is still identifiable.
+      expect(error.startsWith('y'.repeat(1000))).toBe(true);
+    });
+
+    it('clips a thrown non-Error that is huge in its own right', () => {
+      const huge = 'z'.repeat(600_000);
+
+      const { error } = loggerModule.logError(huge);
+
+      expect(error.length).toBeLessThan(8 * 1024);
+      expect(error).toContain(`[truncated, ${huge.length} characters total]`);
+    });
+
+    /**
+     * Totality. Every one of these call sites is inside a `catch`, and the
+     * call happens at the CALL SITE — outside the logger, so outside the
+     * try/catch the reporters run under. A throw here does not lose a log
+     * line, it replaces the failure being reported with one of its own, in
+     * the middle of a recovery path. Reading a field off a malformed error is
+     * exactly where that risk lives: an `Error` whose `message` was reassigned
+     * to a non-string has no `.length` and no `.slice`, and a hostile one
+     * throws on the property read itself.
+     *
+     * `packages/relay/src/lib/describe-error.ts` states the same rule for the
+     * same reason, down to the sentinel this returns.
+     */
+    describe('malformed errors it must survive rather than report', () => {
+      /** An Error whose `message`/`stack` were replaced with the given values. */
+      function malformed(fields: { message?: unknown; stack?: unknown }): Error {
+        const err = new Error('original');
+        for (const [key, value] of Object.entries(fields)) {
+          Object.defineProperty(err, key, { value, writable: true, configurable: true });
+        }
+        return err;
+      }
+
+      it('survives a numeric message', () => {
+        const err = malformed({ message: 12345 });
+
+        expect(() => loggerModule.logError(err)).not.toThrow();
+        expect(loggerModule.logError(err).error).toBe('12345');
+      });
+
+      it('survives an object message', () => {
+        const err = malformed({ message: { big: 'payload' } });
+
+        expect(() => loggerModule.logError(err)).not.toThrow();
+        expect(loggerModule.logError(err).error).toBe('[object Object]');
+      });
+
+      it('survives a numeric stack', () => {
+        const err = malformed({ stack: 999 });
+
+        expect(() => loggerModule.logError(err)).not.toThrow();
+        expect(loggerModule.logError(err).stack).toBe('999');
+      });
+
+      it('survives a message getter that throws, without losing the line', () => {
+        const err = new Error('unused');
+        Object.defineProperty(err, 'message', {
+          get(): string {
+            throw new Error('getter exploded');
+          },
+          configurable: true,
+        });
+
+        expect(() => loggerModule.logError(err)).not.toThrow();
+        // The same sentinel `describeError` collapses to, for the same reason.
+        expect(loggerModule.logError(err)).toEqual({ error: 'unserializable error' });
+      });
+
+      it('survives a thrown object whose toString throws', () => {
+        const hostile = Object.create(null) as object;
+
+        expect(() => loggerModule.logError(hostile)).not.toThrow();
+        expect(loggerModule.logError(hostile).error).toBe('unserializable error');
+      });
+    });
+
+    it('keeps our stack frames when the message embeds someone else’s', () => {
+      // A subprocess dump: the message carries the CHILD's `    at …` lines, so
+      // locating the frames by searching for the first one spends the whole
+      // budget on quoted child lines and returns not one frame of ours.
+      const childFrame = '    at Unpacker.finish (/usr/lib/node_modules/npm/unpack.js:220:17)\n';
+      const err = new Error(`child process failed:\n${childFrame.repeat(9000)}`);
+
+      const { stack } = loggerModule.logError(err);
+
+      expect(stack).toBeDefined();
+      expect(stack!.length).toBeLessThan(32 * 1024);
+      expect(stack).toContain('logger.test.ts');
+      expect(stack).toContain('child process failed:');
+    });
   });
 
   // ---------------------------------------------------------------------------
