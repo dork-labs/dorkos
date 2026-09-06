@@ -11,12 +11,12 @@ export function TunnelLanding({ onGetStarted }: TunnelLandingProps) {
     <div data-testid="tunnel-landing" className="space-y-6 py-2">
       <TunnelOnboarding />
 
-      <div className="text-center">
-        <p className="text-foreground text-sm font-medium">Access DorkOS from any device</p>
-        <p className="text-muted-foreground mx-auto mt-1 max-w-[280px] text-xs leading-relaxed">
-          Create a secure tunnel to access your sessions from your phone, tablet, or any browser.
-        </p>
-      </div>
+      {/* One headline, not two: `TunnelOnboarding` above already says "Access
+          DorkOS from any device" under the illustration, and this block used to
+          repeat it verbatim a few pixels below. */}
+      <p className="text-muted-foreground mx-auto max-w-[280px] text-center text-xs leading-relaxed">
+        Create a secure tunnel to reach your sessions from your phone, tablet, or any browser.
+      </p>
 
       {/* The press comes from the Button primitive now, and the 1% hover grow
           is gone: nothing else in the app inflates under a pointer. */}

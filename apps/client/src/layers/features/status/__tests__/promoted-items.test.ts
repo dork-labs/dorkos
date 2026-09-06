@@ -109,7 +109,7 @@ describe('selectPromotedItems — pins', () => {
   it('refuses to honour a pin on an item excluded from the line', () => {
     const items = selectPromotedItems({
       ctx: restingContext(),
-      pins: ['cache', 'sound', 'polling'],
+      pins: ['cache', 'sound'],
       nodes: allNodes(),
     });
     expect(items.map((i) => i.key)).toEqual(['agent', 'cwd', 'model']);

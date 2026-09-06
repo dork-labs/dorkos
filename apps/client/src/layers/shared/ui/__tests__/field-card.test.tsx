@@ -114,6 +114,28 @@ describe('CollapsibleFieldCard', () => {
     expect(onOpenChange).toHaveBeenCalledWith(true);
   });
 
+  it('renders a header action outside the trigger, so clicking it does not toggle the section', () => {
+    // A button inside the trigger button would be invalid HTML and would open
+    // the section on every click of the action.
+    const onOpenChange = vi.fn();
+    const onAction = vi.fn();
+    render(
+      <CollapsibleFieldCard
+        open={false}
+        onOpenChange={onOpenChange}
+        trigger="Diagnostics"
+        action={<button onClick={onAction}>Copy all</button>}
+      >
+        <div>Content</div>
+      </CollapsibleFieldCard>
+    );
+    const action = screen.getByRole('button', { name: 'Copy all' });
+    expect(action.closest('[data-slot="collapsible-trigger"]')).toBeNull();
+    fireEvent.click(action);
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
   it('applies custom className to the outer card', () => {
     const { container } = render(
       <CollapsibleFieldCard

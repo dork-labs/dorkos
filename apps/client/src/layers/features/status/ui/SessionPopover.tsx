@@ -28,10 +28,6 @@ import { CopyDiagnosticsButton } from './CopyDiagnosticsButton';
 
 /** The settings the panel operates rather than merely reports. */
 export interface SessionControls {
-  /** Whether background refresh is on. */
-  refresh: boolean;
-  /** Flip the background-refresh setting. */
-  onToggleRefresh: () => void;
   /**
    * Planning, when the runtime offers a way of working — `null` when it does
    * not, and the row is then left out entirely rather than shown disabled.
@@ -59,7 +55,7 @@ interface SessionPopoverProps {
   onOpenChange: (open: boolean) => void;
   /** Everything the panel reports about the session. */
   diagnostics: SessionDiagnostics;
-  /** The sound and background-refresh settings. */
+  /** The settings this panel operates, when the session has any. */
   controls: SessionControls;
   /**
    * Live state the registry's severity ranking reads. On a phone the Session rows
@@ -250,15 +246,6 @@ function visibleRows(
 
 /** The rows that operate something rather than report it. */
 function renderControl(key: StatusBarItemKey, controls: SessionControls): ReactNode {
-  if (key === 'polling') {
-    return (
-      <Switch
-        checked={controls.refresh}
-        onCheckedChange={controls.onToggleRefresh}
-        aria-label="Keep checking for updates in the background"
-      />
-    );
-  }
   if (key === 'plan' && controls.plan) {
     return (
       <Switch
