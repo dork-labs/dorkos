@@ -422,6 +422,15 @@ describe('useUpdateAgent', () => {
     // unmount a `mutate` callback does not (`shared/lib/query-client`). Driven
     // through the REAL error policy — a client declared from scratch here
     // carries no `MutationCache`, so this would assert nothing.
+    //
+    // The two halves are asserted SEPARATELY because that is now the shape:
+    // DOR-1755 split the authored line from the raw one, so the label is the
+    // toast's headline and the server's sentence is the description beneath it.
+    // They used to be joined with an em dash into a single string, which put
+    // "ENOENT: no such file or directory" in the same breath as a sentence
+    // written for a person. Naming both keeps this a test of the FEATURE — that
+    // a person is told which action failed and why — rather than of one
+    // particular way of concatenating them.
     const transport = createMockTransport({
       updateMeshAgent: vi.fn().mockRejectedValue(new Error('Billing is set by a person')),
     });
@@ -445,8 +454,8 @@ describe('useUpdateAgent', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(toasts.error).toHaveBeenCalledWith(
-      'Couldn’t change this agent’s account — Billing is set by a person',
-      expect.anything()
+      'Couldn’t change this agent’s account',
+      expect.objectContaining({ description: 'Billing is set by a person' })
     );
   });
 });

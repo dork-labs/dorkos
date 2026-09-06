@@ -41,12 +41,13 @@ const AGENT_MANIFEST_KEY_PREFIX = ['agents'] as const;
  * one for the manifest.
  *
  * @param options - Per-surface options.
- * @param options.errorLabel - Names this surface's action in the user's terms,
- *   for the app-wide failure toast to compose with the server's own sentence —
- *   "Couldn't change this agent's account — …". Same convention, and same
+ * @param options.errorLabel - Names this surface's action in the user's terms.
+ *   It becomes the failure toast's HEADLINE, with the server's own sentence as
+ *   the description beneath it (DOR-1755) — "Couldn't change this agent's
+ *   account", over "Billing is set by a person". Same convention, and same
  *   reasoning, as `entities/agent`'s `useUpdateAgent`: the cache handler always
- *   runs, a `mutate` callback does not. Without it the failure still reports, in
- *   the generic line.
+ *   runs, a `mutate` callback does not. Without it the failure still reports,
+ *   under the generic headline.
  */
 export function useUpdateAgent(options?: { errorLabel?: string }) {
   const transport = useTransport();

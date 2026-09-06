@@ -325,9 +325,9 @@ export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutio
   // `TeamAgentFacts` carries `runtime` and `model` and no account, so a refetch
   // there could not change anything on screen.
   //
-  // The label is what the app-wide mutation handler composes the server's own
-  // sentence onto, so a refusal here reads like the ones Model and Effort get
-  // rather than the generic "Action failed".
+  // The label is the headline the app-wide mutation handler puts the server's
+  // own sentence under, so a refusal here reads like the ones Model and Effort
+  // get rather than the generic "That didn’t work. Try again."
   const updateAgent = useUpdateMeshAgent({ errorLabel: 'Couldn’t change this agent’s account' });
   const writeAccount = useCallback(
     (account: string | null) => {

@@ -2,6 +2,7 @@
 covers:
   - 'fix(client): the Account row saves through the operator route (DOR-1736)'
   - 'fix(client): the account sweep survives the popover that closed (DOR-1736)'
+  - 'fix(client): the failure toast asserts the shape main actually renders (DOR-1736)'
 ---
 
 ### Fixed
