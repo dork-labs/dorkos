@@ -29,14 +29,14 @@ Determine the current file's layer from its path, then enforce:
 
 Sibling features are isolated — but the isolation is about business logic, not composition:
 
-**UI composition across features: ALLOWED.** A feature's UI component may render a sibling feature's component for composition purposes (e.g., ChatPanel renders CommandPalette, StatusLine).
+**UI composition across features: ALLOWED.** A feature's UI component may render a sibling feature's component for composition purposes (e.g., ChatPanel renders SlashCommandList, StatusLine).
 
 **Model/hook cross-imports: FORBIDDEN.** A feature's model/hooks must never import from another feature's model/hooks. This prevents circular business logic dependencies.
 
 ```typescript
 // ALLOWED: UI composition (feature renders sibling component)
 // In features/chat/ui/ChatPanel.tsx
-import { CommandPalette } from '@/layers/features/commands';
+import { SlashCommandList } from '@/layers/features/slash-commands';
 import { StatusLine } from '@/layers/features/status';
 
 // FORBIDDEN: Model/hook cross-import (business logic coupling)

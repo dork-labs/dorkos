@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
-import { CommandPalette } from '../ui/CommandPalette';
+import { SlashCommandList } from '../ui/SlashCommandList';
 
 beforeAll(() => {
   // jsdom does not implement scrollIntoView
@@ -37,27 +37,35 @@ const mockCommands = [
   },
 ];
 
-describe('CommandPalette', () => {
+describe('SlashCommandList', () => {
   it('renders command items', () => {
-    render(<CommandPalette filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />);
+    render(
+      <SlashCommandList filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
+    );
     expect(screen.getByText('/daily:plan')).toBeDefined();
     expect(screen.getByText('/daily:eod')).toBeDefined();
     expect(screen.getByText('/meeting:prep')).toBeDefined();
   });
 
   it('shows descriptions', () => {
-    render(<CommandPalette filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />);
+    render(
+      <SlashCommandList filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
+    );
     expect(screen.getByText('Morning planning')).toBeDefined();
     expect(screen.getByText('End of day review')).toBeDefined();
   });
 
   it('shows argument hints', () => {
-    render(<CommandPalette filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />);
+    render(
+      <SlashCommandList filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
+    );
     expect(screen.getByText('[name]')).toBeDefined();
   });
 
   it('groups commands by namespace', () => {
-    render(<CommandPalette filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />);
+    render(
+      <SlashCommandList filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
+    );
     expect(screen.getByText('daily')).toBeDefined();
     expect(screen.getByText('meeting')).toBeDefined();
   });
@@ -65,7 +73,7 @@ describe('CommandPalette', () => {
   describe('selection highlighting', () => {
     it('highlights first item when selectedIndex=0', () => {
       render(
-        <CommandPalette filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
+        <SlashCommandList filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
       );
       const items = screen.getAllByRole('option');
       expect(items[0].getAttribute('data-selected')).toBe('true');
@@ -75,7 +83,7 @@ describe('CommandPalette', () => {
 
     it('highlights third item when selectedIndex=2', () => {
       render(
-        <CommandPalette filteredCommands={mockCommands} selectedIndex={2} onSelect={vi.fn()} />
+        <SlashCommandList filteredCommands={mockCommands} selectedIndex={2} onSelect={vi.fn()} />
       );
       const items = screen.getAllByRole('option');
       expect(items[0].getAttribute('data-selected')).toBe('false');
@@ -85,13 +93,13 @@ describe('CommandPalette', () => {
 
     it('updates highlight when selectedIndex changes', () => {
       const { rerender } = render(
-        <CommandPalette filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
+        <SlashCommandList filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
       );
       let items = screen.getAllByRole('option');
       expect(items[0].getAttribute('data-selected')).toBe('true');
 
       rerender(
-        <CommandPalette filteredCommands={mockCommands} selectedIndex={1} onSelect={vi.fn()} />
+        <SlashCommandList filteredCommands={mockCommands} selectedIndex={1} onSelect={vi.fn()} />
       );
       items = screen.getAllByRole('option');
       expect(items[0].getAttribute('data-selected')).toBe('false');
@@ -100,14 +108,14 @@ describe('CommandPalette', () => {
   });
 
   it('renders empty state when no commands match', () => {
-    render(<CommandPalette filteredCommands={[]} selectedIndex={0} onSelect={vi.fn()} />);
+    render(<SlashCommandList filteredCommands={[]} selectedIndex={0} onSelect={vi.fn()} />);
     expect(screen.getByText('No commands found.')).toBeDefined();
   });
 
   describe('alias provenance (DOR-120)', () => {
     it('shows the matched alias when a command surfaced via an alias', () => {
       render(
-        <CommandPalette
+        <SlashCommandList
           filteredCommands={[
             { fullCommand: '/usage', description: 'Show context usage', matchedAlias: 'stats' },
           ]}
@@ -120,7 +128,7 @@ describe('CommandPalette', () => {
 
     it('shows no provenance hint when the command matched by name', () => {
       render(
-        <CommandPalette
+        <SlashCommandList
           filteredCommands={[{ fullCommand: '/usage', description: 'Show context usage' }]}
           selectedIndex={0}
           onSelect={vi.fn()}
@@ -133,7 +141,7 @@ describe('CommandPalette', () => {
   describe('honest capability gating (DOR-109 VC3)', () => {
     it('renders a disabled row with its reason and marks it aria-disabled', () => {
       render(
-        <CommandPalette
+        <SlashCommandList
           filteredCommands={[
             {
               fullCommand: '/compact',
@@ -154,7 +162,7 @@ describe('CommandPalette', () => {
     it('does not call onSelect when a disabled row is clicked', () => {
       const onSelect = vi.fn();
       render(
-        <CommandPalette
+        <SlashCommandList
           filteredCommands={[
             {
               fullCommand: '/compact',
@@ -175,7 +183,7 @@ describe('CommandPalette', () => {
   describe('ARIA attributes', () => {
     it('listbox container has listbox role and correct id', () => {
       render(
-        <CommandPalette filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
+        <SlashCommandList filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
       );
       const listbox = screen.getByRole('listbox');
       expect(listbox).toBeDefined();
@@ -184,7 +192,7 @@ describe('CommandPalette', () => {
 
     it('items have option role and unique sequential ids', () => {
       render(
-        <CommandPalette filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
+        <SlashCommandList filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
       );
       const options = screen.getAllByRole('option');
       expect(options).toHaveLength(3);
@@ -195,7 +203,7 @@ describe('CommandPalette', () => {
 
     it('only active item has aria-selected true', () => {
       render(
-        <CommandPalette filteredCommands={mockCommands} selectedIndex={1} onSelect={vi.fn()} />
+        <SlashCommandList filteredCommands={mockCommands} selectedIndex={1} onSelect={vi.fn()} />
       );
       const options = screen.getAllByRole('option');
       expect(options[0].getAttribute('aria-selected')).toBe('false');
@@ -206,7 +214,7 @@ describe('CommandPalette', () => {
 
   it('prevents default on mousedown to preserve textarea focus', () => {
     const { container } = render(
-      <CommandPalette filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
+      <SlashCommandList filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
     );
     const paletteContainer = container.firstElementChild!;
     const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
@@ -217,14 +225,14 @@ describe('CommandPalette', () => {
   describe('scroll behavior', () => {
     it('scrolls active item into view when selectedIndex changes', () => {
       const { rerender } = render(
-        <CommandPalette filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
+        <SlashCommandList filteredCommands={mockCommands} selectedIndex={0} onSelect={vi.fn()} />
       );
 
       // Clear any initial scrollIntoView calls
       vi.mocked(Element.prototype.scrollIntoView).mockClear();
 
       rerender(
-        <CommandPalette filteredCommands={mockCommands} selectedIndex={2} onSelect={vi.fn()} />
+        <SlashCommandList filteredCommands={mockCommands} selectedIndex={2} onSelect={vi.fn()} />
       );
 
       expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });

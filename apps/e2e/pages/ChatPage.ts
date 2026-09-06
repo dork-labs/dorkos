@@ -24,7 +24,7 @@ export class ChatPage {
     this.panel = page.locator('[data-testid="chat-panel"]');
     this.inferenceStreaming = page.locator('[data-testid="inference-indicator-streaming"]');
     this.inferenceComplete = page.locator('[data-testid="inference-indicator-complete"]');
-    // Inline slash-command palette (CommandPalette.tsx): a listbox whose rows are
+    // Inline slash-command list (SlashCommandList.tsx): a listbox whose rows are
     // role="option" with ids `command-item-{n}`.
     this.commandPalette = page.locator('#command-palette-listbox');
     this.paletteOptions = this.commandPalette.getByRole('option');

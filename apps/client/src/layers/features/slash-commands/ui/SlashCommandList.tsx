@@ -3,14 +3,25 @@ import { motion } from 'motion/react';
 import type { CommandEntry } from '@dorkos/shared/types';
 import type { RankedCommandEntry } from '@/layers/entities/command';
 
-interface CommandPaletteProps {
+interface SlashCommandListProps {
   filteredCommands: RankedCommandEntry[];
   selectedIndex: number;
   onSelect: (cmd: CommandEntry) => void;
 }
 
-/** Dropdown list of available commands grouped by namespace. */
-export function CommandPalette({ filteredCommands, selectedIndex, onSelect }: CommandPaletteProps) {
+/**
+ * Dropdown list of available slash commands, grouped by namespace.
+ *
+ * Opens under the composer as soon as a message starts with `/`. The listbox
+ * and row ids (`command-palette-listbox`, `command-item-N`) are the contract
+ * `useInputAutocomplete` points `aria-controls` and `aria-activedescendant` at,
+ * so they stay as they are.
+ */
+export function SlashCommandList({
+  filteredCommands,
+  selectedIndex,
+  onSelect,
+}: SlashCommandListProps) {
   // Pre-compute grouped structure with stable flat indices
   const groups = useMemo(() => {
     const result: { namespace: string; items: { cmd: RankedCommandEntry; index: number }[] }[] = [];
