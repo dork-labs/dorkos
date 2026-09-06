@@ -281,6 +281,10 @@
       "types": "./src/handle.ts",
       "default": "./dist/handle.js"
     },
+    "./canonical-directory": {
+      "types": "./src/canonical-directory.ts",
+      "default": "./dist/canonical-directory.js"
+    },
     "./paths": {
       "types": "./src/paths.ts",
       "default": "./dist/paths.js"

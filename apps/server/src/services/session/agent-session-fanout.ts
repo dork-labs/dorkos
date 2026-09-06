@@ -16,11 +16,35 @@
  * "this machine" names, which is why the rule lives here and not in either of
  * them.
  *
+ * ## One folder, several spellings (DOR-695)
+ *
+ * The membership rule compares two strings that reach it from different
+ * places: a session's `cwd`, which every runtime with a real store derives
+ * from the directory its process ran in (the REAL path), and an agent's
+ * project directory, which is whatever string was registered. On macOS `/tmp`
+ * and `/var` are symlinks, so those are routinely two names for one folder,
+ * and the session was simply dropped.
+ *
+ * The ROOTS are therefore tested in both spellings. The candidate side is not,
+ * and that is a bounded, deliberate gap rather than an oversight: resolving
+ * every row's `cwd` would put a `realpath` syscall inside a per-session loop on
+ * a 2s-budgeted path, and it would only matter for a session tracked under a
+ * symlinked cwd whose agent is registered under the real one — the reverse of
+ * the case that was measured, and one nothing in DorkOS produces today, since
+ * a session's cwd comes from the agent path it was started with.
+ *
+ * The CLIENT mirrors this rule (`select-agent-sessions.ts`) and cannot resolve
+ * anything: it has no filesystem. Reconciling that half means deciding where a
+ * project directory becomes canonical for everyone — an ADR, not an adapter
+ * fix — so the surfaces reading the client selector still drop a symlink-spelt
+ * project's sessions.
+ *
  * @module services/session/agent-session-fanout
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Session, SessionListWarning } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
+import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import { aggregateSessionList } from './aggregate-session-list.js';
 
 /**
@@ -140,6 +164,20 @@ export async function fanOutAgentSessions(opts: {
       );
       const bound = await sources.boundSessionIds(dir).catch(() => new Set<string>());
 
+      // The roots again, in the spelling a runtime with a real store reports
+      // (DOR-695): every one of them derives a session's `cwd` from the
+      // directory the agent process actually ran in, which is the REAL path —
+      // while an agent's registered project directory is whatever string was
+      // typed, and on macOS `/tmp` and `/var` are symlinks. A session the
+      // adapter now finds through the symlinked spelling would be dropped
+      // right here for reporting the real one.
+      //
+      // Resolved ONCE per agent, deliberately: this feeds a per-session test
+      // on the fleet-wide list, which runs under a 2s per-runtime budget, and
+      // a `realpath` per row would spend it on syscalls. The candidate side is
+      // left alone for the same reason — see the module's DOR-695 note.
+      const membershipRoots = [...new Set([...roots, ...roots.map(canonicalDirectory)])];
+
       const warnings = scans.flatMap((scan) => scan.warnings);
       const members: Session[] = [];
       const seen = new Set<string>();
@@ -156,7 +194,8 @@ export async function fanOutAgentSessions(opts: {
           // OR the stored binding, which is what carries a conversation whose
           // DIRECTORY no longer says whose it is — the room-worktree case, and
           // any runtime that reports no cwd at all.
-          const mine = roots.some((root) => isWithinDirectory(s.cwd, root)) || bound.has(s.id);
+          const mine =
+            membershipRoots.some((root) => isWithinDirectory(s.cwd, root)) || bound.has(s.id);
           if (!mine || seen.has(s.id)) continue;
           seen.add(s.id);
           members.push(s);

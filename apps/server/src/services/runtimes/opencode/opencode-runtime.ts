@@ -106,7 +106,7 @@ import {
 import { resolveCompactionModel } from './messaging/compaction-model.js';
 import { projectModelOptions, projectedProviderIds } from './providers/models.js';
 import { OpenCodeMcpManager } from './mcp/mcp-manager.js';
-import { canonicalDirectory } from './canonical-directory.js';
+import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import { captureOpenCodeMedia } from './events/media-capture.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 

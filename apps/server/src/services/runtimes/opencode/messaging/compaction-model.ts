@@ -172,6 +172,8 @@ async function readConfiguredDefaultModel(
   client: OpencodeClient,
   cwd: string
 ): Promise<OpenCodeModelSelection | undefined> {
+  // Raw `cwd`, deliberately — DOR-695 canonicalized the session calls only;
+  // the reasoning is in `mcp/mcp-manager.ts`'s module doc.
   const config = unwrap(await client.config.get({ query: { directory: cwd } }), 'config.get');
   return parseModelSelection(config.model);
 }

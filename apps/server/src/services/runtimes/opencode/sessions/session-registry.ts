@@ -21,7 +21,7 @@
 import type { Session, PermissionModeId } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import { deriveSessionTitle } from '../../shared/derive-title.js';
-import { canonicalDirectory } from '../canonical-directory.js';
+import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 
 /** Max characters of a first message used as the derived session title/preview. */
@@ -57,13 +57,18 @@ function isAnnounceable(event: SessionListEvent): boolean {
 }
 
 /**
- * Project membership for a TRACKED session, by either spelling of the two
- * directories.
+ * A membership test for one project directory, ready to run over many tracked
+ * sessions.
  *
  * A tracked session carries the cwd whoever created it used, and the listing
  * is asked with whatever spelling that caller had — the two are routinely
  * different strings for one directory, because on macOS `/tmp` and `/var` are
  * symlinks (DOR-695). Comparing the real paths reconciles them.
+ *
+ * The root is resolved ONCE, here, rather than per session inside the filter:
+ * `realpath` is a syscall, and this runs on the session-listing path. A
+ * candidate is resolved only when the literal comparison has already failed,
+ * so the common case costs nothing.
  *
  * The literal comparison is tried FIRST and the real-path one only widens it,
  * so this can only ever match more than {@link isWithinDirectory} alone: a
@@ -71,13 +76,16 @@ function isAnnounceable(event: SessionListEvent): boolean {
  * as inside it, exactly as it did before, rather than being dropped by a
  * stricter reading of the same rule.
  *
- * @param candidate - A tracked session's working directory
  * @param root - The project directory the listing asked about
+ * @returns A predicate over a tracked session's working directory
  */
-function belongsToProject(candidate: unknown, root: unknown): boolean {
-  if (isWithinDirectory(candidate, root)) return true;
-  if (typeof candidate !== 'string' || typeof root !== 'string') return false;
-  return isWithinDirectory(canonicalDirectory(candidate), canonicalDirectory(root));
+function memberOfProject(root: string): (candidate: unknown) => boolean {
+  const canonicalRoot = canonicalDirectory(root);
+  return (candidate) => {
+    if (isWithinDirectory(candidate, root)) return true;
+    if (typeof candidate !== 'string') return false;
+    return isWithinDirectory(canonicalDirectory(candidate), canonicalRoot);
+  };
 }
 
 /** Truncate message content into a one-line title/preview (codepoint-safe). */
@@ -167,16 +175,15 @@ export class OpenCodeSessionRegistry {
    * rule is the same rule. It stays reachable by id via
    * {@link OpenCodeSessionRegistry.get}.
    *
-   * Spellings are reconciled by {@link belongsToProject}: the cwd tracked here
+   * Spellings are reconciled by {@link memberOfProject}: the cwd tracked here
    * and the directory the listing asks about are routinely two names for one
    * folder (DOR-695). The sidecar half of the list has no such trouble —
    * OpenCode stores the real path, and the adapter now asks it in that
    * spelling too.
    */
   list(projectDir: string): Session[] {
-    return [...this.sessions.values()]
-      .filter((s) => belongsToProject(s.cwd, projectDir))
-      .map((s) => ({ ...s }));
+    const isMember = memberOfProject(projectDir);
+    return [...this.sessions.values()].filter((s) => isMember(s.cwd)).map((s) => ({ ...s }));
   }
 
   /**

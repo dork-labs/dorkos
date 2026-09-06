@@ -73,6 +73,8 @@ export async function enumerateOpenCodeMcpServers(
 ): Promise<McpServerEntry[] | null> {
   let statuses: Record<string, McpStatus>;
   try {
+    // Raw `cwd`, deliberately — DOR-695 canonicalized the session calls only;
+    // the reasoning is in `mcp/mcp-manager.ts`'s module doc.
     const result = await client.mcp.status({ query: { directory: cwd } });
     if (result.data === undefined) return null;
     statuses = result.data;
@@ -86,6 +88,7 @@ export async function enumerateOpenCodeMcpServers(
   // entry falls back to `stdio` rather than dropping the roster.
   let configMap: Record<string, McpLocalConfig | McpRemoteConfig> = {};
   try {
+    // Raw `cwd` too, for the same reason and to stay consistent with the read above.
     const config = await client.config.get({ query: { directory: cwd } });
     configMap = config.data?.mcp ?? {};
   } catch (err) {
