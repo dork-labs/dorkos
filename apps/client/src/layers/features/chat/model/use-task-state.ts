@@ -228,6 +228,30 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
   }, [lifecycle]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  // Reset the fold state on a session (or scope) change — mirrors the
+  // scopeKeyRef/scopeChanged reset the task data above already does. The
+  // effect just above is keyed on `[lifecycle]` alone, so it only fires when
+  // that STRING VALUE changes; two different sessions can land on the same
+  // value (both mid-turn, or both idle) with nothing to trigger it, and a
+  // hand-collapse or auto-fold left over from the PREVIOUS session bleeds
+  // into whichever session is shown next (DOR-1759). This effect always runs
+  // on a scope change, so it wins regardless of how the effect above reacted
+  // in the same commit: it sets `isCollapsed` fresh from this session's own
+  // lifecycle and clears the hand-collapse latch, which belongs to the
+  // session that set it, not the one being switched to.
+  const foldScopeKeyRef = useRef<string | null>(null);
+  /* eslint-disable react-hooks/set-state-in-effect -- follows a scope change, not render state */
+  useEffect(() => {
+    const scopeKey = `${sessionId ?? ''}::${selectedCwd ?? ''}`;
+    if (foldScopeKeyRef.current === scopeKey) return;
+    foldScopeKeyRef.current = scopeKey;
+    const running = isTurnRunning(lifecycle);
+    wasRunningRef.current = running;
+    collapsedByHandRef.current = false;
+    setIsCollapsed(!running);
+  }, [sessionId, selectedCwd, lifecycle]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   const allTasks = Array.from(state.tasks.values());
   const sorted = sortTasks(allTasks, state.tasks);
   const inProgressTask = allTasks.find((t) => t.status === 'in_progress');
