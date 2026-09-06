@@ -107,7 +107,7 @@ describe('ConnectorRegistry', () => {
     expect(row).toBe(composio);
   });
 
-  it('clears the binding on disconnect (idempotent)', async () => {
+  it('retains a revoked ownership tombstone on disconnect (idempotent)', async () => {
     const composio = new FakeConnectorProvider({ type: 'composio' });
     registry.register(composio);
     const account = await connectOne(composio, 'gmail', 'personal');
@@ -115,8 +115,34 @@ describe('ConnectorRegistry', () => {
 
     registry.recordDisconnect(account.id);
     expect(registry.providerForAccount(account.id)).toBeUndefined();
-    // Clearing again is a no-op, not a throw.
+    expect(registry.accountBinding(account.id)).toMatchObject({
+      provider: 'composio',
+      status: 'revoked',
+    });
+    // Revoking again is a no-op, not a throw.
     expect(() => registry.recordDisconnect(account.id)).not.toThrow();
+  });
+
+  it('reactivates only the same provider ownership after an explicit reconnect', async () => {
+    const composio = new FakeConnectorProvider({ type: 'composio' });
+    registry.register(composio);
+    const account = await connectOne(composio, 'gmail', 'personal');
+    registry.recordConnect(account);
+    registry.recordDisconnect(account.id);
+
+    registry.recordConnect({ ...account, provider: 'nango', label: 'wrong owner' });
+    expect(registry.accountBinding(account.id)).toMatchObject({
+      provider: 'composio',
+      label: 'personal',
+      status: 'revoked',
+    });
+
+    registry.recordConnect({ ...account, label: 'reconnected', status: 'active' });
+    expect(registry.accountBinding(account.id)).toMatchObject({
+      provider: 'composio',
+      label: 'reconnected',
+      status: 'active',
+    });
   });
 
   it('unregister removes a provider; re-registering the same type works again', () => {

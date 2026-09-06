@@ -117,14 +117,14 @@ export const ConnectedAccountSchema = z.object({
 export type ConnectedAccount = z.infer<typeof ConnectedAccountSchema>;
 
 /**
- * The reference-shaped result of beginning a connect flow — mirrors
- * `startOpenRouterOAuth`'s loopback-PKCE shape. Carries only a URL and an opaque
- * flow id to poll; `code_verifier`/secrets stay server-side and never cross the
- * port.
+ * The reference-shaped result of beginning a connect flow. Browser-based flows
+ * carry an authorization URL; flows that verify an already-configured connection
+ * omit it and can be polled immediately. Secrets stay server-side and never cross
+ * the port.
  */
 export const ConnectStartSchema = z.object({
-  /** Vendor consent screen or loopback authorize URL to open. */
-  authorizeUrl: z.string().url(),
+  /** Vendor consent screen or loopback authorize URL to open, when browser action is required. */
+  authorizeUrl: z.string().url().optional(),
   /** Opaque flow id to poll with {@link ConnectorProvider.pollConnect}. */
   flowId: z.string().min(1),
 });
@@ -137,7 +137,7 @@ export type ConnectStart = z.infer<typeof ConnectStartSchema>;
  * `status`, they do not catch.
  */
 export const ConnectPollSchema = z.object({
-  /** `'pending'` while awaiting consent; terminal `'connected'` or `'failed'`. */
+  /** `'pending'` while awaiting browser action or verification; terminal otherwise. */
   status: z.enum(['pending', 'connected', 'failed']),
   /** The new account handle, present once `status === 'connected'`. */
   account: ConnectedAccountSchema.optional(),
@@ -172,8 +172,9 @@ export interface ConnectorProvider {
   listToolkits(): Promise<ConnectorToolkit[]>;
 
   /**
-   * Begin connecting `toolkit`; returns a URL + pollable flow id (secrets stay
-   * server-side). A single-account backend (`supportsMultiAccount: false`)
+   * Begin connecting `toolkit`; returns a pollable flow id and, when browser
+   * action is required, an authorization URL. Secrets stay server-side. A
+   * single-account backend (`supportsMultiAccount: false`)
    * rejects a second connect of an already-connected toolkit rather than
    * creating a duplicate.
    *
@@ -371,11 +372,11 @@ export type ConnectorAccountsResponse = z.infer<typeof ConnectorAccountsResponse
 
 /**
  * Response of `POST /api/connectors/:provider/connect` — the reference-shaped
- * flow start plus the custody disclosure the UI MUST render before the auth
- * URL is opened (disclosure-before-URL is a consent invariant, not styling).
+ * flow start plus the custody disclosure the UI MUST render before any auth URL
+ * is opened. A verification-only flow has no URL.
  */
 export const ConnectorConnectStartResponseSchema = ConnectStartSchema.extend({
-  /** The custody sentence to show BEFORE opening {@link ConnectStart.authorizeUrl}. */
+  /** The custody sentence to show before opening {@link ConnectStart.authorizeUrl}, when present. */
   disclosure: z.string(),
 });
 /** Flow start + pre-connect disclosure. See {@link ConnectorConnectStartResponseSchema}. */
@@ -386,7 +387,7 @@ export type ConnectorConnectStartResponse = z.infer<typeof ConnectorConnectStart
  * with the account in its public (provider-stripped, disclosure-carrying) form.
  */
 export const ConnectorConnectPollResponseSchema = z.object({
-  /** `'pending'` while awaiting consent; terminal `'connected'` or `'failed'`. */
+  /** `'pending'` while awaiting browser action or verification; terminal otherwise. */
   status: ConnectPollSchema.shape.status,
   /** The new account, present once `status === 'connected'`. */
   account: PublicConnectedAccountSchema.optional(),

@@ -18,6 +18,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ConnectedAccountSchema,
+  ConnectStartSchema,
   ConnectorCapabilitiesSchema,
   ConnectorToolkitSchema,
   type ConnectedAccount,
@@ -107,9 +108,10 @@ export function connectorConformance(
     label?: string
   ): Promise<{ status: string; account?: ConnectedAccount }> {
     const start = await provider.startConnect(toolkit, label ? { label } : undefined);
-    expect(start.authorizeUrl.length, 'startConnect must return an authorize URL').toBeGreaterThan(
-      0
-    );
+    expect(
+      ConnectStartSchema.safeParse(start).success,
+      'startConnect must return a valid connect-flow reference'
+    ).toBe(true);
     expect(start.flowId.length, 'startConnect must return a flow id').toBeGreaterThan(0);
 
     let poll = await provider.pollConnect(start.flowId);
