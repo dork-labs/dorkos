@@ -10,8 +10,9 @@
  * the registry after startup has run, which is the only place the guarantee can
  * be true or false.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { LOCAL_COMMUNITY } from '@dorkos/shared/community-adapter';
+import { logger } from '../../../../lib/logger.js';
 import { CommunityRegistry } from '../../registry.js';
 import { RoomStore } from '../../../rooms/room-store.js';
 import {
@@ -93,6 +94,35 @@ describe('registerLocalCommunity', () => {
       signals: 'both',
       credential: 'none',
     });
+  });
+
+  it('degrades rather than failing boot when connecting throws', async () => {
+    // This runs on the startup path, and the whole point of the registry is
+    // per-community degradation: a community that cannot connect contributes a
+    // warning instead of rooms. An unguarded `await` here inverts that for the
+    // one community that is always registered — a throw from anywhere under
+    // `connect` takes the server down before it listens, and every other
+    // subsystem with it. Typed connection failures cannot reach this, which is
+    // exactly why nothing was catching the ones that can: a store handle that
+    // dies mid-resolution, an author registry that throws, a future adapter
+    // whose connect is not as careful as this one's.
+    const registry = new CommunityRegistry();
+    const { register } = install();
+    const boom = new Error('the store gave out while connecting');
+    vi.spyOn(registry, 'connect').mockRejectedValue(boom);
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+
+    await expect(register(registry), 'startup survives it').resolves.toBeDefined();
+
+    expect(
+      registry.has(LOCAL_COMMUNITY),
+      'and the registration itself still stands — the guarantee is that the ref is THERE'
+    ).toBe(true);
+    expect(
+      JSON.stringify(warn.mock.calls),
+      'a failure nobody is told about is the same as no failure'
+    ).toContain('the store gave out while connecting');
+    vi.restoreAllMocks();
   });
 
   it('registers a community whose rooms it can already list', async () => {

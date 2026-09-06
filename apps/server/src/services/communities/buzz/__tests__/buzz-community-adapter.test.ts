@@ -320,6 +320,69 @@ describe('BuzzCommunityAdapter', () => {
     ).toThrow();
   });
 
+  it('holds no key material that serializing the adapter would hand out', async () => {
+    // The conformance suite's U12 asks what the PORT returns. This asks what the
+    // object IS, which is the half that was wrong: the credential arrived as a
+    // constructor parameter property, so it sat on the instance as an ordinary
+    // enumerable field and any structured log line, error report or debug dump
+    // that serialized an adapter printed the secret its whole identity derives
+    // from. Nothing in the port could ever have caught that.
+    const relay = new FakeBuzzRelay();
+    const adapter = adapterOn(relay);
+    await adapter.connect();
+
+    expect(
+      JSON.stringify(adapter),
+      'serializing an adapter must never print the credential it authenticates with'
+    ).not.toContain(CREDENTIAL);
+    // Stated the second way as well, because `JSON.stringify` walks only what is
+    // enumerable and reachable: a credential parked behind a getter or in a
+    // non-enumerable field would pass the line above and still be one
+    // `Object.getOwnPropertyNames` away from a log.
+    const own = adapter as unknown as Record<string, unknown>;
+    const walked = JSON.stringify(
+      Object.getOwnPropertyNames(adapter).map((key) => own[key]),
+      (_key, value: unknown) => (typeof value === 'function' ? undefined : value)
+    );
+    expect(walked, 'and it must not be anywhere on the instance at all').not.toContain(CREDENTIAL);
+
+    // The identity it derived is still there and still works — the point is to
+    // drop the secret, not to break the client.
+    expect(adapter.getCapabilities().credential).toBe('machine-managed');
+    await adapter.disconnect();
+  });
+
+  it('does not read a disconnected relay as a community of empty rooms', async () => {
+    // The failure this replaces was silent and total: one socket close, and
+    // every channel on the relay answered with no messages and no members —
+    // indistinguishable from a quiet community, for the rest of the process's
+    // life. A read that cannot be attempted must FAIL, so the aggregation above
+    // renders "this community could not be reached" beside its name.
+    const relay = new FakeBuzzRelay();
+    const adapter = adapterOn(relay);
+    await adapter.connect();
+    const channelId = relay.createChannel({ name: 'engineering' });
+    relay.addMember(channelId, PUBKEY, 'member');
+    relay.post({ channelId, authorSecret: 'writer', text: 'something was said here' });
+    await adapter.listRooms();
+
+    relay.dropConnections();
+
+    await expect(
+      adapter.listEntries(channelId),
+      'a room with messages in it must not read as a room with none'
+    ).rejects.toThrow(/not available/);
+    await expect(
+      adapter.listMembers(channelId),
+      'nor a room with a roster as a room with nobody in it'
+    ).rejects.toThrow(/not available/);
+    await expect(
+      adapter.listRooms(),
+      'and a community that cannot be reached is a warning, not an empty sidebar'
+    ).rejects.toThrow(/not available/);
+    await adapter.disconnect();
+  });
+
   it('reads nothing at all before the handshake', async () => {
     // The premise the ticket started from — a keyless read-only adapter — is
     // refuted here rather than only in a research note. A read before the

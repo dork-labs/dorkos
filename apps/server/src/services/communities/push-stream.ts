@@ -11,10 +11,29 @@
  *
  * Events queue until a consumer pulls them, so nothing pushed before the first
  * `next()` is lost — which is the whole reason the snapshot can be composed at
- * call time.
+ * call time. That queue is **bounded**, and the bound is the same bound-and-end
+ * policy `services/rooms/room-stream.ts` has always had, for the same reasons.
  *
  * @module server/services/communities/push-stream
  */
+import { logger } from '../../lib/logger.js';
+
+/**
+ * How many undelivered events one stream may hold before it is ended instead of
+ * buffering further.
+ *
+ * The number and the argument are `RoomBroadcaster`'s, deliberately unforked:
+ * dropping frames would open a silent gap; buffering without limit would let one
+ * stalled reader grow the heap until this process dies. Ending the stream does
+ * neither — the port makes a consumer handle a stream that ends anyway (a room
+ * closes, an adapter disconnects), and the recovery is the one the port already
+ * prescribes: subscribe again, from a cursor, and the replay is gap-free.
+ *
+ * A community stream carries at most one snapshot and then one frame per
+ * committed entry, so a thousand undelivered events is a reader that has stopped
+ * reading rather than a busy room.
+ */
+export const MAX_QUEUED_EVENTS = 1000;
 
 /**
  * A queue that is also an async iterable. One producer, one consumer.
@@ -37,13 +56,30 @@ export class PushStream<T> implements AsyncIterable<T> {
   /**
    * Queue one event, delivering it immediately if a consumer is parked.
    *
+   * A push that would take the queue past {@link MAX_QUEUED_EVENTS} ENDS the
+   * stream instead — the queue is discarded with it, because a reader that is
+   * given some of what it missed and not the rest has a gap it cannot see. What
+   * it gets instead is the end of the stream, which every consumer of this port
+   * already handles.
+   *
    * @param value - The event to deliver.
    */
   push(value: T): void {
     if (this.ended) return;
     const waiter = this.waiters.shift();
-    if (waiter) waiter({ value, done: false });
-    else this.queue.push(value);
+    if (waiter) {
+      waiter({ value, done: false });
+      return;
+    }
+    if (this.queue.length >= MAX_QUEUED_EVENTS) {
+      logger.warn('[PushStream] ending a stalled community subscriber; it must resubscribe', {
+        queued: this.queue.length,
+      });
+      this.queue.length = 0;
+      this.end();
+      return;
+    }
+    this.queue.push(value);
   }
 
   /**

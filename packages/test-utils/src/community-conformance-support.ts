@@ -120,6 +120,25 @@ export interface CommunityConformanceOpts {
   ) => Promise<CommunityRoomClosedReason>;
 
   /**
+   * Optional: make a room LEAVE this identity's view, out of band — ejected
+   * from it, or the room deleted where it lives.
+   *
+   * `room_removed` is the one member of `CommunityRoomListEvent` nothing
+   * asserted, and it is the one whose absence is invisible: a backend that never
+   * emits it looks identical to a backend where no room has gone away, and the
+   * cost lands on a person, whose sidebar keeps a room they cannot open. Every
+   * backend that can arrange this owes the case.
+   *
+   * Arranging it needs an act the port deliberately does not expose — archiving
+   * is NOT it, because an archived room still reads and is still listed. An
+   * adapter that omits this hook declines the case by name.
+   *
+   * @param adapter - The adapter holding the room.
+   * @param roomId - The room to take out of this identity's view.
+   */
+  makeRemovedRoom?: (adapter: CommunityAdapter, roomId: string) => Promise<void>;
+
+  /**
    * Optional: arrange an entry **authored by an admitted agent**, out of band,
    * and return its id.
    *

@@ -71,6 +71,39 @@ describe('resolveCommunityCredential', () => {
     expect(warn).toHaveBeenCalled();
   });
 
+  it('surfaces a read failure instead of treating it as a first use', () => {
+    // ENOENT is the ONLY reading failure that means "there is nothing here yet".
+    // Every other one — a permission problem, a directory where a file should
+    // be, a filesystem that gave out — means there IS something here and we
+    // could not read it, which is the state where minting a replacement would
+    // change this install's identity in a community it is already a member of.
+    // The error a person is shown must be the one that happened.
+    const credential = resolveCommunityCredential(dorkHome, COMMUNITY);
+    const file = path.join(communityDir(dorkHome, COMMUNITY), 'credential');
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((target: fs.PathOrFileDescriptor) => {
+      if (String(target) === file) {
+        throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+      }
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    }) as typeof fs.readFileSync);
+
+    expect(
+      () => resolveCommunityCredential(dorkHome, COMMUNITY),
+      'the refusal must name what actually went wrong, not a story about the file'
+    ).toThrow(/EACCES/);
+    expect(
+      JSON.stringify(warn.mock.calls),
+      'and it must not have announced that it was generating a replacement'
+    ).not.toMatch(/generating a new one/);
+
+    vi.restoreAllMocks();
+    expect(
+      resolveCommunityCredential(dorkHome, COMMUNITY),
+      'the file is untouched: whatever holds it, the community may already know it'
+    ).toBe(credential);
+  });
+
   it('logs the path and never the value', () => {
     const info = vi.spyOn(logger, 'info').mockImplementation(() => {});
     const credential = resolveCommunityCredential(dorkHome, COMMUNITY);

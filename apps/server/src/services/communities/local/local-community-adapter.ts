@@ -455,20 +455,31 @@ export class LocalCommunityAdapter implements CommunityAdapter {
   /**
    * Commit an entry as the connected identity.
    *
-   * `input.mentions` is deliberately NOT merged: this backend resolves mentions
-   * from the text itself at write time, against the room's own roster
-   * (`resolveMentions`), which is strictly stronger than trusting a list a
-   * caller assembled. Honouring both would let a caller address someone the
-   * message does not name.
+   * **`input.mentions` is carried, not dropped.** The port defines them as
+   * "member ids the writer addressed... resolved by the caller, not re-parsed by
+   * the adapter", and carries them back on the entry because
+   * `responseMode: 'mention-only'` cannot work without them. This adapter used
+   * to discard the field on the argument that resolving from the text is
+   * stronger — which is true and is also not a reason to lose the other half:
+   * the two are unioned, so a message that names somebody with an `@` still
+   * reaches them, and a caller that resolved its own addressee reaches them even
+   * with no `@` in the text at all.
+   *
+   * What stops that becoming a way to address a stranger is `RoomService`, not
+   * this wrapper: a supplied id is filtered to the room's own addressable roster
+   * there, so the reachable set is exactly the set a person typing an `@` could
+   * have reached. An id outside it is dropped, the same answer an unresolvable
+   * `@name` gets.
    *
    * @param roomId - The room to post into.
-   * @param input - What to say, and what it replies to.
+   * @param input - What to say, what it replies to, and who it addresses.
    */
   async post(roomId: string, input: PostCommunityEntryInput): Promise<CommunityEntryRef> {
     const entry = this.deps.service.post(roomId, {
       authorId: this.identity(),
       text: input.text,
       ...(input.parentEntryId === undefined ? {} : { replyTo: input.parentEntryId }),
+      ...(input.mentions === undefined ? {} : { mentions: input.mentions }),
     });
     return {
       community: this.community,
@@ -829,11 +840,21 @@ export class LocalCommunityAdapter implements CommunityAdapter {
    * one indexed SELECT in-process, and it is also the guard that keeps this
    * honest — a room this store does not hold is not this community's room, and
    * is ignored.
+   *
+   * **`room_member_removed` is watched too, and it is the third event rather
+   * than a fourth kind of update**: it is the only thing on this install that
+   * takes a room OUT of an identity's view, which is what the port's
+   * `room_removed` reports. Without it an ejected room sat in a sidebar until
+   * the process restarted — listed, clickable, and refused on read.
    */
   private onLifecycleEvent(eventName: string, data: unknown): void {
-    if (eventName !== 'room_created' && eventName !== 'room_updated') return;
     const roomId = (data as { roomId?: unknown } | null)?.roomId;
     if (typeof roomId !== 'string') return;
+    if (eventName === 'room_member_removed') {
+      this.onMemberRemoved(roomId);
+      return;
+    }
+    if (eventName !== 'room_created' && eventName !== 'room_updated') return;
     const room = this.deps.store.getRoom(roomId);
     if (!room) return;
 
@@ -858,6 +879,37 @@ export class LocalCommunityAdapter implements CommunityAdapter {
     // never deliver again. Terminating it with the honest reason beats leaving a
     // subscription open forever on a conversation that has been put away.
     if (eventName === 'room_updated' && room.archived) this.closeRoom(roomId, 'archived');
+  }
+
+  /**
+   * Somebody left a room: report it removed when the room has left THIS
+   * identity's view.
+   *
+   * **Visibility is re-read, never inferred from who was removed.** The payload
+   * names an author, and comparing it against the connected identity would be
+   * wrong in both directions: the operator sees every room on her own machine
+   * whether or not she is on its roster, so her own removal takes nothing away,
+   * and another member's removal can be the moment a room stops being visible
+   * to a caller whose view is its memberships. `getRoom` is the shipped
+   * visibility rule and it answers both cases in one indexed read.
+   *
+   * The live subscriptions go with it, with the port's own honest reason. A
+   * reader ejected from a room is holding a stream the broadcaster will happily
+   * keep feeding — the broadcaster fans out per room and knows nothing about who
+   * may see one — so leaving it open would not merely be untidy, it would keep
+   * delivering entries from a room this identity may no longer read.
+   *
+   * @param roomId - The room whose roster changed.
+   */
+  private onMemberRemoved(roomId: string): void {
+    if (this.deps.service.getRoom(roomId, this.identity())) return;
+    const event: CommunityRoomListEvent = {
+      type: 'room_removed',
+      community: this.community,
+      roomId,
+    };
+    for (const stream of [...this.listStreams]) stream.push(event);
+    this.closeRoom(roomId, 'access-revoked');
   }
 
   /** End every subscription to one room with a terminal reason. */

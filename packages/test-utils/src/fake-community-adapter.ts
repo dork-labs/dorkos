@@ -256,8 +256,15 @@ export class FakeCommunityAdapter implements CommunityAdapter {
   }
 
   getCapabilities(): CommunityCapabilities {
-    // Deep-enough copy so a consumer cannot mutate the fake's declaration.
-    return { ...this._capabilities, roles: { ...this._capabilities.roles } };
+    // Deep enough that a consumer cannot mutate the fake's declaration —
+    // `roles.values` and `features` included, which a one-level spread leaves
+    // shared by reference. The reference implementation was handing both out
+    // live until U21 asked (DOR-792).
+    return {
+      ...this._capabilities,
+      roles: { ...this._capabilities.roles, values: [...this._capabilities.roles.values] },
+      features: { ...this._capabilities.features },
+    };
   }
 
   // --- Connection ----------------------------------------------------------
@@ -391,9 +398,16 @@ export class FakeCommunityAdapter implements CommunityAdapter {
     return stream;
   }
 
-  listEntries(roomId: string, opts: ListCommunityEntriesOpts = {}): Promise<CommunityEntryPage> {
+  // `async`, and it has to be: the port types this as promise-returning, and a
+  // stale cursor makes `_ordinalOrThrow` throw. A plain method would throw
+  // SYNCHRONOUSLY at a caller holding a `.catch()`, which is the same mistake
+  // `LocalCommunityAdapter` documents one rule for its whole class about.
+  async listEntries(
+    roomId: string,
+    opts: ListCommunityEntriesOpts = {}
+  ): Promise<CommunityEntryPage> {
     const stored = this._rooms.get(roomId);
-    if (!stored) return Promise.resolve({ entries: [], nextCursor: null });
+    if (!stored) return { entries: [], nextCursor: null };
     const from = opts.cursor === undefined ? 0 : this._ordinalOrThrow(roomId, opts.cursor);
     const matching = stored.entries.filter((e) => {
       if (e.ordinal <= from) return false;
@@ -404,10 +418,10 @@ export class FakeCommunityAdapter implements CommunityAdapter {
     const limit = opts.limit ?? DEFAULT_PAGE_SIZE;
     const page = matching.slice(0, limit);
     const exhausted = page.length === matching.length;
-    return Promise.resolve({
+    return {
       entries: page.map((e) => this._copyEntry(e.entry)),
       nextCursor: exhausted ? null : (page.at(-1)?.entry.cursor ?? null),
-    });
+    };
   }
 
   post(roomId: string, input: PostCommunityEntryInput): Promise<CommunityEntryRef> {
@@ -723,6 +737,23 @@ export class FakeCommunityAdapter implements CommunityAdapter {
     this._emitRoom(roomId, { type: 'room_closed', reason });
     for (const stream of this._roomStreams.get(roomId) ?? []) stream.end();
     this._roomStreams.delete(roomId);
+  }
+
+  /**
+   * Take a room out of this identity's view entirely — ejected from it, or
+   * deleted where it lives — and say so on the room-list stream.
+   *
+   * The out-of-band half of `room_removed`, which no port method can arrange:
+   * archiving is a state a room carries and an archived room still lists, so
+   * nothing on the port takes a room away.
+   *
+   * @param roomId - The room to remove.
+   */
+  removeRoom(roomId: string): void {
+    if (!this._rooms.delete(roomId)) return;
+    for (const stream of this._roomStreams.get(roomId) ?? []) stream.end();
+    this._roomStreams.delete(roomId);
+    this._emitRoomList({ type: 'room_removed', community: this.community, roomId });
   }
 
   /**

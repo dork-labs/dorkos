@@ -131,11 +131,29 @@ communityConformance(() => new MyCommunityAdapter(/* ... */), {
   makeUnauthorizedAdapter: ...,
   revokeOwner: ...,
   makeEvictedRoom: ...,
+  makeRemovedRoom: ...,   // take a room OUT of this identity's view
+  seedEmptyRoom: ...,
   secondCommunity: ...,
 });
 ```
 
 `seedRoom` is required, and a read-only backend arranges it **out of band** with an admin tool. That is the honest cost of a read-only backend, not a reason to stop testing it.
+
+`makeRemovedRoom` is the newest hook and the one most likely to look unnecessary. Archiving is **not** it: an archived room still reads and still lists. What it wants is a room leaving this identity's view — the member ejected from it, or the room deleted where it lives — because `room_removed` is emitted by a different code path in every backend (a poll noticing an absence; a membership event), so an adapter can pass the `room_added` case and never emit a removal at all. What that costs is paid by a person, whose sidebar keeps a room that refuses to open.
+
+### What the suite asserts that a self-consistent adapter can still fail
+
+Five obligations were added after a review found that two genuinely lossy mutations left every assertion green (DOR-792). Each is a sentence the port's own TSDoc already contained, and each is worth reading before you write an adapter, because all five fail in ways that look like something else:
+
+| Case    | The obligation                                                                                  | What failing it looks like                                                                               |
+| ------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **U18** | Emission order is ONE order, and the page and the replay agree about every entry they share     | A conversation that reads in two different orders depending on which surface loaded it                   |
+| **U19** | `post`'s `mentions` survive the write and come back on the entry                                | A `mention-only` member who is never reached, with no error anywhere                                     |
+| **U20** | A receipt's `cursor` resumes **after** the entry it names                                       | A poster's own message duplicated on resume, or the next one lost                                        |
+| **U21** | `getCapabilities()` hands out something a consumer cannot mutate                                | A declaration that changes behind your back — copy `roles.values` and `features`, not just the top level |
+| **U22** | A foreign or unrecognisable cursor is refused on `listEntries` too, not only on `subscribeRoom` | A page served from the wrong place in the wrong room, silently                                           |
+
+The reference `FakeCommunityAdapter` failed two of them the day they were written (a shared `roles.values` array, and a `listEntries` that threw synchronously where the port types a rejection), which is the best argument available that they were worth adding.
 
 A backend that needs a live server (a relay, a hosted community) gates its run on an env var and skips when absent — the pattern `runtimeConformance` already uses for a runtime whose binary is missing.
 
@@ -169,4 +187,7 @@ It also added a fourth typed error to the port. `CommunityMemberNotFoundError` w
 - **Putting a filesystem path on the wire.** A room's own files are deliberately not on this port. That binding names a directory on one machine — a `room-repo.json` sidecar under the DorkOS data directory, cached in `room_repos` — and a remote community has no opinion about a path on somebody's laptop.
 - **Answering an unknown room with a stream.** `subscribeRoom` on a room you cannot serve throws `CommunityRoomNotFoundError`, eagerly. The two shortcuts both fail a person: a stream that opens and never yields is indistinguishable from a quiet room, so the caller waits forever; an immediate `room_closed` reports that a room went away to a caller that never had one. `getRoom` answers `null` for the same pair because a nullable room has an empty value and a stream does not — the shapes differ, the disclosure does not.
 - **Treating a room id as a capability.** `RoomAddress` is an address, not an authorization. Re-check membership on every read — the cache is never the access boundary. That extends to how you refuse: a room that does not exist and a room this identity cannot see get the **identical** `CommunityRoomNotFoundError`, message included. The error takes no `reason` argument precisely so there is nothing to differ, because any difference is a probe for somebody else's direct messages.
+- **Holding your credential as a field.** `constructor(private readonly deps: MyDeps)` is a parameter property, which means the credential you were handed is an ordinary enumerable field on the instance — and anything that serializes an adapter (a structured log line, an error reporter, a debug dump) prints it. The port's no-credential rule is about what methods RETURN, so nothing in the conformance suite can catch this. Read `deps` in the constructor, keep the derived key in a closure, and retain nothing else.
+- **An unbounded queue behind a stream.** Every stream this port hands out is pushed to by a producer and pulled from by a consumer, and the consumer can stop pulling. Bound the queue and END the stream past the bound (`services/communities/push-stream.ts`, matching `RoomBroadcaster`): dropping frames opens a silent gap, buffering without limit grows the heap until the process dies, and ending the stream does neither — the caller resubscribes from a cursor and the replay is gap-free, which is the recovery the port already prescribes.
+- **Staying down after one socket close.** A long-lived connection to somebody else's server WILL be dropped. Reconnect with a backoff, and — the half that is easier to miss — make a read attempted while the connection is down **fail** rather than resolve empty. An empty page and an empty roster are indistinguishable from a quiet community, so one blip reads as "there is nothing here" for the rest of the process's life; a rejection becomes a per-community warning through `aggregateCommunityRooms`, which is a thing a person can act on.
 - **Validating the cursor before the room.** The subtlest way to re-open that probe, and it survives every assertion about either error's contents. A cursor is usually bounded against what the room holds, and a room that is not there holds nothing — so checking the cursor first answers `StaleCommunityCursorError` for a room that does not exist and `CommunityRoomNotFoundError` for one that exists and is hidden. **Two typed refusals that differ is the same leak as two messages that differ.** Check the room first; the local adapter's tests pin the order by asking for both rooms twice, once with a cursor and once without.

@@ -2985,6 +2985,13 @@ export class RoomService {
    *   dispatcher on every agent-authored reply. Distinct from `replyTo`, which
    *   picks a THREAD: a channel post has no thread and still answers something,
    *   and a room posts in arrival order whatever a message responds to.
+   * @param input.mentions - Author ids the writer addressed and resolved for
+   *   itself, unioned with whatever the text names. The `CommunityAdapter` port
+   *   is the caller this exists for: its `post` carries mentions across the
+   *   seam, and a member addressed with no `@` in the message is unreachable
+   *   without them. Filtered to who this room can actually address — see
+   *   {@link withCallerMentions} — so supplying an id is never a way to reach
+   *   somebody outside it.
    * @returns The committed entry, carrying what writing it asked of the room —
    *   see {@link PostedEntry}.
    */
@@ -2999,6 +3006,7 @@ export class RoomService {
       attachmentIds?: readonly string[];
       moment?: RoomMoment;
       answersEntryId?: string;
+      mentions?: readonly string[];
     }
   ): PostedEntry {
     const room = this.requireVisibleRoom(roomId, input.authorId);
@@ -4169,6 +4177,7 @@ export class RoomService {
       replyTo?: string;
       moment?: RoomMoment;
       answersEntryId?: string;
+      mentions?: readonly string[];
     },
     within?: (tx: DbTransaction) => void,
     opts?: {
@@ -4214,10 +4223,14 @@ export class RoomService {
     // member's agent is gone. The second half is what stops a released name
     // becoming a silent one (ADR 260801-003051) — the dispatcher writes the
     // room's answer to it below.
-    const addressed = resolveAddressing(
-      input.text,
-      this.roster.addressingCandidates(roomId, opts?.mentionAugment)
-    );
+    const candidates = this.roster.addressingCandidates(roomId, opts?.mentionAugment);
+    const addressed = resolveAddressing(input.text, candidates);
+    // Who the WRITER addressed, when the writer resolved it themselves rather
+    // than typing an `@`. Only the `CommunityAdapter` port supplies this — its
+    // `post` carries `mentions` and its entry carries them back, because
+    // `responseMode: 'mention-only'` is unusable otherwise — and it is unioned
+    // with what the text resolved to rather than replacing it.
+    const mentions = withCallerMentions(addressed.mentions, input.mentions, candidates.live);
     const id = ulid();
     // The ref write shares the entry's transaction, so both land or neither does
     // (§5.2, A5.6). Composed with `within` — a bridged first message both joins
@@ -4252,10 +4265,12 @@ export class RoomService {
           ...(input.moment && { moment: input.moment }),
           ...(input.answersEntryId !== undefined && { answersEntryId: input.answersEntryId }),
         },
-        mentions: addressed.mentions,
-        // The per-occurrence positions of those mentions, resolved in the SAME
-        // pass and stored beside them so the client draws pills without ever
-        // re-parsing the body (`.claude/rules/room-conduct.md`).
+        mentions,
+        // The per-occurrence positions of the mentions THE TEXT names, resolved
+        // in the SAME pass and stored beside them so the client draws pills
+        // without ever re-parsing the body (`.claude/rules/room-conduct.md`). A
+        // caller-resolved mention has no occurrence to point at, so it has no
+        // span — which is the honest encoding of "addressed, but not written".
         mentionSpans: addressed.spans,
         sessionId: input.sessionId ?? null,
         dispatchId,
@@ -4279,7 +4294,7 @@ export class RoomService {
     // notification is the least important thing this write does, and it must
     // never be able to delay or fail the post that produced it (mirrors the
     // dispatch try/catch immediately below).
-    this.notifyRoomMessage(room, entry, author, addressed.mentions);
+    this.notifyRoomMessage(room, entry, author, mentions);
     // Trigger-only, both ways: the post reaches its readers now, and whoever it
     // addresses answers on their own schedule. Deliberately not awaited — the
     // HTTP 202 must not wait on a model call, and the reply arrives on the same
@@ -5713,4 +5728,41 @@ function slugify(title: string): string | null {
       .slice(0, 80)
       .replace(/-$/, '') || null
   );
+}
+
+/**
+ * Union the mentions a caller resolved for itself with the ones the message
+ * text names.
+ *
+ * Only the `CommunityAdapter` port supplies the first kind: its `post` carries
+ * `mentions` and its entry carries them back, and the port says why — a
+ * `responseMode: 'mention-only'` member cannot be reached without it. A caller
+ * that has already resolved who it addressed is exactly the case a text scan
+ * cannot cover, because there may be no `@` in the message at all.
+ *
+ * **A supplied id must be somebody this room can actually address**, and that is
+ * the whole safety property here: without the filter, a caller could name a
+ * member of a room it cannot see and have this room deliver to them. With it,
+ * the reachable set is identical to the set a person typing an `@` could have
+ * reached — the same `live` roster, in the same call. An id outside it is
+ * dropped rather than refused, exactly as an unresolvable `@name` is: it is not
+ * an error, it is a name this room has nobody for.
+ *
+ * @param resolved - What the text named, in the order it named them.
+ * @param supplied - What the caller resolved, if anything.
+ * @param live - Who an `@` may reach in this room.
+ */
+function withCallerMentions(
+  resolved: readonly string[],
+  supplied: readonly string[] | undefined,
+  live: readonly { authorId: string }[]
+): string[] {
+  if (!supplied?.length) return [...resolved];
+  const addressable = new Set(live.map((candidate) => candidate.authorId));
+  const merged = [...resolved];
+  for (const authorId of supplied) {
+    if (!addressable.has(authorId) || merged.includes(authorId)) continue;
+    merged.push(authorId);
+  }
+  return merged;
 }

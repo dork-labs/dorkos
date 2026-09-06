@@ -25,6 +25,15 @@
  * - `revokeOwner` / `seedAgentEntry` — both belong to agent admission, which
  *   this backend declares `'none'`; the suite skips those cases on the
  *   declaration alone.
+ * - `makeRemovedRoom` — **the connected identity here is the operator, and the
+ *   operator sees every room on her own machine** whether or not she is on its
+ *   roster (`RoomService.seesEveryRoom`). So no act available to this fixture
+ *   takes a room out of THIS identity's view: archiving does not (an archived
+ *   room still lists and still reads), and there is no delete. The adapter does
+ *   emit `room_removed`, and the case that proves it is in
+ *   `local-community-adapter.test.ts`, connected as an agent — an identity whose
+ *   view IS its memberships, which is the view every remote community gives
+ *   everybody.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { communityConformance } from '@dorkos/test-utils';

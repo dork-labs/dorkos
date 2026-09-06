@@ -20,6 +20,16 @@
  * client reports the difference rather than collapsing it into a failure. That is
  * what the port's four connection statuses are for.
  *
+ * **A dropped socket is rebuilt, and a read taken while it is down FAILS.** Those
+ * two are one decision. A long-lived WebSocket to somebody else's server will be
+ * dropped — a restart, a deploy, an idle NAT — and this client used to answer by
+ * staying down until the process was restarted, while every read above it came
+ * back as an empty channel with no members. Both halves were wrong: the
+ * connection is retried with a doubling backoff
+ * ({@link BuzzRelayClient.scheduleReconnect}), and until it is back a read
+ * rejects with {@link BuzzDisconnectedError} rather than resolving to nothing,
+ * so one blip degrades a community to a warning instead of quietly emptying it.
+ *
  * @module server/services/communities/buzz/buzz-relay-client
  */
 import type { CommunityConnection, CommunityRef } from '@dorkos/shared/community-adapter';
@@ -38,6 +48,16 @@ import type { BuzzSocket, BuzzSocketFactory } from './buzz-socket.js';
 
 /** How long to wait for the socket, the challenge and the verdict, all told. */
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
+
+/** How long to wait before the FIRST attempt to rebuild a dropped connection. */
+const DEFAULT_RECONNECT_BASE_MS = 500;
+
+/**
+ * The ceiling on the backoff. A relay that has been down for a while is retried
+ * every half minute rather than never — a socket that has to be rebuilt by
+ * restarting the server is the outcome this exists to prevent.
+ */
+const RECONNECT_MAX_MS = 30_000;
 
 /**
  * Thrown when the relay declines a read rather than answering it: a channel this
@@ -64,9 +84,49 @@ export class BuzzReadRefusedError extends Error {
   }
 }
 
+/**
+ * Thrown when a read could not be attempted at all, because there is no
+ * connection to attempt it over — the socket dropped, or one has not been
+ * rebuilt yet.
+ *
+ * **A class of its own, and not a {@link BuzzReadRefusedError}.** The two say
+ * opposite things about a channel: a refusal means "you may not read this",
+ * which the adapter answers with an empty page because that is the same thing
+ * the caller can act on; a disconnection says nothing about the channel
+ * whatsoever. Collapsing them was how one socket close turned every channel on
+ * this relay into a room with no messages and no members, with a `debug` line
+ * as the only trace — for the whole life of the process. A degraded community
+ * is a warning a person can read (`aggregate-community-rooms.ts`); an empty
+ * room is a lie.
+ */
+export class BuzzDisconnectedError extends Error {
+  /**
+   * Name the reason the connection is not available.
+   *
+   * @param reason - Plain-language detail, for the log.
+   */
+  constructor(readonly reason: string) {
+    super(`the relay connection is not available: ${reason}`);
+    this.name = 'BuzzDisconnectedError';
+  }
+}
+
 /** What one subscription delivers. */
 export type BuzzSubscriptionEvent =
-  { type: 'event'; event: NostrEvent } | { type: 'eose' } | { type: 'closed'; message: string };
+  | { type: 'event'; event: NostrEvent }
+  | { type: 'eose' }
+  | {
+      type: 'closed';
+      /** Why, as the relay said it or as the socket layer reported it. */
+      message: string;
+      /**
+       * Set when the SOCKET went away rather than the relay refusing the read.
+       * The two are different answers about the channel and only this field
+       * tells them apart — the relay's own `CLOSED` message cannot, because a
+       * dropped socket produces no message at all.
+       */
+      disconnected?: boolean;
+    };
 
 /** Everything a {@link BuzzRelayClient} is built from. */
 export interface BuzzRelayClientDeps {
@@ -80,6 +140,13 @@ export interface BuzzRelayClientDeps {
   openSocket: BuzzSocketFactory;
   /** Budget for socket + challenge + verdict. Defaults to ten seconds. */
   connectTimeoutMs?: number;
+  /**
+   * The first backoff step after an established connection drops; each further
+   * attempt doubles it up to {@link RECONNECT_MAX_MS}. Defaults to
+   * {@link DEFAULT_RECONNECT_BASE_MS}, and exists to be turned down so a test
+   * can watch a real timer fire rather than mocking one away.
+   */
+  reconnectBaseDelayMs?: number;
 }
 
 /**
@@ -101,6 +168,9 @@ export class BuzzRelayClient {
   private readonly subscriptions = new Map<string, PushStream<BuzzSubscriptionEvent>>();
   private pendingConnect: ((connection: CommunityConnection) => void) | null = null;
   private challengeAnswered = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempts = 0;
+  private closedByCaller = false;
 
   /**
    * Wire a client. Nothing opens until {@link BuzzRelayClient.connect} runs.
@@ -129,6 +199,10 @@ export class BuzzRelayClient {
    * @param signal - Aborts an attempt that is taking too long.
    */
   connect(signal?: AbortSignal): Promise<CommunityConnection> {
+    // Whatever else this call does, it says the caller wants a connection —
+    // which un-does a `disconnect()` and supersedes any retry already armed.
+    this.closedByCaller = false;
+    this.clearReconnect();
     if (this.authenticated) {
       return Promise.resolve({
         status: 'connected',
@@ -193,6 +267,9 @@ export class BuzzRelayClient {
         continue;
       }
       if (event.type === 'eose') break;
+      // Two different answers about the channel, and only the flag tells them
+      // apart: the relay declining a read, or no connection to have asked over.
+      if (event.disconnected) throw new BuzzDisconnectedError(event.message);
       throw new BuzzReadRefusedError(event.message);
     }
     subscription.close();
@@ -223,7 +300,11 @@ export class BuzzRelayClient {
       // Not an exception: a subscription opened against a dropped connection is
       // a race a caller cannot avoid, and the stream's own terminal event is how
       // every other close is reported.
-      stream.push({ type: 'closed', message: 'not connected to the relay' });
+      stream.push({
+        type: 'closed',
+        message: 'not connected to the relay',
+        disconnected: true,
+      });
       stream.end();
     } else {
       this.socket?.send(encodeReq(subscriptionId, ...filters));
@@ -236,8 +317,15 @@ export class BuzzRelayClient {
     return { events: stream, close: () => stream.end() };
   }
 
-  /** Close the socket and end every open subscription. Idempotent. */
+  /**
+   * Close the socket and end every open subscription. Idempotent.
+   *
+   * It also cancels any reconnect already armed and stops another being armed:
+   * a caller that closed this client did not ask for a socket to come back.
+   */
   disconnect(): void {
+    this.closedByCaller = true;
+    this.clearReconnect();
     this.teardown('disconnected');
   }
 
@@ -314,6 +402,9 @@ export class BuzzRelayClient {
   private settleHandshake(accepted: boolean, message: string): void {
     if (accepted) {
       this.authenticated = true;
+      // A connection that worked starts the ladder over, so a relay that blips
+      // once a day is retried promptly every time rather than ever more slowly.
+      this.reconnectAttempts = 0;
       this.pendingConnect?.({
         status: 'connected',
         identity: { community: this.deps.community, memberId: this.pubkey },
@@ -342,6 +433,11 @@ export class BuzzRelayClient {
    * @param reason - Plain-language detail.
    */
   private onClose(reason: string): void {
+    // Whether this ends a WORKING connection or a handshake that never
+    // finished, decided before `teardown` clears the flag it is read from. Only
+    // the first case is reconnected: a handshake in flight has a caller holding
+    // its promise, and that caller decides what to do with an `'unreachable'`.
+    const established = this.authenticated && this.pendingConnect === null;
     // A close during the handshake is the unreachable case: the relay never got
     // as far as saying anything about our key.
     this.pendingConnect?.({
@@ -349,6 +445,53 @@ export class BuzzRelayClient {
       error: `the relay at '${this.deps.relayUrl}' closed the connection: ${reason}`,
     });
     this.teardown(reason);
+    if (established) this.scheduleReconnect(reason);
+  }
+
+  /**
+   * Arm the next attempt to rebuild a connection that dropped, backing off.
+   *
+   * **Only a transport failure is retried.** A verdict about our key — banned,
+   * or a deployment that has not admitted it — is the same verdict every time,
+   * so retrying it is a loop that never ends and never helps; the caller is told
+   * once and acts on it. That is why this is armed from `onClose` and re-armed
+   * only on `'unreachable'`.
+   *
+   * @param reason - Why the last attempt ended, for the log.
+   */
+  private scheduleReconnect(reason: string): void {
+    if (this.closedByCaller || this.reconnectTimer) return;
+    const base = this.deps.reconnectBaseDelayMs ?? DEFAULT_RECONNECT_BASE_MS;
+    const delay = Math.min(base * 2 ** this.reconnectAttempts, RECONNECT_MAX_MS);
+    this.reconnectAttempts += 1;
+    // A warning, not a debug line. Until the socket is back, every read on this
+    // community fails — the person sees a warning beside that community's name
+    // and this is the log line that explains it.
+    logger.warn('[BuzzCommunity] the relay connection dropped; retrying', {
+      community: this.deps.community,
+      reason,
+      attempt: this.reconnectAttempts,
+      inMs: delay,
+    });
+    const timer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (this.closedByCaller) return;
+      void this.connect().then((connection) => {
+        if (connection.status !== 'unreachable') return;
+        this.scheduleReconnect(connection.error ?? 'the relay did not answer');
+      });
+    }, delay);
+    // Never the reason a process stays alive: a retry nobody is waiting for
+    // must not keep the event loop from draining.
+    (timer as { unref?: () => void }).unref?.();
+    this.reconnectTimer = timer;
+  }
+
+  /** Cancel a retry that is armed, if any. */
+  private clearReconnect(): void {
+    if (!this.reconnectTimer) return;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
   }
 
   /**
@@ -360,7 +503,7 @@ export class BuzzRelayClient {
     this.authenticated = false;
     for (const [subscriptionId, stream] of [...this.subscriptions]) {
       this.subscriptions.delete(subscriptionId);
-      stream.push({ type: 'closed', message: reason });
+      stream.push({ type: 'closed', message: reason, disconnected: true });
       stream.end();
     }
     const socket = this.socket;
