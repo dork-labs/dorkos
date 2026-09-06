@@ -95,3 +95,39 @@ describe('mutation error toast policy', () => {
     );
   });
 });
+
+describe('query error policy', () => {
+  beforeEach(() => {
+    vi.mocked(toast.error).mockClear();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Invoke the QueryCache `onError` with a query carrying `meta`. */
+  function fireQueryError(error: Error, meta: Record<string, unknown> | undefined): void {
+    const handler = queryClient.getQueryCache().config.onError;
+    void handler?.(error, { queryKey: ['relay', 'adapters', 'catalog'], meta } as never);
+  }
+
+  it('stays silent when the browser abandoned the request (reload, navigation, sleep)', () => {
+    const aborted = new Error('The user aborted a request.');
+    aborted.name = 'AbortError';
+    fireQueryError(aborted, { showToastOnError: true });
+
+    expect(console.error).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('still reports a real failure', () => {
+    fireQueryError(new Error('HTTP 500'), { showToastOnError: true });
+
+    expect(console.error).toHaveBeenCalledWith(
+      '[dorkos:query-error]',
+      expect.objectContaining({ error: 'HTTP 500' })
+    );
+    expect(toast.error).toHaveBeenCalled();
+  });
+});

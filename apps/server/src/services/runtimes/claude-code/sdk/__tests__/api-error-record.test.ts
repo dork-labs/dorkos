@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { apiErrorCode, buildApiErrorPart, isApiErrorRecord } from '../api-error-record.js';
+import { SAFEGUARD_REFUSAL_MESSAGE } from '../sdk-error-mapping.js';
 
 describe('isApiErrorRecord', () => {
   // The exact shape the CLI wrote for the reported failure (transcript
@@ -86,6 +87,16 @@ describe('buildApiErrorPart', () => {
     expect(part.details).toBe(
       'Your organization has disabled Claude subscription access for Claude Code'
     );
+  });
+
+  it('names a safeguard refusal instead of calling it an invalid request (DOR-1832)', () => {
+    const notice =
+      "API Error: Opus 5 (1M context)'s safeguards flagged this message (https://www.anthropic.com/legal/aup). Try rephrasing the request in a new session or change your model.\n\nRequest ID: req_011CenTMwsusUFUgkzHGbSR4";
+    const part = buildApiErrorPart('invalid_request', notice);
+
+    expect(part.message).toBe(SAFEGUARD_REFUSAL_MESSAGE);
+    expect(part.category).toBe('execution_error');
+    expect(part.details).toBe(notice);
   });
 
   it('maps a server error to execution_error with DorkOS copy and the vendor text as details', () => {

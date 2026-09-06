@@ -117,7 +117,9 @@ export function buildApiErrorPart(code: string | undefined, noticeText: string):
   // falls back to the mapper's default sentence. Measured 0 of 249 records, so
   // this is a guard rather than a case.
   const message =
-    hasDorkosCopy || noticeText === '' ? describeAssistantError(code ?? '') : noticeText;
+    hasDorkosCopy || noticeText === ''
+      ? describeAssistantError(code ?? '', noticeText)
+      : noticeText;
 
   const part: ErrorPart = { type: 'error', message };
   if (detectAuthError({ message, code })) {

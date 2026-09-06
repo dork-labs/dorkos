@@ -127,19 +127,24 @@ export async function* mapMessageEvent(
     // the retry / rate-limit / max-tokens channels as a clear error event.
     const assistantError = (message as Record<string, unknown>).error as string | undefined;
     if (assistantError && SURFACED_ASSISTANT_ERRORS.has(assistantError)) {
+      // The CLI writes its own sentence for the failure as the message's one
+      // text block ("API Error: … safeguards flagged this message … Request
+      // ID: req_…"). It decides the copy for `invalid_request` and rides along
+      // in `details` so the request id is never lost — the reload path
+      // (`api-error-record.ts`) already kept it; the live path dropped it.
+      const noticeText = apiErrorNoticeText(assistantBody);
+      const described = describeAssistantError(assistantError, noticeText);
       yield {
         type: 'error',
         data: {
-          message: describeAssistantError(assistantError),
+          message: described,
           code: assistantError,
           // Auth failures (revoked/expired sign-in) get the re-auth category so
           // the client offers a "Fix sign-in" affordance; keep the human message.
-          category: detectAuthError({
-            message: describeAssistantError(assistantError),
-            code: assistantError,
-          })
+          category: detectAuthError({ message: described, code: assistantError })
             ? 'auth_error'
             : 'execution_error',
+          ...(noticeText !== undefined && { details: noticeText }),
         },
       };
     }
@@ -309,4 +314,16 @@ export async function* mapMessageEvent(
     };
     return;
   }
+}
+
+/**
+ * The CLI's own text for an API-error assistant message: the first text block,
+ * trimmed, or nothing when the message carried none.
+ */
+function apiErrorNoticeText(body: Record<string, unknown> | undefined): string | undefined {
+  const blocks = body?.content;
+  if (!Array.isArray(blocks)) return undefined;
+  const first = blocks[0] as Record<string, unknown> | undefined;
+  const text = first?.type === 'text' && typeof first.text === 'string' ? first.text.trim() : '';
+  return text === '' ? undefined : text;
 }
