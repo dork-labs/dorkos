@@ -810,6 +810,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     uploadFiles: vi.fn().mockResolvedValue([]),
     // Admin Operations
     getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
+    prepareReset: vi.fn().mockResolvedValue({ token: 'test-reset-token' }),
     resetAllData: vi.fn().mockResolvedValue({ message: 'Reset initiated. Server will restart.' }),
     restartServer: vi.fn().mockResolvedValue({ message: 'Restart initiated.' }),
     // Activity Feed

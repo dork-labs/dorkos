@@ -659,7 +659,11 @@ export const serverOnlyStubs = {
     throw new Error('MCP Apps are not supported in Obsidian plugin mode.');
   },
 
-  async resetAllData(_confirm: string): Promise<{ message: string }> {
+  async prepareReset(): Promise<{ token: string }> {
+    throw new Error('Reset and restart are not supported in Obsidian plugin mode.');
+  },
+
+  async resetAllData(_confirm: string, _token: string): Promise<{ message: string }> {
     throw new Error('Reset and restart are not supported in Obsidian plugin mode.');
   },
 

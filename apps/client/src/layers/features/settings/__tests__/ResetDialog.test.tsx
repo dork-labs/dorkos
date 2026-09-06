@@ -64,7 +64,55 @@ describe('ResetDialog', () => {
     fireEvent.change(screen.getByTestId('reset-confirm-input'), { target: { value: 'reset' } });
     fireEvent.click(screen.getByRole('button', { name: /reset all data/i }));
     await waitFor(() => {
-      expect(mockTransport.resetAllData).toHaveBeenCalledWith('reset');
+      expect(mockTransport.resetAllData).toHaveBeenCalledWith('reset', 'test-reset-token');
+    });
+  });
+
+  // DOR-1707: the server refuses a reset that carries only the confirmation
+  // word, because anything on the machine can send that. The dialog has to ask
+  // for a one-time token first and spend it on the same press.
+  describe('the one-time token (DOR-1707)', () => {
+    it('arms the reset before spending it', async () => {
+      const order: string[] = [];
+      vi.mocked(mockTransport.prepareReset).mockImplementation(() => {
+        order.push('prepare');
+        return Promise.resolve({ token: 'fresh-token' });
+      });
+      vi.mocked(mockTransport.resetAllData).mockImplementation(() => {
+        order.push('reset');
+        return Promise.resolve({ message: 'Reset initiated. Server will restart.' });
+      });
+      render(<ResetDialog {...defaultProps} />, { wrapper: Wrapper });
+
+      fireEvent.change(screen.getByTestId('reset-confirm-input'), { target: { value: 'reset' } });
+      fireEvent.click(screen.getByRole('button', { name: /reset all data/i }));
+
+      await waitFor(() => expect(defaultProps.onResetComplete).toHaveBeenCalled());
+      expect(order).toEqual(['prepare', 'reset']);
+      expect(mockTransport.resetAllData).toHaveBeenCalledWith('reset', 'fresh-token');
+    });
+
+    it('never asks for the reset when the server would not arm one', async () => {
+      vi.mocked(mockTransport.prepareReset).mockRejectedValue(
+        new Error('Too many admin requests.')
+      );
+      render(<ResetDialog {...defaultProps} />, { wrapper: Wrapper });
+
+      fireEvent.change(screen.getByTestId('reset-confirm-input'), { target: { value: 'reset' } });
+      fireEvent.click(screen.getByRole('button', { name: /reset all data/i }));
+
+      // Authored headline, server's own sentence as the description (DOR-1755),
+      // with the typographic apostrophe batch 10 gave it (DOR-1756).
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          'Couldn’t reset your data.',
+          expect.objectContaining({ description: 'Too many admin requests.' })
+        )
+      );
+      // The refusal has to reach the person AND stop the reset: an arm that
+      // failed must never be followed by a spend.
+      expect(mockTransport.resetAllData).not.toHaveBeenCalled();
+      expect(defaultProps.onResetComplete).not.toHaveBeenCalled();
     });
   });
 
@@ -118,6 +166,19 @@ describe('ResetDialog', () => {
       await waitFor(() => expect(resetAllData).toHaveBeenCalled());
       expect(mockTransport.resetAllData).not.toHaveBeenCalled();
       expect(defaultProps.onResetComplete).toHaveBeenCalled();
+    });
+
+    // The shell channel never had DOR-1707's hole — the main process checks that
+    // the sender is the app's own window — so it does not arm a server token it
+    // would have no way to spend.
+    it('does not ask the server for a one-time token', async () => {
+      const resetAllData = installShell({ ok: true });
+      render(<ResetDialog {...defaultProps} />, { wrapper: Wrapper });
+
+      confirmReset();
+
+      await waitFor(() => expect(resetAllData).toHaveBeenCalled());
+      expect(mockTransport.prepareReset).not.toHaveBeenCalled();
     });
 
     it('clears this page before the shell can reload it', async () => {
@@ -189,7 +250,9 @@ describe('ResetDialog', () => {
 
       confirmReset();
 
-      await waitFor(() => expect(mockTransport.resetAllData).toHaveBeenCalledWith('reset'));
+      await waitFor(() =>
+        expect(mockTransport.resetAllData).toHaveBeenCalledWith('reset', 'test-reset-token')
+      );
     });
   });
 });
