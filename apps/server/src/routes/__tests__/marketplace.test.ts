@@ -40,7 +40,10 @@ import {
   InvalidPackageError,
   type InstallerLike,
 } from '../../services/marketplace/marketplace-installer.js';
-import { UnsupportedSourceUrlError } from '../../services/marketplace/source-url-policy.js';
+import {
+  UNSUPPORTED_GIT_REMOTE_MESSAGE,
+  UnsupportedSourceUrlError,
+} from '../../services/marketplace/source-url-policy.js';
 import { SHAPE_PROJECT_PATH_IGNORED_WARNING } from '../../services/marketplace/flows/install-shape.js';
 import {
   PackageNotInstalledError,
@@ -1023,6 +1026,28 @@ describe('Marketplace Routes', () => {
         marketplace: 'dorkos-community',
         force: false,
       });
+    });
+
+    it('returns 400 and the refusal sentence when the address is not one we install from (DOR-1799)', async () => {
+      // A `name@<address>` install spec the pipeline refused at the git seam.
+      // The sentence goes back verbatim because it is what the CLI and the app
+      // both print — and it names the address forms that DO work, which is the
+      // whole reason it is written for a person rather than for a log.
+      installer.install.mockRejectedValue(
+        new UnsupportedSourceUrlError(
+          "ext::sh -c 'id > /tmp/pwned'",
+          UNSUPPORTED_GIT_REMOTE_MESSAGE
+        )
+      );
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/x/install')
+        .send({ source: "ext::sh -c 'id > /tmp/pwned'" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe(UNSUPPORTED_GIT_REMOTE_MESSAGE);
+      // The hostile address is never echoed back to the caller.
+      expect(JSON.stringify(res.body)).not.toContain('ext::');
     });
 
     it('surfaces warnings from installer.install verbatim (e.g. a Shape scoped-install warning, DOR-386)', async () => {

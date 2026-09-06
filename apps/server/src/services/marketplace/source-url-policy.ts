@@ -29,6 +29,12 @@
  *   which is how the personal marketplace registers itself. It never reaches
  *   `git`: every consumer branches on `file://` first and reads the directory.
  *
+ * The module also owns the narrower question one step downstream:
+ * {@link assertSafeGitRemote}, asked at each place an address actually becomes
+ * argv for `git`. A `name@<url>` install spec is hand-built into a source
+ * descriptor the same way a source is, skips the same schema, and reached
+ * `git ls-remote` unchecked for the same reason (DOR-1799).
+ *
  * @module services/marketplace/source-url-policy
  */
 import { fileURLToPath } from 'node:url';
@@ -45,9 +51,24 @@ export const UNSUPPORTED_SOURCE_URL_MESSAGE =
   'git repository, or a file:// path to a folder on this machine.';
 
 /**
- * Thrown when a marketplace source address is refused. Carries the operator-
- * facing sentence as its `message` so every surface — the REST route, the CLI,
- * the app — can show it verbatim without rewriting it.
+ * What a person is told when an address they asked DorkOS to install a package
+ * from is not one we will hand to `git`.
+ *
+ * A separate sentence from {@link UNSUPPORTED_SOURCE_URL_MESSAGE} because the
+ * accepted set is genuinely different, and a refusal that names the wrong set
+ * sends people down a dead end. A marketplace source has to serve its listing
+ * over HTTP, so it is `https://` or a local folder. An install address is only
+ * ever cloned, so every transport {@link isSafeGitUrl} allows works here —
+ * `ssh://` and `git@host:path` included.
+ */
+export const UNSUPPORTED_GIT_REMOTE_MESSAGE =
+  "That address isn't one DorkOS can install a package from. Use an https://, ssh:// or " +
+  'git@host:path address for a git repository, or a file:// path to a folder on this machine.';
+
+/**
+ * Thrown when an address DorkOS was asked to fetch from is refused. Carries the
+ * operator-facing sentence as its `message` so every surface — the REST route,
+ * the CLI, the app — can show it verbatim without rewriting it.
  */
 export class UnsupportedSourceUrlError extends Error {
   /**
@@ -56,10 +77,45 @@ export class UnsupportedSourceUrlError extends Error {
    * @param url - The address that was refused. Deliberately not interpolated
    *   into the message, which is what a person reads; the refusal sites log it
    *   instead, which is where the address is actually useful.
+   * @param message - Which sentence the person reads. Defaults to the
+   *   marketplace-source one; the git-remote door passes
+   *   {@link UNSUPPORTED_GIT_REMOTE_MESSAGE}, which names a wider set of
+   *   working forms. One error class, because every surface that already
+   *   answers this refusal with a 400 should answer both.
    */
-  constructor(public readonly url: string) {
-    super(UNSUPPORTED_SOURCE_URL_MESSAGE);
+  constructor(
+    public readonly url: string,
+    message: string = UNSUPPORTED_SOURCE_URL_MESSAGE
+  ) {
+    super(message);
     this.name = 'UnsupportedSourceUrlError';
+  }
+}
+
+/**
+ * Refuse an address that is about to become argv for `git`.
+ *
+ * The question {@link isSafeGitUrl} answers — may this string be handed to
+ * `git` — asked at the seam rather than at one of the several doors that reach
+ * it. A package author's URL is checked by `marketplace.json` parsing, and a
+ * configured source's by the add route, but a `name@<url>` install spec is
+ * typed by an operator and hand-built into a source descriptor that no schema
+ * ever sees (DOR-1799). Defense in depth rather than a patched hole: git's own
+ * `GIT_ALLOW_PROTOCOL` confinement (`hardenedGitEnv`) already stands behind
+ * this, and git 2.53 refuses `ext::` on its own.
+ *
+ * `file://` addresses do not reach here, so this predicate does not allow them
+ * and does not need to: `fetchFromGit` branches on `file://` first and reads
+ * the directory, and the git-subdir path never carries one — a `file://`
+ * marketplace resolves through the relative-path resolver instead.
+ *
+ * @param url - The address about to be handed to `git`.
+ * @throws {UnsupportedSourceUrlError} When the transport is not one
+ *   {@link isSafeGitUrl} accepts, or the address begins with `-`.
+ */
+export function assertSafeGitRemote(url: string): void {
+  if (!isSafeGitUrl(url)) {
+    throw new UnsupportedSourceUrlError(url, UNSUPPORTED_GIT_REMOTE_MESSAGE);
   }
 }
 

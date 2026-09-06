@@ -29,6 +29,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { hardenedGitEnv } from '../../../lib/git-safety.js';
+import { assertSafeGitRemote } from '../source-url-policy.js';
 import type { Logger } from '@dorkos/shared/logger';
 import type { ResolvedSourceDescriptor } from '@dorkos/marketplace';
 import type { FetchedPackage, FetchPackageOptions, FetcherDeps } from '../package-fetcher.js';
@@ -47,6 +48,22 @@ export async function gitSubdirResolver(
   opts: FetchPackageOptions,
   deps: FetcherDeps
 ): Promise<FetchedPackage> {
+  // This module's fallback ladder spawns `git clone` itself — it never passes
+  // through `PackageFetcher.fetchFromGit` — so the clone URL gets its own
+  // check here rather than borrowing the one on the `resolveCommitSha` call
+  // below. Both of today's callers already hand it a checked address (the
+  // `marketplace.json` schema, or the installer's own check when it builds a
+  // git-subdir source from a configured marketplace), and this is what keeps
+  // that true if a third caller appears.
+  try {
+    assertSafeGitRemote(resolved.cloneUrl);
+  } catch (err) {
+    deps.logger.warn('[git-subdir] refused an unsupported git address', {
+      cloneUrl: resolved.cloneUrl,
+    });
+    throw err;
+  }
+
   const ref = resolved.sha ?? resolved.ref ?? 'main';
   const commitSha = await deps.resolveCommitSha(resolved.cloneUrl, ref);
 
