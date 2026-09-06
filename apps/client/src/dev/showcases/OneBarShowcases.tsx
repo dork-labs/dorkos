@@ -219,7 +219,7 @@ export function OneBarShowcases() {
               actions={
                 <Button variant="outline" size="xs">
                   <Plus />
-                  New Task
+                  New Schedule
                 </Button>
               }
             />
@@ -270,8 +270,42 @@ export function OneBarShowcases() {
               actions={
                 <Button variant="outline" size="xs">
                   <Plus />
-                  New Task
+                  New Schedule
                 </Button>
+              }
+            />
+          </BarFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Scheduled at 390px — the page action is a `+` (DOR-1747). With its label on, the actions
+          cluster is `shrink-0` against a strip that stops at its `min-w-28` floor, so the words
+          painted 11px past the bar instead of anything yielding. Same trade `/team` makes below it;
+          the name stays on the button for a screen reader
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <BarFrame width={PHONE_WIDTH}>
+            <OneBar
+              identity={
+                <BarTabStrip
+                  tabs={HOME_TABS}
+                  activeTabId="scheduled"
+                  label="Home sections, Scheduled on a phone"
+                  indicatorLayoutId="playground-home-tabs-scheduled-phone"
+                />
+              }
+              actions={
+                <>
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    aria-label="New Schedule"
+                    className="h-[35px] w-[35px] p-0"
+                  >
+                    <Plus />
+                  </Button>
+                  <SystemHealthDot state="degraded" />
+                </>
               }
             />
           </BarFrame>
