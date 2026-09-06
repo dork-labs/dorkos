@@ -281,7 +281,7 @@ beforeEach(async () => {
     agentRegistry: makeRegistry([makeManifest()]),
     relay: relay as unknown as RelayCore,
     db,
-    config: { baseUrl: 'http://127.0.0.1:0', version: '0.0.0-test', authRequired: false },
+    config: { baseUrl: 'http://127.0.0.1:0', version: '0.0.0-test' },
     logger,
   });
 

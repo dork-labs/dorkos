@@ -44,10 +44,10 @@ DORKOS_A2A_ENABLED=true
 On startup you'll see a log line confirming the mount point and auth mode:
 
 ```
-[A2A] Gateway mounted (fleet card: /.well-known/agent-card.json, RPC: POST /a2a, auth: none (loopback))
+[A2A] Gateway mounted (fleet card: /.well-known/agent-card.json, RPC: POST /a2a, auth: local MCP token (loopback))
 ```
 
-Here `auth: none` means you've set no `MCP_API_KEY` and haven't turned on login. JSON-RPC execution is still token-gated in that mode — it needs the local MCP token (see [Authentication](#authentication)); only the loopback bind is what "loopback" refers to.
+The auth mode names the credentials a caller can send. `local MCP token (loopback)` means you've set no `MCP_API_KEY` and haven't turned on login, so calls are gated by the local MCP token (see [Authentication](#authentication)) and reachable from your own machine. Calls are never ungated.
 
 ## Discovery: the Agent Card
 
@@ -139,7 +139,7 @@ Which token you send depends on your setup:
 Authorization: Bearer <token>
 ```
 
-Agent Cards advertise the spec-standard `http`/`bearer` security scheme.
+Agent Cards advertise the spec-standard `http`/`bearer` security scheme, and they always say a bearer token is required — because it always is. The requirement is about **calling** an agent, not about reading the card: while login is off you can still fetch a card without a token, and the card itself tells you the call that follows needs one. Cards never say where your token lives; that stays between you and your own machine.
 
 ### `contextId`: grouping turns into a session
 

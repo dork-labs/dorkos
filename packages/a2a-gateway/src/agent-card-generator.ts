@@ -87,19 +87,29 @@ function capabilityToSkill(
 /**
  * Build the shared security configuration used in all Agent Cards.
  *
- * The server authenticates via `Authorization: Bearer <key>` — the
+ * The server authenticates via `Authorization: Bearer <token>` — the
  * spec-standard `http`/`bearer` scheme. (An `apiKey`-in-header scheme naming
  * the `Authorization` header would make clients send the raw key without the
  * `Bearer ` prefix, which the server rejects.)
  *
- * The scheme is always described so clients know what to send, but a
- * `security` requirement is only advertised when the server actually enforces
- * auth ({@link CardGeneratorConfig.authRequired}) — pass-through localhost
- * mode must not claim credentials are required.
+ * The requirement is **unconditional** (DOR-1824). Every JSON-RPC `POST` on
+ * this gateway is token-gated in every posture — the local token while login
+ * is off, a per-user key or `MCP_API_KEY` otherwise — and has been since
+ * DOR-278. The requirement used to be advertised only when a *network-reachable*
+ * credential was configured, which is the signal the exposure guard keys on and
+ * a different question entirely; in the default posture the card told a caller
+ * no credential was needed and the very next `POST` answered `401`.
+ *
+ * Advertising it does not claim the card itself is closed. A2A defines
+ * `securityRequirements` as the requirements for **contacting the agent** — the
+ * endpoints listed in `supportedInterfaces` — so a card served without a
+ * credential (the login-off discovery posture, ADR `260717-021653`) and
+ * declaring a bearer requirement is exactly the protocol-normal public card.
+ *
+ * The scheme description says what to send, never where the credential lives:
+ * this is the one document a stranger may read before presenting anything.
  */
-function buildSecurityConfig(
-  config: CardGeneratorConfig
-): Pick<AgentCard, 'securitySchemes' | 'securityRequirements'> {
+function buildSecurityConfig(): Pick<AgentCard, 'securitySchemes' | 'securityRequirements'> {
   return {
     securitySchemes: {
       bearerAuth: {
@@ -108,12 +118,14 @@ function buildSecurityConfig(
           value: {
             scheme: 'bearer',
             bearerFormat: '',
-            description: 'API key sent as `Authorization: Bearer <key>`.',
+            description:
+              'A credential for this DorkOS instance, sent as `Authorization: Bearer <token>`. ' +
+              'Obtained out of band from the operator; this endpoint issues none.',
           },
         },
       },
     },
-    securityRequirements: config.authRequired ? [{ schemes: { bearerAuth: { list: [] } } }] : [],
+    securityRequirements: [{ schemes: { bearerAuth: { list: [] } } }],
   };
 }
 
@@ -156,7 +168,7 @@ export function generateAgentCard(manifest: AgentManifest, config: CardGenerator
     defaultOutputModes: DEFAULT_OUTPUT_MODES,
     skills,
     signatures: [],
-    ...buildSecurityConfig(config),
+    ...buildSecurityConfig(),
   };
 }
 
@@ -210,6 +222,6 @@ export function generateFleetCard(
     defaultOutputModes: DEFAULT_OUTPUT_MODES,
     skills,
     signatures: [],
-    ...buildSecurityConfig(config),
+    ...buildSecurityConfig(),
   };
 }

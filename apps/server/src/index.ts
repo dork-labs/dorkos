@@ -3112,6 +3112,10 @@ async function start() {
     // can read) — it does not make the surface safe on a non-loopback bind. So the
     // exposure guard still keys off a network-reachable credential (an env key,
     // the legacy compat key, or login) to decide whether A2A may mount off loopback.
+    //
+    // This answers "may A2A face the network?" and nothing else. It is NOT what
+    // Agent Cards advertise: execution is gated in every posture, so cards state
+    // the bearer requirement unconditionally (DOR-1824, agent-card-generator.ts).
     const authConfigured =
       !!env.MCP_API_KEY?.trim() ||
       !!configManager.get('mcp')?.apiKey ||
@@ -3154,7 +3158,6 @@ async function start() {
         db,
         baseUrl,
         version,
-        authRequired: authConfigured,
         rpcRateLimiter,
         cardRateLimiter,
       });
@@ -3171,7 +3174,15 @@ async function start() {
       // Per-agent cards and JSON-RPC under /a2a (per-route limiters live in the router)
       app.use('/a2a', a2aAuth, a2aRouter);
 
-      const a2aAuthMode = authConfigured ? 'auth: required' : 'auth: none (loopback)';
+      // Names the credential a caller must send. "none" was never true here —
+      // execution is gated in every posture; only WHICH credential changes.
+      // With login OFF but an env/legacy key set, acceptor 4 in mcp-auth.ts is
+      // gated on `!authEnabled` — not on the key — so the local token still
+      // passes there too. Name every credential that works, or the line trades
+      // one lie for a smaller one.
+      const a2aAuthMode = authConfigured
+        ? 'auth: API key, login, or local MCP token'
+        : 'auth: local MCP token (loopback)';
       logger.info(
         `[A2A] Gateway mounted (fleet card: /.well-known/agent-card.json, RPC: POST /a2a, ${a2aAuthMode})`
       );
