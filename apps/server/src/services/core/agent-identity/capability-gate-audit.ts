@@ -91,7 +91,20 @@ export function createCapabilityGateAuditObserver(
     // which DorkOS stops asking from also being a window in which it stops
     // telling — the operator's answer to "what did my agent do while I was not
     // being asked". `identity` is always present here, because a permission keys on
-    // agent path and an anonymous caller can never match one.
+    // agent path and an anonymous caller can never match one — `resolveStandingGrant`
+    // in `../capabilities/tier-enforcement.ts` returns `undefined` on `!identity`
+    // before any grant is looked up, so `outcome: 'allowed'` cannot reach here
+    // unnamed.
+    //
+    // That is the one place the DOR-1801 extraction is not byte-for-byte
+    // behavior-preserving, and it is worth stating rather than leaving for the
+    // next reader to re-derive. This branch used to assert `actorType: 'agent'`
+    // unconditionally while taking its label from a formula that answers
+    // `'Unidentified caller'` for a missing identity — so had the unreachable case
+    // ever become reachable, it would have written an agent-typed row labelled
+    // "Unidentified caller" with no `actorId`. Deriving the whole actor together
+    // removes that latent mismatch: the type, the id and the label now cannot
+    // disagree about who acted.
     if (decision.outcome === 'allowed') {
       void activityService.emit({
         ...actor,

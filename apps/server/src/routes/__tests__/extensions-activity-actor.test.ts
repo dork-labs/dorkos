@@ -16,6 +16,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
+import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 /** The one token the faked identity service knows about. */
@@ -248,18 +249,44 @@ describe('who the Activity feed says changed an extension', () => {
   });
 
   // The defect was one hardcoded pair copied into four more routes, so pinning
-  // the four cases above would leave the fifth free to be written the old way.
+  // the six cases above would leave the seventh free to be written the old way.
   // This asserts the SHAPE instead: nothing on this router names an actor by
   // hand, whether or not a person bar makes it true today.
+  //
+  // Both halves of this guard are the way they are because an adversarial review
+  // walked past the first version of it:
+  //
+  //  - The pattern is UNANCHORED. A line-anchored `^\s*actorType:` sees the
+  //    formatted multi-line `emit({ … })` call and nothing else, so a one-line
+  //    `emit({ actorType: 'user', actorLabel: 'You', … })` and a
+  //    `const actor = { actorType: 'user' … }` spread in later both slid
+  //    straight through it. What is forbidden is a quoted actor literal
+  //    anywhere, so that is what it matches.
+  //  - The file list is READ FROM THE DIRECTORY, not written out. Two literals
+  //    guard the two files that exist today and say nothing about
+  //    `extensions-<next-thing>.ts`, which is precisely the route that would
+  //    copy the old shape.
   it('leaves no route on this router asserting its own actor', async () => {
-    const dir = path.dirname(fileURLToPath(import.meta.url));
-    const files = ['extensions.ts', 'extensions-approval.ts'];
+    const routesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+    const files = readdirSync(routesDir).filter((name) => /^extensions.*\.ts$/.test(name));
+
+    // A filter that silently matched nothing would pass this test forever.
+    expect(files.length).toBeGreaterThanOrEqual(2);
 
     for (const file of files) {
-      const source = await readFile(path.join(dir, '..', file), 'utf-8');
-      const hardcoded = source.split('\n').filter((line) => /^\s*actor(Type|Label|Id):/.test(line));
+      const source = await readFile(path.join(routesDir, file), 'utf-8');
+      const hardcoded = source
+        .split('\n')
+        .filter((line) => /actor(Type|Label|Id)\s*:\s*['"`]/.test(line));
       expect(hardcoded, `${file} names an Activity actor by hand`).toEqual([]);
-      expect(source).toContain('readActivityActor(req, res)');
+
+      // Only the files that actually record something have to read the caller —
+      // `extensions-person-bar.ts` writes no Activity at all.
+      if (source.includes('activityService.emit(')) {
+        expect(source, `${file} writes Activity without reading the caller`).toContain(
+          'readActivityActor(req, res)'
+        );
+      }
     }
   });
 });
