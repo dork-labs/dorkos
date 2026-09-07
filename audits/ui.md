@@ -137,6 +137,13 @@ whole-tree lenses only through rotation, one per run, in the order listed above.
 - **Effort:** **S** (about an hour, one file) · **M** (one PR, one slice) · **L** (multi-file
   refactor, wants its own spec).
 
+Half of P1 is a visual claim, so a code-only run (no browser leg) cannot meet it on its own
+terms. The rule: a finding whose visible effect follows **deterministically** from the source —
+a cascade rule that must win, a fixed width that must overflow — may be filed P1 with the
+inference stated as the evidence. Anything resting on how it probably looks caps at P2 and says
+why. A run that files zero P1 while degraded says that too, so the number is not read as a
+verdict on the code.
+
 ## Rules for a valid finding
 
 1. **Cite it.** Every finding names at least one real `file:line` the auditor actually read. No
@@ -150,12 +157,19 @@ whole-tree lenses only through rotation, one per run, in the order listed above.
 5. **Sample honestly.** Auditors that sample say what they covered and what they skipped, so
    coverage gaps are visible in the report rather than invisible in the reader's head.
 6. **No fix by drive-by.** The audit writes zero code.
+7. **Read the last run before re-running a lens.** A lens with a previous raw file
+   (`audits/runs/ui/<date>/raw/<key>.md`, and `plans/ui-ux-audit-202609/raw/` for the September
+   run) reads it first. Findings since fixed are noted as closed; findings still open are
+   **re-measured, not restated**. Report what is new or newly quantified, and say in the coverage
+   note which prior run you read.
 
 ## Output shape (per auditor)
 
 One markdown file per lens at `audits/runs/ui/<date>/raw/<key>.md`, plus a structured summary.
-Each finding: `{lens, severity, effort, title, files[], evidence, recommendation}`, preceded by a
-`coverage` section stating what was examined and what was skipped.
+Each finding: `{lens, severity, effort, title, files[], evidence, recommendation}`, where
+`files[]` holds `file:line` strings (`button.tsx:42`), the same citation validity rule 1 demands.
+A `coverage` section precedes the findings, stating what was examined, where the auditor stopped,
+and what was skipped.
 
 ## Provenance
 
