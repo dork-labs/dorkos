@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectionOperationGrants,
   connections,
+  connectorAuthenticationFlows,
   connectorOperationRevisions,
   connectorProviderInstances,
   connectorReviewRequests,
@@ -16,13 +17,13 @@ import {
   ConnectorProviderInstanceIdSchema,
 } from '@dorkos/shared/connector-schemas';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
-import { ConnectorFlowBindings } from '../flow-bindings.js';
 import {
   ConnectorManagementReviewError,
   ConnectorManagementReviewService,
   type ConnectorManagementActionApplier,
 } from '../management-review-service.js';
 import { ConnectorRegistry } from '../registry.js';
+import { ConnectorAuthenticationFlowService } from '../resources/authentication-flow-service.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const FOREIGN_OWNER = { kind: 'local_install', installationId: 'install-b' } as const;
@@ -33,10 +34,11 @@ const NOW = new Date('2026-09-06T12:00:00.000Z');
 describe('ConnectorManagementReviewService', () => {
   let db: Db;
   let registry: ConnectorRegistry;
-  let flowBindings: ConnectorFlowBindings;
+  let authenticationFlows: ConnectorAuthenticationFlowService;
   let actions: ConnectorManagementActionApplier;
   let service: ConnectorManagementReviewService;
-  let nextId: number;
+  let nextReviewId: number;
+  let nextFlowId: number;
 
   beforeEach(() => {
     db = createDb(':memory:');
@@ -91,27 +93,36 @@ describe('ConnectorManagementReviewService', () => {
         createdAt: NOW.toISOString(),
       })
       .run();
-    flowBindings = new ConnectorFlowBindings(
-      () => `public-flow-${nextId}`,
-      100,
-      (provider) => registry.providerExecutionConfigGeneration(provider)
-    );
     actions = { apply: vi.fn().mockResolvedValue(undefined) };
-    nextId = 0;
-    service = makeService('boot-a', flowBindings);
+    nextReviewId = 0;
+    nextFlowId = 0;
+    authenticationFlows = makeAuthenticationFlows();
+    service = makeService('boot-a');
   });
 
-  function makeService(bootEpoch: string, bindings: ConnectorFlowBindings) {
+  function makeAuthenticationFlows() {
+    return new ConnectorAuthenticationFlowService({
+      db,
+      registry,
+      now: () => NOW,
+      createId: () => `public-flow-${++nextFlowId}`,
+    });
+  }
+
+  function makeService(
+    bootEpoch: string,
+    flows: ConnectorAuthenticationFlowService = authenticationFlows
+  ) {
     return new ConnectorManagementReviewService({
       db,
       registry,
-      flowBindings: bindings,
+      authenticationFlows: flows,
       actions,
       bootEpoch,
       resolveAgent: (_owner, agentId) =>
         agentId === 'agent-a' ? { displayName: 'Research Agent' } : undefined,
       now: () => NOW,
-      createId: () => `review-${++nextId}`,
+      createId: () => `review-${++nextReviewId}`,
     });
   }
 
@@ -313,13 +324,13 @@ describe('ConnectorManagementReviewService', () => {
     service = new ConnectorManagementReviewService({
       db,
       registry,
-      flowBindings,
+      authenticationFlows,
       actions,
       bootEpoch: 'boot-a',
       resolveAgent: (_owner, agentId) =>
         agentId === 'agent-a' ? { displayName: 'Research Agent' } : undefined,
       now: () => clock,
-      createId: () => `review-${++nextId}`,
+      createId: () => `review-${++nextReviewId}`,
     });
     const review = service.create(
       { kind: 'program', requesterId: 'key-a', owner: OWNER },
@@ -355,7 +366,7 @@ describe('ConnectorManagementReviewService', () => {
     });
   });
 
-  it('expires an approved connect review after restart instead of replaying startConnect', async () => {
+  it('retains an approved durable authentication flow across restart without replaying startConnect', async () => {
     const provider = registry.resolveProviderInstance(PROVIDER_ID)!;
     const start = vi.spyOn(provider, 'startConnect');
     const review = service.create(
@@ -373,12 +384,18 @@ describe('ConnectorManagementReviewService', () => {
     await service.resolve(OWNER, review.reviewRequestId, { decision: 'approved' });
     expect(start).toHaveBeenCalledTimes(1);
 
-    const restarted = makeService('boot-b', new ConnectorFlowBindings());
-    expect(restarted.get(OWNER, review.reviewRequestId).state).toBe('expired');
+    const restarted = makeService('boot-b', makeAuthenticationFlows());
+    expect(restarted.get(OWNER, review.reviewRequestId)).toMatchObject({
+      state: 'approved',
+      resolution: {
+        kind: 'connect_authentication_required',
+        authentication: { flowId: 'public-flow-1' },
+      },
+    });
     expect(start).toHaveBeenCalledTimes(1);
   });
 
-  it('expires an approved connect flow when provider material changes', async () => {
+  it('keeps the review durable and marks its authentication flow failed when provider material changes', async () => {
     const oldProvider = registry.resolveProviderInstance(PROVIDER_ID)!;
     const poll = vi.spyOn(oldProvider, 'pollConnect');
     const review = service.create(
@@ -402,9 +419,85 @@ describe('ConnectorManagementReviewService', () => {
       new FakeConnectorProvider({ instanceId: PROVIDER_ID, toolkitVersion: 'current-v2' }),
       'material-b'
     );
-    expect(service.get(OWNER, review.reviewRequestId).state).toBe('expired');
+    expect(service.get(OWNER, review.reviewRequestId)).toMatchObject({
+      state: 'approved',
+      resolution: {
+        kind: 'connect_authentication_required',
+        authentication: { flowId: 'public-flow-1' },
+      },
+    });
+    expect(authenticationFlows.status(OWNER, 'public-flow-1')).toMatchObject({ state: 'failed' });
     expect(poll).not.toHaveBeenCalled();
     expect(db.select().from(connections).all()).toHaveLength(1);
+  });
+
+  it('expires only an approved legacy connect review whose flow has no durable owner binding', async () => {
+    const review = service.create(
+      { kind: 'program', requesterId: 'key-a', owner: OWNER },
+      {
+        action: {
+          version: 1,
+          kind: 'connect',
+          providerInstanceId: PROVIDER_ID,
+          toolkit: 'gmail',
+        },
+        idempotencyKey: 'legacy-flow',
+      }
+    );
+    await service.resolve(OWNER, review.reviewRequestId, { decision: 'approved' });
+    db.delete(connectorAuthenticationFlows).run();
+
+    expect(
+      makeService('boot-b', makeAuthenticationFlows()).get(OWNER, review.reviewRequestId)
+    ).toMatchObject({
+      state: 'expired',
+    });
+  });
+
+  it('recovers a claimed authentication flow when the review outcome receipt is lost', async () => {
+    const provider = registry.resolveProviderInstance(PROVIDER_ID)!;
+    const start = vi.spyOn(provider, 'startConnect');
+    const requester = { kind: 'program', requesterId: 'key-a', owner: OWNER } as const;
+    const review = service.create(requester, {
+      action: {
+        version: 1,
+        kind: 'connect',
+        providerInstanceId: PROVIDER_ID,
+        toolkit: 'gmail',
+      },
+      idempotencyKey: 'lost-review-receipt',
+    });
+    db.$client.exec(`
+      CREATE TRIGGER reject_connect_review_receipt
+      BEFORE UPDATE OF resolution_json ON connector_review_requests
+      WHEN NEW.resolution_json IS NOT NULL
+      BEGIN
+        SELECT RAISE(ABORT, 'receipt rejected');
+      END;
+    `);
+
+    await expect(
+      service.resolve(OWNER, review.reviewRequestId, { decision: 'approved' })
+    ).rejects.toMatchObject({ code: 'action_failed' });
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(service.get(OWNER, review.reviewRequestId)).toMatchObject({
+      state: 'approved',
+      resolution: {
+        kind: 'connect_authentication_required',
+        authentication: { flowId: 'public-flow-1' },
+      },
+    });
+    expect(service.getProgramStatus(requester, review.reviewRequestId)).toMatchObject({
+      state: 'approved',
+      outcome: 'authentication_required',
+    });
+    expect(
+      makeService('boot-b', makeAuthenticationFlows()).get(OWNER, review.reviewRequestId)
+    ).toMatchObject({
+      state: 'approved',
+      resolution: { kind: 'connect_authentication_required' },
+    });
+    expect(start).toHaveBeenCalledTimes(1);
   });
 
   it('applies a non-connect action once and denies a foreign owner uniformly', async () => {
@@ -435,7 +528,7 @@ describe('ConnectorManagementReviewService', () => {
           .run();
       },
     };
-    service = makeService('boot-a', flowBindings);
+    service = makeService('boot-a');
     const requester = { kind: 'program', requesterId: 'key-a', owner: OWNER } as const;
     const review = service.create(requester, {
       action: { version: 1, kind: 'pause', connectionId: CONNECTION_ID },
@@ -465,7 +558,7 @@ describe('ConnectorManagementReviewService', () => {
       outcome: 'outcome_unknown',
     });
     expect(
-      makeService('boot-b', new ConnectorFlowBindings()).get(OWNER, review.reviewRequestId)
+      makeService('boot-b', makeAuthenticationFlows()).get(OWNER, review.reviewRequestId)
     ).toMatchObject({ state: 'approved', resolution: { kind: 'outcome_unknown' } });
     expect(
       service.create(requester, {
@@ -481,7 +574,7 @@ describe('ConnectorManagementReviewService', () => {
       release = resolve;
     });
     actions = { apply: vi.fn(() => held) };
-    service = makeService('boot-a', flowBindings);
+    service = makeService('boot-a');
     const review = service.create(
       { kind: 'program', requesterId: 'key-a', owner: OWNER },
       {

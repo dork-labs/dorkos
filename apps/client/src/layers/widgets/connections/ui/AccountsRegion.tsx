@@ -1,16 +1,11 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
+import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
 import {
-  Button,
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-  Skeleton,
-} from '@/layers/shared/ui';
-import { useConnectorToolkits } from '@/layers/entities/connectors';
-import {
-  AccountsFirstRun,
   AccountsList,
+  ConnectDialog,
   ConnectionAccessDialog,
+  ConnectionDetailSheet,
   ManagementReviews,
   ProviderSetup,
   ServiceGrid,
@@ -19,109 +14,93 @@ import {
 interface AccountsRegionProps {
   /** URL-selected management request. */
   selectedReviewId?: string | null;
+  /** URL-selected durable authentication flow. */
+  selectedFlowId?: string | null;
   /** Put a request into the URL for reload and Back/Forward support. */
   onSelectReview?: (reviewRequestId: string) => void;
   /** Remove the selected request from the URL. */
   onCloseReview?: () => void;
+  /** Put or clear an authentication flow in the URL. */
+  onSelectFlow?: (flowId: string | null) => void;
 }
 
-/**
- * Services your agents can act on for you.
- *
- * The page's other half, with its own consent story: what an agent may do
- * under your name, elsewhere. The region never disappears — with nothing
- * connectable it names the services and the one-time setup in the way rather
- * than rendering an empty box.
- */
+/** Account services, stable connections, owner reviews, and advanced provider setup. */
 export function AccountsRegion({
   selectedReviewId = null,
+  selectedFlowId = null,
   onSelectReview = () => undefined,
   onCloseReview = () => undefined,
+  onSelectFlow = () => undefined,
 }: AccountsRegionProps = {}) {
-  const { data, isLoading, isError, refetch } = useConnectorToolkits();
-  const carrierRef = useRef<HTMLDivElement>(null);
+  const [selectedService, setSelectedService] = useState<ConnectorCatalogService | null>(null);
+  const [detailConnectionId, setDetailConnectionId] = useState<string | null>(null);
   const [accessConnectionId, setAccessConnectionId] = useState<string | null>(null);
-
-  const hasConnectableServices = (data?.toolkits.length ?? 0) > 0;
 
   return (
     <section aria-labelledby="region-accounts" className="space-y-6">
-      <header>
-        <h2 id="region-accounts" className="text-base font-semibold">
-          Accounts
-        </h2>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Services your agents can act on for you.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 id="region-accounts" className="text-base font-semibold">
+            Accounts
+          </h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Services your agents can act on for you.
+          </p>
+        </div>
+        <ServiceGrid onConnect={setSelectedService} />
       </header>
 
-      {isLoading ? (
-        <Skeleton className="h-40 w-full rounded-lg" />
-      ) : isError ? (
-        // A failed fetch is not a settled empty state. Saying "nothing can be
-        // connected yet" here would present a transient network problem as the
-        // truth about the account, and hide the carriers below that a person
-        // could still set up. Say what actually happened, and offer a retry.
-        <div className="bg-card shadow-soft space-y-3 rounded-lg border p-5">
-          <p className="text-sm font-medium">Couldn’t load your services</p>
+      <section aria-labelledby="connections-connected" className="space-y-3">
+        <h3 id="connections-connected" className="text-sm font-semibold">
+          Connected accounts
+        </h3>
+        <AccountsList onOpenDetail={setDetailConnectionId} />
+      </section>
+
+      {selectedFlowId && !selectedService && (
+        <p className="text-muted-foreground text-xs">Your saved sign-in is ready to continue.</p>
+      )}
+
+      <Collapsible>
+        <CollapsibleTrigger className="text-muted-foreground hover:text-foreground focus-ring rounded-md text-sm font-medium">
+          Advanced account setup
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-3 pt-3">
           <p className="text-muted-foreground max-w-prose text-sm leading-relaxed">
-            Something went wrong reaching them just now. This is usually temporary.
+            Use your own Composio or Nango account to manage its billing and setup yourself.
           </p>
-          <Button size="sm" variant="secondary" onClick={() => void refetch()}>
-            Try again
-          </Button>
-        </div>
-      ) : hasConnectableServices ? (
-        <>
-          <ServiceGrid />
-          <section aria-labelledby="connections-connected" className="space-y-3">
-            <h3 id="connections-connected" className="text-sm font-semibold">
-              Connected
-            </h3>
-            <AccountsList onManageAccess={setAccessConnectionId} />
-          </section>
-        </>
-      ) : (
-        <AccountsFirstRun
-          onSetUpCarrier={() =>
-            carrierRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          }
-        />
-      )}
-
-      {/* Named for what they are. Every word tried above this one — "engine",
-          "provider" — failed to mean anything to the people using it.
-
-          Held back until the toolkits query settles. `defaultOpen` is
-          uncontrolled — Radix reads it once, at mount — and on the very first
-          render `isLoading` is true for every visitor, so mounting this any
-          earlier pinned it shut permanently and the open-when-empty intent
-          below could never fire. "Still loading" and "genuinely nothing to
-          connect" both make `hasConnectableServices` false, and only one of
-          them means this section should lead. */}
-      {!isLoading && (
-        <div ref={carrierRef}>
-          <Collapsible defaultOpen={!isError && !hasConnectableServices}>
-            <CollapsibleTrigger className="text-muted-foreground hover:text-foreground focus-ring rounded-md text-sm font-medium">
-              Composio &amp; Nango
-            </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-3 pt-3">
-              <p className="text-muted-foreground max-w-prose text-sm leading-relaxed">
-                These outside services hold the sign-ins that let your agents act for you. Add a key
-                from one and the services it reaches appear above.
-              </p>
-              <ProviderSetup />
-            </CollapsibleContent>
-          </Collapsible>
-        </div>
-      )}
+          <ProviderSetup />
+        </CollapsibleContent>
+      </Collapsible>
 
       <ManagementReviews
         selectedReviewId={selectedReviewId}
         onSelectReview={onSelectReview}
         onCloseReview={onCloseReview}
       />
+
+      <ConnectDialog
+        key={selectedFlowId ?? selectedService?.serviceSlug ?? 'idle'}
+        service={selectedService}
+        flowId={selectedFlowId}
+        onFlowIdChange={onSelectFlow}
+        onClose={() => setSelectedService(null)}
+        onChooseAccess={setAccessConnectionId}
+      />
+      <ConnectionDetailSheet
+        connectionId={detailConnectionId}
+        onClose={() => setDetailConnectionId(null)}
+        onManageAccess={(connectionId) => {
+          setDetailConnectionId(null);
+          setAccessConnectionId(connectionId);
+        }}
+        onReconnect={(flowId) => {
+          setDetailConnectionId(null);
+          onSelectFlow(flowId);
+        }}
+      />
       <ConnectionAccessDialog
+        key={accessConnectionId ?? 'closed'}
         connectionId={accessConnectionId}
         open={accessConnectionId !== null}
         onOpenChange={(open) => {

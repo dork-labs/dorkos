@@ -40,6 +40,7 @@ dorkos/
 │   ├── harness/          # @dorkos/harness - Projects .agents/ + plugins to every agent harness
 │   ├── memory/           # @dorkos/memory - MEMORY.md store behind the MemoryProvider port
 │   ├── a2a-gateway/      # @dorkos/a2a-gateway - A2A protocol gateway
+│   ├── connector-providers/ # @dorkos/connector-providers - Confined external connector SDK adapters
 │   ├── extension-api/    # @dorkos/extension-api - Extension author API
 │   ├── skills/           # @dorkos/skills - SKILL.md schemas, parser, writer, scanner
 │   ├── operating-skills/ # @dorkos/operating-skills - First-party skill pack + version-stamped seeder

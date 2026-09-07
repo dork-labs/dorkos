@@ -83,6 +83,7 @@ import { agentLivenessObserver } from './services/notifications/emitters/agent-l
 import { announceInstalledVersion } from './services/notifications/emitters/update-installed.js';
 import { watchShiftReport } from './services/notifications/emitters/shift-report.js';
 import type { NotifyDmDeps } from './services/relay/notify-dm.js';
+import type { ConnectorProviderInstanceId } from '@dorkos/shared/connector-schemas';
 import type { RelayChannelDeps } from './services/notifications/channels/relay.js';
 import { createRunTerminalListener } from './services/tasks/run-terminal-broadcaster.js';
 import { TaskSchedulerService } from './services/tasks/task-scheduler-service.js';
@@ -103,32 +104,30 @@ import { createTasksRouter } from './routes/tasks.js';
 import { setTasksEnabled, setTasksInitError } from './services/tasks/task-state.js';
 import { RelayCore, AdapterRegistry, SignalEmitter, type AgentRuntimeLike } from '@dorkos/relay';
 import { createRelayRouter } from './routes/relay.js';
-import { createConnectorsRouter } from './routes/connectors.js';
 import { createConnectorProvidersRouter } from './routes/connector-providers.js';
-import { createSessionConnectorsRouter } from './routes/session-connectors.js';
-import { createAgentConnectorsRouter } from './routes/agent-connectors.js';
 import { createConnectorExecutionRouter } from './routes/connector-execution.js';
-import {
-  createConnectorManagementRouter,
-  resolveConnectorOperator,
-} from './routes/connector-management.js';
+import { createConnectorResourcesRouter } from './routes/connector-resources.js';
+import { createConnectorManagementRouter } from './routes/connector-management.js';
 import { UnclaimedChatStore } from './services/relay/unclaimed-chat-store.js';
 import { createUnclaimedChatsRouter } from './routes/unclaimed-chats.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
-import { ConnectorFlowBindings } from './services/connectors/flow-bindings.js';
 import { ConnectorProviderBootstrapper } from './services/connectors/bootstrap.js';
-import { SessionConnectorService } from './services/connectors/session-exposure.js';
-import {
-  AgentConnectorAttachmentStore,
-  SessionConnectorAttachmentStore,
-} from './services/connectors/attachment-store.js';
+import { SessionConnectorAttachmentStore } from './services/connectors/attachment-store.js';
 import { registerConnectorAgentCleanup } from './services/connectors/agent-access-cleanup.js';
 import { ConnectorAuthorityCleanupService } from './services/connectors/authority-cleanup-service.js';
 import { ConnectorManagementActionService } from './services/connectors/management-action-service.js';
 import { ConnectorManagementReviewService } from './services/connectors/management-review-service.js';
 import { ConnectorReconciliationService } from './services/connectors/reconciliation-service.js';
+import { ConnectorAuthenticationFlowService } from './services/connectors/resources/authentication-flow-service.js';
+import { ConnectorLifecycleService } from './services/connectors/resources/lifecycle-service.js';
+import { ConnectorOperatorQueryService } from './services/connectors/resources/operator-query-service.js';
+import { ManagedAuthoritySyncService } from './services/connectors/resources/managed-authority-sync-service.js';
+import { ManagedCloudConnectorProvider } from './services/connectors/providers/managed/managed-cloud.js';
+import { legacyDefaultProviderInstanceId } from './services/connectors/legacy-connection-migration.js';
 import { ConnectorExecutionAuthorizationService } from './services/connectors/execution/authorization-service.js';
 import { ConnectorExecutionBroker } from './services/connectors/execution/execution-broker.js';
+import { ManagedConnectorExecutionContextStore } from './services/connectors/execution/managed-execution-context.js';
+import { ManagedUsageMirrorService } from './services/connectors/execution/managed-usage-mirror-service.js';
 import { ConnectorUsageStore } from './services/connectors/execution/usage-store.js';
 import { ConnectorAccessQueryService } from './services/connectors/execution/access-query-service.js';
 import { ConnectorProgramPrincipalService } from './services/connectors/principal/program-principal-service.js';
@@ -487,6 +486,8 @@ let searchIndexer: SearchIndexer | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
 let sessionAttachmentSweepInterval: ReturnType<typeof setInterval> | undefined;
+let managedAuthorityRecoveryInterval: ReturnType<typeof setInterval> | undefined;
+let managedUsageMirrorRecoveryInterval: ReturnType<typeof setInterval> | undefined;
 // Embedded-terminal PTY manager (ADR 260708-185521). Always-on, boundary-confined;
 // the WebSocket byte channel is attached to the HTTP server after listen().
 let terminalManager: TerminalManager | undefined;
@@ -695,14 +696,7 @@ async function start() {
   });
   const connectorAuthorityCleanup = new ConnectorAuthorityCleanupService({ db });
   const connectorBootEpoch = randomUUID();
-  const agentConnectorAttachmentStore = new AgentConnectorAttachmentStore(db);
   const sessionConnectorAttachmentStore = new SessionConnectorAttachmentStore(db);
-  const sessionConnectorService = new SessionConnectorService({
-    db,
-    registry: connectorRegistry,
-    agentAttachments: agentConnectorAttachmentStore,
-    sessionAttachments: sessionConnectorAttachmentStore,
-  });
 
   // The daily safety net, under everything a migration cannot see coming. Once
   // per UTC day, here and again on the timer started after listen() so a server
@@ -2209,12 +2203,10 @@ async function start() {
       error: err instanceof Error ? err.message : String(err),
     });
   }
-  // ONE flow → provider binding map for the whole process, shared by the REST
-  // router and the agent-facing connector capabilities so a connect flow
-  // started on either surface can be polled on the other.
-  const connectorFlowBindings = new ConnectorFlowBindings(undefined, undefined, (provider) =>
-    connectorRegistry.providerExecutionConfigGeneration(provider)
-  );
+  const managedExecutionContexts = new ManagedConnectorExecutionContextStore();
+  const managedCloudProviderInstanceId = legacyDefaultProviderInstanceId(
+    'dorkos-managed'
+  ) as ConnectorProviderInstanceId;
   // Provider lifecycle is owned by ONE place (connector-completion spec §1):
   // boot registers raw-MCP always (from `connectors.rawMcpServers` config; the
   // empty list is valid) plus Composio/Nango when configured — silent-null when
@@ -2239,6 +2231,17 @@ async function start() {
         displayName: server.displayName,
         connection: { transport: server.transport, url: server.url },
       })),
+    managedCloud: {
+      instanceId: managedCloudProviderInstanceId,
+      configured: () => getCloudLinkManager().getSummary().linked,
+      executionConfigDigest: () => getCloudLinkManager().managedConnectorMaterialDigest(),
+      create: () =>
+        new ManagedCloudConnectorProvider({
+          instanceId: managedCloudProviderInstanceId,
+          cloud: getCloudLinkManager(),
+          executionContext: (command) => managedExecutionContexts.resolve(command),
+        }),
+    },
     ...(env.DORKOS_TEST_RUNTIME && {
       testConnector: {
         create: async () => {
@@ -2253,17 +2256,40 @@ async function start() {
       },
     }),
   });
+  getCloudLinkManager().setManagedProviderSync(() => connectorBootstrapper.reloadManagedCloud());
   await connectorBootstrapper.registerBootProviders();
+  const connectorAuthenticationFlows = new ConnectorAuthenticationFlowService({
+    db,
+    registry: connectorRegistry,
+  });
+  const interruptedConnectorStarts = connectorAuthenticationFlows.invalidateInterruptedStarts();
+  if (interruptedConnectorStarts > 0) {
+    logger.warn('[Connectors] Invalidated interrupted authentication starts', {
+      count: interruptedConnectorStarts,
+    });
+  }
+  const managedConnectorAuthority = new ManagedAuthoritySyncService({
+    db,
+    cloud: getCloudLinkManager(),
+  });
+  const connectorLifecycle = new ConnectorLifecycleService({
+    db,
+    registry: connectorRegistry,
+    authenticationFlows: connectorAuthenticationFlows,
+    authorityCleanup: connectorAuthorityCleanup,
+    managed: managedConnectorAuthority,
+  });
   const connectorManagementActions = new ConnectorManagementActionService({
     db,
     registry: connectorRegistry,
-    flowBindings: connectorFlowBindings,
     authorityCleanup: connectorAuthorityCleanup,
+    lifecycle: connectorLifecycle,
+    managedAuthority: managedConnectorAuthority,
   });
   const connectorManagementReviews = new ConnectorManagementReviewService({
     db,
     registry: connectorRegistry,
-    flowBindings: connectorFlowBindings,
+    authenticationFlows: connectorAuthenticationFlows,
     actions: connectorManagementActions,
     bootEpoch: connectorBootEpoch,
     resolveAgent: (_owner, agentId) => {
@@ -2281,6 +2307,7 @@ async function start() {
         agentId: agent.id,
         displayName: agent.displayName ?? agent.name,
       })),
+    managedAuthority: managedConnectorAuthority,
   });
   const connectorUsage = new ConnectorUsageStore(db);
   const recoveredConnectorAttempts = connectorUsage.recoverPending(new Date().toISOString());
@@ -2289,11 +2316,45 @@ async function start() {
       count: recoveredConnectorAttempts,
     });
   }
+  const managedUsageMirrors = new ManagedUsageMirrorService({
+    db,
+    cloud: getCloudLinkManager(),
+    onRecoveryError: (attemptId, error) => {
+      logger.warn('[Connectors] Managed receipt recovery deferred', {
+        attemptId,
+        error: error instanceof Error ? error.name : 'unknown_error',
+      });
+    },
+  });
+  getCloudLinkManager().setManagedReceiptObserver((receipt) =>
+    managedUsageMirrors.observe(receipt)
+  );
   const connectorOwnsAgent = (owner: ConnectorOwnerAuthority, agentId: string): boolean =>
     owner.kind === connectorOwner.kind &&
     owner.kind === 'local_install' &&
     owner.installationId === connectorOwner.installationId &&
     meshCore?.getProjectPath(agentId) !== undefined;
+  const connectorOperatorQueries = new ConnectorOperatorQueryService({
+    db,
+    registry: connectorRegistry,
+    ...(adapterManager && { relay: adapterManager }),
+    agentOwnership: { ownsAgent: connectorOwnsAgent },
+    managedUsage: getCloudLinkManager(),
+    sessions: {
+      resolveSessionAgent: async (owner, sessionId) => {
+        if (
+          owner.kind !== connectorOwner.kind ||
+          owner.kind !== 'local_install' ||
+          owner.installationId !== connectorOwner.installationId
+        ) {
+          return undefined;
+        }
+        const agentPath = await runtimeRegistry.getSessionAgentPath(sessionId);
+        const agent = agentPath ? meshCore?.getByPath(agentPath) : undefined;
+        return agent ? { agentId: agent.id } : undefined;
+      },
+    },
+  });
   const connectorAuthorization = new ConnectorExecutionAuthorizationService(db, connectorRegistry, {
     ownsAgent: connectorOwnsAgent,
   });
@@ -2320,22 +2381,28 @@ async function start() {
         connectorRuntimePrincipals?.revalidatePrincipal(principal) ?? false,
     }
   );
-  const connectorBroker = new ConnectorExecutionBroker(connectorAuthorization, connectorUsage, {
-    revalidate: (principal) => {
-      if (principal.claims.kind === 'runtime') {
-        return connectorRuntimePrincipals?.revalidatePrincipal(principal) ?? false;
-      }
-      if (principal.claims.kind === 'program') {
-        return connectorProgramPrincipals.revalidate(principal);
-      }
-      return false;
+  const connectorBroker = new ConnectorExecutionBroker(
+    connectorAuthorization,
+    connectorUsage,
+    {
+      revalidate: (principal) => {
+        if (principal.claims.kind === 'runtime') {
+          return connectorRuntimePrincipals?.revalidatePrincipal(principal) ?? false;
+        }
+        if (principal.claims.kind === 'program') {
+          return connectorProgramPrincipals.revalidate(principal);
+        }
+        return false;
+      },
     },
-  });
+    undefined,
+    managedExecutionContexts
+  );
   // A brand-new session is rekeyed to its canonical id mid-first-turn. Move any
   // connector attach set across the same remap so tools attached under the
   // request id are not stranded on the pre-remap id (mirrors the projector +
   // DevTools-store rekeys).
-  onProjectorRekey((oldId, newId) => sessionConnectorService.migrateSession(oldId, newId));
+  onProjectorRekey((oldId, newId) => sessionConnectorAttachmentStore.rekey(oldId, newId));
   // Managed per-agent MCP servers (spec `mcp-server-management`). Constructed
   // once meshCore exists — the service resolves an agent id to its workspace
   // path through the mesh registry (the single instance, shared, ADR-0043) and
@@ -2746,43 +2813,14 @@ async function start() {
       loginEnabled: () => configManager.get('auth').enabled,
     })
   );
-  const authorizeConnectorOwnerAction = (
-    req: Parameters<typeof resolveConnectorOperator>[0],
-    res: Parameters<typeof resolveConnectorOperator>[1]
-  ) =>
-    Boolean(
-      resolveConnectorOperator(req, res, {
-        resolveOwner: () => connectorOwner,
-        loginEnabled: () => configManager.get('auth').enabled,
-      })
-    );
   app.use(
     '/api/connectors',
-    createConnectorsRouter({
-      registry: connectorRegistry,
-      flowBindings: connectorFlowBindings,
-      authorityCleanup: connectorAuthorityCleanup,
-      authorizeOwnerAction: authorizeConnectorOwnerAction,
-      ...(adapterManager && { relay: adapterManager }),
-    })
-  );
-  // The retained session connector route reports durable override state. Its
-  // mutation methods now return 410 and direct the operator to Connections.
-  app.use(
-    '/api/sessions',
-    createSessionConnectorsRouter({
-      service: sessionConnectorService,
-      authorizeOwnerAction: authorizeConnectorOwnerAction,
-    })
-  );
-  // The retained agent connector route reports migration-era standing access.
-  // Its mutation methods now return 410 and direct the operator to Connections.
-  app.use(
-    '/api/agents',
-    createAgentConnectorsRouter({
-      store: agentConnectorAttachmentStore,
-      registry: connectorRegistry,
-      authorizeOwnerAction: authorizeConnectorOwnerAction,
+    createConnectorResourcesRouter({
+      query: connectorOperatorQueries,
+      authentication: connectorAuthenticationFlows,
+      lifecycle: connectorLifecycle,
+      resolveOwner: () => connectorOwner,
+      loginEnabled: () => configManager.get('auth').enabled,
     })
   );
   mountedRouters.push('connectors');
@@ -3843,6 +3881,24 @@ async function start() {
   sweepImages();
   sessionAttachmentSweepInterval = setInterval(sweepImages, SESSION_ATTACHMENT_SWEEP_INTERVAL_MS);
 
+  const recoverManagedAuthority = () => {
+    void managedConnectorAuthority
+      .recoverPending(new AbortController().signal)
+      .catch((error: unknown) => {
+        logger.warn('[Connectors] Managed authority recovery failed', logError(error));
+      });
+  };
+  recoverManagedAuthority();
+  managedAuthorityRecoveryInterval = setInterval(recoverManagedAuthority, 30_000);
+  const recoverManagedUsageMirrors = () => {
+    if (!getCloudLinkManager().getSummary().linked) return;
+    void managedUsageMirrors.recover(50, new AbortController().signal).catch((error: unknown) => {
+      logger.warn('[Connectors] Managed receipt recovery failed', logError(error));
+    });
+  };
+  recoverManagedUsageMirrors();
+  managedUsageMirrorRecoveryInterval = setInterval(recoverManagedUsageMirrors, 60_000);
+
   // Start ngrok tunnel if enabled — by the environment this process was given,
   // or by the stored `tunnel.enabled` preference the /api/tunnel/start route
   // writes when someone turns Remote Access on in the app (DOR-1738). The
@@ -3910,6 +3966,12 @@ async function shutdownServices() {
   }
   if (sessionAttachmentSweepInterval) {
     clearInterval(sessionAttachmentSweepInterval);
+  }
+  if (managedAuthorityRecoveryInterval) {
+    clearInterval(managedAuthorityRecoveryInterval);
+  }
+  if (managedUsageMirrorRecoveryInterval) {
+    clearInterval(managedUsageMirrorRecoveryInterval);
   }
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   terminalManager?.destroyAll();

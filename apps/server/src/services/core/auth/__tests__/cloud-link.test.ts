@@ -16,6 +16,9 @@ function routerFetch(handlers: {
   token?: () => Step;
   heartbeat?: () => Step;
   revoke?: () => Step;
+  authority?: () => Step;
+  execution?: () => Step;
+  usage?: () => Step;
 }) {
   return vi.fn(async (url: string) => {
     const p = new URL(url).pathname;
@@ -24,6 +27,13 @@ function routerFetch(handlers: {
     else if (p.endsWith('/device/token')) step = handlers.token?.();
     else if (p.endsWith('/instances/heartbeat')) step = handlers.heartbeat?.();
     else if (p.endsWith('/instances/revoke')) step = handlers.revoke?.();
+    else if (p.includes('/instances/connectors/authority-commands')) {
+      step = handlers.authority?.();
+    } else if (p.includes('/instances/connectors/executions')) {
+      step = handlers.execution?.();
+    } else if (p.includes('/instances/connectors/usage')) {
+      step = handlers.usage?.();
+    }
     if (!step) throw new Error(`unexpected request: ${p}`);
     return new Response(JSON.stringify(step.body), { status: step.status });
   });
@@ -85,6 +95,155 @@ describe('CloudLinkManager', () => {
 
     const paths = fetchImpl.mock.calls.map((c) => new URL(c[0] as string).pathname);
     expect(paths).toContain('/api/instances/heartbeat');
+  });
+
+  it('reconciles managed provider registration on link and unlink without exposing key material', async () => {
+    const fetchImpl = routerFetch({
+      code: () => CODES,
+      token: () => ({ status: 200, body: { access_token: 'dork_inst_managed' } }),
+      heartbeat: () => ({
+        status: 200,
+        body: { ok: true, instanceId: 'inst-1', lastSeenAt: '2026-07-03T00:00:00Z' },
+      }),
+      revoke: () => ({ status: 200, body: { ok: true } }),
+    });
+    const sync = vi.fn(async () => {});
+    manager = new CloudLinkManager({ fetchImpl, sleep: noSleep });
+    manager.setManagedProviderSync(sync);
+
+    expect(manager.managedConnectorMaterialDigest()).toBeUndefined();
+    await manager.startLink();
+    await manager.pendingLink;
+    const digest = manager.managedConnectorMaterialDigest();
+    expect(digest).toMatch(/^[a-f0-9]{64}$/);
+    expect(digest).not.toContain('dork_inst_managed');
+    expect(sync).toHaveBeenCalledTimes(1);
+
+    await manager.unlink();
+    expect(manager.managedConnectorMaterialDigest()).toBeUndefined();
+    expect(sync).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves an old linked key on permission upgrade and clears an invalid key', async () => {
+    const config = {
+      token: 'old-key' as string | null,
+      getToken() {
+        return this.token;
+      },
+      getAccountLabel: () => null,
+      save: vi.fn(),
+      setAccountLabel: vi.fn(),
+      clear() {
+        this.token = null;
+      },
+    };
+    const command = {
+      version: 1,
+      commandId: 'command-a',
+      managedConnectionId: 'managed-a',
+      scopeVersion: 1,
+      kind: 'set_connection_lifecycle',
+      lifecycle: 'paused',
+    } as const;
+    manager = new CloudLinkManager({
+      config,
+      fetchImpl: routerFetch({
+        authority: () => ({
+          status: 403,
+          body: { code: 'permission_upgrade_required' },
+        }),
+      }),
+    });
+
+    await expect(manager.submitConnectorAuthorityCommand(command)).rejects.toMatchObject({
+      code: 'permission_upgrade_required',
+    });
+    expect(config.token).toBe('old-key');
+
+    manager = new CloudLinkManager({
+      config,
+      fetchImpl: routerFetch({ authority: () => ({ status: 401, body: {} }) }),
+    });
+    await expect(manager.submitConnectorAuthorityCommand(command)).rejects.toMatchObject({
+      code: 'unauthorized',
+    });
+    expect(config.token).toBeNull();
+  });
+
+  it('observes authoritative execution and recovery receipts without blocking the response', async () => {
+    const receipt = {
+      version: 1,
+      receiptId: 'receipt-a',
+      logicalOperationId: 'logical-a',
+      attemptId: 'attempt-a',
+      attemptIndex: 1,
+      outcome: 'success',
+      completedAt: '2026-09-06T12:00:01.000Z',
+      recordedAt: '2026-09-06T12:00:02.000Z',
+    } as const;
+    const observeManagedReceipt = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('mirror busy'))
+      .mockResolvedValueOnce(undefined);
+    manager = new CloudLinkManager({
+      config: {
+        getToken: () => 'linked-key',
+        getAccountLabel: () => null,
+        save: vi.fn(),
+        setAccountLabel: vi.fn(),
+        clear: vi.fn(),
+      },
+      observeManagedReceipt,
+      fetchImpl: routerFetch({
+        execution: () => ({
+          status: 200,
+          body: {
+            state: 'receipt_only',
+            receipt,
+          },
+        }),
+      }),
+    });
+    const request = {
+      version: 1,
+      logicalOperationId: 'logical-a',
+      attemptId: 'attempt-a',
+      attemptIndex: 1,
+      managedConnectionId: 'managed-a',
+      agentId: 'agent-a',
+      grantScopeVersion: 1,
+      attribution: { surface: 'mcp', actorKind: 'agent', actorId: 'agent-a' },
+      revision: {
+        hostedRevisionId: '11111111-1111-4111-8111-111111111111',
+        operationSlug: 'gmail.send',
+        toolkitVersion: '2026-09-01',
+        schemaHash: 'sha256:revision-a',
+      },
+      arguments: { message: 'hello' },
+    } as const;
+
+    await expect(
+      manager.executeManagedConnectorOperation(request, new AbortController().signal)
+    ).resolves.toMatchObject({ state: 'receipt_only', receipt });
+    expect(observeManagedReceipt).toHaveBeenCalledWith(receipt);
+
+    manager = new CloudLinkManager({
+      config: {
+        getToken: () => 'linked-key',
+        getAccountLabel: () => null,
+        save: vi.fn(),
+        setAccountLabel: vi.fn(),
+        clear: vi.fn(),
+      },
+      observeManagedReceipt,
+      fetchImpl: routerFetch({
+        execution: () => ({ status: 200, body: { state: 'recorded', receipt } }),
+      }),
+    });
+    await expect(
+      manager.getManagedConnectorExecutionReceipt('attempt-a', new AbortController().signal)
+    ).resolves.toMatchObject({ state: 'recorded', receipt });
+    expect(observeManagedReceipt).toHaveBeenCalledTimes(2);
   });
 
   it('threads the telemetry instance id into the device-code scope only when the resolver returns one', async () => {

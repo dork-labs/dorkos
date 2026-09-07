@@ -67,6 +67,18 @@ const webEnvSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().default(''),
   GOOGLE_CLIENT_SECRET: z.string().default(''),
 
+  // Hosted managed connectors. These remain raw strings here because the
+  // request boundary parses them as one fail-closed configuration and returns
+  // a safe unavailable response instead of exposing Zod details or secret
+  // values. LIVE_READY stays separate from ENABLED until the P7 smoke passes.
+  DORKOS_MANAGED_CONNECTORS_ENABLED: z.string().optional(),
+  DORKOS_MANAGED_CONNECTORS_LIVE_READY: z.string().optional(),
+  DORKOS_MANAGED_COMPOSIO_PROJECT_KEY: z.string().optional(),
+  DORKOS_MANAGED_COMPOSIO_API_ORIGIN: z.string().optional(),
+  DORKOS_MANAGED_CONNECTOR_CALLBACK_ORIGIN: z.string().optional(),
+  DORKOS_MANAGED_CONNECTOR_AUTH_CONFIGS: z.string().optional(),
+  DORKOS_MANAGED_CONNECTOR_WEBHOOK_SECRET: z.string().optional(),
+
   // Resend — transactional email for verification/reset (cloud-only). Sending
   // throws a clear error when RESEND_API_KEY is unset.
   RESEND_API_KEY: z.string().optional(),

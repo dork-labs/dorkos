@@ -137,7 +137,7 @@
     },
     {
       "guide": "parallel-execution.md",
-      "description": "Parallel agent execution patterns, batching",
+      "description": "Parallel agent execution patterns, batching, landing parallel branches",
       "patterns": [
         ".claude/agents/",
         "\\.claude/commands/"
@@ -301,6 +301,7 @@
       "patterns": [
         "connector-provider",
         "connector-schemas",
+        "packages/connector-providers/",
         "apps/server/src/services/connectors/",
         "connector-conformance",
         "fake-connector-provider",
@@ -529,6 +530,7 @@
       "doc": "docs/connections/composio.mdx",
       "description": "Composio managed connector setup, custody disclosure, and brokered exact operation grants",
       "patterns": [
+        "packages/connector-providers/src/composio",
         "apps/server/src/services/connectors/providers/composio",
         "custody-disclosure"
       ]

@@ -32,12 +32,15 @@ import {
   type ConnectorProgramReviewStatus,
 } from '@dorkos/shared/connector-schemas';
 import type { ConnectorOwnerAuthority } from './principal/server-principal.js';
-import type { ConnectorFlowBindings } from './flow-bindings.js';
 import {
   ConnectorManagementReviewContextBuilder,
   type ConnectorReviewAgentPresentationResolver,
 } from './management-review-context.js';
 import type { ConnectorRegistry } from './registry.js';
+import {
+  ConnectorAuthenticationFlowError,
+  type ConnectorAuthenticationFlowService,
+} from './resources/authentication-flow-service.js';
 
 const DEFAULT_REVIEW_TTL_MS = 15 * 60_000;
 
@@ -87,8 +90,11 @@ export interface ConnectorManagementReviewServiceOptions {
   readonly db: Db;
   /** Registry used for exact provider lookup and connect flow creation. */
   readonly registry: ConnectorRegistry;
-  /** Shared opaque connect-flow binding registry. */
-  readonly flowBindings: ConnectorFlowBindings;
+  /** Restart-safe owner authentication flows used by approved connect reviews. */
+  readonly authenticationFlows: Pick<
+    ConnectorAuthenticationFlowService,
+    'start' | 'status' | 'findByIdempotencyKey'
+  >;
   /** Idempotent concrete local mutation boundary. */
   readonly actions: ConnectorManagementActionApplier;
   /** Current process generation for resolving interrupted decisions safely. */
@@ -125,6 +131,10 @@ function actionHash(action: ConnectorManagementReviewAction): string {
   return createHash('sha256').update(encodeConnectorReviewAction(action)).digest('hex');
 }
 
+function reviewAuthenticationIdempotencyKey(reviewRequestId: string): string {
+  return `connector-review:${reviewRequestId}`;
+}
+
 function isConnectAction(
   action: ConnectorManagementReviewAction
 ): action is Extract<ConnectorManagementReviewAction, { kind: 'connect' }> {
@@ -135,7 +145,7 @@ function isConnectAction(
 export class ConnectorManagementReviewService {
   private readonly db: Db;
   private readonly registry: ConnectorRegistry;
-  private readonly flowBindings: ConnectorFlowBindings;
+  private readonly authenticationFlows: ConnectorManagementReviewServiceOptions['authenticationFlows'];
   private readonly actions: ConnectorManagementActionApplier;
   private readonly reviewContext: ConnectorManagementReviewContextBuilder;
   private readonly bootEpoch: string;
@@ -149,7 +159,7 @@ export class ConnectorManagementReviewService {
   constructor(options: ConnectorManagementReviewServiceOptions) {
     this.db = options.db;
     this.registry = options.registry;
-    this.flowBindings = options.flowBindings;
+    this.authenticationFlows = options.authenticationFlows;
     this.actions = options.actions;
     this.reviewContext = new ConnectorManagementReviewContextBuilder(
       options.db,
@@ -393,23 +403,20 @@ export class ConnectorManagementReviewService {
     try {
       let outcome: ConnectorManagementReviewOutcome;
       if (isConnectAction(action)) {
-        const provider = this.registry.resolveProviderInstance(action.providerInstanceId);
-        if (!provider) throw new Error('Provider unavailable');
-        const started = await provider.startConnect(
-          action.toolkit,
-          action.label ? { label: action.label } : undefined
-        );
-        const flowId = this.flowBindings.record(
-          started.flowId,
-          provider,
-          this.registry.providerExecutionConfigGeneration(provider) ?? -1
-        );
+        const started = await this.authenticationFlows.start(owner, {
+          providerInstanceId: action.providerInstanceId,
+          toolkit: action.toolkit,
+          ...(action.label !== undefined && { label: action.label }),
+          idempotencyKey: reviewAuthenticationIdempotencyKey(reviewRequestId),
+        });
         outcome = {
           kind: 'connect_authentication_required',
           reviewRequestId,
           authentication: {
-            flowId,
-            ...(started.authorizeUrl && { authorizeUrl: started.authorizeUrl }),
+            flowId: started.flowId,
+            ...(started.state === 'pending' && started.authorizeUrl
+              ? { authorizeUrl: started.authorizeUrl }
+              : {}),
           },
         };
       } else {
@@ -453,6 +460,9 @@ export class ConnectorManagementReviewService {
       this.expire(reviewRequestId);
       row = this.requireOwnedRow(reviewRequestId, owner);
     }
+    const action = ConnectorManagementReviewActionSchema.parse(
+      decodeConnectorReviewAction(row.actionPayloadJson)
+    );
     if (row.state === 'approved' && !row.resolutionJson) {
       if (this.activeResolutions.has(reviewRequestId)) {
         const action = ConnectorManagementReviewActionSchema.parse(
@@ -479,17 +489,58 @@ export class ConnectorManagementReviewService {
       }
     }
 
-    const action = ConnectorManagementReviewActionSchema.parse(
-      decodeConnectorReviewAction(row.actionPayloadJson)
-    );
-    if (row.state === 'approved' && row.resolutionJson && isConnectAction(action)) {
-      const resolution = JSON.parse(row.resolutionJson!) as ConnectorManagementReviewOutcome;
-      if (
-        resolution.kind !== 'connect_authentication_required' ||
-        !this.flowBindings.providerFor(resolution.authentication.flowId)
-      ) {
+    let approvedResolution: ConnectorManagementReviewOutcome | undefined = row.resolutionJson
+      ? (JSON.parse(row.resolutionJson) as ConnectorManagementReviewOutcome)
+      : undefined;
+    if (row.state === 'approved' && isConnectAction(action)) {
+      if (!approvedResolution || approvedResolution.kind === 'outcome_unknown') {
+        const recovered = this.authenticationFlows.findByIdempotencyKey(
+          owner,
+          reviewAuthenticationIdempotencyKey(reviewRequestId)
+        );
+        if (recovered) {
+          approvedResolution = {
+            kind: 'connect_authentication_required',
+            reviewRequestId,
+            authentication: {
+              flowId: recovered.flowId,
+              ...(recovered.state === 'pending' && recovered.authorizeUrl
+                ? { authorizeUrl: recovered.authorizeUrl }
+                : {}),
+            },
+          };
+        }
+      }
+      if (approvedResolution?.kind === 'connect_authentication_required') {
+        try {
+          const currentFlow = this.authenticationFlows.status(
+            owner,
+            approvedResolution.authentication.flowId
+          );
+          approvedResolution = {
+            ...approvedResolution,
+            authentication: {
+              flowId: currentFlow.flowId,
+              ...(currentFlow.state === 'pending' && currentFlow.authorizeUrl
+                ? { authorizeUrl: currentFlow.authorizeUrl }
+                : {}),
+            },
+          };
+        } catch (error) {
+          if (
+            !(error instanceof ConnectorAuthenticationFlowError) ||
+            error.code !== 'flow_not_found'
+          ) {
+            throw error;
+          }
+          this.expire(reviewRequestId);
+          row = this.requireOwnedRow(reviewRequestId, owner);
+          approvedResolution = undefined;
+        }
+      } else if (approvedResolution && approvedResolution.kind !== 'outcome_unknown') {
         this.expire(reviewRequestId);
         row = this.requireOwnedRow(reviewRequestId, owner);
+        approvedResolution = undefined;
       }
     }
 
@@ -533,9 +584,7 @@ export class ConnectorManagementReviewService {
           ...base,
           state: row.state,
           resolvedAt: row.resolvedAt!,
-          resolution: row.resolutionJson
-            ? JSON.parse(row.resolutionJson)
-            : { kind: 'outcome_unknown' },
+          resolution: approvedResolution ?? { kind: 'outcome_unknown' },
         });
     }
   }

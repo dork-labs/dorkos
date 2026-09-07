@@ -1,11 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const ALLOWED_COMPOSIO_SDK_ROOTS = [
-  'apps/server/src/services/connectors/providers/composio/',
-  'apps/site/src/lib/connectors/composio/',
-] as const;
+const ALLOWED_COMPOSIO_SDK_ROOTS = ['packages/connector-providers/src/composio/'] as const;
 
 /** Return whether a source path is one of the deliberately narrow SDK adapters. */
 function isAllowedComposioSdkPath(path: string): boolean {
@@ -42,7 +39,7 @@ describe('Composio SDK import boundary', () => {
     )
       .trim()
       .split('\n')
-      .filter(Boolean);
+      .filter((path) => path.length > 0 && existsSync(path));
     expect(files.length).toBeGreaterThan(100);
 
     const violations = files.filter(

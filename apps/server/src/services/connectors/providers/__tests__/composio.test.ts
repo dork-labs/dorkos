@@ -6,6 +6,7 @@ import type {
   CredentialResolution,
 } from '../../../core/credential-provider.js';
 import type {
+  ConnectorCatalogPageRequest,
   ConnectorOperationPageRequest,
   ConnectorOperationRevision,
   ConnectorProviderExecuteResult,
@@ -29,7 +30,10 @@ import {
   toComposioAccountId,
   toExternalAccountRef,
 } from '../composio.js';
-import type { ComposioOperationClient, ComposioSdkExecuteInput } from '../composio/sdk-client.js';
+import type {
+  ComposioOperationClient,
+  ComposioSdkExecuteInput,
+} from '@dorkos/connector-providers/composio';
 
 /**
  * In-memory {@link ComposioHttpClient} — the fake Composio cloud the provider is
@@ -131,6 +135,18 @@ class FakeComposioClient implements ComposioHttpClient {
 class FakeComposioOperationClient implements ComposioOperationClient {
   readonly executions: ComposioSdkExecuteInput[] = [];
 
+  listToolkitPage(request: ConnectorCatalogPageRequest) {
+    request.signal.throwIfAborted();
+    return Promise.resolve({
+      status: 'ok' as const,
+      toolkits: [
+        { slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' as const },
+        { slug: 'slack', displayName: 'Slack', authKind: 'oauth2' as const },
+      ],
+      truncated: false,
+    });
+  }
+
   resolveToolkitVersion(
     toolkit: string,
     signal: AbortSignal
@@ -177,7 +193,7 @@ class FakeComposioOperationClient implements ComposioOperationClient {
       return {
         status: 'error',
         code: 'AUTHORITY_CHANGED_BEFORE_DISPATCH',
-        message: 'Connector authority changed before dispatch.',
+        message: 'Access changed before the operation was sent.',
         retryable: false,
       };
     }

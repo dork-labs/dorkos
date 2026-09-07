@@ -9,6 +9,22 @@
  */
 import { z } from 'zod';
 
+/** Maximum complete operation set supported by the provider discovery safety ceiling. */
+export const CONNECTOR_OPERATION_SELECTION_LIMIT = 100_000;
+
+/** JSON value accepted by connector operation arguments and provider schemas. */
+export const ConnectorJsonValueSchema = z.json();
+/** JSON value accepted by connector operation arguments and provider schemas. */
+export type ConnectorJsonValue = z.infer<typeof ConnectorJsonValueSchema>;
+
+/** JSON object accepted as one connector operation's argument payload. */
+export const ConnectorJsonObjectSchema = z.record(
+  z.string().min(1).max(200),
+  ConnectorJsonValueSchema
+);
+/** JSON object accepted as one connector operation's argument payload. */
+export type ConnectorJsonObject = z.infer<typeof ConnectorJsonObjectSchema>;
+
 /** Stable identifier for one configured connector provider and payer. */
 export const ConnectorProviderInstanceIdSchema = z
   .string()
@@ -84,7 +100,12 @@ export type ConnectorOperationRevision = z.infer<typeof ConnectorOperationRevisi
 
 /** Cursor page returned by provider discovery. */
 export const ConnectorOperationPageSchema = z.object({
-  operations: z.array(ConnectorOperationRevisionSchema.omit({ id: true, discoveredAt: true })),
+  operations: z.array(
+    ConnectorOperationRevisionSchema.omit({ id: true, discoveredAt: true }).extend({
+      // Private upstream revision identity, never included in public revision DTOs.
+      providerRevisionRef: z.string().min(1).max(500).optional(),
+    })
+  ),
   nextCursor: z.string().min(1).optional(),
   truncated: z.boolean(),
 });
@@ -244,7 +265,7 @@ export const ConnectorExecutionTargetSchema = z
   .object({
     connectionId: ConnectionIdSchema,
     operationRevisionId: z.string().min(1),
-    arguments: z.record(z.string(), z.unknown()),
+    arguments: ConnectorJsonObjectSchema,
   })
   .strict();
 /** Public execution target; all private routing and authority are server-derived. */
@@ -453,7 +474,12 @@ export type ConnectorReconciliationApplyRequest = z.infer<
 export const ConnectorReconciliationApplyResponseSchema = z
   .object({
     connectionId: ConnectionIdSchema,
-    reconciliationStatus: z.literal('ready'),
+    reconciliationStatus: ConnectorGrantReconciliationStatusSchema,
+    authoritySync: z.discriminatedUnion('status', [
+      z.object({ status: z.literal('ready') }).strict(),
+      z.object({ status: z.literal('pending') }).strict(),
+      z.object({ status: z.literal('failed'), reason: z.string().min(1).max(1_000) }).strict(),
+    ]),
     grants: z.array(ConnectorReconciliationGrantSelectionSchema),
   })
   .strict();

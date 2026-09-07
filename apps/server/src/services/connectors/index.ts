@@ -1,10 +1,9 @@
 /**
  * Connector gateway service barrel — the server-side surface of the
  * `ConnectorProvider` seam (connector-gateway spec). Re-exports the registry,
- * the provider bootstrapper (lifecycle + live reload), shared flow bindings,
+ * the provider bootstrapper (lifecycle + live reload),
  * the agent-facing discovery domain, brokered execution, routing, custody
- * disclosures, retained session access status, public account mapping, and the
- * shipped provider backends.
+ * disclosures, canonical session overrides, and the shipped provider backends.
  *
  * Exposed as the `@dorkos/server/services/connectors` subpath so the eval
  * harness (`@dorkos/evals`) can express the W4 connector evals against the real
@@ -28,7 +27,6 @@ export {
   TEST_CONNECTOR_API_KEY_REF,
   type ConnectorProviderBootstrapperOpts,
 } from './bootstrap.js';
-export { ConnectorFlowBindings } from './flow-bindings.js';
 export { connectorDomain, type ConnectorCapabilityDeps } from './connector-capabilities.js';
 export {
   connectorExecutionDomain,
@@ -46,6 +44,22 @@ export {
   type ConnectorExecutionPrincipalRevalidationPort,
 } from './execution/execution-broker.js';
 export {
+  ManagedConnectorExecutionContextStore,
+  type ManagedConnectorExecutionContext,
+  type ManagedConnectorExecutionContextBindingPort,
+} from './execution/managed-execution-context.js';
+export {
+  ManagedUsageMirrorError,
+  ManagedUsageMirrorService,
+  type ManagedReceiptRecoveryCloudPort,
+  type ManagedUsageMirrorServiceOptions,
+} from './execution/managed-usage-mirror-service.js';
+export {
+  ConnectorOperatorQueryService,
+  ConnectorOperatorQueryError,
+  type ConnectorOperatorQueryServiceOptions,
+} from './resources/operator-query-service.js';
+export {
   ConnectorUsageEvidenceError,
   ConnectorUsageStore,
   type ConnectorUsageIntentInput,
@@ -59,7 +73,6 @@ export {
   type ConnectorUsageQuery,
 } from './execution/access-query-service.js';
 export { ConnectorProgramPrincipalService } from './principal/program-principal-service.js';
-export { toPublicAccount, type PublicConnectedAccount } from './public-account.js';
 export {
   recommendConnector,
   type RecommendConnectorResult,
@@ -73,11 +86,8 @@ export {
   type CustodyDisclosureContext,
   type DisclosableAccount,
 } from './custody-disclosure.js';
-export { SessionConnectorService, type SessionConnectorServiceOpts } from './session-exposure.js';
 export {
-  AgentConnectorAttachmentStore,
   SessionConnectorAttachmentStore,
-  type AgentConnectorAttachment,
   type SessionConnectorOverride,
   type SessionConnectorOverrideState,
 } from './attachment-store.js';

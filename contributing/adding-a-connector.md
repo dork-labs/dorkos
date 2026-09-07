@@ -20,6 +20,7 @@ The current contract is defined by the [Connections specification](../specs/whit
 | Provider port                                         | `packages/shared/src/connector-provider.ts`                                                                  |
 | Stable IDs, operation, capability, and review schemas | `packages/shared/src/connector-schemas.ts`                                                                   |
 | Conformance suite and fake                            | `packages/test-utils/src/connector-conformance.ts`, `packages/test-utils/src/fake-connector-provider.ts`     |
+| Confined vendor SDK adapters                          | `packages/connector-providers/src/`                                                                          |
 | Provider implementations                              | `apps/server/src/services/connectors/providers/`                                                             |
 | Instance registry and stable connection store         | `apps/server/src/services/connectors/registry.ts`, `apps/server/src/services/connectors/connection-store.ts` |
 | Durable database schema                               | `packages/db/src/schema/connectors/connections.ts`, `packages/db/src/schema/connectors/connector-events.ts`  |
@@ -76,11 +77,9 @@ Put vendor HTTP or SDK calls behind a small injectable client. Tests must use a 
 
 Vendor SDK imports belong only in their adapter roots. For `@composio/core`, the allowed roots are:
 
-- `apps/server/src/services/connectors/providers/composio.ts`
-- `apps/server/src/services/connectors/providers/composio/`
-- `apps/site/src/lib/connectors/composio/`
+- `packages/connector-providers/src/composio/`
 
-The import-boundary test detects static imports, dynamic imports, re-exports, and CommonJS `require`. Extend that test deliberately when adding a new approved adapter root. Do not import the SDK from routes, registry code, session code, or shared packages.
+The import-boundary test detects static imports, dynamic imports, re-exports, and CommonJS `require`. Add reusable vendor transport code to the confined package, then inject it into the server or hosted adapter. Do not import the SDK from routes, registry code, session code, site code, or shared contract packages.
 
 ### 3. Keep private references private
 

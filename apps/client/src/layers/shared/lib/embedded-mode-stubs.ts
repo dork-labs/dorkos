@@ -95,24 +95,26 @@ import type {
   RoomRepoStatus,
 } from '@dorkos/shared/room-repo';
 import type { Workspace, WorktreeScanResult } from '@dorkos/shared/workspace';
-import type {
-  ConnectorAccountsResponse,
-  ConnectorConnectPollResponse,
-  ConnectorConnectStartResponse,
-  ConnectorProviderStatus,
-  ConnectorRecommendationsResponse,
-  ConnectorToolkitsResponse,
-  SessionConnectorAttachResult,
-  SessionConnectorStatus,
-  AgentConnectorAttachment,
-  AgentConnectorAttachResult,
-} from '@dorkos/shared/connector-provider';
+import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
 import type {
   ConnectionId,
   ConnectorAccessibleConnectionsResponse,
   ConnectorAccessibleOperationsResponse,
   ConnectorUsagePage,
 } from '@dorkos/shared/connector-schemas';
+import type {
+  ConnectorAgentConnections,
+  ConnectorAuthenticationFlowCreateRequest,
+  ConnectorAuthenticationFlowState,
+  ConnectorCatalogResourcePage,
+  ConnectorConnectionDetail,
+  ConnectorConnectionListResource,
+  ConnectorConnectionPatch,
+  ConnectorDisconnectImpact,
+  ConnectorLifecycleResult,
+  ConnectorReconnectRequest,
+  ConnectorSessionConnections,
+} from '@dorkos/shared/connector-resource-schemas';
 import type {
   TraceSpan,
   DeliveryMetrics,
@@ -1027,11 +1029,10 @@ async function* emptyRoomEvents(): AsyncIterable<RoomEvent> {}
 
 /**
  * Connector stubs — the connector gateway (provider registry, credential
- * store, connect flows, session tool exposure) is a server-owned subsystem the
- * in-process embed has no services for (connector-completion spec OQ4). Legacy
- * discovery reads answer honestly empty, while authority-sensitive P2 reads
- * and every mutation refuse with a clear pointer to the DorkOS app. Session
- * attach reads answer "nothing attached" for the same reason.
+ * store, durable authentication, and exact grants) is a server-owned subsystem
+ * the in-process embed has no services for. Account-free discovery answers
+ * honestly empty, while owner-scoped reads and every mutation refuse with a
+ * clear pointer to the DorkOS app.
  */
 export const connectorStubs = {
   async getConnectorProviders(): Promise<ConnectorProviderStatus[]> {
@@ -1049,61 +1050,64 @@ export const connectorStubs = {
     throw new Error(EMBEDDED_CONNECTORS_NOTICE);
   },
 
-  async getConnectorToolkits(): Promise<ConnectorToolkitsResponse> {
-    return { toolkits: [], warnings: [] };
+  async getConnectorCatalog(): Promise<ConnectorCatalogResourcePage> {
+    return { services: [], warnings: [] };
   },
 
-  async getConnectorRecommendation(_service: string): Promise<ConnectorRecommendationsResponse> {
-    return { recommendations: [], warnings: [] };
-  },
-
-  async startConnectorFlow(
-    _provider: string,
-    _request: { toolkit: string; label?: string }
-  ): Promise<ConnectorConnectStartResponse> {
+  async getConnectorConnections(): Promise<ConnectorConnectionListResource> {
     throw new Error(EMBEDDED_CONNECTORS_NOTICE);
   },
 
-  async pollConnectorFlow(_flowId: string): Promise<ConnectorConnectPollResponse> {
+  async getConnectorConnection(_connectionId: string): Promise<ConnectorConnectionDetail> {
     throw new Error(EMBEDDED_CONNECTORS_NOTICE);
   },
 
-  async getConnectorAccounts(_toolkit?: string): Promise<ConnectorAccountsResponse> {
-    return { accounts: [], warnings: [] };
-  },
-
-  async disconnectConnectorAccount(_accountId: string): Promise<void> {
+  async startConnectorAuthentication(
+    _input: ConnectorAuthenticationFlowCreateRequest
+  ): Promise<ConnectorAuthenticationFlowState> {
     throw new Error(EMBEDDED_CONNECTORS_NOTICE);
   },
 
-  async getSessionConnectors(_sessionId: string): Promise<SessionConnectorStatus> {
-    return { accounts: [], warnings: [] };
-  },
-
-  async attachSessionConnector(
-    _sessionId: string,
-    _accountId: string
-  ): Promise<SessionConnectorAttachResult> {
+  async pollConnectorAuthentication(_flowId: string): Promise<ConnectorAuthenticationFlowState> {
     throw new Error(EMBEDDED_CONNECTORS_NOTICE);
   },
 
-  async detachSessionConnector(_sessionId: string, _accountId: string): Promise<void> {
+  async renameConnectorConnection(
+    _connectionId: string,
+    _input: ConnectorConnectionPatch
+  ): Promise<ConnectorLifecycleResult> {
     throw new Error(EMBEDDED_CONNECTORS_NOTICE);
   },
 
-  async getAgentConnectors(_agentId: string): Promise<AgentConnectorAttachment[]> {
-    return [];
-  },
-
-  async attachAgentConnector(
-    _agentId: string,
-    _accountId: string
-  ): Promise<AgentConnectorAttachResult> {
+  async reconnectConnectorConnection(
+    _connectionId: string,
+    _input: ConnectorReconnectRequest
+  ): Promise<ConnectorAuthenticationFlowState> {
     throw new Error(EMBEDDED_CONNECTORS_NOTICE);
   },
 
-  async detachAgentConnector(_agentId: string, _accountId: string): Promise<void> {
+  async pauseConnectorConnection(_connectionId: string): Promise<ConnectorLifecycleResult> {
     throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async resumeConnectorConnection(_connectionId: string): Promise<ConnectorLifecycleResult> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async getConnectorDisconnectImpact(_connectionId: string): Promise<ConnectorDisconnectImpact> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async disconnectConnectorConnection(_connectionId: string): Promise<ConnectorLifecycleResult> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async getAgentConnectorConnections(_agentId: string): Promise<ConnectorAgentConnections> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async getSessionConnectorConnections(sessionId: string): Promise<ConnectorSessionConnections> {
+    throw new Error(`${EMBEDDED_CONNECTORS_NOTICE} Session '${sessionId}' is unavailable.`);
   },
 
   async getAccessibleConnectorConnections(): Promise<ConnectorAccessibleConnectionsResponse> {

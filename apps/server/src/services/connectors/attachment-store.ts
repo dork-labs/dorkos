@@ -1,90 +1,20 @@
 /**
- * Persisted legacy connector-attachment stores (connection-scoping spec
- * `specs/connection-scoping/` §Part 1). P2 retains them as migration and session
- * override evidence while canonical operation grants live in the broker stores.
+ * Canonical session connector overrides (connection-scoping spec Part 1).
  *
- * Two canonical tables, two thin CRUD wrappers:
+ * {@link SessionConnectorAttachmentStore} stores per-session overrides. A row
+ * here is a tombstone, not just a presence flag: `'attached'` selects the
+ * session-scoped grant path for an account the agent did not inherit;
+ * `'detached'` suppresses inherited grants. The row never grants an operation
+ * by itself. See `design-decisions.md` D2 for the per-account precedence.
  *
- * - {@link AgentConnectorAttachmentStore} — retained agent-level attachment
- *   evidence. Row existence means the legacy attachment existed; canonical
- *   grants still decide execution.
- * - {@link SessionConnectorAttachmentStore} — per-session overrides. A row
- *   here is a tombstone, not just a presence flag: `'attached'` selects the
- *   session-scoped grant path for an account the agent did not inherit;
- *   `'detached'` suppresses inherited grants. The row never grants an operation
- *   by itself. See `design-decisions.md` D2 for the per-account precedence.
- *
- * Both stores use stable DorkOS connection ids and hold pure intent records —
- * never provider transport details. Reading either table back never grants an
- * operation by itself; broker authorization must still resolve canonical grants.
+ * The store uses stable DorkOS connection ids and holds pure intent records,
+ * never provider transport details. Reading an override never grants an
+ * operation by itself; broker authorization still resolves canonical grants.
  *
  * @module services/connectors/attachment-store
  */
-import {
-  agentConnectionAttachments,
-  sessionConnectionOverrides,
-  eq,
-  and,
-  type Db,
-} from '@dorkos/db';
+import { sessionConnectionOverrides, eq, and, type Db } from '@dorkos/db';
 import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
-
-/** One agent's standing account attachment, as persisted. */
-export interface AgentConnectorAttachment {
-  agentId: string;
-  accountId: ConnectedAccountId;
-  attachedAt: string;
-}
-
-/** Standing, agent-level connector consent — see module doc. */
-export class AgentConnectorAttachmentStore {
-  private readonly _db: Db;
-
-  constructor(db: Db) {
-    this._db = db;
-  }
-
-  /**
-   * Record standing consent for `agentId` to use `accountId`. Idempotent —
-   * re-attaching an already-attached account leaves `attachedAt` at its
-   * original value (first-attach wins, mirroring the registry's
-   * first-write-wins convention) rather than resetting it.
-   */
-  attach(agentId: string, accountId: ConnectedAccountId): void {
-    this._db
-      .insert(agentConnectionAttachments)
-      .values({ agentId, connectionId: accountId, attachedAt: new Date().toISOString() })
-      .onConflictDoNothing()
-      .run();
-  }
-
-  /** Revoke standing consent. Idempotent — detaching an unattached account is a no-op. */
-  detach(agentId: string, accountId: ConnectedAccountId): void {
-    this._db
-      .delete(agentConnectionAttachments)
-      .where(
-        and(
-          eq(agentConnectionAttachments.agentId, agentId),
-          eq(agentConnectionAttachments.connectionId, accountId)
-        )
-      )
-      .run();
-  }
-
-  /** Every account standingly attached to `agentId`. */
-  listForAgent(agentId: string): AgentConnectorAttachment[] {
-    return this._db
-      .select()
-      .from(agentConnectionAttachments)
-      .where(eq(agentConnectionAttachments.agentId, agentId))
-      .all()
-      .map((row) => ({
-        agentId: row.agentId,
-        accountId: row.connectionId as ConnectedAccountId,
-        attachedAt: row.attachedAt,
-      }));
-  }
-}
 
 /** One session's override state for one account. */
 export type SessionConnectorOverrideState = 'attached' | 'detached';

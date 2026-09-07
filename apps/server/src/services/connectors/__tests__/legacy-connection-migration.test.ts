@@ -129,6 +129,12 @@ function rows(raw: Database.Database, table: string): unknown[] {
   return raw.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all();
 }
 
+function hasTable(raw: Database.Database, table: string): boolean {
+  return Boolean(
+    raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)
+  );
+}
+
 afterEach(() => {
   for (const dir of temporaryDirectories.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
@@ -290,7 +296,14 @@ describe('legacy connector application migration', () => {
     expect(
       (rows(db.$client, 'connections') as Array<Record<string, unknown>>).map((row) => row.id)
     ).toEqual(stableIds);
-    expect(rows(db.$client, 'connected_accounts')).toEqual(legacyBefore.accounts);
+    expect(
+      [
+        'connected_accounts',
+        'agent_connector_attachments',
+        'session_connector_attachments',
+        'connector_legacy_agent_revocations',
+      ].some((table) => hasTable(db.$client, table))
+    ).toBe(false);
     db.$client.close();
   });
 
@@ -299,8 +312,6 @@ describe('legacy connector application migration', () => {
     const db = createDb(dbPath);
     runMigrations(db);
     db.$client.prepare("DELETE FROM agents WHERE id = 'agent-a'").run();
-    const legacyBefore = rows(db.$client, 'agent_connector_attachments');
-
     expect(runLegacyConnectionMigration(db)).toEqual({ status: 'ready', migrated: true });
 
     expect(
@@ -317,7 +328,7 @@ describe('legacy connector application migration', () => {
         )
         .get()
     ).toEqual({ count: 1 });
-    expect(rows(db.$client, 'agent_connector_attachments')).toEqual(legacyBefore);
+    expect(hasTable(db.$client, 'agent_connector_attachments')).toBe(false);
     expect(
       db.$client
         .prepare(
@@ -328,6 +339,58 @@ describe('legacy connector application migration', () => {
       { agent_id: null, needs_reconciliation: 1 },
       { agent_id: null, needs_reconciliation: 1 },
     ]);
+    db.$client.close();
+  });
+
+  it('rolls legacy-table retirement back with the backfill and completion ledger', () => {
+    const dbPath = createOldDatabase();
+    const db = createDb(dbPath);
+    runMigrations(db);
+    const before = {
+      accounts: rows(db.$client, 'connected_accounts'),
+      agents: rows(db.$client, 'agent_connector_attachments'),
+      sessions: rows(db.$client, 'session_connector_attachments'),
+    };
+
+    expect(
+      runLegacyConnectionMigration(db, {
+        afterStep: (step) => {
+          if (step === 'retired') throw new Error('interrupt after retirement');
+        },
+      })
+    ).toMatchObject({ status: 'migration_failed' });
+    expect(rows(db.$client, 'connected_accounts')).toEqual(before.accounts);
+    expect(rows(db.$client, 'agent_connector_attachments')).toEqual(before.agents);
+    expect(rows(db.$client, 'session_connector_attachments')).toEqual(before.sessions);
+    expect(rows(db.$client, 'connections')).toEqual([]);
+    expect(rows(db.$client, 'connector_application_migrations')).toEqual([]);
+    db.$client.close();
+  });
+
+  it('retires leftover legacy tables on a later boot without rereading them', () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    db.$client
+      .prepare(
+        'INSERT INTO connector_application_migrations(version, state, started_at, completed_at) VALUES (?, ?, ?, ?)'
+      )
+      .run(CONNECTOR_FOUNDATION_MIGRATION_VERSION, 'complete', fixtureTime(1), fixtureTime(2));
+    db.$client.exec(`
+      INSERT INTO connected_accounts
+      (account_id, provider, toolkit, label, custody, status, created_at)
+      VALUES ('must-not-replay', 'missing', 'gmail', 'Old', 'external', 'active', '${fixtureTime(1)}')
+    `);
+
+    expect(runLegacyConnectionMigration(db)).toEqual({ status: 'ready', migrated: false });
+    expect(
+      [
+        'connected_accounts',
+        'agent_connector_attachments',
+        'session_connector_attachments',
+        'connector_legacy_agent_revocations',
+      ].some((table) => hasTable(db.$client, table))
+    ).toBe(false);
+    expect(rows(db.$client, 'connections')).toEqual([]);
     db.$client.close();
   });
 

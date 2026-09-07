@@ -8,10 +8,10 @@
  */
 export { ProviderSetup } from './ui/ProviderSetup';
 export { ProviderSetupCard } from './ui/ProviderSetupCard';
-export { ServiceGrid, ServiceTile } from './ui/ServiceGrid';
+export { ServiceGrid } from './ui/ServiceGrid';
 export { ConnectDialog } from './ui/ConnectDialog';
 export { AccountsList, AccountRow } from './ui/AccountsList';
-export { AccountsFirstRun } from './ui/AccountsFirstRun';
+export { ConnectionDetailSheet } from './ui/ConnectionDetailSheet';
 export { ClaimFeed } from './ui/ClaimFeed';
 export { ClaimCard } from './ui/ClaimCard';
 export { MessagePolicyCard } from './ui/MessagePolicyCard';

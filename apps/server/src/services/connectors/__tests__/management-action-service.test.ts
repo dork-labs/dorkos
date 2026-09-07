@@ -16,7 +16,6 @@ import {
 } from '@dorkos/shared/connector-schemas';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type { ConnectorAuthorityCleanupPort } from '../authority-cleanup-port.js';
-import { ConnectorFlowBindings } from '../flow-bindings.js';
 import {
   ConnectorManagementActionError,
   ConnectorManagementActionService,
@@ -83,7 +82,6 @@ describe('ConnectorManagementActionService', () => {
     service = new ConnectorManagementActionService({
       db,
       registry,
-      flowBindings: new ConnectorFlowBindings(),
       authorityCleanup: cleanup,
       now: () => NOW,
       createId: () => 'grant-a',

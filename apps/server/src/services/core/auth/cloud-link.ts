@@ -18,18 +18,57 @@
  *
  * @module services/core/auth/cloud-link
  */
+import { createHash } from 'node:crypto';
 import { configManager } from '../config-manager.js';
+import type {
+  ManagedConnectorAuthorityCommand,
+  ManagedConnectorAuthorityCommandStatus,
+  ManagedConnectorExecutionReceipt,
+  ManagedConnectorExecutionReceiptStatus,
+  ManagedConnectorExecutionRequest,
+  ManagedConnectorExecutionResponse,
+} from '@dorkos/shared/connector-managed-schemas';
+import type {
+  ManagedConnectorUsageRequest,
+  ManagedConnectorUsageResponse,
+} from '@dorkos/shared/connector-managed-usage-schemas';
+import type {
+  ManagedConnectorAccount,
+  ManagedConnectorAccountListRequest,
+  ManagedConnectorAccountListResponse,
+  ManagedConnectorAuthenticationCreateRequest,
+  ManagedConnectorAuthenticationState,
+  ManagedConnectorCatalogPage,
+  ManagedConnectorCatalogRequest,
+  ManagedConnectorOperationPageRequest,
+  ManagedConnectorOperationPageResponse,
+  ManagedConnectorToolkitVersionRequest,
+  ManagedConnectorToolkitVersionResponse,
+} from '@dorkos/shared/connector-managed-discovery-schemas';
 import { logConfigWrite } from '../operator/config-write.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { env } from '../../../env.js';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
 import {
   buildInstanceDescriptor,
+  executeManagedConnectorOperation,
+  ManagedConnectorCloudError,
   pollForToken,
+  requestManagedConnectorAccount,
+  requestManagedConnectorAccounts,
+  requestManagedConnectorAuthentication,
+  requestManagedConnectorAuthenticationState,
+  requestManagedConnectorExecutionReceipt,
+  requestManagedConnectorCatalog,
+  requestManagedConnectorOperationSchemas,
+  requestManagedConnectorToolkitVersion,
+  requestManagedConnectorUsage,
+  readManagedConnectorAuthorityCommand,
   requestDeviceCode,
   resolveCloudBaseUrl,
   revokeInstanceKey,
   sendHeartbeat,
+  submitManagedConnectorAuthorityCommand,
   type FetchLike,
   type InstanceDescriptor,
 } from './cloud-link-client.js';
@@ -138,6 +177,8 @@ export interface CloudLinkManagerOptions {
    * touching config or the env; defaults to {@link defaultResolveTelemetryInstanceId}.
    */
   resolveTelemetryInstanceId?: () => Promise<string | undefined>;
+  /** Persist a hosted authoritative receipt in the separate local mirror. */
+  observeManagedReceipt?: (receipt: ManagedConnectorExecutionReceipt) => void | Promise<void>;
 }
 
 /**
@@ -153,6 +194,9 @@ export class CloudLinkManager {
   private readonly now: () => number;
   private readonly heartbeatIntervalMs: number;
   private readonly resolveTelemetryInstanceId: () => Promise<string | undefined>;
+  private observeManagedReceipt:
+    ((receipt: ManagedConnectorExecutionReceipt) => void | Promise<void>) | undefined;
+  private syncManagedProvider: (() => void | Promise<void>) | undefined;
   private configPort: CloudConfigPort | undefined;
 
   private state: CloudLinkState = 'idle';
@@ -168,6 +212,7 @@ export class CloudLinkManager {
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS;
     this.resolveTelemetryInstanceId =
       options.resolveTelemetryInstanceId ?? defaultResolveTelemetryInstanceId;
+    this.observeManagedReceipt = options.observeManagedReceipt;
     this.configPort = options.config;
   }
 
@@ -226,6 +271,7 @@ export class CloudLinkManager {
       if (result.status === 'approved') {
         this.config.save({ instanceToken: result.accessToken, instanceName: descriptor.name });
         this.setState('linked');
+        await this.notifyManagedProviderSync();
         await this.heartbeat(baseUrl, descriptor, result.accessToken);
         if (this.config.getToken()) this.startHeartbeatSchedule();
       } else {
@@ -271,6 +317,7 @@ export class CloudLinkManager {
     this.config.clear();
     this.lastHeartbeatAt = undefined;
     this.setState('idle');
+    await this.notifyManagedProviderSync();
   }
 
   /** The link-flow state for `GET /api/cloud/link/status`. */
@@ -292,6 +339,235 @@ export class CloudLinkManager {
     };
   }
 
+  /** Hash the current linked key for provider material-generation tracking. */
+  managedConnectorMaterialDigest(): string | undefined {
+    const token = this.config.getToken();
+    return token
+      ? createHash('sha256').update(`dorkos:managed-connector:${token}`).digest('hex')
+      : undefined;
+  }
+
+  /** Attach the provider-registry reconciliation callback during server composition. */
+  setManagedProviderSync(sync: () => void | Promise<void>): void {
+    this.syncManagedProvider = sync;
+  }
+
+  /** Submit one durable managed connector authority command with the current linked key. */
+  async submitConnectorAuthorityCommand(
+    command: ManagedConnectorAuthorityCommand,
+    signal?: AbortSignal
+  ): Promise<ManagedConnectorAuthorityCommandStatus> {
+    const token = this.requireConnectorToken();
+    try {
+      return await submitManagedConnectorAuthorityCommand({
+        baseUrl: resolveCloudBaseUrl(),
+        accessToken: token,
+        command,
+        fetchImpl: this.fetchImpl,
+        signal,
+      });
+    } catch (error) {
+      if (error instanceof ManagedConnectorCloudError && error.code === 'unauthorized') {
+        this.markUnlinked();
+      }
+      throw error;
+    }
+  }
+
+  /** Read one durable managed connector authority command with the current linked key. */
+  async readConnectorAuthorityCommand(
+    commandId: string,
+    signal?: AbortSignal
+  ): Promise<ManagedConnectorAuthorityCommandStatus> {
+    const token = this.requireConnectorToken();
+    try {
+      return await readManagedConnectorAuthorityCommand({
+        baseUrl: resolveCloudBaseUrl(),
+        accessToken: token,
+        commandId,
+        fetchImpl: this.fetchImpl,
+        signal,
+      });
+    } catch (error) {
+      if (error instanceof ManagedConnectorCloudError && error.code === 'unauthorized') {
+        this.markUnlinked();
+      }
+      throw error;
+    }
+  }
+
+  /** Read one account-free managed toolkit page. */
+  listManagedConnectorCatalog(
+    request: ManagedConnectorCatalogRequest,
+    signal: AbortSignal
+  ): Promise<ManagedConnectorCatalogPage> {
+    return this.withManagedConnectorToken((accessToken) =>
+      requestManagedConnectorCatalog({
+        baseUrl: resolveCloudBaseUrl(),
+        accessToken,
+        request,
+        fetchImpl: this.fetchImpl,
+        signal,
+      })
+    );
+  }
+
+  /** Resolve one exact managed toolkit version. */
+  resolveManagedConnectorToolkitVersion(
+    request: ManagedConnectorToolkitVersionRequest,
+    signal: AbortSignal
+  ): Promise<ManagedConnectorToolkitVersionResponse> {
+    return this.withManagedConnectorToken((accessToken) =>
+      requestManagedConnectorToolkitVersion({
+        baseUrl: resolveCloudBaseUrl(),
+        accessToken,
+        request,
+        fetchImpl: this.fetchImpl,
+        signal,
+      })
+    );
+  }
+
+  /** Read one immutable managed operation-schema page. */
+  listManagedConnectorOperationSchemas(
+    request: ManagedConnectorOperationPageRequest,
+    signal: AbortSignal
+  ): Promise<ManagedConnectorOperationPageResponse> {
+    return this.withManagedConnectorToken((accessToken) =>
+      requestManagedConnectorOperationSchemas({
+        baseUrl: resolveCloudBaseUrl(),
+        accessToken,
+        request,
+        fetchImpl: this.fetchImpl,
+        signal,
+      })
+    );
+  }
+
+  /** Read one bounded managed connection inventory page. */
+  listManagedConnectorAccounts(
+    request: ManagedConnectorAccountListRequest,
+    signal: AbortSignal
+  ): Promise<ManagedConnectorAccountListResponse> {
+    return this.withManagedConnectorToken((accessToken) =>
+      requestManagedConnectorAccounts({
+        baseUrl: resolveCloudBaseUrl(),
+        accessToken,
+        request,
+        fetchImpl: this.fetchImpl,
+        signal,
+      })
+    );
+  }
+
+  /** Read one exact managed connection. */
+  async getManagedConnectorAccount(
+    managedConnectionId: string,
+    signal: AbortSignal
+  ): Promise<ManagedConnectorAccount> {
+    const response = await this.withManagedConnectorToken((accessToken) =>
+      requestManagedConnectorAccount({
+        baseUrl: resolveCloudBaseUrl(),
+        accessToken,
+        managedConnectionId,
+        fetchImpl: this.fetchImpl,
+        signal,
+      })
+    );
+    return response.account;
+  }
+
+  /** Start one idempotent managed provider-authentication flow. */
+  startManagedConnectorAuthentication(
+    request: ManagedConnectorAuthenticationCreateRequest,
+    signal: AbortSignal
+  ): Promise<ManagedConnectorAuthenticationState> {
+    return this.withManagedConnectorToken((accessToken) =>
+      requestManagedConnectorAuthentication({
+        baseUrl: resolveCloudBaseUrl(),
+        accessToken,
+        request,
+        fetchImpl: this.fetchImpl,
+        signal,
+      })
+    );
+  }
+
+  /** Read one exact managed provider-authentication flow. */
+  getManagedConnectorAuthenticationState(
+    flowId: string,
+    signal: AbortSignal
+  ): Promise<ManagedConnectorAuthenticationState> {
+    return this.withManagedConnectorToken((accessToken) =>
+      requestManagedConnectorAuthenticationState({
+        baseUrl: resolveCloudBaseUrl(),
+        accessToken,
+        flowId,
+        fetchImpl: this.fetchImpl,
+        signal,
+      })
+    );
+  }
+
+  /** Attach the process-local durable hosted-receipt sink during server composition. */
+  setManagedReceiptObserver(
+    observer: (receipt: ManagedConnectorExecutionReceipt) => void | Promise<void>
+  ): void {
+    this.observeManagedReceipt = observer;
+  }
+
+  /** Execute one managed attempt and observe any returned authoritative receipt. */
+  async executeManagedConnectorOperation(
+    request: ManagedConnectorExecutionRequest,
+    signal: AbortSignal
+  ): Promise<ManagedConnectorExecutionResponse> {
+    const response = await this.withManagedConnectorToken((accessToken) =>
+      executeManagedConnectorOperation({
+        baseUrl: resolveCloudBaseUrl(),
+        accessToken,
+        request,
+        fetchImpl: this.fetchImpl,
+        signal,
+      })
+    );
+    if ('receipt' in response) await this.observeReceipt(response.receipt);
+    return response;
+  }
+
+  /** Read one hosted receipt for recovery and observe it when terminal. */
+  async getManagedConnectorExecutionReceipt(
+    attemptId: string,
+    signal: AbortSignal
+  ): Promise<ManagedConnectorExecutionReceiptStatus> {
+    const response = await this.withManagedConnectorToken((accessToken) =>
+      requestManagedConnectorExecutionReceipt({
+        baseUrl: resolveCloudBaseUrl(),
+        accessToken,
+        attemptId,
+        fetchImpl: this.fetchImpl,
+        signal,
+      })
+    );
+    if (response.state === 'recorded') await this.observeReceipt(response.receipt);
+    return response;
+  }
+
+  /** Read one authoritative hosted managed-usage page. */
+  listManagedConnectorUsage(
+    request: ManagedConnectorUsageRequest,
+    signal: AbortSignal
+  ): Promise<ManagedConnectorUsageResponse> {
+    return this.withManagedConnectorToken((accessToken) =>
+      requestManagedConnectorUsage({
+        baseUrl: resolveCloudBaseUrl(),
+        accessToken,
+        request,
+        fetchImpl: this.fetchImpl,
+        signal,
+      })
+    );
+  }
+
   /** Stop all timers and cancel any in-flight poll (server shutdown). */
   stop(): void {
     this.cancelPoll();
@@ -301,6 +577,41 @@ export class CloudLinkManager {
   /** The in-flight background poll, exposed so tests can await settlement. */
   get pendingLink(): Promise<void> | undefined {
     return this.pollTask;
+  }
+
+  private async withManagedConnectorToken<T>(
+    request: (accessToken: string) => Promise<T>
+  ): Promise<T> {
+    const token = this.requireConnectorToken();
+    try {
+      return await request(token);
+    } catch (error) {
+      if (error instanceof ManagedConnectorCloudError && error.code === 'unauthorized') {
+        this.markUnlinked();
+      }
+      throw error;
+    }
+  }
+
+  private async observeReceipt(receipt: ManagedConnectorExecutionReceipt): Promise<void> {
+    if (!this.observeManagedReceipt) return;
+    try {
+      await this.observeManagedReceipt(receipt);
+    } catch (error) {
+      logger.warn(
+        '[CloudLink] Managed receipt mirror failed; recovery will retry',
+        logError(error)
+      );
+    }
+  }
+
+  private async notifyManagedProviderSync(): Promise<void> {
+    if (!this.syncManagedProvider) return;
+    try {
+      await this.syncManagedProvider();
+    } catch (error) {
+      logger.warn('[CloudLink] Managed provider registration failed', logError(error));
+    }
   }
 
   private async heartbeat(
@@ -326,11 +637,18 @@ export class CloudLinkManager {
     }
   }
 
+  private requireConnectorToken(): string {
+    const token = this.config.getToken();
+    if (!token) throw new ManagedConnectorCloudError('unauthorized');
+    return token;
+  }
+
   private markUnlinked(): void {
     this.stopHeartbeatSchedule();
     this.config.clear();
     this.lastHeartbeatAt = undefined;
     this.setState('unlinked');
+    void this.notifyManagedProviderSync();
     logger.warn(
       `[CloudLink] ${UNLINKED_REASON} — cloud revoked the instance key; cleared local token`
     );

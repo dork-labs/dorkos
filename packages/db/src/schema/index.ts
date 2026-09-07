@@ -1,9 +1,9 @@
 /**
  * Consolidated Drizzle ORM schema for the DorkOS database.
  *
- * Re-exports all table definitions from domain-specific schema files.
- * Used by drizzle.config.ts for migration generation and by createDb()
- * for query type inference.
+ * Re-exports the live runtime tables used by createDb() for query type inference.
+ * Historical generator-only declarations are listed directly in drizzle.config.ts
+ * and stay outside this barrel.
  *
  * @module db/schema
  */
@@ -21,13 +21,13 @@ export * from './opencode.js';
 export * from './session-events.js';
 export * from './workspace.js';
 export * from './auth.js';
-export * from './connected-accounts.js';
-export * from './connector-attachments.js';
+export * from './unclaimed-chats.js';
 export * from './connectors/connections.js';
 export * from './connectors/connector-events.js';
 export * from './connectors/connector-review-requests.js';
 export * from './connectors/connector-usage.js';
 export * from './connectors/connector-execution-state.js';
+export * from './connectors/connector-local-state.js';
 export * from './rooms.js';
 export * from './room-coordination.js';
 export * from './read-cursors.js';

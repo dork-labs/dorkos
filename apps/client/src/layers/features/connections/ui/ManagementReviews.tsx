@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Check, Clock3, ExternalLink, ShieldAlert, X } from 'lucide-react';
 import type {
   ConnectorManagementReviewContext,
@@ -23,6 +23,10 @@ import {
   ResponsiveDialogTitle,
   Skeleton,
 } from '@/layers/shared/ui';
+import {
+  managementOperationLabel,
+  presentManagementReview,
+} from '../lib/management-review-presentation';
 
 interface ManagementReviewsProps {
   /** Review selected by card or `?review=` deep link. */
@@ -102,6 +106,7 @@ export function ManagementReviews({
       ) : null}
 
       <ManagementReviewDialog
+        key={selectedReviewId ?? 'closed'}
         reviewRequestId={selectedReviewId}
         open={selectedReviewId !== null}
         onOpenChange={(open) => {
@@ -119,7 +124,7 @@ function ReviewRow({
   review: ConnectorManagementReviewItem;
   onSelect: (reviewRequestId: string) => void;
 }) {
-  const presentation = presentReview(review);
+  const presentation = presentManagementReview(review);
   const outcomeUnknown =
     review.state === 'approved' && review.resolution.kind === 'outcome_unknown';
   return (
@@ -178,20 +183,22 @@ function ManagementReviewDialog({
     review?.state === 'approved' && review.resolution.kind === 'connect_authentication_required'
       ? review.resolution.authentication
       : null;
+  // Terminal durable flows omit their obsolete sign-in URL. Read their status
+  // immediately after reopening instead of asking the owner to sign in again.
+  const checkAuthentication =
+    authenticationOpened || Boolean(authentication && !authentication.authorizeUrl);
   const poll = useConnectorReviewAuthentication(
     authentication?.flowId ?? null,
-    authenticationOpened
+    checkAuthentication
   );
   const authenticationState = poll.isError
     ? 'check_failed'
-    : (poll.data?.status ?? (authenticationOpened ? 'checking' : 'required'));
-  const presentation = useMemo(() => (review ? presentReview(review) : null), [review]);
-
-  useEffect(() => {
-    setAuthenticationOpened(false);
-    setDecisionUncertain(false);
-    resolve.reset();
-  }, [reviewRequestId]);
+    : (poll.data?.state ?? (checkAuthentication ? 'checking' : 'required'));
+  const authenticationFailureReason =
+    poll.data?.state === 'failed' || poll.data?.state === 'start_unknown'
+      ? poll.data.reason
+      : undefined;
+  const presentation = useMemo(() => (review ? presentManagementReview(review) : null), [review]);
 
   const decide = (decision: 'approved' | 'denied') => {
     if (!reviewRequestId || decisionUncertain) return;
@@ -263,9 +270,11 @@ function ManagementReviewDialog({
                   <p className="text-sm font-medium">
                     {authenticationState === 'connected'
                       ? 'Account connected'
-                      : authenticationState === 'failed'
+                      : authenticationState === 'failed' ||
+                          authenticationState === 'expired' ||
+                          authenticationState === 'start_unknown'
                         ? 'Sign-in didn’t finish'
-                        : authenticationState === 'pending'
+                        : authenticationState === 'pending' || authenticationState === 'starting'
                           ? 'Waiting for sign-in'
                           : authenticationState === 'checking'
                             ? 'Checking sign-in'
@@ -276,9 +285,13 @@ function ManagementReviewDialog({
                   <p className="text-muted-foreground text-sm">
                     {authenticationState === 'connected'
                       ? 'Sign-in finished and the account is ready.'
-                      : authenticationState === 'failed'
-                        ? `${poll.data?.error ?? 'This sign-in request failed or expired.'} Start a new connection request to try again.`
-                        : authenticationState === 'pending' || authenticationState === 'checking'
+                      : authenticationState === 'failed' ||
+                          authenticationState === 'expired' ||
+                          authenticationState === 'start_unknown'
+                        ? `${authenticationFailureReason ?? 'This sign-in request failed or expired.'} Start a new connection request to try again.`
+                        : authenticationState === 'pending' ||
+                            authenticationState === 'starting' ||
+                            authenticationState === 'checking'
                           ? 'Finish signing in to the service. This page will update when the account is ready.'
                           : authenticationState === 'check_failed'
                             ? 'The account may still be connected. Check again before starting another request.'
@@ -290,6 +303,8 @@ function ManagementReviewDialog({
                     </Button>
                   ) : authenticationState !== 'connected' &&
                     authenticationState !== 'failed' &&
+                    authenticationState !== 'expired' &&
+                    authenticationState !== 'start_unknown' &&
                     authentication.authorizeUrl ? (
                     <Button asChild>
                       <a
@@ -418,7 +433,7 @@ function ReviewContext({ context }: { context: ConnectorManagementReviewContext 
                 key={operation.operationRevisionId}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2"
               >
-                <span className="text-sm">{operationLabel(operation.operationSlug)}</span>
+                <span className="text-sm">{managementOperationLabel(operation.operationSlug)}</span>
                 <span className="flex items-center gap-2">
                   <Badge size="xs" variant="secondary">
                     {operation.capabilityClassification}
@@ -493,68 +508,4 @@ function ReviewOutcome({ review }: { review: ConnectorManagementReviewItem }) {
       <p className="text-muted-foreground mt-1 text-sm">{description}</p>
     </div>
   );
-}
-
-function presentReview(review: ConnectorManagementReviewItem): {
-  title: string;
-  summary: string;
-  approveLabel: string;
-} {
-  const context = review.context;
-  if (context.kind === 'unavailable') {
-    return {
-      title: 'Older connection request',
-      summary: 'Verified details are unavailable',
-      approveLabel: 'Approve',
-    };
-  }
-  switch (context.kind) {
-    case 'connect':
-      return {
-        title: `Connect ${context.label ?? context.toolkit}`,
-        summary: `${context.toolkit} through ${context.providerDisplayName}`,
-        approveLabel: 'Approve and continue',
-      };
-    case 'edit':
-      return {
-        title: `Rename ${context.connection.label}`,
-        summary: 'Change account label',
-        approveLabel: 'Approve rename',
-      };
-    case 'pause':
-      return {
-        title: `Pause ${context.connection.label}`,
-        summary: 'Stop agent access until resumed',
-        approveLabel: 'Approve pause',
-      };
-    case 'resume':
-      return {
-        title: `Resume ${context.connection.label}`,
-        summary: 'Allow approved agent access again',
-        approveLabel: 'Approve resume',
-      };
-    case 'disconnect':
-      return {
-        title: `Disconnect ${context.connection.label}`,
-        summary: `${context.affectedAgentCount} affected ${context.affectedAgentCount === 1 ? 'agent' : 'agents'}`,
-        approveLabel: 'Approve disconnect',
-      };
-    case 'set_agent_access':
-      return {
-        title: `Change access for ${context.agent.displayName}`,
-        summary: `${context.connection.label} · ${context.requestedOperations.length} actions`,
-        approveLabel: 'Approve access',
-      };
-    case 'remove_agent_access':
-      return {
-        title: `Remove access for ${context.agent.displayName}`,
-        summary: context.connection.label,
-        approveLabel: 'Approve removal',
-      };
-  }
-}
-
-function operationLabel(slug: string): string {
-  const leaf = slug.split('.').at(-1) ?? slug;
-  return leaf.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }

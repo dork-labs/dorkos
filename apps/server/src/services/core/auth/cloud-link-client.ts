@@ -17,6 +17,45 @@
  * @module services/core/auth/cloud-link-client
  */
 import { hostname } from 'node:os';
+import {
+  ManagedConnectorAuthorityCommandSchema,
+  ManagedConnectorAuthorityCommandStatusSchema,
+  ManagedConnectorExecutionReceiptStatusSchema,
+  ManagedConnectorExecutionRequestSchema,
+  ManagedConnectorExecutionResponseSchema,
+  type ManagedConnectorAuthorityCommand,
+  type ManagedConnectorAuthorityCommandStatus,
+  type ManagedConnectorExecutionReceiptStatus,
+  type ManagedConnectorExecutionRequest,
+  type ManagedConnectorExecutionResponse,
+} from '@dorkos/shared/connector-managed-schemas';
+import {
+  ManagedConnectorUsageRequestSchema,
+  ManagedConnectorUsageResponseSchema,
+  type ManagedConnectorUsageRequest,
+  type ManagedConnectorUsageResponse,
+} from '@dorkos/shared/connector-managed-usage-schemas';
+import {
+  ManagedConnectorAccountListResponseSchema,
+  ManagedConnectorAccountResponseSchema,
+  ManagedConnectorAuthenticationCreateRequestSchema,
+  ManagedConnectorAuthenticationStateSchema,
+  ManagedConnectorCatalogPageSchema,
+  ManagedConnectorOperationPageResponseSchema,
+  ManagedConnectorToolkitVersionResponseSchema,
+  type ManagedConnectorAccountListRequest,
+  type ManagedConnectorAccountListResponse,
+  type ManagedConnectorAccountResponse,
+  type ManagedConnectorAuthenticationCreateRequest,
+  type ManagedConnectorAuthenticationState,
+  type ManagedConnectorCatalogPage,
+  type ManagedConnectorCatalogRequest,
+  type ManagedConnectorOperationPageRequest,
+  type ManagedConnectorOperationPageResponse,
+  type ManagedConnectorToolkitVersionRequest,
+  type ManagedConnectorToolkitVersionResponse,
+} from '@dorkos/shared/connector-managed-discovery-schemas';
+import type { ZodType } from 'zod';
 import { env } from '../../../env.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 
@@ -35,6 +74,7 @@ export const DEVICE_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
 
 /** Seconds added to the poll interval each time the cloud answers `slow_down` (RFC 8628 §3.5). */
 const SLOW_DOWN_INCREMENT_SECONDS = 5;
+const MANAGED_CONNECTOR_REQUEST_TIMEOUT_MS = 10_000;
 
 /** A minimal `fetch` shape so callers can inject a mock without pulling DOM lib types. */
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -80,6 +120,133 @@ export type HeartbeatResult =
   | { ok: true; instanceId: string; lastSeenAt: string; accountLabel: string | null }
   | { ok: false; unauthorized: true }
   | { ok: false; unauthorized: false; error: string };
+
+/** Stable managed-cloud refusal categories used by durable local recovery. */
+export type ManagedConnectorCloudErrorCode =
+  | 'unauthorized'
+  | 'permission_upgrade_required'
+  | 'not_found'
+  | 'conflict'
+  | 'network_error'
+  | 'request_failed'
+  | 'invalid_response';
+
+/** Safe managed-cloud error that never includes a hosted response body or token. */
+export class ManagedConnectorCloudError extends Error {
+  /** Construct one typed managed-cloud refusal. */
+  constructor(
+    readonly code: ManagedConnectorCloudErrorCode,
+    readonly status?: number,
+    options?: ErrorOptions
+  ) {
+    super(managedConnectorCloudErrorMessage(code), options);
+    this.name = 'ManagedConnectorCloudError';
+  }
+}
+
+function managedConnectorCloudErrorMessage(code: ManagedConnectorCloudErrorCode): string {
+  switch (code) {
+    case 'unauthorized':
+      return 'This instance is no longer linked.';
+    case 'permission_upgrade_required':
+      return 'Relink this instance to enable managed connections.';
+    case 'not_found':
+      return 'The managed connector request was not found.';
+    case 'conflict':
+      return 'The managed connector request conflicts with an existing request.';
+    case 'network_error':
+      return 'The managed connector service could not be reached.';
+    case 'invalid_response':
+      return 'The managed connector service returned an invalid response.';
+    case 'request_failed':
+      return 'The managed connector service refused the request.';
+  }
+}
+
+async function throwManagedConnectorCloudError(response: Response): Promise<never> {
+  if (response.status === 401) {
+    throw new ManagedConnectorCloudError('unauthorized', response.status);
+  }
+  if (response.status === 403) {
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      body = undefined;
+    }
+    if (
+      typeof body === 'object' &&
+      body !== null &&
+      'code' in body &&
+      body.code === 'permission_upgrade_required'
+    ) {
+      throw new ManagedConnectorCloudError('permission_upgrade_required', response.status);
+    }
+    throw new ManagedConnectorCloudError('request_failed', response.status);
+  }
+  if (response.status === 404) {
+    throw new ManagedConnectorCloudError('not_found', response.status);
+  }
+  if (response.status === 409) {
+    throw new ManagedConnectorCloudError('conflict', response.status);
+  }
+  throw new ManagedConnectorCloudError('request_failed', response.status);
+}
+
+async function parseManagedAuthorityStatus(
+  response: Response
+): Promise<ManagedConnectorAuthorityCommandStatus> {
+  if (!response.ok) await throwManagedConnectorCloudError(response);
+  try {
+    return ManagedConnectorAuthorityCommandStatusSchema.parse(await response.json());
+  } catch {
+    throw new ManagedConnectorCloudError('invalid_response', response.status);
+  }
+}
+
+async function requestManagedConnectorResource<T>(opts: {
+  baseUrl: string;
+  accessToken: string;
+  path: string;
+  schema: ZodType<T>;
+  fetchImpl?: FetchLike;
+  signal: AbortSignal;
+  method?: 'GET' | 'POST';
+  body?: unknown;
+}): Promise<T> {
+  const fetchImpl = opts.fetchImpl ?? defaultFetch;
+  const timeout = AbortSignal.timeout(MANAGED_CONNECTOR_REQUEST_TIMEOUT_MS);
+  const signal = AbortSignal.any([opts.signal, timeout]);
+  let response: Response;
+  try {
+    response = await fetchImpl(`${opts.baseUrl}${opts.path}`, {
+      method: opts.method ?? 'GET',
+      headers: {
+        authorization: `Bearer ${opts.accessToken}`,
+        ...(opts.body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
+      signal,
+    });
+  } catch (error) {
+    if (opts.signal.aborted) throw opts.signal.reason;
+    throw new ManagedConnectorCloudError('network_error', undefined, { cause: error });
+  }
+  if (!response.ok) await throwManagedConnectorCloudError(response);
+  try {
+    return opts.schema.parse(await response.json());
+  } catch {
+    throw new ManagedConnectorCloudError('invalid_response', response.status);
+  }
+}
+
+function managedQuery(entries: Record<string, string | number | undefined>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(entries)) {
+    if (value !== undefined) query.set(key, String(value));
+  }
+  return query.toString();
+}
 
 const defaultFetch: FetchLike = (input, init) => globalThis.fetch(input, init);
 const defaultSleep = (ms: number): Promise<void> =>
@@ -280,6 +447,252 @@ export async function sendHeartbeat(opts: {
     lastSeenAt: body.lastSeenAt,
     accountLabel: typeof body.accountLabel === 'string' ? body.accountLabel : null,
   };
+}
+
+/**
+ * Submit one idempotent managed connector authority command through the linked instance.
+ *
+ * @param opts - Linked cloud URL/token, exact shared command, transport, and cancellation signal.
+ * @returns The strict durable hosted status for the submitted command.
+ */
+export async function submitManagedConnectorAuthorityCommand(opts: {
+  baseUrl: string;
+  accessToken: string;
+  command: ManagedConnectorAuthorityCommand;
+  fetchImpl?: FetchLike;
+  signal?: AbortSignal;
+}): Promise<ManagedConnectorAuthorityCommandStatus> {
+  const fetchImpl = opts.fetchImpl ?? defaultFetch;
+  const command = ManagedConnectorAuthorityCommandSchema.parse(opts.command);
+  let response: Response;
+  try {
+    response = await fetchImpl(`${opts.baseUrl}/api/instances/connectors/authority-commands`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${opts.accessToken}`,
+      },
+      body: JSON.stringify(command),
+      signal: opts.signal,
+    });
+  } catch (error) {
+    if (opts.signal?.aborted) throw opts.signal.reason;
+    throw new ManagedConnectorCloudError('network_error', undefined, { cause: error });
+  }
+  return parseManagedAuthorityStatus(response);
+}
+
+/**
+ * Recover one managed connector authority command without replaying its mutation blindly.
+ *
+ * @param opts - Linked cloud URL/token, command id, transport, and cancellation signal.
+ * @returns The strict durable hosted status for the command.
+ */
+export async function readManagedConnectorAuthorityCommand(opts: {
+  baseUrl: string;
+  accessToken: string;
+  commandId: string;
+  fetchImpl?: FetchLike;
+  signal?: AbortSignal;
+}): Promise<ManagedConnectorAuthorityCommandStatus> {
+  const fetchImpl = opts.fetchImpl ?? defaultFetch;
+  let response: Response;
+  try {
+    response = await fetchImpl(
+      `${opts.baseUrl}/api/instances/connectors/authority-commands/${encodeURIComponent(opts.commandId)}`,
+      {
+        method: 'GET',
+        headers: { authorization: `Bearer ${opts.accessToken}` },
+        signal: opts.signal,
+      }
+    );
+  } catch (error) {
+    if (opts.signal?.aborted) throw opts.signal.reason;
+    throw new ManagedConnectorCloudError('network_error', undefined, { cause: error });
+  }
+  return parseManagedAuthorityStatus(response);
+}
+
+/** Read one account-free managed toolkit page through the linked instance key. */
+export function requestManagedConnectorCatalog(opts: {
+  baseUrl: string;
+  accessToken: string;
+  request: ManagedConnectorCatalogRequest;
+  fetchImpl?: FetchLike;
+  signal: AbortSignal;
+}): Promise<ManagedConnectorCatalogPage> {
+  const query = managedQuery({
+    version: 1,
+    query: opts.request.query,
+    cursor: opts.request.cursor,
+    limit: opts.request.limit,
+  });
+  return requestManagedConnectorResource({
+    ...opts,
+    path: `/api/instances/connectors/catalog?${query}`,
+    schema: ManagedConnectorCatalogPageSchema,
+  });
+}
+
+/** Resolve one concrete managed toolkit version through the linked instance key. */
+export function requestManagedConnectorToolkitVersion(opts: {
+  baseUrl: string;
+  accessToken: string;
+  request: ManagedConnectorToolkitVersionRequest;
+  fetchImpl?: FetchLike;
+  signal: AbortSignal;
+}): Promise<ManagedConnectorToolkitVersionResponse> {
+  return requestManagedConnectorResource({
+    ...opts,
+    path: `/api/instances/connectors/toolkits/${encodeURIComponent(opts.request.toolkit)}/version?version=1`,
+    schema: ManagedConnectorToolkitVersionResponseSchema,
+  });
+}
+
+/** Read one immutable managed operation-schema page through the linked instance key. */
+export function requestManagedConnectorOperationSchemas(opts: {
+  baseUrl: string;
+  accessToken: string;
+  request: ManagedConnectorOperationPageRequest;
+  fetchImpl?: FetchLike;
+  signal: AbortSignal;
+}): Promise<ManagedConnectorOperationPageResponse> {
+  const query = managedQuery({
+    version: 1,
+    toolkitVersion: opts.request.toolkitVersion,
+    cursor: opts.request.cursor,
+    limit: opts.request.limit,
+  });
+  return requestManagedConnectorResource({
+    ...opts,
+    path: `/api/instances/connectors/toolkits/${encodeURIComponent(opts.request.toolkit)}/operations?${query}`,
+    schema: ManagedConnectorOperationPageResponseSchema,
+  });
+}
+
+/** Read one bounded managed connection inventory page through the linked instance key. */
+export function requestManagedConnectorAccounts(opts: {
+  baseUrl: string;
+  accessToken: string;
+  request: ManagedConnectorAccountListRequest;
+  fetchImpl?: FetchLike;
+  signal: AbortSignal;
+}): Promise<ManagedConnectorAccountListResponse> {
+  const query = managedQuery({
+    version: 1,
+    toolkit: opts.request.toolkit,
+    cursor: opts.request.cursor,
+    limit: opts.request.limit,
+  });
+  return requestManagedConnectorResource({
+    ...opts,
+    path: `/api/instances/connectors/connections?${query}`,
+    schema: ManagedConnectorAccountListResponseSchema,
+  });
+}
+
+/** Read one exact managed connection through the linked instance key. */
+export function requestManagedConnectorAccount(opts: {
+  baseUrl: string;
+  accessToken: string;
+  managedConnectionId: string;
+  fetchImpl?: FetchLike;
+  signal: AbortSignal;
+}): Promise<ManagedConnectorAccountResponse> {
+  return requestManagedConnectorResource({
+    ...opts,
+    path: `/api/instances/connectors/connections/${encodeURIComponent(opts.managedConnectionId)}?version=1`,
+    schema: ManagedConnectorAccountResponseSchema,
+  });
+}
+
+/** Start one idempotent managed provider-authentication flow. */
+export function requestManagedConnectorAuthentication(opts: {
+  baseUrl: string;
+  accessToken: string;
+  request: ManagedConnectorAuthenticationCreateRequest;
+  fetchImpl?: FetchLike;
+  signal: AbortSignal;
+}): Promise<ManagedConnectorAuthenticationState> {
+  const request = ManagedConnectorAuthenticationCreateRequestSchema.parse(opts.request);
+  return requestManagedConnectorResource({
+    ...opts,
+    method: 'POST',
+    body: request,
+    path: '/api/instances/connectors/authentication-flows',
+    schema: ManagedConnectorAuthenticationStateSchema,
+  });
+}
+
+/** Read one exact managed provider-authentication flow. */
+export function requestManagedConnectorAuthenticationState(opts: {
+  baseUrl: string;
+  accessToken: string;
+  flowId: string;
+  fetchImpl?: FetchLike;
+  signal: AbortSignal;
+}): Promise<ManagedConnectorAuthenticationState> {
+  return requestManagedConnectorResource({
+    ...opts,
+    path: `/api/instances/connectors/authentication-flows/${encodeURIComponent(opts.flowId)}`,
+    schema: ManagedConnectorAuthenticationStateSchema,
+  });
+}
+
+/** Execute one exact managed connector attempt through the linked instance key. */
+export function executeManagedConnectorOperation(opts: {
+  baseUrl: string;
+  accessToken: string;
+  request: ManagedConnectorExecutionRequest;
+  fetchImpl?: FetchLike;
+  signal: AbortSignal;
+}): Promise<ManagedConnectorExecutionResponse> {
+  const request = ManagedConnectorExecutionRequestSchema.parse(opts.request);
+  return requestManagedConnectorResource({
+    ...opts,
+    method: 'POST',
+    body: request,
+    path: '/api/instances/connectors/executions',
+    schema: ManagedConnectorExecutionResponseSchema,
+  });
+}
+
+/** Read one authoritative hosted receipt without redispatching its attempt. */
+export function requestManagedConnectorExecutionReceipt(opts: {
+  baseUrl: string;
+  accessToken: string;
+  attemptId: string;
+  fetchImpl?: FetchLike;
+  signal: AbortSignal;
+}): Promise<ManagedConnectorExecutionReceiptStatus> {
+  return requestManagedConnectorResource({
+    ...opts,
+    path: `/api/instances/connectors/executions/${encodeURIComponent(opts.attemptId)}`,
+    schema: ManagedConnectorExecutionReceiptStatusSchema,
+  });
+}
+
+/** Read one authoritative hosted managed-usage page. */
+export function requestManagedConnectorUsage(opts: {
+  baseUrl: string;
+  accessToken: string;
+  request: ManagedConnectorUsageRequest;
+  fetchImpl?: FetchLike;
+  signal: AbortSignal;
+}): Promise<ManagedConnectorUsageResponse> {
+  const request = ManagedConnectorUsageRequestSchema.parse(opts.request);
+  const query = managedQuery({
+    version: request.version,
+    managedConnectionId: request.managedConnectionId,
+    agentId: request.agentId,
+    cursor: request.cursor,
+    limit: request.limit,
+  });
+  return requestManagedConnectorResource({
+    ...opts,
+    path: `/api/instances/connectors/usage?${query}`,
+    schema: ManagedConnectorUsageResponseSchema,
+  });
 }
 
 /**

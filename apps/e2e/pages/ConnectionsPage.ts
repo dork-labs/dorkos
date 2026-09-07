@@ -27,7 +27,7 @@ export class ConnectionsPage {
     // would make a "visible" assertion here pass without meaning anything.
     this.heading = page.getByRole('heading', { name: 'Connections', level: 1 });
     this.messaging = page.getByRole('region', { name: 'Messaging' });
-    this.accounts = page.getByRole('region', { name: 'Accounts' });
+    this.accounts = page.getByRole('region', { name: 'Accounts', exact: true });
   }
 
   /** Go straight to the page. */
@@ -77,19 +77,23 @@ export class ConnectionsPage {
     return this.page.getByRole('region', { name: 'Waiting on you' });
   }
 
-  /** The collapsed section naming the two account carriers, verbatim. */
+  /** Provider setup stays behind an explicit advanced action. */
   get carrierSection() {
-    return this.accounts.getByRole('button', { name: 'Composio & Nango' });
+    return this.accounts.getByRole('button', { name: 'Advanced account setup' });
   }
 
   /** One connected account row by its visible account name. */
   account(name: string) {
-    return this.accounts.locator('[data-testid^="account-row-"]', { hasText: name });
+    return this.accounts.locator('[data-testid^="connection-row-"]', { hasText: name });
   }
 
   /** Exact operation access editor for a connected account. */
   async openAccess(name: string) {
-    await this.account(name).getByRole('button', { name: 'Manage access' }).click();
+    await this.account(name).getByRole('button').click();
+    await this.page
+      .getByRole('dialog', { name })
+      .getByRole('button', { name: 'Edit access' })
+      .click();
     return this.page.getByTestId('connector-access-dialog');
   }
 

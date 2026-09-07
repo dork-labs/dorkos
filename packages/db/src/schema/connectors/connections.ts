@@ -93,6 +93,8 @@ export const connectorOperationRevisions = sqliteTable(
     })
       .notNull()
       .default('never'),
+    /** Immutable upstream revision identity; empty for providers without revision references. */
+    providerRevisionRef: text('provider_revision_ref').notNull().default(''),
     inputSchemaJson: text('input_schema_json').notNull(),
     discoveredAt: text('discovered_at').notNull(),
   },
@@ -104,7 +106,8 @@ export const connectorOperationRevisions = sqliteTable(
       table.toolkitVersion,
       table.schemaHash,
       table.capabilityClassification,
-      table.retryPolicy
+      table.retryPolicy,
+      table.providerRevisionRef
     ),
   ]
 );

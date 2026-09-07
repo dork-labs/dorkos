@@ -8,24 +8,21 @@ export const connectorKeys = {
   all: ['connectors'] as const,
 
   providers: () => [...connectorKeys.all, 'providers'] as const,
-  toolkits: () => [...connectorKeys.all, 'toolkits'] as const,
+  authenticationFlow: (flowId: string) =>
+    [...connectorKeys.connections(), 'authentication-flow', flowId] as const,
 
-  // The unfiltered base is the prefix of every filtered key, so one
-  // invalidation of `accounts()` reaches the per-toolkit variants too.
-  accounts: () => [...connectorKeys.all, 'accounts'] as const,
-  accountList: (toolkit?: string) =>
-    toolkit
-      ? ([...connectorKeys.accounts(), { toolkit }] as const)
-      : ([...connectorKeys.accounts()] as const),
+  catalog: (query: string) => [...connectorKeys.all, 'catalog', { query }] as const,
 
-  recommendation: (service: string) => [...connectorKeys.all, 'recommend', service] as const,
-
-  flow: (flowId: string) => [...connectorKeys.all, 'flow', flowId] as const,
-
-  // Per-session connector surface; `sessions()` is the prefix so a global
-  // change (an account disconnected) can sweep every session's cache at once.
-  sessions: () => [...connectorKeys.all, 'session'] as const,
-  session: (sessionId: string) => [...connectorKeys.sessions(), sessionId] as const,
+  connections: () => [...connectorKeys.all, 'connections'] as const,
+  connection: (connectionId: string) =>
+    [...connectorKeys.connections(), 'detail', connectionId] as const,
+  disconnectImpact: (connectionId: string) =>
+    [...connectorKeys.connection(connectionId), 'disconnect-impact'] as const,
+  usage: (connectionId: string) => [...connectorKeys.connection(connectionId), 'usage'] as const,
+  agentConnections: (agentId: string) =>
+    [...connectorKeys.connections(), 'agent', agentId] as const,
+  sessionConnections: (sessionId: string) =>
+    [...connectorKeys.connections(), 'session', sessionId] as const,
 
   reviews: () => [...connectorKeys.all, 'reviews'] as const,
   reviewList: (state?: 'pending' | 'resolved') =>

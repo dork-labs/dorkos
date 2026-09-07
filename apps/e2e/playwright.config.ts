@@ -828,6 +828,8 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
+        // Explicit local capture keeps successful proof video without growing CI artifacts.
+        video: process.env.DORKOS_E2E_CONNECTIONS_VIDEO === '1' ? 'on' : 'retain-on-failure',
       },
       testMatch: ['**/connections/**/*.spec.ts'],
     },

@@ -23,9 +23,11 @@ describe('custody-disclosure', () => {
   });
 
   describe('per-class copy', () => {
-    it('managed names the service and discloses the vendor vault', () => {
+    it('managed discloses custody and explicit agent choice without an auth-method promise', () => {
       const copy = custodyDisclosure('managed', { service: 'Gmail' });
-      expect(copy).toContain('Connecting Gmail');
+      expect(copy).toContain('Choose which agents can use this account.');
+      expect(copy).not.toContain('password');
+      expect(copy).not.toContain('Connecting');
       expect(copy).toContain('not on your computer');
       expect(copy).toContain('disconnect anytime');
     });

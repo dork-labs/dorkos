@@ -78,6 +78,13 @@
       "when": 1788716497596,
       "tag": "0010_tearful_captain_cross",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1788784705166,
+      "tag": "0011_curious_chameleon",
+      "breakpoints": true
     }
   ]
 }

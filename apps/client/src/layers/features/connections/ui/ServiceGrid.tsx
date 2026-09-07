@@ -1,118 +1,161 @@
-import { useState } from 'react';
-import { Cable } from 'lucide-react';
-import type { ConnectorToolkit } from '@dorkos/shared/connector-provider';
-import { Button, Card, Skeleton } from '@/layers/shared/ui';
-import { useConnectorToolkits } from '@/layers/entities/connectors';
+import { useDeferredValue, useState } from 'react';
+import { Cable, MessageSquare, Search } from 'lucide-react';
+import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
+import { useConnectorCatalog } from '@/layers/entities/connectors';
+import { useOpenConnections } from '@/layers/shared/model';
+import {
+  Button,
+  Input,
+  QueryErrorState,
+  ResponsiveDialog,
+  ResponsiveDialogBody,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  Skeleton,
+} from '@/layers/shared/ui';
 import { FALLBACK_SERVICE_ICON, SERVICE_ICONS } from '../lib/presentation';
-import { ConnectDialog } from './ConnectDialog';
 
-/**
- * The service-first grid: Gmail, Slack, Linear, Notion… tiles with one verb,
- * Connect. Which provider carries the connection is invisible here — the
- * connect dialog routes through `recommendConnector`. Empty state points at
- * provider setup; provider degradations surface as honest warnings.
- */
-export function ServiceGrid() {
-  const { data, isLoading, isError, error } = useConnectorToolkits();
-  const [connecting, setConnecting] = useState<ConnectorToolkit | null>(null);
-
-  if (isLoading) {
-    return (
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {Array.from({ length: 4 }, (_, i) => (
-          <Skeleton key={i} className="h-28 rounded-lg" />
-        ))}
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <p role="alert" className="text-destructive text-sm">
-        Couldn’t load services: {error.message}
-      </p>
-    );
-  }
-
-  const toolkits = data?.toolkits ?? [];
-  const warnings = data?.warnings ?? [];
-
-  return (
-    <div className="space-y-3">
-      {toolkits.length === 0 ? (
-        <Card gap="none" className="p-8 text-center">
-          <Cable className="text-muted-foreground/60 mx-auto size-8" aria-hidden />
-          <p className="mt-3 text-sm font-medium">No services to connect yet</p>
-          <p className="text-muted-foreground mx-auto mt-1 max-w-sm text-sm">
-            Add a key under Composio &amp; Nango below, and the services it reaches will show up
-            here.
-          </p>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {toolkits.map((toolkit) => (
-            <ServiceTile
-              key={toolkit.slug}
-              toolkit={toolkit}
-              onConnect={() => setConnecting(toolkit)}
-            />
-          ))}
-        </div>
-      )}
-
-      {warnings.map((warning) => (
-        <p key={warning.provider} className="text-muted-foreground text-xs">
-          Some services may be missing: {warning.message}
-        </p>
-      ))}
-
-      <ConnectDialog service={connecting} onClose={() => setConnecting(null)} />
-    </div>
-  );
-}
-
-/**
- * One service tile: icon, name, and the single Connect verb. Also renderable
- * standalone (Dev Playground) via explicit props.
- *
- * @param props - The toolkit to draw and its connect handler.
- * @param props.toolkit - The connectable service.
- * @param props.onConnect - Called when the person clicks Connect.
- */
-export function ServiceTile({
-  toolkit,
+/** Search the bounded catalog and choose one service or native messaging setup. */
+export function ServiceGrid({
   onConnect,
 }: {
-  toolkit: ConnectorToolkit;
-  onConnect: () => void;
+  /** Opens the account authentication flow for the chosen service. */
+  onConnect: (service: ConnectorCatalogService) => void;
 }) {
-  const Icon = SERVICE_ICONS[toolkit.slug.toLowerCase()] ?? FALLBACK_SERVICE_ICON;
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
+  const catalog = useConnectorCatalog(deferredQuery);
+  const openConnections = useOpenConnections();
+  const services = catalog.data?.pages.flatMap((page) => page.services) ?? [];
+  const warnings = catalog.data?.pages.flatMap((page) => page.warnings) ?? [];
+
   return (
-    <Card
-      data-testid={`service-tile-${toolkit.slug}`}
-      variant="interactive"
-      gap="sm"
-      className="items-start"
-    >
-      {/* `w-full`: the card is a column with `items-start`, which sizes each
-          child to its own content rather than stretching it to the card's
-          width — so without it, a long service name had nothing forcing this
-          row narrower than its own text and painted past the card's padding
-          instead of truncating (DOR-1747). `min-w-0` is what then lets the
-          row shrink below that content size at all. */}
-      <div className="flex w-full min-w-0 items-center gap-2">
-        <Icon className="text-muted-foreground size-4 shrink-0" aria-hidden />
-        <span className="truncate text-sm font-medium">{toolkit.displayName}</span>
-      </div>
-      <Button
-        size="sm"
-        variant="secondary"
-        className="mt-auto w-full"
-        onClick={onConnect}
-        aria-label={`Connect ${toolkit.displayName}`}
-      >
-        Connect
+    <>
+      <Button data-testid="connect-service" onClick={() => setOpen(true)}>
+        <Cable className="size-4" aria-hidden />
+        Connect service
       </Button>
-    </Card>
+      <ResponsiveDialog open={open} onOpenChange={setOpen}>
+        <ResponsiveDialogContent className="max-h-[90vh] sm:max-w-2xl [&>[data-slot=dialog-content-close]]:absolute [&>[data-slot=dialog-content-close]]:top-4 [&>[data-slot=dialog-content-close]]:right-4 [&>[data-slot=dialog-content-close]]:m-0 [&>[data-slot=dialog-content-close]]:opacity-100">
+          <ResponsiveDialogHeader>
+            <ResponsiveDialogTitle>Connect a service</ResponsiveDialogTitle>
+            <ResponsiveDialogDescription>
+              Search once, then choose how you want to use the service.
+            </ResponsiveDialogDescription>
+          </ResponsiveDialogHeader>
+          <ResponsiveDialogBody className="space-y-4 pb-4">
+            <div className="relative">
+              <Search
+                className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+                aria-hidden
+              />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className="pl-9"
+                aria-label="Search services"
+                placeholder="Search Gmail, Slack, Notion…"
+              />
+            </div>
+
+            {catalog.isPending ? (
+              <div className="space-y-2" aria-label="Loading services">
+                <Skeleton className="h-16 rounded-lg" />
+                <Skeleton className="h-16 rounded-lg" />
+                <Skeleton className="h-16 rounded-lg" />
+              </div>
+            ) : catalog.isError ? (
+              <QueryErrorState
+                title="Couldn’t load services"
+                description="Try the catalog again. Your connected accounts are unchanged."
+                onRetry={() => void catalog.refetch()}
+                isRetrying={catalog.isFetching}
+              />
+            ) : services.length === 0 ? (
+              <div className="bg-muted/40 rounded-lg p-6 text-center">
+                <p className="text-sm font-medium">No matching services</p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  Try another name or add your own account below.
+                </p>
+              </div>
+            ) : (
+              <ul className="space-y-2" data-testid="service-catalog-results">
+                {services.map((service) => {
+                  const Icon =
+                    SERVICE_ICONS[service.iconKey.toLowerCase()] ??
+                    SERVICE_ICONS[service.serviceSlug.toLowerCase()] ??
+                    FALLBACK_SERVICE_ICON;
+                  return (
+                    <li
+                      key={service.serviceSlug}
+                      data-testid={`service-result-${service.serviceSlug}`}
+                      className="bg-muted/40 rounded-lg p-3"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Icon className="text-muted-foreground size-4" aria-hidden />
+                        <p className="text-sm font-semibold">{service.displayName}</p>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {service.intents.map((intent) =>
+                          intent.kind === 'messages' ? (
+                            <Button
+                              key={`messages-${intent.relayAdapterType}`}
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => {
+                                setOpen(false);
+                                openConnections('messaging');
+                              }}
+                            >
+                              <MessageSquare className="size-3.5" aria-hidden />
+                              {intent.displayName}
+                            </Button>
+                          ) : (
+                            <Button
+                              key="account"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => {
+                                setOpen(false);
+                                onConnect(service);
+                              }}
+                            >
+                              <Cable className="size-3.5" aria-hidden />
+                              {intent.displayName}
+                            </Button>
+                          )
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            {catalog.hasNextPage && (
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={() => void catalog.fetchNextPage()}
+                disabled={catalog.isFetchingNextPage}
+              >
+                {catalog.isFetchingNextPage ? 'Loading…' : 'Load more services'}
+              </Button>
+            )}
+            {warnings.map((warning) => (
+              <p
+                key={`${warning.code}-${warning.message}`}
+                className="text-muted-foreground text-xs"
+              >
+                {warning.message}
+              </p>
+            ))}
+          </ResponsiveDialogBody>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+    </>
   );
 }

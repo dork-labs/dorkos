@@ -112,6 +112,7 @@ describe('ConnectionAccessDialog', () => {
     vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
       connectionId: PREVIEW.connection.connectionId,
       reconciliationStatus: 'ready',
+      authoritySync: { status: 'ready' },
       grants: [{ agentId: 'agent-b', operationRevisionIds: ['read-v1', 'write-v2'] }],
     });
     renderWith(
@@ -119,7 +120,7 @@ describe('ConnectionAccessDialog', () => {
       <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
     );
 
-    const bo = await screen.findByRole('group', { name: 'Bo' });
+    const bo = await screen.findByRole('group', { name: 'Access for Bo' });
     expect(within(bo).queryByText('Delete')).not.toBeInTheDocument();
     await user.click(within(bo).getByRole('button', { name: 'Read + write' }));
     await user.click(screen.getByRole('button', { name: 'Save access' }));
@@ -130,6 +131,186 @@ describe('ConnectionAccessDialog', () => {
         grants: [{ agentId: 'agent-b', operationRevisionIds: ['read-v1', 'write-v2'] }],
       })
     );
+    expect(screen.getByTestId('connector-access-outcome')).toHaveTextContent('Access updated');
+  });
+
+  it('keeps pending access unusable until an explicit authority check confirms it', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(PREVIEW);
+    vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
+      connectionId: PREVIEW.connection.connectionId,
+      reconciliationStatus: 'ready',
+      authoritySync: { status: 'pending' },
+      grants: [{ agentId: 'agent-b', operationRevisionIds: ['read-v1'] }],
+    });
+    vi.mocked(transport.getConnectorConnection).mockResolvedValue({
+      connection: {
+        connectionId: PREVIEW.connection.connectionId,
+        reconciliationStatus: 'ready',
+        authoritySync: { status: 'ready' },
+      },
+      agents: [
+        {
+          agentId: 'agent-b',
+          operationRevisionIds: ['read-v1'],
+          reconciliationStatus: 'ready',
+          authoritySync: { status: 'ready' },
+        },
+      ],
+    } as never);
+    renderWith(
+      transport,
+      <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
+    );
+
+    const bo = await screen.findByRole('group', { name: 'Access for Bo' });
+    await user.click(within(bo).getByRole('button', { name: 'Read' }));
+    await user.click(screen.getByRole('button', { name: 'Save access' }));
+
+    expect(await screen.findByTestId('connector-access-outcome')).toHaveTextContent(
+      'Access update pending'
+    );
+    expect(screen.queryByText('Access updated')).not.toBeInTheDocument();
+    expect(transport.getConnectorConnection).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Check sync status' }));
+    expect(await screen.findByText('Access updated')).toBeInTheDocument();
+    expect(transport.getConnectorConnection).toHaveBeenCalledTimes(1);
+    expect(transport.applyConnectorReconciliation).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not claim an older pending change after a later grant supersedes it', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(PREVIEW);
+    vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
+      connectionId: PREVIEW.connection.connectionId,
+      reconciliationStatus: 'ready',
+      authoritySync: { status: 'pending' },
+      grants: [{ agentId: 'agent-b', operationRevisionIds: ['read-v1'] }],
+    });
+    vi.mocked(transport.getConnectorConnection).mockResolvedValue({
+      connection: {
+        connectionId: PREVIEW.connection.connectionId,
+        reconciliationStatus: 'ready',
+        authoritySync: { status: 'ready' },
+      },
+      agents: [
+        {
+          agentId: 'agent-b',
+          operationRevisionIds: ['write-v2'],
+          reconciliationStatus: 'ready',
+          authoritySync: { status: 'ready' },
+        },
+      ],
+    } as never);
+    renderWith(
+      transport,
+      <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
+    );
+
+    const bo = await screen.findByRole('group', { name: 'Access for Bo' });
+    await user.click(within(bo).getByRole('button', { name: 'Read' }));
+    await user.click(screen.getByRole('button', { name: 'Save access' }));
+    expect(await screen.findByText('Access update pending')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Check sync status' }));
+    expect(await screen.findByText(/couldn’t confirm that access was saved/i)).toBeInTheDocument();
+    expect(screen.queryByText('Access updated')).not.toBeInTheDocument();
+    expect(transport.applyConnectorReconciliation).toHaveBeenCalledTimes(1);
+  });
+
+  it('explains that a pending removal is already closed locally', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(PREVIEW);
+    vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
+      connectionId: PREVIEW.connection.connectionId,
+      reconciliationStatus: 'ready',
+      authoritySync: { status: 'pending' },
+      grants: [{ agentId: 'agent-a', operationRevisionIds: [] }],
+    });
+    renderWith(
+      transport,
+      <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
+    );
+
+    const ada = await screen.findByRole('group', { name: 'Access for Ada' });
+    await user.click(within(ada).getByRole('button', { name: 'No access' }));
+    await user.click(screen.getByRole('button', { name: 'Save access' }));
+
+    expect(await screen.findByText(/Removed access is already closed/)).toBeInTheDocument();
+    expect(screen.queryByText(/remains unavailable/)).not.toBeInTheDocument();
+  });
+
+  it('shows a failed authority sync and never repeats the write when its status read fails', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(PREVIEW);
+    vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
+      connectionId: PREVIEW.connection.connectionId,
+      reconciliationStatus: 'ready',
+      authoritySync: { status: 'failed', reason: 'Provider confirmation timed out.' },
+      grants: [{ agentId: 'agent-b', operationRevisionIds: ['read-v1'] }],
+    });
+    vi.mocked(transport.getConnectorConnection).mockRejectedValue(new Error('read unavailable'));
+    renderWith(
+      transport,
+      <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
+    );
+
+    const bo = await screen.findByRole('group', { name: 'Access for Bo' });
+    await user.click(within(bo).getByRole('button', { name: 'Read' }));
+    await user.click(screen.getByRole('button', { name: 'Save access' }));
+
+    expect(await screen.findByTestId('connector-access-outcome')).toHaveTextContent(
+      'Access sync failed'
+    );
+    expect(screen.getByText(/Provider confirmation timed out/)).toBeInTheDocument();
+    expect(screen.queryByText('Access updated')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Check sync status' }));
+    expect(await screen.findByText(/The access change was not repeated/)).toBeInTheDocument();
+    expect(transport.getConnectorConnection).toHaveBeenCalledTimes(1);
+    expect(transport.applyConnectorReconciliation).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not claim success when the server returns different grants or a review state', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(PREVIEW);
+    vi.mocked(transport.applyConnectorReconciliation)
+      .mockResolvedValueOnce({
+        connectionId: PREVIEW.connection.connectionId,
+        reconciliationStatus: 'ready',
+        authoritySync: { status: 'ready' },
+        grants: [{ agentId: 'agent-b', operationRevisionIds: ['write-v2'] }],
+      })
+      .mockResolvedValueOnce({
+        connectionId: PREVIEW.connection.connectionId,
+        reconciliationStatus: 'migration_needs_reconcile',
+        authoritySync: { status: 'ready' },
+        grants: [{ agentId: 'agent-b', operationRevisionIds: ['read-v1'] }],
+      });
+    renderWith(
+      transport,
+      <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
+    );
+
+    let bo = await screen.findByRole('group', { name: 'Access for Bo' });
+    await user.click(within(bo).getByRole('button', { name: 'Read' }));
+    await user.click(screen.getByRole('button', { name: 'Save access' }));
+    expect(await screen.findByText(/couldn’t confirm that access was saved/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Reload current access' }));
+    bo = await screen.findByRole('group', { name: 'Access for Bo' });
+    await user.click(within(bo).getByRole('button', { name: 'Read' }));
+    await user.click(screen.getByRole('button', { name: 'Save access' }));
+    expect(await screen.findByTestId('connector-access-outcome')).toHaveTextContent(
+      'Access needs review'
+    );
+    expect(screen.queryByText('Access updated')).not.toBeInTheDocument();
   });
 
   it('does not replay an ambiguous save and requires a fresh authority snapshot', async () => {
@@ -142,8 +323,8 @@ describe('ConnectionAccessDialog', () => {
       <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
     );
 
-    const bo = await screen.findByRole('group', { name: 'Bo' });
-    await user.click(within(bo).getByRole('button', { name: 'Read only' }));
+    const bo = await screen.findByRole('group', { name: 'Access for Bo' });
+    await user.click(within(bo).getByRole('button', { name: 'Read' }));
     await user.click(screen.getByRole('button', { name: 'Save access' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/couldn’t confirm/i);
@@ -167,8 +348,7 @@ describe('ManagementReviews', () => {
       <ManagementReviews selectedReviewId={null} onSelectReview={vi.fn()} onCloseReview={vi.fn()} />
     );
 
-    const error = await screen.findByText('Couldn’t load recent decisions');
-    expect(error).toBeInTheDocument();
+    expect(await screen.findByText('Couldn’t load recent decisions')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() =>
       expect(
@@ -348,7 +528,14 @@ describe('ManagementReviews', () => {
     vi.mocked(transport.getConnectorManagementReviews).mockResolvedValue([]);
     vi.mocked(transport.getConnectorManagementReview).mockResolvedValue(connect);
     vi.mocked(transport.resolveConnectorManagementReview).mockResolvedValue({ review: approved });
-    vi.mocked(transport.pollConnectorFlow).mockResolvedValue({ status: 'pending' });
+    vi.mocked(transport.pollConnectorAuthentication).mockResolvedValue({
+      flowId: 'flow-1',
+      providerInstanceId: 'provider-1' as never,
+      toolkit: 'gmail',
+      state: 'pending',
+      createdAt: '2026-09-06T00:10:00.000Z',
+      expiresAt: '2099-09-06T01:00:00.000Z',
+    });
     renderWith(
       transport,
       <ManagementReviews
@@ -361,10 +548,12 @@ describe('ManagementReviews', () => {
     await user.click(await screen.findByRole('button', { name: 'Approve and continue' }));
     expect(await screen.findByText('Sign-in still required')).toBeInTheDocument();
     expect(screen.queryByText('Account connected')).not.toBeInTheDocument();
-    expect(transport.pollConnectorFlow).not.toHaveBeenCalled();
+    expect(transport.pollConnectorAuthentication).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('link', { name: 'Continue to sign in' }));
-    await waitFor(() => expect(transport.pollConnectorFlow).toHaveBeenCalledWith('flow-1'));
+    await waitFor(() =>
+      expect(transport.pollConnectorAuthentication).toHaveBeenCalledWith('flow-1')
+    );
     expect(await screen.findByText('Waiting for sign-in')).toBeInTheDocument();
     expect(screen.queryByText('Sign-in still required')).not.toBeInTheDocument();
   });
@@ -396,14 +585,59 @@ describe('ManagementReviews', () => {
 
   it.each([
     {
-      poll: { status: 'connected' as const },
+      poll: {
+        flowId: 'flow-terminal',
+        providerInstanceId: 'provider-1' as never,
+        toolkit: 'gmail',
+        state: 'connected' as const,
+        connectionId: 'connection-1' as never,
+        createdAt: '2026-09-06T00:10:00.000Z',
+        expiresAt: '2099-09-06T01:00:00.000Z',
+        completedAt: '2026-09-06T00:11:00.000Z',
+      },
       heading: 'Account connected',
       detail: 'Sign-in finished and the account is ready.',
     },
     {
-      poll: { status: 'failed' as const, error: 'The sign-in link expired.' },
+      poll: {
+        flowId: 'flow-terminal',
+        providerInstanceId: 'provider-1' as never,
+        toolkit: 'gmail',
+        state: 'failed' as const,
+        reason: 'The sign-in link expired.',
+        createdAt: '2026-09-06T00:10:00.000Z',
+        expiresAt: '2099-09-06T01:00:00.000Z',
+        completedAt: '2026-09-06T00:11:00.000Z',
+      },
       heading: 'Sign-in didn’t finish',
       detail: /start a new connection request/i,
+    },
+    {
+      poll: {
+        flowId: 'flow-terminal',
+        providerInstanceId: 'provider-1' as never,
+        toolkit: 'gmail',
+        state: 'expired' as const,
+        createdAt: '2026-09-06T00:10:00.000Z',
+        expiresAt: '2026-09-06T01:00:00.000Z',
+        completedAt: '2026-09-06T01:00:00.000Z',
+      },
+      heading: 'Sign-in didn’t finish',
+      detail: /start a new connection request/i,
+    },
+    {
+      poll: {
+        flowId: 'flow-terminal',
+        providerInstanceId: 'provider-1' as never,
+        toolkit: 'gmail',
+        state: 'start_unknown' as const,
+        reason: 'The provider response was lost.',
+        createdAt: '2026-09-06T00:10:00.000Z',
+        expiresAt: '2026-09-06T01:00:00.000Z',
+        completedAt: '2026-09-06T00:10:01.000Z',
+      },
+      heading: 'Sign-in didn’t finish',
+      detail: /provider response was lost/i,
     },
   ])('shows the terminal authentication state as $heading', async ({ poll, heading, detail }) => {
     const user = userEvent.setup();
@@ -438,7 +672,7 @@ describe('ManagementReviews', () => {
     };
     vi.mocked(transport.getConnectorManagementReviews).mockResolvedValue([]);
     vi.mocked(transport.getConnectorManagementReview).mockResolvedValue(approved);
-    vi.mocked(transport.pollConnectorFlow).mockResolvedValue(poll);
+    vi.mocked(transport.pollConnectorAuthentication).mockResolvedValue(poll);
     renderWith(
       transport,
       <ManagementReviews
@@ -453,5 +687,21 @@ describe('ManagementReviews', () => {
     expect(screen.getByText(detail)).toBeInTheDocument();
     expect(screen.queryByText('Sign-in still required')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Continue to sign in' })).not.toBeInTheDocument();
+
+    // A fresh page load receives no obsolete authorize URL for a terminal flow.
+    cleanup();
+    if (approved.resolution.kind === 'connect_authentication_required') {
+      delete approved.resolution.authentication.authorizeUrl;
+    }
+    renderWith(
+      transport,
+      <ManagementReviews
+        selectedReviewId="review-connect-terminal"
+        onSelectReview={vi.fn()}
+        onCloseReview={vi.fn()}
+      />
+    );
+    expect(await screen.findByText(heading)).toBeInTheDocument();
+    expect(screen.queryByText('Sign-in still required')).not.toBeInTheDocument();
   });
 });

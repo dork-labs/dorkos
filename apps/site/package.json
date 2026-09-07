@@ -21,8 +21,10 @@
   "dependencies": {
     "@base-ui/react": "^1.7.0",
     "@better-auth/api-key": "1.7.2",
+    "@dorkos/connector-providers": "workspace:*",
     "@dorkos/icons": "workspace:*",
     "@dorkos/marketplace": "workspace:*",
+    "@dorkos/shared": "workspace:*",
     "@neondatabase/serverless": "^1.1.0",
     "better-auth": "1.7.2",
     "class-variance-authority": "^0.7.1",

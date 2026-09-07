@@ -1,237 +1,264 @@
-/**
- * @vitest-environment jsdom
- *
- * The /connections building blocks: provider setup cards (key entry, verbatim
- * refusal errors, delete-with-confirm), the service-first grid (tiles, honest
- * empty state, warnings), and the accounts list (multi-account rows, the
- * server-composed custody sentence, disconnect-with-confirm).
- */
-import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+/** @vitest-environment jsdom */
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import type { Transport } from '@dorkos/shared/transport';
-import type {
-  ConnectorProviderStatus,
-  PublicConnectedAccount,
-} from '@dorkos/shared/connector-provider';
+import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { ProviderSetupCard } from '../ui/ProviderSetupCard';
-import { ServiceGrid } from '../ui/ServiceGrid';
+import { setPlatformAdapter } from '@/layers/shared/lib';
 import { AccountsList } from '../ui/AccountsList';
+import { ConnectionDetailSheet } from '../ui/ConnectionDetailSheet';
+import { ServiceGrid } from '../ui/ServiceGrid';
 
-vi.mock('@tanstack/react-router', () => ({
-  useNavigate: () => vi.fn(),
-}));
-
-afterEach(cleanup);
-beforeEach(() => {
-  vi.clearAllMocks();
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }));
+afterEach(() => {
+  cleanup();
+  setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
 });
 
-const unconfigured: ConnectorProviderStatus = {
-  type: 'composio',
-  configured: false,
-  registered: false,
-  custody: 'managed',
-  disclosure:
-    "Composio stores your connected accounts' login access in its own secure vault, not on your computer.",
-};
-
-const NANGO_REFUSAL =
-  'NANGO_ENCRYPTION_KEY is not set. Set it before configuring the Nango secret key.';
-
-function account(over: Partial<PublicConnectedAccount>): PublicConnectedAccount {
-  return {
-    id: 'acct-1' as PublicConnectedAccount['id'],
-    toolkit: 'gmail',
-    label: 'work',
-    status: 'active',
-    custody: 'managed',
-    disclosure:
-      'Connecting work takes you to that service to sign in. Composio stores your connected ' +
-      "accounts' login access in its own secure vault, not on your computer.",
-    ...over,
-  };
-}
-
 function renderWith(transport: Transport, ui: ReactNode) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>{ui}</TransportProvider>
     </QueryClientProvider>
   );
 }
 
-describe('ProviderSetupCard', () => {
-  it('shows the custody stance and saves a pasted key as a password field', async () => {
-    const user = userEvent.setup();
-    const transport = createMockTransport();
-    vi.mocked(transport.putConnectorCredential).mockResolvedValue({
-      ...unconfigured,
-      configured: true,
-      registered: true,
-    });
+const capabilities = {
+  catalog: { status: 'available' as const },
+  authentication: { status: 'available' as const },
+  accounts: { status: 'available' as const },
+  operations: { status: 'available' as const },
+  execution: { status: 'available' as const },
+  triggers: { status: 'unsupported' as const, reason: 'Unavailable' },
+};
 
-    renderWith(transport, <ProviderSetupCard status={unconfigured} />);
-
-    // Custody stance line, server copy verbatim.
-    expect(screen.getByText(unconfigured.disclosure)).toBeInTheDocument();
-
-    const input = screen.getByLabelText(/Composio API key/i);
-    // The key never renders readable — a password input.
-    expect(input).toHaveAttribute('type', 'password');
-    await user.type(input, 'sk-secret');
-    await user.click(screen.getByRole('button', { name: /save key/i }));
-
-    await waitFor(() =>
-      expect(transport.putConnectorCredential).toHaveBeenCalledWith('composio', 'sk-secret')
-    );
-  });
-
-  it('renders a configured provider that refused to register with the verbatim error', () => {
-    const transport = createMockTransport();
-    renderWith(
-      transport,
-      <ProviderSetupCard
-        status={{
-          type: 'nango',
-          configured: true,
-          registered: false,
-          custody: 'self-host',
-          disclosure: "You're connecting through your own Nango server.",
-          error: NANGO_REFUSAL,
-        }}
-      />
-    );
-
-    expect(screen.getByRole('alert')).toHaveTextContent(NANGO_REFUSAL);
-    expect(screen.getByText('Not running')).toBeInTheDocument();
-  });
-
-  it('deletes the key only after the person confirms', async () => {
-    const user = userEvent.setup();
-    const transport = createMockTransport();
-    vi.mocked(transport.deleteConnectorCredential).mockResolvedValue(unconfigured);
-
-    renderWith(
-      transport,
-      <ProviderSetupCard status={{ ...unconfigured, configured: true, registered: true }} />
-    );
-
-    await user.click(screen.getByRole('button', { name: /remove key/i }));
-    // Confirm dialog interposes — nothing deleted yet.
-    expect(transport.deleteConnectorCredential).not.toHaveBeenCalled();
-
-    await user.click(screen.getByRole('button', { name: 'Remove key' }));
-    await waitFor(() =>
-      expect(transport.deleteConnectorCredential).toHaveBeenCalledWith('composio')
-    );
-  });
-});
+function connection(over: Partial<ConnectorConnectionSummary> = {}): ConnectorConnectionSummary {
+  return {
+    connectionId: 'connection-1' as never,
+    providerInstanceId: 'provider-1' as never,
+    toolkit: 'gmail',
+    label: 'work',
+    identityHint: 'work@example.com',
+    lifecycle: 'connected',
+    authenticationStatus: 'active',
+    reconciliationStatus: 'ready',
+    authoritySync: { status: 'ready' },
+    mode: 'managed',
+    custody: 'managed',
+    payer: 'dorkos_managed',
+    agentCount: 2,
+    subscriptionCount: 0,
+    usage: { status: 'available', logicalOperationCount: 3, attemptCount: 4 },
+    warnings: [],
+    ...over,
+  };
+}
 
 describe('ServiceGrid', () => {
-  it('renders service-first tiles with one Connect verb and no vendor names', async () => {
+  it('searches one catalog and keeps Slack message and account intents distinct', async () => {
+    const user = userEvent.setup();
     const transport = createMockTransport();
-    vi.mocked(transport.getConnectorToolkits).mockResolvedValue({
-      toolkits: [
-        { slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' },
-        { slug: 'slack', displayName: 'Slack', authKind: 'oauth2' },
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+      services: [
+        {
+          serviceSlug: 'slack',
+          displayName: 'Slack',
+          iconKey: 'slack',
+          intents: [
+            {
+              kind: 'messages',
+              displayName: 'Messages through a Slack bot',
+              relayAdapterType: 'slack',
+            },
+            {
+              kind: 'account',
+              displayName: 'Use a Slack account',
+              routes: [
+                {
+                  providerInstanceId: 'managed-1' as never,
+                  displayName: 'DorkOS managed',
+                  mode: 'managed',
+                  custody: 'managed',
+                  payer: 'dorkos_managed',
+                  capabilities,
+                  disclosure: 'Managed custody.',
+                  authKind: 'oauth2',
+                },
+              ],
+            },
+          ],
+        },
       ],
       warnings: [],
     });
-
-    renderWith(transport, <ServiceGrid />);
-
-    expect(await screen.findByText('Gmail')).toBeInTheDocument();
-    expect(screen.getByText('Slack')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Connect Gmail' })).toBeInTheDocument();
-    // Provider choice is invisible on the grid.
-    expect(screen.queryByText(/composio/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/nango/i)).not.toBeInTheDocument();
-  });
-
-  it('points an empty grid at provider setup', async () => {
-    const transport = createMockTransport();
-    renderWith(transport, <ServiceGrid />);
-    expect(await screen.findByText('No services to connect yet')).toBeInTheDocument();
-    expect(screen.getByText(/add a key under composio & nango/i)).toBeInTheDocument();
-  });
-
-  it('surfaces provider degradation warnings instead of hiding them', async () => {
-    const transport = createMockTransport();
-    vi.mocked(transport.getConnectorToolkits).mockResolvedValue({
-      toolkits: [{ slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' }],
-      warnings: [{ provider: 'nango', message: 'nango timed out after 5000ms' }],
-    });
-
-    renderWith(transport, <ServiceGrid />);
-    expect(await screen.findByText(/nango timed out after 5000ms/)).toBeInTheDocument();
+    const onConnect = vi.fn();
+    renderWith(transport, <ServiceGrid onConnect={onConnect} />);
+    await user.click(screen.getByRole('button', { name: 'Connect service' }));
+    await user.type(screen.getByRole('textbox', { name: 'Search services' }), 'Slack');
+    expect(
+      await screen.findByRole('button', { name: 'Messages through a Slack bot' })
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Use a Slack account' }));
+    expect(onConnect).toHaveBeenCalledWith(expect.objectContaining({ serviceSlug: 'slack' }));
+    expect(transport.getConnectorCatalog).toHaveBeenCalledWith(
+      expect.objectContaining({ query: 'Slack', limit: 24 })
+    );
   });
 });
 
 describe('AccountsList', () => {
-  it('renders two accounts of one service as distinct rows, each with its custody sentence', async () => {
-    const transport = createMockTransport();
-    const work = account({});
-    const personal = account({
-      id: 'acct-2' as PublicConnectedAccount['id'],
-      label: 'personal',
-      disclosure: 'Connecting personal takes you to that service to sign in.',
-    });
-    vi.mocked(transport.getConnectorAccounts).mockResolvedValue({
-      accounts: [work, personal],
-      warnings: [],
+  it('explains embedded unavailability without claiming there are no accounts', async () => {
+    setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
+    const transport = createMockTransport({
+      getConnectorConnections: vi
+        .fn()
+        .mockRejectedValue(new Error('Connections can only be managed in DorkOS itself.')),
     });
 
-    renderWith(transport, <AccountsList />);
+    renderWith(transport, <AccountsList onOpenDetail={() => undefined} />);
 
-    expect(await screen.findByText('Gmail (work)')).toBeInTheDocument();
-    expect(screen.getByText('Gmail (personal)')).toBeInTheDocument();
-    // The per-account custody sentence comes from the API — asserted verbatim.
-    expect(screen.getByText(work.disclosure)).toBeInTheDocument();
-    expect(screen.getByText(personal.disclosure)).toBeInTheDocument();
+    expect(await screen.findByText('Connected accounts are unavailable here')).toBeInTheDocument();
+    expect(screen.getByText(/Open DorkOS in your browser to connect services/)).toBeInTheDocument();
+    expect(screen.queryByText('No accounts connected')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
   });
 
-  it('marks an expired account so trouble reads as trouble', async () => {
-    const transport = createMockTransport();
-    vi.mocked(transport.getConnectorAccounts).mockResolvedValue({
-      accounts: [account({ status: 'expired' })],
-      warnings: [],
-    });
-
-    renderWith(transport, <AccountsList />);
-    expect(await screen.findByText('expired')).toBeInTheDocument();
-  });
-
-  it('disconnects only after the person confirms', async () => {
+  it('shows several stable accounts as concise rows and opens the exact detail id', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
-    vi.mocked(transport.getConnectorAccounts).mockResolvedValue({
-      accounts: [account({})],
-      warnings: [],
+    vi.mocked(transport.getConnectorConnections).mockResolvedValue({
+      connections: [
+        connection(),
+        connection({ connectionId: 'connection-2' as never, label: 'personal', agentCount: 0 }),
+      ],
     });
-
-    renderWith(transport, <AccountsList />);
-
-    await user.click(await screen.findByRole('button', { name: /disconnect/i }));
-    expect(transport.disconnectConnectorAccount).not.toHaveBeenCalled();
-
-    await user.click(screen.getByRole('button', { name: 'Disconnect' }));
-    await waitFor(() =>
-      expect(transport.disconnectConnectorAccount).toHaveBeenCalledWith('acct-1')
-    );
+    const onOpenDetail = vi.fn();
+    renderWith(transport, <AccountsList onOpenDetail={onOpenDetail} />);
+    await user.click(await screen.findByRole('button', { name: /Gmail \(personal\)/i }));
+    expect(onOpenDetail).toHaveBeenCalledWith('connection-2');
+    expect(screen.getByText(/2 agents · Managed/)).toBeInTheDocument();
+    expect(screen.getByText(/0 agents · Managed/)).toBeInTheDocument();
   });
 
-  it('shows the honest empty state', async () => {
+  it('distinguishes review, pending synchronization, and failed synchronization', async () => {
     const transport = createMockTransport();
-    renderWith(transport, <AccountsList />);
-    expect(await screen.findByText(/nothing connected yet/i)).toBeInTheDocument();
+    vi.mocked(transport.getConnectorConnections).mockResolvedValue({
+      connections: [
+        connection({
+          connectionId: 'pending-connection' as never,
+          label: 'pending',
+          authoritySync: { status: 'pending' },
+          usage: { status: 'unavailable', reason: 'Usage source timed out.' },
+        }),
+        connection({
+          connectionId: 'failed-connection' as never,
+          label: 'failed',
+          authoritySync: { status: 'failed', reason: 'Provider rejected the update.' },
+        }),
+        connection({
+          connectionId: 'review-connection' as never,
+          label: 'review',
+          reconciliationStatus: 'migration_needs_reconcile',
+        }),
+      ],
+    });
+    renderWith(transport, <AccountsList onOpenDetail={() => undefined} />);
+    expect(await screen.findByText('Syncing')).toBeInTheDocument();
+    expect(screen.getByText('Sync failed')).toBeInTheDocument();
+    expect(screen.getByText('Review needed')).toBeInTheDocument();
+    expect(screen.queryByText('Ready')).not.toBeInTheDocument();
+  });
+
+  it('labels disconnected accounts without treating active authentication as ready', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorConnections).mockResolvedValue({
+      connections: [connection({ lifecycle: 'disconnected' })],
+    });
+    renderWith(transport, <AccountsList onOpenDetail={() => undefined} />);
+    expect(await screen.findByText('Disconnected')).toBeInTheDocument();
+    expect(screen.queryByText('Ready')).not.toBeInTheDocument();
+  });
+});
+
+describe('ConnectionDetailSheet', () => {
+  it('shows honest unavailable states and exact impact before disconnecting', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorConnection).mockResolvedValue({
+      connection: connection({
+        authoritySync: { status: 'failed', reason: 'Provider rejected the update.' },
+        usage: { status: 'unavailable', reason: 'Provider does not report usage.' },
+      }),
+      provider: {
+        providerInstanceId: 'provider-1' as never,
+        displayName: 'DorkOS managed',
+        mode: 'managed',
+        custody: 'managed',
+        payer: 'dorkos_managed',
+        capabilities,
+        disclosure: 'DorkOS stores login access in its secure vault.',
+      },
+      agents: [
+        {
+          agentId: 'agent-1',
+          displayName: 'Researcher',
+          operationRevisionIds: ['operation-1'],
+          classifications: ['read'],
+          reconciliationStatus: 'ready',
+          authoritySync: { status: 'ready' },
+        },
+      ],
+      sessions: { affectedCount: 3 },
+      subscriptions: {
+        totalCount: 0,
+        activeCount: 0,
+        capability: { status: 'unsupported', reason: 'Event controls are not available yet.' },
+      },
+    });
+    vi.mocked(transport.getConnectorDisconnectImpact).mockResolvedValue({
+      connectionId: 'connection-1' as never,
+      affectedAgentCount: 1,
+      affectedSessionCount: 3,
+      affectedSubscriptionCount: 0,
+      pendingDeliveryCount: 2,
+    });
+    const onManageAccess = vi.fn();
+    renderWith(
+      transport,
+      <ConnectionDetailSheet
+        connectionId="connection-1"
+        onClose={() => undefined}
+        onManageAccess={onManageAccess}
+        onReconnect={() => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('dialog', { name: 'Gmail (work)' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Usage is unavailable: Provider does not report usage.')
+    ).toBeInTheDocument();
+    expect(screen.getByText('Sync failed')).toBeInTheDocument();
+    expect(
+      screen.getByText('Access sync failed: Provider rejected the update.')
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Event subscriptions are unavailable/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Edit access' }));
+    expect(onManageAccess).toHaveBeenCalledWith('connection-1');
+
+    await user.click(screen.getByRole('button', { name: 'Disconnect' }));
+    expect(
+      await screen.findByText(
+        /1 agents, 3 sessions, and 0 subscriptions will lose access\. 2 pending deliveries will stop\./
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Disconnect' })).toBeEnabled();
   });
 });

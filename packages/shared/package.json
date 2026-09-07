@@ -113,6 +113,22 @@
       "types": "./src/connector-schemas.ts",
       "default": "./dist/connector-schemas.js"
     },
+    "./connector-managed-schemas": {
+      "types": "./src/connector-managed-schemas.ts",
+      "default": "./dist/connector-managed-schemas.js"
+    },
+    "./connector-managed-discovery-schemas": {
+      "types": "./src/connector-managed-discovery-schemas.ts",
+      "default": "./dist/connector-managed-discovery-schemas.js"
+    },
+    "./connector-managed-usage-schemas": {
+      "types": "./src/connector-managed-usage-schemas.ts",
+      "default": "./dist/connector-managed-usage-schemas.js"
+    },
+    "./connector-resource-schemas": {
+      "types": "./src/connector-resource-schemas.ts",
+      "default": "./dist/connector-resource-schemas.js"
+    },
     "./community-adapter": {
       "types": "./src/community-adapter.ts",
       "default": "./dist/community-adapter.js"
