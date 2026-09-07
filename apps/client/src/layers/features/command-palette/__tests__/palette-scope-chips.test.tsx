@@ -37,7 +37,12 @@ function makeRoom(overrides: Partial<RoomSummary> = {}): RoomSummary {
     archived: false,
     ambientMaxEntries: 30,
     createdAt: '2026-08-01T10:00:00.000Z',
-    lastActivityAt: ago(2 * HOUR),
+    // A frozen literal, not a clock read, following `palette-ranking-wired`'s
+    // precedent: nothing in this file ranks one room against another, so the
+    // only thing a live `Date.now()` could contribute here is the kind of
+    // microsecond tie DOR-1502 turned out to be. Both rooms share it, so they
+    // tie by construction and the key tiebreak decides — deterministically.
+    lastActivityAt: '2026-08-01T12:00:00.000Z',
     unreadCount: 0,
     participants: null,
     ...overrides,
@@ -58,7 +63,10 @@ function makeSession(
   overrides: Partial<Session> & { id: string; title: string; updatedAt: string }
 ): Session {
   return {
-    createdAt: ago(48 * HOUR),
+    // Frozen for the same reason the room's is: `createdAt` reaches no ranking
+    // signal — a conversation's freshness is its `updatedAt` — so a clock read
+    // here buys nothing and can only introduce drift.
+    createdAt: '2026-07-30T10:00:00.000Z',
     permissionMode: 'default',
     runtime: 'claude-code',
     ...overrides,
@@ -475,7 +483,13 @@ describe('two chips at once are rejected, by construction', () => {
 
     // The footer agrees, which is what the comment used to promise and never
     // checked: with nothing scopable highlighted, Tab is not offered.
-    await highlight('probe alpha');
+    //
+    // `probe beta`, deliberately, and not `probe alpha` (DOR-1502). Alpha is
+    // the freshest row in this scope, so the leading-row pin has it selected
+    // already and `highlight` could go back to firing events cmdk ignores
+    // without a single test noticing. Beta is the row nothing pre-selects, so
+    // reaching it is proof the helper moved the highlight itself.
+    await highlight('probe beta');
     expect(screen.queryByText('Search inside')).toBeNull();
 
     // And pressing it anyway adds nothing.
