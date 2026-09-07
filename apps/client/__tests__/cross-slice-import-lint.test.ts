@@ -97,6 +97,31 @@ describe('cross-slice relative import lint rule', () => {
     expect(await lintFixture('features/__slice-fixture-a__/ui/status/Deep.ts')).toEqual([]);
   });
 
+  it('allows a relative path to the repo-root scripts/ directory', async () => {
+    // The repo's shared source stripper lives at `scripts/lib/code-only.mjs`,
+    // outside every package. Four guards here read source with it, and there is
+    // no slice at the other end of that path — so the message this rule would
+    // print ("reach it through its barrel") names something that does not
+    // exist. What must NOT change is the sibling-slice case above, which is why
+    // both live in this file.
+    expect(await lintFixture('features/__slice-fixture-a__/ui/OutsideSrc.ts')).toEqual([]);
+  });
+
+  it('still reports a deep relative import into another workspace package', async () => {
+    // The exemption above is a PREFIX, not "anything outside src/". This fixture
+    // leaves `src/` by the identical number of hops and is a real violation of
+    // the same encapsulation idea one level up — and unlike the scripts path it
+    // HAS a correct spelling to be redirected to (`@dorkos/shared/transport`).
+    // Nothing in the tree does it today; this is what keeps that true.
+    const errors = await lintFixture('features/__slice-fixture-a__/ui/OutsidePackage.ts');
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].severity).toBe(2);
+    // And it names the fix that exists. "Reach it through its barrel" would send
+    // the reader looking for a slice barrel in `packages/shared`, which has none.
+    expect(errors[0].message).toContain('@dorkos/<package>');
+  });
+
   it('reports a cross-slice relative path in vi.mock, which no import declaration carries', async () => {
     const errors = await lintFixture('features/__slice-fixture-a__/__tests__/mock.test.ts');
 

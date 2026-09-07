@@ -19,6 +19,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 
+import { codeOnly, lexWithoutComments } from '../../../../../../../scripts/lib/code-only.mjs';
+
 const FEATURE_DIR = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 
 /**
@@ -46,9 +48,23 @@ const BANNED = [
  * the very tokens it is banning — this file's own reason for existing is a
  * sentence in `palette-scope.ts` reading "no `agent:`". Scanning comments would
  * make documenting the decision the thing that fails the check.
+ *
+ * The repo's shared stripper does it, not the regex pair this used to be: the
+ * `(^|[^:])` guard was there to stop a URL's `//` opening a fake line comment,
+ * one of several ways a pair of regexes desynchronises (DOR-642). The shared
+ * one lexes with TypeScript's own parser, so a `//` inside a string is never a
+ * comment and no such guard is needed.
+ *
+ * `lexWithoutComments` and NOT `lex`: every banned shape above is a QUOTED
+ * token (`'before:'`) or a regex literal, which the literal-blanking stripper
+ * erases outright. The scan would then match nothing and report a clean pass
+ * over a palette it had not read.
+ *
+ * @param source - A palette source file's text.
+ * @param path - Its path, which decides how it is lexed.
  */
-function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+function code(source: string, path: string): { code: string; parseErrors: number } {
+  return lexWithoutComments(source, path);
 }
 
 /** Every `.ts`/`.tsx` file the feature ships — tests excluded, they are not shipped. */
@@ -65,24 +81,32 @@ function sourceFiles(dir: string): string[] {
 describe('the palette parses no query language', () => {
   const files = sourceFiles(FEATURE_DIR);
 
+  const scanned = files.map((path) => ({ path, ...code(readFileSync(path, 'utf8'), path) }));
+
   it('reads a feature that actually has files in it', () => {
     // Without this, a broken path would make every claim below vacuously true.
     expect(files.length).toBeGreaterThan(15);
+    // And every one of them was really read. A file the stripper cannot parse
+    // has a comment map made of guesses, and it fails silently — no hit in it
+    // looks exactly like no offence in it.
+    expect(scanned.filter((f) => f.parseErrors > 0).map((f) => f.path)).toEqual([]);
   });
 
   it('parses no filter token out of what a person typed', () => {
-    const hits = files.flatMap((path) => {
-      const source = code(readFileSync(path, 'utf8'));
-      return BANNED.filter((pattern) => pattern.test(source)).map(
-        (pattern) => `${path}: ${pattern}`
-      );
-    });
+    const hits = scanned.flatMap(({ path, code: source }) =>
+      BANNED.filter((pattern) => pattern.test(source)).map((pattern) => `${path}: ${pattern}`)
+    );
     expect(hits).toEqual([]);
   });
 
-  it('would catch each of them if one arrived', () => {
+  it('would catch each of them if one arrived, through the real strip', () => {
     // The guard above passes trivially against a matcher that matches nothing.
-    // This is the matcher being made to fire, once per pattern.
+    // This is the matcher being made to fire, once per pattern — and routed
+    // through `code()`, not against the raw string, because the strip is half
+    // the pipeline. Every shape below is a QUOTED token or a regex literal, so
+    // the repo's other stripper (`codeOnly`, which blanks literals to answer
+    // "is this a call?") erases all four: the sweep above would go empty and
+    // report a clean palette it had never read. Both directions are asserted.
     const planted = [
       `if (term.startsWith('before:')) return filterByDate(term);`,
       String.raw`const TOKEN = /(\w+):(\S+)/g;`,
@@ -91,14 +115,17 @@ describe('the palette parses no query language', () => {
     ];
     expect(BANNED).toHaveLength(planted.length);
     for (const [index, pattern] of BANNED.entries()) {
-      expect(pattern.test(planted[index] as string), String(pattern)).toBe(true);
+      const source = planted[index] as string;
+      expect(pattern.test(code(source, 'planted.ts').code), String(pattern)).toBe(true);
+      expect(pattern.test(codeOnly(source, 'planted.ts')), `codeOnly hides ${pattern}`).toBe(false);
     }
   });
 
   it('reads the whole search string as one term after a single prefix character', () => {
     // The only parse the palette does, pinned: one leading character, and
     // everything after it is what was typed. Nothing splits, nothing keys.
-    const search = code(readFileSync(join(FEATURE_DIR, 'model', 'use-palette-search.ts'), 'utf8'));
+    const searchFile = join(FEATURE_DIR, 'model', 'use-palette-search.ts');
+    const { code: search } = code(readFileSync(searchFile, 'utf8'), searchFile);
     const parse = /export function parsePrefix[\s\S]*?\n}/.exec(search)?.[0] ?? '';
     expect(parse).not.toBe('');
     expect(parse).toContain('search.slice(1)');

@@ -8,6 +8,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { activityVerb } from '@/layers/shared/lib';
+import { lexWithoutComments } from '../../../../../../../../scripts/lib/code-only.mjs';
 import { buildSidebarModel, type SidebarRowModel } from '../build-sidebar-model';
 import { SIDEBAR_FIXTURES } from '../fixtures';
 
@@ -15,18 +16,30 @@ const MODEL_DIR = join(__dirname, '..');
 const RULES_DIR = join(MODEL_DIR, 'rules');
 
 /**
- * A source with its comments removed, so the purity check reads the CODE.
+ * A source with its comments blanked, so the purity check reads the CODE.
  *
  * The docs in these modules name the very calls the rule forbids — that is how
  * the rule is written down where the next author will read it — so a check over
  * the raw text would fail on its own documentation.
+ *
+ * The repo's shared stripper does it, not a block-comment regex plus a
+ * whole-line `//` filter (DOR-1714). `lexWithoutComments` and not `lex`,
+ * because the whitelist below is a list of IMPORT SPECIFIERS — strings — and
+ * the literal-blanking stripper would erase every one of them, leaving
+ * `importsOf` nothing to find and the whitelist nothing to judge.
+ *
+ * @param source - A module's full source text.
+ * @param fileName - Its path, which decides how the stripper lexes it. The
+ *   default suits the inline `.ts` fixtures the proof cases pass in.
  */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('//'))
-    .join('\n');
+function stripComments(source: string, fileName = 'fixture.ts'): string {
+  const { code, parseErrors } = lexWithoutComments(source, fileName);
+  // The honesty channel the module's own docs ask callers to assert. A source
+  // the parser could not read has a comment map made of guesses — `importsOf`
+  // finds no imports in it, and "imports only whitelisted modules" passes for
+  // the one reason a green must never mean.
+  expect(parseErrors, `${fileName} did not parse, so this scan read guesswork`).toBe(0);
+  return code;
 }
 
 /** Every source file the purity rule covers: the entry point and its rules. */
@@ -38,7 +51,7 @@ function pureModuleSources(): { file: string; source: string }[] {
       .filter((name) => name.endsWith('.ts'))
       .map((name) => join(RULES_DIR, name)),
   ];
-  return files.map((file) => ({ file, source: stripComments(readFileSync(file, 'utf8')) }));
+  return files.map((file) => ({ file, source: stripComments(readFileSync(file, 'utf8'), file) }));
 }
 
 /**
@@ -240,7 +253,8 @@ describe('R1 — the model can carry no verb, and the check for it can fail', ()
     // criterion asked for "a fixture whose sessions carry activity"; the type
     // makes such a fixture unconstructible, which is a stronger answer than any
     // fixture would have been.
-    const stateSource = stripComments(readFileSync(join(MODEL_DIR, 'sidebar-state.ts'), 'utf8'));
+    const STATE_FILE = join(MODEL_DIR, 'sidebar-state.ts');
+    const stateSource = stripComments(readFileSync(STATE_FILE, 'utf8'), STATE_FILE);
     expect(stateSource).toMatch(/sessionStatuses:\s*Readonly<Record<string,\s*SessionLifecycle>>/);
     expect(stateSource).not.toMatch(/SessionActivity/);
   });
@@ -297,9 +311,8 @@ describe('P1 AC-1 — purity, asserted over the module source', () => {
       // It is justified by the module being a leaf — no imports, so nothing
       // transitive can arrive through it — and the day somebody adds one, the
       // exemption stops being narrow and this fails instead of nobody noticing.
-      const leaf = stripComments(
-        readFileSync(join(MODEL_DIR, '..', '..', '..', 'shared', 'lib', `${moduleName}.ts`), 'utf8')
-      );
+      const leafFile = join(MODEL_DIR, '..', '..', '..', 'shared', 'lib', `${moduleName}.ts`);
+      const leaf = stripComments(readFileSync(leafFile, 'utf8'), leafFile);
       expect(importsOf(leaf)).toEqual([]);
       // `importsOf` only recognises `import … from '…'`. A side-effect import
       // (`import './registers-everything';`) and a `require()` each pull a whole

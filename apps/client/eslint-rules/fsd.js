@@ -33,8 +33,9 @@ const VITEST_MODULE_PATH_HELPERS = new Set([
  * and `shared/ui/x.tsx -> ../lib/utils` is an ordinary within-unit import.
  *
  * @param filePath Absolute path of the file being linted.
- * @returns The absolute slice root plus its `<layer>/<slice>` label, or `null`
- *   when the file sits above one.
+ * @returns The absolute slice root, the app's `src` root, the repo-root
+ *   `scripts/` directory, and the `<layer>/<slice>` label — or `null` when the
+ *   file sits above a slice.
  */
 function sliceOf(filePath) {
   const parts = filePath.split(sep);
@@ -48,8 +49,16 @@ function sliceOf(filePath) {
   // The file must live strictly inside the unit, not be the unit directory.
   if (parts.length <= rootEnd) return null;
 
+  // `<repo>/apps/<app>/src/layers/...` — so the repo root is three segments
+  // above `src`. Derived rather than searched for: a marker hunt (`.git`,
+  // `pnpm-workspace.yaml`) touches the filesystem from inside a lint rule, and a
+  // checkout without the marker would silently widen the exemption to
+  // everything, which is the direction that must never fail open.
+  const srcIndex = layersIndex - 1;
   return {
     root: parts.slice(0, rootEnd).join(sep),
+    srcRoot: parts.slice(0, layersIndex).join(sep),
+    scriptsRoot: [...parts.slice(0, srcIndex - 2), 'scripts'].join(sep),
     label: parts.slice(layersIndex + 1, rootEnd).join('/'),
   };
 }
@@ -73,6 +82,20 @@ function sliceOf(filePath) {
  * this toolchain either: a dynamic `import()` built from a template literal (no
  * static path to resolve) and a backslash-separated specifier (not a module
  * path on any platform Vite serves). Both would be dead code to handle.
+ *
+ * So is a relative path to the repo-root `scripts/` directory — specifically
+ * `scripts/lib/code-only.mjs`, which four guards here read source with
+ * (DOR-1714). That one is not a cross-slice import in either direction: there is
+ * no slice at the other end and no barrel to route through, so the message this
+ * rule would print asks for something that does not exist.
+ *
+ * The exemption is scoped to that prefix and NOT to "anything outside `src/`",
+ * which is where it started and which was too wide. `../../../../../../../
+ * packages/shared/src/transport` also leaves `src/`, and it is a deep relative
+ * import into another workspace package — a real violation of the same
+ * encapsulation idea one level up, and one that has a correct spelling
+ * (`@dorkos/shared/transport`) to be redirected to. Nothing in the tree does it
+ * today; the point of a narrow exemption is that nothing can start.
  */
 const noCrossSliceRelativeImport = {
   meta: {
@@ -86,6 +109,9 @@ const noCrossSliceRelativeImport = {
       crossSlice:
         "FSD violation: the relative path '{{specifier}}' leaves this file's own slice ({{slice}}). " +
         'Reach another slice through its barrel — `@/layers/<layer>/<slice>` — never a relative path into its internals.',
+      outsideApp:
+        "FSD violation: the relative path '{{specifier}}' leaves this app's `src/` entirely. " +
+        'Reach another workspace package by its package name — `@dorkos/<package>/<subpath>` — never a relative path into its source.',
     },
   },
 
@@ -105,6 +131,21 @@ const noCrossSliceRelativeImport = {
 
       const target = resolve(dirname(filePath), node.value);
       if (target === slice.root || target.startsWith(slice.root + sep)) return;
+      // The repo-root `scripts/` directory is the one place outside this app a
+      // relative path may legitimately reach — see the rule's docblock. Scoped
+      // to that prefix on purpose: a deep relative import into another
+      // WORKSPACE PACKAGE also leaves `src/`, has a correct aliased spelling,
+      // and still reds here.
+      if (target.startsWith(slice.scriptsRoot + sep)) return;
+
+      // Two different mistakes, so two different messages. Telling somebody who
+      // reached into `packages/shared/src/` to "use the slice's barrel" names a
+      // thing that does not exist and sends them looking for it; the fix they
+      // actually want is the package name.
+      if (!target.startsWith(slice.srcRoot + sep)) {
+        context.report({ node, messageId: 'outsideApp', data: { specifier: node.value } });
+        return;
+      }
 
       context.report({
         node,

@@ -33,3 +33,24 @@ export declare function lex(text: string, fileName?: string): { code: string; pa
  * @returns The same source, same length, with every non-code span blanked.
  */
 export declare function codeOnly(text: string, fileName?: string): string;
+
+/**
+ * A source file with its COMMENTS blanked to spaces and every literal left
+ * exactly as written, plus how much of the file TypeScript could not parse.
+ *
+ * The stripper for guards that ask "does this file SAY this word?" rather than
+ * "is this token a call?" — the answer usually lives in a literal (a Tailwind
+ * class, an import specifier, a prompt's prose), which `lex` blanks away. A
+ * corpus scan should assert `parseErrors` is zero across it, for the same
+ * reason `lex` gives.
+ *
+ * @param text - The file's full source.
+ * @param fileName - The file's name or path, which decides how it is lexed
+ *   (`.tsx` and `.jsx` differ from `.ts` and `.js`). Defaults to TypeScript.
+ * @returns The source with comments blanked (same length as the input) and the
+ *   parse-error count behind it.
+ */
+export declare function lexWithoutComments(
+  text: string,
+  fileName?: string
+): { code: string; parseErrors: number };

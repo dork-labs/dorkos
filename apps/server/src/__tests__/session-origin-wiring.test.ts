@@ -35,6 +35,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { lexWithoutComments } from '../../../../scripts/lib/code-only.mjs';
+
 /** The composition root, resolved from this file rather than from the cwd. */
 const INDEX_TS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../index.ts');
 
@@ -44,7 +46,7 @@ function compositionRoot(): string {
 }
 
 /**
- * The lines of `index.ts` that are CODE, with comment lines blanked out.
+ * The lines of `index.ts` that are CODE, with its comments blanked out.
  *
  * Not cosmetic: `index.ts` twice explains itself with the phrase
  * "`sessionListBroadcaster.start()` below", and a plain search for the call
@@ -53,18 +55,23 @@ function compositionRoot(): string {
  * correctly wired file. Blanking rather than dropping keeps line indices
  * meaningful for anyone debugging this.
  *
- * Line-level and deliberately simple: every mention this guard cares about sits
- * on its own line, in a file with no trailing `/* … *\/` after code.
+ * The repo's shared stripper does it, not a whole-line `//` filter: the filter
+ * that used to live here read a trailing comment after code as code, and read
+ * any line inside a block comment that did not start with `*` the same way.
+ * `lexWithoutComments` and not `lex` because the mint sites this file's
+ * sibling guards look for live in string literals — keeping both server guards
+ * on one stripper is the point (DOR-1714).
+ *
+ * @returns One entry per source line, comment spans replaced by spaces.
  */
 function codeLines(): string[] {
-  return compositionRoot()
-    .split('\n')
-    .map((line) => {
-      const trimmed = line.trimStart();
-      return trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')
-        ? ''
-        : line;
-    });
+  const { code, parseErrors } = lexWithoutComments(compositionRoot(), INDEX_TS);
+  // The honesty channel the module's own docs ask callers to assert. A file the
+  // parser could not read has a comment map made of guesses, and it fails
+  // SILENTLY — `lineOf` returns -1 for everything and "the call is missing"
+  // reads exactly like "the file did not parse".
+  expect(parseErrors, 'index.ts did not parse, so this scan read guesswork').toBe(0);
+  return code.split('\n');
 }
 
 /** The index of the first code line containing `needle`, or -1. */

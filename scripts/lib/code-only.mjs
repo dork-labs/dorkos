@@ -2,6 +2,21 @@
  * The repo's one source stripper: a file's CODE, with every comment, string,
  * template chunk, regex literal and JSX text blanked out.
  *
+ * Two questions are asked of source text in this repo, so there are two answers
+ * over one lexing. `codeOnly`/`lex` answer "is this token a CALL?" and blank the
+ * literals with the comments. `lexWithoutComments` answers "does this file SAY
+ * this word?" and blanks only the comments, because for that family the subject
+ * — a Tailwind class, an import specifier, a prompt's prose — lives inside a
+ * literal and blanking it would make the guard vacuously green. Everything
+ * below about ordering applies to both: the comment spans are found the same
+ * way for each.
+ *
+ * The asymmetry is deliberate rather than an oversight. `codeOnly` exists
+ * because most call-scanning callers hold ONE file and have no corpus to assert
+ * `parseErrors` over. Every comment-only caller in this repo sweeps a directory
+ * or a named file list, so all of them want the count — a count-less twin here
+ * would have no consumer, and an export nobody imports is the thing that rots.
+ *
  * ## Why this exists, and why it is not regexes
  *
  * Several guards in this repo scan source text for a token and must not be
@@ -148,41 +163,48 @@ function isNonCodeLiteral(node) {
 }
 
 /**
- * A source file's code, with comments and literal text blanked to spaces, plus
- * how much of the file TypeScript could not parse.
+ * Blank `[start, end)` of `chars`, keeping newlines so positions survive.
  *
- * `parseErrors` is the honesty channel. Everything this module knows comes from
- * the parse, so a file the parser could not read is a file whose literal map is
- * guesswork — and the failure is SILENT, which is the property that makes it
- * dangerous. A caller scanning a corpus should assert this is zero across it;
- * `codeOnly` drops it only because most callers have one file and no corpus to
- * assert over.
+ * @param {string[]} chars - The character array to mutate.
+ * @param {number} start - First index to blank.
+ * @param {number} end - Index after the last one to blank.
+ * @returns {void}
+ */
+function blankRange(chars, start, end) {
+  for (let i = Math.max(start, 0); i < end && i < chars.length; i++) {
+    if (chars[i] !== '\n' && chars[i] !== '\r') chars[i] = ' ';
+  }
+}
+
+/**
+ * The one pass both exports are built from: literals blanked, comments located.
  *
- * The concrete case, and the reason for the fallback below: JSX inside a `.ts`
- * file. `apps/server/src/core-extensions/*` is written that way on purpose (the
- * extension pipeline compiles it with esbuild at runtime, so it never meets the
- * server's tsc, and the server tsconfig excludes it). Lexed as TS, `</p>` reads
- * as the start of a regular expression, and everything up to the next `/`
- * becomes literal text — so a call between two closing tags is blanked away and
- * the scan over that file reports nothing, having seen nothing. Retrying as TSX
- * fixes it, and 33 parse errors becoming 0 is what says the retry was right.
+ * Finding the comments is the part that has to happen in this order. The spans
+ * are read off text whose literals are already blanked, so no string or regex
+ * delimiter survives to open a fake comment — and the left-to-right walk means
+ * one comment form can never open a span inside the other. What a caller does
+ * with the spans afterwards is its own business: `lex` keeps the blanked chars,
+ * and `lexWithoutComments` applies the same spans to the ORIGINAL text so the
+ * literals come back untouched.
+ *
+ * The JSX retry lives here rather than in either export, so both readings of a
+ * file agree about what it is: a `.ts` file holding JSX parses as a pile of
+ * errors and lexes to nonsense. Rather than keeping a list of directories that
+ * are secretly TSX — which rots, and is wrong the day somebody adds the next
+ * one — the parse is retried under the JSX-accepting twin and the better result
+ * wins. A file that is genuinely broken gets errors either way and keeps its
+ * original reading; only a file the twin can actually parse switches.
  *
  * @param {string} text - The file's full source.
- * @param {string} [fileName] - The file's name or path, which decides how it is
- *   lexed (`.tsx` and `.jsx` differ from `.ts` and `.js`). Defaults to TypeScript.
- * @returns {{ code: string, parseErrors: number }} The blanked source (same
- *   length as the input) and the parse-error count of the lexing that produced it.
+ * @param {string} fileName - The file's name or path, which decides how it is lexed.
+ * @returns {{ chars: string[], comments: [number, number][], parseErrors: number }}
+ *   The literal- and comment-blanked characters, the comment spans that were
+ *   blanked out of them, and the parse-error count of the lexing behind both.
  */
-export function lex(text, fileName = 'scan.ts') {
+function analyze(text, fileName) {
   const kind = scriptKindFor(fileName);
   let parsed = parseOnce(text, fileName, kind);
 
-  // A `.ts` file holding JSX parses as a pile of errors and lexes to nonsense.
-  // Rather than keeping a list of directories that are secretly TSX — which
-  // rots, and is wrong the day somebody adds the next one — the parse is
-  // retried under the JSX-accepting twin and the better result wins. A file
-  // that is genuinely broken gets errors either way and keeps its original
-  // reading; only a file the twin can actually parse switches.
   const twin = JSX_TWIN.get(kind);
   if (parsed.errors > 0 && twin !== undefined) {
     const retry = parseOnce(text, fileName, twin);
@@ -200,26 +222,13 @@ export function lex(text, fileName = 'scan.ts') {
   const length = chars.length;
 
   /**
-   * Blank `[start, end)`, keeping newlines so positions survive.
-   *
-   * @param {number} start - First index to blank.
-   * @param {number} end - Index after the last one to blank.
-   * @returns {void}
-   */
-  const blank = (start, end) => {
-    for (let i = Math.max(start, 0); i < end && i < length; i++) {
-      if (chars[i] !== '\n' && chars[i] !== '\r') chars[i] = ' ';
-    }
-  };
-
-  /**
    * Blank every literal chunk in the tree.
    *
    * @param {ts.Node} node - The node to visit.
    * @returns {void}
    */
   const visit = (node) => {
-    if (isNonCodeLiteral(node)) blank(node.getStart(source), node.end);
+    if (isNonCodeLiteral(node)) blankRange(chars, node.getStart(source), node.end);
     ts.forEachChild(node, visit);
   };
   visit(source);
@@ -227,6 +236,8 @@ export function lex(text, fileName = 'scan.ts') {
   // Comments, in ONE left-to-right pass over text that no longer holds a string
   // or regex delimiter. An unterminated block comment runs to end of file, which
   // is what the language says it does.
+  /** @type {[number, number][]} */
+  const comments = [];
   for (let i = 0; i < length;) {
     if (chars[i] !== '/') {
       i++;
@@ -235,20 +246,104 @@ export function lex(text, fileName = 'scan.ts') {
     if (chars[i + 1] === '/') {
       let end = i;
       while (end < length && chars[end] !== '\n' && chars[end] !== '\r') end++;
-      blank(i, end);
+      comments.push([i, end]);
       i = end;
     } else if (chars[i + 1] === '*') {
       let end = i + 2;
       while (end < length && !(chars[end] === '*' && chars[end + 1] === '/')) end++;
       const past = end < length ? end + 2 : length;
-      blank(i, past);
+      comments.push([i, past]);
       i = past;
     } else {
       i++;
     }
   }
+  for (const [start, end] of comments) blankRange(chars, start, end);
 
-  return { code: chars.join(''), parseErrors: parsed.errors };
+  return { chars, comments, parseErrors: parsed.errors };
+}
+
+/**
+ * A source file's code, with comments and literal text blanked to spaces, plus
+ * how much of the file TypeScript could not parse.
+ *
+ * `parseErrors` is the honesty channel. Everything this module knows comes from
+ * the parse, so a file the parser could not read is a file whose literal map is
+ * guesswork — and the failure is SILENT, which is the property that makes it
+ * dangerous. A caller scanning a corpus should assert this is zero across it;
+ * `codeOnly` drops it only because most callers have one file and no corpus to
+ * assert over.
+ *
+ * The concrete case, and the reason for the JSX fallback in `analyze`: JSX
+ * inside a `.ts` file. `apps/server/src/core-extensions/*` is written that way
+ * on purpose (the extension pipeline compiles it with esbuild at runtime, so it
+ * never meets the server's tsc, and the server tsconfig excludes it). Lexed as
+ * TS, `</p>` reads as the start of a regular expression, and everything up to
+ * the next `/` becomes literal text — so a call between two closing tags is
+ * blanked away and the scan over that file reports nothing, having seen
+ * nothing. Retrying as TSX fixes it, and 33 parse errors becoming 0 is what
+ * says the retry was right.
+ *
+ * @param {string} text - The file's full source.
+ * @param {string} [fileName] - The file's name or path, which decides how it is
+ *   lexed (`.tsx` and `.jsx` differ from `.ts` and `.js`). Defaults to TypeScript.
+ * @returns {{ code: string, parseErrors: number }} The blanked source (same
+ *   length as the input) and the parse-error count of the lexing that produced it.
+ */
+export function lex(text, fileName = 'scan.ts') {
+  const { chars, parseErrors } = analyze(text, fileName);
+  return { code: chars.join(''), parseErrors };
+}
+
+/**
+ * A source file with its COMMENTS blanked to spaces and every literal left
+ * exactly as written, plus how much of the file TypeScript could not parse.
+ *
+ * ## Why this exists beside `lex`
+ *
+ * `lex` answers "is this token a call?", so it blanks literals: a call cannot
+ * live inside a string, and blanking one is incapable of hiding a call. A whole
+ * second family of guards asks a different question — "does this file SAY this
+ * word?" — and for them the answer usually lives in a literal. A Tailwind class
+ * sits in a `className` string, an import specifier is a string, a prompt's
+ * prose is a template literal, a query key is `['config']`. Run those through
+ * `lex` and the subject is blanked away: every offender list goes empty and the
+ * guard reports a clean green having read nothing it cared about. That is the
+ * one failure mode worse than the regexes this module replaced, so the two
+ * questions get two functions rather than one function and a flag nobody sets.
+ *
+ * What those guards genuinely need is only for comments to go, because their
+ * own documentation names the thing they forbid — the sentence explaining why
+ * `bg-green-500` is retired contains `bg-green-500` — and a guard that reds on
+ * its own explanation teaches the next author to delete the explanation.
+ *
+ * ## Why it is not simply a comment regex
+ *
+ * It is the same lexing as `lex`, stopped one step earlier. The comment spans
+ * are found on literal-blanked text, so the ordering problem in this module's
+ * header applies here in full: a `/*` inside a string or a `//` inside a block
+ * comment desynchronises any pair of comment regexes, and both were live in
+ * this repo. Only the spans are then applied to the original text, so the
+ * literals return byte for byte.
+ *
+ * ## What a caller inherits
+ *
+ * A token inside a string is VISIBLE here — that is the point — so this reads
+ * prose the model or the browser would see, not the call graph. Reach for `lex`
+ * when the question is about code. Positions are preserved exactly, so a caller
+ * that reports 1-based line numbers keeps reporting the right ones.
+ *
+ * @param {string} text - The file's full source.
+ * @param {string} [fileName] - The file's name or path, which decides how it is
+ *   lexed (`.tsx` and `.jsx` differ from `.ts` and `.js`). Defaults to TypeScript.
+ * @returns {{ code: string, parseErrors: number }} The source with comments
+ *   blanked (same length as the input) and the parse-error count behind it.
+ */
+export function lexWithoutComments(text, fileName = 'scan.ts') {
+  const { comments, parseErrors } = analyze(text, fileName);
+  const chars = text.split('');
+  for (const [start, end] of comments) blankRange(chars, start, end);
+  return { code: chars.join(''), parseErrors };
 }
 
 /**

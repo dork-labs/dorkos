@@ -33,32 +33,37 @@ import { describe, it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
+import { lexWithoutComments } from '../../../../scripts/lib/code-only.mjs';
+
+const INDEX_PATH = fileURLToPath(new URL('../index.ts', import.meta.url));
+
 /**
- * Drop comment LINES, so the scan sees only code.
+ * Drop comments, so the scan sees only what the server actually mints.
  *
  * The comments in `index.ts` name `127.0.0.1` several times on purpose — they
  * explain why it must not be used — and flagging those would push the next
  * person to delete the explanation.
  *
- * Deliberately line-oriented rather than the usual non-greedy block-comment
- * sweep, which was measured to be wrong on this file: it collapsed 178k
- * characters to 26k and swallowed two of the three real mint sites. A closing
- * block delimiter appearing anywhere inside a string or a line comment re-pairs
- * the delimiters, and every match after it lands on the wrong span. A code line
- * never begins with an asterisk or a double slash, so dropping those lines is
- * exact here and cannot run away.
+ * The repo's shared stripper, not the non-greedy block-comment regex this file
+ * used to warn about: that regex was measured wrong here (178k characters
+ * collapsed to 26k, two of the three real mint sites swallowed) because a
+ * closing delimiter inside a string re-pairs the spans, and the whole-line `//`
+ * filter that replaced it was blind to a trailing comment after code. The
+ * shared stripper finds comment spans only after the parser has blanked every
+ * literal, so neither failure is reachable.
+ *
+ * `lexWithoutComments` and not `lex`: a loopback URL IS a string literal, so
+ * the stripper that blanks literals would leave this scan nothing to find and
+ * the offender list would be empty for the one reason a green must never mean.
+ *
+ * @param source - `index.ts` as read from disk.
+ * @returns The same text with comment spans blanked and every literal intact.
  */
 function stripComments(source: string): string {
-  return source
-    .split('\n')
-    .filter((line) => {
-      const trimmed = line.trimStart();
-      return !trimmed.startsWith('//') && !trimmed.startsWith('*') && !trimmed.startsWith('/*');
-    })
-    .join('\n');
+  const { code, parseErrors } = lexWithoutComments(source, INDEX_PATH);
+  expect(parseErrors, 'index.ts did not parse, so this scan read guesswork').toBe(0);
+  return code;
 }
-
-const INDEX_PATH = fileURLToPath(new URL('../index.ts', import.meta.url));
 
 describe('dial URLs minted by the composition root', () => {
   it('never hardcodes a loopback literal', async () => {

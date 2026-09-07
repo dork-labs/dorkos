@@ -149,6 +149,21 @@ const FIXTURE_FILES: ReadonlyArray<readonly [path: string, source: string]> = [
     'features/__slice-fixture-a__/ui/Ok.ts',
     "import { state } from '../model/state';\nimport { thing } from '@/layers/features/__slice-fixture-b__';\nexport const ok = () => state + thing;\n",
   ],
+  // A path to the repo-root `scripts/` directory, which is what the four
+  // source-scanning guards here do to reach the shared stripper. There is no
+  // slice at the other end, so there is nothing for the rule to be about.
+  [
+    'features/__slice-fixture-a__/ui/OutsideSrc.ts',
+    "import { codeOnly } from '../../../../../../../scripts/lib/code-only.mjs';\nexport const outside = codeOnly;\n",
+  ],
+  // Its discriminator, and the reason that exemption is a PREFIX and not
+  // "anything outside src/": this leaves `src/` by the identical number of
+  // hops, and it is a deep relative import into another workspace package with
+  // a correct aliased spelling to be redirected to.
+  [
+    'features/__slice-fixture-a__/ui/OutsidePackage.ts',
+    "import type { Transport } from '../../../../../../../packages/shared/src/transport';\nexport type T = Transport;\n",
+  ],
   // Nested one segment deeper, so `../../` still lands inside slice A. This is
   // the case a depth-counting string pattern gets wrong.
   [
