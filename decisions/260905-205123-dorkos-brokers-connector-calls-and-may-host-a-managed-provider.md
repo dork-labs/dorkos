@@ -1,7 +1,7 @@
 ---
 id: 260905-205123
 title: DorkOS brokers connector calls and may host a tenant-scoped managed provider
-status: proposed
+status: accepted
 created: 2026-09-05
 spec: white-label-connections
 superseded-by: null
@@ -15,9 +15,9 @@ provenance: { tracker: linear, issue: DOR-1792 }
 
 ## Status
 
-Proposed.
+Accepted (2026-09-07).
 
-This proposes to amend ADR 260729-234626 by retiring “Direct connection is the default lane” and “No DorkOS-held platform key” when implementation lands. It also proposes to amend ADR 260718-045630 by retiring the assumption that connector execution reaches an agent through a provider MCP server. Until then the accepted parent behavior applies; after implementation, both parents remain accepted for their direct/BYO routes, provider abstraction, custody disclosure, Slack/Relay boundary, and provider choices.
+This amends ADR 260729-234626 by retiring “Direct connection is the default lane” and “No DorkOS-held platform key.” It also amends ADR 260718-045630 by retiring the assumption that connector execution reaches an agent through a provider MCP server. Both parents remain accepted for their direct/BYO routes, provider abstraction, custody disclosure, Slack/Relay boundary, and provider choices.
 
 ## Context
 

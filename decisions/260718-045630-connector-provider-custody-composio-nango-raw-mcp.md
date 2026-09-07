@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Accepted. Proposed amendment ADR 260905-205123 would retire the assumption that provider execution is handed to an agent through provider MCP configuration upon implementation. Until then existing behavior applies; afterward, the swappable provider seam, Composio/Nango/raw-MCP choices, and structural custody disclosure would remain in force.
+Accepted. Amended by ADR 260905-205123 (accepted 2026-09-07), which retires the assumption that provider execution is handed to an agent through provider MCP configuration. The swappable provider seam, Composio/Nango/raw-MCP choices, and structural custody disclosure remain in force.
 
 ## Context
 

@@ -5,7 +5,7 @@
       "id": "260905-205123",
       "slug": "dorkos-brokers-connector-calls-and-may-host-a-managed-provider",
       "title": "DorkOS brokers connector calls and may host a tenant-scoped managed provider",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-09-05",
       "specSlug": "white-label-connections",
       "amends": ["260729-234626", "260718-045630"],
@@ -807,7 +807,7 @@
       "number": 321,
       "slug": "workos-standalone-sso-scim-enterprise-federation",
       "title": "WorkOS standalone SSO/SCIM as the enterprise federation layer for DorkOS Cloud",
-      "status": "draft",
+      "status": "proposed",
       "extractedFrom": "accounts-and-auth",
       "created": "2026-07-02",
       "specSlug": "accounts-and-auth"

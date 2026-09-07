@@ -1120,9 +1120,9 @@ export const features: Feature[] = [
       'The built-in tunnel puts your local DorkOS server on the internet with one switch. Control your agents from your phone or any other machine.',
     status: 'ga',
     benefits: [
-      'Turn on a tunnel with one click in Settings',
+      'Turn on remote access with one switch in the Control Center',
       'Get a secure web address, gated by owner login',
-      'Scan a QR code to open it on your phone instantly',
+      'A globe in the top bar keeps your link and QR code one click away',
       'Works with Relay, so you can approve actions remotely too',
     ],
     docsUrl: '/docs/self-hosting/tunnel-setup',
@@ -1165,8 +1165,9 @@ export const features: Feature[] = [
     benefits: [
       'Connect Gmail, Slack, or another service with one sign-in',
       'See where your sign-in lives before you connect',
-      'Attach a connection to one session, not your whole system',
-      'Disconnect an account any time, from one screen',
+      'Add a second account for the same service, each with its own label',
+      'Choose the exact actions each agent may use, account by account',
+      'Pause or disconnect an account any time, from one screen',
     ],
     docsUrl: '/docs/connections',
     relatedFeatures: ['marketplace', 'mcp-server', 'relay-message-bus', 'mcp-sign-in'],

@@ -5,6 +5,304 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.74.0] - 2026-09-07
+
+> DorkOS 0.74.0 puts you in charge of the accounts your agents act through, moves remote access into the Control Center, and cleans up the whole app: one word for connections, grouped Settings tabs, and a calmer, keyboard-friendly interface everywhere.
+
+### Added
+
+- Remote access now lives in the Control Center — flip it on, and a globe appears in the top bar with your link and QR code one click away
+- ⌘K knows about it too: search for "remote" to copy the link, show the QR code, or turn remote access on or off
+- You can now scroll back through a room's older messages. A room opens on its
+  most recent fifty, and an "Older messages" button at the top loads the fifty
+  before those — as many times as you like, back to the day the room started.
+  The room keeps your place when the older messages land (DOR-1734)
+- Review the exact connected account and actions each named agent can use in Connections.
+- Use approved Composio actions from Claude Code, Codex, OpenCode, or the `dorkos connections` command.
+- Let programs request a connection change and follow its status without gaining owner access.
+- Show an explicit unknown outcome when an approved change may have finished but its confirmation could not be saved.
+- You can now tell DorkOS that an account on another platform is you, and it stops notifying you about your own messages. Text your agent from your own phone and DorkOS used to buzz you about what you had just written — and again if you typed your own `@handle`. Open Team, find yourself on the platform you write from, and press "This is me"; press "Not me" to take it back. It only changes whose words DorkOS thinks those are — that account still gets nothing else on your machine, and only you can set it (DOR-1778)
+- Connect several accounts for the same service, choose the exact actions each agent may use, and see the same access from the account or agent profile.
+- Keep sign-in progress after a restart, review agent requests, and pause or disconnect accounts from Connections. See account usage without exposing action inputs.
+- Use DorkOS-managed accounts or your own Composio account. Keep Slack and Telegram messaging separate from the actions agents may take through connected accounts.
+
+### Changed
+
+- Buttons give a little squeeze when you press them, everywhere in the app — the same small answer a sidebar row already gave (DOR-1751)
+- Tapping a tab on your phone answers right away, instead of waiting for the next screen to load (DOR-1751)
+- Sections that fold open — in Settings, Connections, agent setup and onboarding — slide instead of jumping (DOR-1751)
+- Rows in a table are easier to see under the mouse, especially in dark mode (DOR-1751)
+- Checkboxes pop in when you tick them, like the switches beside them (DOR-1751)
+- The globe only appears while remote access is actually running, and holds still once it is — one quiet ripple when your phone can reach this machine, and nothing after that
+- If your tunnel drops, every part of DorkOS finds out at once instead of waiting for the next page refresh
+- Settings is easier to find your way around. The tabs are grouped now — You, Agents & sessions, Access & privacy, System — and each one is named after what is inside it. "Advanced" is gone: the message box and the switch that watches for agents you started somewhere else moved to Preferences, the logging settings moved to Server, and what was left — reset and restart — is now a tab called "Danger zone". "Show dev tools" moved to Experiments, alongside the app's other developer switches. Security and DorkOS account are one "Access" tab with a section each, and Remote Access is a proper tab instead of a window that opened on top of the settings window. Old links you saved still land in the right place (DOR-1758)
+- The Server tab leads with the two things people open it for — the version and the address to paste into other apps. The folder paths and Node version now sit in a "Diagnostics" section you can open when something is wrong, with one button that copies all of them at once (DOR-1758)
+- The switch that watches for agents you started somewhere else is no longer in the session panel under the message box. It changed that setting for every window on your machine, not just the session you were looking at, so it now lives only in Settings → Preferences (DOR-1758)
+- One word for the outside world. Anything that links your agents to the outside world is a **connection** everywhere now — on the Connections page, in the app's own menus and dialogs, in the warning you get before letting an agent act without asking, in the message Slack and Telegram send back when someone who is not an approver taps a button, in what `dorkos doctor` reports, and on the website. The same thing used to go by four different names. Nothing you have set up changes; only the words do (DOR-1754, DOR-1814)
+- Scheduled tasks are called tasks everywhere on the page now, and the run history says who started each run: a schedule, you, or an agent.
+- The task form is clearer: "When it runs" instead of "Cron Expression", "Stop after" instead of "Max Runtime", and "Remember the last run" instead of "Sticky".
+- Cross-project access says "project" throughout, instead of switching between project, namespace and directory.
+- Settings → Runtimes now opens with a line saying what a runtime is, and the model and effort pickers say "Automatic" where they used to say "Runtime's choice".
+- Settings now sounds like one product. Rows that read like a manual ("Poll for updates to sessions running outside DorkOS", "Size in KB before a log file is rotated") now say what you get in plain words, and rows whose control already spoke for itself lost their filler description (DOR-1755)
+- Every heading, button and menu item is sentence case now. "Reset All Data" is "Reset all data", "Open in New Tab" is "Open in a new tab", "Add to Chat" is "Add to chat", and the headings on Home stopped SHOUTING IN CAPS (DOR-1755)
+- The messages that never reached an agent are no longer called "dead letters". That screen, and the Activity tab's, now say what happened in plain words instead of a raw wire code like `hop_limit`, whose messages they were, and what clearing them does, with the raw example folded away (DOR-1755)
+- The Team page's grouping chip says "Group by owner" instead of "Group: manager", which is the word the rest of the page already used (DOR-1755)
+- Settings describes each group of agent tools by what the agent gets to do ("Let agents send messages and check the inbox."), not a bare command fragment (DOR-1755)
+- The "Agent Discovery" tool group is now "Agent discovery", matching the other three groups.
+- Mentioning you inside a private chat you have muted no longer gets through. In a 1:1 every message already reaches you, so an `@` there is not a second way in — muting that conversation now means muting all of it
+- Messages you send yourself, from your own phone into a chat DorkOS is bridging, now come back to you as a notification — unless you tell DorkOS that the Telegram or Slack account is you, which you can now do on the Team page
+- Message search now says what it covers in one line instead of four bullets. The full
+  list is one click away, and it opens itself when a search comes back empty — which is
+  when "search matches whole words" is the answer you needed (DOR-1757)
+- Settings → Notifications is scannable by its bold labels. Every row's sentence is
+  short, the wall of framing above them is gone, and the how-to for getting DorkOS onto
+  your phone is tucked into "Get these on your phone" (DOR-1757)
+- The install screen leads with one line — "Adds 12 files. Declares no commands." — and
+  opens only the parts you have to read: the commands a package runs, the jobs it
+  schedules, and anything that clashes. The rest is one click away, with its count on
+  the label, so nothing is hidden (DOR-1757)
+- The Workspaces page says what a worktree is once instead of twice, and the folder it
+  scans no longer runs off the edge of a phone screen (DOR-1757)
+- The small labels dotted around the app (counts, states, categories) are drawn from
+  one recipe now, so the same kind of label is the same size everywhere (DOR-1760)
+- The connection-lost banner now announces itself to screen readers, so whenever it
+  does reach the screen it says so out loud instead of silently changing colour
+  (DOR-1760)
+- Side panels open in a fifth of a second instead of half a second, and the dark backdrop
+  now arrives with the panel instead of ahead of it (DOR-1764)
+- The sidebar and the right panel open without that little pause before they start moving
+  (DOR-1764)
+- The send button and the two icons in the top bar no longer grow under your mouse. They
+  light up instead, the way the rest of the buttons do (DOR-1764)
+- Picking one of a few side-by-side choices — like how much freedom you give an agent —
+  now slides the highlight across instead of blinking it to the new spot (DOR-1764)
+- Pages fade in when you switch between Home, Team and the rest, so the page keeps up with
+  the menu beside it (DOR-1764)
+- Copying something now shows the checkmark with a small fade, so you can see it worked
+  (DOR-1764)
+- Empty panels and "couldn't load that" panels now look the same everywhere in the app, instead of a little different on each screen (DOR-1763)
+- Panels that list facts — a session's id, a server's settings, your usage — line those facts up the same way on every screen (DOR-1763)
+- Sections that slide open and shut now all move at the same speed. Before, opening a tool card and opening a task row were the same gesture at two different speeds (DOR-1763)
+- Most controls in the app now measure size the same way — extra small, small, medium, large — so two controls side by side usually line up (DOR-1761)
+- `.env.example` now lists every setting the server reads — the telemetry off switches, rate limits, tracing, and the self-hosted connector gateway among them — and no longer describes a scheduler switch that nothing reads any more (DOR-1646)
+- Keep each connected account under its own DorkOS identity, preserve existing agent and session access during the upgrade, and show a clear recovery error if that upgrade cannot finish. Removing one connection from an agent now stops its live tools and revokes that connection's grants, session access, and event delivery before the action completes. (DOR-1793)
+- The sign-in system got a library upgrade. Your auth database updates itself the first time the new version starts — no action needed, and existing logins keep working.
+- Template addresses are now limited to the ones DorkOS can actually download from: `https://`, `git@host:path`, a `github:`, `gitlab:` or `bitbucket:` shorthand (add `#branch` to pin a version), or an `owner/repo` name. Other spellings — `ssh://`, `git://`, plain `http://`, the `gh:` and `sourcehut:` shortcuts, and one-word template names — are now refused with a message naming what to use instead, because none of them ever finished a download (DOR-1825)
+- Loading spinners now look the same everywhere in the app. They were drawn by hand in three dozen places, at six different sizes for the same job, so two panels loading side by side could disagree about how big "loading" is.
+- The spinner on a running task now uses the app's own blue, which means it stays readable in dark mode instead of staying stuck at the light-mode shade.
+- Spinners that sit next to words like "Loading files" no longer get read out a second time by a screen reader, and the ones that sit alone now say what they are waiting for.
+- On a phone, the icon that replaces a spinner when something finishes is now the same size as the spinner was. Buttons and rows used to shift by a few pixels at the moment they finished loading.
+- The note DorkOS adds when it shortens something now reads `… [truncated, 2400019 characters total]`, giving the full size. It used to say how much was left off instead (`… [truncated, 2395923 more characters]`), so any saved search that looks for the old wording in `~/.dork/logs/` will stop matching (DOR-1728)
+- The line DorkOS writes when it crashes (`Uncaught exception`) now records the failure under `error`, the name every other error line in `~/.dork/logs/` already uses; it used to be `message` on that line only, so a saved search for it will need updating. The `Unhandled promise rejection` line keeps its wording and gains the fields it was dropping — the error's name, and codes like `ENOENT` (DOR-1827)
+
+### Fixed
+
+- The sort-direction button next to filter dropdowns (on Team, Tasks, and Activity) now works with the keyboard, not just a mouse click.
+- Schedule preset cards now tell a screen reader their name and what they do, not the entire prompt read out in full.
+- The "open this link?" dialog now works properly with a keyboard: Escape closes it, Tab stays inside it, and focus lands on it the moment it opens instead of staying stuck behind it.
+- Tabbing through the right panel's tabs and the composer's status line (runtime, model, plan, and permission chips) now shows the app's keyboard focus ring instead of the browser's default one.
+- Dialogs, side panels, and dropdown selectors no longer flash a focus ring when you click them with a mouse — it now only shows up for keyboard navigation, where it belongs.
+- On a phone, the top of the Schedules "No schedules yet" screen was cut off behind the header. It now starts at the top and scrolls (DOR-1748)
+- Marketplace cards now measure the space they actually have instead of the width of your window, so opening a side panel no longer squeezes them into unreadable slivers (DOR-1748)
+- On a tablet-sized window the side panel now slides over the page instead of squashing it, and the Home tabs never shrink away to nothing (DOR-1748)
+- Pop-up windows now keep a margin from the screen edges, keep their rounded corners on a phone, and scroll when they are taller than the screen (DOR-1748)
+- Removed the React warnings that appeared in the browser console every time the app loaded (DOR-1748)
+- Long folder paths stay inside the card that shows them. On a phone, the Workspaces page used to push yours off the side of the screen (DOR-1747)
+- Marketplace cards show who made a package and where it came from, in full, on a card of any width — including the narrow columns a docked panel or a half-width window can create (DOR-1747)
+- An agent's name stays readable in search results. The folder path beside it gives way first (DOR-1747)
+- The marketplace search box fits on a phone, down to the smallest ones — the "/" shortcut hint it was making room for only shows where there is a keyboard to press it (DOR-1747)
+- Text no longer paints outside its box in the font picker, the blocked-paths list, the discovered-agent list, a connector tile's name, chat error details, or the full-power window (DOR-1747)
+- A discovered agent's suggested name and a denied agent's reason now show their full value on hover when truncated, matching every other truncated field (DOR-1747)
+- Closing the "open this link?" dialog now returns your keyboard focus to the link you opened it from, instead of dropping it to the top of the page.
+- The sort control in list filter bars (Tasks, Team, Activity) is bigger and easier to tap.
+- Tool and thinking cards in a chat answer the mouse now, and their headers show a focus ring for people using a keyboard (DOR-1751)
+- Activity rows that lead nowhere no longer look clickable or take a keyboard stop (DOR-1751)
+- Cards that lift under the mouse do the same for a keyboard, so nobody learns less by not using a mouse (DOR-1751)
+- Menu and list rows fade between highlights instead of flashing (DOR-1751)
+- A keyboard focus ring inside a section that folds open no longer gets cut off at the edge (DOR-1751)
+- Rows in the Obsidian sidebar panel keep their press feedback and hover colour again (DOR-1751)
+- If turning remote access off doesn't work, DorkOS now tells you why instead of quietly leaving the switch on
+- Fixed several buttons on the phone that were too small to tap reliably — the queued-message actions in the composer, the terminal and canvas tab close buttons, the schedule builder's day-of-week picker, the activity page's filter chips, the Tasks/Team/Activity filter toolbar (Status, Filter, and the active-filters badge), and the background-task bar's expand arrow all now have a proper-sized tap area, even though the button you see stays the same size. (DOR-1753)
+- Fixed the search box on Tasks, Team and other pages, which was quietly disabled from growing on a phone, and a few controls that had ended up smaller on a phone than on a full-size screen. (DOR-1753)
+- What a background agent last did is now shown from a normal-sized screen up. On a phone, the task list keeps the agent's full description visible instead of shortening it to make room. (DOR-1753)
+- The side panel on a phone no longer stretches to fill the whole screen when it has almost nothing to show — Pulse and the Files list now size to their own content instead of leaving most of the screen empty. (DOR-1753)
+- Coloured borders show up again. One line of styling had been quietly turning every coloured
+  border grey, on 69 screens. Panels that were meant to look different at a glance — a
+  connection that is fine, one that needs a look, one that broke — all wore the same grey
+  outline. They do not any more (DOR-1750)
+- Small text on a phone now grows with everything else. Timestamps, badges, keyboard hints and
+  little labels were pinned to a fixed size, so they stayed tiny while the rest of the app got
+  bigger. Roughly 300 of them now follow the same scale (DOR-1750)
+- Icons in buttons grow on a phone too, so a small icon no longer sits in a big tap target. Two
+  dialogs had icons stuck at the wrong size entirely; both are fixed (DOR-1750)
+- Status colours mean one thing everywhere. Green, amber and red were spelled seven different
+  ways across the app, so the same state could look green in one place and a slightly different
+  green in another. There is one set now, and it is tuned for dark mode as well as light
+  (DOR-1750)
+- The built-in terminal uses the font you picked in Settings. It used to ignore your choice and
+  draw in its own (DOR-1750)
+- Running background tasks are colour-coded from the app's own palette, so their colours suit
+  dark mode instead of staying the same in both themes (DOR-1750)
+- An agent that never picked a colour gets its own again in Settings → Runtimes, instead of a
+  flat grey (DOR-1750)
+- An agent changing one of its own settings no longer quietly turns the ones beside it back on. Switching off its SOUL.md used to switch its saved notes back on, and nudging one personality dial reset the other five (DOR-1719)
+- When one agent messages another directly, the agent that answers now runs on the AI tool it is set up to use. A Codex agent used to reply through Claude Code — under its own name — because a direct agent-to-agent message never said which tool to use. Messages arriving from Telegram and Slack already worked this way (DOR-1627)
+- If an agent is set to use an AI tool this copy of DorkOS did not start, another one answers for it, as before — but the server log now says so, naming the agent, the tool it asked for, and the one that replied instead. It used to happen silently (DOR-1627)
+- Renaming a room, changing its topic, or putting it away is now yours alone. An agent in the room could do any of those over the API before — including archiving a channel, which takes it off everyone's sidebar. Agents can still rename a channel they belong to and write its topic through the `update_room` tool, which has never been able to archive anything, and an agent asking for its own direct message again still brings that conversation back (DOR-608)
+- Fixed a bug where a Claude Code session started in a brand-new project — often one begun while DorkOS was still starting up — could be missing from your session list until you restarted the app. The list now re-checks your projects on disk every few seconds, so a session the file watcher failed to notice still turns up on its own (DOR-577)
+- The to-do list an agent writes above the message box now opens while the agent is working and folds back to its one-line progress count when the turn is done, and a long list scrolls inside its own box instead of pushing the conversation off a phone screen (DOR-1759)
+- The space just above the message box now shows one thing at a time. Suggested replies and the question about turning on notifications used to stack up together; whichever matters more speaks, and the other waits its turn (DOR-1759)
+- The Pulse panel no longer repeats what the page beside it already shows: its activity peek is gone on the Activity page, and its "Needs attention" list is gone on Home (DOR-1759)
+- Sections you can fold open and shut — "Advanced settings", "Schedule", an install's permission groups — now look and behave the same everywhere, and each one says how much it is hiding (DOR-1759)
+- The strongest permission setting used to say it "still asks when it matters", which sounded just like the safer setting next to it. It now says plainly that it will not stop to ask you, even for risky steps.
+- Errors tell you what to do next. "Failed to X" is now "Couldn't X", and the sentence written for you is the headline, with whatever the server said underneath it. You should no longer meet a bare "ENOENT: no such file or directory" with nothing else to read (DOR-1755)
+- The setup screen no longer shows internal field names when it cannot save your progress. It says so in a sentence and keeps going (DOR-1755)
+- A feature that is off now tells you where to type the command that turns it on, and offers to copy it (DOR-1755)
+- On a phone, the empty Channels screen points at the All tab at the bottom instead of a sidebar that phones do not have (DOR-1755)
+- A few error messages claimed something the app couldn't actually promise, like "Nothing was deleted" after a reset that failed partway through, or "Nothing you did was lost" on the screen for a crash so bad the app can't tell what happened. They now say what's actually true: it isn't sure (DOR-1755)
+- Remote access said "Failed to start tunnel" and "Failed to stop tunnel" when it couldn't tell you why. Those now match the rest of the app's voice (DOR-1755)
+- Fixed links inside a package's README on the DorkOS marketplace website. They looked like links but were not: hovering showed no address, ⌘-click or middle-click did not open a new tab, "Copy link address" had nothing to copy, and search engines could not follow them. They are ordinary links now (DOR-1296)
+- Opening a document in the canvas editor no longer repaints every border in the app.
+  The editor brings its own stylesheet, and that stylesheet was resetting the app's
+  border colour to the text colour — so cards, buttons, inputs and filter pills all
+  picked up a hard near-black outline (a washed-out light one in dark mode) and kept
+  it until the next reload. Measured across thirteen screens in both themes (DOR-1024)
+- Coloured borders now work inside the Obsidian panel too, the same way they do in the
+  app (DOR-1024)
+- Installing an agent from the Marketplace into one project used to leave it stranded.
+  The files landed correctly, but the installed list looked right past them and the
+  uninstall button said the package was not installed — so the only way to remove one
+  was to delete the folder by hand. Project installs are now looked for in the same
+  places they are written to, whatever kind of package they are (DOR-994)
+- A package installed globally and again inside a project now shows as two separate
+  installations you can manage one at a time, and removing the project copy leaves the
+  global one alone (DOR-994)
+- Updating a marketplace package no longer destroys another install of that same package that arrives while the update is running. An update takes the old copy away and puts the new one down, and for a moment in between the folder was unguarded: anything installed in that moment was deleted without a word, even though whoever installed it had already been told it worked. The update now holds the folder from start to finish (DOR-1722)
+- A conversation whose agent runs on Claude, Codex or OpenCode now says so by name when
+  that program is no longer running on your machine — and tells you the two ways back:
+  turn it on again to pick up where you left off, or take the agent out of the
+  conversation and add it back to start fresh. Before, every message got the same
+  "ran into a problem" apology and pointed you at a session that was always empty, so
+  the only way to fix it was to already know how (DOR-1720)
+- That line is written once while the situation lasts, instead of once for every message
+  you send (DOR-1720)
+- A session you open from the sessions list says the same thing in the same words when
+  the program it runs on isn't running (DOR-1720)
+- The "Add a connection" dialog used "Connection" for both the thing you're picking and the thing you're creating. Picking a source now says "Source".
+- Removing a connection now tells you plainly that nothing routes through it anymore, instead of reusing the same wording as removing a single routing rule.
+- A message from a real person in a private Telegram or Slack chat now notifies you, the same way a message from one of your agents does. It used to be the one kind of message DorkOS stayed silent about — and the mute switch, the five-minute grouping and the read-when-you-open-it rule all apply to it just as they do to an agent's
+- A channel you are not a member of no longer claims you left it. The app only knows whether you are in a room right now, not whether you ever were — so a channel one of your agents opened without you was labelled "You left this channel", which was never true. The sidebar row now says "Read only", the channel itself says "You're not in this channel. You can read it, but not add to it.", and the way back in is called "Join" (DOR-1620)
+- Long chats with Codex and OpenCode agents got slower and more expensive than they needed to be. Every turn re-sent the agent's whole introduction — who it is, its SOUL.md and NOPE.md, what DorkOS is, where it is running — and each copy stayed in the conversation, so a twenty-message chat was carrying twenty copies of the same few pages. OpenCode now sends it on a channel its own engine keeps out of the conversation, and Codex sends it once per chat and again only when you actually edit the agent. Measured on a real agent, that removes about 60% of the text a twenty-turn Codex chat was carrying and about 90% for OpenCode — counted as characters of text sent, which is what we can measure directly rather than what a model provider ends up charging for. Nothing an agent needs to know went away: its saved notes and the tools it currently has are still refreshed on every turn (DOR-477)
+- The little coloured tags in the Marketplace that say what kind of package you're
+  looking at — agent, plugin, skill pack — now pick colours made for dark mode
+  instead of reusing the light-mode ones (DOR-1760)
+- Small icon buttons — copy, close, fullscreen, Browse — are big enough to tap on a
+  phone and show a focus outline when you reach them with the keyboard. Several were
+  about half the size a thumb needs (DOR-1760)
+- The settings sidebar reads correctly to a screen reader again. It described itself
+  as two overlapping widgets at once, and the arrow keys now work from wherever your
+  focus already is (DOR-1760)
+- A greyed-out folder field greys out its Browse button too, instead of offering to
+  change something you can't (DOR-1760)
+- A long dialog heading no longer runs underneath the expand button in the corner
+  (DOR-1760)
+- A busy Inbox shows up right away. It used to trickle in one row at a time, which looked
+  like it was loading slowly (DOR-1764)
+- The recent-chats panel above the message box, and a project card you just added during
+  setup, fade away instead of vanishing mid-blink (DOR-1764)
+- Menus now open outward from the button you clicked, and one near the edge of the screen
+  slides in from the right direction (DOR-1764)
+- If you have asked your system for less on-screen movement, a busy conversation's glowing
+  border now stays still (DOR-1764)
+- When a plugin's `hooks/hooks.json` is damaged, DorkOS keeps the parts it can still read and skips the rest. It used to skip them silently, so a hook could stop running with nothing anywhere to say so. `dorkos harness sync` now names the file and each affected event, and says whether the rest of that event still runs (DOR-1724)
+- A project-room conversation you carry on somewhere other than the room now continues in the same working copy the agent has been using in that room, so the work it has not saved into the room's files yet is right there. Before, it started up in the agent's own folder instead, and that work was invisible. If you name a folder yourself, yours still wins (DOR-1624)
+- Right-clicking in the desktop app did nothing at all — no copy or paste on a text box, no "Copy Link Address" on a link, no spelling suggestions. It now opens the menu you would expect, and the app's own right-click menus (like the one on a room in the sidebar) still take priority where they have one (DOR-1297)
+- The health check now spots a room that can no longer find its conversation after its agent's folder moved. It used to look for the saved conversation anywhere on disk and call the room healthy, while the agent itself looked only where it lives now and started over from nothing every time (DOR-805)
+- Screen readers no longer read out loading spinners as unlabelled pictures (DOR-1763)
+- The subagent lines in a session's status panel now match the size of every row around them, instead of standing out as the one larger line (DOR-1763)
+- A server's detail rows in agent settings show the label dimmer than the value again, so the two read at a glance (DOR-1763)
+- Buttons no longer submit a form by accident when all they were asked to do is run a click (DOR-1761)
+- Checkboxes and radio dots now grow on a phone, like the text boxes beside them already did (DOR-1761)
+- A switch given a size now still grows on a phone; asking for both used to quietly do nothing (DOR-1761)
+- The live activity chip that shows what your agent is doing now keeps its gentle pulse when "reduce motion" is turned on, instead of going still (DOR-1761)
+- In the desktop app, Settings → Danger zone → **Restart Server** and **Reset All Data** work again. Both used to ask the server to end itself and start over, which the app can't do — so the app refused, and the two buttons could only fail. Now the app restarts its own server: it stops it, deletes your data if you asked for that, starts it again, and puts your window back on it. If another copy of DorkOS is using the same folder, nothing is deleted and you are told which one to quit (DOR-542)
+- Refusals from these two buttons read like sentences again. A message from the server used to arrive as the whole raw response — braces, error code and all — with the explanation buried inside it (DOR-542)
+- Changing an agent's personality saves once, when you let go of the slider. Dragging one dial used to send a save on every step it crossed, and the handle lagged behind your finger while it caught up (DOR-1646)
+- Search on the docs site now puts the page that explains a topic first. Searching "relay" used to return a long reference page that merely mentions relay, with the Relay page itself down at eleventh (DOR-701)
+- Docs search now understands word endings and small typos: "scheduling" finds what "schedule" finds, and "releay" still finds Relay (DOR-701)
+- Asking docs search a full question no longer costs a giant download. A five-word question used to return around 300 KB — worse than reading the whole documentation index — and now costs about the same as a one-word search (DOR-701)
+- The diagnostic view of a room's agents no longer contradicts the health check about the same agent. It used to look for a saved conversation anywhere on disk and report "found it", while the health check warned that the agent could not actually reach it — so anyone chasing a room that had forgotten everything was told to look somewhere else. Both now read the same answer, the "anywhere on disk" one is still shown beside it under a name that says what it is, and when the two differ the response says why (DOR-1780)
+- The diagnostic view of a single session now says whether the runtime it names is the one that session actually runs on, or just the one it would get. A room's first session had no recorded runtime, so the view printed a guess as if it were a fact (DOR-1780)
+- One room member DorkOS cannot look up no longer costs you the whole report. A busy or damaged database used to take down the diagnostic view and cut short the startup check that repairs rooms — the two places you go when something is already wrong. Now it costs that one member's answer, which is marked as unreadable rather than passed off as healthy (DOR-1780)
+- A message that ran out of time before an agent saw it is now turned away everywhere, and whoever sent it is told in plain words — "The message expired before the agent could start" — instead of "TTL budget expired". One path already refused these; another quietly handed the message a fresh full clock and answered as if it had just arrived, so an hour-old message could still start a turn nobody was waiting for (DOR-1770)
+- Starting DorkOS with `--tunnel` now prints the address your phone can reach it on, and a QR code for getting there without typing it. Turning Remote Access on later from the app prints it too. Both were silent before: the terminal was watching a copy of the tunnel that never actually ran, and the QR code was failing in a way nothing reported (DOR-1745)
+- Installing an adapter for one project now tells you when it lands machine-wide instead of silently ignoring the project choice (DOR-1776)
+- The install conflict check now looks at every kind of installed package — agents and Shapes as well as plugins — when warning you about a clashing skill name or a screen slot two packages both want (DOR-1776)
+- Reinstalling a package no longer warns that it clashes with itself, and two different packages that happen to share a name are no longer mistaken for one, which used to hide a real clash between them (DOR-1776)
+- Editing an agent's setup while another agent is talking to it no longer switches which AI tool answers — the conversation stays with the tool that has its history. DorkOS used to re-read the agent's setup on every message, so a change made mid-chat handed the rest of the conversation to a tool that had never seen any of it and answered from nothing. Your change still applies everywhere else you use that agent — in rooms, in chat, and in new sessions you start; the one running agent-to-agent thread keeps the tool that has been answering it (DOR-1774)
+- An agent-to-agent message that could not run at all — the AI tool not signed in, for example — no longer locks that conversation to the tool it happened to try. Fix the setup and send again, and the next message goes where you said (DOR-1774)
+- You can now pick up and reorder sidebar items with just the keyboard. Tab into a section, arrow down to the row you want, press Space to lift it, arrow to where it should go, and press Space again to drop it. Escape puts it back. Before this, the sidebar told screen readers a row could be dragged with the keyboard, but there was no key that could actually start the drag (DOR-1746).
+- Enter still opens whatever a sidebar row points at — Space is the key that picks it up.
+- The same works on a section you made yourself: Space picks the whole section up so you can move it, and Enter folds it. Sections that come with DorkOS — Channels, Direct messages, Agents — can't be moved, so Space still folds those.
+- Lifting something and putting it straight back where it was no longer saves anything. It used to write your whole sidebar layout back to disk for a move that never happened.
+- Editing a schedule that came from an installed agent or Shape no longer writes into that package's own files, where the change would have been shared with everyone who installed it and wiped out by the next update. DorkOS now says the schedule belongs to a package, the same as it already did for plugins — and schedules belonging to agents you made yourself stay yours to edit (DOR-1789)
+- Adding a new schedule to an agent that came from the marketplace is now refused up front, instead of being accepted and then wiped out by that package's next update. DorkOS suggests making your own copy of the agent and putting the schedule there (DOR-1789)
+- DorkOS now re-reads a message mailbox the moment it starts watching it, instead of only reacting to what arrives afterwards. Anything already waiting — mail that landed while DorkOS was not running, or in the instant the watcher was still starting up — is picked up straight away rather than sitting there until something else happens to arrive (DOR-1787)
+- A scheduled run that hits its time limit now says so the same way everywhere, in plain words. Depending on how the run was started, its record used to read either "Run stopped after passing its 5m time limit" or "Run timed out (TTL budget expired)" — the same thing, said twice, once in jargon (DOR-1786)
+- Switching which account an agent runs on now saves on machines with more than one account. The Account setting in an agent's "Runs on" panel was sending its change down a path that only agents use, and that path refuses account changes on purpose — only you get to decide whose subscription pays. So the setting quietly failed every time, on the only machines that show it. It now goes the way the rest of your settings go, the picker keeps whatever you chose, and every screen that names the account — the panel itself and the account label at the bottom of the window — updates straight away, even if you close the panel the moment you click (DOR-1736)
+- A thread's "3 replies" line no longer says a smaller number than the replies
+  it is sitting above. It could fall behind when a reply arrived while you were
+  reading a long thread (DOR-1734)
+- DorkOS now reaches a remote tool server and reads its tool list before it shows connected. Failed checks add no account and explain what to fix. Closing before a check starts keeps it closed. Simultaneous connections stay with the right provider. Repeated disconnects cannot bring back a removed server. (DOR-738)
+- Adding a marketplace now checks the address before it saves it. A marketplace is either an `https://` link to a git repository or a `file://` folder on your own machine; anything else — including SSH-style `git@host:org/repo` addresses, which look right but can never load a listing — is turned down on the spot, with a note saying what to use instead. Previously any text at all was accepted and quietly failed later. Sources you already have are left exactly as they are (DOR-1710)
+- DorkOS used to spell an ellipsis two ways ("Saving…" beside "Saving...") and an apostrophe two ways, sometimes on the same screen. The app now spells both one way, and a check keeps new copy from drifting back (DOR-1756)
+- When something goes wrong, DorkOS now says the same thing every time. The crash screen, the page-error screen and the "page not found" screen used to invent their own words for the same two buttons. They now all say "Try again", "Reload DorkOS" and "Back to home" (DOR-1756)
+- A page that fails to load now tells you what happened in a sentence written for you, with the technical error tucked underneath, instead of showing you the raw error and nothing else (DOR-1756)
+- Errors that used to start "Could not…" now start "Couldn't…", and say what to try next (DOR-1756)
+- When an agent asks you for something, the card now says "`{name}` needs something from you" and its button says "Done". Screen readers hear the same plain countdown the card shows: "Two minutes left to answer." (DOR-1756)
+- Smaller labels that read like code now read like English: "Repository link" instead of "Git URL", "What this can do" instead of "Permissions & Effects", "Not protected" instead of "No auth", and "Reloaded 3 extensions" instead of "Reloaded 3 extension(s)" (DOR-1756)
+- The banner about agents running unattended now says "connection", matching the rest of the app, and its Connections button actually opens Connections. It had quietly stopped working (DOR-1756)
+- On a phone, the "New Schedule" button ran off the side of the Schedules header and painted over the icons next to it, leaving the page tabs clipped at both ends. It is a `+` there now — the same shortening the Team page already uses — and screen readers still hear its full name (DOR-1747)
+- Installing a package straight from an address now checks the address the same way marketplace sources are checked. An install address is a git repository over `https://`, `ssh://` or `git@host:path`, or a `file://` folder on your own machine; anything else is turned down before DorkOS runs anything, with a note saying what to use instead (DOR-1799)
+- A huge error no longer floods your terminal. When something fails with a message megabytes long — a crashed program dumping everything it had — DorkOS now prints the start of it, the lines that say where it happened, and a note saying how big the whole thing was. Log files were already shortened this way; the terminal was not (DOR-1728)
+- DorkOS accounts now keep the sign-in source they came from, so email, GitHub, and Google sign-ins continue to recognize the right account after an upgrade.
+- Skills from other tools that keep extra settings under `metadata` (for example ClawHub skills) used to be dropped silently. They now load like any other skill.
+- The built-in "writing for humans" skill had a typo in its header that made DorkOS skip it. It is back.
+- Huge errors are now shortened in more places. DorkOS already shortened an error it was reporting on its own, but not one tucked into a wider line of detail — and those lines used to carry the whole thing, filling a log file with a single 1.2 MB line. Crash reports and the other failures DorkOS reports now get the same short version, with the same note saying how big the original was (DOR-1827)
+- Activity now names the agent that changed an extension's settings or secrets, registered or removed an agent, added a chat connection, changed a chat route, or created, paused, deleted or cancelled a scheduled task. Those entries always said "You" before, so work one of your agents did looked like something you did yourself. What you do in the app still says "You", and a caller DorkOS cannot identify is shown as an unidentified caller rather than as you (DOR-1801, DOR-1829)
+- DorkOS sometimes said "DorkOS couldn't finish starting" on a machine that was
+  simply busy. One small hiccup while the app was still loading — a picture that
+  didn't arrive, a request that gave up — was enough to make it announce a
+  failure, even though the app came up seconds later. It now waits until loading
+  has actually stopped before saying anything went wrong, so a slow start looks
+  like a slow start.
+- Loading a profile photo at the moment it was replaced or removed could take the whole server down, rather than just failing that one request. Photos are now read from disk once instead of twice, which removes the crash and also fixes a subtler problem: the version tag your browser caches could name different bytes than the ones it was actually sent.
+- Opening a file or a picture from a room or a transcript at the exact moment it was deleted could take the whole app down, instead of just failing that one request. Now only that one request fails, and everything else you have open keeps running.
+- When Claude's safety filter declines a message, the chat now says that plainly and tells you what to do: rephrase it, or pick a different model. Before, it only said "The request was rejected as invalid" and hid the reason under Details.
+- Reloading the app used to print one red "query error" line per background check in the browser console. Those were the browser cancelling requests, not real failures, and they are no longer logged.
+- OpenCode sessions no longer disappear from the session list when a project is opened through a different spelling of the same folder — through a symlink, with a trailing slash, or by way of a parent folder. They come back in the session list, in the sidebar's Recent list, and in the Activity counts. The surfaces reading the client-side selector still miss them when the folder is reached through a symlink: that matching happens in the browser, where it cannot check what a folder really is on disk. That half is coming separately. (DOR-695)
+- Activity now records removing an extension's secret and putting one of its settings back to the default. Setting them was already recorded; taking them away was not (DOR-1829)
+- The agent card an outside tool reads before talking to your agents now says that a key is needed. It only said so when you had turned login on or set a server key, so on a normal setup the card promised the call would go through and the call came back refused. Calls have always needed a key; now the card admits it. Reading the card still needs nothing while login is off, and the card never says where your key is kept (DOR-1824)
+- DorkOS now refuses to read or install from folders outside your allowed workspace, however the address is spelled. A package install aimed at a `file://` address used to skip that check — it could list the contents of a folder you never opened up, and copy that folder in (DOR-1825)
+- Creating an agent from a template now checks the address up front and says plainly when it isn't one DorkOS can download from, instead of failing partway through with a server error (DOR-1825)
+- Your GitHub key is only ever sent to GitHub. Installing a marketplace package, or creating an agent from a template, used to attach your key to whatever address it was pointed at — so an address on someone else's site was handed a working key to your GitHub account. Private repositories on GitHub still work exactly as before (DOR-1833)
+- Reopening a menu or a dropdown list straight after closing it no longer eats your next click. The press did nothing and you had to press again — the list that had just closed was still on screen finishing its fade, and it was closing the one your press had opened. The same press now works the first time, anywhere in the app a menu is reopened straight after it closed (DOR-1834, DOR-1835)
+- Clicking the little arrow at the right of a collapsible settings section now opens and closes it, the way clicking its title always did. The arrow had quietly stopped being part of the button.
+- Opening the session page without a link no longer flashes errors on its way in. DorkOS picks the conversation you were last having and sends you there, but it was not saying which project that conversation belongs to — so the page asked for a transcript it could not place, got two errors back, and settled on an empty screen before recovering. It now names the project, and the conversation opens straight away (DOR-1836)
+- Stopping an agent's very first reply in a room now always stops it. The very first time an agent answers in a room, DorkOS works out which program is running that answer by reading the agent's settings — and if those settings changed while the answer was being written, Stop went to the wrong program and quietly did nothing: the reply carried on to the end, and you paid for it. DorkOS now remembers which program picked the answer up, so Stop goes there (DOR-1721)
+- Reconnecting to a chat no longer skips replies. When two turns started on the same chat at once, the server could swap out the counter it uses to number that chat's events — and a window reconnecting afterwards asked to carry on from a position that no longer meant what it used to, so some replies simply never arrived and nothing looked wrong. Those windows now reload the conversation instead.
+
+### Security
+
+- Resetting DorkOS — the button that deletes everything it has stored — now takes a deliberate two-step confirmation, so nothing else on your machine can trigger it with one hidden request. Before this, any program that could reach the DorkOS API could delete your whole `~/.dork` folder with a single message, because the only thing the reset asked for was a word that is written in DorkOS's own source code. Now DorkOS hands out a one-time code the moment you press the button, and the reset only happens if that exact code comes back within two minutes. Nothing changes about how you reset: type "reset", press the button, done (DOR-1707)
+- Turning an extension on or off is now yours alone. DorkOS already refused an agent that request when it came through settings, but the Extensions screen had its own way in that asked nobody — so an agent, or a web page you happened to be visiting, could switch your extensions on and off behind your back. Both are refused now, in both directions, and DorkOS says what it did not do and who can do it. Nothing an extension does actually ran without your say-so either way: an extension still needs your one-time approval before its code runs anywhere (DOR-1507)
+- An agent can no longer create a second extension under a name you already use. DorkOS keeps extensions in two places — one for you, one inside a project — and it used to check only the place it was writing to. So an agent could put its own `notes` in your project while your own `notes` sat in the other place, and that copy could quietly take over the name later, after you had switched the original off. Now a name you are already using is refused in both places, and the message says where the existing one lives (DOR-1507)
+- Rate limits now count by connection instead of by a header anyone can write. DorkOS was reading the client's address from `X-Forwarded-For`, which is fine behind a proxy and free to fake without one — so someone guessing your password could put a new value in that header on every try and never run out of attempts. All six limits count honestly now: sign-in, the MCP endpoint, the agent-to-agent endpoints, extension data proxies, the connection test for agent messaging, and the admin restart and reset buttons — that last one guards the button that erases everything DorkOS has stored, so it is the one you would least want a stranger to be able to keep retrying. If a proxy you control really is the only way in and you want it counted per person behind it, set `DORKOS_TRUST_PROXY=true` (DOR-1711)
+- The MCP endpoints now check where a browser request came from the same way the rest of DorkOS does. They had their own shorter list, which quietly refused addresses everything else accepted — the IPv6 spelling of localhost, a container published on a different port, and any address you listed in `DORKOS_CORS_ORIGIN`. Those work now, and the protection against a malicious page pointing your own address at itself is unchanged (DOR-1711, DOR-553)
+- The addresses you list in `DORKOS_CORS_ORIGIN` are now added to the ones DorkOS already trusts, rather than standing in for them. Before, listing your public address could stop the app's own live connection from opening and stop you signing in, because those two checks read the list as the complete answer while the rest of the app did not (DOR-1711)
+- Check the active turn, agent, session override, connection, action version, and approval again before every provider attempt.
+- Stop the next discovery or action after access is revoked, a turn ends, or provider configuration changes.
+
 ## [0.73.0] - 2026-09-03
 
 ### Added
@@ -1903,106 +2201,4 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
   TLS-terminating proxy, set the `X-Forwarded-Proto` header on it — a proxy that omits it
   will now have its upgrade requests rejected instead of silently accepted (DOR-932)
 
-## [0.58.0] - 2026-08-06
-
-> DorkOS 0.58.0 brings the outside world into one place. Connections is now a page where you decide who can reach your agents and which accounts they act under; a Telegram or Slack chat or group can become a channel your agents read and answer in; you can manage each agent's tools without leaving the app; and several DorkOS windows finally stay responsive at once.
-
-### Added
-
-- **Connections is a page now, with two halves.** Messaging is where people and platforms reach your agents. Accounts is the services your agents can act on for you. They sit on one page, one scroll, because they ask two different things of you: who may write to your agents, and what your agents may do under your name.
-- **You can see who is trying to reach a bot nobody set up.** A Telegram or Slack bot can be found by anyone. When a stranger writes to one, DorkOS now shows you a card at the top of the page: who wrote, and how many times. It never shows what they wrote, because it never reads it. Pick an agent to answer, ignore the chat, or block it outright. The bot stays quiet until you decide, and no agent runs, so nothing is spent.
-- **An account you give an agent stays given.** Switch on Gmail for an agent and every session it starts gets Gmail, today and after a restart. A single session can still add or drop an account just for itself.
-- **A fresh install shows you what is possible.** The Accounts half used to be an empty box until you set up a carrier, which made it look broken. It now names the services and tells you the truth about what stands in the way: Gmail and the rest connect through Composio, a one-time setup of about two minutes, and your sign-ins live in Composio's vault rather than on this machine.
-- The getting-started card has a new "Connect a service" row that takes you straight to the Accounts area of the Connections page.
-- Manage an agent's MCP servers right inside DorkOS. Open an agent and go to its Toolkit tab to add a server (a local command or a remote URL), turn it on or off, test the connection, and see at a glance whether it's connected — no terminal and no config files to edit. Before a new server can run, DorkOS shows you the exact command it will start and asks you to approve it. Available for Claude Code agents now.
-- Codex agents can now use managed MCP servers too, the same way Claude Code agents already can. Add one from a Codex agent's Toolkit tab: point it at a local command or a remote URL, turn it on or off, and DorkOS makes it available to the agent on its next turn. Codex doesn't support the third kind of server (a persistent streaming link, SSE), so that option isn't offered when you're adding a server to a Codex agent.
-- You can now add and manage MCP servers for an OpenCode agent right from the Agent Hub, the same way you already can for Claude and Codex agents. DorkOS connects the servers you turn on to the agent at the start of each session, and shows whether each one is working. It also surfaces any MCP servers you set up in OpenCode itself, as a read-only status view (DOR-893).
-- Bring an MCP server DorkOS found in a project's config under DorkOS management in one click. When an agent's Toolkit tab shows a "discovered" server (one read from the project's `.mcp.json`), a Manage button now promotes it to a managed server you can turn on or off, test, and edit here — after the same quick approval step as adding one by hand. Available for Claude Code agents.
-- You can turn a connected Telegram chat into a **channel**. Its messages are set up to land in one shared log your agent reads before it answers, it is set up so you can speak into the chat from the cockpit, and everyone writing in from outside your machine is clearly marked. A new [Bridged Channels](/docs/guides/bridged-channels) guide walks through it and is honest about the trade: bridging lets people you may not know put text in front of your agent, the permission mode is the real bound, and the channel log is your audit trail. (DOR-881)
-- The Bridge to a channel action lives in a messaging connection's settings. The same screen turns bridging back off (after telling you what that archives), lets you choose whether the chat hears about a failed or stopped turn, and says plainly why a chat can't be bridged when it can't, instead of a greyed-out button. (DOR-878)
-- You can now set up a group chat to become a channel, not just a one-to-one. Turning on Bridge to a channel for a group creates a channel where the group's messages land in a shared log your agent reads, and the agent stays quiet until it's mentioned. A broadcast channel still can't be bridged, and now says exactly that ("a broadcast channel, not a two-way conversation") instead of the old catch-all reason. A chat connected before this change carries no record of what kind it is, so it stays a one-to-one-only bridge until a new message comes through. (DOR-907)
-- When someone messages a bot you haven't set up yet, the claim card now offers two ways to answer: "Answer in a channel" sets up a room for that chat in one step, or "Answer privately" keeps it as a single chat, same as before. Choosing an agent still never happens automatically — nothing runs, and nothing is spent, until you decide. If a channel can't be set up (for example, the chat turns out to be a broadcast), the chat is still answered privately and the card says why. (DOR-882)
-- Adding your bot to a Telegram group now shows up right away as its own card on the Connections page, naming who added it and to which group. Pick an agent and choose Join, and that agent answers the group from a new channel. Ignore hides the card without changing anything; Leave actually removes the bot from the group on Telegram, not just from the list. (DOR-883)
-- If the bot gets added to a broadcast channel instead of a group, the card says so and only offers Ignore or Leave. A broadcast channel is one-way, so there is nobody in it for an agent to answer. (DOR-883, DOR-907)
-- A bridged Telegram channel's header now shows whether your agent sees every message there or only the ones that mention it, taken straight from Telegram's own privacy setting for the bot. Tap it to see why, and how to change it on Telegram's side. (DOR-879)
-- Anyone bridged in from Telegram is marked with the platform they're on, next to their name in the room's member list and beside every message they send, so you can always tell a person on your own machine apart from someone joining in from outside it. (DOR-879)
-- In rooms and chats, agents now look different from people at a glance. An agent's avatar is a square with a small robot badge; a person's stays round. Someone posting in from another chat app, like Telegram, gets a small icon too, so you can see where their message came from.
-- @mentions in room messages now show up as colored tags. Hover one to see who it is, agent or person. A mention of someone who has since left the room still shows, just as plain text.
-- Feedback, bug reports, and ideas you send from DorkOS are now trackable. Open "Feedback & requests" from the help menu to see everything this install has sent and where it stands: Received, Triaged, In progress, or Shipped with the version it went out in.
-- Add your email to a report and DorkOS emails you twice: once to confirm it arrived, and again when it ships. Nothing in between, and never anything else.
-- Sending feedback from the cockpit is richer and clearer. The dialog leads with your message, shows who it will be sent as (with a one-click "Send anonymously" that really withholds your name and email), and tucks diagnostics and the recent conversation behind an "Attachments & details" panel. You can open a full preview to see exactly what will be sent before you press Send — nothing leaves your machine until you do, and home paths and secrets are removed first. Bug reports include the recent conversation and a scrubbed slice of server logs so the team can see what led to the problem.
-- New ways to reach feedback: a "Send feedback" command in the command palette, a "Report" button on error toasts, and a "Report this crash" button on the crash screen — each opens the dialog ready to send.
-- Marketplace cards for messaging and service adapters now tell you what they become once installed: a messaging adapter reads "Adds a new way to reach your agents", and a service connector reads "Adds a new service your agents can act on", matching the two halves of the Connections page.
-- After you install one of these, the confirmation gives you a one-tap way in: "Open Messaging" or "Open Accounts" takes you straight to the right part of the Connections page to finish setting it up.
-- Channels and conversations can now go in sidebar groups alongside your agents. Drag one in, reorder it, or use "Move to group" in its right-click menu, and it stays where you put it (DOR-581)
-- Mute a channel or conversation from that same menu to dim it and stop it asking for your attention (DOR-581)
-- Right-click a sidebar section header, or press the "…" beside it, to see what you can do with that whole section. Channels and Direct messages can start a new one, mark everything read, and collapse. Recent can start a session. Agents can add an agent or a group, and finally gives you the sort and show settings that had nowhere to click before. Every header uses the same words for the same actions (DOR-601)
-- A group's own "…" menu can now collapse or expand that group, so every section in the sidebar folds away from the same place (DOR-601)
-
-### Changed
-
-- Everything that links your agents to the outside world now lives under one word: Connections. The session badge, the per-agent settings, the session panel, and the add and edit dialogs all say "Connection" now, instead of the old mix of "Integration", "Connector", and "Adapter".
-- Status messages about your network no longer say "Connection" — a word we're saving for the Connections page. The live-sync indicator now says "Live updates" (or "Offline" when it's down), a lost server link says "Server link lost. Check your network.", a stalled fetch says "Can't reach DorkOS", adapter tests say "Reachable" or "Not reachable" while trying to reach it, and tunnel and install errors name what actually failed instead of saying "Connection" (DOR-855)
-- Setting up Telegram or Slack asks who should answer first. It used to ask last, and let you skip. Skipping left you with a bot that reached nobody and no sign that anything was wrong. The agent and the connection are now saved together, and if the agent cannot be set, nothing is saved at all.
-- A chat that already reaches an agent says so. Pointing it at someone else now asks once — "This chat reaches DorkBot. Move it to security-auditor?" — instead of quietly creating a second route that never fires.
-- Slack asks what you want it for. It can be a place you talk to your agents, or an account they act on as you. Those are different things, so it asks which, and tells you where an account sign-in is kept before you pick.
-- Session strategy is in plain words. "One conversation per chat", "One conversation per person", or "A fresh start every message", each saying what it means.
-- The Slack setup form names Slack directly ("Slack channel settings", "respond in Slack channels?"), so its channels never get confused with your Channels list.
-- When you filter which chats reach an agent, the field reads in plain language: "Chat type", with options like "Direct message" and "Broadcast channel".
-- Old links still work. Anything that used to open the messaging pop-up, including the Settings link, now lands on the messaging half of the Connections page.
-- Cleared up copy that used "agent" for two different things at once. The sidebar's "Add more agents" row that actually opens the Runtimes tab now says "Connect more runtimes"; first-run setup, the Runtimes settings tab, and the status bar now name Claude Code, Codex, and OpenCode (or say "runtime") instead of "agent" there. Background-task labels for helper subagents now say "subagent" instead of "agent" too. Nothing about your fleet of named agents changed (DOR-853)
-- The Settings Runtimes page now shows one card per runtime instead of a single shared form. Each card shows what a new conversation with that runtime will start with, at a glance.
-- You can now set the model and thinking effort for every runtime, not just your default one. Before, only the default runtime's model and effort could be changed at all.
-- Pick your default runtime by clicking Make default on its card.
-- Claude Code's billing accounts and OpenCode's power source now live on their own runtime's card instead of somewhere else in Settings.
-- One shared control, "Where new conversations stop for you," sits below the cards and covers every runtime at once.
-- The Runtimes page now works on your phone: cards expand in place instead of needing a wider screen.
-- The Runtimes page now calls the three trust levels "Asks before acting," "Pauses at big steps," and "Full autonomy," so the words describe what each level actually does.
-- Settings is shorter and grouped. It went from twelve tabs to ten, sorted under plain headings: Agents & sessions, Access & privacy, System, and Add-ons. Appearance and Preferences stay at the top, and Remote Access stays a button at the bottom. The window, and the sidebar button that opens it, are titled "Settings" now, not "App Settings".
-- The default agent moves to the Agents page. It used to be its own Settings tab. Now you open an agent's menu on the Agents page and choose "Set as default" — right next to the "Default" badge that already tells you which one it is.
-- Integrations left Settings for the Connections page. Everything that tab did lives on the Connections page now, and old links to it still land there.
-- The Tools tab names what the tools do. The groups you can switch on and off are Messaging, Agent discovery, Connection management, and Scheduling, instead of the names of the parts under the hood.
-- Settings now opens at nearly the size of your window instead of a small box, so long pages like Runtimes have room to breathe and you scroll less (DOR-917)
-- Choosing where OpenCode gets its models is a shorter read: each choice shows its name and one line, and the extra detail (including the honest trade-off) appears once you pick a path, before you set anything up (DOR-917)
-- The arrow on a runtime card now opens and closes the card when you click it, the way it always looked like it should (DOR-917)
-- The Settings → Tools card that lets outside apps (Claude Code, Cursor, Windsurf) use DorkOS as an MCP server is now named "Connect other apps to DorkOS" — the old "External MCP Server" label didn't say which direction the tools flowed.
-- That card and an agent's Toolkit tab (where you give an agent tools from other MCP servers) now point at each other, so wherever you land you can find the other one.
-- The agent map (Discovery → topology graph) no longer says "Integration" anywhere: the edge label, the "Remove" button, the drag-to-connect hint, and the remove-connection dialog all say "Connection" now, matching the rest of the app.
-- A binding's chat-type badge on the graph now reads in plain language ("Direct message", "Group", "Broadcast channel", "Thread") instead of the raw platform value.
-- The help menu now leads with "Send feedback" and "Report a bug", adds "Feedback & requests", and keeps the GitHub option available but tucked below. Reporting on GitHub is no longer in the command palette.
-- Cmd+K now closes a dialog you opened from the sidebar, not just one you reached by a link. Before, opening the command palette left that window sitting behind it (DOR-839)
-- Rooms can now carry three new status notes for a bridged channel (a message that could not be delivered, a delivery blocked by your reply or start settings, and messages arriving faster than the channel can record them). This widens the set of note types a room may hold. The DorkOS cockpit ships in lockstep and understands them, but an older client pinned to the previous set will fail to read a room that contains one of the new notes until it is updated. This is the one part of the change that is not backward-compatible; everything else is additive. (DOR-881)
-- If you reach DorkOS through a reverse proxy, check that it passes WebSocket connections through — live output now uses them. The setup pages have working config for nginx and Caddy (DOR-927)
-- Running the Docker image and reaching it by a name rather than an IP (`http://dorkos.lan:4242`)? Add `DORKOS_TRUSTED_HOSTS=dorkos.lan`. Without it the page loads and the live updates never arrive — the Docker page explains why (DOR-927)
-
-### Fixed
-
-- Fixed the sidebar session list going empty for a runtime whose permission-mode names sit outside DorkOS's shared list — new sessions and status updates for it were silently dropped instead of shown (DOR-851)
-- Two people could end up messaging the same Telegram or Slack chat and quietly land on two different agents, with no warning either had happened — whoever connected the chat second had no idea their connection was silently going nowhere. Connecting a chat to an agent is now exclusive: trying to connect an already-connected chat tells you which agent already has it, instead of quietly losing the newer connection with no error.
-- Creating a new agent now reliably opens a working chat. The agent's opening turn runs in the new agent's own folder instead of whichever folder you were in a moment before, so its first message is saved where the chat looks for it. Before, the greeting could land in the wrong place: the chat showed "No conversation found" or the conversation seemed to vanish, and the new session sometimes appeared under the agent you had open just before.
-- Clicking an agent in the sidebar now opens the conversation you left off in. Before, it usually opened a blank chat instead, even while the sidebar showed that agent working. You only got the real conversation back if you had already opened that agent in the same browser tab, so a second window or a fresh reload almost always lost it. An agent with no conversations yet still starts a new one (DOR-928)
-- Click two agents quickly and you land on the second one, not whichever one happened to load first. The same holds if you click an agent and then open a channel, a thread, or a recent conversation: you stay where you last clicked (DOR-928)
-- If DorkOS cannot reach the server while opening an agent, it now says so and leaves you where you are, instead of dropping you into a blank chat (DOR-928)
-- "New Session" in the command palette starts a new conversation again, on the agent you are actually on. It had been reopening the agent's most recent conversation, which is what "Open Here" does (DOR-928)
-- Opening Settings or Tasks right after clicking an agent no longer cancels the click. Going somewhere real still does: click an agent, then open a different channel, and you stay in the channel (DOR-928)
-- You can keep several DorkOS windows open at once. Opening a third window used to make the whole app stop responding — activity dots froze, replies looked stuck halfway, reloads never finished, and a fourth window would not open at all. Those were all one problem, and it is fixed (DOR-927)
-- The Send button now greys out whenever it will not send: while your agent is still answering, or in a conversation you can only read. It used to look ready to press and quietly do nothing (DOR-850).
-- The "set up messaging" buttons on an agent's page led nowhere useful. One opened a Settings tab with no messaging controls; the other opened a tab that no longer exists. Both now open the Messaging section of the Connections page.
-- On a phone, the sidebar now closes as soon as you tap a conversation, an agent, or a link, so you land on the thing you picked instead of staring at the sidebar again (DOR-610)
-- "Replay setup" now clears the screen for the setup flow it restarts. If you reached Settings from the "Setup skipped" message, the Settings window used to stay open on top of the welcome screen (DOR-839)
-- Fixed a screen reader announcing "1 more subagents running" for the subagent overflow badge; it now says "1 more subagent running" (DOR-890)
-- Screen readers now get exactly one panel per Settings tab: switching tabs briefly created a hidden second copy of the panel with the same id, which could confuse assistive tech (DOR-693)
-- When you set up Telegram or Slack, required fields (like DM Access or an API key) show a red asterisk next to the label. Screen readers used to read that asterisk out loud as part of the field's name, like "DM Access star". Now they just read the plain field name, and the asterisk still shows for sighted users (DOR-651).
-- Opening a channel or a direct message now shows its name at the top of the screen, instead of always saying "Dashboard" (DOR-587)
-- Workspaces, Connections, and Feedback & requests now show their own name at the top of the page instead of "Dashboard" (DOR-919)
-- Settings panels no longer print their own title twice. Appearance, Preferences, Tools, Security, Privacy & Data, and DorkOS account each showed the same heading a second time just under the first one (DOR-918)
-- When a new message reorders the command palette while it is open, the highlight now stays on the top row until you move it yourself. It used to ride the old row down the list, so Enter opened something other than the row now sitting on top (DOR-699)
-- The keyboard shortcuts panel no longer lists Cmd/Ctrl+Shift+D (Dev Playground) in a production build, where pressing it did nothing (DOR-567).
-- "Move to group" no longer offers smart groups as a destination. Filing an agent into one made the row disappear from the sidebar, because smart groups only show members their rules pick (DOR-581)
-- In Shapes, pressing Escape to back out of "Make your own version" now puts your keyboard focus back on the button you opened it from, so the next Tab carries on from there instead of jumping to the top of the Shape list (DOR-513)
-
-### Security
-
-- Links your agent fetched now clear the same safety check as every other link in DorkOS before a chip can open them (DOR-921)
-
-Older releases (v0.1.0 – v0.57.0) live in the [Changelog archive](/changelog-archive).
+Older releases (v0.1.0 – v0.58.0) live in the [Changelog archive](/changelog-archive).
