@@ -2,6 +2,7 @@
 covers:
   - "fix(server): stopping an agent's very first reply in a room now stops it (DOR-1721)"
   - 'fix(server): the boot-window stop re-aims at the turn, not at what it reached (DOR-1721 review)'
+  - 'fix(server): the boot-window stop is marked on the turn, under either of its names (DOR-1721 review 2)'
 ---
 
 ### Fixed

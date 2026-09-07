@@ -826,6 +826,94 @@ describe('createSessionRoomTurnRunner', () => {
       await answered2;
     });
 
+    it('re-aims a stop a halt aimed at the CANONICAL id, which is every halt on a late answer', async () => {
+      // The mark and the capture have to answer to the same names. The room
+      // moves onto the canonical id the moment `onSessionBound` reports it, so
+      // every halt after that point — which is every halt on an answer that
+      // outran the room's patience — addresses the turn by a name a
+      // session-keyed mark was never written under. The stop was delivered,
+      // landed on a still-booting process, and then was never re-aimed: the turn
+      // ran to completion, silently, on the exact shape DOR-1424 exists for.
+      agentManifest = { runtime: 'claude-code' };
+      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
+      let opened: TriggerCall | undefined;
+      turnBehaviour = (opts) => {
+        opened = opts;
+        openTurn(opts);
+        return { accepted: true, canonicalId: 'canonical-boot' };
+      };
+      const answered = runner.run(request({ sessionId: 'placeholder-boot' }));
+      await settle();
+
+      expect(
+        (await runner.interrupt({ sessionId: 'canonical-boot', agentPath: '/repo/ana' })).outcome
+      ).toBe('not-running');
+
+      opened?.projector.ingest({ type: 'text_delta', text: 'the essay' });
+      await settle();
+
+      expect(
+        interruptQuery.mock.calls,
+        'the stop was recorded under a name the re-aim does not read, so it never fired'
+      ).toEqual([['canonical-boot'], ['placeholder-boot']]);
+
+      opened?.projector.ingest({ type: 'turn_end' });
+      await answered;
+    });
+
+    it('never lets a stop marked on turn 1 be inherited by turn 2 under a shared name', async () => {
+      // **The trap in answering the canonical-id case with a wider LOOKUP.**
+      // Sweeping both of a turn's names out of a session-keyed mark set reads a
+      // mark turn 1 left behind under the canonical id — which turn 2 registers
+      // again, because the runtime renames a resumed session to the same thing —
+      // and the top-of-run delete cannot clear it, since the canonical id is not
+      // known until acceptance. A person who pressed Stop and immediately
+      // retyped would have the new turn killed by the old stop, which is the
+      // rule `never aims it at the NEXT turn` states for the placeholder.
+      //
+      // Marking the TURN is what makes it structural: the mark dies with the
+      // object, so there is nothing to inherit.
+      agentManifest = { runtime: 'claude-code' };
+      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
+      /** Arm a turn that opens and waits, renamed to the shared canonical id. */
+      const open = (): { produce: () => void; close: () => void } => {
+        let opened: TriggerCall | undefined;
+        turnBehaviour = (opts) => {
+          opened = opts;
+          openTurn(opts);
+          return { accepted: true, canonicalId: 'canonical-shared' };
+        };
+        return {
+          produce: () => opened?.projector.ingest({ type: 'text_delta', text: 'the essay' }),
+          close: () => opened?.projector.ingest({ type: 'turn_end' }),
+        };
+      };
+
+      // Turn 1 is stopped in its boot window, under the canonical name, and then
+      // ends without ever producing — so the stop is never consumed.
+      const firstTurn = open();
+      const first = runner.run(request({ sessionId: 'shared-sess' }));
+      await settle();
+      await runner.interrupt({ sessionId: 'canonical-shared', agentPath: '/repo/ana' });
+      firstTurn.close();
+      await first;
+      expect(interruptQuery).toHaveBeenCalledTimes(1);
+
+      // Turn 2 is the room asking again. It produces, and must not be stopped.
+      const secondTurn = open();
+      const second = runner.run(request({ sessionId: 'shared-sess' }));
+      await settle();
+      secondTurn.produce();
+      await settle();
+
+      expect(
+        interruptQuery,
+        'turn 2 was killed by a stop nobody aimed at it, because the mark outlived turn 1'
+      ).toHaveBeenCalledTimes(1);
+      secondTurn.close();
+      await second;
+    });
+
     it('clears a capture left by a turn that threw before its collector existed', async () => {
       // The one residue the capture's lifetime admits to, and the line that
       // bounds it. A `run` that throws between the capture and the collector has
