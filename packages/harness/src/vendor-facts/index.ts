@@ -84,7 +84,7 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
       notes: [
         'The one fact the whole engine is built on: Claude Code is the only harness that does not read `.agents/skills`. The symlink into `.claude/skills/` is the entire reason the skills half of the engine exists.',
         '`nameMustMatchDir` is `false` because the page states the frontmatter name is display-only outside plugins — the directory is the identity, so no match is required. `onInvalidName` is `unknown` because no name rule is stated for it to break.',
-        "Read paths the contract lists but this row omits, because they are not a directory a projection can walk: enabled plugins' `skills/`, `--add-dir` directories, the nested `<subdir>/.claude/skills/` tier Claude Code loads lazily when a file there is touched (SK-15; explicitly out of scope for `coverage()` per the test plan §2), and the enterprise/managed tier above `~/.claude/skills/` that wins every conflict.",
+        "Read paths the contract lists but this row omits, because they are not a directory a projection can walk: enabled plugins' `skills/`, `--add-dir` directories, the nested `<subdir>/.claude/skills/` tier Claude Code loads lazily when a file there is touched (SK-15; explicitly out of scope for `harnessCoverage()` per the test plan §2), and the enterprise/managed tier above `~/.claude/skills/` that wins every conflict.",
       ],
     },
   },

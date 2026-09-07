@@ -416,7 +416,20 @@ describe('harnessCoverage() — symlinked skill directories', () => {
     symlinkSync(target, join(root, readPath, 'linked'), 'dir');
   }
 
-  it.each(['claude-code', 'codex'] as const)(
+  // Derived from the table, not hardcoded, so the walk is tested against what
+  // the facts SAY rather than against a second copy of them that can drift.
+  // Which harness sits in which list is pinned by the census in
+  // `vendor-facts.test.ts`, so moving one between them still reds a test.
+  const FOLLOWS_LINKS = HARNESS_IDS.filter((h) => skillsFactsFor(h).symlinks === 'followed');
+  const LINKS_UNDOCUMENTED = HARNESS_IDS.filter((h) => skillsFactsFor(h).symlinks !== 'followed');
+
+  it('has a harness in both symlink groups, so neither it.each below can pass vacuously', () => {
+    expect(FOLLOWS_LINKS.length).toBeGreaterThan(0);
+    expect(LINKS_UNDOCUMENTED.length).toBeGreaterThan(0);
+    expect(FOLLOWS_LINKS.length + LINKS_UNDOCUMENTED.length).toBe(HARNESS_IDS.length);
+  });
+
+  it.each(FOLLOWS_LINKS)(
     '%s: follows a symlinked skill directory, which its docs say it does',
     (harness: HarnessId) => {
       const root = makeRoot();
@@ -431,7 +444,7 @@ describe('harnessCoverage() — symlinked skill directories', () => {
     }
   );
 
-  it.each(['opencode', 'cursor', 'gemini', 'copilot'] as const)(
+  it.each(LINKS_UNDOCUMENTED)(
     '%s: cannot say whether a symlinked skill directory is read at all — its symlink cell is undocumented',
     (harness: HarnessId) => {
       const root = makeRoot();

@@ -15,7 +15,7 @@
  * to say it loads, and under this key. `uncertain` is the refusal to make one:
  * the outcome turns on a cell the vendor never documented, so the skill is
  * neither counted nor dropped. A consumer may therefore read `discovered` alone
- * and trust it. The five ways a skill becomes uncertain:
+ * and trust it. The six ways a skill becomes uncertain:
  *
  * - it was reached through a **symlink** and the harness does not document
  *   whether it follows them;
@@ -33,6 +33,18 @@
  * An assertion therefore reads "`discovered` contains what we projected **and**
  * `uncertain` is empty", so a gap in the table fails loudly instead of becoming
  * a confident wrong answer.
+ *
+ * **On a tree DorkOS has already projected into, `uncertain` is not empty, and
+ * that is not a failure.** The engine's whole skills projection is a symlink
+ * into `.claude/skills`, and three of the six harnesses do not document whether
+ * they follow one — so on this repo's own worktree cursor, opencode and copilot
+ * each report 31 discovered and 18 uncertain, every one of the 18 a symlink
+ * reason for a skill they also reach as a real directory under `.agents/skills`.
+ * The assertion for a projected tree is therefore the weaker, still-honest one:
+ * `uncertain` is empty **or** holds only symlink-reason entries whose skill also
+ * appears in `discovered` by another path. Anything else — an unknown identity
+ * rule, an unnamed skill, a broken name rule, a second copy — is a real finding.
+ * DOR-1847's false-native work leans on exactly that shape.
  *
  * Two scope limits, both deliberate:
  *
@@ -440,24 +452,33 @@ function applyDedupe(
     return kept;
   }
 
-  const kept: DiscoveredSkill[] = [];
-  const firstByRealpath = new Map<string, DiscoveredSkill>();
-  const firstByKey = new Map<string, DiscoveredSkill>();
-  for (const candidate of candidates) {
-    const realpath = realpathOf(candidate.dir);
-    const first = firstByRealpath.get(realpath) ?? firstByKey.get(candidate.key);
-    if (first) {
-      uncertain.push({
-        path: candidate.dir,
-        reason: `one skill is reachable at ${viaOf(root, first.dir)} and ${viaOf(root, candidate.dir)}, and ${harness} does not document whether it loads once or twice`,
-      });
-      continue;
+  if (facts.dedupe === 'unknown') {
+    const kept: DiscoveredSkill[] = [];
+    const firstByRealpath = new Map<string, DiscoveredSkill>();
+    const firstByKey = new Map<string, DiscoveredSkill>();
+    for (const candidate of candidates) {
+      const realpath = realpathOf(candidate.dir);
+      const first = firstByRealpath.get(realpath) ?? firstByKey.get(candidate.key);
+      if (first) {
+        uncertain.push({
+          path: candidate.dir,
+          reason: `one skill is reachable at ${viaOf(root, first.dir)} and ${viaOf(root, candidate.dir)}, and ${harness} does not document whether it loads once or twice`,
+        });
+        continue;
+      }
+      firstByRealpath.set(realpath, candidate);
+      firstByKey.set(candidate.key, candidate);
+      kept.push(candidate);
     }
-    firstByRealpath.set(realpath, candidate);
-    firstByKey.set(candidate.key, candidate);
-    kept.push(candidate);
+    return kept;
   }
-  return kept;
+
+  // A fifth dedupe value has to fail the TYPE here, not fall through to some
+  // behaviour nobody chose: reaching `unknown` by exhaustion would have made a
+  // new value silently mean "keep everything", which is the confident answer
+  // this module exists to refuse.
+  const unhandled: never = facts.dedupe;
+  throw new Error(`unhandled dedupe rule: ${String(unhandled)}`);
 }
 
 /**

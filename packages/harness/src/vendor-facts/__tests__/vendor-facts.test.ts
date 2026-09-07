@@ -118,12 +118,16 @@ describe('vendor-facts table', () => {
   });
 
   it('censuses every behaviour cell, so a value the coverage walk has no fixture for cannot appear unnoticed', () => {
-    // `harnessCoverage()` branches on exactly these six cells. This census is
-    // the contract between the table and that walk's fixtures: change a cell and
-    // this reds, which is the prompt to bring a fixture with the change. Three
-    // values in the vocabulary have no row today — `dedupe: 'by-name'` (the
-    // OpenCode hypothesis, unconfirmed), `onInvalidName: 'skip'` and
-    // `'warn-and-load'` — and the assertions below are what keep that true.
+    // `harnessCoverage()` branches on seven cells. Six of them are enumerable
+    // and are censused here; the seventh, `nameRegex`, is a pattern rather than
+    // a value and is pinned by the name-rule test at the bottom of this file
+    // (which harnesses state one, and that each stated one rejects `pkg__name`).
+    // This census is the contract between the table and the walk's fixtures:
+    // change a cell and this reds, which is the prompt to bring a fixture with
+    // the change. Three values in the vocabulary have no row today —
+    // `dedupe: 'by-name'` (the OpenCode hypothesis, unconfirmed),
+    // `onInvalidName: 'skip'` and `'warn-and-load'` — and the assertions below
+    // are what keep that true.
     const census = HARNESS_IDS.map((harness) => {
       const f = skillsFactsFor(harness);
       return [
