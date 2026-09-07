@@ -1055,11 +1055,12 @@ export class CodexRuntime implements AgentRuntime {
    * @inheritdoc
    *
    * Codex's built-in TUI commands can't run under `codex exec` and the SDK has
-   * no command-discovery API, so instead of faking them this surfaces the
-   * project's authored skills (`<cwd>/.agents/skills`) as `/<name>` slash
-   * commands — the same skills Claude's SDK exposes from `.claude/skills`. With
-   * no `cwd` (cold discovery, no session context) there is no project to scan,
-   * so the palette is empty.
+   * no command-discovery API, so instead of faking them this surfaces every
+   * skill Codex itself can see in `<cwd>/.agents/skills` — authored dirs,
+   * linked-in sources, and the `<pkg>__<name>` projections of installed plugins
+   * alike — as `/<name>` slash commands, the same skills Claude's SDK exposes
+   * from `.claude/skills`. With no `cwd` (cold discovery, no session context)
+   * there is no project to scan, so the palette is empty.
    */
   async getCommands(_forceRefresh?: boolean, cwd?: string): Promise<CommandRegistry> {
     const commands = cwd ? scanSkillCommands(cwd) : [];
