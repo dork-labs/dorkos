@@ -24,16 +24,31 @@ describe('vendor-facts table', () => {
     for (const path of facts.readPaths.project) {
       expect(path).not.toBe('');
       // Project read paths are repo-relative, never absolute and never `~`:
-      // `coverage()` joins them onto a tree root.
+      // `harnessCoverage()` joins them onto a tree root.
       expect(path.startsWith('/')).toBe(false);
       expect(path.startsWith('~')).toBe(false);
     }
     expect(facts.readPaths.user.length).toBeGreaterThan(0);
 
     expect(facts.source.url).toMatch(/^https:\/\//);
-    expect(facts.source.fetchedAt).toBe(VENDOR_FACTS_FETCHED_AT);
+    // A real ISO date, not "whatever the shared constant happens to be": a row
+    // re-fetched on its own carries its own literal date, and that is the
+    // signal the next reader wants. Asserting equality with the constant would
+    // be `x === x` and would also forbid the per-row bump.
+    expect(facts.source.fetchedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(Number.isNaN(Date.parse(facts.source.fetchedAt))).toBe(false);
     expect(facts.source.quote?.length ?? 0).toBeGreaterThan(0);
     expect(facts.liveReload).not.toBe('');
+  });
+
+  it('was compiled in one pass — at least one row still carries the table-wide fetch date', () => {
+    // If every row has drifted to its own date, the shared constant has stopped
+    // meaning anything and should be retired rather than left as decoration.
+    expect(VENDOR_FACTS_FETCHED_AT).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const onTheSharedDate = HARNESS_IDS.filter(
+      (h) => skillsFactsFor(h).source.fetchedAt === VENDOR_FACTS_FETCHED_AT
+    );
+    expect(onTheSharedDate.length).toBeGreaterThan(0);
   });
 
   it('is documentation-derived from end to end today — the first H-tier run against a real binary has to change this assertion', () => {
@@ -62,18 +77,25 @@ describe('vendor-facts table', () => {
   });
 
   it('keeps every undocumented cell undocumented — filling one in is a deliberate edit with a citation, never a default', () => {
-    // These are the cells the vendor pages did not answer. `coverage()` turns
-    // each into a loud `uncertain` finding, which is the only thing stopping the
-    // table from becoming a confident wrong guard. Changing a row here means
-    // fetching the page (or running the binary) and bumping its `fetchedAt`.
+    // These are the cells the vendor pages did not answer. `harnessCoverage()`
+    // turns each into a loud `uncertain` finding, which is the only thing
+    // stopping the table from becoming a confident wrong guard. Changing a row
+    // here means fetching the page (or running the binary) and bumping its
+    // `fetchedAt`.
     const unknowns: ReadonlyArray<[HarnessId, string, unknown]> = [
       ['opencode', 'symlinks', skillsFactsFor('opencode').symlinks],
       ['cursor', 'symlinks', skillsFactsFor('cursor').symlinks],
       ['gemini', 'symlinks', skillsFactsFor('gemini').symlinks],
       ['copilot', 'symlinks', skillsFactsFor('copilot').symlinks],
       ['gemini', 'identity', skillsFactsFor('gemini').identity],
+      ['copilot', 'identity', skillsFactsFor('copilot').identity],
       ['gemini', 'nameMustMatchDir', skillsFactsFor('gemini').nameMustMatchDir],
       ['copilot', 'nameMustMatchDir', skillsFactsFor('copilot').nameMustMatchDir],
+      // SK-12 leaves "is one skill reachable twice loaded once or twice?" open
+      // for all three harnesses that read both `.claude/skills` and
+      // `.agents/skills`. OpenCode is not the exception: the 2026-07 source
+      // check is a hypothesis in its notes, not a documented outcome.
+      ['opencode', 'dedupe', skillsFactsFor('opencode').dedupe],
       ['cursor', 'dedupe', skillsFactsFor('cursor').dedupe],
       ['gemini', 'dedupe', skillsFactsFor('gemini').dedupe],
       ['copilot', 'dedupe', skillsFactsFor('copilot').dedupe],
@@ -93,6 +115,40 @@ describe('vendor-facts table', () => {
     expect(HARNESS_IDS.map((h) => skillsFactsFor(h).onInvalidName)).toEqual(
       HARNESS_IDS.map(() => 'unknown')
     );
+  });
+
+  it('censuses every behaviour cell, so a value the coverage walk has no fixture for cannot appear unnoticed', () => {
+    // `harnessCoverage()` branches on exactly these six cells. This census is
+    // the contract between the table and that walk's fixtures: change a cell and
+    // this reds, which is the prompt to bring a fixture with the change. Three
+    // values in the vocabulary have no row today — `dedupe: 'by-name'` (the
+    // OpenCode hypothesis, unconfirmed), `onInvalidName: 'skip'` and
+    // `'warn-and-load'` — and the assertions below are what keep that true.
+    const census = HARNESS_IDS.map((harness) => {
+      const f = skillsFactsFor(harness);
+      return [
+        harness,
+        f.walk,
+        f.identity,
+        String(f.nameMustMatchDir),
+        f.onInvalidName,
+        f.dedupe,
+        f.symlinks,
+      ].join(' ');
+    });
+
+    expect(census).toEqual([
+      'claude-code ascend-to-repo-root dir false unknown by-realpath followed',
+      'codex ascend-to-repo-root frontmatter false unknown none followed',
+      'cursor descend-recursive dir true unknown unknown unknown',
+      'gemini fixed unknown unknown unknown unknown unknown',
+      'copilot fixed unknown unknown unknown unknown unknown',
+      'opencode ascend-to-worktree frontmatter true unknown unknown unknown',
+    ]);
+
+    expect(HARNESS_IDS.map((h) => skillsFactsFor(h).dedupe)).not.toContain('by-name');
+    expect(HARNESS_IDS.map((h) => skillsFactsFor(h).onInvalidName)).not.toContain('skip');
+    expect(HARNESS_IDS.map((h) => skillsFactsFor(h).onInvalidName)).not.toContain('warn-and-load');
   });
 
   it('states a name rule only where a vendor states one, and each stated rule rejects the engine <pkg>__<name> shape', () => {

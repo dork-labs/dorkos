@@ -128,7 +128,7 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
       nameRegex: /^(?=.{1,64}$)[a-z0-9]+(?:-[a-z0-9]+)*$/,
       nameMustMatchDir: true,
       onInvalidName: 'unknown',
-      dedupe: 'by-name',
+      dedupe: 'unknown',
       symlinks: 'unknown',
       liveReload: 'unknown — the vendor page states nothing',
       source: {
@@ -139,7 +139,7 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
       },
       verified: 'docs',
       notes: [
-        '`dedupe: by-name` comes from the 2026-07 source check the contract records ("source keyed on frontmatter `name` … which would collapse the pair"), not from the vendor page. The contract\'s SK-12 still calls the *outcome* unverified pending the H tier, so treat this cell as the one most likely to be corrected by a binary.',
+        'The 2026-07 source check the contract records ("source keyed on frontmatter `name` … which **would** collapse the pair") is the standing hypothesis for what happens to a skill reachable through two of these three directories — but it is a hypothesis, not a documented outcome: the vendor page says nothing, and SK-12 lists the answer as unverified pending the H tier, exactly as it does for Cursor and Copilot. So `dedupe` stays `unknown` and this note carries the reasoning. When the H tier confirms it, the cell becomes `by-name` and `verified` becomes `binary` in the same edit.',
         'The docs state the name rule but not what happens to a skill that breaks it, hence `onInvalidName: unknown` — which is what makes a `<pkg>__<name>` directory an `uncertain` finding here rather than a discovery or a drop (SK-09).',
       ],
     },
@@ -206,7 +206,7 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
         user: ['~/.copilot/skills', '~/.agents/skills'],
       },
       walk: 'fixed',
-      identity: 'frontmatter',
+      identity: 'unknown',
       // "lowercase with hyphens", transcribed from the docs rule; the page's
       // phrasing is prose rather than a pattern, and digits are assumed allowed.
       nameRegex: /^[a-z0-9-]+$/,
@@ -224,7 +224,7 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
       verified: 'docs',
       notes: [
         '`nameMustMatchDir: unknown` because "typically matches" is an observation, not a rule — the contract\'s SK-09 names Copilot as unverified for exactly this reason.',
-        '`identity: frontmatter` follows from the page requiring a `name` while only describing the directory as a typical match; it is the weakest identity cell in the table and the first one the H tier should check.',
+        '`identity: unknown` because the page requires a `name` but describes the directory only as what it "typically matches" — which says a skill has a name, not that the name is the key Copilot collides on. SK-09 groups Copilot with the unverified harnesses for exactly this reason. A skill whose two names agree is discovered either way; one whose names differ is reported uncertain.',
         '`walk: fixed` is the same conservative reading of silence as Gemini: no ancestor walk and no recursion is documented.',
       ],
     },

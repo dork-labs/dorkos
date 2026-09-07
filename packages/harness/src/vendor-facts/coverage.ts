@@ -4,20 +4,35 @@
  * The projection engine's tests are strong on file shape ("a symlink exists at
  * `.claude/skills/x`") and weak on truth ("Claude Code would load it"). This
  * module closes that gap from the other side: it walks a **real** directory the
- * way {@link ../index.js#HARNESS_VENDOR_FACTS | the vendor-facts table} says a
+ * way {@link ./index.js#HARNESS_VENDOR_FACTS | the vendor-facts table} says a
  * harness walks it, and reports what that harness's documented rules would
  * discover. It is the oracle a projection is measured against, so it must never
  * learn anything from the projector: it imports the facts, `HarnessId`, and the
  * skills frontmatter parser, and nothing from `plan/` or `apply/`.
  *
- * The second half of the contract is {@link Uncertain}. Several cells in the
- * facts table are `unknown` because a vendor page did not say — what Cursor does
- * with a name that breaks its own charset rule, whether Copilot loads one skill
- * or two when it is reachable twice. Wherever an outcome depends on such a cell,
- * this walk refuses to guess: the entry lands in `uncertain` instead of being
- * quietly counted or quietly dropped. An assertion therefore reads "`discovered`
- * contains what we projected **and** `uncertain` is empty", and a gap in the
- * table fails loudly rather than becoming a confident wrong answer.
+ * **The rule that makes it honest: every skill lands in exactly one list.**
+ * `discovered` is a confident claim — this harness's own documentation is enough
+ * to say it loads, and under this key. `uncertain` is the refusal to make one:
+ * the outcome turns on a cell the vendor never documented, so the skill is
+ * neither counted nor dropped. A consumer may therefore read `discovered` alone
+ * and trust it. The five ways a skill becomes uncertain:
+ *
+ * - it was reached through a **symlink** and the harness does not document
+ *   whether it follows them;
+ * - the harness's **identity** rule is unknown and the directory name and the
+ *   frontmatter name disagree, so the key would differ between the two readings;
+ * - the harness keys on the **frontmatter name** and the `SKILL.md` has none;
+ * - a documented **name rule** is broken and the harness does not document what
+ *   it does about it (`onInvalidName: 'unknown'`);
+ * - the harness requires (or might require) the name to **match the directory**
+ *   and it cannot be checked, or does not match and the requirement is unstated;
+ * - one skill is reachable **twice** and the harness does not document whether it
+ *   loads once or twice — here the first copy reached is still a confident
+ *   discovery, and only each later copy is uncertain.
+ *
+ * An assertion therefore reads "`discovered` contains what we projected **and**
+ * `uncertain` is empty", so a gap in the table fails loudly instead of becoming
+ * a confident wrong answer.
  *
  * Two scope limits, both deliberate:
  *
@@ -28,9 +43,23 @@
  *   there is touched, which no static walk can express (SK-15). The test plan
  *   (§2, T1c) puts it out of scope on purpose rather than inventing a fourth walk.
  *
+ * Three values in the facts vocabulary have no row today and so no fixture here:
+ * `dedupe: 'by-name'`, `onInvalidName: 'skip'` and `onInvalidName: 'warn-and-load'`.
+ * That is asserted rather than assumed — `vendor-facts.test.ts` censuses every
+ * behaviour cell, so the first row to use one of them reds a test and the author
+ * has to bring a fixture with it.
+ *
  * @module vendor-facts/coverage
  */
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync, type Stats } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  type Stats,
+} from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
 import type { HarnessId } from '../manifest/schema.js';
@@ -50,11 +79,14 @@ export interface DiscoveredSkill {
 }
 
 /**
- * One thing this walk refuses to decide, because the vendor did not document it.
+ * One skill this walk refuses to decide about, because the vendor did not
+ * document the thing the outcome turns on.
  *
- * An `uncertain` entry is never also a `discovered` one, except for the dedupe
- * case: when a harness's dedupe rule is `unknown`, both copies stay discovered
- * AND an `uncertain` entry says the count may be one or two.
+ * An uncertain skill is **never** also a discovered one: the two lists partition
+ * what the walk found, so `discovered` can be read on its own as a confident
+ * claim. The one case that looks like an exception is not: when a skill is
+ * reachable twice under an unknown dedupe rule, the first copy reached is a
+ * confident discovery and each *later* copy is the uncertain entry.
  */
 export interface Uncertain {
   /** Absolute path of the directory whose outcome is undecidable. */
@@ -63,15 +95,15 @@ export interface Uncertain {
   reason: string;
 }
 
-/** What {@link coverage} reports about a tree. */
+/** What {@link harnessCoverage} reports about a tree. */
 export interface CoverageResult {
-  /** Everything the harness's documented rules would load, in walk order. */
+  /** Everything the harness's documented rules are enough to say it loads, in walk order. */
   discovered: DiscoveredSkill[];
   /** Everything whose outcome depends on a cell the vendor never documented. */
   uncertain: Uncertain[];
 }
 
-/** Options for {@link coverage}. */
+/** Options for {@link harnessCoverage}. */
 export interface CoverageOptions {
   /**
    * The directory a session would start in, for the two ascending walks.
@@ -106,6 +138,21 @@ const MAX_DESCEND_DEPTH = 6;
 function statOrUndefined(path: string): Stats | undefined {
   try {
     return statSync(path, { throwIfNoEntry: false });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * `lstatSync` that answers `undefined` instead of throwing — the entry itself,
+ * not what it points at, which is how the walk tells a symlink from a directory.
+ *
+ * @param path - absolute path to stat.
+ * @returns the stats of the entry, or `undefined` when it cannot be read.
+ */
+function lstatOrUndefined(path: string): Stats | undefined {
+  try {
+    return lstatSync(path, { throwIfNoEntry: false });
   } catch {
     return undefined;
   }
@@ -248,24 +295,25 @@ function readDirs(facts: SkillsFacts, root: string, cwd: string): ReadDir[] {
   return dirs;
 }
 
-/** A candidate discovery plus the uncertainty its identity and name rules produced. */
+/** A candidate discovery plus whatever made its outcome undecidable. */
 interface Candidate {
-  /** The discovery, if the harness's rules let it load. */
+  /** The discovery, if the harness's documented rules are enough to claim it. */
   found: DiscoveredSkill;
-  /** Reasons this entry's outcome is undecidable; each becomes an {@link Uncertain}. */
+  /** Reasons the outcome is undecidable; each becomes an {@link Uncertain}. */
   reasons: string[];
-  /** Whether the documented rules let it load at all. */
+  /** Whether the documented rules are enough to say it loads. Never true when `reasons` is non-empty. */
   loads: boolean;
 }
 
 /**
- * Apply one harness's identity and name rules to one skill directory.
+ * Apply one harness's symlink, identity and name rules to one skill directory.
  *
  * @param harness - the harness whose rules apply, named in the message text.
  * @param facts - its skills facts.
  * @param dir - absolute path of the skill directory.
  * @param skillMd - absolute path of the `SKILL.md` inside it.
  * @param via - the read path it was found through.
+ * @param reachedThroughSymlink - whether the entry in the read path is a symlink rather than a directory.
  * @returns the candidate discovery, its key, and any undecidable outcome.
  */
 function evaluate(
@@ -273,11 +321,18 @@ function evaluate(
   facts: SkillsFacts,
   dir: string,
   skillMd: string,
-  via: string
+  via: string,
+  reachedThroughSymlink: boolean
 ): Candidate {
   const dirName = basename(dir);
   const name = frontmatterName(skillMd);
   const reasons: string[] = [];
+
+  if (reachedThroughSymlink && facts.symlinks === 'unknown') {
+    reasons.push(
+      `it is reached through a symlink, and ${harness} does not document whether it follows one`
+    );
+  }
 
   let key = dirName;
   if (facts.identity === 'frontmatter') {
@@ -316,30 +371,37 @@ function evaluate(
     );
   }
 
-  let loads = true;
+  // A broken name rule with a DOCUMENTED consequence is not uncertainty: 'skip'
+  // drops the skill outright and 'warn-and-load' loads it. Only 'unknown' is a
+  // refusal to decide, and it joins the reasons above.
+  let droppedByRule = false;
   if (violations.length > 0) {
     if (facts.onInvalidName === 'skip') {
-      loads = false;
+      droppedByRule = true;
     } else if (facts.onInvalidName === 'unknown') {
-      loads = false;
       for (const violation of violations) {
         reasons.push(
           `${violation}, and ${harness} does not document what it does with such a skill`
         );
       }
     }
-    // 'warn-and-load' is a documented outcome, not an uncertainty: it loads.
   }
 
-  return { found: { key, dir, skillMd, via }, reasons, loads };
+  return {
+    found: { key, dir, skillMd, via },
+    reasons,
+    loads: reasons.length === 0 && !droppedByRule,
+  };
 }
 
 /**
  * Collapse candidates according to the harness's documented dedupe rule.
  *
- * `by-realpath` and `by-name` keep the first candidate in walk order. `none` is
- * Codex's explicit "duplicates are NOT merged - both appear", so both stay and
- * nothing is uncertain. `unknown` keeps both AND reports the ambiguity, since
+ * `by-realpath` and `by-name` keep the first candidate in walk order and drop the
+ * rest silently, because the vendor documents the merge. `none` is Codex's
+ * explicit "duplicates are NOT merged - both appear", so both stay and nothing is
+ * uncertain. `unknown` keeps the **first** copy reached — that one loads whatever
+ * the answer turns out to be — and moves each later copy to `uncertain`, since
  * "one or two" is exactly the question the vendor left open.
  *
  * @param harness - the harness whose rule applies, named in the message text.
@@ -356,6 +418,8 @@ function applyDedupe(
   candidates: DiscoveredSkill[],
   uncertain: Uncertain[]
 ): DiscoveredSkill[] {
+  if (facts.dedupe === 'none') return candidates;
+
   const realpathOf = (dir: string): string => {
     try {
       return realpathSync(dir);
@@ -376,47 +440,46 @@ function applyDedupe(
     return kept;
   }
 
-  if (facts.dedupe === 'unknown') {
-    const groups = new Map<string, DiscoveredSkill[]>();
-    for (const candidate of candidates) {
-      for (const id of [`realpath:${realpathOf(candidate.dir)}`, `key:${candidate.key}`]) {
-        const group = groups.get(id) ?? [];
-        group.push(candidate);
-        groups.set(id, group);
-      }
-    }
-    const reported = new Set<string>();
-    for (const members of groups.values()) {
-      if (members.length < 2) continue;
-      const paths = members.map((m) => viaOf(root, m.dir)).sort();
-      const signature = paths.join(' ');
-      if (reported.has(signature)) continue;
-      reported.add(signature);
+  const kept: DiscoveredSkill[] = [];
+  const firstByRealpath = new Map<string, DiscoveredSkill>();
+  const firstByKey = new Map<string, DiscoveredSkill>();
+  for (const candidate of candidates) {
+    const realpath = realpathOf(candidate.dir);
+    const first = firstByRealpath.get(realpath) ?? firstByKey.get(candidate.key);
+    if (first) {
       uncertain.push({
-        path: members[0].dir,
-        reason: `one skill is reachable at ${paths.join(' and ')}, and ${harness} does not document whether it loads once or twice`,
+        path: candidate.dir,
+        reason: `one skill is reachable at ${viaOf(root, first.dir)} and ${viaOf(root, candidate.dir)}, and ${harness} does not document whether it loads once or twice`,
       });
+      continue;
     }
+    firstByRealpath.set(realpath, candidate);
+    firstByKey.set(candidate.key, candidate);
+    kept.push(candidate);
   }
-
-  return candidates;
+  return kept;
 }
 
 /**
  * What a harness's documented rules would discover in a real tree.
  *
- * Walks `root` the way {@link ../index.js#HARNESS_VENDOR_FACTS} says `harness`
+ * Walks `root` the way {@link ./index.js#HARNESS_VENDOR_FACTS} says `harness`
  * walks it, treating every directory that directly contains a `SKILL.md` as a
- * skill, and applying that harness's identity, name and dedupe rules. Anything
- * whose outcome depends on a cell the vendor never documented is reported in
- * `uncertain` instead of being guessed either way.
+ * skill, and applying that harness's symlink, identity, name and dedupe rules.
+ * Every skill lands in exactly one of the two returned lists: `discovered` when
+ * the harness's own documentation is enough to claim it loads, `uncertain` when
+ * the answer depends on a cell the vendor never wrote down.
  *
  * @param harness - the harness to model.
  * @param root - absolute path of the tree to walk (a repo checkout, an agent workspace).
  * @param opts - walk options; see {@link CoverageOptions}.
  * @returns what the harness would find, and what cannot be decided from its docs.
  */
-export function coverage(harness: HarnessId, root: string, opts?: CoverageOptions): CoverageResult {
+export function harnessCoverage(
+  harness: HarnessId,
+  root: string,
+  opts?: CoverageOptions
+): CoverageResult {
   const facts = skillsFactsFor(harness);
   const absRoot = resolve(root);
   const cwd = resolve(opts?.cwd ?? absRoot);
@@ -434,13 +497,22 @@ export function coverage(harness: HarnessId, root: string, opts?: CoverageOption
     }
     for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
       const dir = join(abs, entry.name);
-      // Follow symlinks - every harness that documents them follows them, and a
-      // dangling one is nothing at all.
+      // Resolve through symlinks to decide whether there is a skill here at all
+      // (a dangling link is nothing); remember that it WAS a link, because on
+      // four of the six harnesses that is itself an undocumented question.
       if (!statOrUndefined(dir)?.isDirectory()) continue;
       const skillMd = join(dir, 'SKILL.md');
       if (!statOrUndefined(skillMd)?.isFile()) continue;
+      const reachedThroughSymlink = lstatOrUndefined(dir)?.isSymbolicLink() === true;
 
-      const { found, reasons, loads } = evaluate(harness, facts, dir, skillMd, via);
+      const { found, reasons, loads } = evaluate(
+        harness,
+        facts,
+        dir,
+        skillMd,
+        via,
+        reachedThroughSymlink
+      );
       for (const reason of reasons) uncertain.push({ path: dir, reason });
       if (loads) candidates.push(found);
     }

@@ -1,5 +1,5 @@
 /**
- * The types behind {@link ../index.js | the vendor-facts table} — one dated,
+ * The types behind {@link ./index.js | the vendor-facts table} — one dated,
  * quoted record per harness describing how that harness *reads* an artifact
  * kind, as its own documentation states it.
  *
@@ -126,7 +126,7 @@ export interface SkillsFacts {
  * Everything the table records about one harness.
  *
  * Only `skills` exists today. Instructions, hooks and commands are deliberately
- * absent — see the module docs of {@link ../index.js} for why.
+ * absent — see the module docs of {@link ./index.js} for why.
  */
 export interface HarnessFacts {
   /** How this harness reads skills. */
