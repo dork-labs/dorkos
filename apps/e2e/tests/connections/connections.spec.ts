@@ -1,13 +1,16 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
 import { BasePage } from '../../pages/BasePage.js';
 import { ChatPage } from '../../pages/ChatPage.js';
+import { ConnectionsPage } from '../../pages/ConnectionsPage.js';
 import { RightPanelPage } from '../../pages/RightPanelPage.js';
+import { registerOwnerManagementTests } from './owner-management.js';
 
 /**
  * Browser proof of the connector gateway (connector-completion spec §Detailed
  * Design 8, task E2), driven against the test-mode server's scripted
  * `test-connector` provider: the REAL credential routes, connect flow, custody
- * disclosures, and session attach — with no vendor anywhere.
+ * disclosures, exact agent grants, and read-only session status — with no
+ * provider-specific execution surface.
  *
  * Runs in the `chromium-connections` project (baseURL = the test-mode Vite
  * client). ONE spec file on purpose, exactly like `chat-mock.spec.ts`: the
@@ -44,7 +47,7 @@ test.beforeEach(async ({ request }) => {
 });
 
 /** Open /connections and wait for the cockpit shell. */
-async function gotoConnections(page: Page): Promise<void> {
+export async function gotoConnections(page: Page): Promise<void> {
   await page.goto('/connections', { waitUntil: 'domcontentloaded' });
   await new BasePage(page).waitForAppReady();
 }
@@ -116,7 +119,7 @@ async function connectGmail(
  * the UI drives, without re-walking the dialog the flow test already proves.
  * The PUT replaces the provider instance, so the account set starts empty.
  */
-async function connectWorkAccountViaApi(request: APIRequestContext): Promise<void> {
+export async function connectWorkAccountViaApi(request: APIRequestContext): Promise<string> {
   const put = await request.put(CREDENTIAL_URL, { data: { secret: 'e2e-test-key' } });
   expect(put.ok()).toBe(true);
 
@@ -129,7 +132,10 @@ async function connectWorkAccountViaApi(request: APIRequestContext): Promise<voi
   // One poll completes the scripted flow and records the account binding.
   const poll = await request.get(`${API_URL}/api/connectors/flows/${flowId}`);
   expect(poll.ok()).toBe(true);
-  expect(((await poll.json()) as { status: string }).status).toBe('connected');
+  const result = (await poll.json()) as { status: string; account?: { id: string } };
+  expect(result.status).toBe('connected');
+  expect(result.account?.id).toBeTruthy();
+  return result.account!.id;
 }
 
 test.describe('Connections — save key, connect, multi-account', () => {
@@ -208,12 +214,14 @@ test.describe('Connections — save key, connect, multi-account', () => {
   });
 });
 
-test.describe('Connections — session attach', () => {
-  test('attaches Gmail (work) to a session, shows it with exposure state, and detaches', async ({
+registerOwnerManagementTests({ apiUrl: API_URL, connectWorkAccountViaApi, gotoConnections });
+
+test.describe('Connections — session access status', () => {
+  test('shows canonical agent access read-only and links to the exact access editor', async ({
     page,
     request,
   }) => {
-    await connectWorkAccountViaApi(request);
+    const connectionId = await connectWorkAccountViaApi(request);
 
     // Mint a real test-mode session by sending one message.
     const scenario = await request.post(`${API_URL}/api/test/scenario`, {
@@ -221,7 +229,33 @@ test.describe('Connections — session attach', () => {
     });
     expect(scenario.ok()).toBe(true);
     const seed = await request.post(`${API_URL}/api/test/seed-agent`);
-    const { agentDir } = (await seed.json()) as { agentDir: string };
+    const { agentDir, agentId } = (await seed.json()) as { agentDir: string; agentId: string };
+
+    // Give the seeded agent one exact immutable operation through the same
+    // owner reconciliation boundary the Connections access dialog uses.
+    const previewResponse = await request.post(
+      `${API_URL}/api/connectors/reconciliation/previews`,
+      { data: { connectionId } }
+    );
+    expect(previewResponse.ok()).toBe(true);
+    const preview = (await previewResponse.json()) as {
+      previewId: string;
+      candidates: Array<{
+        operationRevisionId: string;
+        capabilityClassification: 'read' | 'write' | 'destructive';
+      }>;
+    };
+    const read = preview.candidates.find(
+      (candidate) => candidate.capabilityClassification === 'read'
+    );
+    expect(read).toBeTruthy();
+    const apply = await request.post(`${API_URL}/api/connectors/reconciliation/apply`, {
+      data: {
+        previewId: preview.previewId,
+        grants: [{ agentId, operationRevisionIds: [read!.operationRevisionId] }],
+      },
+    });
+    expect(apply.ok()).toBe(true);
 
     const chatPage = new ChatPage(page);
     await chatPage.goto(undefined, { dir: agentDir });
@@ -234,29 +268,22 @@ test.describe('Connections — session attach', () => {
     await page.getByRole('tab', { name: 'Session', exact: true }).click();
     const group = page.locator('[data-testid="session-connectors"]');
     await expect(group).toBeVisible();
-    await expect(group.getByText('No accounts attached to this session.')).toBeVisible();
-
-    // Attach: pick the account, read its custody sentence (the consent point
-    // re-shows it), then confirm.
-    await group.getByRole('button', { name: 'Attach account' }).click();
-    await page
-      .getByRole('list', { name: 'Connected accounts to attach' })
-      .getByRole('button', { name: 'Gmail (work)' })
-      .click();
-    const attachDisclosure = page.locator('[data-testid="attach-disclosure"]');
-    await expect(attachDisclosure).toBeVisible();
-    await expect(attachDisclosure).toContainText(CUSTODY_FRAGMENT);
-    await page.getByRole('button', { name: 'Attach', exact: true }).click();
-
-    // The attached row lists the account with its tool-server exposure state:
-    // the scripted provider exposes active accounts, so "tools on".
-    const row = page.locator('[data-testid^="session-connector-"]', { hasText: 'Gmail (work)' });
+    const row = group.locator('[data-testid^="session-connector-"]', {
+      hasText: 'Gmail (work)',
+    });
     await expect(row).toBeVisible();
-    await expect(row.getByText('tools on')).toBeVisible();
+    await expect(row.getByText('Agent access')).toBeVisible();
+    await expect(group.getByRole('button', { name: /attach|detach/i })).toHaveCount(0);
 
-    // Detach removes it — one action, back to the quiet empty state.
-    await row.getByRole('button', { name: 'Detach Gmail (work) from this session' }).click();
-    await expect(row).toBeHidden();
-    await expect(group.getByText('No accounts attached to this session.')).toBeVisible();
+    // The retained session panel is status only. Its one action opens the
+    // canonical owner workspace, where the exact connection and named agent
+    // are reviewable rather than reconstructing consent from the session.
+    await group.getByRole('button', { name: 'Manage agent access' }).click();
+    await expect(page).toHaveURL(/\/connections/);
+    const connections = new ConnectionsPage(page);
+    const access = await connections.openAccess('Gmail (work)');
+    await expect(access.getByRole('group', { name: 'E2E Test Agent' })).toBeVisible();
+    await expect(access.getByRole('checkbox', { name: 'List for E2E Test Agent' })).toBeChecked();
+    await expect(access.getByRole('checkbox', { name: 'List for DorkBot' })).not.toBeChecked();
   });
 });

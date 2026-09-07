@@ -62,6 +62,8 @@ function useResponsiveDialogOptional(): ResponsiveDialogContextValue | undefined
 export interface ResponsiveDialogProps {
   children: React.ReactNode;
   open?: boolean;
+  /** Open on the first render when the dialog is not controlled by `open`. */
+  defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   /** Start in fullscreen mode when opened on desktop. Ignored on mobile. */
   defaultFullscreen?: boolean;
@@ -70,14 +72,31 @@ export interface ResponsiveDialogProps {
 /** Renders a dialog on desktop or a drawer on mobile with shared context. */
 function ResponsiveDialog({
   children,
+  defaultOpen = false,
   defaultFullscreen = false,
   onOpenChange,
   ...props
 }: ResponsiveDialogProps) {
-  const isDesktop = !useIsMobile();
+  const requestedIsDesktop = !useIsMobile();
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen);
+  const open = props.open ?? uncontrolledOpen;
+  // Capture the primitive at each open/close boundary. While open, a breakpoint
+  // change must not replace Radix Dialog with Vaul Drawer underneath the user's
+  // focus. While closed, keep following the viewport so the next open uses the
+  // right primitive. React supports this guarded render-time adjustment for
+  // state derived from a prop transition; an effect would add a stale render.
+  const [primitiveState, setPrimitiveState] = React.useState({
+    open,
+    isDesktop: requestedIsDesktop,
+  });
+  let isDesktop = primitiveState.isDesktop;
+  if (primitiveState.open !== open || (!open && primitiveState.isDesktop !== requestedIsDesktop)) {
+    const nextPrimitiveState = { open, isDesktop: requestedIsDesktop };
+    setPrimitiveState(nextPrimitiveState);
+    isDesktop = nextPrimitiveState.isDesktop;
+  }
   const [isFullscreen, setIsFullscreen] = React.useState(defaultFullscreen);
   const [hasFullscreenToggle, setHasFullscreenToggle] = React.useState(false);
-  const Comp = isDesktop ? Dialog : Drawer;
 
   const registerFullscreenToggle = React.useCallback(() => {
     setHasFullscreenToggle(true);
@@ -87,10 +106,13 @@ function ResponsiveDialog({
   // Reset fullscreen state when dialog closes
   const handleOpenChange = React.useCallback(
     (open: boolean) => {
-      if (!open) setIsFullscreen(defaultFullscreen);
+      if (props.open === undefined) setUncontrolledOpen(open);
+      if (!open) {
+        setIsFullscreen(defaultFullscreen);
+      }
       onOpenChange?.(open);
     },
-    [defaultFullscreen, onOpenChange]
+    [defaultFullscreen, onOpenChange, props.open]
   );
 
   const toggleFullscreen = React.useCallback(() => {
@@ -111,9 +133,15 @@ function ResponsiveDialog({
 
   return (
     <ResponsiveDialogContext.Provider value={ctxValue}>
-      <Comp {...props} onOpenChange={handleOpenChange}>
-        {children}
-      </Comp>
+      {isDesktop ? (
+        <Dialog {...props} open={open} onOpenChange={handleOpenChange}>
+          {children}
+        </Dialog>
+      ) : (
+        <Drawer {...props} open={open} onOpenChange={handleOpenChange}>
+          {children}
+        </Drawer>
+      )}
     </ResponsiveDialogContext.Provider>
   );
 }

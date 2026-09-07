@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createDb, runMigrations, type Db } from '@dorkos/db';
+import { connectorProviderInstances, createDb, eq, runMigrations, type Db } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type { CredentialProvider, CredentialResolution } from '../../core/credential-provider.js';
 import { ConnectorRegistry } from '../registry.js';
@@ -14,7 +14,6 @@ import { COMPOSIO_API_KEY_REF } from '../providers/composio.js';
 import { ComposioApiError, type ComposioHttpClient } from '../providers/composio-client.js';
 import { NANGO_SECRET_KEY_REF } from '../providers/nango.js';
 import type { NangoHttpClient } from '../providers/nango-client.js';
-import { NangoProxyMcp } from '../providers/nango-proxy-mcp.js';
 import type { RawMcpServerDescriptor } from '../providers/raw-mcp.js';
 
 /** A valid 256-bit key written in base64 (32 zero bytes) for the enforced gate. */
@@ -39,7 +38,6 @@ function fakeComposioClient(failProbeWith?: Error): ComposioHttpClient {
       return Promise.resolve([]);
     },
     deleteConnectedAccount: () => Promise.resolve(),
-    mcpSessionForAccount: () => Promise.resolve(null),
   };
 }
 
@@ -51,7 +49,6 @@ function fakeNangoClient(): NangoHttpClient {
     getConnectionState: () => Promise.reject(new Error('not used')),
     listConnections: () => Promise.resolve([]),
     deleteConnection: () => Promise.resolve(),
-    proxyRequest: () => Promise.resolve({ status: 200, body: '' }),
   };
 }
 
@@ -92,7 +89,6 @@ describe('ConnectorProviderBootstrapper', () => {
       registry,
       credentials: fakeCredentials(secrets),
       nangoEnv: opts?.nangoEnv ?? (() => ({})),
-      nangoProxy: new NangoProxyMcp({ localOrigin: 'http://127.0.0.1:4242' }),
       rawMcpServers: opts?.rawMcpServers ?? (() => []),
       // Hermetic vendor clients: without these the post-registration connection
       // check would issue a real network request from the test suite.
@@ -199,6 +195,34 @@ describe('ConnectorProviderBootstrapper', () => {
       expect(second).toBeDefined();
       expect(second).not.toBe(first);
       expect(registry.listProviders().filter((p) => p.type === 'composio')).toHaveLength(1);
+    });
+
+    it('advances material generation when a confined Composio credential changes', async () => {
+      const bootstrapper = makeBootstrapper();
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-1');
+      await bootstrapper.registerBootProviders();
+      const first = db
+        .select({
+          digest: connectorProviderInstances.executionConfigDigest,
+          generation: connectorProviderInstances.executionConfigGeneration,
+        })
+        .from(connectorProviderInstances)
+        .where(eq(connectorProviderInstances.type, 'composio'))
+        .get()!;
+
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-2');
+      await bootstrapper.reload('composio');
+      const second = db
+        .select({
+          digest: connectorProviderInstances.executionConfigDigest,
+          generation: connectorProviderInstances.executionConfigGeneration,
+        })
+        .from(connectorProviderInstances)
+        .where(eq(connectorProviderInstances.type, 'composio'))
+        .get()!;
+
+      expect(second.digest).not.toBe(first.digest);
+      expect(second.generation).toBe(first.generation + 1);
     });
 
     it('clears a recorded Nango refusal once the reload succeeds', async () => {

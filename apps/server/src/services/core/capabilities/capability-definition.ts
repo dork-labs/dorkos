@@ -30,7 +30,11 @@
 import type { z } from 'zod';
 import type { Logger } from '@dorkos/shared/logger';
 import type { CapabilityTier, CapabilitySurfaces } from '@dorkos/shared/capabilities';
-import type { CapabilityHandlerContext } from './registry.js';
+import type {
+  CapabilityHandlerContext,
+  CapabilityInvocationContext,
+  CapabilityPreflightResult,
+} from './registry.js';
 import type { InSessionCardKind } from './in-session-card.js';
 
 /**
@@ -204,6 +208,18 @@ export interface CapabilityDefinition<
    * refused call has no handler run.
    */
   toolGroup?: CapabilityToolGroup;
+  /**
+   * Resolve live server authority after parsing and before tier approval.
+   *
+   * Connector execution uses this hook so owner, actor, grant, target, and
+   * arguments are bound to approval at the registry choke point. It runs for
+   * trusted callers too; trust never substitutes for live domain authority.
+   */
+  preflight?: (
+    deps: CapabilityDeps,
+    input: z.infer<In>,
+    context: CapabilityInvocationContext
+  ) => Promise<CapabilityPreflightResult>;
   /**
    * Execute the capability against the injected dependencies, returning PLAIN
    * typed output (see the module-level "result-wrapping seam" note — transport

@@ -2,19 +2,20 @@
  * Project registry capabilities into in-session `dorkos` MCP tool definitions
  * (spec `capability-registry`, task 2.2).
  *
- * This is the Claude Agent SDK half of the MCP projection. The SDK builds its
- * server from a `tools` array passed to `createSdkMcpServer({ tools })` rather
- * than by mutating a server instance, so — unlike the external adapter's
- * `registerCapabilitiesAsMcpTools(server, registry)` — this returns the tool
- * definitions to spread into that array. The `tool()` helper carries no
- * annotations slot, so only names, descriptions, input shapes, and handlers are
- * projected; all the transport-neutral work lives in
+ * This is the Claude Agent SDK half of the MCP projection. Ordinary in-session
+ * capabilities become the `tools` array passed to `createSdkMcpServer`. The five
+ * principal-bound connector capabilities use the real returned `McpServer`
+ * instead, because its full-schema registration preserves strict unknown-field
+ * rejection that the Agent SDK's raw-shape `tool()` helper would erase. All
+ * transport-neutral invocation work still lives in
  * `core/capabilities/mcp-projection.ts`.
  *
  * @module services/runtimes/claude-code/mcp-tools/capability-mcp-tools
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
-import { toolExposure } from './tool-exposure.js';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import { searchHintFrom, toolExposure } from './tool-exposure.js';
 import type { McpServerId } from '@dorkos/shared/capabilities';
 
 import type {
@@ -23,12 +24,15 @@ import type {
 } from '../../../core/capabilities/index.js';
 import {
   capabilitiesForMcpServer,
+  approvalTokenArgument,
   capabilityInputShape,
+  deriveMcpAnnotations,
   invokeCapabilityAsMcpResult,
   type InSessionSurface,
 } from '../../../core/capabilities/mcp-projection.js';
 import type { CapabilityHoldSession } from '../../../core/capabilities/capability-approval-hold.js';
 import type { ApprovalService } from '../../../core/approvals/index.js';
+import { CONNECTOR_RUNTIME_CAPABILITY_IDS } from '../../../connectors/runtime-capability-scope.js';
 
 /**
  * The in-session seam: the live session inline cards are rendered into, plus the
@@ -64,7 +68,8 @@ function abortSignalOf(extra: unknown): AbortSignal | undefined {
  * @param transport - Which server's tool surface to project (defaults to
  *   `in-session`).
  * @param resolveContext - Optional resolver for the invocation context, awaited
- *   per tool call. This surface has no request to read a token from, so the
+ *   per tool call and told the exact capability id plus call signal. This
+ *   surface has no request to read a token from, so the
  *   caller's identity is derived from the session instead (see
  *   `createInSessionContextResolver`); the resolver memoizes, so many tool calls
  *   in one session cost one lookup. Omitted in tests and introspection paths,
@@ -81,7 +86,10 @@ function abortSignalOf(extra: unknown): AbortSignal | undefined {
 export function capabilityMcpTools(
   registry: CapabilityRegistry,
   transport: McpServerId = 'in-session',
-  resolveContext?: () => Promise<CapabilityInvocationContext | undefined>,
+  resolveContext?: (
+    capabilityId: string,
+    signal?: AbortSignal
+  ) => Promise<CapabilityInvocationContext | undefined>,
   hold?: InSessionCapabilityHold
 ) {
   return capabilitiesForMcpServer(registry, transport).map((capability) =>
@@ -102,7 +110,7 @@ export function capabilityMcpTools(
           registry,
           capability.id,
           args,
-          await resolveContext?.(),
+          await resolveContext?.(capability.id, signal),
           perCall
         );
       },
@@ -114,4 +122,72 @@ export function capabilityMcpTools(
       toolExposure(capability.surfaces.mcp!.toolName, capability.title)
     )
   );
+}
+
+function strictConnectorInputSchema(registry: CapabilityRegistry, capabilityId: string) {
+  const capability = registry.get(capabilityId);
+  if (!capability || !(capability.input instanceof z.ZodObject)) {
+    throw new Error(`Connector runtime capability '${capabilityId}' has no object input schema.`);
+  }
+  return capability.tier === 'destructive'
+    ? capability.input.extend(approvalTokenArgument())
+    : capability.input;
+}
+
+/**
+ * Register the five principal-bound connector tools on Claude's in-process MCP server.
+ *
+ * These capabilities deliberately declare no ordinary MCP surface. They are added
+ * only when a live Claude agent session owns a turn context, and their full strict
+ * Zod schemas are passed to the MCP SDK so unknown owner, agent, session, or provider
+ * selectors reach validation instead of being stripped by the Agent SDK's raw-shape
+ * `tool()` helper.
+ *
+ * @param server - The real MCP server returned by `createSdkMcpServer`.
+ * @param registry - The composed capability registry containing the exact five ids.
+ * @param resolveContext - Per-call resolver that mints the current turn's principal.
+ * @param hold - Optional in-session approval hold for destructive execution.
+ */
+export function registerClaudeConnectorCapabilityTools(
+  server: McpServer,
+  registry: CapabilityRegistry,
+  resolveContext: (
+    capabilityId: string,
+    signal?: AbortSignal
+  ) => Promise<CapabilityInvocationContext | undefined>,
+  hold?: InSessionCapabilityHold
+): void {
+  for (const capabilityId of CONNECTOR_RUNTIME_CAPABILITY_IDS) {
+    const capability = registry.get(capabilityId);
+    if (!capability) {
+      throw new Error(`Connector runtime capability '${capabilityId}' is not registered.`);
+    }
+    const searchHint = searchHintFrom(capability.title ?? capability.description);
+    server.registerTool(
+      capability.id,
+      {
+        description: capability.description,
+        inputSchema: strictConnectorInputSchema(registry, capabilityId),
+        annotations: deriveMcpAnnotations(capability),
+        ...(searchHint ? { _meta: { 'anthropic/searchHint': searchHint } } : {}),
+      },
+      async (args: Record<string, unknown>, extra: unknown) => {
+        const signal = abortSignalOf(extra);
+        const perCall: InSessionSurface | undefined = hold
+          ? {
+              approvals: hold.approvals,
+              session: hold.session,
+              ...(signal ? { signal } : {}),
+            }
+          : undefined;
+        return invokeCapabilityAsMcpResult(
+          registry,
+          capability.id,
+          args,
+          await resolveContext(capability.id, signal),
+          perCall
+        );
+      }
+    );
+  }
 }

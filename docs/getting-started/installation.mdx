@@ -19,7 +19,7 @@ DorkOS gives you a browser tab where you run, schedule, and check on your coding
 
 ## Try it without installing
 
-Curious before you commit to anything? If you have Node.js 22 or newer, you can run DorkOS straight from npm with `npx`, no install step first:
+Curious before you commit to anything? If you have Node.js 22.22.3 or newer, you can run DorkOS straight from npm with `npx`, no install step first:
 
 ```bash
 npx dorkos@latest
@@ -55,7 +55,7 @@ One command, no yak-shaving: it checks your Node.js version, installs DorkOS, an
 curl -fsSL https://dorkos.ai/install | bash
 ```
 
-This checks for Node.js 22+, installs DorkOS, and asks if you'd like to run the setup wizard. Say yes and it'll ask for your preferred port, a UI theme, and which folder you want DorkOS to work in by default. You can change any of these later.
+This checks for Node.js 22.22.3 or later, installs DorkOS, and asks if you'd like to run the setup wizard. Say yes and it'll ask for your preferred port, a UI theme, and which folder you want DorkOS to work in by default. You can change any of these later.
 
 </Step>
 <Step>
@@ -291,7 +291,7 @@ Open the DorkOS Copilot settings and enter your Anthropic API key.
 <Callout type="info">
   For the curious: the plugin runs the same agent engine as the CLI, but in-process inside Obsidian
   instead of talking to a separate server. In practice that means it's fast and nothing leaves your
-  machine, though it also means the plugin needs Node.js 22+ installed on your system.
+  machine, though it also means the plugin needs Node.js 22.22.3 or later installed on your system.
 </Callout>
 
 </Tab>

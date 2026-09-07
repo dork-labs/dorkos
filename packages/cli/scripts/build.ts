@@ -229,7 +229,7 @@ async function buildCLI() {
     entryPoints: [path.join(ROOT, 'apps/server/src/index.ts')],
     bundle: true,
     platform: 'node',
-    target: 'node18',
+    target: 'node22.22',
     format: 'esm',
     outfile: path.join(OUT, 'server/index.js'),
     external: [
@@ -238,6 +238,7 @@ async function buildCLI() {
       // node_modules), exactly like the Claude SDK. They MUST also be listed in
       // packages/cli/package.json dependencies so a published CLI installs them.
       '@anthropic-ai/claude-agent-sdk',
+      '@composio/core',
       '@openai/codex-sdk',
       '@opencode-ai/sdk',
       '@ngrok/ngrok',
@@ -328,7 +329,7 @@ async function buildCLI() {
     entryPoints: [path.join(ROOT, 'packages/cli/src/cli.ts')],
     bundle: true,
     platform: 'node',
-    target: 'node18',
+    target: 'node22.22',
     format: 'esm',
     outfile: path.join(OUT, 'bin/cli.js'),
     external: [

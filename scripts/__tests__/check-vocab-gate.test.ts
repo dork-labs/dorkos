@@ -17,10 +17,11 @@
  * suite can never red-light an unrelated PR just because the real repo grew
  * a new file.
  */
-import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import ts from 'typescript';
 import {
   collectFiles,
   isAllowlisted,
@@ -577,6 +578,47 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
     const repoRoot = join(import.meta.dirname, '../..');
     expect(runVocabGate(repoRoot)).toEqual([]);
   }, 20_000);
+
+  it('checks literal API errors and owner-refusal messages in connector management', () => {
+    const repoRoot = join(import.meta.dirname, '../..');
+    const routePath = join(repoRoot, 'apps/server/src/routes/connector-management.ts');
+    const routeSource = readFileSync(routePath, 'utf8');
+    const sourceFile = ts.createSourceFile(
+      routePath,
+      routeSource,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS
+    );
+    const apiCopy: string[] = [];
+
+    function staticText(node: ts.Expression | undefined): string | undefined {
+      if (node && ts.isStringLiteralLike(node)) return node.text;
+      if (node && ts.isTemplateExpression(node)) {
+        return [node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join(' ');
+      }
+      return undefined;
+    }
+
+    function visit(node: ts.Node): void {
+      if (ts.isPropertyAssignment(node) && node.name.getText(sourceFile) === 'error') {
+        const text = staticText(node.initializer);
+        if (text !== undefined) apiCopy.push(text);
+      }
+      if (ts.isCallExpression(node) && node.expression.getText(sourceFile) === 'sendOwnerRefusal') {
+        const text = staticText(node.arguments[2]);
+        if (text !== undefined) apiCopy.push(text);
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(sourceFile);
+
+    const copySource = apiCopy
+      .map((text, index) => `const apiCopy${index} = { message: ${JSON.stringify(text)} };`)
+      .join('\n');
+    expect(apiCopy).toHaveLength(10);
+    expect(scanSource(routePath, copySource, loadBannedTerms())).toEqual([]);
+  });
 
   it('every allowlist entry path resolves to a real file or directory', () => {
     // A rename or deletion that leaves a stale allowlist entry behind is not

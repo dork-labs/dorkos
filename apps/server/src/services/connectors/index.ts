@@ -1,15 +1,14 @@
 /**
  * Connector gateway service barrel — the server-side surface of the
  * `ConnectorProvider` seam (connector-gateway spec). Re-exports the registry,
- * the provider bootstrapper (lifecycle + live reload), the shared flow-binding
- * map, the agent-facing capability domain, the routing surface, the
- * custody-disclosure copy, the per-session tool exposure binder, the public
- * account mapping, the Nango Proxy→MCP wrapper, and the shipped provider
- * backends.
+ * the provider bootstrapper (lifecycle + live reload), shared flow bindings,
+ * the agent-facing discovery domain, brokered execution, routing, custody
+ * disclosures, retained session access status, public account mapping, and the
+ * shipped provider backends.
  *
  * Exposed as the `@dorkos/server/services/connectors` subpath so the eval
  * harness (`@dorkos/evals`) can express the W4 connector evals against the real
- * routing/registry/exposure code with fakes, without reaching into internal
+ * routing, registry, and broker code with fakes, without reaching into internal
  * source paths.
  *
  * @module services/connectors
@@ -31,8 +30,36 @@ export {
 } from './bootstrap.js';
 export { ConnectorFlowBindings } from './flow-bindings.js';
 export { connectorDomain, type ConnectorCapabilityDeps } from './connector-capabilities.js';
+export {
+  connectorExecutionDomain,
+  type ConnectorExecutionCapabilityDeps,
+} from './execution/execution-capabilities.js';
+export {
+  ConnectorExecutionAuthorizationService,
+  type AuthorizedConnectorExecution,
+  type ConnectorAgentOwnershipPort,
+  type PrepareConnectorExecutionInput,
+} from './execution/authorization-service.js';
+export {
+  ConnectorExecutionBroker,
+  type ConnectorBrokerExecutionInput,
+  type ConnectorExecutionPrincipalRevalidationPort,
+} from './execution/execution-broker.js';
+export {
+  ConnectorUsageEvidenceError,
+  ConnectorUsageStore,
+  type ConnectorUsageIntentInput,
+  type ConnectorUsageOutcome,
+  type ConnectorUsageTerminalInput,
+} from './execution/usage-store.js';
+export {
+  ConnectorAccessQueryError,
+  ConnectorAccessQueryService,
+  type ConnectorOperatorUsageQuery,
+  type ConnectorUsageQuery,
+} from './execution/access-query-service.js';
+export { ConnectorProgramPrincipalService } from './principal/program-principal-service.js';
 export { toPublicAccount, type PublicConnectedAccount } from './public-account.js';
-export { NangoProxyMcp, type NangoProxyMcpOpts } from './providers/nango-proxy-mcp.js';
 export {
   recommendConnector,
   type RecommendConnectorResult,
@@ -46,15 +73,7 @@ export {
   type CustodyDisclosureContext,
   type DisclosableAccount,
 } from './custody-disclosure.js';
-export {
-  SessionConnectorService,
-  type SessionConnectorServiceOpts,
-  type SessionConnectorStatus,
-  type SessionConnectorAccountStatus,
-  type SessionConnectorWarning,
-  type SessionMcpServers,
-  type AttachResult,
-} from './session-exposure.js';
+export { SessionConnectorService, type SessionConnectorServiceOpts } from './session-exposure.js';
 export {
   AgentConnectorAttachmentStore,
   SessionConnectorAttachmentStore,
@@ -66,6 +85,25 @@ export {
   registerConnectorAgentCleanup,
   type ConnectorAgentCleanupDeps,
 } from './agent-access-cleanup.js';
+export type { ConnectorAuthorityCleanupPort } from './authority-cleanup-port.js';
+export {
+  CONNECTOR_RUNTIME_CAPABILITY_IDS,
+  CONNECTOR_RUNTIME_EXECUTION_CAPABILITY_IDS,
+  isConnectorRuntimeCapabilityId,
+  type ConnectorRuntimeCapabilityId,
+  type ConnectorRuntimeExecutionCapabilityId,
+} from './runtime-capability-scope.js';
+export type {
+  ConnectorRuntime,
+  ConnectorRuntimeBindingBootPort,
+  ConnectorRuntimePrincipalPort,
+  ConnectorTurnRefusalReason,
+  OpenConnectorTurnInput,
+  OpenConnectorTurnResult,
+  ResolveConnectorTurnInput,
+  ResolveConnectorTurnResult,
+  RevokeConnectorTurnReason,
+} from './runtime-principal-port.js';
 export {
   ComposioConnectorProvider,
   maybeCreateComposioProvider,
@@ -85,7 +123,6 @@ export {
   type ComposioConnectionRequest,
   type ComposioConnectionState,
   type ComposioConnectedAccount,
-  type ComposioMcpSession,
   type ComposioAccountStatus,
 } from './providers/composio-client.js';
 export {
@@ -123,3 +160,10 @@ export {
 // Gmail eval can assert the refined eval-13 oracle (only the vendor API-key ref
 // is resolved, never a per-account token ref).
 export type { CredentialProvider, CredentialResolution } from '../core/credential-provider.js';
+
+export {
+  isServerPrincipal,
+  type ConnectorOwnerAuthority,
+  type ServerPrincipalClaims,
+  type ServerPrincipalProof,
+} from './principal/server-principal.js';

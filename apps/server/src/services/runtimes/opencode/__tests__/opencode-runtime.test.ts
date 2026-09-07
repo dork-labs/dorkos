@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { OpencodeClient, GlobalEvent } from '@opencode-ai/sdk';
 import type {
   DependencyCheck,
@@ -24,6 +27,7 @@ import {
 } from '../providers/check-dependencies.js';
 import { detectOllama } from '../providers/ollama.js';
 import { TurnEventQueue } from '../events/global-event-hub.js';
+import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
 import {
   DIRECTORY,
   OTHER_DIRECTORY,
@@ -36,6 +40,7 @@ import {
   sessionCompacted,
   sessionError,
   abortedError,
+  unknownError,
   statusEvent,
   partUpdated,
   partDelta,
@@ -69,6 +74,12 @@ vi.mock('../providers/check-dependencies.js', () => ({
 vi.mock('../providers/ollama.js', () => ({
   detectOllama: vi.fn(async () => ({ running: false, models: [] })),
 }));
+
+const resolveDorkosMcpInjection = vi.hoisted(() => vi.fn());
+vi.mock('../../shared/dorkos-mcp-injection.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../shared/dorkos-mcp-injection.js')>();
+  return { ...actual, resolveDorkosMcpInjection };
+});
 
 const SATISFIED_CHECKS: DependencyCheck[] = [
   {
@@ -143,7 +154,11 @@ function createMockClient() {
     provider: { list: vi.fn(async () => ({ data: { all: [], default: {}, connected: [] } })) },
     mcp: {
       status: vi.fn(async () => ({ data: {} as Record<string, unknown> })),
-      add: vi.fn(async () => ({ data: {} as Record<string, unknown> })),
+      add: vi.fn(async (options) => ({
+        data: {
+          [options?.body?.name ?? 'unknown']: { status: 'connected' as const },
+        },
+      })),
       disconnect: vi.fn(async () => ({ data: true })),
     },
     config: { get: vi.fn(async () => ({ data: {} as Record<string, unknown> })) },
@@ -212,6 +227,7 @@ describe('OpenCodeRuntime', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(checkOpenCodeDependencies).mockReturnValue(SATISFIED_CHECKS);
+    resolveDorkosMcpInjection.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -2000,6 +2016,54 @@ describe('OpenCodeRuntime', () => {
     });
   });
 
+  describe('carriesRoomTools', () => {
+    it('finds a successful canonical reconcile through the session directory symlink', async () => {
+      const root = mkdtempSync(path.join(realpathSync(tmpdir()), 'dorkos-oc-room-tools-'));
+      const canonicalDirectory = path.join(root, 'canonical');
+      const rawAlias = path.join(root, 'alias');
+      mkdirSync(canonicalDirectory);
+      symlinkSync(canonicalDirectory, rawAlias);
+      const harness = makeRuntime();
+      const sessionId = nextSessionId();
+      harness.client.session.create.mockResolvedValue({
+        data: sessionInfo(OC_SESSION_A, canonicalDirectory),
+      });
+      harness.client.session.get.mockResolvedValue({
+        data: sessionInfo(OC_SESSION_A, canonicalDirectory),
+      });
+      harness.runtime.setMeshCore({
+        getByPath: (cwd: string) =>
+          cwd === rawAlias ? { id: 'agent-1', name: 'agent' } : undefined,
+        listWithPaths: () => [],
+        updateLastSeen: () => undefined,
+      });
+      resolveDorkosMcpInjection.mockResolvedValue({
+        url: 'http://localhost:4242/mcp',
+        headers: { Authorization: 'Bearer test', 'X-DorkOS-Agent': 'agent-token' },
+      });
+
+      try {
+        const turn = consume(harness.runtime.sendMessage(sessionId, 'hello', { cwd: rawAlias }));
+        await vi.waitFor(() => expect(harness.client.global.event).toHaveBeenCalled());
+        const connection = harness.source.latest();
+        connection.push(globalEvent(canonicalDirectory, serverConnected()));
+        await vi.waitFor(() => expect(harness.client.session.promptAsync).toHaveBeenCalled());
+
+        expect(harness.client.mcp.add).toHaveBeenCalledWith(
+          expect.objectContaining({ query: { directory: canonicalDirectory } })
+        );
+        expect(await harness.runtime.carriesRoomTools({ cwd: rawAlias })).toBe(true);
+
+        for (const event of opencodeSimpleTurn(OC_SESSION_A, 'done')) {
+          connection.push(globalEvent(canonicalDirectory, event));
+        }
+        await turn.finished;
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('setManagedMcpServers (managed injection)', () => {
     const STDIO_CONN: McpAppServerConnection = {
       transport: 'stdio',
@@ -2162,6 +2226,409 @@ describe('OpenCodeRuntime', () => {
       // signature guard does NOT short-circuit — the failed server is retried.
       await driveTurn(harness, sessionId, 2);
       expect(client.mcp.add).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('connector runtime turn lifecycle', () => {
+    function connectorPort(): ConnectorRuntimePrincipalPort {
+      let sequence = 0;
+      return {
+        openTurn: vi.fn(async () => {
+          sequence += 1;
+          return {
+            bindingId: `binding-${sequence}`,
+            bearer: `secret-${sequence}`,
+            expiresAt: '2099-01-01T00:00:00.000Z',
+          };
+        }),
+        resolve: vi.fn(),
+        revoke: vi.fn(async () => undefined),
+      };
+    }
+
+    function enableConnectorTools(
+      harness: ReturnType<typeof makeRuntime>,
+      principals = connectorPort()
+    ): ConnectorRuntimePrincipalPort {
+      harness.runtime.setMeshCore({
+        getByPath: (cwd: string) =>
+          cwd === DIRECTORY ? { id: 'agent-1', name: 'agent' } : undefined,
+        listWithPaths: () => [],
+        updateLastSeen: () => undefined,
+      });
+      harness.runtime.setConnectorRuntimeTools({
+        principals,
+        listenerUrl: 'http://127.0.0.1:4341/mcp',
+        isConnectorCapabilityId: (id) =>
+          new Set([
+            'connectors.execute_read',
+            'connectors.execute_write',
+            'connectors.execute_destructive',
+          ]).has(id),
+      });
+      return principals;
+    }
+
+    it('uses the sidecar canonical directory and revokes on terminal completion', async () => {
+      const harness = makeRuntime();
+      const principals = enableConnectorTools(harness);
+      const sessionId = nextSessionId();
+      const { finished } = consume(
+        harness.runtime.sendMessage(sessionId, 'hello', { cwd: DIRECTORY })
+      );
+      const connection = await openTurn(harness);
+
+      const connectorAdd = harness.client.mcp.add.mock.calls.find(
+        (call) => call[0]?.body?.name === 'dorkos_connections'
+      )?.[0];
+      expect(connectorAdd).toMatchObject({
+        query: { directory: DIRECTORY },
+        body: {
+          name: 'dorkos_connections',
+          config: {
+            type: 'remote',
+            url: 'http://127.0.0.1:4341/mcp',
+            headers: {
+              Authorization: 'Bearer secret-1',
+              'X-DorkOS-Connector-Runtime': 'opencode',
+              'X-DorkOS-Connector-Cwd': encodeURIComponent(DIRECTORY),
+            },
+          },
+        },
+      });
+      expect(principals.openTurn).toHaveBeenCalledWith({
+        runtime: 'opencode',
+        canonicalSessionId: sessionId,
+        agentPath: DIRECTORY,
+        canonicalCwd: DIRECTORY,
+        signal: expect.any(AbortSignal),
+      });
+
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'done')) {
+        connection.push(globalEvent(DIRECTORY, event));
+      }
+      await finished;
+      expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_terminal');
+    });
+
+    it('finishes revocation before granting the same-directory lease to the next turn', async () => {
+      const harness = makeRuntime();
+      const principals = enableConnectorTools(harness);
+      let finishRevocation: (() => void) | undefined;
+      vi.mocked(principals.revoke).mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishRevocation = resolve;
+          })
+      );
+      const first = consume(
+        harness.runtime.sendMessage(nextSessionId(), 'first', { cwd: DIRECTORY })
+      );
+      const connection = await openTurn(harness);
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'first done')) {
+        connection.push(globalEvent(DIRECTORY, event));
+      }
+      await vi.waitFor(() => expect(principals.revoke).toHaveBeenCalledTimes(1));
+
+      const second = consume(
+        harness.runtime.sendMessage(nextSessionId(), 'second', { cwd: DIRECTORY })
+      );
+      await vi.waitFor(() => expect(principals.openTurn).toHaveBeenCalledTimes(1));
+      finishRevocation?.();
+      await first.finished;
+      await vi.waitFor(() => expect(principals.openTurn).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(harness.client.global.event).toHaveBeenCalledTimes(2));
+      const secondConnection = harness.source.latest();
+      secondConnection.push(globalEvent(DIRECTORY, serverConnected()));
+      await vi.waitFor(() => expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(2));
+
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'second done')) {
+        secondConnection.push(globalEvent(DIRECTORY, event));
+      }
+      await second.finished;
+    });
+
+    it('keeps a same-directory turn visible and cancellable while it waits for the lease', async () => {
+      const harness = makeRuntime();
+      const principals = enableConnectorTools(harness);
+      const firstSession = nextSessionId();
+      const secondSession = nextSessionId();
+      const first = consume(harness.runtime.sendMessage(firstSession, 'first', { cwd: DIRECTORY }));
+      const connection = await openTurn(harness);
+      const second = consume(
+        harness.runtime.sendMessage(secondSession, 'second', { cwd: DIRECTORY })
+      );
+
+      expect(principals.openTurn).toHaveBeenCalledTimes(1);
+      let receipt = await harness.runtime.interruptQuery(secondSession);
+      await vi.waitFor(async () => {
+        if (receipt.outcome === 'not-running') {
+          receipt = await harness.runtime.interruptQuery(secondSession);
+        }
+        expect(receipt.outcome).not.toBe('not-running');
+      });
+      expect(receipt).toEqual({
+        outcome: 'closed',
+        runtime: 'opencode',
+      });
+      await expect(second.finished).rejects.toMatchObject({ name: 'AbortError' });
+      expect(principals.openTurn).toHaveBeenCalledTimes(1);
+
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'done')) {
+        connection.push(globalEvent(DIRECTORY, event));
+      }
+      await first.finished;
+      expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_terminal');
+    });
+
+    it('keeps same-directory compaction cancellable without reconciling a live connector', async () => {
+      const harness = makeRuntime();
+      const principals = enableConnectorTools(harness);
+      const promptSession = nextSessionId();
+      const compactSession = nextSessionId();
+      harness.runtime.ensureSession(compactSession, {
+        permissionMode: 'default',
+        cwd: DIRECTORY,
+        model: 'anthropic/claude-sonnet-4-5',
+      });
+
+      const prompt = consume(
+        harness.runtime.sendMessage(promptSession, 'hold the connector lease', { cwd: DIRECTORY })
+      );
+      const connection = await openTurn(harness);
+      const compact = consume(
+        harness.runtime.executeCommandIntent(compactSession, 'compact', { cwd: DIRECTORY })
+      );
+
+      let receipt = await harness.runtime.interruptQuery(compactSession);
+      await vi.waitFor(async () => {
+        if (receipt.outcome === 'not-running') {
+          receipt = await harness.runtime.interruptQuery(compactSession);
+        }
+        expect(receipt.outcome).not.toBe('not-running');
+      });
+      expect(receipt).toEqual({ outcome: 'closed', runtime: 'opencode' });
+      await expect(compact.finished).rejects.toMatchObject({ name: 'AbortError' });
+      expect(harness.client.mcp.disconnect).not.toHaveBeenCalledWith(
+        expect.objectContaining({ path: { name: 'dorkos_connections' } })
+      );
+      expect(harness.client.session.summarize).not.toHaveBeenCalled();
+      expect(principals.openTurn).toHaveBeenCalledTimes(1);
+
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'done')) {
+        connection.push(globalEvent(DIRECTORY, event));
+      }
+      await prompt.finished;
+      expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_terminal');
+    });
+
+    it('finishes cancellation revocation before the next same-directory reconcile', async () => {
+      const harness = makeRuntime();
+      const principals = enableConnectorTools(harness);
+      let finishRevocation: (() => void) | undefined;
+      vi.mocked(principals.revoke).mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishRevocation = resolve;
+          })
+      );
+      const promptSession = nextSessionId();
+      const compactSession = nextSessionId();
+      harness.runtime.ensureSession(compactSession, {
+        permissionMode: 'default',
+        cwd: DIRECTORY,
+        model: 'anthropic/claude-sonnet-4-5',
+      });
+
+      const prompt = consume(
+        harness.runtime.sendMessage(promptSession, 'hold the connector lease', { cwd: DIRECTORY })
+      );
+      const promptConnection = await openTurn(harness);
+      const compact = consume(
+        harness.runtime.executeCommandIntent(compactSession, 'compact', { cwd: DIRECTORY })
+      );
+      const interrupt = harness.runtime.interruptQuery(promptSession);
+
+      await vi.waitFor(() => expect(principals.revoke).toHaveBeenCalledTimes(1));
+      expect(harness.client.mcp.disconnect).not.toHaveBeenCalledWith(
+        expect.objectContaining({ path: { name: 'dorkos_connections' } })
+      );
+      expect(harness.client.session.summarize).not.toHaveBeenCalled();
+
+      finishRevocation?.();
+      await expect(interrupt).resolves.toEqual({ outcome: 'acked', runtime: 'opencode' });
+      promptConnection.push(globalEvent(DIRECTORY, sessionError(OC_SESSION_A, abortedError())));
+      promptConnection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
+      await prompt.finished;
+
+      await vi.waitFor(() =>
+        expect(harness.client.mcp.disconnect).toHaveBeenCalledWith({
+          path: { name: 'dorkos_connections' },
+          query: { directory: DIRECTORY },
+        })
+      );
+      await vi.waitFor(() => expect(harness.client.global.event).toHaveBeenCalledTimes(2));
+      const compactConnection = harness.source.latest();
+      compactConnection.push(globalEvent(DIRECTORY, serverConnected()));
+      await vi.waitFor(() => expect(harness.client.session.summarize).toHaveBeenCalledTimes(1));
+      compactConnection.push(globalEvent(DIRECTORY, sessionCompacted(OC_SESSION_A)));
+      compactConnection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
+      await compact.finished;
+      expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_cancelled');
+    });
+
+    it('still aborts and releases the turn when fail-closed revocation persistence rejects', async () => {
+      const harness = makeRuntime();
+      const principals = enableConnectorTools(harness);
+      vi.mocked(principals.revoke).mockRejectedValue(new Error('revocation persistence failed'));
+      const firstSession = nextSessionId();
+      const first = consume(harness.runtime.sendMessage(firstSession, 'first', { cwd: DIRECTORY }));
+      const firstConnection = await openTurn(harness);
+
+      await expect(harness.runtime.interruptQuery(firstSession)).resolves.toEqual({
+        outcome: 'acked',
+        runtime: 'opencode',
+      });
+      expect(harness.client.session.abort).toHaveBeenCalledWith({ path: { id: OC_SESSION_A } });
+      firstConnection.push(globalEvent(DIRECTORY, sessionError(OC_SESSION_A, abortedError())));
+      firstConnection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
+      await first.finished;
+      expect(principals.revoke).toHaveBeenCalledTimes(2);
+
+      const second = consume(
+        harness.runtime.sendMessage(nextSessionId(), 'second', { cwd: DIRECTORY })
+      );
+      await vi.waitFor(() => expect(principals.openTurn).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(harness.client.global.event).toHaveBeenCalledTimes(2));
+      const secondConnection = harness.source.latest();
+      secondConnection.push(globalEvent(DIRECTORY, serverConnected()));
+      await vi.waitFor(() => expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(2));
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'second done')) {
+        secondConnection.push(globalEvent(DIRECTORY, event));
+      }
+      await second.finished;
+    });
+
+    it('re-adds its retained connector after compaction disables it', async () => {
+      const harness = makeRuntime();
+      enableConnectorTools(harness);
+      const dynamicStatus = new Map<string, { status: 'connected' | 'disabled' }>();
+      harness.client.mcp.add.mockImplementation(async (options) => {
+        const name = options?.body?.name ?? 'unknown';
+        dynamicStatus.set(name, { status: 'connected' });
+        return { data: Object.fromEntries(dynamicStatus) };
+      });
+      harness.client.mcp.status.mockImplementation(async () => ({
+        data: Object.fromEntries(dynamicStatus),
+      }));
+      harness.client.mcp.disconnect.mockImplementation(async (options) => {
+        dynamicStatus.set(options.path.name, { status: 'disabled' });
+        return { data: true };
+      });
+
+      const first = consume(
+        harness.runtime.sendMessage(nextSessionId(), 'first', { cwd: DIRECTORY })
+      );
+      const firstConnection = await openTurn(harness);
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'first done')) {
+        firstConnection.push(globalEvent(DIRECTORY, event));
+      }
+      await first.finished;
+      expect(
+        harness.client.mcp.add.mock.calls.filter(
+          (call) => call[0]?.body?.name === 'dorkos_connections'
+        )
+      ).toHaveLength(1);
+
+      const compactSession = nextSessionId();
+      harness.runtime.ensureSession(compactSession, {
+        permissionMode: 'default',
+        cwd: DIRECTORY,
+        model: 'anthropic/claude-sonnet-4-5',
+      });
+      const compact = consume(
+        harness.runtime.executeCommandIntent(compactSession, 'compact', { cwd: DIRECTORY })
+      );
+      await vi.waitFor(() => expect(harness.client.global.event).toHaveBeenCalledTimes(2));
+      const compactConnection = harness.source.latest();
+      compactConnection.push(globalEvent(DIRECTORY, serverConnected()));
+      await vi.waitFor(() => expect(harness.client.session.summarize).toHaveBeenCalledTimes(1));
+      compactConnection.push(globalEvent(DIRECTORY, sessionCompacted(OC_SESSION_A)));
+      compactConnection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
+      await compact.finished;
+      expect(dynamicStatus.get('dorkos_connections')).toEqual({ status: 'disabled' });
+
+      const second = consume(
+        harness.runtime.sendMessage(nextSessionId(), 'second', { cwd: DIRECTORY })
+      );
+      await vi.waitFor(() => expect(harness.client.global.event).toHaveBeenCalledTimes(3));
+      const secondConnection = harness.source.latest();
+      secondConnection.push(globalEvent(DIRECTORY, serverConnected()));
+      await vi.waitFor(() => expect(harness.client.session.promptAsync).toHaveBeenCalledTimes(2));
+      expect(
+        harness.client.mcp.add.mock.calls.filter(
+          (call) => call[0]?.body?.name === 'dorkos_connections'
+        )
+      ).toHaveLength(2);
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'second done')) {
+        secondConnection.push(globalEvent(DIRECTORY, event));
+      }
+      await second.finished;
+    });
+
+    it('revokes setup when connector registration fails but still runs the ordinary turn', async () => {
+      const harness = makeRuntime();
+      const principals = enableConnectorTools(harness);
+      harness.client.mcp.add.mockRejectedValueOnce(new Error('connector add failed'));
+      const sessionId = nextSessionId();
+      const { finished } = consume(
+        harness.runtime.sendMessage(sessionId, 'hello', { cwd: DIRECTORY })
+      );
+      const connection = await openTurn(harness);
+
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'done')) {
+        connection.push(globalEvent(DIRECTORY, event));
+      }
+      await finished;
+      expect(principals.revoke).toHaveBeenCalledTimes(1);
+      expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'setup_failed');
+    });
+
+    it('revokes setup when connector registration returns a failed status', async () => {
+      const harness = makeRuntime();
+      const principals = enableConnectorTools(harness);
+      harness.client.mcp.add.mockResolvedValueOnce({
+        data: {
+          dorkos_connections: { status: 'failed', error: 'connector handshake failed' },
+        },
+      });
+      const sessionId = nextSessionId();
+      const { finished } = consume(
+        harness.runtime.sendMessage(sessionId, 'hello', { cwd: DIRECTORY })
+      );
+      const connection = await openTurn(harness);
+
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'done')) {
+        connection.push(globalEvent(DIRECTORY, event));
+      }
+      await finished;
+      expect(principals.revoke).toHaveBeenCalledTimes(1);
+      expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'setup_failed');
+    });
+
+    it('revokes a sidecar error as a runtime failure', async () => {
+      const harness = makeRuntime();
+      const principals = enableConnectorTools(harness);
+      const sessionId = nextSessionId();
+      const { finished } = consume(
+        harness.runtime.sendMessage(sessionId, 'hello', { cwd: DIRECTORY })
+      );
+      const connection = await openTurn(harness);
+
+      connection.push(globalEvent(DIRECTORY, sessionError(OC_SESSION_A, unknownError('failed'))));
+      connection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
+      await finished;
+      expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'runtime_failed');
     });
   });
 });

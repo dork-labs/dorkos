@@ -2,7 +2,7 @@
 import type { MeshCore } from '@dorkos/mesh';
 import type { Logger } from '@dorkos/shared/logger';
 import type { ConnectorRegistry } from './registry.js';
-import type { SessionConnectorService } from './session-exposure.js';
+import type { ConnectorAuthorityCleanupPort } from './authority-cleanup-port.js';
 
 /** Dependencies for {@link registerConnectorAgentCleanup}. */
 export interface ConnectorAgentCleanupDeps {
@@ -10,8 +10,8 @@ export interface ConnectorAgentCleanupDeps {
   mesh: Pick<MeshCore, 'onUnregister'>;
   /** Canonical connector authority store. */
   registry: ConnectorRegistry;
-  /** Live session exposure cache invalidated after durable cleanup. */
-  sessions: SessionConnectorService;
+  /** Pending broker/review/runtime authority cleanup. */
+  authorityCleanup: ConnectorAuthorityCleanupPort;
   /** Startup logger. */
   logger: Pick<Logger, 'warn'>;
 }
@@ -27,15 +27,29 @@ export interface ConnectorAgentCleanupDeps {
  */
 export function registerConnectorAgentCleanup(deps: ConnectorAgentCleanupDeps): void {
   const removeAccess = (agentId: string): void => {
-    deps.registry.recordAgentRemoval(agentId);
-    if (deps.registry.migrationHealth().status === 'migration_failed') {
-      deps.logger.warn(
-        '[Connectors] Canonical agent connector cleanup is deferred while connector migration is unavailable; legacy consent remains fenced for the next retry.'
-      );
-      return;
+    let cleanupError: unknown;
+    try {
+      deps.registry.recordAgentRemoval(agentId);
+    } catch (error) {
+      cleanupError = error;
     }
-    const sessionIds = deps.registry.removeAgentAccess(agentId);
-    deps.sessions.invalidateAgent(agentId, sessionIds);
+    try {
+      if (deps.registry.migrationHealth().status === 'migration_failed') {
+        deps.logger.warn(
+          '[Connectors] Canonical agent connector cleanup is deferred while connector migration is unavailable; legacy consent remains fenced for the next retry.'
+        );
+      } else {
+        deps.registry.removeAgentAccess(agentId);
+      }
+    } catch (error) {
+      cleanupError ??= error;
+    }
+    try {
+      deps.authorityCleanup.revokeAgent({ agentId, reason: 'agent_removed' });
+    } catch (error) {
+      cleanupError ??= error;
+    }
+    if (cleanupError) throw cleanupError;
   };
 
   deps.mesh.onUnregister((agentId) => removeAccess(agentId));

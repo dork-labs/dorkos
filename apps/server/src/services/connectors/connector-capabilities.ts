@@ -1,77 +1,35 @@
 /**
- * The connector domain's capabilities (connector-completion spec §Detailed
- * Design 2) — the seven agent-facing tools that make "connect my Gmail" work
- * from inside a chat, projected onto BOTH MCP servers by the capability
- * registry exactly as the marketplace domain is.
+ * Provider-neutral connector discovery capabilities.
  *
- * Every capability is a thin wrapper over the shipped connector services and
- * never bypasses the REST routes' invariants: the public account shape comes
- * from `public-account.ts`, the bounded recent-flow bindings are the
- * SHARED {@link ConnectorFlowBindings} instance the REST router uses (a flow
- * started in chat can be polled over REST and vice versa), and a successful
- * poll records the account via `registry.recordConnect` exactly as the route
- * does.
- *
- * Consent semantics (spec §Decisions 3): the three reads carry
- * `readOnlyCarveOut: true`; `connector.attach_account` is the consent binding,
- * so it is a `destructive`-tier mutation — the tier gate asks a person before
- * an agent can grant itself a user's account. `start_connect` returns markdown
- * carrying the custody disclosure and, for browser flows, the sign-in URL —
- * the v1 in-chat connect experience (a custom card is a named deferred
- * enhancement, spec §Non-Goals).
- *
- * Session scoping: in-session invocations default to the invoking session
- * (`context.sessionId`, set by the in-session adapter); external `/mcp`
- * callers have no invoking session and must pass `sessionId` explicitly.
+ * Private accounts, connection flows, and attachment mutations are deliberately
+ * absent. Agents execute only through the authenticated internal connector MCP
+ * server, whose capabilities recheck exact canonical grants for every call.
  *
  * @module services/connectors/connector-capabilities
  */
 import { z } from 'zod';
-import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
 
 import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
-import type { CapabilityDeps, CapabilityHandlerContext } from '../core/capabilities/index.js';
-import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
-import { custodyDisclosure } from './custody-disclosure.js';
+import type { CapabilityDeps } from '../core/capabilities/index.js';
 import { recommendConnector, type RelayAdapterCatalog } from './routing.js';
-import { toPublicAccount } from './public-account.js';
-import type { ConnectorFlowBindings } from './flow-bindings.js';
 import type { ConnectorRegistry } from './registry.js';
-import type { SessionConnectorService } from './session-exposure.js';
-import { SessionConnectorOwnerUnavailableError } from './attachment-store.js';
 
-/** The connector service bundle the capabilities read. */
+/** The nonprivate connector discovery services available to capability callers. */
 export interface ConnectorCapabilityDeps {
-  /** The registry holding the connector backends + id → provider routing. */
+  /** Registry holding the configured provider toolkit catalogs. */
   registry: ConnectorRegistry;
-  /** The per-account → session tool-server binder (attach/detach). */
-  sessionConnectors: SessionConnectorService;
-  /** The shared bounded recent-flow store (same instance as the REST router). */
-  flowBindings: ConnectorFlowBindings;
-  /** Optional relay adapter catalog for relay-adapter-first routing. */
+  /** Optional relay adapter catalog for relay-adapter-first recommendations. */
   relay?: RelayAdapterCatalog;
 }
 
-/**
- * Extend the shared dependency bag with the connector domain's service bundle.
- * Optional so a registry composed from other domains alone need not supply it;
- * every connector `invoke` asserts its presence via
- * {@link requireConnectorDeps}.
- */
 declare module '../core/capabilities/capability-definition.js' {
   interface CapabilityDeps {
-    /** Connector service bundle consumed by the connector capabilities. */
+    /** Nonprivate connector discovery services. */
     connectorDeps?: ConnectorCapabilityDeps;
   }
 }
 
-/**
- * Narrow the shared bag to the connector service bundle, throwing if a registry
- * that owns connector capabilities was composed without it (a wiring bug).
- *
- * @param deps - The registry's shared dependency bag.
- * @returns The connector service bundle.
- */
+/** Resolve the connector discovery bundle and enforce subsystem health. */
 function requireConnectorDeps(deps: CapabilityDeps): ConnectorCapabilityDeps {
   if (!deps.connectorDeps) {
     throw new Error('Connector capability invoked without connectorDeps in the registry bag.');
@@ -80,65 +38,24 @@ function requireConnectorDeps(deps: CapabilityDeps): ConnectorCapabilityDeps {
   return deps.connectorDeps;
 }
 
-/** Validate connector dependency wiring without touching migration health at server boot. */
+/** Validate connector dependency wiring without touching migration health at boot. */
 function assertConnectorDeps(deps: CapabilityDeps): void {
   if (!deps.connectorDeps) {
     throw new Error('Connector capability invoked without connectorDeps in the registry bag.');
   }
 }
 
-/**
- * Resolve the session a session-scoped capability acts on: the explicit
- * `sessionId` input when given, otherwise the invoking session (in-session
- * calls). External `/mcp` callers have neither and get a clear error.
- *
- * @param inputSessionId - The optional `sessionId` the caller passed.
- * @param context - The handler context (carries the invoking session in-session).
- */
-function resolveSessionId(
-  inputSessionId: string | undefined,
-  context: CapabilityHandlerContext
-): string {
-  const sessionId = inputSessionId ?? context.sessionId;
-  if (!sessionId) {
-    throw new CapabilityToolError({
-      error:
-        'No session to act on. In a DorkOS session this defaults to the current one; ' +
-        'external callers must pass sessionId explicitly.',
-    });
-  }
-  return sessionId;
-}
-
-/** Shared `{ accountId, sessionId? }` input for attach/detach. */
-const SessionAccountInputSchema = z.object({
-  accountId: z.string().min(1).describe('The connected account id (from connector_list_accounts).'),
-  sessionId: z
-    .string()
-    .min(1)
-    .optional()
-    .describe(
-      'Target session id. Defaults to the invoking session; required for external callers.'
-    ),
-});
-
-/**
- * The connector domain: read-only discovery first, then the connect flow, then
- * the session attach/detach mutations. This is the registration order on both
- * MCP servers.
- */
+/** Nonprivate provider-neutral discovery projected onto ordinary MCP surfaces. */
 export const connectorDomain: CapabilityDomain = {
   name: 'connector',
   assertDeps: assertConnectorDeps,
   capabilities: [
-    // ── Read-only discovery ─────────────────────────────────────────────────
     defineCapability({
       id: 'connector.list_toolkits',
       title: 'List connectable services',
       description:
-        'List the services (Gmail, Slack, …) the configured connector backends can connect, ' +
-        'aggregated and deduped. Empty when no connector backend is configured yet — point the ' +
-        'user at the Connections page to add a key under Composio & Nango.',
+        'List services you can use with DorkOS. Open Connections in the ' +
+        'DorkOS app to connect an account or change access.',
       tier: 'observe',
       input: z.object({}),
       output: z.unknown(),
@@ -150,21 +67,17 @@ export const connectorDomain: CapabilityDomain = {
           annotations: { idempotentHint: true, openWorldHint: true },
         },
       },
-      invoke: async (deps) => {
-        const { registry } = requireConnectorDeps(deps);
-        return registry.listToolkits();
-      },
+      invoke: async (deps) => requireConnectorDeps(deps).registry.listToolkits(),
     }),
     defineCapability({
       id: 'connector.recommend',
       title: 'Recommend how to connect a service',
       description:
-        'Recommend how to connect a named service, best route first: a purpose-built relay ' +
-        'adapter outranks a gateway connector, which outranks a raw MCP server. Call this before ' +
-        'the start-connecting tool when the user asks to connect something.',
+        'Recommend the best route for a service. Account setup and access changes ' +
+        'remain owner actions in the DorkOS app.',
       tier: 'observe',
       input: z.object({
-        service: z.string().min(1).describe("Service slug, e.g. 'gmail' or 'slack'."),
+        service: z.string().min(1).describe("Service slug, for example 'gmail' or 'slack'."),
       }),
       output: z.unknown(),
       surfaces: {
@@ -178,241 +91,6 @@ export const connectorDomain: CapabilityDomain = {
       invoke: async (deps, input) => {
         const { registry, relay } = requireConnectorDeps(deps);
         return recommendConnector(input.service, { registry, ...(relay && { relay }) });
-      },
-    }),
-    defineCapability({
-      id: 'connector.list_accounts',
-      title: 'List connected accounts',
-      description:
-        'List the accounts the user has connected (optionally filtered to one service), each ' +
-        'with its status and its plain-language custody line. Pass the account id to the ' +
-        'attach-account tool to expose its tools to a session.',
-      tier: 'observe',
-      input: z.object({
-        toolkit: z.string().min(1).optional().describe('Filter to one service slug.'),
-      }),
-      output: z.unknown(),
-      surfaces: {
-        mcp: {
-          toolName: 'connector_list_accounts',
-          servers: ['in-session', 'external'],
-          readOnlyCarveOut: true,
-          annotations: { idempotentHint: true, openWorldHint: true },
-        },
-      },
-      invoke: async (deps, input) => {
-        const { registry } = requireConnectorDeps(deps);
-        const { accounts, warnings } = await registry.listAccounts(
-          input.toolkit ? { toolkit: input.toolkit } : undefined
-        );
-        // toPublicAccount strips the server-only provider field AND attaches
-        // the per-account custody sentence — one shape for routes and agents.
-        return { accounts: accounts.map(toPublicAccount), warnings };
-      },
-    }),
-
-    // ── The connect flow ────────────────────────────────────────────────────
-    defineCapability({
-      id: 'connector.start_connect',
-      title: 'Start connecting a service',
-      description:
-        'Begin connecting a service account. Browser-based flows return a sign-in link and ' +
-        'custody disclosure. Show both to the user verbatim, then wait for them to finish. ' +
-        'A flow without a link verifies an existing server setup and can be checked at once. ' +
-        'Check either flow with the poll-connect tool, passing the returned flowId. ' +
-        'Pass a label (e.g. "work") to tell two accounts of one service apart.',
-      tier: 'act',
-      input: z.object({
-        service: z.string().min(1).describe("Service slug to connect, e.g. 'gmail'."),
-        label: z
-          .string()
-          .min(1)
-          .optional()
-          .describe('Disambiguates multiple accounts of one service, e.g. "work".'),
-        provider: z
-          .string()
-          .min(1)
-          .optional()
-          .describe('Force a specific backend; omitted = best gateway/raw-mcp recommendation.'),
-      }),
-      output: z.unknown(),
-      surfaces: {
-        mcp: {
-          toolName: 'connector_start_connect',
-          servers: ['in-session', 'external'],
-          annotations: { openWorldHint: true },
-        },
-      },
-      invoke: async (deps, input) => {
-        const { registry, relay, flowBindings } = requireConnectorDeps(deps);
-
-        let providerType = input.provider;
-        if (!providerType) {
-          // Pick the top gateway/raw-mcp recommendation. A relay-adapter
-          // recommendation is deliberately skipped here: it is a different
-          // surface, and connector_recommend already points the agent at it.
-          const { recommendations } = await recommendConnector(input.service, {
-            registry,
-            ...(relay && { relay }),
-          });
-          providerType = recommendations.find(
-            (r) => r.kind === 'gateway' || r.kind === 'raw-mcp'
-          )?.provider;
-        }
-        const provider = providerType ? registry.resolveProvider(providerType) : undefined;
-        if (!provider) {
-          throw new CapabilityToolError({
-            error:
-              `Nothing can connect '${input.service}' yet. ` +
-              'Ask the user to configure a connector provider under Settings → Connections.',
-          });
-        }
-
-        let start;
-        let flowId: string;
-        try {
-          start = await provider.startConnect(
-            input.service,
-            input.label ? { label: input.label } : undefined
-          );
-          flowId = flowBindings.record(
-            start.flowId,
-            provider,
-            registry.disconnectedConnectionFor(provider, input.service, input.label)
-          );
-        } catch (err) {
-          // A rejected start or a saturated flow store is a domain error the
-          // agent should relay, never a crash.
-          throw new CapabilityToolError({
-            error: err instanceof Error ? err.message : 'Failed to start the connect flow.',
-          });
-        }
-        const disclosure = custodyDisclosure(provider.getCapabilities().custody, {
-          service: input.service,
-        });
-        // The v1 in-chat connect experience: plain markdown the chat renders.
-        const message = start.authorizeUrl
-          ? `[Sign in to ${input.service}](${start.authorizeUrl})\n\n${disclosure}\n\n` +
-            `Tell me when you've signed in, then I'll check.`
-          : `${disclosure}\n\nI'll check the configured connection now.`;
-        return {
-          flowId,
-          ...(start.authorizeUrl && { authorizeUrl: start.authorizeUrl }),
-          disclosure,
-          message,
-        };
-      },
-    }),
-    defineCapability({
-      id: 'connector.poll_connect',
-      title: 'Check a connect flow',
-      description:
-        'Check whether a connect flow has completed. Returns pending, connected (with the new ' +
-        'account), or failed. For a browser flow, call after the user says they have signed in. ' +
-        'For a flow without a link, call immediately.',
-      tier: 'act',
-      input: z.object({
-        flowId: z.string().min(1).describe('The flow id the start-connecting tool returned.'),
-      }),
-      output: z.unknown(),
-      surfaces: {
-        mcp: {
-          toolName: 'connector_poll_connect',
-          servers: ['in-session', 'external'],
-          annotations: { idempotentHint: true, openWorldHint: true },
-        },
-      },
-      invoke: async (deps, input) => {
-        const { registry, flowBindings } = requireConnectorDeps(deps);
-        const response = await flowBindings.poll(
-          input.flowId,
-          (binding) => binding.provider.pollConnect(binding.providerFlowId),
-          ({ provider, result: providerResult }) => {
-            const account =
-              providerResult.status === 'connected' && providerResult.account
-                ? registry.recordConnect(provider, providerResult.account)
-                : undefined;
-            return {
-              status: providerResult.status,
-              ...(account && { account: toPublicAccount(account) }),
-              ...(providerResult.error && { error: providerResult.error }),
-            };
-          }
-        );
-        if (!response) {
-          throw new CapabilityToolError({ error: `Unknown connect flow '${input.flowId}'.` });
-        }
-        return response;
-      },
-    }),
-
-    // ── Session attach/detach (the consent binding) ─────────────────────────
-    defineCapability({
-      id: 'connector.attach_account',
-      title: 'Attach an account to a session',
-      description:
-        "Expose a connected account's tools to a session. This is a consent point: a person " +
-        'approves it, and the result echoes the custody disclosure. The tools appear on the ' +
-        "session's next turn. Defaults to the current session; external callers must pass " +
-        'sessionId.',
-      tier: 'destructive',
-      input: SessionAccountInputSchema,
-      output: z.unknown(),
-      // What a person needs to decide: which account, onto which session.
-      approvalDisplayFields: ['accountId', 'sessionId'],
-      surfaces: {
-        mcp: {
-          toolName: 'connector_attach_account',
-          servers: ['in-session', 'external'],
-          annotations: { idempotentHint: true },
-        },
-      },
-      invoke: async (deps, input, context) => {
-        const { sessionConnectors } = requireConnectorDeps(deps);
-        const sessionId = resolveSessionId(input.sessionId, context);
-        let result;
-        try {
-          result = await sessionConnectors.attach(sessionId, input.accountId as ConnectedAccountId);
-        } catch (error) {
-          if (error instanceof SessionConnectorOwnerUnavailableError) {
-            throw new CapabilityToolError({
-              error: 'Choose a registered agent before attaching a connection to this session.',
-            });
-          }
-          throw error;
-        }
-        if (!result) {
-          throw new CapabilityToolError({
-            error: `Unknown connected account '${input.accountId}'.`,
-          });
-        }
-        // The null-branch warning is surfaced on the result, never thrown — the
-        // attach is recorded either way (consent is consent).
-        return { sessionId, ...result };
-      },
-    }),
-    defineCapability({
-      id: 'connector.detach_account',
-      title: 'Detach an account from a session',
-      description:
-        "Remove a connected account's tools from a session. Idempotent — detaching an account " +
-        'that is not attached is a no-op. Defaults to the current session; external callers ' +
-        'must pass sessionId.',
-      tier: 'act',
-      input: SessionAccountInputSchema,
-      output: z.unknown(),
-      surfaces: {
-        mcp: {
-          toolName: 'connector_detach_account',
-          servers: ['in-session', 'external'],
-          annotations: { idempotentHint: true },
-        },
-      },
-      invoke: async (deps, input, context) => {
-        const { sessionConnectors } = requireConnectorDeps(deps);
-        const sessionId = resolveSessionId(input.sessionId, context);
-        sessionConnectors.detach(sessionId, input.accountId as ConnectedAccountId);
-        return { detached: true, accountId: input.accountId, sessionId };
       },
     }),
   ],

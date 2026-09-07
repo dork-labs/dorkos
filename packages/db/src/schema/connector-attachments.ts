@@ -8,17 +8,10 @@ import {
 } from 'drizzle-orm/sqlite-core';
 
 /**
- * Standing, agent-level consent for a connected account (connection-scoping
- * spec `specs/connection-scoping/` §Part 1). Row existence IS the consent —
- * there is no `attached: boolean` column, because a detach deletes the row
- * rather than flipping a flag: an agent-level attachment has no "explicitly
- * not attached" state to distinguish from "never attached," unlike the
- * session-level table below.
- *
- * Every session belonging to `agentId` inherits this account's tools on its
- * next hydration (`SessionConnectorService.hydrateSession`), UNLESS a
- * `session_connector_attachments` row for the same account overrides it —
- * see that table's doc comment for the no-merge ladder.
+ * Retained agent-level connector attachments from connection-scoping Part 1.
+ * P2 keeps these rows as migration and status evidence while canonical
+ * `connection_operation_grants` authorize exact operation revisions. Row
+ * existence alone no longer authorizes provider execution.
  */
 export const agentConnectorAttachments = sqliteTable(
   'agent_connector_attachments',
@@ -37,14 +30,13 @@ export const agentConnectorAttachments = sqliteTable(
 );
 
 /**
- * Session-level connector-attachment OVERRIDE (connection-scoping spec
- * §Part 1). Unlike the agent-level table, a row here is a tombstone, not just
- * a presence flag: `state = 'attached'` exposes an account the agent has not
- * standingly attached (session-only grant); `state = 'detached'` SUPPRESSES
- * an account the agent HAS standingly attached, for this session only. Both
+ * Retained session-level connector override (connection-scoping Part 1).
+ * Unlike the agent-level table, a row here is a tombstone, not just a presence
+ * flag: `state = 'attached'` selects session-scoped canonical grants;
+ * `state = 'detached'` blocks inherited agent grants. Both
  * states must be persisted as explicit rows — "no session-level record for
- * this account" is a third, different state (inherit the agent's standing
- * attachment), and a plain delete-on-detach could not distinguish "never
+ * this account" is a third, different state (inherit canonical agent grants),
+ * and a plain delete-on-detach could not distinguish "never
  * touched" from "explicitly turned off."
  *
  * Precedence: session > agent, no merge. See

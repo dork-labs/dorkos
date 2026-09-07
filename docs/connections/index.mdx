@@ -12,7 +12,7 @@ import { Steps, Step } from 'fumadocs-ui/components/steps';
 The **Connections** page is everything outside DorkOS, in one place. It has two halves:
 
 - **Messaging** — where people and platforms reach your agents, like Telegram and Slack. Set this up so an agent can message you the moment it finishes, and you can message it back. See the [Relay Messaging](/docs/guides/relay-messaging) guide.
-- **Accounts** — services your agents can act on for you, like Gmail, GitHub, or Notion. You connect an account once. After that, you can attach it to any session, and that session's agent can use it.
+- **Accounts** — services your agents can act on for you, like Gmail, GitHub, or Notion. You connect an account once, then review the exact actions each named agent may use.
 
 This page covers the **Accounts** half: connecting a service your agents act on.
 
@@ -78,21 +78,21 @@ The account appears under **Connected**, named like "Gmail (work)", with its own
 
 <Step>
 
-### Attach it to a session
+### Review agent access
 
-Open a session, then open the right panel's **Session** tab. The **Connections** group lists your accounts. Attaching one shows the custody line again, then the account's tools reach that session's agent on its next turn. Only sessions you attach an account to can use it.
+Open the connected account and choose **Agent access**. Select a named agent and review the exact actions it may use. DorkOS pins those actions to the reviewed versions. New or changed actions stay off until you review them.
 
 </Step>
 
 </Steps>
 
-## Or just ask your agent
+## Account changes stay with you
 
-You can also connect a service from inside a chat. Ask your agent something like "connect my Gmail". It replies with a sign-in link and the same custody sentence. Sign in, tell it you are done, and it confirms the new account. When an agent wants to attach an account to its session, DorkOS asks you to approve first. An agent can never grant itself one of your accounts.
+Agents and programs can ask for a connection or access change, but they cannot approve it. Open **Connections** to review the account, agent, and exact actions before deciding. An approval to connect is separate from finishing the service's sign-in.
 
 ## Connect more than one account
 
-You can connect two accounts of the same service and keep them apart. A personal Gmail and a work Gmail show up as two separate rows, each with its own label. An agent uses whichever you attach to the session. Neither one leaks into the other.
+You can connect two accounts of the same service and keep them apart. A personal Gmail and a work Gmail show up as two separate rows, each with its own label. Each account has its own stable identity and private provider binding. You grant an agent actions on the exact account you intend; neither account borrows the other's access.
 
 ## Where your login lives (custody)
 
@@ -100,7 +100,7 @@ Every account connection moves your login somewhere. DorkOS tells you where, in 
 
 There are three custody types:
 
-- **Direct**: DorkOS connects to a remote tool server using the connection details you configured. Any login needed by its tools stays with that server.
+- **Direct**: DorkOS verifies a remote tool server using the connection details you configured. Any login stays with that server. Direct server execution is not available in this alpha because DorkOS cannot yet verify immutable action metadata from a generic MCP endpoint.
 - **Managed**: a trusted company (Composio) holds your login in its own secure vault, not on your computer. This is the easiest path for services that don't connect directly.
 - **Self-host**: your own server (Nango) holds the login, on infrastructure you control. Nothing leaves your systems.
 
@@ -110,7 +110,7 @@ You pick the path per service. You can hold a direct GitHub and a managed Gmail 
 
 When you click Connect, DorkOS routes the service for you:
 
-- If the service runs its own sign-in that DorkOS can talk to directly, that is the default. The key stays on your machine.
+- A configured raw MCP server appears as a direct connection option. DorkOS can verify and inventory it, but cannot grant its unversioned actions to an agent in this alpha.
 - If the service has a purpose-built two-way messaging adapter in DorkOS (like Slack), that lives on the **Messaging** half of this page instead. It is richer than a generic connection.
 - If neither fits, a carrier (Composio, or Nango if you self-host) connects the long tail of services.
 - If you already run your own remote tool server for the service, you can point straight at it.
@@ -126,7 +126,7 @@ When you click Connect, DorkOS routes the service for you:
   <Card
     title="Raw MCP server"
     href="/docs/connections/raw-mcp"
-    description="Point DorkOS at a remote tool server with a working connection. DorkOS checks it before adding the account."
+    description="Verify and inventory a configured remote tool server. Agent execution is not available for this path yet."
   />
   <Card
     title="Nango (self-host)"

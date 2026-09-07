@@ -69,16 +69,24 @@ export interface ConnectionStoreOptions {
   migration?: LegacyConnectionMigrationInput;
   /** Test seam for a deterministic migration result. */
   runMigration?: (db: Db, input?: LegacyConnectionMigrationInput) => ConnectorMigrationResult;
+  /** Verified account or installation that owns newly configured provider instances. */
+  configuredOwner?: {
+    readonly ownerKind: 'user' | 'local_install';
+    readonly ownerId: string;
+  };
 }
 
 /** Stable connection store and sole writer after the application backfill. */
 export class ConnectionStore {
   private readonly db: Db;
   private readonly migrationResult: ConnectorMigrationResult;
+  private readonly configuredOwner:
+    { readonly ownerKind: 'user' | 'local_install'; readonly ownerId: string } | undefined;
 
   /** Run the backfill boundary before exposing any stable reads or writes. */
   constructor(options: ConnectionStoreOptions) {
     this.db = options.db;
+    this.configuredOwner = options.configuredOwner;
     this.migrationResult = (options.runMigration ?? runLegacyConnectionMigration)(
       options.db,
       options.migration
@@ -98,7 +106,7 @@ export class ConnectionStore {
   }
 
   /** Persist or refresh one configured provider instance without deleting connections. */
-  registerProvider(provider: ConnectorProvider): void {
+  registerProvider(provider: ConnectorProvider, executionConfigDigest: string): number {
     this.assertAvailable();
     const capabilities = provider.getCapabilities();
     const now = new Date().toISOString();
@@ -106,38 +114,84 @@ export class ConnectionStore {
     // Custody describes its vault; a future managed service must declare its
     // deployment mode explicitly instead of inferring it from custody.
     const mode = 'byo' as const;
-    const existing = this.db
-      .select({ createdAt: connectorProviderInstances.createdAt })
-      .from(connectorProviderInstances)
-      .where(eq(connectorProviderInstances.id, provider.instanceId))
-      .get();
-    this.db
-      .insert(connectorProviderInstances)
-      .values({
-        id: provider.instanceId,
-        type: provider.type,
-        mode,
-        displayName: provider.type,
-        custody: capabilities.custody,
-        capabilityJson: JSON.stringify(capabilities.capabilities),
-        status: 'available',
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: connectorProviderInstances.id,
-        set: {
+    return this.db.transaction((tx) => {
+      const existing = tx
+        .select({
+          createdAt: connectorProviderInstances.createdAt,
+          executionConfigDigest: connectorProviderInstances.executionConfigDigest,
+          executionConfigGeneration: connectorProviderInstances.executionConfigGeneration,
+          ownerKind: connectorProviderInstances.ownerKind,
+          ownerId: connectorProviderInstances.ownerId,
+        })
+        .from(connectorProviderInstances)
+        .where(eq(connectorProviderInstances.id, provider.instanceId))
+        .get();
+      if (
+        existing?.ownerKind &&
+        existing.ownerId &&
+        this.configuredOwner &&
+        (existing.ownerKind !== this.configuredOwner.ownerKind ||
+          existing.ownerId !== this.configuredOwner.ownerId)
+      ) {
+        throw new Error('Configured connector provider belongs to a different owner.');
+      }
+      const materialChanged =
+        existing !== undefined && existing.executionConfigDigest !== executionConfigDigest;
+      const executionConfigGeneration =
+        existing?.executionConfigDigest === executionConfigDigest
+          ? existing.executionConfigGeneration
+          : Math.max(1, (existing?.executionConfigGeneration ?? 0) + 1);
+      tx.insert(connectorProviderInstances)
+        .values({
+          id: provider.instanceId,
           type: provider.type,
           mode,
           displayName: provider.type,
           custody: capabilities.custody,
           capabilityJson: JSON.stringify(capabilities.capabilities),
           status: 'available',
-          error: null,
+          executionConfigDigest,
+          executionConfigGeneration,
+          ownerKind: this.configuredOwner?.ownerKind ?? existing?.ownerKind,
+          ownerId: this.configuredOwner?.ownerId ?? existing?.ownerId,
+          createdAt: existing?.createdAt ?? now,
           updatedAt: now,
-        },
-      })
-      .run();
+        })
+        .onConflictDoUpdate({
+          target: connectorProviderInstances.id,
+          set: {
+            type: provider.type,
+            mode,
+            displayName: provider.type,
+            custody: capabilities.custody,
+            capabilityJson: JSON.stringify(capabilities.capabilities),
+            status: 'available',
+            error: null,
+            executionConfigDigest,
+            executionConfigGeneration,
+            ownerKind: this.configuredOwner?.ownerKind ?? existing?.ownerKind,
+            ownerId: this.configuredOwner?.ownerId ?? existing?.ownerId,
+            updatedAt: now,
+          },
+        })
+        .run();
+      if (materialChanged) {
+        tx.update(connections)
+          .set({ grantReconciliationStatus: 'migration_needs_reconcile', updatedAt: now })
+          .where(eq(connections.providerInstanceId, provider.instanceId))
+          .run();
+      }
+      return executionConfigGeneration;
+    });
+  }
+
+  /** Read the material generation for one configured provider instance. */
+  providerExecutionConfigGeneration(instanceId: ConnectorProviderInstanceId): number | undefined {
+    return this.db
+      .select({ generation: connectorProviderInstances.executionConfigGeneration })
+      .from(connectorProviderInstances)
+      .where(eq(connectorProviderInstances.id, instanceId))
+      .get()?.generation;
   }
 
   /** Mark a provider unavailable while retaining its identity and connections. */
@@ -284,6 +338,16 @@ export class ConnectionStore {
       .run();
   }
 
+  /** Replace the operator-facing label of one stable connection. */
+  setLabel(accountId: ConnectedAccount['id'], label: string): void {
+    this.assertAvailable();
+    this.db
+      .update(connections)
+      .set({ label, updatedAt: new Date().toISOString() })
+      .where(eq(connections.id, accountId))
+      .run();
+  }
+
   /** Tombstone a connection and synchronously revoke local active access. */
   revokeConnection(accountId: ConnectedAccount['id']): void {
     this.assertAvailable();
@@ -344,9 +408,8 @@ export class ConnectionStore {
    *
    * @param agentId - Agent losing access.
    * @param accountId - Exact stable connection being detached.
-   * @returns Owned session ids whose live exposure must be invalidated.
    */
-  removeAgentConnectionAccess(agentId: string, accountId: ConnectedAccount['id']): string[] {
+  removeAgentConnectionAccess(agentId: string, accountId: ConnectedAccount['id']): void {
     this.assertAvailable();
     const sessionRows = this.db
       .select({ sessionId: sessionConnectionOverrides.sessionId })
@@ -406,7 +469,6 @@ export class ConnectionStore {
         )
         .run();
     });
-    return sessionIds;
   }
 
   /**

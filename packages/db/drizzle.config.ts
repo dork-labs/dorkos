@@ -22,6 +22,7 @@ export default defineConfig({
     './src/schema/connectors/connector-events.ts',
     './src/schema/connectors/connector-review-requests.ts',
     './src/schema/connectors/connector-usage.ts',
+    './src/schema/connectors/connector-execution-state.ts',
     './src/schema/rooms.ts',
     './src/schema/room-coordination.ts',
     './src/schema/read-cursors.ts',

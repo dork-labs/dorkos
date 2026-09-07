@@ -39,7 +39,7 @@ make_workspace() {
   local root=$1
   mkdir -p "$root/apps/e2e/tests/settings" "$root/apps/e2e/tests/chat" \
     "$root/apps/e2e/tests/conversation" "$root/apps/e2e/tests/dashboard-sidebar" \
-    "$root/apps/e2e/test-results"
+    "$root/apps/e2e/tests/connections" "$root/apps/e2e/test-results"
   : >"$root/apps/e2e/tests/alpha.spec.ts"
   : >"$root/apps/e2e/tests/beta.spec.ts"
   : >"$root/apps/e2e/tests/settings/auth-login.spec.ts"
@@ -51,6 +51,7 @@ make_workspace() {
   : >"$root/apps/e2e/tests/chat/live-turn-visibility.ts"
   : >"$root/apps/e2e/tests/chat/runtime-capability-parity.ts"
   : >"$root/apps/e2e/tests/chat/session-read-state.ts"
+  : >"$root/apps/e2e/tests/connections/owner-management.ts"
   : >"$root/apps/e2e/tests/conversation/ask-anywhere.ts"
   : >"$root/apps/e2e/tests/conversation/ask-parks.ts"
   : >"$root/apps/e2e/tests/dashboard-sidebar/now-survives-reload.ts"
@@ -97,13 +98,16 @@ make_workspace() {
     { "title": "conversation/ask-parks.ts", "file": "conversation/ask-parks.ts",
       "specs": [ { "title": "the ask-parks module's suite runs", "file": "conversation/ask-parks.ts",
                    "tests": [ { "status": "expected" } ] } ] },
+    { "title": "connections/owner-management.ts", "file": "connections/owner-management.ts",
+      "specs": [ { "title": "the owner-management module's suite runs", "file": "connections/owner-management.ts",
+                   "tests": [ { "status": "expected" } ] } ] },
     { "title": "settings", "file": "settings/auth-login.spec.ts", "specs": [],
       "suites": [ { "title": "Auth", "file": "settings/auth-login.spec.ts",
                     "specs": [ { "title": "auth runs", "file": "settings/auth-login.spec.ts",
                                  "tests": [ { "status": "skipped" } ] } ] } ] }
   ],
   "config": { "shard": null },
-  "stats": { "expected": 13, "unexpected": 0, "flaky": 0, "skipped": 1 }
+  "stats": { "expected": 14, "unexpected": 0, "flaky": 0, "skipped": 1 }
 }
 JSON
 }
@@ -188,7 +192,7 @@ make_workspace "$tmp/healthy"
 # The count is the FIXTURE's, not the real suite's — two ordinary specs plus one
 # test per registered module — so it moves when make_workspace does and never
 # because somebody added a browser test.
-check 'a healthy run passes' "$tmp/healthy" 0 '13 test(s) executed'
+check 'a healthy run passes' "$tmp/healthy" 0 '14 test(s) executed'
 
 # A spec on disk that the run never collected — the testIgnore/testMatch hole.
 make_workspace "$tmp/uncollected"
@@ -255,6 +259,35 @@ check 'an exemption naming a deleted spec is refused' "$tmp/deadExemption" 1 'do
 make_workspace "$tmp/staleReport"
 rm "$tmp/staleReport/apps/e2e/tests/beta.spec.ts"
 check 'a report naming a deleted spec is refused' "$tmp/staleReport" 1 'do not exist on disk'
+
+# The connection owner-management helper registers tests from a plain .ts file.
+# Its successful report entry above must not become an exemption: missing,
+# skipped, and deleted variants must all remain failures.
+for mode in missing skipped deleted; do
+  root="$tmp/ownerModule-$mode"
+  make_workspace "$root"
+  if [ "$mode" = deleted ]; then
+    rm "$root/apps/e2e/tests/connections/owner-management.ts"
+  else
+    python3 - "$root/apps/e2e/test-results/results.json" "$mode" <<'PYMODULE'
+import json, sys
+p, mode = sys.argv[1:]
+d = json.load(open(p))
+module = 'connections/owner-management.ts'
+if mode == 'missing':
+    d['suites'] = [s for s in d['suites'] if s['file'] != module]
+else:
+    for suite in d['suites']:
+        if suite['file'] == module:
+            suite['specs'][0]['tests'][0]['status'] = 'skipped'
+    d['stats']['skipped'] += 1
+d['stats']['expected'] -= 1
+json.dump(d, open(p, 'w'))
+PYMODULE
+  fi
+  check "an owner-management module that is $mode is refused" \
+    "$root" 1 'connections/owner-management.ts'
+done
 
 # --- REGISTERED_MODULES, in both directions ---------------------------------
 #
@@ -374,7 +407,7 @@ check 'a stats block with no numbers is refused, not skipped past' \
 make_workspace "$tmp/sharded"
 make_shards "$tmp/sharded" 3
 sharded=$tmp/sharded/apps/e2e/test-results
-check 'a healthy three-shard run passes' "$tmp/sharded" 0 '13 test(s) executed' \
+check 'a healthy three-shard run passes' "$tmp/sharded" 0 '14 test(s) executed' \
   "$sharded/shard-1.json" "$sharded/shard-2.json" "$sharded/shard-3.json"
 
 # And it must still be the same ASSERTION, not just the same total: a spec absent

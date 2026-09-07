@@ -55,6 +55,8 @@ export interface RequestUser {
    * that resolves an identity states which credential it verified.
    */
   credential: 'cookie' | 'api-key';
+  /** Stable Better Auth API-key record id, present only for an API-key credential. */
+  credentialId?: string;
 }
 
 /** Paths the gate protects: the API surface and the external MCP endpoint. */
@@ -208,7 +210,11 @@ export async function verifyRequestAuth(
       // The apiKey plugin stores the owning user id in `referenceId`. Require it
       // to be non-empty: a valid key must resolve to an owner, never `''`.
       if (result.valid && result.key?.referenceId) {
-        return { userId: result.key.referenceId, credential: 'api-key' };
+        return {
+          userId: result.key.referenceId,
+          credential: 'api-key',
+          credentialId: result.key.id,
+        };
       }
     } catch (error) {
       logger.debug('[Auth] API key verification failed', {

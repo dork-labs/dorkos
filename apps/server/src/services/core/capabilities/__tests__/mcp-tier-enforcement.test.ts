@@ -34,6 +34,7 @@ import { capabilityInputShape, invokeCapabilityAsMcpResult } from '../mcp-projec
 import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
 import type { AgentIdentity } from '../../agent-identity/index.js';
+import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
 
 const AGENT: AgentIdentity = {
   agentPath: '/projects/prober',
@@ -237,6 +238,35 @@ describe('invokeCapabilityAsMcpResult — tier enforcement', () => {
 
     expect(payloadOf(result)).toEqual({ ok: true });
     expect(ran[0].context.approval).toBeUndefined();
+  });
+
+  it('explicitly forwards server principal, cwd, and the per-call abort signal', async () => {
+    const controller = new AbortController();
+    const principal = createServerPrincipal({
+      kind: 'runtime',
+      owner: { kind: 'local_install', installationId: 'install-a' },
+      bindingId: 'binding-a',
+      runtime: 'claude-code',
+      canonicalSessionId: 'session-a',
+      agentId: 'agent-a',
+      agentPath: '/agents/a',
+      canonicalCwd: '/projects/a',
+    });
+
+    await invokeCapabilityAsMcpResult(
+      registry,
+      'gated.tidy',
+      { name: 'production' },
+      { serverPrincipal: principal, cwd: '/projects/a' },
+      undefined,
+      controller.signal
+    );
+
+    expect(ran[0]?.context).toMatchObject({
+      serverPrincipal: principal,
+      cwd: '/projects/a',
+      signal: controller.signal,
+    });
   });
 
   it('still reports an unknown capability id through the registry', async () => {

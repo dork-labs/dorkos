@@ -177,13 +177,12 @@ function isLoopbackCallback(redirectUri: string): boolean {
  * The bearer token on a request, or `undefined`. RFC 6750 makes the scheme name
  * case-insensitive, so `bearer x` is as valid as `Bearer x`.
  *
- * The credential must start with a non-space, for the reason `_authorize` in
- * `services/connectors/providers/nango-proxy-mcp.ts` gives: ` +` and `.` both
- * match a space, so `(.+)` made the engine try every split of the run
+ * The credential must start with a non-space because ` +` and `.` both match a
+ * space, so a trailing `(.+)` makes the engine try every split of the run
  * (CodeQL js/polynomial-redos). This router only mounts under
  * `DORKOS_TEST_RUNTIME`, so nothing ships it — it is fixed anyway because a
- * bearer parser left in the quadratic shape is the one that gets copied into
- * real code. The only value that parses differently is an all-whitespace
+ * bearer parser left in the quadratic shape is likely to get copied into real
+ * code. The only value that parses differently is an all-whitespace
  * credential, which no issued token can be.
  */
 function bearerToken(header: string | undefined): string | undefined {

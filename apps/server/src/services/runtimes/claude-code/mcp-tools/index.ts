@@ -24,7 +24,10 @@ import { getAgentTools } from './agent-tools.js';
 import { getUiTools } from './ui-tools.js';
 import { getDevtoolsTools } from './devtools-tools.js';
 import { getExtensionTools } from './extension-tools.js';
-import { capabilityMcpTools } from './capability-mcp-tools.js';
+import {
+  capabilityMcpTools,
+  registerClaudeConnectorCapabilityTools,
+} from './capability-mcp-tools.js';
 import { createInSessionContextResolver } from '../../../core/agent-identity/index.js';
 import type { AgentIdentity } from '../../../core/agent-identity/index.js';
 import { gateHandRegisteredMcpTools, type SdkMcpTool } from '../../../core/mcp-tool-gate.js';
@@ -279,7 +282,8 @@ function withToolExposure(tools: SdkMcpTool[], alwaysLoaded: ReadonlySet<string>
  */
 export function createDorkOsToolServer(
   deps: McpToolDeps,
-  session?: import('./ui-tools.js').UiToolSession,
+  session?: import('./ui-tools.js').UiToolSession &
+    Pick<import('../agent-types.js').AgentSession, 'connectorTurn'>,
   sessionId?: string,
   marketplaceDeps?: MarketplaceMcpDeps,
   registry?: CapabilityRegistry
@@ -298,20 +302,24 @@ export function createDorkOsToolServer(
   const resolveContext = createInSessionContextResolver(session?.cwd);
   // Registry capabilities additionally learn WHICH session is calling, read per
   // tool call (the live session's canonical `sdkSessionId` over the trigger id,
-  // mirroring the DevTools read-time resolution) so session-scoped capabilities
-  // — connector attach/detach — can default to the invoking session.
+  // mirroring the DevTools read-time resolution) so resumable flows can bind to
+  // the invoking session without accepting a caller-selected replacement.
   // …and WHERE that session lives, so a capability whose work outlives the
   // process (a sign-in the person finishes in a browser) can be resumed in the
   // right directory after a restart (DOR-981).
-  const resolveCapabilityContext = async () => {
+  const resolveCapabilityContext = async (capabilityId: string, signal?: AbortSignal) => {
     const base = await resolveContext();
     const invokingSessionId = session?.sdkSessionId || sessionId;
-    if (!invokingSessionId) return base;
-    return {
+    const invocation = {
       ...(base ?? {}),
-      sessionId: invokingSessionId,
+      ...(invokingSessionId ? { sessionId: invokingSessionId } : {}),
       ...(session?.cwd ? { cwd: session.cwd } : {}),
+      ...(signal ? { signal } : {}),
     };
+    const connectorTurn = session?.connectorTurn;
+    if (!connectorTurn?.isConnectorCapabilityId(capabilityId)) return invocation;
+    const serverPrincipal = await connectorTurn.resolvePrincipal();
+    return { ...invocation, serverPrincipal };
   };
   // The in-session hold seam (DOR-939): only with BOTH a live session (an event
   // queue to render the inline card into) and the approval primitive can a fresh
@@ -334,6 +342,15 @@ export function createDorkOsToolServer(
       ...capabilityMcpTools(capabilityRegistry, 'in-session', resolveCapabilityContext, hold),
     ],
   });
+
+  if (session?.connectorTurn) {
+    registerClaudeConnectorCapabilityTools(
+      server.instance,
+      capabilityRegistry,
+      resolveCapabilityContext,
+      hold
+    );
+  }
 
   // The read-only `dorkos://` resources: the same registration the external
   // `/mcp` server performs, scoped to THIS session's project rather than the

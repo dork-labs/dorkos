@@ -46,6 +46,7 @@ import {
   legacyDefaultProviderInstanceId,
   type ConnectorMigrationResult,
 } from './legacy-connection-migration.js';
+import { connectorExecutionConfigDigest } from './execution/execution-config.js';
 import {
   maybeCreateComposioProvider,
   COMPOSIO_API_KEY_REF,
@@ -57,7 +58,6 @@ import {
   NANGO_SECRET_KEY_REF,
   type MaybeCreateNangoProviderDeps,
 } from './providers/nango.js';
-import type { NangoProxyMcp } from './providers/nango-proxy-mcp.js';
 import { RawMcpConnectorProvider, type RawMcpServerDescriptor } from './providers/raw-mcp.js';
 
 /** The test-mode provider type the credential route accepts under `DORKOS_TEST_RUNTIME`. */
@@ -77,8 +77,6 @@ export interface ConnectorProviderBootstrapperOpts {
   credentials: CredentialProvider;
   /** Env-derived Nango settings (base URL, encryption key), re-read per reload. */
   nangoEnv: () => { baseUrl?: string; encryptionKey?: string };
-  /** The Nango Proxy→MCP wrapper handed to every Nango provider instance (DOR-415). */
-  nangoProxy: NangoProxyMcp;
   /** Raw-MCP server descriptors from user config (`connectors.rawMcpServers`), read at boot. */
   rawMcpServers: () => RawMcpServerDescriptor[];
   /**
@@ -142,6 +140,31 @@ function reportsKeyKind(provider: unknown): provider is { keyKind(): ConnectorKe
   );
 }
 
+/** Read a provider-confined digest without learning or re-resolving its construction secrets. */
+function providerExecutionConfigDigest(provider: ConnectorProvider): string | undefined {
+  const digest = (provider as ConnectorProvider & { readonly executionConfigDigest?: unknown })
+    .executionConfigDigest;
+  return typeof digest === 'string' && digest.length > 0 ? digest : undefined;
+}
+
+/** Hash only raw-MCP fields that can change the server reached during execution. */
+function rawMcpExecutionConfigDigest(
+  provider: ConnectorProvider,
+  servers: RawMcpServerDescriptor[]
+): string {
+  return connectorExecutionConfigDigest({
+    provider: provider.type,
+    instanceId: provider.instanceId,
+    servers: servers
+      .map((server) => ({
+        slug: server.slug,
+        authKind: server.authKind ?? 'none',
+        connection: server.connection,
+      }))
+      .sort((left, right) => left.slug.localeCompare(right.slug)),
+  });
+}
+
 /**
  * Owns connector-provider construction, registration, and live reload; see the
  * module docs for boot vs reload semantics.
@@ -167,7 +190,7 @@ export class ConnectorProviderBootstrapper {
     this._rawMcpServers = opts.rawMcpServers;
     this._onUnregistered = opts.onUnregistered;
 
-    const { credentials, nangoEnv, nangoProxy } = opts;
+    const { credentials, nangoEnv } = opts;
     const specs: ManagedProviderSpec[] = [
       {
         type: 'composio',
@@ -199,7 +222,6 @@ export class ConnectorProviderBootstrapper {
           const env = nangoEnv();
           return maybeCreateNangoProvider({
             credentials,
-            proxy: nangoProxy,
             ...(env.baseUrl !== undefined && { baseUrl: env.baseUrl }),
             ...(env.encryptionKey !== undefined && { encryptionKey: env.encryptionKey }),
             ...(opts.makeNangoClient && { makeClient: opts.makeNangoClient }),
@@ -250,7 +272,12 @@ export class ConnectorProviderBootstrapper {
   async registerBootProviders(): Promise<void> {
     // The raw-MCP baseline registers unconditionally — with the empty list too,
     // so the seam is live before anyone configures a server (gap 3).
-    this._registry.register(new RawMcpConnectorProvider({ servers: this._rawMcpServers() }));
+    const rawMcpServers = this._rawMcpServers();
+    const rawMcpProvider = new RawMcpConnectorProvider({ servers: rawMcpServers });
+    this._registry.register(
+      rawMcpProvider,
+      rawMcpExecutionConfigDigest(rawMcpProvider, rawMcpServers)
+    );
     for (const spec of this._specs.values()) {
       await this._swap(spec);
     }
@@ -302,7 +329,7 @@ export class ConnectorProviderBootstrapper {
         // card said Ready over a dead service grid. The failure message
         // (Composio's own, secret-free) lands on the status DTO instead.
         await provider.listAccounts();
-        this._registry.register(provider);
+        this._registry.register(provider, providerExecutionConfigDigest(provider));
         this._instanceBySpecType.set(spec.type, provider.instanceId);
         logger.info(`[Connectors] ${spec.logLabel} registered`);
       }

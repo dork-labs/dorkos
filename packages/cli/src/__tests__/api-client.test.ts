@@ -292,4 +292,38 @@ describe('apiCall 401 guidance', () => {
     expect(err.message).toBe('Validation failed');
     expect(err.body.errors).toEqual(['bad name']);
   });
+
+  it.each([
+    {
+      status: 403,
+      body: {
+        error: 'Open this account action from the DorkOS app.',
+        code: 'connector_owner_origin_required',
+        message: 'Open this account action from the DorkOS app.',
+      },
+    },
+    {
+      status: 401,
+      body: {
+        error: 'This program needs a verified API key to request an account change.',
+        code: 'connector_program_credential_required',
+      },
+    },
+  ])(
+    'shows the useful Connections explanation for a $status response',
+    async ({ status, body }) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Response(JSON.stringify(body), { status }))
+      );
+
+      const err = (await apiCall('GET', '/api/connectors/reviews').catch(
+        (e: unknown) => e
+      )) as ApiError;
+
+      expect(err.status).toBe(status);
+      expect(err.message).toBe(body.error);
+      expect(err.body.code).toBe(body.code);
+    }
+  );
 });

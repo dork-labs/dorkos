@@ -98,6 +98,15 @@ import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
 import { CodexContextGate } from './context-gate.js';
 import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
 import { scanSkillCommands } from './scan-skill-commands.js';
+import {
+  connectorRuntimeHeaders,
+  type ConnectorRuntimeMcpInjection,
+  type ConnectorRuntimeTools,
+} from '../connector-tools.js';
+import type {
+  OpenConnectorTurnResult,
+  RevokeConnectorTurnReason,
+} from '../../connectors/runtime-principal-port.js';
 
 /**
  * How long a warmed Codex MCP-status cache stays fresh before {@link CodexRuntime.getMcpStatus}
@@ -176,6 +185,8 @@ export class CodexRuntime implements AgentRuntime {
    * same guard the Claude adapter applies before minting an identity token.
    */
   private meshCore: AgentRegistryPort | undefined;
+  /** Internal connector tool boundary, installed after boot opens its listener. */
+  private connectorRuntimeTools: ConnectorRuntimeTools | undefined;
   /**
    * Resolver for an agent's enabled managed MCP servers, when the composition
    * root injected it. Absent leaves every turn with only the `dorkos_ui`
@@ -189,6 +200,8 @@ export class CodexRuntime implements AgentRuntime {
   private readonly locks = new SessionLockManager();
   /** One AbortController per in-flight turn (NOTES.md Verdict 3). */
   private readonly activeTurns = new Map<string, AbortController>();
+  /** Connector bearer bound to the exact in-flight turn controller. */
+  private readonly activeConnectorBindings = new Map<AbortController, string>();
   /**
    * What DorkOS context each session's thread already holds, so the identity
    * blocks are not re-sent into a rollout that already carries them (DOR-477).
@@ -291,18 +304,26 @@ export class CodexRuntime implements AgentRuntime {
   private async clientForTurn(
     tokenEnv: Record<string, string>,
     managed: CodexManagedMcpServers,
-    dorkosTools: DorkosMcpInjection | null
+    dorkosTools: DorkosMcpInjection | null,
+    connectorTools: ConnectorRuntimeMcpInjection | null
   ): Promise<Codex> {
     const binary = await this.resolveTurnBinary();
     const hasToken = Object.keys(tokenEnv).length > 0;
     const hasManaged = Object.keys(managed.servers).length > 0;
-    if (hasToken || hasManaged || dorkosTools) {
-      return new Codex(buildCodexOptions(binary, this.mcpUiUrl, tokenEnv, managed, dorkosTools));
+    if (hasToken || hasManaged || dorkosTools || connectorTools) {
+      return new Codex(
+        buildCodexOptions(binary, this.mcpUiUrl, tokenEnv, managed, dorkosTools, connectorTools)
+      );
     }
     if (this.sharedClient?.binary !== binary) {
       this.sharedClient = { binary, client: new Codex(buildCodexOptions(binary, this.mcpUiUrl)) };
     }
     return this.sharedClient.client;
+  }
+
+  /** Install the internal connector tool boundary after its listener starts. */
+  setConnectorRuntimeTools(tools: ConnectorRuntimeTools): void {
+    this.connectorRuntimeTools = tools;
   }
 
   // --- Session lifecycle ---
@@ -543,101 +564,130 @@ export class CodexRuntime implements AgentRuntime {
     // that mints, injects or names a tool is gated on the answer.
     const meshAgent = this.meshCore?.getByPath(cwd);
 
-    // Mint this session's agent identity token when this cwd hosts a registered
-    // agent. It rides the subprocess env, never the prompt, so it stays a
-    // credential for the `dorkos` commands the agent runs rather than text in its
-    // context and transcript (spec `agent-trust` §3.1). `{}` leaves the turn
-    // unattributed, exactly as before.
-    //
-    // Minted under the name a PERSON reads, never the slug: the token's label
-    // is replayed onto the agent's author row by every room tool it calls, so
-    // the slug there renames a live agent mid-conversation (DOR-1264).
-    const agentTokenEnv = await resolveAgentTokenEnv(
-      meshAgent ? cwd : undefined,
-      meshAgent?.displayName ?? meshAgent?.name
-    );
-
-    // The `dorkos` tool server, when the experiment is on and this cwd hosts a
-    // registered agent (spec `tool-only-room-replies` §D4). Resolved PER TURN,
-    // like the env token above and for the same reason: it carries a freshly
-    // minted identity token, so a per-session or per-boot resolve would let the
-    // 30-day fuse arm on a long-lived agent. `null` injects nothing, which is
-    // exactly today's behaviour.
-    //
-    // Scoped to every agent-bound session rather than to room turns: the runtime
-    // cannot know why it was called, and these tools are worth having outside a
-    // room anyway.
-    //
-    // Resolved BEFORE the managed servers because it decides whether the name
-    // `dorkos` is reserved against them this turn — see below.
-    const dorkosTools = await resolveDorkosMcpInjection(
-      meshAgent ? cwd : undefined,
-      meshAgent?.displayName ?? meshAgent?.name
-    );
-
-    // The agent's ENABLED managed MCP servers for this cwd, injected inline via
-    // `config.mcp_servers` (spec `mcp-server-management` §6, DOR-892). Resolved
-    // at turn time because the resolver keys on the session cwd; a non-agent
-    // session has no manifest and contributes none.
-    const managedMcpServers = resolveManagedMcpServers(
-      this.managedMcpServers,
-      cwd,
-      dorkosTools !== null
-    );
-
-    const threadOptions = projectThreadOptions(settings, cwd);
-    const client = await this.clientForTurn(agentTokenEnv, managedMcpServers, dorkosTools);
-    // A fresh thread holds nothing this session's previous thread was ever sent,
-    // so the gate is cleared BEFORE it is consulted (DOR-477).
-    if (boundThreadId === undefined) this.contextGate.forget(sessionId);
-    const thread =
-      boundThreadId !== undefined
-        ? client.resumeThread(boundThreadId, threadOptions)
-        : client.startThread(threadOptions);
-
-    // Runtime-neutral DorkOS context (identity, persona, safety boundaries,
-    // <dorkos_context>, <env>): the same blocks the Claude adapter injects, so a
-    // Codex agent knows who it is and how to reach its capabilities.
-    //
-    // Codex's only input channel is the prompt, and a prompt lands in the
-    // thread's persisted rollout, so re-sending this every turn leaves one copy
-    // per turn IN the conversation. {@link CodexContextGate} decides which half
-    // this turn owes: the whole append when the thread has not been told (or the
-    // agent was edited since), the memory block alone otherwise — memory is
-    // outside the gate because it changes while the thread runs.
-    const neutralContextSelection = this.contextGate.select(
-      sessionId,
-      await buildAgentContextAppend(cwd)
-    );
-
-    // The room verbs, and ONLY when this turn actually carries them — gated on
-    // the resolved injection itself, not on a second guess at it, so the prose
-    // and the wiring cannot disagree (spec `tool-only-room-replies` §D11).
-    // Named under codex's own MCP prefix, never claude-code's: a bare or
-    // wrongly-prefixed name is uncallable, which is the DOR-1292 defect.
-    //
-    // Outside the context gate, and deliberately: whether this session HAS the
-    // room tools is answered per turn, so a menu written in the wrong tense must
-    // never survive into a turn where it is false.
-    const agentContext = dorkosTools
-      ? [
-          neutralContextSelection.text,
-          buildRoomToolsBlock(
-            CODEX_DORKOS_TOOL_PREFIX,
-            // Per TURN here, unlike claude-code's cached prefix: codex builds this
-            // block on every turn anyway, so the mode is always current.
-            roomReplyModeForToolCapableSession()
-          ),
-        ]
-          .filter(Boolean)
-          .join('\n\n')
-      : neutralContextSelection.text;
-
     const controller = new AbortController();
     this.activeTurns.set(sessionId, controller);
-    const ctx = createCodexEventContext(sessionId);
-    let bound = boundThreadId !== undefined;
+    let connectorBinding: OpenConnectorTurnResult | undefined;
+    let connectorRevokeReason: RevokeConnectorTurnReason = 'setup_failed';
+    let connectorRuntimeFailed = false;
     try {
+      let connectorTools: ConnectorRuntimeMcpInjection | null = null;
+      if (this.connectorRuntimeTools && meshAgent) {
+        connectorBinding = await this.connectorRuntimeTools.principals.openTurn({
+          runtime: this.type,
+          canonicalSessionId: sessionId,
+          agentPath: cwd,
+          canonicalCwd: cwd,
+          signal: controller.signal,
+        });
+        this.activeConnectorBindings.set(controller, connectorBinding.bindingId);
+        connectorTools = {
+          url: this.connectorRuntimeTools.listenerUrl,
+          headers: connectorRuntimeHeaders({
+            bearer: connectorBinding.bearer,
+            runtime: this.type,
+            canonicalCwd: cwd,
+          }),
+        };
+      }
+
+      // Mint this session's agent identity token when this cwd hosts a registered
+      // agent. It rides the subprocess env, never the prompt, so it stays a
+      // credential for the `dorkos` commands the agent runs rather than text in its
+      // context and transcript (spec `agent-trust` §3.1). `{}` leaves the turn
+      // unattributed, exactly as before.
+      //
+      // Minted under the name a PERSON reads, never the slug: the token's label
+      // is replayed onto the agent's author row by every room tool it calls, so
+      // the slug there renames a live agent mid-conversation (DOR-1264).
+      const agentTokenEnv = await resolveAgentTokenEnv(
+        meshAgent ? cwd : undefined,
+        meshAgent?.displayName ?? meshAgent?.name
+      );
+
+      // The `dorkos` tool server, when the experiment is on and this cwd hosts a
+      // registered agent (spec `tool-only-room-replies` §D4). Resolved PER TURN,
+      // like the env token above and for the same reason: it carries a freshly
+      // minted identity token, so a per-session or per-boot resolve would let the
+      // 30-day fuse arm on a long-lived agent. `null` injects nothing, which is
+      // exactly today's behaviour.
+      //
+      // Scoped to every agent-bound session rather than to room turns: the runtime
+      // cannot know why it was called, and these tools are worth having outside a
+      // room anyway.
+      //
+      // Resolved BEFORE the managed servers because it decides whether the name
+      // `dorkos` is reserved against them this turn — see below.
+      const dorkosTools = await resolveDorkosMcpInjection(
+        meshAgent ? cwd : undefined,
+        meshAgent?.displayName ?? meshAgent?.name
+      );
+
+      // The agent's ENABLED managed MCP servers for this cwd, injected inline via
+      // `config.mcp_servers` (spec `mcp-server-management` §6, DOR-892). Resolved
+      // at turn time because the resolver keys on the session cwd; a non-agent
+      // session has no manifest and contributes none.
+      const managedMcpServers = resolveManagedMcpServers(
+        this.managedMcpServers,
+        cwd,
+        dorkosTools !== null
+      );
+
+      const threadOptions = projectThreadOptions(settings, cwd);
+      const client = await this.clientForTurn(
+        agentTokenEnv,
+        managedMcpServers,
+        dorkosTools,
+        connectorTools
+      );
+      // A fresh thread holds nothing this session's previous thread was ever sent,
+      // so the gate is cleared BEFORE it is consulted (DOR-477).
+      if (boundThreadId === undefined) this.contextGate.forget(sessionId);
+      const thread =
+        boundThreadId !== undefined
+          ? client.resumeThread(boundThreadId, threadOptions)
+          : client.startThread(threadOptions);
+
+      // Runtime-neutral DorkOS context (identity, persona, safety boundaries,
+      // <dorkos_context>, <env>): the same blocks the Claude adapter injects, so a
+      // Codex agent knows who it is and how to reach its capabilities.
+      //
+      // Codex's only input channel is the prompt, and a prompt lands in the
+      // thread's persisted rollout, so re-sending this every turn leaves one copy
+      // per turn IN the conversation. {@link CodexContextGate} decides which half
+      // this turn owes: the whole append when the thread has not been told (or the
+      // agent was edited since), the memory block alone otherwise — memory is
+      // outside the gate because it changes while the thread runs.
+      const neutralContextSelection = this.contextGate.select(
+        sessionId,
+        await buildAgentContextAppend(cwd)
+      );
+
+      // The room verbs, and ONLY when this turn actually carries them — gated on
+      // the resolved injection itself, not on a second guess at it, so the prose
+      // and the wiring cannot disagree (spec `tool-only-room-replies` §D11).
+      // Named under codex's own MCP prefix, never claude-code's: a bare or
+      // wrongly-prefixed name is uncallable, which is the DOR-1292 defect.
+      //
+      // Outside the context gate, and deliberately: whether this session HAS the
+      // room tools is answered per turn, so a menu written in the wrong tense must
+      // never survive into a turn where it is false.
+      const agentContext = dorkosTools
+        ? [
+            neutralContextSelection.text,
+            buildRoomToolsBlock(
+              CODEX_DORKOS_TOOL_PREFIX,
+              // Per TURN here, unlike claude-code's cached prefix: codex builds this
+              // block on every turn anyway, so the mode is always current.
+              roomReplyModeForToolCapableSession()
+            ),
+          ]
+            .filter(Boolean)
+            .join('\n\n')
+        : neutralContextSelection.text;
+
+      const ctx = createCodexEventContext(sessionId);
+      let bound = boundThreadId !== undefined;
+      connectorRevokeReason = 'runtime_failed';
       const { events } = await thread.runStreamed(buildCodexPrompt(content, opts, agentContext), {
         signal: controller.signal,
       });
@@ -663,17 +713,36 @@ export class CodexRuntime implements AgentRuntime {
           bound = true;
         }
         yield event;
+        if (
+          event.type === 'session_status' &&
+          'terminalReason' in event.data &&
+          event.data.terminalReason === 'error'
+        ) {
+          connectorRuntimeFailed = true;
+        }
         // The async half of media mapping. `mapCodexThread` is pure and cannot
         // store bytes, so it records what it saw on `ctx` and this drains it
         // here — after the event it rode in on, so an image lands in the
         // transcript exactly where the tool result that produced it did.
         yield* captureCodexMedia(this.attachments, sessionId, ctx);
       }
+      connectorRevokeReason = connectorRuntimeFailed ? 'runtime_failed' : 'turn_terminal';
     } finally {
-      // Guard against clearing a NEWER turn's controller: this turn's entry
-      // may already have been replaced if a second send raced in.
-      if (this.activeTurns.get(sessionId) === controller) {
-        this.activeTurns.delete(sessionId);
+      if (controller.signal.aborted) connectorRevokeReason = 'turn_cancelled';
+      try {
+        if (connectorBinding && this.activeConnectorBindings.has(controller)) {
+          this.activeConnectorBindings.delete(controller);
+          await this.connectorRuntimeTools?.principals.revoke(
+            connectorBinding.bindingId,
+            connectorRevokeReason
+          );
+        }
+      } finally {
+        // Guard against clearing a NEWER turn's controller: this turn's entry
+        // may already have been replaced if a second send raced in.
+        if (this.activeTurns.get(sessionId) === controller) {
+          this.activeTurns.delete(sessionId);
+        }
       }
     }
   }
@@ -800,7 +869,19 @@ export class CodexRuntime implements AgentRuntime {
     const controller = this.activeTurns.get(sessionId);
     if (!controller) return { outcome: 'not-running', reason: 'no-open-turn', runtime: this.type };
     this.activeTurns.delete(sessionId);
+    const connectorBindingId = this.activeConnectorBindings.get(controller);
+    this.activeConnectorBindings.delete(controller);
     controller.abort();
+    if (connectorBindingId) {
+      try {
+        await this.connectorRuntimeTools?.principals.revoke(connectorBindingId, 'turn_cancelled');
+      } catch (err) {
+        logger.warn('[CodexRuntime] failed to persist interrupted connector binding revoke', {
+          sessionId,
+          err,
+        });
+      }
+    }
     logger.debug('[CodexRuntime] interrupted in-flight turn', { sessionId });
     return { outcome: 'closed', runtime: this.type };
   }

@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import {
   Button,
   Collapsible,
@@ -10,10 +10,20 @@ import { useConnectorToolkits } from '@/layers/entities/connectors';
 import {
   AccountsFirstRun,
   AccountsList,
-  AgentAccounts,
+  ConnectionAccessDialog,
+  ManagementReviews,
   ProviderSetup,
   ServiceGrid,
 } from '@/layers/features/connections';
+
+interface AccountsRegionProps {
+  /** URL-selected management request. */
+  selectedReviewId?: string | null;
+  /** Put a request into the URL for reload and Back/Forward support. */
+  onSelectReview?: (reviewRequestId: string) => void;
+  /** Remove the selected request from the URL. */
+  onCloseReview?: () => void;
+}
 
 /**
  * Services your agents can act on for you.
@@ -23,9 +33,14 @@ import {
  * connectable it names the services and the one-time setup in the way rather
  * than rendering an empty box.
  */
-export function AccountsRegion() {
+export function AccountsRegion({
+  selectedReviewId = null,
+  onSelectReview = () => undefined,
+  onCloseReview = () => undefined,
+}: AccountsRegionProps = {}) {
   const { data, isLoading, isError, refetch } = useConnectorToolkits();
   const carrierRef = useRef<HTMLDivElement>(null);
+  const [accessConnectionId, setAccessConnectionId] = useState<string | null>(null);
 
   const hasConnectableServices = (data?.toolkits.length ?? 0) > 0;
 
@@ -63,9 +78,8 @@ export function AccountsRegion() {
             <h3 id="connections-connected" className="text-sm font-semibold">
               Connected
             </h3>
-            <AccountsList />
+            <AccountsList onManageAccess={setAccessConnectionId} />
           </section>
-          <AgentAccounts />
         </>
       ) : (
         <AccountsFirstRun
@@ -101,6 +115,19 @@ export function AccountsRegion() {
           </Collapsible>
         </div>
       )}
+
+      <ManagementReviews
+        selectedReviewId={selectedReviewId}
+        onSelectReview={onSelectReview}
+        onCloseReview={onCloseReview}
+      />
+      <ConnectionAccessDialog
+        connectionId={accessConnectionId}
+        open={accessConnectionId !== null}
+        onOpenChange={(open) => {
+          if (!open) setAccessConnectionId(null);
+        }}
+      />
     </section>
   );
 }

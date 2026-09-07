@@ -28,9 +28,9 @@ tokens themselves live in your Nango database.
 
 ## Before you start
 
-You need a running, self-hosted Nango. The free version (the Docker Compose setup) gives you what
-this connector uses: OAuth sign-in and a secure proxy. That is all DorkOS needs. DorkOS never uses
-Nango's paid features.
+You need a running, self-hosted Nango. The current connector uses its OAuth sign-in and account
+inventory. DorkOS does not send arbitrary API requests through Nango and does not use Nango's paid
+MCP features.
 
 ## The one rule you cannot skip: set an encryption key
 
@@ -69,17 +69,11 @@ When the base URL, the secret key, and a valid `NANGO_ENCRYPTION_KEY` are all se
 connector is on. When any of them is missing, DorkOS leaves it off and the Nango card says what
 is missing. Nothing breaks.
 
-## How your agent uses a self-host account
+## Current execution limit
 
-Once an account is connected and attached to a session, the agent gets one tool for it: a request
-tool that can call the service's API through your self-hosted Nango. Nango adds the sign-in to each
-request from your own database, so the agent can act for you while the keys never leave your
-systems. It is one honest, low-level tool per account, not a polished catalog of service-specific
-tools. That richer catalog may come later.
+You can connect and inventory a self-hosted Nango account, but agents cannot execute its service actions in this alpha. The Nango adapter does not yet provide the trusted, immutable action versions and classifications DorkOS requires before it can create an exact grant. DorkOS reports that capability as unavailable instead of exposing a generic credentialed proxy.
 
-Connecting works the same as every other path: click **Connect** on a service, read the custody
-sentence, sign in through your own Nango, and the account appears with its custody marked as
-self-host. You can hold more than one account for the same service, and disconnect any of them.
+Connecting still uses the normal owner flow: choose the service in **Connections**, read the custody sentence, sign in through your Nango server, and wait for the account to appear. The account remains ungranted until the adapter can prove the exact actions safely.
 
 ## Other ways to connect
 

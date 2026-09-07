@@ -23,6 +23,12 @@ import {
   invokeCapabilityAsMcpResult,
 } from '../capabilities/mcp-projection.js';
 
+function abortSignalOf(extra: unknown): AbortSignal | undefined {
+  if (!extra || typeof extra !== 'object' || !('signal' in extra)) return undefined;
+  const signal = (extra as { signal?: unknown }).signal;
+  return signal instanceof AbortSignal ? signal : undefined;
+}
+
 /**
  * Register every registry capability advertised on the given MCP server against
  * an existing external `McpServer` instance.
@@ -56,8 +62,15 @@ export function registerCapabilitiesAsMcpTools(
         inputSchema: capabilityInputShape(capability),
         annotations: deriveMcpAnnotations(capability),
       },
-      async (args: Record<string, unknown>) =>
-        invokeCapabilityAsMcpResult(registry, capability.id, args, context)
+      async (args: Record<string, unknown>, extra: unknown) =>
+        invokeCapabilityAsMcpResult(
+          registry,
+          capability.id,
+          args,
+          context,
+          undefined,
+          abortSignalOf(extra)
+        )
     );
   }
 }

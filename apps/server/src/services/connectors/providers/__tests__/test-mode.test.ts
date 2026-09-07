@@ -34,34 +34,143 @@ function fakeCredentials(store: Map<string, string>): CredentialProvider {
 }
 
 // The scripted e2e backend clears the same behavioral gate every real backend
-// does (task E1 acceptance). Multi-account, so the two-distinct-ids branch runs;
-// the null branch is arranged by expiring a connected account.
+// does (task E1 acceptance). Multi-account, so the two-distinct-ids branch runs.
 connectorConformance(makeProvider, {
   name: 'TestModeConnectorProvider — conformance',
   toolkit: 'gmail',
-  makeUnexposableAccount: async () => {
-    const provider = makeProvider();
-    const { flowId } = await provider.startConnect('gmail');
-    const { account } = await provider.pollConnect(flowId);
-    provider.setStatus(account!.externalAccountRef, 'expired');
-    return { provider, externalAccountRef: account!.externalAccountRef };
-  },
 });
 
 describe('TestModeConnectorProvider — scripted semantics', () => {
-  it('declares the managed, multi-account, MCP-exposing capability shape', () => {
+  it('declares the managed, multi-account, brokered-execution capability shape', () => {
     const caps = makeProvider().getCapabilities();
     expect(caps).toMatchObject({
       type: TEST_CONNECTOR_PROVIDER_TYPE,
       supportsMultiAccount: true,
       custody: 'managed',
-      exposesOverMcp: true,
     });
   });
 
   it('lists the scripted gmail + slack toolkits', async () => {
     const toolkits = await makeProvider().listToolkits();
     expect(toolkits.map((tk) => tk.slug)).toEqual(['gmail', 'slack']);
+  });
+
+  it('pins a concrete toolkit version and paginates exact operation schemas', async () => {
+    const provider = makeProvider();
+    const version = await provider.resolveToolkitVersion('gmail', new AbortController().signal);
+    expect(version).toEqual({ status: 'ok', toolkit: 'gmail', toolkitVersion: '2026-09-01' });
+
+    const first = await provider.listOperationSchemas({
+      toolkit: 'gmail',
+      toolkitVersion: '2026-09-01',
+      limit: 2,
+      signal: new AbortController().signal,
+    });
+    expect(first).toMatchObject({
+      status: 'ok',
+      page: {
+        truncated: true,
+        nextCursor: '2',
+        operations: [
+          { operationSlug: 'gmail.messages.list', capabilityClassification: 'read' },
+          { operationSlug: 'gmail.messages.send', capabilityClassification: 'write' },
+        ],
+      },
+    });
+    if (first.status !== 'ok') throw new Error('expected operation page');
+    const second = await provider.listOperationSchemas({
+      toolkit: 'gmail',
+      toolkitVersion: '2026-09-01',
+      cursor: first.page.nextCursor,
+      limit: 2,
+      signal: new AbortController().signal,
+    });
+    expect(second).toMatchObject({
+      status: 'ok',
+      page: {
+        truncated: false,
+        operations: [
+          { operationSlug: 'gmail.messages.delete', capabilityClassification: 'destructive' },
+        ],
+      },
+    });
+  });
+
+  it('executes only the exact connected account and immutable operation revision', async () => {
+    const provider = makeProvider();
+    const { flowId } = await provider.startConnect('gmail', { label: 'work' });
+    const connected = await provider.pollConnect(flowId);
+    if (connected.status !== 'connected' || !connected.account) {
+      throw new Error('expected connected test account');
+    }
+    const schemas = await provider.listOperationSchemas({
+      toolkit: 'gmail',
+      toolkitVersion: '2026-09-01',
+      limit: 1,
+      signal: new AbortController().signal,
+    });
+    if (schemas.status !== 'ok') throw new Error('expected operation schema');
+    const result = await provider.execute({
+      externalAccountRef: connected.account.externalAccountRef,
+      authorizeDispatch: () => true,
+      operation: {
+        id: 'revision-1',
+        ...schemas.page.operations[0],
+        discoveredAt: '2026-09-06T00:00:00.000Z',
+      },
+      arguments: { query: 'from:ada' },
+      logicalOperationId: 'logical-1',
+      attemptId: 'attempt-1',
+      signal: new AbortController().signal,
+    });
+    expect(result).toEqual({
+      status: 'success',
+      data: { ok: true, operation: 'gmail.messages.list', accountLabel: 'work' },
+      providerLogId: 'test-log-attempt-1',
+    });
+
+    const wrongAccount = await provider.execute({
+      externalAccountRef: 'private-other-account' as ConnectorExternalAccountRef,
+      authorizeDispatch: () => true,
+      operation: {
+        id: 'revision-1',
+        ...schemas.page.operations[0],
+        discoveredAt: '2026-09-06T00:00:00.000Z',
+      },
+      arguments: {},
+      logicalOperationId: 'logical-2',
+      attemptId: 'attempt-2',
+      signal: new AbortController().signal,
+    });
+    expect(wrongAccount).toMatchObject({ status: 'error', code: 'TEST_OPERATION_MISMATCH' });
+  });
+
+  it('returns typed cancellation before deterministic execution dispatch', async () => {
+    const provider = makeProvider();
+    const controller = new AbortController();
+    controller.abort();
+    expect(
+      await provider.execute({
+        externalAccountRef: 'private-account' as ConnectorExternalAccountRef,
+        authorizeDispatch: () => true,
+        operation: {
+          id: 'revision-1',
+          providerInstanceId: provider.instanceId,
+          toolkit: 'gmail',
+          operationSlug: 'gmail.messages.list',
+          toolkitVersion: '2026-09-01',
+          schemaHash: 'test-gmail-list-v1',
+          capabilityClassification: 'read',
+          retryPolicy: 'never',
+          inputSchema: {},
+          discoveredAt: '2026-09-06T00:00:00.000Z',
+        },
+        arguments: {},
+        logicalOperationId: 'logical-1',
+        attemptId: 'attempt-1',
+        signal: controller.signal,
+      })
+    ).toMatchObject({ status: 'cancelled', code: 'CANCELLED_BEFORE_DISPATCH' });
   });
 
   it('points the authorize URL at the local no-op page — everything stays on-machine', async () => {
@@ -83,22 +192,6 @@ describe('TestModeConnectorProvider — scripted semantics', () => {
     const second = await provider.pollConnect(flowId);
     expect(second.account?.externalAccountRef).toBe(first.account?.externalAccountRef);
   });
-
-  it('exposes an active account as a stub http tool server on the local origin', async () => {
-    const provider = makeProvider();
-    const { flowId } = await provider.startConnect('slack', { label: 'team' });
-    const { account } = await provider.pollConnect(flowId);
-
-    const connection = await provider.toolServerForAccount(account!.externalAccountRef);
-    expect(connection).toMatchObject({ transport: 'http' });
-    expect((connection as { url: string }).url.startsWith(`${LOCAL_ORIGIN}/`)).toBe(true);
-  });
-
-  it('resolves null for an unknown account id — never a throw', async () => {
-    await expect(
-      makeProvider().toolServerForAccount('never-connected' as ConnectorExternalAccountRef)
-    ).resolves.toBeNull();
-  });
 });
 
 describe('maybeCreateTestModeConnectorProvider — the credential gate', () => {
@@ -119,9 +212,6 @@ describe('maybeCreateTestModeConnectorProvider — the credential gate', () => {
       registry,
       credentials,
       nangoEnv: () => ({}),
-      // Nango is never configured in these tests; a throwing stub keeps the
-      // real NangoProxyMcp (and its module graph) out of this file.
-      nangoProxy: {} as never,
       rawMcpServers: () => [],
       testConnector: {
         create: () =>
@@ -172,7 +262,6 @@ describe('maybeCreateTestModeConnectorProvider — the credential gate', () => {
       registry,
       credentials: fakeCredentials(secrets),
       nangoEnv: () => ({}),
-      nangoProxy: {} as never,
       rawMcpServers: () => [],
     });
     await production.registerBootProviders();

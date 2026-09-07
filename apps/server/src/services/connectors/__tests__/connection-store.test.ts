@@ -5,6 +5,7 @@ import {
   connections,
   connectorEventSubscriptions,
   connectorOperationRevisions,
+  connectorProviderInstances,
   connectorUsageAttempts,
   createDb,
   eq,
@@ -63,6 +64,62 @@ describe('ConnectionStore lifecycle and cleanup', () => {
     expect(registry.accountBinding(connection.id)?.status).toBe('expired');
   });
 
+  it('advances material config generation only when the execution digest changes', () => {
+    registry.register(provider, 'digest-a');
+    const first = db
+      .select()
+      .from(connectorProviderInstances)
+      .where(eq(connectorProviderInstances.id, provider.instanceId))
+      .get()!;
+
+    registry.register(provider, 'digest-a');
+    const unchanged = db
+      .select()
+      .from(connectorProviderInstances)
+      .where(eq(connectorProviderInstances.id, provider.instanceId))
+      .get()!;
+    expect(unchanged.executionConfigGeneration).toBe(first.executionConfigGeneration);
+
+    db.update(connections)
+      .set({ grantReconciliationStatus: 'ready' })
+      .where(eq(connections.id, connection.id))
+      .run();
+    registry.register(provider, 'digest-b');
+    const changed = db
+      .select()
+      .from(connectorProviderInstances)
+      .where(eq(connectorProviderInstances.id, provider.instanceId))
+      .get()!;
+    expect(changed.executionConfigGeneration).toBe(first.executionConfigGeneration + 1);
+    expect(changed.executionConfigDigest).toBe('digest-b');
+    expect(db.select().from(connections).get()?.grantReconciliationStatus).toBe(
+      'migration_needs_reconcile'
+    );
+  });
+
+  it('binds configured providers to one verified owner without reassignment', () => {
+    const owned = new ConnectorRegistry({
+      db,
+      configuredOwner: { ownerKind: 'local_install', ownerId: 'install-a' },
+    });
+    owned.register(provider, 'digest-a');
+    expect(
+      db
+        .select()
+        .from(connectorProviderInstances)
+        .where(eq(connectorProviderInstances.id, provider.instanceId))
+        .get()
+    ).toMatchObject({ ownerKind: 'local_install', ownerId: 'install-a' });
+
+    const foreign = new ConnectorRegistry({
+      db,
+      configuredOwner: { ownerKind: 'local_install', ownerId: 'install-b' },
+    });
+    expect(() => foreign.register(provider, 'digest-a')).toThrow(
+      'Configured connector provider belongs to a different owner.'
+    );
+  });
+
   it('tombstones disconnect while retaining immutable revisions and historical usage', () => {
     db.insert(connectionOperationGrants)
       .values({
@@ -84,15 +141,15 @@ describe('ConnectionStore lifecycle and cleanup', () => {
         surface: 'mcp',
         actorKind: 'agent',
         actorId: 'agent-a',
+        ownerKind: 'local_install',
+        ownerId: 'installation-a',
         agentId: 'agent-a',
         connectionId: connection.id,
         providerInstanceId: provider.instanceId,
         providerType: provider.type,
         payer: 'operator_byo',
         operationRevisionId: 'revision-1',
-        outcome: 'success',
         startedAt: NOW,
-        completedAt: NOW,
       })
       .run();
 

@@ -1,6 +1,6 @@
 ---
 title: Raw MCP server
-description: Point DorkOS at a remote tool server that is already ready to use
+description: Verify and inventory a configured remote MCP server
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
@@ -8,7 +8,7 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 # Raw MCP server
 
-Some services run their own remote tool server that speaks MCP (the standard that lets AI tools talk to each other). If you already have one, you can point DorkOS straight at it.
+Some services run their own remote tool server that speaks MCP (the standard that lets AI tools talk to each other). You can point DorkOS at one to verify the connection and keep its account in Connections.
 
 <Callout type="warn">This path is built but not yet confirmed end to end. It is in alpha.</Callout>
 
@@ -20,7 +20,7 @@ If the server rejects the connection, times out, or cannot be reached, DorkOS sh
 
 ## What you get
 
-This path connects one account per server. It does not manage several accounts of the same service. If you need two accounts of one service, use the [Composio](/docs/connections/composio) path instead.
+This path verifies and inventories one account per configured server. It does not grant the server's tools to agents. A generic MCP tool list does not provide the immutable versions and safe classifications DorkOS requires for exact owner-reviewed access. If you need brokered actions now, use the [Composio](/docs/connections/composio) path.
 
 ## Set it up
 
@@ -76,9 +76,9 @@ Open **Connections** in the sidebar. Your server now shows up as a tile in the S
 
 <Step>
 
-### Use it in a session
+### Check its status
 
-Open a session, then the right panel's **Session** tab. Attach the connection in the **Connections** group to let that session's agent use the server's tools.
+The account appears under **Connections** after verification. It remains unavailable for agent execution in this alpha. DorkOS will not expose the remote server directly or turn its unversioned tools into broad agent access.
 
 </Step>
 

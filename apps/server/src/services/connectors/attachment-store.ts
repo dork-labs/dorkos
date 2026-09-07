@@ -1,23 +1,22 @@
 /**
- * Persisted connector-attachment stores (connection-scoping spec
- * `specs/connection-scoping/` §Part 1) — the durable half of the two-level
- * consent ladder `SessionConnectorService` reads at hydration time.
+ * Persisted legacy connector-attachment stores (connection-scoping spec
+ * `specs/connection-scoping/` §Part 1). P2 retains them as migration and session
+ * override evidence while canonical operation grants live in the broker stores.
  *
  * Two canonical tables, two thin CRUD wrappers:
  *
- * - {@link AgentConnectorAttachmentStore} — standing, agent-level consent.
- *   Row existence IS the consent (no boolean column); a detach deletes the
- *   row.
+ * - {@link AgentConnectorAttachmentStore} — retained agent-level attachment
+ *   evidence. Row existence means the legacy attachment existed; canonical
+ *   grants still decide execution.
  * - {@link SessionConnectorAttachmentStore} — per-session overrides. A row
  *   here is a tombstone, not just a presence flag: `'attached'` selects the
- *   session-scoped path for an account the agent has not standingly attached;
- *   `'detached'` suppresses inherited access. The row never grants an operation
+ *   session-scoped grant path for an account the agent did not inherit;
+ *   `'detached'` suppresses inherited grants. The row never grants an operation
  *   by itself. See `design-decisions.md` D2 for the per-account precedence.
  *
  * Both stores use stable DorkOS connection ids and hold pure intent records —
- * never a resolved `McpAppServerConnection` (unserializable, provider-held). Reading either
- * table back never produces something tool-shaped by itself; a caller must
- * still resolve the connection via the owning `ConnectorProvider`.
+ * never provider transport details. Reading either table back never grants an
+ * operation by itself; broker authorization must still resolve canonical grants.
  *
  * @module services/connectors/attachment-store
  */

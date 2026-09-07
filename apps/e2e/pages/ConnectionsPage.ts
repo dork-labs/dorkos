@@ -81,4 +81,20 @@ export class ConnectionsPage {
   get carrierSection() {
     return this.accounts.getByRole('button', { name: 'Composio & Nango' });
   }
+
+  /** One connected account row by its visible account name. */
+  account(name: string) {
+    return this.accounts.locator('[data-testid^="account-row-"]', { hasText: name });
+  }
+
+  /** Exact operation access editor for a connected account. */
+  async openAccess(name: string) {
+    await this.account(name).getByRole('button', { name: 'Manage access' }).click();
+    return this.page.getByTestId('connector-access-dialog');
+  }
+
+  /** Pending and resolved owner-management request surface. */
+  get reviewRequests() {
+    return this.accounts.getByRole('region', { name: 'Requests to review' });
+  }
 }

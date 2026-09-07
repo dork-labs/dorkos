@@ -20,13 +20,10 @@ import { AgentRegistry, MeshCore } from '@dorkos/mesh';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type { ConnectedAccount } from '@dorkos/shared/connector-provider';
 import { registerConnectorAgentCleanup } from '../agent-access-cleanup.js';
-import {
-  AgentConnectorAttachmentStore,
-  SessionConnectorAttachmentStore,
-} from '../attachment-store.js';
+import { ConnectorAuthorityCleanupService } from '../authority-cleanup-service.js';
+import { AgentConnectorAttachmentStore } from '../attachment-store.js';
 import { ConnectionStore } from '../connection-store.js';
 import { ConnectorRegistry } from '../registry.js';
-import { SessionConnectorService } from '../session-exposure.js';
 
 const NOW = '2026-09-05T12:00:00.000Z';
 const expiredAt = new Date(Date.now() - 25 * 60 * 60 * 1_000).toISOString();
@@ -37,14 +34,6 @@ function makeRoot(): string {
   const root = mkdtempSync(path.join(tmpdir(), 'connector-agent-cleanup-'));
   temporaryDirectories.push(root);
   return root;
-}
-
-function createServices(db: Db, registry: ConnectorRegistry): SessionConnectorService {
-  return new SessionConnectorService({
-    registry,
-    agentAttachments: new AgentConnectorAttachmentStore(db),
-    sessionAttachments: new SessionConnectorAttachmentStore(db),
-  });
 }
 
 async function connect(registry: ConnectorRegistry): Promise<ConnectedAccount> {
@@ -148,15 +137,12 @@ describe('connector authority across Mesh startup reconciliation', () => {
     });
 
     const registry = new ConnectorRegistry({ db });
-    const sessions = createServices(db, registry);
     const account = await connect(registry);
     seedAuthority(db, account, [agentA.id, agentB.id]);
-    await sessions.hydrateSession(`session-${agentA.id}`, agentA.id);
-    await sessions.hydrateSession(`session-${agentB.id}`, agentB.id);
     registerConnectorAgentCleanup({
       mesh,
       registry,
-      sessions,
+      authorityCleanup: new ConnectorAuthorityCleanupService({ db }),
       logger: { warn: vi.fn() },
     });
 
@@ -206,10 +192,6 @@ describe('connector authority across Mesh startup reconciliation', () => {
         .where(eq(connectorEventSubscriptions.agentId, agentB.id))
         .get()?.enabled
     ).toBe(true);
-    expect(sessions.mcpServersForSession(`session-${agentA.id}`).servers).toEqual({});
-    expect(Object.keys(sessions.mcpServersForSession(`session-${agentB.id}`).servers)).toEqual([
-      'gmail-shared',
-    ]);
   });
 
   it('fences retained legacy consent across a failed migration and same-id registration', async () => {
@@ -261,7 +243,7 @@ describe('connector authority across Mesh startup reconciliation', () => {
     registerConnectorAgentCleanup({
       mesh,
       registry: failedRegistry,
-      sessions: createServices(db, failedRegistry),
+      authorityCleanup: new ConnectorAuthorityCleanupService({ db }),
       logger: { warn },
     });
     rmSync(removedPath, { recursive: true, force: true });
@@ -288,7 +270,7 @@ describe('connector authority across Mesh startup reconciliation', () => {
     registerConnectorAgentCleanup({
       mesh,
       registry: recoveredRegistry,
-      sessions: createServices(db, recoveredRegistry),
+      authorityCleanup: new ConnectorAuthorityCleanupService({ db }),
       logger: { warn },
     });
 
@@ -322,5 +304,85 @@ describe('connector authority across Mesh startup reconciliation', () => {
     expect(db.select().from(agentConnectionAttachments).all()).toMatchObject([
       { agentId: removed.id, connectionId: stableConnectionId },
     ]);
+  });
+});
+
+describe('agent cleanup failure containment', () => {
+  function runCleanup(options: {
+    markerThrows?: boolean;
+    durableThrows?: boolean;
+    transientThrows?: boolean;
+  }) {
+    let unregister!: (agentId: string, projectPath: string) => void;
+    const events: string[] = [];
+    const registry = {
+      recordAgentRemoval: vi.fn(() => {
+        events.push('marker');
+        if (options.markerThrows) throw new Error('marker cleanup failed');
+      }),
+      migrationHealth: vi.fn(() => ({ status: 'ready' as const, migrated: false })),
+      removeAgentAccess: vi.fn(() => {
+        events.push('durable');
+        if (options.durableThrows) throw new Error('durable cleanup failed');
+      }),
+    } as unknown as ConnectorRegistry;
+    const authorityCleanup = {
+      revokeAgent: vi.fn(() => {
+        events.push('transient');
+        if (options.transientThrows) throw new Error('transient cleanup failed');
+      }),
+      revokeAgentConnection: vi.fn(),
+      revokeConnection: vi.fn(),
+    };
+    registerConnectorAgentCleanup({
+      mesh: {
+        onUnregister: (callback: (agentId: string, projectPath: string) => void) => {
+          unregister = callback;
+        },
+      },
+      registry,
+      authorityCleanup,
+      logger: { warn: vi.fn() },
+    });
+    return {
+      invoke: () => unregister('agent-a', '/agents/a'),
+      events,
+      registry,
+      authorityCleanup,
+    };
+  }
+
+  it('still closes durable access when transient authority cleanup throws', () => {
+    const harness = runCleanup({ transientThrows: true });
+    expect(harness.invoke).toThrow('transient cleanup failed');
+    expect(harness.events).toEqual(['marker', 'durable', 'transient']);
+    expect(harness.registry.removeAgentAccess).toHaveBeenCalledWith('agent-a');
+  });
+
+  it('still closes canonical and pending authority when the durable marker throws', () => {
+    const harness = runCleanup({ markerThrows: true });
+    expect(harness.invoke).toThrow('marker cleanup failed');
+    expect(harness.events).toEqual(['marker', 'durable', 'transient']);
+    expect(harness.registry.removeAgentAccess).toHaveBeenCalledWith('agent-a');
+    expect(harness.authorityCleanup.revokeAgent).toHaveBeenCalledWith({
+      agentId: 'agent-a',
+      reason: 'agent_removed',
+    });
+  });
+
+  it('reports the first failure after attempting every independent close', () => {
+    const harness = runCleanup({ markerThrows: true, durableThrows: true, transientThrows: true });
+    expect(harness.invoke).toThrow('marker cleanup failed');
+    expect(harness.events).toEqual(['marker', 'durable', 'transient']);
+  });
+
+  it('still clears transient authority when durable access cleanup throws', () => {
+    const harness = runCleanup({ durableThrows: true });
+    expect(harness.invoke).toThrow('durable cleanup failed');
+    expect(harness.events).toEqual(['marker', 'durable', 'transient']);
+    expect(harness.authorityCleanup.revokeAgent).toHaveBeenCalledWith({
+      agentId: 'agent-a',
+      reason: 'agent_removed',
+    });
   });
 });

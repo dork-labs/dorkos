@@ -197,9 +197,7 @@ import {
   ConnectorWarningSchema,
   PublicConnectedAccountSchema,
   SessionConnectorStatusSchema,
-  SessionConnectorAttachResultSchema,
   AgentConnectorListResponseSchema,
-  AgentConnectorAttachResultSchema,
 } from '@dorkos/shared/connector-provider';
 import { PackageTypeSchema } from '@dorkos/marketplace';
 import { z } from 'zod';
@@ -3079,23 +3077,22 @@ registry.registerPath({
   },
 });
 
-// --- Session ↔ connector attach/detach (the consent binding) ---
+// --- Retained session connector status and retired mutation paths ---
 
 registry.registerPath({
   method: 'get',
   path: '/api/sessions/{id}/connectors',
   tags: ['Connectors'],
-  summary: "A session's connector surface (attached accounts + warnings)",
+  summary: "A session's connector access state",
   description:
-    'Lists the connected accounts explicitly attached to a session, each with its exposure state, ' +
-    'plus per-account warnings for attached accounts that cannot be exposed right now (the ' +
-    '`toolServerForAccount` null branch: expired / revoked / unavailable).',
+    'Lists inherited and explicit connector access for a session. Session overrides take ' +
+    'precedence over agent access and remain visible until an owner changes them in Connections.',
   request: {
     params: z.object({ id: z.string() }),
   },
   responses: {
     200: {
-      description: 'Attached accounts and per-account degradation warnings',
+      description: 'Durable access rows and lifecycle warnings',
       content: { 'application/json': { schema: SessionConnectorStatusSchema } },
     },
   },
@@ -3105,23 +3102,15 @@ registry.registerPath({
   method: 'post',
   path: '/api/sessions/{id}/connectors/{accountId}',
   tags: ['Connectors'],
-  summary: 'Attach a connected account to a session (the consent point)',
+  summary: 'Retired session connector mutation',
   description:
-    'Attaches an account to a session so its tools are exposed as an MCP tool server, and ' +
-    're-shows the custody disclosure (spec §Detailed Design 3). A known account whose connection ' +
-    'resolves null still attaches (consent recorded) but is reported unexposed via a warning; no ' +
-    'connection detail ever crosses to the client.',
+    'Returns 410 without changing authority. Owners manage exact operation access in Connections.',
   request: {
     params: z.object({ id: z.string(), accountId: z.string() }),
   },
   responses: {
-    200: {
-      description:
-        'The account attached; carries its status, the custody disclosure, and any warning',
-      content: { 'application/json': { schema: SessionConnectorAttachResultSchema } },
-    },
-    404: {
-      description: 'Unknown connected account',
+    410: {
+      description: 'Session connector mutations moved to Connections',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -3131,29 +3120,29 @@ registry.registerPath({
   method: 'delete',
   path: '/api/sessions/{id}/connectors/{accountId}',
   tags: ['Connectors'],
-  summary: 'Detach a connected account from a session (idempotent)',
-  description:
-    'Removes the consent binding so the account is no longer exposed to the session. Idempotent — ' +
-    'detaching an unattached account still resolves 204.',
+  summary: 'Retired session connector mutation',
+  description: 'Returns 410 without changing authority. Owners manage access in Connections.',
   request: {
     params: z.object({ id: z.string(), accountId: z.string() }),
   },
   responses: {
-    204: { description: 'Account detached (or already absent)' },
+    410: {
+      description: 'Session connector mutations moved to Connections',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 
-// --- Agent ↔ connector attach/detach (standing consent) — connection-scoping spec §Part 1 ---
+// --- Retained legacy agent attachment read and retired mutation paths ---
 
 registry.registerPath({
   method: 'get',
   path: '/api/agents/{agentId}/connectors',
   tags: ['Connectors'],
-  summary: "An agent's standing connector attachments",
+  summary: "An agent's legacy connector attachments",
   description:
-    'Lists the accounts standingly attached to an agent. Every session of this agent inherits ' +
-    'these accounts on its next hydration unless a session-level override says otherwise ' +
-    '(precedence: session > agent, no merge).',
+    'Lists retained attachment rows for migration visibility. Canonical operation grants are ' +
+    'reviewed and edited through Connections.',
   request: {
     params: z.object({ agentId: z.string() }),
   },
@@ -3169,20 +3158,14 @@ registry.registerPath({
   method: 'post',
   path: '/api/agents/{agentId}/connectors/{accountId}',
   tags: ['Connectors'],
-  summary: 'Attach an account to an agent, standingly (the consent point)',
-  description:
-    'Records standing consent for the agent to use this account; re-shows the custody ' +
-    'disclosure. Resolution of the connection itself happens per session, at hydration time.',
+  summary: 'Retired agent connector mutation',
+  description: 'Returns 410 without changing authority. Owners manage access in Connections.',
   request: {
     params: z.object({ agentId: z.string(), accountId: z.string() }),
   },
   responses: {
-    200: {
-      description: 'The attachment recorded, plus the custody disclosure',
-      content: { 'application/json': { schema: AgentConnectorAttachResultSchema } },
-    },
-    404: {
-      description: 'Unknown connected account',
+    410: {
+      description: 'Agent connector mutations moved to Connections',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -3192,14 +3175,16 @@ registry.registerPath({
   method: 'delete',
   path: '/api/agents/{agentId}/connectors/{accountId}',
   tags: ['Connectors'],
-  summary: 'Detach an account from an agent (idempotent)',
-  description:
-    'Revokes standing consent. Idempotent — detaching an unattached account still resolves 204.',
+  summary: 'Retired agent connector mutation',
+  description: 'Returns 410 without changing authority. Owners manage access in Connections.',
   request: {
     params: z.object({ agentId: z.string(), accountId: z.string() }),
   },
   responses: {
-    204: { description: 'Account detached (or already absent)' },
+    410: {
+      description: 'Agent connector mutations moved to Connections',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 

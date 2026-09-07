@@ -153,6 +153,51 @@ describe('ApprovalService', () => {
   });
 
   describe('consume', () => {
+    it('persists exact connector scope and refuses a cross-authority retry without spending it', () => {
+      const connectorAuthority = {
+        digest: 'authority-a',
+        ownerKind: 'local_install',
+        ownerId: 'install-a',
+        agentId: 'agent-a',
+        sessionId: 'session-a',
+        connectionId: 'connection-a',
+        operationRevisionId: 'revision-a',
+      } as const;
+      const ticket = service.request({
+        ...BINDING,
+        summary: 'Delete a remote record',
+        connectorAuthority,
+      });
+      service.grant(ticket.approvalId);
+
+      expect(
+        db.select().from(approvals).where(eq(approvals.id, ticket.approvalId)).get()
+      ).toMatchObject({
+        authorityBindingDigest: 'authority-a',
+        connectorOwnerKind: 'local_install',
+        connectorOwnerId: 'install-a',
+        connectorAgentId: 'agent-a',
+        connectorSessionId: 'session-a',
+        connectorConnectionId: 'connection-a',
+        connectorOperationRevisionId: 'revision-a',
+      });
+      expect(
+        service.consume(ticket.token, {
+          ...BINDING,
+          authorityBindingDigest: 'authority-b',
+        })
+      ).toEqual({ outcome: 'mismatched', approvalId: ticket.approvalId });
+      expect(
+        service.consume(ticket.token, {
+          ...BINDING,
+          authorityBindingDigest: 'authority-a',
+        })
+      ).toMatchObject({
+        outcome: 'granted',
+        authorityBindingDigest: 'authority-a',
+      });
+    });
+
     it('reports pending until somebody decides', () => {
       const ticket = requestOne();
       expect(service.consume(ticket.token, BINDING)).toEqual({

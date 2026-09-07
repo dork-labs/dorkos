@@ -1,66 +1,41 @@
 /**
- * Agent ↔ connector attach/detach routes (connection-scoping spec
- * `specs/connection-scoping/` §Part 1) — the STANDING consent binding between
- * an agent and a connected account, as opposed to `routes/session-connectors.ts`'s
- * per-session binding. Every session belonging to an attached agent inherits
- * the account's tools on its next hydration
- * (`SessionConnectorService.hydrateSession`) unless a session-level override
- * says otherwise (precedence: session > agent, no merge — see
- * `specs/connection-scoping/design-decisions.md` D2).
+ * Owner-only view of legacy agent connector attachments.
  *
- * - `POST   /api/agents/:agentId/connectors/:accountId` — attach (the consent
- *   point); re-shows the custody disclosure.
- * - `DELETE /api/agents/:agentId/connectors/:accountId` — detach (idempotent).
- * - `GET    /api/agents/:agentId/connectors` — this agent's standing attachments.
- *
- * Thin, like its session-scoped sibling: no `McpAppServerConnection` detail
- * crosses to the client, and no connection is resolved here at all — an
- * agent-level attach records INTENT only, resolution happens per session at
- * hydration time.
+ * P2 keeps `GET` for migration visibility. The old `POST` and `DELETE` paths
+ * return a typed 410 without changing authority; owners manage exact operation
+ * grants in Connections.
  *
  * @module routes/agent-connectors
  */
-import { Router } from 'express';
-import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
+import { Router, type Request, type Response } from 'express';
 import type { AgentConnectorAttachmentStore } from '../services/connectors/attachment-store.js';
 import type { ConnectorRegistry } from '../services/connectors/registry.js';
-import type { SessionConnectorService } from '../services/connectors/session-exposure.js';
-import { disclosureForAccount } from '../services/connectors/custody-disclosure.js';
 
-/** Minimal mesh lookup the attach route needs to validate an agent exists. */
-export interface AgentConnectorsMeshLike {
-  getProjectPath(agentId: string): string | undefined;
-}
+const ACCESS_MOVED = {
+  code: 'CONNECTOR_ACCESS_MANAGED_IN_CONNECTIONS',
+  error: 'Connection access is managed in Connections. Review this agent under /connections.',
+} as const;
 
 /** Constructor dependencies for {@link createAgentConnectorsRouter}. */
 export interface AgentConnectorsRouterDeps {
-  /** The standing agent-level attachment store. */
+  /** Retained agent-level attachment evidence. */
   store: AgentConnectorAttachmentStore;
-  /** The registry, used to validate the account id and build the disclosure. */
+  /** Registry health source used to fail closed during migration recovery. */
   registry: ConnectorRegistry;
-  /** Durable session authority and live connector exposure cache. */
-  sessions: SessionConnectorService;
-  /**
-   * Mesh lookup to validate `agentId` before attaching (adversarial review
-   * MAJOR 7 — mirrors `routes/unclaimed-chats.ts`'s claim route, which needs
-   * the identical check for the identical reason: without it, a typo'd
-   * agent id silently accumulates standing consent for an agent that will
-   * never exist). Optional only so a caller that genuinely has no mesh
-   * (some tests) can omit it; the server always wires it.
-   */
-  meshCore?: AgentConnectorsMeshLike;
+  /** Owner-only boundary for retained legacy attachment reads and writes. */
+  authorizeOwnerAction: (req: Request, res: Response) => boolean;
 }
 
 /**
  * Create the agent-connectors router.
  *
- * @param deps - Injected store + registry + mesh lookup; see {@link AgentConnectorsRouterDeps}.
+ * @param deps - Retained store, registry health, and owner authorization boundary.
  * @returns An Express router to mount at `/api/agents`.
  */
 export function createAgentConnectorsRouter(deps: AgentConnectorsRouterDeps): Router {
   // mergeParams so the mounted `:agentId` segment is visible to these handlers.
   const router = Router({ mergeParams: true });
-  const { store, registry, sessions, meshCore } = deps;
+  const { store, registry } = deps;
 
   router.use((_req, res, next) => {
     const health = registry.migrationHealth();
@@ -70,39 +45,21 @@ export function createAgentConnectorsRouter(deps: AgentConnectorsRouterDeps): Ro
     }
     next();
   });
+  router.use((req, res, next) => {
+    if (!deps.authorizeOwnerAction(req, res)) return;
+    next();
+  });
 
   router.get('/:agentId/connectors', (req, res) => {
     res.json({ accounts: store.listForAgent(req.params.agentId) });
   });
 
-  router.post('/:agentId/connectors/:accountId', (req, res) => {
-    if (meshCore && !meshCore.getProjectPath(req.params.agentId)) {
-      res.status(400).json({ error: `Agent '${req.params.agentId}' not found in mesh registry` });
-      return;
-    }
-    const accountId = req.params.accountId as ConnectedAccountId;
-    const binding = registry.accountBinding(accountId);
-    if (!binding) {
-      res.status(404).json({ error: `Unknown connected account '${accountId}'` });
-      return;
-    }
-    store.attach(req.params.agentId, accountId);
-    res.json({
-      account: {
-        accountId,
-        toolkit: binding.toolkit,
-        label: binding.label,
-        status: binding.status,
-      },
-      disclosure: disclosureForAccount(binding),
-    });
+  router.post('/:agentId/connectors/:accountId', (_req, res) => {
+    res.status(410).json(ACCESS_MOVED);
   });
 
-  router.delete('/:agentId/connectors/:accountId', (req, res) => {
-    const accountId = req.params.accountId as ConnectedAccountId;
-    const sessionIds = registry.removeAgentConnectionAccess(req.params.agentId, accountId);
-    sessions.invalidateAgentConnection(req.params.agentId, accountId, sessionIds);
-    res.status(204).end();
+  router.delete('/:agentId/connectors/:accountId', (_req, res) => {
+    res.status(410).json(ACCESS_MOVED);
   });
 
   return router;

@@ -27,6 +27,7 @@ export * from './connectors/connections.js';
 export * from './connectors/connector-events.js';
 export * from './connectors/connector-review-requests.js';
 export * from './connectors/connector-usage.js';
+export * from './connectors/connector-execution-state.js';
 export * from './rooms.js';
 export * from './room-coordination.js';
 export * from './read-cursors.js';

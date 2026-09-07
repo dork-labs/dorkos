@@ -37,7 +37,12 @@ const STATUS_BADGE_VARIANT: Record<
  * sentence, and disconnect with confirm. Two accounts of one service are two
  * visibly distinct rows (multi-account made visible).
  */
-export function AccountsList() {
+export function AccountsList({
+  onManageAccess,
+}: {
+  /** Open exact operation access for one stable connection. */
+  onManageAccess?: (connectionId: string) => void;
+} = {}) {
   const { data, isLoading, isError, error } = useConnectorAccounts();
 
   if (isLoading) {
@@ -69,7 +74,7 @@ export function AccountsList() {
       ) : (
         <ul className="space-y-2">
           {accounts.map((account) => (
-            <AccountRow key={account.id} account={account} />
+            <AccountRow key={account.id} account={account} onManageAccess={onManageAccess} />
           ))}
         </ul>
       )}
@@ -93,9 +98,11 @@ export function AccountsList() {
 export function AccountRow({
   account,
   onDisconnect,
+  onManageAccess,
 }: {
   account: PublicConnectedAccount;
   onDisconnect?: (accountId: string) => void;
+  onManageAccess?: (connectionId: string) => void;
 }) {
   const disconnect = useDisconnectConnectorAccount();
   const Icon = SERVICE_ICONS[account.toolkit.toLowerCase()] ?? FALLBACK_SERVICE_ICON;
@@ -121,37 +128,48 @@ export function AccountRow({
             account row carries its own truthful disclosure line. */}
         <p className="text-muted-foreground mt-1 text-xs leading-relaxed">{account.disclosure}</p>
       </div>
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+        {onManageAccess && (
           <Button
             variant="ghost"
             size="sm"
-            className="text-muted-foreground hover:text-destructive shrink-0 gap-1.5 text-xs"
-            disabled={disconnect.isPending}
+            className="text-muted-foreground shrink-0 text-xs"
+            onClick={() => onManageAccess(account.id)}
           >
-            <Unplug className="size-3.5" aria-hidden />
-            {disconnect.isPending ? 'Disconnecting…' : 'Disconnect'}
+            Manage access
           </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Disconnect {name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Your agents lose access to this account, and sessions it was attached to stop seeing
-              its tools. You can connect it again anytime.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep connected</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDisconnect}
-              className="bg-destructive hover:bg-destructive/90 text-white"
+        )}
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-destructive shrink-0 gap-1.5 text-xs"
+              disabled={disconnect.isPending}
             >
-              Disconnect
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              <Unplug className="size-3.5" aria-hidden />
+              {disconnect.isPending ? 'Disconnecting…' : 'Disconnect'}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Disconnect {name}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Your agents lose access to this account. You can connect it again anytime.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep connected</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDisconnect}
+                className="bg-destructive hover:bg-destructive/90 text-white"
+              >
+                Disconnect
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </li>
   );
 }

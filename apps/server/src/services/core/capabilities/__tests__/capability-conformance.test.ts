@@ -178,67 +178,22 @@ const marketplaceDeps = {
   logger: noopLogger,
 } as unknown as MarketplaceMcpDeps;
 
-// Fake connector bundle: a real registry + binder over an in-memory db with a
-// fake provider, so the connector capabilities' invoke assertions run the real
-// service code with no network.
+// Fake connector discovery bundle: a real registry over an in-memory database,
+// so the two nonprivate discovery handlers run real aggregation without a network.
 const { ConnectorRegistry } = await import('../../../connectors/registry.js');
-const { ConnectorFlowBindings } = await import('../../../connectors/flow-bindings.js');
-const { SessionConnectorService } = await import('../../../connectors/session-exposure.js');
-const { AgentConnectorAttachmentStore, SessionConnectorAttachmentStore } =
-  await import('../../../connectors/attachment-store.js');
 const { FakeConnectorProvider } = await import('@dorkos/test-utils');
-const { agents, runMigrations, sessionMetadata } = await import('@dorkos/db');
+const { runMigrations } = await import('@dorkos/db');
 
 const connectorDb = createTestDb();
 runMigrations(connectorDb);
-const connectorFixtureCreatedAt = new Date().toISOString();
-connectorDb
-  .insert(agents)
-  .values({
-    id: 'conformance-agent',
-    name: 'conformance-agent',
-    runtime: 'test-mode',
-    projectPath: path.join(SANDBOX_CWD, 'agents', 'conformance'),
-    registeredAt: connectorFixtureCreatedAt,
-    updatedAt: connectorFixtureCreatedAt,
-  })
-  .run();
-connectorDb
-  .insert(sessionMetadata)
-  .values({
-    sessionId: 'conformance',
-    runtime: 'test-mode',
-    agentPath: path.join(SANDBOX_CWD, 'agents', 'conformance'),
-    createdAt: connectorFixtureCreatedAt,
-  })
-  .run();
 const conformanceConnectorRegistry = new ConnectorRegistry({ db: connectorDb });
 const conformanceConnectorProvider = new FakeConnectorProvider({
   type: 'composio',
   custody: 'managed',
 });
 conformanceConnectorRegistry.register(conformanceConnectorProvider);
-const conformanceConnectStart = await conformanceConnectorProvider.startConnect('gmail', {
-  label: 'conformance',
-});
-const conformanceConnectPoll = await conformanceConnectorProvider.pollConnect(
-  conformanceConnectStart.flowId
-);
-if (conformanceConnectPoll.status !== 'connected' || !conformanceConnectPoll.account) {
-  throw new Error('conformance fixture: fake connector did not create its account');
-}
-const conformanceConnection = conformanceConnectorRegistry.recordConnect(
-  conformanceConnectorProvider,
-  conformanceConnectPoll.account
-);
 const connectorDeps = {
   registry: conformanceConnectorRegistry,
-  sessionConnectors: new SessionConnectorService({
-    registry: conformanceConnectorRegistry,
-    agentAttachments: new AgentConnectorAttachmentStore(connectorDb),
-    sessionAttachments: new SessionConnectorAttachmentStore(connectorDb),
-  }),
-  flowBindings: new ConnectorFlowBindings(),
 };
 
 // The MCP-server-management domain. The locator returns undefined (no agent), so
@@ -540,12 +495,6 @@ capabilityConformance(registry, {
       description: 'A conformance fixture package.',
     },
     'connector.recommend': { service: 'gmail' },
-    'connector.start_connect': { service: 'gmail', label: 'conformance' },
-    // An unknown flow: the handler answers with its structured CapabilityToolError.
-    'connector.poll_connect': { flowId: 'conformance-flow' },
-    // Destructive: refused by the gate before the handler runs (asserted above).
-    'connector.attach_account': { accountId: conformanceConnection.id, sessionId: 'conformance' },
-    'connector.detach_account': { accountId: conformanceConnection.id, sessionId: 'conformance' },
     // Every mcp verb needs a PARSEABLE fixture: the destructive writes so the gate
     // (not a ZodError) refuses them, and the observe/act verbs so they reach the
     // handler and answer with a structured AGENT_NOT_FOUND (the locator has no

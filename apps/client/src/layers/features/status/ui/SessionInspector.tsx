@@ -74,9 +74,9 @@ export function SessionInspector() {
  * @param props.live - Whether the readout is visible, gating the one-second age
  *   tick. Defaults to `true` for static hosts (the playground) that only ever
  *   render it when it is on screen.
- * @param props.connectors - The session's connector surface (attached
- *   accounts, attach/detach), injected as a slot so this layout stays
- *   renderable against a mock snapshot (playground) with no live queries.
+ * @param props.connectors - The session's read-only connection access status
+ *   and link to the owner access editor, injected as a slot so this layout
+ *   stays renderable against a mock snapshot (playground) with no live queries.
  */
 export function SessionReadout({
   diagnostics,

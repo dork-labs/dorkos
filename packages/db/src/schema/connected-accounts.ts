@@ -6,9 +6,9 @@ import { sqliteTable, text, index } from 'drizzle-orm/sqlite-core';
  *
  * This is NOT the source of truth for the tokens — the provider vaults own
  * those (Composio's cloud vault, a self-hosted Nango's Postgres, the remote MCP
- * server itself). The table exists only so the server can route
- * `toolServerForAccount`/`disconnect` to the backend that owns an id without
- * leaking the vendor into session code, and so `listAccounts` can aggregate
+ * server itself). The table exists only so the server can route management and
+ * brokered execution to the backend that owns an id without leaking provider
+ * identity into public DTOs, and so `listAccounts` can aggregate
  * cheaply. Written on a successful `pollConnect` (first-write-wins, mirroring
  * `runtimeRegistry`, ADR-0255) and retained with `revoked` status on disconnect
  * as a credential-free ownership tombstone; never hand-edited.

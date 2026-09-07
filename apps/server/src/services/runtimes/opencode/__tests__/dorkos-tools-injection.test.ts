@@ -82,7 +82,7 @@ function fakeSidecar(liveNames: string[] = []) {
     mcp: {
       add: vi.fn(async ({ body }: { body: AddCall }) => {
         adds.push({ name: body.name, config: body.config });
-        return {};
+        return { data: { [body.name]: { status: 'connected' as const } } };
       }),
       status: vi.fn(async () => ({
         data: Object.fromEntries(liveNames.map((name) => [name, { status: 'connected' }])),
@@ -249,6 +249,108 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
       const { client, adds } = fakeSidecar();
       await makeManager(agentDir).ensureManaged(client, agentDir);
       expect(adds).toHaveLength(0);
+    });
+  });
+
+  describe('connector runtime server', () => {
+    it('registers independently of external MCP and the room-tools experiment', async () => {
+      configState.value = { runtimes: { dorkosTools: false }, mcp: { enabled: false } };
+      const { client, adds } = fakeSidecar();
+      const manager = makeManager(agentDir);
+
+      const result = await manager.ensureManaged(
+        client,
+        '/canonical/repo',
+        {
+          url: 'http://127.0.0.1:4341/mcp',
+          headers: {
+            Authorization: 'Bearer connector-secret',
+            'X-DorkOS-Connector-Runtime': 'opencode',
+            'X-DorkOS-Connector-Cwd': encodeURIComponent('/canonical/repo'),
+          },
+        },
+        agentDir
+      );
+
+      expect(result).toEqual({ dorkosApplied: false, connectorApplied: true });
+      expect(adds).toEqual([
+        {
+          name: 'dorkos_connections',
+          config: {
+            type: 'remote',
+            url: 'http://127.0.0.1:4341/mcp',
+            headers: {
+              Authorization: 'Bearer connector-secret',
+              'X-DorkOS-Connector-Runtime': 'opencode',
+              'X-DorkOS-Connector-Cwd': encodeURIComponent('/canonical/repo'),
+            },
+            enabled: true,
+          },
+        },
+      ]);
+      expect(client.mcp.add).toHaveBeenCalledWith(
+        expect.objectContaining({ query: { directory: '/canonical/repo' } })
+      );
+    });
+
+    it('reports registration failure without claiming the connector server exists', async () => {
+      const { client } = fakeSidecar();
+      vi.mocked(client.mcp.add).mockImplementation(async (options) => {
+        if (options?.body?.name === 'dorkos_connections') throw new Error('sidecar add failed');
+        return {
+          data: {
+            [options?.body?.name ?? 'unknown']: { status: 'connected' as const },
+          },
+        } as never;
+      });
+
+      const manager = makeManager(agentDir);
+      const result = await manager.ensureManaged(client, agentDir, {
+        url: 'http://127.0.0.1:4341/mcp',
+        headers: { Authorization: 'Bearer connector-secret' },
+      });
+
+      expect(result.connectorApplied).toBe(false);
+    });
+
+    it('reports an HTTP-success failed status as a connector registration failure', async () => {
+      const { client } = fakeSidecar();
+      let connectorAttempts = 0;
+      vi.mocked(client.mcp.add).mockImplementation(async (options) => {
+        const name = options?.body?.name ?? 'unknown';
+        if (name === 'dorkos_connections') connectorAttempts += 1;
+        return {
+          data: {
+            [name]:
+              name === 'dorkos_connections' && connectorAttempts === 1
+                ? { status: 'failed' as const, error: 'connector handshake failed' }
+                : { status: 'connected' as const },
+          },
+        } as never;
+      });
+
+      const manager = makeManager(agentDir);
+      const result = await manager.ensureManaged(client, agentDir, {
+        url: 'http://127.0.0.1:4341/mcp',
+        headers: { Authorization: 'Bearer connector-secret' },
+      });
+
+      expect(result.connectorApplied).toBe(false);
+
+      vi.mocked(client.mcp.status).mockResolvedValueOnce({
+        data: {
+          dorkos_connections: {
+            status: 'failed',
+            error: 'connector handshake failed',
+          },
+        },
+      } as never);
+      const retried = await manager.ensureManaged(client, agentDir, {
+        url: 'http://127.0.0.1:4341/mcp',
+        headers: { Authorization: 'Bearer connector-secret' },
+      });
+      expect(retried.connectorApplied).toBe(true);
+      expect(connectorAttempts).toBe(2);
     });
   });
 });

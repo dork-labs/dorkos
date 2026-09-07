@@ -157,7 +157,7 @@ function makeConnectionsQueryClient(seed: (qc: QueryClient) => void): QueryClien
 /**
  * `AccountsRegion` in its first-run state — no connectable services yet.
  *
- * The populated state (`ServiceGrid`, `AccountsList`, `AgentAccounts`) needs
+ * The populated state (`ServiceGrid`, `AccountsList`, access review) needs
  * three more seeded data sources beyond this one; left for a future pass
  * rather than guessing at their shapes here. First-run is the state every new
  * install actually starts in, so it earns its place on its own.

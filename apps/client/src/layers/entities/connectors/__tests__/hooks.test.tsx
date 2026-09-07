@@ -9,7 +9,6 @@ import type { Transport } from '@dorkos/shared/transport';
 import type {
   ConnectorProviderStatus,
   PublicConnectedAccount,
-  SessionConnectorAttachResult,
 } from '@dorkos/shared/connector-provider';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
@@ -21,8 +20,6 @@ import {
   useSaveConnectorCredential,
   useDeleteConnectorCredential,
   useSessionConnectors,
-  useAttachSessionConnector,
-  useDetachSessionConnector,
 } from '../index';
 
 const providerStatus: ConnectorProviderStatus = {
@@ -40,18 +37,6 @@ const account: PublicConnectedAccount = {
   label: 'work',
   status: 'active',
   custody: 'managed',
-  disclosure: 'Connecting work takes you to that service to sign in.',
-};
-
-const attachResult: SessionConnectorAttachResult = {
-  account: {
-    accountId: 'acct-1' as PublicConnectedAccount['id'],
-    toolkit: 'gmail',
-    label: 'work',
-    status: 'active',
-    serverName: 'gmail-work',
-    exposed: true,
-  },
   disclosure: 'Connecting work takes you to that service to sign in.',
 };
 
@@ -204,8 +189,16 @@ describe('useSessionConnectors', () => {
   it('fetches the session surface with warnings', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getSessionConnectors).mockResolvedValue({
-      accounts: [attachResult.account],
-      warnings: [{ accountId: attachResult.account.accountId, label: 'work', reason: 'expired' }],
+      accounts: [
+        {
+          accountId: account.id,
+          toolkit: 'gmail',
+          label: 'work',
+          status: 'expired',
+          access: 'inherited',
+        },
+      ],
+      warnings: [{ accountId: account.id, label: 'work', reason: 'expired' }],
     });
 
     const { result } = renderHook(() => useSessionConnectors('sess-1'), {
@@ -215,41 +208,5 @@ describe('useSessionConnectors', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(transport.getSessionConnectors).toHaveBeenCalledWith('sess-1');
     expect(result.current.data?.warnings[0].reason).toBe('expired');
-  });
-});
-
-describe('useAttachSessionConnector', () => {
-  it('attaches, returns the disclosure-carrying receipt, and refetches the session', async () => {
-    const transport = createMockTransport();
-    vi.mocked(transport.attachSessionConnector).mockResolvedValue(attachResult);
-    const { queryClient, wrapper } = createWrapper(transport);
-    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
-
-    const { result } = renderHook(() => useAttachSessionConnector(), { wrapper });
-    result.current.mutate({ sessionId: 'sess-1', accountId: 'acct-1' });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(transport.attachSessionConnector).toHaveBeenCalledWith('sess-1', 'acct-1');
-    expect(result.current.data?.disclosure).toContain('sign in');
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ['connectors', 'session', 'sess-1'],
-    });
-  });
-});
-
-describe('useDetachSessionConnector', () => {
-  it('detaches and refetches the session surface', async () => {
-    const transport = createMockTransport();
-    const { queryClient, wrapper } = createWrapper(transport);
-    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
-
-    const { result } = renderHook(() => useDetachSessionConnector(), { wrapper });
-    result.current.mutate({ sessionId: 'sess-1', accountId: 'acct-1' });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(transport.detachSessionConnector).toHaveBeenCalledWith('sess-1', 'acct-1');
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ['connectors', 'session', 'sess-1'],
-    });
   });
 });

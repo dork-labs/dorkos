@@ -22,6 +22,9 @@ export {
   type ApprovalDecisionOutcome,
   type AwaitDecisionOptions,
   type ApprovalTicket,
+  type ApprovalBinding,
+  type ApprovalConnectorAuthority,
+  type ApprovalRequestInput,
 } from './approval-service.js';
 export {
   ApprovalGrantService,

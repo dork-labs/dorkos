@@ -5,9 +5,9 @@
  *
  * - **`connector-gmail`** ("Connect to my Gmail") drives the gateway path:
  *   `recommendConnector('gmail')` tops with a gateway; two connects of one
- *   toolkit yield two distinct, independently-addressable accounts; both expose
- *   a tool server; the injected session servers carry no provider identity (G2);
- *   and the refined eval-13 oracle holds — the only persisted credential
+ *   toolkit yield two distinct, independently-addressable accounts; outward
+ *   account DTOs carry no provider identity; and the refined eval-13 oracle
+ *   holds — the only persisted credential
  *   reference on the managed path is the vendor API-key ref, never a per-account
  *   token ref.
  * - **`connector-slack`** ("Connect to Slack") is the discriminating routing
@@ -17,17 +17,16 @@
  * WHY FAKE-BACKED AND STRUCTURAL: these prove the two evals are EXPRESSIBLE
  * against the spec'd interface and hold as a deterministic contract. Their
  * oracles exercise the real `recommendConnector` / `ConnectorRegistry` /
- * `SessionConnectorService` / Composio-provider code with a
+ * public account mapper / Composio-provider code with a
  * {@link @dorkos/test-utils!FakeConnectorProvider} and an in-memory Composio
  * client, so they run on `test-mode` (no model, no key, free) and gate nothing
  * they cannot deterministically prove.
  *
  * WHY STILL `quarantined` (spec: "Quarantined until W5"): the LIVE promotion —
- * a real model driving the connect flow end-to-end through the connector MCP
- * tools against a mock OAuth provider (CI) or a real provider sandbox (weekly,
- * D5) — is the W5 gate and needs the connector tool surface wired into the
- * harness. Until that lands, these interface-contract cases are the honest,
- * green proof (demo-claim gate); they never claim the surface works end-to-end.
+ * a real model driving owner-reviewed connect and brokered execution against a
+ * mock OAuth provider (CI) or a real provider sandbox (weekly, D5) — is the W5
+ * gate. Until that lands, these interface-contract cases are honest structural
+ * proof and never claim the surface works end-to-end.
  *
  * @module evals/suite/connectors
  */
@@ -35,12 +34,10 @@ import { FakeConnectorProvider } from '@dorkos/test-utils/fake-connector-provide
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
   ConnectorRegistry,
-  SessionConnectorService,
-  AgentConnectorAttachmentStore,
-  SessionConnectorAttachmentStore,
   recommendConnector,
   maybeCreateComposioProvider,
   COMPOSIO_API_KEY_REF,
+  toPublicAccount,
   type RelayAdapterCatalog,
   type CredentialProvider,
   type CredentialResolution,
@@ -49,7 +46,6 @@ import {
   type ComposioConnectionRequest,
   type ComposioConnectionState,
   type ComposioConnectedAccount,
-  type ComposioMcpSession,
 } from '@dorkos/server/services/connectors';
 import type { ConnectedAccount } from '@dorkos/shared/connector-provider';
 import type { EvalCase, Oracle, OracleResult } from '../types.js';
@@ -58,9 +54,6 @@ import type { EvalCase, Oracle, OracleResult } from '../types.js';
 const GMAIL = 'gmail';
 /** The service the routing eval discriminates (relay adapter beats the gateway). */
 const SLACK = 'slack';
-/** Real vendor product names that must never leak into a session tool server (G2). */
-const VENDOR_IDENTITIES = ['composio', 'nango', 'rube'];
-
 /** Build a relay adapter catalog exposing a purpose-built adapter for the given slugs. */
 function relayWith(slugs: Record<string, string>): RelayAdapterCatalog {
   return {
@@ -126,68 +119,39 @@ const gmailRoutesToGateway: Oracle = async (): Promise<OracleResult> => {
   };
 };
 
-/** Two connects of Gmail yield two distinct accounts, each exposing a tool server. */
+/** Two connects of Gmail yield two distinct stable, independently routable accounts. */
 const gmailTwoAccountAddressing: Oracle = async (): Promise<OracleResult> => {
   const { registry, provider, personal, work } = await twoGmailAccounts('composio');
-  const distinct = personal.id !== work.id;
   const accounts = await provider.listAccounts({ toolkit: GMAIL });
   const personalRef = registry.accountBinding(personal.id)?.externalAccountRef;
   const workRef = registry.accountBinding(work.id)?.externalAccountRef;
-  const serverPersonal = personalRef ? await provider.toolServerForAccount(personalRef) : null;
-  const serverWork = workRef ? await provider.toolServerForAccount(workRef) : null;
   const passed =
-    distinct && accounts.length === 2 && serverPersonal !== null && serverWork !== null;
+    personal.id !== work.id &&
+    accounts.length === 2 &&
+    personalRef !== undefined &&
+    workRef !== undefined &&
+    personalRef !== workRef;
   return {
-    label: 'two Gmail accounts are distinct and each exposes a tool server',
+    label: 'two Gmail accounts have distinct stable ids and private provider bindings',
     passed,
     evidence: { ids: [personal.id, work.id], count: accounts.length },
-    ...(passed ? {} : { detail: 'expected two distinct ids, both with a non-null tool server' }),
+    ...(passed ? {} : { detail: 'expected two distinct stable ids and provider bindings' }),
   };
 };
 
-/** Attached accounts inject two provider-neutral named servers, with no vendor identity (G2). */
-const gmailNoProviderLeakage: Oracle = async (): Promise<OracleResult> => {
-  // A NEUTRAL fake type so the fake's namespaced account id cannot itself smuggle
-  // a real vendor name into the assertion — G2 is about the vendor's identity
-  // (composio/nango/rube) never appearing, and the server name being toolkit+label.
-  const { db, registry, personal, work } = await twoGmailAccounts('gateway-under-test');
-  db.$client
-    .prepare(
-      `INSERT INTO agents (id, name, runtime, project_path, registered_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      'connector-gmail-agent',
-      'connector-gmail-agent',
-      'test-mode',
-      '/eval/gmail',
-      '2026-09-05T00:00:00.000Z',
-      '2026-09-05T00:00:00.000Z'
-    );
-  const service = new SessionConnectorService({
-    registry,
-    agentAttachments: new AgentConnectorAttachmentStore(db),
-    sessionAttachments: new SessionConnectorAttachmentStore(db),
-  });
-  const sessionId = 'connector-gmail-eval';
-  await service.hydrateSession(sessionId, 'connector-gmail-agent');
-  await service.attach(sessionId, personal.id);
-  await service.attach(sessionId, work.id);
-
-  const { servers } = service.mcpServersForSession(sessionId);
-  const names = Object.keys(servers).sort();
-  const twoNamedByToolkitLabel =
-    names.length === 2 && names[0] === 'gmail-personal' && names[1] === 'gmail-work';
-  const blob = JSON.stringify(servers).toLowerCase();
-  const leaked = VENDOR_IDENTITIES.filter((v) => blob.includes(v));
-  const passed = twoNamedByToolkitLabel && leaked.length === 0;
+/** Public account rows omit provider identity and private account references. */
+const gmailPublicRowsHideProviderIdentity: Oracle = async (): Promise<OracleResult> => {
+  const { personal, work } = await twoGmailAccounts('gateway-under-test');
+  const rows = [toPublicAccount(personal), toPublicAccount(work)];
+  const publicBlob = JSON.stringify(rows);
+  const passed =
+    rows.every((row) => !('provider' in row) && !('externalAccountRef' in row)) &&
+    !publicBlob.includes('gateway-under-test');
   return {
-    label: 'two named servers (gmail-personal, gmail-work) with no provider identity',
+    label: 'public connection rows omit provider identity and private account references',
     passed,
-    evidence: { names, leaked },
-    ...(passed
-      ? {}
-      : { detail: `names=${JSON.stringify(names)} leaked=${JSON.stringify(leaked)}` }),
+    evidence: rows,
+    ...(passed ? {} : { detail: 'provider-private identity crossed the public account mapper' }),
   };
 };
 
@@ -277,7 +241,7 @@ const slackRoutesToRelayAdapterFirst: Oracle = async (): Promise<OracleResult> =
  */
 export const connectorGmailCase: EvalCase = {
   id: 'connector-gmail',
-  title: 'Connect to my Gmail — the gateway path, two accounts, no provider leakage',
+  title: 'Connect to my Gmail — the gateway path with two private account bindings',
   prompt: '',
   runtimeTier: 'test-mode',
   costClass: 'free',
@@ -286,7 +250,7 @@ export const connectorGmailCase: EvalCase = {
   oracles: [
     gmailRoutesToGateway,
     gmailTwoAccountAddressing,
-    gmailNoProviderLeakage,
+    gmailPublicRowsHideProviderIdentity,
     gmailPersistsOnlyVendorKeyRef,
   ],
 };
@@ -362,11 +326,5 @@ class InMemoryComposioClient implements ComposioHttpClient {
   deleteConnectedAccount(connectedAccountId: string): Promise<void> {
     this.accounts.delete(connectedAccountId);
     return Promise.resolve();
-  }
-
-  mcpSessionForAccount(connectedAccountId: string): Promise<ComposioMcpSession | null> {
-    const account = this.accounts.get(connectedAccountId);
-    if (!account || account.status !== 'ACTIVE') return Promise.resolve(null);
-    return Promise.resolve({ url: `https://rube.app/mcp/${connectedAccountId}` });
   }
 }

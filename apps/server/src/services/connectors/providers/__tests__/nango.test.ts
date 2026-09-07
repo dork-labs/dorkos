@@ -13,10 +13,7 @@ import {
   type NangoConnectionStatus,
   type NangoHttpClient,
   type NangoIntegration,
-  type NangoProxyRequest,
-  type NangoProxyResponse,
 } from '../nango-client.js';
-import { NangoProxyMcp } from '../nango-proxy-mcp.js';
 import {
   NangoConnectorProvider,
   NangoEncryptionKeyError,
@@ -111,11 +108,6 @@ class FakeNangoClient implements NangoHttpClient {
     return Promise.resolve();
   }
 
-  proxyRequest(_input: NangoProxyRequest): Promise<NangoProxyResponse> {
-    if (this._failure) return Promise.reject(this._failure);
-    return Promise.resolve({ status: 200, body: '{"ok":true}' });
-  }
-
   /** Force a connection's Nango status (drives the expired/revoked branch). */
   setStatus(connectionId: string, status: NangoConnectionStatus): void {
     const connection = this._connections.get(connectionId);
@@ -138,45 +130,24 @@ function abortError(): Error {
 /** A valid 256-bit key written in base64 (32 zero bytes) for the enforced gate. */
 const VALID_ENCRYPTION_KEY = Buffer.alloc(32).toString('base64');
 
-/** A fresh Proxy→MCP wrapper for one provider under test. */
-function makeProxy(): NangoProxyMcp {
-  return new NangoProxyMcp({ localOrigin: 'http://127.0.0.1:4242' });
-}
-
 function makeProvider(): NangoConnectorProvider {
-  return new NangoConnectorProvider({ client: new FakeNangoClient(), proxy: makeProxy() });
+  return new NangoConnectorProvider({ client: new FakeNangoClient() });
 }
 
 // The self-host adapter clears the same behavioral gate every backend does.
-// Multi-account (supportsMultiAccount:true), so the suite's two-distinct-ids
-// branch runs. With exposesOverMcp:true (DOR-415), the suite runs the TRUE
-// branch: a healthy account must expose a well-formed MCP connection, and the
-// required unexposable case still resolves null.
+// Multi-account (supportsMultiAccount:true), so the suite's two-distinct-ids branch runs.
 connectorConformance(makeProvider, {
   name: 'NangoConnectorProvider — conformance',
   toolkit: 'gmail',
-  makeUnexposableAccount: async () => {
-    const client = new FakeNangoClient();
-    const provider = new NangoConnectorProvider({ client, proxy: makeProxy() });
-    const { flowId } = await provider.startConnect('gmail', { label: 'personal' });
-    const { account } = await provider.pollConnect(flowId);
-    // Expire the connection: a non-ACTIVE account must resolve null (the
-    // documented null branch), never throw.
-    client.setStatus(toNangoConnectionId(account!.externalAccountRef), 'EXPIRED');
-    return { provider, externalAccountRef: account!.externalAccountRef };
-  },
 });
 
 describe('NangoConnectorProvider — self-host-custody semantics', () => {
-  it('declares the self-host, multi-account, MCP-exposing capability shape', () => {
+  it('declares the self-host, multi-account, brokered-execution capability shape', () => {
     const caps = makeProvider().getCapabilities();
     expect(caps).toMatchObject({
       type: 'nango',
       supportsMultiAccount: true,
       custody: 'self-host',
-      // Tools ride the DorkOS Proxy→MCP wrapper (DOR-415), never Nango's
-      // Enterprise-gated MCP server.
-      exposesOverMcp: true,
     });
   });
 
@@ -210,43 +181,6 @@ describe('NangoConnectorProvider — self-host-custody semantics', () => {
     expect(new Set(accounts.map((a) => a.externalAccountRef)).size).toBe(2);
   });
 
-  it('exposes an ACTIVE account as the wrapper connection (bearer-gated local endpoint)', async () => {
-    const provider = makeProvider();
-    const { flowId } = await provider.startConnect('gmail', { label: 'personal' });
-    const account = (await provider.pollConnect(flowId)).account!;
-
-    const connection = await provider.toolServerForAccount(account.externalAccountRef);
-    expect(connection).not.toBeNull();
-    expect(connection).toMatchObject({ transport: 'http' });
-    const http = connection as { url: string; headers?: Record<string, string> };
-    // The wrapper's local endpoint, addressed by the opaque account id…
-    expect(http.url).toBe(
-      `http://127.0.0.1:4242/api/connectors/nango/mcp/${encodeURIComponent(account.externalAccountRef)}`
-    );
-    // …gated by a per-account bearer token (never the Nango secret key).
-    expect(http.headers?.authorization).toMatch(/^Bearer [0-9a-f]{64}$/);
-  });
-
-  it('resolves null for a non-ACTIVE account (the documented null branch)', async () => {
-    const client = new FakeNangoClient();
-    const provider = new NangoConnectorProvider({ client, proxy: makeProxy() });
-    const { flowId } = await provider.startConnect('gmail', { label: 'personal' });
-    const account = (await provider.pollConnect(flowId)).account!;
-
-    client.setStatus(toNangoConnectionId(account.externalAccountRef), 'EXPIRED');
-    await expect(provider.toolServerForAccount(account.externalAccountRef)).resolves.toBeNull();
-  });
-
-  it('resolves null on a transport failure while resolving the account, never a throw', async () => {
-    const client = new FakeNangoClient();
-    const provider = new NangoConnectorProvider({ client, proxy: makeProxy() });
-    const { flowId } = await provider.startConnect('gmail', { label: 'personal' });
-    const account = (await provider.pollConnect(flowId)).account!;
-
-    client.failWith(new NangoApiError(401, 'unauthorized'));
-    await expect(provider.toolServerForAccount(account.externalAccountRef)).resolves.toBeNull();
-  });
-
   it('surfaces a failed Nango connect as a typed failure, never a throw', async () => {
     const provider = makeProvider();
     const poll = await provider.pollConnect('cs_does_not_exist');
@@ -278,21 +212,21 @@ describe('NangoConnectorProvider — degrade contract on transport failure', () 
     it(`listToolkits PROPAGATES ${label} (the registry turns it into a warning)`, async () => {
       const client = new FakeNangoClient();
       client.failWith(err());
-      const provider = new NangoConnectorProvider({ client, proxy: makeProxy() });
+      const provider = new NangoConnectorProvider({ client });
       await expect(provider.listToolkits()).rejects.toThrow();
     });
 
     it(`listAccounts PROPAGATES ${label} (never a silent empty list)`, async () => {
       const client = new FakeNangoClient();
       client.failWith(err());
-      const provider = new NangoConnectorProvider({ client, proxy: makeProxy() });
+      const provider = new NangoConnectorProvider({ client });
       await expect(provider.listAccounts()).rejects.toThrow();
     });
 
     it(`pollConnect maps ${label} to a failure-typed result`, async () => {
       const client = new FakeNangoClient();
       client.failWith(err());
-      const provider = new NangoConnectorProvider({ client, proxy: makeProxy() });
+      const provider = new NangoConnectorProvider({ client });
       const poll = await provider.pollConnect('cs_anything');
       expect(poll.status).toBe('failed');
       expect(poll.error).toBeTruthy();
@@ -307,16 +241,15 @@ describe('NangoConnectorProvider — degrade contract on transport failure', () 
       getConnectionState: () => Promise.resolve({ status: 'PENDING' }),
       listConnections: () => Promise.resolve([]),
       deleteConnection: () => Promise.resolve(),
-      proxyRequest: () => Promise.resolve({ status: 200, body: '' }),
     };
-    const provider = new NangoConnectorProvider({ client, proxy: makeProxy() });
+    const provider = new NangoConnectorProvider({ client });
     await expect(provider.startConnect('gmail')).rejects.toThrow(/no authorize URL/);
   });
 
   it('does NOT swallow a non-transport error (a genuine bug still surfaces)', async () => {
     const client = new FakeNangoClient();
     client.failWith(new TypeError('bug in mapping'));
-    const provider = new NangoConnectorProvider({ client, proxy: makeProxy() });
+    const provider = new NangoConnectorProvider({ client });
     await expect(provider.listToolkits()).rejects.toThrow(/bug in mapping/);
   });
 });
@@ -353,7 +286,6 @@ describe('maybeCreateNangoProvider — the configured-only registry gate', () =>
 
   it('returns null when the secret key is unconfigured (dangling reference)', async () => {
     const provider = await maybeCreateNangoProvider({
-      proxy: makeProxy(),
       credentials: fakeCredentials({}),
       baseUrl: 'http://localhost:3003',
       encryptionKey: VALID_ENCRYPTION_KEY,
@@ -363,7 +295,6 @@ describe('maybeCreateNangoProvider — the configured-only registry gate', () =>
 
   it('returns null when the base URL is absent (connector not configured)', async () => {
     const provider = await maybeCreateNangoProvider({
-      proxy: makeProxy(),
       credentials: fakeCredentials({ [NANGO_SECRET_KEY_REF]: 'sk-nango-test' }),
       encryptionKey: VALID_ENCRYPTION_KEY,
     });
@@ -373,7 +304,6 @@ describe('maybeCreateNangoProvider — the configured-only registry gate', () =>
   it('REFUSES (throws) when configured but NANGO_ENCRYPTION_KEY is missing', async () => {
     await expect(
       maybeCreateNangoProvider({
-        proxy: makeProxy(),
         credentials: fakeCredentials({ [NANGO_SECRET_KEY_REF]: 'sk-nango-test' }),
         baseUrl: 'http://localhost:3003',
       })
@@ -384,7 +314,6 @@ describe('maybeCreateNangoProvider — the configured-only registry gate', () =>
     let seenKey: string | undefined;
     let seenBaseUrl: string | undefined;
     const provider = await maybeCreateNangoProvider({
-      proxy: makeProxy(),
       credentials: fakeCredentials({ [NANGO_SECRET_KEY_REF]: 'sk-nango-test' }),
       baseUrl: 'http://localhost:3003',
       encryptionKey: VALID_ENCRYPTION_KEY,
@@ -397,6 +326,9 @@ describe('maybeCreateNangoProvider — the configured-only registry gate', () =>
 
     expect(provider).toBeInstanceOf(NangoConnectorProvider);
     expect(provider?.type).toBe('nango');
+    expect(provider?.executionConfigDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.stringify(provider)).not.toContain('sk-nango-test');
+    expect(JSON.stringify(provider)).not.toContain(provider!.executionConfigDigest);
     // The resolved key + base URL reach the HTTP client seam, not the provider surface.
     expect(seenKey).toBe('sk-nango-test');
     expect(seenBaseUrl).toBe('http://localhost:3003');

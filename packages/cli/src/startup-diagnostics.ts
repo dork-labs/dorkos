@@ -6,8 +6,8 @@
  */
 import os from 'os';
 
-/** Minimum Node.js major version required by DorkOS. */
-export const MIN_NODE_MAJOR = 20;
+/** Minimum Node.js version required by DorkOS and its bundled provider SDKs. */
+export const MIN_NODE_VERSION = '22.22.3';
 
 /** Structured diagnostic result with category and human-readable guidance. */
 export interface Diagnostic {
@@ -34,16 +34,24 @@ export interface Diagnostic {
  *
  * Call this early in the CLI entry point — before any imports that could
  * fail on older runtimes. Returns null if the version is acceptable.
+ *
+ * @param version - Node.js version to check; defaults to the running process.
  */
-export function checkNodeVersion(): Diagnostic | null {
-  const major = parseInt(process.versions.node.split('.')[0], 10);
-  if (major < MIN_NODE_MAJOR) {
+export function checkNodeVersion(version = process.versions.node): Diagnostic | null {
+  const current = version.split('.').map((part) => Number.parseInt(part, 10));
+  const minimum = MIN_NODE_VERSION.split('.').map((part) => Number.parseInt(part, 10));
+  const supported = minimum.every((minimumPart, index) => {
+    const currentPart = current[index] ?? 0;
+    const equalPrefix = minimum.slice(0, index).every((part, prior) => part === current[prior]);
+    return !equalPrefix || currentPart >= minimumPart;
+  });
+  if (!supported) {
     return {
       category: 'node-version',
-      headline: `Node.js ${process.versions.node} is not supported`,
-      detail: `DorkOS requires Node.js ${MIN_NODE_MAJOR} or later. You are running ${process.versions.node}.`,
+      headline: `Node.js ${version} is not supported`,
+      detail: `DorkOS requires Node.js ${MIN_NODE_VERSION} or later. You are running ${version}.`,
       fix: [
-        `Upgrade Node.js to v${MIN_NODE_MAJOR}+ (LTS recommended):`,
+        `Upgrade Node.js to v${MIN_NODE_VERSION} or later:`,
         `  nvm install --lts   # if using nvm`,
         `  brew install node    # if using Homebrew`,
         `  https://nodejs.org   # manual download`,

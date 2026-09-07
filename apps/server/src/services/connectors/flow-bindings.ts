@@ -1,23 +1,16 @@
 /**
- * The shared connect-flow → provider binding map (connector-completion
- * spec §Detailed Design 2/3).
+ * Shared public-flow to private-provider binding map.
  *
- * A `flowId` is provider-scoped but the poll surfaces are not, so whichever
- * surface started a flow must record which backend minted it for the poll to
- * route `pollConnect` back correctly. Both surfaces that can start or poll a
- * flow — the REST router (`routes/connectors.ts`) and the agent-facing
- * capabilities (`connector-capabilities.ts`) — share ONE instance of this map,
- * so a flow started in chat can be polled over REST and vice versa. Never
- * instantiate one per surface; that splits the state this module exists to keep
- * whole.
+ * Provider flow ids are private and provider-scoped. Owner REST and durable
+ * management-review paths share one instance so every approved connect routes
+ * to the exact provider object and material generation that started it.
+ * Terminal responses are cached for idempotent polling, and a material swap or
+ * disconnect invalidates the corresponding flow. The bounded LRU removes old
+ * and abandoned state.
  *
- * Active bindings retain the exact provider instance and private provider flow
- * reference. Terminal results retain only the public response for idempotent
- * replay. A bounded LRU removes abandoned and older completed flows.
- *
- * In-memory and process-scoped by design: a connect flow does not
- * survive a server restart (the user simply re-initiates), the same liveness
- * the loopback-PKCE flow already assumes (gateway spec §Non-Goals).
+ * The map is process-scoped. Durable review rows detect a restart-lost approved
+ * flow and return an explicit expired/recovery outcome; they never replay an
+ * ambiguous upstream create.
  *
  * @module services/connectors/flow-bindings
  */
@@ -40,6 +33,8 @@ export interface ActiveConnectorFlowBinding {
   provider: ConnectorProvider;
   /** Provider-owned flow reference passed only back to that instance. */
   providerFlowId: string;
+  /** Durable execution-material generation captured before the flow started. */
+  executionConfigGeneration: number;
   /** Existing stable connection this flow may explicitly restore. */
   reconnectConnectionId?: ConnectedAccountId;
   /** Shared public-resolution promise while one provider poll is active. */
@@ -52,6 +47,10 @@ export interface TerminalConnectorFlowBinding {
   state: 'terminal';
   /** Secret-free response returned identically to later poll attempts. */
   result: ConnectorConnectPollResponse;
+  /** Exact provider retained only to reject replay after its material changes. */
+  provider: ConnectorProvider;
+  /** Durable execution-material generation that authorized this result. */
+  executionConfigGeneration: number;
 }
 
 /** Active private routing or a terminal public replay record. */
@@ -73,14 +72,20 @@ export class ConnectorFlowBindings {
   private readonly _flows = new Map<string, ConnectorFlowBinding>();
   private readonly _createId: () => string;
   private readonly _maxEntries: number;
+  private readonly _resolveProviderGeneration: (provider: ConnectorProvider) => number | undefined;
 
-  /** Construct a bounded binding cache with an optional deterministic ID factory. */
-  constructor(createId: () => string = ulid, maxEntries = DEFAULT_MAX_ENTRIES) {
+  /** Construct a bounded binding cache with optional deterministic test seams. */
+  constructor(
+    createId: () => string = ulid,
+    maxEntries = DEFAULT_MAX_ENTRIES,
+    resolveProviderGeneration: (provider: ConnectorProvider) => number | undefined = () => 1
+  ) {
     if (!Number.isInteger(maxEntries) || maxEntries < 1) {
       throw new RangeError('Connector flow binding capacity must be a positive integer.');
     }
     this._createId = createId;
     this._maxEntries = maxEntries;
+    this._resolveProviderGeneration = resolveProviderGeneration;
   }
 
   /**
@@ -88,13 +93,18 @@ export class ConnectorFlowBindings {
    *
    * @param providerFlowId - The private flow id from `startConnect`.
    * @param provider - The exact configured backend instance that minted it.
+   * @param executionConfigGeneration - Material generation current before start.
    * @param reconnectConnectionId - Unambiguous disconnected connection this flow may restore.
    */
   record(
     providerFlowId: string,
     provider: ConnectorProvider,
+    executionConfigGeneration: number,
     reconnectConnectionId?: ConnectedAccountId
   ): string {
+    if (this._resolveProviderGeneration(provider) !== executionConfigGeneration) {
+      throw new Error('Connector provider configuration changed. Start connecting again.');
+    }
     if (this._flows.size >= this._maxEntries) {
       const oldestIdle = [...this._flows].find(
         ([, binding]) => binding.state === 'terminal' || binding.pollPromise === undefined
@@ -112,6 +122,7 @@ export class ConnectorFlowBindings {
       state: 'active',
       provider,
       providerFlowId,
+      executionConfigGeneration,
       ...(reconnectConnectionId && { reconnectConnectionId }),
     });
     return flowId;
@@ -126,6 +137,10 @@ export class ConnectorFlowBindings {
   providerFor(flowId: string): ConnectorFlowBinding | undefined {
     const binding = this._flows.get(flowId);
     if (!binding) return undefined;
+    if (this._resolveProviderGeneration(binding.provider) !== binding.executionConfigGeneration) {
+      this._flows.delete(flowId);
+      return undefined;
+    }
     this._flows.delete(flowId);
     this._flows.set(flowId, binding);
     return binding;
@@ -177,7 +192,11 @@ export class ConnectorFlowBindings {
    * @param binding - Active object captured before awaiting the provider.
    */
   isCurrent(flowId: string, binding: ActiveConnectorFlowBinding): boolean {
-    return this._flows.get(flowId) === binding;
+    const current =
+      this._flows.get(flowId) === binding &&
+      this._resolveProviderGeneration(binding.provider) === binding.executionConfigGeneration;
+    if (!current && this._flows.get(flowId) === binding) this._flows.delete(flowId);
+    return current;
   }
 
   /**
@@ -199,6 +218,8 @@ export class ConnectorFlowBindings {
     this._flows.set(flowId, {
       state: 'terminal',
       result: ConnectorConnectPollResponseSchema.parse(structuredClone(result)),
+      provider: binding.provider,
+      executionConfigGeneration: binding.executionConfigGeneration,
     });
     return true;
   }

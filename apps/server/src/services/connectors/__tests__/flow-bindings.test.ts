@@ -17,19 +17,21 @@ describe('ConnectorFlowBindings', () => {
       instanceId: 'composio-work' as ConnectorProviderInstanceId,
     });
 
-    const first = bindings.record('provider-flow-1', firstProvider);
-    const second = bindings.record('provider-flow-1', secondProvider);
+    const first = bindings.record('provider-flow-1', firstProvider, 1);
+    const second = bindings.record('provider-flow-1', secondProvider, 1);
 
     expect(first).not.toBe(second);
     expect(bindings.providerFor(first)).toEqual({
       state: 'active',
       provider: firstProvider,
       providerFlowId: 'provider-flow-1',
+      executionConfigGeneration: 1,
     });
     expect(bindings.providerFor(second)).toEqual({
       state: 'active',
       provider: secondProvider,
       providerFlowId: 'provider-flow-1',
+      executionConfigGeneration: 1,
     });
   });
 
@@ -39,8 +41,8 @@ describe('ConnectorFlowBindings', () => {
     const provider = new FakeConnectorProvider({
       instanceId: 'composio-personal' as ConnectorProviderInstanceId,
     });
-    const first = bindings.record('private-a', provider);
-    const second = bindings.record('private-b', provider);
+    const first = bindings.record('private-a', provider, 1);
+    const second = bindings.record('private-b', provider, 1);
     const firstBinding = bindings.providerFor(first)!;
     expect(firstBinding.state).toBe('active');
     if (firstBinding.state !== 'active') throw new Error('expected active flow');
@@ -51,9 +53,11 @@ describe('ConnectorFlowBindings', () => {
     expect(bindings.providerFor(first)).toEqual({
       state: 'terminal',
       result: { status: 'failed', error: 'Authorization was denied.' },
+      provider,
+      executionConfigGeneration: 1,
     });
 
-    const third = bindings.record('private-c', provider);
+    const third = bindings.record('private-c', provider, 1);
     expect(bindings.providerFor(second)).toBeUndefined();
     expect(bindings.providerFor(first)).toMatchObject({ state: 'terminal' });
     expect(bindings.providerFor(third)).toMatchObject({
@@ -68,10 +72,10 @@ describe('ConnectorFlowBindings', () => {
     const provider = new FakeConnectorProvider({
       instanceId: 'composio-personal' as ConnectorProviderInstanceId,
     });
-    const first = bindings.record('private-a', provider);
+    const first = bindings.record('private-a', provider, 1);
     const captured = bindings.providerFor(first)!;
     if (captured.state !== 'active') throw new Error('expected active flow');
-    bindings.record('private-b', provider);
+    bindings.record('private-b', provider, 1);
 
     expect(
       bindings.recordTerminal(first, captured, {
@@ -88,7 +92,7 @@ describe('ConnectorFlowBindings', () => {
     const provider = new FakeConnectorProvider({
       instanceId: 'composio-personal' as ConnectorProviderInstanceId,
     });
-    const first = bindings.record('private-a', provider);
+    const first = bindings.record('private-a', provider, 1);
     let release!: () => void;
     const blocked = new Promise<void>((resolve) => {
       release = resolve;
@@ -106,7 +110,7 @@ describe('ConnectorFlowBindings', () => {
 
     const firstPoll = bindings.poll(first, poller, publicize);
     const concurrentPoll = bindings.poll(first, poller, publicize);
-    expect(() => bindings.record('private-b', provider)).toThrow(/already in progress/i);
+    expect(() => bindings.record('private-b', provider, 1)).toThrow(/already in progress/i);
     release();
 
     await expect(firstPoll).resolves.toEqual({
@@ -125,7 +129,7 @@ describe('ConnectorFlowBindings', () => {
     const provider = new FakeConnectorProvider({
       instanceId: 'composio-personal' as ConnectorProviderInstanceId,
     });
-    const flowId = bindings.record('private-flow', provider);
+    const flowId = bindings.record('private-flow', provider, 1);
     const active = bindings.providerFor(flowId)!;
     if (active.state !== 'active') throw new Error('expected active flow');
 
@@ -146,6 +150,8 @@ describe('ConnectorFlowBindings', () => {
 
     expect(bindings.providerFor(flowId)).toEqual({
       state: 'terminal',
+      provider,
+      executionConfigGeneration: 1,
       result: {
         status: 'connected',
         account: {
@@ -158,5 +164,47 @@ describe('ConnectorFlowBindings', () => {
         },
       },
     });
+  });
+
+  it('drops in-flight and terminal results when provider material generation changes', async () => {
+    const provider = new FakeConnectorProvider({
+      instanceId: 'composio-personal' as ConnectorProviderInstanceId,
+    });
+    let generation = 1;
+    const bindings = new ConnectorFlowBindings(
+      () => 'public-a',
+      2,
+      (candidate) => (candidate === provider ? generation : undefined)
+    );
+    const flowId = bindings.record('private-flow', provider, generation);
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const publicize = () => ({ status: 'failed' as const, error: 'should not publish' });
+    const poll = bindings.poll(
+      flowId,
+      async () => {
+        await blocked;
+        return { status: 'failed', error: 'old provider result' };
+      },
+      publicize
+    );
+
+    generation = 2;
+    release();
+    await expect(poll).resolves.toBeUndefined();
+    expect(bindings.providerFor(flowId)).toBeUndefined();
+
+    generation = 1;
+    const replayFlowId = bindings.record('private-replay', provider, generation);
+    const active = bindings.providerFor(replayFlowId)!;
+    if (active.state !== 'active') throw new Error('expected active flow');
+    bindings.recordTerminal(replayFlowId, active, {
+      status: 'failed',
+      error: 'Authorization was denied.',
+    });
+    generation = 2;
+    expect(bindings.providerFor(replayFlowId)).toBeUndefined();
   });
 });

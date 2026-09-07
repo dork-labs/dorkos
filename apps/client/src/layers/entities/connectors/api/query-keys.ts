@@ -27,8 +27,9 @@ export const connectorKeys = {
   sessions: () => [...connectorKeys.all, 'session'] as const,
   session: (sessionId: string) => [...connectorKeys.sessions(), sessionId] as const,
 
-  // Standing per-agent attachments. Same prefix rule as sessions: disconnecting
-  // an account sweeps every agent's cache with one `agents()` invalidation.
-  agents: () => [...connectorKeys.all, 'agent'] as const,
-  agent: (agentId: string) => [...connectorKeys.agents(), agentId] as const,
+  reviews: () => [...connectorKeys.all, 'reviews'] as const,
+  reviewList: (state?: 'pending' | 'resolved') =>
+    [...connectorKeys.reviews(), 'list', state ?? 'all'] as const,
+  review: (reviewRequestId: string) =>
+    [...connectorKeys.reviews(), 'detail', reviewRequestId] as const,
 };

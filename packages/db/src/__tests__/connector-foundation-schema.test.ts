@@ -11,6 +11,7 @@ import {
   connectorOperationRevisions,
   connectorProviderInstances,
   connectorUsageAttempts,
+  connectorUsageTerminalReceipts,
   createDb,
   eq,
   runMigrations,
@@ -78,7 +79,7 @@ describe('connector foundation schema', () => {
     db.$client.close();
   });
 
-  it('treats classification as part of a revision fingerprint and forbids mutation', () => {
+  it('treats classification and retry policy as revision fingerprint fields', () => {
     const db = createDb(':memory:');
     runMigrations(db);
     seedProvider(db, 'instance-a');
@@ -96,6 +97,14 @@ describe('connector foundation schema', () => {
       .run();
     db.insert(connectorOperationRevisions)
       .values({ id: 'revision-write', ...base, capabilityClassification: 'write' })
+      .run();
+    db.insert(connectorOperationRevisions)
+      .values({
+        id: 'revision-read-retryable',
+        ...base,
+        capabilityClassification: 'read',
+        retryPolicy: 'provider_idempotency_key',
+      })
       .run();
 
     expect(() =>
@@ -183,14 +192,25 @@ describe('connector foundation schema', () => {
         surface: 'mcp',
         actorKind: 'agent',
         actorId: 'agent-a',
+        ownerKind: 'local_install',
+        ownerId: 'installation-a',
         agentId: 'agent-a',
         connectionId: 'connection-a',
         providerInstanceId: 'instance-a',
         providerType: 'composio',
         payer: 'operator_byo',
         operationRevisionId: 'revision-a',
-        outcome: 'success',
         startedAt: now(),
+      })
+      .run();
+    db.insert(connectorUsageTerminalReceipts)
+      .values({
+        receiptId: 'receipt-a',
+        attemptId: 'attempt-a',
+        outcome: 'success',
+        completedAt: now(),
+        recordedAt: now(),
+        provenance: 'broker',
       })
       .run();
     expect(() =>
@@ -210,8 +230,21 @@ describe('connector foundation schema', () => {
     expect(() =>
       db
         .update(connectorUsageAttempts)
-        .set({ outcome: 'rewritten' })
+        .set({ actorId: 'rewritten' })
         .where(eq(connectorUsageAttempts.attemptId, 'attempt-a'))
+        .run()
+    ).toThrow(/append-only/i);
+    expect(() =>
+      db
+        .update(connectorUsageTerminalReceipts)
+        .set({ outcome: 'error' })
+        .where(eq(connectorUsageTerminalReceipts.attemptId, 'attempt-a'))
+        .run()
+    ).toThrow(/append-only/i);
+    expect(() =>
+      db
+        .delete(connectorUsageTerminalReceipts)
+        .where(eq(connectorUsageTerminalReceipts.attemptId, 'attempt-a'))
         .run()
     ).toThrow(/append-only/i);
     expect(() =>

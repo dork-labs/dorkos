@@ -158,14 +158,14 @@ async function fetchLiveTools(): Promise<ToolListEntry[]> {
 }
 
 describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
-  it('has exactly 32 members (the audited read-only set)', () => {
+  it('has exactly 31 members (the audited read-only set)', () => {
     // A hard count anchors the constant against silent additions/removals.
-    // 18 legacy (`LEGACY_READ_ONLY_TOOL_NAMES`) + 14 registry-derived carve-outs:
-    // 4 operator, 5 marketplace, 3 connector, `mcp_list_server` from the
+    // 18 legacy (`LEGACY_READ_ONLY_TOOL_NAMES`) + 13 registry-derived carve-outs:
+    // 4 operator, 5 marketplace, 2 connector, `mcp_list_server` from the
     // MCP-server-management domain, plus `list_capabilities` from the
     // self-description domain. A carve-out only counts when its tool reaches the
     // `external` server, which is what `readOnlyCarveOutToolNames` checks.
-    expect(READ_ONLY_MCP_TOOL_NAMES.size).toBe(32);
+    expect(READ_ONLY_MCP_TOOL_NAMES.size).toBe(31);
   });
 
   it('every live tool with readOnlyHint === true is accounted for', async () => {
@@ -184,6 +184,19 @@ describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
         `${name} is read-only but neither in the carve-out nor deliberately guarded`
       ).toBe(true);
     }
+  });
+
+  it('never projects private connector inventory, connect flows, or access mutations', async () => {
+    const names = (await fetchLiveTools()).map((tool) => tool.name);
+    expect(names).not.toEqual(
+      expect.arrayContaining([
+        'connector_list_accounts',
+        'connector_start_connect',
+        'connector_poll_connect',
+        'connector_attach_account',
+        'connector_detach_account',
+      ])
+    );
   });
 
   it('names a deliberately guarded tool only when that tool is live and read-only', async () => {

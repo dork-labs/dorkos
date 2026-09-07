@@ -896,7 +896,7 @@ async function buildServer() {
     entryPoints: [path.join(DESKTOP_PKG, 'src/server-entry.ts')],
     bundle: true,
     platform: 'node',
-    target: 'node20',
+    target: 'node22.22',
     format: 'esm',
     outfile,
     banner: {
@@ -910,6 +910,7 @@ async function buildServer() {
       // external list; both bundle the exact same apps/server/src/index.ts
       // module graph.
       '@anthropic-ai/claude-agent-sdk',
+      '@composio/core',
       '@openai/codex-sdk',
       '@opencode-ai/sdk',
       '@ngrok/ngrok',

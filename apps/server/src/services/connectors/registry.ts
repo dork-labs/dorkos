@@ -24,6 +24,7 @@ import type {
   ConnectorToolkit,
   ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
+import { connectorExecutionConfigDigest } from './execution/execution-config.js';
 import { ConnectionStore, type StableConnectionBinding } from './connection-store.js';
 import type {
   ConnectorMigrationResult,
@@ -60,8 +61,8 @@ export interface AggregatedToolkits {
 /**
  * One canonical stable connection binding — the provider-neutral metadata
  * that binds an opaque `ConnectedAccountId` to its owning backend and carries
- * the naming/disclosure fields the session tool surface reads (toolkit, label,
- * custody) without ever exposing which vendor is behind the connection.
+ * the naming and disclosure fields public status surfaces read (toolkit, label,
+ * custody) without exposing which provider is behind the connection.
  */
 export type ConnectedAccountBinding = StableConnectionBinding;
 
@@ -75,6 +76,11 @@ export interface ConnectorRegistryOpts {
   migration?: LegacyConnectionMigrationInput;
   /** Inject an authoritative store in focused tests. */
   connectionStore?: ConnectionStore;
+  /** Verified account or installation that owns configured provider instances. */
+  configuredOwner?: {
+    readonly ownerKind: 'user' | 'local_install';
+    readonly ownerId: string;
+  };
 }
 
 /**
@@ -118,7 +124,12 @@ export class ConnectorRegistry {
   constructor(opts: ConnectorRegistryOpts) {
     this._providerTimeoutMs = opts.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
     this._connections =
-      opts.connectionStore ?? new ConnectionStore({ db: opts.db, migration: opts.migration });
+      opts.connectionStore ??
+      new ConnectionStore({
+        db: opts.db,
+        migration: opts.migration,
+        ...(opts.configuredOwner && { configuredOwner: opts.configuredOwner }),
+      });
   }
 
   /** Current source-of-truth migration health for route-level 503 responses. */
@@ -137,8 +148,8 @@ export class ConnectorRegistry {
   }
 
   /** Revoke one agent's durable authority for one exact stable connection. */
-  removeAgentConnectionAccess(agentId: string, accountId: ConnectedAccountId): string[] {
-    return this._connections.removeAgentConnectionAccess(agentId, accountId);
+  removeAgentConnectionAccess(agentId: string, accountId: ConnectedAccountId): void {
+    this._connections.removeAgentConnectionAccess(agentId, accountId);
   }
 
   /** Fence retained legacy consent before an agent is removed. */
@@ -153,10 +164,32 @@ export class ConnectorRegistry {
    *
    * @param provider - The backend to register.
    */
-  register(provider: ConnectorProvider): void {
+  register(provider: ConnectorProvider, executionConfigDigest?: string): void {
+    if (this._connections.health().status === 'ready') {
+      this._connections.registerProvider(
+        provider,
+        executionConfigDigest ??
+          connectorExecutionConfigDigest({
+            source: 'direct-registration',
+            instanceId: provider.instanceId,
+            type: provider.type,
+            capabilities: provider.getCapabilities(),
+          })
+      );
+    }
     this._providers.set(provider.instanceId, provider);
     this._defaultInstanceByType.set(provider.type, provider.instanceId);
-    if (this._connections.health().status === 'ready') this._connections.registerProvider(provider);
+  }
+
+  /**
+   * Resolve the durable material generation only while this exact provider
+   * object remains registered for its configured instance.
+   *
+   * @param provider - Exact object captured when an upstream flow began.
+   */
+  providerExecutionConfigGeneration(provider: ConnectorProvider): number | undefined {
+    if (this._providers.get(provider.instanceId) !== provider) return undefined;
+    return this._connections.providerExecutionConfigGeneration(provider.instanceId);
   }
 
   /**
@@ -235,8 +268,8 @@ export class ConnectorRegistry {
 
   /**
    * Read the canonical private binding for an account id — the provider-neutral
-   * metadata (owning provider, toolkit, label, custody, status) the session
-   * tool surface needs to name and disclose an attached account. Returns
+   * metadata (owning provider, toolkit, label, custody, status) used by owner
+   * management, broker routing, and retained access status. Returns
    * `undefined` when the id is unknown.
    *
    * @param accountId - The opaque account handle to look up.
@@ -276,10 +309,8 @@ export class ConnectorRegistry {
    * consent row pointing at it would let a future re-connect of the SAME
    * account id (a real possibility: providers are free to reuse an id) silently
    * inherit stale consent nobody re-confirmed. This method does not, by
-   * itself, drop an already-resolved connection out of a LIVE session's
-   * in-memory cache — the caller (the connectors route) also calls
-   * `SessionConnectorService.invalidateAccount` for that, mirroring the
-   * existing provider-unregister cascade in `index.ts`.
+   * itself, call the provider's disconnect operation; the owner route does that
+   * first, then commits this durable tombstone and authority cleanup.
    *
    * @param accountId - The opaque account handle to unbind.
    */
@@ -290,6 +321,11 @@ export class ConnectorRegistry {
   /** Pause or resume a stable connection without changing provider authentication state. */
   setPaused(accountId: ConnectedAccountId, paused: boolean): void {
     this._connections.setPaused(accountId, paused);
+  }
+
+  /** Replace the operator-facing label of one stable connection. */
+  setLabel(accountId: ConnectedAccountId, label: string): void {
+    this._connections.setLabel(accountId, label);
   }
 
   /**
