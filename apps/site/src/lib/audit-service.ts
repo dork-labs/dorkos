@@ -14,6 +14,8 @@
  *
  * @module lib/audit-service
  */
+import { randomUUID } from 'node:crypto';
+
 import type { Auth } from '@/lib/auth';
 import { AUDIT_MODEL } from '@/lib/audit-registry-plugin';
 
@@ -109,7 +111,11 @@ export async function recordAudit(auth: Auth, entry: AuditEntryInput): Promise<v
   const adapter = await getAdapter(auth);
   await adapter.create({
     model: AUDIT_MODEL,
+    // audit_log.id is a PostgreSQL UUID. Better Auth otherwise replaces a
+    // missing/provided id with its own non-UUID string before Drizzle inserts.
+    forceAllowId: true,
     data: {
+      id: randomUUID(),
       actorUserId: entry.actorUserId,
       action: entry.action,
       targetUserId: entry.targetUserId ?? null,
