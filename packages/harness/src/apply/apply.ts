@@ -241,21 +241,25 @@ function applyMerge(repoRoot: string, action: ProjectionAction): boolean {
  *
  * A sweep candidate must be BOTH a real symlink AND carry the
  * `<pkg>__<skill>` marker — engine projections are always symlinks, so a
- * hand-authored *directory* (even one named `my__helper/`, which the authored
- * scan already skips) is never a candidate and is never removed. Among the
- * managed symlinks, any whose target is no longer in the current plan belongs to
- * an uninstalled plugin and is removed. This preserves the engine's guarantee
- * that it never destroys hand-authored content.
+ * hand-authored *directory* (even one named `my__helper/`) is never a candidate
+ * and is never removed. Among the symlinks, any whose target is no longer in the
+ * current plan belongs to an uninstalled plugin and is removed. This preserves
+ * the engine's guarantee that it never destroys hand-authored content.
+ *
+ * The keep-set is every `symlink` target in the plan, of ANY provenance — not
+ * just the installed ones. A person's own skill may be NAMED with a `__`, and it
+ * then projects as an authored symlink at a path that looks managed; keeping
+ * only installed targets meant one `applyPlan` created that link and deleted it
+ * again on its way out (DOR-1844). What the sweep may TOUCH is still the narrow
+ * `__`-plus-symlink test; only what it KEEPS is wide.
  *
  * @param repoRoot - absolute path to the repository root.
- * @param plan - the current projection plan (its installed targets are kept).
+ * @param plan - the current projection plan (every symlink target is kept).
  * @returns the repo-relative paths swept.
  */
 export function sweepInstalledOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
   const managed = new Set(
-    plan.actions
-      .filter((a) => a.provenance === 'installed' && a.kind === 'symlink' && a.target)
-      .map((a) => a.target as string)
+    plan.actions.filter((a) => a.kind === 'symlink' && a.target).map((a) => a.target as string)
   );
 
   const swept: string[] = [];

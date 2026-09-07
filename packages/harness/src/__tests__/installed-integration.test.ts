@@ -372,6 +372,44 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     expect(project(repo, { dorkHome }).warnings.filter((w) => w.artifact === 'hook')).toEqual([]);
   });
 
+  it('keeps an AUTHORED skill link whose name contains `__`, in the same apply that made it', () => {
+    // The sweep may only TOUCH a `__`-named symlink — but what it KEEPS used to
+    // be the installed-plugin links alone. An authored skill whose own name
+    // contains `__` projects as an authored symlink at exactly such a path, so
+    // one `applyPlan(..., { sweepOrphans: true })` created the link and then
+    // deleted it again on the way out (found by DOR-1844, which makes the
+    // scanner see those directories in the first place).
+    repo = mkdtempSync(join(tmpdir(), 'harness-authored-ns-'));
+    const source = join(repo, '.agents', 'skills', 'my__helper');
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, 'SKILL.md'), '# my__helper\n');
+
+    const plan: ProjectionPlan = {
+      harnesses: ['claude-code'],
+      actions: [
+        {
+          kind: 'symlink',
+          artifact: 'skill',
+          harness: 'claude-code',
+          provenance: 'authored',
+          name: 'my__helper',
+          source: '.agents/skills/my__helper',
+          target: '.claude/skills/my__helper',
+        },
+      ],
+      drops: [],
+      warnings: [],
+    };
+
+    const { applied, swept } = applyPlan(repo, plan, { sweepOrphans: true });
+
+    expect(applied).toHaveLength(1);
+    expect(swept).toEqual([]);
+    const link = join(repo, '.claude', 'skills', 'my__helper');
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(realpathSync(link)).toBe(realpathSync(source));
+  });
+
   it('never sweeps a hand-authored `__` directory — only managed symlinks', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inst-int-'));
     const skillsDir = join(repo, '.agents', 'skills');
