@@ -25,4 +25,5 @@ export * from './apply/apply.js';
 export { sweepGeneratedOrphans } from './apply/generated-targets.js';
 export * from './report/drop-list.js';
 export * from './vendor-facts/index.js';
+export * from './vendor-facts/coverage.js';
 export * from './engine.js';
