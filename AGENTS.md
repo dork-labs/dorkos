@@ -196,4 +196,5 @@ Also on GitHub Actions: `fragment-present` (changelog), `scripts-test`, and CLI 
 - **Identifiers**: new ADRs and specs use timestamp ids `YYMMDD-HHMMSS` from `.claude/scripts/id.ts` (coordination-free; ADR-0312). Legacy 4-digit numbers are frozen and sort first. There is no `nextNumber`.
 - **ADRs**: `decisions/<id>-<slug>.md` + `manifest.json`. `/adr:create`, `/adr:from-spec` (applies the significance rubric at extraction — no draft state), `/adr:review`, `/adr:list`.
 - **Specs**: `specs/<slug>/` with `manifest.json` (`01-ideation.md`, `02-specification.md`, optional `03-tasks.json`). **Plans**: `plans/` at repo root.
+- **Audits**: one committed charter per domain in `audits/<domain>.md` (shared preamble in `audits/README.md`), with run logs and per-lens diff stamps under `audits/runs/<domain>/`; the UI domain is driven by `/ui-audit:init|run|execute|pulse` and the `auditing-ui` skill.
 - **Changelog**: per-change fragments in `changelog/unreleased/` (`<id>-<slug>.md`, timestamp-id + slug), compiled into `CHANGELOG.md` at release; never edit `CHANGELOG.md` directly (ADR 260707-231641, `changelog/README.md`).
