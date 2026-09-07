@@ -37,17 +37,36 @@ function makeRoom(overrides: Partial<RoomSummary> = {}): RoomSummary {
     archived: false,
     ambientMaxEntries: 30,
     createdAt: '2026-08-01T10:00:00.000Z',
-    lastActivityAt: ago(2 * HOUR),
+    // A frozen literal, not a clock read, following `palette-ranking-wired`'s
+    // precedent: nothing in this file ranks one room against another, so the
+    // only thing a live `Date.now()` could contribute here is the kind of
+    // microsecond tie DOR-1502 turned out to be. Both rooms share it, so they
+    // tie by construction and the key tiebreak decides — deterministically.
+    lastActivityAt: '2026-08-01T12:00:00.000Z',
     unreadCount: 0,
     participants: null,
     ...overrides,
   };
 }
 
-function makeSession(overrides: Partial<Session> & { id: string; title: string }): Session {
+/**
+ * A conversation for the corpus below.
+ *
+ * `updatedAt` is **required**, not defaulted, and that is the whole point
+ * (DOR-1502). It is the only signal that separates these fixtures in the
+ * ranker, so a shared default made their order a race between two `Date.now()`
+ * reads a few microseconds apart — same millisecond and they tied, different
+ * milliseconds and one overtook the other. Requiring it turns "state your own
+ * freshness" from a convention the next fixture can miss into a type error.
+ */
+function makeSession(
+  overrides: Partial<Session> & { id: string; title: string; updatedAt: string }
+): Session {
   return {
-    createdAt: ago(48 * HOUR),
-    updatedAt: ago(3 * HOUR),
+    // Frozen for the same reason the room's is: `createdAt` reaches no ranking
+    // signal — a conversation's freshness is its `updatedAt` — so a clock read
+    // here buys nothing and can only introduce drift.
+    createdAt: '2026-07-30T10:00:00.000Z',
     permissionMode: 'default',
     runtime: 'claude-code',
     ...overrides,
@@ -70,18 +89,35 @@ const ALL_ROOMS = [shipping, quiet];
  * filtered list — only the chip can. Two conversations belong to Orbit, one to
  * Lander, and one came from `#shipping` while living in Lander's directory, so
  * an agent scope and a room scope select genuinely different rows.
+ *
+ * **Every one states its own `updatedAt`, an hour apart** (DOR-1502) — see
+ * {@link makeSession} for why the factory refuses to guess it. The order here is
+ * newest first, so `probe alpha` leads the Orbit scope as a stated fact rather
+ * than as a coincidence of when this module happened to be evaluated.
  */
-const orbitOne = makeSession({ id: 'sess-orbit-1', title: 'probe alpha', cwd: '/projects/orbit' });
-const orbitTwo = makeSession({ id: 'sess-orbit-2', title: 'probe beta', cwd: '/projects/orbit' });
+const orbitOne = makeSession({
+  id: 'sess-orbit-1',
+  title: 'probe alpha',
+  cwd: '/projects/orbit',
+  updatedAt: ago(1 * HOUR),
+});
+const orbitTwo = makeSession({
+  id: 'sess-orbit-2',
+  title: 'probe beta',
+  cwd: '/projects/orbit',
+  updatedAt: ago(2 * HOUR),
+});
 const landerOne = makeSession({
   id: 'sess-lander-1',
   title: 'probe gamma',
   cwd: '/projects/lander',
+  updatedAt: ago(3 * HOUR),
 });
 const fromShipping = makeSession({
   id: 'sess-shipping-1',
   title: 'probe delta',
   cwd: '/projects/lander',
+  updatedAt: ago(4 * HOUR),
   origin: 'room',
   // Exactly what `applyRoomOriginOverlay` stamps for a channel: the name a
   // person reads, and the id the scope actually joins on (DOR-1157).
@@ -237,12 +273,26 @@ async function openPalette() {
   await waitFor(() => expect(mockTransport.listRecentSessions).toHaveBeenCalled());
 }
 
-/** Highlight a row by the text it shows, the way arrowing onto it would. */
+/**
+ * Highlight a row by the text it shows, the way moving the pointer onto it does.
+ *
+ * **`pointerMove`, and only `pointerMove`** (DOR-1502). cmdk's `Item` selects on
+ * one handler and one handler only — `onPointerMove` — so `mouseMove` and
+ * `mouseEnter`, which this used to fire, moved no highlight at all. They were
+ * silently inert: the wait below passed only when the named row was ALREADY
+ * selected, and the one thing that selects a row nobody has touched is
+ * `useLeadingRowPin`, which pins whichever row the ranker puts FIRST.
+ *
+ * So `highlight('probe alpha')` was really asserting "probe alpha out-ranks
+ * probe beta" — a claim this file never meant to make and the fixtures below no
+ * longer leave to chance. A real pointer event makes the helper do what its name
+ * says for any row at any rank, and it also tells the pin a person moved the
+ * highlight, so the pin stops pulling it back to the leading row.
+ */
 async function highlight(text: string) {
   await waitFor(() => expect(rowTexts().some((row) => row.includes(text))).toBe(true));
   const row = screen.getAllByRole('option').find((el) => (el.textContent ?? '').includes(text));
-  fireEvent.mouseMove(row as Element);
-  fireEvent.mouseEnter(row as Element);
+  fireEvent.pointerMove(row as Element);
   await waitFor(() => expect((row as Element).getAttribute('data-selected')).toBe('true'));
 }
 
@@ -418,20 +468,28 @@ describe('two chips at once are rejected, by construction', () => {
     // display name for an agent — so this says "no agent and no channel row"
     // in the one place those three are distinguishable.
     //
-    // Wrapped in its own `waitFor` rather than read once: this flaked under CI
-    // load (DOR-1502), and the row-text wait above only proves a session row
-    // has arrived, not that the list is done changing — an agent/channel row
-    // could still be on screen at that instant. Asserting the exact set the
-    // Orbit scope admits, not just "nothing foreign", so a regression that
-    // drops a real row is caught here too.
-    await waitFor(() => {
-      const values = screen.getAllByRole('option').map((el) => el.getAttribute('data-value') ?? '');
-      expect(new Set(values)).toEqual(new Set([orbitOne.id, orbitTwo.id]));
-    });
+    // Read once, not polled. This was wrapped in a `waitFor` when DOR-1502 was
+    // first read as "the list is still settling"; the flake was diagnosed since
+    // and it was never here — it was `highlight` below, firing an event cmdk
+    // does not listen to. A poll is the wrong shape for this claim anyway: a
+    // chip is up, and under a chip the corpus admits conversations and nothing
+    // else, so the instant a session row is on screen no agent or channel row
+    // can be beside it. There is nothing left to wait for.
+    //
+    // Asserting the exact set the Orbit scope admits, not just "nothing
+    // foreign", so a regression that drops a real row is caught here too.
+    const values = screen.getAllByRole('option').map((el) => el.getAttribute('data-value') ?? '');
+    expect(new Set(values)).toEqual(new Set([orbitOne.id, orbitTwo.id]));
 
     // The footer agrees, which is what the comment used to promise and never
     // checked: with nothing scopable highlighted, Tab is not offered.
-    await highlight('probe alpha');
+    //
+    // `probe beta`, deliberately, and not `probe alpha` (DOR-1502). Alpha is
+    // the freshest row in this scope, so the leading-row pin has it selected
+    // already and `highlight` could go back to firing events cmdk ignores
+    // without a single test noticing. Beta is the row nothing pre-selects, so
+    // reaching it is proof the helper moved the highlight itself.
+    await highlight('probe beta');
     expect(screen.queryByText('Search inside')).toBeNull();
 
     // And pressing it anyway adds nothing.

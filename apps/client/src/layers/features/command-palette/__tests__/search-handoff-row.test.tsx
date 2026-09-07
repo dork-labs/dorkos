@@ -255,8 +255,11 @@ describe('the message-search hand-off row', () => {
     const agentRow = screen
       .getAllByRole('option')
       .find((el) => (el.textContent ?? '').includes('Dashboards')) as HTMLElement;
-    fireEvent.mouseMove(agentRow);
-    fireEvent.mouseEnter(agentRow);
+    // `pointerMove` is the one event that moves a cmdk highlight — its `Item`
+    // has no mouse handler at all, so the `mouseMove`/`mouseEnter` pair this
+    // used to fire selected nothing and the wait below passed only while
+    // `useLeadingRowPin` happened to have this row on top anyway (DOR-1502).
+    fireEvent.pointerMove(agentRow);
     await waitFor(() => expect(agentRow.getAttribute('data-selected')).toBe('true'));
     fireEvent.keyDown(searchInput(), { key: 'Tab', bubbles: true });
     await screen.findByTestId('palette-scope-chip');
