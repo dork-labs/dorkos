@@ -1476,6 +1476,11 @@ describe('TaskSchedulerService', () => {
     it('reads a cron the scheduler has never registered (DOR-1394)', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
 
+      // Read before the call, not at assertion time (DOR-1716): the preview is
+      // in the future OF THE CALL that produced it, and that is a relation the
+      // clock cannot step over. Against a later reading it is a race — a run
+      // this test asks for at 02:59:59.999 is due the millisecond after.
+      const before = Date.now();
       const runs = service.previewNextRuns('0 3 * * *', 'UTC', 3);
 
       expect(runs).toHaveLength(3);
@@ -1483,7 +1488,7 @@ describe('TaskSchedulerService', () => {
       for (const run of runs) expect(run).toMatch(/T03:00:00\.000Z$/);
       const gaps = runs.slice(1).map((r, i) => Date.parse(r) - Date.parse(runs[i]!));
       expect(gaps).toEqual([86_400_000, 86_400_000]);
-      expect(Date.parse(runs[0]!)).toBeGreaterThan(Date.now());
+      expect(Date.parse(runs[0]!)).toBeGreaterThan(before);
     });
 
     it('honours the timezone, so the same expression means different instants', () => {
