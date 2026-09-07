@@ -113,6 +113,18 @@ const sessionOwners = new Map<string, string>();
  */
 const runtimesAskedFor: string[] = [];
 
+/**
+ * Which runtime each stop was actually DELIVERED to, in order.
+ *
+ * Recorded beside `interruptQuery` rather than folded into its arguments,
+ * because that spy's call list is asserted verbatim by the DOR-1424 cases and a
+ * second argument would rewrite all of them. It is the only way to tell a stop
+ * that reached the runtime running the turn from one that reached a runtime
+ * holding no such turn — which is the whole of DOR-1721, and is invisible to a
+ * suite where every `get` hands back the same behaviour.
+ */
+const interruptsDeliveredTo: string[] = [];
+
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     persistSessionRuntime: (...args: unknown[]) => persistSessionRuntime(...args),
@@ -141,7 +153,10 @@ vi.mock('../../core/runtime-registry.js', () => ({
         acquireLock: () => true,
         releaseLock: () => undefined,
         sendMessage: () => undefined,
-        interruptQuery: (sessionId: string) => interruptQuery(sessionId),
+        interruptQuery: (sessionId: string) => {
+          interruptsDeliveredTo.push(type);
+          return interruptQuery(sessionId);
+        },
         getInternalSessionId: (sessionId: string) => internalSessionId(sessionId),
         ...(roomToolDirectories === null
           ? {}
@@ -405,6 +420,7 @@ describe('createSessionRoomTurnRunner', () => {
     roomToolsAskedFor = [];
     sessionOwners.clear();
     runtimesAskedFor.length = 0;
+    interruptsDeliveredTo.length = 0;
     agentManifest = null;
     registeredRuntimes = ['claude-code', 'codex', 'opencode', 'test-mode'];
   });
@@ -515,6 +531,123 @@ describe('createSessionRoomTurnRunner', () => {
 
       expect(runtimesAskedFor).toEqual(['codex']);
       expect(interruptQuery).toHaveBeenCalledWith('room-session-on-codex');
+    });
+
+    /**
+     * A first turn, opened and left running, with the levers to drive it.
+     *
+     * `sessionOwners` is deliberately left empty: a first turn is a session
+     * nothing has bound yet, which is the entire window DOR-1721 is about — the
+     * binding row is written after acceptance, and for claude-code under a
+     * canonical id the halt is not even asking about.
+     *
+     * @param runner - The runner under test.
+     * @param sessionId - The session the room bound for this turn.
+     */
+    function firstTurnInFlight(
+      runner: ReturnType<typeof createSessionRoomTurnRunner>,
+      sessionId: string
+    ): { answered: Promise<unknown>; produce: () => void; close: () => void } {
+      let opened: TriggerCall | undefined;
+      turnBehaviour = (opts) => {
+        opened = opts;
+        openTurn(opts);
+        return { accepted: true, canonicalId: opts.sessionId };
+      };
+      const answered = runner.run(request({ sessionId }));
+      return {
+        answered,
+        produce: () => opened?.projector.ingest({ type: 'text_delta', text: 'the essay' }),
+        close: () => opened?.projector.ingest({ type: 'turn_end' }),
+      };
+    }
+
+    it('keeps a halt on the runtime running a FIRST turn, though the manifest changed under it', async () => {
+      // **DOR-1721, traced out of DOR-764's review (PR #1476) and made
+      // deterministic here.** A first turn has no binding to read — the row is
+      // written after acceptance, and for claude-code under a canonical id a
+      // mid-turn halt is not even asking about — so `interrupt` fell through to
+      // the agent's manifest for the whole length of that turn. Edit
+      // `.dork/agent.json` while turn 1 is running and the stop was delivered to
+      // a runtime holding no such turn: `interruptQuery` answered `not-running`,
+      // nothing stopped, and the turn nobody wanted ran to completion and was
+      // billed.
+      //
+      // `interruptsDeliveredTo` is the assertion that can see it. Every runtime
+      // this suite hands back behaves identically, so a receipt cannot tell them
+      // apart — only which object was reached can.
+      agentManifest = { runtime: 'claude-code' };
+      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
+      const turn = firstTurnInFlight(runner, 'sess-first-turn');
+      await settle();
+
+      // The edit lands INSIDE turn 1 — the window between the runner resolving
+      // its runtime and the binding that would have answered for it.
+      agentManifest = { runtime: 'codex' };
+      await runner.interrupt({ sessionId: 'sess-first-turn', agentPath: '/repo/ana' });
+
+      expect(
+        interruptsDeliveredTo,
+        'the halt was delivered to the runtime the manifest now names instead of the one ' +
+          'actually holding the turn, so it stopped nothing at all'
+      ).toEqual(['claude-code']);
+      // And it was not RE-DERIVED to get there: the runner captured the runtime
+      // when it committed to it, so the only `get` in this test is the turn's
+      // own. A second entry here is the manifest being consulted again.
+      expect(runtimesAskedFor).toEqual(['claude-code']);
+
+      turn.close();
+      await turn.answered;
+    });
+
+    it("re-aims DOR-1424's remembered stop at the turn's runtime, not the manifest's", async () => {
+      // The second half of the same defect, and the more expensive one. A stop
+      // that lands on nothing is remembered and re-aimed at the first thing the
+      // turn produces (DOR-1424) — so a misaimed stop is memoized and fired at
+      // the wrong runtime a SECOND time, and the boot-window fix silently buys
+      // nothing for exactly the turns that need it most.
+      agentManifest = { runtime: 'claude-code' };
+      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
+      const turn = firstTurnInFlight(runner, 'sess-boot-flip');
+      await settle();
+
+      agentManifest = { runtime: 'codex' };
+      expect(
+        (await runner.interrupt({ sessionId: 'sess-boot-flip', agentPath: '/repo/ana' })).outcome
+      ).toBe('not-running');
+
+      // The process finishes booting and the turn starts producing — where the
+      // remembered stop is delivered.
+      turn.produce();
+      await settle();
+
+      expect(
+        interruptsDeliveredTo,
+        'the remembered stop was re-aimed at the manifest’s runtime rather than the one ' +
+          'running the turn, so the turn ran to completion anyway'
+      ).toEqual(['claude-code', 'claude-code']);
+      expect(interruptQuery.mock.calls).toEqual([['sess-boot-flip'], ['sess-boot-flip']]);
+
+      turn.close();
+      await turn.answered;
+    });
+
+    it('lets go of the capture when the turn ends, so the next halt asks again', async () => {
+      // The lifetime, stated from the side that would rot: the capture is the
+      // right answer only WHILE the turn is running. Held past the turn, a
+      // deliberate runtime change — remove and re-add the agent, which drops the
+      // binding — would be answered from a dead turn's memory forever.
+      agentManifest = { runtime: 'claude-code' };
+      const runner = createSessionRoomTurnRunner({ waitMs: () => 200, ceilingMs: () => 200 });
+      const turn = firstTurnInFlight(runner, 'sess-let-go');
+      await settle();
+      turn.close();
+      await turn.answered;
+
+      agentManifest = { runtime: 'codex' };
+      await runner.interrupt({ sessionId: 'sess-let-go', agentPath: '/repo/ana' });
+
+      expect(interruptsDeliveredTo).toEqual(['codex']);
     });
   });
 
