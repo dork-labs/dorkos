@@ -693,14 +693,23 @@ describe('RuntimeRegistry', () => {
       });
 
       it('reports when the binding was written, so a caller can tell it from a fresh one', async () => {
+        // The window is closed around the write and nothing else (DOR-1716):
+        // `after` is read the instant `persistSessionRuntime` returns, not at
+        // assertion time, so what is asserted is a RELATION between the row and
+        // the call that made it rather than a race with however long the rest of
+        // this test took. The bounds are exact on purpose — the ±1ms slack that
+        // used to sit on both of them accepted a `createdAt` stamped by a clock
+        // that was not the one the row was written on, which is the one defect
+        // this assertion exists to catch.
         const before = Date.now();
         await registry.persistSessionRuntime('timed', 'test-mode');
+        const after = Date.now();
 
         const boundAt = registry.getSessionBindings(['timed']).get('timed')?.boundAt;
 
         expect(boundAt).not.toBeNull();
-        expect(boundAt).toBeGreaterThanOrEqual(before - 1);
-        expect(boundAt).toBeLessThanOrEqual(Date.now() + 1);
+        expect(boundAt).toBeGreaterThanOrEqual(before);
+        expect(boundAt).toBeLessThanOrEqual(after);
       });
 
       it('reports an unreadable timestamp as unknown rather than as a number', async () => {

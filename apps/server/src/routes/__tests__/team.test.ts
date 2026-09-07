@@ -291,7 +291,13 @@ describe('GET /api/team', () => {
       const res = await request(fixtureTarget.mount(app())).get('/api/team');
 
       const self = res.body.members.find((m: { isSelf: boolean }) => m.isSelf);
-      expect(Date.parse(self.person.lastSeenAt)).toBeGreaterThanOrEqual(before - 1000);
+      // No slack (DOR-1716). The stamp is written while this request is being
+      // served, so `before` is a bound it cannot precede; a second of tolerance
+      // only bought the assertion the ability to accept a stamp left over from
+      // something that ran BEFORE the request — which is the one thing it is
+      // here to rule out. Its service-level sibling in
+      // `aggregate-team.test.ts` already writes it this way.
+      expect(Date.parse(self.person.lastSeenAt)).toBeGreaterThanOrEqual(before);
       const priya = res.body.members.find(
         (m: { displayName: string }) => m.displayName === 'Priya'
       );

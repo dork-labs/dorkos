@@ -92,6 +92,11 @@ function recordedAt(kind: 'session' | 'agent' | 'room', id: string): number | nu
   return iso === undefined ? null : Date.parse(iso);
 }
 
+/** The record under one key exactly as stored, before anything parses it. */
+function recordedRaw(kind: 'session' | 'agent' | 'room', id: string): string | undefined {
+  return useInteractionStore.getState().opened[interactionKey(kind, id)];
+}
+
 /** Apply the server's retire announce — the canonical id supersedes a request UUID. */
 function announceRekey(retired: string, canonical: string): void {
   useSessionListStore.getState().applyListEvent({
@@ -167,21 +172,34 @@ describe('a send records the operator’s interaction', () => {
       wrapper: wrapper(createMockTransport({ postMessage })),
     });
     await waitFor(() => expect(result.current.status).toBe('idle'));
-    const before = Date.now();
 
     act(() => result.current.setInput('Hello'));
     await waitFor(() => expect(result.current.input).toBe('Hello'));
-    await act(async () => {
-      await result.current.handleSubmit();
-    });
+
+    // The send's clock is the test's, for the length of the send and no longer
+    // (DOR-1716). `recordOpened` takes the instant as an argument precisely so
+    // it can be someone else's, but this call site — `use-session-submit` —
+    // deliberately does not pass one, so freezing `Date.now` across the submit
+    // is how the test owns the clock without a seam production has no use for.
+    // Real timers stay real: `waitFor` above and the awaited transport below
+    // both need them, which rules out `vi.useFakeTimers` on this path.
+    const SENT_AT = Date.UTC(2026, 8, 3, 10, 0, 0);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(SENT_AT);
+    try {
+      await act(async () => {
+        await result.current.handleSubmit();
+      });
+    } finally {
+      clock.mockRestore();
+    }
 
     // Epoch milliseconds would satisfy the `string` type, parse to NaN, and be
-    // read as "never interacted with" — silently, on both sides. Asserting the
-    // parsed instant is what makes the unit part of this test.
-    const at = recordedAt('session', 's1');
-    expect(at).not.toBeNull();
-    expect(at as number).toBeGreaterThanOrEqual(before);
-    expect(at as number).toBeLessThanOrEqual(Date.now());
+    // read as "never interacted with" — silently, on both sides. So the stored
+    // string is asserted whole, in the unit it has to be in: that pins the
+    // format AND the instant at once, where a range could only ever say the
+    // value was somewhere between two readings of the runner's own clock.
+    expect(recordedRaw('session', 's1')).toBe('2026-09-03T10:00:00.000Z');
+    expect(recordedAt('session', 's1')).toBe(SENT_AT);
   });
 
   it('records even when the trigger is refused — the person still wrote it', async () => {
