@@ -42,7 +42,7 @@ const BROKEN_SHOWCASE = '[data-showcase-error]';
  * which React reports twice on every load. Only the playground reaches that
  * variant today (production renders `selectable`), so it is not a user-facing
  * defect and does not belong in a coverage PR; it is finding F2 in
- * `plans/ui-ux-audit-202609/01-findings.md`.
+ * `plans/ui-ux-audit-202609/notes/260907-143000-dor-1816-browser-pass-and-deferred-coverage.md`.
  *
  * Matched on the message shell rather than the whole thing: React interpolates
  * the tag names and appends a component stack, so the tail is not stable.

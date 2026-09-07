@@ -1,11 +1,11 @@
 # UI/UX Audit — Execution Plan
 
-Orchestrator: session `ui-ux-component-review-sep` (2026-09-03). Source: [`01-findings.md`](01-findings.md) — 167 findings, 20 batches.
+Orchestrator: session `ui-ux-component-review-sep` (2026-09-03). Source: [`01-findings.md`](01-findings.md) — 167 findings, 20 batches. Batch N's findings live in their own file, [`batches/NN-<slug>.md`](batches/); the index says [where new material goes](01-findings.md#where-new-material-goes).
 
 ## Method (per batch)
 
 1. **Worktree** from `origin/main` at `/Users/doriancollier/Keep/dork-os/worktrees/uiux-bNN` (branch `uiux/bNN-<slug>`), `pnpm install` + `pnpm --filter @dorkos/shared build` first.
-2. **Implement** — Sonnet/Opus agent, batch findings verbatim from 01-findings.md. Playground updated alongside any changed shared primitive (maintaining-dev-playground skill).
+2. **Implement** — Sonnet/Opus agent, batch findings verbatim from `batches/NN-<slug>.md`. Playground updated alongside any changed shared primitive (maintaining-dev-playground skill). Record what happened to each finding in that same file, under the finding — never in the index.
 3. **Verify** — targeted vitest for every touched package + every test rendering a changed component; typecheck + lint per package; **real-browser check** of changed surfaces: worktree client on its own port (`VITE_PORT=63NN DORKOS_PORT=6242 pnpm dev` in `apps/client`) proxying the live server, screenshotted headless via a standalone Playwright script (never the shared MCP browser — contention).
 4. **Adversarial review** — separate Opus agent, REVIEW.md rubric, on the branch BEFORE the PR opens. Brief names the failure modes (the six defect shapes). Implementer fixes; reviewer re-verifies.
 5. **PR** — labels per batch below; bare `gh pr merge --auto` (never `--squash` under the queue). Changelog fragment for user-visible changes (`changelog/unreleased/`); `skip-changelog` only for docs/dev-only batches.
