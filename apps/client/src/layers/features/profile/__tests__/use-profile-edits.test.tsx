@@ -20,7 +20,9 @@ import {
   useUploadProfileAvatar,
   useDeleteProfileAvatar,
   useSetAuthorHandle,
+  useSetIdentityLinkedToMe,
 } from '../model/use-profile-edits';
+import { identityLinkErrorMessage } from '../model/profile-errors';
 
 /** A QueryClient plus every key it was asked to invalidate, in call order. */
 function recordingWrapper() {
@@ -120,5 +122,50 @@ describe('the operator profile writes', () => {
     );
     expect(invalidated).toContainEqual([...TEAM_ROSTER_KEY]);
     expect(invalidated).toContainEqual(roomKeys.details());
+  });
+
+  it('invalidates the roster when a platform identity is claimed (DOR-1778)', async () => {
+    // The claim is DRAWN on the roster row it was made from, so a row still
+    // offering "This is me" after it landed is a control that looks broken.
+    const transport = createMockTransport();
+    const { queryClient, invalidated } = recordingWrapper();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+
+    const { result } = renderHook(() => useSetIdentityLinkedToMe(), { wrapper });
+
+    await act(async () => {
+      result.current.mutate({ memberId: 'person-miguel', linked: true });
+    });
+
+    await waitFor(() =>
+      expect(transport.setIdentityLinkedToMe).toHaveBeenCalledWith('person-miguel', true)
+    );
+    expect(invalidated).toContainEqual([...TEAM_ROSTER_KEY]);
+  });
+});
+
+describe('why a claim was refused (DOR-1778)', () => {
+  it('names the two refusals a person can do something about', () => {
+    expect(identityLinkErrorMessage({ code: 'IDENTITY_NOT_EXTERNAL' }, true)).toContain(
+      'another chat platform'
+    );
+    expect(identityLinkErrorMessage({ code: 'OPERATOR_ONLY' }, true)).toContain(
+      'owns this install'
+    );
+  });
+
+  it('passes an unrecognised refusal’s own sentence through', () => {
+    expect(identityLinkErrorMessage(new Error('the server went away'), true)).toBe(
+      'the server went away'
+    );
+  });
+
+  it('falls back per direction, so the sentence matches what was attempted', () => {
+    expect(identityLinkErrorMessage({}, true)).toContain('could not be linked');
+    expect(identityLinkErrorMessage({}, false)).toContain('could not be removed');
   });
 });

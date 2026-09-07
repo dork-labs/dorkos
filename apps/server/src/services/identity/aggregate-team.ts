@@ -469,6 +469,18 @@ function personRow(
       // operator already or somebody the operator is not. Absent means "the
       // question does not apply", which is what the card reads to decide whether
       // to offer the affordance at all.
+      //
+      // **It rides an ungated read, and that is a decision rather than an
+      // oversight.** `GET /api/team` has no caller gate, so an agent that can
+      // reach the API can see which platform identity the operator has claimed.
+      // Weighed and accepted: the same payload already hands out `isSelf`, every
+      // person's display name and handle, and each bridged person's platform, so
+      // an agent that wanted to guess which Telegram account is the operator's
+      // could already do it from the roster it can read. One more boolean beside
+      // those is a small increment, and the alternative — a second, gated read
+      // purely for this flag — would put the roster's own state in two places
+      // and give the card a reason to fetch twice. What must never ride this
+      // read is the WRITE: only the owner may claim (`routes/profile.ts`).
       ...(isExternalNaturalKey(record.naturalKey)
         ? { linkedToYou: isOwnerVoiceRecord(record, ownerUserId) }
         : {}),

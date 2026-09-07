@@ -37,6 +37,14 @@ export interface TeamRosterGridProps {
   onOpenProfile?: (memberId: string) => void;
   /** Claim or release an account on another platform as the reader's own (DOR-1778). */
   onSetLinkedToMe?: (memberId: string, linked: boolean) => void;
+  /**
+   * Which row's claim is in flight, and which one was refused with what.
+   *
+   * Carried as ids rather than as booleans because one mutation serves the
+   * whole grid: the state belongs to a row, and only the caller holding the
+   * mutation knows which row it is.
+   */
+  identityLinkState?: { pendingId?: string; errorId?: string; errorMessage?: string };
   className?: string;
 }
 
@@ -156,6 +164,7 @@ export function TeamRosterGrid({
   onSelectOwner,
   onOpenProfile,
   onSetLinkedToMe,
+  identityLinkState,
   className,
 }: TeamRosterGridProps) {
   // One boolean, reported as `data-layout-animated` and passed to every card,
@@ -191,6 +200,10 @@ export function TeamRosterGrid({
         onSelectOwner={withAttribution ? onSelectOwner : undefined}
         onOpenProfile={onOpenProfile}
         onSetLinkedToMe={onSetLinkedToMe}
+        linkPending={identityLinkState?.pendingId === member.id}
+        {...(identityLinkState?.errorId === member.id && identityLinkState.errorMessage
+          ? { linkError: identityLinkState.errorMessage }
+          : {})}
         layoutAnimated={animated}
       />
     );

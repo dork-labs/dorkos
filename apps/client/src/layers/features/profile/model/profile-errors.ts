@@ -91,3 +91,33 @@ export function nameErrorMessage(error: unknown): string {
   }
   return messageOf(error) ?? 'Your name could not be saved. Try again.';
 }
+
+/**
+ * What went wrong claiming — or releasing — an account on another platform
+ * (DOR-1778).
+ *
+ * Two refusals worth their own sentence, because they are two different things
+ * to do about it. `IDENTITY_NOT_EXTERNAL` means the row cannot be claimed at
+ * all — it is somebody on this machine, or an agent — and no retry changes
+ * that; `OPERATOR_ONLY` means this is not the caller's install to say so.
+ * Everything else, including a server that never answered, falls back to the
+ * one sentence a person can act on.
+ *
+ * @param error - Whatever the transport threw.
+ * @param linking - Which direction was refused, so the fallback names it.
+ */
+export function identityLinkErrorMessage(error: unknown, linking: boolean): string {
+  switch (codeOf(error)) {
+    case 'IDENTITY_NOT_EXTERNAL':
+      return 'Only an account on another chat platform can be linked to you.';
+    case 'OPERATOR_ONLY':
+      return 'Only the person who owns this install can say which accounts are theirs.';
+    default:
+      return (
+        messageOf(error) ??
+        (linking
+          ? 'That account could not be linked to you. Try again.'
+          : 'That link could not be removed. Try again.')
+      );
+  }
+}

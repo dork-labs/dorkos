@@ -497,6 +497,53 @@ describe('a mention of the operator', () => {
     expect(announced('mention.received')).toHaveLength(1);
   });
 
+  it('reaches the operator when a collaborator names the phone they claimed', async () => {
+    // The ADDITION half of the same predicate, and the half the two cases above
+    // cannot reach: they exit at the author gate before any mention is weighed.
+    // Here the author is somebody else, so the scan actually runs — and "this
+    // account is me" has to mean an `@` naming it names ME. Without the claim
+    // consulted on the mention side, an `@` at the operator's own phone handle
+    // reaches nobody at all: the handle is the phone's, not the local row's.
+    const harness = open();
+    const group = harness.service.createBridgedRoom({
+      ...bridgeDm(harness),
+      chatId: '556',
+      chatType: 'group',
+      channelType: 'group',
+      title: 'launch crew',
+    });
+    // The operator says something in the group first, which is what puts their
+    // phone on that roster — a mention resolves against the room's members, so
+    // an identity that has never spoken there is not addressable there. It also
+    // exercises the suppression half in passing: this post raises nothing.
+    const phone = harness.service.postExternal(group.id, {
+      identity: OPERATORS_PHONE,
+      text: 'morning all',
+    }).author;
+    harness.authors.linkToOwner(phone.id, null);
+    await flush();
+    expect(stored()).toHaveLength(0);
+    // Read back rather than spelled: the qualified handle an external author is
+    // minted with is the handle grammar's to decide, and a literal here would
+    // silently stop naming anybody the day that derivation changed.
+    const phoneHandle = harness.authors.getById(phone.id)?.handle;
+    expect(phoneHandle).toBeTruthy();
+
+    harness.service.postExternal(group.id, {
+      identity: {
+        platformType: 'telegram',
+        instanceId: 'tg-main',
+        platformUserId: '145223',
+        displayName: 'Miguel',
+      },
+      text: `@${phoneHandle} can you take a look`,
+    });
+    await flush();
+
+    expect(announced('mention.received')).toHaveLength(1);
+    expect(stored()[0]).toMatchObject({ kind: 'mention.received', roomId: group.id });
+  });
+
   it('collapses into dm.received when the collaborator names the operator inside the DM', async () => {
     // The DM collapse applies to a human author exactly as it does to an
     // agent's: one message, one banner. The operator still hears it — as

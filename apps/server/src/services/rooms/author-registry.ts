@@ -692,12 +692,17 @@ export class AuthorRegistry {
         // every five minutes, so re-deriving here would overwrite the address
         // with whatever the manifest currently says.
         handle: existing.handle,
-        // NOT refreshed either, and for a reason with teeth: `postExternal`
-        // resolves its author on EVERY inbound message, so a resolve that
-        // dropped this would revoke the operator's own claim on their phone the
-        // first time they used it (DOR-1778). Nothing in `refreshed` writes the
-        // column, so the row keeps it; this line is what keeps the RECORD
-        // handed back agreeing with the row.
+        // NOT refreshed either (DOR-1778) — and be exact about what this line
+        // does, because the tempting version of the sentence is wrong. The
+        // stored claim is never at risk: nothing in `refreshed` names this
+        // column, so the row keeps it whatever happens here, and every
+        // predicate that re-reads the row by id would go on answering
+        // correctly. What this line buys is that the RECORD handed back agrees
+        // with the row it came from. `postExternal` resolves its author on
+        // every inbound message and hands that record on, so without it a
+        // claimed identity would be returned as unclaimed to any caller that
+        // trusts the record instead of re-querying — the class of bug where two
+        // reads of one author disagree.
         linkedOwnerKey: existing.linkedOwnerKey,
         ...refreshed,
         mintedForManifestId,
@@ -1192,29 +1197,19 @@ export class AuthorRegistry {
       return this.resolve({ kind: 'human', naturalKey, displayName: LOCAL_HUMAN_DISPLAY_NAME });
     }
 
-    this.db.update(authors).set({ naturalKey }).where(eq(authors.id, sentinel.id)).run();
-    this.carryOwnerLinks(naturalKey);
+    // One transaction, because the two writes are one statement about identity:
+    // the owner's row moves to the account key and every claim NAMING that key
+    // moves with it. Half of that — the row rebound, the claims still pointing at
+    // `'local'` — is an install where the operator silently stops being
+    // recognised on their own phone, with nothing to say why (DOR-1778 review).
+    this.db.transaction((tx) => {
+      tx.update(authors).set({ naturalKey }).where(eq(authors.id, sentinel.id)).run();
+      tx.update(authors)
+        .set({ linkedOwnerKey: naturalKey })
+        .where(eq(authors.linkedOwnerKey, LOCAL_HUMAN_NATURAL_KEY))
+        .run();
+    });
     return { ...toRecord(sentinel), naturalKey };
-  }
-
-  /**
-   * Re-point every platform identity the operator claimed before this install
-   * had an account at the account key it has now (DOR-1778).
-   *
-   * The same move {@link AuthorRegistry.bindOwner} makes on the owner's own row,
-   * applied to the rows that NAME it. The sentinel is not replaced, it is
-   * rebound in place — the person is the same person — so a link made under
-   * `'local'` is still a true statement afterwards, and leaving it would silently
-   * revoke it the day somebody turned login on.
-   *
-   * @param naturalKey - The owner's key now.
-   */
-  private carryOwnerLinks(naturalKey: string): void {
-    this.db
-      .update(authors)
-      .set({ linkedOwnerKey: naturalKey })
-      .where(eq(authors.linkedOwnerKey, LOCAL_HUMAN_NATURAL_KEY))
-      .run();
   }
 
   /**

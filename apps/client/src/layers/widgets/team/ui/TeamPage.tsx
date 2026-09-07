@@ -8,7 +8,7 @@ import {
 } from '@/layers/entities/team';
 import { usePendingRead, useProfileDeepLink } from '@/layers/shared/model';
 import { AgentGhostRows } from '@/layers/features/agents-list';
-import { useSetIdentityLinkedToMe } from '@/layers/features/profile';
+import { identityLinkErrorMessage, useSetIdentityLinkedToMe } from '@/layers/features/profile';
 import {
   TeamRosterGrid,
   TeamRosterSkeleton,
@@ -128,6 +128,23 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
           onSelectOwner={(ownerId) => patchFilters({ owner: ownerId })}
           onOpenProfile={openProfile}
           onSetLinkedToMe={(memberId, linked) => setLinkedToMe.mutate({ memberId, linked })}
+          // Scoped to the row that was pressed by reading the mutation's own
+          // `variables`, which is what one shared mutation can say about which
+          // of many rows it is currently answering for.
+          identityLinkState={{
+            ...(setLinkedToMe.isPending && setLinkedToMe.variables
+              ? { pendingId: setLinkedToMe.variables.memberId }
+              : {}),
+            ...(setLinkedToMe.isError && setLinkedToMe.variables
+              ? {
+                  errorId: setLinkedToMe.variables.memberId,
+                  errorMessage: identityLinkErrorMessage(
+                    setLinkedToMe.error,
+                    setLinkedToMe.variables.linked
+                  ),
+                }
+              : {}),
+          }}
         />
       ) : (
         <p className="text-muted-foreground py-8 text-center text-sm">

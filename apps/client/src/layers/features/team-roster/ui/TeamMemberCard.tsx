@@ -139,6 +139,25 @@ export interface TeamMemberCardProps {
    * no server behind it draws no control it cannot honour.
    */
   onSetLinkedToMe?: (memberId: string, linked: boolean) => void;
+  /**
+   * Whether THIS row's claim is in flight.
+   *
+   * Per row, not per page: one mutation serves the whole roster, so a bare
+   * `isPending` would grey out every card's control because one of them was
+   * pressed. It also closes the double-press race — a second press while the
+   * first is in flight would send the same value twice, and the second answer
+   * would land on a roster the first had already changed.
+   */
+  linkPending?: boolean;
+  /**
+   * Why THIS row's claim was refused, already turned into a sentence, or
+   * `undefined` when nothing went wrong.
+   *
+   * A refusal here is otherwise completely silent: the write answers 204 with
+   * no body, the roster simply does not change, and the button goes back to
+   * saying what it said before — which reads as a control that does nothing.
+   */
+  linkError?: string;
   className?: string;
 }
 
@@ -184,6 +203,8 @@ export function TeamMemberCard({
   onSelectOwner,
   onOpenProfile,
   onSetLinkedToMe,
+  linkPending = false,
+  linkError,
   ownedAgentCount,
   layoutAnimated = false,
   ref,
@@ -377,6 +398,7 @@ export function TeamMemberCard({
             // Same marker, same stand-down: this is an aside, not the card's
             // primary action.
             data-card-aside=""
+            disabled={linkPending}
             onClick={() => onSetLinkedToMe(member.id, !linkedToYou)}
             // The visible words are the verb; the label names who they act on,
             // because "This is me" on its own is a sentence a screen reader
@@ -389,10 +411,23 @@ export function TeamMemberCard({
             // `relative` lifts it above the name button's card-wide overlay,
             // exactly as the attribution below does — without it every press
             // here would open a profile instead.
-            className="text-muted-foreground hover:text-foreground focus-visible:text-foreground focus-ring relative mt-1.5 block w-fit max-w-full truncate rounded text-xs underline-offset-2 transition-[color] duration-(--identity-answer) ease-(--identity-ease-standard) hover:underline focus-visible:underline"
+            className="text-muted-foreground hover:text-foreground focus-visible:text-foreground focus-ring relative mt-1.5 block w-fit max-w-full truncate rounded text-xs underline-offset-2 transition-[color] duration-(--identity-answer) ease-(--identity-ease-standard) hover:underline focus-visible:underline disabled:pointer-events-none disabled:opacity-60"
           >
             {linkedToYou ? 'Not me' : 'This is me'}
           </button>
+        )}
+        {/* `alert`, the tone `ProfileFields` uses for a refusal: it interrupts
+            what the person was doing, where a confirmation would not. There is
+            no "Saved" twin, because success is already drawn — the badge
+            arrives and the verb flips. */}
+        {linkError && (
+          <p
+            role="alert"
+            data-slot="team-member-link-error"
+            className="text-destructive relative mt-1 text-xs"
+          >
+            {linkError}
+          </p>
         )}
         {owner && onSelectOwner && (
           // A row rather than the bare button, so the echo has something to

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server,client,db,shared): tell DorkOS a Telegram account is you (DOR-1778)'
+  - 'test(server,client): pin the claim’s coverage gaps and say why a claim was refused (DOR-1778)'
 ---
 
 ### Added

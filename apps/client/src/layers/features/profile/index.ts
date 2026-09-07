@@ -39,6 +39,9 @@ export { AccountMenuContainer } from './ui/AccountMenuContainer';
 // claim on the platform row it belongs to (DOR-1778). Its siblings stay inside
 // the feature, where the panel that draws them lives.
 export { useSetIdentityLinkedToMe } from './model/use-profile-edits';
+// Its refusal mapping travels with it, for the same reason: the surface that
+// draws the control is the surface that has to say why it was refused.
+export { identityLinkErrorMessage } from './model/profile-errors';
 export { ProfilePanel, type ProfilePanelProps } from './ui/ProfilePanel';
 export { ProfilePanelContainer } from './ui/ProfilePanelContainer';
 // The stack's shape, for callers that build one: the playground, and the two

@@ -613,11 +613,12 @@ describe('external authors in a bridged room', () => {
 
 describe('claiming an external identity as the operator (DOR-1778)', () => {
   let authors: AuthorRegistry;
+  let service: RoomService;
   let human: string;
   let setOwner: ReturnType<typeof createRoomHarness>['setOwner'];
 
   beforeEach(() => {
-    ({ authors, human, setOwner } = createRoomHarness({
+    ({ authors, service, human, setOwner } = createRoomHarness({
       agents: agentLookup,
       runner: scriptedRunner(() => null),
     }));
@@ -645,15 +646,15 @@ describe('claiming an external identity as the operator (DOR-1778)', () => {
     expect(authors.isOwner(miguel.id, null)).toBe(false);
   });
 
-  it('survives the resolve that every inbound message performs', () => {
-    // `postExternal` resolves its author on EVERY message, and a resolve that
-    // dropped the claim would revoke it the first time the operator used the
-    // phone they had just claimed.
+  it('is carried by the resolve that every inbound message performs', () => {
+    // `postExternal` resolves its author on every message and hands that RECORD
+    // on. The stored claim is safe either way — no resolve writes the column —
+    // so this asserts the record's own field against a knowable value rather
+    // than asking a predicate that would re-read the row and pass regardless.
     const miguel = external();
     authors.linkToOwner(miguel.id, null);
 
-    expect(external().linkedOwnerKey).not.toBeNull();
-    expect(authors.isOwnerVoice(miguel.id, null)).toBe(true);
+    expect(external().linkedOwnerKey).toBe('local');
   });
 
   it('follows the operator through the install gaining a login', () => {
@@ -696,6 +697,99 @@ describe('claiming an external identity as the operator (DOR-1778)', () => {
     expect(() => authors.linkToOwner(authors.system().id, null)).toThrow(
       expect.objectContaining({ code: 'IDENTITY_NOT_EXTERNAL' })
     );
+  });
+
+  describe('what a claim does NOT buy — the five authority paths', () => {
+    /**
+     * A claimed phone, seated in a bridged room it has spoken in, plus a
+     * channel of the operator's it has never been near.
+     *
+     * Both are needed: the not-a-member paths have to be asked about a room the
+     * OWNER can see and this identity cannot, and the operator-only paths have
+     * to be asked about a room it IS in — otherwise "refused" would only prove
+     * it is a stranger to that room, which is not the claim under test.
+     */
+    function seated() {
+      const bridged = service.createBridgedRoom({
+        adapterId: 'tg-main',
+        chatId: '555',
+        bindingId: 'binding-ana',
+        chatType: 'group',
+        channelType: 'group',
+        title: 'Ops Team',
+        agentPath: '/agents/ana',
+        operatorAuthorId: human,
+      });
+      const ownersOwn = service.createRoom(
+        {
+          kind: 'channel',
+          slug: 'private-notes',
+          title: '#private-notes',
+          members: [],
+          agentPaths: [],
+        },
+        human
+      );
+      // Said before the phone arrives, so the join floor has something to hide.
+      service.post(ownersOwn.id, { authorId: human, text: 'before anybody else' });
+      service.post(bridged.id, { authorId: human, text: 'kicking off' });
+      const phone = service.postExternal(bridged.id, {
+        identity: {
+          platformType: 'telegram',
+          instanceId: 'tg-main',
+          platformUserId: '900900',
+          displayName: 'Dorian',
+        },
+        text: 'here from my phone',
+      }).author;
+      authors.linkToOwner(phone.id, null);
+      return { bridged: bridged.id, ownersOwn: ownersOwn.id, phone: phone.id };
+    }
+
+    it('does not see every room on the machine (seesEveryRoom)', () => {
+      const { ownersOwn, phone } = seated();
+
+      expect(service.listRooms(phone).map((room) => room.id)).not.toContain(ownersOwn);
+      // …and the owner's own predicate is unaffected, so this is a claim about
+      // the linked row and not about the grant having gone missing.
+      expect(service.listRooms(human).map((room) => room.id)).toContain(ownersOwn);
+    });
+
+    it('cannot open a room it is not in, however the operator reads it (canSee)', () => {
+      const { ownersOwn, phone } = seated();
+
+      expect(service.getRoom(ownersOwn, phone)).toBeNull();
+      expect(service.getRoom(ownersOwn, human)).not.toBeNull();
+    });
+
+    it('cannot rename a room it IS in (requireOperator)', () => {
+      const { bridged, phone } = seated();
+
+      expect(() => service.updateRoom(bridged, phone, { title: 'mine now' })).toThrow(
+        expect.objectContaining({ code: 'OPERATOR_ONLY' })
+      );
+    });
+
+    it('cannot rewrite that room’s roster either (requireOperator)', () => {
+      const { bridged, phone } = seated();
+
+      expect(() => service.addMember(bridged, phone, { agentPath: '/agents/ana' })).toThrow(
+        expect.objectContaining({ code: 'OPERATOR_ONLY' })
+      );
+    });
+
+    it('exports from its own join floor, never the operator’s whole-room copy', () => {
+      // The carve-out that hands the OWNER a room from seq 0 — the community
+      // exit promise (DOR-596 C2) — is the sharpest of the five: it decides how
+      // much of a conversation leaves the machine in a file.
+      const { bridged, phone } = seated();
+
+      const [asPhone] = [...service.exportRoom(bridged, phone)];
+      const [asOwner] = [...service.exportRoom(bridged, human)];
+
+      expect(asPhone).toMatchObject({ scope: { joinFloorApplied: true } });
+      expect(asOwner).toMatchObject({ scope: { joinFloorApplied: false } });
+    });
   });
 
   it('gives the claim back, and does not mind being asked twice', () => {
