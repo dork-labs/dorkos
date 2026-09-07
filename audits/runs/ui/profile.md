@@ -21,7 +21,7 @@ run (`lens:tokens`), by inferring from the repo and `AGENTS.md` rather than by i
   creates, renames, deletes, sends, or archives.
 - **A fresh worktree has no `node_modules`.** `pnpm install` there before the browser leg, or the
   Vite config cannot resolve `@dorkos/shared/constants` and the dev server never starts.
-- **Fence labels.** `source/audit` (provenance) and `audit/claimed` (in-progress visibility) must
-  exist in Linear before an emission references them. Never write an `agent/*` label — those are
-  the workflow engine's own claim labels.
+- **Fence labels.** `source/audit` (provenance) and `ui-audit/in-progress` (in-progress
+  visibility) must exist in Linear before an emission references them. Never write an `agent/*`
+  label — those are the workflow engine's own claim labels.
 - **Run-log commits** carry the `skip-changelog` and `review:light` labels: they are docs.

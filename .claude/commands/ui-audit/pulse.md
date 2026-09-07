@@ -13,9 +13,9 @@ to the pulse is below.
 
 ## Contract
 
-1. **Require a baseline.** Read `audits/runs/ui/stamps.json`. With no stamps file, or with lenses
-   missing from it, stop and say so: the pulse has no diff base and will not invent one
-   (skill §1). The fix is one `full` or scoped `/ui-audit:run`.
+1. **Require a baseline.** Read `audits/runs/ui/stamps.json`. A lens missing from it is skipped
+   and named in the report; the pulse stops only when the file itself is absent (skill §1). The
+   fix is one `full` or scoped `/ui-audit:run`.
 
 2. **Diff-scope per lens.** Give each surface-local lens the changes since **its own**
    `lastAuditedCommit`, never one global stamp. A lens skipped for six weeks sees six weeks.

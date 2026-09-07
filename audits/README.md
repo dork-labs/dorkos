@@ -17,7 +17,8 @@ audits/
 
 `profile.md` and `stamps.json` live at the **domain root**, not inside a dated run: both are
 durable state that outlives any single run, and putting them in a run directory would leave the
-next run guessing which copy wins. `<date>` is ISO `YYYY-MM-DD`, so runs sort chronologically.
+next run guessing which copy wins. `<date>` is ISO `YYYY-MM-DD`, so runs sort chronologically. A second run on the same day suffixes
+its date directory `-2`, then `-3`, and so on; that run's meta item carries the suffixed run id.
 
 Today there is one charter (`ui.md`). The convention exists so the next one (`docs.md`,
 `adrs.md`, `harness.md`) has an obvious home instead of contending for a single root file.
