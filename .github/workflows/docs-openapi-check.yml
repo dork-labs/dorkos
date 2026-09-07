@@ -9,43 +9,129 @@ name: docs-openapi-check
 # never silently fall out of sync again. Two failures motivated it: the spec had
 # drifted unnoticed for ~3 months (broken export-script import), and a stale MDX
 # page for a removed operation later broke the site build at prerender time.
+#
+# TWO EVENTS, TWO DEPTHS, ONE JOB — the shape site-build.yml and test.yml settle
+# on, and the reason this workflow can ever become a required check:
+#
+#   * `merge_group`: regenerates UNCONDITIONALLY, with NO `paths:` filter. That
+#     trigger is not decoration and must not be deleted as unused while the check
+#     is still advisory (DOR-1608). Two reasons it has to be here. First, the
+#     queue's combined tree — main plus everything ahead of it in the queue plus
+#     this PR — is the only place the cross-PR staleness this job exists to catch
+#     is visible: a PR that adds a route and a PR that regenerates docs/api are
+#     each green alone and combine into a stale spec on main (a red
+#     `openapi-fresh` on a PR that touched no schema is this exact shape).
+#     Second, GitHub's troubleshooting-required-status-checks doc: a workflow
+#     skipped by path filtering reports NOTHING, not success, and under the merge
+#     queue a required check that never reports blocks the queue until
+#     `check_response_timeout_minutes` (60) expires. So no path filter on this
+#     event, ever; if the queue leg ever needs scoping, scope it in a STEP — a
+#     skipped step leaves the job green and the context reported.
+#   * `pull_request`: the early-warning half, so an author gets the answer on
+#     their own PR. THE SCOPE DECISION LIVES INSIDE THE JOB (the step below),
+#     not in a workflow-level `paths:` filter, for the second half of the same
+#     rule: a required check that never reports ON THE PR keeps the PR out of the
+#     queue entirely (measured on PR #1246, which sat armed, green and
+#     unqueueable for 15 hours). The workflow-level filter this file used to
+#     carry would have done exactly that the day the check was promoted.
+#
+# NO push-to-main leg any more. The queue already ran this job against the exact
+# tree content main receives (a squash rewrites the SHA, not the content) — the
+# same reason `test` and `lint` dropped theirs (AGENTS.md §CI). It also held a
+# second hand-synced copy of the path list; there is now one copy, in the scope
+# step.
+#
+# THIS IS NOT A REQUIRED CHECK. Making `openapi-fresh` required is a
+# branch-protection change and the operator's to make (the DOR-1519 precedent);
+# this file only removes the two reasons it could not become one. Until the
+# ruleset lists it, a red here blocks `merge-tail.yml` from ARMING auto-merge
+# (scripts/should-arm-automerge.sh requires every check settled green) but does
+# not block the queue.
 
 on:
   pull_request:
-    paths:
-      - 'apps/server/src/**'
-      - 'packages/shared/src/**'
-      - 'scripts/export-openapi.ts'
-      - 'apps/site/scripts/generate-api-docs.ts'
-      - 'docs/api/**'
-  push:
-    branches: [main]
-    paths:
-      - 'apps/server/src/**'
-      - 'packages/shared/src/**'
-      - 'scripts/export-openapi.ts'
-      - 'apps/site/scripts/generate-api-docs.ts'
-      - 'docs/api/**'
+  merge_group:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for Node 20 runtime.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
+# Cancel superseded runs for PR pushes only. Merge-group refs are unique per
+# build (gh-readonly-queue/main/pr-<n>-<sha>), so queue runs never share a group
+# and are never cancelled here — the queue supersedes builds by dequeuing them.
+# Deliberately identical in form to site-build.yml and test.yml.
+concurrency:
+  group: docs-openapi-check-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
+  # THE ONE PRODUCER of the `openapi-fresh` context, on both events. Do not
+  # rename it, and do not split it into two same-named jobs under mutually
+  # exclusive `if`s — test.yml's header explains why one producer is the only
+  # shape whose required-check semantics are pinned down.
   openapi-fresh:
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 so `origin/<base>` exists locally for the scope step. At
+      # the default depth 1 the diff below cannot resolve the base at all.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
+      # The only decision in this file: does this run spend the ~4 minutes of
+      # install + build + regenerate? A merge-group run always does. A pull
+      # request does when it can reach the generated artifacts — the inputs to
+      # both generators, the generators themselves, their committed output, and
+      # this workflow so an edit to the gate exercises it. That list is the ONE
+      # copy of the workflow-level `paths:` filter this file used to carry.
+      #
+      # `--no-renames` is load-bearing: with rename detection on, moving a file
+      # OUT of docs/api reports only the destination path, so the very change
+      # that deletes a generated page would score as not touching it.
+      - name: Decide whether this run regenerates the API docs
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: origin/${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != 'pull_request' ]; then
+            echo "$EVENT run — regenerating unconditionally"
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The diff is captured first (so a git failure trips `set -e` instead
+          # of being swallowed inside a pipeline) and matched WITHOUT `grep -q`:
+          # -q exits on the first match, and under `pipefail` the resulting
+          # EPIPE on the writer would score the whole pipeline as failed — i.e.
+          # as "nothing matched" — on exactly the large diffs that do match.
+          changed=$(git diff --no-renames --name-only "$BASE"...HEAD)
+          if printf '%s\n' "$changed" | grep -E '^(apps/server/src/|packages/shared/src/|docs/api/|scripts/export-openapi\.ts$|apps/site/scripts/generate-api-docs\.ts$|\.github/workflows/docs-openapi-check\.yml$)' > /dev/null; then
+            echo 'this change can reach the generated API docs — regenerating'
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'nothing under the generators, their inputs, or docs/api changed — skipping the regeneration steps'
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      # Every step below is skipped when the scope step said no. A skipped STEP
+      # leaves this job green and the `openapi-fresh` context reported, which is
+      # the whole point; a skipped JOB reports nothing at all.
       - uses: pnpm/action-setup@v6
+        if: steps.scope.outputs.run == 'true'
 
       - uses: actions/setup-node@v7
+        if: steps.scope.outputs.run == 'true'
         with:
           node-version: 22
           cache: pnpm
 
       - name: Install dependencies
+        if: steps.scope.outputs.run == 'true'
         run: pnpm install --frozen-lockfile
 
       # The generator (scripts/export-openapi.ts) runs via tsx but imports the
@@ -53,20 +139,24 @@ jobs:
       # packages must be built first. Build all of packages/* to stay robust if
       # the route registry grows new schema imports.
       - name: Build workspace packages
+        if: steps.scope.outputs.run == 'true'
         run: pnpm exec turbo build --filter="./packages/*"
 
       - name: Regenerate OpenAPI spec
+        if: steps.scope.outputs.run == 'true'
         run: pnpm docs:export-api
 
       # Regenerate the fumadocs MDX from the spec. The generator prunes its own
       # output first, so a removed operation drops its stale page here too.
       - name: Regenerate API reference MDX
+        if: steps.scope.outputs.run == 'true'
         run: pnpm --filter=@dorkos/site generate:api-docs
 
       # `git add -A` before diffing so the check also catches NEW pages for added
       # endpoints (plain `git diff` ignores untracked files) and removed pages for
       # deleted ones — not just edits to existing files.
       - name: Fail if generated API docs are out of date
+        if: steps.scope.outputs.run == 'true'
         run: |
           git add -A docs/api
           if ! git diff --cached --quiet -- docs/api; then
