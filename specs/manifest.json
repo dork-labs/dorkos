@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260907-001947",
+      "slug": "marketplace-agent-schedules",
+      "title": "A durable home for schedules a person makes for a marketplace agent",
+      "created": "2026-09-06",
+      "status": "ideation"
+    },
+    {
       "id": "260906-164422",
       "slug": "gate-bypass-surfaces",
       "title": "Routes that mount outside the session gate and the host guard: gate them, or pin the assumption",
