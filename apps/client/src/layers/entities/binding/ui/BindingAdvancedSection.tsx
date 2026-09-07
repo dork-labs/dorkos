@@ -313,10 +313,10 @@ export function BindingAdvancedSection({
         consequence={
           <>
             At a stop that asks, an action this agent needs permission for waits for an answer:
-            where your integration can show buttons, it arrives in the chat as Approve and Deny, and
+            where your connection can show buttons, it arrives in the chat as Approve and Deny, and
             only the people on the approver list may answer. Either way an ask nobody answers is
             refused after 10 minutes and the agent carries on without it. Here nothing is asked at
-            all. Anyone who can send a message through this integration sets off whatever the agent
+            all. Anyone who can send a message through this connection sets off whatever the agent
             decides to do.
           </>
         }

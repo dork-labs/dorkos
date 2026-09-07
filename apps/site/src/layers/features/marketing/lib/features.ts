@@ -51,7 +51,7 @@ export const CATEGORY_LABELS: Record<FeatureCategory, string> = {
   'agent-control': 'Agent Control',
   scheduling: 'Scheduling',
   messaging: 'Messaging',
-  integration: 'Integration',
+  integration: 'Connections',
   discovery: 'Discovery',
   visualization: 'Visualization',
   identity: 'Identity',
@@ -899,12 +899,12 @@ export const features: Feature[] = [
   },
   {
     slug: 'slack-adapter',
-    name: 'Slack Adapter',
+    name: 'Slack Connection',
     product: 'relay',
     category: 'integration',
     tagline: 'Chat with your agents in Slack, with no tab-switching',
     description:
-      'The Slack adapter connects Relay to your Slack workspace. Send messages, get updates, and approve agent actions without ever leaving Slack.',
+      'Connect Relay to your Slack workspace. Send messages, get updates, and approve agent actions without ever leaving Slack.',
     status: 'ga',
     benefits: [
       'Message agents from any Slack channel',
@@ -917,12 +917,12 @@ export const features: Feature[] = [
   },
   {
     slug: 'telegram-adapter',
-    name: 'Telegram Adapter',
+    name: 'Telegram Connection',
     product: 'relay',
     category: 'integration',
     tagline: 'Check on your agents and send them commands, from Telegram',
     description:
-      'The Telegram adapter gives every agent its own Telegram bot. Watch runs, get notified, and send commands, all from your phone.',
+      'Give every agent its own Telegram bot. Watch runs, get notified, and send commands from your phone, without opening the app.',
     status: 'ga',
     benefits: [
       'Watch full agent replies stream in Telegram',

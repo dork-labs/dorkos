@@ -135,6 +135,80 @@
       "path": "apps/client/src/layers/features/agent-settings/ui/ToolsTab.tsx",
       "terms": ["connection"],
       "reason": "The per-agent \"Connection management\" tool group (DOR-1754) — the same group, under the same name, as tool-inventory.ts's, which is allowlisted for the same domain reason."
+    },
+    {
+      "path": "apps/server/src/services/core/openapi-registry.ts",
+      "terms": [
+        "integration",
+        "integrations",
+        "connector",
+        "connectors",
+        "adapter",
+        "adapters",
+        "provider",
+        "providers"
+      ],
+      "reason": "The /api/docs developer reference. ADR 260804-021140 renamed the product copy and left the WIRE untouched on purpose — `/api/connectors/providers/{provider}` takes a `provider` path parameter, a relay binding points at an `adapter` id, and `platform:<platform>:<adapter>:<user id>` is a literal stored identity string. A description that stopped naming those would name fields that do not exist, which is the reason mcp-capabilities.ts is allowlisted one entry above. Two hits are a different word entirely: git's \"integration tree\", and the path `docs/integrations/sse-protocol.mdx`. Whole-file scope is the finest this gate offers; a genuinely product-facing sentence added to this file would slip through, so read the two-layer table in the ADR before writing one."
+    },
+    {
+      "path": "apps/server/src/services/core/operator/operator-capabilities.ts",
+      "terms": ["provider", "providers"],
+      "reason": "`operator.config_get` and `operator.config_update` describe the config.json fields by their literal names to the agent reading them — the `providers` map, `providersConfigured`, \"the provider ids that have a credential\", and OpenCode's own `provider` setting. Renaming the words would name keys that are not in the file. Scoped to `provider` only: an `adapter` or `integration` in this file would be prose, not a field name, and should red."
+    },
+    {
+      "path": "apps/server/src/services/connectors/connector-capabilities.ts",
+      "terms": ["connector", "connectors", "adapter", "adapters"],
+      "reason": "MCP tool descriptions for the connector domain, addressed to an agent choosing a route: \"a purpose-built relay adapter outranks a gateway connector, which outranks a raw MCP server\" names the three architecture seams by their own names, which is what makes the ranking readable. Deliberately NOT scoped to `provider`: the one sentence that told an agent to point the user at \"a provider key\" named a UI that no longer exists and was rewritten to \"Composio & Nango\" (DOR-1814), so `provider` coming back here should red."
+    },
+    {
+      "path": "apps/server/src/services/marketplace-mcp/marketplace-capabilities.ts",
+      "terms": ["adapter", "adapters"],
+      "reason": "The marketplace search and list tools enumerate the package TYPES an author writes in a manifest (agent/plugin/skill-pack/adapter). ADR 260804-021140's scoped-word registry keeps `adapter` in the marketplace-author domain; a filter value that stopped matching the manifest key would simply not work."
+    },
+    {
+      "path": "apps/server/src/services/marketplace/conflict-detector.ts",
+      "terms": ["adapter"],
+      "reason": "\"An adapter of type X is already configured\" is the install-time collision between two marketplace packages, named with the package type the author declared — the same marketplace-author domain the ADR's registry keeps the word in."
+    },
+    {
+      "path": "apps/server/src/services/runtimes/test-mode/runtime-constants.ts",
+      "terms": ["integration"],
+      "reason": "\"Deterministic allow/deny for integration tests\" is the software-testing sense of the word, not the retired product noun, on the `test-mode` runtime that exists only for e2e and reaches no user surface."
+    },
+    {
+      "path": "apps/client/src/layers/features/marketplace/ui/MarketplaceSidebar.tsx",
+      "terms": ["connector", "connectors"],
+      "reason": "The marketplace's Connectors facet. Kept deliberately at the DOR-1754 close-out (\"The marketplace's Connectors facet stays as it is\") on the ADR's scoped-word registry: the catalog and the Connections page are different pages, so the author word and the user word never share a viewport."
+    },
+    {
+      "path": "apps/client/src/layers/features/runtime-connect/",
+      "terms": ["provider", "providers"],
+      "reason": "The OpenCode model-provider connect path — \"Provider\", \"Connect provider\", \"Saving your provider key…\". ADR 260804-021140's registry allows `provider` in OpenCode's model-provider picker, which never co-renders with the Connections page; the word here means whoever serves the model, not a service an agent acts on."
+    },
+    {
+      "path": "apps/client/src/layers/features/status/ui/ModelSelectionList.tsx",
+      "terms": ["provider"],
+      "reason": "\"Connect a provider to search everything you can run\" is the model picker's own empty state — the same model-provider sense the ADR keeps for OpenCode, offering the same action runtime-connect performs."
+    },
+    {
+      "path": "apps/client/src/layers/shared/ui/unverified-catalog-notice.tsx",
+      "terms": ["provider"],
+      "reason": "The unverified model-catalog notice, shown beside the model picker and offering the same action: the model-provider sense, never a Connections-domain account."
+    },
+    {
+      "path": "apps/client/src/layers/features/dashboard-sidebar/model/fixtures/",
+      "terms": ["adapter"],
+      "reason": "Sidebar journey fixtures: invented session titles a fictional developer typed (\"Port the codex adapter\"). Simulated user content, not DorkOS's authored copy — the same reason the gate skips `__tests__/` — and the module header says to read these, never edit them."
+    },
+    {
+      "path": "apps/site/src/app/(marketing)/marketplace/privacy/page.tsx",
+      "terms": ["adapter"],
+      "reason": "\"The package type (agent, plugin, skill-pack, adapter)\" lists what the marketplace records about an install, naming the manifest keys an author writes — the marketplace-author domain the ADR's registry keeps."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "terms": ["adapter", "provider", "connector", "connectors"],
+      "reason": "Comparison pages describe OTHER products in their own words, and a competitor's feature name is not ours to rename: DeepSeek Harness's plugin architecture (\"the model adapter, the tools, the session log\"), Grok Bot's Plugins screen, whose own documentation calls what it installs \"connectors\", and the model-provider sense in \"whatever provider or local model you chose\", which the ADR keeps anyway. None of it is DorkOS naming its own Connections surface — the rows that describe DorkOS say \"connection\"."
     }
   ]
 }

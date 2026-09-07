@@ -62,7 +62,7 @@ describe('resolveSessionForCwd', () => {
 
     const resolved = await resolveSessionForCwd({ queryClient, transport }, CWD);
 
-    expect(resolved).toEqual({ sessionId: 'the-conversation', isNew: false });
+    expect(resolved).toEqual({ sessionId: 'the-conversation', isNew: false, cwd: CWD });
   });
 
   it('looks past every automated origin, not just rooms', async () => {
@@ -79,7 +79,39 @@ describe('resolveSessionForCwd', () => {
     // every runtime that does not report origins at all.
     const queryClient = clientWith([session('unmarked', 5)]);
     const resolved = await resolveSessionForCwd({ queryClient, transport }, CWD);
-    expect(resolved).toEqual({ sessionId: 'unmarked', isNew: false });
+    expect(resolved).toEqual({ sessionId: 'unmarked', isNew: false, cwd: CWD });
+  });
+
+  // --- The directory the answer belongs to (DOR-1836) ---
+
+  it('reports the conversation’s OWN directory, not the one that was asked for', async () => {
+    // **A project's list covers its whole subtree** (DOR-1550), so the newest
+    // conversation in it can be one that was held one level down and filed under
+    // its own directory. Every per-session read on the server is addressed by id
+    // AND directory, so an answer carrying only the id leaves the caller to pair
+    // it with the directory it asked about — which is how `/session` reached a
+    // 404 for a session that was sitting on disk, and an empty transcript for
+    // the same id when it passed the project directory explicitly (DOR-1836,
+    // measured against a live server 2026-09-07).
+    const nested = `${CWD}/apps/desktop`;
+    const inSubfolder = { ...session('one-level-down', 5), cwd: nested };
+    const queryClient = clientWith([inSubfolder, session('older-here', 90)]);
+
+    const resolved = await resolveSessionForCwd({ queryClient, transport }, CWD);
+
+    expect(resolved).toEqual({ sessionId: 'one-level-down', isNew: false, cwd: nested });
+  });
+
+  it('falls back to the asked-for directory when the row names none', async () => {
+    // `cwd` is optional on a session row, so a runtime that does not report one
+    // must not turn into a `null` directory and a history read with nothing to
+    // address. The directory the caller asked about is the honest fallback.
+    const { cwd: _dropped, ...noDirectory } = session('unplaced', 5);
+    const queryClient = clientWith([noDirectory]);
+
+    const resolved = await resolveSessionForCwd({ queryClient, transport }, CWD);
+
+    expect(resolved?.cwd).toBe(CWD);
   });
 
   // --- BC-34's else-branch ---
@@ -96,6 +128,9 @@ describe('resolveSessionForCwd', () => {
     // Emphatically NOT the automated run it looked past.
     expect(resolved?.sessionId).not.toBe('nightly');
     expect(resolved?.sessionId).not.toBe('telegram');
+    // An invented id belongs to no directory yet, so the one that was asked for
+    // is the only one it can be started in.
+    expect(resolved?.cwd).toBe(CWD);
   });
 
   it('still starts a fresh session for a directory with nothing at all', async () => {

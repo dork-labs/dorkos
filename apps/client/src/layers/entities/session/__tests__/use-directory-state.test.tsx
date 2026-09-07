@@ -158,6 +158,30 @@ describe('useDirectoryState', () => {
     );
   });
 
+  it('adopts the ?dir= the /session redirect emits as the window’s selected directory', async () => {
+    // **The side effect of DOR-1836, pinned so it stays a decision.** Bare
+    // `/session` used to redirect with the session id alone; it now names the
+    // resolved conversation's own directory, and this one-way sync carries that
+    // into `selectedCwd`. When the conversation was held one level down
+    // (a project's session list covers its whole subtree, DOR-1550) the window
+    // therefore settles on a SUBFOLDER, which may hold no registered agent — so
+    // the sidebar highlights nothing.
+    //
+    // That is the honest answer rather than a regression: `selectedCwd` means
+    // "where would new work happen", and for a bare `/session` that really is
+    // wherever the conversation you were just taken to lives. Reading the
+    // transcript from one directory while claiming to be in another is the state
+    // DOR-1836 exists to remove. Asserted here because nothing else would notice
+    // it changing back.
+    mockSearchDir = '/Users/me/project/apps/desktop';
+
+    renderHook(() => useDirectoryState());
+
+    await waitFor(() =>
+      expect(mockSetStoreDir).toHaveBeenCalledWith('/Users/me/project/apps/desktop')
+    );
+  });
+
   it('falls back to Zustand when URL has no ?dir= param', () => {
     mockSearchDir = undefined;
     mockStoreDir = '/default/path';

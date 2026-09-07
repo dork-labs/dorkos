@@ -96,7 +96,7 @@ describe('checkAdapterEntries', () => {
   it('warns and says the credential may still be in plain text', () => {
     const result = checkAdapterEntries({ unparsedCount: 2 });
     expect(result.status).toBe('warn');
-    expect(result.label).toContain('2 chat integrations');
+    expect(result.label).toContain('2 chat connections');
     expect(result.detail).toContain('plain text');
   });
 });
@@ -173,7 +173,7 @@ describe('checkRelayBindingGhosts', () => {
       registeredAgentIds: new Set(['agent-1']),
     });
     expect(result.status).toBe('warn');
-    expect(result.detail).toContain('chat integration that no longer exists');
+    expect(result.detail).toContain('chat connection that no longer exists');
   });
 
   it('counts a binding broken on both ends once', () => {
@@ -183,7 +183,7 @@ describe('checkRelayBindingGhosts', () => {
       registeredAgentIds: new Set(),
     });
     expect(result.label).toContain('1 chat connection is');
-    expect(result.detail).toContain('chat integration that no longer exists');
+    expect(result.detail).toContain('chat connection that no longer exists');
     expect(result.detail).toContain('agent DorkOS does not know about');
   });
 });

@@ -161,7 +161,7 @@ describe('ServiceGrid', () => {
     const transport = createMockTransport();
     renderWith(transport, <ServiceGrid />);
     expect(await screen.findByText('No services to connect yet')).toBeInTheDocument();
-    expect(screen.getByText(/add a provider key/i)).toBeInTheDocument();
+    expect(screen.getByText(/add a key under composio & nango/i)).toBeInTheDocument();
   });
 
   it('surfaces provider degradation warnings instead of hiding them', async () => {

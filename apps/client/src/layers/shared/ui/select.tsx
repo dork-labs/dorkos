@@ -82,7 +82,28 @@ function SelectContent({
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(
-          'bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border shadow-md',
+          'bg-popover text-popover-foreground data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border shadow-md',
+          // OPENS WITH AN ANIMATION, CLOSES AT ONCE — the same load-bearing
+          // half `dropdown-menu` carries, for the same reason and on the same
+          // evidence (DOR-1835, following DOR-1834). Radix keeps this list
+          // mounted for as long as it has a closing animation to play, and the
+          // part of it that listens for "somebody pressed outside me" is kept
+          // with it. This control's own button answers a press the instant the
+          // pointer goes down — earlier than a plain click — so for the ~150ms
+          // a fade lasted that one press was answered twice: the button
+          // reopened the list, and the copy still finishing its fade read the
+          // same press as a press outside and closed what had just opened.
+          // Measured in a browser: the press landed 1.4ms after the list went
+          // to its closing state, and the list was gone 160ms later having
+          // never reopened.
+          //
+          // Restoring the fade needs Radix to be able to reopen a list it is
+          // still closing, and it cannot: the reopened list is the SAME element
+          // rather than a new one, so nothing puts the keyboard back inside it
+          // and the arrow keys reach nothing. Leaving at once is what makes the
+          // next press a clean start. Anyone who asked their machine to reduce
+          // motion has had this behaviour all along.
+          'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
           position === 'popper' &&
             'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
           className
