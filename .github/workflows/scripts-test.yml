@@ -485,6 +485,17 @@ jobs:
       - name: Format-changed hook fixtures
         run: bash scripts/test-format-changed.sh
 
+      # The pre-push half of the same story, and in `harness` for the same
+      # reason: scripts/pre-push-format-check.sh runs the REAL prettier, and the
+      # cases that matter most are the ones where a stub could not tell the
+      # difference — an ignored path, a file with no parser, a deleted path,
+      # a base ref that quietly resolves to somebody else's commits. Its two
+      # failure directions are both quiet: too slack and it greenlights the
+      # seven-reds-in-a-week that DOR-1839 was opened about, too eager and it
+      # refuses honest pushes until everyone answers it with `--no-verify`.
+      - name: Pre-push formatting gate fixtures
+        run: bash scripts/test-pre-push-format-check.sh
+
       # Pins scripts/check-banned-words.sh, the DOR-1517 prose guard. The guard
       # itself runs in the `typecheck` workflow (already a required check, and
       # it reports on merge_group); this step proves the guard still goes red on

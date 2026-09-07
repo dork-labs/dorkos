@@ -84,8 +84,42 @@ pre-push:
   # below still has to PRODUCE output incrementally for there to be anything to
   # relay, which is the other half of scripts/pre-push-watchdog.sh's job.
   follow: true
+  #
+  # RUN IN ORDER AND STOP AT THE FIRST FAILURE (DOR-1839). Without `piped`,
+  # lefthook runs a hook's commands concurrently, so the two-second formatting
+  # check below would race a six-minute test sweep and you would wait out the
+  # sweep to be told about a missing space. Piped makes the cheap, certain
+  # verdict preempt the expensive one.
+  #
+  # ORDER IS BY `priority`, NOT BY POSITION IN THIS FILE. Measured against
+  # lefthook 2.1.12: with `piped: true` and no priorities, commands run in
+  # ALPHABETICAL order by name regardless of the order they are written — a
+  # command named `zzz` written first still runs second. `formatting` happens to
+  # sort before `tests` anyway, so both mechanisms agree today; the priorities
+  # are here so that a rename cannot silently reverse them, and
+  # scripts/__tests__/pre-push-format-gate.test.ts fails if they do.
+  piped: true
   commands:
+    formatting:
+      priority: 1
+      # Two seconds that save a CI round-trip: seven PRs across five sessions
+      # went red on the required `lint` check's `prettier --check .` in one
+      # week, every one a single `prettier --write` from green. The script's
+      # header carries the full argument — what it diffs against (the same base
+      # this file's `tests` command pins), why it checks rather than writes, and
+      # why a checkout with no node_modules fails here loudly instead of
+      # cryptically two steps later.
+      #
+      # NO `use_stdin` HERE, deliberately. lefthook hands git's ref list to
+      # whichever command asks for it, and `tests` below needs it to recognise a
+      # delete-only push. This step wants nothing from stdin, and taking it
+      # would put two commands in a queue for one pipe. (Verified on lefthook
+      # 2.1.12: with this command running first and not declaring `use_stdin`,
+      # the `tests` command still receives git's ref line intact.)
+      run: bash scripts/pre-push-format-check.sh
+      fail_text: 'Formatting check failed — run the `prettier --write` command printed above, commit, and push again.'
     tests:
+      priority: 2
       # DOR-116 — delete-only pushes (e.g. `git push origin --delete <branch>`)
       # have nothing to test. lefthook does not forward git's pre-push stdin
       # (one "<local ref> <local sha> <remote ref> <remote sha>" line per
