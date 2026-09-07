@@ -17,6 +17,7 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { McpServerEntry } from '@dorkos/shared/transport';
+import { UNOWNED_STREAM_GENERATION } from '@dorkos/shared/session-stream';
 import type {
   SessionSnapshot,
   SessionEvent,
@@ -423,6 +424,15 @@ export class FakeAgentRuntime implements AgentRuntime {
     ) => AsyncIterable<SessionEvent>
     // eslint-disable-next-line require-yield
   >(async function* () {});
+  // Answers "no in-process counter owns this session", which is the truth for a
+  // fake that keeps no projector. A test that binds this fake to the REAL
+  // projector registry (the durable-stream tests do) must override this the same
+  // way it overrides `subscribeSession` — the two answers describe one seq space
+  // and a runtime that lets them disagree is the DOR-1704 defect.
+  streamGeneration = vi.fn<(ctx: SessionOpts, sessionId: string) => string>(
+    () => UNOWNED_STREAM_GENERATION
+  );
+
   subscribeSessionList = vi.fn<(ctx: SessionOpts) => AsyncIterable<SessionListEvent>>(
     // eslint-disable-next-line require-yield
     async function* () {}

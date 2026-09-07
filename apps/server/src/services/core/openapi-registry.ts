@@ -615,7 +615,7 @@ registry.registerPath({
       cwd: z.string().optional().openapi({ description: 'Project directory (boundary-checked).' }),
       after: z.string().optional().openapi({
         description:
-          'Resume cursor; replay events with seq greater than this. A bare integer that names no server process and no seq space, so it is checked only against the replay window — prefer `Last-Event-ID`/`resume`, which carry both.',
+          "Resume cursor; replay events with seq greater than this. A bare integer that names no server process and no event counter, so it is checked only against the replay window. Safe when it is the cursor of a snapshot just taken on the same connection, which is all DorkOS's own HTTP transport uses it for; a cursor PERSISTED across a reconnect must be the whole `Last-Event-ID`/`resume` frame id, which carries both.",
       }),
       resume: z.string().optional().openapi({
         description:

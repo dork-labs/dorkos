@@ -17,11 +17,8 @@ import { resolveCaller } from './room-caller.js';
 import { STATUS_BY_CODE } from './room-error-response.js';
 import { SseStreamSink } from '../services/core/streams/durable-stream-sink.js';
 import { sendError } from '../lib/route-utils.js';
-import {
-  cursorMatchesGeneration,
-  parseResumeCursor,
-  UNOWNED_STREAM_GENERATION,
-} from '../lib/stream-cursor.js';
+import { UNOWNED_STREAM_GENERATION } from '@dorkos/shared/session-stream';
+import { cursorMatchesGeneration, parseResumeCursor } from '../lib/stream-cursor.js';
 
 /** Route params for `GET /:id/events` — pins `id` to `string` for the handler. */
 interface RoomEventsParams {

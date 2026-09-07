@@ -30,47 +30,6 @@
  */
 export const STREAM_EPOCH = Date.now();
 
-/**
- * The generation of a seq space no in-process instance owns.
- *
- * A room's log is durable SQLite: its `seq` is allocated inside the insert
- * transaction and nothing in this process can reset or renumber it, so every
- * room frame carries this constant. A session id with no projector registered
- * reads as this too — and cannot be resumed against by mistake, because the
- * `subscribeSession` that follows mints a FRESH projector at counter 0 and its
- * own `StaleResumeCursorError` guard refuses any cursor above it.
- *
- * If a durable log ever gains an in-process rebuild, it stops being unowned and
- * has to mint a real generation like the projector does.
- */
-export const UNOWNED_STREAM_GENERATION = 'g0';
-
-/** Backs {@link mintStreamGeneration}; `g0` is reserved, so this starts at 1. */
-let generationCounter = 0;
-
-/**
- * Mint a generation for a seq space this process is about to own.
- *
- * The epoch alone is not enough to tell two seq spaces apart, because a seq
- * space can be replaced WITHIN one process: a session's `seq` counter belongs
- * to a `SessionStateProjector` INSTANCE, and a rekey collision (two projectors
- * racing for one canonical id — see `rekeyProjector`) retires one instance and
- * puts another, with its own unrelated counter, behind the same session id. A
- * client holding a cursor from the retired instance would present a number the
- * winner finds perfectly plausible (`cursor ≤ counter`), and the replay would
- * hand it the winner's later events as though they followed its own — a silent
- * gap that no error and no reconnect can heal, because the two counters agree
- * on nothing but their shape.
- *
- * So every instance that owns a seq space mints one of these at construction
- * and it rides every frame id it stamps. Values are never reused within a
- * process, and the epoch separates processes, so a cursor either names the
- * exact seq space that is about to serve it or it names none.
- */
-export function mintStreamGeneration(): string {
-  return `g${++generationCounter}`;
-}
-
 /** A resume signal parsed off a durable `/events` request. */
 export interface ResumeCursor {
   /** Replay events whose `seq` is strictly greater than this. */
@@ -155,8 +114,16 @@ export function parseResumeCursor(
  * A `null` generation is the `?after=` escape hatch and passes: that cursor
  * never claimed a seq space, so the stream's own window check is the whole
  * contract for it. Anything else must name the serving space exactly — a
- * mismatch is a cursor from a retired projector, and the only safe answer is a
+ * mismatch is a cursor from a retired counter, and the only safe answer is a
  * fresh snapshot.
+ *
+ * The escape hatch is narrow rather than lax. Its only in-repo consumer is
+ * `HttpTransport.subscribeSession` (`transport/session-stream-methods.ts`),
+ * which passes the cursor of a snapshot it has just taken in the same call — so
+ * the number cannot predate the counter answering it. A third-party client that
+ * PERSISTS an `?after=` integer across a reconnect gets no generation check and
+ * only the replay window between it and a wrong replay, which is why the
+ * documented cursor is the whole frame id.
  *
  * @param cursor - What {@link parseResumeCursor} returned.
  * @param generation - The generation of the seq space about to serve, read in

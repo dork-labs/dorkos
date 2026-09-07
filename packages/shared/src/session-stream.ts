@@ -957,6 +957,51 @@ export const SessionListEventSchema = z
 /** Inferred type for {@link SessionListEventSchema}. */
 export type SessionListEvent = z.infer<typeof SessionListEventSchema>;
 
+// === Seq-space Generations ===
+
+/**
+ * The generation of a seq space no in-process instance owns.
+ *
+ * A `seq` is only meaningful relative to the counter that issued it, and a
+ * counter can be REPLACED behind the same session id — so a durable stream's
+ * frame ids name their counter as well as their position, and a resume cursor
+ * is honoured only when the two agree. This is the value for a counter nothing
+ * in the process owns: a room's log, whose `seq` is allocated inside the SQLite
+ * insert and which nothing here can renumber, and a session with no live
+ * projector behind it.
+ *
+ * The second case is not a hole. Subscribing to a session with no projector
+ * mints a fresh one at counter 0, and its own {@link StaleResumeCursorError}
+ * guard refuses every cursor above that.
+ */
+export const UNOWNED_STREAM_GENERATION = 'g0';
+
+/** Backs {@link mintStreamGeneration}; `g0` is reserved, so this starts at 1. */
+let generationCounter = 0;
+
+/**
+ * Mint a generation for a seq space this process is about to own.
+ *
+ * A server process's stream epoch is not enough to tell two seq spaces apart,
+ * because a seq space can be replaced WITHIN one process: a session's counter
+ * belongs to a `SessionStateProjector` INSTANCE, and a rekey collision (two
+ * projectors racing for one canonical id) retires one instance and puts another,
+ * with its own unrelated counter, behind the same session id. A client holding a
+ * cursor from the retired instance would present a number the winner finds
+ * perfectly plausible (`cursor ≤ counter`), and the replay would hand it the
+ * winner's later events as though they followed its own — a silent gap that no
+ * error and no reconnect can heal, because the two counters agree on nothing but
+ * their shape.
+ *
+ * So every instance that owns a seq space mints one of these at construction and
+ * it rides every frame id stamped from that counter. Values are never reused
+ * within a process, and the epoch separates processes, so a cursor either names
+ * the exact seq space about to serve it or it names none.
+ */
+export function mintStreamGeneration(): string {
+  return `g${++generationCounter}`;
+}
+
 // === Resume Errors ===
 
 /**

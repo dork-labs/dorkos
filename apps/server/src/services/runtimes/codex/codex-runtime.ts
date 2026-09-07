@@ -62,7 +62,11 @@ import type {
 } from '@dorkos/shared/session-stream';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { McpServerEntry } from '@dorkos/shared/transport';
-import { getOrCreateProjector } from '../../session/session-state-projector.js';
+import {
+  getOrCreateProjector,
+  peekProjector,
+  streamGenerationOf,
+} from '../../session/session-state-projector.js';
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
@@ -872,6 +876,19 @@ export class CodexRuntime implements AgentRuntime {
       sinceCursor,
       signal
     );
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * The registry answers directly here: Codex keys its projectors by the
+   * DorkOS session id and holds no second id to resolve through, so this reads
+   * the same entry {@link subscribeSession} binds to. Peek-only — asking which
+   * counter serves a session must not mint one, and the fresh projector a
+   * subsequent subscribe would mint refuses every cursor above 0 anyway.
+   */
+  streamGeneration(_ctx: SessionOpts, sessionId: string): string {
+    return streamGenerationOf(peekProjector(sessionId));
   }
 
   /**

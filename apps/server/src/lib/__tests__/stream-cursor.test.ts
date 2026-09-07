@@ -8,13 +8,12 @@
  * refused would first be let through.
  */
 import { describe, it, expect } from 'vitest';
+import { mintStreamGeneration, UNOWNED_STREAM_GENERATION } from '@dorkos/shared/session-stream';
 import {
   cursorMatchesGeneration,
-  mintStreamGeneration,
   parseResumeCursor,
   streamFrameId,
   STREAM_EPOCH,
-  UNOWNED_STREAM_GENERATION,
 } from '../stream-cursor.js';
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';

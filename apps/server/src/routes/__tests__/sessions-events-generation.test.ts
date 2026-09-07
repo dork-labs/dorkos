@@ -18,6 +18,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { collectDurableEvents } from '@dorkos/test-utils';
 import type { SseFrame } from '@dorkos/test-utils';
+import { UNOWNED_STREAM_GENERATION } from '@dorkos/shared/session-stream';
 import type { SessionEvent, SessionSnapshot } from '@dorkos/shared/session-stream';
 import type { SessionOpts } from '@dorkos/shared/agent-runtime';
 
@@ -81,7 +82,9 @@ import { STREAM_EPOCH } from '../../lib/stream-cursor.js';
 import {
   disposeProjector,
   getOrCreateProjector,
+  peekProjector,
   rekeyProjector,
+  streamGenerationOf,
   type RawSessionEvent,
   type SessionStateProjector,
 } from '../../services/session/session-state-projector.js';
@@ -95,6 +98,8 @@ const CANONICAL = '00000000-0000-4000-8000-0000000017a4';
 const REQUEST_ID = '00000000-0000-4000-8000-0000000017b5';
 /** A session used by the tests that need no collision. */
 const PLAIN = '00000000-0000-4000-8000-0000000017c6';
+/** Where {@link PLAIN}'s projector lives when the runtime bridges an id alias. */
+const ALIASED = '00000000-0000-4000-8000-0000000017d7';
 
 const CWD = '/mock/home';
 
@@ -118,6 +123,13 @@ function bindRuntimeToProjectors(): void {
     (ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> =>
       getOrCreateProjector(sessionId, ctx.cwd ?? CWD).buildSnapshot(async () => [])
   ) as unknown as typeof fakeRuntime.getSessionSnapshot;
+
+  // Answered off the SAME registry `subscribeSession` binds to, which is the
+  // obligation the contract puts on every runtime. A fake that answered this
+  // some other way would be testing a server that cannot exist.
+  fakeRuntime.streamGeneration = vi.fn((_ctx: SessionOpts, sessionId: string): string =>
+    streamGenerationOf(peekProjector(sessionId))
+  ) as unknown as typeof fakeRuntime.streamGeneration;
 }
 
 /** Ingest `count` text deltas so the projector's counter advances. */
@@ -149,7 +161,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  for (const id of [CANONICAL, REQUEST_ID, PLAIN]) disposeProjector(id);
+  for (const id of [CANONICAL, REQUEST_ID, PLAIN, ALIASED]) disposeProjector(id);
 });
 
 describe('GET /api/sessions/:id/events — seq-space generation', () => {
@@ -263,6 +275,40 @@ describe('GET /api/sessions/:id/events — seq-space generation', () => {
 
     expect(second.frames.some((f) => f.event === 'snapshot')).toBe(false);
     expect(deltaTexts(second.frames)).toEqual(['s1', 's2']);
+  });
+
+  it('stamps the generation the RUNTIME names, even when the projector lives under another id', async () => {
+    // claude-code reaches a session's projector through the SDK id alias as well
+    // as the registry, so the id a reader connects under may have no registry
+    // entry at all while a real projector streams to it. The stream must ask the
+    // runtime which counter it bound, not the registry: reading the bare id
+    // answers "unowned", every frame goes out stamped `g0`, and the mismatch
+    // check then accepts any cursor carrying `g0` — the guard is present and
+    // protects nothing (DOR-1704).
+    const alias = getOrCreateProjector(ALIASED, CWD);
+    feed(alias, 'x', 2);
+    // Nothing under the id the reader uses; only the runtime can bridge them.
+    expect(peekProjector(PLAIN)).toBeUndefined();
+    const resolveThroughAlias = (id: string): SessionStateProjector | undefined =>
+      peekProjector(id) ?? peekProjector(id === PLAIN ? ALIASED : id);
+    fakeRuntime.subscribeSession = vi.fn(
+      (_ctx: SessionOpts, sessionId: string, since?: number, signal?: AbortSignal) =>
+        resolveThroughAlias(sessionId)!.subscribe(since, signal)
+    ) as unknown as typeof fakeRuntime.subscribeSession;
+    fakeRuntime.streamGeneration = vi.fn((_ctx: SessionOpts, sessionId: string) =>
+      streamGenerationOf(resolveThroughAlias(sessionId))
+    ) as unknown as typeof fakeRuntime.streamGeneration;
+
+    const { frames } = await collectDurableEvents(app, PLAIN, {
+      after: 0,
+      until: (f) => deltaTexts(f).length >= 2,
+    });
+
+    expect(alias.streamGeneration).not.toBe(UNOWNED_STREAM_GENERATION);
+    expect(frames.filter((f) => f.id !== undefined).map((f) => f.id)).toEqual([
+      `${PLAIN}-${STREAM_EPOCH}-${alias.streamGeneration}-1`,
+      `${PLAIN}-${STREAM_EPOCH}-${alias.streamGeneration}-2`,
+    ]);
   });
 
   it('stamps every live frame with the generation of the projector that produced it', async () => {

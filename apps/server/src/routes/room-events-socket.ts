@@ -15,11 +15,8 @@ import { resolveCaller } from './room-caller.js';
 import { STATUS_BY_CODE } from './room-error-response.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
 import type { UpgradeDecision, UpgradeRoute } from '../services/core/streams/upgrade-router.js';
-import {
-  cursorMatchesGeneration,
-  parseResumeCursor,
-  UNOWNED_STREAM_GENERATION,
-} from '../lib/stream-cursor.js';
+import { UNOWNED_STREAM_GENERATION } from '@dorkos/shared/session-stream';
+import { cursorMatchesGeneration, parseResumeCursor } from '../lib/stream-cursor.js';
 import { logger } from '../lib/logger.js';
 
 /** Matches `/api/rooms/:id/events`, capturing the room id. */

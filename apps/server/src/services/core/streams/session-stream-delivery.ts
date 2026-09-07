@@ -20,6 +20,7 @@ import type { AgentRuntime, SessionOpts } from '@dorkos/shared/agent-runtime';
 import {
   StaleResumeCursorError,
   isBlockingInteractionEventType,
+  UNOWNED_STREAM_GENERATION,
 } from '@dorkos/shared/session-stream';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
@@ -27,7 +28,6 @@ import type { DurableStreamSink } from './durable-stream-sink.js';
 import {
   cursorMatchesGeneration,
   streamFrameId,
-  UNOWNED_STREAM_GENERATION,
   type ResumeCursor,
 } from '../../../lib/stream-cursor.js';
 import type { CallerPrincipal } from '../../../lib/caller-principal.js';
@@ -44,20 +44,6 @@ export interface SessionStreamPlan {
   ctx: SessionOpts;
   /** The parsed resume signal, or `undefined` for a cold connect. */
   resume: ResumeCursor | undefined;
-  /**
-   * Reads the generation of the seq space that would serve this session RIGHT
-   * NOW — `sessionStreamGeneration` for every caller in this server.
-   *
-   * Injected rather than imported so this module keeps speaking only the
-   * {@link AgentRuntime} contract for a session's CONTENT; which projector owns
-   * the counter is a fact the route layer already holds. It is called
-   * SYNCHRONOUSLY beside each `subscribeSession`, never across an `await`: a
-   * rekey collision can put a different projector behind a session id, and a
-   * generation read a tick early would stamp frame ids with a seq space that is
-   * no longer the one producing them — which is the exact confusion the
-   * generation exists to prevent.
-   */
-  streamGeneration: () => string;
   /**
    * Who is reading, so an Ask's detail reaches only a caller entitled to it
    * (spec `ask-entitlement`, review finding 2).
@@ -85,10 +71,20 @@ export interface SessionStreamPlan {
  *
  * "Cannot be served gap-free" has two halves, and the second is the quiet one.
  * A cursor may be out of the replay window, which the runtime says by throwing.
- * Or it may be a perfectly plausible number from a DIFFERENT seq space —
- * a projector that was retired while this reader was away — which nothing about
- * the number itself reveals. The cursor's generation is the only thing that can
- * tell them apart, so it is checked before the resume is even attempted.
+ * Or it may be a perfectly plausible number from a DIFFERENT seq space — a
+ * counter that was retired while this reader was away — which nothing about the
+ * number itself reveals. Only the cursor's generation can tell them apart, so it
+ * is checked before the resume is even attempted, against
+ * {@link AgentRuntime.streamGeneration}.
+ *
+ * That generation is read from the RUNTIME, in the same tick as the
+ * `subscribeSession` it describes, and both halves of that sentence are load
+ * bearing. The runtime, because only the runtime knows which counter it would
+ * bind this session to — claude-code reaches one through the SDK id alias, and a
+ * generation resolved any other way names a counter that is not the one
+ * producing the events. The same tick, because a rekey between the two would
+ * stamp frame ids from a counter that has already been replaced. Get either
+ * wrong and the check still runs, still passes, and protects nothing (DOR-1704).
  *
  * Never throws: a mid-stream failure is logged and closes the stream, which the
  * client's reconnect handles.
@@ -100,7 +96,7 @@ export async function deliverSessionStream(
   sink: DurableStreamSink,
   plan: SessionStreamPlan
 ): Promise<void> {
-  const { sessionId, runtime, ctx, resume, streamGeneration, principal } = plan;
+  const { sessionId, runtime, ctx, resume, principal } = plan;
   // Resolved ONCE per connection rather than per frame: a principal is fixed
   // for the life of a socket (changing it would need a new handshake), and the
   // room a session answers for cannot change the answer here — only a `bridged`
@@ -116,7 +112,7 @@ export async function deliverSessionStream(
       // the projector behind this session id can change, and both the check and
       // the ids stamped from it have to describe the seq space that actually
       // answers.
-      const serving = streamGeneration();
+      const serving = runtime.streamGeneration(ctx, sessionId);
       if (!cursorMatchesGeneration(resume, serving)) {
         // The number is plausible and the seq space is not this reader's. The
         // resume is not attempted at all — there is nothing here to replay
@@ -164,8 +160,8 @@ export async function deliverSessionStream(
       iterator = runtime
         .subscribeSession(ctx, sessionId, snap.cursor, sink.signal)
         [Symbol.asyncIterator]();
-      // Same tick as the subscribe above, for the reason the plan field gives.
-      generation = streamGeneration();
+      // Same tick as the subscribe above, for the reason given at the top.
+      generation = runtime.streamGeneration(ctx, sessionId);
     }
 
     for (;;) {

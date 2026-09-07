@@ -84,6 +84,8 @@ import {
 import {
   getOrCreateProjector,
   disposeProjector,
+  peekProjector,
+  streamGenerationOf,
 } from '../../services/session/session-state-projector.js';
 
 const app = createApp();
@@ -136,6 +138,11 @@ beforeEach(() => {
       signal?: AbortSignal
     ): AsyncIterable<SessionEvent> =>
       getOrCreateProjector(sessionId).subscribe(sinceCursor ?? 0, signal)
+  );
+  // The third half of the same contract: a runtime names the seq space it just
+  // bound, and it must be the registry entry the two above use (DOR-1704).
+  fakeRuntime.streamGeneration = vi.fn((_ctx: SessionOpts, sessionId: string): string =>
+    streamGenerationOf(peekProjector(sessionId))
   );
 });
 

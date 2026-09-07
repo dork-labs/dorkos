@@ -19,7 +19,8 @@
 import type { RoomEntry, RoomEvent } from '@dorkos/shared/room-schemas';
 import type { DurableStreamSink } from './durable-stream-sink.js';
 import { getRoomService } from '../../rooms/index.js';
-import { streamFrameId, UNOWNED_STREAM_GENERATION } from '../../../lib/stream-cursor.js';
+import { UNOWNED_STREAM_GENERATION } from '@dorkos/shared/session-stream';
+import { streamFrameId } from '../../../lib/stream-cursor.js';
 import { logger } from '../../../lib/logger.js';
 import { ROOMS } from '../../../config/constants.js';
 

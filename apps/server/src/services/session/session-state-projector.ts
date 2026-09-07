@@ -22,7 +22,12 @@
  *
  * @module services/session/session-state-projector
  */
-import { StaleResumeCursorError, isBlockingInteractionEvent } from '@dorkos/shared/session-stream';
+import {
+  StaleResumeCursorError,
+  isBlockingInteractionEvent,
+  mintStreamGeneration,
+  UNOWNED_STREAM_GENERATION,
+} from '@dorkos/shared/session-stream';
 import type {
   SessionEvent,
   SessionSnapshot,
@@ -31,7 +36,7 @@ import type {
   SessionLifecycle,
 } from '@dorkos/shared/session-stream';
 import { deriveSessionActivity } from './activity/derive-activity.js';
-import { mintStreamGeneration, UNOWNED_STREAM_GENERATION } from '../../lib/stream-cursor.js';
+
 import type {
   HistoryMessage,
   PendingInteractionDTO,
@@ -2291,28 +2296,22 @@ export function peekProjector(sessionId: string): SessionStateProjector | undefi
 }
 
 /**
- * The generation of the seq space that would serve `sessionId` right now — what
- * a durable stream stamps its frame ids with, and what a resume cursor has to
- * name to be honoured.
+ * Name the seq space a projector owns, or say that none is owned.
  *
- * Redirect-aware, like every other read here: a client that followed a session
- * from its request id to its canonical id is still reading the SAME instance,
- * so it gets the same generation and its resume stays gap-free.
+ * The one place the "no projector" answer is decided, so every runtime's
+ * `streamGeneration` gives the same answer to the same fact. Deliberately takes
+ * the PROJECTOR and not a session id: which projector serves an id is a
+ * question only the runtime can answer — claude-code resolves it through the SDK
+ * id alias, the others read the registry — and an id-keyed helper here would be
+ * an inviting way to answer it wrongly. That is not hypothetical: the first cut
+ * of this shipped one, and on claude-code's alias path it reported "unowned"
+ * while a real projector served, which silently disarmed the whole check
+ * (DOR-1704).
  *
- * Answers {@link UNOWNED_STREAM_GENERATION} when no projector is registered,
- * which is not a hole: the `subscribeSession` that follows mints a fresh
- * projector at counter 0, and its own cursor validation refuses anything above
- * that. Never creates a projector — asking which seq space serves a session
- * must not be the thing that invents one.
- *
- * **Read it in the same tick as the subscribe it guards.** A rekey collision
- * can replace the instance behind a session id, so a generation read across an
- * `await` may name a seq space that is no longer the one about to answer.
- *
- * @param sessionId - DorkOS session id, canonical or retired.
+ * @param projector - Whatever the caller's own resolution found, or `undefined`.
  */
-export function sessionStreamGeneration(sessionId: string): string {
-  return peekProjector(sessionId)?.streamGeneration ?? UNOWNED_STREAM_GENERATION;
+export function streamGenerationOf(projector: SessionStateProjector | undefined): string {
+  return projector?.streamGeneration ?? UNOWNED_STREAM_GENERATION;
 }
 
 /**

@@ -22,7 +22,6 @@ import {
   callerNamedCwd,
   resolveSessionCwdOrDefault,
   resolveSettingsKey,
-  sessionStreamGeneration,
 } from '../services/session/index.js';
 import { deliverSessionStream } from '../services/core/streams/session-stream-delivery.js';
 import { SseStreamSink } from '../services/core/streams/durable-stream-sink.js';
@@ -112,12 +111,11 @@ export const sessionEventsHandler = async (
     sessionId,
     runtime,
     ctx,
-    resume,
     // No `resourceId` is passed to the parse above, deliberately: a session's
     // projector can be rekeyed from its request id to its canonical id, and the
     // client that followed it there is resuming the SAME seq space. The
     // generation is what judges that — correctly, and in both directions.
-    streamGeneration: () => sessionStreamGeneration(sessionId),
+    resume,
     // The Express chain has already run `sessionGate` and `resolveAgentIdentity`,
     // so this is the same read the fleet-wide surfaces make.
     principal: readCallerPrincipal(req, res),

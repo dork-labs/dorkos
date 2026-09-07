@@ -1394,6 +1394,34 @@ export interface AgentRuntime {
   ): AsyncIterable<SessionEvent>;
 
   /**
+   * Names the seq space {@link subscribeSession} would bind this session to
+   * right now — the counter, not the position in it.
+   *
+   * A `seq` means nothing on its own. It is a position in ONE counter, and the
+   * counter behind a session id can be replaced while a client is away, at which
+   * point the client's number is still in range and still monotonic and points
+   * at events it has never seen. A durable stream therefore stamps this
+   * alongside the `seq` in every frame id, and honours a resume only when the
+   * cursor names the same one. Return {@link UNOWNED_STREAM_GENERATION} when no
+   * counter this process could renumber is behind the session.
+   *
+   * **Answer from the SAME resolution `subscribeSession` uses.** This is the
+   * whole obligation, and the easy way to get it wrong: an adapter that resolves
+   * a session id through an alias when it subscribes, but answers this off the
+   * bare id, reports a counter that is not the one producing the events — and
+   * the mismatch check it feeds silently passes everything (DOR-1704).
+   *
+   * Must not create anything: asking which counter serves a session is not a
+   * reason to invent one. Pure and synchronous — a durable stream reads it in
+   * the same tick as its `subscribeSession`, because a value read across an
+   * `await` may name a counter that has already been replaced.
+   *
+   * @param ctx - Session context (carries projectDir/cwd and resolved settings)
+   * @param sessionId - Target session ID
+   */
+  streamGeneration(ctx: SessionOpts, sessionId: string): string;
+
+  /**
    * Discovery + liveness across ALL sessions the adapter can observe, including
    * externally-driven ones (Claude adapter watches ~/.claude/projects; future
    * adapters expose their own). Feeds the global status stream.

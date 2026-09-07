@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { HistoryMessage } from '@dorkos/shared/types';
+import { UNOWNED_STREAM_GENERATION } from '@dorkos/shared/session-stream';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 
 // Mock the SDK before importing the runtime (matches claude-code-runtime.test.ts).
@@ -24,6 +25,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import {
   getOrCreateProjector,
   disposeProjector,
+  peekProjector,
   setSessionEventStore,
   SessionEventStore,
   TranscriptReader,
@@ -144,6 +146,46 @@ describe('ClaudeCodeRuntime session contract', () => {
       expect((await iterator.next()).value).toMatchObject({ type: 'turn_start', seq: 1 });
 
       disposeProjector(canonicalId);
+    });
+
+    // The generation has to travel the SAME alias, or the resume check it feeds
+    // is inert exactly where this adapter is most interesting (DOR-1704).
+    it('names the seq space it would SUBSCRIBE to, through the id alias (DOR-1704)', async () => {
+      // The shape that made the first cut of the generation useless: the
+      // projector lives under the SDK id, `subscribeSession` reaches it through
+      // `getInternalSessionId`, and a generation resolved off the bare session id
+      // instead answers "nothing owns this". A stream stamping that would frame
+      // real events with the unowned generation, and the mismatch check would
+      // then accept every stale cursor — the collision this whole mechanism
+      // exists to catch would sail straight through.
+      const sdkId = 'contract-sdk-id-generation';
+      vi.spyOn(runtime, 'getInternalSessionId').mockReturnValue(sdkId);
+
+      const live = getOrCreateProjector(sdkId);
+      live.ingest({ type: 'turn_start' });
+
+      // Asked under the DorkOS id, which has no registry entry of its own.
+      expect(peekProjector(sessionId)).toBeUndefined();
+      expect(runtime.streamGeneration({ permissionMode: 'default' }, sessionId)).toBe(
+        live.streamGeneration
+      );
+      expect(runtime.streamGeneration({ permissionMode: 'default' }, sessionId)).not.toBe(
+        UNOWNED_STREAM_GENERATION
+      );
+
+      disposeProjector(sdkId);
+    });
+
+    // Peek-only: asking which counter serves a session must not be the thing
+    // that invents one, or the answer describes a projector nothing streamed.
+    it('reports the unowned generation for a session with no projector, and mints none', () => {
+      const orphan = 'contract-session-never-streamed';
+      vi.spyOn(runtime, 'getInternalSessionId').mockReturnValue(undefined);
+
+      expect(runtime.streamGeneration({ permissionMode: 'default' }, orphan)).toBe(
+        UNOWNED_STREAM_GENERATION
+      );
+      expect(peekProjector(orphan)).toBeUndefined();
     });
 
     // sinceCursor replays only the gap (events with a greater seq) before live.
