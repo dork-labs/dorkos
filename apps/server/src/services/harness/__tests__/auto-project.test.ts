@@ -55,7 +55,7 @@ describe('runAutoProjection', () => {
     projectSpy = vi.spyOn(_internal, 'project').mockReturnValue(FAKE_PLAN);
     applyPlanSpy = vi
       .spyOn(_internal, 'applyPlan')
-      .mockReturnValue({ applied: [], conflicts: [], swept: [] });
+      .mockReturnValue({ applied: [], conflicts: [], swept: [], leftAlone: [] });
     // No package ships hooks in these cases, so nothing is ever asked about and
     // the plan is built with every package's hooks allowed. The hook gate has its
     // own suite (`hook-projection-gate.test.ts`), which drives the real engine.

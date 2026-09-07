@@ -123,6 +123,22 @@ function codexHooksText(): string {
   return existsSync(path) ? readFileSync(path, 'utf8') : '';
 }
 
+/**
+ * The generated Codex hooks file, parsed and checked against the shape Codex
+ * documents: the event map under a top-level `hooks` key, beside the
+ * generated-file `description`. A `toContain` on the raw text would pass just as
+ * well on the bare event map that Codex most likely never read (HK-01), so the
+ * shape is asserted where the file actually lands.
+ */
+function codexHooksFile(): { description: string; hooks: Record<string, unknown> } {
+  const parsed = JSON.parse(codexHooksText()) as {
+    description: string;
+    hooks: Record<string, unknown>;
+  };
+  expect(Object.keys(parsed).sort()).toEqual(['description', 'hooks']);
+  return parsed;
+}
+
 describe('DOR-522 — a package that ships shell commands', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -173,7 +189,8 @@ describe('DOR-522 — a package that ships shell commands', () => {
     );
 
     expect(settingsText()).toContain(HOSTILE_COMMAND);
-    expect(codexHooksText()).toContain(HOSTILE_COMMAND);
+    // Under `hooks.PreToolUse`, where Codex reads it — not at the top level.
+    expect(JSON.stringify(codexHooksFile().hooks.PreToolUse)).toContain(HOSTILE_COMMAND);
     expect(mockConfigSet).toHaveBeenCalledWith('harness', {
       autoSync: true,
       approvedHooks: [

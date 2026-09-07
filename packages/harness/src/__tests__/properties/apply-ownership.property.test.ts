@@ -8,13 +8,17 @@
  * dir, projected, and applied for real; nothing here is mocked.
  *
  * - **P3 — a conflict never destroys.** Every occupant the person staged holds
- *   the same bytes after apply, and every one of them is named in `conflicts`.
+ *   the same bytes after apply, and every one of them is named: as a `conflict`
+ *   when the plan wanted to write that path and could not, and as `leftAlone`
+ *   when the plan never wanted it.
  * - **P4 — the sweep touches only what the engine wrote.** After an apply, some
  *   sources are deleted and the repo is re-projected and applied with the sweep
  *   on: every path the sweep removed was written by an earlier apply in this
- *   run, never belongs to a harness the manifest does not enable, and a
- *   generated file and its `.dorkos-generated` sidecar are swept together or not
- *   at all.
+ *   run, no unowned file is ever removed, and a generated file and its
+ *   `.dorkos-generated` sidecar are swept together or not at all. Ownership —
+ *   not the manifest — is the whole guard, so an OWNED file whose harness has
+ *   left the manifest is swept; that named case lives in
+ *   `apply/__tests__/generated-ownership.test.ts`.
  *
  * The seed is fixed so a failure is reproducible; fast-check prints it (and the
  * shrunk counterexample) in the failure message.
@@ -198,14 +202,26 @@ describe('P3 — a conflict never destroys what somebody else wrote', () => {
       fc.property(arbRepo(), (spec) => {
         withRepo(spec, ({ repoRoot, dorkHome, occupantAbs }) => {
           const plan = project(repoRoot, { dorkHome });
-          const { conflicts, applied } = applyPlan(repoRoot, plan, { sweepOrphans: true });
+          const { conflicts, applied, leftAlone } = applyPlan(repoRoot, plan, {
+            sweepOrphans: true,
+          });
           const conflictTargets = new Set(conflicts.map((c) => c.target));
+          const leftAloneTargets = new Set(leftAlone);
 
           if (spec.occupant && occupantAbs && spec.occupant.sidecar !== 'matching') {
-            // Unowned: the file is the person's. Untouched, and reported.
-            expect(readText(occupantAbs)).toBe(occupantContent(spec.occupant.target));
-            expect(conflictTargets.has(spec.occupant.target)).toBe(true);
-            expect(applied.some((a) => a.target === spec.occupant?.target)).toBe(false);
+            // Unowned: the file is the person's. Untouched, and reported — as a
+            // conflict when the plan wanted that path, as left alone when not.
+            const target = spec.occupant.target;
+            expect(readText(occupantAbs)).toBe(occupantContent(target));
+            expect(applied.some((a) => a.target === target)).toBe(false);
+            const planned = plan.actions.some((a) => a.kind === 'generate' && a.target === target);
+            expect({ target, planned, named: true }).toEqual({
+              target,
+              planned,
+              named: planned ? conflictTargets.has(target) : leftAloneTargets.has(target),
+            });
+            // Never both, so a person is told one thing about one file.
+            expect(conflictTargets.has(target) && leftAloneTargets.has(target)).toBe(false);
           }
 
           if (
@@ -257,8 +273,12 @@ describe('P4 — the sweep removes only what an earlier apply wrote', () => {
 
           const secondPlan = project(repoRoot, { dorkHome });
           const { swept } = applyPlan(repoRoot, secondPlan, { sweepOrphans: true });
-          const enabled = new Set(spec.harnesses);
           const sweptSet = new Set(swept);
+          // The one path the generator guarantees the engine does NOT own.
+          const unowned =
+            spec.occupant && spec.occupant.sidecar !== 'matching'
+              ? spec.occupant.target
+              : undefined;
 
           for (const path of swept) {
             expect({ path, inLedger: ledger.has(path) }).toEqual({ path, inLedger: true });
@@ -266,15 +286,10 @@ describe('P4 — the sweep removes only what an earlier apply wrote', () => {
             const base = path.endsWith(SIDECAR_SUFFIX)
               ? path.slice(0, -SIDECAR_SUFFIX.length)
               : path;
-            const harness = TARGET_HARNESS[base];
-            if (harness) {
-              // Scoped to the manifest: a harness nobody enabled is not ours to prune.
-              expect({ path, harness, enabled: enabled.has(harness) }).toEqual({
-                path,
-                harness,
-                enabled: true,
-              });
-              // File and sidecar go together, or not at all.
+            if (TARGET_HARNESS[base]) {
+              // Ownership is the whole guard: an unowned file is never swept…
+              expect({ path, unowned }).not.toEqual({ path, unowned: base });
+              // …and a file and its sidecar go together, or not at all.
               expect(sweptSet.has(base)).toBe(true);
               expect(sweptSet.has(`${base}${SIDECAR_SUFFIX}`)).toBe(true);
             }

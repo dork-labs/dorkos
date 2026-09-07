@@ -118,7 +118,41 @@ describe('J-02 — an existing Codex project adopts DorkOS', () => {
     // Pass 1 of auto-projection: no package has been allowed to contribute hooks
     // yet, which is exactly when the sweep used to run over these three paths.
     const plan = project(repo, { dorkHome, allowPluginHooks: () => false });
-    const { conflicts } = applyPlan(repo, plan, { sweepOrphans: true });
+    const { conflicts, leftAlone } = applyPlan(repo, plan, { sweepOrphans: true });
+
+    const after = snapshotTree(repo);
+    expect(diffSnapshots(before, after)).toEqual({
+      added: ['.agents/skills/acme__greet'],
+      changed: [],
+      removed: [],
+    });
+
+    expectHandWrittenFilesIntact(repo);
+
+    // Nothing was blocked — this plan writes no hooks anywhere — so none of the
+    // three is a conflict. They are named as files DorkOS stepped over.
+    expect(conflicts).toEqual([]);
+    expect([...leftAlone].sort()).toEqual([
+      '.codex/hooks.json',
+      '.cursor/hooks.json',
+      '.github/hooks/copilot-hooks.json',
+    ]);
+  });
+
+  it('still never overwrites the hand-written Codex file once the plugin hooks are allowed', () => {
+    const staged = stageCodexFirstRepo();
+    repo = staged.repoRoot;
+    dorkHome = staged.home;
+
+    const before = snapshotTree(repo);
+
+    // Pass 2: the person said yes to the package's hooks, so the plan now WANTS
+    // to write `.codex/hooks.json` and `.cursor/hooks.json`. The person's files
+    // still win — each is reported once as a conflict, and never rewritten.
+    // Copilot is not in the manifest, so nothing is planned there and its file is
+    // merely stepped over.
+    const plan = project(repo, { dorkHome, allowPluginHooks: () => true });
+    const { conflicts, leftAlone } = applyPlan(repo, plan, { sweepOrphans: true });
 
     const after = snapshotTree(repo);
     expect(diffSnapshots(before, after)).toEqual({
@@ -132,38 +166,11 @@ describe('J-02 — an existing Codex project adopts DorkOS', () => {
     expect(conflicts.map((c) => c.target).sort()).toEqual([
       '.codex/hooks.json',
       '.cursor/hooks.json',
-      '.github/hooks/copilot-hooks.json',
     ]);
     for (const conflict of conflicts) {
       expect(conflict.reason).toContain('.claude/settings.json');
-      expect(conflict.reason).toMatch(/delete the file/);
+      expect(conflict.reason).toMatch(/blocked|then re-run/);
     }
-  });
-
-  it('still never overwrites the hand-written Codex file once the plugin hooks are allowed', () => {
-    const staged = stageCodexFirstRepo();
-    repo = staged.repoRoot;
-    dorkHome = staged.home;
-
-    const before = snapshotTree(repo);
-
-    // Pass 2: the person said yes to the package's hooks, so the plan now WANTS
-    // to write `.codex/hooks.json` (and `.cursor/hooks.json`). The person's file
-    // still wins — it is reported once, and never rewritten.
-    const plan = project(repo, { dorkHome, allowPluginHooks: () => true });
-    const { conflicts } = applyPlan(repo, plan, { sweepOrphans: true });
-
-    const after = snapshotTree(repo);
-    expect(diffSnapshots(before, after)).toEqual({
-      added: ['.agents/skills/acme__greet'],
-      changed: [],
-      removed: [],
-    });
-
-    expectHandWrittenFilesIntact(repo);
-
-    const codexConflicts = conflicts.filter((c) => c.target === '.codex/hooks.json');
-    expect(codexConflicts).toHaveLength(1);
-    expect(codexConflicts[0].reason).toContain('.claude/settings.json');
+    expect(leftAlone).toEqual(['.github/hooks/copilot-hooks.json']);
   });
 });

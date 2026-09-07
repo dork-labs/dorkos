@@ -40,8 +40,12 @@ export const GENERATED_SIDECAR_SUFFIX = '.dorkos-generated';
  * the one canonical hook source, and hooks moved there reach every harness.
  */
 export const HAND_WRITTEN_HOOKS_REASON =
-  'hand-written or edited outside DorkOS; move these hooks into `.claude/settings.json` so ' +
-  'every harness gets them, or delete the file, then re-run';
+  'blocked by a file DorkOS did not write — hand-written, or edited after DorkOS wrote it. ' +
+  'Move these hooks into `.claude/settings.json` so every harness gets them, or delete the ' +
+  'file, then re-run';
+// The other case — somebody's own file where the plan writes NOTHING — carries no
+// per-item reason, because it is not a fault: `applyPlan` and `checkPlan` return
+// the bare path in `leftAlone` and the CLI heads the list with what it means.
 
 /**
  * The sidecar path for a generated target.

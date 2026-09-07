@@ -11,6 +11,7 @@ import {
   formatWarnings,
   project,
   scaffoldManifest,
+  GENERATED_HOOK_TARGET_HARNESSES,
   HARNESS_IDS,
   HARNESS_MANIFEST_PATH,
   type HarnessId,
@@ -108,6 +109,26 @@ function formatAction(action: ProjectionAction): string {
   return `  [${action.kind}] ${action.artifact} "${action.name}" -> ${path}  (${action.harness})${note}`;
 }
 
+/**
+ * The heading and lines for generated-hook paths the engine stepped over.
+ *
+ * Deliberately NOT a conflict: nothing was blocked, so this never changes an
+ * exit code. It exists so a person whose repo DorkOS projects no hooks into is
+ * told why their file is being ignored rather than left to guess.
+ */
+function formatLeftAlone(leftAlone: string[]): string[] {
+  if (leftAlone.length === 0) return [];
+  return [
+    '',
+    'Left alone — files DorkOS did not write, at paths it would otherwise generate:',
+    ...leftAlone.map(
+      (path) =>
+        `  ${path}  (${GENERATED_HOOK_TARGET_HARNESSES[path as keyof typeof GENERATED_HOOK_TARGET_HARNESSES]})`
+    ),
+    '  Nothing to fix. Put these hooks in .claude/settings.json if you want DorkOS to carry them to every harness.',
+  ];
+}
+
 /** Render a per-harness count of each actionable projection kind. */
 function summarizeActions(actions: ProjectionAction[]): string {
   if (actions.length === 0) return '  (no projected actions)';
@@ -142,7 +163,13 @@ function filterPlanToHarness(plan: ProjectionPlan, harness: HarnessId): Projecti
   };
 }
 
-/** Print the check-mode report and return its exit code (0 clean, 1 drift). */
+/**
+ * Print the check-mode report and return its exit code.
+ *
+ * Non-zero for drift (a `--fix` would repair it) and for a blocked projection (a
+ * `--fix` cannot, until the person moves their file). Zero for paths merely left
+ * alone — those are reported, never counted against the tree.
+ */
 function reportCheck(repoRoot: string, plan: ProjectionPlan): number {
   const drift = checkPlan(repoRoot, plan);
 
@@ -155,16 +182,27 @@ function reportCheck(repoRoot: string, plan: ProjectionPlan): number {
     console.log('');
     console.log(warningBlock);
   }
+  for (const line of formatLeftAlone(drift.leftAlone)) console.log(line);
   console.log('');
 
   if (drift.clean) {
     console.log('No drift — every projection already matches the plan.');
     return 0;
   }
-  console.log(`Drift detected (${drift.drifted.length} out of sync):`);
-  for (const action of drift.drifted) console.log(formatAction(action));
-  console.log('');
-  console.log('Run `dorkos harness sync --fix` to apply.');
+
+  if (drift.drifted.length > 0) {
+    console.log(`Drift detected (${drift.drifted.length} out of sync):`);
+    for (const action of drift.drifted) console.log(formatAction(action));
+    console.log('');
+    console.log('Run `dorkos harness sync --fix` to apply.');
+  }
+  if (drift.blocked.length > 0) {
+    if (drift.drifted.length > 0) console.log('');
+    console.log(
+      `${drift.blocked.length} projection(s) blocked — a --fix cannot write these until you clear the way:`
+    );
+    for (const action of drift.blocked) console.log(formatAction(action));
+  }
   return 1;
 }
 
@@ -176,7 +214,7 @@ function reportCheck(repoRoot: string, plan: ProjectionPlan): number {
  * harnesses' live projections for orphans).
  */
 function reportFix(repoRoot: string, plan: ProjectionPlan, sweepOrphans: boolean): number {
-  const { applied, conflicts, swept } = applyPlan(repoRoot, plan, { sweepOrphans });
+  const { applied, conflicts, swept, leftAlone } = applyPlan(repoRoot, plan, { sweepOrphans });
 
   console.log(`Applied ${applied.length} projection(s):`);
   for (const action of applied) console.log(formatAction(action));
@@ -193,6 +231,10 @@ function reportFix(repoRoot: string, plan: ProjectionPlan, sweepOrphans: boolean
     console.log(`Swept ${swept.length} orphaned installed projection(s):`);
     for (const path of swept) console.log(`  ${path}`);
   }
+
+  // Reported, never counted: a file DorkOS was not going to write anyway is not
+  // a reason to hand somebody a failing command on every sync.
+  for (const line of formatLeftAlone(leftAlone)) console.log(line);
 
   if (conflicts.length === 0) return 0;
 

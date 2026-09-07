@@ -26,7 +26,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { project } from '../../engine.js';
-import { applyPlan, sweepGeneratedOrphans } from '../apply.js';
+import { applyPlan, checkPlan, sweepGeneratedOrphans } from '../apply.js';
 import { getActionContent } from '../../plan/content-map.js';
 import { writeFileAt, writeJsonAt } from '../../__tests__/journeys/stage.js';
 import type { ProjectionPlan } from '../../plan/types.js';
@@ -185,23 +185,83 @@ describe('generated hook file ownership', () => {
     expect(existsSync(sidecarOf('.codex/hooks.json'))).toBe(false);
   });
 
-  it('never sweeps a generated target for a harness the manifest does not enable', () => {
+  it('sweeps its own generated file once its harness leaves the manifest', () => {
     stageRepo();
     applyPlan(repo, project(repo, { dorkHome }));
     const cursorHooks = join(repo, '.cursor', 'hooks.json');
     expect(existsSync(cursorHooks)).toBe(true);
 
-    // Cursor leaves the manifest. Its generated file is no longer the engine's
-    // business, so the sweep steps over it instead of pruning another harness's
-    // config out from under it.
+    // Cursor leaves the manifest. Turning a harness off means DorkOS stops
+    // projecting into it — leaving a live hooks file behind would be the
+    // opposite. The sidecar makes this unambiguous: the engine wrote these exact
+    // bytes, so they are the engine's to take back.
     writeJsonAt(join(repo, '.agents', 'harness.manifest.json'), {
       version: 1,
       harnesses: ['claude-code', 'codex'],
     });
     const swept = sweepGeneratedOrphans(repo, project(repo, { dorkHome }));
 
-    expect(swept).not.toContain('.cursor/hooks.json');
-    expect(existsSync(cursorHooks)).toBe(true);
+    expect(swept).toContain('.cursor/hooks.json');
+    expect(swept).toContain(`.cursor/hooks.json${GENERATED_SIDECAR_SUFFIX}`);
+    expect(existsSync(cursorHooks)).toBe(false);
+  });
+
+  it('leaves a hand-written file at a disabled harness alone, and never sweeps it', () => {
+    // The other half of the rule above: ownership, not the manifest, is what
+    // decides. A file the engine never wrote survives a harness leaving the
+    // manifest exactly as it survives everything else.
+    stageRepo();
+    const mine = `${JSON.stringify({ version: 1, hooks: {} }, null, 2)}\n`;
+    writeFileAt(join(repo, '.cursor', 'hooks.json'), mine);
+    writeJsonAt(join(repo, '.agents', 'harness.manifest.json'), {
+      version: 1,
+      harnesses: ['claude-code', 'codex'],
+    });
+
+    const { swept, leftAlone, conflicts } = applyPlan(repo, project(repo, { dorkHome }), {
+      sweepOrphans: true,
+    });
+
+    expect(swept).toEqual([]);
+    expect(leftAlone).toContain('.cursor/hooks.json');
+    expect(conflicts.map((c) => c.target)).not.toContain('.cursor/hooks.json');
+    expect(readFileSync(join(repo, '.cursor', 'hooks.json'), 'utf8')).toBe(mine);
+  });
+
+  it('reports a hand-written file at a path it is not generating as left alone, not a conflict', () => {
+    // Nothing was blocked: this plan writes no Copilot hooks at all, so a person
+    // who has their own file there has nothing to fix and must not be handed a
+    // standing non-zero exit for it.
+    stageRepo();
+    const mine = `${JSON.stringify({ version: 1, hooks: {} }, null, 2)}\n`;
+    writeFileAt(join(repo, '.github', 'hooks', 'copilot-hooks.json'), mine);
+
+    const { conflicts, leftAlone } = applyPlan(repo, project(repo, { dorkHome }));
+
+    expect(leftAlone).toEqual(['.github/hooks/copilot-hooks.json']);
+    expect(conflicts).toEqual([]);
+    expect(readFileSync(join(repo, '.github', 'hooks', 'copilot-hooks.json'), 'utf8')).toBe(mine);
+  });
+
+  it('tells --check what is blocked and what it stepped over, without calling either drift', () => {
+    stageRepo();
+    const mineCursor = `${JSON.stringify({ version: 1, hooks: { stop: [] } }, null, 2)}\n`;
+    writeFileAt(join(repo, '.cursor', 'hooks.json'), mineCursor);
+    writeFileAt(
+      join(repo, '.github', 'hooks', 'copilot-hooks.json'),
+      `${JSON.stringify({ version: 1, hooks: {} }, null, 2)}\n`
+    );
+    const plan = project(repo, { dorkHome });
+    applyPlan(repo, plan);
+
+    const drift = checkPlan(repo, plan);
+
+    // `.cursor/hooks.json` is planned but cannot be written: blocked, and the
+    // reason a `--check` exits non-zero. Copilot's file blocks nothing.
+    expect(drift.blocked.map((a) => a.target)).toEqual(['.cursor/hooks.json']);
+    expect(drift.leftAlone).toEqual(['.github/hooks/copilot-hooks.json']);
+    expect(drift.drifted.map((a) => a.target)).not.toContain('.cursor/hooks.json');
+    expect(drift.clean).toBe(false);
   });
 
   it('removes a sidecar whose file is gone', () => {
