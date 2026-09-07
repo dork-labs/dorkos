@@ -269,5 +269,31 @@ export default defineConfig([
     rules: { 'fsd/no-cross-slice-relative-import': 'error' },
   },
 
+  // FSD Feature Model Isolation (DOR-1284): a feature's model code may not
+  // import another feature's model code.
+  //
+  // `.claude/rules/fsd-layers.md` has forbidden this since the layer rules were
+  // written, and until now nothing enforced it — the `features/**` block above
+  // bans widgets and nothing else, and every other FSD rule here is about
+  // LAYERS, which two sibling features share. The rule it enforces is narrow on
+  // purpose: the same file allows UI composition across features, and allows a
+  // model file to reach a sibling through its public barrel. It is the sibling's
+  // private wiring that is out of bounds.
+  //
+  // Local code rather than another `no-restricted-imports` pattern for two
+  // reasons — a string pattern cannot tell a sibling's model from the file's OWN
+  // feature's model, and this rule's options would REPLACE the widgets ban above
+  // rather than merge with it for every file it matched. Both are written up in
+  // the rule itself.
+  //
+  // Like the encapsulation rule above, it resolves nothing and loads no plugin,
+  // so it cannot fail open — and `__tests__/cross-slice-import-lint.test.ts`
+  // lints real fixtures through this config anyway, in both directions.
+  {
+    files: ['src/layers/features/*/model/**/*.{ts,tsx}'],
+    plugins: { fsd },
+    rules: { 'fsd/no-cross-feature-model-import': 'error' },
+  },
+
   ...testConfig,
 ]);

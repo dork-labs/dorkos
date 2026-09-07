@@ -124,20 +124,31 @@ describe('the stripper reads every source in the scanned corpus', () => {
   });
 });
 
-describe('both scans over this corpus share the one stripper', () => {
+describe('every source-scanning guard in this package shares the one stripper', () => {
   // The hook's half of this guard is asserted in `scripts/__tests__/
   // code-only.test.ts`, whose CI job the hook's own path filter triggers. This
-  // half lives here for the same reason: a capability scan that regrew its own
-  // regexes is a change to `apps/server`, and this is the suite that runs.
-  const guards = ['gate-bypass-scan.test.ts', 'permission-mode-firewall.test.ts'];
+  // half lives here for the same reason: a server guard that regrew its own
+  // regexes is a change to `apps/server`, and this is the suite that runs — the
+  // repo-wide census beside the stripper does NOT, because its job is filtered
+  // to `scripts/**` and `.claude/hooks/**`.
+  //
+  // Two families, both listed. The capability scans ask "is this token a CALL?"
+  // and use `codeOnly`. The three DOR-1714 converted below ask "does this file
+  // SAY this word?" — their subjects are string literals, so they use
+  // `lexWithoutComments`, which keeps the literals and drops only the comments.
+  const guards = [
+    'services/core/capabilities/__tests__/gate-bypass-scan.test.ts',
+    'services/core/capabilities/__tests__/permission-mode-firewall.test.ts',
+    'services/runtimes/claude-code/messaging/__tests__/context-tool-names.test.ts',
+    '__tests__/session-origin-wiring.test.ts',
+    '__tests__/loopback-url-mints.test.ts',
+  ];
 
-  it.each(guards)('%s imports it, and carries no stripping regexes of its own', async (name) => {
-    const text = await readFile(path.join(path.dirname(fileURLToPath(import.meta.url)), name), {
-      encoding: 'utf-8',
-    });
+  it.each(guards)('%s imports it, and carries no stripping regexes of its own', async (rel) => {
+    const text = await readFile(path.join(SERVER_SRC, rel), { encoding: 'utf-8' });
 
     expect(text).toContain('code-only.mjs');
-    // Every shape the hand-rolled stripping took across the three call sites: a
+    // Every shape the hand-rolled stripping took across the call sites: a
     // block-comment regex, a line-comment regex, and a whole-line `//` filter.
     // Each was blind in a different direction, and no order of them is correct.
     expect(text).not.toMatch(/replace\(\s*\/\\\/\\\*/);

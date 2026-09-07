@@ -42,6 +42,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { lexWithoutComments } from '../../../../scripts/lib/code-only.mjs';
+
 const SRC = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const GLOBALS_CSS = resolve(SRC, 'app/globals.css');
 
@@ -145,16 +147,6 @@ function walkTsx(dir: string, out: string[] = []): string[] {
 }
 
 /**
- * Strip JS/JSX comments so prose that merely *mentions* a colour is not
- * mistaken for a call site. Leaves `://` alone so URLs survive.
- *
- * @param source - File source.
- */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
-}
-
-/**
  * The `<section ...>` opening tags in a file, attributes included.
  *
  * A dark ground on a `<section>` is what marks a component as dark-grounded.
@@ -217,8 +209,30 @@ const HEX_LITERAL_ALLOWLIST: Record<string, string> = {
     'terminal mockup on a #1A1814 ground — the token was darkened for cream and moves the wrong way here (3.87:1 -> 2.97:1); tracked under DOR-1700',
 };
 
+/**
+ * Every scanned `.tsx`: its path, its raw source, and its source with comments
+ * blanked — the form both source scans read.
+ *
+ * The comments have to go because prose that merely *mentions* a colour is not
+ * a call site, and a comment explaining why `#7a756a` was retired contains
+ * `#7a756a`. That is done by the repo's shared stripper rather than the pair of
+ * regexes this file used to carry: the old `(^|[^:])\/\/` guard existed to stop
+ * a URL's `//` from opening a fake line comment, which is one of the several
+ * ways a regex pair desynchronises (DOR-642). The shared stripper lexes with
+ * TypeScript's own parser, so a `//` inside a string is never a comment at all
+ * and no such guard is needed.
+ *
+ * `lexWithoutComments` and NOT `lex`: every subject here — `text-warm-gray`,
+ * `#7A756A` — is written inside a `className` string, and the literal-blanking
+ * stripper would erase exactly those. Both scans would then find nothing and
+ * report a clean pass over files they had not read.
+ */
 const TSX_FILES = walkTsx(SRC)
-  .map((f) => ({ rel: relative(SRC, f).split('\\').join('/'), source: readFileSync(f, 'utf8') }))
+  .map((f) => {
+    const rel = relative(SRC, f).split('\\').join('/');
+    const source = readFileSync(f, 'utf8');
+    return { rel, source, ...lexWithoutComments(source, rel) };
+  })
   .filter(({ rel }) => !rel.startsWith(VARIANT_PLAYGROUND));
 
 /**
@@ -318,6 +332,10 @@ describe('marketing muted-text contrast', () => {
     // A walk that silently returned nothing would make both scans below vacuous.
     expect(TSX_FILES.length).toBeGreaterThan(50);
     expect(TSX_FILES.some(({ rel }) => rel.endsWith('story/StoryHero.tsx'))).toBe(true);
+    // And every one of them was actually READ. A file the stripper cannot parse
+    // has a comment map made of guesses, and it fails silently — the scan finds
+    // no offender in it and looks exactly like a scan over a clean file.
+    expect(TSX_FILES.filter((f) => f.parseErrors > 0).map((f) => f.rel)).toEqual([]);
   });
 
   it('still finds the dark-grounded sections it is supposed to be judging', () => {
@@ -330,8 +348,8 @@ describe('marketing muted-text contrast', () => {
   });
 
   it('no dark-grounded section paints text with a light-ground warm-gray token', () => {
-    const offenders = DARK_GROUNDED_FILES.filter(({ source }) =>
-      LIGHT_GROUND_TEXT_TOKENS.test(stripComments(source))
+    const offenders = DARK_GROUNDED_FILES.filter(({ code }) =>
+      LIGHT_GROUND_TEXT_TOKENS.test(code)
     ).map(({ rel }) => rel);
     expect(offenders).toEqual([]);
   });
@@ -349,8 +367,7 @@ describe('marketing muted-text contrast', () => {
 
   it('no component hardcodes the muted gray instead of referencing the token', () => {
     const offenders = TSX_FILES.filter(
-      ({ rel, source }) =>
-        !(rel in HEX_LITERAL_ALLOWLIST) && MUTED_HEX_LITERAL.test(stripComments(source))
+      ({ rel, code }) => !(rel in HEX_LITERAL_ALLOWLIST) && MUTED_HEX_LITERAL.test(code)
     ).map(({ rel }) => rel);
     expect(offenders).toEqual([]);
   });
@@ -361,7 +378,7 @@ describe('marketing muted-text contrast', () => {
       const file = TSX_FILES.find((f) => f.rel === rel);
       expect(file, `allowlisted file is gone, drop the entry: ${rel}`).toBeDefined();
       expect(
-        MUTED_HEX_LITERAL.test(stripComments(file!.source)),
+        MUTED_HEX_LITERAL.test(file!.code),
         `allowlisted file no longer hardcodes the gray, drop the entry: ${rel}`
       ).toBe(true);
     }

@@ -69,18 +69,42 @@ async function lintFixture(relativePath: string): Promise<Linter.LintMessage[]> 
     `ESLint skipped ${relativePath} instead of linting it`
   ).toEqual([]);
 
-  return messages.filter((m) => m.ruleId === 'fsd/no-cross-slice-relative-import');
+  return messages;
+}
+
+/**
+ * The slice-encapsulation rule's messages for one fixture.
+ *
+ * @param relativePath Path under `src/layers/`.
+ * @returns Only `fsd/no-cross-slice-relative-import` messages.
+ */
+async function relativeImportErrors(relativePath: string): Promise<Linter.LintMessage[]> {
+  return (await lintFixture(relativePath)).filter(
+    (m) => m.ruleId === 'fsd/no-cross-slice-relative-import'
+  );
+}
+
+/**
+ * The feature-model isolation rule's messages for one fixture.
+ *
+ * @param relativePath Path under `src/layers/`.
+ * @returns Only `fsd/no-cross-feature-model-import` messages.
+ */
+async function featureModelErrors(relativePath: string): Promise<Linter.LintMessage[]> {
+  return (await lintFixture(relativePath)).filter(
+    (m) => m.ruleId === 'fsd/no-cross-feature-model-import'
+  );
 }
 
 describe('cross-slice relative import lint rule', () => {
   beforeAll(async () => {
     // Pay ESLint's config cold start here, on this hook's own budget. The
     // fixture slices are already on disk — `globalSetup` wrote them.
-    await lintFixture('features/__slice-fixture-a__/ui/Ok.ts');
+    await relativeImportErrors('features/__slice-fixture-a__/ui/Ok.ts');
   }, 120_000);
 
   it('reports a relative path that reaches into a sibling slice', async () => {
-    const errors = await lintFixture('features/__slice-fixture-a__/ui/Bad.ts');
+    const errors = await relativeImportErrors('features/__slice-fixture-a__/ui/Bad.ts');
 
     expect(errors).toHaveLength(1);
     // severity 2 = error. The lint gate only fails on errors, so a warning here
@@ -90,21 +114,112 @@ describe('cross-slice relative import lint rule', () => {
   });
 
   it('leaves within-slice relative imports and aliased barrel imports alone', async () => {
-    expect(await lintFixture('features/__slice-fixture-a__/ui/Ok.ts')).toEqual([]);
+    expect(await relativeImportErrors('features/__slice-fixture-a__/ui/Ok.ts')).toEqual([]);
   });
 
   it('allows `../../` when the importing file is deep enough to stay in its slice', async () => {
-    expect(await lintFixture('features/__slice-fixture-a__/ui/status/Deep.ts')).toEqual([]);
+    expect(await relativeImportErrors('features/__slice-fixture-a__/ui/status/Deep.ts')).toEqual(
+      []
+    );
+  });
+
+  it('allows a relative path to the repo-root scripts/ directory', async () => {
+    // The repo's shared source stripper lives at `scripts/lib/code-only.mjs`,
+    // outside every package. Four guards here read source with it, and there is
+    // no slice at the other end of that path — so the message this rule would
+    // print ("reach it through its barrel") names something that does not
+    // exist. What must NOT change is the sibling-slice case above, which is why
+    // both live in this file.
+    expect(await relativeImportErrors('features/__slice-fixture-a__/ui/OutsideSrc.ts')).toEqual([]);
+  });
+
+  it('still reports a deep relative import into another workspace package', async () => {
+    // The exemption above is a PREFIX, not "anything outside src/". This fixture
+    // leaves `src/` by the identical number of hops and is a real violation of
+    // the same encapsulation idea one level up — and unlike the scripts path it
+    // HAS a correct spelling to be redirected to (`@dorkos/shared/transport`).
+    // Nothing in the tree does it today; this is what keeps that true.
+    const errors = await relativeImportErrors('features/__slice-fixture-a__/ui/OutsidePackage.ts');
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].severity).toBe(2);
+    // And it names the fix that exists. "Reach it through its barrel" would send
+    // the reader looking for a slice barrel in `packages/shared`, which has none.
+    expect(errors[0].message).toContain('@dorkos/<package>');
   });
 
   it('reports a cross-slice relative path in vi.mock, which no import declaration carries', async () => {
-    const errors = await lintFixture('features/__slice-fixture-a__/__tests__/mock.test.ts');
+    const errors = await relativeImportErrors(
+      'features/__slice-fixture-a__/__tests__/mock.test.ts'
+    );
 
     expect(errors).toHaveLength(1);
     expect(errors[0].severity).toBe(2);
   });
 
   it('treats the sliceless shared/ layer as one unit', async () => {
-    expect(await lintFixture('shared/__slice-fixture-segment__/uses-lib.ts')).toEqual([]);
+    expect(await relativeImportErrors('shared/__slice-fixture-segment__/uses-lib.ts')).toEqual([]);
+  });
+});
+
+/**
+ * Guards the feature-model isolation rule (DOR-1284): a feature's model code may
+ * not import another feature's model code.
+ *
+ * `.claude/rules/fsd-layers.md` has forbidden that since the layer rules were
+ * written and nothing enforced it, so five files drifted across the line before
+ * a groom pass caught them.
+ *
+ * Every case is a DISCRIMINATION. A rule that simply banned
+ * `@/layers/features/*&#8203;/model/` from `model/` would pass the first case and
+ * break the second and third — the alias spelling of a file's OWN model, and the
+ * sibling's public barrel, which the same rules file explicitly allows. The
+ * fourth is the scope: UI composition across features is normal, so the same
+ * import from `ui/` is not this rule's business.
+ */
+describe('cross-feature model import lint rule', () => {
+  it('reports a model file importing a sibling feature’s model', async () => {
+    const errors = await featureModelErrors(
+      'features/__slice-fixture-a__/model/CrossFeatureModel.ts'
+    );
+
+    expect(errors).toHaveLength(1);
+    // severity 2 = error. The lint gate only fails on errors, so a warning here
+    // would let the violation land.
+    expect(errors[0].severity).toBe(2);
+    expect(errors[0].message).toContain('__slice-fixture-b__');
+  });
+
+  it('leaves a file’s own feature model alone, even spelled with the alias', async () => {
+    expect(
+      await featureModelErrors('features/__slice-fixture-a__/model/OwnModelByAlias.ts')
+    ).toEqual([]);
+  });
+
+  it('leaves the sibling’s public barrel alone — that is the sanctioned door', async () => {
+    expect(await featureModelErrors('features/__slice-fixture-a__/model/SiblingBarrel.ts')).toEqual(
+      []
+    );
+  });
+
+  it('does not fire from ui/, where composition across features is allowed', async () => {
+    expect(
+      await featureModelErrors('features/__slice-fixture-a__/ui/UiReachesSiblingModel.ts')
+    ).toEqual([]);
+  });
+
+  it('still bans widgets from inside model/, which a no-restricted-imports block would have dropped', async () => {
+    // `no-restricted-imports` options replace rather than merge, so scoping this
+    // rule that way would have silently un-banned widgets for every file under
+    // `features/*/model/`. It is a separate rule for that reason; this is the
+    // assertion that would have caught the mistake.
+    const messages = await lintFixture('features/__slice-fixture-a__/model/state.ts');
+    expect(messages.filter((m) => m.ruleId === 'no-restricted-imports')).toEqual([]);
+
+    const widgets = await lintFixture('features/__slice-fixture-a__/model/ReachesWidget.ts');
+    const banned = widgets.filter((m) => m.ruleId === 'no-restricted-imports');
+    expect(banned).toHaveLength(1);
+    expect(banned[0].severity).toBe(2);
+    expect(banned[0].message).toContain('cannot import from widgets');
   });
 });

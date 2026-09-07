@@ -17,6 +17,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { lexWithoutComments } from '../../../../scripts/lib/code-only.mjs';
+
 /** `apps/client/src`. */
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -65,16 +67,30 @@ const KEY_LITERAL = /(^|[^\w\]$])\[\s*['"]config['"]\s*(\]|,\s*['"]current['"]\s
  * the key rather than a use of it, and an indexed TYPE (`SomeType['config']`),
  * which is a property lookup and not a query key at all.
  *
+ * Comments go through the repo's shared stripper rather than the whole-line
+ * `//`/`*` filter this used to carry (DOR-1714), which read a trailing comment
+ * after code as code and read a `//` inside a string as a comment. The stripper
+ * blanks rather than deletes, so the line numbers reported here still point at
+ * the line the offence is really on.
+ *
+ * `lexWithoutComments` and NOT `lex`: the subject IS a string literal
+ * (`['config']`), so the literal-blanking stripper would erase every offender
+ * and the sweep below would sweep nothing.
+ *
  * @param source - A TypeScript file's text.
+ * @param fileName - Its path, which decides how it is lexed. The default suits
+ *   the inline fixtures the proof cases pass in.
  */
-function bareKeyOffenders(source: string): number[] {
-  const lines = source.split('\n');
+function bareKeyOffenders(source: string, fileName = 'fixture.ts'): number[] {
+  // Stripping only ever REMOVES text, so a file with no raw match cannot gain
+  // one — and skipping the parse for those keeps a sweep over every client
+  // source cheap.
+  if (!KEY_LITERAL.test(source)) return [];
+  const { code, parseErrors } = lexWithoutComments(source, fileName);
+  expect(parseErrors, `${fileName} did not parse, so this scan read guesswork`).toBe(0);
   const offenders: number[] = [];
-  for (const [index, line] of lines.entries()) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('*') || trimmed.startsWith('//') || trimmed.startsWith('/*')) continue;
-    if (!KEY_LITERAL.test(line)) continue;
-    offenders.push(index + 1);
+  for (const [index, line] of code.split('\n').entries()) {
+    if (KEY_LITERAL.test(line)) offenders.push(index + 1);
   }
   return offenders;
 }
@@ -101,7 +117,7 @@ describe('one config query key', () => {
       // The factory, which defines the key, and this file, whose fixtures spell
       // the offending shapes on purpose to prove the scanner sees them.
       if (rel === KEY_FACTORY || rel === SELF) continue;
-      for (const line of bareKeyOffenders(readFileSync(file, 'utf8'))) {
+      for (const line of bareKeyOffenders(readFileSync(file, 'utf8'), file)) {
         offenders.push(`${rel}:${line}`);
       }
     }

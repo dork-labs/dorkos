@@ -81,6 +81,8 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
+import { codeOnly, lexWithoutComments } from '../../../../../../../../scripts/lib/code-only.mjs';
+
 // `readManifest` must return a REAL manifest, and `configManager` must answer
 // `getAll` (DOR-1292 review). `buildAgentBlock` returns '' on a null manifest and
 // pushes `<dorkos_context>` from INSIDE it, and the `<user_profile>` build throws
@@ -243,9 +245,21 @@ function namedAsCallable(block: string, advertised: ReadonlySet<string>): string
  * TSDoc in these modules legitimately names tools — several comments exist
  * precisely to explain why the PROSE must not name them. Scanning raw source
  * would flag those and push the next person to weaken the check.
+ *
+ * `lexWithoutComments` and not `lex`: the prompt prose these modules ship IS
+ * template-literal text, so the stripper that blanks literals would leave
+ * nothing for this scan to read and every offender list would go empty.
+ *
+ * @param source - A module's full source text.
+ * @param fileName - Its path, which decides how the stripper lexes it.
+ * @returns The same source with comments blanked and prose intact.
  */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+function stripComments(source: string, fileName: string): string {
+  const { code, parseErrors } = lexWithoutComments(source, fileName);
+  // A file the parser could not read has a comment map made of guesses, and it
+  // fails silently — the scan finds nothing and looks exactly like a clean pass.
+  expect(parseErrors, `${fileName} did not parse, so this scan saw guesswork`).toBe(0);
+  return code;
 }
 
 /** Every XML tag opened in a block of prompt prose, in order. */
@@ -658,7 +672,8 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       // name each one actually emits, which also proves each adapter passes its
       // own prefix rather than defaulting to none.
       if (name === 'room-context-block.ts') continue;
-      const source = stripComments(await readFile(join(dir, name), 'utf8'));
+      const file = join(dir, name);
+      const source = stripComments(await readFile(file, 'utf8'), file);
       if (source.includes(IN_SESSION_TOOL_PREFIX)) {
         offenders.push(`${name}: spells ${IN_SESSION_TOOL_PREFIX}`);
       }
@@ -670,6 +685,18 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'these runtime-neutral modules name a DorkOS tool. Codex and OpenCode read them too, ' +
         "and do not use claude-code's prefix — name the verb, or mark it as an ending."
     ).toEqual([]);
+
+    // The scan above is only worth something if the strip KEEPS the prose it is
+    // judging. Every block in these modules is a template literal, so the
+    // repo's other stripper — `codeOnly`, which blanks literals to answer "is
+    // this a call?" — erases the entire subject: the offender list goes empty
+    // and this reports a clean pass over files it has not read. Planted through
+    // the real pipeline, both directions.
+    const planted = ['export const BLOCK = `Reply with post_to_room when asked.`;'].join('\n');
+    expect(namedAsCallable(stripComments(planted, 'planted.ts'), advertised)).toContain(
+      'post_to_room'
+    );
+    expect(namedAsCallable(codeOnly(planted, 'planted.ts'), advertised)).toEqual([]);
   });
 
   it('names the room tools correctly on each of the three runtimes (DOR-1613)', async () => {

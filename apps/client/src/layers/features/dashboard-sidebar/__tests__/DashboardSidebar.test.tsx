@@ -30,6 +30,8 @@ import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import type { Task } from '@dorkos/shared/types';
 import { useSessionListStore } from '@/layers/entities/session';
 
+import { lexWithoutComments } from '../../../../../../../scripts/lib/code-only.mjs';
+
 /** An agent member reference — `pinned`, `muted` and `items` all hold these. */
 const agent = (path: string): SidebarItemRef => ({ kind: 'agent', path });
 /** A room member reference. */
@@ -606,14 +608,20 @@ function agentRowButton(name: string): HTMLElement {
  * component may not do, which is how the rule is written down where the next
  * author will read it.
  *
+ * The repo's shared stripper does that, not a regex pair plus a whole-line `//`
+ * filter (DOR-1714). `lexWithoutComments` and not `lex`, because one of the
+ * forbidden shapes — a `model/rules` import — is spelled inside a string, and
+ * the literal-blanking stripper would erase the very thing being looked for.
+ *
  * @param source - The component's source text.
+ * @param fileName - Its path, which decides how the stripper lexes it.
  */
-function rulesIn(source: string): string[] {
-  const code = source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('//'))
-    .join('\n');
+function rulesIn(source: string, fileName: string): string[] {
+  const { code, parseErrors } = lexWithoutComments(source, fileName);
+  // The honesty channel the module's own docs ask callers to assert: a source
+  // the parser could not read has a comment map made of guesses, and a rule list
+  // that comes back empty for that reason looks exactly like a pure renderer.
+  expect(parseErrors, `${fileName} did not parse, so this scan read guesswork`).toBe(0);
   const forbidden: [string, RegExp][] = [
     [
       'a collection method',
@@ -1343,14 +1351,15 @@ describe('DashboardSidebar', () => {
   // ── The rule this whole task exists to make true ──
 
   describe('the renderer holds no rules', () => {
-    const source = readFileSync(join(__dirname, '..', 'ui', 'DashboardSidebar.tsx'), 'utf8');
+    const RENDERER = join(__dirname, '..', 'ui', 'DashboardSidebar.tsx');
+    const source = readFileSync(RENDERER, 'utf8');
 
     it('is under 200 lines', () => {
       expect(source.split('\n').length).toBeLessThan(200);
     });
 
     it('transforms nothing — no array work, no model field, no arithmetic', () => {
-      expect(rulesIn(source)).toEqual([]);
+      expect(rulesIn(source, RENDERER)).toEqual([]);
     });
 
     it('reds on every rule a reviewer could put back', () => {
@@ -1366,18 +1375,27 @@ describe('DashboardSidebar', () => {
         ['a badge count', 'const n = rows.reduce((sum, row) => sum + (row.unread.count ?? 0), 0);'],
         ['a fold decision', 'const open = !section.collapsed;'],
         ['arithmetic on the model', 'const spare = Math.max(0, rows.length - 3);'],
+        // The one forbidden shape that is a STRING — an import specifier. It is
+        // in this table for that reason: run `rulesIn` through the repo's other
+        // stripper (`codeOnly`, which blanks literals) and this is the case that
+        // goes quiet while the five above still fire, so the guard would keep
+        // looking healthy while the rule it enforces stopped being enforced.
+        ['a rule import', "import { selectNowItems } from '../model/rules/select-now-items';"],
       ];
       for (const [what, line] of cases) {
-        expect(rulesIn(`${source}\n${line}\n`), `${what} walked past the guard`).not.toEqual([]);
+        expect(
+          rulesIn(`${source}\n${line}\n`, RENDERER),
+          `${what} walked past the guard`
+        ).not.toEqual([]);
       }
     });
 
     it('does not fire on the renderer’s own prose', () => {
       // The other half: a guard that reds on the docblock would be satisfied by
       // deleting a comment, which is not the property anyone wants.
-      expect(rulesIn('/** Never .filter() or .sort() here. */\n// and no unread either\n')).toEqual(
-        []
-      );
+      expect(
+        rulesIn('/** Never .filter() or .sort() here. */\n// and no unread either\n', RENDERER)
+      ).toEqual([]);
     });
   });
 });
@@ -1823,11 +1841,14 @@ describe('Heads up — the zone that justifies the redesign', () => {
       // Comments stripped: both words appear in prose SAYING there is neither,
       // and a scan that reds on its own explanation would be satisfied by
       // deleting the explanation.
-      const code = files.map((f) =>
-        readFileSync(join(dir, f), 'utf8')
-          .replace(/\/\*[\s\S]*?\*\//g, '')
-          .replace(/\/\/.*$/gm, '')
-      );
+      const code = files.map((f) => {
+        const file = join(dir, f);
+        const lexed = lexWithoutComments(readFileSync(file, 'utf8'), file);
+        // A file the parser could not read lexes to guesswork, and both
+        // `not.toContain`s below would pass over it having seen nothing.
+        expect(lexed.parseErrors, `${file} did not parse`).toBe(0);
+        return lexed.code;
+      });
       // Named files, read for real: a scan over a directory that had been
       // renamed would report the same clean answer as one that is really clean.
       expect(code).toHaveLength(files.length);

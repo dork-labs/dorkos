@@ -1,10 +1,15 @@
 import { describe, it, expect } from 'vitest';
-// Deliberately reaching into another feature, and only a test may. The claim
-// under test is an AGREEMENT between two features — the palette writes composer
-// text, the chat send funnel decides whether that text is a command — and an
-// agreement asserted against a re-typed copy of the rule is not asserted at
-// all. This is the real recognizer the draft will meet.
-import { isNativeCommandContent } from '@/layers/features/chat/model/native-commands';
+// Deliberately reaching for another feature. The claim under test is an
+// AGREEMENT between two features — the palette writes composer text, the chat
+// send funnel decides whether that text is a command — and an agreement
+// asserted against a re-typed copy of the rule is not asserted at all. This is
+// the real recognizer the draft will meet.
+//
+// Through chat's barrel, which is where a cross-feature contract belongs: this
+// file is model code, and model code may not reach into a sibling's private
+// wiring (DOR-1284, `fsd/no-cross-feature-model-import`). The predicate is
+// exported from `features/chat` for exactly this reason.
+import { isNativeCommandContent } from '@/layers/features/chat';
 import { composeCommandDraft } from '../palette-command-draft';
 
 describe('composeCommandDraft', () => {

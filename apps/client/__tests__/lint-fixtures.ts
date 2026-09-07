@@ -138,7 +138,11 @@ const FIXTURE_FILES: ReadonlyArray<readonly [path: string, source: string]> = [
   // The neighbour being reached into. Real, so the fixture is a genuine
   // resolvable import and not a dangling string.
   ['features/__slice-fixture-b__/ui/Thing.ts', 'export const thing = 1;\n'],
-  ['features/__slice-fixture-b__/index.ts', "export { thing } from './ui/Thing';\n"],
+  ['features/__slice-fixture-b__/model/rule.ts', 'export const rule = 2;\n'],
+  [
+    'features/__slice-fixture-b__/index.ts',
+    "export { thing } from './ui/Thing';\nexport { rule } from './model/rule';\n",
+  ],
   // Slice A's own internals, at two depths.
   ['features/__slice-fixture-a__/model/state.ts', 'export const state = 1;\n'],
   [
@@ -148,6 +152,21 @@ const FIXTURE_FILES: ReadonlyArray<readonly [path: string, source: string]> = [
   [
     'features/__slice-fixture-a__/ui/Ok.ts',
     "import { state } from '../model/state';\nimport { thing } from '@/layers/features/__slice-fixture-b__';\nexport const ok = () => state + thing;\n",
+  ],
+  // A path to the repo-root `scripts/` directory, which is what the four
+  // source-scanning guards here do to reach the shared stripper. There is no
+  // slice at the other end, so there is nothing for the rule to be about.
+  [
+    'features/__slice-fixture-a__/ui/OutsideSrc.ts',
+    "import { codeOnly } from '../../../../../../../scripts/lib/code-only.mjs';\nexport const outside = codeOnly;\n",
+  ],
+  // Its discriminator, and the reason that exemption is a PREFIX and not
+  // "anything outside src/": this leaves `src/` by the identical number of
+  // hops, and it is a deep relative import into another workspace package with
+  // a correct aliased spelling to be redirected to.
+  [
+    'features/__slice-fixture-a__/ui/OutsidePackage.ts',
+    "import type { Transport } from '../../../../../../../packages/shared/src/transport';\nexport type T = Transport;\n",
   ],
   // Nested one segment deeper, so `../../` still lands inside slice A. This is
   // the case a depth-counting string pattern gets wrong.
@@ -159,6 +178,31 @@ const FIXTURE_FILES: ReadonlyArray<readonly [path: string, source: string]> = [
     'features/__slice-fixture-a__/__tests__/mock.test.ts',
     "vi.mock('../../__slice-fixture-b__/ui/Thing', () => ({ thing: 2 }));\nexport const mocked = 1;\n",
   ],
+  // Feature model isolation (DOR-1284). Four fixtures, because the rule has to
+  // separate the sibling's private wiring from three things that are ordinary:
+  // the same feature's own model reached by the alias, the sibling's public
+  // barrel, and a UI file doing the very thing model code may not.
+  [
+    'features/__slice-fixture-a__/model/CrossFeatureModel.ts',
+    "import { rule } from '@/layers/features/__slice-fixture-b__/model/rule';\nexport const bad = () => rule;\n",
+  ],
+  [
+    'features/__slice-fixture-a__/model/OwnModelByAlias.ts',
+    "import { state } from '@/layers/features/__slice-fixture-a__/model/state';\nexport const own = () => state;\n",
+  ],
+  [
+    'features/__slice-fixture-a__/model/SiblingBarrel.ts',
+    "import { rule } from '@/layers/features/__slice-fixture-b__';\nexport const viaBarrel = () => rule;\n",
+  ],
+  [
+    'features/__slice-fixture-a__/model/ReachesWidget.ts',
+    "import { AppLayout } from '@/layers/widgets/app-layout';\nexport const reaches = AppLayout;\n",
+  ],
+  [
+    'features/__slice-fixture-a__/ui/UiReachesSiblingModel.ts',
+    "import { rule } from '@/layers/features/__slice-fixture-b__/model/rule';\nexport const fromUi = () => rule;\n",
+  ],
+
   // `shared/` is sliceless: its top-level directories are segments, so a
   // relative hop between them stays inside the unit.
   [

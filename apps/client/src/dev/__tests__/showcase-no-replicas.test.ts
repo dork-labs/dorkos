@@ -18,6 +18,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
+import { lexWithoutComments } from '../../../../../scripts/lib/code-only.mjs';
+
 const DEV_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Read one file under `dev/`. */
@@ -26,17 +28,30 @@ function showcaseSource(...segments: string[]): string {
 }
 
 /**
- * The same source with its comments removed.
+ * The same source with its comments blanked.
  *
  * The checks below look for retired class names, and a comment explaining WHY a
  * class name is retired contains that name — so a scan over raw source fails on
  * its own documentation and the only way to keep it green is to stop explaining
- * things. Code only.
+ * things.
+ *
+ * The repo's shared stripper does it, not a block-comment regex plus a
+ * line-comment one (DOR-1714). `lexWithoutComments` and NOT `lex`: a class
+ * name lives inside a `className` string, which the literal-blanking stripper
+ * erases — every `not.toContain` below would then pass against a file it had
+ * not read.
+ *
+ * @param segments - Path segments under `dev/`.
+ * @returns The file's text with only its comments blanked out.
  */
 function showcaseCode(...segments: string[]): string {
-  return showcaseSource(...segments)
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^[ \t]*\/\/.*$/gm, '');
+  const file = join(DEV_DIR, ...segments);
+  const { code, parseErrors } = lexWithoutComments(readFileSync(file, 'utf8'), file);
+  // The honesty channel the module's own docs ask callers to assert: a showcase
+  // the parser could not read has a comment map made of guesses, and every
+  // `not.toContain` below passes over a file nothing looked at.
+  expect(parseErrors, `${file} did not parse, so this scan read guesswork`).toBe(0);
+  return code;
 }
 
 describe('the topology showcases render the real components', () => {
