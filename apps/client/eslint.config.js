@@ -100,8 +100,8 @@ export default defineConfig([
   // FSD Layer Enforcement: shared/ cannot import higher layers, and inside
   // shared/ the lib barrel is not the way in (DOR-1761).
   //
-  // `shared/lib/index.ts` re-exports ~150 symbols from ~60 modules, including
-  // `HttpTransport`, `playCelebration`, `CelebrationEngine` and `queryClient`.
+  // `shared/lib/index.ts` re-exports ~140 symbols from ~60 modules, including
+  // `playCelebration`, `CelebrationEngine`, the font loader and `queryClient`.
   // So `import { cn } from '@/layers/shared/lib'` inside a 20-line `OptionRow`
   // pulls a module graph that has nothing to do with merging class names — and
   // the barrel already documents that cost itself, at the line explaining why
@@ -109,6 +109,15 @@ export default defineConfig([
   // for consumers in `entities/`, `features/` and `widgets/`; within `shared/`,
   // import the leaf module. `cn` had three spellings before this and the one the
   // written rule endorsed was the expensive one.
+  //
+  // The rule is NARROWER than it was, because the worst thing it used to name is
+  // now structurally impossible. `HttpTransport` headed this list until DOR-1809
+  // took both Transports — and `createBootCache`, which loads one — off the
+  // barrel; `lib/__tests__/barrel-transport-isolation.test.ts` fails if either
+  // comes back. What is left is a real but ordinary cost, so the rule stays: a
+  // lint rule is the right tool for "prefer the cheap spelling", and it was
+  // never the right tool for the transport, which is why that half is a
+  // structure and a load test instead.
   //
   // Tests are exempt: a spec may name the barrel as a string fixture, and one
   // (`lib/__tests__/one-verb-source.test.ts`) does.
@@ -125,7 +134,7 @@ export default defineConfig([
           paths: ['@/layers/shared/lib', './lib', '../lib', '../../lib'].map((name) => ({
             name,
             message:
-              'Inside shared/, import the leaf module — `@/layers/shared/lib/utils` for cn. The lib barrel pulls the transport, the sound player and ~60 other modules in with it.',
+              'Inside shared/, import the leaf module — `@/layers/shared/lib/utils` for cn. The lib barrel pulls the sound player, the celebration engine and ~60 other modules in with it.',
           })),
           patterns: [
             {

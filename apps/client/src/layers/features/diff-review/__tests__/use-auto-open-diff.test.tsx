@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
 const { executeUiCommand, getConfig } = mocks;
 const capturedHandler = () => mocks.handler.current;
 
-vi.mock('@/layers/shared/lib', () => ({
+vi.mock('@/layers/shared/lib/transport', () => ({
   streamManager: {
     subscribeSessionEvent: (handler: SessionEventHandler) => {
       mocks.handler.current = handler;
@@ -25,6 +25,8 @@ vi.mock('@/layers/shared/lib', () => ({
       };
     },
   },
+}));
+vi.mock('@/layers/shared/lib', () => ({
   executeUiCommand: mocks.executeUiCommand,
 }));
 

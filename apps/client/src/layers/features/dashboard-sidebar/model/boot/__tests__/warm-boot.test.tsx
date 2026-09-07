@@ -23,12 +23,9 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
 import { persistQueryClientRestore } from '@tanstack/react-query-persist-client';
-import {
-  createBootCache,
-  isBootQueryKey,
-  HttpTransport,
-  type BootCache,
-} from '@/layers/shared/lib';
+import { isBootQueryKey } from '@/layers/shared/lib';
+import { createBootCache, type BootCache } from '@/layers/shared/lib/query-persister';
+import { HttpTransport } from '@/layers/shared/lib/transport';
 import { configKeys } from '@/layers/shared/model';
 import { powerFixture } from '../../fixtures/power';
 // Heads up's three sources are the one part of the gate that is mocked here,

@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   handler: { current: null as SessionEventHandler | null },
 }));
 
-vi.mock('@/layers/shared/lib', () => ({
+vi.mock('@/layers/shared/lib/transport', () => ({
   streamManager: {
     subscribeSessionEvent: (handler: SessionEventHandler) => {
       mocks.handler.current = handler;

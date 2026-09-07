@@ -30,6 +30,8 @@ const streamMocks = vi.hoisted(() => ({
 // from the shared lib barrel — mock both so tests can fire session events.
 vi.mock('@/layers/shared/lib', () => ({
   cn: (...inputs: unknown[]) => inputs.flat(Infinity).filter(Boolean).join(' '),
+}));
+vi.mock('@/layers/shared/lib/transport', () => ({
   streamManager: {
     subscribeSessionEvent: (handler: SessionEventHandler) => {
       streamMocks.handler.current = handler;
