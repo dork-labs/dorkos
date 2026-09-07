@@ -320,9 +320,7 @@ for (const { name, viewport } of WIDTHS) {
         // hypothetical at exactly 768: a reserved scrollbar takes the viewport
         // below the breakpoint by the width of the scrollbar, and headless
         // Chromium's overlay scrollbars are the only reason it does not here.
-        const isTablet = await page.evaluate(
-          () => window.matchMedia('(min-width: 768px)').matches
-        );
+        const isTablet = await page.evaluate(() => window.matchMedia('(min-width: 768px)').matches);
         expect(
           isTablet,
           `the ${name} case asked for ${viewport.width}px and the page resolves ` +
