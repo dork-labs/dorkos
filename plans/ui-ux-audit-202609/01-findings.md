@@ -1850,6 +1850,50 @@ All under `apps/client/src/dev/showcases/`: `MiscShowcases.tsx:2` (`CelebrationO
 
 ---
 
+## Found after the batches — ready to file
+
+Defects the audit's own follow-up work surfaced, recorded here rather than fixed
+where they were found, so a coverage PR does not quietly carry a product change.
+
+### F1 — Home's bar overflows its own row by ~4px at exactly 768px
+
+**P3 · S · lens 8** — found by the tablet sweep added in DOR-1816, on its first
+run.
+`apps/client/src/AppShell.tsx:745`, `apps/client/src/layers/widgets/one-bar/ui/OneBar.tsx:65-95`,
+`apps/client/src/layers/widgets/one-bar/ui/HomeSurfaceBar.tsx:62-100`,
+`apps/client/src/layers/widgets/one-bar/ui/RoomRunState.tsx`,
+`apps/client/src/layers/shared/ui/bar-tab-strip.tsx:168`
+
+**Evidence.** Measured in Chromium at 768×1024 on `/`: the shell's cross-fade
+wrapper (`flex min-w-0 flex-1 items-center gap-2 self-stretch`) is 293.0px wide
+and its children want 297.3px, so the health dot — last in the row — paints
+4.3px past it. Nothing in the row will yield the difference, and every refusal
+is deliberate: `BarTabStrip` is at the `min-w-28` floor finding 2.3 gave it
+(112.0px), the chips zone is `shrink-0` (153.3px), and `RoomRunState` reserves
+its ~70px whether or not anything is running, which is its own documented
+"reserved-space mechanism (I3)" — an agent picking work up must not move the
+row.
+
+768px is the first width at which this is reachable, which is why no earlier
+pass saw it: `RoomRunState` draws nothing below the mobile breakpoint by
+design, so the width it reserves appears for the first time at exactly the
+width the new sweep added.
+
+**Not visible today**, which is why it is P3 and not P1: the 4.3px lands in the
+header's own 8px gap and overlaps nothing. It is a latent overlap — the moment
+the chips grow (a longer room name, a three-digit working count) it becomes the
+health dot sitting under the ⌘K trigger.
+
+**Recommendation.** A product decision about which chip yields on Home's bar at
+tablet width, not a containment patch — which is why it was filed rather than
+fixed inside `apps/e2e`. The guard records it in `EXPECTED_ESCAPES`
+(`apps/e2e/tests/responsive/no-horizontal-scroll.spec.ts`) so the sweep stays
+green and still reports every OTHER escape on that page; that entry also fails
+the test if the escape ever stops happening, so fixing this forces the entry's
+deletion.
+
+---
+
 ## Appendix — coverage and honest gaps
 
 What each lens actually covered, and what it did not, so the gaps are visible rather than implied.

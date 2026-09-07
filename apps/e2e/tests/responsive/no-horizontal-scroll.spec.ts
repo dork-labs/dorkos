@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 
 /**
- * Nothing escapes its container on a phone (DOR-1747).
+ * Nothing escapes its container on a phone or a tablet (DOR-1747, DOR-1816).
  *
  * The rule this pins is one line long: no content may leave its container or
  * make the page scroll sideways. It is broken by one thing over and over — a
@@ -22,9 +22,26 @@ import { test, expect } from '../../fixtures';
  *
  * That second check is quiet by construction. Truncation sets `overflow:hidden`
  * to earn its ellipsis, a scroller sets `auto`, and both are skipped — only
- * text painting outside a box that does not clip is reported. Across all eight
- * routes it reports nothing today, and reports the Workspaces line the moment
- * the path goes back into the sentence.
+ * text painting outside a box that does not clip is reported. Across the
+ * sixteen route×width cells it reports one escape today (see
+ * {@link EXPECTED_ESCAPES}), and it reports the Workspaces line the moment the
+ * path goes back into the sentence.
+ *
+ * **Every route is judged at two widths, and the second is not a formality**
+ * (DOR-1816). See {@link WIDTHS}: DOR-1747's own review found a real escape
+ * that only exists at 768px, and this file could not have caught it. The
+ * tablet pass found another one on its first run — see {@link EXPECTED_ESCAPES}
+ * — which is the answer to whether it was worth adding.
+ *
+ * **What it costs, measured rather than estimated.** Back-to-back on one
+ * machine at `--workers=2`: the eight phone cases sum to 38.1s of test time
+ * and finish in 33.3s of wall clock; all sixteen sum to 72.8s and finish in
+ * 49.5s. So the sum went up 1.9× and nothing else did — the cost is in the
+ * cases, not in some per-run overhead that would have made this a bad trade.
+ * CI runs one worker per shard, where the sum IS the wall clock: about 35
+ * extra seconds on a shard that already takes ~16 minutes. Nothing is sampled
+ * or sharded away to pay for it: a guard that quietly checked half its routes
+ * would be worse than one that honestly checked one width.
  *
  * **Only a laid-out page can catch any of this.** jsdom reports every element
  * as 0×0 and has no viewport, so a unit test can assert that a `truncate` class
@@ -38,12 +55,28 @@ import { test, expect } from '../../fixtures';
  */
 
 /**
- * The narrowest phone viewport this suite watches. Defined locally rather
- * than imported from the rooms suite's helper — a shared viewport constant
- * would be a fine addition later, but this responsive suite has no reason to
- * depend on an unrelated suite's module for one number.
+ * The two widths every route is judged at. Defined locally rather than
+ * imported from the rooms suite's helper — a shared viewport constant would be
+ * a fine addition later, but this responsive suite has no reason to depend on
+ * an unrelated suite's module for two numbers.
+ *
+ * **The tablet width is not an extrapolation of the phone one** (DOR-1816).
+ * DOR-1747's own review found a real, previously-invisible escape by measuring
+ * at exactly 768×1024 — the marketplace card's author/source row had a
+ * `min-w-[6.5rem]` floor that painted past the card's edge on 306 of 306 cards
+ * — and it found it at that width and not at 390, because 768 is where the
+ * sidebar docks and the page's usable width stops being the window's. That
+ * review asked for this sweep and it was deferred as its own pass, because it
+ * doubles the route×width matrix.
+ *
+ * 768 exactly, not 767 or 800: it is Tailwind's `md` breakpoint, so it is the
+ * first width at which every `md:` rule in the app is live. A defect at the
+ * boundary is a defect in the rule that just turned on.
  */
-const PHONE = { width: 390, height: 844 } as const;
+const WIDTHS = [
+  { name: 'phone', viewport: { width: 390, height: 844 } },
+  { name: 'tablet', viewport: { width: 768, height: 1024 } },
+] as const;
 
 /** Every destination in the sidebar, plus the ones the home tab bar owns. */
 const ROUTES = [
@@ -188,29 +221,92 @@ async function escapedText(page: Page): Promise<{ escapes: string[]; textLeaves:
  */
 const MIN_TEXT_LEAVES = 16;
 
-test.describe('Responsive — nothing escapes its container at 390px @smoke', () => {
-  test.use({ viewport: PHONE });
+/**
+ * Escapes this guard has already found, reported, and deliberately not fixed
+ * here — keyed `route@width`, valued with a fragment of the escape's own
+ * description.
+ *
+ * **An entry is a promise in both directions, and that is what stops this from
+ * being a mute button.** An escape naming one of these is not reported, and
+ * every other escape on the same page still is; but an entry that stops
+ * matching also fails the test, saying so. So the moment somebody fixes the
+ * bar, this guard goes red and asks for the entry to be deleted — which is the
+ * only reliable way an allowance like this ever gets removed.
+ *
+ * ── `/` at 768px — Home's bar overflows its own row by ~4px (DOR-1816) ──
+ *
+ * Measured: the cross-fade wrapper that holds the route's bar gets 293px of the
+ * header, and its children want 297.3px. Nothing in the row will yield the
+ * difference, and each refusal is deliberate: `BarTabStrip` is already at the
+ * `min-w-28` floor DOR-1748 gave it, the chips zone is `shrink-0`, and
+ * `RoomRunState` reserves ~70px whether or not anything is running (its own
+ * "reserved-space mechanism (I3)" — an agent picking work up must not move the
+ * row). So the health dot, last in the row, paints 4.3px past the wrapper.
+ *
+ * 768px is the first width at which this can happen at all, which is why no
+ * earlier guard saw it: `RoomRunState` draws nothing below the mobile
+ * breakpoint by design, so the ~70px it reserves appears for the first time at
+ * exactly the width this sweep added.
+ *
+ * **Not fixed here on purpose.** It is invisible today — the 4.3px lands in the
+ * header's own 8px gap and overlaps nothing — and every candidate fix is a
+ * product decision about which chip yields on Home's bar, which does not belong
+ * in a coverage PR. Recorded in `plans/ui-ux-audit-202609/01-findings.md` and
+ * filed under UI/UX Audit 2026-09 instead.
+ */
+const EXPECTED_ESCAPES: Readonly<Record<string, string>> = {
+  '/@768': '<div class="flex shrink-0 items-center gap-2">',
+};
 
-  for (const route of ROUTES) {
-    test(`${route} contains its own content`, async ({ page, basePage }) => {
-      await basePage.goto(route);
-      await basePage.waitForAppReady();
-      // The shell mounting is not the route having anything in it — an API
-      // that never answers still passes `app-shell`. Settle network first so
-      // the sample below looks at real content rather than a skeleton.
-      await page.waitForLoadState('networkidle');
+for (const { name, viewport } of WIDTHS) {
+  test.describe(`Responsive — nothing escapes its container at ${viewport.width}px @smoke`, () => {
+    test.use({ viewport });
 
-      const worst = await worstHorizontalOverflow(page);
-      const { escapes, textLeaves } = await escapedText(page);
+    for (const route of ROUTES) {
+      test(`${route} contains its own content on a ${name}`, async ({ page, basePage }) => {
+        await basePage.goto(route);
+        await basePage.waitForAppReady();
+        // The shell mounting is not the route having anything in it — an API
+        // that never answers still passes `app-shell`. Settle network first so
+        // the sample below looks at real content rather than a skeleton.
+        await page.waitForLoadState('networkidle');
 
-      expect(
-        textLeaves,
-        `${route} rendered only ${textLeaves} text-bearing elements — ` +
-          `too few to trust this sample (floor ${MIN_TEXT_LEAVES}); the route ` +
-          `likely never loaded its data`
-      ).toBeGreaterThanOrEqual(MIN_TEXT_LEAVES);
-      expect(escapes, `${route} paints content outside its container`).toEqual([]);
-      expect(worst, `${route} scrolled ${worst}px past ${PHONE.width}px`).toBe(0);
-    });
-  }
-});
+        const worst = await worstHorizontalOverflow(page);
+        const { escapes, textLeaves } = await escapedText(page);
+
+        // Every message names the width as well as the route: the same route
+        // passes at one and fails at the other, so a failure that said only
+        // "/marketplace paints content outside its container" would send the
+        // reader to reproduce it at whichever width they happened to try.
+        expect(
+          textLeaves,
+          `${route} at ${viewport.width}px rendered only ${textLeaves} text-bearing elements — ` +
+            `too few to trust this sample (floor ${MIN_TEXT_LEAVES}); the route ` +
+            `likely never loaded its data`
+        ).toBeGreaterThanOrEqual(MIN_TEXT_LEAVES);
+
+        const expected = EXPECTED_ESCAPES[`${route}@${viewport.width}`];
+        const unexpected =
+          expected === undefined ? escapes : escapes.filter((one) => !one.includes(expected));
+        expect(
+          unexpected,
+          `${route} paints content outside its container at ${viewport.width}px`
+        ).toEqual([]);
+        if (expected !== undefined) {
+          // The other half of the promise EXPECTED_ESCAPES makes. Stated as a
+          // count rather than a boolean so a failure prints which way it went:
+          // 0 means the escape is gone and the entry is owed a deletion, and
+          // anything above 1 means the fragment has stopped naming one thing.
+          expect(
+            escapes.filter((one) => one.includes(expected)).length,
+            `${route} at ${viewport.width}px no longer paints the ONE escape ` +
+              `EXPECTED_ESCAPES records for it (${expected}). If it was fixed, delete that ` +
+              `entry — it is now hiding whatever escapes this route grows next`
+          ).toBe(1);
+        }
+
+        expect(worst, `${route} scrolled ${worst}px past ${viewport.width}px`).toBe(0);
+      });
+    }
+  });
+}
