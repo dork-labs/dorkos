@@ -176,13 +176,6 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
   },
   // ConnectionsShowcases
   {
-    id: 'servicetile',
-    title: 'ServiceTile',
-    page: 'home-inbox',
-    category: 'Connections',
-    keywords: ['connector', 'connections', 'service', 'connect', 'gmail', 'slack', 'tile', 'grid'],
-  },
-  {
     id: 'accountrow',
     title: 'AccountRow',
     page: 'home-inbox',

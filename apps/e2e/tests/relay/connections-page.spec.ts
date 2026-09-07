@@ -91,11 +91,12 @@ test.describe('Connections page @smoke', () => {
   }) => {
     await connectionsPage.goto();
 
-    // The region never vanishes. With no carrier key it names the services and
-    // the one-time setup standing in the way, in the vendor's own name.
+    // The region never vanishes. With no connected account it names the empty
+    // state and the next useful step without implying that setup is complete.
     await expect(connectionsPage.accounts).toBeVisible();
-    await expect(
-      connectionsPage.accounts.getByText(/connects through composio|connected/i).first()
-    ).toBeVisible();
+    await expect(connectionsPage.accounts).toContainText('No accounts connected');
+    await expect(connectionsPage.accounts).toContainText(
+      'Connect a service, then choose exactly which agents may use it.'
+    );
   });
 });

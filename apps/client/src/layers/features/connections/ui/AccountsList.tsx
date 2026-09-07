@@ -1,184 +1,106 @@
-import { Unplug } from 'lucide-react';
-import type { PublicConnectedAccount } from '@dorkos/shared/connector-provider';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-  Badge,
-  Button,
-  cardVariants,
-  Skeleton,
-} from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
-import { useConnectorAccounts, useDisconnectConnectorAccount } from '@/layers/entities/connectors';
-import { accountDisplayName, FALLBACK_SERVICE_ICON, SERVICE_ICONS } from '../lib/presentation';
+import { ChevronRight } from 'lucide-react';
+import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
+import { EmbeddedConnectionsNotice, useConnectorConnections } from '@/layers/entities/connectors';
+import { getPlatform } from '@/layers/shared/lib';
+import { Badge, Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
+import { connectionStatusLabel, FALLBACK_SERVICE_ICON, SERVICE_ICONS } from '../lib/presentation';
 
-/** Badge styling per account lifecycle status — trouble reads as trouble. */
-const STATUS_BADGE_VARIANT: Record<
-  PublicConnectedAccount['status'],
-  'secondary' | 'outline' | 'destructive'
-> = {
-  active: 'secondary',
-  paused: 'outline',
-  pending: 'outline',
-  expired: 'destructive',
-  revoked: 'destructive',
-};
-
-/**
- * The connected accounts list: one row per account — service icon, "Gmail
- * (work)" naming, lifecycle status, the account's own server-composed custody
- * sentence, and disconnect with confirm. Two accounts of one service are two
- * visibly distinct rows (multi-account made visible).
- */
+/** Compact canonical stable-account inventory. */
 export function AccountsList({
-  onManageAccess,
+  onOpenDetail,
 }: {
-  /** Open exact operation access for one stable connection. */
-  onManageAccess?: (connectionId: string) => void;
-} = {}) {
-  const { data, isLoading, isError, error } = useConnectorAccounts();
-
-  if (isLoading) {
+  /** Opens the detail surface for one stable connection. */
+  onOpenDetail: (connectionId: string) => void;
+}) {
+  const query = useConnectorConnections();
+  if (query.isPending) {
     return (
-      <div className="space-y-2">
+      <div className="space-y-2" aria-label="Loading connected accounts">
         <Skeleton className="h-16 rounded-lg" />
         <Skeleton className="h-16 rounded-lg" />
       </div>
     );
   }
-
-  if (isError) {
+  if (query.isError) {
+    if (getPlatform().isEmbedded) {
+      return <EmbeddedConnectionsNotice title="Connected accounts are unavailable here" />;
+    }
     return (
-      <p role="alert" className="text-destructive text-sm">
-        Couldn’t load connected accounts: {error.message}
-      </p>
+      <QueryErrorState
+        title="Couldn’t load connected accounts"
+        description="Try again. Nothing about your accounts was changed."
+        onRetry={() => void query.refetch()}
+        isRetrying={query.isFetching}
+      />
     );
   }
-
-  const accounts = data?.accounts ?? [];
-  const warnings = data?.warnings ?? [];
-
+  const connections = query.data?.connections ?? [];
+  if (connections.length === 0) {
+    return (
+      <div className="bg-muted/40 rounded-lg p-5">
+        <p className="text-sm font-medium">No accounts connected</p>
+        <p className="text-muted-foreground mt-1 text-xs">
+          Connect a service, then choose exactly which agents may use it.
+        </p>
+      </div>
+    );
+  }
   return (
-    <div className="space-y-3">
-      {accounts.length === 0 ? (
-        <p className="text-muted-foreground text-sm">
-          Nothing connected yet. Pick a service above and connect your first account.
-        </p>
-      ) : (
-        <ul className="space-y-2">
-          {accounts.map((account) => (
-            <AccountRow key={account.id} account={account} onManageAccess={onManageAccess} />
-          ))}
-        </ul>
-      )}
-      {warnings.map((warning) => (
-        <p key={warning.provider} className="text-muted-foreground text-xs">
-          Some accounts may be missing: {warning.message}
-        </p>
+    <ul className="space-y-2">
+      {connections.map((connection) => (
+        <AccountRow
+          key={connection.connectionId}
+          connection={connection}
+          onOpenDetail={onOpenDetail}
+        />
       ))}
-    </div>
+    </ul>
   );
 }
 
-/**
- * One connected account row. Also renderable standalone (Dev Playground) —
- * pass `onDisconnect` to override the live mutation.
- *
- * @param props - The account to draw and an optional disconnect override.
- * @param props.account - The public account, custody sentence included.
- * @param props.onDisconnect - Optional handler; defaults to the live mutation.
- */
+/** One stable connection row with detail as its single action. */
 export function AccountRow({
-  account,
-  onDisconnect,
-  onManageAccess,
+  connection,
+  onOpenDetail,
 }: {
-  account: PublicConnectedAccount;
-  onDisconnect?: (accountId: string) => void;
-  onManageAccess?: (connectionId: string) => void;
+  /** Canonical owner-visible connection summary. */
+  connection: ConnectorConnectionSummary;
+  /** Opens the account detail surface. */
+  onOpenDetail: (connectionId: string) => void;
 }) {
-  const disconnect = useDisconnectConnectorAccount();
-  const Icon = SERVICE_ICONS[account.toolkit.toLowerCase()] ?? FALLBACK_SERVICE_ICON;
-  const name = accountDisplayName(displayService(account.toolkit), account.label);
-  const handleDisconnect = () =>
-    onDisconnect ? onDisconnect(account.id) : disconnect.mutate({ accountId: account.id });
+  const Icon = SERVICE_ICONS[connection.toolkit.toLowerCase()] ?? FALLBACK_SERVICE_ICON;
+  const service = connection.toolkit.charAt(0).toUpperCase() + connection.toolkit.slice(1);
+  const healthy =
+    connection.lifecycle === 'connected' &&
+    connection.authenticationStatus === 'active' &&
+    connection.reconciliationStatus === 'ready' &&
+    connection.authoritySync.status === 'ready';
+  const status = connectionStatusLabel(connection);
 
   return (
-    <li
-      data-testid={`account-row-${account.id}`}
-      // The card shell from the card's own recipe; the element stays an `<li>`.
-      className={cn(cardVariants({ gap: 'sm' }), 'flex-row items-start p-3')}
-    >
-      <Icon className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium">{name}</span>
-          <Badge size="xs" variant={STATUS_BADGE_VARIANT[account.status]}>
-            {account.status}
-          </Badge>
-        </div>
-        {/* The per-account custody sentence, server-composed — every rendered
-            account row carries its own truthful disclosure line. */}
-        <p className="text-muted-foreground mt-1 text-xs leading-relaxed">{account.disclosure}</p>
-      </div>
-      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-        {onManageAccess && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground shrink-0 text-xs"
-            onClick={() => onManageAccess(account.id)}
-          >
-            Manage access
-          </Button>
-        )}
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-destructive shrink-0 gap-1.5 text-xs"
-              disabled={disconnect.isPending}
-            >
-              <Unplug className="size-3.5" aria-hidden />
-              {disconnect.isPending ? 'Disconnecting…' : 'Disconnect'}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Disconnect {name}?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Your agents lose access to this account. You can connect it again anytime.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Keep connected</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleDisconnect}
-                className="bg-destructive hover:bg-destructive/90 text-white"
-              >
-                Disconnect
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+    <li data-testid={`connection-row-${connection.connectionId}`}>
+      <Button
+        variant="ghost"
+        onClick={() => onOpenDetail(connection.connectionId)}
+        className="bg-muted/40 hover:bg-muted/70 focus-visible:bg-muted/70 h-auto min-h-14 w-full justify-start rounded-lg px-3 py-2.5 text-left"
+      >
+        <Icon className="text-muted-foreground size-4 shrink-0" aria-hidden />
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-sm font-medium">
+              {service} ({connection.label})
+            </span>
+            <Badge size="xs" variant={healthy ? 'secondary' : 'outline'}>
+              {status}
+            </Badge>
+          </span>
+          <span className="text-muted-foreground mt-0.5 block text-xs">
+            {connection.agentCount} {connection.agentCount === 1 ? 'agent' : 'agents'} ·{' '}
+            {connection.mode === 'managed' ? 'Managed' : 'Your account'}
+          </span>
+        </span>
+        <ChevronRight className="text-muted-foreground size-4 shrink-0" aria-hidden />
+      </Button>
     </li>
   );
-}
-
-/**
- * A service's display name when only its slug is at hand (account rows carry
- * the toolkit slug, not the toolkit object).
- */
-function displayService(toolkit: string): string {
-  if (!toolkit) return 'Account';
-  return toolkit.charAt(0).toUpperCase() + toolkit.slice(1);
 }

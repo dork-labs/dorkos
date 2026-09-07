@@ -7,10 +7,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
-import {
-  AgentConnectorAttachmentStore,
-  SessionConnectorAttachmentStore,
-} from '../attachment-store.js';
+import { SessionConnectorAttachmentStore } from '../attachment-store.js';
 
 /** Seed the canonical parents required by attachment foreign keys. */
 function seedConnections(db: Db): void {
@@ -43,34 +40,6 @@ function seedConnections(db: Db): void {
       .run();
   }
 }
-
-describe('AgentConnectorAttachmentStore', () => {
-  let db: Db;
-  let store: AgentConnectorAttachmentStore;
-
-  beforeEach(() => {
-    db = createDb(':memory:');
-    runMigrations(db);
-    seedConnections(db);
-    store = new AgentConnectorAttachmentStore(db);
-  });
-
-  it('attach/detach/listForAgent round-trip', () => {
-    const gmail = 'gmail:personal' as ConnectedAccountId;
-    store.attach('agent-a', gmail);
-    expect(store.listForAgent('agent-a').map((a) => a.accountId)).toEqual([gmail]);
-    store.detach('agent-a', gmail);
-    expect(store.listForAgent('agent-a')).toEqual([]);
-  });
-
-  it('attach is idempotent — a re-attach does not reset attachedAt', () => {
-    const gmail = 'gmail:personal' as ConnectedAccountId;
-    store.attach('agent-a', gmail);
-    const first = store.listForAgent('agent-a')[0]!.attachedAt;
-    store.attach('agent-a', gmail);
-    expect(store.listForAgent('agent-a')[0]!.attachedAt).toBe(first);
-  });
-});
 
 describe('SessionConnectorAttachmentStore', () => {
   let db: Db;

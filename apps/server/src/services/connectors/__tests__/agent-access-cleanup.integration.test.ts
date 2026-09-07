@@ -6,7 +6,6 @@ import {
   agentConnectionAttachments,
   agents,
   connectionOperationGrants,
-  connections,
   connectorEventSubscriptions,
   connectorLegacyAgentRevocations,
   connectorOperationRevisions,
@@ -21,7 +20,6 @@ import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type { ConnectedAccount } from '@dorkos/shared/connector-provider';
 import { registerConnectorAgentCleanup } from '../agent-access-cleanup.js';
 import { ConnectorAuthorityCleanupService } from '../authority-cleanup-service.js';
-import { AgentConnectorAttachmentStore } from '../attachment-store.js';
 import { ConnectionStore } from '../connection-store.js';
 import { ConnectorRegistry } from '../registry.js';
 
@@ -155,9 +153,13 @@ describe('connector authority across Mesh startup reconciliation', () => {
     const result = await mesh.reconcileOnStartup();
 
     expect(result.removed).toBe(1);
-    expect(db.select().from(connectorLegacyAgentRevocations).all()).toMatchObject([
-      { agentId: agentA.id },
-    ]);
+    expect(
+      db.$client
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'connector_legacy_agent_revocations'"
+        )
+        .get()
+    ).toBeUndefined();
     expect(db.select().from(agentConnectionAttachments).all()).toMatchObject([
       { agentId: agentB.id },
     ]);
@@ -276,7 +278,13 @@ describe('connector authority across Mesh startup reconciliation', () => {
 
     expect(recoveredRegistry.migrationHealth()).toEqual({ status: 'ready', migrated: true });
     expect(db.select().from(agentConnectionAttachments).all()).toEqual([]);
-    expect(db.$client.prepare('SELECT * FROM agent_connector_attachments').all()).toHaveLength(1);
+    expect(
+      db.$client
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_connector_attachments'"
+        )
+        .get()
+    ).toBeUndefined();
     expect(
       db.$client
         .prepare(
@@ -296,14 +304,15 @@ describe('connector authority across Mesh startup reconciliation', () => {
         .get(removedSessionId)
     ).toEqual({ count: 0 });
 
-    // The marker only fences old consent. A fresh explicit operator action for
-    // the re-registered agent can create canonical authority normally.
-    const stableConnectionId = db.select({ id: connections.id }).from(connections).get()!
-      .id as ConnectedAccount['id'];
-    new AgentConnectorAttachmentStore(db).attach(removed.id, stableConnectionId);
-    expect(db.select().from(agentConnectionAttachments).all()).toMatchObject([
-      { agentId: removed.id, connectionId: stableConnectionId },
-    ]);
+    // The migration consumes the marker after fencing the old attachment. New
+    // access can now be granted only through the canonical review workflow.
+    expect(
+      db.$client
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'connector_legacy_agent_revocations'"
+        )
+        .get()
+    ).toBeUndefined();
   });
 });
 

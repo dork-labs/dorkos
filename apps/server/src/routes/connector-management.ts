@@ -301,15 +301,20 @@ export function createConnectorManagementRouter(deps: ConnectorManagementRouterD
     }
   });
 
-  router.post('/reconciliation/apply', (req, res) => {
+  router.post('/reconciliation/apply', async (req, res) => {
     const owner = resolveConnectorOperator(req, res, deps);
     if (!owner) return;
     const input = parseBody(ConnectorReconciliationApplyRequestSchema, req.body ?? {}, res);
     if (!input) return;
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    req.once('aborted', abort);
     try {
-      res.json(deps.reconciliation.apply(owner, input));
+      res.json(await deps.reconciliation.apply(owner, input, controller.signal));
     } catch (error) {
       sendManagementError(res, error);
+    } finally {
+      req.off('aborted', abort);
     }
   });
 

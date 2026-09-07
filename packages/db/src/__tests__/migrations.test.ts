@@ -115,9 +115,9 @@ describe('Database Migrations', () => {
       // Better Auth identity tables (accounts-and-auth P1, migration 0019).
       'account',
       'activity_events',
-      // Stable provider-neutral connection attachments. The legacy connector
-      // tables remain until their last compatibility consumer moves in a later
-      // workstream (Connections P1, migration 0086).
+      // Stable provider-neutral connection attachments. Drizzle creates the
+      // legacy inputs for old-install upgrades; the application migration
+      // retires them only after its verified backfill commits.
       'agent_connection_attachments',
       // Standing, agent-level connector consent — row existence IS the
       // attachment (connection-scoping spec §Part 1, migration 0048).
@@ -151,10 +151,15 @@ describe('Database Migrations', () => {
       'connections',
       'connector_agent_requests',
       'connector_application_migrations',
+      'connector_authentication_flows',
       'connector_event_inbox',
       'connector_event_receipts',
       'connector_event_subscriptions',
       'connector_legacy_agent_revocations',
+      'connector_managed_authority_outbox',
+      'connector_managed_authority_scopes',
+      'connector_managed_receipt_recoveries',
+      'connector_managed_usage_mirrors',
       'connector_operation_revisions',
       'connector_provider_instances',
       'connector_reconciliation_agents',

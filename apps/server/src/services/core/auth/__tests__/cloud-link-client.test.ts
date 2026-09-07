@@ -3,10 +3,15 @@ import {
   DEVICE_GRANT_TYPE,
   INSTANCE_CLIENT_ID,
   buildInstanceDescriptor,
+  executeManagedConnectorOperation,
   pollForToken,
+  requestManagedConnectorExecutionReceipt,
+  requestManagedConnectorUsage,
+  readManagedConnectorAuthorityCommand,
   requestDeviceCode,
   revokeInstanceKey,
   sendHeartbeat,
+  submitManagedConnectorAuthorityCommand,
   type InstanceDescriptor,
 } from '../cloud-link-client.js';
 
@@ -310,6 +315,215 @@ describe('sendHeartbeat', () => {
       fetchImpl,
     });
     expect(result).toEqual({ ok: false, unauthorized: false, error: 'HTTP 503' });
+  });
+});
+
+describe('managed connector authority commands', () => {
+  const command = {
+    version: 1,
+    commandId: 'command-a',
+    managedConnectionId: 'managed-a',
+    scopeVersion: 2,
+    kind: 'set_connection_lifecycle',
+    lifecycle: 'paused',
+  } as const;
+
+  it('posts the exact strict command with the linked bearer', async () => {
+    const status = {
+      version: 1,
+      commandId: command.commandId,
+      managedConnectionId: command.managedConnectionId,
+      scopeVersion: command.scopeVersion,
+      state: 'applied',
+      externalCleanup: 'not_required',
+    } as const;
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(status), { status: 200 }));
+
+    await expect(
+      submitManagedConnectorAuthorityCommand({
+        baseUrl: BASE,
+        accessToken: 'dork_inst_abc',
+        command,
+        fetchImpl,
+      })
+    ).resolves.toEqual(status);
+
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe(`${BASE}/api/instances/connectors/authority-commands`);
+    expect((init as RequestInit).headers).toMatchObject({
+      authorization: 'Bearer dork_inst_abc',
+    });
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual(command);
+  });
+
+  it('reads status by encoded id and rejects malformed success bodies', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{}', { status: 200 }));
+    await expect(
+      readManagedConnectorAuthorityCommand({
+        baseUrl: BASE,
+        accessToken: 'dork_inst_abc',
+        commandId: 'command/a',
+        fetchImpl,
+      })
+    ).rejects.toMatchObject({ code: 'invalid_response' });
+    expect(fetchImpl.mock.calls[0][0]).toBe(
+      `${BASE}/api/instances/connectors/authority-commands/command%2Fa`
+    );
+  });
+
+  it('distinguishes relink-required 403 from invalid-key 401 without leaking response text', async () => {
+    await expect(
+      submitManagedConnectorAuthorityCommand({
+        baseUrl: BASE,
+        accessToken: 'old-key',
+        command,
+        fetchImpl: vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                code: 'permission_upgrade_required',
+                private: 'SECRET_HOSTED_ERROR',
+              }),
+              { status: 403 }
+            )
+        ),
+      })
+    ).rejects.toMatchObject({
+      code: 'permission_upgrade_required',
+      message: 'Relink this instance to enable managed connections.',
+    });
+    await expect(
+      submitManagedConnectorAuthorityCommand({
+        baseUrl: BASE,
+        accessToken: 'dead-key',
+        command,
+        fetchImpl: vi.fn(async () => new Response('', { status: 401 })),
+      })
+    ).rejects.toMatchObject({ code: 'unauthorized' });
+  });
+});
+
+describe('managed connector execution and usage', () => {
+  const request = {
+    version: 1,
+    logicalOperationId: 'logical-a',
+    attemptId: 'attempt-a',
+    attemptIndex: 1,
+    managedConnectionId: 'managed-a',
+    agentId: 'agent-a',
+    grantScopeVersion: 3,
+    attribution: { surface: 'cli', actorKind: 'program', actorId: 'credential-a' },
+    revision: {
+      hostedRevisionId: '11111111-1111-4111-8111-111111111111',
+      operationSlug: 'gmail.send',
+      toolkitVersion: '2026-09-01',
+      schemaHash: 'sha256:revision-a',
+    },
+    arguments: { message: 'hello' },
+  } as const;
+  const receipt = {
+    version: 1,
+    receiptId: 'receipt-a',
+    logicalOperationId: 'logical-a',
+    attemptId: 'attempt-a',
+    attemptIndex: 1,
+    outcome: 'success',
+    completedAt: '2026-09-06T12:00:01.000Z',
+    recordedAt: '2026-09-06T12:00:02.000Z',
+  } as const;
+
+  it('posts the strict execution request once with the linked bearer', async () => {
+    const response = {
+      state: 'completed',
+      result: { status: 'success', data: { delivered: true } },
+      receipt,
+    } as const;
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(response), { status: 200 }));
+
+    await expect(
+      executeManagedConnectorOperation({
+        baseUrl: BASE,
+        accessToken: 'dork_inst_abc',
+        request,
+        fetchImpl,
+        signal: new AbortController().signal,
+      })
+    ).resolves.toEqual(response);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe(`${BASE}/api/instances/connectors/executions`);
+    expect((init as RequestInit).headers).toMatchObject({
+      authorization: 'Bearer dork_inst_abc',
+      'content-type': 'application/json',
+    });
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual(request);
+  });
+
+  it('reads a receipt and usage page without accepting malformed hosted evidence', async () => {
+    const receiptFetch = vi.fn(
+      async () => new Response(JSON.stringify({ state: 'recorded', receipt }), { status: 200 })
+    );
+    await expect(
+      requestManagedConnectorExecutionReceipt({
+        baseUrl: BASE,
+        accessToken: 'dork_inst_abc',
+        attemptId: 'attempt/a',
+        fetchImpl: receiptFetch,
+        signal: new AbortController().signal,
+      })
+    ).resolves.toMatchObject({ state: 'recorded', receipt });
+    expect(receiptFetch.mock.calls[0][0]).toBe(
+      `${BASE}/api/instances/connectors/executions/attempt%2Fa`
+    );
+
+    const usageFetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            version: 1,
+            status: 'available',
+            counts: { logicalOperationCount: 1, attemptCount: 1 },
+            items: [],
+          }),
+          { status: 200 }
+        )
+    );
+    await requestManagedConnectorUsage({
+      baseUrl: BASE,
+      accessToken: 'dork_inst_abc',
+      request: {
+        version: 1,
+        managedConnectionId: 'managed/a',
+        agentId: 'agent a',
+        limit: 25,
+      },
+      fetchImpl: usageFetch,
+      signal: new AbortController().signal,
+    });
+    expect(usageFetch.mock.calls[0][0]).toBe(
+      `${BASE}/api/instances/connectors/usage?version=1&managedConnectionId=managed%2Fa&agentId=agent+a&limit=25`
+    );
+
+    await expect(
+      requestManagedConnectorExecutionReceipt({
+        baseUrl: BASE,
+        accessToken: 'dork_inst_abc',
+        attemptId: 'attempt-a',
+        fetchImpl: vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                state: 'recorded',
+                receipt: { ...receipt, logicalOperationId: 'other' },
+                privateProviderLog: 'SECRET',
+              }),
+              { status: 200 }
+            )
+        ),
+        signal: new AbortController().signal,
+      })
+    ).rejects.toMatchObject({ code: 'invalid_response' });
   });
 });
 

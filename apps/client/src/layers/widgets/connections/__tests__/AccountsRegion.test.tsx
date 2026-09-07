@@ -1,128 +1,60 @@
-/**
- * @vitest-environment jsdom
- */
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+/** @vitest-environment jsdom */
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
-import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { AccountsRegion } from '../ui/AccountsRegion';
 
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }));
 afterEach(cleanup);
 
 function renderRegion(transport: Transport) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={transport}>{children}</TransportProvider>
+  render(
+    <QueryClientProvider client={client}>
+      <TransportProvider transport={transport}>
+        <AccountsRegion />
+      </TransportProvider>
     </QueryClientProvider>
   );
-  return render(<AccountsRegion />, { wrapper });
 }
 
 describe('AccountsRegion', () => {
-  it('renders the honest first-run state when nothing is connectable', async () => {
-    // The mock transport's default: an empty toolkit list, no error. This is a
-    // settled empty state — the region names the services and the carrier.
+  it('keeps one service action and a calm empty account inventory', async () => {
     const transport = createMockTransport();
     renderRegion(transport);
-
-    await waitFor(() => {
-      expect(screen.getByText(/nothing can be connected yet/i)).toBeInTheDocument();
-    });
-    expect(screen.getByRole('button', { name: 'Composio & Nango' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connect service' })).toBeInTheDocument();
+    expect(await screen.findByText('No accounts connected')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Advanced account setup' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
   });
 
-  it('shows a distinct error state on a failed fetch, not the empty state', async () => {
-    // A transient fetch failure must never be dressed up as "nothing can be
-    // connected yet" — that hides a network problem behind a settled fact.
-    const transport = createMockTransport({
-      getConnectorToolkits: vi.fn().mockRejectedValue(new Error('network down')),
-    });
-    renderRegion(transport);
-
-    await waitFor(() => {
-      expect(screen.getByText(/couldn.t load your services/i)).toBeInTheDocument();
-    });
-    expect(screen.queryByText(/nothing can be connected yet/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
-  });
-
-  it('retries the fetch when the error state offers it', async () => {
-    const getToolkits = vi
+  it('shows an account read failure as an error and retries the canonical resource', async () => {
+    const user = userEvent.setup();
+    const read = vi
       .fn()
       .mockRejectedValueOnce(new Error('network down'))
-      .mockResolvedValue({ toolkits: [], warnings: [] });
-    const transport = createMockTransport({ getConnectorToolkits: getToolkits });
-    renderRegion(transport);
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
-    });
-    fireEvent.click(screen.getByRole('button', { name: /try again/i }));
-
-    // The retry runs, and the settled empty state replaces the error card.
-    await waitFor(() => {
-      expect(screen.getByText(/nothing can be connected yet/i)).toBeInTheDocument();
-    });
-    expect(getToolkits).toHaveBeenCalledTimes(2);
+      .mockResolvedValue({ connections: [] });
+    renderRegion(createMockTransport({ getConnectorConnections: read }));
+    expect(await screen.findByText('Couldn’t load connected accounts')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('No accounts connected')).toBeInTheDocument();
   });
 
-  it('leads with the service grid when services are connectable', async () => {
-    const transport = createMockTransport({
-      getConnectorToolkits: vi.fn().mockResolvedValue({
-        toolkits: [{ slug: 'gmail', displayName: 'Gmail' }],
-        warnings: [],
-      }),
-    });
-    renderRegion(transport);
-
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Connected' })).toBeInTheDocument();
-    });
-    // The first-run copy stays out of the way once something is connectable.
-    expect(screen.queryByText(/nothing can be connected yet/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/couldn.t load your services/i)).not.toBeInTheDocument();
-  });
-
-  // --- the carrier section's opening state -------------------------------
-  // Asserting the section's *content*, never its trigger: the trigger renders
-  // identically open or closed, so a test that stops at the trigger passes
-  // whichever way this goes. These two are what caught the carriers being
-  // pinned shut for every visitor — `defaultOpen` is read once at mount, and
-  // the first render is always the loading one, where `hasConnectableServices`
-  // is false for a reason that has nothing to do with being empty.
-
-  it('opens the carrier section when there is nothing else to connect', async () => {
-    const transport = createMockTransport();
-    renderRegion(transport);
-
-    await waitFor(() => {
-      expect(screen.getByText(/nothing can be connected yet/i)).toBeInTheDocument();
-    });
-    // The one-time setup is the only way forward from here, so it is already open.
-    expect(screen.getByText(/These outside services hold the sign-ins/i)).toBeVisible();
-  });
-
-  it('leaves the carrier section closed when services are already connectable', async () => {
-    const transport = createMockTransport({
-      getConnectorToolkits: vi.fn().mockResolvedValue({
-        toolkits: [{ slug: 'gmail', displayName: 'Gmail' }],
-        warnings: [],
-      }),
-    });
-    renderRegion(transport);
-
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Connected' })).toBeInTheDocument();
-    });
-    // Deep enough to keep, quiet enough not to lead — the trigger is still there.
-    expect(screen.queryByText(/These outside services hold the sign-ins/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Composio & Nango' })).toBeInTheDocument();
+  it('keeps BYO provider setup behind the explicit advanced action', async () => {
+    const user = userEvent.setup();
+    renderRegion(createMockTransport());
+    expect(screen.queryByText(/Use your own Composio or Nango account/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Advanced account setup' }));
+    expect(screen.getByText(/Use your own Composio or Nango account/i)).toBeVisible();
   });
 });

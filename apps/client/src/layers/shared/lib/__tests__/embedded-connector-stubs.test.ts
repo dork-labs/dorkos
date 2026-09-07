@@ -7,6 +7,8 @@ describe('embedded connector authority stubs', () => {
   it('refuses every authority-sensitive read instead of fabricating empty access', async () => {
     const reads = [
       () => connectorStubs.getAccessibleConnectorConnections(),
+      () => connectorStubs.getConnectorConnections(),
+      () => connectorStubs.getAgentConnectorConnections('agent-a'),
       () =>
         connectorStubs.getAccessibleConnectorOperations('agent-a', 'connection-a' as ConnectionId),
       () => connectorStubs.getAgentConnectorUsage(),

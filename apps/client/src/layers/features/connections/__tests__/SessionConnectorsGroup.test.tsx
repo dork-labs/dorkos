@@ -1,98 +1,94 @@
 /** @vitest-environment jsdom */
-import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import type { SessionConnectorStatus } from '@dorkos/shared/connector-provider';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { SessionConnectorsGroup } from '../ui/SessionConnectorsGroup';
 
 const navigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }));
-
 afterEach(cleanup);
-beforeEach(() => vi.clearAllMocks());
-
-const inheritedStatus: SessionConnectorStatus = {
-  accounts: [
-    {
-      accountId: 'acct-1' as SessionConnectorStatus['accounts'][number]['accountId'],
-      toolkit: 'gmail',
-      label: 'work',
-      status: 'active',
-      access: 'inherited',
-    },
-  ],
-  warnings: [],
-};
 
 function renderGroup(transport: Transport) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
-  });
-  return render(
-    <QueryClientProvider client={queryClient}>
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>
-        <SessionConnectorsGroup sessionId="sess-1" />
+        <SessionConnectorsGroup sessionId="session-1" />
       </TransportProvider>
     </QueryClientProvider>
   );
 }
 
+function sessionConnection(over: Record<string, unknown> = {}) {
+  return {
+    connectionId: 'connection-1' as never,
+    toolkit: 'gmail',
+    label: 'work',
+    access: 'inherited' as const,
+    operationRevisionIds: ['read-v1'],
+    dominatingReason: 'none' as const,
+    ...over,
+  };
+}
+
 describe('SessionConnectorsGroup', () => {
-  it('renders nothing while the session has no inherited or explicit access', async () => {
+  it('renders nothing when the canonical session has no connection access', async () => {
     const transport = createMockTransport();
+    vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue({
+      sessionId: 'session-1',
+      agentId: 'agent-1',
+      connections: [],
+    });
     renderGroup(transport);
-    await waitFor(() => expect(transport.getSessionConnectors).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(transport.getSessionConnectorConnections).toHaveBeenCalledWith('session-1')
+    );
     expect(screen.queryByTestId('session-connectors')).not.toBeInTheDocument();
   });
 
-  it('renders inherited access without an attach or detach control', async () => {
+  it('keeps inherited, session-only, and disabled access distinct with a dominating reason', async () => {
     const transport = createMockTransport();
-    vi.mocked(transport.getSessionConnectors).mockResolvedValue(inheritedStatus);
-    renderGroup(transport);
-
-    expect(await screen.findByText('Gmail (work)')).toBeInTheDocument();
-    expect(screen.getByText('Agent access')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /attach|detach/i })).not.toBeInTheDocument();
-    expect(transport.getConnectorAccounts).not.toHaveBeenCalled();
-  });
-
-  it('states that an explicit session block survives later agent access changes', async () => {
-    const transport = createMockTransport();
-    vi.mocked(transport.getSessionConnectors).mockResolvedValue({
-      accounts: [{ ...inheritedStatus.accounts[0], access: 'session_blocked' }],
-      warnings: [],
-    });
-    renderGroup(transport);
-
-    expect(await screen.findByText('Blocked for session')).toBeInTheDocument();
-    expect(screen.getByText(/Agent access does not replace a session block/i)).toBeInTheDocument();
-  });
-
-  it('links owner changes to the Connections workspace', async () => {
-    const user = userEvent.setup();
-    const transport = createMockTransport();
-    vi.mocked(transport.getSessionConnectors).mockResolvedValue(inheritedStatus);
-    renderGroup(transport);
-
-    await user.click(await screen.findByRole('button', { name: /manage agent access/i }));
-    expect(navigate).toHaveBeenCalledWith({ to: '/connections' });
-  });
-
-  it('surfaces an unavailable connection beside its durable access state', async () => {
-    const transport = createMockTransport();
-    vi.mocked(transport.getSessionConnectors).mockResolvedValue({
-      accounts: [{ ...inheritedStatus.accounts[0], status: 'expired' }],
-      warnings: [
-        { accountId: inheritedStatus.accounts[0].accountId, label: 'work', reason: 'expired' },
+    vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue({
+      sessionId: 'session-1',
+      agentId: 'agent-1',
+      connections: [
+        sessionConnection(),
+        sessionConnection({
+          connectionId: 'connection-2',
+          label: 'personal',
+          access: 'session_only',
+        }),
+        sessionConnection({
+          connectionId: 'connection-3',
+          label: 'archive',
+          access: 'disabled',
+          dominatingReason: 'connection_paused',
+        }),
       ],
     });
     renderGroup(transport);
+    expect(await screen.findByText('Inherited from agent')).toBeInTheDocument();
+    expect(screen.getByText('Allowed only in this session')).toBeInTheDocument();
+    expect(screen.getByText('Disabled in this session')).toBeInTheDocument();
+    expect(screen.getByText('The account is paused.')).toBeInTheDocument();
+  });
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('expired. Reconnect');
+  it('opens the canonical owner workspace without attach or detach controls', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue({
+      sessionId: 'session-1',
+      agentId: 'agent-1',
+      connections: [sessionConnection()],
+    });
+    renderGroup(transport);
+    await user.click(await screen.findByRole('button', { name: /Manage agent access/i }));
+    expect(navigate).toHaveBeenCalledWith({ to: '/connections' });
+    expect(screen.queryByRole('button', { name: /attach|detach/i })).not.toBeInTheDocument();
   });
 });

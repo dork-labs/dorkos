@@ -25,7 +25,11 @@ import type {
   ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
 import { connectorExecutionConfigDigest } from './execution/execution-config.js';
-import { ConnectionStore, type StableConnectionBinding } from './connection-store.js';
+import {
+  ConnectionStore,
+  type ConnectorProviderDeploymentMode,
+  type StableConnectionBinding,
+} from './connection-store.js';
 import type {
   ConnectorMigrationResult,
   LegacyConnectionMigrationInput,
@@ -163,8 +167,14 @@ export class ConnectorRegistry {
    * independently registered and routable.
    *
    * @param provider - The backend to register.
+   * @param executionConfigDigest - Secret-free fingerprint of execution material.
+   * @param mode - Server-owned deployment and payer mode; direct registrations are BYO.
    */
-  register(provider: ConnectorProvider, executionConfigDigest?: string): void {
+  register(
+    provider: ConnectorProvider,
+    executionConfigDigest?: string,
+    mode: ConnectorProviderDeploymentMode = 'byo'
+  ): void {
     if (this._connections.health().status === 'ready') {
       this._connections.registerProvider(
         provider,
@@ -174,7 +184,8 @@ export class ConnectorRegistry {
             instanceId: provider.instanceId,
             type: provider.type,
             capabilities: provider.getCapabilities(),
-          })
+          }),
+        mode
       );
     }
     this._providers.set(provider.instanceId, provider);
@@ -379,9 +390,8 @@ export class ConnectorRegistry {
    * Find every registered provider that lists `toolkitSlug`, with the same
    * per-provider timeout + degradation as the aggregation paths: a provider
    * that throws or hangs on `listToolkits` becomes a `warnings[]` entry rather
-   * than blocking the caller. Used by the routing surface (`recommendConnector`)
-   * so `GET /api/connectors/recommend` degrades on a slow provider instead of
-   * hanging (a real risk once a gateway makes a live network call).
+   * than blocking the caller. Used by the provider-neutral recommendation
+   * capability so discovery degrades on a slow provider instead of hanging.
    *
    * @param toolkitSlug - The service slug to match against each provider's toolkits.
    */

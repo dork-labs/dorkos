@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   connectionOperationGrants,
   connections,
+  connectorManagedAuthorityOutbox,
   connectorOperationRevisions,
   connectorProviderInstances,
   connectorUsageAttempts,
@@ -30,6 +31,10 @@ import { ConnectorRuntimePrincipalService } from '../../principal/runtime-princi
 import { createServerPrincipal } from '../../principal/server-principal.js';
 import { ConnectorExecutionAuthorizationService } from '../authorization-service.js';
 import { ConnectorExecutionBroker } from '../execution-broker.js';
+import {
+  ManagedConnectorExecutionContextStore,
+  type ManagedConnectorExecutionContext,
+} from '../managed-execution-context.js';
 import { ConnectorUsageStore } from '../usage-store.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
@@ -45,6 +50,7 @@ interface ScriptedProvider extends ConnectorProvider {
   readonly results: Array<ConnectorProviderExecuteResult | Error>;
   afterExecute?: () => void | Promise<void>;
   beforeDispatch?: () => void | Promise<void>;
+  onCommand?: (command: ConnectorProviderExecuteCommand) => void;
 }
 
 function createScriptedProvider(): ScriptedProvider {
@@ -63,12 +69,13 @@ function createScriptedProvider(): ScriptedProvider {
     execute: {
       value: async (command: ConnectorProviderExecuteCommand) => {
         commands.push(command);
+        provider.onCommand?.(command);
         await provider.beforeDispatch?.();
         if (!(await command.authorizeDispatch())) {
           return {
             status: 'error' as const,
             code: 'AUTHORITY_CHANGED_BEFORE_DISPATCH',
-            message: 'Connector authority changed before dispatch.',
+            message: 'Access changed before the operation was sent.',
             retryable: false,
           };
         }
@@ -154,12 +161,13 @@ describe('ConnectorExecutionBroker', () => {
             capabilityClassification: 'write' as const,
             retryPolicy: 'provider_idempotency_key' as const,
           },
-        ].map((revision) => ({
+        ].map((revision, index) => ({
           ...revision,
           providerInstanceId: provider.instanceId,
           toolkit: 'gmail',
           toolkitVersion: '2026-09-01',
           schemaHash: `sha256:${revision.id}`,
+          providerRevisionRef: `10000000-0000-4000-8000-00000000000${index + 1}`,
           inputSchemaJson: JSON.stringify({
             type: 'object',
             properties: { message: { type: 'string' } },
@@ -258,6 +266,112 @@ describe('ConnectorExecutionBroker', () => {
     });
     expect(provider.commands).toHaveLength(1);
     expect(provider.dispatchedCommands).toHaveLength(1);
+  });
+
+  it('binds a managed attempt to the latest applied hosted scope without blocking old grants on a pending edit', async () => {
+    db.update(connectorProviderInstances)
+      .set({ mode: 'managed' })
+      .where(eq(connectorProviderInstances.id, provider.instanceId))
+      .run();
+    const baseOutbox = {
+      connectionId: CONNECTION_ID,
+      providerInstanceId: provider.instanceId,
+      executionConfigGeneration: 1,
+      ownerKind: OWNER.kind,
+      ownerId: OWNER.installationId,
+      managedConnectionId: EXTERNAL_REF,
+      scopeKind: 'agent_grants' as const,
+      subjectId: 'agent-a',
+      requestHash: 'request-a',
+      requestJson: '{}',
+      safeReason: null,
+      attemptCount: 0,
+      nextAttemptAt: null,
+      leaseOwner: null,
+      leasedUntil: null,
+      createdAt: '2026-09-06T12:00:00.000Z',
+      updatedAt: '2026-09-06T12:00:00.000Z',
+      resolvedAt: null,
+      compactedAt: null,
+    };
+    db.insert(connectorManagedAuthorityOutbox)
+      .values([
+        {
+          ...baseOutbox,
+          commandId: 'scope-applied',
+          scopeVersion: 4,
+          state: 'applied',
+          resolvedAt: '2026-09-06T12:00:00.000Z',
+        },
+        {
+          ...baseOutbox,
+          commandId: 'scope-pending',
+          scopeVersion: 5,
+          state: 'pending',
+        },
+      ])
+      .run();
+    const contexts = new ManagedConnectorExecutionContextStore();
+    let captured: ManagedConnectorExecutionContext | undefined;
+    provider.onCommand = (command) => {
+      captured = contexts.resolve(command);
+    };
+    broker = new ConnectorExecutionBroker(
+      authorization,
+      new ConnectorUsageStore(db),
+      { revalidate: () => true },
+      () => new Date('2026-09-06T12:00:01.000Z'),
+      contexts
+    );
+
+    await expect(execute()).resolves.toMatchObject({ result: { status: 'success' } });
+    expect(captured).toEqual({
+      agentId: 'agent-a',
+      attemptIndex: 1,
+      grantScopeVersion: 4,
+      hostedRevisionId: '10000000-0000-4000-8000-000000000001',
+      attribution: { surface: 'mcp', actorKind: 'agent', actorId: 'agent-a' },
+    });
+  });
+
+  it('refuses an unbound legacy managed revision before intent instead of guessing by slug', async () => {
+    db.update(connectorProviderInstances)
+      .set({ mode: 'managed' })
+      .where(eq(connectorProviderInstances.id, provider.instanceId))
+      .run();
+    const original = db
+      .select()
+      .from(connectorOperationRevisions)
+      .where(eq(connectorOperationRevisions.id, REVISION_ID))
+      .get()!;
+    db.insert(connectorOperationRevisions)
+      .values({ ...original, id: 'legacy-unbound', providerRevisionRef: '' })
+      .run();
+    db.update(connectionOperationGrants)
+      .set({ operationRevisionId: 'legacy-unbound' })
+      .where(eq(connectionOperationGrants.operationRevisionId, REVISION_ID))
+      .run();
+    await expect(
+      execute(principal(), 'connectors.execute_write', undefined, {
+        ...target,
+        operationRevisionId: 'legacy-unbound',
+      })
+    ).rejects.toMatchObject({ payload: { code: 'CONNECTOR_MANAGED_REVISION_REQUIRED' } });
+    expect(db.select().from(connectorUsageAttempts).all()).toEqual([]);
+    expect(provider.commands).toEqual([]);
+  });
+
+  it('refuses managed execution before intent when no hosted grant scope has applied', async () => {
+    db.update(connectorProviderInstances)
+      .set({ mode: 'managed' })
+      .where(eq(connectorProviderInstances.id, provider.instanceId))
+      .run();
+
+    await expect(execute()).rejects.toMatchObject({
+      payload: { code: 'CONNECTOR_MANAGED_AUTHORITY_PENDING' },
+    });
+    expect(db.select().from(connectorUsageAttempts).all()).toEqual([]);
+    expect(provider.commands).toEqual([]);
   });
 
   it('refuses a durable runtime principal before dispatch when connector migration failed', async () => {

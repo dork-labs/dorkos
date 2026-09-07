@@ -19,10 +19,11 @@ import {
 import {
   ConnectorReconciliationApplyRequestSchema,
   ConnectorReconciliationApplyResponseSchema,
+  ConnectionIdSchema,
   ConnectorProviderInstanceIdSchema,
   ConnectorReconciliationPreviewRequestSchema,
   ConnectorReconciliationPreviewSchema,
-  type ConnectorOperationRevision,
+  type ConnectorOperationPage,
   type ConnectorReconciliationAgent,
   type ConnectorReconciliationApplyRequest,
   type ConnectorReconciliationApplyResponse,
@@ -31,6 +32,7 @@ import {
 } from '@dorkos/shared/connector-schemas';
 import type { ConnectorOwnerAuthority } from './principal/server-principal.js';
 import type { ConnectorRegistry } from './registry.js';
+import type { ManagedAuthoritySyncService } from './resources/managed-authority-sync-service.js';
 
 const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_MAX_PAGES = 20;
@@ -79,6 +81,11 @@ export interface ConnectorReconciliationServiceOptions {
   readonly bootEpoch: string;
   /** List registered agents at the instant a preview is created. */
   readonly listAgents: () => ConnectorReconciliationAgentSource[];
+  /** Durable hosted authority synchronizer for managed provider instances. */
+  readonly managedAuthority?: Pick<
+    ManagedAuthoritySyncService,
+    'stageAgentGrantReplacement' | 'deliverAgentGrantReplacement'
+  >;
   /** Injectable clock for expiry tests. */
   readonly now?: () => Date;
   /** Injectable id source for deterministic tests. */
@@ -106,7 +113,7 @@ function revisionSetHash(ids: readonly string[]): string {
     .digest('hex');
 }
 
-type DiscoveredOperation = Omit<ConnectorOperationRevision, 'id' | 'discoveredAt'>;
+type DiscoveredOperation = ConnectorOperationPage['operations'][number];
 
 function operationIdentity(operation: DiscoveredOperation): string {
   return [
@@ -117,6 +124,7 @@ function operationIdentity(operation: DiscoveredOperation): string {
     operation.schemaHash,
     operation.capabilityClassification,
     operation.retryPolicy,
+    operation.providerRevisionRef ?? '',
   ].join('\n');
 }
 
@@ -126,6 +134,12 @@ export class ConnectorReconciliationService {
   private readonly registry: ConnectorRegistry;
   private readonly bootEpoch: string;
   private readonly listAgents: () => ConnectorReconciliationAgentSource[];
+  private readonly managedAuthority:
+    | Pick<
+        ManagedAuthoritySyncService,
+        'stageAgentGrantReplacement' | 'deliverAgentGrantReplacement'
+      >
+    | undefined;
   private readonly now: () => Date;
   private readonly createId: () => string;
   private readonly maxPages: number;
@@ -138,6 +152,7 @@ export class ConnectorReconciliationService {
     this.registry = options.registry;
     this.bootEpoch = options.bootEpoch;
     this.listAgents = options.listAgents;
+    this.managedAuthority = options.managedAuthority;
     this.now = options.now ?? (() => new Date());
     this.createId = options.createId ?? ulid;
     this.maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;
@@ -189,6 +204,7 @@ export class ConnectorReconciliationService {
         operationSlug: connectorOperationRevisions.operationSlug,
         toolkitVersion: connectorOperationRevisions.toolkitVersion,
         schemaHash: connectorOperationRevisions.schemaHash,
+        providerRevisionRef: connectorOperationRevisions.providerRevisionRef,
         capabilityClassification: connectorOperationRevisions.capabilityClassification,
         retryPolicy: connectorOperationRevisions.retryPolicy,
         inputSchemaJson: connectorOperationRevisions.inputSchemaJson,
@@ -244,7 +260,11 @@ export class ConnectorReconciliationService {
                 connectorOperationRevisions.capabilityClassification,
                 operation.capabilityClassification
               ),
-              eq(connectorOperationRevisions.retryPolicy, operation.retryPolicy)
+              eq(connectorOperationRevisions.retryPolicy, operation.retryPolicy),
+              eq(
+                connectorOperationRevisions.providerRevisionRef,
+                operation.providerRevisionRef ?? ''
+              )
             )
           )
           .get();
@@ -276,6 +296,7 @@ export class ConnectorReconciliationService {
                 operationSlug: row.operationSlug,
                 toolkitVersion: row.toolkitVersion,
                 schemaHash: row.schemaHash,
+                providerRevisionRef: row.providerRevisionRef,
                 capabilityClassification: row.capabilityClassification,
                 retryPolicy: row.retryPolicy,
                 inputSchema: JSON.parse(row.inputSchemaJson) as Record<string, unknown>,
@@ -404,10 +425,11 @@ export class ConnectorReconciliationService {
   }
 
   /** Atomically consume a current preview and replace only named-agent grants. */
-  apply(
+  async apply(
     owner: ConnectorOwnerAuthority,
-    input: ConnectorReconciliationApplyRequest
-  ): ConnectorReconciliationApplyResponse {
+    input: ConnectorReconciliationApplyRequest,
+    signal: AbortSignal = new AbortController().signal
+  ): Promise<ConnectorReconciliationApplyResponse> {
     const request = ConnectorReconciliationApplyRequestSchema.parse(input);
     this.assertUniqueSelections(request);
     const ownerRow = ownerColumns(owner);
@@ -435,6 +457,8 @@ export class ConnectorReconciliationService {
           ownerId: connectorProviderInstances.ownerId,
           status: connectorProviderInstances.status,
           lifecycleState: connections.lifecycleState,
+          mode: connectorProviderInstances.mode,
+          managedConnectionId: connections.externalAccountRef,
         })
         .from(connectorProviderInstances)
         .innerJoin(connections, eq(connections.providerInstanceId, connectorProviderInstances.id))
@@ -525,7 +549,51 @@ export class ConnectorReconciliationService {
         );
       }
 
+      const managedCommandIds: string[] = [];
       for (const selection of request.grants) {
+        if (provider.mode === 'managed') {
+          if (!this.managedAuthority) {
+            throw new ConnectorReconciliationError(
+              'preview_stale',
+              'Managed connection synchronization is unavailable. Relink and try again.'
+            );
+          }
+          const revisionRows = selection.operationRevisionIds.length
+            ? tx
+                .select({
+                  id: connectorOperationRevisions.id,
+                  operationSlug: connectorOperationRevisions.operationSlug,
+                  toolkitVersion: connectorOperationRevisions.toolkitVersion,
+                  schemaHash: connectorOperationRevisions.schemaHash,
+                  providerRevisionRef: connectorOperationRevisions.providerRevisionRef,
+                })
+                .from(connectorOperationRevisions)
+                .where(inArray(connectorOperationRevisions.id, selection.operationRevisionIds))
+                .all()
+            : [];
+          const byId = new Map(revisionRows.map((revision) => [revision.id, revision]));
+          const ordered = selection.operationRevisionIds.map((id) => byId.get(id)!);
+          managedCommandIds.push(
+            this.managedAuthority.stageAgentGrantReplacement(tx, {
+              connectionId: ConnectionIdSchema.parse(preview.connectionId),
+              managedConnectionId: provider.managedConnectionId,
+              agentId: selection.agentId,
+              revisions: ordered.map((revision) => ({
+                operationSlug: revision.operationSlug,
+                toolkitVersion: revision.toolkitVersion,
+                schemaHash: revision.schemaHash,
+                hostedRevisionId: revision.providerRevisionRef,
+              })),
+              operationRevisionIds: ordered.map((revision) => revision.id),
+              providerInstanceId: ConnectorProviderInstanceIdSchema.parse(
+                preview.providerInstanceId
+              ),
+              executionConfigGeneration: preview.executionConfigGeneration,
+              owner,
+            })
+          );
+          continue;
+        }
         const selected = new Set(selection.operationRevisionIds);
         const existing = tx
           .select({
@@ -563,17 +631,35 @@ export class ConnectorReconciliationService {
             .run();
         }
       }
-      tx.update(connections)
-        .set({ grantReconciliationStatus: 'ready', updatedAt: now })
-        .where(eq(connections.id, preview.connectionId))
-        .run();
+      if (provider.mode !== 'managed' || managedCommandIds.length === 0) {
+        tx.update(connections)
+          .set({ grantReconciliationStatus: 'ready', updatedAt: now })
+          .where(eq(connections.id, preview.connectionId))
+          .run();
+      }
       return {
         connectionId: preview.connectionId,
-        reconciliationStatus: 'ready' as const,
-        grants: request.grants,
+        managedCommandIds,
       };
     });
-    return ConnectorReconciliationApplyResponseSchema.parse(response);
+    const results = [];
+    for (const commandId of response.managedCommandIds) {
+      results.push(await this.managedAuthority!.deliverAgentGrantReplacement(commandId, signal));
+    }
+    const failed = results.find((result) => result.authoritySync.status === 'failed');
+    const pending = results.some((result) => result.authoritySync.status === 'pending');
+    const connection = this.db
+      .select({ reconciliationStatus: connections.grantReconciliationStatus })
+      .from(connections)
+      .where(eq(connections.id, response.connectionId))
+      .get();
+    return ConnectorReconciliationApplyResponseSchema.parse({
+      connectionId: response.connectionId,
+      reconciliationStatus: connection?.reconciliationStatus ?? 'migration_needs_reconcile',
+      authoritySync:
+        failed?.authoritySync ?? (pending ? { status: 'pending' } : { status: 'ready' }),
+      grants: request.grants,
+    });
   }
 
   private resolveOwnedConnection(owner: ConnectorOwnerAuthority, connectionId: string) {

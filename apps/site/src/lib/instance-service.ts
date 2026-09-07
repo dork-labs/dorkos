@@ -14,6 +14,12 @@
  */
 import type { Auth } from '@/lib/auth';
 import {
+  MANAGED_CONNECTOR_AUTHORITY_PERMISSIONS,
+  MANAGED_CONNECTOR_EXECUTION_PERMISSIONS,
+  MANAGED_CONNECTOR_INSTANCE_KEY_PERMISSIONS,
+  MANAGED_CONNECTOR_USAGE_PERMISSIONS,
+} from '@dorkos/shared/connector-managed-schemas';
+import {
   INSTANCE_KEY_PREFIX,
   INSTANCE_PERMISSION_ACTION,
   INSTANCE_PERMISSION_RESOURCE,
@@ -63,6 +69,40 @@ interface InstanceKeyMetadata {
   platform: string;
   dorkosVersion: string;
   scope: typeof INSTANCE_PERMISSION_RESOURCE;
+}
+
+/** Managed connector route classes carried by a linked-instance key. */
+export type ManagedConnectorPermission = 'authority' | 'execute' | 'usage';
+
+/** Verified owner and live instance identity for one managed connector request. */
+export interface VerifiedManagedConnectorInstance {
+  status: 'ok';
+  ownerId: string;
+  instanceId: string;
+  keyId: string;
+}
+
+/** Fail-closed result returned before a hosted connector route reads its body. */
+export type ManagedConnectorInstanceVerification =
+  | VerifiedManagedConnectorInstance
+  | { status: 'unauthorized' }
+  | { status: 'permission_upgrade_required' };
+
+const CONNECTOR_PERMISSION_REQUIREMENTS = {
+  authority: MANAGED_CONNECTOR_AUTHORITY_PERMISSIONS,
+  execute: MANAGED_CONNECTOR_EXECUTION_PERMISSIONS,
+  usage: MANAGED_CONNECTOR_USAGE_PERMISSIONS,
+} as const;
+
+/** Convert shared readonly permission declarations to Better Auth's request shape. */
+function permissionRequest(permissions: {
+  readonly instance: readonly string[];
+  readonly connectors?: readonly string[];
+}): Record<string, string[]> {
+  return {
+    instance: [...permissions.instance],
+    ...(permissions.connectors ? { connectors: [...permissions.connectors] } : {}),
+  };
 }
 
 /** Resolve the Better Auth database adapter for the given instance. */
@@ -137,11 +177,64 @@ export async function createInstanceApiKey(
       name: args.descriptor.name,
       prefix: INSTANCE_KEY_PREFIX,
       metadata,
-      permissions: { [INSTANCE_PERMISSION_RESOURCE]: [INSTANCE_PERMISSION_ACTION] },
+      permissions: permissionRequest(MANAGED_CONNECTOR_INSTANCE_KEY_PERMISSIONS),
       rateLimitEnabled: false,
     },
   });
   return { key: created.key, instanceId };
+}
+
+/**
+ * Verify a managed connector request against the real API-key permission engine
+ * and the live instance registry row. Old instance keys keep ordinary linking
+ * access but receive an explicit relink result for connector routes.
+ *
+ * @param auth - The Better Auth instance.
+ * @param request - Request carrying the linked instance Bearer key.
+ * @param permission - Exact managed connector route class being entered.
+ * @returns Verified owner/instance identity or a safe refusal classification.
+ */
+export async function verifyManagedConnectorInstance(
+  auth: Auth,
+  request: Request,
+  permission: ManagedConnectorPermission
+): Promise<ManagedConnectorInstanceVerification> {
+  const key = readBearer(request.headers.get('authorization'));
+  if (!key) return { status: 'unauthorized' };
+
+  const linkRequirement = permissionRequest({ instance: [INSTANCE_PERMISSION_ACTION] });
+  const linked = await auth.api.verifyApiKey({ body: { key, permissions: linkRequirement } });
+  if (!linked.valid || !linked.key) return { status: 'unauthorized' };
+
+  const required = permissionRequest(CONNECTOR_PERMISSION_REQUIREMENTS[permission]);
+  const scoped = await auth.api.verifyApiKey({ body: { key, permissions: required } });
+  if (!scoped.valid || !scoped.key) {
+    // A key can be revoked between the two verification awaits. Recheck the
+    // link marker so revocation remains a 401 rather than looking like a key
+    // that only needs the connector permission upgrade.
+    const stillLinked = await auth.api.verifyApiKey({
+      body: { key, permissions: linkRequirement },
+    });
+    return stillLinked.valid && stillLinked.key
+      ? { status: 'permission_upgrade_required' }
+      : { status: 'unauthorized' };
+  }
+
+  const metadata = readKeyMetadata(scoped.key.metadata);
+  const instanceId = metadata?.instanceId;
+  const ownerId = scoped.key.referenceId;
+  if (!instanceId || !ownerId) return { status: 'unauthorized' };
+
+  const adapter = await getAdapter(auth);
+  const instance = (await adapter.findOne({
+    model: INSTANCE_MODEL,
+    where: [{ field: 'id', value: instanceId }],
+  })) as InstanceRecord | null;
+  if (!instance || instance.revokedAt || instance.userId !== ownerId) {
+    return { status: 'unauthorized' };
+  }
+
+  return { status: 'ok', ownerId, instanceId, keyId: scoped.key.id };
 }
 
 /** JSON response helper (never caches; carries the status code). */

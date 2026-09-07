@@ -20,6 +20,22 @@ describe('export-openapi', () => {
     expect(paths.some((p) => p.includes('/health'))).toBe(true);
   });
 
+  it('documents only the canonical connector resource and authority routes', () => {
+    const paths = generateOpenAPISpec().paths ?? {};
+
+    expect(paths).toHaveProperty('/api/connectors/catalog');
+    expect(paths).toHaveProperty('/api/connectors/connections');
+    expect(paths).toHaveProperty('/api/connectors/authentication-flows/{flowId}');
+    expect(paths).toHaveProperty('/api/connectors/reconciliation/apply');
+    expect(paths).toHaveProperty('/api/connectors/executions');
+    expect(paths).toHaveProperty('/api/connectors/usage/operator');
+    expect(paths).not.toHaveProperty('/api/connectors/toolkits');
+    expect(paths).not.toHaveProperty('/api/connectors/accounts');
+    expect(paths).not.toHaveProperty('/api/connectors/flows/{flowId}');
+    expect(paths).not.toHaveProperty('/api/sessions/{id}/connectors');
+    expect(paths).not.toHaveProperty('/api/agents/{agentId}/connectors');
+  });
+
   it('documents the team roster as a read with no write path', () => {
     const spec = generateOpenAPISpec();
     const team = spec.paths?.['/api/team'];

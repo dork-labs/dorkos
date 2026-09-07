@@ -18,6 +18,7 @@ import {
   type AuthorizedConnectorExecution,
 } from './authorization-service.js';
 import { ConnectorUsageStore, type ConnectorUsageOutcome } from './usage-store.js';
+import type { ManagedConnectorExecutionContextBindingPort } from './managed-execution-context.js';
 
 /** One fully parsed invocation reaching the execution broker after tier enforcement. */
 export interface ConnectorBrokerExecutionInput {
@@ -81,7 +82,8 @@ export class ConnectorExecutionBroker {
     private readonly authorization: ConnectorExecutionAuthorizationService,
     private readonly usage: ConnectorUsageStore,
     private readonly principalRevalidation: ConnectorExecutionPrincipalRevalidationPort,
-    private readonly now: () => Date = () => new Date()
+    private readonly now: () => Date = () => new Date(),
+    private readonly managedExecutionContext?: ManagedConnectorExecutionContextBindingPort
   ) {}
 
   /** Dispatch one logical operation with at most one explicitly safe retry. */
@@ -124,7 +126,7 @@ export class ConnectorExecutionBroker {
       }
       if (authorized.authorityBinding.approvalScope.digest !== expectedDigest) {
         throw new CapabilityToolError({
-          error: 'Connector authority changed before dispatch.',
+          error: 'Access changed before the operation was sent.',
           code: 'CONNECTOR_AUTHORITY_CHANGED',
         });
       }
@@ -156,6 +158,7 @@ export class ConnectorExecutionBroker {
         expectedDigest,
         logicalOperationId,
         attemptId,
+        attemptCount,
         upstreamIdempotencyKey,
         input.signal
       );
@@ -205,6 +208,7 @@ export class ConnectorExecutionBroker {
     expectedDigest: string,
     logicalOperationId: string,
     attemptId: string,
+    attemptIndex: number,
     upstreamIdempotencyKey: string,
     signal: AbortSignal
   ): Promise<ConnectorProviderExecuteResult> {
@@ -216,7 +220,7 @@ export class ConnectorExecutionBroker {
       };
     }
     try {
-      return await authorized.provider.execute({
+      const command = {
         externalAccountRef: authorized.externalAccountRef,
         operation: authorized.operation,
         arguments: authorized.arguments,
@@ -227,7 +231,34 @@ export class ConnectorExecutionBroker {
           : {}),
         signal,
         authorizeDispatch: () => this.revalidateFinalDispatch(input, expectedDigest, signal),
-      });
+      };
+      if (authorized.payer === 'dorkos_managed') {
+        if (
+          !this.managedExecutionContext ||
+          authorized.managedGrantScopeVersion === undefined ||
+          !authorized.managedHostedRevisionId
+        ) {
+          return {
+            status: 'error',
+            code: 'MANAGED_EXECUTION_CONTEXT_UNAVAILABLE',
+            message: 'Managed account access is not ready.',
+            retryable: false,
+          };
+        }
+        this.managedExecutionContext.bind(command, {
+          agentId: authorized.agentId,
+          attemptIndex,
+          grantScopeVersion: authorized.managedGrantScopeVersion,
+          hostedRevisionId: authorized.managedHostedRevisionId,
+          attribution: {
+            surface: input.surface,
+            actorKind: authorized.actorKind,
+            actorId: authorized.actorId,
+            ...(authorized.sessionId ? { sessionId: authorized.sessionId } : {}),
+          },
+        });
+      }
+      return await authorized.provider.execute(command);
     } catch {
       return safeThrownProviderResult();
     }

@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { describeViolation, runAxe } from '../../axe.js';
 import { ConnectionsPage } from '../../pages/ConnectionsPage.js';
+import { RightPanelPage } from '../../pages/RightPanelPage.js';
 
 interface ReconciliationCandidate {
   operationRevisionId: string;
@@ -48,10 +49,10 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
       await harness.gotoConnections(page);
       const connections = new ConnectionsPage(page);
       const access = await connections.openAccess('Gmail (work)');
-      const agent = access.getByRole('group', { name: seeded.agentName });
-      await agent.getByRole('button', { name: 'Read only' }).click();
+      const agent = access.getByRole('group', { name: new RegExp(seeded.agentName) });
+      await agent.getByRole('button', { name: 'Read', exact: true }).click();
       await access.getByRole('button', { name: 'Save access' }).click();
-      await expect(access.getByTestId('connector-access-outcome')).toBeVisible();
+      await expect(access.getByTestId('connector-access-outcome')).toHaveText('Access updated');
 
       const afterAccess = await previewConnection(request, harness.apiUrl, connectionId);
       expect(afterAccess.currentGrants).toContainEqual({
@@ -93,6 +94,226 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
         agentId: seeded.agentId,
         operationRevisionIds: [read!.operationRevisionId, write!.operationRevisionId].sort(),
       });
+      await page.keyboard.press('Escape');
+      // The same canonical revision grants are visible from the named agent's
+      // profile, and its Manage action returns to the owner workspace.
+      const rightPanel = new RightPanelPage(page);
+      await rightPanel.openProfilePage('connections', seeded.agentDir);
+      const profileAccount = page.getByTestId(`agent-connection-${connectionId}`);
+      await expect(profileAccount).toContainText('Gmail (work)');
+      await expect(profileAccount).toContainText('2 approved actions');
+      await expect(profileAccount).toContainText('Available');
+      const profileAccess = await request.get(
+        `${harness.apiUrl}/api/connectors/agents/${seeded.agentId}/connections`
+      );
+      expect(profileAccess.ok()).toBe(true);
+      expect(await profileAccess.json()).toMatchObject({
+        connections: [
+          expect.objectContaining({
+            connectionId,
+            operationRevisionIds: [read!.operationRevisionId, write!.operationRevisionId].sort(),
+          }),
+        ],
+      });
+      await page
+        .locator('[aria-labelledby="agent-account-access"]')
+        .getByRole('button', { name: 'Manage', exact: true })
+        .click();
+      await expect(page).toHaveURL(/\/connections/);
+      const removal = await connections.openAccess('Gmail (work)');
+      const removedAgent = removal.getByRole('group', { name: new RegExp(seeded.agentName) });
+      await removedAgent.getByRole('button', { name: 'No access', exact: true }).click();
+      await removal.getByRole('button', { name: 'Save access' }).click();
+      await expect(removal.getByTestId('connector-access-outcome')).toHaveText('Access updated');
+      const afterRemoval = await previewConnection(request, harness.apiUrl, connectionId);
+      expect(
+        afterRemoval.currentGrants.filter((grant) => grant.agentId === seeded.agentId)
+      ).toEqual([]);
+      await rightPanel.openProfilePage('connections', seeded.agentDir);
+      await expect(page.getByText('No account access', { exact: true })).toBeVisible();
+      await expect(page.getByTestId(`agent-connection-${connectionId}`)).toHaveCount(0);
+    });
+
+    test('resumes approved sign-in through the durable flow route after reload', async ({
+      page,
+      request,
+    }) => {
+      const existingId = await harness.connectWorkAccountViaApi(request);
+      const detail = await request.get(
+        `${harness.apiUrl}/api/connectors/connections/${existingId}`
+      );
+      expect(detail.ok()).toBe(true);
+      const { connection } = (await detail.json()) as {
+        connection: { providerInstanceId: string };
+      };
+      const review = await createReview(request, harness.apiUrl, {
+        version: 1,
+        kind: 'connect',
+        providerInstanceId: connection.providerInstanceId,
+        toolkit: 'gmail',
+        label: 'review account',
+      });
+      await page.goto(`/connections?review=${encodeURIComponent(review.reviewRequestId)}`);
+      let dialog = page.getByTestId('connector-review-dialog');
+      await dialog.getByRole('button', { name: 'Approve and continue' }).click();
+      await expect(dialog.getByText('Sign-in still required', { exact: true })).toBeVisible();
+      const before = await request.get(
+        `${harness.apiUrl}/api/connectors/reviews/${review.reviewRequestId}`
+      );
+      expect(before.ok()).toBe(true);
+      const approved = (await before.json()) as {
+        resolution: { authentication: { flowId: string } };
+      };
+      const flowId = approved.resolution.authentication.flowId;
+      expect(flowId).toBeTruthy();
+      await page.reload();
+      dialog = page.getByTestId('connector-review-dialog');
+      await expect(dialog.getByRole('link', { name: 'Continue to sign in' })).toBeVisible();
+      const durablePoll = page.waitForResponse((response) =>
+        response.url().endsWith(`/api/connectors/authentication-flows/${flowId}`)
+      );
+      const popup = page.waitForEvent('popup');
+      await dialog.getByRole('link', { name: 'Continue to sign in' }).click();
+      const signIn = await popup;
+      const polled = await durablePoll;
+      expect(polled.ok()).toBe(true);
+      const connected = (await polled.json()) as {
+        state: string;
+        flowId: string;
+        connectionId: string;
+      };
+      expect(connected).toMatchObject({ state: 'connected', flowId });
+      expect(connected.connectionId).not.toBe(existingId);
+      await expect(dialog.getByText('Account connected', { exact: true })).toBeVisible();
+      await signIn.close();
+      await page.reload();
+      dialog = page.getByTestId('connector-review-dialog');
+      await expect(dialog.getByText('Account connected', { exact: true })).toBeVisible();
+      await expect(dialog.getByText('Sign-in still required', { exact: true })).toHaveCount(0);
+      const replay = await request.post(
+        `${harness.apiUrl}/api/connectors/reviews/${review.reviewRequestId}/decision`,
+        { data: { decision: 'approved' } }
+      );
+      expect(replay.ok()).toBe(true);
+      expect(await replay.json()).toMatchObject({
+        review: { resolution: { authentication: { flowId } } },
+      });
+      const inventory = await request.get(`${harness.apiUrl}/api/connectors/connections`);
+      expect(inventory.ok()).toBe(true);
+      const { connections: accounts } = (await inventory.json()) as {
+        connections: Array<{ connectionId: string; label: string }>;
+      };
+      expect(accounts.filter((account) => account.label === 'review account')).toEqual([
+        expect.objectContaining({ connectionId: connected.connectionId }),
+      ]);
+      const preview = await previewConnection(request, harness.apiUrl, connected.connectionId);
+      expect(preview.currentGrants).toEqual([]);
+    });
+
+    test('renames, pauses, resumes and disconnects the exact account with visible usage', async ({
+      page,
+      request,
+      playwright,
+    }) => {
+      const connectionId = await harness.connectWorkAccountViaApi(request);
+      const seeded = await seedAgent(request, harness.apiUrl);
+      const preview = await previewConnection(request, harness.apiUrl, connectionId);
+      const read = preview.candidates.find(
+        (candidate) => candidate.capabilityClassification === 'read'
+      )!;
+      const grant = await request.post(`${harness.apiUrl}/api/connectors/reconciliation/apply`, {
+        data: {
+          previewId: preview.previewId,
+          grants: [{ agentId: seeded.agentId, operationRevisionIds: [read.operationRevisionId] }],
+        },
+      });
+      expect(grant.ok()).toBe(true);
+      const key = await createProgramKey(request, harness.apiUrl);
+      const programRequest = await playwright.request.newContext();
+      const execute = () =>
+        programRequest.post(`${harness.apiUrl}/api/connectors/executions`, {
+          headers: { authorization: `Bearer ${key.key}` },
+          data: {
+            agentId: seeded.agentId,
+            connectionId,
+            operationRevisionId: read.operationRevisionId,
+            arguments: { query: 'harmless-browser-read' },
+          },
+        });
+      try {
+        const first = await execute();
+        expect(first.status(), await first.text()).toBe(200);
+        expect(await first.json()).toMatchObject({
+          result: { status: 'success' },
+          attemptCount: 1,
+        });
+        await harness.gotoConnections(page);
+        const connections = new ConnectionsPage(page);
+        await connections.account('Gmail (work)').getByRole('button').click();
+        const detail = page.getByTestId('connection-detail');
+        await detail.getByLabel('Label', { exact: true }).fill('renamed');
+        await detail.getByRole('button', { name: 'Save', exact: true }).click();
+        await expect(detail.getByRole('heading', { name: 'Gmail (renamed)' })).toBeVisible();
+        await expect(
+          detail.getByText('1 logical operations, 1 attempts.', { exact: true })
+        ).toBeVisible();
+        await detail.getByRole('button', { name: 'Pause', exact: true }).click();
+        await expect(detail.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
+        await expect
+          .poll(async () => {
+            const response = await request.get(
+              `${harness.apiUrl}/api/connectors/connections/${connectionId}`
+            );
+            expect(response.ok()).toBe(true);
+            return ((await response.json()) as { connection: { lifecycle: string } }).connection
+              .lifecycle;
+          })
+          .toBe('paused');
+        const paused = await execute();
+        expect(paused.status()).toBe(409);
+        expect(await paused.json()).toMatchObject({ code: 'CONNECTOR_NOT_EXECUTABLE' });
+        await detail.getByRole('button', { name: 'Resume', exact: true }).click();
+        await expect(detail.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+        const resumed = await execute();
+        expect(resumed.status(), await resumed.text()).toBe(200);
+        await harness.gotoConnections(page);
+        await connections.account('Gmail (renamed)').getByRole('button').click();
+        await expect(
+          detail.getByText('2 logical operations, 2 attempts.', { exact: true })
+        ).toBeVisible();
+        await detail.getByRole('button', { name: 'Disconnect', exact: true }).click();
+        const impact = page.getByRole('alertdialog', { name: 'Disconnect this account?' });
+        await expect(
+          impact.getByText(
+            '1 agents, 0 sessions, and 0 subscriptions will lose access. 0 pending deliveries will stop.',
+            { exact: true }
+          )
+        ).toBeVisible();
+        await impact.getByRole('button', { name: 'Disconnect', exact: true }).click();
+        await expect(detail).toBeHidden();
+        const after = await request.get(
+          `${harness.apiUrl}/api/connectors/connections/${connectionId}`
+        );
+        expect(after.ok()).toBe(true);
+        expect(await after.json()).toMatchObject({
+          connection: { connectionId, label: 'renamed', lifecycle: 'disconnected' },
+        });
+        const usage = await request.get(
+          `${harness.apiUrl}/api/connectors/usage/operator?connectionId=${encodeURIComponent(connectionId)}`
+        );
+        expect(usage.ok()).toBe(true);
+        const usageBody = await usage.json();
+        expect(usageBody.items).toHaveLength(2);
+        expect(JSON.stringify(usageBody)).not.toContain('harmless-browser-read');
+        expect((await execute()).status()).not.toBe(200);
+      } finally {
+        await programRequest.dispose();
+        const deleted = await request.post(`${harness.apiUrl}/api/auth/api-key/delete`, {
+          headers: { origin: harness.apiUrl },
+          data: { keyId: key.id },
+        });
+        expect(deleted.ok()).toBe(true);
+      }
     });
 
     test('denial and expiry cannot change the account', async ({ page, request }) => {
@@ -307,11 +528,11 @@ async function expectDrawerContained(dialog: Locator, viewportHeight: number): P
 async function seedAgent(
   request: APIRequestContext,
   apiUrl: string
-): Promise<{ agentId: string; agentName: string }> {
+): Promise<{ agentId: string; agentName: string; agentDir: string }> {
   const response = await request.post(`${apiUrl}/api/test/seed-agent`);
   expect(response.ok()).toBe(true);
-  const body = (await response.json()) as { agentId: string };
-  return { agentId: body.agentId, agentName: 'E2E Test Agent' };
+  const body = (await response.json()) as { agentId: string; agentDir: string };
+  return { agentId: body.agentId, agentDir: body.agentDir, agentName: 'E2E Test Agent' };
 }
 
 async function previewConnection(
@@ -353,10 +574,13 @@ async function accountStatus(
   apiUrl: string,
   connectionId: string
 ): Promise<string | undefined> {
-  const response = await request.get(`${apiUrl}/api/connectors/accounts`);
+  const response = await request.get(`${apiUrl}/api/connectors/connections`);
   expect(response.ok()).toBe(true);
-  const body = (await response.json()) as { accounts: Array<{ id: string; status: string }> };
-  return body.accounts.find((account) => account.id === connectionId)?.status;
+  const body = (await response.json()) as {
+    connections: Array<{ connectionId: string; authenticationStatus: string }>;
+  };
+  return body.connections.find((connection) => connection.connectionId === connectionId)
+    ?.authenticationStatus;
 }
 
 function expireReview(reviewRequestId: string): void {
@@ -373,4 +597,37 @@ function expireReview(reviewRequestId: string): void {
   } finally {
     db.close();
   }
+}
+
+/** Issue an ephemeral program key through real local owner authentication. */
+async function createProgramKey(
+  request: APIRequestContext,
+  apiUrl: string
+): Promise<{ id: string; key: string }> {
+  const account = {
+    email: 'connections-owner@e2e.dorkos.local',
+    password: 'connections-owner-test-password',
+  };
+  let signedIn = await request.post(`${apiUrl}/api/auth/sign-in/email`, {
+    headers: { origin: apiUrl },
+    data: account,
+  });
+  if (!signedIn.ok()) {
+    const signup = await request.post(`${apiUrl}/api/auth/sign-up/email`, {
+      headers: { origin: apiUrl },
+      data: { ...account, name: 'Connections test owner' },
+    });
+    expect(signup.ok()).toBe(true);
+    signedIn = await request.post(`${apiUrl}/api/auth/sign-in/email`, {
+      headers: { origin: apiUrl },
+      data: account,
+    });
+  }
+  expect(signedIn.ok()).toBe(true);
+  const created = await request.post(`${apiUrl}/api/auth/api-key/create`, {
+    headers: { origin: apiUrl },
+    data: { name: 'Connections browser protocol', expiresIn: 86400 },
+  });
+  expect(created.ok()).toBe(true);
+  return (await created.json()) as { id: string; key: string };
 }

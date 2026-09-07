@@ -1,8 +1,14 @@
-import { useEffect, useId, useMemo, useState } from 'react';
-import { Check, RefreshCw, ShieldAlert } from 'lucide-react';
-import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
+import { useEffect, useMemo, useState } from 'react';
+import { Check, Clock3, RefreshCw, ShieldAlert } from 'lucide-react';
+import type {
+  ConnectorReconciliationApplyResponse,
+  ConnectorReconciliationGrantSelection,
+  ConnectorReconciliationPreview,
+} from '@dorkos/shared/connector-schemas';
+import type { ConnectorAuthoritySyncState } from '@dorkos/shared/connector-resource-schemas';
 import {
   useApplyConnectorReconciliation,
+  useConnectorConnection,
   usePreviewConnectorReconciliation,
 } from '@/layers/entities/connectors';
 import {
@@ -41,6 +47,20 @@ function operationLabel(slug: string): string {
   return leaf.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function acceptedExactGrants(
+  expected: ConnectorReconciliationGrantSelection[],
+  actual: ConnectorReconciliationGrantSelection[]
+): boolean {
+  const normalize = (grants: ConnectorReconciliationGrantSelection[]) =>
+    grants
+      .map((grant) => ({
+        agentId: grant.agentId,
+        operationRevisionIds: [...grant.operationRevisionIds].sort(),
+      }))
+      .sort((left, right) => left.agentId.localeCompare(right.agentId));
+  return JSON.stringify(normalize(expected)) === JSON.stringify(normalize(actual));
+}
+
 /** Exact operation-revision access editor backed by one complete server snapshot. */
 export function ConnectionAccessDialog({
   connectionId,
@@ -49,28 +69,25 @@ export function ConnectionAccessDialog({
 }: ConnectionAccessDialogProps) {
   const previewMutation = usePreviewConnectorReconciliation();
   const applyMutation = useApplyConnectorReconciliation();
+  const syncQuery = useConnectorConnection(connectionId, false);
   const [selections, setSelections] = useState<AgentOperationSelections>({});
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [advancedAgentId, setAdvancedAgentId] = useState<string | null>(null);
   const [needsRefresh, setNeedsRefresh] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saveOutcome, setSaveOutcome] = useState<ConnectorReconciliationApplyResponse | null>(null);
 
   const preview = previewMutation.data;
   useEffect(() => {
     if (!open || !connectionId) return;
-    setShowAdvanced(false);
-    setNeedsRefresh(false);
-    setSaved(false);
     previewMutation.reset();
     applyMutation.reset();
-    previewMutation.mutate({ connectionId });
+    previewMutation.mutate(
+      { connectionId },
+      { onSuccess: (nextPreview) => setSelections(selectionsFromPreview(nextPreview)) }
+    );
     // Mutations are stable enough for this open transition; including their
     // changing result objects would recreate a preview after every response.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, connectionId]);
-
-  useEffect(() => {
-    if (preview) setSelections(selectionsFromPreview(preview));
-  }, [preview]);
 
   const changed = useMemo(
     () => (preview ? changedGrantSelections(preview, selections) : []),
@@ -80,10 +97,13 @@ export function ConnectionAccessDialog({
   const refresh = () => {
     if (!connectionId) return;
     setNeedsRefresh(false);
-    setSaved(false);
+    setSaveOutcome(null);
     applyMutation.reset();
     previewMutation.reset();
-    previewMutation.mutate({ connectionId });
+    previewMutation.mutate(
+      { connectionId },
+      { onSuccess: (nextPreview) => setSelections(selectionsFromPreview(nextPreview)) }
+    );
   };
 
   const apply = () => {
@@ -95,7 +115,17 @@ export function ConnectionAccessDialog({
     applyMutation.mutate(
       { previewId: preview.previewId, grants: changed },
       {
-        onSuccess: () => setSaved(true),
+        onSuccess: (result) => {
+          if (
+            result.connectionId !== preview.connection.connectionId ||
+            !acceptedExactGrants(changed, result.grants)
+          ) {
+            setNeedsRefresh(true);
+            previewMutation.reset();
+            return;
+          }
+          setSaveOutcome(result);
+        },
         onError: () => {
           // A failed response may have arrived after the server committed. Do
           // not replay it. Discard the snapshot and read authority again.
@@ -105,6 +135,63 @@ export function ConnectionAccessDialog({
       }
     );
   };
+
+  const checkSync = () => {
+    void syncQuery.refetch().then((result) => {
+      if (!result.data || !saveOutcome || !connectionId) return;
+      const expectedGrants = saveOutcome.grants;
+      const canonicalGrants = expectedGrants.map((expected) => ({
+        agentId: expected.agentId,
+        operationRevisionIds:
+          result.data.agents.find((agent) => agent.agentId === expected.agentId)
+            ?.operationRevisionIds ?? [],
+      }));
+      if (
+        result.data.connection.connectionId !== connectionId ||
+        saveOutcome.connectionId !== connectionId ||
+        !acceptedExactGrants(expectedGrants, canonicalGrants)
+      ) {
+        setNeedsRefresh(true);
+        setSaveOutcome(null);
+        previewMutation.reset();
+        return;
+      }
+
+      const changedAgents = expectedGrants.flatMap((expected) => {
+        const agent = result.data.agents.find(
+          (candidate) => candidate.agentId === expected.agentId
+        );
+        return agent ? [agent] : [];
+      });
+      const reconciliationStatus =
+        result.data.connection.reconciliationStatus !== 'ready'
+          ? result.data.connection.reconciliationStatus
+          : (changedAgents.find((agent) => agent.reconciliationStatus !== 'ready')
+              ?.reconciliationStatus ?? 'ready');
+      const authorityStates: ConnectorAuthoritySyncState[] = [
+        result.data.connection.authoritySync,
+        ...changedAgents.map((agent) => agent.authoritySync),
+      ];
+      const failedAuthority = authorityStates.find(
+        (state): state is Extract<ConnectorAuthoritySyncState, { status: 'failed' }> =>
+          state.status === 'failed'
+      );
+      const authoritySync: ConnectorAuthoritySyncState =
+        failedAuthority ??
+        (authorityStates.some((state) => state.status === 'pending')
+          ? { status: 'pending' }
+          : { status: 'ready' });
+      setSaveOutcome({ ...saveOutcome, reconciliationStatus, authoritySync });
+    });
+  };
+
+  const saved =
+    saveOutcome?.reconciliationStatus === 'ready' && saveOutcome.authoritySync.status === 'ready';
+  const needsReconciliation = saveOutcome !== null && saveOutcome.reconciliationStatus !== 'ready';
+  const pendingAdds = saveOutcome?.grants.some((grant) => grant.operationRevisionIds.length > 0);
+  const pendingRemovals = saveOutcome?.grants.some(
+    (grant) => grant.operationRevisionIds.length === 0
+  );
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
@@ -158,29 +245,97 @@ export function ConnectionAccessDialog({
                   Access updated
                 </p>
                 <p className="text-muted-foreground mt-1 text-sm">
-                  Only the agents you changed were updated.
+                  Access is ready for the agents you changed.
                 </p>
               </div>
+            </div>
+          ) : needsReconciliation ? (
+            <div className="border-warning/30 bg-warning/5 flex items-start gap-3 rounded-lg border p-4">
+              <ShieldAlert className="text-warning mt-0.5 size-4 shrink-0" aria-hidden />
+              <div>
+                <p data-testid="connector-access-outcome" className="text-sm font-medium">
+                  Access needs review
+                </p>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  Available actions changed. Reload the current access before making another change.
+                </p>
+              </div>
+            </div>
+          ) : saveOutcome?.authoritySync.status === 'pending' ? (
+            <div className="border-warning/30 bg-warning/5 space-y-3 rounded-lg border p-4">
+              <div className="flex items-start gap-3">
+                <Clock3 className="text-warning mt-0.5 size-4 shrink-0" aria-hidden />
+                <div>
+                  <p data-testid="connector-access-outcome" className="text-sm font-medium">
+                    Access update pending
+                  </p>
+                  <p className="text-muted-foreground mt-1 text-sm">
+                    {pendingAdds && pendingRemovals
+                      ? 'Removed access is already closed. New access stays unavailable until synchronization finishes.'
+                      : pendingRemovals
+                        ? 'Removed access is already closed. The service is still removing access.'
+                        : 'New access is saved but remains unavailable until synchronization finishes.'}
+                  </p>
+                </div>
+              </div>
+              {syncQuery.isError && (
+                <p role="alert" className="text-destructive text-sm">
+                  Couldn’t check the current sync status. The access change was not repeated.
+                </p>
+              )}
+            </div>
+          ) : saveOutcome?.authoritySync.status === 'failed' ? (
+            <div className="border-destructive/30 bg-destructive/5 space-y-3 rounded-lg border p-4">
+              <div className="flex items-start gap-3">
+                <ShieldAlert className="text-destructive mt-0.5 size-4 shrink-0" aria-hidden />
+                <div>
+                  <p
+                    data-testid="connector-access-outcome"
+                    role="alert"
+                    className="text-sm font-medium"
+                  >
+                    Access sync failed
+                  </p>
+                  <p className="text-muted-foreground mt-1 text-sm">
+                    {saveOutcome.authoritySync.reason} Agents cannot use this change. Check your
+                    account setup, then try again.
+                  </p>
+                </div>
+              </div>
+              {syncQuery.isError && (
+                <p role="alert" className="text-destructive text-sm">
+                  Couldn’t check the current sync status. The access change was not repeated.
+                </p>
+              )}
             </div>
           ) : preview ? (
             <ReconciliationEditor
               preview={preview}
               selections={selections}
               setSelections={setSelections}
-              showAdvanced={showAdvanced}
-              setShowAdvanced={setShowAdvanced}
+              advancedAgentId={advancedAgentId}
+              setAdvancedAgentId={setAdvancedAgentId}
             />
           ) : null}
         </ResponsiveDialogBody>
         <ResponsiveDialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            {saved ? 'Done' : 'Cancel'}
+            {saved ? 'Done' : saveOutcome ? 'Close' : 'Cancel'}
           </Button>
-          {!saved && !needsRefresh && preview && (
+          {needsReconciliation ? (
+            <Button variant="secondary" onClick={refresh}>
+              Reload current access
+            </Button>
+          ) : saveOutcome && !saved ? (
+            <Button variant="secondary" onClick={checkSync} disabled={syncQuery.isFetching}>
+              <RefreshCw className="size-4" aria-hidden />
+              {syncQuery.isFetching ? 'Checking…' : 'Check sync status'}
+            </Button>
+          ) : !needsRefresh && preview && !saved ? (
             <Button onClick={apply} disabled={changed.length === 0 || applyMutation.isPending}>
               {applyMutation.isPending ? 'Saving…' : 'Save access'}
             </Button>
-          )}
+          ) : null}
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
@@ -191,116 +346,140 @@ function ReconciliationEditor({
   preview,
   selections,
   setSelections,
-  showAdvanced,
-  setShowAdvanced,
+  advancedAgentId,
+  setAdvancedAgentId,
 }: {
   preview: ConnectorReconciliationPreview;
   selections: AgentOperationSelections;
   setSelections: (next: AgentOperationSelections) => void;
-  showAdvanced: boolean;
-  setShowAdvanced: (next: boolean) => void;
+  advancedAgentId: string | null;
+  setAdvancedAgentId: (next: string | null) => void;
 }) {
-  const sensitiveActionsId = useId();
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium">{preview.connection.label}</p>
-          <p className="text-muted-foreground text-xs">
-            {preview.candidates.length} available actions
-          </p>
-        </div>
-        <label
-          htmlFor={sensitiveActionsId}
-          className="focus-within:ring-ring flex min-h-9 cursor-pointer items-center gap-2 rounded-md px-2 text-sm focus-within:ring-2"
-        >
-          <Checkbox
-            id={sensitiveActionsId}
-            checked={showAdvanced}
-            onCheckedChange={(checked) => setShowAdvanced(checked === true)}
-          />
-          Show sensitive actions
-        </label>
+      <div>
+        <p className="text-sm font-medium">{preview.connection.label}</p>
+        <p className="text-muted-foreground text-xs">
+          Choose a simple level for each agent. Open Advanced only when individual actions differ.
+        </p>
       </div>
 
       {preview.agents.length === 0 ? (
-        <p className="text-muted-foreground rounded-lg border p-4 text-sm">
+        <p className="bg-muted/40 rounded-lg p-4 text-sm">
           Register an agent before granting account access.
         </p>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-2">
           {preview.agents.map((agent) => {
             const selected = new Set(selections[agent.agentId] ?? []);
-            const visible = preview.candidates.filter(
-              (candidate) =>
-                candidate.capabilityClassification !== 'destructive' ||
-                showAdvanced ||
-                selected.has(candidate.operationRevisionId)
-            );
-            const setLevel = (level: 'none' | 'read' | 'read-write') =>
+            const read = revisionIdsForAccessLevel(preview.candidates, 'read');
+            const readWrite = revisionIdsForAccessLevel(preview.candidates, 'read-write');
+            const sorted = [...selected].sort();
+            const same = (candidate: string[]) =>
+              candidate.length === sorted.length &&
+              candidate.every((value, index) => value === sorted[index]);
+            const level =
+              sorted.length === 0
+                ? 'No access'
+                : same(read)
+                  ? 'Read'
+                  : same(readWrite)
+                    ? 'Read + write'
+                    : 'Custom access';
+            const advanced = advancedAgentId === agent.agentId;
+            const setLevel = (next: 'none' | 'read' | 'read-write') =>
               setSelections({
                 ...selections,
-                [agent.agentId]: revisionIdsForAccessLevel(preview.candidates, level),
+                [agent.agentId]: revisionIdsForAccessLevel(preview.candidates, next),
               });
+
             return (
-              <fieldset key={agent.agentId} className="space-y-3 rounded-lg border p-4">
-                <legend className="px-1 text-sm font-semibold">{agent.displayName}</legend>
-                <div
-                  className="flex flex-wrap gap-2"
-                  aria-label={`Quick access for ${agent.displayName}`}
-                >
-                  <Button size="sm" variant="outline" onClick={() => setLevel('none')}>
-                    No access
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setLevel('read')}>
-                    Read only
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setLevel('read-write')}>
-                    Read + write
+              <fieldset key={agent.agentId} className="bg-muted/40 rounded-lg p-3">
+                <legend className="sr-only">Access for {agent.displayName}</legend>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold">{agent.displayName}</p>
+                    <p className="text-muted-foreground text-xs">{level}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-expanded={advanced}
+                    onClick={() => setAdvancedAgentId(advanced ? null : agent.agentId)}
+                  >
+                    Advanced
                   </Button>
                 </div>
-                <ul className="divide-y rounded-md border">
-                  {visible.map((candidate) => {
-                    const checked = selected.has(candidate.operationRevisionId);
-                    const cannotAdd = !candidate.supported && !checked;
-                    return (
-                      <li key={candidate.operationRevisionId} className="flex gap-3 p-3">
-                        <Checkbox
-                          aria-label={`${operationLabel(candidate.operationSlug)} for ${agent.displayName}`}
-                          checked={checked}
-                          disabled={cannotAdd}
-                          onCheckedChange={(next) => {
-                            const updated = new Set(selected);
-                            if (next === true) updated.add(candidate.operationRevisionId);
-                            else updated.delete(candidate.operationRevisionId);
-                            setSelections({
-                              ...selections,
-                              [agent.agentId]: [...updated].sort(),
-                            });
-                          }}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-medium">
-                              {operationLabel(candidate.operationSlug)}
-                            </span>
-                            <Badge size="xs" variant="secondary">
-                              {candidate.capabilityClassification}
-                            </Badge>
-                            {!candidate.supported && (
-                              <Badge size="xs" variant="outline">
-                                No longer available
+                <div
+                  className="mt-2 grid grid-cols-3 gap-1.5"
+                  aria-label={`Quick access for ${agent.displayName}`}
+                >
+                  {(
+                    [
+                      ['none', 'No access'],
+                      ['read', 'Read'],
+                      ['read-write', 'Read + write'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <Button
+                      key={value}
+                      size="sm"
+                      variant={level === label ? 'secondary' : 'outline'}
+                      aria-pressed={level === label}
+                      onClick={() => setLevel(value)}
+                      className="px-2 text-xs"
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+                {advanced && (
+                  <ul className="mt-3 space-y-1.5" data-testid={`advanced-access-${agent.agentId}`}>
+                    {preview.candidates.map((candidate) => {
+                      const checked = selected.has(candidate.operationRevisionId);
+                      const cannotAdd = !candidate.supported && !checked;
+                      return (
+                        <li
+                          key={candidate.operationRevisionId}
+                          className="bg-background flex gap-3 rounded-md p-2.5"
+                        >
+                          <Checkbox
+                            aria-label={`${operationLabel(candidate.operationSlug)} for ${agent.displayName}`}
+                            checked={checked}
+                            disabled={cannotAdd}
+                            onCheckedChange={(next) => {
+                              const updated = new Set(selected);
+                              if (next === true) updated.add(candidate.operationRevisionId);
+                              else updated.delete(candidate.operationRevisionId);
+                              setSelections({
+                                ...selections,
+                                [agent.agentId]: [...updated].sort(),
+                              });
+                            }}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-sm font-medium">
+                                {operationLabel(candidate.operationSlug)}
+                              </span>
+                              <Badge size="xs" variant="secondary">
+                                {candidate.capabilityClassification}
                               </Badge>
-                            )}
+                              {!candidate.supported && (
+                                <Badge size="xs" variant="outline">
+                                  No longer available
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-muted-foreground mt-0.5 text-xs">
+                              Version {candidate.toolkitVersion}
+                            </p>
                           </div>
-                          <p className="text-muted-foreground mt-0.5 text-xs">
-                            Version {candidate.toolkitVersion}
-                          </p>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </fieldset>
             );
           })}

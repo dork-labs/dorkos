@@ -8,7 +8,7 @@ import type {
   ConnectorReconciliationApplyResponse,
   ConnectorReconciliationPreview,
 } from '@dorkos/shared/connector-schemas';
-import type { ConnectorConnectPollResponse } from '@dorkos/shared/connector-provider';
+import type { ConnectorAuthenticationFlowState } from '@dorkos/shared/connector-resource-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { connectorKeys } from '../api/query-keys';
 
@@ -47,8 +47,7 @@ export function useResolveConnectorManagementReview() {
       queryClient.setQueryData(connectorKeys.review(reviewRequestId), result.review);
       void queryClient.invalidateQueries({ queryKey: connectorKeys.reviewList('pending') });
       void queryClient.invalidateQueries({ queryKey: connectorKeys.reviewList('resolved') });
-      void queryClient.invalidateQueries({ queryKey: connectorKeys.accounts() });
-      void queryClient.invalidateQueries({ queryKey: connectorKeys.sessions() });
+      void queryClient.invalidateQueries({ queryKey: connectorKeys.connections() });
     },
   });
 }
@@ -77,8 +76,7 @@ export function useApplyConnectorReconciliation() {
     mutationFn: (input) => transport.applyConnectorReconciliation(input),
     meta: { suppressErrorToast: true },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: connectorKeys.accounts() });
-      void queryClient.invalidateQueries({ queryKey: connectorKeys.sessions() });
+      void queryClient.invalidateQueries({ queryKey: connectorKeys.connections() });
     },
   });
 }
@@ -87,21 +85,24 @@ export function useApplyConnectorReconciliation() {
 export function useConnectorReviewAuthentication(flowId: string | null, enabled: boolean) {
   const transport = useTransport();
   const queryClient = useQueryClient();
-  const query = useQuery<ConnectorConnectPollResponse>({
-    queryKey: connectorKeys.flow(flowId ?? ''),
-    queryFn: () => transport.pollConnectorFlow(flowId ?? ''),
+  const query = useQuery<ConnectorAuthenticationFlowState>({
+    queryKey: connectorKeys.authenticationFlow(flowId ?? ''),
+    queryFn: () => transport.pollConnectorAuthentication(flowId ?? ''),
     enabled: enabled && flowId !== null && flowId !== '',
-    refetchInterval: (query) => (query.state.data?.status === 'pending' ? 2_000 : false),
+    refetchInterval: (query) => {
+      const state = query.state.data?.state;
+      return state === 'starting' || state === 'pending' ? 2_000 : false;
+    },
     staleTime: 0,
     gcTime: 0,
     meta: { suppressErrorToast: true },
   });
 
   useEffect(() => {
-    if (query.data?.status === 'connected') {
-      void queryClient.invalidateQueries({ queryKey: connectorKeys.accounts() });
+    if (query.data?.state === 'connected') {
+      void queryClient.invalidateQueries({ queryKey: connectorKeys.connections() });
     }
-  }, [query.data?.status, queryClient]);
+  }, [query.data?.state, queryClient]);
 
   return query;
 }

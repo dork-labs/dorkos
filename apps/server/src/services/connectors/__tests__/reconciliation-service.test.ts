@@ -1,8 +1,10 @@
 /** Complete snapshots, named-agent replacement, and stale-preview refusal. */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  and,
   connectionOperationGrants,
   connections,
+  connectorManagedAuthorityOutbox,
   connectorOperationRevisions,
   connectorProviderInstances,
   connectorReconciliationPreviews,
@@ -17,12 +19,17 @@ import {
   ConnectorProviderInstanceIdSchema,
 } from '@dorkos/shared/connector-schemas';
 import type { ConnectorProvider } from '@dorkos/shared/connector-provider';
+import type {
+  ManagedConnectorAuthorityCommand,
+  ManagedConnectorAuthorityCommandStatus,
+} from '@dorkos/shared/connector-managed-schemas';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import { ConnectorRegistry } from '../registry.js';
 import {
   ConnectorReconciliationError,
   ConnectorReconciliationService,
 } from '../reconciliation-service.js';
+import { ManagedAuthoritySyncService } from '../resources/managed-authority-sync-service.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const NOW = new Date('2026-09-06T12:00:00.000Z');
@@ -104,7 +111,7 @@ describe('ConnectorReconciliationService', () => {
       listAgents: () => agents,
       now: () => NOW,
       createId: () => `generated-${++nextId}`,
-      pageSize: 1,
+      pageSize: 10,
     });
   });
 
@@ -137,7 +144,7 @@ describe('ConnectorReconciliationService', () => {
       (candidate) =>
         candidate.operationSlug === 'gmail.read' && candidate.toolkitVersion === 'current-v2'
     )!;
-    const applied = service.apply(OWNER, {
+    const applied = await service.apply(OWNER, {
       previewId: preview.previewId,
       grants: [
         {
@@ -166,6 +173,190 @@ describe('ConnectorReconciliationService', () => {
     expect(db.select().from(connections).get()!.grantReconciliationStatus).toBe('ready');
   });
 
+  it('never resurrects a prior local grant when a hosted classification returns to its old value', async () => {
+    const originalDiscovery = provider.listOperationSchemas.bind(provider);
+    let generation = 1;
+    vi.spyOn(provider, 'listOperationSchemas').mockImplementation(async (request) => {
+      const result = await originalDiscovery(request);
+      if (result.status === 'ok')
+        result.page.operations = result.page.operations.map((operation) => ({
+          ...operation,
+          ...(operation.operationSlug === 'gmail.read'
+            ? {
+                providerRevisionRef: `10000000-0000-4000-8000-00000000000${generation}`,
+                capabilityClassification: generation === 2 ? ('write' as const) : ('read' as const),
+              }
+            : {}),
+        }));
+      return result;
+    });
+    const preview = () =>
+      service.preview(OWNER, { connectionId: CONNECTION_ID }, new AbortController().signal);
+    const first = await preview();
+    const firstRead = first.candidates.find(
+      (candidate) =>
+        candidate.operationSlug === 'gmail.read' && candidate.toolkitVersion === 'current-v2'
+    )!;
+    await service.apply(OWNER, {
+      previewId: first.previewId,
+      grants: [{ agentId: 'agent-a', operationRevisionIds: [firstRead.operationRevisionId] }],
+    });
+    generation = 2;
+    const second = await preview();
+    const changed = second.candidates.find(
+      (candidate) => candidate.operationSlug === 'gmail.read' && candidate.supported
+    )!;
+    expect(changed.operationRevisionId).not.toBe(firstRead.operationRevisionId);
+    expect(changed.capabilityClassification).toBe('write');
+    generation = 3;
+    const third = await preview();
+    const returned = third.candidates.find(
+      (candidate) => candidate.operationSlug === 'gmail.read' && candidate.supported
+    )!;
+    expect(returned.capabilityClassification).toBe('read');
+    expect(returned.operationRevisionId).not.toBe(firstRead.operationRevisionId);
+    expect(returned.operationRevisionId).not.toBe(changed.operationRevisionId);
+    expect(
+      third.candidates.find(
+        (candidate) => candidate.operationRevisionId === firstRead.operationRevisionId
+      )?.supported
+    ).toBe(false);
+    expect(
+      db
+        .select()
+        .from(connectionOperationGrants)
+        .where(eq(connectionOperationGrants.operationRevisionId, returned.operationRevisionId))
+        .all()
+    ).toEqual([]);
+    expect(JSON.stringify(third)).not.toContain('providerRevisionRef');
+    expect(JSON.stringify(third)).not.toContain('10000000-0000-4000-8000-000000000003');
+  });
+
+  it('keeps managed additions inactive until the current hosted acknowledgement', async () => {
+    const readRef = '10000000-0000-4000-8000-000000000001';
+    const writeRef = '10000000-0000-4000-8000-000000000002';
+    const originalDiscovery = provider.listOperationSchemas.bind(provider);
+    vi.spyOn(provider, 'listOperationSchemas').mockImplementation(async (request) => {
+      const result = await originalDiscovery(request);
+      if (result.status === 'ok')
+        result.page.operations = result.page.operations.map((operation) => ({
+          ...operation,
+          providerRevisionRef: operation.operationSlug === 'gmail.read' ? readRef : writeRef,
+        }));
+      return result;
+    });
+    // Model a previously reviewed hosted identity, not an unbound legacy revision.
+    const oldRevision = db
+      .select()
+      .from(connectorOperationRevisions)
+      .where(eq(connectorOperationRevisions.id, 'old-read-v1'))
+      .get()!;
+    db.insert(connectorOperationRevisions)
+      .values({ ...oldRevision, id: 'managed-old-read-v1', providerRevisionRef: readRef })
+      .run();
+    db.update(connectionOperationGrants)
+      .set({ operationRevisionId: 'managed-old-read-v1' })
+      .where(eq(connectionOperationGrants.operationRevisionId, 'old-read-v1'))
+      .run();
+
+    db.update(connectorProviderInstances)
+      .set({ mode: 'managed', custody: 'managed' })
+      .where(eq(connectorProviderInstances.id, provider.instanceId))
+      .run();
+    let release!: (status: ManagedConnectorAuthorityCommandStatus) => void;
+    let submittedCommand: ManagedConnectorAuthorityCommand | undefined;
+    const managedAuthority = new ManagedAuthoritySyncService({
+      db,
+      cloud: {
+        submitConnectorAuthorityCommand: (command) =>
+          new Promise((resolve) => {
+            submittedCommand = command;
+            release = resolve;
+          }),
+        readConnectorAuthorityCommand: async () => {
+          throw Object.assign(new Error('absent'), { code: 'not_found' });
+        },
+      },
+      now: () => NOW,
+      createId: (() => {
+        let id = 0;
+        return () => `managed-${++id}`;
+      })(),
+    });
+    service = new ConnectorReconciliationService({
+      db,
+      registry,
+      bootEpoch: 'boot-a',
+      listAgents: () => agents,
+      now: () => NOW,
+      createId: () => `generated-${++nextId}`,
+      pageSize: 10,
+      managedAuthority,
+    });
+    const preview = await service.preview(
+      OWNER,
+      { connectionId: CONNECTION_ID },
+      new AbortController().signal
+    );
+    const addition = preview.candidates.find(
+      (candidate) => candidate.operationSlug === 'gmail.write'
+    )!;
+
+    const applying = service.apply(OWNER, {
+      previewId: preview.previewId,
+      grants: [
+        {
+          agentId: 'agent-a',
+          operationRevisionIds: ['managed-old-read-v1', addition.operationRevisionId],
+        },
+      ],
+    });
+
+    expect(db.select().from(connectorManagedAuthorityOutbox).get()?.state).toBe('pending');
+    const grantsBeforeAck = db
+      .select()
+      .from(connectionOperationGrants)
+      .where(eq(connectionOperationGrants.subjectId, 'agent-a'))
+      .all();
+    expect(
+      grantsBeforeAck.find((grant) => grant.operationRevisionId === 'managed-old-read-v1')
+        ?.revokedAt
+    ).toBeNull();
+    expect(
+      grantsBeforeAck.find((grant) => grant.operationRevisionId === addition.operationRevisionId)
+        ?.revokedAt
+    ).toBe(NOW.toISOString());
+    expect(db.select().from(connections).get()?.grantReconciliationStatus).toBe(
+      'migration_needs_reconcile'
+    );
+
+    const command = submittedCommand!;
+    release({
+      version: 1,
+      commandId: command.commandId,
+      managedConnectionId: command.managedConnectionId,
+      scopeVersion: command.scopeVersion,
+      state: 'applied',
+      externalCleanup: 'not_required',
+    });
+    await expect(applying).resolves.toMatchObject({
+      reconciliationStatus: 'ready',
+      authoritySync: { status: 'ready' },
+    });
+    expect(
+      db
+        .select()
+        .from(connectionOperationGrants)
+        .where(
+          and(
+            eq(connectionOperationGrants.subjectId, 'agent-a'),
+            isNull(connectionOperationGrants.revokedAt)
+          )
+        )
+        .all()
+    ).toHaveLength(2);
+  });
+
   it('marks an old revision unsupported only after complete exact-version discovery proves it', async () => {
     const original = provider.listOperationSchemas.bind(provider);
     vi.spyOn(provider, 'listOperationSchemas').mockImplementation(async (request) =>
@@ -182,12 +373,12 @@ describe('ConnectorReconciliationService', () => {
     expect(
       preview.candidates.find((candidate) => candidate.operationRevisionId === 'old-read-v1')
     ).toMatchObject({ toolkitVersion: 'old-v1', supported: false });
-    expect(() =>
+    await expect(
       service.apply(OWNER, {
         previewId: preview.previewId,
         grants: [{ agentId: 'agent-a', operationRevisionIds: ['old-read-v1'] }],
       })
-    ).toThrowError(expect.objectContaining({ code: 'invalid_selection' }));
+    ).rejects.toMatchObject({ code: 'invalid_selection' });
     expect(
       db
         .select()
@@ -218,7 +409,7 @@ describe('ConnectorReconciliationService', () => {
       { connectionId: CONNECTION_ID },
       new AbortController().signal
     );
-    service.apply(OWNER, {
+    await service.apply(OWNER, {
       previewId: preview.previewId,
       grants: [{ agentId: 'agent-a', operationRevisionIds: [] }],
     });
@@ -239,12 +430,12 @@ describe('ConnectorReconciliationService', () => {
       .where(eq(connectorProviderInstances.id, provider.instanceId))
       .run();
 
-    expect(() =>
+    await expect(
       service.apply(OWNER, {
         previewId: preview.previewId,
         grants: [{ agentId: 'agent-a', operationRevisionIds: [] }],
       })
-    ).toThrowError(ConnectorReconciliationError);
+    ).rejects.toBeInstanceOf(ConnectorReconciliationError);
     expect(
       db
         .select()
@@ -262,12 +453,12 @@ describe('ConnectorReconciliationService', () => {
     );
     agents = [{ agentId: 'agent-b', displayName: 'Beta' }];
 
-    expect(() =>
+    await expect(
       service.apply(OWNER, {
         previewId: preview.previewId,
         grants: [{ agentId: 'agent-a', operationRevisionIds: [] }],
       })
-    ).toThrowError(ConnectorReconciliationError);
+    ).rejects.toBeInstanceOf(ConnectorReconciliationError);
     expect(
       db
         .select()
@@ -280,12 +471,12 @@ describe('ConnectorReconciliationService', () => {
       { agentId: 'agent-a', displayName: 'Alpha' },
       { agentId: 'agent-b', displayName: 'Beta' },
     ];
-    expect(() =>
+    await expect(
       service.apply(OWNER, {
         previewId: preview.previewId,
         grants: [{ agentId: 'agent-a', operationRevisionIds: [] }],
       })
-    ).not.toThrow();
+    ).resolves.toMatchObject({ authoritySync: { status: 'ready' } });
   });
 
   it('rejects foreign owners without revealing whether the connection exists', async () => {

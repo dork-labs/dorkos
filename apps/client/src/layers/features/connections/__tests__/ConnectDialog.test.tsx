@@ -1,321 +1,176 @@
-/**
- * @vitest-environment jsdom
- *
- * The connect flow dialog: recommendation routing (relay adapter leads when
- * one exists), the multi-account label suggestion, the browser consent
- * sequence, and immediate verification for a flow with no browser step.
- */
-import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
+/** @vitest-environment jsdom */
+import { useState } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Transport } from '@dorkos/shared/transport';
-import type { ConnectorToolkit, PublicConnectedAccount } from '@dorkos/shared/connector-provider';
+import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { useConnectFlowStore } from '@/layers/entities/connectors';
 import { ConnectDialog } from '../ui/ConnectDialog';
 
-vi.mock('@tanstack/react-router', () => ({
-  useNavigate: () => vi.fn(),
-}));
-
 afterEach(cleanup);
-beforeEach(() => {
-  vi.clearAllMocks();
-  // The flow store is app-wide (it must outlive the dialog); each test resets it.
-  useConnectFlowStore.getState().reset();
-});
 
-const gmail: ConnectorToolkit = { slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' };
+const capabilities = {
+  catalog: { status: 'available' as const },
+  authentication: { status: 'available' as const },
+  accounts: { status: 'available' as const },
+  operations: { status: 'available' as const },
+  execution: { status: 'available' as const },
+  triggers: { status: 'unsupported' as const, reason: 'Events arrive in a later release.' },
+};
 
-const gatewayRecommendation = {
-  recommendations: [
+const gmail: ConnectorCatalogService = {
+  serviceSlug: 'gmail',
+  displayName: 'Gmail',
+  iconKey: 'gmail',
+  intents: [
     {
-      kind: 'gateway' as const,
-      target: 'gmail',
-      provider: 'composio',
-      rank: 1,
-      reason: 'Connect gmail through the composio gateway.',
-      custody: 'managed' as const,
+      kind: 'account',
+      displayName: 'Use a Gmail account',
+      routes: [
+        {
+          providerInstanceId: 'byo-1' as never,
+          displayName: 'My provider',
+          mode: 'byo',
+          custody: 'self-host',
+          payer: 'operator_byo',
+          capabilities,
+          disclosure: 'Your account stores login access.',
+          authKind: 'oauth2',
+        },
+        {
+          providerInstanceId: 'managed-1' as never,
+          displayName: 'DorkOS managed',
+          mode: 'managed',
+          custody: 'managed',
+          payer: 'dorkos_managed',
+          capabilities,
+          disclosure: 'DorkOS stores login access with its provider.',
+          authKind: 'oauth2',
+        },
+        {
+          providerInstanceId: 'offline-1' as never,
+          displayName: 'Unavailable provider',
+          mode: 'byo',
+          custody: 'external',
+          payer: 'operator_byo',
+          capabilities: {
+            ...capabilities,
+            authentication: { status: 'unsupported', reason: 'Provider is not configured.' },
+          },
+          disclosure: 'This provider would keep login access.',
+          authKind: 'oauth2',
+        },
+      ],
     },
   ],
-  warnings: [],
 };
 
-const startResponse = {
-  flowId: 'flow-1',
-  authorizeUrl: 'https://vendor.example/authorize/gmail',
-  disclosure:
-    'Connecting gmail takes you to that service to sign in. Composio stores your connected ' +
-    "accounts' login access in its own secure vault, not on your computer.",
-};
-
-const connectedAccount: PublicConnectedAccount = {
-  id: 'acct-9' as PublicConnectedAccount['id'],
-  toolkit: 'gmail',
-  label: 'work',
-  status: 'active',
-  custody: 'managed',
-  disclosure: 'Connecting work takes you to that service to sign in.',
-};
-
-function renderDialog(transport: Transport, onClose = vi.fn()) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+function renderDialog(transport = createMockTransport(), service = gmail) {
+  const chooseAccess = vi.fn();
+  function Host() {
+    const [flowId, setFlowId] = useState<string | null>(null);
+    return (
+      <ConnectDialog
+        service={service}
+        flowId={flowId}
+        onFlowIdChange={setFlowId}
+        onClose={() => undefined}
+        onChooseAccess={chooseAccess}
+      />
+    );
+  }
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const ui = (service: typeof gmail | null) => (
-    <QueryClientProvider client={queryClient}>
+  render(
+    <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>
-        <ConnectDialog service={service} onClose={onClose} />
+        <Host />
       </TransportProvider>
     </QueryClientProvider>
   );
-  const view = render(ui(gmail));
-  // Re-render with the parent's `service` value (the parent owns open state),
-  // keeping the same QueryClient so in-flight polling is observable.
-  const setService = (service: typeof gmail | null) => view.rerender(ui(service));
-  return { onClose, setService };
+  return { transport, chooseAccess };
 }
 
 describe('ConnectDialog', () => {
-  it('shows the custody disclosure BEFORE the auth URL can be opened, and polls only after', async () => {
-    const user = userEvent.setup();
-    const openSpy = vi.spyOn(window, 'open');
-    const transport = createMockTransport();
-    vi.mocked(transport.getConnectorRecommendation).mockResolvedValue(gatewayRecommendation);
-    vi.mocked(transport.startConnectorFlow).mockResolvedValue(startResponse);
-    vi.mocked(transport.pollConnectorFlow).mockResolvedValue({
-      status: 'connected',
-      account: connectedAccount,
-    });
-
-    renderDialog(transport);
-
-    // Step 1: the label form. No sign-in link exists anywhere in this step —
-    // a link rendered here would be a URL reachable before the disclosure.
-    expect(await screen.findByRole('button', { name: 'Continue' })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /open the sign-in page/i })).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Continue' }));
-
-    // Step 2: the disclosure step. The server's sentence is rendered…
-    const disclosure = await screen.findByTestId('connect-disclosure');
-    expect(disclosure).toHaveTextContent(startResponse.disclosure);
-    // …and the ONLY route to the vendor is the link rendered beneath it.
-    const signIn = screen.getByRole('link', { name: /open the sign-in page/i });
-    expect(signIn).toHaveAttribute('href', startResponse.authorizeUrl);
-    expect(signIn).toHaveAttribute('target', '_blank');
-    // Consent ordering: nothing polls while the person is reading.
-    expect(transport.pollConnectorFlow).not.toHaveBeenCalled();
-
-    // Step 3: the person opens the sign-in page — polling begins.
-    await user.click(signIn);
-    await waitFor(() => expect(transport.pollConnectorFlow).toHaveBeenCalledWith('flow-1'));
-
-    // Step 4: connected, named, and disclosed.
-    expect(await screen.findByText('Gmail (work) is connected.')).toBeInTheDocument();
-    expect(screen.getByText(connectedAccount.disclosure)).toBeInTheDocument();
-
-    // Across the whole flow, nothing ever called window.open — the person's
-    // click on the anchor is the only way the vendor page opens.
-    expect(openSpy).not.toHaveBeenCalled();
-    openSpy.mockRestore();
-  });
-
-  it('shows connection verification without inventing a sign-in link', async () => {
+  it('defaults to an available managed route, discloses custody, then waits for explicit agent access', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
-    vi.mocked(transport.getConnectorRecommendation).mockResolvedValue({
-      recommendations: [
-        {
-          kind: 'raw-mcp',
-          target: 'gmail',
-          provider: 'mcp',
-          rank: 2,
-          reason: 'Use the configured MCP server.',
-          custody: 'external',
-        },
-      ],
-      warnings: [],
-    });
-    vi.mocked(transport.startConnectorFlow).mockResolvedValue({
+    vi.mocked(transport.startConnectorAuthentication).mockResolvedValue({
       flowId: 'flow-1',
-      disclosure: 'This tool connects straight to Gmail.',
+      providerInstanceId: 'managed-1' as never,
+      toolkit: 'gmail',
+      state: 'pending',
+      authorizeUrl: 'https://provider.example/auth',
+      createdAt: '2026-09-06T00:00:00.000Z',
+      expiresAt: '2026-09-06T01:00:00.000Z',
     });
-    vi.mocked(transport.pollConnectorFlow).mockReturnValue(new Promise(() => {}));
+    vi.mocked(transport.pollConnectorAuthentication).mockResolvedValue({
+      flowId: 'flow-1',
+      providerInstanceId: 'managed-1' as never,
+      toolkit: 'gmail',
+      state: 'connected',
+      connectionId: 'connection-1' as never,
+      createdAt: '2026-09-06T00:00:00.000Z',
+      expiresAt: '2026-09-06T01:00:00.000Z',
+      completedAt: '2026-09-06T00:01:00.000Z',
+    });
+    const { chooseAccess } = renderDialog(transport);
 
-    renderDialog(transport);
-    await user.click(await screen.findByRole('button', { name: 'Continue' }));
-
-    expect(await screen.findByText('Checking the configured server…')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /sign-in/i })).toBeNull();
-    expect(screen.getByText(/only if the server accepts the configured connection/i)).toBeVisible();
-    expect(transport.pollConnectorFlow).toHaveBeenCalledWith('flow-1');
+    expect(screen.getByTestId('connect-disclosure')).toHaveTextContent(
+      'DorkOS stores login access'
+    );
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() =>
+      expect(transport.startConnectorAuthentication).toHaveBeenCalledWith(
+        expect.objectContaining({ providerInstanceId: 'managed-1', toolkit: 'gmail' })
+      )
+    );
+    expect(await screen.findByText('Gmail is connected')).toBeInTheDocument();
+    expect(screen.getByText(/No agent can use it/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Choose agents/i }));
+    expect(chooseAccess).toHaveBeenCalledWith('connection-1');
   });
 
-  it('does not connect after the dialog closes while verification is starting', async () => {
+  it('preserves an explicit provider choice and never starts an unavailable route', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
-    vi.mocked(transport.getConnectorRecommendation).mockResolvedValue({
-      recommendations: [
-        {
-          kind: 'raw-mcp',
-          target: 'gmail',
-          provider: 'mcp',
-          rank: 2,
-          reason: 'Use the configured MCP server.',
-          custody: 'external',
-        },
-      ],
-      warnings: [],
-    });
-    let finishStart: ((result: { flowId: string; disclosure: string }) => void) | undefined;
-    const startRequest = new Promise<{ flowId: string; disclosure: string }>((resolve) => {
-      finishStart = resolve;
-    });
-    vi.mocked(transport.startConnectorFlow).mockReturnValue(startRequest);
-    const { onClose, setService } = renderDialog(transport);
-
-    await user.click(await screen.findByRole('button', { name: 'Continue' }));
-    await waitFor(() => expect(transport.startConnectorFlow).toHaveBeenCalledTimes(1));
-    expect(useConnectFlowStore.getState().step).toBe('starting');
-    await user.keyboard('{Escape}');
-    expect(onClose).toHaveBeenCalledTimes(1);
-    setService(null);
-    expect(useConnectFlowStore.getState().step).toBe('idle');
-
-    await act(async () => {
-      finishStart?.({ flowId: 'late-flow', disclosure: 'Late verification response.' });
-      await startRequest;
-    });
-
-    expect(useConnectFlowStore.getState().step).toBe('idle');
-    expect(transport.pollConnectorFlow).not.toHaveBeenCalled();
-  });
-
-  it('suggests the "personal" label when a first account of the service exists', async () => {
-    const transport = createMockTransport();
-    vi.mocked(transport.getConnectorRecommendation).mockResolvedValue(gatewayRecommendation);
-    vi.mocked(transport.getConnectorAccounts).mockResolvedValue({
-      accounts: [connectedAccount],
-      warnings: [],
-    });
-
+    vi.mocked(transport.startConnectorAuthentication).mockReturnValue(new Promise(() => undefined));
     renderDialog(transport);
 
-    await waitFor(() => expect(screen.getByLabelText(/account label/i)).toHaveValue('personal'));
-    expect(screen.getByText(/a label tells them apart/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Change setup' }));
+    expect(screen.getByRole('button', { name: /Unavailable provider/i })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: /My provider/i }));
+    expect(screen.getByTestId('connect-disclosure')).toHaveTextContent('Your account stores');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(transport.startConnectorAuthentication).toHaveBeenCalledWith(
+      expect.objectContaining({ providerInstanceId: 'byo-1' })
+    );
   });
 
-  it('asks which of the two things a dual-nature service is being connected for', async () => {
-    const transport = createMockTransport();
-    vi.mocked(transport.getConnectorRecommendation).mockResolvedValue({
-      recommendations: [
-        {
-          kind: 'relay-adapter',
-          target: 'gmail',
-          provider: 'gmail',
-          rank: 0,
-          reason: 'Gmail has a purpose-built two-way adapter in DorkOS.',
-        },
-        ...gatewayRecommendation.recommendations,
-      ],
-      warnings: [],
-    });
-
-    renderDialog(transport);
-
-    // Two different powers, named by what each one does — not one option and
-    // an afterthought labelled "use the other one".
-    expect(
-      await screen.findByRole('button', { name: /chat with your agents in gmail/i })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: /let agents act on your gmail account/i })
-    ).toBeInTheDocument();
-    // The account path says whose vault the sign-in lands in, at the fork.
-    expect(screen.getByText(/goes through composio/i)).toBeInTheDocument();
-    // Neither has been chosen by merely opening the dialog.
-    expect(transport.startConnectorFlow).not.toHaveBeenCalled();
-  });
-
-  it('says honestly when nothing can connect the service yet', async () => {
-    const transport = createMockTransport();
-    renderDialog(transport);
-    expect(await screen.findByText(/gmail cannot be connected yet/i)).toBeInTheDocument();
-  });
-
-  it('keeps a mid-grant flow polling after the dialog closes, and records the account', async () => {
+  it('keeps custody visible beside a pending provider sign-in', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
-    vi.mocked(transport.getConnectorRecommendation).mockResolvedValue(gatewayRecommendation);
-    vi.mocked(transport.startConnectorFlow).mockResolvedValue(startResponse);
-    // Still pending when the person closes the dialog; the grant completes after.
-    vi.mocked(transport.pollConnectorFlow)
-      .mockResolvedValueOnce({ status: 'pending' })
-      .mockResolvedValue({ status: 'connected', account: connectedAccount });
-
-    const { onClose, setService } = renderDialog(transport);
-
-    await user.click(await screen.findByRole('button', { name: 'Continue' }));
-    await user.click(await screen.findByRole('link', { name: /open the sign-in page/i }));
-    await waitFor(() => expect(transport.pollConnectorFlow).toHaveBeenCalled());
-
-    // The waiting step says closing is safe, and DISMISSING the dialog (Escape,
-    // overlay, X — the paths that run handleOpenChange) does not abandon the
-    // flow. The in-step "Close window" button exists too but calls onClose
-    // directly, so Escape is the path that discriminates the close guard.
-    expect(screen.getByText(/you can close this window/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Close window' })).toBeInTheDocument();
-    await user.keyboard('{Escape}');
-    expect(onClose).toHaveBeenCalled();
-    expect(useConnectFlowStore.getState().step).toBe('waiting');
-
-    // Parent closes the dialog; the hook stays mounted with the page and the
-    // poll keeps running until the vendor confirms — the account is recorded
-    // (accounts invalidation fires), never an orphaned grant.
-    setService(null);
-    await waitFor(() => expect(useConnectFlowStore.getState().step).toBe('connected'), {
-      timeout: 5_000,
-    });
-    expect(useConnectFlowStore.getState().account).toEqual(connectedAccount);
-  });
-
-  it('abandons an un-consented flow when the dialog closes during disclosure', async () => {
-    const user = userEvent.setup();
-    const transport = createMockTransport();
-    vi.mocked(transport.getConnectorRecommendation).mockResolvedValue(gatewayRecommendation);
-    vi.mocked(transport.startConnectorFlow).mockResolvedValue(startResponse);
-
-    const { onClose } = renderDialog(transport);
-
-    await user.click(await screen.findByRole('button', { name: 'Continue' }));
-    await screen.findByTestId('connect-disclosure');
-
-    // Nothing has been granted yet — Escape abandons cleanly.
-    await user.keyboard('{Escape}');
-    expect(onClose).toHaveBeenCalled();
-    expect(useConnectFlowStore.getState().step).toBe('idle');
-    expect(transport.pollConnectorFlow).not.toHaveBeenCalled();
-  });
-
-  it('surfaces a failed flow verbatim with a way back', async () => {
-    const user = userEvent.setup();
-    const transport = createMockTransport();
-    vi.mocked(transport.getConnectorRecommendation).mockResolvedValue(gatewayRecommendation);
-    vi.mocked(transport.startConnectorFlow).mockResolvedValue(startResponse);
-    vi.mocked(transport.pollConnectorFlow).mockResolvedValue({
-      status: 'failed',
-      error: 'The vendor rejected the connection.',
-    });
-
+    const pending = {
+      flowId: 'flow-1',
+      providerInstanceId: 'managed-1' as never,
+      toolkit: 'gmail',
+      state: 'pending' as const,
+      authorizeUrl: 'https://provider.example/auth',
+      createdAt: '2026-09-06T00:00:00.000Z',
+      expiresAt: '2026-09-06T01:00:00.000Z',
+    };
+    vi.mocked(transport.startConnectorAuthentication).mockResolvedValue(pending);
+    vi.mocked(transport.pollConnectorAuthentication).mockResolvedValue(pending);
     renderDialog(transport);
 
-    await user.click(await screen.findByRole('button', { name: 'Continue' }));
-    await user.click(await screen.findByRole('link', { name: /open the sign-in page/i }));
-
-    expect(await screen.findByText('The vendor rejected the connection.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('link', { name: 'Open sign-in' })).toBeInTheDocument();
+    expect(screen.getByTestId('connect-disclosure')).toHaveTextContent(
+      'DorkOS stores login access'
+    );
   });
 });

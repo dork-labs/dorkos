@@ -7,11 +7,48 @@ import {
   ConnectorProgramReviewStatusSchema,
   ConnectorProgramExecutionRequestSchema,
   ConnectorProviderExecuteResultSchema,
+  ConnectorReconciliationApplyResponseSchema,
   ConnectorReviewActionSchema,
   ConnectorUsageItemSchema,
   decodeConnectorReviewAction,
   encodeConnectorReviewAction,
 } from '../connector-schemas.js';
+
+describe('connector reconciliation apply contracts', () => {
+  const base = {
+    connectionId: 'connection-a',
+    reconciliationStatus: 'ready',
+    grants: [{ agentId: 'agent-a', operationRevisionIds: ['revision-a'] }],
+  } as const;
+
+  it.each([
+    { status: 'ready' as const },
+    { status: 'pending' as const },
+    { status: 'failed' as const, reason: 'Provider confirmation timed out.' },
+  ])('requires and preserves the $status authority sync state', (authoritySync) => {
+    expect(
+      ConnectorReconciliationApplyResponseSchema.parse({ ...base, authoritySync })
+    ).toMatchObject({ authoritySync });
+  });
+
+  it('allows a catalog review state without presenting it as ready', () => {
+    expect(
+      ConnectorReconciliationApplyResponseSchema.parse({
+        ...base,
+        reconciliationStatus: 'migration_needs_reconcile',
+        authoritySync: { status: 'ready' },
+      }).reconciliationStatus
+    ).toBe('migration_needs_reconcile');
+  });
+
+  it.each([
+    base,
+    { ...base, authoritySync: { status: 'failed' } },
+    { ...base, authoritySync: { status: 'unknown' } },
+  ])('rejects an incomplete or unknown authority sync result', (candidate) => {
+    expect(ConnectorReconciliationApplyResponseSchema.safeParse(candidate).success).toBe(false);
+  });
+});
 
 describe('connector execution contracts', () => {
   it('requires retry policy on immutable revisions and retryability on provider errors', () => {

@@ -79,6 +79,17 @@ export interface ConnectorProviderBootstrapperOpts {
   nangoEnv: () => { baseUrl?: string; encryptionKey?: string };
   /** Raw-MCP server descriptors from user config (`connectors.rawMcpServers`), read at boot. */
   rawMcpServers: () => RawMcpServerDescriptor[];
+  /** Hosted managed provider backed by the current linked-instance token. */
+  managedCloud?: {
+    /** Stable provider instance registered for every valid linked key. */
+    instanceId: ConnectorProvider['instanceId'];
+    /** Whether a linked-instance key is currently present. */
+    configured: () => boolean;
+    /** Hash of the current key material, never the token itself. */
+    executionConfigDigest: () => string | undefined;
+    /** Construct the tokenless provider adapter. */
+    create: () => ConnectorProvider;
+  };
   /**
    * Present only under `DORKOS_TEST_RUNTIME`: enables the `test-connector`
    * credential-gated spec. The factory builds the scripted test provider once a
@@ -175,6 +186,8 @@ export class ConnectorProviderBootstrapper {
   private readonly _onUnregistered:
     ((providerInstanceId: string, providerType: string) => void) | undefined;
   private readonly _specs = new Map<string, ManagedProviderSpec>();
+  private readonly _managedCloud: ConnectorProviderBootstrapperOpts['managedCloud'];
+  private _managedCloudReload: Promise<void> = Promise.resolve();
   private readonly _instanceBySpecType = new Map<string, ConnectorProvider['instanceId']>();
   /** Last refusal/connection-check failure per provider type, surfaced on the status DTO. */
   private readonly _lastError = new Map<string, string>();
@@ -189,6 +202,7 @@ export class ConnectorProviderBootstrapper {
     this._registry = opts.registry;
     this._rawMcpServers = opts.rawMcpServers;
     this._onUnregistered = opts.onUnregistered;
+    this._managedCloud = opts.managedCloud;
 
     const { credentials, nangoEnv } = opts;
     const specs: ManagedProviderSpec[] = [
@@ -276,10 +290,43 @@ export class ConnectorProviderBootstrapper {
     const rawMcpProvider = new RawMcpConnectorProvider({ servers: rawMcpServers });
     this._registry.register(
       rawMcpProvider,
-      rawMcpExecutionConfigDigest(rawMcpProvider, rawMcpServers)
+      rawMcpExecutionConfigDigest(rawMcpProvider, rawMcpServers),
+      'byo'
     );
     for (const spec of this._specs.values()) {
       await this._swap(spec);
+    }
+    await this.reloadManagedCloud();
+  }
+
+  /** Reconcile the hosted managed provider with the current linked-instance key. */
+  reloadManagedCloud(): Promise<void> {
+    const reload = this._managedCloudReload.then(() => this._reloadManagedCloud());
+    this._managedCloudReload = reload.catch(() => {});
+    return reload;
+  }
+
+  private async _reloadManagedCloud(): Promise<void> {
+    const managed = this._managedCloud;
+    if (!managed) return;
+    const wasRegistered = this._registry.resolveProviderInstance(managed.instanceId) !== undefined;
+    this._registry.unregisterProviderInstance(managed.instanceId);
+    try {
+      if (!managed.configured()) return;
+      const provider = managed.create();
+      await provider.listAccounts();
+      this._registry.register(provider, managed.executionConfigDigest(), 'managed');
+      logger.info('[Connectors] DorkOS managed provider registered');
+    } catch (error) {
+      logger.error(
+        `[Connectors] DorkOS managed provider failed its connection check: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    } finally {
+      if (wasRegistered && !this._registry.resolveProviderInstance(managed.instanceId)) {
+        this._onUnregistered?.(managed.instanceId, 'dorkos-managed');
+      }
     }
   }
 
@@ -329,7 +376,7 @@ export class ConnectorProviderBootstrapper {
         // card said Ready over a dead service grid. The failure message
         // (Composio's own, secret-free) lands on the status DTO instead.
         await provider.listAccounts();
-        this._registry.register(provider, providerExecutionConfigDigest(provider));
+        this._registry.register(provider, providerExecutionConfigDigest(provider), 'byo');
         this._instanceBySpecType.set(spec.type, provider.instanceId);
         logger.info(`[Connectors] ${spec.logLabel} registered`);
       }

@@ -37,6 +37,16 @@ export { account, apikey, deviceCode, session, user, verification } from './auth
 export { instance, type Instance, type NewInstance } from './instance-schema';
 export { auditLog, type AuditLogEntry, type NewAuditLogEntry } from './audit-schema';
 export {
+  connectorTenant,
+  managedConnectorAuthFlow,
+  managedConnectorAuthorityCommand,
+  managedConnectorConnection,
+  managedConnectorExecutionAttempt,
+  managedConnectorGrant,
+  managedConnectorOperationRevision,
+  managedConnectorProvider,
+} from './managed-connectors-schema';
+export {
   newsletterSubscriber,
   type NewsletterSubscriber,
   type NewNewsletterSubscriber,

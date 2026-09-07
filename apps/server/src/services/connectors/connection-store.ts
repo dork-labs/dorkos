@@ -76,6 +76,9 @@ export interface ConnectionStoreOptions {
   };
 }
 
+/** Server-owned deployment and payer mode for a configured provider instance. */
+export type ConnectorProviderDeploymentMode = 'managed' | 'byo';
+
 /** Stable connection store and sole writer after the application backfill. */
 export class ConnectionStore {
   private readonly db: Db;
@@ -106,20 +109,21 @@ export class ConnectionStore {
   }
 
   /** Persist or refresh one configured provider instance without deleting connections. */
-  registerProvider(provider: ConnectorProvider, executionConfigDigest: string): number {
+  registerProvider(
+    provider: ConnectorProvider,
+    executionConfigDigest: string,
+    mode: ConnectorProviderDeploymentMode
+  ): number {
     this.assertAvailable();
     const capabilities = provider.getCapabilities();
     const now = new Date().toISOString();
-    // This bootstrap configures a provider owned by this DorkOS install.
-    // Custody describes its vault; a future managed service must declare its
-    // deployment mode explicitly instead of inferring it from custody.
-    const mode = 'byo' as const;
     return this.db.transaction((tx) => {
       const existing = tx
         .select({
           createdAt: connectorProviderInstances.createdAt,
           executionConfigDigest: connectorProviderInstances.executionConfigDigest,
           executionConfigGeneration: connectorProviderInstances.executionConfigGeneration,
+          mode: connectorProviderInstances.mode,
           ownerKind: connectorProviderInstances.ownerKind,
           ownerId: connectorProviderInstances.ownerId,
         })
@@ -136,9 +140,10 @@ export class ConnectionStore {
         throw new Error('Configured connector provider belongs to a different owner.');
       }
       const materialChanged =
-        existing !== undefined && existing.executionConfigDigest !== executionConfigDigest;
+        existing !== undefined &&
+        (existing.executionConfigDigest !== executionConfigDigest || existing.mode !== mode);
       const executionConfigGeneration =
-        existing?.executionConfigDigest === executionConfigDigest
+        existing?.executionConfigDigest === executionConfigDigest && existing.mode === mode
           ? existing.executionConfigGeneration
           : Math.max(1, (existing?.executionConfigGeneration ?? 0) + 1);
       tx.insert(connectorProviderInstances)
@@ -472,13 +477,15 @@ export class ConnectionStore {
   }
 
   /**
-   * Fence retained legacy consent for an agent before its removal is observed.
+   * Fence retained legacy consent only while its application migration is unavailable.
    *
-   * The marker bypasses application-migration health because the Drizzle table
-   * already exists and must be durable precisely when the legacy backfill is
-   * unavailable. It does not block later explicit canonical consent.
+   * A successful migration retires the legacy input tables atomically, so the
+   * marker becomes unnecessary and this method becomes a no-op. During a failed
+   * migration the tables remain intact and the marker prevents a later retry
+   * from restoring consent for an agent removed in the meantime.
    */
   recordAgentRemoval(agentId: string): void {
+    if (this.migrationResult.status === 'ready') return;
     this.db
       .insert(connectorLegacyAgentRevocations)
       .values({ agentId, revokedAt: new Date().toISOString() })

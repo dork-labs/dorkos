@@ -97,6 +97,34 @@ describe('ConnectionStore lifecycle and cleanup', () => {
     );
   });
 
+  it('fences existing authority when the explicit provider deployment mode changes', () => {
+    db.update(connections)
+      .set({ grantReconciliationStatus: 'ready' })
+      .where(eq(connections.id, connection.id))
+      .run();
+    const before = db
+      .select({ generation: connectorProviderInstances.executionConfigGeneration })
+      .from(connectorProviderInstances)
+      .where(eq(connectorProviderInstances.id, provider.instanceId))
+      .get()!;
+
+    registry.register(provider, undefined, 'managed');
+
+    expect(
+      db
+        .select({
+          generation: connectorProviderInstances.executionConfigGeneration,
+          mode: connectorProviderInstances.mode,
+        })
+        .from(connectorProviderInstances)
+        .where(eq(connectorProviderInstances.id, provider.instanceId))
+        .get()
+    ).toEqual({ generation: before.generation + 1, mode: 'managed' });
+    expect(db.select().from(connections).get()?.grantReconciliationStatus).toBe(
+      'migration_needs_reconcile'
+    );
+  });
+
   it('binds configured providers to one verified owner without reassignment', () => {
     const owned = new ConnectorRegistry({
       db,

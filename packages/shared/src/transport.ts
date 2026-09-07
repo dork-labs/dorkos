@@ -155,18 +155,7 @@ import type {
 } from './team-schemas.js';
 import type { CloudLinkStatus, CloudLinkSummary, StartLinkResult } from './cloud-schemas.js';
 import type { FeedbackListItem, FeedbackSubmission } from './telemetry-events.js';
-import type {
-  ConnectorAccountsResponse,
-  ConnectorConnectPollResponse,
-  ConnectorConnectStartResponse,
-  ConnectorProviderStatus,
-  ConnectorRecommendationsResponse,
-  ConnectorToolkitsResponse,
-  SessionConnectorAttachResult,
-  SessionConnectorStatus,
-  AgentConnectorAttachment,
-  AgentConnectorAttachResult,
-} from './connector-provider.js';
+import type { ConnectorProviderStatus } from './connector-provider.js';
 import type {
   ConnectionId,
   ConnectorAccessibleConnectionsResponse,
@@ -184,6 +173,19 @@ import type {
   ConnectorUsagePage,
 } from './connector-schemas.js';
 import type { SearchQuery, SearchResponse } from './search-schemas.js';
+import type {
+  ConnectorAgentConnections,
+  ConnectorAuthenticationFlowCreateRequest,
+  ConnectorAuthenticationFlowState,
+  ConnectorCatalogResourcePage,
+  ConnectorConnectionDetail,
+  ConnectorConnectionListResource,
+  ConnectorConnectionPatch,
+  ConnectorDisconnectImpact,
+  ConnectorLifecycleResult,
+  ConnectorReconnectRequest,
+  ConnectorSessionConnections,
+} from './connector-resource-schemas.js';
 
 /** A single entry in the adapter list — config plus live status. */
 export interface AdapterListItem {
@@ -2445,119 +2447,56 @@ export interface Transport extends RoomTransport {
    */
   deleteConnectorCredential(provider: string): Promise<ConnectorProviderStatus>;
 
-  /** List the connectable services aggregated across every registered provider. */
-  getConnectorToolkits(): Promise<ConnectorToolkitsResponse>;
+  /** Read one bounded provider-neutral catalog page without account state. */
+  getConnectorCatalog(input?: {
+    query?: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<ConnectorCatalogResourcePage>;
 
-  /**
-   * Ask how a service should be connected, best route first: a purpose-built
-   * relay adapter outranks a gateway connector, which outranks a raw MCP
-   * server. The service grid's Connect verb routes through this so the
-   * provider choice stays invisible.
-   *
-   * @param service - Service slug, e.g. `'gmail' | 'slack'`.
-   */
-  getConnectorRecommendation(service: string): Promise<ConnectorRecommendationsResponse>;
+  /** Read every stable connection owned by the current operator. */
+  getConnectorConnections(): Promise<ConnectorConnectionListResource>;
 
-  /**
-   * Begin connecting a service account through one provider. The result
-   * carries the auth URL, a pollable flow id, and the custody disclosure the
-   * UI must render BEFORE the auth URL is opened.
-   *
-   * @param provider - Provider type the flow runs through (from the recommendation).
-   * @param request - The toolkit to connect and an optional multi-account label.
-   */
-  startConnectorFlow(
-    provider: string,
-    request: { toolkit: string; label?: string }
-  ): Promise<ConnectorConnectStartResponse>;
+  /** Read owner-visible detail for one stable connection. */
+  getConnectorConnection(connectionId: string): Promise<ConnectorConnectionDetail>;
 
-  /**
-   * Poll a connect flow until it settles. A FLOW failure is typed on the
-   * result (`status: 'failed'` with `error`); the request itself can still
-   * reject — an unknown or already-released flow id answers 404 — and callers
-   * treat that rejection as terminal too.
-   *
-   * @param flowId - The opaque flow id from {@link startConnectorFlow}.
-   */
-  pollConnectorFlow(flowId: string): Promise<ConnectorConnectPollResponse>;
+  /** Start one restart-safe idempotent provider authentication flow. */
+  startConnectorAuthentication(
+    input: ConnectorAuthenticationFlowCreateRequest
+  ): Promise<ConnectorAuthenticationFlowState>;
 
-  /**
-   * List every connected account across providers, each row carrying its own
-   * server-composed custody sentence.
-   *
-   * @param toolkit - Optional service slug to filter to.
-   */
-  getConnectorAccounts(toolkit?: string): Promise<ConnectorAccountsResponse>;
+  /** Poll one restart-safe owner authentication flow. */
+  pollConnectorAuthentication(flowId: string): Promise<ConnectorAuthenticationFlowState>;
 
-  /**
-   * Disconnect (revoke) one connected account. Idempotent — an unknown or
-   * already-removed id resolves without error.
-   *
-   * @param accountId - The opaque account id to disconnect.
-   */
-  disconnectConnectorAccount(accountId: string): Promise<void>;
+  /** Rename one stable connection locally. */
+  renameConnectorConnection(
+    connectionId: string,
+    input: ConnectorConnectionPatch
+  ): Promise<ConnectorLifecycleResult>;
 
-  /**
-   * Read a session's connector surface: the accounts attached to it, each with
-   * its exposure state, plus per-account null-branch warnings ("expired —
-   * reconnect" style) for accounts that could not be exposed.
-   *
-   * @param sessionId - The session to report on.
-   */
-  getSessionConnectors(sessionId: string): Promise<SessionConnectorStatus>;
+  /** Start an idempotent reconnect while keeping the previous account closed. */
+  reconnectConnectorConnection(
+    connectionId: string,
+    input: ConnectorReconnectRequest
+  ): Promise<ConnectorAuthenticationFlowState>;
 
-  /**
-   * Retired session-access mutation retained until P3 removes the compatibility
-   * Transport surface. The HTTP adapter rejects it and directs the operator to
-   * the Connections access editor.
-   *
-   * @param sessionId - The session the account is being attached to.
-   * @param accountId - The opaque account id to attach.
-   */
-  attachSessionConnector(
-    sessionId: string,
-    accountId: string
-  ): Promise<SessionConnectorAttachResult>;
+  /** Pause local and hosted authority for one stable connection. */
+  pauseConnectorConnection(connectionId: string): Promise<ConnectorLifecycleResult>;
 
-  /**
-   * Retired session-access mutation retained until P3 removes the compatibility
-   * Transport surface. The HTTP adapter rejects it and directs the operator to
-   * the Connections access editor.
-   *
-   * @param sessionId - The session to detach from.
-   * @param accountId - The opaque account id to detach.
-   */
-  detachSessionConnector(sessionId: string, accountId: string): Promise<void>;
+  /** Resume only after current hosted authority acknowledges the transition. */
+  resumeConnectorConnection(connectionId: string): Promise<ConnectorLifecycleResult>;
 
-  // --- Agent-level connector attachment (connection-scoping spec §Part 1) ---
+  /** Read the exact local authority affected by disconnecting one connection. */
+  getConnectorDisconnectImpact(connectionId: string): Promise<ConnectorDisconnectImpact>;
 
-  /**
-   * List the accounts an agent has standingly attached. Every session that
-   * agent starts inherits these unless the session overrides the account.
-   *
-   * @param agentId - The agent whose standing attachments to read.
-   */
-  getAgentConnectors(agentId: string): Promise<AgentConnectorAttachment[]>;
+  /** Disconnect one stable connection with local close-first semantics. */
+  disconnectConnectorConnection(connectionId: string): Promise<ConnectorLifecycleResult>;
 
-  /**
-   * Retired agent-access mutation retained until P3 removes the compatibility
-   * Transport surface. The HTTP adapter rejects it and directs the operator to
-   * the Connections access editor.
-   *
-   * @param agentId - The agent gaining the standing attachment.
-   * @param accountId - The opaque account id to attach.
-   */
-  attachAgentConnector(agentId: string, accountId: string): Promise<AgentConnectorAttachResult>;
+  /** Read the current exact connection grants for one owned agent. */
+  getAgentConnectorConnections(agentId: string): Promise<ConnectorAgentConnections>;
 
-  /**
-   * Retired agent-access mutation retained until P3 removes the compatibility
-   * Transport surface. The HTTP adapter rejects it and directs the operator to
-   * the Connections access editor.
-   *
-   * @param agentId - The agent losing the standing attachment.
-   * @param accountId - The opaque account id to detach.
-   */
-  detachAgentConnector(agentId: string, accountId: string): Promise<void>;
+  /** Read effective connector access for one canonical session. */
+  getSessionConnectorConnections(sessionId: string): Promise<ConnectorSessionConnections>;
 
   /** List the exact connections currently usable by one owned agent. */
   getAccessibleConnectorConnections(

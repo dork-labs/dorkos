@@ -42,7 +42,7 @@ describe('connector management routes', () => {
     reviews.list.mockReturnValue([]);
     reviews.resolve.mockResolvedValue({ review: { reviewRequestId: 'review-a' } });
     reconciliation.preview.mockResolvedValue({ previewId: 'preview-a' });
-    reconciliation.apply.mockReturnValue({ connectionId: 'connection-a' });
+    reconciliation.apply.mockResolvedValue({ connectionId: 'connection-a' });
   });
 
   function buildApp(

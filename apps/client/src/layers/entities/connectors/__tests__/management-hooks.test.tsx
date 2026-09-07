@@ -12,6 +12,7 @@ import {
   useApplyConnectorReconciliation,
   useConnectorManagementReview,
   useConnectorManagementReviews,
+  useConnectorReviewAuthentication,
   usePreviewConnectorReconciliation,
   useResolveConnectorManagementReview,
 } from '../index';
@@ -86,7 +87,7 @@ describe('connector owner-management hooks', () => {
     expect(queryClient.getQueryData(connectorKeys.review('review-1'))).toEqual(denied);
     expect(invalidate).toHaveBeenCalledWith({ queryKey: connectorKeys.reviewList('pending') });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: connectorKeys.reviewList('resolved') });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: connectorKeys.sessions() });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: connectorKeys.connections() });
   });
 
   it('previews one stable connection and submits an exact named-agent replacement', async () => {
@@ -97,6 +98,7 @@ describe('connector owner-management hooks', () => {
     vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
       connectionId: 'connection-1',
       reconciliationStatus: 'ready',
+      authoritySync: { status: 'ready' },
       grants: [{ agentId: 'agent-a', operationRevisionIds: [] }],
     } as never);
     const { queryClient, wrapper } = wrapperFor(transport);
@@ -119,6 +121,30 @@ describe('connector owner-management hooks', () => {
       previewId: 'preview-1',
       grants: [{ agentId: 'agent-a', operationRevisionIds: [] }],
     });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: connectorKeys.sessions() });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: connectorKeys.connections() });
+  });
+
+  it('polls the durable owner flow and invalidates only canonical connections on success', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.pollConnectorAuthentication).mockResolvedValue({
+      flowId: 'flow-1',
+      providerInstanceId: 'provider-1' as never,
+      toolkit: 'gmail',
+      state: 'connected',
+      connectionId: 'connection-1' as never,
+      createdAt: '2026-09-06T00:00:00.000Z',
+      expiresAt: '2026-09-06T01:00:00.000Z',
+      completedAt: '2026-09-06T00:05:00.000Z',
+    });
+    const { queryClient, wrapper } = wrapperFor(transport);
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useConnectorReviewAuthentication('flow-1', true), {
+      wrapper,
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(transport.pollConnectorAuthentication).toHaveBeenCalledWith('flow-1');
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: connectorKeys.connections() });
   });
 });

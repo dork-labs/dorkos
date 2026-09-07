@@ -53,12 +53,11 @@ export function custodyDisclosure(
 ): string {
   switch (custody) {
     case 'managed':
-      // Managed (Composio) — tokens leave the machine. The middle sentence is
-      // the canonical ADR string, reused verbatim.
+      // Managed (Composio): preserve the required custody fact without making
+      // an OAuth-only password promise or implying newly connected agents gain access.
       return (
-        `Connecting ${ctx.service} takes you to that service to sign in. ` +
         `${MANAGED_CUSTODY_CANONICAL_SENTENCE} ` +
-        'Your agents can then act for you; your password is never shared, and you can disconnect anytime.'
+        'Choose which agents can use this account. You can disconnect anytime.'
       );
     case 'self-host':
       // Self-host (Nango) — tokens stay in the operator's own infrastructure.

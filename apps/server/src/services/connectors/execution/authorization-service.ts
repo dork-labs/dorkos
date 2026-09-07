@@ -4,10 +4,12 @@ import { z } from 'zod';
 import {
   connectionOperationGrants,
   connections,
+  connectorManagedAuthorityOutbox,
   connectorOperationRevisions,
   connectorProviderInstances,
   sessionConnectionOverrides,
   and,
+  desc,
   eq,
   isNull,
   type Db,
@@ -90,6 +92,10 @@ export interface AuthorizedConnectorExecution {
   readonly executionConfigGeneration: number;
   /** Usage payer derived from server-owned provider configuration. */
   readonly payer: 'operator_byo' | 'dorkos_managed';
+  /** Latest applied hosted agent-grant scope, present only for managed execution. */
+  readonly managedGrantScopeVersion?: number;
+  /** Private hosted revision identity derived from the granted local immutable revision. */
+  readonly managedHostedRevisionId?: string;
 }
 
 interface ExecutionRow {
@@ -113,6 +119,7 @@ interface ExecutionRow {
   operationSlug: string;
   toolkitVersion: string;
   schemaHash: string;
+  providerRevisionRef: string;
   classification: ConnectorOperationClassification;
   retryPolicy: 'never' | 'provider_idempotency_key';
   inputSchemaJson: string;
@@ -327,7 +334,27 @@ export class ConnectorExecutionAuthorizationService {
         'This provider does not support operation execution.'
       );
     }
+    const managedHostedRevisionId =
+      row.providerMode === 'managed'
+        ? z.string().uuid().safeParse(row.providerRevisionRef)
+        : undefined;
+    if (managedHostedRevisionId && !managedHostedRevisionId.success) {
+      return refuse(
+        'CONNECTOR_MANAGED_REVISION_REQUIRED',
+        'Review this managed action again before using it.'
+      );
+    }
     const argumentsValue = this.validateArguments(row.inputSchemaJson, input.target.arguments);
+    const managedGrantScopeVersion =
+      row.providerMode === 'managed'
+        ? this.readAppliedManagedGrantScopeVersion(row.externalAccountRef, actor.agentId)
+        : undefined;
+    if (row.providerMode === 'managed' && managedGrantScopeVersion === undefined) {
+      return refuse(
+        'CONNECTOR_MANAGED_AUTHORITY_PENDING',
+        'Managed connector access is still synchronizing.'
+      );
+    }
     const operation = ConnectorOperationRevisionSchema.parse({
       id: row.operationRevisionId,
       providerInstanceId: row.providerInstanceId,
@@ -347,6 +374,8 @@ export class ConnectorExecutionAuthorizationService {
       connectionId: row.connectionId,
       providerInstanceId: row.providerInstanceId,
       executionConfigGeneration: row.executionConfigGeneration,
+      managedGrantScopeVersion,
+      hostedRevisionId: managedHostedRevisionId?.success ? managedHostedRevisionId.data : undefined,
       operationRevisionId: row.operationRevisionId,
       arguments: argumentsValue,
     });
@@ -372,9 +401,33 @@ export class ConnectorExecutionAuthorizationService {
       arguments: Object.freeze({ ...argumentsValue }),
       executionConfigGeneration: row.executionConfigGeneration,
       payer: row.providerMode === 'managed' ? 'dorkos_managed' : 'operator_byo',
+      ...(managedGrantScopeVersion === undefined ? {} : { managedGrantScopeVersion }),
+      ...(managedHostedRevisionId?.success
+        ? { managedHostedRevisionId: managedHostedRevisionId.data }
+        : {}),
     });
     this.preparedExecutions.add(authorized);
     return authorized;
+  }
+
+  private readAppliedManagedGrantScopeVersion(
+    managedConnectionId: string,
+    agentId: string
+  ): number | undefined {
+    return this.db
+      .select({ scopeVersion: connectorManagedAuthorityOutbox.scopeVersion })
+      .from(connectorManagedAuthorityOutbox)
+      .where(
+        and(
+          eq(connectorManagedAuthorityOutbox.managedConnectionId, managedConnectionId),
+          eq(connectorManagedAuthorityOutbox.scopeKind, 'agent_grants'),
+          eq(connectorManagedAuthorityOutbox.subjectId, agentId),
+          eq(connectorManagedAuthorityOutbox.state, 'applied')
+        )
+      )
+      .orderBy(desc(connectorManagedAuthorityOutbox.scopeVersion))
+      .limit(1)
+      .get()?.scopeVersion;
   }
 
   private async resolveActor(
@@ -454,6 +507,7 @@ export class ConnectorExecutionAuthorizationService {
         operationSlug: connectorOperationRevisions.operationSlug,
         toolkitVersion: connectorOperationRevisions.toolkitVersion,
         schemaHash: connectorOperationRevisions.schemaHash,
+        providerRevisionRef: connectorOperationRevisions.providerRevisionRef,
         classification: connectorOperationRevisions.capabilityClassification,
         retryPolicy: connectorOperationRevisions.retryPolicy,
         inputSchemaJson: connectorOperationRevisions.inputSchemaJson,

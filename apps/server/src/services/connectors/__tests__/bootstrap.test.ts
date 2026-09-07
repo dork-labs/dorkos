@@ -84,6 +84,7 @@ describe('ConnectorProviderBootstrapper', () => {
     onUnregistered?: (providerInstanceId: string, providerType: string) => void;
     /** Error the Composio connection check rejects with (the wrong-key branch). */
     composioProbeError?: Error;
+    managedCloud?: ConstructorParameters<typeof ConnectorProviderBootstrapper>[0]['managedCloud'];
   }) {
     return new ConnectorProviderBootstrapper({
       registry,
@@ -96,6 +97,7 @@ describe('ConnectorProviderBootstrapper', () => {
       makeNangoClient: () => fakeNangoClient(),
       ...(opts?.testConnector && { testConnector: opts.testConnector }),
       ...(opts?.onUnregistered && { onUnregistered: opts.onUnregistered }),
+      ...(opts?.managedCloud && { managedCloud: opts.managedCloud }),
     });
   }
 
@@ -133,6 +135,16 @@ describe('ConnectorProviderBootstrapper', () => {
       secrets.set(COMPOSIO_API_KEY_REF, 'ck-live-test');
       await makeBootstrapper().registerBootProviders();
       expect(registry.resolveProvider('composio')).toBeDefined();
+      expect(
+        db
+          .select({
+            mode: connectorProviderInstances.mode,
+            custody: connectorProviderInstances.custody,
+          })
+          .from(connectorProviderInstances)
+          .where(eq(connectorProviderInstances.type, 'composio'))
+          .get()
+      ).toEqual({ mode: 'byo', custody: 'managed' });
     });
 
     it('registers Nango when configured with a valid encryption key', async () => {
@@ -144,6 +156,70 @@ describe('ConnectorProviderBootstrapper', () => {
         }),
       }).registerBootProviders();
       expect(registry.resolveProvider('nango')).toBeDefined();
+    });
+
+    it('registers the hosted managed provider only while a linked key is configured', async () => {
+      let linked = false;
+      const managed = new FakeConnectorProvider({
+        instanceId: 'managed-provider' as never,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      const bootstrapper = makeBootstrapper({
+        managedCloud: {
+          instanceId: managed.instanceId,
+          configured: () => linked,
+          executionConfigDigest: () => (linked ? 'linked-material' : undefined),
+          create: () => managed,
+        },
+      });
+
+      await bootstrapper.registerBootProviders();
+      expect(registry.resolveProviderInstance(managed.instanceId)).toBeUndefined();
+      linked = true;
+      await bootstrapper.reloadManagedCloud();
+      expect(registry.resolveProviderInstance(managed.instanceId)).toBe(managed);
+      expect(
+        db
+          .select({
+            digest: connectorProviderInstances.executionConfigDigest,
+            generation: connectorProviderInstances.executionConfigGeneration,
+            mode: connectorProviderInstances.mode,
+          })
+          .from(connectorProviderInstances)
+          .where(eq(connectorProviderInstances.id, managed.instanceId))
+          .get()
+      ).toEqual({ digest: 'linked-material', generation: 1, mode: 'managed' });
+
+      const restartedRegistry = new ConnectorRegistry({ db });
+      const restarted = new ConnectorProviderBootstrapper({
+        registry: restartedRegistry,
+        credentials: fakeCredentials(secrets),
+        nangoEnv: () => ({}),
+        rawMcpServers: () => [],
+        makeComposioClient: () => fakeComposioClient(),
+        makeNangoClient: () => fakeNangoClient(),
+        managedCloud: {
+          instanceId: managed.instanceId,
+          configured: () => linked,
+          executionConfigDigest: () => (linked ? 'linked-material' : undefined),
+          create: () => managed,
+        },
+      });
+      await restarted.registerBootProviders();
+      expect(
+        db
+          .select({
+            generation: connectorProviderInstances.executionConfigGeneration,
+            mode: connectorProviderInstances.mode,
+          })
+          .from(connectorProviderInstances)
+          .where(eq(connectorProviderInstances.id, managed.instanceId))
+          .get()
+      ).toEqual({ generation: 1, mode: 'managed' });
+      linked = false;
+      await restarted.reloadManagedCloud();
+      expect(restartedRegistry.resolveProviderInstance(managed.instanceId)).toBeUndefined();
     });
 
     it('logs-and-skips the Nango encryption-key refusal — boot resolves, status carries the error', async () => {

@@ -40,6 +40,10 @@ import type {
   ConnectorProviderExecuteResult,
   ConnectorUnsupportedResult,
 } from '@dorkos/shared/connector-schemas';
+import {
+  ComposioSdkClient,
+  type ComposioOperationClient,
+} from '@dorkos/connector-providers/composio';
 import type { CredentialProvider } from '../../core/credential-provider.js';
 import {
   ComposioApiError,
@@ -48,7 +52,6 @@ import {
   type ComposioConnectedAccount,
   type ComposioHttpClient,
 } from './composio-client.js';
-import { ComposioSdkClient, type ComposioOperationClient } from './composio/sdk-client.js';
 import { legacyDefaultProviderInstanceId } from '../legacy-connection-migration.js';
 
 /** The backend type identifier this provider registers and reports under. */

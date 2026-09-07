@@ -51,6 +51,7 @@ export default defineConfig({
       'apps/site',
       'packages/a2a-gateway',
       'packages/cli',
+      'packages/connector-providers',
       'packages/db',
       'packages/evals',
       'packages/extension-api',

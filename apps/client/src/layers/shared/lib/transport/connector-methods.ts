@@ -1,8 +1,7 @@
 /**
  * Connector Transport methods factory (HTTP adapter) — provider setup,
- * connected accounts, reviewed access, exact execution, usage, and read-only
- * session status. The retained attach/detach methods call retired compatibility
- * routes that direct operators to the Connections access editor.
+ * stable connections, reviewed access, exact execution, usage, and canonical
+ * agent and session projections.
  *
  * Everything here is reference-shaped: vendor secrets travel once (into
  * `putConnectorCredential`) and never come back; account rows carry the
@@ -11,19 +10,7 @@
  *
  * @module shared/lib/transport/connector-methods
  */
-import type {
-  ConnectorAccountsResponse,
-  ConnectorConnectPollResponse,
-  ConnectorConnectStartResponse,
-  ConnectorProviderStatus,
-  ConnectorRecommendationsResponse,
-  ConnectorToolkitsResponse,
-  SessionConnectorAttachResult,
-  SessionConnectorStatus,
-  AgentConnectorAttachment,
-  AgentConnectorAttachResult,
-  AgentConnectorListResponse,
-} from '@dorkos/shared/connector-provider';
+import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
 import type {
   ConnectionId,
   ConnectorAccessibleConnectionsResponse,
@@ -40,7 +27,20 @@ import type {
   ConnectorReconciliationPreviewRequest,
   ConnectorUsagePage,
 } from '@dorkos/shared/connector-schemas';
-import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
+import { fetchJSON, buildQueryString } from './http-client';
+import type {
+  ConnectorAgentConnections,
+  ConnectorAuthenticationFlowCreateRequest,
+  ConnectorAuthenticationFlowState,
+  ConnectorCatalogResourcePage,
+  ConnectorConnectionDetail,
+  ConnectorConnectionListResource,
+  ConnectorConnectionPatch,
+  ConnectorDisconnectImpact,
+  ConnectorLifecycleResult,
+  ConnectorReconnectRequest,
+  ConnectorSessionConnections,
+} from '@dorkos/shared/connector-resource-schemas';
 
 /** Create the connector methods bound to a base URL. */
 export function createConnectorMethods(baseUrl: string) {
@@ -68,92 +68,104 @@ export function createConnectorMethods(baseUrl: string) {
       );
     },
 
-    getConnectorToolkits(): Promise<ConnectorToolkitsResponse> {
-      return fetchJSON<ConnectorToolkitsResponse>(baseUrl, '/connectors/toolkits');
+    getConnectorCatalog(
+      input: { query?: string; cursor?: string; limit?: number } = {}
+    ): Promise<ConnectorCatalogResourcePage> {
+      const qs = buildQueryString({ q: input.query, cursor: input.cursor, limit: input.limit });
+      return fetchJSON<ConnectorCatalogResourcePage>(baseUrl, `/connectors/catalog${qs}`);
     },
 
-    getConnectorRecommendation(service: string): Promise<ConnectorRecommendationsResponse> {
-      const qs = buildQueryString({ service });
-      return fetchJSON<ConnectorRecommendationsResponse>(baseUrl, `/connectors/recommend${qs}`);
+    getConnectorConnections(): Promise<ConnectorConnectionListResource> {
+      return fetchJSON<ConnectorConnectionListResource>(baseUrl, '/connectors/connections');
     },
 
-    startConnectorFlow(
-      provider: string,
-      request: { toolkit: string; label?: string }
-    ): Promise<ConnectorConnectStartResponse> {
-      return fetchJSON<ConnectorConnectStartResponse>(
+    getConnectorConnection(connectionId: string): Promise<ConnectorConnectionDetail> {
+      return fetchJSON<ConnectorConnectionDetail>(
         baseUrl,
-        `/connectors/${encodeURIComponent(provider)}/connect`,
-        { method: 'POST', body: JSON.stringify(request) }
+        `/connectors/connections/${encodeURIComponent(connectionId)}`
       );
     },
 
-    pollConnectorFlow(flowId: string): Promise<ConnectorConnectPollResponse> {
-      return fetchJSON<ConnectorConnectPollResponse>(
-        baseUrl,
-        `/connectors/flows/${encodeURIComponent(flowId)}`
-      );
-    },
-
-    getConnectorAccounts(toolkit?: string): Promise<ConnectorAccountsResponse> {
-      const qs = buildQueryString({ toolkit });
-      return fetchJSON<ConnectorAccountsResponse>(baseUrl, `/connectors/accounts${qs}`);
-    },
-
-    disconnectConnectorAccount(accountId: string): Promise<void> {
-      return fetchNoContent(baseUrl, `/connectors/accounts/${encodeURIComponent(accountId)}`, {
-        method: 'DELETE',
+    startConnectorAuthentication(
+      input: ConnectorAuthenticationFlowCreateRequest
+    ): Promise<ConnectorAuthenticationFlowState> {
+      return fetchJSON<ConnectorAuthenticationFlowState>(baseUrl, '/connectors/connections', {
+        method: 'POST',
+        body: JSON.stringify(input),
       });
     },
 
-    getSessionConnectors(sessionId: string): Promise<SessionConnectorStatus> {
-      return fetchJSON<SessionConnectorStatus>(
+    pollConnectorAuthentication(flowId: string): Promise<ConnectorAuthenticationFlowState> {
+      return fetchJSON<ConnectorAuthenticationFlowState>(
         baseUrl,
-        `/sessions/${encodeURIComponent(sessionId)}/connectors`
+        `/connectors/authentication-flows/${encodeURIComponent(flowId)}`
       );
     },
 
-    attachSessionConnector(
-      sessionId: string,
-      accountId: string
-    ): Promise<SessionConnectorAttachResult> {
-      return fetchJSON<SessionConnectorAttachResult>(
+    renameConnectorConnection(
+      connectionId: string,
+      input: ConnectorConnectionPatch
+    ): Promise<ConnectorLifecycleResult> {
+      return fetchJSON<ConnectorLifecycleResult>(
         baseUrl,
-        `/sessions/${encodeURIComponent(sessionId)}/connectors/${encodeURIComponent(accountId)}`,
-        { method: 'POST' }
+        `/connectors/connections/${encodeURIComponent(connectionId)}`,
+        { method: 'PATCH', body: JSON.stringify(input) }
       );
     },
 
-    detachSessionConnector(sessionId: string, accountId: string): Promise<void> {
-      return fetchNoContent(
+    reconnectConnectorConnection(
+      connectionId: string,
+      input: ConnectorReconnectRequest
+    ): Promise<ConnectorAuthenticationFlowState> {
+      return fetchJSON<ConnectorAuthenticationFlowState>(
         baseUrl,
-        `/sessions/${encodeURIComponent(sessionId)}/connectors/${encodeURIComponent(accountId)}`,
+        `/connectors/connections/${encodeURIComponent(connectionId)}/reconnect`,
+        { method: 'POST', body: JSON.stringify(input) }
+      );
+    },
+
+    pauseConnectorConnection(connectionId: string): Promise<ConnectorLifecycleResult> {
+      return fetchJSON<ConnectorLifecycleResult>(
+        baseUrl,
+        `/connectors/connections/${encodeURIComponent(connectionId)}/pause`,
+        { method: 'POST', body: '{}' }
+      );
+    },
+
+    resumeConnectorConnection(connectionId: string): Promise<ConnectorLifecycleResult> {
+      return fetchJSON<ConnectorLifecycleResult>(
+        baseUrl,
+        `/connectors/connections/${encodeURIComponent(connectionId)}/resume`,
+        { method: 'POST', body: '{}' }
+      );
+    },
+
+    getConnectorDisconnectImpact(connectionId: string): Promise<ConnectorDisconnectImpact> {
+      return fetchJSON<ConnectorDisconnectImpact>(
+        baseUrl,
+        `/connectors/connections/${encodeURIComponent(connectionId)}/disconnect-impact`
+      );
+    },
+
+    disconnectConnectorConnection(connectionId: string): Promise<ConnectorLifecycleResult> {
+      return fetchJSON<ConnectorLifecycleResult>(
+        baseUrl,
+        `/connectors/connections/${encodeURIComponent(connectionId)}`,
         { method: 'DELETE' }
       );
     },
 
-    // --- Agent-level attachment (connection-scoping spec §Part 1) ---
-
-    getAgentConnectors(agentId: string): Promise<AgentConnectorAttachment[]> {
-      return fetchJSON<AgentConnectorListResponse>(
+    getAgentConnectorConnections(agentId: string): Promise<ConnectorAgentConnections> {
+      return fetchJSON<ConnectorAgentConnections>(
         baseUrl,
-        `/agents/${encodeURIComponent(agentId)}/connectors`
-      ).then((r) => r.accounts);
-    },
-
-    attachAgentConnector(agentId: string, accountId: string): Promise<AgentConnectorAttachResult> {
-      return fetchJSON<AgentConnectorAttachResult>(
-        baseUrl,
-        `/agents/${encodeURIComponent(agentId)}/connectors/${encodeURIComponent(accountId)}`,
-        { method: 'POST' }
+        `/connectors/agents/${encodeURIComponent(agentId)}/connections`
       );
     },
 
-    detachAgentConnector(agentId: string, accountId: string): Promise<void> {
-      return fetchNoContent(
+    getSessionConnectorConnections(sessionId: string): Promise<ConnectorSessionConnections> {
+      return fetchJSON<ConnectorSessionConnections>(
         baseUrl,
-        `/agents/${encodeURIComponent(agentId)}/connectors/${encodeURIComponent(accountId)}`,
-        { method: 'DELETE' }
+        `/connectors/sessions/${encodeURIComponent(sessionId)}/connections`
       );
     },
 

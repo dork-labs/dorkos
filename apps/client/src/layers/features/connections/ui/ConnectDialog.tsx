@@ -1,11 +1,20 @@
-import { useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
-import { ArrowUpRight, CheckCircle2, ExternalLink } from 'lucide-react';
-import type { ConnectorToolkit } from '@dorkos/shared/connector-provider';
+import { useMemo, useState } from 'react';
+import { ArrowUpRight, CheckCircle2, ExternalLink, RefreshCw, ShieldCheck } from 'lucide-react';
+import type {
+  ConnectorAuthenticationFlowState,
+  ConnectorCatalogProviderRoute,
+  ConnectorCatalogService,
+} from '@dorkos/shared/connector-resource-schemas';
+import {
+  useConnectorAuthentication,
+  useConnectorCatalog,
+  useStartConnectorAuthentication,
+} from '@/layers/entities/connectors';
 import {
   Button,
   Input,
   Label,
+  QueryErrorState,
   ResponsiveDialog,
   ResponsiveDialogBody,
   ResponsiveDialogContent,
@@ -13,394 +22,346 @@ import {
   ResponsiveDialogFooter,
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
-  Skeleton,
 } from '@/layers/shared/ui';
-import {
-  useConnectFlow,
-  useConnectorAccounts,
-  useConnectorRecommendation,
-} from '@/layers/entities/connectors';
-import { accountDisplayName, providerName } from '../lib/presentation';
-
-/**
- * The label suggested when a service already has one account — makes the
- * multi-account capability visible at exactly the moment it becomes real.
- */
-const SUGGESTED_SECOND_LABEL = 'personal';
 
 interface ConnectDialogProps {
-  /** The service being connected, or `null` when the dialog is closed. */
-  service: ConnectorToolkit | null;
-  /** Close the dialog (also called after Done on success). */
+  /** Service selected from the account-free catalog. */
+  service: ConnectorCatalogService | null;
+  /** Opaque durable flow id stored in the current URL. */
+  flowId: string | null;
+  /** Writes or clears the URL-backed flow identity. */
+  onFlowIdChange: (flowId: string | null) => void;
+  /** Clears the transient service selection after the dialog closes. */
   onClose: () => void;
+  /** Opens exact agent access for the newly connected stable account. */
+  onChooseAccess: (connectionId: string) => void;
 }
 
-/**
- * The connect flow dialog: an intent step for services that are two things at
- * once (Slack is both a place to talk to your agents and an account they can
- * act on), an optional account label, then the consent sequence — the server's
- * custody disclosure is rendered before a real sign-in link opens anything.
- * Providers with an already-configured connection skip the browser step and
- * begin verification immediately. The new account is confirmed in place.
- *
- * @param props - The service to connect and the close handler.
- */
-export function ConnectDialog({ service, onClose }: ConnectDialogProps) {
-  const flow = useConnectFlow();
-  const open = service !== null;
+function defaultRoute(
+  routes: ConnectorCatalogProviderRoute[]
+): ConnectorCatalogProviderRoute | null {
+  const available = routes.filter(
+    (route) => route.capabilities.authentication.status === 'available'
+  );
+  return (
+    available.find((route) => route.mode === 'managed') ??
+    available.find((route) => route.mode === 'byo') ??
+    null
+  );
+}
 
-  const handleOpenChange = (next: boolean) => {
-    if (!next) {
-      // Mid-grant (`waiting`), the vendor tab may still complete the sign-in:
-      // keep the flow tracked and polling (the store outlives this dialog, and
-      // this hook stays mounted with the page) so the account is recorded even
-      // when the person closes the dialog before finishing. Every other step
-      // is safe to abandon — nothing has been granted yet, or it is terminal.
-      if (flow.state.step !== 'waiting') flow.reset();
-      onClose();
-    }
+function accountRoutes(service: ConnectorCatalogService | null): ConnectorCatalogProviderRoute[] {
+  return service?.intents.find((intent) => intent.kind === 'account')?.routes ?? [];
+}
+
+function titleCase(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+/** Durable service authentication flow with provider disclosure before authorization. */
+export function ConnectDialog({
+  service,
+  flowId,
+  onFlowIdChange,
+  onClose,
+  onChooseAccess,
+}: ConnectDialogProps) {
+  const [open, setOpen] = useState(Boolean(service || flowId));
+  const [label, setLabel] = useState('');
+  const [routeOverride, setRouteOverride] = useState<string | null>(null);
+  const [showProviders, setShowProviders] = useState(false);
+  const start = useStartConnectorAuthentication();
+  const flow = useConnectorAuthentication(flowId);
+  const lookup = useConnectorCatalog(flow.data?.toolkit ?? service?.serviceSlug ?? '');
+  const lookedUpService = lookup.data?.pages
+    .flatMap((page) => page.services)
+    .find((candidate) => candidate.serviceSlug === flow.data?.toolkit);
+  const resolvedService = service ?? lookedUpService ?? null;
+  const routes = accountRoutes(resolvedService);
+  const availableRouteCount = routes.filter(
+    (candidate) => candidate.capabilities.authentication.status === 'available'
+  ).length;
+  const route =
+    routes.find((candidate) => candidate.providerInstanceId === routeOverride) ??
+    (flow.data
+      ? routes.find((candidate) => candidate.providerInstanceId === flow.data.providerInstanceId)
+      : null) ??
+    defaultRoute(routes);
+  const activeFlow: ConnectorAuthenticationFlowState | undefined = flow.data ?? start.data;
+
+  const serviceName = resolvedService?.displayName ?? titleCase(activeFlow?.toolkit ?? 'service');
+  const unavailableReason = useMemo(() => {
+    if (route) return null;
+    const unavailable = routes.find(
+      (candidate) => candidate.capabilities.authentication.status === 'unsupported'
+    )?.capabilities.authentication;
+    return unavailable?.status === 'unsupported'
+      ? unavailable.reason
+      : 'No configured provider can connect this service yet.';
+  }, [route, routes]);
+
+  const close = () => {
+    setOpen(false);
+    onClose();
   };
 
-  return (
-    <ResponsiveDialog open={open} onOpenChange={handleOpenChange}>
-      <ResponsiveDialogContent className="sm:max-w-md">
-        {service && <ConnectDialogBody service={service} flow={flow} onClose={onClose} />}
-      </ResponsiveDialogContent>
-    </ResponsiveDialog>
-  );
-}
+  const begin = () => {
+    if (!resolvedService || !route) return;
+    start.mutate(
+      {
+        providerInstanceId: route.providerInstanceId,
+        toolkit: resolvedService.serviceSlug,
+        ...(label.trim() && { label: label.trim() }),
+        idempotencyKey: crypto.randomUUID(),
+      },
+      { onSuccess: (result) => onFlowIdChange(result.flowId) }
+    );
+  };
 
-/** The dialog's inner content, mounted only while a service is selected. */
-function ConnectDialogBody({
-  service,
-  flow,
-  onClose,
-}: {
-  service: ConnectorToolkit;
-  flow: ReturnType<typeof useConnectFlow>;
-  onClose: () => void;
-}) {
-  const { state } = flow;
-  // The store holds ONE app-wide flow; show its steps only when it belongs to
-  // this service. Opening the dialog for slack while a gmail flow still waits
-  // in the background starts fresh (and starting replaces the old tracking).
-  const flowOwnsService =
-    state.toolkit === service.slug && state.step !== 'idle' && state.step !== 'starting';
+  const terminal =
+    activeFlow?.state === 'connected' ||
+    activeFlow?.state === 'failed' ||
+    activeFlow?.state === 'expired' ||
+    activeFlow?.state === 'start_unknown';
+
   return (
     <>
-      <ResponsiveDialogHeader>
-        <ResponsiveDialogTitle>Connect {service.displayName}</ResponsiveDialogTitle>
-        <ResponsiveDialogDescription>
-          {flowOwnsService && state.step === 'connected'
-            ? 'Connected and ready to use.'
-            : `Link a ${service.displayName} account so your agents can act for you.`}
-        </ResponsiveDialogDescription>
-      </ResponsiveDialogHeader>
-      <ResponsiveDialogBody className="pb-4">
-        {!flowOwnsService && <ConnectSetupStep service={service} flow={flow} onClose={onClose} />}
-        {flowOwnsService && state.step === 'disclosure' && <ConnectDisclosureStep flow={flow} />}
-        {flowOwnsService && state.step === 'waiting' && (
-          <ConnectWaitingStep
-            service={service}
-            verifying={state.authorizeUrl === null}
-            onClose={onClose}
-          />
-        )}
-        {flowOwnsService && state.step === 'connected' && (
-          <ConnectConnectedStep service={service} flow={flow} onClose={onClose} />
-        )}
-        {flowOwnsService && state.step === 'failed' && (
-          <ConnectFailedStep flow={flow} onClose={onClose} />
-        )}
-      </ResponsiveDialogBody>
-    </>
-  );
-}
-
-/**
- * The pre-flight step: ask which of the two things this service is being
- * connected for, when it can be both, then take the optional account label and
- * start the flow.
- */
-function ConnectSetupStep({
-  service,
-  flow,
-  onClose,
-}: {
-  service: ConnectorToolkit;
-  flow: ReturnType<typeof useConnectFlow>;
-  onClose: () => void;
-}) {
-  const navigate = useNavigate();
-  const recommendation = useConnectorRecommendation(service.slug);
-  const existing = useConnectorAccounts(service.slug);
-  // `null` = untouched. The rendered value derives the suggestion from live
-  // data, so the pre-fill needs no effect and a person's typing always wins.
-  const [labelInput, setLabelInput] = useState<string | null>(null);
-  const [useGatewayAnyway, setUseGatewayAnyway] = useState(false);
-
-  const hasAccountAlready = (existing.data?.accounts.length ?? 0) > 0;
-  // Multi-account made visible: a second account of one service starts with a
-  // suggested label so "Gmail" and "Gmail (personal)" never collide unnamed.
-  const label = labelInput ?? (hasAccountAlready ? SUGGESTED_SECOND_LABEL : '');
-
-  if (recommendation.isLoading) {
-    return (
-      <div className="space-y-2">
-        <Skeleton className="h-4 w-3/4" />
-        <Skeleton className="h-9 w-full" />
-      </div>
-    );
-  }
-
-  if (recommendation.isError) {
-    return (
-      <p role="alert" className="text-destructive text-sm">
-        {recommendation.error.message}
-      </p>
-    );
-  }
-
-  const recs = recommendation.data?.recommendations ?? [];
-  const relayRec = recs.find((r) => r.kind === 'relay-adapter');
-  const providerRec = recs.find(
-    (r) => (r.kind === 'gateway' || r.kind === 'raw-mcp') && r.provider !== undefined
-  );
-
-  // Some services are two different things wearing one name. Slack can be a
-  // place people talk TO your agents, or an account your agents act on FOR
-  // you. Those are different powers with different consent stories, so the
-  // choice is asked plainly instead of hidden behind a "use the other one"
-  // afterthought.
-  if (relayRec && !useGatewayAnyway) {
-    return (
-      <div className="space-y-3">
-        <p className="text-sm leading-relaxed">What do you want {service.displayName} for?</p>
-        <div className="flex flex-col gap-2">
-          <Button
-            onClick={() => {
-              onClose();
-              void navigate({ to: '/connections', search: { region: 'messaging' } as never });
-            }}
-            className="h-auto flex-col items-start gap-1 py-3 text-left"
-          >
-            <span className="flex w-full items-center justify-between gap-2 font-medium">
-              Chat with your agents in {service.displayName}
-              <ArrowUpRight className="size-4 shrink-0" aria-hidden />
-            </span>
-            <span className="text-xs font-normal opacity-80">
-              Message them from {service.displayName} and get replies there.
-            </span>
-          </Button>
-          {providerRec && (
-            <Button
-              variant="secondary"
-              onClick={() => setUseGatewayAnyway(true)}
-              className="h-auto flex-col items-start gap-1 py-3 text-left"
-            >
-              <span className="w-full font-medium">
-                Let agents act on your {service.displayName} account
-              </span>
-              <span className="text-muted-foreground text-xs font-normal">
-                They post and read as you. This one goes through{' '}
-                {providerName(providerRec.provider as string)}.
-              </span>
-            </Button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (!providerRec) {
-    return (
-      <p className="text-muted-foreground text-sm">
-        {service.displayName} cannot be connected yet. Add a Composio or Nango key further down this
-        page first.
-      </p>
-    );
-  }
-
-  const starting = flow.state.step === 'starting';
-  return (
-    <form
-      className="space-y-4"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const trimmed = label.trim();
-        flow.start({
-          provider: providerRec.provider as string,
-          toolkit: service.slug,
-          ...(trimmed !== '' && { label: trimmed }),
-        });
-      }}
-    >
-      <div className="space-y-1">
-        <Label htmlFor="connect-account-label" className="text-xs">
-          Account label <span className="text-muted-foreground">(optional)</span>
-        </Label>
-        <Input
-          id="connect-account-label"
-          value={label}
-          onChange={(e) => setLabelInput(e.target.value)}
-          placeholder="e.g. work"
-          autoComplete="off"
-        />
-        <p className="text-muted-foreground text-xs">
-          {hasAccountAlready
-            ? `You already have a ${service.displayName} account connected. A label tells them apart.`
-            : 'A label helps when you later connect a second account of the same service.'}
-        </p>
-      </div>
-      <ResponsiveDialogFooter className="px-0 pb-0">
-        <Button type="submit" disabled={starting} className="w-full sm:w-auto">
-          {starting ? 'Starting…' : 'Continue'}
+      {!open && flowId && !terminal && (
+        <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+          Resume {serviceName} connection
         </Button>
-      </ResponsiveDialogFooter>
-    </form>
-  );
-}
-
-/**
- * The consent step: the server's custody sentence, rendered before anything
- * opens. The sign-in link is the only way to the vendor page, and it sits
- * under the disclosure — reading order IS the consent order.
- */
-function ConnectDisclosureStep({ flow }: { flow: ReturnType<typeof useConnectFlow> }) {
-  const { state } = flow;
-  return (
-    <div className="space-y-4">
-      <p
-        data-testid="connect-disclosure"
-        className="bg-muted rounded-md px-3 py-2.5 text-sm leading-relaxed"
-      >
-        {state.disclosure}
-      </p>
-      <div className="space-y-2">
-        <Button asChild className="w-full gap-1.5">
-          <a
-            href={state.authorizeUrl ?? '#'}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => flow.authOpened()}
-          >
-            Open the sign-in page
-            <ExternalLink className="size-4" aria-hidden />
-          </a>
-        </Button>
-        <p className="text-muted-foreground text-center text-xs">
-          The sign-in opens in a new tab. Come back here when you are done.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/**
- * The polling step: the flow is checked until the vendor confirms or refuses.
- * Deliberately no Cancel — the sign-in may already be completing in the vendor
- * tab, and abandoning tracking here is how a live grant goes unrecorded.
- * Closing merely hides the dialog; the flow keeps polling and the account
- * lands in the list either way (disconnect is always available afterwards).
- */
-function ConnectWaitingStep({
-  service,
-  verifying,
-  onClose,
-}: {
-  service: ConnectorToolkit;
-  verifying: boolean;
-  onClose: () => void;
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <span
-          aria-hidden
-          className="border-muted-foreground/30 border-t-foreground size-4 shrink-0 animate-spin rounded-full border-2"
-        />
-        <p className="text-sm">
-          {verifying ? 'Checking the configured server…' : 'Waiting for you to finish signing in…'}
-        </p>
-      </div>
-      <p className="text-muted-foreground text-xs">
-        {verifying
-          ? `${service.displayName} will appear in your accounts only if the server accepts the configured connection.`
-          : `You can close this window. We keep checking, and ${service.displayName} will appear in your accounts once the sign-in finishes.`}
-      </p>
-      <Button variant="ghost" size="sm" onClick={onClose}>
-        Close window
-      </Button>
-    </div>
-  );
-}
-
-/** The success step: the new account, named and disclosed, one Done away. */
-function ConnectConnectedStep({
-  service,
-  flow,
-  onClose,
-}: {
-  service: ConnectorToolkit;
-  flow: ReturnType<typeof useConnectFlow>;
-  onClose: () => void;
-}) {
-  const account = flow.state.account;
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <CheckCircle2 className="size-5 text-emerald-500" aria-hidden />
-        <p className="text-sm font-medium">
-          {account
-            ? `${accountDisplayName(service.displayName, account.label)} is connected.`
-            : `${service.displayName} is connected.`}
-        </p>
-      </div>
-      {account && (
-        <p className="text-muted-foreground text-xs leading-relaxed">{account.disclosure}</p>
       )}
-      <ResponsiveDialogFooter className="px-0 pb-0">
-        <Button
-          onClick={() => {
-            flow.reset();
-            onClose();
-          }}
+      <ResponsiveDialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next) close();
+          else setOpen(true);
+        }}
+      >
+        <ResponsiveDialogContent
+          data-testid="connect-auth-dialog"
+          className="max-h-[90vh] sm:max-w-lg [&>[data-slot=dialog-content-close]]:absolute [&>[data-slot=dialog-content-close]]:top-4 [&>[data-slot=dialog-content-close]]:right-4 [&>[data-slot=dialog-content-close]]:m-0 [&>[data-slot=dialog-content-close]]:opacity-100"
         >
-          Done
-        </Button>
-      </ResponsiveDialogFooter>
-    </div>
-  );
-}
+          <ResponsiveDialogHeader>
+            <ResponsiveDialogTitle>Connect {serviceName}</ResponsiveDialogTitle>
+            <ResponsiveDialogDescription>
+              {activeFlow
+                ? 'Finish this connection, then choose which agents may use it.'
+                : 'Name the account and review who handles its sign-in.'}
+            </ResponsiveDialogDescription>
+          </ResponsiveDialogHeader>
+          <ResponsiveDialogBody className="space-y-4 pb-4">
+            {!activeFlow ? (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="connection-label">Account label</Label>
+                  <Input
+                    id="connection-label"
+                    value={label}
+                    onChange={(event) => setLabel(event.target.value)}
+                    placeholder="Work, personal, support…"
+                    autoComplete="off"
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    A label keeps several {serviceName} accounts easy to tell apart.
+                  </p>
+                </div>
 
-/** The failure step: the honest error, verbatim, with a way back. */
-function ConnectFailedStep({
-  flow,
-  onClose,
-}: {
-  flow: ReturnType<typeof useConnectFlow>;
-  onClose: () => void;
-}) {
-  return (
-    <div className="space-y-4">
-      <p role="alert" className="text-destructive text-sm leading-relaxed">
-        {flow.state.error ?? 'The connection did not complete.'}
-      </p>
-      <div className="flex gap-2">
-        <Button variant="secondary" size="sm" onClick={() => flow.reset()}>
-          Try again
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            flow.reset();
-            onClose();
-          }}
-        >
-          Close
-        </Button>
-      </div>
-    </div>
+                {route ? (
+                  <div
+                    data-testid="connect-disclosure"
+                    className="bg-muted/40 space-y-2 rounded-lg p-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="text-muted-foreground size-4" aria-hidden />
+                        <p className="text-sm font-medium">{route.displayName}</p>
+                      </div>
+                      {availableRouteCount > 1 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowProviders((value) => !value)}
+                        >
+                          Change setup
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-muted-foreground text-xs leading-relaxed">
+                      {route.disclosure}
+                    </p>
+                    <p className="text-muted-foreground text-xs">
+                      {route.payer === 'dorkos_managed'
+                        ? 'DorkOS covers service usage.'
+                        : 'Service usage is billed to you.'}
+                    </p>
+                  </div>
+                ) : (
+                  <p
+                    role="alert"
+                    className="text-destructive bg-destructive/5 rounded-lg p-3 text-sm"
+                  >
+                    {unavailableReason}
+                  </p>
+                )}
+
+                {showProviders && (
+                  <fieldset className="space-y-2">
+                    <legend className="text-xs font-medium">Available setups</legend>
+                    {routes.map((candidate) => {
+                      const available =
+                        candidate.capabilities.authentication.status === 'available';
+                      return (
+                        <button
+                          key={candidate.providerInstanceId}
+                          type="button"
+                          disabled={!available}
+                          onClick={() => {
+                            setRouteOverride(candidate.providerInstanceId);
+                            setShowProviders(false);
+                          }}
+                          className="bg-muted/40 focus-visible:ring-ring flex min-h-11 w-full items-center justify-between rounded-lg px-3 py-2 text-left focus-visible:ring-2 focus-visible:outline-none disabled:opacity-50"
+                        >
+                          <span>
+                            <span className="block text-sm font-medium">
+                              {candidate.displayName}
+                            </span>
+                            <span className="text-muted-foreground block text-xs">
+                              {candidate.mode === 'managed'
+                                ? 'Managed by DorkOS'
+                                : 'Your own account'}
+                            </span>
+                          </span>
+                          {!available && (
+                            <span className="text-muted-foreground text-xs">Unavailable</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </fieldset>
+                )}
+
+                {start.isError && (
+                  <QueryErrorState
+                    title="Couldn’t start the connection"
+                    description="No account was connected. Try again when the service is ready."
+                    onRetry={begin}
+                    isRetrying={start.isPending}
+                  />
+                )}
+              </>
+            ) : activeFlow.state === 'starting' || activeFlow.state === 'pending' ? (
+              <div className="space-y-4">
+                {route && (
+                  <div
+                    data-testid="connect-disclosure"
+                    className="bg-muted/40 space-y-1.5 rounded-lg p-3"
+                  >
+                    <p className="text-sm font-medium">{route.displayName}</p>
+                    <p className="text-muted-foreground text-xs leading-relaxed">
+                      {route.disclosure}
+                    </p>
+                    <p className="text-muted-foreground text-xs">
+                      {route.payer === 'dorkos_managed'
+                        ? 'DorkOS covers service usage.'
+                        : 'Service usage is billed to you.'}
+                    </p>
+                  </div>
+                )}
+                {activeFlow.state === 'pending' && activeFlow.authorizeUrl ? (
+                  <>
+                    <p className="text-sm">
+                      Continue with {route?.displayName ?? 'the selected service'}.
+                    </p>
+                    <Button asChild className="w-full">
+                      <a href={activeFlow.authorizeUrl} target="_blank" rel="noopener noreferrer">
+                        {route?.authKind === 'none' ? 'Check connection' : 'Open sign-in'}
+                        <ExternalLink className="size-4" aria-hidden />
+                      </a>
+                    </Button>
+                  </>
+                ) : (
+                  <p className="flex items-center gap-2 text-sm">
+                    <RefreshCw className="size-4 animate-spin" aria-hidden />
+                    {activeFlow.state === 'starting'
+                      ? 'Starting the connection…'
+                      : 'Waiting for sign-in…'}
+                  </p>
+                )}
+                <p className="text-muted-foreground text-xs">
+                  This step is saved in the page address. You can return or reload without starting
+                  over.
+                </p>
+                {flow.isError && (
+                  <QueryErrorState
+                    title="Couldn’t check the connection"
+                    description="Sign-in may still finish. Check its current state again."
+                    onRetry={() => void flow.refetch()}
+                    isRetrying={flow.isFetching}
+                  />
+                )}
+              </div>
+            ) : activeFlow.state === 'connected' ? (
+              <div className="space-y-4">
+                <div className="bg-success/5 flex items-start gap-3 rounded-lg p-4">
+                  <CheckCircle2 className="text-success mt-0.5 size-5" aria-hidden />
+                  <div>
+                    <p className="text-sm font-medium">{serviceName} is connected</p>
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      No agent can use it until you choose access.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  className="w-full"
+                  onClick={() => {
+                    onChooseAccess(activeFlow.connectionId);
+                    onFlowIdChange(null);
+                    close();
+                  }}
+                >
+                  Choose agents
+                  <ArrowUpRight className="size-4" aria-hidden />
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p role="alert" className="text-destructive text-sm font-medium">
+                  {activeFlow.state === 'expired'
+                    ? 'This connection request expired.'
+                    : 'The connection was not completed.'}
+                </p>
+                {'reason' in activeFlow && (
+                  <p className="text-muted-foreground text-xs">{activeFlow.reason}</p>
+                )}
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    onFlowIdChange(null);
+                    start.reset();
+                  }}
+                >
+                  Start again
+                </Button>
+              </div>
+            )}
+          </ResponsiveDialogBody>
+          {!activeFlow && (
+            <ResponsiveDialogFooter>
+              <Button variant="ghost" onClick={close}>
+                Cancel
+              </Button>
+              <Button onClick={begin} disabled={!route || start.isPending}>
+                {start.isPending
+                  ? 'Starting…'
+                  : route?.authKind === 'none'
+                    ? 'Check connection'
+                    : 'Continue'}
+              </Button>
+            </ResponsiveDialogFooter>
+          )}
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+    </>
   );
 }

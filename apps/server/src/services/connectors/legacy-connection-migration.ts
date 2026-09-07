@@ -49,7 +49,7 @@ export interface ResolvedLegacyOperationSet {
 
 /** Named transaction checkpoints used by rollback tests. */
 export type ConnectorMigrationStep =
-  'claimed' | 'providers' | 'connections' | 'attachments' | 'operations' | 'verified';
+  'claimed' | 'providers' | 'connections' | 'attachments' | 'operations' | 'verified' | 'retired';
 
 /** Inputs already resolved before the synchronous database boundary. */
 export interface LegacyConnectionMigrationInput {
@@ -84,6 +84,19 @@ class ConnectorMigrationInvariantError extends Error {
   ) {
     super(message);
     this.name = 'ConnectorMigrationInvariantError';
+  }
+}
+
+const LEGACY_CONNECTOR_TABLES = [
+  'session_connector_attachments',
+  'agent_connector_attachments',
+  'connected_accounts',
+  'connector_legacy_agent_revocations',
+] as const;
+
+function retireLegacyConnectorTables(db: Db): void {
+  for (const table of LEGACY_CONNECTOR_TABLES) {
+    db.$client.exec(`DROP TABLE IF EXISTS ${table}`);
   }
 }
 
@@ -136,7 +149,10 @@ export function runLegacyConnectionMigration(
       const existing = db.$client
         .prepare('SELECT state FROM connector_application_migrations WHERE version = ?')
         .get(CONNECTOR_FOUNDATION_MIGRATION_VERSION) as { state: string } | undefined;
-      if (existing?.state === 'complete') return;
+      if (existing?.state === 'complete') {
+        retireLegacyConnectorTables(db);
+        return;
+      }
 
       const startedAt = now();
       phase = 'claimed';
@@ -445,6 +461,9 @@ export function runLegacyConnectionMigration(
           'UPDATE connector_application_migrations SET state = ?, completed_at = ? WHERE version = ?'
         )
         .run('complete', now(), CONNECTOR_FOUNDATION_MIGRATION_VERSION);
+      retireLegacyConnectorTables(db);
+      phase = 'retired';
+      input.afterStep?.('retired');
       migrated = true;
     })();
     return { status: 'ready', migrated };

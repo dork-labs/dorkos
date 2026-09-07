@@ -188,17 +188,35 @@ import {
 } from '@dorkos/shared/notification-schemas';
 import { registerCapabilitiesInOpenApi } from './capabilities/index.js';
 import { composeCapabilityRegistryForDocs } from './self-description/dorkos-registry.js';
+import { ConnectorProviderStatusSchema } from '@dorkos/shared/connector-provider';
 import {
-  ConnectorToolkitSchema,
-  ConnectorRecommendationSchema,
-  ConnectorProviderStatusSchema,
-  ConnectorConnectStartResponseSchema,
-  ConnectorConnectPollResponseSchema,
-  ConnectorWarningSchema,
-  PublicConnectedAccountSchema,
-  SessionConnectorStatusSchema,
-  AgentConnectorListResponseSchema,
-} from '@dorkos/shared/connector-provider';
+  ConnectorAccessibleConnectionsResponseSchema,
+  ConnectorAccessibleOperationsResponseSchema,
+  ConnectorExecutionResponseSchema,
+  ConnectorManagementReviewCreateRequestSchema,
+  ConnectorManagementReviewDecisionResultSchema,
+  ConnectorManagementReviewDecisionSchema,
+  ConnectorManagementReviewItemSchema,
+  ConnectorProgramReviewStatusSchema,
+  ConnectorReconciliationApplyRequestSchema,
+  ConnectorReconciliationApplyResponseSchema,
+  ConnectorReconciliationPreviewRequestSchema,
+  ConnectorReconciliationPreviewSchema,
+  ConnectorUsagePageSchema,
+} from '@dorkos/shared/connector-schemas';
+import {
+  ConnectorAgentConnectionsSchema,
+  ConnectorAuthenticationFlowCreateRequestSchema,
+  ConnectorAuthenticationFlowStateSchema,
+  ConnectorCatalogResourcePageSchema,
+  ConnectorConnectionDetailSchema,
+  ConnectorConnectionListResourceSchema,
+  ConnectorConnectionPatchSchema,
+  ConnectorDisconnectImpactSchema,
+  ConnectorLifecycleResultSchema,
+  ConnectorReconnectRequestSchema,
+  ConnectorSessionConnectionsSchema,
+} from '@dorkos/shared/connector-resource-schemas';
 import { PackageTypeSchema } from '@dorkos/marketplace';
 import { z } from 'zod';
 
@@ -2851,9 +2869,19 @@ registry.registerPath({
 });
 
 // --- Connectors ---
-// Response shapes come straight from `@dorkos/shared/connector-provider` — the
-// same schemas the Transport methods and client hooks are typed with, so the
-// documented API cannot drift from the one the client consumes.
+// Response shapes come from the same strict shared schemas consumed by the
+// routes, Transport methods, and client hooks. The one local request mirror
+// below replaces the recursive finite-JSON argument schema because the OpenAPI
+// generator cannot traverse recursive Zod schemas; the route remains stricter.
+
+const LocalConnectorProgramExecutionRequestSchema = z
+  .object({
+    agentId: z.string().min(1),
+    connectionId: z.string().min(1),
+    operationRevisionId: z.string().min(1),
+    arguments: z.record(z.string(), z.unknown()),
+  })
+  .strict();
 
 registry.registerPath({
   method: 'get',
@@ -2925,55 +2953,46 @@ registry.registerPath({
   },
 });
 
+// --- Canonical connector resources and reviewed authority ---
+
 registry.registerPath({
   method: 'get',
-  path: '/api/connectors/toolkits',
+  path: '/api/connectors/catalog',
   tags: ['Connectors'],
-  summary: 'List connectable services (aggregated across providers)',
+  summary: 'List the provider-neutral connector catalog',
   description:
-    'Aggregates `listToolkits()` across every registered connector provider, deduped by slug, ' +
-    'degrading one unreachable provider to a `warnings[]` entry (ADR-0310).',
+    'Returns one bounded account-free page. Native message adapters remain distinct from account routes.',
+  request: {
+    query: z.object({
+      q: z.string().max(200).optional(),
+      cursor: z.string().min(1).max(500).optional(),
+      limit: z.coerce.number().int().min(1).max(100).optional(),
+    }),
+  },
   responses: {
     200: {
-      description: 'Connectable services plus per-provider degradation warnings',
-      content: {
-        'application/json': {
-          schema: z.object({
-            toolkits: z.array(ConnectorToolkitSchema),
-            warnings: z.array(ConnectorWarningSchema),
-          }),
-        },
-      },
+      description: 'Account-free connector catalog page',
+      content: { 'application/json': { schema: ConnectorCatalogResourcePageSchema } },
+    },
+    400: {
+      description: 'Invalid catalog query or cursor',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
 
 registry.registerPath({
   method: 'get',
-  path: '/api/connectors/recommend',
+  path: '/api/connectors/connections',
   tags: ['Connectors'],
-  summary: 'Recommend how to connect a service (relay-adapter > gateway > raw-mcp)',
-  description:
-    'Returns ranked recommendations for a service, best first: a purpose-built relay adapter ' +
-    '(rank 0) outranks a gateway backend (rank 1), which outranks a raw-MCP baseline (rank 2). ' +
-    'This is the routing surface the "Connect to Slack" and "Connect to my Gmail" evals assert against.',
-  request: {
-    query: z.object({ service: z.string() }),
-  },
+  summary: 'List the operator’s stable connections',
   responses: {
     200: {
-      description: 'Ranked connector recommendations (ascending by rank) plus degradation warnings',
-      content: {
-        'application/json': {
-          schema: z.object({
-            recommendations: z.array(ConnectorRecommendationSchema),
-            warnings: z.array(ConnectorWarningSchema),
-          }),
-        },
-      },
+      description: 'Owner-scoped stable connection inventory',
+      content: { 'application/json': { schema: ConnectorConnectionListResourceSchema } },
     },
-    400: {
-      description: 'Missing service query parameter',
+    403: {
+      description: 'Verified operator authority is required',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -2981,60 +3000,29 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
-  path: '/api/connectors/{provider}/connect',
+  path: '/api/connectors/connections',
   tags: ['Connectors'],
-  summary: 'Begin a connect flow for a toolkit',
-  description:
-    'Starts a connect flow on the named provider and returns a pollable flow id. Browser-based ' +
-    'flows also return a consent URL; verification-only flows omit it. Secrets stay server-side.',
+  summary: 'Start a restart-safe connector authentication flow',
   request: {
-    params: z.object({ provider: z.string() }),
     body: {
-      content: {
-        'application/json': {
-          schema: z.object({ toolkit: z.string(), label: z.string().optional() }),
-        },
-      },
+      content: { 'application/json': { schema: ConnectorAuthenticationFlowCreateRequestSchema } },
     },
   },
   responses: {
-    200: {
-      description:
-        'Connect started; carries a pollable flow id and custody disclosure. Browser-based ' +
-        'flows also carry the authorize URL to open after the disclosure is shown.',
-      content: { 'application/json': { schema: ConnectorConnectStartResponseSchema } },
+    201: {
+      description: 'Durable owner-only authentication flow state',
+      content: { 'application/json': { schema: ConnectorAuthenticationFlowStateSchema } },
     },
-    400: {
-      description: 'Validation error, unknown toolkit, or a duplicate single-account connect',
+    403: {
+      description: 'Verified operator authority is required',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
-    404: {
-      description: 'Unknown connector provider',
+    409: {
+      description: 'The idempotency key belongs to a different request',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/flows/{flowId}',
-  tags: ['Connectors'],
-  summary: 'Poll a connect flow to completion',
-  description:
-    'Polls an in-flight connect flow. Failure is typed on the result (`status: "failed"`), never ' +
-    'thrown. On `connected`, the new account is bound to its owning provider for later routing.',
-  request: {
-    params: z.object({ flowId: z.string() }),
-  },
-  responses: {
-    200: {
-      description:
-        'The pollable connect state (pending | connected | failed); on connected the account ' +
-        'is public-shaped (provider stripped, custody sentence attached)',
-      content: { 'application/json': { schema: ConnectorConnectPollResponseSchema } },
-    },
-    404: {
-      description: 'Unknown connect flow',
+    422: {
+      description: 'Authentication is unavailable for the selected provider route',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -3042,153 +3030,437 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'get',
-  path: '/api/connectors/accounts',
+  path: '/api/connectors/authentication-flows/{flowId}',
   tags: ['Connectors'],
-  summary: 'List connected accounts (aggregated, provider stripped)',
-  description:
-    'Aggregates connected accounts across providers with per-provider degradation. The server-only ' +
-    '`provider` field is stripped and no connection details ever reach the client (spec §Security).',
+  summary: 'Poll one durable connector authentication flow',
+  request: { params: z.object({ flowId: z.string().min(1).max(200) }) },
+  responses: {
+    200: {
+      description: 'Current owner-only authentication state',
+      content: { 'application/json': { schema: ConnectorAuthenticationFlowStateSchema } },
+    },
+    404: {
+      description: 'Flow absent or owned by someone else',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/connections/{connectionId}',
+  tags: ['Connectors'],
+  summary: 'Read one stable connection and its exact grants',
+  request: { params: z.object({ connectionId: z.string().min(1) }) },
+  responses: {
+    200: {
+      description: 'Owner-visible connection detail',
+      content: { 'application/json': { schema: ConnectorConnectionDetailSchema } },
+    },
+    404: {
+      description: 'Connection absent or owned by someone else',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/connectors/connections/{connectionId}',
+  tags: ['Connectors'],
+  summary: 'Rename one stable connection',
   request: {
-    query: z.object({ toolkit: z.string().optional() }),
+    params: z.object({ connectionId: z.string().min(1) }),
+    body: { content: { 'application/json': { schema: ConnectorConnectionPatchSchema } } },
   },
   responses: {
     200: {
-      description: 'Connected accounts (provider stripped) plus degradation warnings',
-      content: {
-        'application/json': {
-          schema: z.object({
-            accounts: z.array(PublicConnectedAccountSchema),
-            warnings: z.array(ConnectorWarningSchema),
-          }),
-        },
-      },
+      description: 'Updated lifecycle projection',
+      content: { 'application/json': { schema: ConnectorLifecycleResultSchema } },
+    },
+    404: {
+      description: 'Connection absent or owned by someone else',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
 
 registry.registerPath({
   method: 'delete',
-  path: '/api/connectors/accounts/{accountId}',
+  path: '/api/connectors/connections/{connectionId}',
   tags: ['Connectors'],
-  summary: 'Disconnect an account (idempotent)',
-  description:
-    'Revokes the account at its owning provider and clears its routing binding. Idempotent — ' +
-    'disconnecting an unknown or already-removed id still resolves 204.',
-  request: {
-    params: z.object({ accountId: z.string() }),
-  },
+  summary: 'Disconnect one stable connection',
+  description: 'Closes local authority before provider or hosted cleanup is awaited.',
+  request: { params: z.object({ connectionId: z.string().min(1) }) },
   responses: {
-    204: { description: 'Account disconnected (or already absent)' },
+    200: {
+      description: 'Local lifecycle and external cleanup state',
+      content: { 'application/json': { schema: ConnectorLifecycleResultSchema } },
+    },
+    404: {
+      description: 'Connection absent or owned by someone else',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 
-// --- Retained session connector status and retired mutation paths ---
-
 registry.registerPath({
   method: 'get',
-  path: '/api/sessions/{id}/connectors',
+  path: '/api/connectors/connections/{connectionId}/disconnect-impact',
   tags: ['Connectors'],
-  summary: "A session's connector access state",
-  description:
-    'Lists inherited and explicit connector access for a session. Session overrides take ' +
-    'precedence over agent access and remain visible until an owner changes them in Connections.',
-  request: {
-    params: z.object({ id: z.string() }),
-  },
+  summary: 'Preview authority affected by disconnecting a connection',
+  request: { params: z.object({ connectionId: z.string().min(1) }) },
   responses: {
     200: {
-      description: 'Durable access rows and lifecycle warnings',
-      content: { 'application/json': { schema: SessionConnectorStatusSchema } },
+      description: 'Current grant, session, and subscription impact',
+      content: { 'application/json': { schema: ConnectorDisconnectImpactSchema } },
+    },
+    404: {
+      description: 'Connection absent or owned by someone else',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
 
 registry.registerPath({
   method: 'post',
-  path: '/api/sessions/{id}/connectors/{accountId}',
+  path: '/api/connectors/connections/{connectionId}/reconnect',
   tags: ['Connectors'],
-  summary: 'Retired session connector mutation',
-  description:
-    'Returns 410 without changing authority. Owners manage exact operation access in Connections.',
+  summary: 'Start an idempotent reconnect flow',
   request: {
-    params: z.object({ id: z.string(), accountId: z.string() }),
+    params: z.object({ connectionId: z.string().min(1) }),
+    body: { content: { 'application/json': { schema: ConnectorReconnectRequestSchema } } },
   },
   responses: {
-    410: {
-      description: 'Session connector mutations moved to Connections',
+    201: {
+      description: 'Durable owner-only authentication flow state',
+      content: { 'application/json': { schema: ConnectorAuthenticationFlowStateSchema } },
+    },
+    404: {
+      description: 'Connection absent or owned by someone else',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'The idempotency key belongs to a different request',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
 
-registry.registerPath({
-  method: 'delete',
-  path: '/api/sessions/{id}/connectors/{accountId}',
-  tags: ['Connectors'],
-  summary: 'Retired session connector mutation',
-  description: 'Returns 410 without changing authority. Owners manage access in Connections.',
-  request: {
-    params: z.object({ id: z.string(), accountId: z.string() }),
-  },
-  responses: {
-    410: {
-      description: 'Session connector mutations moved to Connections',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
+for (const action of ['pause', 'resume'] as const) {
+  registry.registerPath({
+    method: 'post',
+    path: `/api/connectors/connections/{connectionId}/${action}`,
+    tags: ['Connectors'],
+    summary: `${action === 'pause' ? 'Pause' : 'Resume'} one stable connection`,
+    request: { params: z.object({ connectionId: z.string().min(1) }) },
+    responses: {
+      200: {
+        description: 'Local lifecycle and managed authority synchronization state',
+        content: { 'application/json': { schema: ConnectorLifecycleResultSchema } },
+      },
+      404: {
+        description: 'Connection absent or owned by someone else',
+        content: { 'application/json': { schema: ErrorResponseSchema } },
+      },
     },
-  },
-});
-
-// --- Retained legacy agent attachment read and retired mutation paths ---
+  });
+}
 
 registry.registerPath({
   method: 'get',
-  path: '/api/agents/{agentId}/connectors',
+  path: '/api/connectors/agents/{agentId}/connections',
   tags: ['Connectors'],
-  summary: "An agent's legacy connector attachments",
-  description:
-    'Lists retained attachment rows for migration visibility. Canonical operation grants are ' +
-    'reviewed and edited through Connections.',
-  request: {
-    params: z.object({ agentId: z.string() }),
-  },
+  summary: 'Read exact connection grants for one owned agent',
+  request: { params: z.object({ agentId: z.string().min(1) }) },
   responses: {
     200: {
-      description: "The agent's standing attachments",
-      content: { 'application/json': { schema: AgentConnectorListResponseSchema } },
+      description: 'Canonical agent connection grants',
+      content: { 'application/json': { schema: ConnectorAgentConnectionsSchema } },
+    },
+    404: {
+      description: 'Agent absent or owned by someone else',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/sessions/{sessionId}/connections',
+  tags: ['Connectors'],
+  summary: 'Read effective connector access for one session',
+  request: { params: z.object({ sessionId: z.string().min(1) }) },
+  responses: {
+    200: {
+      description: 'Canonical session connector access',
+      content: { 'application/json': { schema: ConnectorSessionConnectionsSchema } },
+    },
+    404: {
+      description: 'Session absent or owned by someone else',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
 
 registry.registerPath({
   method: 'post',
-  path: '/api/agents/{agentId}/connectors/{accountId}',
+  path: '/api/connectors/reviews',
   tags: ['Connectors'],
-  summary: 'Retired agent connector mutation',
-  description: 'Returns 410 without changing authority. Owners manage access in Connections.',
+  summary: 'Create an owner-reviewed connector management request',
   request: {
-    params: z.object({ agentId: z.string(), accountId: z.string() }),
+    body: {
+      content: { 'application/json': { schema: ConnectorManagementReviewCreateRequestSchema } },
+    },
   },
   responses: {
-    410: {
-      description: 'Agent connector mutations moved to Connections',
+    201: {
+      description: 'Owner review or requester-safe review status',
+      content: {
+        'application/json': {
+          schema: z.union([
+            ConnectorManagementReviewItemSchema,
+            ConnectorProgramReviewStatusSchema,
+          ]),
+        },
+      },
+    },
+    401: {
+      description: 'A verified program credential is required',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Agent identity or an unverified operator is refused',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
 
 registry.registerPath({
-  method: 'delete',
-  path: '/api/agents/{agentId}/connectors/{accountId}',
+  method: 'get',
+  path: '/api/connectors/program/reviews/{reviewRequestId}',
   tags: ['Connectors'],
-  summary: 'Retired agent connector mutation',
-  description: 'Returns 410 without changing authority. Owners manage access in Connections.',
+  summary: 'Read requester-safe status for one program review',
+  request: { params: z.object({ reviewRequestId: z.string().min(1) }) },
+  responses: {
+    200: {
+      description: 'Requester-safe lifecycle and outcome',
+      content: { 'application/json': { schema: ConnectorProgramReviewStatusSchema } },
+    },
+    404: {
+      description: 'Review absent or belongs to another requester',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/reviews',
+  tags: ['Connectors'],
+  summary: 'List owner-visible connector reviews',
+  request: { query: z.object({ state: z.enum(['pending', 'resolved']).optional() }) },
+  responses: {
+    200: {
+      description: 'Owner-visible reviews',
+      content: {
+        'application/json': {
+          schema: z.object({ reviews: z.array(ConnectorManagementReviewItemSchema) }).strict(),
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/reviews/{reviewRequestId}',
+  tags: ['Connectors'],
+  summary: 'Read one owner-visible connector review',
+  request: { params: z.object({ reviewRequestId: z.string().min(1) }) },
+  responses: {
+    200: {
+      description: 'Owner-visible review context and lifecycle',
+      content: { 'application/json': { schema: ConnectorManagementReviewItemSchema } },
+    },
+    404: {
+      description: 'Review absent or owned by someone else',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/connectors/reviews/{reviewRequestId}/decision',
+  tags: ['Connectors'],
+  summary: 'Resolve one pending connector review',
   request: {
-    params: z.object({ agentId: z.string(), accountId: z.string() }),
+    params: z.object({ reviewRequestId: z.string().min(1) }),
+    body: { content: { 'application/json': { schema: ConnectorManagementReviewDecisionSchema } } },
   },
   responses: {
-    410: {
-      description: 'Agent connector mutations moved to Connections',
+    200: {
+      description: 'Durably resolved review',
+      content: { 'application/json': { schema: ConnectorManagementReviewDecisionResultSchema } },
+    },
+    409: {
+      description: 'Review is no longer pending or the target changed',
       content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/connectors/reconciliation/previews',
+  tags: ['Connectors'],
+  summary: 'Preview a complete immutable grant revision',
+  request: {
+    body: {
+      content: { 'application/json': { schema: ConnectorReconciliationPreviewRequestSchema } },
+    },
+  },
+  responses: {
+    201: {
+      description: 'Complete immutable grant preview',
+      content: { 'application/json': { schema: ConnectorReconciliationPreviewSchema } },
+    },
+    409: {
+      description: 'The connection must be reconciled before it can be edited',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/connectors/reconciliation/apply',
+  tags: ['Connectors'],
+  summary: 'Apply an exact grant replacement from one preview',
+  request: {
+    body: {
+      content: { 'application/json': { schema: ConnectorReconciliationApplyRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Exact persisted grants and hosted authority synchronization state',
+      content: { 'application/json': { schema: ConnectorReconciliationApplyResponseSchema } },
+    },
+    409: {
+      description: 'The preview was consumed, expired, or superseded',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/accessible',
+  tags: ['Connectors'],
+  summary: 'List connections accessible to one owned agent',
+  request: { query: z.object({ agentId: z.string().min(1) }) },
+  responses: {
+    200: {
+      description: 'Agent-scoped accessible connections',
+      content: { 'application/json': { schema: ConnectorAccessibleConnectionsResponseSchema } },
+    },
+    401: {
+      description: 'A verified program credential is required',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/accessible/{connectionId}/operations',
+  tags: ['Connectors'],
+  summary: 'List exact granted operation revisions for one connection',
+  request: {
+    params: z.object({ connectionId: z.string().min(1) }),
+    query: z.object({ agentId: z.string().min(1) }),
+  },
+  responses: {
+    200: {
+      description: 'Exact agent-scoped operation revisions',
+      content: { 'application/json': { schema: ConnectorAccessibleOperationsResponseSchema } },
+    },
+    404: {
+      description: 'Connection absent, ungranted, or owned by someone else',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+for (const surface of ['executions', 'cli/executions'] as const) {
+  registry.registerPath({
+    method: 'post',
+    path: `/api/connectors/${surface}`,
+    tags: ['Connectors'],
+    summary:
+      surface === 'executions'
+        ? 'Execute one exact connector operation'
+        : 'Execute one exact connector operation from the CLI',
+    request: {
+      body: {
+        content: { 'application/json': { schema: LocalConnectorProgramExecutionRequestSchema } },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Brokered execution result with durable attempt identity',
+        content: { 'application/json': { schema: ConnectorExecutionResponseSchema } },
+      },
+      202: {
+        description: 'Owner approval is required before execution',
+        content: { 'application/json': { schema: z.unknown() } },
+      },
+      403: {
+        description: 'The principal lacks the exact grant',
+        content: { 'application/json': { schema: ErrorResponseSchema } },
+      },
+    },
+  });
+}
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/usage/agent',
+  tags: ['Connectors'],
+  summary: 'List connector usage for one owned agent',
+  request: {
+    query: z.object({
+      agentId: z.string().min(1),
+      cursor: z.string().min(1).optional(),
+      limit: z.coerce.number().int().min(1).max(100).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'Agent-scoped connector usage page',
+      content: { 'application/json': { schema: ConnectorUsagePageSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/usage/operator',
+  tags: ['Connectors'],
+  summary: 'List operator-scoped connector usage',
+  request: {
+    query: z.object({
+      connectionId: z.string().min(1).optional(),
+      cursor: z.string().min(1).optional(),
+      limit: z.coerce.number().int().min(1).max(100).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'Owner-scoped connector usage page',
+      content: { 'application/json': { schema: ConnectorUsagePageSchema } },
     },
   },
 });

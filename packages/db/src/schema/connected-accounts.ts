@@ -1,20 +1,13 @@
 import { sqliteTable, text, index } from 'drizzle-orm/sqlite-core';
 
 /**
- * Derived cache binding an opaque `ConnectedAccountId` to its owning connector
- * provider (ADR-0043 pattern, connector-gateway spec §Detailed Design 2).
+ * Historical pre-cutover account table, retained only as Drizzle migration input.
  *
- * This is NOT the source of truth for the tokens — the provider vaults own
- * those (Composio's cloud vault, a self-hosted Nango's Postgres, the remote MCP
- * server itself). The table exists only so the server can route management and
- * brokered execution to the backend that owns an id without leaking provider
- * identity into public DTOs, and so `listAccounts` can aggregate
- * cheaply. Written on a successful `pollConnect` (first-write-wins, mirroring
- * `runtimeRegistry`, ADR-0255) and retained with `revoked` status on disconnect
- * as a credential-free ownership tombstone; never hand-edited.
- *
- * `provider` is server-only — it is stripped from the session-facing account
- * DTO so the tool surface never sees which backend is behind a connection.
+ * The application backfills these rows into canonical connections and drops this
+ * table transactionally in `legacy-connection-migration.ts`. Keeping its schema
+ * in the generation snapshot prevents a generated SQL DROP from running before
+ * that application backfill on an existing installation. It is not exported by
+ * the live schema barrel and must never be used for runtime reads or writes.
  */
 export const connectedAccounts = sqliteTable(
   'connected_accounts',

@@ -62,6 +62,8 @@ export interface RelayAdapterCatalog {
    * @param type - The adapter type / service slug, e.g. `'slack'`.
    */
   getManifest(type: string): { displayName?: string } | undefined;
+  /** Enumerate native adapter manifests independently of connector providers. */
+  getCatalog?(): Array<{ manifest: { type: string; displayName?: string } }>;
 }
 
 /** Collaborators `recommendConnector` reads. */

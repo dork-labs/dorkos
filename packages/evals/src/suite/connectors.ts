@@ -6,7 +6,7 @@
  * - **`connector-gmail`** ("Connect to my Gmail") drives the gateway path:
  *   `recommendConnector('gmail')` tops with a gateway; two connects of one
  *   toolkit yield two distinct, independently-addressable accounts; outward
- *   account DTOs carry no provider identity; and the refined eval-13 oracle
+ *   connection DTOs carry no provider-private account reference; and the refined eval-13 oracle
  *   holds — the only persisted credential
  *   reference on the managed path is the vendor API-key ref, never a per-account
  *   token ref.
@@ -17,7 +17,7 @@
  * WHY FAKE-BACKED AND STRUCTURAL: these prove the two evals are EXPRESSIBLE
  * against the spec'd interface and hold as a deterministic contract. Their
  * oracles exercise the real `recommendConnector` / `ConnectorRegistry` /
- * public account mapper / Composio-provider code with a
+ * canonical owner resource projection / Composio-provider code with a
  * {@link @dorkos/test-utils!FakeConnectorProvider} and an in-memory Composio
  * client, so they run on `test-mode` (no model, no key, free) and gate nothing
  * they cannot deterministically prove.
@@ -34,10 +34,10 @@ import { FakeConnectorProvider } from '@dorkos/test-utils/fake-connector-provide
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
   ConnectorRegistry,
+  ConnectorOperatorQueryService,
   recommendConnector,
   maybeCreateComposioProvider,
   COMPOSIO_API_KEY_REF,
-  toPublicAccount,
   type RelayAdapterCatalog,
   type CredentialProvider,
   type CredentialResolution,
@@ -54,6 +54,7 @@ import type { EvalCase, Oracle, OracleResult } from '../types.js';
 const GMAIL = 'gmail';
 /** The service the routing eval discriminates (relay adapter beats the gateway). */
 const SLACK = 'slack';
+const OWNER = { kind: 'local_install', installationId: 'eval-install' } as const;
 /** Build a relay adapter catalog exposing a purpose-built adapter for the given slugs. */
 function relayWith(slugs: Record<string, string>): RelayAdapterCatalog {
   return {
@@ -85,7 +86,10 @@ async function twoGmailAccounts(providerType: string): Promise<{
   work: ConnectedAccount;
 }> {
   const db = createTestDb();
-  const registry = new ConnectorRegistry({ db });
+  const registry = new ConnectorRegistry({
+    db,
+    configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+  });
   const provider = new FakeConnectorProvider({
     type: providerType,
     custody: 'managed',
@@ -139,19 +143,27 @@ const gmailTwoAccountAddressing: Oracle = async (): Promise<OracleResult> => {
   };
 };
 
-/** Public account rows omit provider identity and private account references. */
+/** Owner resource rows omit private provider account references. */
 const gmailPublicRowsHideProviderIdentity: Oracle = async (): Promise<OracleResult> => {
-  const { personal, work } = await twoGmailAccounts('gateway-under-test');
-  const rows = [toPublicAccount(personal), toPublicAccount(work)];
-  const publicBlob = JSON.stringify(rows);
+  const { db } = await twoGmailAccounts('gateway-under-test');
+  const query = new ConnectorOperatorQueryService({
+    db,
+    registry: new ConnectorRegistry({
+      db,
+      configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+    }),
+    agentOwnership: { ownsAgent: () => false },
+    sessions: { resolveSessionAgent: () => undefined },
+  });
+  const rows = await query.listConnections(OWNER);
   const passed =
-    rows.every((row) => !('provider' in row) && !('externalAccountRef' in row)) &&
-    !publicBlob.includes('gateway-under-test');
+    rows.length === 2 &&
+    rows.every((row) => !('provider' in row) && !('externalAccountRef' in row));
   return {
-    label: 'public connection rows omit provider identity and private account references',
+    label: 'owner connection rows omit private provider account references',
     passed,
     evidence: rows,
-    ...(passed ? {} : { detail: 'provider-private identity crossed the public account mapper' }),
+    ...(passed ? {} : { detail: 'provider-private account identity crossed the owner resource' }),
   };
 };
 

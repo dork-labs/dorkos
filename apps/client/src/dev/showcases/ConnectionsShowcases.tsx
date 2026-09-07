@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { PublicConnectedAccount } from '@dorkos/shared/connector-provider';
-import { ServiceTile, AccountRow } from '@/layers/features/connections';
+import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
+import { AccountRow } from '@/layers/features/connections';
 import { AccountsRegion, MessagingRegion } from '@/layers/widgets/connections';
 import { connectorKeys } from '@/layers/entities/connectors';
 import { CATALOG_KEY } from '@/layers/entities/relay';
@@ -11,23 +11,24 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 
-const MANAGED_DISCLOSURE =
-  'Connecting Gmail takes you to that service to sign in. Composio stores your connected ' +
-  "accounts' login access in its own secure vault, not on your computer. Your agents can then " +
-  'act for you; your password is never shared, and you can disconnect anytime.';
-
-const SELF_HOST_DISCLOSURE =
-  "You're connecting through your own Nango server. The keys to this connection are stored in " +
-  'your database, on infrastructure you control. Nothing about this connection leaves your systems.';
-
-function mockAccount(over: Partial<PublicConnectedAccount>): PublicConnectedAccount {
+function mockAccount(over: Partial<ConnectorConnectionSummary>): ConnectorConnectionSummary {
   return {
-    id: 'ca_mock_1' as PublicConnectedAccount['id'],
+    connectionId: 'ca_mock_1' as ConnectorConnectionSummary['connectionId'],
+    providerInstanceId: 'provider-1' as ConnectorConnectionSummary['providerInstanceId'],
     toolkit: 'gmail',
     label: 'work',
-    status: 'active',
+    identityHint: 'work@example.com',
+    lifecycle: 'connected',
+    authenticationStatus: 'active',
+    reconciliationStatus: 'ready',
+    authoritySync: { status: 'ready' },
+    mode: 'managed',
     custody: 'managed',
-    disclosure: MANAGED_DISCLOSURE,
+    payer: 'dorkos_managed',
+    agentCount: 2,
+    subscriptionCount: 0,
+    usage: { status: 'available', logicalOperationCount: 12, attemptCount: 12 },
+    warnings: [],
     ...over,
   };
 }
@@ -41,59 +42,26 @@ export function ConnectionsShowcases() {
   return (
     <>
       <PlaygroundSection
-        title="ServiceTile"
-        description="One connectable service on the /connections grid — service-first, a single Connect verb, provider invisible."
-      >
-        <ShowcaseLabel>Known services</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="grid max-w-xl grid-cols-2 gap-3 sm:grid-cols-3">
-            <ServiceTile
-              toolkit={{ slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' }}
-              onConnect={() => {}}
-            />
-            <ServiceTile
-              toolkit={{ slug: 'slack', displayName: 'Slack', authKind: 'oauth2' }}
-              onConnect={() => {}}
-            />
-            <ServiceTile
-              toolkit={{ slug: 'linear', displayName: 'Linear', authKind: 'oauth2' }}
-              onConnect={() => {}}
-            />
-          </div>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Unknown service (fallback icon)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="max-w-40">
-            <ServiceTile
-              toolkit={{ slug: 'obscureapi', displayName: 'Obscure API', authKind: 'api-key' }}
-              onConnect={() => {}}
-            />
-          </div>
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
-      <PlaygroundSection
         title="AccountRow"
         description="One connected account: service icon, Gmail (work) naming, lifecycle status, and its own server-composed custody sentence."
       >
         <ShowcaseLabel>Active, managed custody</ShowcaseLabel>
         <ShowcaseDemo>
           <ul className="max-w-xl">
-            <AccountRow account={mockAccount({})} onDisconnect={() => {}} />
+            <AccountRow connection={mockAccount({})} onOpenDetail={() => {}} />
           </ul>
         </ShowcaseDemo>
 
         <ShowcaseLabel>Two accounts of one service</ShowcaseLabel>
         <ShowcaseDemo>
           <ul className="max-w-xl space-y-2">
-            <AccountRow account={mockAccount({})} onDisconnect={() => {}} />
+            <AccountRow connection={mockAccount({})} onOpenDetail={() => {}} />
             <AccountRow
-              account={mockAccount({
-                id: 'ca_mock_2' as PublicConnectedAccount['id'],
+              connection={mockAccount({
+                connectionId: 'ca_mock_2' as ConnectorConnectionSummary['connectionId'],
                 label: 'personal',
               })}
-              onDisconnect={() => {}}
+              onOpenDetail={() => {}}
             />
           </ul>
         </ShowcaseDemo>
@@ -102,15 +70,17 @@ export function ConnectionsShowcases() {
         <ShowcaseDemo>
           <ul className="max-w-xl">
             <AccountRow
-              account={mockAccount({
-                id: 'ca_mock_3' as PublicConnectedAccount['id'],
+              connection={mockAccount({
+                connectionId: 'ca_mock_3' as ConnectorConnectionSummary['connectionId'],
                 toolkit: 'slack',
                 label: 'team',
-                status: 'expired',
+                authenticationStatus: 'expired',
+                lifecycle: 'paused',
+                mode: 'byo',
                 custody: 'self-host',
-                disclosure: SELF_HOST_DISCLOSURE,
+                payer: 'operator_byo',
               })}
-              onDisconnect={() => {}}
+              onOpenDetail={() => {}}
             />
           </ul>
         </ShowcaseDemo>
@@ -119,11 +89,11 @@ export function ConnectionsShowcases() {
         <ShowcaseDemo>
           <ul className="max-w-xl">
             <AccountRow
-              account={mockAccount({
-                id: 'ca_mock_4' as PublicConnectedAccount['id'],
-                status: 'paused',
+              connection={mockAccount({
+                connectionId: 'ca_mock_4' as ConnectorConnectionSummary['connectionId'],
+                lifecycle: 'paused',
               })}
-              onDisconnect={() => {}}
+              onOpenDetail={() => {}}
             />
           </ul>
         </ShowcaseDemo>
@@ -166,7 +136,11 @@ function AccountsRegionShowcase() {
   const client = useMemo(
     () =>
       makeConnectionsQueryClient((qc) => {
-        qc.setQueryData(connectorKeys.toolkits(), { toolkits: [] });
+        qc.setQueryData(connectorKeys.connections(), { connections: [] });
+        qc.setQueryData(connectorKeys.catalog(''), {
+          pages: [{ services: [], warnings: [] }],
+          pageParams: [undefined],
+        });
       }),
     []
   );
@@ -174,7 +148,7 @@ function AccountsRegionShowcase() {
   return (
     <PlaygroundSection
       title="AccountsRegion"
-      description="The composed panel behind Connections' Accounts region, in its first-run state — nothing connectable yet, so the region names the one-time Composio & Nango setup instead of an empty box."
+      description="The composed Accounts region in its calm first-run state, with one service action and advanced provider setup kept out of the main path."
     >
       <ShowcaseDemo>
         <QueryClientProvider client={client}>
