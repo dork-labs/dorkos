@@ -122,16 +122,19 @@ vitest-flake-report.json
 # `import 'vitest'` resolves). Removed in afterAll — this line is what stops an
 # interrupted run leaving a deliberately-failing spec file behind.
 scripts/.flake-fixture-*/
-# Entity slices written into the source tree by the cross-entity DAG guard
-# (apps/client/__tests__/entity-dag-lint.test.ts). They have to live under
-# `entities/` because the lint rule they exercise is scoped to that path, and
-# they are removed in `afterAll` — this line is what stops an interrupted run
-# from leaving a committable landmine behind. ESLint does not read .gitignore,
-# so the fixture is still linted.
+# Slices written into the client's source tree by the two lint guards
+# (apps/client/__tests__/entity-dag-lint.test.ts and cross-slice-import-lint.test.ts).
+# They have to live under `src/layers/` because the rules they exercise are
+# scoped by path and derive a file's slice from that file's own path; anywhere
+# else the rule skips them and every assertion passes vacuously. Written and
+# removed by the client project's `globalSetup`
+# (apps/client/__tests__/lint-fixtures.ts) rather than by either suite's own
+# hooks, so within one invocation `src/` never changes while another suite is
+# walking it (DOR-1821; two concurrent runs in one checkout still collide, which
+# is the "one checkout, one writer" residual) — these lines are what stop a run
+# killed before its teardown from leaving a committable landmine behind. ESLint
+# does not read .gitignore, so `eslint.config.js` ignores the same globs and
+# `tsconfig.json` excludes them; only the two guard suites lint them, through an
+# `ESLint` constructed with `ignore: false`.
 apps/client/src/layers/entities/__dag-fixture-*__/
-# Same arrangement, for the slice-encapsulation guard
-# (apps/client/__tests__/cross-slice-import-lint.test.ts). Its fixtures have to
-# live inside `src/layers/` because the rule derives a file's slice from that
-# file's own path; anywhere else the rule skips them and every assertion passes
-# vacuously.
 apps/client/src/layers/*/__slice-fixture-*__/

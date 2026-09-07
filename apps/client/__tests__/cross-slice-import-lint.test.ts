@@ -1,7 +1,6 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { ESLint, type Linter } from 'eslint';
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 
 /**
  * Guards the slice-encapsulation rule (DOR-1010): a relative path may not leave
@@ -22,8 +21,10 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
  * The slices are written into the real source tree rather than a tmpdir because
  * the rule is scoped to `src/layers/**` and derives the slice from the file's
  * own path; a fixture outside that tree would be skipped and every assertion
- * would pass vacuously. They are removed in `afterAll`, and `.gitignore` carries
- * a line for them so an interrupted run cannot leave one committable.
+ * would pass vacuously. Their source text, and the lifecycle that puts them
+ * there, live in `lint-fixtures.ts`: writing and removing them from this file's
+ * own hooks changed `src/` while other suites walked it, which is what DOR-1821
+ * was. `globalSetup` now does both outside any worker's lifetime.
  */
 const CLIENT_ROOT = resolve(__dirname, '..');
 const LAYERS = resolve(CLIENT_ROOT, 'src/layers');
@@ -34,87 +35,49 @@ const LAYERS = resolve(CLIENT_ROOT, 'src/layers');
  * the default 5s test budget on a loaded machine, so the whole suite shares one
  * instance and the cold start is paid in `beforeAll` (which gets its own
  * timeout) rather than inside whichever assertion happened to run first.
- */
-const eslint = new ESLint({ cwd: CLIENT_ROOT });
-
-/** Every fixture directory, for teardown. Kept in sync with `.gitignore`. */
-const FIXTURE_DIRS = [
-  resolve(LAYERS, 'features/__slice-fixture-a__'),
-  resolve(LAYERS, 'features/__slice-fixture-b__'),
-  resolve(LAYERS, 'shared/__slice-fixture-segment__'),
-];
-
-/**
- * Write one fixture file, creating its directories.
  *
- * @param relativePath Path under `src/layers/`.
- * @param source File contents.
- * @returns The absolute path written.
+ * `ignore: false` because `eslint.config.js` ignores the fixture slices, so that
+ * a `pnpm lint` overlapping a test run does not report the violations they carry
+ * on purpose. The option decides which files are SELECTED, not which rules run.
  */
-function writeFixture(relativePath: string, source: string): string {
-  const absolute = resolve(LAYERS, relativePath);
-  mkdirSync(dirname(absolute), { recursive: true });
-  writeFileSync(absolute, source, 'utf-8');
-  return absolute;
-}
+const eslint = new ESLint({ cwd: CLIENT_ROOT, ignore: false });
 
 /**
  * Lint one fixture through the app's real flat config and return only the
  * messages this rule produced.
+ *
+ * Asserts that ESLint actually READ the file first. Three of the five cases
+ * below are negative — they expect an empty message list — and an empty list is
+ * exactly what a file ESLint skipped produces. The skip is one edit away: drop
+ * `ignore: false` above and every fixture falls under the `ignores` entry in
+ * `eslint.config.js`, at which point `lintFiles` returns a single result
+ * carrying only a "File ignored because of a matching ignore pattern" warning
+ * and all three negatives pass on a file nothing looked at.
+ *
+ * So one result, and no ignore warning, before the messages are filtered.
  *
  * @param relativePath Path under `src/layers/`.
  * @returns The rule's messages for that file.
  */
 async function lintFixture(relativePath: string): Promise<Linter.LintMessage[]> {
   const results = await eslint.lintFiles([resolve(LAYERS, relativePath)]);
-  return results
-    .flatMap((r) => r.messages)
-    .filter((m) => m.ruleId === 'fsd/no-cross-slice-relative-import');
+
+  expect(results, `ESLint returned no result for ${relativePath}`).toHaveLength(1);
+  const messages = results[0].messages;
+  expect(
+    messages.filter((m) => m.message.includes('File ignored')),
+    `ESLint skipped ${relativePath} instead of linting it`
+  ).toEqual([]);
+
+  return messages.filter((m) => m.ruleId === 'fsd/no-cross-slice-relative-import');
 }
 
 describe('cross-slice relative import lint rule', () => {
   beforeAll(async () => {
-    // The neighbour being reached into. Real, so the fixture is a genuine
-    // resolvable import and not a dangling string.
-    writeFixture('features/__slice-fixture-b__/ui/Thing.ts', 'export const thing = 1;\n');
-    writeFixture('features/__slice-fixture-b__/index.ts', "export { thing } from './ui/Thing';\n");
-
-    // Slice A's own internals, at two depths.
-    writeFixture('features/__slice-fixture-a__/model/state.ts', 'export const state = 1;\n');
-
-    writeFixture(
-      'features/__slice-fixture-a__/ui/Bad.ts',
-      "import { thing } from '../../__slice-fixture-b__/ui/Thing';\nexport const bad = () => thing;\n"
-    );
-    writeFixture(
-      'features/__slice-fixture-a__/ui/Ok.ts',
-      "import { state } from '../model/state';\nimport { thing } from '@/layers/features/__slice-fixture-b__';\nexport const ok = () => state + thing;\n"
-    );
-    // Nested one segment deeper, so `../../` still lands inside slice A. This is
-    // the case a depth-counting string pattern gets wrong.
-    writeFixture(
-      'features/__slice-fixture-a__/ui/status/Deep.ts',
-      "import { state } from '../../model/state';\nexport const deep = () => state;\n"
-    );
-    writeFixture(
-      'features/__slice-fixture-a__/__tests__/mock.test.ts',
-      "vi.mock('../../__slice-fixture-b__/ui/Thing', () => ({ thing: 2 }));\nexport const mocked = 1;\n"
-    );
-
-    // `shared/` is sliceless: its top-level directories are segments, so a
-    // relative hop between them stays inside the unit.
-    writeFixture(
-      'shared/__slice-fixture-segment__/uses-lib.ts',
-      "import { cn } from '../lib/utils';\nexport const usesLib = cn;\n"
-    );
-
-    // Pay ESLint's config cold start here, on this hook's own budget.
+    // Pay ESLint's config cold start here, on this hook's own budget. The
+    // fixture slices are already on disk — `globalSetup` wrote them.
     await lintFixture('features/__slice-fixture-a__/ui/Ok.ts');
   }, 120_000);
-
-  afterAll(() => {
-    for (const dir of FIXTURE_DIRS) rmSync(dir, { recursive: true, force: true });
-  });
 
   it('reports a relative path that reaches into a sibling slice', async () => {
     const errors = await lintFixture('features/__slice-fixture-a__/ui/Bad.ts');

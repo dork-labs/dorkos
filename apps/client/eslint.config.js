@@ -19,6 +19,20 @@ export default defineConfig([
   // `.yalc/**` holds local co-dev overlays of published packages (e.g. an
   // in-flight blintz build); it is gitignored and must not be linted.
   { ignores: ['dist/**', '.turbo/**', '.yalc/**'] },
+  // The two lint guards' fixture slices, which are deliberate violations of the
+  // very rules below: a cross-entity cycle, and a relative path that leaves its
+  // slice. They have to sit inside `src/layers/` — the rules are scoped by path
+  // — and `__tests__/lint-fixtures.ts` keeps them there for the whole of a
+  // client test run, so a `pnpm lint` that overlaps one reports seven errors
+  // nobody wrote (measured, with these globs removed). ESLint does not read
+  // .gitignore, so this is the line that stops it. `apps/client/tsconfig.json`
+  // excludes the same globs, because `tsc` is a `src/` consumer too and the
+  // cycle costs it two implicit-any errors and a `vi` only Vitest supplies.
+  // The guards lint them anyway, through an `ESLint` instance
+  // constructed with `ignore: false` — the option governs which files are
+  // SELECTED, never which rules run, so nothing about the guards' meaning
+  // changes and a real cycle in a real slice is still an error.
+  { ignores: ['src/layers/entities/__dag-fixture-*__/**', 'src/layers/*/__slice-fixture-*__/**'] },
   ...reactConfig,
 
   // `sidebar.tsx` started as upstream shadcn's sidebar block, kept close to it

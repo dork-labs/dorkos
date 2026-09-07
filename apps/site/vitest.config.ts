@@ -12,6 +12,10 @@ export default defineConfig({
     },
   },
   test: {
+    // What `--project <name>` matches from the repo root. Rationale:
+    // apps/server/vitest.config.ts. Pinned for every project by
+    // scripts/__tests__/vitest-projects.test.ts (DOR-1822).
+    name: 'site',
     environment: 'jsdom',
     globals: true,
     // Honors the pre-push gate's VITEST_RETRY budget; 0 when unset. CI sets its

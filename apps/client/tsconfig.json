@@ -6,5 +6,11 @@
     }
   },
   "include": ["src/**/*", "__tests__/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "// exclude": "The last two are the lint guards' fixture slices, which __tests__/lint-fixtures.ts keeps inside src/layers/ for the whole of a client test run because the rules they prove are scoped by path. They are deliberate violations, and tsc is a src/ consumer like any other: resident fixtures make `tsc --noEmit` exit 2 on three errors nobody wrote (two implicit-any returns from the cycle, and a `vi` that only Vitest supplies). ESLint ignores the same globs; this is the tsc half.",
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/layers/entities/__dag-fixture-*__/**",
+    "src/layers/*/__slice-fixture-*__/**"
+  ]
 }
