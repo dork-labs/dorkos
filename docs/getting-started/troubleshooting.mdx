@@ -53,14 +53,16 @@ Look for the DorkOS icon in the menu bar on macOS, or in the notification area n
   window instead, so you're never left with a running app you can't reach.
 </Callout>
 
-## "Restart DorkOS and Reset all data don't work in the desktop app"
+## "Restart DorkOS and Reset all data in the desktop app"
 
-Both buttons in **Settings → Danger zone** now refuse in the desktop app, and say why. The app starts and stops the server itself, so a restart triggered from inside would leave you with no server running at all.
+Both buttons in **Settings → Danger zone** work in the desktop app. The app runs the server itself, so it does the work for you:
 
-- **To restart**: quit DorkOS and open it again. That does the same thing.
-- **To start over**: quit DorkOS, delete your data folder (`~/.dork`), then open DorkOS again and it will set itself up from scratch. Nothing is deleted while the button is refusing, so a refusal never means you lost anything.
+- **Restart DorkOS** stops the server, starts it again, and points the window at the new one. If the restart fails, the app tells you and leaves a server running.
+- **Reset all data** stops the server, deletes your data folder, then starts fresh.
 
-Neither restriction applies when you run DorkOS from the CLI or Docker.
+Two things worth knowing. The app will not reset while another copy of DorkOS is using the same data folder, so quit the other one first. And if you open a desktop-run DorkOS in a normal browser tab or on your phone, both buttons refuse there and say why: only the app window can ask the app to restart itself.
+
+You can always start over by hand instead. Quit DorkOS, delete your data folder (`~/.dork`), then open DorkOS again and it sets itself up from scratch.
 
 ## "It says my agent isn't ready" or "Claude Code / Codex / OpenCode won't connect"
 

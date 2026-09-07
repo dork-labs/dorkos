@@ -14,6 +14,7 @@ DorkOS has one identity core — [Better Auth](https://better-auth.com) — embe
 | Which author id the owner IS               | `apps/server/src/routes/room-caller.ts`                     |
 | Exposure guard (tunnel / bind)             | `apps/server/src/services/core/auth/exposure-guard.ts`      |
 | Legacy MCP key seeding                     | `apps/server/src/services/core/auth/seed-legacy-mcp-key.ts` |
+| One-time reset token (DOR-1707)            | `apps/server/src/services/core/auth/reset-token.ts`         |
 | MCP auth middleware (4-tier)               | `apps/server/src/middleware/mcp-auth.ts`                    |
 | Trusted-origin resolver (CSRF)             | `apps/server/src/lib/trusted-origins.ts`                    |
 | Auth SQLite schema                         | `packages/db/src/schema/auth.ts`                            |

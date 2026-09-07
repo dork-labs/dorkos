@@ -1,7 +1,7 @@
 ---
 number: 321
 title: WorkOS standalone SSO/SCIM as the enterprise federation layer for DorkOS Cloud
-status: draft
+status: proposed
 created: 2026-07-02
 spec: accounts-and-auth
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: accounts-and-auth)
+Proposed (auto-extracted from spec: accounts-and-auth). No enterprise federation work has been built; the decision is deliberately deferred until enterprise demand arrives.
 
 ## Context
 
