@@ -131,6 +131,56 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     await request.patch('/api/config', { data: { ui: { sidebar: { groups } } } }).catch(() => {});
   });
 
+  test('opens the New menu on the FIRST click after a section commits', async ({
+    page,
+    dashboardSidebar,
+  }) => {
+    // **The press right after a commit used to do nothing** (DOR-1834). Radix
+    // keeps a menu mounted for as long as it has a closing animation to play,
+    // and the part of it that listens for a press outside is kept with it — so
+    // for those ~150ms a press on the menu's own button was answered twice: the
+    // button reopened the menu, and the copy still finishing its fade read the
+    // same press as a press outside and closed what had just opened. A second
+    // press worked, which is what made it read as a dead click rather than a
+    // race.
+    //
+    // Driven with ONE click and no settling wait on purpose: waiting is the
+    // whole defect. Only a browser can see this — jsdom runs no animations, so
+    // a menu there leaves on the commit that closes it and none of this
+    // happens.
+    await dashboardSidebar.newMenu.chooseSectionEntry('new-group-empty');
+    const input = page.getByRole('textbox', { name: 'New section name' });
+    await input.fill(groupName);
+    // Straight off the keyboard, and `force` on the click: both skip a locator
+    // resolve and an actionability wait that this test cannot afford. The
+    // window under test was ~150ms wide and the round trips alone spent most of
+    // it, which made the same defect show up four runs in five instead of five.
+    // Nothing is being forced past: "New" is persistent chrome that is on
+    // screen and pressable in every frame of this test.
+    await page.keyboard.press('Enter');
+    await dashboardSidebar.newMenu.trigger.click({ force: true });
+
+    await expect(
+      dashboardSidebar.newMenu.item('new-group'),
+      'the first click on New after a section commit did not open the menu'
+    ).toBeVisible();
+    // **And the keyboard came with it**, which is the half a screenshot cannot
+    // tell apart. A menu that reopens while the old copy is still on screen is
+    // the SAME element re-shown rather than a new one, so nothing puts the
+    // reader inside it and no arrow key reaches a row — it looks right and
+    // answers nothing.
+    await expect(
+      page.locator('[role="menu"]:focus-within'),
+      'the reopened menu never took focus, so no key can reach its items'
+    ).not.toHaveCount(0);
+    // …and the section really was made, so this is the window after a commit
+    // rather than after an abandoned editor. Asked after the menu is put away:
+    // an open menu takes the rest of the page out of the accessibility tree,
+    // and `groupHeader` asks for a button by its name.
+    await page.keyboard.press('Escape');
+    await expect(dashboardSidebar.groupHeader(groupName)).toBeVisible();
+  });
+
   test('creates a group, drags an agent into it, and persists across reload', async ({
     page,
     request,
@@ -369,43 +419,22 @@ test.describe('Dashboard Sidebar — Sections @smoke', { tag: SOLE_SIDEBAR_TAG }
     // check alone would pass on a reorder that never reached the server.
     await dashboardSidebar.createGroup(groupName);
 
-    /** Every stored section, as the config keeps it — shape included. */
-    const storedGroups = async (): Promise<({ id: string; name: string } & object)[]> => {
-      const config = (await (await request.get('/api/config')).json()) as {
-        ui: { sidebar: { groups: ({ id: string; name: string } & object)[] } };
-      };
-      return config.ui.sidebar.groups;
-    };
     /** This test's two sections, in the order the config keeps them. */
-    const persistedOrder = async (): Promise<string[]> =>
-      (await storedGroups())
+    const persistedOrder = async (): Promise<string[]> => {
+      const config = (await (await request.get('/api/config')).json()) as {
+        ui: { sidebar: { groups: { name: string }[] } };
+      };
+      return config.ui.sidebar.groups
         .map((g) => g.name)
         .filter((name) => name === groupName || name === secondGroupName);
+    };
 
-    // **The second section is SEEDED, not made through the menu.** Making one
-    // is proved by the six tests around this one; making a second immediately
-    // after the first buys a dependency on a window this test is not about —
-    // measured, right after a section commits, the next click on "New" is
-    // swallowed and only the one after it opens the menu (one click is enough
-    // again a second and a half later — DOR-1834). The shape is CLONED from the section
-    // just made rather than restated here, so a seed cannot drift from the
-    // schema, and the clone is appended so the pair starts in a known order.
-    const groups = await storedGroups();
-    const made = groups.find((g) => g.name === groupName);
-    expect(made, 'the section that was just made was never stored').toBeDefined();
-    await request.patch('/api/config', {
-      data: {
-        ui: {
-          sidebar: { groups: [...groups, { ...made, id: `${made!.id}-b`, name: secondGroupName }] },
-        },
-      },
-    });
-
-    // The panel reads `ui.sidebar` from a query it has already answered, so the
-    // seed reaches the screen on the next load rather than by itself.
-    await page.reload();
-    await basePage.waitForAppReady();
-    await basePage.ensureSidebarOpen();
+    // **The second section is made through the menu, like the first.** It used
+    // to be seeded over the API to route around DOR-1834 — a press on "New"
+    // right after a section committed was swallowed by the closing menu's own
+    // dismissable layer — and that is fixed, so the honest path is back. The
+    // spec above this one is what keeps it honest.
+    await dashboardSidebar.createGroup(secondGroupName);
 
     // Asserted rather than assumed, because the whole test is about a CHANGE
     // to it.

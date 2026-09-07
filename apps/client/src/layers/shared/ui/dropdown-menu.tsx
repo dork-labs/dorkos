@@ -67,9 +67,22 @@ function DropdownMenuContent({
           // middle — Radix publishes the trigger-relative origin, and every other
           // overlay in the app already reads it.
           'origin-(--radix-dropdown-menu-content-transform-origin)',
-          'data-[state=open]:animate-in data-[state=closed]:animate-out',
-          'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-          'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+          // OPENS WITH AN ANIMATION, CLOSES AT ONCE — and the second half is
+          // load-bearing rather than a taste (DOR-1834). Radix keeps a menu
+          // mounted for as long as it has a closing animation to play, and the
+          // part of it that listens for "somebody pressed outside me" is kept
+          // with it. So for the ~150ms a fade lasted, a press on the menu's own
+          // button was answered twice: the button reopened the menu, and the
+          // copy still finishing its fade read the same press as a press
+          // outside and closed what had just opened. Two presses were needed;
+          // the first did nothing at all.
+          //
+          // Restoring the fade needs Radix to be able to reopen a menu it is
+          // still closing, and it cannot: the reopened menu is the SAME element
+          // rather than a new one, so nothing puts the keyboard back inside it
+          // and the arrow keys reach nothing. Leaving at once is what makes the
+          // next press a clean start.
+          'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
           // All four sides: Radix flips a menu near a viewport edge to `left` or
           // `right`, and those two used to slide from nowhere.
           'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2',
@@ -213,9 +226,13 @@ function DropdownMenuSubContent({
           // Same trigger-relative origin as the top-level menu: a submenu grows
           // out of the item that opened it.
           'origin-(--radix-dropdown-menu-content-transform-origin)',
-          'data-[state=open]:animate-in data-[state=closed]:animate-out',
-          'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-          'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+          // And it leaves at once too — for consistency with its parent rather
+          // than for its parent's reason. A submenu dismisses nothing on an
+          // outside press (Radix gives it no `onDismiss` and leaves outside
+          // pointer events alone), so it never ate anybody's click; it is that a
+          // submenu lingering after the menu it belongs to has gone is a ghost,
+          // not a fade (DOR-1834).
+          'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
           'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2',
           'data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2',
           className
