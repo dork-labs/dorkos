@@ -366,6 +366,22 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {},
   },
   {
+    what: "records that an account on another platform IS the operator, which makes DorkOS read that account's messages as the operator's own words and stop notifying anybody about them",
+    // Listed the day it landed rather than the day somebody adds a second
+    // caller, which is what this file's own prose asks for (DOR-1778). The
+    // damage a second, ungated caller would do is quiet by construction: a
+    // claim pointed at a real collaborator silences every DM and every mention
+    // that person raises, and the only symptom is messages that never arrive.
+    // Nothing agent-reachable may ever reach it.
+    call: 'linkToOwner(',
+    allowed: {
+      'routes/profile.ts':
+        'POST /api/profile/identities/:authorId — refuses an agent for being a machine, and a second person for not owning the install, before it reads an author id',
+      'services/rooms/author-registry.ts':
+        'the definition itself, which additionally refuses any row that is not a `platform:` one, so an agent\u2019s row cannot be claimed even by the owner',
+    },
+  },
+  {
     what: 'runs the tier gate for a caller that performs the effect itself, instead of via registry.invoke',
     call: 'authorizeCapability(',
     allowed: {

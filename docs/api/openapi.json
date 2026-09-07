@@ -9430,6 +9430,9 @@
               "null"
             ]
           },
+          "linkedToYou": {
+            "type": "boolean"
+          },
           "nameSuggestedBy": {
             "type": [
               "string",
@@ -21668,6 +21671,136 @@
           },
           "403": {
             "description": "The caller is an agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile/identities/{authorId}": {
+      "post": {
+        "tags": [
+          "Profile"
+        ],
+        "summary": "Say that an account on another platform is you",
+        "description": "Records that one external identity — a Telegram or Slack account, stored as `platform:<platform>:<adapter>:<user id>` — is the operator themselves. What it buys is silence about your own words: a message you send your own agent from your own phone arrives as an ordinary person on that platform, so without this DorkOS raises a `dm.received` about it, and a `mention.received` for any `@` you type that spells one of your own handles. It is a claim about WHOSE WORDS those are and grants that account nothing on this install: every check that decides what a caller may do still keys on the local account you sign in as, so a linked identity gets no whole-room export, no roster writes and no wider search. Only the person who owns this install may call it — an agent is refused (403), and so is any second person — and only a `platform:` row may be claimed (400 otherwise), because claiming an agent would silence every message that agent sends. Idempotent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The roster id of the identity to claim"
+            },
+            "required": true,
+            "description": "The roster id of the identity to claim",
+            "name": "authorId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Recorded"
+          },
+          "400": {
+            "description": "That identity is not somebody on another platform, so it cannot be claimed — an agent’s row, the system author, or a person on this machine",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent, or a person who does not own this install",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No identity by that id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Profile"
+        ],
+        "summary": "Take that claim back",
+        "description": "The revocation half, gated identically. Idempotent: releasing an identity that was never claimed succeeds, because the caller wanted it unclaimed either way. Its messages notify the operator again from the very next one.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The roster id of the identity to claim"
+            },
+            "required": true,
+            "description": "The roster id of the identity to claim",
+            "name": "authorId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Released"
+          },
+          "400": {
+            "description": "That identity is not somebody on another platform, so it cannot be claimed — an agent’s row, the system author, or a person on this machine",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent, or a person who does not own this install",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No identity by that id",
             "content": {
               "application/json": {
                 "schema": {

@@ -8,6 +8,7 @@ import {
 } from '@/layers/entities/team';
 import { usePendingRead, useProfileDeepLink } from '@/layers/shared/model';
 import { AgentGhostRows } from '@/layers/features/agents-list';
+import { identityLinkErrorMessage, useSetIdentityLinkedToMe } from '@/layers/features/profile';
 import {
   TeamRosterGrid,
   TeamRosterSkeleton,
@@ -75,6 +76,10 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
   // The roster rows this page draws ARE the drawer's own id space, so a card
   // hands its `member.id` straight over with nothing to map.
   const { open: openProfile } = useProfileDeepLink();
+  // Owned here rather than inside the card: a card that could mutate the roster
+  // is a card that has opinions about it, which is the same reason `owner` and
+  // `ownedAgentCount` are resolved by the caller.
+  const setLinkedToMe = useSetIdentityLinkedToMe();
   const { data, isLoading: isFetchingRoster, isError, refetch } = useTeamRoster();
   // "The read has not settled" is not "there is nobody" (DOR-1419) — without
   // this the grid below renders "Nobody to show yet." for a beat before the real
@@ -122,6 +127,24 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
           grouped={activeFilters.group === 'manager'}
           onSelectOwner={(ownerId) => patchFilters({ owner: ownerId })}
           onOpenProfile={openProfile}
+          onSetLinkedToMe={(memberId, linked) => setLinkedToMe.mutate({ memberId, linked })}
+          // Scoped to the row that was pressed by reading the mutation's own
+          // `variables`, which is what one shared mutation can say about which
+          // of many rows it is currently answering for.
+          identityLinkState={{
+            ...(setLinkedToMe.isPending && setLinkedToMe.variables
+              ? { pendingId: setLinkedToMe.variables.memberId }
+              : {}),
+            ...(setLinkedToMe.isError && setLinkedToMe.variables
+              ? {
+                  errorId: setLinkedToMe.variables.memberId,
+                  errorMessage: identityLinkErrorMessage(
+                    setLinkedToMe.error,
+                    setLinkedToMe.variables.linked
+                  ),
+                }
+              : {}),
+          }}
         />
       ) : (
         <p className="text-muted-foreground py-8 text-center text-sm">

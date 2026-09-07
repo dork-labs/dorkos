@@ -2240,6 +2240,30 @@ export interface Transport extends RoomTransport {
    */
   deleteProfileAvatar(): Promise<void>;
 
+  /**
+   * Say whether an account on another platform is the operator themselves —
+   * "this Telegram account is me" (DOR-1778).
+   *
+   * What it buys is silence about your own words: a message you send your agent
+   * from your own phone arrives as an ordinary person on that platform, so
+   * without this DorkOS notifies you about it, and about any `@` you type that
+   * spells one of your own handles.
+   *
+   * **A claim about whose words those are, and nothing more.** It grants that
+   * account no powers on this install — every check that decides what a caller
+   * may DO still keys on the account you are signed in as.
+   *
+   * Operator-only, refused (403) for an agent and for any second person, and
+   * refused (400) for any member that is not somebody on another platform: an
+   * agent's row cannot be claimed, because claiming it would silence every
+   * message that agent sends you. Revocable by calling it again with `false`,
+   * and idempotent in both directions.
+   *
+   * @param memberId - The roster id of the identity to claim or release.
+   * @param linked - `true` to claim it, `false` to take the claim back.
+   */
+  setIdentityLinkedToMe(memberId: string, linked: boolean): Promise<void>;
+
   // --- Read state (spec `team-room-home` §D4, ADR 260808-140956) ---
 
   /**

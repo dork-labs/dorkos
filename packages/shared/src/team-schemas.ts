@@ -184,6 +184,26 @@ export const TeamPersonFactsSchema = z
      */
     lastSeenAt: z.string().nullable(),
     /**
+     * Whether the operator has said this account on another platform is
+     * themselves (DOR-1778) — so DorkOS stops raising a notification every time
+     * they message their own agent from their own phone.
+     *
+     * **Optional because the question does not apply to every row**, and the
+     * three states are meant to be read with `=== undefined`:
+     *
+     * - **absent** — a person on this machine. Nothing to claim; draw nothing.
+     * - **`false`** — somebody on a platform outside this machine that the
+     *   operator has NOT claimed. This is the ordinary case (every real
+     *   collaborator), and the row offers "This is me".
+     * - **`true`** — claimed. Their messages are the operator's own words.
+     *
+     * Never a substitute for `isSelf`, which stays true for exactly one row —
+     * the operator's own local author. A claimed identity is the same PERSON
+     * and a different row, and every authority check on this install still
+     * keys on the row that `isSelf` marks.
+     */
+    linkedToYou: z.boolean().optional(),
+    /**
      * That this person's name was an agent's suggestion, and whose (DOR-1022).
      *
      * **Three states, and the difference between two of them is the whole

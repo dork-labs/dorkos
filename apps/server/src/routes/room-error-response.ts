@@ -89,6 +89,9 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // so this code reaching a route means DorkOS built one wrong, not that a
   // request was bad.
   RESERVED_NATURAL_KEY: 500,
+  // A 400, unlike its neighbour above: a request CAN name an author id, so this
+  // one really is somebody asking to claim a row that is not claimable.
+  IDENTITY_NOT_EXTERNAL: 400,
   NOT_A_BRIDGED_ROOM: 409,
   NO_SURVIVING_BRIDGE: 409,
   ATTACHMENT_NOT_FOUND: 404,

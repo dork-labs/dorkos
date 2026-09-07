@@ -76,6 +76,27 @@ export function useDeleteProfileAvatar() {
 }
 
 /**
+ * Say whether an account on another platform is the person at the keyboard —
+ * "this Telegram account is me" (DOR-1778) — or take that back.
+ *
+ * It invalidates the same readers every other profile write does, and needs to:
+ * the claim is drawn on the roster row it was made from, and a row still
+ * offering "This is me" after the claim landed is a control that looks broken.
+ *
+ * @returns A TanStack mutation taking the roster id and whether it is you.
+ */
+export function useSetIdentityLinkedToMe() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ memberId, linked }: { memberId: string; linked: boolean }) =>
+      transport.setIdentityLinkedToMe(memberId, linked),
+    onSuccess: () => invalidateProfileReaders(queryClient),
+  });
+}
+
+/**
  * Claim or change an `@handle`.
  *
  * **The handles spec's own route, and no second one** (`handles` S6): this is a

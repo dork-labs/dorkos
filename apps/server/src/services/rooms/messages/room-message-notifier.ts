@@ -23,10 +23,20 @@ export class RoomMessageNotifier {
   private readonly authors: AuthorRegistry;
   /** The mesh agent table, read only to resolve a posting agent's `agents.id`. */
   private readonly agents: RoomAgentLookup;
-  /** Whether an author is the install's owner. Read per check, never captured. */
-  private readonly isOwnerAuthor: (authorId: string) => boolean;
-  /** The record-based twin of {@link RoomMessageNotifier.isOwnerAuthor}. */
+  /**
+   * Whether an already-loaded author IS the install's owner — the roster
+   * question, asked of rows {@link AuthorRegistry.getMany} has already fetched.
+   * Deliberately the authority predicate and not the one below it: who is on a
+   * room's roster is a fact about the owner's own row.
+   */
   private readonly isOwnerRecord: (record: AuthorRecord) => boolean;
+  /**
+   * Whether an author's WORDS are the operator's own — the owner, plus any
+   * platform identity they have linked to themselves. Read per check, so a link
+   * made in the app silences the very next message rather than the next server
+   * start.
+   */
+  private readonly isOwnerVoice: (authorId: string) => boolean;
   /** Whether the operator has muted a room. Read per post, never captured. */
   private readonly isRoomMuted: (roomId: string) => boolean;
 
@@ -34,8 +44,8 @@ export class RoomMessageNotifier {
     this.store = core.store;
     this.authors = core.authors;
     this.agents = core.agents;
-    this.isOwnerAuthor = core.isOwnerAuthor;
     this.isOwnerRecord = core.isOwnerRecord;
+    this.isOwnerVoice = core.isOwnerVoice;
     this.isRoomMuted = core.isRoomMuted;
   }
 
@@ -43,15 +53,15 @@ export class RoomMessageNotifier {
    * Raise `dm.received` / `mention.received` for one committed entry, when it
    * earned either (spec `notification-system` task T11, DOR-1388).
    *
-   * **Never notifies the operator about their own words** — `isOwnerAuthor`
+   * **Never notifies the operator about their own words** — `isOwnerVoice`
    * alone, and that is the whole check. An earlier revision also treated any
    * HUMAN author in a `dm`-kind room as the operator, reasoning that a
    * bridged private chat is always the operator's own conversation. That is
    * false: a bridged `dm` room is minted from an unclaimed chat somebody ELSE
    * started with the bot (`postExternal`), so its human party can be a real
    * collaborator, not the operator's own phone. Their words in that room have
-   * to reach the operator like anyone else's, which is why this gate is
-   * `isOwnerAuthor` and nothing wider.
+   * to reach the operator like anyone else's, which is why this gate asks who
+   * an author IS and never what shape the room is.
    *
    * **A real person's message in a 1:1 DM raises `dm.received` exactly as an
    * agent's does** (DOR-1392). `dm.received` used to also require
@@ -76,13 +86,21 @@ export class RoomMessageNotifier {
    * inbound update whose sender is itself a bot account — which the bot's
    * own delivery always is — before `postExternal` ever mints an author or
    * writes an entry, so that suppression is structural and upstream of this
-   * seam. What this gate does NOT catch is the operator genuinely texting
-   * their own agent from their own phone: that is a real external human
-   * author (`platform:` naturalKey, not `isOwnerAuthor`), so their own message
-   * comes back to them as one `dm.received`. Accepted deliberately, and far
-   * cheaper than silently dropping every real collaborator's message; the fix
-   * is the platform-identity link ("this Telegram account is me"), which
-   * retires the echo for `dm.received` and `mention.received` in one move.
+   * seam.
+   *
+   * **The operator texting their own agent from their own phone is silent too,
+   * once they have said that account is theirs** (DOR-1778). Their message
+   * arrives as a real external human author (`platform:` naturalKey), which the
+   * OWNER predicate does not recognise and must not — that predicate is what
+   * grants the whole-room export and every roster write. So the link is read by
+   * a predicate of its own, `isOwnerVoice`, which answers "are these words the
+   * operator's own" and nothing else. Both kinds fall out here together: the
+   * author gate below returns before either is weighed, and the mention scan
+   * beside it asks the same question of the ids an entry names, so an `@` that
+   * spells one of the operator's own handles is their own handle whichever
+   * identity they typed it from. An UNLINKED platform identity is a stranger
+   * exactly as before, which is the property that keeps a real collaborator's
+   * message from being swallowed.
    *
    * A ghost author (its row vanished, ADR 260801-003051) is skipped outright:
    * there is nobody's name to put in a title.
@@ -113,9 +131,9 @@ export class RoomMessageNotifier {
   ): void {
     try {
       if (!author) return;
-      if (this.isOwnerAuthor(author.id)) return;
+      if (this.isOwnerVoice(author.id)) return;
 
-      const mentionsOperator = mentions.some((id) => this.isOwnerAuthor(id));
+      const mentionsOperator = mentions.some((id) => this.isOwnerVoice(id));
       const isDirectMessage = room.kind === 'dm' && this.isOneOnOneDmWithOperator(room.id);
       if (!isDirectMessage && !mentionsOperator) return;
 
@@ -164,7 +182,7 @@ export class RoomMessageNotifier {
    * humans, is not a DM with anybody — there is nobody there to notify.
    *
    * Reads the owner check off the record `getMany` already fetched rather
-   * than `isOwnerAuthor(id)`, which re-queries by id — the exact cost
+   * than an id-keyed check, which re-queries per row — the exact cost
    * `AuthorRegistry.isOwner`'s own doc warns a caller already holding the
    * roster should not pay (`author-registry.ts`).
    *

@@ -103,6 +103,71 @@ describe('aggregateTeamRoster', () => {
     registry.resolveAgent('/Users/dorian/agents/ana', 'Ana');
   });
 
+  describe('a platform identity claimed as the operator (DOR-1778)', () => {
+    /** Miguel's Telegram row, minted the way an inbound bridged message mints it. */
+    function external() {
+      return registry.resolveExternal({
+        platformType: 'telegram',
+        instanceId: 'tg-main',
+        platformUserId: '145223',
+        displayName: 'Miguel',
+      });
+    }
+
+    /** One member off the roster, by id. */
+    async function memberById(id: string) {
+      const { members } = await aggregateTeamRoster(sources());
+      return members.find((member) => member.id === id);
+    }
+
+    it('says false for an unclaimed account somewhere else — the ordinary case', async () => {
+      const miguel = external();
+      expect((await memberById(miguel.id))?.person?.linkedToYou).toBe(false);
+    });
+
+    it('says true once the operator claims it', async () => {
+      const miguel = external();
+      registry.linkToOwner(miguel.id, OWNER_USER_ID);
+      expect((await memberById(miguel.id))?.person?.linkedToYou).toBe(true);
+    });
+
+    it('carries no such key at all for somebody on this machine', async () => {
+      // Absent is a third state and not a shape accident: a local row cannot be
+      // claimed, so the card must be able to tell "not yours" from "not
+      // askable" and draw no control for the second.
+      const self = await memberById(ownerAuthorId);
+      expect(self?.person).toBeDefined();
+      expect(self?.person && 'linkedToYou' in self.person).toBe(false);
+    });
+
+    it('marks the LOCAL row as you, even when the claimed row was minted first', async () => {
+      // The reason this had to be attribution and not identity. `isSelf` is
+      // resolved by finding the FIRST record the OWNER predicate accepts
+      // (`aggregateTeamRoster`), so a claim that widened that predicate would
+      // not add a second "you" — it would move the one there is onto whichever
+      // row happens to sort earlier.
+      //
+      // Ordering is therefore the whole test, and it is built rather than
+      // assumed: rows come back oldest first, so this install mints the bridged
+      // person BEFORE it has an owner account at all — which is the ordinary
+      // history of an install that bridged a chat and turned login on later.
+      // Asserting "exactly one row is marked" would pass under the widening on
+      // this fixture and prove nothing; asserting WHICH row is what fails.
+      db = createTestDb();
+      registry = new AuthorRegistry(db);
+      const miguel = external();
+      ownerAuthorId = registry.bindOwner(OWNER_USER_ID).id;
+      registry.linkToOwner(miguel.id, OWNER_USER_ID);
+
+      const { members } = await aggregateTeamRoster(sources());
+
+      expect(members.filter((member) => member.isSelf).map((member) => member.id)).toEqual([
+        ownerAuthorId,
+      ]);
+      expect(members.find((member) => member.id === miguel.id)?.isSelf).toBe(false);
+    });
+  });
+
   it('returns a payload the response schema accepts', async () => {
     const roster = await aggregateTeamRoster(sources());
     expect(TeamRosterResponseSchema.safeParse(roster).success).toBe(true);

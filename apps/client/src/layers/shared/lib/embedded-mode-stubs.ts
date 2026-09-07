@@ -1251,4 +1251,8 @@ export const profileStubs = {
   async deleteProfileAvatar(): Promise<never> {
     throw new Error('Profile photos need a DorkOS server');
   },
+
+  async setIdentityLinkedToMe(_memberId: string, _linked: boolean): Promise<never> {
+    throw new Error('Linking a chat account to you needs a DorkOS server');
+  },
 };

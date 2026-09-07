@@ -39,9 +39,10 @@ import { TeamPage } from '../ui/TeamPage';
  */
 let harness: ProfileDeepLinkHarness;
 
-function renderPage(roster: TeamRosterResponse) {
+function renderPage(roster: TeamRosterResponse, overrides: Partial<Transport> = {}) {
   const transport = createMockTransport({
     getTeamRoster: vi.fn().mockResolvedValue(roster),
+    ...overrides,
   } as Partial<Transport>);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
@@ -183,6 +184,47 @@ describe('TeamPage — the filter chips', () => {
     await screen.findByText('Dorian');
 
     expect(screen.queryByRole('group', { name: 'Filter by person' })).toBeNull();
+  });
+});
+
+describe('TeamPage — claiming an account on another platform (DOR-1778)', () => {
+  /** The claim control on one card, by the row it belongs to. */
+  function claimControl(name: string): HTMLElement {
+    const card = screen.getByText(name).closest('article')!;
+    return within(card).getByRole('button', { name: new RegExp(`${name} is you$`) });
+  }
+
+  it('sends the claim for the row that was pressed', async () => {
+    const user = userEvent.setup();
+    const setIdentityLinkedToMe = vi.fn().mockResolvedValue(undefined);
+    renderPage({ members: MOCK_TEAM_ROSTER }, { setIdentityLinkedToMe });
+    await screen.findByText('Dorian');
+
+    await user.click(claimControl('Miguel Ferreira-Santos'));
+
+    expect(setIdentityLinkedToMe).toHaveBeenCalledWith('person-miguel', true);
+  });
+
+  it('draws the refusal on that row when the server says no', async () => {
+    // The wiring this file exists to cover: the page holds ONE mutation for the
+    // whole grid, so a refusal has to be routed back to the row it came from.
+    // A version that dropped the state entirely still sends the write, still
+    // logs nothing, and leaves a button that appears to do nothing at all.
+    const user = userEvent.setup();
+    const setIdentityLinkedToMe = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('nope'), { code: 'OPERATOR_ONLY' }));
+    renderPage({ members: MOCK_TEAM_ROSTER }, { setIdentityLinkedToMe });
+    await screen.findByText('Dorian');
+
+    await user.click(claimControl('Miguel Ferreira-Santos'));
+
+    const miguel = screen.getByText('Miguel Ferreira-Santos').closest('article')!;
+    expect(await within(miguel).findByRole('alert')).toHaveTextContent(
+      'Only the person who owns this install can say which accounts are theirs.'
+    );
+    // …and nowhere else on the page, which is the half a boolean would fail.
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
   });
 });
 

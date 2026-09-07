@@ -25,6 +25,20 @@ const agentLookup = agentLookupFor({
   '/agents/bo': { name: 'bo', displayName: 'Bo' },
 });
 
+/**
+ * The operator's own Telegram account, as the bridge presents it.
+ *
+ * Deliberately not distinguishable from a stranger's by anything in this
+ * object — that is the whole reason DOR-1778 needs a declared link rather than
+ * a heuristic.
+ */
+const OPERATORS_PHONE = {
+  platformType: 'telegram',
+  instanceId: 'tg-main',
+  platformUserId: '900900',
+  displayName: 'Dorian',
+} as const;
+
 /** One captured global-stream broadcast. */
 type Broadcast = [string, unknown];
 
@@ -161,29 +175,94 @@ describe('a DM to the operator', () => {
     expect(stored()).toHaveLength(0);
   });
 
-  it("echoes the operator's own phone leg back at them — accepted until identity linking lands", async () => {
-    // The operator texting their own agent from their own phone arrives as a
-    // real external human author (`platform:` naturalKey), which `isOwnerAuthor`
-    // does not recognise, so their own message notifies them. Deliberately
-    // accepted: far cheaper than dropping every real collaborator's message.
-    // The platform-identity link ("this Telegram account is me") retires it for
-    // dm.received and mention.received together.
+  it("echoes the operator's own phone leg back at them while that account is still a stranger", async () => {
+    // The negative half of DOR-1778, and the reason the link had to be
+    // DECLARED rather than guessed: an external identity nobody has claimed is
+    // a stranger, whether or not it happens to be the operator. This is the
+    // pre-link state and it must not change — the same code path carries every
+    // real collaborator's message.
     const harness = open();
     const bridged = harness.service.createBridgedRoom(bridgeDm(harness));
+
+    harness.service.postExternal(bridged.id, { identity: OPERATORS_PHONE, text: 'ana, status?' });
+    await flush();
+
+    expect(stored()).toHaveLength(1);
+    expect(stored()[0].kind).toBe('dm.received');
+  });
+
+  it("stays silent for the operator's own phone leg once they say that account is them", async () => {
+    // DOR-1778, the inversion of the case above. The operator texting their own
+    // agent from their own phone posts as a `platform:` author; the link is what
+    // lets the one guard at the top of `notifyRoomMessage` recognise it as their
+    // own voice, and their own words have never earned them a notification.
+    const harness = open();
+    const bridged = harness.service.createBridgedRoom(bridgeDm(harness));
+    const phone = harness.authors.resolveExternal(OPERATORS_PHONE);
+    harness.authors.linkToOwner(phone.id, null);
+
+    harness.service.postExternal(bridged.id, { identity: OPERATORS_PHONE, text: 'ana, status?' });
+    await flush();
+
+    expect(stored()).toHaveLength(0);
+  });
+
+  it('still raises dm.received for somebody ELSE after the operator links their own phone', async () => {
+    // The over-suppression guard. A link is about ONE identity: claiming your
+    // own phone must not turn the bridged DM into a room that notifies nobody,
+    // which is the failure mode that would be invisible until a colleague's
+    // message went missing.
+    const harness = open();
+    const bridged = harness.service.createBridgedRoom(bridgeDm(harness));
+    harness.authors.linkToOwner(harness.authors.resolveExternal(OPERATORS_PHONE).id, null);
 
     harness.service.postExternal(bridged.id, {
       identity: {
         platformType: 'telegram',
         instanceId: 'tg-main',
-        platformUserId: '900900',
-        displayName: 'Dorian',
+        platformUserId: '145223',
+        displayName: 'Miguel',
       },
-      text: 'ana, status?',
+      text: 'on my way, be there in 10',
     });
     await flush();
 
+    expect(announced('dm.received')).toHaveLength(1);
+    expect(stored()[0]).toMatchObject({ title: 'Miguel messaged you' });
+  });
+
+  it('goes back to notifying the moment the operator takes the link back', async () => {
+    // The mapping is revocable, and revoking it has to reach the very next
+    // message rather than the next server start — the predicate is read per
+    // check for exactly this.
+    const harness = open();
+    const bridged = harness.service.createBridgedRoom(bridgeDm(harness));
+    const phone = harness.authors.resolveExternal(OPERATORS_PHONE);
+    harness.authors.linkToOwner(phone.id, null);
+    harness.authors.unlinkFromOwner(phone.id);
+
+    harness.service.postExternal(bridged.id, { identity: OPERATORS_PHONE, text: 'ana, status?' });
+    await flush();
+
     expect(stored()).toHaveLength(1);
-    expect(stored()[0].kind).toBe('dm.received');
+  });
+
+  it('keeps the link across the install gaining a login', async () => {
+    // `bindOwner` rebinds the `'local'` sentinel onto the account key in place,
+    // because it is the same person — so a claim made before login was turned on
+    // is still a true statement afterwards. Leaving it behind would silently
+    // revoke it, and the operator would only find out by being notified about
+    // their own messages again.
+    const harness = open();
+    const bridged = harness.service.createBridgedRoom(bridgeDm(harness));
+    harness.authors.linkToOwner(harness.authors.resolveExternal(OPERATORS_PHONE).id, null);
+
+    harness.setOwner('user-dorian');
+
+    harness.service.postExternal(bridged.id, { identity: OPERATORS_PHONE, text: 'ana, status?' });
+    await flush();
+
+    expect(stored()).toHaveLength(0);
   });
 
   it('raises no row for an agent DMing itself with nobody else on the roster', async () => {
@@ -363,6 +442,107 @@ describe('a mention of the operator', () => {
     expect(announced('mention.received')).toHaveLength(1);
     const [row] = stored();
     expect(row).toMatchObject({ kind: 'mention.received', roomId: bridged.id });
+  });
+
+  it('stays silent when the operator spells their own handle from their own phone', async () => {
+    // The second half DOR-1778 retires, and it falls out of the SAME guard: the
+    // author is weighed before the mentions are, so an `@dorian` the operator
+    // typed on their phone is their own handle in their own message. A bridged
+    // GROUP rather than a DM, so nothing here is explained by the DM collapse.
+    const harness = open();
+    harness.authors.setHandle(harness.human, 'dorian');
+    const group = harness.service.createBridgedRoom({
+      ...bridgeDm(harness),
+      chatId: '556',
+      chatType: 'group',
+      channelType: 'group',
+      title: 'launch crew',
+    });
+    harness.authors.linkToOwner(harness.authors.resolveExternal(OPERATORS_PHONE).id, null);
+
+    harness.service.postExternal(group.id, {
+      identity: OPERATORS_PHONE,
+      text: '@dorian remember to ship this',
+    });
+    await flush();
+
+    expect(stored()).toHaveLength(0);
+  });
+
+  it('still reaches the operator when somebody else names them in that same group', async () => {
+    // The over-suppression guard for mentions, run against the identical room
+    // and the identical text as the case above — only the author differs.
+    const harness = open();
+    harness.authors.setHandle(harness.human, 'dorian');
+    const group = harness.service.createBridgedRoom({
+      ...bridgeDm(harness),
+      chatId: '556',
+      chatType: 'group',
+      channelType: 'group',
+      title: 'launch crew',
+    });
+    harness.authors.linkToOwner(harness.authors.resolveExternal(OPERATORS_PHONE).id, null);
+
+    harness.service.postExternal(group.id, {
+      identity: {
+        platformType: 'telegram',
+        instanceId: 'tg-main',
+        platformUserId: '145223',
+        displayName: 'Miguel',
+      },
+      text: '@dorian remember to ship this',
+    });
+    await flush();
+
+    expect(announced('mention.received')).toHaveLength(1);
+  });
+
+  it('reaches the operator when a collaborator names the phone they claimed', async () => {
+    // The ADDITION half of the same predicate, and the half the two cases above
+    // cannot reach: they exit at the author gate before any mention is weighed.
+    // Here the author is somebody else, so the scan actually runs — and "this
+    // account is me" has to mean an `@` naming it names ME. Without the claim
+    // consulted on the mention side, an `@` at the operator's own phone handle
+    // reaches nobody at all: the handle is the phone's, not the local row's.
+    const harness = open();
+    const group = harness.service.createBridgedRoom({
+      ...bridgeDm(harness),
+      chatId: '556',
+      chatType: 'group',
+      channelType: 'group',
+      title: 'launch crew',
+    });
+    // The operator says something in the group first, which is what puts their
+    // phone on that roster — a mention resolves against the room's members, so
+    // an identity that has never spoken there is not addressable there. Setup
+    // only: this post is not a second proof of the suppression half, because it
+    // raises nothing either way (it is a plain channel line naming nobody).
+    const phone = harness.service.postExternal(group.id, {
+      identity: OPERATORS_PHONE,
+      text: 'morning all',
+    }).author;
+    harness.authors.linkToOwner(phone.id, null);
+    await flush();
+    expect(stored()).toHaveLength(0);
+    // Read back rather than spelled: the qualified handle an external author is
+    // minted with is the handle grammar's to decide, and a literal here would
+    // silently stop naming anybody the day that derivation changed.
+    const phoneHandle = harness.authors.getById(phone.id)?.handle;
+    expect(phoneHandle).toBeTruthy();
+
+    harness.service.postExternal(group.id, {
+      identity: {
+        platformType: 'telegram',
+        instanceId: 'tg-main',
+        platformUserId: '145223',
+        displayName: 'Miguel',
+      },
+      text: `@${phoneHandle} can you take a look`,
+    });
+    await flush();
+
+    expect(announced('mention.received')).toHaveLength(1);
+    expect(stored()[0]).toMatchObject({ kind: 'mention.received', roomId: group.id });
   });
 
   it('collapses into dm.received when the collaborator names the operator inside the DM', async () => {

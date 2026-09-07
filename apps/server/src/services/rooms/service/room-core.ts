@@ -66,6 +66,12 @@ export interface RoomCore {
   readonly isOwnerAuthor: (authorId: string) => boolean;
   /** The record-based twin of {@link RoomCore.isOwnerAuthor}. */
   readonly isOwnerRecord: (record: AuthorRecord) => boolean;
+  /**
+   * Whether an author's words are the operator's own — the owner, plus any
+   * platform identity they have declared to be them (DOR-1778). Attribution,
+   * never authority; see {@link RoomServiceDeps.isOwnerVoice}.
+   */
+  readonly isOwnerVoice: (authorId: string) => boolean;
   readonly bridges: BridgeStore;
   /** Where the PEOPLE in a room have read up to. Never an agent's cursor. */
   readonly readCursors: ReadCursorService;
@@ -169,6 +175,7 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     maxPostsPerTurn: deps.maxPostsPerTurn,
     isOwnerAuthor: deps.isOwnerAuthor,
     isOwnerRecord: deps.isOwnerRecord,
+    isOwnerVoice: deps.isOwnerVoice,
     bridges: deps.bridges,
     readCursors: deps.readCursors,
     agents: deps.agents,

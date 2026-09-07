@@ -466,6 +466,13 @@ export function createRoomSubsystem(opts: {
     // The record-based twin, for a caller that already fetched a batch of
     // rows and would otherwise pay `isOwnerAuthor`'s re-query per member.
     isOwnerRecord: (record) => isOwnerRecord(record, readOwnerAccount()?.id ?? null),
+    // A THIRD question, not a third spelling of the two above: whose WORDS these
+    // are, which the platform-identity link widens and the two authority
+    // predicates deliberately do not (DOR-1778, `isOwnerVoiceRecord`). Read per
+    // check for the same reason they are — an install becomes owned partway
+    // through its life, and a link made in the app has to silence the very next
+    // message.
+    isOwnerVoice: (authorId) => authors.isOwnerVoice(authorId, readOwnerAccount()?.id ?? null),
     readCursors,
     // Read per post, for the same reason as every reader above: muting a room
     // in the sidebar has to silence the very next `dm.received`, not the next

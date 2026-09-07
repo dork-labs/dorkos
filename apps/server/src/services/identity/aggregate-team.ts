@@ -46,7 +46,13 @@ import type { AgentHealthStatus, AgentRuntime } from '@dorkos/shared/mesh-schema
 import type { DisplayNameSource } from '@dorkos/shared/config-schema';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../lib/logger.js';
-import { authorOrigin, isOwnerRecord, type AuthorRecord } from '../rooms/author-registry.js';
+import {
+  authorOrigin,
+  isExternalNaturalKey,
+  isOwnerRecord,
+  isOwnerVoiceRecord,
+  type AuthorRecord,
+} from '../rooms/author-registry.js';
 import type { ActiveClaimView } from '../rooms/room-claims.js';
 import {
   resolveOperatorProfile,
@@ -416,12 +422,15 @@ function nameSuggestedBy(
  * @param now - The moment this roster was read, which is when the operator was
  *   last seen: they are here, by construction. Everybody else's `lastSeenAt` is
  *   `null` — see the field's doc for why the room log is not read for it.
+ * @param ownerUserId - The owner account's user id, or `null` when the install
+ *   has no accounts — what a platform identity's claim is weighed against.
  */
 function personRow(
   record: AuthorRecord,
   isSelf: boolean,
   operator: OperatorRowFacts,
-  now: string
+  now: string,
+  ownerUserId: string | null
 ): TeamMember {
   const { name: operatorName, email: operatorEmail } = operator;
   return {
@@ -455,6 +464,26 @@ function personRow(
         ? { nameSuggestedBy: operator.nameSuggestedBy }
         : {}),
       lastSeenAt: isSelf ? now : null,
+      // Only for somebody on a platform outside this machine, because only such
+      // a row can be claimed (DOR-1778) — a local person's row is either the
+      // operator already or somebody the operator is not. Absent means "the
+      // question does not apply", which is what the card reads to decide whether
+      // to offer the affordance at all.
+      //
+      // **It rides an ungated read, and that is a decision rather than an
+      // oversight.** `GET /api/team` has no caller gate, so an agent that can
+      // reach the API can see which platform identity the operator has claimed.
+      // Weighed and accepted: the same payload already hands out `isSelf`, every
+      // person's display name and handle, and each bridged person's platform, so
+      // an agent that wanted to guess which Telegram account is the operator's
+      // could already do it from the roster it can read. One more boolean beside
+      // those is a small increment, and the alternative — a second, gated read
+      // purely for this flag — would put the roster's own state in two places
+      // and give the card a reason to fetch twice. What must never ride this
+      // read is the WRITE: only the owner may claim (`routes/profile.ts`).
+      ...(isExternalNaturalKey(record.naturalKey)
+        ? { linkedToYou: isOwnerVoiceRecord(record, ownerUserId) }
+        : {}),
     },
   };
 }
@@ -646,7 +675,7 @@ export async function aggregateTeamRoster(sources: TeamRosterSources): Promise<T
     nameSuggestedBy: nameSuggestedBy(configNameSource, operator.nameRung),
   };
   const personRows = people.value.map((record) =>
-    personRow(record, record.id === self?.id, operatorRowFacts, now)
+    personRow(record, record.id === self?.id, operatorRowFacts, now, account?.id ?? null)
   );
   // The operator first — and this really does move a row: `listActive` orders by
   // `created_at`, and a bridged group seen before login was enabled leaves an

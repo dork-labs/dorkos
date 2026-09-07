@@ -309,6 +309,15 @@ export type RoomErrorCode =
    */
   | 'RESERVED_NATURAL_KEY'
   /**
+   * The operator tried to declare an author to be themselves that is not
+   * somebody on a platform outside this machine (DOR-1778). A link says "these
+   * words are mine" and so silences the notifications an author's messages
+   * would raise; pointing one at an agent, at the system author or at another
+   * person would silence somebody ELSE'S words, which is why the one shape it
+   * accepts is a `platform:` row.
+   */
+  | 'IDENTITY_NOT_EXTERNAL'
+  /**
    * `RoomService.postExternal` was aimed at a room with no live bridge row
    * (chats-as-channels spec §4.2). An external author is only ever a member of
    * a room that projects an external chat; landing one anywhere else would put

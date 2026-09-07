@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
@@ -43,6 +44,95 @@ describe('TeamMemberCard', () => {
     // browser's own broken-image icon and no styling un-paints it.
     expect(avatarImage()).toBeNull();
     expect(screen.getByText('D')).toBeInTheDocument();
+  });
+
+  describe('claiming an account on another platform (DOR-1778)', () => {
+    const MIGUEL = MOCK_TEAM_ROSTER.find((member) => member.id === 'person-miguel')!;
+
+    /** Miguel's row, with the claim in whichever of its three states. */
+    function withClaim(linkedToYou: boolean | undefined): TeamMember {
+      const person = { ...MIGUEL.person!, linkedToYou };
+      if (linkedToYou === undefined) delete person.linkedToYou;
+      return { ...MIGUEL, person };
+    }
+
+    it('offers "This is me" on an unclaimed account somewhere else', () => {
+      render(<TeamMemberCard member={withClaim(false)} onSetLinkedToMe={() => {}} />);
+      expect(screen.getByRole('button', { name: /is you$/ })).toHaveTextContent('This is me');
+    });
+
+    it('offers the way back once it is claimed, and says so beside the name', () => {
+      // Revocable, and visibly so: a claim you cannot see is a claim you cannot
+      // undo, and the badge is what tells you which row is answering for you.
+      render(<TeamMemberCard member={withClaim(true)} onSetLinkedToMe={() => {}} />);
+      expect(screen.getByRole('button', { name: /^Stop treating/ })).toHaveTextContent('Not me');
+      expect(screen.getByText('also you')).toBeInTheDocument();
+    });
+
+    it('sends the OPPOSITE of the state it is drawing', async () => {
+      const calls: [string, boolean][] = [];
+      const user = userEvent.setup();
+      render(
+        <TeamMemberCard
+          member={withClaim(false)}
+          onSetLinkedToMe={(memberId, linked) => calls.push([memberId, linked])}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: /is you$/ }));
+
+      expect(calls).toEqual([['person-miguel', true]]);
+    });
+
+    it('offers nothing at all for somebody on this machine', () => {
+      // The absent state, and it is a real one: the operator's own row cannot be
+      // claimed and neither can anybody else local, so the card must not draw a
+      // control the server would refuse.
+      render(<TeamMemberCard member={SELF} onSetLinkedToMe={() => {}} />);
+      expect(screen.queryByText('This is me')).toBeNull();
+    });
+
+    it('draws nothing when nothing is wired to answer it', () => {
+      // An embed with no server behind it stubs this write; a button that threw
+      // on press would be worse than no button.
+      render(<TeamMemberCard member={withClaim(false)} />);
+      expect(screen.queryByText('This is me')).toBeNull();
+    });
+
+    it('disables the control while that row is in flight', () => {
+      // Also the double-press guard: a second press would send the same value
+      // again, and its answer would land on a roster the first had changed.
+      render(<TeamMemberCard member={withClaim(false)} onSetLinkedToMe={() => {}} linkPending />);
+      expect(screen.getByRole('button', { name: /is you$/ })).toBeDisabled();
+    });
+
+    it('says why it was refused, where a person will hear it', () => {
+      // The write answers 204 with no body and the roster simply does not
+      // change, so without this a refusal is a button that appears to do
+      // nothing at all.
+      render(
+        <TeamMemberCard
+          member={withClaim(false)}
+          onSetLinkedToMe={() => {}}
+          linkError="Only the person who owns this install can say which accounts are theirs."
+        />
+      );
+      expect(screen.getByRole('alert')).toHaveTextContent('Only the person who owns this install');
+    });
+
+    it('draws no refusal when nothing was refused', () => {
+      render(<TeamMemberCard member={withClaim(false)} onSetLinkedToMe={() => {}} />);
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('stands the card down for it, exactly as it does for the attribution', () => {
+      const { container } = render(
+        <TeamMemberCard member={withClaim(false)} onSetLinkedToMe={() => {}} />
+      );
+      expect(container.querySelector('[data-slot="team-member-link-to-me"]')).toHaveAttribute(
+        'data-card-aside'
+      );
+    });
   });
 
   describe('where the name came from (DOR-1022)', () => {
@@ -151,9 +241,7 @@ describe('TeamMemberCard', () => {
         />
       );
 
-      expect(cardOf(container).className).toContain(
-        'has-[[data-slot=team-member-owner]:active]:scale-100'
-      );
+      expect(cardOf(container).className).toContain('has-[[data-card-aside]:active]:scale-100');
     });
 
     it('stands down for the attribution, so one pointer lights one action', () => {
@@ -168,20 +256,22 @@ describe('TeamMemberCard', () => {
       );
       const card = cardOf(container);
 
-      // Scoped to the attribution BY NAME. A bare `has-[button:hover]` would be
-      // true everywhere on the card, because the name button's `after:` overlay
-      // covers the whole tile and a pseudo-element hit-tests as its own
+      // Scoped to the ASIDES by their shared marker. A bare `has-[button:hover]`
+      // would be true everywhere on the card, because the name button's `after:`
+      // overlay covers the whole tile and a pseudo-element hit-tests as its own
       // element — the lift would then never fire at all.
       expect(card.className).not.toContain('has-[button:hover]');
-      expect(card.className).toContain('has-[[data-slot=team-member-owner]:hover]:translate-y-0');
+      expect(card.className).toContain('has-[[data-card-aside]:hover]:translate-y-0');
       expect(card.className).toContain(
-        'has-[[data-slot=team-member-owner]:hover]:[--identity-border-strength:0%]'
+        'has-[[data-card-aside]:hover]:[--identity-border-strength:0%]'
       );
-      // A keyboard reaching the attribution calms the card the same way.
-      expect(card.className).toContain(
-        'has-[[data-slot=team-member-owner]:focus-visible]:translate-y-0'
+      // A keyboard reaching an aside calms the card the same way.
+      expect(card.className).toContain('has-[[data-card-aside]:focus-visible]:translate-y-0');
+      // And the attribution is one: a rule keyed on a marker nothing carries
+      // would pass this assertion and stand down for nothing (DOR-1778).
+      expect(container.querySelector('[data-slot="team-member-owner"]')).toHaveAttribute(
+        'data-card-aside'
       );
-      expect(container.querySelector('[data-slot="team-member-owner"]')).not.toBeNull();
     });
 
     it('answers a keyboard on the attribution exactly as it answers a mouse', () => {
@@ -364,10 +454,10 @@ describe('TeamMemberCard', () => {
       const card = cardOf(container);
 
       expect(card.className).toContain(
-        '[&:has([data-slot=team-member-owner]:hover)_[data-slot=identity-badge]]:rotate-0'
+        '[&:has([data-card-aside]:hover)_[data-slot=identity-badge]]:rotate-0'
       );
       expect(card.className).toContain(
-        '[&:has([data-slot=team-member-owner]:focus-visible)_[data-slot=identity-badge]]:rotate-0'
+        '[&:has([data-card-aside]:focus-visible)_[data-slot=identity-badge]]:rotate-0'
       );
     });
 
@@ -437,5 +527,39 @@ describe('TeamRosterGrid cluster header', () => {
     // it losing the photo loses it for the whole cluster.
     const images = Array.from(document.querySelectorAll('img'));
     expect(images.some((img) => img.getAttribute('src') === PHOTO)).toBe(true);
+  });
+
+  it('lands a claim’s pending and refused state on that row only (DOR-1778)', () => {
+    // One mutation serves the whole grid, so the state has to arrive as an id.
+    // A boolean would grey out every control on the page because one of them
+    // was pressed, and would print one row's refusal under all of them.
+    const claimable = MOCK_TEAM_ROSTER.filter(
+      (member) => member.person?.linkedToYou !== undefined
+    ).map((member, index) => ({ ...member, id: `person-elsewhere-${index}` }));
+    const two = [claimable[0]!, { ...claimable[0]!, id: 'person-elsewhere-1' }];
+
+    render(
+      <TeamRosterGrid
+        members={two}
+        roster={two}
+        grouped={false}
+        onSetLinkedToMe={() => {}}
+        identityLinkState={{
+          pendingId: two[0].id,
+          errorId: two[0].id,
+          errorMessage: 'Only the person who owns this install can say which accounts are theirs.',
+        }}
+      />
+    );
+
+    const cardOfMember = (id: string) =>
+      document.querySelector(`[data-member-id="${id}"]`) as HTMLElement;
+    const controlIn = (id: string) =>
+      cardOfMember(id).querySelector('[data-slot="team-member-link-to-me"]') as HTMLButtonElement;
+
+    expect(controlIn(two[0].id).disabled).toBe(true);
+    expect(controlIn(two[1].id).disabled).toBe(false);
+    expect(cardOfMember(two[0].id).querySelector('[role="alert"]')).not.toBeNull();
+    expect(cardOfMember(two[1].id).querySelector('[role="alert"]')).toBeNull();
   });
 });
