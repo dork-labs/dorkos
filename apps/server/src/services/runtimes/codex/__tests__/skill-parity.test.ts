@@ -13,7 +13,9 @@
  *
  * So this test stages a real repo, runs the REAL `project()` + `applyPlan()`
  * from `@dorkos/harness` to put the plugin projections on disk, and then holds
- * both readers against what a bare `codex` read would enumerate.
+ * both readers against what a bare `codex` read would enumerate — each minus
+ * only the invocation filter it documents, so the assertion proves parity
+ * rather than being satisfiable by echoing the directory listing back.
  *
  * @vitest-environment node
  */
@@ -83,21 +85,26 @@ function readAgentsSkillsAsCodexWould(root: string): CodexSkill[] {
   return found.sort((a, b) => a.dir.localeCompare(b.dir));
 }
 
-/** Write a `SKILL.md` under `dir`, creating the directory. */
-function writeSkillMd(dir: string, name: string, description: string): void {
+/**
+ * Write a `SKILL.md` under `dir`, creating the directory. Extra frontmatter
+ * lines (e.g. `user-invocable: false`) are appended verbatim.
+ */
+function writeSkillMd(dir: string, name: string, description: string, extraFrontmatter = ''): void {
   mkdirSync(dir, { recursive: true });
   writeFileSync(
     join(dir, 'SKILL.md'),
-    `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n\nBody of ${name}.\n`,
+    `---\nname: ${name}\ndescription: ${description}\n${extraFrontmatter}---\n\n# ${name}\n\nBody of ${name}.\n`,
     'utf-8'
   );
 }
 
 /**
- * Stage a repo the way a real one looks after `dorkos harness sync`: two
- * authored skills as plain directories, a third authored skill whose source is
- * a symlink into a folder outside `.agents/`, and one project-scoped
- * marketplace plugin carrying two skills of its own.
+ * Stage a repo the way a real one looks after `dorkos harness sync`: two plain
+ * authored skill directories, a third authored skill whose source is a symlink
+ * into a folder outside `.agents/`, one project-scoped marketplace plugin
+ * carrying two skills of its own, and one skill for each reader's own
+ * documented filter — so an assertion cannot pass by echoing the raw directory
+ * listing back.
  */
 function stageRepo(): string {
   const root = mkdtempSync(join(tmpdir(), 'codex-parity-'));
@@ -111,6 +118,24 @@ function stageRepo(): string {
 
   writeSkillMd(join(root, '.agents', 'skills', 'deploy'), 'deploy', 'Ship the app');
   writeSkillMd(join(root, '.agents', 'skills', 'analyze'), 'analyze', 'Analyze the codebase');
+
+  // One skill per reader's filter. `user-invocable: false` means "the model may
+  // load this, a person should never see it in a `/` menu", so the palette hides
+  // it and the model-facing resource keeps it. `disable-model-invocation: true`
+  // is the mirror image: person-only, which is exactly what a slash palette is
+  // for, so the palette keeps it and the model-facing list omits it.
+  writeSkillMd(
+    join(root, '.agents', 'skills', 'house-style'),
+    'house-style',
+    'Background knowledge',
+    'user-invocable: false\n'
+  );
+  writeSkillMd(
+    join(root, '.agents', 'skills', 'release-notes'),
+    'release-notes',
+    'Cut release notes',
+    'disable-model-invocation: true\n'
+  );
 
   // The linked authored skill: real directory outside `.agents/`, linked in.
   writeSkillMd(join(root, 'vault', 'notes'), 'notes', 'Take notes in the vault');
@@ -177,20 +202,22 @@ describe('Codex skill parity (J-15)', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('gives the DorkOS palette and dorkos://skills exactly what a bare codex sees', async () => {
+  it('gives each reader the whole .agents/skills directory, minus only its own documented filter', async () => {
     const asCodexSees = readAgentsSkillsAsCodexWould(root);
 
     // First: the fixture really is the interesting shape. Two plain authored
-    // dirs, one symlinked authored source, two projected plugin skills — a
-    // count, not a lower bound, so a projection that stopped happening reddens
-    // here rather than quietly shrinking the subject of the two assertions
-    // below.
+    // dirs, one symlinked authored source, two projected plugin skills, and one
+    // skill per reader filter — a count, not a lower bound, so a projection that
+    // stopped happening reddens here rather than quietly shrinking the subject
+    // of every assertion below.
     expect(asCodexSees.map((s) => s.dir)).toEqual([
       'acme__publish',
       'acme__rollback',
       'analyze',
       'deploy',
+      'house-style',
       'notes',
+      'release-notes',
     ]);
 
     // The projected plugin skills keep the plugin's own frontmatter `name`,
@@ -200,10 +227,21 @@ describe('Codex skill parity (J-15)', () => {
     expect(asCodexSees.find((s) => s.dir === 'acme__publish')?.name).toBe('publish');
     expect(asCodexSees.find((s) => s.dir === 'notes')?.name).toBe('notes');
 
-    const expected = asCodexSees.map((s) => s.dir);
-    expect(scanSkillCommands(root).map((c) => c.command)).toEqual(expected);
+    const onDisk = asCodexSees.map((s) => s.dir);
 
+    // The palette: everything Codex reads, minus the one skill its author hid
+    // from a `/` menu. Nothing else is subtracted — in particular the two
+    // `acme__*` projections and the symlinked `notes` are all present, which is
+    // the parity claim (DOR-1844 made three of these seven visible).
+    expect(scanSkillCommands(root).map((c) => c.command)).toEqual(
+      onDisk.filter((d) => d !== 'house-style')
+    );
+
+    // The MCP resource: everything Codex reads, minus the one skill its author
+    // told the model not to reach for on its own. Different filter, same
+    // directory — and `release-notes`, which the palette keeps, is the proof
+    // that neither list is just the raw directory echoed back.
     client = await connect(root);
-    expect(await listedSkillNames(client)).toEqual(expected);
+    expect(await listedSkillNames(client)).toEqual(onDisk.filter((d) => d !== 'release-notes'));
   });
 });

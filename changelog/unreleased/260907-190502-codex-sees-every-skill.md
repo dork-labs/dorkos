@@ -2,6 +2,7 @@
 covers:
   - 'fix(harness): a linked-in skill is a skill, and `__` alone is not a projection (DOR-1844)'
   - 'fix(server): the Codex palette and dorkos://skills show what Codex reads (DOR-1844)'
+  - "fix(harness): a package's skill dir may not be a symlink out of the package (DOR-1844)"
 ---
 
 ### Fixed
