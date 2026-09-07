@@ -61,8 +61,10 @@ emit, not a quiet substitute for one that was.
 ```
 
 Stamps are **per lens**, never one global stamp: a lens skipped for six weeks still sees six
-weeks of change when it next runs. The rotation cursor names the next whole-tree lens due, in the
-charter's Lens classes order. Write a lens's stamp only when that lens actually ran, and only
+weeks of change when it next runs. A whole-tree lens's `lastAuditedCommit` records recency only —
+when it last ran — and is never used as a diff base, since whole-tree lenses cannot be
+diff-scoped (§2). The rotation cursor names the next whole-tree lens due, in the charter's Lens
+classes order. Write a lens's stamp only when that lens actually ran, and only
 after its findings are recorded; a lens that did not run keeps its old entry untouched. Creating
 `stamps.json` for the first time sets `rotation.cursor` to the **first** whole-tree lens in that
 order (`cva`), since nothing has run yet and the first one is therefore the one due.
@@ -134,8 +136,9 @@ app, driven at desktop and phone widths.
 `responsive`, `states`, `motion`, `clutter`, and `tokens` (for theme drift and anything the
 cascade decides at render time). The command fills the auditor prompt's `{{#BROWSER_LEG}}` block
 for exactly those, on every scope, **whenever the profile supplies a dev command and a free
-port** — and for no other lens, since the rest read structure a browser cannot adjudicate. No dev
-command in the profile means the degrade rule below applies to all five. **No profile at all is
+port** — and for no other lens, since the rest read structure a browser cannot adjudicate. The leg
+may be skipped even then when nothing in scope is browser-adjudicable, provided the report says
+so. No dev command in the profile means the degrade rule below applies to all five. **No profile at all is
 different**: when the scope includes one of these five lenses, capture the profile now (or ask)
 rather than silently skipping the browser leg — the same rule as §1's emission case, because a
 dropped browser leg here is exactly the kind of thing a missing profile must not quietly cause.
@@ -209,7 +212,8 @@ commands point at it rather than restating it.
 - Every `/ui-audit:run` and `/ui-audit:pulse` emission creates one per-run **`type/meta` item,
   "promotion decision for audit run `<date>`"**, and every emitted finding-batch item carries a
   **`blockedBy` edge to it**. A `source/audit` label rides along as **provenance only**, and is
-  explicitly not a fence.
+  explicitly not a fence. A run that emits no new batches — everything found was a dedup refresh
+  of an already-filed item — emits nothing and creates no meta item.
 - **Never write `agent/*` labels.** Those are the workflow engine's durable claim labels;
   borrowing them makes its own loops treat audit items as orphaned work to re-adopt, which
   inverts the fence. In-progress visibility uses the plugin-namespace label
