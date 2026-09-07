@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { ArrowUp, CornerDownLeft, Square, Clock, Check, X, Loader2 } from 'lucide-react';
+import { ArrowUp, CornerDownLeft, Square, Clock, Check, X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { Spinner } from '@/layers/shared/ui';
 import { DispositionMenu } from './DispositionMenu';
@@ -122,10 +122,11 @@ const BUTTON_ICON: Record<ButtonState, React.ElementType> = {
   update: Check,
   cancel: X,
   // Keeps spinning while it waits — the upload's progress and its off switch are
-  // the same control, so neither costs the other its place.
-  'cancel-upload': Loader2,
-  dispatching: Loader2,
-  stopping: Loader2,
+  // the same control, so neither costs the other its place. `Spinner` carries
+  // its own rotation, so the use site below adds nothing.
+  'cancel-upload': Spinner,
+  dispatching: Spinner,
+  stopping: Spinner,
 };
 
 function resolveButtonState(
@@ -331,12 +332,7 @@ export function InputActionButton({
             )}
             aria-label={BUTTON_CONFIG[buttonState].label}
           >
-            <ActionIcon
-              className={cn(
-                'size-(--size-icon-sm)',
-                buttonState === 'cancel-upload' && 'animate-spin'
-              )}
-            />
+            <ActionIcon className="size-(--size-icon-sm)" />
           </motion.button>
         ) : (
           <div aria-hidden="true" data-testid="action-slot-spacer" className="p-1.5 max-md:p-2">

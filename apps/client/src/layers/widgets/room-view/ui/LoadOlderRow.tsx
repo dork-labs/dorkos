@@ -3,8 +3,7 @@
  *
  * @module widgets/room-view/ui/LoadOlderRow
  */
-import { Loader2 } from 'lucide-react';
-import { Button } from '@/layers/shared/ui';
+import { Button, Spinner } from '@/layers/shared/ui';
 
 interface LoadOlderRowProps {
   /** True while the page is on its way. */
@@ -46,7 +45,7 @@ export function LoadOlderRow({ loading, onLoad }: LoadOlderRowProps) {
         data-testid="room-load-older"
         className="text-muted-foreground hover:text-foreground h-7 gap-2 text-xs"
       >
-        {loading && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
+        {loading && <Spinner size="xs" />}
         {loading ? 'Loading older messages…' : 'Older messages'}
       </Button>
     </div>

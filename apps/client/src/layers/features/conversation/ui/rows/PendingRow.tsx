@@ -10,8 +10,9 @@
  */
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { File as FileIcon, Loader2, TriangleAlert } from 'lucide-react';
+import { File as FileIcon, TriangleAlert } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
+import { Spinner } from '@/layers/shared/ui';
 import {
   findLandedEcho,
   PENDING_SLOW_MS,
@@ -181,7 +182,7 @@ export function PendingRow({ post, viewerAuthorId }: PendingRowProps) {
         </div>
       ) : (
         <p className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
-          <Loader2 aria-hidden className="size-3 shrink-0 motion-safe:animate-spin" />
+          <Spinner size="xs" className="shrink-0 motion-reduce:animate-none" />
           <span>{slow ? 'Still sending…' : 'Sending…'}</span>
           {slow && (
             <button

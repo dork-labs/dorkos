@@ -70,7 +70,12 @@
                     {
                       "kind": "element",
                       "tag": "svg",
-                      "classes": ["lucide", "lucide-file", "size-3", "text-muted-foreground"],
+                      "classes": [
+                        "lucide",
+                        "lucide-file",
+                        "size-(--size-icon-xs)",
+                        "text-muted-foreground"
+                      ],
                       "attrs": {
                         "aria-hidden": "true",
                         "fill": "none",
@@ -198,7 +203,7 @@
                         "lucide",
                         "lucide-circle-alert",
                         "shrink-0",
-                        "size-3",
+                        "size-(--size-icon-xs)",
                         "text-destructive"
                       ],
                       "attrs": {

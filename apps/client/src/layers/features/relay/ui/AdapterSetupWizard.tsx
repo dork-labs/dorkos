@@ -9,7 +9,8 @@ import {
   DialogFooter,
 } from '@/layers/shared/ui/dialog';
 import { Button } from '@/layers/shared/ui/button';
-import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
+import { Spinner } from '@/layers/shared/ui';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 import type { AdapterManifest, CatalogInstance } from '@dorkos/shared/relay-schemas';
 import { StepIndicator } from './wizard/StepIndicator';
 import { ConfigureStep } from './wizard/ConfigureStep';
@@ -204,7 +205,7 @@ export function AdapterSetupWizard({
               )}
               {step === 'confirm' && (
                 <Button onClick={handleSave} disabled={isSaving}>
-                  {isSaving && <Loader2 className="mr-2 size-4 animate-spin" />}
+                  {isSaving && <Spinner className="mr-2" />}
                   {isEditMode ? 'Save changes' : 'Connect'}
                 </Button>
               )}

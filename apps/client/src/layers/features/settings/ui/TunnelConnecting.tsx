@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Check, Loader2 } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
+import { Spinner } from '@/layers/shared/ui';
 
 /** Time after mount at which each step becomes active (milliseconds). */
 const STEP_THRESHOLDS_MS = [0, 500, 1200] as const;
@@ -91,7 +92,10 @@ export function TunnelConnecting() {
               isReached ? 'opacity-100' : 'opacity-0'
             )}
           >
-            <span className="flex size-4 shrink-0 items-center justify-center">
+            {/* The slot is the icon scale, not a literal: below 768px the scale
+                grows to 1.25 and a 16px box would clip the 20px glyph inside
+                it. Check and Spinner swap in here, so all three agree. */}
+            <span className="flex size-(--size-icon-sm) shrink-0 items-center justify-center">
               <AnimatePresence mode="wait">
                 {isDone ? (
                   <motion.span
@@ -103,7 +107,7 @@ export function TunnelConnecting() {
                     transition={checkmarkTransition}
                     className="inline-flex"
                   >
-                    <Check className="text-muted-foreground size-4" />
+                    <Check className="text-muted-foreground size-(--size-icon-sm)" />
                   </motion.span>
                 ) : isActive ? (
                   <motion.span
@@ -114,7 +118,7 @@ export function TunnelConnecting() {
                     transition={{ duration: 0.15 }}
                     className="inline-flex"
                   >
-                    <Loader2 className="text-muted-foreground size-4 animate-spin" />
+                    <Spinner className="text-muted-foreground" />
                   </motion.span>
                 ) : null}
               </AnimatePresence>

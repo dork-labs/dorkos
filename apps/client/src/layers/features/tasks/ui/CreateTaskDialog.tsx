@@ -27,12 +27,8 @@ import {
 } from '@/layers/shared/ui';
 import type { Task } from '@dorkos/shared/types';
 import { TaskTemplateGallery } from './TaskTemplateGallery';
-import {
-  ScheduleForm,
-  buildFormValues,
-  type ScheduleFormValues,
-  type DialogStep,
-} from './TaskFormInner';
+import { ScheduleForm } from './TaskFormInner';
+import { buildFormValues, type ScheduleFormValues, type DialogStep } from './task-form-values';
 import type { TaskAgentRoster } from './TaskAgentField';
 import { useAgentRuntime } from './use-task-execution';
 

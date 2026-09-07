@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Loader2 } from 'lucide-react';
-import { Button } from '@/layers/shared/ui';
+import { Button, Spinner } from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
 
 const POLL_INTERVAL_MS = 1500;
@@ -84,7 +83,7 @@ export function ServerRestartOverlay({ open, onDismiss }: ServerRestartOverlayPr
           </>
         ) : (
           <>
-            <Loader2 className="text-muted-foreground size-8 animate-spin" />
+            <Spinner size="lg" className="text-muted-foreground" />
             <p className="text-foreground text-sm font-medium">Restarting server…</p>
             <p className="text-muted-foreground text-sm">Waiting for server to come back…</p>
           </>

@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Loader2, File as FileIcon, AlertCircle } from 'lucide-react';
+import { X, File as FileIcon, AlertCircle } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
+import { Spinner } from '@/layers/shared/ui';
 import type { PendingFile } from '../model/pending-file';
 
 /** Check if a File is an image by MIME type. */
@@ -94,13 +95,13 @@ export function ComposerAttachments({
               )}
             >
               {file.status === 'uploading' ? (
-                <Loader2 className="text-muted-foreground size-3 animate-spin" />
+                <Spinner size="xs" className="text-muted-foreground" />
               ) : failed ? (
-                <AlertCircle className="text-destructive size-3 shrink-0" />
+                <AlertCircle className="text-destructive size-(--size-icon-xs) shrink-0" />
               ) : thumbUrl ? (
                 <img src={thumbUrl} alt="" className="size-5 shrink-0 rounded object-cover" />
               ) : (
-                <FileIcon className="text-muted-foreground size-3" />
+                <FileIcon className="text-muted-foreground size-(--size-icon-xs)" />
               )}
 
               <span className="max-w-32 truncate">{file.file.name}</span>

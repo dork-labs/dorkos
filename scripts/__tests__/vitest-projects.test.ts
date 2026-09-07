@@ -118,8 +118,8 @@ function configPathFor(project: string): string {
 }
 
 /**
- * The source text of `test.retry` in a config's `defineConfig({ … })` argument,
- * or `undefined` when the config does not set it.
+ * The source text of one `test.*` property in a config's `defineConfig({ … })`
+ * argument, or `undefined` when the config does not set it.
  *
  * Read from the TypeScript AST rather than by importing the module, because the
  * `harness` job in `.github/workflows/scripts-test.yml` runs this suite with NO
@@ -143,8 +143,9 @@ function configPathFor(project: string): string {
  * second one is fixed by editing this file.
  *
  * @param configPath - Absolute path of the project's vitest/vite config file.
+ * @param property - The `test.*` property to read, e.g. `retry` or `name`.
  */
-function retryExpression(configPath: string): string | undefined {
+function testProperty(configPath: string, property: string): string | undefined {
   const source = ts.createSourceFile(
     configPath,
     readFileSync(configPath, 'utf8'),
@@ -186,7 +187,7 @@ function retryExpression(configPath: string): string | undefined {
       if (
         ts.isPropertyAssignment(testProp) &&
         ts.isIdentifier(testProp.name) &&
-        testProp.name.text === 'retry'
+        testProp.name.text === property
       ) {
         found = testProp.initializer.getText(source).replace(/\s+/g, ' ');
       }
@@ -217,7 +218,7 @@ function retryExpression(configPath: string): string | undefined {
 describe('VITEST_RETRY reaches every registered project', () => {
   for (const project of rootConfig.test?.projects as string[]) {
     it(`${project} wires the gate's retry budget`, () => {
-      expect(retryExpression(configPathFor(project))).toBe(CANONICAL_RETRY);
+      expect(testProperty(configPathFor(project), 'retry')).toBe(CANONICAL_RETRY);
     });
   }
 
@@ -241,5 +242,34 @@ describe('VITEST_RETRY reaches every registered project', () => {
     expect(withoutBudget.default.test?.retry).toBe(0);
 
     vi.unstubAllEnvs();
+  });
+});
+
+/**
+ * `--project <name>` has to match the name a reader would guess.
+ *
+ * The root config registers its projects by PATH, and a project that declares no
+ * name of its own falls back to the one in its `package.json` — so for most of
+ * this repo's life the obvious `pnpm vitest run --project client` matched
+ * nothing and only `--project @dorkos/client` worked (DOR-1822). Vitest answers
+ * a filter that matches no project with a startup error and a non-zero exit, so
+ * this was never the false green it was first reported as; it is the DOR-670
+ * failure again, where the runner's complaint reads as a broken test rather than
+ * a name that was never registered.
+ *
+ * The names are the directory basenames, which is what the root config's own
+ * path entries already say out loud, and `scripts` had wired its own that way
+ * before any of the others.
+ */
+describe('every registered project answers to its directory name', () => {
+  for (const project of rootConfig.test?.projects as string[]) {
+    it(`${project} is reachable as --project ${path.basename(project)}`, () => {
+      expect(testProperty(configPathFor(project), 'name')).toBe(`'${path.basename(project)}'`);
+    });
+  }
+
+  it('the names are unique, so no filter is ambiguous', () => {
+    const names = (rootConfig.test?.projects as string[]).map((p) => path.basename(p));
+    expect(new Set(names).size).toBe(names.length);
   });
 });

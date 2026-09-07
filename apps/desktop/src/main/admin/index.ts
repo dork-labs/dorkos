@@ -13,7 +13,7 @@ import { isOwnOrigin } from '../window-manager';
  * "Restart Server" and "Reset All Data", done by the supervisor that owns the
  * server rather than by the server itself (DOR-542).
  *
- * Settings → Advanced offers both, and in the desktop app both were dead. They
+ * Settings → Danger zone offers both, and in the desktop app both were dead. They
  * go out over `POST /api/admin/restart` and `POST /api/admin/reset`, which end
  * the server process and count on something restarting it — true for the CLI,
  * which re-execs itself, and false here: inside an Electron `UtilityProcess`

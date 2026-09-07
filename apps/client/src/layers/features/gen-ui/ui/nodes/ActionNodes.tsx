@@ -1,6 +1,6 @@
 import { useState, type MouseEvent } from 'react';
 import { motion } from 'motion/react';
-import { Check, Loader2 } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { toast } from 'sonner';
 import type { WidgetAction, WidgetNode } from '@dorkos/shared/ui-widget';
 import {
@@ -12,6 +12,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Spinner,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -96,8 +97,8 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
         sent && 'opacity-70'
       )}
     >
-      {pending && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
-      {sent && <Check className="size-3.5" aria-hidden />}
+      {pending && <Spinner size="xs" />}
+      {sent && <Check className="size-(--size-icon-xs)" aria-hidden />}
       {label}
     </Button>
   );

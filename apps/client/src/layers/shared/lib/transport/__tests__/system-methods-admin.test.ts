@@ -4,7 +4,7 @@
  * is shown when the server says no (DOR-542).
  *
  * These two methods used to do `throw new Error(await res.text())`, and Settings
- * → Advanced hands that straight to `toast.error`. So the desktop app's 409 —
+ * → Danger zone hands that straight to `toast.error`. So the desktop app's 409 —
  * the one explaining that the app starts and stops the server for you — arrived
  * as the entire raw JSON body, braces and error code and all, with the sentence
  * buried inside it. Nothing above this seam can tell the difference between a

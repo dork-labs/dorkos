@@ -584,7 +584,7 @@ export function createSystemMethods(baseUrl: string) {
 
     // Both go through `fetchJSON` rather than a bare `fetch` so a refusal
     // arrives as the sentence the server wrote. They used to throw
-    // `await res.text()`, and the Advanced tab handed that straight to
+    // `await res.text()`, and the Danger zone tab handed that straight to
     // `toast.error` — so a person clicking Restart in the desktop app was shown
     // the entire raw 409 body, braces and error code included, with the
     // explanation buried inside it. `fetchJSON` reads `error` off the body and

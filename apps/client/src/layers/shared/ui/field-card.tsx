@@ -69,6 +69,15 @@ interface CollapsibleFieldCardProps {
  * distances from the shared right edge (review nit: measured 34px apart at 1440px).
  * Out here, both chevrons sit at the same `pr-3` from the card's own edge every time,
  * present or not.
+ *
+ * Moving it out cost it its click, though: it became a glyph beside the button
+ * rather than part of it, and a chevron that does not answer a click is the one
+ * affordance in this card that lies (DOR-1815). It is its own `CollapsibleTrigger`
+ * now — a second one, which Radix allows — carrying `aria-hidden` and `tabIndex={-1}`
+ * so only the pointer gains anything. The keyboard reaches exactly one toggle and a
+ * screen reader is told about exactly one, which is what they had before. It also
+ * refuses `mousedown`'s default, so a click on it never parks focus on a node that
+ * has been removed from the accessibility tree.
  */
 function CollapsibleFieldCard({
   open,
@@ -94,12 +103,25 @@ function CollapsibleFieldCard({
           </CollapsibleTrigger>
           <div className="flex shrink-0 items-center gap-1 pr-3">
             {action}
-            <ChevronDown
-              className={cn(
-                'text-muted-foreground size-4 transition-transform',
-                !open && '-rotate-90'
-              )}
-            />
+            <CollapsibleTrigger
+              aria-hidden
+              tabIndex={-1}
+              // A button removed from the accessibility tree must not end up
+              // holding focus, and a pointer press focuses its target on
+              // mousedown. Refusing that default keeps focus wherever it
+              // already was — the click still fires, since preventing mousedown
+              // does not cancel the click that follows it.
+              onMouseDown={(event) => event.preventDefault()}
+              data-testid="collapsible-field-card-chevron"
+              className="flex items-center py-3"
+            >
+              <ChevronDown
+                className={cn(
+                  'text-muted-foreground size-4 transition-transform',
+                  !open && '-rotate-90'
+                )}
+              />
+            </CollapsibleTrigger>
           </div>
         </div>
         <CollapsibleContent>

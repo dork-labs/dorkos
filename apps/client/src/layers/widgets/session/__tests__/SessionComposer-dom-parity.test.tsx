@@ -32,6 +32,24 @@
  * env(safe-area-inset-bottom))`), so it is the one token whose loss changes the
  * rendered composer on a notched phone and NOTHING else in the tree — no
  * attribute, no element, no other class.
+ *
+ * ## The attachment-chip amendment, and exactly what it was (2026-09-07)
+ *
+ * The two `failed-attachment` baselines — flag-off and flag-on — carry ONE
+ * token swapped per icon: the file glyph and the alert glyph moved from a
+ * literal `size-3` to `size-(--size-icon-xs)` (DOR-1811). They sit in the same
+ * slot as a `Spinner` that already rode the icon scale, and the scale is 1.25
+ * below 768px, so on a phone the uploading chip drew a 15px spinner and the
+ * settled chip a 12px glyph.
+ *
+ * Applied as a TWO-TOKEN edit per file rather than by re-running the recorder,
+ * for the reason {@link QUEUE_PANEL_SUBTREE} gives: `DORKOS_RECORD_DOM_BASELINE=1`
+ * would also rewrite the queue-panel subtree these carry stale on purpose. The
+ * measured proof that nothing else moved is the diff these files produced
+ * before the edit — four class-token entries on two `svg` nodes, no element, no
+ * attribute, no text. The `lucide-x` remove buttons in the same chips are still
+ * `size-3`, because they were not part of the swap and must not silently become
+ * part of it.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import React, { createRef } from 'react';

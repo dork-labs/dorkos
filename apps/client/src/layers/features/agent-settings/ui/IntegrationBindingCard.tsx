@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { FlaskConical, Loader2, MoreHorizontal, Pause, Play } from 'lucide-react';
+import { FlaskConical, MoreHorizontal, Pause, Play } from 'lucide-react';
 import {
   Badge,
   Button,
+  Spinner,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -214,9 +215,9 @@ export function IntegrationBindingCard({
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={handleTest} disabled={isTestPending || isPaused}>
               {isTestPending ? (
-                <Loader2 className="mr-2 size-4 animate-spin" />
+                <Spinner className="mr-2" />
               ) : (
-                <FlaskConical className="mr-2 size-4" />
+                <FlaskConical className="mr-2 size-(--size-icon-sm)" />
               )}
               Send test
             </DropdownMenuItem>

@@ -1,57 +1,37 @@
 /**
- * Pin suite for `check-copy-spec-drift.ts`, the DOR-1647 copy/spec guard.
+ * Pin suite for `check-copy-spec-drift.ts`, the DOR-1647 copy/spec guard — the
+ * RULES half.
  *
  * WHY THIS EXISTS. The guard's whole value is a threshold judgement — which
- * runs of text count as copy, when a rewrite counts as a deletion, and when an
- * unrelated string elsewhere in the tree is allowed to say "no, that still
- * renders". Drift in either direction fails silently: loosened, it stops
- * catching the queue ejections it was built for; tightened, it reds a correct
- * PR, which stops `merge-tail.yml` arming auto-merge and teaches everyone to
- * ignore it. Same argument `check-vocab-gate.test.ts` beside this file makes,
- * at the same stakes.
+ * runs of text count as copy, how a regex literal is read, which of two
+ * overlapping runs contains the other, and when a string elsewhere in the tree
+ * is allowed to say "no, that still renders". Drift in either direction fails
+ * silently: loosened, it stops catching the queue ejections it was built for;
+ * tightened, it reds a correct PR, which stops `merge-tail.yml` arming
+ * auto-merge and teaches everyone to ignore it. Same argument
+ * `check-vocab-gate.test.ts` beside this file makes, at the same stakes.
  *
- * THE TWO REGRESSIONS ARE FIXTURES, NOT PROSE. `catches the real 2026-08-31
- * regressions` reproduces #1397's actual shapes — the interpolated
- * `Compacted context — ${pre} → ${post} tokens` in a bare `return`, and the
- * `Connected — ${n} tool…` template whose spec asserts a REGEX — because those
- * two are what the design was calibrated against and a rewrite that quietly
- * stops catching them is the only failure that matters.
- *
- * The last suite runs the real script against a real throwaway git repository:
- * a base commit, a copy rewrite committed on top, and `runCopySpecGuard` doing
- * its own `git diff`/`git show`. The classification tests would all still pass
- * if the git plumbing addressed the wrong side of the diff, so the plumbing is
- * executed rather than mocked.
+ * `check-copy-spec-drift-replay.test.ts` holds the other half: #1397's and
+ * #1549's real shapes replayed end to end, and the whole script driven through
+ * a throwaway git checkout. Every threshold asserted here is calibrated on an
+ * incident replayed there, so the two files are read together.
  */
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
+  classifyOverlap,
+  collapseByPosition,
   dropSupported,
   extractChunks,
   isProseChunk,
   isScannablePath,
   matchSpecStrings,
   normalizeCopy,
+  regexLiteralSource,
   removedChunks,
-  runCopySpecGuard,
+  spans,
   type Chunk,
+  type Finding,
 } from '../check-copy-spec-drift.ts';
-
-const tempDirs: string[] = [];
-
-/** A fresh temp directory, tracked for cleanup after the test. */
-function makeTempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'copy-spec-drift-'));
-  tempDirs.push(dir);
-  return dir;
-}
-
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
 
 /** Chunk texts only, for assertions that do not care about position. */
 function texts(chunks: Chunk[]): string[] {
@@ -164,6 +144,100 @@ describe('extractChunks', () => {
     const chunks = extractChunks('Banner.tsx', "const a = 1;\nconst b = 'Sign in to continue';");
     expect(chunks[0]?.line).toBe(2);
   });
+
+  it('strips the anchors and carries the case flag off a regex locator', () => {
+    // #1549's settings break. `^` never appears in the component's string and
+    // the `i` made the casing irrelevant to Playwright — between them, the two
+    // characters made this assertion invisible to the gate.
+    const chunks = extractChunks(
+      'spec.ts',
+      "await expect(panel.getByRole('button', { name: /^working directory/i })).toBeVisible();",
+      { includeRegex: true }
+    );
+    expect(chunks).toEqual([
+      { file: 'spec.ts', line: 1, text: 'working directory', ignoreCase: true },
+    ]);
+  });
+
+  it('leaves a case-sensitive regex unflagged, so app copy is compared verbatim', () => {
+    const chunks = extractChunks(
+      'spec.ts',
+      'const chip = page.getByRole("button", { name: /live sessions — open the switcher/ });',
+      { includeRegex: true }
+    );
+    expect(chunks[0]?.ignoreCase).toBeUndefined();
+  });
+});
+
+describe('regexLiteralSource', () => {
+  it('strips both anchors and reports the case flag', () => {
+    expect(regexLiteralSource('/^working directory$/i')).toEqual({
+      source: 'working directory',
+      ignoreCase: true,
+    });
+  });
+
+  it('keeps an escaped dollar, which is copy rather than an anchor', () => {
+    expect(regexLiteralSource('/costs \\$/').source).toBe('costs \\$');
+  });
+
+  it('strips the anchor after an escaped backslash', () => {
+    expect(regexLiteralSource('/a path\\\\$/').source).toBe('a path\\\\');
+  });
+
+  it('reports no case folding for a bare pattern', () => {
+    expect(regexLiteralSource('/Connected — 2 tools/')).toEqual({
+      source: 'Connected — 2 tools',
+      ignoreCase: false,
+    });
+  });
+});
+
+describe('spans', () => {
+  it('folds case only when asked', () => {
+    expect(spans('Working Directory', 'working directory')).toBe(false);
+    expect(spans('Working Directory', 'working directory', true)).toBe(true);
+  });
+});
+
+describe('classifyOverlap', () => {
+  it('reads a spec string that is broader than the removed run', () => {
+    expect(classifyOverlap('Compacted context — 51.2k tokens', 'Compacted context —', false)).toBe(
+      'assertion-spans-removed'
+    );
+  });
+
+  it('reads a spec string that sits INSIDE the removed run', () => {
+    // The session-switcher break: the component's chunk carries a trailing
+    // ` for`, so the spec's regex is the shorter of the two and the original
+    // one-directional containment never fired.
+    expect(
+      classifyOverlap(
+        'live sessions — open the session switcher',
+        'live sessions — open the session switcher for',
+        false
+      )
+    ).toBe('removed-spans-assertion');
+  });
+
+  it('classifies a case-folded equality by the copy side, so a casing sweep is answerable', () => {
+    // Title Case → sentence case cannot break a `/…/i` locator, and only the
+    // `removed-spans-assertion` rule can see that the file still renders it.
+    expect(classifyOverlap('working directory', 'Working Directory', true)).toBe(
+      'removed-spans-assertion'
+    );
+  });
+
+  it('ignores a short spec string that merely happens to sit inside a long run', () => {
+    // `Send message`, a room composer button, inside the settings tool
+    // description `Send messages and check the inbox` — the one coincidence in
+    // #1549's 190 files, and 0.36 of the run it sits in.
+    expect(classifyOverlap('Send message', 'Send messages and check the inbox', false)).toBeNull();
+  });
+
+  it('says nothing when the two runs do not overlap', () => {
+    expect(classifyOverlap('Sign in to continue', 'Compacted context —', false)).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -173,6 +247,11 @@ describe('extractChunks', () => {
 /** Shorthand for a chunk at an arbitrary position. */
 function chunk(text: string, file = 'apps/client/src/Foo.tsx'): Chunk {
   return { file, line: 1, text };
+}
+
+/** Shorthand for a spec chunk that came from a `/…/i` regex. */
+function ciChunk(text: string, file = 'apps/e2e/tests/a.spec.ts'): Chunk {
+  return { file, line: 1, text, ignoreCase: true };
 }
 
 describe('removedChunks', () => {
@@ -215,9 +294,24 @@ describe('matchSpecStrings', () => {
     expect(findings).toHaveLength(1);
     expect(findings[0]?.specFile).toBe('apps/e2e/tests/chat/compaction.ts');
     expect(findings[0]?.removed).toBe('Compacted context —');
+    expect(findings[0]?.overlap).toBe('assertion-spans-removed');
   });
 
-  it('says nothing when no spec string spans the removed run', () => {
+  it('pairs a removed run with a spec string it CONTAINS, which is the #1549 shape', () => {
+    const findings = matchSpecStrings(
+      [chunk('live sessions — open the session switcher for')],
+      [
+        chunk(
+          'live sessions — open the session switcher',
+          'apps/e2e/tests/dashboard-sidebar/session-switcher.spec.ts'
+        ),
+      ]
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.overlap).toBe('removed-spans-assertion');
+  });
+
+  it('says nothing when no spec string overlaps the removed run', () => {
     expect(
       matchSpecStrings([chunk('Compacted context —')], [chunk('Some other assertion here')])
     ).toEqual([]);
@@ -243,168 +337,121 @@ describe('dropSupported', () => {
   it('keeps the finding when a longer HEAD run is unrelated to the spec string', () => {
     expect(dropSupported(finding, ['Something entirely different and long'])).toHaveLength(1);
   });
+
+  it('keeps the finding when the longer HEAD run does not cover the removed one', () => {
+    // #1549's presence break in one line: `TAKING_LONGER` is longer than the
+    // run that vanished and the spec string of course spans it, but it says
+    // nothing about the em dash that disappeared before it.
+    const presence = matchSpecStrings(
+      [chunk('still working —')],
+      [chunk('is still working — this is taking longer than usual', 'apps/e2e/tests/a.spec.ts')]
+    );
+    expect(dropSupported(presence, ['this is taking longer than usual'])).toHaveLength(1);
+  });
+
+  it('suppresses a spec string the removed run still spans, from its own file', () => {
+    const casing = matchSpecStrings(
+      [chunk('New Session', 'apps/client/src/palette.ts')],
+      [ciChunk('new session')]
+    );
+    expect(dropSupported(casing, [], [chunk('New session', 'apps/client/src/palette.ts')])).toEqual(
+      []
+    );
+  });
+
+  it('folds case on BOTH clauses, so copy that grew AND lowercased still suppresses', () => {
+    // The asymmetry this pins: one clause folded case and the other read the
+    // removed run verbatim, so a HEAD run that really did absorb the copy —
+    // `Working Directory` growing into `open the working directory picker`
+    // during a sentence-case sweep — failed the verbatim clause and the finding
+    // survived. A `/i` locator goes on matching that; reporting it is a false
+    // positive.
+    const insensitive = matchSpecStrings(
+      [chunk('Working Directory')],
+      [ciChunk('open the working directory picker now')]
+    );
+    expect(insensitive).toHaveLength(1);
+    expect(dropSupported(insensitive, ['open the working directory picker'])).toEqual([]);
+  });
+
+  it('will not let another changed file vouch for a spec string', () => {
+    // `Select a working directory to browse its files.` is a file-explorer
+    // empty state; the spec it would have silenced drives the Server tab.
+    const settings = matchSpecStrings(
+      [chunk('Working Directory', 'apps/client/src/ServerTab.tsx')],
+      [ciChunk('working directory')]
+    );
+    expect(
+      dropSupported(
+        settings,
+        [],
+        [
+          chunk(
+            'Select a working directory to browse its files.',
+            'apps/client/src/FileExplorer.tsx'
+          ),
+        ]
+      )
+    ).toHaveLength(1);
+  });
 });
 
-// ---------------------------------------------------------------------------
-// The two failures this gate was built for
-// ---------------------------------------------------------------------------
-
-describe('catches the real 2026-08-31 regressions', () => {
-  /** Run the pure pipeline the way `runCopySpecGuard` composes it. */
-  function guard(before: string, after: string, spec: string, corpus: string[] = []): number {
-    const removed = removedChunks(
-      extractChunks('apps/client/src/Card.tsx', before),
-      extractChunks('apps/client/src/Card.tsx', after)
-    );
-    const matched = matchSpecStrings(
-      removed,
-      extractChunks('apps/e2e/tests/x.spec.ts', spec, { includeRegex: true })
-    );
-    return dropSupported(matched, [
-      ...texts(extractChunks('apps/client/src/Card.tsx', after)),
-      ...corpus,
-    ]).length;
-  }
-
-  it('catches #1397 breaking compaction.ts (interpolated copy, string assertion)', () => {
-    expect(
-      guard(
-        'export function label(pre: string, post: string) {\n  return `Compacted context — ${pre} → ${post} tokens`;\n}',
-        'export function label(pre: string, post: string) {\n  return `Compacted context · ${pre} → ${post} tokens`;\n}',
-        "await expect(liveRow).toContainText('Compacted context — 51.2k → 4.2k tokens');"
-      )
-    ).toBe(1);
-  });
-
-  it('catches #1397 breaking mcp-oauth-signin.spec.ts (regex assertion)', () => {
-    expect(
-      guard(
-        'export function label(n: number) {\n  return `Connected — ${n} tool${n === 1 ? "" : "s"}.`;\n}',
-        'export function label(n: number) {\n  return `Connected · ${n} tool${n === 1 ? "" : "s"}.`;\n}',
-        'await expect(section.getByText(/Connected — 2 tools\\./)).toBeVisible();',
-        // The unrelated component that kept `Connected —` alive through the
-        // sweep. A corpus-wide presence test would suppress on this; the
-        // more-specific rule must not.
-        ['Connected —']
-      )
-    ).toBe(1);
-  });
-
-  it('stays quiet once the spec is updated in the same change', () => {
-    expect(
-      guard(
-        'export function label(pre: string, post: string) {\n  return `Compacted context — ${pre} → ${post} tokens`;\n}',
-        'export function label(pre: string, post: string) {\n  return `Compacted context · ${pre} → ${post} tokens`;\n}',
-        "await expect(liveRow).toContainText('Compacted context · 51.2k → 4.2k tokens');"
-      )
-    ).toBe(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// End to end, through real git
-// ---------------------------------------------------------------------------
-
-/** Write `contents` to `repo/relPath`, creating parent directories. */
-function write(repo: string, relPath: string, contents: string): void {
-  const absolute = join(repo, relPath);
-  mkdirSync(dirname(absolute), { recursive: true });
-  writeFileSync(absolute, contents);
-}
-
-/** Run git in `repo` with hooks and signing disabled. */
-function git(repo: string, ...args: string[]): string {
-  return execFileSync(
-    'git',
+describe('collapseByPosition', () => {
+  /** Two removed runs, both overlapping one assertion on one line. */
+  const findings: Finding[] = matchSpecStrings(
     [
-      '-c',
-      'core.hooksPath=',
-      '-c',
-      'commit.gpgsign=false',
-      '-c',
-      'user.name=t',
-      '-c',
-      'user.email=t@t',
-      ...args,
+      chunk('Select Working Directory', 'apps/client/src/DirectoryPicker.tsx'),
+      chunk('Working Directory', 'apps/client/src/ServerTab.tsx'),
     ],
-    { cwd: repo, encoding: 'utf8' }
+    [ciChunk('working directory', 'apps/e2e/tests/settings/settings-dialog.spec.ts')]
   );
-}
 
-describe('runCopySpecGuard — through a real git checkout', () => {
-  const COMPONENT = 'apps/client/src/CompactBoundaryRow.tsx';
-  const SPEC = 'apps/e2e/tests/chat/compaction.spec.ts';
-
-  /** A repo whose base commit renders and asserts the same copy. */
-  function seedRepo(): { repo: string; base: string } {
-    const repo = makeTempDir();
-    git(repo, 'init', '-b', 'main');
-    write(
-      repo,
-      COMPONENT,
-      'export function label(pre: string, post: string) {\n  return `Compacted context — ${pre} → ${post} tokens`;\n}\n'
-    );
-    write(
-      repo,
-      SPEC,
-      "test('shows the boundary', async () => {\n  await expect(row).toContainText('Compacted context — 51.2k → 4.2k tokens');\n});\n"
-    );
-    git(repo, 'add', '-A');
-    git(repo, 'commit', '-m', 'base');
-    return { repo, base: git(repo, 'rev-parse', 'HEAD').trim() };
-  }
-
-  it('reds on a copy rewrite the browser suite still asserts', () => {
-    const { repo, base } = seedRepo();
-    write(
-      repo,
-      COMPONENT,
-      'export function label(pre: string, post: string) {\n  return `Compacted context · ${pre} → ${post} tokens`;\n}\n'
-    );
-    git(repo, 'commit', '-am', 'em-dash sweep');
-
-    const findings = runCopySpecGuard(repo, base);
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.specFile).toBe(SPEC);
-    expect(findings[0]?.specLine).toBe(2);
-    expect(findings[0]?.copyFile).toBe(COMPONENT);
-    expect(findings[0]?.removed).toBe('Compacted context —');
+  it('reports one stale assertion once, keeping the closest-fitting evidence', () => {
+    expect(findings).toHaveLength(2);
+    const collapsed = collapseByPosition(findings);
+    expect(collapsed).toHaveLength(1);
+    expect(collapsed[0]?.removed).toBe('Working Directory');
   });
 
-  it('stays green when the same change updates the spec', () => {
-    const { repo, base } = seedRepo();
-    write(
-      repo,
-      COMPONENT,
-      'export function label(pre: string, post: string) {\n  return `Compacted context · ${pre} → ${post} tokens`;\n}\n'
+  it('keeps two DIFFERENT stale strings on one line apart', () => {
+    // `expect(row).toHaveText('Paused — no traffic', 'Resume routing')` is two
+    // separate fixes on one line. Keying on the position alone reported the
+    // first and swallowed the second.
+    const oneLine = matchSpecStrings(
+      [
+        chunk('Paused — no traffic', 'apps/client/src/BindingCard.tsx'),
+        chunk('Resume routing', 'apps/client/src/BindingCard.tsx'),
+      ],
+      [
+        { file: 'apps/e2e/tests/a.spec.ts', line: 7, text: 'Paused — no traffic' },
+        { file: 'apps/e2e/tests/a.spec.ts', line: 7, text: 'Resume routing' },
+      ]
     );
-    write(
-      repo,
-      SPEC,
-      "test('shows the boundary', async () => {\n  await expect(row).toContainText('Compacted context · 51.2k → 4.2k tokens');\n});\n"
-    );
-    git(repo, 'commit', '-am', 'em-dash sweep, suite in step');
-
-    expect(runCopySpecGuard(repo, base)).toEqual([]);
+    expect(
+      collapseByPosition(oneLine)
+        .map((finding) => finding.removed)
+        .sort()
+    ).toEqual(['Paused — no traffic', 'Resume routing']);
   });
 
-  it('stays green when the change touches no copy root at all', () => {
-    const { repo, base } = seedRepo();
-    write(repo, 'docs/thing.mdx', 'Compacted context — some prose.\n');
-    git(repo, 'add', '-A');
-    git(repo, 'commit', '-m', 'docs only');
-
-    expect(runCopySpecGuard(repo, base)).toEqual([]);
-  });
-
-  it('sees an uncommitted rewrite, so running it before pushing is worth something', () => {
-    const { repo, base } = seedRepo();
-    write(
-      repo,
-      COMPONENT,
-      'export function label(pre: string, post: string) {\n  return `Compacted context · ${pre} → ${post} tokens`;\n}\n'
+  it('keeps assertions on different lines apart', () => {
+    const twoLines = matchSpecStrings(
+      [chunk('Working Directory', 'apps/client/src/ServerTab.tsx')],
+      [
+        {
+          file: 'apps/e2e/tests/settings/settings-dialog.spec.ts',
+          line: 1,
+          text: 'working directory',
+          ignoreCase: true,
+        },
+        {
+          file: 'apps/e2e/tests/settings/settings-dialog.spec.ts',
+          line: 2,
+          text: 'working directory',
+          ignoreCase: true,
+        },
+      ]
     );
-
-    expect(runCopySpecGuard(repo, base)).toHaveLength(1);
+    expect(collapseByPosition(twoLines)).toHaveLength(2);
   });
 });
