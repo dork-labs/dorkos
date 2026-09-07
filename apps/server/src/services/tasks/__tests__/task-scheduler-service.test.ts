@@ -536,8 +536,10 @@ describe('TaskSchedulerService', () => {
       expect(run!.trigger).toBe('manual');
       expect(run!.status).toBe('running');
 
-      // Wait for async execution
-      await new Promise((r) => setTimeout(r, 100));
+      // `triggerManualRun` is fire-and-forget, so the run it returns has not
+      // executed yet. Wait for the run row to reach a terminal status — the
+      // outcome — rather than for a fixed number of milliseconds (DOR-1840).
+      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
 
       await service.stop();
     });
@@ -558,10 +560,8 @@ describe('TaskSchedulerService', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
       await service.triggerManualRun(task.id);
 
-      // Wait for async execution to complete
-      await new Promise((r) => setTimeout(r, 100));
+      await vi.waitFor(() => expect(mockAgent.sendMessage).toHaveBeenCalledOnce());
 
-      expect(mockAgent.sendMessage).toHaveBeenCalledOnce();
       const [, , opts] = vi.mocked(mockAgent.sendMessage).mock.calls[0];
       expect(opts?.systemPromptAppend).toBeDefined();
       expect(opts?.systemPromptAppend).toContain('TASK SCHEDULER CONTEXT');
@@ -1259,11 +1259,18 @@ describe('TaskSchedulerService', () => {
 
       // The second fire must NOT open a turn. If the stickyBusy guard is removed,
       // it does — and that second `sendMessage` parks forever, so we cannot simply
-      // await this dispatch. Race it against a short deadline: with the guard it
-      // resolves at once (skipped, no await); without it, it hangs on the second
-      // turn and the deadline wins — either way we then assert on the call count.
+      // await this dispatch. Race it against the outcome that only the BROKEN
+      // build produces: a second turn on the same session. With the guard the
+      // dispatch resolves at once (skipped, no await) and wins; without it the
+      // second turn appears and wins. Either way we then assert on the call
+      // count, and neither side of the race is a wall-clock guess (DOR-1840) —
+      // an arbitrary deadline here would let a loaded runner report the guard
+      // intact while a second turn was merely slow to start.
       const secondFire = dispatch(task, new Date(1_700_000_100_000));
-      await Promise.race([secondFire, new Promise((r) => setTimeout(r, 100))]);
+      const secondTurnOpened = vi
+        .waitFor(() => expect(vi.mocked(mockAgent.sendMessage)).toHaveBeenCalledTimes(2))
+        .catch(() => undefined);
+      await Promise.race([secondFire, secondTurnOpened]);
 
       // No second turn was ever started on the session (the RIGHT reason to skip,
       // not merely a missing row): reverting stickyBusy reddens THIS.
@@ -1657,9 +1664,8 @@ describe('TaskSchedulerService', () => {
       });
 
       await service.triggerManualRun(task.id);
-      await new Promise((r) => setTimeout(r, 100));
+      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
-      expect(mockRelay.publish).toHaveBeenCalledOnce();
       const [subject] = mockRelay.publish.mock.calls[0];
       expect(subject).toBe(`relay.system.tasks.${task.id}`);
 
@@ -1684,7 +1690,7 @@ describe('TaskSchedulerService', () => {
       });
 
       await service.triggerManualRun(task.id);
-      await new Promise((r) => setTimeout(r, 100));
+      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
       const [, payload, options] = mockRelay.publish.mock.calls[0];
       const dispatch = payload as TaskDispatchPayload;
@@ -1735,7 +1741,7 @@ describe('TaskSchedulerService', () => {
       });
 
       const run = await service.triggerManualRun(task.id);
-      await new Promise((r) => setTimeout(r, 100));
+      await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('failed'));
 
       const updatedRun = store.listRuns({ taskId: task.id }).find((r) => r.id === run!.id);
       expect(updatedRun?.status).toBe('failed');
@@ -1762,8 +1768,19 @@ describe('TaskSchedulerService', () => {
         relay: mockRelay as unknown as RelayCore,
       });
 
+      // The completion signal is the post-publish WRITE, not the row's value:
+      // `createRun` already opens a run as `running`, so waiting for the row to
+      // read `running` would settle before the dispatch had done anything and
+      // the assertion below could not fail (the old fixed sleep hid that — it
+      // was the one site in this file the delay probe left green). Spying on the
+      // write also gives the row assertion something to discriminate: delete the
+      // `updateRun({ status: 'running' })` in `relay-dispatch.ts` and this reds.
+      const wroteRunning = vi.spyOn(store, 'updateRun');
+
       const run = await service.triggerManualRun(task.id);
-      await new Promise((r) => setTimeout(r, 100));
+      await vi.waitFor(() =>
+        expect(wroteRunning).toHaveBeenCalledWith(run!.id, { status: 'running' })
+      );
 
       const updatedRun = store.listRuns({ taskId: task.id }).find((r) => r.id === run!.id);
       expect(updatedRun?.status).toBe('running');
@@ -1802,7 +1819,7 @@ describe('TaskSchedulerService', () => {
       });
 
       const run = await service.triggerManualRun(task.id);
-      await new Promise((r) => setTimeout(r, 100));
+      await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('completed'));
 
       const updatedRun = store.getRun(run!.id);
       expect(updatedRun?.status).toBe('completed');
@@ -1832,7 +1849,7 @@ describe('TaskSchedulerService', () => {
       });
 
       await service.triggerManualRun(task.id);
-      await new Promise((r) => setTimeout(r, 100));
+      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
       const [, , options] = mockRelay.publish.mock.calls[0];
       // TTL should be roughly now + 600_000 (10 minutes)
@@ -1860,7 +1877,7 @@ describe('TaskSchedulerService', () => {
       });
 
       await service.triggerManualRun(task.id);
-      await new Promise((r) => setTimeout(r, 100));
+      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
       const [, , options] = mockRelay.publish.mock.calls[0];
       // Default TTL: 3_600_000 (1 hour)
@@ -1900,9 +1917,14 @@ describe('TaskSchedulerService', () => {
       });
 
       const run = await service.triggerManualRun(task.id);
-      await new Promise((r) => setTimeout(r, 100));
+      // The handler's terminal write is the signal. The `deliveredTo === 0`
+      // branch that this test is really about runs synchronously once `publish`
+      // resolves — i.e. before any poll of this wait can observe the row — so a
+      // row that reads `cancelled` here means that branch has already made its
+      // decision, and the negative assertion below is judging a finished
+      // dispatch rather than a 100ms guess at one.
+      await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('cancelled'));
 
-      expect(store.getRun(run!.id)!.status).toBe('cancelled');
       expect(activityService.emit).not.toHaveBeenCalled();
 
       await service.stop();
@@ -2115,10 +2137,9 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     });
 
     const run = await service.triggerManualRun(task.id);
-    await new Promise((r) => setTimeout(r, 100));
+    await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('failed'));
 
     const updatedRun = store.getRun(run!.id);
-    expect(updatedRun!.status).toBe('failed');
     expect(updatedRun!.error).toContain('not found in registry');
 
     await service.stop();
@@ -2139,10 +2160,9 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
 
     const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
     const run = await service.triggerManualRun(task.id);
-    await new Promise((r) => setTimeout(r, 100));
+    await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('failed'));
 
     const updated = store.getRun(run!.id);
-    expect(updated!.status).toBe('failed');
     expect(updated!.error).toContain('the runtime fell over');
     expect(updated!.sessionId).toBe(run!.id);
 
@@ -2173,11 +2193,15 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     });
 
     await service.triggerManualRun(task.id);
-    await new Promise((r) => setTimeout(r, 100));
-
-    expect(mockAgent.ensureSession).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ cwd: agentDir })
+    // The turn's own call is the signal — same as the two `process.cwd()` cases
+    // below. A fixed sleep here raced the scheduler's real async work and failed
+    // 1 run in 5 under concurrent-suite load with `Number of calls: 0`
+    // (DOR-1840).
+    await vi.waitFor(() =>
+      expect(mockAgent.ensureSession).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ cwd: agentDir })
+      )
     );
     // A scheduled run is UNATTENDED, and the runtime reads that: an unanswered
     // prompt is refused at the ten-minute countdown instead of waiting four
