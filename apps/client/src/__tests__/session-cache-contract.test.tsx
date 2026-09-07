@@ -192,6 +192,7 @@ describe('session list: one writer, many readers', () => {
     expect(await resolveSessionForCwd({ queryClient, transport }, CWD)).toEqual({
       sessionId: 'listed-1',
       isNew: false,
+      cwd: CWD,
     });
   });
 
@@ -270,7 +271,7 @@ describe('session resolution for an agent this window has never opened', () => {
 
     const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
 
-    expect(resolved).toEqual({ sessionId: 'web-1', isNew: false });
+    expect(resolved).toEqual({ sessionId: 'web-1', isNew: false, cwd: OTHER_CWD });
   });
 
   it('sends the /session loader to that same conversation', async () => {
@@ -341,7 +342,7 @@ describe('session resolution for an agent this window has never opened', () => {
 
     const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
 
-    expect(resolved).toEqual({ sessionId: 'still-there', isNew: false });
+    expect(resolved).toEqual({ sessionId: 'still-there', isNew: false, cwd: OTHER_CWD });
   });
 
   it('re-asks rather than trusting a listing the server has disowned', async () => {

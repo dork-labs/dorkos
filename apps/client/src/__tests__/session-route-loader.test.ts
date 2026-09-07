@@ -250,6 +250,61 @@ describe('sessionRouteLoader', () => {
     expect(search.session).not.toBe('proj-s1');
   });
 
+  // --- The directory the redirect has to name (DOR-1836) ---
+
+  it('names the resolved conversation’s directory when the URL named none', async () => {
+    // **Bare `/session` used to land on a session it could not then read.** The
+    // redirect carried the id and nothing else, so the history read asked for
+    // the transcript with no directory at all and was refused
+    // (`SESSION_CWD_REQUIRED`), and the detail read asked under whatever
+    // directory this window had selected and was told the session did not exist
+    // — two 404s and two `[dorkos:query-error]` breadcrumbs before the page
+    // settled on an empty state. Both were measured against a live server on
+    // 2026-09-07, and both come from the same omission.
+    queryClient.setQueryData(sessionKeys.list(null), [
+      {
+        id: 'lives-somewhere',
+        title: 'Yesterday',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T12:00:00Z',
+        permissionMode: 'default',
+        runtime: 'claude-code',
+        cwd: '/Users/me/project',
+      },
+    ] satisfies Session[]);
+
+    const result = await callLoader('');
+
+    expect(result.redirect).toMatchObject({
+      search: { session: 'lives-somewhere', dir: '/Users/me/project' },
+    });
+  });
+
+  it('never overrules a directory the person named', async () => {
+    // The other half of the rule, and the one that keeps agent-switching honest.
+    // A project's session list covers its whole SUBTREE (DOR-1550), so the
+    // newest conversation in it may have been held one level down — and that is
+    // not a reason to move somebody who asked for the project. This fills a
+    // blank; it never overwrites.
+    queryClient.setQueryData(sessionKeys.list('/Users/me/project'), [
+      {
+        id: 'one-level-down',
+        title: 'In a subfolder',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T12:00:00Z',
+        permissionMode: 'default',
+        runtime: 'claude-code',
+        cwd: '/Users/me/project/apps/desktop',
+      },
+    ] satisfies Session[]);
+
+    const result = await callLoader('?dir=/Users/me/project');
+
+    expect(result.redirect).toMatchObject({
+      search: { session: 'one-level-down', dir: '/Users/me/project' },
+    });
+  });
+
   it('asks the server about a directory this window has never displayed', async () => {
     // The bug this loader used to have (DOR-928): an empty cache entry is the
     // NORMAL state for every agent but the one on screen, so treating it as

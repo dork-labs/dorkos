@@ -69,7 +69,10 @@ export interface ResolveSessionDeps {
   transport: Transport;
 }
 
-/** The session a directory opens on, and whether it had to be invented. */
+/**
+ * The session a directory opens on: which one, whether it had to be invented,
+ * and the directory its own reads have to name.
+ */
 export interface ResolvedSession {
   /** A session id that is always safe to put in a `/session` URL. */
   sessionId: string;
@@ -80,6 +83,44 @@ export interface ResolvedSession {
    * conversation.
    */
   isNew: boolean;
+  /**
+   * **The directory this session's own reads have to name**, which is the
+   * session's own working directory rather than the one that was asked for.
+   *
+   * The two are not always the same. A project's session list covers the
+   * project's whole SUBTREE (DOR-1550): a conversation started in
+   * `<project>/apps/desktop` is filed under its own directory and appears in
+   * `<project>`'s list, carrying that directory in its row. Every per-session
+   * read on the server is addressed by id AND directory, so asking about such a
+   * session under `<project>` answers 404 for the detail row and an EMPTY
+   * transcript for the messages — a conversation that looks erased rather than
+   * misaddressed (measured 2026-09-07, DOR-1836).
+   *
+   * `null` when the answer was invented (there is no session yet, so no
+   * directory belongs to it) and the caller named no directory either.
+   *
+   * **Every caller that asked about a directory of its own keeps it, and none
+   * of them reads this** — switching agents means going to the agent you picked,
+   * not to wherever its newest conversation happens to live, and the row that
+   * names the agent would then be pointing somewhere the window is not. So
+   * `SidebarChrome`, `use-palette-actions`, `use-directory-state` and
+   * `switchAgentCwd` all navigate with the directory they were given and discard
+   * this one.
+   *
+   * That is a DELIBERATE trade, not an oversight, and it is worth stating what
+   * it costs: the empty-transcript symptom above is reachable from every one of
+   * those four surfaces, not only from `/session?dir=`. Picking an agent whose
+   * newest conversation was held one level down still reads under the agent's
+   * own directory and still comes back empty. The alternative — skipping any row
+   * whose directory is spelled differently from the one asked for — trades a
+   * recoverable empty transcript for DOR-928's own symptom, a spurious mint
+   * abandoning real work, on any path-spelling mismatch. Fixing it properly
+   * means addressing a session by id alone, which is a server-side change.
+   *
+   * The `/session` loader is the one caller with no directory to keep, so it is
+   * the one that adopts this.
+   */
+  cwd: string | null;
 }
 
 /**
@@ -102,8 +143,9 @@ export interface ResolvedSession {
  *
  * @param deps - Query client to read and fill, transport to ask over.
  * @param cwd - The target working directory, or `null` for the default one.
- * @returns The resolved session and whether it is brand-new, or `null` when the
- *   lookup failed.
+ * @returns The resolved session, whether it is brand-new, and the directory its
+ *   reads must name (see {@link ResolvedSession.cwd}), or `null` when the lookup
+ *   failed.
  */
 export async function resolveSessionForCwd(
   deps: ResolveSessionDeps,
@@ -113,8 +155,13 @@ export async function resolveSessionForCwd(
   if (sessions === null) return null;
   const mostRecent = mostRecentConversation(sessions);
   return mostRecent
-    ? { sessionId: mostRecent.id, isNew: false }
-    : { sessionId: crypto.randomUUID(), isNew: true };
+    ? // The row's OWN directory first, because that is the one the server can
+      // place this session under; the asked-for one only as a fallback, for a
+      // runtime whose listing does not report a directory at all.
+      { sessionId: mostRecent.id, isNew: false, cwd: mostRecent.cwd ?? cwd }
+    : // Nothing exists yet, so no directory belongs to this id — the caller's own
+      // is the only honest answer, and `null` when it had none either.
+      { sessionId: crypto.randomUUID(), isNew: true, cwd };
 }
 
 /**
