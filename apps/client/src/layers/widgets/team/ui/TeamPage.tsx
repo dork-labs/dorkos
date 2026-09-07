@@ -8,6 +8,7 @@ import {
 } from '@/layers/entities/team';
 import { usePendingRead, useProfileDeepLink } from '@/layers/shared/model';
 import { AgentGhostRows } from '@/layers/features/agents-list';
+import { useSetIdentityLinkedToMe } from '@/layers/features/profile';
 import {
   TeamRosterGrid,
   TeamRosterSkeleton,
@@ -75,6 +76,10 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
   // The roster rows this page draws ARE the drawer's own id space, so a card
   // hands its `member.id` straight over with nothing to map.
   const { open: openProfile } = useProfileDeepLink();
+  // Owned here rather than inside the card: a card that could mutate the roster
+  // is a card that has opinions about it, which is the same reason `owner` and
+  // `ownedAgentCount` are resolved by the caller.
+  const setLinkedToMe = useSetIdentityLinkedToMe();
   const { data, isLoading: isFetchingRoster, isError, refetch } = useTeamRoster();
   // "The read has not settled" is not "there is nobody" (DOR-1419) — without
   // this the grid below renders "Nobody to show yet." for a beat before the real
@@ -122,6 +127,7 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
           grouped={activeFilters.group === 'manager'}
           onSelectOwner={(ownerId) => patchFilters({ owner: ownerId })}
           onOpenProfile={openProfile}
+          onSetLinkedToMe={(memberId, linked) => setLinkedToMe.mutate({ memberId, linked })}
         />
       ) : (
         <p className="text-muted-foreground py-8 text-center text-sm">

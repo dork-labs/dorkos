@@ -4845,6 +4845,65 @@ registry.registerPath({
   },
 });
 
+const identityLinkParams = {
+  params: z.object({
+    authorId: z.string().openapi({ description: 'The roster id of the identity to claim' }),
+  }),
+};
+
+const identityLinkRefusals = {
+  400: {
+    description:
+      'That identity is not somebody on another platform, so it cannot be claimed — an ' +
+      'agent’s row, the system author, or a person on this machine',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  401: roomAgentUnverified,
+  403: {
+    description: 'The caller is an agent, or a person who does not own this install',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  404: {
+    description: 'No identity by that id',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+};
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/profile/identities/{authorId}',
+  tags: ['Profile'],
+  summary: 'Say that an account on another platform is you',
+  description:
+    'Records that one external identity — a Telegram or Slack account, stored as ' +
+    '`platform:<platform>:<adapter>:<user id>` — is the operator themselves. What it buys is ' +
+    'silence about your own words: a message you send your own agent from your own phone ' +
+    'arrives as an ordinary person on that platform, so without this DorkOS raises a ' +
+    '`dm.received` about it, and a `mention.received` for any `@` you type that spells one of ' +
+    'your own handles. ' +
+    'It is a claim about WHOSE WORDS those are and grants that account nothing on this install: ' +
+    'every check that decides what a caller may do still keys on the local account you sign in ' +
+    'as, so a linked identity gets no whole-room export, no roster writes and no wider search. ' +
+    'Only the person who owns this install may call it — an agent is refused (403), and so is ' +
+    'any second person — and only a `platform:` row may be claimed (400 otherwise), because ' +
+    'claiming an agent would silence every message that agent sends. Idempotent.',
+  request: identityLinkParams,
+  responses: { 204: { description: 'Recorded' }, ...identityLinkRefusals },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/profile/identities/{authorId}',
+  tags: ['Profile'],
+  summary: 'Take that claim back',
+  description:
+    'The revocation half, gated identically. Idempotent: releasing an identity that was never ' +
+    'claimed succeeds, because the caller wanted it unclaimed either way. Its messages notify ' +
+    'the operator again from the very next one.',
+  request: identityLinkParams,
+  responses: { 204: { description: 'Released' }, ...identityLinkRefusals },
+});
+
 registry.registerPath({
   method: 'get',
   path: '/api/profile/avatar/{id}',

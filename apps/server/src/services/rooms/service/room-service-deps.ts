@@ -201,6 +201,18 @@ export interface RoomServiceDeps {
    */
   isOwnerRecord(record: AuthorRecord): boolean;
   /**
+   * Whether this author's WORDS are the operator's own — true for the owner,
+   * and for a platform identity the operator has declared to be them
+   * (DOR-1778).
+   *
+   * **Not a third spelling of {@link RoomServiceDeps.isOwnerAuthor}**, and the
+   * difference is the whole reason it is a separate seam: that one is an
+   * authority check (`seesEveryRoom`, `requireOperator`, the export floor), this
+   * one is an attribution check. `isOwnerVoiceRecord` in `author-registry.ts`
+   * argues the split at length. Only the notifier reads this.
+   */
+  isOwnerVoice(authorId: string): boolean;
+  /**
    * Where {@link RoomService.createBridgedRoom} writes the `room_bridges` row
    * that IS a bridged room's identity (chats-as-channels spec §3.2). Consumed,
    * never reshaped: this domain calls only {@link BridgeStore.createBridge},

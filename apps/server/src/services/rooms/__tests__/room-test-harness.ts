@@ -708,6 +708,7 @@ export function createRoomHarness(opts: {
     maxPostsPerTurn: () => opts.maxPostsPerTurn ?? 3,
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, ownerUserId),
     isOwnerRecord: (record) => isOwnerRecord(record, ownerUserId),
+    isOwnerVoice: (authorId) => authors.isOwnerVoice(authorId, ownerUserId),
     readCursors,
     isRoomMuted,
   });

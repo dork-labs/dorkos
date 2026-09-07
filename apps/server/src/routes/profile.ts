@@ -58,7 +58,7 @@ export interface ProfileRouterDeps {
    * plus the one question that decides whether the account record is this
    * author's to write.
    */
-  authors: Pick<AuthorRegistry, 'setImageUrl' | 'isOwner'>;
+  authors: Pick<AuthorRegistry, 'setImageUrl' | 'isOwner' | 'linkToOwner' | 'unlinkFromOwner'>;
   /** The account that owns this install, or `null` when nobody has registered. */
   ownerAccount: () => { id: string } | null;
   /** Write Better Auth's `user.image`, so the account record agrees with the roster. */
@@ -158,6 +158,93 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
   }
 
   /**
+   * The person who OWNS this install, or `null` after answering the refusal
+   * anybody else gets.
+   *
+   * {@link operatorOrRefuse} narrowed by one more question, and the two are not
+   * the same one: that one refuses a machine, this one also refuses a second
+   * person. ADR 260727-184933 D6 says no second local account can exist;
+   * `room-caller.ts` checks that invariant rather than assuming it, the PATCH
+   * handler below checks it, and so does this — an invited person claiming an
+   * identity "is me" would be silencing the OWNER'S notifications.
+   *
+   * @param req - The incoming request.
+   * @param res - The response.
+   * @param subject - What they were trying to change, for the refusal.
+   */
+  function ownerOrRefuse(req: Request, res: Response, subject: string): AuthorRecord | null {
+    const operator = operatorOrRefuse(req, res, subject);
+    if (!operator) return null;
+    // `null` is a real answer, not a missing one: with no account the `'local'`
+    // sentinel IS the owner, which is what keeps the default install working.
+    if (!deps.authors.isOwner(operator.id, deps.ownerAccount()?.id ?? null)) {
+      sendError(
+        res,
+        403,
+        `Only the person who owns this install can change this ${subject}.`,
+        'OPERATOR_ONLY'
+      );
+      return null;
+    }
+    return operator;
+  }
+
+  /**
+   * POST /identities/:authorId — "this Telegram account is me" (DOR-1778).
+   *
+   * **The declaration is the operator's and nobody else's, which is why it is a
+   * route here rather than a field on the adapter or a verb an agent can
+   * reach.** A link makes DorkOS treat an external identity's messages as the
+   * operator's own words, so whoever can write one can silence the
+   * notifications somebody ELSE'S messages would raise. Three things keep that
+   * shut, and each is checked rather than assumed:
+   *
+   * - An agent is refused before anything is read (`operatorOrRefuse`, 403).
+   * - A second person is refused too (`ownerOrRefuse`, 403).
+   * - The registry refuses any author that is not a `platform:` row
+   *   (`IDENTITY_NOT_EXTERNAL`, 400), so an agent's row cannot be claimed even
+   *   by the owner. That is the one refusal that is structural: the only path
+   *   that writes such a key is `resolveExternal`.
+   *
+   * It is deliberately NOT on the adapter's config (`PATCH
+   * /api/relay/adapters/:id/config`), which looks like the natural home and is
+   * not: that route is ungated on purpose — its verbs are `act`-tier MCP tools
+   * an agent is already permitted to call (`routes/relay-adapters.ts`) — so a
+   * link stored there would be a link an agent could write.
+   *
+   * Idempotent, and no more informative than it has to be: an id that names
+   * nothing answers 404 through the rooms domain's own status table.
+   */
+  router.post('/identities/:authorId', (req, res) => {
+    const owner = ownerOrRefuse(req, res, 'identity');
+    if (!owner) return;
+    try {
+      deps.authors.linkToOwner(req.params.authorId, deps.ownerAccount()?.id ?? null);
+      return res.status(204).end();
+    } catch (err) {
+      return sendRoomError(res, err, 'POST /identities/:authorId');
+    }
+  });
+
+  /**
+   * DELETE /identities/:authorId — take that claim back.
+   *
+   * The revocation half, gated identically. Idempotent: an identity that was
+   * never claimed answers 204 too, because "it is not mine" is the state the
+   * caller asked for either way.
+   */
+  router.delete('/identities/:authorId', (req, res) => {
+    const owner = ownerOrRefuse(req, res, 'identity');
+    if (!owner) return;
+    try {
+      deps.authors.unlinkFromOwner(req.params.authorId);
+      return res.status(204).end();
+    } catch (err) {
+      return sendRoomError(res, err, 'DELETE /identities/:authorId');
+    }
+  });
+
+  /**
    * Point both identity records at the same URL — or at nothing.
    *
    * **The account record is written FIRST**, and the order is deliberate. The
@@ -206,31 +293,21 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
    * the table assumed. The author record keeps saying `'You'`, which is still
    * the right word from the operator's own seat in a room.
    *
-   * **Both writes are behind one ownership check**, which is `writeImageUrl`'s
-   * argument applied to a value that needs it more. `config.profile.displayName`
-   * is install-global rather than per-author, so a second human author saving
-   * their own name would rewrite the OWNER's roster row. ADR 260727-184933 D6
-   * says no such person can exist locally; `room-caller.ts` checks that
-   * invariant anyway rather than assuming it, and so does this.
+   * **Both writes are behind one ownership check** — {@link ownerOrRefuse},
+   * which is `writeImageUrl`'s argument applied to a value that needs it more.
+   * `config.profile.displayName` is install-global rather than per-author, so a
+   * second human author saving their own name would rewrite the OWNER's roster
+   * row. ADR 260727-184933 D6 says no such person can exist locally;
+   * `room-caller.ts` checks that invariant anyway rather than assuming it, and
+   * so does this.
    */
   router.patch('/', (req, res) => {
-    const operator = operatorOrRefuse(req, res, 'name');
+    const operator = ownerOrRefuse(req, res, 'name');
     if (!operator) return;
     const body = parseBody(ProfileUpdateRequestSchema, req.body, res);
     if (!body) return;
 
     const owner = deps.ownerAccount();
-    // `null` is a real answer, not a missing one: with no account the `'local'`
-    // sentinel IS the owner, which is what keeps the default install working.
-    if (!deps.authors.isOwner(operator.id, owner?.id ?? null)) {
-      return sendError(
-        res,
-        403,
-        'Only the person who owns this install can change this name.',
-        'OPERATOR_ONLY'
-      );
-    }
-
     if (owner) deps.setAccountName(owner.id, body.displayName);
     // The one door that can name a person, so the one door that records one
     // (DOR-1022). Unconditional — including when the string does not change,

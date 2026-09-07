@@ -184,6 +184,15 @@ export interface AuthorRecord {
    * next (ADR 260801-003051). The directory is still what identity keys on.
    */
   mintedForManifestId: string | null;
+  /**
+   * The owner author's natural key this row was declared to BE, or `null` —
+   * which is every row but an external one the operator has claimed (DOR-1778).
+   *
+   * **Attribution, not authority.** It answers "are these words the operator's
+   * own" ({@link isOwnerVoiceRecord}) and nothing else; {@link isOwnerRecord}
+   * ignores it entirely. See {@link AuthorRegistry.linkToOwner}.
+   */
+  linkedOwnerKey: string | null;
 }
 
 /**
@@ -268,10 +277,61 @@ function isUniqueViolation(err: unknown, indexName: string): boolean {
  */
 export function isOwnerRecord(record: AuthorRecord, ownerUserId: string | null): boolean {
   if (record.kind !== 'human') return false;
-  return (
-    record.naturalKey ===
-    (ownerUserId === null ? LOCAL_HUMAN_NATURAL_KEY : accountNaturalKey(ownerUserId))
-  );
+  return record.naturalKey === ownerNaturalKey(ownerUserId);
+}
+
+/**
+ * Whether an already-loaded author's words are the OPERATOR'S OWN — either
+ * because the row IS the owner ({@link isOwnerRecord}), or because the operator
+ * has declared that external identity to be them (DOR-1778).
+ *
+ * **The second predicate exists because the first one is an authority check,
+ * and this question is not.** `isOwnerRecord` and `AuthorRegistry.isOwner` gate
+ * `seesEveryRoom`, `requireOperator`, the whole-room export floor and the search
+ * scope over the operator's own sessions. Those grants are made of a verified
+ * local account; a link is a label the operator typed about an account on
+ * somebody else's platform, and widening the authority predicate with it would
+ * hand every one of those powers to whoever holds that platform account. It
+ * would also break `TeamMember.isSelf`, which is documented as true for exactly
+ * one roster row and is computed by finding the FIRST record `isOwnerRecord`
+ * accepts (`aggregate-team.ts`).
+ *
+ * So the split is deliberate and permanent: **attribution here, authority
+ * there.** Everything that asks "are these words mine" reads this; everything
+ * that asks "may this caller do the owner's things" keeps reading the other.
+ * Today the one consumer is the room notifier, which is the whole of DOR-1778 —
+ * an operator texting their own agent from their own phone posts as a
+ * `platform:` author, and without this they get a `dm.received` about their own
+ * message and a `mention.received` for spelling their own handle.
+ *
+ * A link made before this install had an account survives gaining one:
+ * {@link AuthorRegistry.bindOwner} carries the stored key over with the row it
+ * rebinds, so the comparison here is always against the CURRENT owner key and a
+ * lapsed link fails closed (the operator hears about their own message again,
+ * which is noise rather than a disclosure).
+ *
+ * @param record - The author to weigh.
+ * @param ownerUserId - The owner account's user id, or `null` when the install
+ *   has no accounts.
+ */
+export function isOwnerVoiceRecord(record: AuthorRecord, ownerUserId: string | null): boolean {
+  if (isOwnerRecord(record, ownerUserId)) return true;
+  if (record.kind !== 'human' || record.linkedOwnerKey === null) return false;
+  return record.linkedOwnerKey === ownerNaturalKey(ownerUserId);
+}
+
+/**
+ * The natural key the owner's author row carries right now.
+ *
+ * One derivation for the two states an install can be in, so the sentinel and
+ * the bound key are never spelled apart: every predicate, every peek and the
+ * link comparison all ask the same question of the same string.
+ *
+ * @param ownerUserId - The owner account's user id, or `null` when the install
+ *   has no accounts.
+ */
+function ownerNaturalKey(ownerUserId: string | null): string {
+  return ownerUserId === null ? LOCAL_HUMAN_NATURAL_KEY : accountNaturalKey(ownerUserId);
 }
 
 /**
@@ -632,6 +692,13 @@ export class AuthorRegistry {
         // every five minutes, so re-deriving here would overwrite the address
         // with whatever the manifest currently says.
         handle: existing.handle,
+        // NOT refreshed either, and for a reason with teeth: `postExternal`
+        // resolves its author on EVERY inbound message, so a resolve that
+        // dropped this would revoke the operator's own claim on their phone the
+        // first time they used it (DOR-1778). Nothing in `refreshed` writes the
+        // column, so the row keeps it; this line is what keeps the RECORD
+        // handed back agreeing with the row.
+        linkedOwnerKey: existing.linkedOwnerKey,
         ...refreshed,
         mintedForManifestId,
       };
@@ -707,6 +774,9 @@ export class AuthorRegistry {
       color: row.color,
       imageUrl: row.imageUrl,
       mintedForManifestId: settled?.mintedForManifestId ?? row.mintedForManifestId,
+      // A row this call may have just inserted has no claim on it; one a
+      // concurrent resolve settled first might.
+      linkedOwnerKey: settled?.linkedOwnerKey ?? null,
     };
   }
 
@@ -938,6 +1008,10 @@ export class AuthorRegistry {
       color: fresh.color,
       imageUrl: fresh.imageUrl,
       mintedForManifestId: occupantId,
+      // Never inherited from the row this one replaces: a fresh occupant of a
+      // directory is a different party, which is the whole point of retiring
+      // the old row (ADR 260801-003051).
+      linkedOwnerKey: null,
     };
   }
 
@@ -1038,9 +1112,7 @@ export class AuthorRegistry {
    * @returns The record, or `null` when the row is not there.
    */
   peekOperator(ownerUserId: string | null): AuthorRecord | null {
-    const naturalKey =
-      ownerUserId === null ? LOCAL_HUMAN_NATURAL_KEY : accountNaturalKey(ownerUserId);
-    const row = this.activeRow('human', naturalKey);
+    const row = this.activeRow('human', ownerNaturalKey(ownerUserId));
     // The pre-login sentinel is deliberately NOT a fallback for a bound owner:
     // reading it would hand the owner's scope to a row that is not the owner,
     // which is the widening this whole seam is shaped to refuse.
@@ -1106,7 +1178,7 @@ export class AuthorRegistry {
    * @param userId - The owner's Better Auth user id.
    */
   bindOwner(userId: string): AuthorRecord {
-    const naturalKey = accountNaturalKey(userId);
+    const naturalKey = ownerNaturalKey(userId);
     // Both reads go through the active-row filter for the same reason the
     // resolve path does. A human author never retires — there is no manifest
     // behind it to change hands — but a `(kind, natural_key)` lookup that does
@@ -1121,7 +1193,104 @@ export class AuthorRegistry {
     }
 
     this.db.update(authors).set({ naturalKey }).where(eq(authors.id, sentinel.id)).run();
+    this.carryOwnerLinks(naturalKey);
     return { ...toRecord(sentinel), naturalKey };
+  }
+
+  /**
+   * Re-point every platform identity the operator claimed before this install
+   * had an account at the account key it has now (DOR-1778).
+   *
+   * The same move {@link AuthorRegistry.bindOwner} makes on the owner's own row,
+   * applied to the rows that NAME it. The sentinel is not replaced, it is
+   * rebound in place — the person is the same person — so a link made under
+   * `'local'` is still a true statement afterwards, and leaving it would silently
+   * revoke it the day somebody turned login on.
+   *
+   * @param naturalKey - The owner's key now.
+   */
+  private carryOwnerLinks(naturalKey: string): void {
+    this.db
+      .update(authors)
+      .set({ linkedOwnerKey: naturalKey })
+      .where(eq(authors.linkedOwnerKey, LOCAL_HUMAN_NATURAL_KEY))
+      .run();
+  }
+
+  /**
+   * Record that an external identity is the operator themselves — "this
+   * Telegram account is me" (DOR-1778).
+   *
+   * **Only an external row may be claimed**, and the refusal is structural
+   * rather than advisory: an agent's row, the system author, the operator's own
+   * row and any second person's row are all local, and the one path that writes
+   * a `platform:` key is {@link AuthorRegistry.resolveExternal}. So "is this
+   * somebody on a platform outside this machine" is a sound question to ask of
+   * the stored key, and everything else is refused with
+   * `IDENTITY_NOT_EXTERNAL`. Claiming an AGENT would be the damaging case — it
+   * would silence every DM that agent sends the operator — and it cannot be
+   * spelled here at all.
+   *
+   * **Whose voice it is, not what it may do.** The stored key is read by
+   * {@link isOwnerVoiceRecord} and by nothing else; see that function for why it
+   * is deliberately invisible to {@link isOwnerRecord}.
+   *
+   * Idempotent, and the caller is the one that decides who may ask: this method
+   * takes the owner's user id rather than resolving it, exactly as
+   * {@link AuthorRegistry.isOwner} does, so the ownership check lives at the
+   * route where the caller is known (`routes/profile.ts`).
+   *
+   * @param authorId - The external author to claim.
+   * @param ownerUserId - The owner account's user id, or `null` when the install
+   *   has no accounts.
+   * @returns The author, with the link as stored.
+   */
+  linkToOwner(authorId: string, ownerUserId: string | null): AuthorRecord {
+    const author = this.getById(authorId);
+    if (!author) throw new RoomError('MEMBER_NOT_FOUND', 'No such author');
+    if (author.kind !== 'human' || !isExternalNaturalKey(author.naturalKey)) {
+      throw new RoomError(
+        'IDENTITY_NOT_EXTERNAL',
+        'Only an account on another platform can be linked to you'
+      );
+    }
+    const linkedOwnerKey = ownerNaturalKey(ownerUserId);
+    this.db.update(authors).set({ linkedOwnerKey }).where(eq(authors.id, authorId)).run();
+    return { ...author, linkedOwnerKey };
+  }
+
+  /**
+   * Take a claim back, so that identity is a stranger again.
+   *
+   * The revocation half of {@link AuthorRegistry.linkToOwner}, and unconditional
+   * on WHICH owner key the row carries: an operator undoing a claim on their own
+   * install is entitled to undo it whether it was made before or after they
+   * turned login on. Idempotent — an unlinked row simply stays unlinked.
+   *
+   * @param authorId - The author to release.
+   * @returns The author, with no link.
+   */
+  unlinkFromOwner(authorId: string): AuthorRecord {
+    const author = this.getById(authorId);
+    if (!author) throw new RoomError('MEMBER_NOT_FOUND', 'No such author');
+    this.db.update(authors).set({ linkedOwnerKey: null }).where(eq(authors.id, authorId)).run();
+    return { ...author, linkedOwnerKey: null };
+  }
+
+  /**
+   * Whether an author's words are the operator's own — the id form of
+   * {@link isOwnerVoiceRecord}, on {@link AuthorRegistry.isOwner}'s pattern.
+   *
+   * A caller already holding the row must use the function, not this method:
+   * this one re-reads by id.
+   *
+   * @param authorId - The author to weigh.
+   * @param ownerUserId - The owner account's user id, or `null` when the install
+   *   has no accounts.
+   */
+  isOwnerVoice(authorId: string, ownerUserId: string | null): boolean {
+    const author = this.getById(authorId);
+    return author ? isOwnerVoiceRecord(author, ownerUserId) : false;
   }
 
   /**
@@ -1419,5 +1588,6 @@ function toRecord(row: typeof authors.$inferSelect): AuthorRecord {
     color: row.color,
     imageUrl: row.imageUrl,
     mintedForManifestId: row.mintedForManifestId,
+    linkedOwnerKey: row.linkedOwnerKey,
   };
 }

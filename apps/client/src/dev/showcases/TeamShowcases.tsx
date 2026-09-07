@@ -17,6 +17,12 @@ const byId = (id: string): TeamMember => MOCK_TEAM_ROSTER.find((member) => membe
 /** The operator's own row — the only one a provenance note is ever drawn on. */
 const SELF = MOCK_TEAM_ROSTER.find((member) => member.isSelf)!;
 
+/** The same row with the claim made, so both halves of the toggle are on screen. */
+const claimed = (member: TeamMember): TeamMember => ({
+  ...member,
+  person: { ...member.person!, linkedToYou: true },
+});
+
 /**
  * The playground's Transport answers `null` for everything, which a page that
  * reads a roster cannot render. Overriding the one method here — rather than
@@ -137,6 +143,22 @@ export function TeamShowcases() {
             <TeamMemberCard member={withSuggestedName(SELF, 'DorkBot')} />
             <TeamMemberCard member={withSuggestedName(SELF, null)} />
             <TeamMemberCard member={SELF} />
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Claiming an account on another platform (DOR-1778) — offered only on a row that is
+          somewhere else, so DorkOS stops telling you about messages you sent yourself. The third
+          card is the operator’s own row, which cannot be claimed and draws nothing.
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="grid gap-3 md:grid-cols-3">
+            <TeamMemberCard member={byId('person-miguel')} onSetLinkedToMe={() => undefined} />
+            <TeamMemberCard
+              member={claimed(byId('person-miguel'))}
+              onSetLinkedToMe={() => undefined}
+            />
+            <TeamMemberCard member={SELF} onSetLinkedToMe={() => undefined} />
           </div>
         </ShowcaseDemo>
       </PlaygroundSection>

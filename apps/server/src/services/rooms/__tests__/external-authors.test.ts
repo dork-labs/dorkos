@@ -611,6 +611,106 @@ describe('external authors in a bridged room', () => {
   });
 });
 
+describe('claiming an external identity as the operator (DOR-1778)', () => {
+  let authors: AuthorRegistry;
+  let human: string;
+  let setOwner: ReturnType<typeof createRoomHarness>['setOwner'];
+
+  beforeEach(() => {
+    ({ authors, human, setOwner } = createRoomHarness({
+      agents: agentLookup,
+      runner: scriptedRunner(() => null),
+    }));
+  });
+
+  /** Miguel's row, minted the way an inbound message mints it. */
+  function external(): ReturnType<AuthorRegistry['resolveExternal']> {
+    return authors.resolveExternal({
+      platformType: 'telegram',
+      instanceId: 'tg-main',
+      platformUserId: '145223',
+      displayName: 'Miguel',
+    });
+  }
+
+  it('answers the VOICE question yes and the OWNER question no', () => {
+    // The whole design in one assertion. A claimed identity speaks for the
+    // operator; it is not the operator's row, so nothing gated on ownership —
+    // `seesEveryRoom`, every roster write, the whole-room export floor — moves
+    // an inch. Widening `isOwner` instead would have moved all three.
+    const miguel = external();
+    authors.linkToOwner(miguel.id, null);
+
+    expect(authors.isOwnerVoice(miguel.id, null)).toBe(true);
+    expect(authors.isOwner(miguel.id, null)).toBe(false);
+  });
+
+  it('survives the resolve that every inbound message performs', () => {
+    // `postExternal` resolves its author on EVERY message, and a resolve that
+    // dropped the claim would revoke it the first time the operator used the
+    // phone they had just claimed.
+    const miguel = external();
+    authors.linkToOwner(miguel.id, null);
+
+    expect(external().linkedOwnerKey).not.toBeNull();
+    expect(authors.isOwnerVoice(miguel.id, null)).toBe(true);
+  });
+
+  it('follows the operator through the install gaining a login', () => {
+    const miguel = external();
+    authors.linkToOwner(miguel.id, null);
+
+    setOwner('user-dorian');
+
+    expect(authors.isOwnerVoice(miguel.id, 'user-dorian')).toBe(true);
+  });
+
+  it('claims one identity and not the next', () => {
+    const miguel = external();
+    const stranger = authors.resolveExternal({
+      platformType: 'telegram',
+      instanceId: 'tg-main',
+      platformUserId: '999999',
+      displayName: 'Somebody Else',
+    });
+    authors.linkToOwner(miguel.id, null);
+
+    expect(authors.isOwnerVoice(stranger.id, null)).toBe(false);
+  });
+
+  it('refuses an AGENT, which is the claim that would silence somebody else', () => {
+    const ana = authors.resolveAgent('/agents/ana', 'Ana');
+
+    expect(() => authors.linkToOwner(ana.id, null)).toThrow(
+      expect.objectContaining({ code: 'IDENTITY_NOT_EXTERNAL' })
+    );
+  });
+
+  it('refuses a person on this machine, the operator’s own row included', () => {
+    expect(() => authors.linkToOwner(human, null)).toThrow(
+      expect.objectContaining({ code: 'IDENTITY_NOT_EXTERNAL' })
+    );
+  });
+
+  it('refuses the system author', () => {
+    expect(() => authors.linkToOwner(authors.system().id, null)).toThrow(
+      expect.objectContaining({ code: 'IDENTITY_NOT_EXTERNAL' })
+    );
+  });
+
+  it('gives the claim back, and does not mind being asked twice', () => {
+    const miguel = external();
+    authors.linkToOwner(miguel.id, null);
+
+    authors.unlinkFromOwner(miguel.id);
+    authors.unlinkFromOwner(miguel.id);
+
+    expect(authors.isOwnerVoice(miguel.id, null)).toBe(false);
+    // The row is still there, still the same person, still holding its history.
+    expect(authors.getById(miguel.id)?.displayName).toBe('Miguel');
+  });
+});
+
 describe('the natural key itself', () => {
   /** Miguel's identity, with the platform user id last in the key. */
   const base: ExternalAuthorIdentity = {

@@ -129,6 +129,16 @@ export interface TeamMemberCardProps {
    * that does it; unwired, the card is the plain read-only tile it was.
    */
   onOpenProfile?: (memberId: string) => void;
+  /**
+   * Say whether an account on another platform is the person reading this
+   * (DOR-1778) — and take it back.
+   *
+   * Drawn only on a row that can answer the question, which the payload states
+   * rather than the card infers: `person.linkedToYou` is absent for anybody on
+   * this machine. Unwired, the row simply does not offer it, so an embed with
+   * no server behind it draws no control it cannot honour.
+   */
+  onSetLinkedToMe?: (memberId: string, linked: boolean) => void;
   className?: string;
 }
 
@@ -173,6 +183,7 @@ export function TeamMemberCard({
   owner,
   onSelectOwner,
   onOpenProfile,
+  onSetLinkedToMe,
   ownedAgentCount,
   layoutAnimated = false,
   ref,
@@ -180,6 +191,10 @@ export function TeamMemberCard({
 }: TeamMemberCardProps) {
   const face = teamMemberFace(member);
   const suggestedName = nameProvenanceNote(member);
+  // Three states, and `undefined` is one of them — a row on this machine cannot
+  // be claimed at all, so it is not offered the control. See
+  // `TeamPersonFactsSchema.linkedToYou`.
+  const linkedToYou = member.person?.linkedToYou;
 
   return (
     <motion.article
@@ -227,11 +242,16 @@ export function TeamMemberCard({
           'has-[[data-slot=team-member-open]:focus-visible]:shadow-elevated has-[[data-slot=team-member-open]:focus-visible]:-translate-y-px',
           'has-[[data-slot=team-member-open]:focus-visible]:[--identity-border-strength:var(--identity-border-mix)]',
           'active:translate-y-0 active:scale-[0.99] active:duration-(--identity-press)',
-          // Per-area stand-down: hovering the attribution — a DIFFERENT action
-          // inside the same card — calms the card, so one pointer never lights
-          // two affordances at once and each area telegraphs its OWN verb.
+          // Per-area stand-down: hovering an ASIDE — a DIFFERENT action inside
+          // the same card — calms the card, so one pointer never lights two
+          // affordances at once and each area telegraphs its OWN verb.
           //
-          // Scoped to the attribution by name, not to `button:hover`. The
+          // Keyed on `data-card-aside`, which every such control carries, rather
+          // than on one control's `data-slot`. There are two of them now (the
+          // attribution and the identity claim) and there will be more; a rule
+          // per slot is how the second one silently misses the stand-down.
+          //
+          // Scoped to the asides, not to `button:hover`. The
           // card's primary control is the name button, whose `after:` overlay
           // covers the whole tile; a pseudo-element hit-tests as part of the
           // element that generated it, so `has-[button:hover]` would be true
@@ -250,8 +270,8 @@ export function TeamMemberCard({
           // punch a hole in the card's own hit area, so pointing at the face
           // would stop being a press.
           IDENTITY_BADGE_WAKE,
-          'has-[[data-slot=team-member-owner]:hover]:shadow-soft has-[[data-slot=team-member-owner]:hover]:translate-y-0 has-[[data-slot=team-member-owner]:hover]:[--identity-border-strength:0%]',
-          'has-[[data-slot=team-member-owner]:focus-visible]:shadow-soft has-[[data-slot=team-member-owner]:focus-visible]:translate-y-0 has-[[data-slot=team-member-owner]:focus-visible]:[--identity-border-strength:0%]',
+          'has-[[data-card-aside]:hover]:shadow-soft has-[[data-card-aside]:hover]:translate-y-0 has-[[data-card-aside]:hover]:[--identity-border-strength:0%]',
+          'has-[[data-card-aside]:focus-visible]:shadow-soft has-[[data-card-aside]:focus-visible]:translate-y-0 has-[[data-card-aside]:focus-visible]:[--identity-border-strength:0%]',
           // …and the badge stands down with it. The wake now rides the card's
           // hover, so without this, pointing at the attribution would wake the
           // face while the rest of the card deliberately calmed — one pointer
@@ -259,12 +279,12 @@ export function TeamMemberCard({
           // exists to prevent. Written as one `:has()` variant reaching the
           // badge inside the disc, because the badge belongs to `IdentityAvatar`
           // and the card can only reach it as a descendant.
-          '[&:has([data-slot=team-member-owner]:hover)_[data-slot=identity-badge]]:scale-100 [&:has([data-slot=team-member-owner]:hover)_[data-slot=identity-badge]]:rotate-0',
-          '[&:has([data-slot=team-member-owner]:focus-visible)_[data-slot=identity-badge]]:scale-100 [&:has([data-slot=team-member-owner]:focus-visible)_[data-slot=identity-badge]]:rotate-0',
+          '[&:has([data-card-aside]:hover)_[data-slot=identity-badge]]:scale-100 [&:has([data-card-aside]:hover)_[data-slot=identity-badge]]:rotate-0',
+          '[&:has([data-card-aside]:focus-visible)_[data-slot=identity-badge]]:scale-100 [&:has([data-card-aside]:focus-visible)_[data-slot=identity-badge]]:rotate-0',
           // `:active` propagates to ancestors, so without this the card would
           // shrink under a press the stand-down had only just calmed — the
           // press echoing on the surface that is deliberately NOT answering.
-          'has-[[data-slot=team-member-owner]:active]:scale-100',
+          'has-[[data-card-aside]:active]:scale-100',
         ],
         className
       )}
@@ -318,6 +338,15 @@ export function TeamMemberCard({
               default
             </Badge>
           )}
+          {/* Not the `you` chip above, and deliberately worded apart from it:
+              `isSelf` marks the one row this install signs in as, and this marks
+              another account the same person also uses. Two rows saying `you`
+              would read as a roster that cannot count. */}
+          {linkedToYou && (
+            <Badge size="xs" variant="secondary">
+              also you
+            </Badge>
+          )}
         </div>
         {/* Absent rather than `@` — a handle nobody has is not a handle that
             reaches nobody, and an empty `@` is the second of those. */}
@@ -341,6 +370,30 @@ export function TeamMemberCard({
         {member.agent?.recentlyActive && (
           <p className="text-muted-foreground mt-0.5 text-xs">Active in the last hour</p>
         )}
+        {linkedToYou !== undefined && onSetLinkedToMe && (
+          <button
+            type="button"
+            data-slot="team-member-link-to-me"
+            // Same marker, same stand-down: this is an aside, not the card's
+            // primary action.
+            data-card-aside=""
+            onClick={() => onSetLinkedToMe(member.id, !linkedToYou)}
+            // The visible words are the verb; the label names who they act on,
+            // because "This is me" on its own is a sentence a screen reader
+            // cannot attach to a row.
+            aria-label={
+              linkedToYou
+                ? `Stop treating ${member.displayName} as you`
+                : `Tell DorkOS that ${member.displayName} is you`
+            }
+            // `relative` lifts it above the name button's card-wide overlay,
+            // exactly as the attribution below does — without it every press
+            // here would open a profile instead.
+            className="text-muted-foreground hover:text-foreground focus-visible:text-foreground focus-ring relative mt-1.5 block w-fit max-w-full truncate rounded text-xs underline-offset-2 transition-[color] duration-(--identity-answer) ease-(--identity-ease-standard) hover:underline focus-visible:underline"
+          >
+            {linkedToYou ? 'Not me' : 'This is me'}
+          </button>
+        )}
         {owner && onSelectOwner && (
           // A row rather than the bare button, so the echo has something to
           // anchor to. `w-fit` shrinks it to the attribution's own width, which
@@ -352,6 +405,8 @@ export function TeamMemberCard({
               // Named so the card can stand down for exactly this control and
               // no other — see the `has-[…]` rules on the article above.
               data-slot="team-member-owner"
+              // The shared stand-down marker — see the `has-[…]` rules above.
+              data-card-aside=""
               onClick={() => onSelectOwner(owner.id)}
               // The visible text names the owner; the label names what pressing
               // it does, which is the part a screen reader cannot infer from

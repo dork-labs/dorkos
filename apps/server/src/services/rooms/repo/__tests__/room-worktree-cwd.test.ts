@@ -34,6 +34,7 @@ function author(kind: AuthorRecord['kind'], displayName: string): AuthorRecord {
     color: null,
     imageUrl: null,
     mintedForManifestId: null,
+    linkedOwnerKey: null,
     retiredAt: null,
   } as AuthorRecord;
 }

@@ -128,6 +128,28 @@ export const authors = sqliteTable(
     mintedForManifestId: text('minted_for_manifest_id'),
 
     /**
+     * The `natural_key` of the owner author this row was declared to BE — set
+     * only on an external (`platform:`) row, and only by the operator saying
+     * "this Telegram account is me" (DOR-1778).
+     *
+     * It stores the owner's KEY (`'local'`, or `user:<id>`) rather than a
+     * boolean, so the declaration names WHO it was made by. An install that
+     * gains a login rebinds the `'local'` sentinel onto the account key
+     * (`AuthorRegistry.bindOwner`) and carries these along in the same move —
+     * the row is the same person, so the link follows it rather than silently
+     * lapsing.
+     *
+     * **It is a claim about ATTRIBUTION, never about authority.** What it
+     * answers is "are these words the operator's own", which is what stops the
+     * notifier telling them about their own phone's messages. It deliberately
+     * does not widen `isOwnerRecord` — the export floor, `seesEveryRoom` and
+     * every roster write are gated on that predicate, and a label the operator
+     * typed is not the credential those grants are made of. See
+     * `isOwnerVoiceRecord` in `author-registry.ts`.
+     */
+    linkedOwnerKey: text('linked_owner_key'),
+
+    /**
      * When this row stopped being the active author for its directory, or null
      * while it still is. A retired row keeps its id, its history and its
      * memberships forever; it simply stops claiming handles and receiving turns.

@@ -44,5 +44,12 @@ export function createProfileMethods(baseUrl: string) {
     deleteProfileAvatar(): Promise<void> {
       return fetchNoContent(baseUrl, '/profile/avatar', { method: 'DELETE' });
     },
+
+    /** Both directions answer 204; the roster is what the caller re-reads. */
+    setIdentityLinkedToMe(memberId: string, linked: boolean): Promise<void> {
+      return fetchNoContent(baseUrl, `/profile/identities/${encodeURIComponent(memberId)}`, {
+        method: linked ? 'POST' : 'DELETE',
+      });
+    },
   };
 }

@@ -35,6 +35,8 @@ export interface TeamRosterGridProps {
   onSelectOwner?: (ownerId: string) => void;
   /** Open one identity's profile — the card body's own action. */
   onOpenProfile?: (memberId: string) => void;
+  /** Claim or release an account on another platform as the reader's own (DOR-1778). */
+  onSetLinkedToMe?: (memberId: string, linked: boolean) => void;
   className?: string;
 }
 
@@ -153,6 +155,7 @@ export function TeamRosterGrid({
   grouped,
   onSelectOwner,
   onOpenProfile,
+  onSetLinkedToMe,
   className,
 }: TeamRosterGridProps) {
   // One boolean, reported as `data-layout-animated` and passed to every card,
@@ -187,6 +190,7 @@ export function TeamRosterGrid({
         ownedAgentCount={owner ? countOwnedAgents(owner.id, roster) : undefined}
         onSelectOwner={withAttribution ? onSelectOwner : undefined}
         onOpenProfile={onOpenProfile}
+        onSetLinkedToMe={onSetLinkedToMe}
         layoutAnimated={animated}
       />
     );

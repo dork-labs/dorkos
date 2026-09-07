@@ -212,7 +212,12 @@ export const MOCK_TEAM_ROSTER: TeamMember[] = [
     // Nothing on this install dates a bridged person's presence, so the roster
     // says `null` rather than guessing — the case the header renders as the
     // platform line instead of "Last seen …".
-    person: { role: null, lastSeenAt: null },
+    //
+    // `linkedToYou: false` is the state every real collaborator is in, and the
+    // one the card offers "This is me" from (DOR-1778). It is present at all
+    // only because this row is on another platform; a row on this machine
+    // carries no such key.
+    person: { role: null, lastSeenAt: null, linkedToYou: false },
   },
   {
     id: 'agent-warden',

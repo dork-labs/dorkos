@@ -891,6 +891,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .fn()
       .mockResolvedValue({ imageUrl: '/api/profile/avatar/person-1?v=abc' }),
     deleteProfileAvatar: vi.fn().mockResolvedValue(undefined),
+    setIdentityLinkedToMe: vi.fn().mockResolvedValue(undefined),
     // Answers with the `AuthorRef` the real route returns, echoing the handle
     // it was asked for. A bare `vi.fn()` resolves `undefined`, which is not a
     // shape any caller can read — a component that renders the saved handle

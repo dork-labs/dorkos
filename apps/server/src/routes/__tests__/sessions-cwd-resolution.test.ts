@@ -180,6 +180,7 @@ function agentAuthor(displayName: string): AuthorRecord {
     color: null,
     imageUrl: null,
     mintedForManifestId: null,
+    linkedOwnerKey: null,
     retiredAt: null,
   } as AuthorRecord;
 }
