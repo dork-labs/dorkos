@@ -17,9 +17,9 @@ name: dependabot-lockfile-repair
 # block from package.json as a matter of course and cannot produce the
 # mismatch. Dependabot does not speak pnpm, so it alone drops it. And when the
 # mismatch does occur it is self-announcing: `pnpm install --frozen-lockfile`
-# is the first step of every CI job and fails with the error named above plus
-# the exact command that fixes it, so no separate drift guard is warranted
-# (assessed in DOR-1715).
+# is the first thing every CI job that installs does, and it fails with the
+# error named above plus the exact command that fixes it, so no separate drift
+# guard is warranted (assessed in DOR-1715).
 #
 # THERE USED TO BE A SECOND REPAIR — a Prettier pass over the lockfile
 # (DOR-1554) — because `prettier --check .` in lint.yml gated the whole repo on

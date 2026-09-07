@@ -71,7 +71,6 @@ find node_modules/.pnpm -maxdepth 1 \
   \( -name '@better-auth+core@*' -o -name '@better-auth+utils@*' \) \
   | sed 's|.*/||' | sort -u                  # must print exactly one of each
 git show HEAD:pnpm-lock.yaml > pnpm-lock.yaml && pnpm install   # restore (git checkout is blocked)
-pnpm exec prettier --write pnpm-lock.yaml
 ```
 
 Then the runtime half, which the typecheck does not cover:
