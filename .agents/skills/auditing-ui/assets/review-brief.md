@@ -18,8 +18,9 @@ read-only to you. Never `git stash`, never `git checkout -- <path>`, never `pkil
 Stop only processes you started, by PID or by your own port via `lsof -ti`.
 
 **Method.** Read `{{REPO_ROOT}}/REVIEW.md` first and review as a senior engineer against it. Its
-failure-mode library names the defect shapes that pass every test and read clean in a diff; hunt
-each one **by name**, not as a vibe. Then add the two checks specific to an audit batch:
+section **"Failure modes worth hunting by name"** lists the defect shapes that pass every test
+and read clean in a diff; hunt each one **by name**, not as a vibe. Then add the two checks
+specific to an audit batch:
 
 - **Against the finding, not against taste.** Walk the batch's findings in `{{REPORT}}` item by
   item. Does each change actually satisfy the finding it claims? A change that improves something
@@ -29,9 +30,10 @@ each one **by name**, not as a vibe. Then add the two checks specific to an audi
 
 **Verify by driving, not only by reading.** Run the cheap gates yourself (targeted tests on
 touched files, per-package typecheck and lint).
-{{#BROWSER}}Boot the worktree client on port `{{PORT}}` and drive it headless with a standalone
-Playwright script at 1440x900 and 390x844 to confirm the fixes render and nothing nearby
-regressed. Look, don't touch: click nothing that mutates data. Stop your dev server when done.
+{{#BROWSER}}Then drive the surface: boot the worktree client on port `{{PORT}}` and confirm at
+1440x900 and 390x844 that the fixes render and nothing nearby regressed. Follow
+`{{REPO_ROOT}}/.agents/skills/auditing-ui/SKILL.md` §3 "The browser leg" exactly — it owns the
+look-don't-touch rules, the port rules, and how to drive it.
 {{/BROWSER}}
 
 Every finding needs a `file:line` you actually read plus the failure scenario it produces. Rank

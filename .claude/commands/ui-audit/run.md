@@ -1,46 +1,42 @@
 ---
 description: Run a UI audit (full, one lens, one surface, or a diff) and emit fenced work items
-argument-hint: '[full | lens:<name> | surface:<route> | diff]'
-allowed-tools: Read, Write, Edit, Grep, Glob, Task, AskUserQuestion, Bash(git:*), Bash(node:*), Bash(lsof:*)
+argument-hint: 'full | lens:<key> | surface:<route> | diff'
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Agent, AskUserQuestion, TodoWrite
 category: workflow
 ---
 
 # Run a UI audit
 
-**Scope:** $ARGUMENTS (default `diff`)
+**Scope:** $ARGUMENTS
 
-Read `.claude/skills/auditing-ui/SKILL.md` and the charter at `audits/ui.md` first. If the
-charter is missing, run `/ui-audit:init` instead.
+Read `.claude/skills/auditing-ui/SKILL.md` and the charter `audits/ui.md`, then follow them. The
+skill owns the procedure; this command adds only what is specific to running one audit.
 
 ## Contract
 
-1. **Resolve the scope** per the skill's scoping table. `diff` covers surface-local lenses only;
-   whole-tree lenses reach a diff run through rotation, never through diff-scoping.
+1. **A scope is required.** There is no default. If `$ARGUMENTS` is empty, ask. Lens keys come
+   from the charter's lens list.
 
-2. **Print a cost estimate before spawning anything, and on `full` get explicit consent.** A full
-   run is roughly ten million subagent tokens across a dozen auditors. State the lens count, the
-   estimate, and wait for a yes. Scoped runs print the estimate and proceed.
+2. **Read `audits/runs/ui/profile.md` first** (skill §1). If the charter is missing, run
+   `/ui-audit:init` instead of guessing.
 
-3. **Fan out the auditors**, one per lens, using `assets/auditor-prompt.md`. Parallel where the
-   harness spawns agents; sequential otherwise, which is a first-class path and produces the same
-   report. Each auditor writes its raw file to `audits/runs/ui/<date>/raw/<lens>.md`.
+3. **The cost gate is this command's own responsibility.** Print the lens count and a token
+   estimate before spawning anything, using the per-lens budget in skill §2. On `full`, **wait
+   for explicit consent** — a full run is roughly ten million subagent tokens, and the operator
+   should agree to that knowingly. Scoped runs print the estimate and proceed.
 
-4. **Run the browser leg** where the scope includes surface-local lenses and an app is runnable,
-   under the skill's look-don't-touch rules: your own ports, a standalone Playwright script and
-   never a shared browser, no mutating clicks, stop only what you started. If no app is runnable,
-   say so in the report and audit code-only.
+4. **Refuse a `diff` with no baseline.** `diff` requires a stamp per lens (skill §1, bootstrap
+   rule). Missing stamps stop the run and name the fix; never silently widen to the whole tree,
+   which is the cost gate above being bypassed by accident.
 
-5. **Synthesize** with `assets/synthesizer-prompt.md`: dedup, spot-verify citations, drop the
-   invalid with reasons recorded, batch by collision class. Write
-   `audits/runs/ui/<date>/report.md`.
+5. **Audit, then synthesize**, per skill §§3-4. Raw findings to
+   `audits/runs/ui/<date>/raw/<key>.md`, report to `audits/runs/ui/<date>/report.md`, ISO date.
 
-6. **Emit the work items, fenced.** Per the skill's ownership contract, and without improvising:
-   one `type/meta` "promotion decision for audit run `<date>`" item, every batch item carrying a
-   `blockedBy` edge to it, `source/audit` as provenance only, and **no `agent/*` label, ever**.
-   No tracker configured means the ledger at `audits/runs/ui/<date>/backlog.md` instead.
+6. **Emit the work items fenced**, exactly as skill §5 specifies, including its "How to actually
+   write it" mechanics. Do not improvise a variant of the fence.
 
-7. **Write the stamps** for the lenses that actually ran (`stamps.json`, per lens, plus the
-   rotation cursor). A lens that did not run keeps its old stamp.
+7. **Write stamps** for the lenses that ran, and advance the rotation cursor if a whole-tree lens
+   ran. Lenses that did not run keep their entries.
 
-8. **Report** the batch list, the coverage gaps including any dropped browser leg, and the
+8. **Report** the batch list, every coverage gap including a dropped browser leg, and the
    promotion decision the operator now owes. This command never executes a batch.

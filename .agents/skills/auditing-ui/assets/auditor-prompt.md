@@ -38,12 +38,14 @@ different run.{{/DIFF_SCOPE}}
 - Write zero code. Findings only.
 
 {{#BROWSER_LEG}}
-**Browser leg.** Boot your own client on port `{{PORT}}` and drive it with a standalone headless
-Playwright script (never a shared MCP browser). Navigate, resize to 1440x900 and 390x844,
-screenshot to `{{SCRATCH}}/`, and read the screenshots. Click nothing that mutates data: the API
-behind your client is a real server. Stop your dev server by its PID or `lsof -ti :{{PORT}}` when
-done; never `pkill`. If you cannot get an app running, say so plainly in your coverage note and
-audit code-only.
+**Browser leg.** Read `{{REPO_ROOT}}/.agents/skills/auditing-ui/SKILL.md` §3 "The browser leg"
+and follow every rule in it; it is the authority and this paragraph is not a summary of it. The
+run's parameters: boot your own client on port `{{PORT}}` with `{{DEV_COMMAND}}`, drive it with a
+standalone headless script (`@playwright/test`, resolvable from `apps/e2e`), screenshot to
+`{{SCRATCH}}/` at 1440x900 and 390x844, and **read** the screenshots. Ports `{{TAKEN_PORTS}}` are
+someone else's; stop only your own process, by PID or `lsof -ti :{{PORT}}`, and never `pkill`.
+Click nothing that mutates data. If you cannot get an app running, say so plainly in your
+coverage note and audit code-only.
 {{/BROWSER_LEG}}
 
 Write your **full** findings (all of them, ranked by severity) as markdown to

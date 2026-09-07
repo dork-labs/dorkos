@@ -6,12 +6,18 @@ through which lenses, what counts as a valid finding, and how findings get ranke
 
 ```
 audits/
-├── README.md            # this file — the preamble every charter inherits
-├── ui.md                # the UI/UX charter (apps/client)
+├── README.md              # this file — the preamble every charter inherits
+├── ui.md                  # the UI/UX charter (apps/client)
 └── runs/
     └── <domain>/
-        └── <date>/      # one run: report, per-lens diff stamps, rotation state, ledger
+        ├── profile.md     # this repo's landing profile — how work lands here
+        ├── stamps.json    # per-lens last-audited commit + the rotation cursor
+        └── <date>/        # one run: report.md, raw/<lens>.md, and a ledger when untracked
 ```
+
+`profile.md` and `stamps.json` live at the **domain root**, not inside a dated run: both are
+durable state that outlives any single run, and putting them in a run directory would leave the
+next run guessing which copy wins. `<date>` is ISO `YYYY-MM-DD`, so runs sort chronologically.
 
 Today there is one charter (`ui.md`). The convention exists so the next one (`docs.md`,
 `adrs.md`, `harness.md`) has an obvious home instead of contending for a single root file.
@@ -38,12 +44,10 @@ contradict them.
 - **Simplify first.** When two valid recommendations exist, the one that removes, merges, or
   shortens wins. Prefer deleting over restyling, one thing over two, a short label over a
   sentence. An audit that only adds has failed.
-- **No walls of text.** Nothing this repo produces for a human, on screen or on a page, may be
-  a large undifferentiated block of prose. Lead with the gist in as few words as possible
-  (generally under five for a headline), then offer a path to more detail only when it genuinely
-  matters. "Learn more" names the **pattern**, never the literal text: pick the affordance that
-  fits (info icon, tooltip, expandable section, contextual link, hover card), and if the gist is
-  enough, use no affordance at all. This is progressive disclosure applied to copy.
+- **No walls of text.** Lead with the gist, in under five words where a headline will do, then
+  offer a path to more detail only when it genuinely matters. "Learn more" names the **pattern**,
+  not the text: pick the affordance that fits (info icon, tooltip, expandable section,
+  contextual link), or none at all when the gist is enough.
 - **Sample honestly.** An auditor that cannot cover its domain exhaustively says what it
   covered and what it skipped, in the report, every time. A silent gap is worse than a stated
   one, because the reader believes the audit is complete.
@@ -64,8 +68,9 @@ contradict them.
   is missing and leaves it alone when it exists. This README in particular is shared: it accretes
   directives from every domain, and no single audit may clobber another's additions.
 - **Guard-safe prose.** `audits/` is not in the scan list of the banned-words guard
-  (`scripts/check-banned-words.sh`) today, but write as if it were: any retired vocabulary named
-  here needs the same inline `vocab-allow` marker plus a reason the guard asks for elsewhere.
+  (`scripts/check-banned-words.sh`) today, but write as if it were: mark any retired vocabulary
+  you must name with an inline `vocab-allow` comment. The guard matches the marker alone; the
+  reason beside it is convention, not enforcement, and is what makes the exemption reviewable.
 
 ## Prior art
 
