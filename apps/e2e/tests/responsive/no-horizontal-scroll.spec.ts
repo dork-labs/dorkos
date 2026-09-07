@@ -221,17 +221,52 @@ async function escapedText(page: Page): Promise<{ escapes: string[]; textLeaves:
  */
 const MIN_TEXT_LEAVES = 16;
 
+/** One escape this guard already knows about — see {@link EXPECTED_ESCAPES}. */
+interface ExpectedEscape {
+  /**
+   * Enough of the escape's own description to name the box it is about.
+   *
+   * The tag and its class list, which identifies WHICH element escaped. The
+   * size deliberately lives in {@link maxOvershootPx} instead of here: matching
+   * on `+4px` too would make a one-pixel change of layout rounding read as "the
+   * escape was fixed", and this file would then fail for a reason nobody did
+   * anything about.
+   */
+  fragment: string;
+  /** The most it may escape by, in CSS pixels, before this stops being excused. */
+  maxOvershootPx: number;
+}
+
+/**
+ * How far one escape reported by {@link escapedText} actually escaped.
+ *
+ * Parsed back out of the description rather than returned alongside it: the
+ * probe's answer is what a failure prints, so the number a reader sees and the
+ * number this asserts on are the same number by construction.
+ *
+ * @param escape - One entry from `escapes`.
+ * @returns The overshoot in CSS pixels, or `Infinity` when the description does
+ *   not start with one — which fails every ceiling rather than passing it.
+ */
+function overshootOf(escape: string): number {
+  const match = /^\+(\d+)px /.exec(escape);
+  return match === null ? Number.POSITIVE_INFINITY : Number(match[1]);
+}
+
 /**
  * Escapes this guard has already found, reported, and deliberately not fixed
  * here — keyed `route@width`, valued with a fragment of the escape's own
  * description.
  *
- * **An entry is a promise in both directions, and that is what stops this from
+ * **An entry is a promise in three directions, and that is what stops this from
  * being a mute button.** An escape naming one of these is not reported, and
- * every other escape on the same page still is; but an entry that stops
- * matching also fails the test, saying so. So the moment somebody fixes the
- * bar, this guard goes red and asks for the entry to be deleted — which is the
- * only reliable way an allowance like this ever gets removed.
+ * every other escape on the same page still is. An entry that stops matching
+ * fails the test, so the moment somebody fixes the bar this guard goes red and
+ * asks for the entry to be deleted — which is the only reliable way an
+ * allowance like this ever gets removed. And an entry excuses a SIZE as well as
+ * a shape: `fragment` names the box, `maxOvershootPx` says how far it is
+ * allowed to escape, so the same box escaping ten times as far is a failure
+ * rather than a fact this file already knew.
  *
  * ── `/` at 768px — Home's bar overflows its own row by ~4px (DOR-1816) ──
  *
@@ -254,8 +289,15 @@ const MIN_TEXT_LEAVES = 16;
  * in a coverage PR. Recorded in `plans/ui-ux-audit-202609/01-findings.md` and
  * filed under UI/UX Audit 2026-09 instead.
  */
-const EXPECTED_ESCAPES: Readonly<Record<string, string>> = {
-  '/@768': '<div class="flex shrink-0 items-center gap-2">',
+const EXPECTED_ESCAPES: Readonly<Record<string, ExpectedEscape>> = {
+  '/@768': {
+    fragment: '<div class="flex shrink-0 items-center gap-2">',
+    // Measured at 4px. Five is that plus a pixel of rounding — deliberately
+    // NOT open-ended: an excuse with no ceiling would go on excusing this
+    // escape at 40px and at 400px, which is precisely the regression F1's own
+    // recommendation predicts (the overshoot grows the moment the chips do).
+    maxOvershootPx: 5,
+  },
 };
 
 for (const { name, viewport } of WIDTHS) {
@@ -270,6 +312,23 @@ for (const { name, viewport } of WIDTHS) {
         // that never answers still passes `app-shell`. Settle network first so
         // the sample below looks at real content rather than a skeleton.
         await page.waitForLoadState('networkidle');
+
+        // **The width the page BELIEVES it is, not the one Playwright asked
+        // for.** Every `md:` rule in the app answers to this media query, and a
+        // tablet sweep whose pages resolved it the phone way would be a second
+        // phone sweep reporting itself as tablet coverage. It is not
+        // hypothetical at exactly 768: a reserved scrollbar takes the viewport
+        // below the breakpoint by the width of the scrollbar, and headless
+        // Chromium's overlay scrollbars are the only reason it does not here.
+        const isTablet = await page.evaluate(
+          () => window.matchMedia('(min-width: 768px)').matches
+        );
+        expect(
+          isTablet,
+          `the ${name} case asked for ${viewport.width}px and the page resolves ` +
+            `(min-width: 768px) as ${isTablet} — the layout under test is not the one this ` +
+            `case is named for`
+        ).toBe(viewport.width >= 768);
 
         const worst = await worstHorizontalOverflow(page);
         const { escapes, textLeaves } = await escapedText(page);
@@ -286,23 +345,37 @@ for (const { name, viewport } of WIDTHS) {
         ).toBeGreaterThanOrEqual(MIN_TEXT_LEAVES);
 
         const expected = EXPECTED_ESCAPES[`${route}@${viewport.width}`];
+        const matched =
+          expected === undefined ? [] : escapes.filter((one) => one.includes(expected.fragment));
         const unexpected =
-          expected === undefined ? escapes : escapes.filter((one) => !one.includes(expected));
+          expected === undefined
+            ? escapes
+            : escapes.filter((one) => !one.includes(expected.fragment));
         expect(
           unexpected,
           `${route} paints content outside its container at ${viewport.width}px`
         ).toEqual([]);
         if (expected !== undefined) {
-          // The other half of the promise EXPECTED_ESCAPES makes. Stated as a
+          // The second half of the promise EXPECTED_ESCAPES makes. Stated as a
           // count rather than a boolean so a failure prints which way it went:
           // 0 means the escape is gone and the entry is owed a deletion, and
           // anything above 1 means the fragment has stopped naming one thing.
           expect(
-            escapes.filter((one) => one.includes(expected)).length,
+            matched.length,
             `${route} at ${viewport.width}px no longer paints the ONE escape ` +
-              `EXPECTED_ESCAPES records for it (${expected}). If it was fixed, delete that ` +
-              `entry — it is now hiding whatever escapes this route grows next`
+              `EXPECTED_ESCAPES records for it (${expected.fragment}). If it was fixed, delete ` +
+              `that entry — it is now hiding whatever escapes this route grows next`
           ).toBe(1);
+          // The third half: excused, but not excused without limit. Without
+          // this the entry above goes on covering the same box escaping by
+          // 40px or 400px, which is the growth F1 itself predicts.
+          const worstExcused = Math.max(...matched.map(overshootOf));
+          expect(
+            worstExcused,
+            `${route} at ${viewport.width}px escapes by ${worstExcused}px, and ` +
+              `EXPECTED_ESCAPES only excuses it up to ${expected.maxOvershootPx}px. The escape ` +
+              `this file already knew about has got worse; it is not the one that was measured`
+          ).toBeLessThanOrEqual(expected.maxOvershootPx);
         }
 
         expect(worst, `${route} scrolled ${worst}px past ${viewport.width}px`).toBe(0);

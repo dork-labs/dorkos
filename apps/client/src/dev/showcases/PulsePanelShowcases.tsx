@@ -74,12 +74,17 @@ const WEDGED_SESSION: Session = {
 /**
  * The status that makes it a signal.
  *
- * **`error`, never `streaming`.** `deriveAttentionSignals` raises the `error`
- * signal off this one field, and `streaming` is the one lifecycle a global
- * reader watches without joining it to a session list first
- * (`use-tour-occasions.ts` asks whether ANY status is streaming). Seeding that
- * one would light a tour occasion for a session nobody has; seeding this one
- * cannot.
+ * `deriveAttentionSignals` raises the `error` signal off this one field, which
+ * is why it is the lifecycle seeded.
+ *
+ * **Two hooks scan `statuses` globally rather than joining it to a session list,
+ * and `error` is one of the two things they scan for** — so the value here is
+ * not what makes the seed safe (see {@link useWedgedSession} for what does).
+ * `use-tour-occasions.ts` asks whether ANY status is `streaming`;
+ * `use-dorkbot-seed.ts` collects the ids of every status that is `error`.
+ * Neither is reachable from the playground: the tour hook wants a `streaming`
+ * this never writes, and the DorkBot seed is mounted by `ChatPanel`
+ * (`widgets/session/ui/ChatPanel.tsx`), a surface no `/dev/*` page renders.
  */
 const WEDGED_STATUS: SessionStatus = {
   contextUsage: null,
@@ -186,27 +191,41 @@ function makeAttentionQueryClient(): QueryClient {
  *
  * Three things keep the write from reaching them, and all three are needed:
  *
- * 1. **The id is unique to this file.** Every consumer of `statuses` looks a
- *    lifecycle up BY SESSION ID against a list it fetched itself
- *    (`use-attention-signals`, `use-live-sessions`, `use-presence-rows`,
- *    `palette-recent`), so a status keyed to an id no other fixture mentions
- *    joins to nothing and changes nobody's answer.
- * 2. **The lifecycle is `error`.** See {@link WEDGED_STATUS} — `streaming` is
- *    the one value a global reader tests without joining first.
+ * 1. **The id is unique to this file**, and this is the load-bearing one. Every
+ *    reader that joins `statuses` to a session list does it BY SESSION ID
+ *    against a list it fetched itself (`use-attention-signals`,
+ *    `use-live-sessions`, `use-presence-rows`, `palette-recent`), so a status
+ *    keyed to an id no other fixture mentions joins to nothing and changes
+ *    nobody's answer.
+ * 2. **The two hooks that scan `statuses` WITHOUT joining are both unreachable
+ *    from here.** They are the exception rule 1 does not cover, and the
+ *    lifecycle value is not what saves us from them — `use-dorkbot-seed.ts`
+ *    scans for exactly the `error` this seeds. It is mounted by `ChatPanel`,
+ *    which no `/dev/*` page renders; the other, `use-tour-occasions.ts`, scans
+ *    for `streaming`, which this never writes. See {@link WEDGED_STATUS}.
  * 3. **The previous value is restored on unmount**, whatever it was, so
  *    navigating away from `/dev/features` leaves the store as the app's own
- *    stream left it.
+ *    stream left it. Pinned by `dev/__tests__/every-showcase-mounts.test.tsx`,
+ *    which asserts the store is seeded while the page is up and byte-identical
+ *    to its prior state once it comes down — mutate either branch of the
+ *    cleanup below and that case fails.
  */
 function useWedgedSession(): void {
   useEffect(() => {
-    const before = useSessionListStore.getState().statuses[WEDGED_SESSION_ID];
-    useSessionListStore
-      .getState()
-      .setSessionStatus(WEDGED_SESSION_ID, WEDGED_STATUS, WEDGED_SESSION.cwd);
+    // **Both maps, because `setSessionStatus` writes both.** Restoring the
+    // status while leaving our own `cwd` behind would put this file's fake
+    // directory against somebody else's session — unreachable today (nothing
+    // else holds this id) and wrong the moment it is not.
+    const store = useSessionListStore.getState();
+    const beforeStatus = store.statuses[WEDGED_SESSION_ID];
+    const beforeCwd = store.statusCwds[WEDGED_SESSION_ID];
+    store.setSessionStatus(WEDGED_SESSION_ID, WEDGED_STATUS, WEDGED_SESSION.cwd);
     return () => {
-      const store = useSessionListStore.getState();
-      if (before === undefined) store.removeSession(WEDGED_SESSION_ID);
-      else store.setSessionStatus(WEDGED_SESSION_ID, before, WEDGED_SESSION.cwd);
+      const current = useSessionListStore.getState();
+      // `removeSession` clears every map this id could have reached, which is
+      // the honest undo for a status that was not there before.
+      if (beforeStatus === undefined) current.removeSession(WEDGED_SESSION_ID);
+      else current.setSessionStatus(WEDGED_SESSION_ID, beforeStatus, beforeCwd);
     };
   }, []);
 }

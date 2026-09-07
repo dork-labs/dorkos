@@ -257,7 +257,7 @@ const CURRENT_SESSION_ID = 'sw-live-2';
  *
  * The tag is not a prop — the switcher asks `useSessionId()`, which reads
  * `?session=` off the router. The playground runs its OWN memory router
- * (`DevPlayground`, `createMemoryHistory({ initialEntries: ['/dev'] })`), so a
+ * (`DevPlayground`, whose memory history lands on `PLAYGROUND_ROUTER_PATH`), so a
  * param typed into the browser's address bar never reaches it, and the required
  * "current-session-tagged" state measured zero tagged rows.
  *

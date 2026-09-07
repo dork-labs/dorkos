@@ -120,11 +120,17 @@ test.describe('Dev Playground — the Pulse attention showcase is populated @smo
     // and asks for the entry above to be deleted rather than going on hiding
     // whatever the page logs next.
     for (const known of KNOWN_CONSOLE_ERRORS) {
+      // ONE each, not "at least one". React reports each nesting rule once per
+      // offending element and the page renders exactly one `variant="toggle"`
+      // card, so the number is knowable — and a `toBeGreaterThan(0)` here would
+      // go on passing if a second toggle card appeared, which is the same
+      // defect twice and worth being told about.
       expect(
         consoleErrors.filter((message) => message.includes(known)).length,
-        `the page no longer logs the console error KNOWN_CONSOLE_ERRORS accounts for ` +
-          `("${known}"). If finding F2 was fixed, delete that entry`
-      ).toBeGreaterThan(0);
+        `the page must log the console error KNOWN_CONSOLE_ERRORS accounts for ("${known}") ` +
+          `exactly once. Zero means finding F2 was fixed and that entry is owed a deletion; ` +
+          `more than one means a second showcase now reaches the same defect`
+      ).toBe(1);
     }
   });
 });
