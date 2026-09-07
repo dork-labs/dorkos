@@ -102,7 +102,7 @@ export function McpClientCredentialsForm({
       </div>
 
       <p className="text-muted-foreground text-xs leading-relaxed">
-        From the provider’s developer settings. Stored encrypted on this computer; the agent never
+        From the service’s developer settings. Stored encrypted on this computer; the agent never
         sees it.
       </p>
 

@@ -410,7 +410,7 @@ registry.registerPath({
   summary: 'Deep health checks',
   description:
     'The setup checks that need a running server: room-to-session bindings with no transcript, ' +
-    'quarantined relay access rules, unreadable chat-integration entries, relay bindings pointing ' +
+    'quarantined relay access rules, unreadable chat-connection entries, relay bindings pointing ' +
     'at a missing adapter or agent, and duplicate agent ids. Always answers 200 — a failing check ' +
     'is data, not an HTTP error. Results are content-free (counts and plain sentences only) and ' +
     'share the `CheckResult` shape `dorkos doctor` renders; `dorkos doctor --deep` merges them ' +

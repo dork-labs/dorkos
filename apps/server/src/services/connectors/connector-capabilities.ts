@@ -137,8 +137,8 @@ export const connectorDomain: CapabilityDomain = {
       title: 'List connectable services',
       description:
         'List the services (Gmail, Slack, …) the configured connector backends can connect, ' +
-        'aggregated and deduped. Empty when no connector provider is configured yet — point the ' +
-        'user at Settings → Connections to add a provider key.',
+        'aggregated and deduped. Empty when no connector backend is configured yet — point the ' +
+        'user at the Connections page to add a key under Composio & Nango.',
       tier: 'observe',
       input: z.object({}),
       output: z.unknown(),

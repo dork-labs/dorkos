@@ -106,7 +106,7 @@ export default function TelemetryPage() {
             </li>
             <li>
               <span className="text-charcoal font-mono">counts</span>: rough totals of your agents,
-              tasks, and relay adapters. Just numbers, never their names or contents.
+              tasks, and chat connections. Just numbers, never their names or contents.
             </li>
           </ul>
         </section>

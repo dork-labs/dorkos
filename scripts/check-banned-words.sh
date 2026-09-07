@@ -20,6 +20,21 @@
 #   check-vocab-gate.ts  →  render-path strings in apps/{client,site,server}/src
 #   this script          →  prose and data files an AST walk cannot see
 #
+# Both now run in the `typecheck` workflow, one step apart (DOR-1814 moved the
+# parser half there; before that it rode only its own pin suite, on a workflow
+# path-filtered away from every copy-only PR).
+#
+# THIS SCRIPT'S WORD LIST IS NOT THE WHOLE VOCABULARY. It carries wave 2 only.
+# The four nouns ADR 260804-021140 retired for "Connections" — integration,
+# connector, adapter, provider (DOR-1814, wave 4) — are enforced by the parser
+# half ALONE, deliberately: they are ordinary English with legitimate technical
+# senses everywhere this script looks. `docs/integrations/` is a shipped URL
+# path, every release note in the frozen changelog says "integration", and
+# `docs/api/openapi.json` is generated from route descriptions that name
+# `provider` path parameters. A grep here would fire on all of it and teach
+# everyone to skip the gate, which is the failure this file's header warns
+# about two paragraphs up. Sweep docs prose for those four words by hand.
+#
 # Neither one covers the other's ground, and a word landing in either place
 # fails CI. Do not "simplify" this into a repo-wide grep: grep cannot tell the
 # identifier `ProductSurface.cockpit` from the sentence "open the cockpit", and

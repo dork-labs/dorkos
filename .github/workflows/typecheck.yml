@@ -160,6 +160,25 @@ jobs:
         if: ${{ !cancelled() }}
         run: bash scripts/check-banned-words.sh
 
+      # The other half of that split: render-path strings in app source, judged
+      # by the TypeScript parser rather than grep (DOR-855 wave 1, DOR-1517
+      # wave 2, DOR-1756 wave 3, DOR-1814 wave 4 — the four words ADR
+      # 260804-021140 retired for "Connections").
+      #
+      # It rides THIS job because until DOR-1814 it rode nothing that could
+      # stop a copy change. Its only CI home was the real-repo canary inside
+      # scripts/__tests__/check-vocab-gate.test.ts, run by scripts-test.yml —
+      # which is path-filtered to `scripts/**` and friends and carries no
+      # `merge_group:` trigger. A PR that touched only apps/client/src copy
+      # therefore never ran the gate at all, which is precisely the PR the gate
+      # exists for. `typecheck` is unfiltered, required, and reports on
+      # `merge_group`, so the guard now fails the merge rather than a workflow
+      # nobody was watching. The canary test stays where it is: it pins the
+      # mechanism, this step enforces the result.
+      - name: Retired-vocabulary gate — app render paths (DOR-855)
+        if: ${{ !cancelled() }}
+        run: pnpm run check:vocab-gate
+
       # Raw NUL bytes pasted into text files (DOR-1561). Rides THIS job for
       # the same reason the gate above it does: `typecheck` is already a
       # required status check that reports on `merge_group`, and a gate on a

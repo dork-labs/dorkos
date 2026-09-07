@@ -66,10 +66,27 @@
  * named `*ErrorMessage`/`honestInstallError`, or a `// vocab-gate: copy`
  * marker comment) without touching the mechanism this file already has.
  *
+ * WHERE IT RUNS. The `typecheck` workflow, one step after
+ * `check-banned-words.sh` — the two halves of the split above, side by side.
+ * That is new as of DOR-1814. For its first four months this script's only CI
+ * home was the real-repo canary inside `scripts/__tests__/check-vocab-gate.test.ts`,
+ * run by `scripts-test.yml`, which is path-filtered to `scripts/**` and friends
+ * and carries no `merge_group:` trigger — so a PR touching nothing but
+ * `apps/client/src` copy never ran the gate at all. The canary test stays: it
+ * pins the mechanism, the workflow step enforces the result.
+ *
  * DATA, NOT CODE, IS WHAT A NEW WAVE EXTENDS. `vocab-gate/banned-terms.json`
  * holds one wave per retired string (Wave 1: "connection"; Wave 2: "mission
  * control"/"cockpit"; Wave 3: the typography DOR-1756 settled — "...",
- * "&apos;", "&rsquo;", "&ldquo;", "&rdquo;"); `vocab-gate/allowlist.json` holds
+ * "&apos;", "&rsquo;", "&ldquo;", "&rdquo;"; Wave 4: "integration",
+ * "connector", "adapter" and "provider", singular and plural, the four nouns
+ * ADR 260804-021140 retired for "Connections"). Wave 4 is also the wave that
+ * shows what the allowlist is FOR: all four words keep legitimate technical
+ * senses this repo uses daily — `RelayAdapter`, `ConnectorProvider`, the
+ * marketplace package types an author writes, OpenCode's model providers — and
+ * every one of them is a scoped, reasoned entry rather than a term left
+ * unbanned, because the word is correct only where the ADR's scoped-word
+ * registry says it is. `vocab-gate/allowlist.json` holds
  * every legitimate domain use the parser still flags, each with a path
  * substring, an optional term scope, and a written reason. A new wave adds a
  * wave object and whatever allowlist entries its own sweep turns up — this file

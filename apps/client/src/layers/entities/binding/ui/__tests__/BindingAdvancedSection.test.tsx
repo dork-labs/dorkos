@@ -218,7 +218,7 @@ describe('BindingAdvancedSection permissions', () => {
       expect(alert).toHaveTextContent(/refused after 10 minutes/);
       // Not every adapter can draw a button. The sentence must be true for a
       // webhook binding, which gets no buttons and auto-denies every ask.
-      expect(alert).toHaveTextContent(/where your integration can show buttons/i);
+      expect(alert).toHaveTextContent(/where your connection can show buttons/i);
     });
 
     it('applies it only once the person confirms', async () => {
