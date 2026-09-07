@@ -44,6 +44,23 @@ const TEAM_VIEW_MODES: TeamViewMode[] = ['cards', 'table', 'topology', 'denied',
 /** The width a phone gives the bar. */
 const PHONE_WIDTH = 390;
 
+/**
+ * The width the page really has at 768px with the sidebar and the right panel
+ * both docked — the frame `min-w-28` was added for (audit finding 2.3).
+ */
+const SQUEEZED_FRAME_WIDTH = 236;
+
+/**
+ * How `apps/e2e/tests/one-bar/bar-tab-strip-floor.spec.ts` finds the squeezed
+ * strip.
+ *
+ * The one showcase on this page that a browser spec MEASURES rather than looks
+ * at. `min-w-28`'s floor is a rendered width, and jsdom lays nothing out — the
+ * unit suite could only ever assert that the class is on the element, which is
+ * true of a build where the floor does nothing.
+ */
+export const SQUEEZED_STRIP_TEST_ID = 'playground-squeezed-tabs';
+
 const LONG_ROOM_NAME = 'Priya, Kai, Ikechi and 47 others about the quarterly migration plan';
 
 /**
@@ -341,7 +358,7 @@ export function OneBarShowcases() {
           16px wide, with no label and not even a fade. It now stops at one readable tab
         </ShowcaseLabel>
         <ShowcaseDemo>
-          <BarFrame width={236}>
+          <BarFrame width={SQUEEZED_FRAME_WIDTH}>
             <OneBar
               identity={
                 <BarTabStrip
@@ -349,9 +366,29 @@ export function OneBarShowcases() {
                   activeTabId="workspaces"
                   label="Home sections, squeezed"
                   indicatorLayoutId="playground-home-tabs-squeezed"
+                  // The one showcase a browser spec measures rather than looks
+                  // at (DOR-1816): `min-w-28`'s floor is a rendered width, and
+                  // jsdom can only ever be told the class is present. The
+                  // testid is what `apps/e2e/tests/one-bar/bar-tab-strip-floor.spec.ts`
+                  // addresses — including the edge fades, which derive theirs
+                  // from it.
+                  testId={SQUEEZED_STRIP_TEST_ID}
                 />
               }
-              chips={<SystemHealthDot state="healthy" />}
+              /* The members chip belongs here, and leaving it out made this demo
+                 prove nothing (DOR-1816). Home IS #team, so at 768px its bar
+                 carries the head count beside the tabs. Without it the row had
+                 218px to spend on a 122px strip and never reached the floor at
+                 all — the strip rendered identically whether `min-w-28` was
+                 there or not, which is exactly the hole the class-string unit
+                 test had. With the chip the row asks for more than it has, and
+                 the floor is what answers. */
+              chips={
+                <>
+                  <BarMembersChip count={12} roomName="#team" onClick={() => {}} />
+                  <SystemHealthDot state="healthy" />
+                </>
+              }
             />
           </BarFrame>
         </ShowcaseDemo>
