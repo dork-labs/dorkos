@@ -1,3 +1,4 @@
+import type { Ref } from 'react';
 import { Folder } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Badge } from '@/layers/shared/ui/badge';
@@ -48,6 +49,18 @@ interface CandidateCardProps {
   onDeny?: (candidate: DiscoveryCandidate) => void;
   onSkip?: (candidate: DiscoveryCandidate) => void;
   className?: string;
+  /**
+   * Forwarded to the card's root element.
+   *
+   * **Load-bearing, not a convenience.** `DiscoveryView` renders this list
+   * inside `AnimatePresence mode="popLayout"`, which takes an exiting card out
+   * of the layout flow by writing `position: absolute` onto its DOM node — and
+   * it can only reach that node through a ref the card passes on. Without it
+   * `popLayout` silently does nothing: an approved card holds its slot for the
+   * whole exit and the cards below it sit still instead of closing the gap.
+   * Same reasoning, same shape as `TeamMemberCardProps.ref`.
+   */
+  ref?: Ref<HTMLDivElement>;
 }
 
 /** Displays a discovered agent candidate with approve, deny, and optional skip actions. */
@@ -57,11 +70,13 @@ export function CandidateCard({
   onDeny,
   onSkip,
   className,
+  ref,
 }: CandidateCardProps) {
   const { path, strategy, hints } = candidate;
 
   return (
     <motion.div
+      ref={ref}
       data-slot="candidate-card"
       layout
       initial={{ opacity: 0, y: 6 }}

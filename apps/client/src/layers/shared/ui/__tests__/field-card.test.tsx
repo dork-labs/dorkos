@@ -136,6 +136,36 @@ describe('CollapsibleFieldCard', () => {
     expect(onOpenChange).not.toHaveBeenCalled();
   });
 
+  it('toggles the section when the chevron beside the trigger is clicked', () => {
+    // The chevron sits OUTSIDE the label trigger so every card draws it at the
+    // same distance from the card's right edge whether or not an `action` is
+    // present. Moving it out cost it its click, and a chevron that does not
+    // answer one is the affordance lying (DOR-1815).
+    const onOpenChange = vi.fn();
+    render(
+      <CollapsibleFieldCard open={false} onOpenChange={onOpenChange} trigger="Section">
+        <div>Content</div>
+      </CollapsibleFieldCard>
+    );
+    fireEvent.click(screen.getByTestId('collapsible-field-card-chevron'));
+    expect(onOpenChange).toHaveBeenCalledWith(true);
+  });
+
+  it('offers the chevron to the pointer only — one toggle for the keyboard and the reader', () => {
+    // Two triggers is what makes the chevron clickable; two ANNOUNCED toggles
+    // would be the regression. The chevron is hidden from the accessibility
+    // tree and taken out of the tab order, so `getAllByRole` still sees one.
+    render(
+      <CollapsibleFieldCard open={false} onOpenChange={vi.fn()} trigger="Section">
+        <div>Content</div>
+      </CollapsibleFieldCard>
+    );
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    const chevron = screen.getByTestId('collapsible-field-card-chevron');
+    expect(chevron).toHaveAttribute('aria-hidden', 'true');
+    expect(chevron).toHaveAttribute('tabindex', '-1');
+  });
+
   it('applies custom className to the outer card', () => {
     const { container } = render(
       <CollapsibleFieldCard

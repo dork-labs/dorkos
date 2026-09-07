@@ -615,11 +615,21 @@ describe('Session border indicator', () => {
     vi.useRealTimers();
   });
 
+  // The row stamps what `usePulseMotion` decided as `data-pulsing`, precisely
+  // because no motion prop survives into jsdom. That only helps if something
+  // reads it: an attribute nobody asserts can drift to a constant and every
+  // test still passes (DOR-1815). These two read it in both directions.
+  function pulsing(container: HTMLElement): string | null {
+    const item = container.querySelector('[data-testid="session-row"]') as HTMLElement;
+    return item.getAttribute('data-pulsing');
+  }
+
   it('shows subtle idle border when session is idle', () => {
     const { container } = renderRow(
       <SessionRow variant="full" session={makeSession()} isActive={false} onClick={() => {}} />
     );
     expect(getBorderColor(container)).toBe('rgba(128, 128, 128, 0.08)');
+    expect(pulsing(container)).toBe('false');
   });
 
   it('shows green border when session is streaming', () => {
@@ -632,6 +642,7 @@ describe('Session border indicator', () => {
     // the row exists with the border-l-2 class.
     const item = container.querySelector('[data-testid="session-row"]') as HTMLElement;
     expect(item.className).toContain('border-l-2');
+    expect(pulsing(container)).toBe('true');
   });
 
   it('shows destructive border when session has an error', () => {

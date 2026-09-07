@@ -350,9 +350,9 @@ export function createWindow(options: CreateWindowOptions = {}): BrowserWindow {
  * port is `null` for the whole of every gap — a crash, a restart in flight, a
  * restart that failed — and during those gaps a window is still sitting on the
  * origin it last loaded, holding a page that is very much ours. Answering
- * `undefined` there tells every caller that the app's own cockpit is a foreign
+ * `undefined` there tells every caller that the app's own window is a foreign
  * document: links out of it would be handed to the system browser, permissions
- * denied, and Settings → Advanced's Restart refused with "DorkOS only takes this
+ * denied, and Settings → Danger zone's Restart refused with "DorkOS only takes this
  * from its own window" — the dead button DOR-542 exists to remove, at the one
  * moment somebody needs it. The remembered value can only ever be the port we
  * really did serve on, because a live port always wins over it.
