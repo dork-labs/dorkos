@@ -2,7 +2,8 @@ import type { Locator, Page, TestInfo } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { SOLE_SIDEBAR_TAG } from '../../fixtures/sole-access';
 import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
-import { PHONE, TOUCH_TARGET_PX, touchHeight, settled } from '../rooms/room-sheet-helpers';
+import { TOUCH_TARGET_PX, touchHeight } from '../../pages/touch-reach';
+import { PHONE, settled } from '../rooms/room-sheet-helpers';
 
 // One cockpit at a time, with the ceiling this repo's other room specs use.
 test.describe.configure({ mode: 'default', timeout: 90_000 });
