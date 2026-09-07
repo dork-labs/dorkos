@@ -29,16 +29,30 @@ export interface SkillEntry {
  * authored skill (DOR-1844). The orphan sweep asks for the same pair, so nothing
  * hand-authored is mistaken for a projection.
  *
- * KNOWN GAP (measured 2026-09-07, not fixed here): the sweep's KEEP-set is built
- * from `provenance: 'installed'` actions only, so an authored `my__helper`
- * survives the "is this managed?" test and then fails the "is this still
- * projected?" one — `applyPlan(..., { sweepOrphans: true })` creates
- * `.claude/skills/my__helper` and removes it in the same call. The source
- * directory is untouched and Codex reads `.agents/skills` natively, so nothing
- * is lost; the Claude Code link just never lands. The fix belongs in
- * `sweepInstalledOrphans` (keep every `symlink` action's target, not only the
- * installed ones) and is deliberately not made here — `apply/apply.ts` is owned
- * by another change in flight. See contributing/harness-sync.md §4.
+ * KNOWN GAP — `__` is still a bad name for an authored skill until DOR-1842
+ * lands. That change widens `sweepInstalledOrphans`' keep-set from
+ * `provenance: 'installed'` actions to every `symlink` action; `apply/apply.ts`
+ * is its file, so nothing here touches it. All three symptoms were reproduced on
+ * 2026-09-07 and none of them loses the authored SOURCE:
+ *
+ * 1. A real `.agents/skills/my__helper` DIRECTORY is projected and then swept in
+ *    the same call: `applyPlan(..., { sweepOrphans: true })` creates
+ *    `.claude/skills/my__helper` and reports `swept:
+ *    ['.claude/skills/my__helper']`. Codex reads `.agents/skills` natively, so
+ *    only the Claude Code link is lost.
+ * 2. Because that link is planned and then removed, `dorkos harness sync
+ *    --check` reports it as drift on EVERY run (`checkPlan(...).clean === false`,
+ *    `drifted: ['claude-code:my__helper']`, exit 1) — a permanently red check
+ *    with no state a person can reach to make it green.
+ * 3. An authored `.agents/skills/my__helper` SYMLINK is indistinguishable from a
+ *    managed projection by construction, so the scan skips it (correctly, by the
+ *    rule above) and the sweep then deletes the link itself: `swept:
+ *    ['.agents/skills/my__helper']`. The real directory behind the link
+ *    survives; the link does not, and `--check` calls that clean because nothing
+ *    was ever planned for it. This one is PRE-EXISTING — the old name-only rule
+ *    skipped such an entry too — and is documented here rather than introduced.
+ *
+ * See contributing/harness-sync.md §4.
  */
 export const INSTALLED_PROJECTION_MARKER = '__';
 
@@ -74,6 +88,20 @@ export interface ScanSkillDirsOptions {
    * command in the same repo (DOR-1844, ADR 260706-192819's parity promise).
    */
   includeManagedProjections?: boolean;
+  /**
+   * Whether an entry that is a symlink may count as a skill. Defaults to `true`,
+   * because linking a skill in from elsewhere is exactly what a person does with
+   * `.agents/skills` and what every harness reading that directory honors.
+   *
+   * Pass `false` for a root the ENGINE walks on a package's behalf rather than a
+   * person's. A symlink there is a link the scan would follow out of the tree it
+   * was pointed at, and the projector turns whatever it finds into a
+   * `.agents/skills` and `.claude/skills` link that both the palette and
+   * `dorkos://skills` then serve — so `skills/stolen -> /somewhere/private`
+   * publishes that directory to every agent in the project. See
+   * `collectPortableSkills` for the one root that sets it.
+   */
+  followSymlinks?: boolean;
 }
 
 /**
@@ -101,8 +129,9 @@ function resolvesToDirectory(absPath: string, entry: Dirent): boolean {
  *
  * An entry counts as a skill when it is a directory — or a symlink resolving to
  * one, which is how a person links a skill kept outside the repo into
- * `.agents/skills` — and it directly contains a `SKILL.md`. Stray files,
- * skill-less directories and dangling links are ignored.
+ * `.agents/skills`, and which `followSymlinks: false` turns off for a root the
+ * engine walks on a package's behalf — and it directly contains a `SKILL.md`.
+ * Stray files, skill-less directories and dangling links are ignored.
  *
  * By default a managed installed projection is ignored too, so the authored scan
  * never re-derives the engine's own output. That is `<pkg>__<name>` **and** a
@@ -128,8 +157,9 @@ export function scanSkillDirs(
 
   const skills: SkillEntry[] = [];
   for (const entry of readdirSync(absRoot, { withFileTypes: true })) {
-    const isManagedProjection =
-      entry.isSymbolicLink() && entry.name.includes(INSTALLED_PROJECTION_MARKER);
+    const isLink = entry.isSymbolicLink();
+    if (isLink && options.followSymlinks === false) continue;
+    const isManagedProjection = isLink && entry.name.includes(INSTALLED_PROJECTION_MARKER);
     if (isManagedProjection && !options.includeManagedProjections) continue;
     const absEntry = join(absRoot, entry.name);
     if (!resolvesToDirectory(absEntry, entry)) continue;

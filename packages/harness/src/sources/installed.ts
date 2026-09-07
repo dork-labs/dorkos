@@ -385,23 +385,38 @@ function toInstalledSkill(entry: SkillEntry, absSkillsRoot: string): InstalledSk
  * Collect a project plugin's portable skill dirs (skills/ + .dork/tasks/),
  * de-duped by name.
  *
- * Both scans take {@link scanSkillDirs}' default view, which is the right one
- * here for two separate reasons. A skill a package ships as a SYMLINK counts —
- * the package's author linked it in deliberately, and every harness that reads
- * the projection follows the link — and that now happens without asking,
- * because the scanner follows links. Managed projections stay excluded, because
- * a marketplace package's own `skills/` directory is content it authored, not
- * somewhere the engine ever writes: a `<pkg>__<name>` symlink there would be a
- * package linking at another package's install dir, which is not an install
- * shape DorkOS produces and not one it should re-project.
+ * **Both scans pass `followSymlinks: false`, and that is a containment rule, not
+ * a tidiness one.** A package's install directory is a tree the ENGINE walks on
+ * the package's behalf, so a symlink in it is a link the scan would follow out
+ * of the directory it was pointed at — and the projector turns whatever it finds
+ * into `.agents/skills/<pkg>__<name>` and `.claude/skills/<pkg>__<name>`, which
+ * the Codex palette and `dorkos://skills` then serve to every agent in the
+ * project. `skills/stolen -> /somewhere/private` is that whole chain
+ * (reproduced 2026-09-07: two links planned and applied, the target's `SKILL.md`
+ * served as `evil__stolen`).
+ *
+ * A marketplace install can never produce such a link — `stagePackageContents`
+ * (`services/marketplace/lib/stage-package.ts`) strips every symlink as it
+ * copies, of any kind, escaping or internal, for exactly this reason (DOR-279).
+ * But `dorkos harness sync` walks `.dork/plugins/` itself, so a tree put there
+ * by anything other than the installer reaches this scan with no staging in
+ * between. Refusing the whole shape rather than realpath-checking each link
+ * matches the installer's own doctrine, leaves nothing legitimate behind (the
+ * staged tree has no symlinks to preserve), and avoids a check whose answer can
+ * change between the `realpath` and the read.
+ *
+ * Managed projections stay excluded for a separate reason: a package's `skills/`
+ * is content it authored, never a directory the engine writes into, so a
+ * `<pkg>__<name>` entry there is not a projection to re-derive.
  */
 function collectPortableSkills(pluginDir: string, relDir: string): InstalledSkill[] {
   const skillsRoot = join(pluginDir, 'skills');
   const tasksRoot = join(pluginDir, '.dork', 'tasks');
-  const skillEntries = scanSkillDirs(skillsRoot, `${relDir}/skills`).map((e) =>
+  const contained = { followSymlinks: false } as const;
+  const skillEntries = scanSkillDirs(skillsRoot, `${relDir}/skills`, contained).map((e) =>
     toInstalledSkill(e, skillsRoot)
   );
-  const taskEntries = scanSkillDirs(tasksRoot, `${relDir}/.dork/tasks`).map((e) =>
+  const taskEntries = scanSkillDirs(tasksRoot, `${relDir}/.dork/tasks`, contained).map((e) =>
     toInstalledSkill(e, tasksRoot)
   );
   const byName = new Map<string, InstalledSkill>();

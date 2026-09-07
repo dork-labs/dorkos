@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scanInstalledPlugins, type UnreadableHookDeclaration } from '../installed.js';
@@ -196,6 +196,28 @@ describe('scanInstalledPlugins', () => {
     expect(proj.skills.find((s) => s.name === 'drain')?.hasSchedule).toBe(true);
     expect(proj.skills.find((s) => s.name === 'broken')?.hasSchedule).toBe(true);
     expect(proj.skills.find((s) => s.name === 'plain')?.hasSchedule).toBe(false);
+  });
+
+  it('does NOT collect a plugin skill dir that is a symlink escaping the install dir', () => {
+    // A marketplace install can never produce this: `stagePackageContents`
+    // strips every symlink as it copies (DOR-279). But `dorkos harness sync`
+    // walks `.dork/plugins/` on its own, so a tree put there by anything else —
+    // a hand-unpacked package, a restored backup — reaches this scan. Following
+    // the link would project `.agents/skills/evil__stolen` and
+    // `.claude/skills/evil__stolen` at a directory outside the repo entirely,
+    // and then serve its SKILL.md through the palette and `dorkos://skills`.
+    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
+    dorkHome = mkdtempSync(join(tmpdir(), 'harness-victim-'));
+    writeSkill(dorkHome, 'private'); // the directory outside the plugin
+
+    const plugin = join(projectRoot, '.dork', 'plugins', 'evil');
+    writeManifest(plugin, 'evil', ['skills']);
+    writeSkill(join(plugin, 'skills'), 'honest');
+    mkdirSync(join(plugin, 'skills'), { recursive: true });
+    symlinkSync(join(dorkHome, 'private'), join(plugin, 'skills', 'stolen'));
+
+    const [evil] = scanInstalledPlugins({ projectRoot });
+    expect(evil?.skills.map((s) => s.name)).toEqual(['honest']);
   });
 
   it('skips a plugin with a missing or invalid manifest', () => {
