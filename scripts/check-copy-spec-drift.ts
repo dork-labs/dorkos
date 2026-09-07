@@ -46,9 +46,20 @@
  *
  * What IS shared is the template's static chunk, `Compacted context —`. So a
  * template literal contributes its head and every span literal SEPARATELY, and
- * a spec string counts as a hit when it CONTAINS a removed chunk. Substring
+ * a spec string counts as a hit when it OVERLAPS a removed chunk. Substring
  * containment is also what Playwright itself does: `getByText` matches on
  * substring unless `{ exact: true }` is passed.
+ *
+ * OVERLAP RUNS BOTH WAYS (DOR-1819). The first version only asked whether the
+ * SPEC string contains the removed run, and PR #1549 walked straight through
+ * that hole: the component's chunk was
+ * `live sessions — open the session switcher for` (45 characters) while the
+ * spec's regex asked for `live sessions — open the session switcher` (41), so
+ * the spec string was the SHORTER of the two and containment never fired. Both
+ * sides are interpolated in practice, so which one is broader is an accident of
+ * where each side chose to stop — never a signal. {@link Overlap} names the two
+ * shapes and {@link dropSupported} rules on each with the evidence that shape
+ * actually admits.
  *
  * WHY "REMOVED" IS JUDGED PER FILE AND "STILL RENDERS" PER SPEC STRING. The
  * first rule tried was the obvious one — a chunk counts as removed when it
@@ -68,6 +79,16 @@
  * or "it moved and got longer" looks like, and it is the only shape the corpus
  * can honestly rule on. `Connected —` in an unrelated component is exactly as
  * long as the run that vanished, so it no longer suppresses anything.
+ *
+ * AND IT MUST COVER THE RUN THAT VANISHED (DOR-1819). "Longer, and inside the
+ * same spec string" was not enough on its own. #1549 reworded
+ * `${who} ${be} still working — ${TAKING_LONGER}` to `…still working, …`, and
+ * the finding was suppressed by `TAKING_LONGER` itself — a longer, UNCHANGED
+ * constant in the very same file, which the spec string of course also spans,
+ * and which says nothing whatever about the em dash that disappeared. A
+ * supporting run now has to CONTAIN the removed run as well, which is what "the
+ * copy just grew around it" means and what an unrelated neighbouring constant
+ * can never do.
  *
  * WHY IT DOES NOT REUSE THE VOCAB GATE'S COPY-SINK CLASSIFIER. `isCopySink` in
  * `check-vocab-gate.ts` is the obvious candidate and was the first thing tried;
@@ -93,6 +114,23 @@
  *     a lookup table keyed by an enum, or text that only exists after i18n.
  *   - A spec that builds its expectation the same dynamic way the component
  *     does, so neither side holds a literal at all.
+ *   - A regex assertion whose source carries metacharacters beyond the anchors
+ *     {@link regexLiteralSource} strips. `/^working folder/i` is read exactly;
+ *     `/Connected — \d+ tools/` keeps its `\d+` verbatim and therefore matches
+ *     no component chunk. Only the literal head of such a pattern would be
+ *     comparable, and splitting one out is not attempted here.
+ *   - Copy the change removes from a file it touched while an UNCHANGED file
+ *     elsewhere still renders the same run. Removal is judged per changed file
+ *     on purpose (above), so this direction is a false positive rather than a
+ *     miss — say so on the PR; the check is advisory.
+ *
+ * WHY IT IS STILL NEEDED IF `browser-test` EVER RUNS ON PRs (DOR-1818). It runs
+ * in seconds against a diff, where the shards cost forty minutes on a machine
+ * that has to be provisioned; and it names the copy that moved, which a
+ * Playwright timeout does not. If the shards do start reporting on
+ * `pull_request`, this becomes the fast pre-shard signal rather than the only
+ * one, and the honest thing to do then is say so here rather than delete it
+ * silently.
  *
  * That is a signal, not a proof, and it is deliberately positioned as one: the
  * merge-queue shards remain the gate that decides the merge. This runs on the
@@ -138,6 +176,28 @@ const SPEC_ROOTS = ['apps/e2e'];
 const MIN_CHUNK_CHARS = 10;
 
 /**
+ * How much of a removed run a SHORTER spec string has to cover before the spec
+ * is read as depending on that run.
+ *
+ * Only the `removed-spans-assertion` direction needs this, and the asymmetry is
+ * the point. When the spec string is the broader one it asserts the whole of
+ * itself, so any run inside it that vanished breaks the locator however small
+ * that run is. When the spec string sits INSIDE the removed run it asserts only
+ * a fragment, and Playwright's substring matching means the fragment can go on
+ * matching anything else that contains it — so a fragment covering nearly all
+ * of the run is a dependency, and one covering a third of it is a common phrase
+ * that happened to sit there.
+ *
+ * Calibrated on #1549 itself: the two assertions the change really stranded
+ * cover 0.91 (`live sessions — open the session switcher` of
+ * `…switcher for`) and 1.0 (`working directory` of `Working Directory`) of
+ * their runs, while the one coincidence in the same 190-file batch —
+ * `Send message`, a room composer button, sitting inside the settings tool
+ * description `Send messages and check the inbox` — covers 0.36.
+ */
+const MIN_ASSERTION_COVERAGE = 0.6;
+
+/**
  * Path fragments that are never product copy, applied to BOTH sides so the
  * "was it removed" scan and the "does it still exist" scan agree. They mirror
  * `check-vocab-gate.ts`'s list — `collectFiles` applies that one while walking
@@ -154,9 +214,28 @@ export interface Chunk {
   line: number;
   /** Whitespace-collapsed, trimmed text. */
   text: string;
+  /**
+   * The chunk came from a `/…/i` regex, so every comparison it takes part in
+   * must fold case — a case-insensitive locator keeps matching copy whose
+   * casing changed, and stops matching copy whose WORDS changed. Only ever set
+   * on the apps/e2e side; authored copy is compared verbatim.
+   */
+  ignoreCase?: boolean;
 }
 
-/** A browser-suite string that spans copy this change removed. */
+/**
+ * Which of the two runs is the broader one. Both shapes are the same
+ * regression — a locator that can no longer match — but they admit different
+ * evidence that the copy survived, so {@link dropSupported} rules on them
+ * separately.
+ */
+export type Overlap =
+  /** The spec string spans the removed run: `'Compacted context — 51.2k…'` over `'Compacted context —'`. */
+  | 'assertion-spans-removed'
+  /** The removed run spans the spec string: `'live sessions — open the session switcher for'` over `/live sessions — open the session switcher/`. */
+  | 'removed-spans-assertion';
+
+/** A browser-suite string that overlaps copy this change removed. */
 export interface Finding {
   /** Repo-relative path of the apps/e2e file holding the stale string. */
   specFile: string;
@@ -164,12 +243,16 @@ export interface Finding {
   specLine: number;
   /** The full apps/e2e string, normalized. */
   assertion: string;
+  /** Whether `assertion` came from a case-insensitive regex. */
+  ignoreCase: boolean;
   /** Repo-relative path the removed copy used to live at. */
   copyFile: string;
   /** 1-based line it used to live on. */
   copyLine: number;
-  /** The removed chunk `assertion` still spans. */
+  /** The removed chunk `assertion` overlaps. */
   removed: string;
+  /** Which run contains which. */
+  overlap: Overlap;
 }
 
 /**
@@ -181,6 +264,47 @@ export interface Finding {
  */
 export function normalizeCopy(raw: string): string {
   return raw.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Whether `haystack` contains `outer`, folding case when a case-insensitive
+ * regex is one of the two sides.
+ *
+ * @param haystack - The run that might be the broader one.
+ * @param needle - The run that might sit inside it.
+ * @param ignoreCase - Set when either side came from a `/…/i` regex.
+ */
+export function spans(haystack: string, needle: string, ignoreCase = false): boolean {
+  if (!ignoreCase) return haystack.includes(needle);
+  return haystack.toLowerCase().includes(needle.toLowerCase());
+}
+
+/**
+ * The literal text a regex literal asks for, with the anchors stripped.
+ *
+ * `/^working directory/i` is the settings-dialog assertion #1549 broke, and the
+ * two characters that made it invisible to the first version of this gate were
+ * the `^` (never present in the component's string) and the lower-case `w`
+ * (which the `i` flag made irrelevant to Playwright and fatal here). The flags
+ * come back alongside the source so the caller can carry `ignoreCase` onto the
+ * chunk; the rest of the pattern is returned verbatim, metacharacters included
+ * (module doc, "what it cannot catch").
+ *
+ * @param raw - The literal exactly as written, delimiters and flags included.
+ */
+export function regexLiteralSource(raw: string): { source: string; ignoreCase: boolean } {
+  const end = raw.lastIndexOf('/');
+  const flags = raw.slice(end + 1);
+  let source = raw.slice(1, end);
+  // `^` at position 0 cannot be escaped, so this is always the anchor.
+  if (source.startsWith('^')) source = source.slice(1);
+  // A trailing `$` IS the anchor unless a backslash escaped it, and an escaped
+  // backslash before it un-escapes it again — count the run to tell them apart.
+  if (source.endsWith('$')) {
+    const backslashes = (/(\\*)\$$/.exec(source)?.[1] ?? '').length;
+    if (backslashes % 2 === 0) source = source.slice(0, -1);
+  }
+  return { source, ignoreCase: flags.includes('i') };
 }
 
 /**
@@ -244,11 +368,11 @@ export function extractChunks(
   );
   const chunks: Chunk[] = [];
 
-  function record(node: ts.Node, raw: string): void {
+  function record(node: ts.Node, raw: string, ignoreCase = false): void {
     const normalized = normalizeCopy(raw);
     if (!isProseChunk(normalized)) return;
     const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-    chunks.push({ file, line: line + 1, text: normalized });
+    chunks.push({ file, line: line + 1, text: normalized, ...(ignoreCase ? { ignoreCase } : {}) });
   }
 
   function visit(node: ts.Node): void {
@@ -263,11 +387,8 @@ export function extractChunks(
     } else if (ts.isStringLiteralLike(node)) {
       record(node, node.text);
     } else if (options.includeRegex === true && ts.isRegularExpressionLiteral(node)) {
-      const raw = node.getText(sourceFile);
-      // Strip the delimiters and flags: `/Connected — 2 tools\./i` → `Connected
-      // — 2 tools\.`. Backslash escapes inside survive, which costs nothing —
-      // the chunks that matter carry no metacharacters.
-      record(node, raw.slice(1, raw.lastIndexOf('/')));
+      const { source, ignoreCase } = regexLiteralSource(node.getText(sourceFile));
+      record(node, source, ignoreCase);
     }
     ts.forEachChild(node, visit);
   }
@@ -392,7 +513,35 @@ export function removedChunks(before: Chunk[], after: Chunk[]): Chunk[] {
 }
 
 /**
- * Pair every removed chunk with each browser-suite string that spans it.
+ * Which run contains which, or null when the two do not overlap usefully.
+ *
+ * The COPY side is tested first, so two runs that are equal after case-folding
+ * — the settings-row shape, `Working Directory` against `/^working directory/i`
+ * — classify as `removed-spans-assertion` and are ruled on directly, by asking
+ * whether the changed files still render the spec's whole string. Classifying
+ * that shape the other way is what made a pure Title-Case-to-sentence-case
+ * rewrite report three findings against `/i` regexes it cannot possibly break.
+ *
+ * @param assertion - The apps/e2e string.
+ * @param removed - The run the change deleted.
+ * @param ignoreCase - Set when `assertion` came from a `/…/i` regex.
+ */
+export function classifyOverlap(
+  assertion: string,
+  removed: string,
+  ignoreCase: boolean
+): Overlap | null {
+  if (spans(removed, assertion, ignoreCase)) {
+    if (assertion.length / removed.length < MIN_ASSERTION_COVERAGE) return null;
+    return 'removed-spans-assertion';
+  }
+  if (spans(assertion, removed, ignoreCase)) return 'assertion-spans-removed';
+  return null;
+}
+
+/**
+ * Pair every removed chunk with each browser-suite string that overlaps it, in
+ * either direction.
  *
  * Deliberately separate from {@link dropSupported} so the corpus walk — the
  * only expensive step here — runs solely when this returns something.
@@ -406,7 +555,9 @@ export function matchSpecStrings(removed: Chunk[], specChunks: Chunk[]): Finding
 
   for (const chunk of removed) {
     for (const spec of specChunks) {
-      if (!spec.text.includes(chunk.text)) continue;
+      const ignoreCase = spec.ignoreCase === true;
+      const overlap = classifyOverlap(spec.text, chunk.text, ignoreCase);
+      if (overlap === null) continue;
       const key = `${spec.file}:${spec.line}:${chunk.text}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -414,9 +565,11 @@ export function matchSpecStrings(removed: Chunk[], specChunks: Chunk[]): Finding
         specFile: spec.file,
         specLine: spec.line,
         assertion: spec.text,
+        ignoreCase,
         copyFile: chunk.file,
         copyLine: chunk.line,
         removed: chunk.text,
+        overlap,
       });
     }
   }
@@ -424,26 +577,96 @@ export function matchSpecStrings(removed: Chunk[], specChunks: Chunk[]): Finding
 }
 
 /**
- * Drop findings whose spec string is still covered, more specifically than the
- * removed run covered it, by copy that exists at HEAD.
+ * Drop findings whose spec string demonstrably still matches something at HEAD.
  *
- * "More specifically" means strictly longer AND still contained in the same
- * spec string — the shape a rewrite takes when it only lengthens copy, or moves
- * it somewhere this change also touched. An equally-long match elsewhere in the
- * tree does NOT suppress: that is the `Connected —` collision the module doc
- * describes, where an unrelated component happens to hold the same eleven
- * characters and the spec still cannot match.
+ * The two overlap shapes admit different evidence, so each gets its own rule.
+ *
+ * `assertion-spans-removed` — the spec string is broader than any single chunk,
+ * usually because it is interpolated, so nothing at HEAD can be checked against
+ * it whole. The only honest question left is whether the copy GREW around the
+ * run that vanished, and the answer is a HEAD run that is strictly longer than
+ * the removed one, still inside the same spec string, AND containing the
+ * removed run. All three clauses are load-bearing:
+ *
+ *   - drop "strictly longer" and `Connected —` in an unrelated component
+ *     suppresses the MCP regression (the collision in the module doc);
+ *   - drop "inside the spec string" and any long sentence anywhere suppresses
+ *     everything;
+ *   - drop "contains the removed run" and `TAKING_LONGER` — a longer, unchanged
+ *     constant in the same file — suppresses #1549's presence break, which is
+ *     exactly what happened (DOR-1819).
+ *
+ * `removed-spans-assertion` — here the spec string IS a complete run of copy,
+ * so it can be checked directly: if the file the run left behind still holds a
+ * chunk containing it, the locator still matches and there is nothing to
+ * report. That covers both a pure casing sweep (`New Session` → `New session`,
+ * which a `/new session/i` locator never noticed) and a long run splitting into
+ * shorter ones around the fragment a spec quotes.
+ *
+ * Two narrowings, each measured on #1549:
+ *
+ *   - the CORPUS cannot be consulted here. The settings assertion the batch
+ *     stranded asks for `working directory`, and thirty unrelated runs
+ *     elsewhere in the tree still contain those words — none of them on the
+ *     Server tab the spec drives.
+ *   - nor can the other CHANGED FILES. `Select a working directory to browse
+ *     its files.`, a file-explorer empty state in the same 190-file batch,
+ *     vouches for that assertion just as wrongly. Scoping to the file the run
+ *     left costs nothing, because {@link removedChunks} has already absorbed
+ *     every cross-file move: a run that survives verbatim somewhere else in the
+ *     change never counts as removed in the first place.
  *
  * @param findings - Output of {@link matchSpecStrings}.
  * @param corpusTexts - Every chunk text in the copy corpus at HEAD.
+ * @param changedChunks - Chunks the changed files still hold at HEAD, with
+ *   their paths, so a finding is answered by its OWN file.
  */
-export function dropSupported(findings: Finding[], corpusTexts: string[]): Finding[] {
-  return findings.filter(
-    (finding) =>
-      !corpusTexts.some(
-        (text) => text.length > finding.removed.length && finding.assertion.includes(text)
-      )
-  );
+export function dropSupported(
+  findings: Finding[],
+  corpusTexts: string[],
+  changedChunks: Chunk[] = []
+): Finding[] {
+  return findings.filter((finding) => {
+    if (finding.overlap === 'removed-spans-assertion') {
+      return !changedChunks.some(
+        (chunk) =>
+          chunk.file === finding.copyFile &&
+          spans(chunk.text, finding.assertion, finding.ignoreCase)
+      );
+    }
+    return !corpusTexts.some(
+      (text) =>
+        text.length > finding.removed.length &&
+        spans(finding.assertion, text, finding.ignoreCase) &&
+        text.includes(finding.removed)
+    );
+  });
+}
+
+/**
+ * Keep one finding per stale assertion — the one whose removed run is closest
+ * in length to the assertion, which is the most specific evidence available.
+ *
+ * A single locator can overlap several runs the same change removed: #1549's
+ * `/^working directory/i` matched both the Server tab's `Working Directory` row
+ * and `Select Working Directory`, a dialog title in a different file that the
+ * same batch also reworded. Both are true, but the fix is one edit to one line,
+ * and printing it twice reads as noise. Runs after {@link dropSupported} so a
+ * suppressed candidate never displaces one that survived.
+ *
+ * @param findings - Surviving findings, in any order.
+ */
+export function collapseByPosition(findings: Finding[]): Finding[] {
+  const best = new Map<string, Finding>();
+  for (const finding of findings) {
+    const key = `${finding.specFile}:${finding.specLine}`;
+    const held = best.get(key);
+    const distance = Math.abs(finding.assertion.length - finding.removed.length);
+    if (held === undefined || distance < Math.abs(held.assertion.length - held.removed.length)) {
+      best.set(key, finding);
+    }
+  }
+  return [...best.values()];
 }
 
 /**
@@ -479,9 +702,12 @@ export function runCopySpecGuard(repoRoot: string, baseRef: string): Finding[] {
   if (candidates.length === 0) return [];
 
   // Only now is the whole-corpus walk worth its few seconds.
-  return dropSupported(
-    candidates,
-    collectCorpus(repoRoot, COPY_ROOTS).map((chunk) => chunk.text)
+  return collapseByPosition(
+    dropSupported(
+      candidates,
+      collectCorpus(repoRoot, COPY_ROOTS).map((chunk) => chunk.text),
+      after
+    )
   );
 }
 
@@ -499,7 +725,7 @@ if (isMain) {
     for (const finding of findings) {
       console.error(
         `::error file=${finding.specFile},line=${finding.specLine}::"${finding.assertion}" ` +
-          `spans copy this change removed ("${finding.removed}", was ${finding.copyFile}:${finding.copyLine}) ` +
+          `overlaps copy this change removed ("${finding.removed}", was ${finding.copyFile}:${finding.copyLine}) ` +
           `and no app source still produces it.`
       );
       console.error(`  ${finding.specFile}:${finding.specLine}  ${finding.assertion}`);
