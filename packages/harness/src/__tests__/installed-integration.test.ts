@@ -13,7 +13,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { project } from '../engine.js';
-import { applyPlan, sweepInstalledOrphans, sweepGeneratedOrphans } from '../apply/apply.js';
+import { applyPlan, sweepInstalledOrphans } from '../apply/apply.js';
+import { sweepGeneratedOrphans } from '../apply/generated-targets.js';
 import { getActionContent } from '../plan/content-map.js';
 import type { ProjectionPlan } from '../plan/types.js';
 
@@ -385,7 +386,6 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     writeFileSync(join(source, 'SKILL.md'), '# my__helper\n');
 
     const plan: ProjectionPlan = {
-      harnesses: ['claude-code'],
       actions: [
         {
           kind: 'symlink',
@@ -423,12 +423,7 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     symlinkSync('../../.dork/plugins/gone/skills/skill', orphan);
 
     // Sweep with an empty plan: nothing is "managed", so every candidate is an orphan.
-    const swept = sweepInstalledOrphans(repo, {
-      harnesses: [],
-      actions: [],
-      drops: [],
-      warnings: [],
-    });
+    const swept = sweepInstalledOrphans(repo, { actions: [], drops: [], warnings: [] });
 
     // The symlink is swept; the hand-authored real directory is untouched.
     expect(swept).toEqual(['.agents/skills/gone__skill']);

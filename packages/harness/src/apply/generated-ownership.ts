@@ -22,10 +22,7 @@
  */
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import {
-  CANONICAL_TO_CODEXCLI_EVENT_NAMES,
-  CLAUDE_TO_CANONICAL_EVENT_NAMES,
-} from '../vendor/rulesync-maps.js';
+import { CANONICAL_TO_CODEXCLI_EVENT_NAMES } from '../vendor/rulesync-maps.js';
 
 /**
  * The suffix of the ownership sidecar written beside every generated hook file.
@@ -47,13 +44,8 @@ export const HAND_WRITTEN_HOOKS_REASON =
 // per-item reason, because it is not a fault: `applyPlan` and `checkPlan` return
 // the bare path in `leftAlone` and the CLI heads the list with what it means.
 
-/**
- * The sidecar path for a generated target.
- *
- * @param absTarget - absolute path of the generated file.
- * @returns the absolute path of its ownership sidecar.
- */
-export function generatedSidecarPath(absTarget: string): string {
+/** The sidecar path for a generated target. Private: callers ask the questions below. */
+function generatedSidecarPath(absTarget: string): string {
   return `${absTarget}${GENERATED_SIDECAR_SUFFIX}`;
 }
 
@@ -124,23 +116,38 @@ export function ownsGeneratedFile(absTarget: string, onDisk: string): boolean {
 }
 
 /**
- * Every hook event name the engine could have written as a key of its old bare
- * Codex map: Claude's own spellings and the Codex spellings they translate to.
+ * The only keys the engine could ever have written into its old bare Codex map:
+ * the CODEX spellings, and nothing else.
+ *
+ * `generateCodexHooks` translated each Claude event through the canonical
+ * vocabulary into Codex's own name and DROPPED every event Codex has no home
+ * for, so a Claude-only name like `Notification` was never written to this file
+ * by DorkOS. Admitting the Claude vocabulary here would hand rule 2 a licence
+ * over files only a person could have authored.
  */
-const KNOWN_HOOK_EVENT_NAMES: ReadonlySet<string> = new Set<string>([
-  ...Object.keys(CLAUDE_TO_CANONICAL_EVENT_NAMES),
-  ...Object.values(CANONICAL_TO_CODEXCLI_EVENT_NAMES),
-]);
+const CODEX_WRITABLE_EVENT_NAMES: ReadonlySet<string> = new Set<string>(
+  Object.values(CANONICAL_TO_CODEXCLI_EVENT_NAMES)
+);
 
 /**
  * Whether a sidecar-less `.codex/hooks.json` is the engine's OWN pre-DOR-1842
  * output: the bare event map it used to write, before the documented
  * `{ description, hooks }` wrapper.
  *
- * The test is deliberately narrow — a top-level object with at least one key,
- * no `hooks` or `description` key (either one makes it the vendor's documented
- * shape, so a person's), and every key a known hook event name whose value is an
- * array. A hand-written file in the shape Codex documents can never match.
+ * The test is deliberately narrow, and every clause of it is load-bearing: a
+ * top-level object with at least one key, every key one of the ten event names
+ * the old generator could actually emit ({@link CODEX_WRITABLE_EVENT_NAMES}),
+ * and every value an array.
+ *
+ * The vocabulary is what excludes the vendor's documented shape, so no separate
+ * check for it is needed — and a separate check would be dead code, since
+ * neither `hooks` nor `description` is a Codex event name and a file carrying
+ * either already fails on that key. A file keyed by an event DorkOS would have
+ * dropped (`Notification`) is excluded the same way.
+ *
+ * The caller pairs this with "no sidecar has ever been written here": once one
+ * exists, the engine's authorship is already recorded, so a file that no longer
+ * matches it was edited by a person and the legacy shape proves nothing.
  *
  * @param content - the file's bytes.
  * @returns `true` when the file is the engine's own legacy output.
@@ -153,8 +160,9 @@ export function isLegacyBareCodexHooks(content: string): boolean {
     return false;
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return false;
-  if (Object.hasOwn(parsed, 'hooks') || Object.hasOwn(parsed, 'description')) return false;
   const entries = Object.entries(parsed as Record<string, unknown>);
   if (entries.length === 0) return false;
-  return entries.every(([key, value]) => KNOWN_HOOK_EVENT_NAMES.has(key) && Array.isArray(value));
+  return entries.every(
+    ([key, value]) => CODEX_WRITABLE_EVENT_NAMES.has(key) && Array.isArray(value)
+  );
 }

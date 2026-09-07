@@ -9,8 +9,9 @@
  * people to hand-write exactly these files.
  *
  * These cases cover the three migration rules for files the engine wrote BEFORE
- * sidecars existed, plus the sweep's two guards (ownership, and the manifest's
- * enabled harnesses).
+ * sidecars existed, the narrowness of rule 2, and the sweep's one guard —
+ * ownership, which is the whole of it: a harness leaving the manifest does not
+ * spare a file the engine wrote, and does not endanger one it did not.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -26,7 +27,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { project } from '../../engine.js';
-import { applyPlan, checkPlan, sweepGeneratedOrphans } from '../apply.js';
+import { applyPlan, checkPlan } from '../apply.js';
+import { sweepGeneratedOrphans } from '../generated-targets.js';
 import { getActionContent } from '../../plan/content-map.js';
 import { writeFileAt, writeJsonAt } from '../../__tests__/journeys/stage.js';
 import type { ProjectionPlan } from '../../plan/types.js';
@@ -120,6 +122,61 @@ describe('generated hook file ownership', () => {
     const rewritten = JSON.parse(readFileSync(join(repo, target), 'utf8'));
     expect(Object.keys(rewritten).sort()).toEqual(['description', 'hooks']);
     expect(existsSync(sidecarOf(target))).toBe(true);
+  });
+
+  it('does not adopt a bare map keyed by an event it could never have written', () => {
+    // Rule 2's licence is "only DorkOS could have produced this". The old
+    // generator dropped every event Codex has no home for, so `Notification` in
+    // a bare map means a person wrote the file.
+    stageRepo();
+    const plan = project(repo, { dorkHome });
+    const target = '.codex/hooks.json';
+    const mine = `${JSON.stringify({ Notification: [{ hooks: [{ type: 'command', command: 'echo MINE' }] }] }, null, 2)}\n`;
+    writeFileAt(join(repo, target), mine);
+
+    const { applied, conflicts } = applyPlan(repo, plan);
+
+    expect(readFileSync(join(repo, target), 'utf8')).toBe(mine);
+    expect(applied.map((a) => a.target)).not.toContain(target);
+    expect(conflicts.map((c) => c.target)).toContain(target);
+  });
+
+  it('never adopts a bare map at any path but the Codex one', () => {
+    // Only `.codex/hooks.json` ever held the bare event map. Cursor's and
+    // Copilot's generated files were always `{ version, hooks }`, so a bare map
+    // at those paths cannot be the engine's old output — whoever wrote it, it
+    // was not DorkOS.
+    stageRepo();
+    const plan = project(repo, { dorkHome });
+    const mine = `${JSON.stringify({ Stop: [{ hooks: [{ type: 'command', command: 'echo MINE' }] }] }, null, 2)}\n`;
+    writeFileAt(join(repo, '.cursor', 'hooks.json'), mine);
+
+    const { applied, conflicts } = applyPlan(repo, plan);
+
+    expect(readFileSync(join(repo, '.cursor', 'hooks.json'), 'utf8')).toBe(mine);
+    expect(applied.map((a) => a.target)).not.toContain('.cursor/hooks.json');
+    expect(conflicts.map((c) => c.target)).toContain('.cursor/hooks.json');
+  });
+
+  it('does not re-adopt a file it wrote that somebody has since edited into a bare map', () => {
+    // The other half of rule 2's narrowness: a sidecar EXISTS here, so DorkOS
+    // demonstrably wrote this path once. Its bytes no longer match, which makes
+    // the edit a person's, and the legacy shape is no longer evidence of
+    // anything — rule 2 is only for files written before sidecars existed.
+    stageRepo();
+    const plan = project(repo, { dorkHome });
+    applyPlan(repo, plan);
+    const target = '.codex/hooks.json';
+    expect(existsSync(sidecarOf(target))).toBe(true);
+
+    const edited = `${JSON.stringify({ Stop: [{ hooks: [{ type: 'command', command: 'echo MINE' }] }] }, null, 2)}\n`;
+    writeFileSync(join(repo, target), edited);
+
+    const { applied, conflicts } = applyPlan(repo, plan);
+
+    expect(readFileSync(join(repo, target), 'utf8')).toBe(edited);
+    expect(applied.map((a) => a.target)).not.toContain(target);
+    expect(conflicts.map((c) => c.target)).toContain(target);
   });
 
   it('treats a hand-written Cursor file with no sidecar as a conflict (migration rule 3)', () => {

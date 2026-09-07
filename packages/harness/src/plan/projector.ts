@@ -443,7 +443,6 @@ export function buildPlan(input: {
   }
 
   return {
-    harnesses: [...manifest.harnesses],
     actions: all.filter((a) => a.kind !== 'drop'),
     drops: all.filter((a) => a.kind === 'drop'),
     warnings,

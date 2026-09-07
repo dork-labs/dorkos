@@ -188,9 +188,9 @@ function projectOnce(
   // `.codex/hooks.json`, and the sweep deleted whatever was at that path — before
   // the card was ever raised (DOR-1842). The engine now prunes a generated hooks
   // file only when a `.dorkos-generated` sidecar proves it wrote those exact
-  // bytes, and only for a harness the manifest enables; anything else comes back
-  // as a conflict, which is logged below.
-  const { applied, conflicts, swept } = _internal.applyPlan(projectPath, plan, {
+  // bytes. Anything else comes back as `leftAlone` (nothing was blocked, so it is
+  // not a conflict), and is logged below.
+  const { applied, conflicts, swept, leftAlone } = _internal.applyPlan(projectPath, plan, {
     sweepOrphans: true,
   });
 
@@ -225,6 +225,17 @@ function projectOnce(
     });
   }
 
+  // Not a warning: nothing was blocked. But it is the only place the app path
+  // says out loud that somebody's own hooks file is why DorkOS is projecting no
+  // hooks there, so it names the paths rather than counting them.
+  if (leftAlone.length > 0) {
+    logger.info('[HarnessSync] Left a hooks file DorkOS did not write alone', {
+      packageName,
+      projectPath,
+      paths: leftAlone,
+    });
+  }
+
   logger.info('[HarnessSync] Auto-projection complete', {
     packageName,
     action,
@@ -232,6 +243,7 @@ function projectOnce(
     applied: applied.length,
     conflicts: conflicts.length,
     swept: swept.length,
+    leftAlone: leftAlone.length,
     awaitingApproval: pending.length,
   });
 

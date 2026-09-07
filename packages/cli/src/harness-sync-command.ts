@@ -116,17 +116,24 @@ function formatAction(action: ProjectionAction): string {
  * exit code. It exists so a person whose repo DorkOS projects no hooks into is
  * told why their file is being ignored rather than left to guess.
  */
-function formatLeftAlone(leftAlone: string[]): string[] {
-  if (leftAlone.length === 0) return [];
+function formatLeftAlone(leftAlone: string[], harnessFilter?: HarnessId): string[] {
+  // `--harness <id>` narrows every other line of this report, so it narrows this
+  // one too: a Cursor file is not an answer to a question about Codex.
+  const shown = harnessFilter
+    ? leftAlone.filter((path) => harnessOf(path) === harnessFilter)
+    : leftAlone;
+  if (shown.length === 0) return [];
   return [
     '',
     'Left alone — files DorkOS did not write, at paths it would otherwise generate:',
-    ...leftAlone.map(
-      (path) =>
-        `  ${path}  (${GENERATED_HOOK_TARGET_HARNESSES[path as keyof typeof GENERATED_HOOK_TARGET_HARNESSES]})`
-    ),
+    ...shown.map((path) => `  ${path}  (${harnessOf(path)})`),
     '  Nothing to fix. Put these hooks in .claude/settings.json if you want DorkOS to carry them to every harness.',
   ];
+}
+
+/** Which harness a generated hooks path belongs to, for the left-alone label. */
+function harnessOf(path: string): HarnessId | undefined {
+  return GENERATED_HOOK_TARGET_HARNESSES[path as keyof typeof GENERATED_HOOK_TARGET_HARNESSES];
 }
 
 /** Render a per-harness count of each actionable projection kind. */
@@ -156,7 +163,6 @@ function summarizeActions(actions: ProjectionAction[]): string {
  */
 function filterPlanToHarness(plan: ProjectionPlan, harness: HarnessId): ProjectionPlan {
   return {
-    harnesses: plan.harnesses.filter((h) => h === harness),
     actions: plan.actions.filter((a) => a.harness === harness),
     drops: plan.drops.filter((a) => a.harness === harness),
     warnings: plan.warnings.filter((w) => w.harness === harness),
@@ -170,7 +176,7 @@ function filterPlanToHarness(plan: ProjectionPlan, harness: HarnessId): Projecti
  * `--fix` cannot, until the person moves their file). Zero for paths merely left
  * alone — those are reported, never counted against the tree.
  */
-function reportCheck(repoRoot: string, plan: ProjectionPlan): number {
+function reportCheck(repoRoot: string, plan: ProjectionPlan, harnessFilter?: HarnessId): number {
   const drift = checkPlan(repoRoot, plan);
 
   console.log('Projection summary:');
@@ -182,7 +188,7 @@ function reportCheck(repoRoot: string, plan: ProjectionPlan): number {
     console.log('');
     console.log(warningBlock);
   }
-  for (const line of formatLeftAlone(drift.leftAlone)) console.log(line);
+  for (const line of formatLeftAlone(drift.leftAlone, harnessFilter)) console.log(line);
   console.log('');
 
   if (drift.clean) {
@@ -213,7 +219,12 @@ function reportCheck(repoRoot: string, plan: ProjectionPlan): number {
  * passed only for an unfiltered plan (a `--harness` filter would mistake other
  * harnesses' live projections for orphans).
  */
-function reportFix(repoRoot: string, plan: ProjectionPlan, sweepOrphans: boolean): number {
+function reportFix(
+  repoRoot: string,
+  plan: ProjectionPlan,
+  sweepOrphans: boolean,
+  harnessFilter?: HarnessId
+): number {
   const { applied, conflicts, swept, leftAlone } = applyPlan(repoRoot, plan, { sweepOrphans });
 
   console.log(`Applied ${applied.length} projection(s):`);
@@ -234,7 +245,7 @@ function reportFix(repoRoot: string, plan: ProjectionPlan, sweepOrphans: boolean
 
   // Reported, never counted: a file DorkOS was not going to write anyway is not
   // a reason to hand somebody a failing command on every sync.
-  for (const line of formatLeftAlone(leftAlone)) console.log(line);
+  for (const line of formatLeftAlone(leftAlone, harnessFilter)) console.log(line);
 
   if (conflicts.length === 0) return 0;
 
@@ -327,7 +338,7 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
 
   // Orphan sweep only runs on a full (unfiltered) plan — see reportFix.
   const exitCode = args.fix
-    ? reportFix(repoRoot, plan, harnessFilter === undefined)
-    : reportCheck(repoRoot, plan);
+    ? reportFix(repoRoot, plan, harnessFilter === undefined, harnessFilter)
+    : reportCheck(repoRoot, plan, harnessFilter);
   return { exitCode };
 }

@@ -39,7 +39,6 @@ afterEach(() => {
 /** A plan with one skill symlink from `.agents/skills/<name>` into `.claude/skills`. */
 function linkPlan(name: string): ProjectionPlan {
   return {
-    harnesses: ['claude-code'],
     actions: [
       {
         kind: 'symlink',

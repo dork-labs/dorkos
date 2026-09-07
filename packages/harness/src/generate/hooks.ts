@@ -165,9 +165,9 @@ export const COPILOT_HOOKS_TARGET = '.github/hooks/copilot-hooks.json';
  * Every repo-relative hooks file the engine generates, one per harness. The
  * apply stage prunes one of these that the current plan no longer regenerates
  * (the source plugin/hook is gone) — but ONLY when its `.dorkos-generated`
- * sidecar proves the engine wrote exactly the bytes on disk, and only for a
- * harness the manifest enables. Presence on this list is not ownership: all
- * three are paths their vendors document as hand-authorable.
+ * sidecar proves the engine wrote exactly the bytes on disk. Presence on this
+ * list is not ownership: all three are paths their vendors document as
+ * hand-authorable.
  *
  * Gemini is deliberately absent for a stronger reason: its hooks live inside the
  * SHARED `.gemini/settings.json`, which also holds unrelated user settings, so
@@ -181,10 +181,10 @@ export const GENERATED_HOOK_TARGETS = [
 ] as const;
 
 /**
- * Which harness each generated hook file belongs to. The apply stage's orphan
- * sweep reads this so it only ever prunes a file for a harness the manifest
- * actually enables — a Copilot hooks file is not the engine's business in a repo
- * that never enabled Copilot (AP-07).
+ * Which harness each generated hook file belongs to — the label the CLI puts
+ * beside a path it stepped over, so "left alone" names the agent the file is
+ * for. It is NOT a sweep guard: what the sweep may prune is decided by the
+ * `.dorkos-generated` sidecar alone.
  */
 export const GENERATED_HOOK_TARGET_HARNESSES: Readonly<
   Record<(typeof GENERATED_HOOK_TARGETS)[number], HarnessId>

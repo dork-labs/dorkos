@@ -416,6 +416,78 @@ describe('runHarnessSync', () => {
     expect(printed).not.toContain('could not be read');
   });
 
+  /** Write a hooks file DorkOS did not write, at one of the paths it generates. */
+  function writeHandWrittenHooks(root: string, rel: string, command: string): string {
+    const abs = path.join(root, ...rel.split('/'));
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    const body = `${JSON.stringify({ version: 1, hooks: { stop: [{ type: 'command', command }] } }, null, 2)}\n`;
+    fs.writeFileSync(abs, body);
+    return body;
+  }
+
+  it('--fix names a hooks file it stepped over, says there is nothing to fix, and still exits 0', async () => {
+    // Cursor is not in this fixture's manifest, so nothing is planned for
+    // `.cursor/hooks.json`. A person who keeps their own file there has blocked
+    // nothing, so a sync must not start failing for them.
+    writeFixtureRepo(tmpDir);
+    const mine = writeHandWrittenHooks(tmpDir, '.cursor/hooks.json', 'echo MINE');
+    process.chdir(tmpDir);
+
+    const fix = await runHarnessSync({ check: false, fix: true });
+
+    expect(fix.exitCode).toBe(0);
+    const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(printed).toContain('Left alone — files DorkOS did not write');
+    expect(printed).toContain('.cursor/hooks.json  (cursor)');
+    expect(printed).toContain('Nothing to fix.');
+    expect(fs.readFileSync(path.join(tmpDir, '.cursor', 'hooks.json'), 'utf8')).toBe(mine);
+  });
+
+  it('--check exits 0 when the only news is a file it stepped over', async () => {
+    writeFixtureRepo(tmpDir);
+    writeHandWrittenHooks(tmpDir, '.cursor/hooks.json', 'echo MINE');
+    process.chdir(tmpDir);
+    await runHarnessSync({ check: false, fix: true }); // project everything first
+    logSpy.mockClear();
+
+    const check = await runHarnessSync({ check: true, fix: false });
+
+    expect(check.exitCode).toBe(0);
+    const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(printed).toContain('Left alone — files DorkOS did not write');
+    expect(printed).toContain('No drift');
+  });
+
+  it('--check names a blocked projection and exits 1', async () => {
+    // Codex IS in the manifest and the fixture has an authored Stop hook, so the
+    // plan wants `.codex/hooks.json` — and cannot have it. That is a fault, and
+    // it has to be reported as one.
+    writeFixtureRepo(tmpDir);
+    writeHandWrittenHooks(tmpDir, '.codex/hooks.json', 'echo MINE');
+    process.chdir(tmpDir);
+
+    const check = await runHarnessSync({ check: true, fix: false });
+
+    expect(check.exitCode).toBe(1);
+    const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(printed).toContain('blocked');
+    expect(printed).toContain('.codex/hooks.json');
+    expect(printed).toContain('.claude/settings.json');
+  });
+
+  it('--harness narrows the left-alone list to that harness', async () => {
+    writeFixtureRepo(tmpDir);
+    writeHandWrittenHooks(tmpDir, '.cursor/hooks.json', 'echo MINE cursor');
+    writeHandWrittenHooks(tmpDir, '.github/hooks/copilot-hooks.json', 'echo MINE copilot');
+    process.chdir(tmpDir);
+
+    await runHarnessSync({ check: true, fix: false, harness: 'cursor' });
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(printed).toContain('.cursor/hooks.json');
+    expect(printed).not.toContain('copilot-hooks.json');
+  });
+
   it('narrows the plan with --harness and rejects an unknown harness', async () => {
     writeFixtureRepo(tmpDir);
     process.chdir(tmpDir);

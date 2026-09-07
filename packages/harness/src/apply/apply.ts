@@ -27,24 +27,18 @@ import {
 } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import type { DriftResult, ProjectionAction, ProjectionPlan } from '../plan/types.js';
-import { getActionContent } from '../plan/content-map.js';
+import { requireActionContent } from '../plan/content-map.js';
 import { AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
+import type { ClaudeHooksConfig } from '../generate/hooks.js';
+import { HAND_WRITTEN_HOOKS_REASON } from './generated-ownership.js';
 import {
-  CODEX_HOOKS_TARGET,
-  GENERATED_HOOK_TARGETS,
-  type ClaudeHooksConfig,
-} from '../generate/hooks.js';
-import {
-  GENERATED_SIDECAR_SUFFIX,
-  HAND_WRITTEN_HOOKS_REASON,
-  generatedSidecarPath,
-  hasGeneratedSidecar,
-  isLegacyBareCodexHooks,
-  ownsGeneratedFile,
-  removeGeneratedSidecar,
-  readFileIfPresent,
-  writeGeneratedSidecar,
-} from './generated-ownership.js';
+  applyGeneratedHookFile,
+  findBlockedGeneratedHookTargets,
+  findLeftAloneGeneratedHookFiles,
+  generatedHookOutcome,
+  isGeneratedHookTarget,
+  sweepGeneratedOrphans,
+} from './generated-targets.js';
 import {
   CLAUDE_COMMANDS_DIR,
   CLAUDE_SKILLS_DIR,
@@ -79,17 +73,6 @@ function isSymlink(absPath: string): boolean {
 /** The relative symlink text that points from `target` to `source`. */
 function relativeLink(repoRoot: string, source: string, target: string): string {
   return relative(dirname(join(repoRoot, target)), join(repoRoot, source));
-}
-
-/** Read the deterministic bytes the projector attached to a scaffold/generate action. */
-function requireContent(action: ProjectionAction): string {
-  const content = getActionContent(action);
-  if (content === undefined) {
-    throw new Error(
-      `${action.kind} action for "${action.name}" has no attached content; the projector must call setActionContent`
-    );
-  }
-  return content;
 }
 
 /**
@@ -147,78 +130,16 @@ function applyScaffold(repoRoot: string, action: ProjectionAction): void {
   const absTarget = join(repoRoot, action.target);
   if (pathExists(absTarget)) return; // user owns it — never overwrite
   mkdirSync(dirname(absTarget), { recursive: true });
-  writeFileSync(absTarget, requireContent(action));
-}
-
-/** True when a target is one of the per-harness hooks files the sidecar rules guard. */
-function isGeneratedHookTarget(target: string): target is (typeof GENERATED_HOOK_TARGETS)[number] {
-  return (GENERATED_HOOK_TARGETS as readonly string[]).includes(target);
-}
-
-/** Write a generated hook file and record the engine's ownership of those bytes. */
-function writeOwnedGenerated(absTarget: string, content: string): void {
-  mkdirSync(dirname(absTarget), { recursive: true });
-  writeFileSync(absTarget, content);
-  writeGeneratedSidecar(absTarget, content);
-}
-
-/**
- * What applying a generated hooks file to its current on-disk state would do.
- * One predicate, read by both {@link applyGenerate} (which acts on it) and
- * {@link isDrifted} / {@link findBlockedGeneratedHookTargets} (which report it),
- * so the three can never disagree about who owns a file.
- */
-type GeneratedHookOutcome = 'write' | 'adopt' | 'unchanged' | 'blocked';
-
-/**
- * Decide what the engine may do with a generated hooks file.
- *
- * Codex and Cursor both document these paths as files a person may write, so the
- * engine writes one only when it can prove it wrote what is there — a
- * `.dorkos-generated` sidecar whose digest still matches the bytes on disk.
- *
- * Two migrations cover files written before sidecars existed, in order:
- *
- * 1. the bytes are already exactly what would be written now — adopt silently by
- *    recording the sidecar;
- * 2. `.codex/hooks.json` holding the engine's own pre-DOR-1842 bare event map,
- *    with no sidecar ever written — rewrite it into the shape Codex documents.
- *
- * Anything else is somebody's own file: `blocked`.
- *
- * @param absTarget - absolute path of the generated file.
- * @param target - its repo-relative path (which harness's file it is).
- * @param content - the bytes the plan would write.
- * @param onDisk - what is there now, or `undefined` when nothing readable is.
- * @returns the outcome an apply would produce.
- */
-function generatedHookOutcome(
-  absTarget: string,
-  target: string,
-  content: string,
-  onDisk: string | undefined
-): GeneratedHookOutcome {
-  if (onDisk === undefined) return 'write'; // absent: the engine's to create
-  // Ours. Rewrite only on a real change: these paths are watched, and a write
-  // that changes nothing is still a change event for whoever is watching.
-  if (ownsGeneratedFile(absTarget, onDisk)) return onDisk === content ? 'unchanged' : 'write';
-  if (onDisk === content) return 'adopt'; // migration 1: byte-for-byte already
-  if (
-    target === CODEX_HOOKS_TARGET &&
-    !hasGeneratedSidecar(absTarget) &&
-    isLegacyBareCodexHooks(onDisk)
-  ) {
-    return 'write'; // migration 2: our own legacy output
-  }
-  return 'blocked';
+  writeFileSync(absTarget, requireActionContent(action));
 }
 
 /**
  * (Re)write a generated target deterministically.
  *
- * Command wrappers are wholly the engine's (their marker is the ownership
- * predicate, checked by the caller) and are simply rewritten. The per-harness
- * hooks files go through {@link generatedHookOutcome} instead.
+ * Command wrappers are wholly the engine's — their marker is the ownership
+ * predicate, and the caller has already checked it — so they are simply
+ * rewritten. The per-harness hooks files are not the engine's by path, so they
+ * go through {@link applyGeneratedHookFile} and its sidecar rules instead.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param action - the `generate` action to realize.
@@ -227,27 +148,15 @@ function generatedHookOutcome(
  */
 function applyGenerate(repoRoot: string, action: ProjectionAction): boolean {
   if (!action.target) throw new Error(`generate action for "${action.name}" is missing target`);
-  const content = requireContent(action);
+  const content = requireActionContent(action);
   const absTarget = join(repoRoot, action.target);
 
-  if (!isGeneratedHookTarget(action.target)) {
-    mkdirSync(dirname(absTarget), { recursive: true });
-    writeFileSync(absTarget, content);
-    return true;
+  if (isGeneratedHookTarget(action.target)) {
+    return applyGeneratedHookFile(absTarget, action.target, content);
   }
-
-  switch (generatedHookOutcome(absTarget, action.target, content, readFileIfPresent(absTarget))) {
-    case 'write':
-      writeOwnedGenerated(absTarget, content);
-      return true;
-    case 'adopt':
-      writeGeneratedSidecar(absTarget, content);
-      return true;
-    case 'unchanged':
-      return true;
-    case 'blocked':
-      return false;
-  }
+  mkdirSync(dirname(absTarget), { recursive: true });
+  writeFileSync(absTarget, content);
+  return true;
 }
 
 /**
@@ -264,7 +173,7 @@ function applyGenerate(repoRoot: string, action: ProjectionAction): boolean {
  */
 function applyMerge(repoRoot: string, action: ProjectionAction): boolean {
   if (!action.target) throw new Error(`merge action for "${action.name}" is missing target`);
-  const managed = JSON.parse(requireContent(action)) as ClaudeHooksConfig;
+  const managed = JSON.parse(requireActionContent(action)) as ClaudeHooksConfig;
   return mergeManagedHooks(join(repoRoot, action.target), managed);
 }
 
@@ -480,126 +389,6 @@ export function sweepSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan)
 }
 
 /**
- * Prune orphaned generated hook files (e.g. `.codex/hooks.json`) — but only the
- * ones the engine can prove it wrote.
- *
- * When the plugin that contributed the only Codex-mappable hook is uninstalled,
- * the projector emits no `generate` action for that path and the file is left
- * stale on disk. This sweep removes it, the mirror of the symlink orphan sweep in
- * {@link sweepInstalledOrphans} — behind two guards, because Codex's and Cursor's
- * own docs tell people to hand-write exactly these paths (HK-11):
- *
- * The file goes only when its `.dorkos-generated` sidecar's digest still matches
- * the bytes on disk. A file with no sidecar was never the engine's; a file whose
- * bytes no longer match is one somebody edited after the engine wrote it. Both
- * are left alone, sidecar included. The file and its sidecar are always removed
- * together, so no half-swept path is ever left claiming ownership; a sidecar
- * whose file is already gone is removed on its own.
- *
- * Ownership is the WHOLE guard — the manifest is deliberately not consulted. A
- * harness leaving the manifest means DorkOS stops projecting into it, and
- * leaving a live hooks file behind would be the opposite of that; the sidecar
- * makes those bytes unambiguously the engine's to take back. Nothing a person
- * wrote is reachable either way, which is what AP-07 is actually protecting.
- *
- * A path the plan still generates is kept (the apply pass rewrites it), so this
- * never races a live projection.
- *
- * @param repoRoot - absolute path to the repository root.
- * @param plan - the current projection plan (its generate targets are kept).
- * @returns the repo-relative paths pruned, sidecars included.
- */
-export function sweepGeneratedOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
-  const regenerated = new Set(
-    plan.actions.filter((a) => a.kind === 'generate' && a.target).map((a) => a.target as string)
-  );
-
-  const swept: string[] = [];
-  for (const rel of GENERATED_HOOK_TARGETS) {
-    if (regenerated.has(rel)) continue; // still generated by the current plan, keep (apply rewrites it)
-    const abs = join(repoRoot, rel);
-    const sidecarRel = `${rel}${GENERATED_SIDECAR_SUFFIX}`;
-    const onDisk = readFileIfPresent(abs);
-    if (onDisk === undefined) {
-      // No readable file here. A sidecar left behind describes nothing, so it goes.
-      if (pathExists(generatedSidecarPath(abs))) {
-        removeGeneratedSidecar(abs);
-        swept.push(sidecarRel);
-      }
-      continue;
-    }
-    if (!ownsGeneratedFile(abs, onDisk)) continue; // somebody else's file — never ours to delete
-    rmSync(abs, { force: true });
-    removeGeneratedSidecar(abs);
-    swept.push(rel, sidecarRel);
-  }
-  return swept;
-}
-
-/**
- * Generated hook paths where somebody's own file sits and the current plan wants
- * to write NOTHING — the first auto-projection pass, which has no hook
- * contributors by design, or a harness the manifest never enabled.
- *
- * Nothing is blocked in that case: the engine had no projection to make there, so
- * this is a statement, not a fault. It is reported separately from `conflicts`
- * precisely so it cannot become a standing non-zero exit for somebody whose only
- * crime is writing their own `.codex/hooks.json`.
- *
- * A target the plan DOES write is settled by {@link applyGenerate} instead, and a
- * file the engine owns belongs to the sweep, so neither is listed here.
- *
- * @param repoRoot - absolute path to the repository root.
- * @param plan - the current projection plan.
- * @returns the repo-relative paths the engine stepped over.
- */
-function findLeftAloneGeneratedHookFiles(repoRoot: string, plan: ProjectionPlan): string[] {
-  const planned = new Set(
-    plan.actions.filter((a) => a.kind === 'generate' && a.target).map((a) => a.target as string)
-  );
-
-  const leftAlone: string[] = [];
-  for (const rel of GENERATED_HOOK_TARGETS) {
-    if (planned.has(rel)) continue;
-    const abs = join(repoRoot, rel);
-    const onDisk = readFileIfPresent(abs);
-    if (onDisk === undefined) continue; // nothing readable there
-    if (ownsGeneratedFile(abs, onDisk)) continue; // ours; the sweep decides its fate
-    leftAlone.push(rel);
-  }
-  return leftAlone;
-}
-
-/**
- * Generate actions the engine cannot realize because a file it does not own
- * occupies the target — what `--fix` reports as a conflict, answered without
- * touching disk so `--check` can say the same thing first.
- *
- * @param repoRoot - absolute path to the repository root.
- * @param plan - the current projection plan.
- * @returns the blocked actions, each carrying {@link HAND_WRITTEN_HOOKS_REASON}.
- */
-function findBlockedGeneratedHookTargets(
-  repoRoot: string,
-  plan: ProjectionPlan
-): ProjectionAction[] {
-  const blocked: ProjectionAction[] = [];
-  for (const action of plan.actions) {
-    if (action.kind !== 'generate' || !action.target) continue;
-    if (!isGeneratedHookTarget(action.target)) continue;
-    const absTarget = join(repoRoot, action.target);
-    const outcome = generatedHookOutcome(
-      absTarget,
-      action.target,
-      requireContent(action),
-      readFileIfPresent(absTarget)
-    );
-    if (outcome === 'blocked') blocked.push({ ...action, reason: HAND_WRITTEN_HOOKS_REASON });
-  }
-  return blocked;
-}
-
-/**
  * Realize a projection plan on disk.
  *
  * `native`/`drop` actions are no-ops. `generate` is rewritten idempotently. A
@@ -711,20 +500,21 @@ function isDrifted(repoRoot: string, action: ProjectionAction): boolean {
       if (!action.target) return true;
       const absTarget = join(repoRoot, action.target);
       if (!pathExists(absTarget)) return true;
-      const content = requireContent(action);
+      const content = requireActionContent(action);
       // A direct read, so a dangling symlink at a generate target still throws
       // here exactly as it did (AP-05 is DOR-1843's, not this function's).
       const onDisk = readFileSync(absTarget, 'utf8');
       if (!isGeneratedHookTarget(action.target)) return onDisk !== content;
-      // Drift is what `--fix` would CHANGE. `blocked` is a separate answer:
-      // somebody's own file is not stale, it is theirs, and re-running fixes
-      // nothing about it.
+      // Drift is what `--fix` would CHANGE on disk — `adopt` counts, because
+      // writing the missing sidecar is a change even though the file itself is
+      // already right. `blocked` is a separate answer: somebody's own file is
+      // not stale, it is theirs, and re-running fixes nothing about it.
       const outcome = generatedHookOutcome(absTarget, action.target, content, onDisk);
       return outcome === 'write' || outcome === 'adopt';
     }
     case 'merge': {
       if (!action.target) return true;
-      const managed = JSON.parse(requireContent(action)) as ClaudeHooksConfig;
+      const managed = JSON.parse(requireActionContent(action)) as ClaudeHooksConfig;
       return managedHooksDrift(join(repoRoot, action.target), managed);
     }
     case 'native':
