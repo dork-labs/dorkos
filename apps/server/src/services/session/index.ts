@@ -31,6 +31,7 @@ export {
   CAPABILITY_HOLD_PAUSE_GRACE_MS,
   getOrCreateProjector,
   peekProjector,
+  sessionStreamGeneration,
   disposeProjector,
   rekeyProjector,
   onProjectorRekey,

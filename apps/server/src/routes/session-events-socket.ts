@@ -28,6 +28,7 @@ import {
   callerNamedCwd,
   resolveSessionCwdOrDefault,
   resolveSettingsKey,
+  sessionStreamGeneration,
 } from '../services/session/index.js';
 import { deliverSessionStream } from '../services/core/streams/session-stream-delivery.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
@@ -127,7 +128,7 @@ export const sessionEventsRoute: UpgradeRoute = {
       if (denied) return denied;
     }
 
-    const sinceCursor = parseResumeCursor(
+    const resume = parseResumeCursor(
       url.searchParams.get(STREAM_RESUME_PARAM) ?? undefined,
       url.searchParams.get('after') ?? undefined
     );
@@ -139,7 +140,10 @@ export const sessionEventsRoute: UpgradeRoute = {
           sessionId,
           runtime,
           ctx,
-          sinceCursor,
+          resume,
+          // Same reading as the SSE handler's: the cursor names its seq space by
+          // generation, so a rekey is judged by identity rather than by id.
+          streamGeneration: () => sessionStreamGeneration(sessionId),
           // `StreamUpgradeLocals` is `res.locals`-shaped precisely so this
           // reads the same principal an HTTP request would.
           principal: readCallerPrincipal({ headers }, { locals }),

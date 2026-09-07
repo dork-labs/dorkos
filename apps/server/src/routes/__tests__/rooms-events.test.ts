@@ -131,7 +131,7 @@ describe('GET /api/rooms/:id/events', () => {
     const frames = await stream.frames;
 
     const entry = frames.find((f) => f.event === 'entry');
-    expect(entry?.id).toBe(`${roomId}-${STREAM_EPOCH}-1`);
+    expect(entry?.id).toBe(`${roomId}-${STREAM_EPOCH}-g0-1`);
     expect((entry?.data as { entry: { body: { text: string } } }).entry.body.text).toBe('live one');
   });
 
@@ -141,15 +141,15 @@ describe('GET /api/rooms/:id/events', () => {
     }
 
     const stream = openRoomStream(testServerPort(), roomId, {
-      lastEventId: `${roomId}-${STREAM_EPOCH}-1`,
+      lastEventId: `${roomId}-${STREAM_EPOCH}-g0-1`,
       until: (frames) => frames.filter((f) => f.event === 'entry').length >= 2,
     });
     const frames = await stream.frames;
 
     expect(frames.some((f) => f.event === 'snapshot')).toBe(false);
     expect(frames.map((f) => f.id)).toEqual([
-      `${roomId}-${STREAM_EPOCH}-2`,
-      `${roomId}-${STREAM_EPOCH}-3`,
+      `${roomId}-${STREAM_EPOCH}-g0-2`,
+      `${roomId}-${STREAM_EPOCH}-g0-3`,
     ]);
   });
 
@@ -165,7 +165,7 @@ describe('GET /api/rooms/:id/events', () => {
     const frames = await stream.frames;
 
     expect(frames.some((f) => f.event === 'snapshot')).toBe(false);
-    expect(frames.map((f) => f.id)).toEqual([`${roomId}-${STREAM_EPOCH}-2`]);
+    expect(frames.map((f) => f.id)).toEqual([`${roomId}-${STREAM_EPOCH}-g0-2`]);
   });
 
   it('treats a cursor from a dead process as a cold connect rather than mis-replaying', async () => {
@@ -173,7 +173,7 @@ describe('GET /api/rooms/:id/events', () => {
 
     const stream = openRoomStream(testServerPort(), roomId, {
       // A cursor minted by a previous process: same shape, foreign epoch.
-      lastEventId: `${roomId}-${STREAM_EPOCH - 1}-1`,
+      lastEventId: `${roomId}-${STREAM_EPOCH - 1}-g0-1`,
       until: (frames) => frames.some((f) => f.event === 'snapshot'),
     });
     const frames = await stream.frames;
@@ -181,11 +181,39 @@ describe('GET /api/rooms/:id/events', () => {
     expect(frames.some((f) => f.event === 'snapshot')).toBe(true);
   });
 
-  it('goes straight to live with no gap when the replay is already current', async () => {
+  it('treats a cursor from another seq space as a cold connect', async () => {
+    // A room's log is durable, so its frames carry the UNOWNED generation `g0`
+    // — nothing in this process can renumber it. A cursor naming any other seq
+    // space did not come from this log, whatever its number looks like.
+    await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'one' });
+
+    const stream = openRoomStream(testServerPort(), roomId, {
+      lastEventId: `${roomId}-${STREAM_EPOCH}-g4-1`,
+      until: (frames) => frames.some((f) => f.event === 'snapshot'),
+    });
+
+    expect((await stream.frames).some((f) => f.event === 'snapshot')).toBe(true);
+  });
+
+  it('treats a pre-generation cursor — a tab open across the deploy — as a cold connect', async () => {
+    // The rollout case, on the room half of the same frame. The older
+    // `<roomId>-<epoch>-<seq>` names no seq space, so it is re-hydrated rather
+    // than accepted as if it matched.
     await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'one' });
 
     const stream = openRoomStream(testServerPort(), roomId, {
       lastEventId: `${roomId}-${STREAM_EPOCH}-1`,
+      until: (frames) => frames.some((f) => f.event === 'snapshot'),
+    });
+
+    expect((await stream.frames).some((f) => f.event === 'snapshot')).toBe(true);
+  });
+
+  it('goes straight to live with no gap when the replay is already current', async () => {
+    await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'one' });
+
+    const stream = openRoomStream(testServerPort(), roomId, {
+      lastEventId: `${roomId}-${STREAM_EPOCH}-g0-1`,
       until: (frames) => frames.some((f) => f.event === 'entry'),
     });
     await stream.ready;
@@ -196,7 +224,7 @@ describe('GET /api/rooms/:id/events', () => {
     // Exactly one entry: the gap was empty, and seq 1 is not re-sent.
     const entries = frames.filter((f) => f.event === 'entry');
     expect(entries).toHaveLength(1);
-    expect(entries[0].id).toBe(`${roomId}-${STREAM_EPOCH}-2`);
+    expect(entries[0].id).toBe(`${roomId}-${STREAM_EPOCH}-g0-2`);
   });
 
   it('sets the headers that keep a long-lived stream from being buffered', async () => {
@@ -267,13 +295,13 @@ describe('GET /api/rooms/:id/events', () => {
     // the durable log, which never held it.
     await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'two' });
     const resumed = openRoomStream(testServerPort(), roomId, {
-      lastEventId: `${roomId}-${STREAM_EPOCH}-1`,
+      lastEventId: `${roomId}-${STREAM_EPOCH}-g0-1`,
       until: (frames) => frames.some((f) => f.event === 'entry'),
     });
     const replayed = await resumed.frames;
 
     expect(replayed.some((f) => f.event === 'signal')).toBe(false);
-    expect(replayed.map((f) => f.id)).toEqual([`${roomId}-${STREAM_EPOCH}-2`]);
+    expect(replayed.map((f) => f.id)).toEqual([`${roomId}-${STREAM_EPOCH}-g0-2`]);
   });
 
   it('ignores an out-of-range ?after= instead of going deaf for the connection', async () => {
@@ -292,7 +320,7 @@ describe('GET /api/rooms/:id/events', () => {
     const frames = await stream.frames;
 
     expect(frames.some((f) => f.event === 'snapshot')).toBe(true);
-    expect(frames.find((f) => f.event === 'entry')?.id).toBe(`${roomId}-${STREAM_EPOCH}-1`);
+    expect(frames.find((f) => f.event === 'entry')?.id).toBe(`${roomId}-${STREAM_EPOCH}-g0-1`);
   });
 
   it('refuses a cursor minted for a different room', async () => {
@@ -306,7 +334,7 @@ describe('GET /api/rooms/:id/events', () => {
     // Room seqs are per-room and durable, so another room's cursor is a
     // plausible number that would silently skip real entries here.
     const stream = openRoomStream(testServerPort(), roomId, {
-      lastEventId: `${other.body.id}-${STREAM_EPOCH}-1`,
+      lastEventId: `${other.body.id}-${STREAM_EPOCH}-g0-1`,
       until: (frames) => frames.some((f) => f.event === 'snapshot'),
     });
     const frames = await stream.frames;

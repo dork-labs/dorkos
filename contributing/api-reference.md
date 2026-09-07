@@ -113,7 +113,7 @@ Durable per-session SSE stream — the single delivery path for session state (s
 
 **Headers:**
 
-- `Last-Event-ID` (optional) - Echoed automatically by EventSource on reconnect; format `<sessionId>-<epoch>-<seq>`. A matching epoch resumes with a gap-free replay (events with `seq` > cursor, no snapshot); a mismatched or unservable cursor falls back to a cold snapshot.
+- `Last-Event-ID` (optional) - Echoed automatically by EventSource on reconnect; format `<sessionId>-<epoch>-<generation>-<seq>`. A matching epoch AND generation resume with a gap-free replay (events with `seq` > cursor, no snapshot). The generation names the projector instance that owns the `seq` counter, which a rekey can replace behind the same session id; a mismatched epoch or generation, a cursor in the older generation-less format, or an unservable one falls back to a cold snapshot.
 
 **Events:**
 

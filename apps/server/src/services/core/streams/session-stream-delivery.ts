@@ -24,7 +24,12 @@ import {
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import type { DurableStreamSink } from './durable-stream-sink.js';
-import { STREAM_EPOCH } from '../../../lib/stream-cursor.js';
+import {
+  cursorMatchesGeneration,
+  streamFrameId,
+  UNOWNED_STREAM_GENERATION,
+  type ResumeCursor,
+} from '../../../lib/stream-cursor.js';
 import type { CallerPrincipal } from '../../../lib/caller-principal.js';
 import { askEntitlement } from '../../session/asks/ask-entitlement.js';
 import { logger } from '../../../lib/logger.js';
@@ -37,8 +42,22 @@ export interface SessionStreamPlan {
   runtime: AgentRuntime;
   /** The boundary-validated cwd plus the effective permission mode. */
   ctx: SessionOpts;
-  /** The resume cursor, or `undefined` for a cold connect. */
-  sinceCursor: number | undefined;
+  /** The parsed resume signal, or `undefined` for a cold connect. */
+  resume: ResumeCursor | undefined;
+  /**
+   * Reads the generation of the seq space that would serve this session RIGHT
+   * NOW — `sessionStreamGeneration` for every caller in this server.
+   *
+   * Injected rather than imported so this module keeps speaking only the
+   * {@link AgentRuntime} contract for a session's CONTENT; which projector owns
+   * the counter is a fact the route layer already holds. It is called
+   * SYNCHRONOUSLY beside each `subscribeSession`, never across an `await`: a
+   * rekey collision can put a different projector behind a session id, and a
+   * generation read a tick early would stamp frame ids with a seq space that is
+   * no longer the one producing them — which is the exact confusion the
+   * generation exists to prevent.
+   */
+  streamGeneration: () => string;
   /**
    * Who is reading, so an Ask's detail reaches only a caller entitled to it
    * (spec `ask-entitlement`, review finding 2).
@@ -64,6 +83,13 @@ export interface SessionStreamPlan {
  * cold path — resuming anyway would leave the client silently missing events or
  * permanently deaf.
  *
+ * "Cannot be served gap-free" has two halves, and the second is the quiet one.
+ * A cursor may be out of the replay window, which the runtime says by throwing.
+ * Or it may be a perfectly plausible number from a DIFFERENT seq space —
+ * a projector that was retired while this reader was away — which nothing about
+ * the number itself reveals. The cursor's generation is the only thing that can
+ * tell them apart, so it is checked before the resume is even attempted.
+ *
  * Never throws: a mid-stream failure is logged and closes the stream, which the
  * client's reconnect handles.
  *
@@ -74,28 +100,48 @@ export async function deliverSessionStream(
   sink: DurableStreamSink,
   plan: SessionStreamPlan
 ): Promise<void> {
-  const { sessionId, runtime, ctx, sinceCursor, principal } = plan;
+  const { sessionId, runtime, ctx, resume, streamGeneration, principal } = plan;
   // Resolved ONCE per connection rather than per frame: a principal is fixed
   // for the life of a socket (changing it would need a new handshake), and the
   // room a session answers for cannot change the answer here — only a `bridged`
   // principal reads it, and one never arrives over HTTP.
   const maySeeAsk = askEntitlement(principal, { sessionId }) !== 'none';
   let iterator: AsyncIterator<SessionEvent> | undefined;
+  /** The seq space every `id:` line below is stamped from. */
+  let generation = UNOWNED_STREAM_GENERATION;
 
   try {
-    if (sinceCursor !== undefined) {
-      // subscribeSession validates the cursor EAGERLY, so an unservable one
-      // throws here rather than silently under-delivering later.
-      try {
-        iterator = runtime
-          .subscribeSession(ctx, sessionId, sinceCursor, sink.signal)
-          [Symbol.asyncIterator]();
-      } catch (err) {
-        if (!(err instanceof StaleResumeCursorError)) throw err;
-        logger.info('[session stream] unservable resume cursor — falling back to cold snapshot', {
+    if (resume !== undefined) {
+      // Read and compare in the same tick as the subscribe: between two ticks
+      // the projector behind this session id can change, and both the check and
+      // the ids stamped from it have to describe the seq space that actually
+      // answers.
+      const serving = streamGeneration();
+      if (!cursorMatchesGeneration(resume, serving)) {
+        // The number is plausible and the seq space is not this reader's. The
+        // resume is not attempted at all — there is nothing here to replay
+        // gap-free, only a coincidence to be misled by.
+        logger.info('[session stream] resume cursor from a retired seq space — cold snapshot', {
           sessionId,
-          sinceCursor,
+          cursorSeq: resume.seq,
+          cursorGeneration: resume.generation,
+          serving,
         });
+      } else {
+        // subscribeSession validates the cursor EAGERLY, so an unservable one
+        // throws here rather than silently under-delivering later.
+        try {
+          iterator = runtime
+            .subscribeSession(ctx, sessionId, resume.seq, sink.signal)
+            [Symbol.asyncIterator]();
+          generation = serving;
+        } catch (err) {
+          if (!(err instanceof StaleResumeCursorError)) throw err;
+          logger.info('[session stream] unservable resume cursor — falling back to cold snapshot', {
+            sessionId,
+            sinceCursor: resume.seq,
+          });
+        }
       }
     }
 
@@ -118,6 +164,8 @@ export async function deliverSessionStream(
       iterator = runtime
         .subscribeSession(ctx, sessionId, snap.cursor, sink.signal)
         [Symbol.asyncIterator]();
+      // Same tick as the subscribe above, for the reason the plan field gives.
+      generation = streamGeneration();
     }
 
     for (;;) {
@@ -131,7 +179,7 @@ export async function deliverSessionStream(
       await sink.send({
         event: value.type,
         data: value,
-        id: `${sessionId}-${STREAM_EPOCH}-${value.seq}`,
+        id: streamFrameId(sessionId, generation, value.seq),
       });
     }
   } catch (err) {

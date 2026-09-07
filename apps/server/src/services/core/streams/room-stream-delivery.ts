@@ -19,7 +19,7 @@
 import type { RoomEntry, RoomEvent } from '@dorkos/shared/room-schemas';
 import type { DurableStreamSink } from './durable-stream-sink.js';
 import { getRoomService } from '../../rooms/index.js';
-import { STREAM_EPOCH } from '../../../lib/stream-cursor.js';
+import { streamFrameId, UNOWNED_STREAM_GENERATION } from '../../../lib/stream-cursor.js';
 import { logger } from '../../../lib/logger.js';
 import { ROOMS } from '../../../config/constants.js';
 
@@ -66,7 +66,15 @@ export async function deliverRoomStream(
     sink.send({
       event: event.type,
       data: event,
-      ...(event.type === 'entry' ? { id: `${roomId}-${STREAM_EPOCH}-${event.seq}` } : {}),
+      // Rooms stamp the UNOWNED generation because their seq really is unowned:
+      // it is allocated inside the SQLite insert and nothing in this process can
+      // renumber it, so unlike a session there is no instance here to retire.
+      // The shape is shared with the session stream all the same — a reader that
+      // had to know which stream keeps its seq space is a reader that gets it
+      // wrong.
+      ...(event.type === 'entry'
+        ? { id: streamFrameId(roomId, UNOWNED_STREAM_GENERATION, event.seq) }
+        : {}),
     });
 
   /** Frame one durable entry the same way a live one is framed. */

@@ -17,7 +17,11 @@ import { resolveCaller } from './room-caller.js';
 import { STATUS_BY_CODE } from './room-error-response.js';
 import { SseStreamSink } from '../services/core/streams/durable-stream-sink.js';
 import { sendError } from '../lib/route-utils.js';
-import { parseResumeCursor } from '../lib/stream-cursor.js';
+import {
+  cursorMatchesGeneration,
+  parseResumeCursor,
+  UNOWNED_STREAM_GENERATION,
+} from '../lib/stream-cursor.js';
 
 /** Route params for `GET /:id/events` — pins `id` to `string` for the handler. */
 interface RoomEventsParams {
@@ -79,8 +83,17 @@ export const roomEventsHandler = async (
   // issue for the life of the connection, silently suppressing every entry the
   // reader is connected to receive. Past the end is not a resume; it is a cold
   // connect that hydrates from the snapshot.
+  //
+  // The generation is judged here rather than at the subscribe, because a room's
+  // seq space cannot be swapped mid-request the way a session's projector can:
+  // it is the durable log, and it is the same one a tick from now.
   const maxSeq = service.maxSeq(roomId);
-  const sinceCursor = requested !== undefined && requested <= maxSeq ? requested : undefined;
+  const sinceCursor =
+    requested !== undefined &&
+    cursorMatchesGeneration(requested, UNOWNED_STREAM_GENERATION) &&
+    requested.seq <= maxSeq
+      ? requested.seq
+      : undefined;
 
   const sink = new SseStreamSink(res);
   // A resume connect whose gap is empty writes nothing until the first live

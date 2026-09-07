@@ -425,7 +425,7 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
       await react('👍');
 
       const { frames, reactionsByEntry } = await resumeAndCollect(
-        `${roomId}-${STREAM_EPOCH}-${entrySeq}`,
+        `${roomId}-${STREAM_EPOCH}-g0-${entrySeq}`,
         later.body.entryId
       );
 
@@ -457,7 +457,7 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
       await react('👍');
 
       const { reactionsByEntry } = await resumeAndCollect(
-        `${roomId}-${STREAM_EPOCH}-${entrySeq}`,
+        `${roomId}-${STREAM_EPOCH}-g0-${entrySeq}`,
         later.body.entryId
       );
 

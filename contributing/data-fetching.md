@@ -172,12 +172,12 @@ GET /api/sessions/:id/events   (durable SSE — snapshot → replay → live)
 event: snapshot
 data: {"messages":[...],"inProgressTurn":null,"status":{...},"pendingInteractions":[],"queuedMessages":[],"cursor":42}
 
-id: <sessionId>-<epoch>-43
+id: <sessionId>-<epoch>-<generation>-43
 event: text_delta
 data: {"seq":43,"type":"text_delta","text":"Hello"}
 ```
 
-Client-side, `StreamManager` (`layers/shared/lib/transport/stream-manager.ts`) owns the connection, validates frames against `@dorkos/shared/session-stream`, and forwards them to the session stream store. On reconnect, `Last-Event-ID` resumes the stream gap-free.
+Client-side, `StreamManager` (`layers/shared/lib/transport/stream-manager.ts`) owns the connection, validates frames against `@dorkos/shared/session-stream`, and forwards them to the session stream store. On reconnect, `Last-Event-ID` resumes the stream gap-free. Send the whole id back: the `epoch` names the server process and the `generation` names the projector instance that owns the `seq` counter, and a cursor whose generation no longer matches is answered with a fresh snapshot rather than a replay off the wrong counter.
 
 #### Message Parts
 

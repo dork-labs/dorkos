@@ -78,22 +78,22 @@ GET /api/sessions/:id/events
 The stream has three phases:
 
 1. **Snapshot.** On a cold connect the server emits a single `snapshot` event carrying the completed message history (`messages`), the in-progress turn (`inProgressTurn`, or `null` when idle), the server-held `status`, any `pendingInteractions` awaiting your response, the messages waiting to run (`queuedMessages`, empty when nothing is), and a `cursor` (the highest event sequence number the snapshot reflects). Those five fields are the whole of a session's live state: hydrate from them and you are exactly as correct as a client that has been connected all along.
-2. **Replay.** On reconnect, the browser (or your SSE client) echoes the last received `id:` back as `Last-Event-ID`. The server skips the snapshot and replays only the events you missed, gap-free. If the cursor can no longer be served (e.g., the server restarted), the stream falls back to a fresh snapshot: you never silently miss events.
-3. **Live.** Events stream as the turn produces them. Every event carries a per-session monotonic `seq`, and every SSE frame carries an `id:` line of the form `<sessionId>-<epoch>-<seq>` for resumption.
+2. **Replay.** On reconnect, the browser (or your SSE client) echoes the last received `id:` back as `Last-Event-ID`. The server skips the snapshot and replays only the events you missed, gap-free. If the cursor can no longer be served — the server restarted, or the session's event counter was replaced while you were away — the stream falls back to a fresh snapshot: you never silently miss events.
+3. **Live.** Events stream as the turn produces them. Every event carries a per-session monotonic `seq`, and every SSE frame carries an `id:` line of the form `<sessionId>-<epoch>-<generation>-<seq>` for resumption. Treat the whole id as opaque and send it back unchanged. The `epoch` names the server process and the `generation` names the counter inside it — a session's counter can be replaced mid-life, and without those two parts a leftover `seq` would look like a perfectly ordinary position in the new counter and you would be resumed to the wrong place. Send back an id missing either part and you get a fresh snapshot instead.
 
 ```
 event: snapshot
 data: {"messages":[...],"inProgressTurn":null,"status":{...},"pendingInteractions":[],"queuedMessages":[],"cursor":42}
 
-id: abc123-1760000000000-43
+id: abc123-1760000000000-g7-43
 event: turn_start
 data: {"seq":43,"type":"turn_start","userMessage":"Hello, Claude"}
 
-id: abc123-1760000000000-44
+id: abc123-1760000000000-g7-44
 event: text_delta
 data: {"seq":44,"type":"text_delta","text":"Hello! How can I help?"}
 
-id: abc123-1760000000000-45
+id: abc123-1760000000000-g7-45
 event: turn_end
 data: {"seq":45,"type":"turn_end","terminalReason":"completed"}
 ```
@@ -542,18 +542,18 @@ socket.onmessage = (message) => {
 
 Each message is one JSON text frame carrying the same three things an SSE frame carries:
 
-| Field   | Meaning                                                                                                                                    |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `event` | The event name — what `event:` carried.                                                                                                    |
-| `data`  | The payload — what `data:` carried, already parsed.                                                                                        |
-| `id`    | The resume cursor, `<resourceId>-<epoch>-<seq>` — what the `id:` line carried. Present only on frames that occupy a place in the sequence. |
+| Field   | Meaning                                                                                                                                                 |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `event` | The event name — what `event:` carried.                                                                                                                 |
+| `data`  | The payload — what `data:` carried, already parsed.                                                                                                     |
+| `id`    | The resume cursor, `<resourceId>-<epoch>-<generation>-<seq>` — what the `id:` line carried. Present only on frames that occupy a place in the sequence. |
 
 Four differences to know about:
 
 - **Resuming uses a query parameter, not a header.** A browser `WebSocket` takes a URL and nothing
   else, so send the last `id` you saw as `?resume=<id>` rather than as `Last-Event-ID`. Send the
-  whole id, not just the trailing number — the middle part identifies the server process, and it is
-  what stops a cursor from a restarted server replaying the wrong events.
+  whole id, not just the trailing number — the middle parts identify the server process and its
+  event counter, and they are what stops an old cursor from replaying the wrong events.
 - **Heartbeats are frames.** SSE keeps a connection alive with a comment your parser ignores. A
   WebSocket has no comment, and its built-in ping is invisible to browser JavaScript, so the server
   sends a frame named `__heartbeat` instead. Treat any frame as proof the stream is alive, and skip

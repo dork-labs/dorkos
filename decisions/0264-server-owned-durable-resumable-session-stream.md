@@ -33,6 +33,23 @@ The persistent DorkOS server is the durable mediator; delivery is **exclusively*
 
 In-process buffering only (no Redis). A server restart aborts the in-flight turn (accepted loss boundary, per ADR-0262); the restart-degradation path marks a turn left `streaming` as `interrupted` so a cold hydrate shows it was cut short.
 
+## Amendment (2026-09-07)
+
+The frame id gained a third field and is now `<sessionId>-<epoch>-<generation>-<seq>`
+(`lib/stream-cursor.ts`; rooms stamp the same shape). The epoch tells two server
+PROCESSES apart, which left one seq space unguarded: a session's counter belongs
+to a `SessionStateProjector` INSTANCE, and `rekeyProjector` can retire one
+instance and put another — with an unrelated counter — behind the same canonical
+id inside one process. A reader that was on the retired instance came back with a
+number the winner found perfectly plausible (`cursor <= counter`, matching epoch,
+matching id), and the replay served it the winner's later events as though they
+followed its own. The generation is minted per instance, so it moves with the
+instance across an ordinary rekey (that resume stays gap-free) and differs after a
+collision (that resume is refused and answered with a snapshot). A cursor in the
+older three-field format names no generation and is treated as foreign — a tab
+open across the deploy re-hydrates once rather than resuming into the wrong
+counter. DOR-1704, closing the DOR-782 F3 residual.
+
 ## Consequences
 
 ### Positive
@@ -44,5 +61,5 @@ In-process buffering only (no Redis). A server restart aborts the in-flight turn
 ### Negative
 
 - Decoupling turn execution from the POST was a substantial refactor with real subtleties now owned by `trigger-turn.ts`: lock lifetime, detached error surfacing, and the canonical-id race (the 202's id is only best-effort).
-- In-flight turns are lost on server restart (notably on `pnpm dev` hot reload); the epoch check converts that into a clean cold reconnect rather than silent deafness, but the turn itself is gone.
+- In-flight turns are lost on server restart (notably on `pnpm dev` hot reload); the epoch check converts that into a clean cold reconnect rather than silent deafness, but the turn itself is gone. The generation added by the 2026-09-07 amendment does the same for a seq space replaced WITHIN a process.
 - Buffer sizing is policy: a client further behind than the ring/log retention falls back to a full snapshot rather than gap-replay; `EventLog` depth also bounds log-backed history (ADR-0263).
