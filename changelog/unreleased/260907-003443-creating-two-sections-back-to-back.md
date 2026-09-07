@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client,e2e): creating two sections back-to-back no longer eats a click (DOR-1834)'
+  - 'test(e2e): the home-indicator guard waits for the footer it measures (DOR-1834)'
 ---
 
 ### Fixed

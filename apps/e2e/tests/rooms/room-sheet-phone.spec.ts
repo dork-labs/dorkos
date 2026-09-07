@@ -109,6 +109,21 @@ test.describe('Room panel on a phone — 390×844 @smoke', () => {
     // not assertable here (see this file's header). What is assertable is the
     // shape of the rule: exactly one element inside the panel declares that
     // padding, and a second declaration is how the gap doubles on a real phone.
+    //
+    // **Wait for the thing being measured** (DOR-1834's queue run). `openSheet`
+    // returns as soon as the panel is on screen, and the footer is drawn a
+    // commit later, when the room's own details land — measured at 27ms. The
+    // walk below asks the DOM which of these rules match INSIDE the panel, so
+    // running it before the footer exists matches nothing and reports zero,
+    // which `toHaveLength(1)` fails just as loudly as it fails two. Nothing was
+    // wrong with the rule on the run that caught this; the question was asked
+    // too early. Sizing the shards differently is all it took to lose the race,
+    // so the wait is the fix rather than a retry.
+    await expect(
+      sheet.locator('.room-panel-footer'),
+      'the panel never drew the footer that carries the inset'
+    ).toBeVisible();
+
     const declarations = await sheet.evaluate((root) => {
       const found: string[] = [];
       const walk = (rules: CSSRuleList) => {
@@ -142,9 +157,12 @@ test.describe('Room panel on a phone — 390×844 @smoke', () => {
       return found;
     });
 
+    // Named in both directions, because this assertion fails both ways and the
+    // one-sided message sent a reader looking for a duplicate rule that was
+    // never there.
     expect(
       declarations,
-      `more than one rule pads for the home indicator inside the panel: ${declarations.join(', ')}`
+      `exactly one rule inside the panel must pad for the home indicator — found ${declarations.length}: ${declarations.join(', ') || '(none)'}`
     ).toHaveLength(1);
     expect(declarations[0]).toContain('room-panel-footer');
   });
