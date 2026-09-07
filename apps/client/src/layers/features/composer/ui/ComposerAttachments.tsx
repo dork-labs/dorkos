@@ -97,11 +97,11 @@ export function ComposerAttachments({
               {file.status === 'uploading' ? (
                 <Spinner size="xs" className="text-muted-foreground" />
               ) : failed ? (
-                <AlertCircle className="text-destructive size-3 shrink-0" />
+                <AlertCircle className="text-destructive size-(--size-icon-xs) shrink-0" />
               ) : thumbUrl ? (
                 <img src={thumbUrl} alt="" className="size-5 shrink-0 rounded object-cover" />
               ) : (
-                <FileIcon className="text-muted-foreground size-3" />
+                <FileIcon className="text-muted-foreground size-(--size-icon-xs)" />
               )}
 
               <span className="max-w-32 truncate">{file.file.name}</span>

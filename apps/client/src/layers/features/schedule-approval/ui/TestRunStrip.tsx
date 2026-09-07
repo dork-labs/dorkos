@@ -74,7 +74,7 @@ export function TestRunStrip({ testRun, onOpenRun, className }: TestRunStripProp
 
       {phase === 'finished' && (
         <>
-          <Check className="text-status-success size-3.5 shrink-0" aria-hidden />
+          <Check className="text-status-success size-(--size-icon-xs) shrink-0" aria-hidden />
           <span>Test run finished{finishedWhen(finishedAt)}</span>
           {onOpenRun && (
             // A real button rather than an anchor: the cockpit routes in-process
@@ -94,14 +94,14 @@ export function TestRunStrip({ testRun, onOpenRun, className }: TestRunStripProp
 
       {phase === 'stopped' && (
         <>
-          <CircleSlash className="size-3.5 shrink-0" aria-hidden />
+          <CircleSlash className="size-(--size-icon-xs) shrink-0" aria-hidden />
           Test run was stopped before it finished.
         </>
       )}
 
       {phase === 'failed' && (
         <>
-          <X className="text-status-error size-3.5 shrink-0" aria-hidden />
+          <X className="text-status-error size-(--size-icon-xs) shrink-0" aria-hidden />
           {/* The reason, whenever the server gave one. A bare "it failed" is
               the least useful thing this line could say to somebody deciding
               whether to let the same prompt run unattended every night. */}

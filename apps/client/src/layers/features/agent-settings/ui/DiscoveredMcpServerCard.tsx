@@ -203,7 +203,7 @@ export function DiscoveredMcpServerCard({
               {importServer.isPending ? (
                 <Spinner size="xs" />
               ) : (
-                <Plus className="size-3.5" aria-hidden />
+                <Plus className="size-(--size-icon-xs)" aria-hidden />
               )}
               Add to agent
             </Button>

@@ -1,5 +1,5 @@
 /**
- * Where "Restart Server" and "Reset All Data" go when the app is the desktop app.
+ * Where "Restart" and "Reset all data" go when the app is the desktop app.
  *
  * Both actions end the server process and count on something starting it again.
  * Over HTTP that something is the server itself, re-execing its own command line

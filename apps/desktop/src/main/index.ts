@@ -270,7 +270,7 @@ if (!gotTheLock) {
   // is a "failure" the ladder would go on to recover from.
   setupRendererRecovery();
 
-  // Settings → Danger zone's "Restart Server" and "Reset All Data". Both are the
+  // Settings → Danger zone's "Restart" and "Reset all data". Both are the
   // supervisor's work here rather than the server's, because a server that ends
   // its own process inside a UtilityProcess never comes back (see `admin/`).
   setupAdminActions({ getRendererUrl });

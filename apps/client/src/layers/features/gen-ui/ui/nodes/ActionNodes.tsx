@@ -98,7 +98,7 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
       )}
     >
       {pending && <Spinner size="xs" />}
-      {sent && <Check className="size-3.5" aria-hidden />}
+      {sent && <Check className="size-(--size-icon-xs)" aria-hidden />}
       {label}
     </Button>
   );

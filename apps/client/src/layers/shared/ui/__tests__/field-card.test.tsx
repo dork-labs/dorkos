@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { FieldCard, FieldCardContent, CollapsibleFieldCard } from '../field-card';
 
@@ -164,6 +165,25 @@ describe('CollapsibleFieldCard', () => {
     const chevron = screen.getByTestId('collapsible-field-card-chevron');
     expect(chevron).toHaveAttribute('aria-hidden', 'true');
     expect(chevron).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('does not park focus on the chevron, which is not in the accessibility tree', () => {
+    // A pointer press focuses its target on mousedown, so without refusing
+    // that default the click would leave focus sitting on an `aria-hidden`
+    // node — nowhere, as far as a screen reader is concerned. `userEvent`
+    // drives the real mousedown/mouseup/click sequence, which is what makes
+    // this observable; `fireEvent.click` never moves focus at all.
+    const user = userEvent.setup();
+    render(
+      <CollapsibleFieldCard open={false} onOpenChange={vi.fn()} trigger="Section">
+        <div>Content</div>
+      </CollapsibleFieldCard>
+    );
+    const before = document.activeElement;
+    return user.click(screen.getByTestId('collapsible-field-card-chevron')).then(() => {
+      expect(document.activeElement).toBe(before);
+      expect(document.activeElement).not.toBe(screen.getByTestId('collapsible-field-card-chevron'));
+    });
   });
 
   it('applies custom className to the outer card', () => {

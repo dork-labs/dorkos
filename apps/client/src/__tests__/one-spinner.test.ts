@@ -60,28 +60,44 @@ describe('one spinner (DOR-1811)', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('leaves the sites that stop for reduced motion able to stop', () => {
+  it('leaves the sites that stop for reduced motion able to stop, the right way round', () => {
     // The component spins unconditionally, so the five call sites that
     // deliberately hold still for someone who asked for less motion have to
     // turn it OFF rather than leave it on. `animate-none` (and its
     // `motion-reduce:` variant) is the only spelling that displaces the
-    // component's own `animate-spin` through `cn`; re-adding `animate-spin` at
-    // the call site would silently re-animate all five.
+    // component's own `animate-spin` through `cn`.
     expect(CLIENT_SOURCE.get(SPINNER_IMPLEMENTATION)).toContain("cva('animate-spin'");
 
-    const stopsForReducedMotion = [
+    // **The polarity is the whole test.** An earlier version of this matched a
+    // bare `/animate-none/`, which `!reducedMotion && 'animate-none'` satisfies
+    // just as well — the exact inversion that would make every one of these
+    // spin for the reader who asked them not to, and hold still for everyone
+    // else. The lookbehind rejects a leading `!`, and the second assertion says
+    // so in the failure message rather than leaving a silent non-match.
+    const gatedInJs = [
       'layers/entities/runtime/ui/RuntimeSetupDialog.tsx',
-      'layers/features/conversation/ui/rows/PendingRow.tsx',
       'layers/features/runtime-connect/ui/OllamaLocalPath.tsx',
       'layers/features/runtime-connect/ui/connect-feedback.tsx',
       'layers/features/settings/ui/runtimes/RuntimeCard.tsx',
     ];
-    for (const file of stopsForReducedMotion) {
+    for (const file of gatedInJs) {
       const text = CLIENT_SOURCE.get(file.split('/').join(sep));
       expect(text, `${file} is missing`).toBeDefined();
       expect(text, `${file} no longer turns the spin off`).toMatch(
-        /(?:motion-reduce:)?animate-none/
+        /(?<![!\w.])reducedMotion\s*&&\s*'animate-none'/
+      );
+      expect(text, `${file} turns the spin off for the WRONG readers`).not.toMatch(
+        /!\s*reducedMotion\s*&&\s*'animate-none'/
       );
     }
+
+    // The one that spells the same gate in CSS. `motion-safe:animate-none` is
+    // the inversion here, and naming the variant literally rejects it.
+    const pendingRow = CLIENT_SOURCE.get(
+      'layers/features/conversation/ui/rows/PendingRow.tsx'.split('/').join(sep)
+    );
+    expect(pendingRow).toBeDefined();
+    expect(pendingRow).toContain('motion-reduce:animate-none');
+    expect(pendingRow).not.toContain('motion-safe:animate-none');
   });
 });

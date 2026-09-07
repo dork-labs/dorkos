@@ -212,7 +212,7 @@ function IdleState({
       </div>
 
       <Button onClick={() => void handleLink()} disabled={busy}>
-        {busy ? <Spinner className="mr-1.5" /> : <Link2 className="mr-1.5 size-4" />}
+        {busy ? <Spinner className="mr-1.5" /> : <Link2 className="mr-1.5 size-(--size-icon-sm)" />}
         {busy ? 'Starting…' : 'Link this instance'}
       </Button>
       {(consentError ?? startError) && (
@@ -353,7 +353,11 @@ function RecoveryState({
         </div>
       </div>
       <Button onClick={() => void onAction()} disabled={pending}>
-        {pending ? <Spinner className="mr-1.5" /> : <RefreshCw className="mr-1.5 size-4" />}
+        {pending ? (
+          <Spinner className="mr-1.5" />
+        ) : (
+          <RefreshCw className="mr-1.5 size-(--size-icon-sm)" />
+        )}
         {actionLabel}
       </Button>
     </div>

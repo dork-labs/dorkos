@@ -217,7 +217,7 @@ export function IntegrationBindingCard({
               {isTestPending ? (
                 <Spinner className="mr-2" />
               ) : (
-                <FlaskConical className="mr-2 size-4" />
+                <FlaskConical className="mr-2 size-(--size-icon-sm)" />
               )}
               Send test
             </DropdownMenuItem>
