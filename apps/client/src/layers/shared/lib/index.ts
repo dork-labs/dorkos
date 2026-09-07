@@ -43,6 +43,7 @@ export {
   classifyLink,
   declaredScheme,
   describeRefusal,
+  internalRoutePath,
   isWebUrl,
   linkRefusalHere,
   openLink,

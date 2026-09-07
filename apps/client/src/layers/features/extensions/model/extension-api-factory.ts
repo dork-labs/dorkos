@@ -11,6 +11,7 @@ import { isExtensionEventDeclared } from '@dorkos/extension-api';
 import type { UiCommand, UiCanvasContent } from '@dorkos/shared/types';
 import type { CommandPaletteContribution } from '@/layers/shared/model';
 import { executeUiCommand } from '@/layers/shared/lib/ui-action-dispatcher';
+import { internalRoutePath } from '@/layers/shared/lib/link-navigation';
 import { toast } from 'sonner';
 import type { ExtensionAPIDeps } from './types';
 import { extensionApiUrl } from './extension-api-url';
@@ -158,7 +159,16 @@ export function createExtensionAPI(
     },
 
     navigate(path: string): void {
-      deps.navigate({ to: path });
+      // An extension wrote this string, so it is checked against the routes the
+      // app actually serves before the router is handed it (DOR-924). An
+      // unknown path, another origin, or a scheme the link seam refuses is a
+      // no-op that says so rather than a navigation to nowhere.
+      const target = internalRoutePath(path);
+      if (target === null) {
+        console.warn(`[extensions] ${extId} asked to navigate to an unknown route:`, path);
+        return;
+      }
+      deps.navigate({ to: target });
     },
 
     getState(): ExtensionReadableState {

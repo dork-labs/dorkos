@@ -12,6 +12,7 @@ import {
 } from '@/layers/entities/connectors';
 import {
   Button,
+  ExternalLinkAnchor,
   Input,
   Label,
   QueryErrorState,
@@ -273,11 +274,14 @@ export function ConnectDialog({
                     <p className="text-sm">
                       Continue with {route?.displayName ?? 'the selected service'}.
                     </p>
+                    {/* The authorize URL is the connector flow's answer, so it
+                        clears the app's scheme allowlist before the browser is
+                        handed anything (DOR-924). */}
                     <Button asChild className="w-full">
-                      <a href={activeFlow.authorizeUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLinkAnchor href={activeFlow.authorizeUrl}>
                         {route?.authKind === 'none' ? 'Check connection' : 'Open sign-in'}
                         <ExternalLink className="size-4" aria-hidden />
-                      </a>
+                      </ExternalLinkAnchor>
                     </Button>
                   </>
                 ) : (

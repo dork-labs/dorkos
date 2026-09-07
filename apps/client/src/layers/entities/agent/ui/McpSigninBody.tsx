@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, ExternalLink, ShieldCheck } from 'lucide-react';
-import { Button, Spinner } from '@/layers/shared/ui';
+import { Button, ExternalLinkAnchor, Spinner } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import type { McpSigninFlow } from '../model/use-mcp-signin-flow';
 import { McpClientCredentialsForm } from './McpClientCredentialsForm';
@@ -191,17 +191,19 @@ export function McpSigninBody({
             </div>
           </div>
           {state.authorizeUrl && (
+            // The URL is the remote MCP server's, so it clears the app's scheme
+            // allowlist before the browser is handed anything, and `authOpened`
+            // fires only if it actually left — a refusal must not read as
+            // "you're signed in" (DOR-924).
             <Button asChild size="sm" className="gap-1.5 focus-visible:ring-2">
-              <a
+              <ExternalLinkAnchor
                 href={state.authorizeUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => flow.authOpened()}
+                onOpened={() => flow.authOpened()}
                 aria-label={`Open the sign-in page for ${serverName}`}
               >
                 Open the sign-in page
                 <ExternalLink className="size-3.5" aria-hidden />
-              </a>
+              </ExternalLinkAnchor>
             </Button>
           )}
         </div>

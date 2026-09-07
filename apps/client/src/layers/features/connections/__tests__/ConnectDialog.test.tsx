@@ -173,4 +173,29 @@ describe('ConnectDialog', () => {
       'DorkOS stores login access'
     );
   });
+
+  it('will not carry an authorize URL naming a scheme the app refuses (DOR-924)', async () => {
+    // `authorizeUrl` is whatever the connector flow answered with. It was a
+    // bare `<a href>`, so the browser followed it with none of the app's link
+    // policy in the path — including on a middle-click or "Copy Link Address",
+    // which no click handler can intercept.
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    const pending = {
+      flowId: 'flow-1',
+      providerInstanceId: 'managed-1' as never,
+      toolkit: 'gmail',
+      state: 'pending' as const,
+      authorizeUrl: 'data:text/html,<script>alert(1)</script>',
+      createdAt: '2026-09-06T00:00:00.000Z',
+      expiresAt: '2026-09-06T01:00:00.000Z',
+    };
+    vi.mocked(transport.startConnectorAuthentication).mockResolvedValue(pending);
+    vi.mocked(transport.pollConnectorAuthentication).mockResolvedValue(pending);
+    renderDialog(transport);
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    const action = await screen.findByText('Open sign-in');
+    expect(action.closest('a')?.hasAttribute('href')).toBe(false);
+  });
 });

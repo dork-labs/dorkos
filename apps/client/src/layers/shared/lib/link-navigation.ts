@@ -248,6 +248,33 @@ export function classifyLink(href: string, from: string = currentHref()): Classi
   return { kind: 'internal', url: url.href, path: `${pathname}${url.search}${url.hash}` };
 }
 
+/**
+ * The router-relative path for an href that names a route the cockpit actually
+ * serves, or `null` for everything else.
+ *
+ * The gate for a **path that came from outside this file's own source** — a
+ * server-written activity `linkPath`, an extension's `navigate(path)` argument
+ * (DOR-924). Both used to be cast straight into the router's typed `to`
+ * (`item.linkPath as '/'`), which is a claim about a string nobody checked:
+ * a path naming no route left the router with nowhere to go, and an absolute
+ * URL at another origin was a navigation target the caller never intended to
+ * offer.
+ *
+ * Deliberately **not** {@link openLink}. `openLink` answers "open this
+ * wherever it belongs", so an unrecognised path there becomes an external link
+ * and opens a browser tab — the wrong answer for a supplied path, where the
+ * honest outcome is not navigating at all. This answers the narrower question
+ * the callers actually have: is there a route here, and what is it?
+ *
+ * @param href - The supplied path or URL, exactly as received.
+ * @returns Path + search + hash for the router, or `null` when the href names
+ * no route this app serves (including any scheme the seam refuses).
+ */
+export function internalRoutePath(href: string): string | null {
+  const link = classifyLink(href);
+  return link.kind === 'internal' ? link.path : null;
+}
+
 /** An internal navigation request handed to the router. */
 export interface LinkNavigation {
   /** Router-relative path + search + hash, e.g. `/session?dir=%2Ftmp`. */

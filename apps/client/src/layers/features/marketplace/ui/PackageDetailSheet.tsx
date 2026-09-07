@@ -37,6 +37,7 @@ import {
   SheetTitle,
   Button,
   Badge,
+  ExternalLinkAnchor,
   Skeleton,
   MarkdownContent,
 } from '@/layers/shared/ui';
@@ -445,15 +446,15 @@ export function PackageDetailSheet() {
 
               {/* Homepage link */}
               {homepage && (
-                <a
+                // Whatever the remote catalog said, on the app's own link
+                // policy rather than the browser's (DOR-924).
+                <ExternalLinkAnchor
                   href={homepage}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs transition-colors"
                 >
                   <ExternalLink className="size-3" aria-hidden />
                   <span className="truncate">{homepage}</span>
-                </a>
+                </ExternalLinkAnchor>
               )}
             </SheetHeader>
 

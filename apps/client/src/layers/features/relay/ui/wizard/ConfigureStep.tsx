@@ -1,5 +1,6 @@
 import { BookOpen, Info } from 'lucide-react';
 import { Button } from '@/layers/shared/ui/button';
+import { ExternalLinkAnchor } from '@/layers/shared/ui/external-link-anchor';
 import { Input } from '@/layers/shared/ui/input';
 import { Label } from '@/layers/shared/ui/label';
 import { MarkdownContent } from '@/layers/shared/ui/markdown-content';
@@ -84,11 +85,20 @@ export function ConfigureStep({
             </Button>
           )}
           {manifest.actionButton && (
-            <a href={manifest.actionButton.url} target="_blank" rel="noopener noreferrer">
-              <Button type="button" variant="outline" size="sm">
+            // The manifest is the adapter author's, marketplace-installed ones
+            // included, so its deep link goes through the app's link seam
+            // rather than straight to the browser (DOR-924).
+            //
+            // `Button asChild` wrapping the anchor, not an anchor wrapping a
+            // `Button` — the shape every other supplied-URL call site uses. The
+            // old nesting put a native `<button>` inside the link, which is
+            // invalid on its own and becomes two tab stops on the refused path,
+            // where the anchor itself is a `role="button"`.
+            <Button asChild type="button" variant="outline" size="sm">
+              <ExternalLinkAnchor href={manifest.actionButton.url}>
                 {manifest.actionButton.label}
-              </Button>
-            </a>
+              </ExternalLinkAnchor>
+            </Button>
           )}
         </div>
       )}

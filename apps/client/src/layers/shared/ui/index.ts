@@ -43,6 +43,8 @@ export { DetailRow } from './detail-row';
 export type { DetailRowProps } from './detail-row';
 export { EmptyState, emptyStateIconVariants } from './empty-state';
 export type { EmptyStateProps, EmptyStateAction } from './empty-state';
+export { ExternalLinkAnchor } from './external-link-anchor';
+export type { ExternalLinkAnchorProps } from './external-link-anchor';
 export { QueryErrorState } from './query-error-state';
 export type { QueryErrorStateProps } from './query-error-state';
 export { RemovableChip } from './removable-chip';

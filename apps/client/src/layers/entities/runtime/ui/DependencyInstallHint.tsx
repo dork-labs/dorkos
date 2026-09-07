@@ -1,5 +1,5 @@
 import { Terminal, ExternalLink } from 'lucide-react';
-import { CopyButton } from '@/layers/shared/ui';
+import { CopyButton, ExternalLinkAnchor } from '@/layers/shared/ui';
 
 interface DependencyInstallHintProps {
   /** Copyable install/auth shell command. Omit to render only the docs link. */
@@ -36,14 +36,14 @@ export function DependencyInstallHint({ command, infoUrl, copyLabel }: Dependenc
         </div>
       )}
       {infoUrl && (
-        <a
+        // The docs URL rides the runtime-doctor payload, so it clears the app's
+        // scheme allowlist like every other link the app dispatches (DOR-924).
+        <ExternalLinkAnchor
           href={infoUrl}
-          target="_blank"
-          rel="noopener noreferrer"
           className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"
         >
           Learn more <ExternalLink className="size-3" />
-        </a>
+        </ExternalLinkAnchor>
       )}
     </div>
   );

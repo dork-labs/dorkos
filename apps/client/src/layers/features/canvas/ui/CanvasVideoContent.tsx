@@ -21,7 +21,8 @@ export function CanvasVideoContent({ content }: CanvasVideoContentProps) {
   const cwd = useAppStore((s) => s.selectedCwd);
 
   const resolved = useMemo(
-    () => resolveCanvasFetchUrl(content.src, (p) => transport.mediaUrl(cwd ?? '', p)),
+    () =>
+      resolveCanvasFetchUrl(content.src, (p) => transport.mediaUrl(cwd ?? '', p), 'data:video/'),
     [content.src, transport, cwd]
   );
 
