@@ -84,3 +84,26 @@ Key invariants:
 - **Uninstall prunes everything the engine put there — and only that.** `applyPlan(..., { sweepOrphans: true })` sweeps orphaned skill symlinks, Claude command wrappers (and their emptied dirs), OpenCode command wrappers and their aggregated `.gitignore` (marker-scoped, so authored files in the shared dir are never touched), managed settings hooks, and generated hooks files whose sidecar proves the engine wrote them (file and sidecar always together). Every one of those has an ownership predicate; nothing is swept by path alone. The skill sweep's keep-set is every `symlink` target in the plan whatever its provenance, not just the installed ones — an authored skill NAMED with a `__` projects as an authored symlink at a path that looks managed, and keeping only installed targets made one apply create that link and delete it again (DOR-1844). What the sweep may touch stays the narrow `__`-plus-symlink test; only what it keeps is wide. Auto-projection reruns project+apply after every install/uninstall (`apps/server/src/services/harness/auto-project.ts`).
 
 Global installs (`~/.dork/plugins`) are still SDK-injected by the claude-code runtime as a transitional exception until global-scope projection lands (DOR-174).
+
+## 5. The vendor-facts table and the coverage walk
+
+`packages/harness/src/vendor-facts/` answers a question the rest of the engine's tests do not: **would the harness actually load what we wrote?** Everything above this section is about writing files. A test that asserts a symlink exists at `.claude/skills/x` proves the engine did its job; it says nothing about whether Claude Code reads that path, keys the skill by its directory, or follows the link at all. Those are facts about someone else's product, and they change without telling us.
+
+Two pieces:
+
+- **`index.ts` — the facts.** One typed, dated, quoted record per harness: where it reads skills at project and user scope, how it walks for those paths (`ascend-to-repo-root`, `ascend-to-worktree`, `descend-recursive`, `fixed`), what it treats as a skill's identity, its name rules, what it does with duplicates and symlinks, and whether a new skill appears without a restart. It is §1.1 of [`meta/harness-sync-capabilities.md`](../meta/harness-sync-capabilities.md) as data — that document is the source, and it is where a new cell's reasoning belongs.
+- **`coverage.ts` — the walk.** `coverage(harness, root, { cwd })` walks a real directory the way that harness's facts say it walks, and returns `{ discovered, uncertain }`. It imports the facts, `HarnessId` and the skills frontmatter parser, and nothing from `plan/` or `apply/` — it is the oracle those get measured against, so it must not be able to agree with them by construction.
+
+**Every cell is documentation-derived.** `verified` is `'docs'` on all six rows: nothing here has been checked against a running `claude`, `codex`, `opencode`, `cursor-agent`, `gemini` or `copilot`. `plans/harness-sync-test-plan.md` calls that the H tier, and it does not exist yet. A test asserts the all-`'docs'` state on purpose, so the first real binary run has to change an assertion rather than quietly widen a claim.
+
+**`unknown` is an answer, and the most valuable one in the file.** Where a vendor page said nothing — whether OpenCode follows symlinks, whether Gemini keys a skill by its directory or its frontmatter name, what Cursor does with a name that breaks its own charset rule — the cell says `unknown`, and `coverage()` reports the skill in `uncertain` instead of counting it or dropping it. That is what stops the table becoming a confident, wrong CI gate. An assertion reads "`discovered` has what we projected **and** `uncertain` is empty", so a gap fails loudly. Filling an `unknown` in with a plausible guess is the single most damaging edit anyone can make here.
+
+**To update a cell when a vendor changes:**
+
+1. Fetch the vendor page again and read the sentence that states the behaviour.
+2. Edit the cell, put that sentence in `source.quote`, and bump `source.fetchedAt` to the day you fetched it. A row whose date no longer matches `VENDOR_FACTS_FETCHED_AT` has been re-checked on its own, which is exactly the signal the next reader wants.
+3. If the change is behavioural rather than editorial, update §1.1 of the capabilities contract in the same commit — the table and the contract are one claim in two places.
+4. Run `pnpm vitest run packages/harness/src/vendor-facts`. Several facts are pinned by name (that Claude Code alone does not read `.agents/skills`; that every `onInvalidName` is still `unknown`), so a real change reds a test and the red is the review prompt.
+5. A cell you verified by **running the harness** flips `verified` to `'binary'` — and then say so in the quote: which binary, which version, what you observed.
+
+**What it is for.** `coverage()` is the measuring stick for the projection fixes that follow: DOR-1847's false-native corrections (an authored skill Cursor's read paths find while the plan drops it as "not auto-projected in v1"), and eventually the H tier, which will replace `'docs'` cells with observed ones and is expected to contradict some of them. When it does, the disagreement is a finding about the engine, not a bug in the table — as long as the table said honestly where it got each number.
