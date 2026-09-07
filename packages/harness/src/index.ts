@@ -24,4 +24,5 @@ export * from './apply/apply.js';
 // sweep is part of the package's surface, the rest is apply's business.
 export { sweepGeneratedOrphans } from './apply/generated-targets.js';
 export * from './report/drop-list.js';
+export * from './vendor-facts/index.js';
 export * from './engine.js';

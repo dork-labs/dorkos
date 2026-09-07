@@ -1,0 +1,115 @@
+import { describe, it, expect } from 'vitest';
+import { HARNESS_IDS, type HarnessId } from '../../manifest/schema.js';
+import { HARNESS_VENDOR_FACTS, VENDOR_FACTS_FETCHED_AT, skillsFactsFor } from '../index.js';
+
+/** The canonical directory the whole skills half of the engine is organised around. */
+const CANONICAL_SKILLS_DIR = '.agents/skills';
+
+describe('vendor-facts table', () => {
+  it('has a skills row for every harness the engine targets, and no row for anything else', () => {
+    // The table is the oracle for `HARNESS_IDS`; a harness added to the engine
+    // without a row here would be measured against nothing, and a row left
+    // behind after a harness is dropped is stale data nobody reads.
+    expect(Object.keys(HARNESS_VENDOR_FACTS).sort()).toEqual([...HARNESS_IDS].sort());
+    for (const harness of HARNESS_IDS) {
+      expect(HARNESS_VENDOR_FACTS[harness].skills).toBeDefined();
+    }
+    expect(HARNESS_IDS).toHaveLength(6);
+  });
+
+  it.each(HARNESS_IDS)('%s: cites where its claims came from and when', (harness: HarnessId) => {
+    const facts = skillsFactsFor(harness);
+
+    expect(facts.readPaths.project.length).toBeGreaterThan(0);
+    for (const path of facts.readPaths.project) {
+      expect(path).not.toBe('');
+      // Project read paths are repo-relative, never absolute and never `~`:
+      // `coverage()` joins them onto a tree root.
+      expect(path.startsWith('/')).toBe(false);
+      expect(path.startsWith('~')).toBe(false);
+    }
+    expect(facts.readPaths.user.length).toBeGreaterThan(0);
+
+    expect(facts.source.url).toMatch(/^https:\/\//);
+    expect(facts.source.fetchedAt).toBe(VENDOR_FACTS_FETCHED_AT);
+    expect(facts.source.quote?.length ?? 0).toBeGreaterThan(0);
+    expect(facts.liveReload).not.toBe('');
+  });
+
+  it('is documentation-derived from end to end today — the first H-tier run against a real binary has to change this assertion', () => {
+    // `verified: 'binary'` is a claim no cell can make yet: nothing in this repo
+    // has ever started a `claude`, `codex`, `opencode`, `cursor-agent`, `gemini`
+    // or `copilot` process and watched what it loaded. When the H tier lands,
+    // the row it verifies flips to 'binary' and this assertion narrows to the
+    // rows that are still on paper. Loosening it without a binary run is the
+    // failure mode it exists to catch.
+    const verified = HARNESS_IDS.map((h) => skillsFactsFor(h).verified);
+    expect(verified).toEqual(HARNESS_IDS.map(() => 'docs'));
+  });
+
+  it('records that Claude Code is the only harness that does not read .agents/skills — the one fact the whole engine is built on', () => {
+    // Every other harness reads the canonical directory natively, so the symlink
+    // into `.claude/skills/` is the entire reason the skills half of the engine
+    // exists. If this ever flips, the engine's central premise is gone, and this
+    // test is where that has to be noticed.
+    expect(skillsFactsFor('claude-code').readPaths.project).not.toContain(CANONICAL_SKILLS_DIR);
+
+    const others = HARNESS_IDS.filter((h) => h !== 'claude-code');
+    expect(others).toHaveLength(5);
+    for (const harness of others) {
+      expect(skillsFactsFor(harness).readPaths.project).toContain(CANONICAL_SKILLS_DIR);
+    }
+  });
+
+  it('keeps every undocumented cell undocumented — filling one in is a deliberate edit with a citation, never a default', () => {
+    // These are the cells the vendor pages did not answer. `coverage()` turns
+    // each into a loud `uncertain` finding, which is the only thing stopping the
+    // table from becoming a confident wrong guard. Changing a row here means
+    // fetching the page (or running the binary) and bumping its `fetchedAt`.
+    const unknowns: ReadonlyArray<[HarnessId, string, unknown]> = [
+      ['opencode', 'symlinks', skillsFactsFor('opencode').symlinks],
+      ['cursor', 'symlinks', skillsFactsFor('cursor').symlinks],
+      ['gemini', 'symlinks', skillsFactsFor('gemini').symlinks],
+      ['copilot', 'symlinks', skillsFactsFor('copilot').symlinks],
+      ['gemini', 'identity', skillsFactsFor('gemini').identity],
+      ['gemini', 'nameMustMatchDir', skillsFactsFor('gemini').nameMustMatchDir],
+      ['copilot', 'nameMustMatchDir', skillsFactsFor('copilot').nameMustMatchDir],
+      ['cursor', 'dedupe', skillsFactsFor('cursor').dedupe],
+      ['gemini', 'dedupe', skillsFactsFor('gemini').dedupe],
+      ['copilot', 'dedupe', skillsFactsFor('copilot').dedupe],
+    ];
+    expect(unknowns.map(([harness, cell, value]) => `${harness}.${cell}=${String(value)}`)).toEqual(
+      unknowns.map(([harness, cell]) => `${harness}.${cell}=unknown`)
+    );
+
+    // Live reload is prose, so it is pinned by prefix rather than by value.
+    for (const harness of ['opencode', 'cursor', 'copilot'] as const) {
+      expect(skillsFactsFor(harness).liveReload.startsWith('unknown')).toBe(true);
+    }
+
+    // Not one of the six documents what it does with a skill whose name breaks
+    // its own rule, which is why `onInvalidName` has no 'skip' or 'warn-and-load'
+    // row yet. Both values exist for the day a vendor states one.
+    expect(HARNESS_IDS.map((h) => skillsFactsFor(h).onInvalidName)).toEqual(
+      HARNESS_IDS.map(() => 'unknown')
+    );
+  });
+
+  it('states a name rule only where a vendor states one, and each stated rule rejects the engine <pkg>__<name> shape', () => {
+    // SK-09: `pkg__name` violates OpenCode's and Cursor's stated rules twice
+    // over (charset and directory match) and Copilot's charset rule; Codex and
+    // Claude Code state no charset rule at all, which is why the projection is
+    // only confidently loadable there.
+    const withRule = HARNESS_IDS.filter((h) => skillsFactsFor(h).nameRegex !== undefined);
+    expect(withRule.sort()).toEqual(['copilot', 'cursor', 'opencode']);
+
+    for (const harness of withRule) {
+      const regex = skillsFactsFor(harness).nameRegex;
+      expect(regex?.test('flow__capture')).toBe(false);
+      expect(regex?.test('writing-for-humans')).toBe(true);
+    }
+
+    expect(skillsFactsFor('claude-code').nameRegex).toBeUndefined();
+    expect(skillsFactsFor('codex').nameRegex).toBeUndefined();
+  });
+});
