@@ -1930,7 +1930,7 @@ describe('AdapterManager', () => {
       freshManager.registerPluginManifest('custom', {
         type: 'custom',
         displayName: 'Custom',
-        description: 'Custom adapter',
+        description: 'Custom connection',
         category: 'custom',
         builtin: false,
         configFields: [],

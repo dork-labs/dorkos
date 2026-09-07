@@ -207,8 +207,8 @@
     },
     {
       "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
-      "terms": ["adapter", "provider"],
-      "reason": "Comparison pages describe OTHER products in their own words — DeepSeek Harness's plugin architecture (\"the model adapter, the tools, the session log\") — plus the model-provider sense in \"whatever provider or local model you chose\", which the ADR keeps. Neither is DorkOS naming its own Connections surface."
+      "terms": ["adapter", "provider", "connector", "connectors"],
+      "reason": "Comparison pages describe OTHER products in their own words, and a competitor's feature name is not ours to rename: DeepSeek Harness's plugin architecture (\"the model adapter, the tools, the session log\"), Grok Bot's Plugins screen, whose own documentation calls what it installs \"connectors\", and the model-provider sense in \"whatever provider or local model you chose\", which the ADR keeps anyway. None of it is DorkOS naming its own Connections surface — the rows that describe DorkOS say \"connection\"."
     }
   ]
 }

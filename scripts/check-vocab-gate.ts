@@ -51,6 +51,17 @@
  * prose, not a render path, and gets swept by hand alongside the UI strings
  * it describes.
  *
+ * A second unclosed gap, measured in DOR-1814: a string handed to an ordinary
+ * function call is invisible, even when that call's return value lands in a
+ * copy position. `plural(n, 'connection', 'connections')` inside a `label:`
+ * template is the live example — the template itself is scanned, but the two
+ * words that will actually be printed are arguments to `plural` and are not.
+ * Same shape as `parts.push(\`... at a chat integration ...\`)`, where the
+ * pushed sentence ends up in a `detail:`. Closing it means either whitelisting
+ * copy-returning helpers by name or following the value, both bigger than the
+ * classifier this file has; until then, a sweep of a file with helper-built
+ * copy has to be read as well as scanned.
+ *
  * A real, currently-unclosed gap: `return 'Connection lost'` and
  * `throw new Error('Connection lost')` are not copy-bearing positions this
  * script recognizes — a bare return or throw carries no property name or JSX
@@ -217,6 +228,17 @@ const COPY_PROP_NAMES = new Set([
   'tooltip',
   'q',
   'a',
+  // `detail` and `fix` are the other two thirds of a `CheckResult`
+  // (apps/server/src/services/observability/deep-health/): `dorkos doctor`
+  // prints all three — the label, the dimmed detail under it, and the fix line
+  // that tells a person what to do. Only `label` was scanned until DOR-1814,
+  // which is why that surface could carry "Fix the integration in Settings →
+  // Integrations" — a retired word AND a Settings tab the rename deleted —
+  // through two vocabulary waves without the gate seeing it. Left out of
+  // {@link COPY_ATTR_NAMES} deliberately: neither is a JSX copy attribute in
+  // this codebase, and a `fix=` prop would far more likely be a callback.
+  'detail',
+  'fix',
 ]);
 
 /**

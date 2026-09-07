@@ -577,7 +577,7 @@ export class TelegramAdapter extends BaseRelayAdapter {
             ` for toolCallId=${entry.toolCallId}`
         );
         await ctx.answerCallbackQuery({
-          text: 'You are not on this integration’s approver list.',
+          text: 'You are not on this connection’s approver list.',
           show_alert: true,
         });
         return;
