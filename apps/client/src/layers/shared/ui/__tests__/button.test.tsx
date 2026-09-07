@@ -4,7 +4,7 @@
  * Touch targets for the responsive-scaling sizes (DOR-771). Apple HIG asks for
  * 44pt, Material for 48dp; `size="sm"` used to give 40px below the `md`
  * breakpoint — the ruler that measures this for real is
- * `apps/e2e/tests/rooms/room-sheet-helpers.ts`'s `TOUCH_TARGET_PX = 44`, but
+ * `apps/e2e/pages/touch-reach.ts`'s `TOUCH_TARGET_PX = 44`, but
  * the class that decides the height is asserted here so a future regression
  * fails fast, in milliseconds, without a browser. Note the gate is viewport
  * WIDTH (Tailwind's `md:`), not a touch-capability query — see the comment on

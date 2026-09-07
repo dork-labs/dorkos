@@ -3,6 +3,7 @@ import { QueryClient } from '@tanstack/react-query';
 import {
   createMemoryHistory,
   createRootRoute,
+  createRoute,
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router';
@@ -48,16 +49,48 @@ const queryClient = new QueryClient({
 
 const transport = createPlaygroundTransport();
 
+/**
+ * The pathname the playground's own router reports.
+ *
+ * Deliberately not `/` and not any route the app ships: a showcase asking
+ * "which route am I on?" must not be told it is standing somewhere it changes
+ * its behaviour for. See the router below for the defect that made this
+ * necessary.
+ */
+const PLAYGROUND_ROUTER_PATH = '/dev-playground';
+
 // Minimal router providing TanStack Router context for hooks (useSearch, useNavigate)
 // that are called transitively by showcase components. Uses memory history so it
 // doesn't interfere with the playground's own URL-based routing.
+//
+// **The one child route exists so this router does not claim to be Home**
+// (DOR-1816). With a root route and nothing else, every path a memory history
+// is given resolves to `/` — so `useSafePathname()` answered `/` on every
+// playground page, and any showcase whose component gates on the route behaved
+// as if it were standing on the home surface. That is not hypothetical:
+// `PulseAttentionSection` draws NOTHING on `/` at desktop width (it would be
+// duplicating Home's own triage header), so batch 20's `PulsePanel` showcase
+// rendered its Activity half and silently omitted the other one — including its
+// all-clear line — and the omission looked like a component with one section.
+// A child route the history actually lands on gives the playground a pathname
+// of its own; `DevPlaygroundShell` renders the page itself, so the child has
+// nothing to draw and there is no `<Outlet />` for it to draw into.
 const devRootRoute = createRootRoute({
   staticData: { header: null },
   component: DevPlaygroundShell,
 });
+const devPlaygroundRoute = createRoute({
+  getParentRoute: () => devRootRoute,
+  path: PLAYGROUND_ROUTER_PATH,
+  component: () => null,
+  // Required by the app's own route options type (`router.tsx` sets it on every
+  // route so the shell can read a per-route header); this route draws nothing,
+  // so it declares none.
+  staticData: { header: null },
+});
 const devRouter = createRouter({
-  routeTree: devRootRoute,
-  history: createMemoryHistory({ initialEntries: ['/dev'] }),
+  routeTree: devRootRoute.addChildren([devPlaygroundRoute]),
+  history: createMemoryHistory({ initialEntries: [PLAYGROUND_ROUTER_PATH] }),
 });
 
 /** Platform-aware modifier key symbol. */

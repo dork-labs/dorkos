@@ -107,12 +107,32 @@ export class RightPanelPage {
    * that can land a second after the panel was opened and close it again. It also
    * only clicks the toggle when the toggle itself says the panel is closed, so a
    * call that arrives while the panel is already open can never toggle it shut.
+   *
+   * **The tablist is inside the retry loop, and below 1024px that is the
+   * difference between working and hanging** (DOR-1816). On a desktop the panel
+   * is an inset `Panel` that is in the DOM even while collapsed to zero width,
+   * so a single up-front wait for its tablist could not fail for a reason
+   * opening would fix. Under `useIsBelowDesktop` it is an overlay Sheet
+   * instead, which mounts nothing at all until it is open and UNMOUNTS again
+   * when the per-agent layout restore closes it — so an up-front wait had
+   * nothing to wait for and burned its whole budget on a panel one click away,
+   * both when the caller arrived with the sheet shut and when the restore shut
+   * it mid-wait. Retrying both together costs a desktop caller nothing: the
+   * tablist is already visible on its first look, and `open()` reads the
+   * toggle's own label and clicks only when it says the panel is closed.
    */
   async ensureTabStripOpen() {
-    await this.header.getByRole('tablist').waitFor({ state: 'visible', timeout: 15_000 });
-    for (let attempt = 0; attempt < 10; attempt++) {
-      if ((await this.tabStripWidth()) > 0) return;
+    const tablist = this.header.getByRole('tablist');
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline) {
       await this.open();
+      // Short per-attempt, long in total: a sheet that was dismissed a beat ago
+      // has to be re-opened, not waited on.
+      const showing = await tablist
+        .waitFor({ state: 'visible', timeout: 2_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (showing && (await this.tabStripWidth()) > 0) return;
       await this.page.waitForTimeout(200);
     }
     throw new Error('the right panel never opened wide enough to measure its tab strip');

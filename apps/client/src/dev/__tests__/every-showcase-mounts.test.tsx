@@ -42,6 +42,7 @@ import {
   RouterProvider,
 } from '@tanstack/react-router';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
+import { useSessionListStore } from '@/layers/entities/session';
 
 import { createPlaygroundTransport } from '../playground-transport';
 import { PlaygroundProviders } from '../playground-providers';
@@ -221,4 +222,42 @@ describe('the dev playground', () => {
       ).toEqual([]);
     }
   );
+
+  it('leaves the global session-list store exactly as it found it', async () => {
+    // **The one showcase that writes to shared global state** (DOR-1816).
+    // `PulsePanelShowcase`'s populated Needs Attention demo seeds a lifecycle
+    // into `useSessionListStore` — a module-level Zustand store no
+    // `QueryClientProvider` can scope — because `useAttentionSignals` reads it
+    // from there and nowhere else. It promises to put the store back, and a
+    // promise a test does not hold is a comment.
+    //
+    // **The reset is what makes this case mean anything, and leaving it out
+    // made the first version vacuous.** The store outlives every case in this
+    // file, so a page rendered earlier in the `it.each` above has already left
+    // its own seed in it — including, when the cleanup is broken, the very seed
+    // this case is looking for. Measured: with `useWedgedSession`'s cleanup
+    // mutated away, this case PASSED inside the full file (the damage was
+    // already in `before`) and FAILED when run alone. Starting from a known
+    // empty store is what makes the two agree.
+    useSessionListStore.getState().resetStatuses();
+    const before = JSON.stringify(useSessionListStore.getState().statuses);
+
+    const container = await renderPage('features');
+    expect(container.textContent?.trim().length ?? 0).toBeGreaterThan(0);
+    // Both directions, because either alone passes against a broken build: a
+    // showcase that never seeded would satisfy the teardown check trivially,
+    // and one that never cleaned up would satisfy this one.
+    expect(
+      JSON.stringify(useSessionListStore.getState().statuses),
+      'the Pulse showcase must actually seed the store while it is mounted — with nothing ' +
+        'seeded, the teardown assertion below cannot fail and proves nothing'
+    ).not.toBe(before);
+
+    cleanup();
+    expect(
+      JSON.stringify(useSessionListStore.getState().statuses),
+      'unmounting /dev/features left a session status behind in the global store, which every ' +
+        'other surface in the app reads'
+    ).toBe(before);
+  });
 });

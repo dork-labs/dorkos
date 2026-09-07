@@ -222,12 +222,21 @@ describe('BarTabStrip — overflow at a narrow width', () => {
     expect(fade('end')).toBeNull();
   });
 
-  it('never yields below one readable tab', async () => {
+  it('still declares the floor that keeps one readable tab (measured in the browser)', async () => {
     // With `min-w-0` and nothing else, `flex-initial` gave away every pixel it
     // was asked for: at 768px with the sidebar and the right panel both docked,
     // the four home tabs measured 16px wide — no label, and not even the fade
-    // that says there is more. jsdom lays nothing out, so the floor itself is
-    // what can be asserted.
+    // that says there is more.
+    //
+    // **This case is a canary, and the proof lives in the browser** —
+    // `apps/e2e/tests/one-bar/bar-tab-strip-floor.spec.ts`, which measures the
+    // strip's rendered width in the Dev Playground's 236px frame (DOR-1816).
+    // jsdom lays nothing out, so all this file can ask is whether the class is
+    // on the element, and a class is not a floor: adding `md:min-w-8` beside
+    // `min-w-28` leaves both assertions below green while the strip renders
+    // 68.8px, which is the defect. What this case still buys is that deleting
+    // the floor outright fails in a one-second unit run rather than only in the
+    // browser leg.
     renderStrip('/', 'home');
     await screen.findByTestId('page');
 

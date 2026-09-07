@@ -247,6 +247,21 @@
         "apps/client/src/layers/features/team-roster/ui/TeamRosterToolbar.tsx",
         "apps/client/src/layers/widgets/one-bar/ui/TeamHeader.tsx"
       ]
+    },
+    "touch-reach": {
+      "relatedCode": [
+        "apps/client/src/layers/features/terminal/ui/TerminalTabs.tsx",
+        "apps/client/src/layers/features/canvas/ui/CanvasHeader.tsx",
+        "apps/client/src/layers/features/chat/ui/tasks/BackgroundTaskBar.tsx",
+        "apps/client/src/dev/showcases/BackgroundTaskShowcases.tsx",
+        "apps/e2e/pages/touch-reach.ts"
+      ],
+      "explorationNotes": [
+        "Measure the REACH, not just the height. The DOR-1753 defect this guards was an ::after with only top/bottom set, which shrink-wraps to zero width and catches nothing \u2014 so the class was present, the unit tests were green, and touchHeight equalled the border box. Seeding that exact defect back in prints 25.0px for a tab close button (40.99px healthy) and 15.0px for the chevron (34.99px healthy).",
+        "The right panel is an overlay Sheet below 1024px and mounts NOTHING until it is open, so RightPanelPage.ensureTabStripOpen has to open before it waits for the tablist \u2014 and keep retrying both, because the per-agent layout restore can shut the sheet again mid-wait.",
+        "The background-task bar is measured in the Dev Playground on purpose: a real one needs an agent turn that spawns a subagent or a background bash command, which this suite never buys. The showcase renders the real component including the overflow-hidden + 44px maxHeight clip that is the whole reason the chevron's reach is sized to the row.",
+        "That clip is why the chevron floor is not 20px of reach: on a bash-only bar (no AgentRunner figure, so a shorter row) the last ~2px is clipped and the growth measures 17.6px rather than 20."
+      ]
     }
   }
 }

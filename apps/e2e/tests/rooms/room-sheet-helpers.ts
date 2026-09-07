@@ -9,12 +9,15 @@
  * that ellipsises. The sheet's unit suite covers what it says; those cover what
  * it *is* on a laid-out page.
  *
- * **Three measurement traps live here, each of which cost a red run.** They are
+ * **Two measurement traps live here, each of which cost a red run.** They are
  * documented on the helper that defends against them rather than in a list,
  * because the next person meets them one at a time: geometry has to wait for a
- * drawer to stop moving ({@link rectOf}), `elementFromPoint` works in viewport
- * coordinates ({@link touchHeight}), and a Tailwind ring is one layer of a
+ * drawer to stop moving ({@link rectOf}), and a Tailwind ring is one layer of a
  * five-layer `box-shadow` whose unused layers are all zeros ({@link ringBleed}).
+ *
+ * **The touch ruler is no longer here.** `TOUCH_TARGET_PX` and `touchHeight`
+ * moved to `pages/touch-reach.ts` at DOR-1816, when a third suite needed them
+ * and the second was already reaching across into this one to borrow them.
  *
  * @module tests/rooms/room-sheet-helpers
  */
@@ -24,62 +27,6 @@ import { SERVER_ROUND_TRIP_MS, type RoomsApi, type SeededAgent } from '../../fix
 
 /** iPhone 14/15 in portrait — the width the sheet's phone rendering was cut for. */
 export const PHONE = { width: 390, height: 844 } as const;
-
-/** The smallest thing a thumb can reliably hit, in CSS pixels. */
-export const TOUCH_TARGET_PX = 44;
-/**
- * How tall a control really is to a finger, including any invisible reach it
- * gives itself.
- *
- * `boundingBox()` answers with the border box, which is the wrong number for
- * anything that widens its own hit area with a pseudo-element — the loudness
- * pill is 32px of visible pill plus 6px of `::after` each way, and a test
- * reading 32 would fail a control that is fine. So the page is *probed*: walk
- * a pixel at a time out from the border box and ask the browser what it would
- * hit, which is the same question a thumb asks.
- *
- * @param locator - The control to measure.
- * @returns Its hit height in CSS pixels.
- */
-export async function touchHeight(locator: Locator): Promise<number> {
-  return locator.evaluate((el) => {
-    const box = el.getBoundingClientRect();
-    const x = box.left + box.width / 2;
-    // `contains` covers the element's own children; a pseudo-element hit-tests
-    // as the element that owns it, so `::after` reach lands on `el` itself.
-    const owns = (y: number) => {
-      const hit = document.elementFromPoint(x, y);
-      return hit !== null && (hit === el || el.contains(hit));
-    };
-
-    /**
-     * The exact y where this control stops answering, found by halving.
-     *
-     * **Not a one-pixel-at-a-time walk, and the difference is the whole
-     * measurement.** Stepping in integers loses the fraction at each end — a
-     * band running 602.0 to 646.0 probed on whole pixels answers from 603 to
-     * 644 and reports 41 for a control that is exactly 44. That looked like a
-     * real miss of the 44px bar and was an artefact of the ruler.
-     *
-     * @param outward - -1 for up, 1 for down.
-     */
-    const edge = (outward: -1 | 1) => {
-      let inside = box.top + box.height / 2;
-      // 32px is past any reach this sheet gives anything, so a control that
-      // still answers there is a hit area that has swallowed its neighbours.
-      let outside = inside + outward * 32;
-      if (owns(outside)) return outside;
-      for (let i = 0; i < 14; i += 1) {
-        const mid = (inside + outside) / 2;
-        if (owns(mid)) inside = mid;
-        else outside = mid;
-      }
-      return outside;
-    };
-
-    return edge(1) - edge(-1);
-  });
-}
 
 /** A rect as the page reports it, in viewport coordinates. */
 export interface Rect {

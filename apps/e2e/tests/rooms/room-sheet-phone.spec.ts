@@ -1,6 +1,7 @@
 import type { Locator } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
+import { touchHeight, TOUCH_TARGET_PX } from '../../pages/touch-reach';
 import { openCockpit } from './open-cockpit';
 import {
   expandScale,
@@ -10,8 +11,6 @@ import {
   rectOf,
   seedRoom,
   settled,
-  touchHeight,
-  TOUCH_TARGET_PX,
 } from './room-sheet-helpers';
 
 // Same shape as its siblings: one cockpit at a time, and a ceiling sized for a
