@@ -40,17 +40,19 @@ describe('isLegacyBareCodexHooks', () => {
     expect(isLegacyBareCodexHooks(bare('MadeUpEvent'))).toBe(false);
   });
 
-  it('rejects the vendor shape, by either of its two keys', () => {
+  it("rejects the vendor shape's keys on the vocabulary alone", () => {
     // Neither `hooks` nor `description` is a Codex event name, so the vocabulary
-    // alone rules the documented file out — which is exactly why the function
-    // carries no separate check for it. This pins that outcome, so widening the
-    // vocabulary can never quietly hand rule 2 the vendor's own shape.
-    expect(isLegacyBareCodexHooks(`${JSON.stringify({ hooks: { Stop: [] } }, null, 2)}\n`)).toBe(
-      false
-    );
-    expect(isLegacyBareCodexHooks(`${JSON.stringify({ description: 'mine' }, null, 2)}\n`)).toBe(
-      false
-    );
+    // rules the documented file out by itself — which is exactly why the
+    // function carries no separate check for it. The values here are ARRAYS on
+    // purpose: give them their natural shapes and the value check rejects them
+    // first, and the test would stay green even if somebody admitted these two
+    // literal keys into the vocabulary. With arrays, only the vocabulary can
+    // answer, so widening it reds here.
+    expect(
+      isLegacyBareCodexHooks(`${JSON.stringify({ hooks: [], description: [] }, null, 2)}\n`)
+    ).toBe(false);
+    expect(isLegacyBareCodexHooks(`${JSON.stringify({ hooks: [] }, null, 2)}\n`)).toBe(false);
+    expect(isLegacyBareCodexHooks(`${JSON.stringify({ description: [] }, null, 2)}\n`)).toBe(false);
   });
 
   it('rejects anything that is not a non-empty object of arrays', () => {

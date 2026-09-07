@@ -44,9 +44,9 @@ function writeOwnedGenerated(absTarget: string, content: string): void {
 
 /**
  * What applying a generated hooks file to its current on-disk state would do.
- * One predicate, read by both {@link applyGenerate} (which acts on it) and
- * {@link isDrifted} / {@link findBlockedGeneratedHookTargets} (which report it),
- * so the three can never disagree about who owns a file.
+ * One predicate, read by {@link applyGeneratedHookFile} (which acts on it), by
+ * {@link findBlockedGeneratedHookTargets}, and by `apply.ts`'s drift check
+ * (which both report it), so the three can never disagree about who owns a file.
  */
 export type GeneratedHookOutcome = 'write' | 'adopt' | 'unchanged' | 'blocked';
 
@@ -128,8 +128,8 @@ export function applyGeneratedHookFile(
  * When the plugin that contributed the only Codex-mappable hook is uninstalled,
  * the projector emits no `generate` action for that path and the file is left
  * stale on disk. This sweep removes it, the mirror of the symlink orphan sweep in
- * {@link sweepInstalledOrphans} — behind two guards, because Codex's and Cursor's
- * own docs tell people to hand-write exactly these paths (HK-11):
+ * `apply.ts` — behind one guard, ownership, because Codex's and Cursor's own docs
+ * tell people to hand-write exactly these paths (HK-11):
  *
  * The file goes only when its `.dorkos-generated` sidecar's digest still matches
  * the bytes on disk. A file with no sidecar was never the engine's; a file whose
@@ -188,8 +188,9 @@ export function sweepGeneratedOrphans(repoRoot: string, plan: ProjectionPlan): s
  * precisely so it cannot become a standing non-zero exit for somebody whose only
  * crime is writing their own `.codex/hooks.json`.
  *
- * A target the plan DOES write is settled by {@link applyGenerate} instead, and a
- * file the engine owns belongs to the sweep, so neither is listed here.
+ * A target the plan DOES write is settled by {@link applyGeneratedHookFile}
+ * instead, and a file the engine owns belongs to {@link sweepGeneratedOrphans},
+ * so neither is listed here.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the current projection plan.
