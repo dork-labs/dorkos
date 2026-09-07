@@ -381,7 +381,20 @@ function toInstalledSkill(entry: SkillEntry, absSkillsRoot: string): InstalledSk
   };
 }
 
-/** Collect a project plugin's portable skill dirs (skills/ + .dork/tasks/), de-duped by name. */
+/**
+ * Collect a project plugin's portable skill dirs (skills/ + .dork/tasks/),
+ * de-duped by name.
+ *
+ * Both scans take {@link scanSkillDirs}' default view, which is the right one
+ * here for two separate reasons. A skill a package ships as a SYMLINK counts —
+ * the package's author linked it in deliberately, and every harness that reads
+ * the projection follows the link — and that now happens without asking,
+ * because the scanner follows links. Managed projections stay excluded, because
+ * a marketplace package's own `skills/` directory is content it authored, not
+ * somewhere the engine ever writes: a `<pkg>__<name>` symlink there would be a
+ * package linking at another package's install dir, which is not an install
+ * shape DorkOS produces and not one it should re-project.
+ */
 function collectPortableSkills(pluginDir: string, relDir: string): InstalledSkill[] {
   const skillsRoot = join(pluginDir, 'skills');
   const tasksRoot = join(pluginDir, '.dork', 'tasks');

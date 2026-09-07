@@ -7,6 +7,8 @@ import {
   lstatSync,
   realpathSync,
   readFileSync,
+  readlinkSync,
+  symlinkSync,
   existsSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -94,5 +96,39 @@ describe('harness engine integration', () => {
     ).toBe(true);
     expect(lstatSync(link).isDirectory()).toBe(true);
     expect(readFileSync(join(link, 'precious.md'), 'utf8')).toBe('# do not delete\n');
+  });
+
+  it('projects and applies an authored skill whose own source is a symlink', () => {
+    // A person keeps a skill in a shared folder and links it into the repo
+    // (`.agents/skills/notes -> ../../vault/notes`). Codex follows that link
+    // natively, so DorkOS has to see it too (DOR-1844). The Claude Code
+    // projection is then a link to a link, which realpath resolves to the one
+    // real directory — and the drift check compares LINK TEXT, so a resolvable
+    // chain is clean, not drifted.
+    dir = buildFixtureRepo();
+    mkdirSync(join(dir, 'vault', 'notes'), { recursive: true });
+    writeFileSync(join(dir, 'vault', 'notes', 'SKILL.md'), '# notes skill\n');
+    symlinkSync(join('..', '..', 'vault', 'notes'), join(dir, '.agents', 'skills', 'notes'));
+
+    const plan = project(dir);
+    const planned = plan.actions.find((a) => a.artifact === 'skill' && a.name === 'notes');
+    expect(planned).toMatchObject({
+      kind: 'symlink',
+      harness: 'claude-code',
+      provenance: 'authored',
+      source: '.agents/skills/notes',
+      target: '.claude/skills/notes',
+    });
+
+    expect(applyPlan(dir, plan).conflicts).toEqual([]);
+
+    const projected = join(dir, '.claude', 'skills', 'notes');
+    expect(lstatSync(projected).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(projected)).toBe(join('..', '..', '.agents', 'skills', 'notes'));
+    // Through both links to the one real directory.
+    expect(realpathSync(projected)).toBe(realpathSync(join(dir, 'vault', 'notes')));
+    expect(readFileSync(join(projected, 'SKILL.md'), 'utf8')).toBe('# notes skill\n');
+
+    expect(checkPlan(dir, plan).clean).toBe(true);
   });
 });
