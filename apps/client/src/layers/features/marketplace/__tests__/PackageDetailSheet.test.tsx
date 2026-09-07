@@ -632,4 +632,28 @@ describe('PackageDetailSheet', () => {
 
     expect(screen.queryByRole('heading', { name: 'About' })).not.toBeInTheDocument();
   });
+  // -------------------------------------------------------------------------
+  // The homepage link (DOR-924)
+  // -------------------------------------------------------------------------
+
+  it('links to a package homepage the app would open', () => {
+    openPackage(makePackage({ homepage: 'https://dorkos.ai/packages/code-reviewer' }));
+
+    render(<PackageDetailSheet />);
+
+    const link = screen.getByText('https://dorkos.ai/packages/code-reviewer').closest('a');
+    expect(link?.getAttribute('href')).toBe('https://dorkos.ai/packages/code-reviewer');
+  });
+
+  it('renders no href for a homepage naming a scheme the app refuses', () => {
+    // `homepage` is whatever the remote catalog said. It reached a bare
+    // `<a href>`, so the browser — not the app's link seam — decided what a
+    // click, a middle-click or "Copy Link Address" did with it.
+    const hostile = 'data:text/html,<script>alert(1)</script>';
+    openPackage(makePackage({ homepage: hostile }));
+
+    render(<PackageDetailSheet />);
+
+    expect(screen.getByText(hostile).closest('a')?.hasAttribute('href')).toBe(false);
+  });
 });

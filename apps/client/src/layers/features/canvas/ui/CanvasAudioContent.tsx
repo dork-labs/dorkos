@@ -21,7 +21,8 @@ export function CanvasAudioContent({ content }: CanvasAudioContentProps) {
   const cwd = useAppStore((s) => s.selectedCwd);
 
   const resolved = useMemo(
-    () => resolveCanvasFetchUrl(content.src, (p) => transport.mediaUrl(cwd ?? '', p)),
+    () =>
+      resolveCanvasFetchUrl(content.src, (p) => transport.mediaUrl(cwd ?? '', p), 'data:audio/'),
     [content.src, transport, cwd]
   );
 

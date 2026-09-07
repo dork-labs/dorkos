@@ -13,6 +13,7 @@ import {
 import {
   Badge,
   Button,
+  ExternalLinkAnchor,
   QueryErrorState,
   ResponsiveDialog,
   ResponsiveDialogBody,
@@ -307,15 +308,16 @@ function ManagementReviewDialog({
                     authenticationState !== 'start_unknown' &&
                     authentication.authorizeUrl ? (
                     <Button asChild>
-                      <a
+                      {/* Same seam as every other supplied URL, and the
+                          "they opened it" flag is set only if it really left —
+                          a refusal must not read as progress (DOR-924). */}
+                      <ExternalLinkAnchor
                         href={authentication.authorizeUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={() => setAuthenticationOpened(true)}
+                        onOpened={() => setAuthenticationOpened(true)}
                       >
                         Continue to sign in
                         <ExternalLink className="size-4" aria-hidden />
-                      </a>
+                      </ExternalLinkAnchor>
                     </Button>
                   ) : authenticationState === 'required' ? (
                     <Button onClick={() => setAuthenticationOpened(true)}>Check connection</Button>

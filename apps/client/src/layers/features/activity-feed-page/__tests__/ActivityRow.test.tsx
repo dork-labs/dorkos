@@ -50,14 +50,14 @@ const renderRow = (activity: ActivityItem) =>
 
 describe('ActivityRow', () => {
   it('is focusable and navigable when the event has somewhere to go', () => {
-    renderRow(item({ linkPath: '/session/abc' }));
+    renderRow(item({ linkPath: '/tasks' }));
 
     const row = screen.getByRole('row');
     expect(row.getAttribute('tabindex')).toBe('0');
     expect(row.hasAttribute('data-activity-row')).toBe(true);
 
     fireEvent.keyDown(row, { key: 'Enter' });
-    expect(navigate).toHaveBeenCalledWith({ to: '/session/abc', replace: false });
+    expect(navigate).toHaveBeenCalledWith({ href: '/tasks', replace: false });
   });
 
   it('renders as plain text when there is nothing to open', () => {
@@ -73,5 +73,42 @@ describe('ActivityRow', () => {
 
     fireEvent.keyDown(row, { key: 'Enter' });
     expect(navigate).not.toHaveBeenCalled();
+  });
+  // -------------------------------------------------------------------------
+  // A server-written path is not a route until it is checked (DOR-924)
+  // -------------------------------------------------------------------------
+
+  it('does not navigate on a path naming no route the app serves', () => {
+    // `linkPath` is written by the server and used to be cast straight into the
+    // router's typed `to` (`item.linkPath as '/'`) — a claim about a string
+    // nobody checked. A path with nowhere to go now leaves the row inert.
+    renderRow(item({ linkPath: '/session/abc' }));
+
+    const row = screen.getByRole('row');
+    expect(row.getAttribute('tabindex')).toBeNull();
+    expect(row.hasAttribute('data-activity-row')).toBe(false);
+    expect(screen.queryByRole('button', { name: /Open/ })).not.toBeInTheDocument();
+
+    fireEvent.keyDown(row, { key: 'Enter' });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'https://evil.example/steal',
+    '//evil.example/steal',
+    'javascript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+  ])('does not navigate on the off-origin or hostile path %s', (linkPath) => {
+    renderRow(item({ linkPath }));
+
+    fireEvent.keyDown(screen.getByRole('row'), { key: 'Enter' });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('navigates from the Open button only for a real route', () => {
+    renderRow(item({ linkPath: '/agents' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Open/ }));
+    expect(navigate).toHaveBeenCalledWith({ href: '/agents', replace: false });
   });
 });

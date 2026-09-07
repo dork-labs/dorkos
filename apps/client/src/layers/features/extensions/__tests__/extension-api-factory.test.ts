@@ -396,6 +396,30 @@ describe('createExtensionAPI', () => {
     expect(deps.navigate).toHaveBeenCalledWith({ to: '/team' });
   });
 
+  // An extension's `navigate` argument is a string the extension author wrote,
+  // and it used to reach the router unchecked (DOR-924).
+  it.each([
+    '/not-a-route',
+    'https://evil.example/steal',
+    '//evil.example/steal',
+    'javascript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+  ])('navigate refuses %s rather than handing it to the router', (path) => {
+    const { api } = createExtensionAPI('my-ext', deps);
+
+    api.navigate(path);
+
+    expect(deps.navigate).not.toHaveBeenCalled();
+  });
+
+  it('navigate keeps the search an in-app path carries', () => {
+    const { api } = createExtensionAPI('my-ext', deps);
+
+    api.navigate('/session?dir=%2Ftmp');
+
+    expect(deps.navigate).toHaveBeenCalledWith({ to: '/session?dir=%2Ftmp' });
+  });
+
   // 9. getState
   describe('getState', () => {
     it('projects selectedCwd and sessionId from the app store', () => {

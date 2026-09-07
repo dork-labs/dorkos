@@ -7,6 +7,7 @@ import {
   APP_ROUTE_PATHS,
   classifyLink,
   declaredScheme,
+  internalRoutePath,
   isWebUrl,
   openExternalLink,
   openLink,
@@ -300,6 +301,41 @@ describe('classifyLink', () => {
     for (const route of APP_ROUTE_PATHS) {
       expect(classifyLink(route, FROM), route).toMatchObject({ kind: 'internal' });
     }
+  });
+});
+
+describe('internalRoutePath', () => {
+  // The gate for a path this app did not author: the server's activity
+  // `linkPath`, an extension's `navigate(path)` argument (DOR-924). Both used
+  // to be cast straight into the router's typed `to`.
+  it('returns the router path for a route the app serves', () => {
+    expect(internalRoutePath('/tasks')).toBe('/tasks');
+    expect(internalRoutePath('/agents')).toBe('/agents');
+    expect(internalRoutePath('/')).toBe('/');
+  });
+
+  it('keeps the search and hash a supplied path carries', () => {
+    expect(internalRoutePath('/session?dir=%2Ftmp#top')).toBe('/session?dir=%2Ftmp#top');
+  });
+
+  it('refuses a path naming no route, rather than inventing one', () => {
+    // The router has nowhere to go with these, and `openLink` would answer
+    // them by opening a browser tab — the wrong answer for a supplied path.
+    expect(internalRoutePath('/session/abc')).toBeNull();
+    expect(internalRoutePath('/nope')).toBeNull();
+    expect(internalRoutePath('')).toBeNull();
+  });
+
+  it('refuses another origin, however it is spelled', () => {
+    expect(internalRoutePath('https://evil.example/tasks')).toBeNull();
+    // Protocol-relative: a browser resolves this to another host, not a path.
+    expect(internalRoutePath('//evil.example/tasks')).toBeNull();
+  });
+
+  it('refuses every scheme the seam refuses', () => {
+    expect(internalRoutePath('javascript:alert(1)')).toBeNull();
+    expect(internalRoutePath('data:text/html,<script>alert(1)</script>')).toBeNull();
+    expect(internalRoutePath('vbscript:msgbox(1)')).toBeNull();
   });
 });
 

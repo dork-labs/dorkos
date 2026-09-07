@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
 import { Button, TableRow, TableCell } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, internalRoutePath } from '@/layers/shared/lib';
 import { ActorBadge } from '@/layers/entities/activity';
 import type { ActivityItem } from '@/layers/entities/activity';
 
@@ -74,11 +74,18 @@ export interface ActivityRowProps {
  * action that does not exist (DOR-1751). Those rows now render as plain text,
  * and they no longer carry `data-activity-row`, so arrow-key navigation walks
  * only the rows it can actually put focus on.
+ *
+ * **"Somewhere to go" means a route this app actually serves** (DOR-924).
+ * `linkPath` is written by the server, and it used to be cast straight into the
+ * router's typed `to` (`item.linkPath as '/'`) — a claim about a string nobody
+ * checked. `internalRoutePath` checks it, so a path naming no route, another
+ * origin, or a scheme the link seam refuses leaves the row inert rather than
+ * handing the router somewhere it cannot go.
  */
 export function ActivityRow({ item, className }: ActivityRowProps) {
   const navigate = useNavigate();
   const time = formatActivityTime(item.occurredAt);
-  const linkPath = item.linkPath;
+  const linkPath = item.linkPath ? internalRoutePath(item.linkPath) : null;
 
   return (
     <TableRow
@@ -89,7 +96,7 @@ export function ActivityRow({ item, className }: ActivityRowProps) {
         linkPath
           ? (e) => {
               if (e.key === 'Enter') {
-                navigate({ to: linkPath as '/', replace: false });
+                navigate({ href: linkPath, replace: false });
               }
             }
           : undefined
@@ -123,12 +130,12 @@ export function ActivityRow({ item, className }: ActivityRowProps) {
 
       {/* Link button */}
       <TableCell className="w-16 py-1.5 pr-2 text-right max-sm:w-10">
-        {item.linkPath && (
+        {linkPath && (
           <Button
             variant="ghost"
             size="sm"
             className="h-6 min-h-[44px] px-2 text-xs sm:min-h-0"
-            onClick={() => navigate({ to: item.linkPath as '/', replace: false })}
+            onClick={() => navigate({ href: linkPath, replace: false })}
           >
             Open →
           </Button>
