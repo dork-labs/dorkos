@@ -15,5 +15,5 @@
  * @module boot-cache-flag
  */
 
-/** See {@link BOOT_CACHE_DISABLED_KEY} in `shared/lib/query-persister.ts`. */
+/** See {@link BOOT_CACHE_DISABLED_KEY} in `shared/lib/boot-cache-keys.ts`. */
 export const BOOT_CACHE_DISABLED_KEY = 'dorkos:boot-cache-disabled';

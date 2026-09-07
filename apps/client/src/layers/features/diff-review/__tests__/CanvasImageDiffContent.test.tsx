@@ -26,8 +26,9 @@ const streamMocks = vi.hoisted(() => ({
   handler: { current: null as SessionEventHandler | null },
 }));
 
-// The component tree pulls `cn` and (via useAgentEditRefresh) `streamManager`
-// from the shared lib barrel — mock both so tests can fire session events.
+// Two mocks because the two live in two places (DOR-1809): the tree pulls `cn`
+// off the lib barrel, and `streamManager` — via useAgentEditRefresh — off the
+// transport subpath. Stubbing the second is what lets tests fire session events.
 vi.mock('@/layers/shared/lib', () => ({
   cn: (...inputs: unknown[]) => inputs.flat(Infinity).filter(Boolean).join(' '),
 }));

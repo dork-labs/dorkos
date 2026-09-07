@@ -86,12 +86,24 @@ const TRANSPORT_MODULES = [
  * control case evaluate the whole HTTP stack through the mock machinery, which
  * turned this file into a 20-second test. Nothing here calls into a transport —
  * the subject is which modules load, not what they do — so an inert namespace
- * is enough, and any name read off it is a class that exists and does nothing.
+ * is enough, and it answers to any name with a class that does nothing.
+ *
+ * **`has` is what keeps a real regression legible, and it is not decoration.**
+ * Vitest checks a factory mock's namespace with `in` before it hands a named
+ * import over, so a bare `get` trap leaves every name looking absent: the exact
+ * failure this file exists to catch — a value import that reaches the transport
+ * again — would have died on vitest's own "No X export is defined on the mock,
+ * use importOriginal" instead of on the assertion below, and taken the control
+ * down with it. Two failures, neither of them the one that is true. `ownKeys`
+ * stays empty because the target is empty and a Proxy may not invent own keys
+ * it cannot describe; nothing here enumerates the namespace.
  */
 const STUB: Record<string, unknown> = new Proxy(
   {},
   {
     get: (_target, key) => (typeof key === 'symbol' || key === 'then' ? undefined : class Stub {}),
+    has: (_target, key) => key !== 'then',
+    ownKeys: () => [],
   }
 );
 
@@ -137,6 +149,14 @@ describe('shared/lib barrel ↔ transport isolation', () => {
     expect(typeof barrel.cn).toBe('function');
     expect(typeof barrel.clearBootCache).toBe('function');
     expect(barrel.BOOT_CACHE_KEY_PREFIX).toBe('dorkos:rq:');
+
+    // And `pruneForeignBootCaches` is NOT on it. The split turned it from a
+    // private helper into an export so `query-persister` could still reach it,
+    // and "drop every entry except this one" is a claim only the module that
+    // writes the entry is in a position to make. That was a comment on the
+    // function until this line, which is the difference between a convention
+    // and a fact — the same difference this whole file is about.
+    expect(barrel).not.toHaveProperty('pruneForeignBootCaches');
   });
 
   it('records both Transports when something really does load one', async () => {

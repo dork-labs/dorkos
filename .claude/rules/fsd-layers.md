@@ -168,11 +168,15 @@ import { cn } from '@/layers/shared/lib/utils';
 import { cn } from '@/layers/shared/lib';
 ```
 
-`shared/lib/index.ts` re-exports ~150 symbols from ~60 modules, `HttpTransport`,
-`playCelebration` and `queryClient` among them. Asking for `cn` through it puts
-the transport and the sound player in a 20-line leaf primitive's module graph —
-a cost the barrel already documents itself, at the line explaining why
-`overnightBoundary` is deliberately left off it. `no-restricted-imports` scoped
+`shared/lib/index.ts` re-exports ~140 symbols from ~60 modules,
+`playCelebration`, the font loader and `queryClient` among them. Asking for `cn`
+through it puts the sound player and the celebration engine in a 20-line leaf
+primitive's module graph — a cost the barrel already documents itself, at the
+line explaining why `overnightBoundary` is deliberately left off it. It no
+longer puts the TRANSPORT there: DOR-1809 took both Transports off the barrel
+outright, so that half is a structure and a load test
+(`shared/lib/__tests__/barrel-transport-isolation.test.ts`) rather than a lint
+rule. See the note on the `shared/` layer below. `no-restricted-imports` scoped
 to `src/layers/shared/**` holds this; tests are exempt, because a spec may name
 the barrel as a string fixture.
 
