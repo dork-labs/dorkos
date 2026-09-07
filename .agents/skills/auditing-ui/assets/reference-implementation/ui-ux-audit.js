@@ -1,5 +1,5 @@
-/* global phase, parallel, agent, log, pipeline, workflow, args, budget */
-// The identifiers above are injected by the workflow runtime at execution time — never imported.
+/* eslint-disable no-undef -- phase, parallel, agent, log, pipeline, workflow, args, budget are injected by the workflow runtime at execution time, never imported */
+// (kept as history from the September 2026 run; see the README in this directory)
 // NON-NORMATIVE REFERENCE IMPLEMENTATION. Do not treat this file as the contract.
 //
 // This is the actual audit fan-out orchestration script from the September 2026 UI/UX

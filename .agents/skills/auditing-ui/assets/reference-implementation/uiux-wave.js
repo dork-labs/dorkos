@@ -1,5 +1,5 @@
-/* global phase, parallel, agent, log, pipeline, workflow, args, budget */
-// The identifiers above are injected by the workflow runtime at execution time — never imported.
+/* eslint-disable no-undef -- phase, parallel, agent, log, pipeline, workflow, args, budget are injected by the workflow runtime at execution time, never imported */
+// (kept as history from the September 2026 run; see the README in this directory)
 // NON-NORMATIVE REFERENCE IMPLEMENTATION. Do not treat this file as the contract.
 //
 // This is the actual wave landing orchestration script from the September 2026 UI/UX
@@ -155,8 +155,7 @@ You may NOT edit any file. Every finding needs file:line you actually read plus 
 
 const finalPrompt = (
   review,
-  b,
-  idx
+  b
 ) => `You are the finalizer for UI/UX audit batch ${b.num} ("${b.title}", Linear ${b.issue}). Worktree: ${WT_BASE}/uiux-b${b.num}. An adversarial review verdict of "${review.verdict}" with ${review.findings.length} finding(s) is at ${review.reviewFile || SCRATCH + '/b' + b.num + '/review.md'} — read it in full.
 
 ${SAFETY}
