@@ -26,8 +26,19 @@ export interface SkillEntry {
  * installed projection as a SYMLINK, so "managed projection" means `__` in the
  * name **and** a symlink on disk. A real directory named `my__helper` is
  * something a person authored, and is scanned and projected like any other
- * authored skill (DOR-1844). The orphan sweep applies the same pair, so nothing
- * hand-authored is ever swept.
+ * authored skill (DOR-1844). The orphan sweep asks for the same pair, so nothing
+ * hand-authored is mistaken for a projection.
+ *
+ * KNOWN GAP (measured 2026-09-07, not fixed here): the sweep's KEEP-set is built
+ * from `provenance: 'installed'` actions only, so an authored `my__helper`
+ * survives the "is this managed?" test and then fails the "is this still
+ * projected?" one — `applyPlan(..., { sweepOrphans: true })` creates
+ * `.claude/skills/my__helper` and removes it in the same call. The source
+ * directory is untouched and Codex reads `.agents/skills` natively, so nothing
+ * is lost; the Claude Code link just never lands. The fix belongs in
+ * `sweepInstalledOrphans` (keep every `symlink` action's target, not only the
+ * installed ones) and is deliberately not made here — `apply/apply.ts` is owned
+ * by another change in flight. See contributing/harness-sync.md §4.
  */
 export const INSTALLED_PROJECTION_MARKER = '__';
 
