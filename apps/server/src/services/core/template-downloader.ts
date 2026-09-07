@@ -16,6 +16,19 @@
  *   deliberately different (it clones from `ssh://`; this file cannot), so the
  *   two doors stay two doors rather than one shared predicate applied twice.
  *
+ * Both surfaces share one credential rule, and it is not about addresses but
+ * about what travels to them: the operator's GitHub token goes to GitHub and
+ * nowhere else (DOR-1833). There are exactly two places anything is ever
+ * attached, and each guards itself, because each can be reached without the
+ * other:
+ *
+ * - {@link execGitClone}'s `x-access-token@` URL rewrite, gated on
+ *   {@link isGitHubCredentialHost} — the host it is about to clone from.
+ * - the `auth` option handed to giget, gated on the stricter
+ *   {@link gigetTarballHostIsGitHub} — because giget sends the token to a
+ *   tarball URL that, for every source but the `github:` shorthand, the remote
+ *   gets to choose.
+ *
  * @module services/core/template-downloader
  */
 import { spawn, execSync } from 'node:child_process';
@@ -166,11 +179,12 @@ function isTemplateRepoPath(value: string): boolean {
  * `foo+git::` address arrives there as a `foo::` transport, and a `git://` one
  * arrives as a LOCAL path (giget strips the scheme, and `//host/x` resolves
  * against the cwd). **It narrows the transport set, and that is all it does.**
- * It is not a fix for credential exposure: an `https://` address is accepted
- * here by design, and both download paths attach the operator's GitHub token to
- * whatever host it names — {@link execGitClone} by rewriting the URL, giget by
- * its `auth` option. That is tracked separately as DOR-1833 and is not
- * addressable by an allowlist that has to permit arbitrary `https://` hosts.
+ * It is not what keeps the operator's credential off a stranger's host, and
+ * never could be: an `https://` address is accepted here by design, so an
+ * allowlist that must permit arbitrary hosts cannot decide what may be sent to
+ * one. That is decided at each attachment point instead —
+ * {@link isGitHubCredentialHost} for {@link execGitClone}'s URL rewrite,
+ * {@link gigetTarballHostIsGitHub} for giget's `auth` option (DOR-1833).
  *
  * The accepted set is NARROWER than {@link isSafeGitUrl} in two deliberate
  * ways: `ssh://` and `git://` are refused, and neither has ever been downloadable
@@ -251,6 +265,116 @@ export function resolveGitAuth(): string | undefined {
 }
 
 /**
+ * The hosts {@link resolveGitAuth}'s token belongs to.
+ *
+ * Every entry is a GitHub host this server can genuinely be asked to clone
+ * from: `github.com` is what {@link resolveGitUrl} emits for every shorthand
+ * and for a bare `owner/repo`, and what `@dorkos/marketplace` builds for a
+ * `github` package source; `www.github.com` and `gist.github.com` are the only
+ * other GitHub hosts a person's own `https://` address can name that `git
+ * clone` reaches. Nothing else belongs here — `gitlab.com`, a self-hosted
+ * Gitea, a marketplace `url` source pointing at Azure DevOps are all somebody
+ * else's host, and a GitHub token is not theirs to receive.
+ *
+ * There is no GitHub Enterprise entry because DorkOS has no setting that names
+ * an enterprise host. Add the setting first; then this set reads from it.
+ */
+const GITHUB_CREDENTIAL_HOSTS = new Set(['github.com', 'www.github.com', 'gist.github.com']);
+
+/**
+ * True when `url` names a host the operator's GitHub token may be sent to.
+ *
+ * A credential belongs to the host that issued it. Before DOR-1833 both
+ * download strategies attached the operator's `GITHUB_TOKEN` (or their `gh auth
+ * token`) to whatever host the address named — so a marketplace package or a
+ * workspace template pointing at `https://evil.example.com/x.git` collected a
+ * live GitHub credential. This predicate is what {@link execGitClone} asks
+ * before rewriting a URL. It is deliberately NOT what the giget path asks —
+ * see {@link gigetTarballHostIsGitHub} for why a github.com address is not
+ * enough there.
+ *
+ * The comparison is an exact lookup of the parsed host in
+ * {@link GITHUB_CREDENTIAL_HOSTS}, never a substring or prefix test:
+ * `github.com.evil.com` and `notgithub.com` are different hosts and must fail.
+ * WHATWG `URL` lower-cases the host and punycodes non-ASCII labels on the way
+ * in, so `https://GITHUB.COM/...` matches while a Cyrillic-homoglyph
+ * `github.com` becomes `xn--…` and does not.
+ *
+ * Three further refusals, each narrow and deliberate:
+ *
+ * - Only `https:`. `git@host:path` and `ssh://` carry no place to put a token,
+ *   and `http://` would put it on the wire in clear text.
+ * - Only the default port. `URL` normalises an explicit `:443` away, so any
+ *   port left over is a non-standard one; GitHub serves nothing there, and
+ *   `github.com:8443` reaching a listener is not a case worth crediting.
+ * - No address that already carries userinfo. It brought its own credential,
+ *   and the rewrite in {@link execGitClone} would append a second one.
+ *
+ * @param url - A clone or download address.
+ * @returns `true` when the GitHub token may travel with a request to it.
+ */
+export function isGitHubCredentialHost(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== 'https:') return false;
+  if (parsed.port !== '') return false;
+  if (parsed.username !== '' || parsed.password !== '') return false;
+
+  return GITHUB_CREDENTIAL_HOSTS.has(parsed.hostname);
+}
+
+/**
+ * True when the tarball giget downloads for `source` is fetched from a GitHub
+ * URL that **giget itself constructs**, and so may carry the operator's token.
+ *
+ * That is a stricter question than "does this address name github.com", and the
+ * difference is the whole rule. giget resolves a source to a template
+ * descriptor and then fetches `descriptor.tar` with the `Authorization: Bearer`
+ * header — so what matters is not the host of the address a person supplied but
+ * the host of the tarball URL that address eventually produces. Only the
+ * `github:` shorthand fixes that URL in giget's own code:
+ * `https://api.github.com/repos/<repo>/tarball/<ref>`. (Node's fetch drops the
+ * `Authorization` header on the cross-origin redirect GitHub answers with, so
+ * the token stops at api.github.com and never reaches codeload.)
+ *
+ * Every other accepted source lets somebody else choose that host:
+ *
+ * - An `https://` address goes to giget's `http` provider, which — when the
+ *   address ends in `.json` or the response is JSON — reads the REMOTE'S OWN
+ *   JSON and takes `tar` from it. The remote names any host it likes and gets
+ *   the token. `https://github.com/<attacker>/<repo>/raw/main/template.json`
+ *   passes every host check there is, because the host really is github.com;
+ *   the bytes behind it are the attacker's. A github.com address is therefore
+ *   no safer here than any other, which is why this asks about the shorthand
+ *   and not about the host.
+ * - `gitlab:` and `bitbucket:` are other people's hosts outright.
+ * - A bare `owner/repo` goes to giget's public template REGISTRY, which needs
+ *   no credential and answers with the same remote-chosen `tar` field.
+ *
+ * Almost nothing is lost by withholding the token from `https://` sources: the
+ * fallback runs only after `git clone` failed, and a private GitHub repository
+ * is cloned by the primary strategy with the token attached
+ * ({@link execGitClone}). One real case does go with it — a PRIVATE GitHub
+ * release asset (`https://github.com/org/repo/releases/download/v1/x.tar.gz`)
+ * is not a repository, genuinely needs the token on its first hop, and giget's
+ * non-JSON http branch would have fetched it. It is dropped deliberately,
+ * because no check can tell it apart from the indirection above: both are
+ * `https://github.com/…` addresses whose bytes GitHub serves on somebody
+ * else's behalf, and only the response decides which one it turns out to be.
+ *
+ * @param source - The raw template source a person supplied.
+ * @returns `true` when the GitHub token may be passed to giget for it.
+ */
+function gigetTarballHostIsGitHub(source: string): boolean {
+  return source.startsWith('github:');
+}
+
+/**
  * Classify a giget or git error into a known error category.
  *
  * @param err - The thrown error object
@@ -287,8 +411,12 @@ export function classifyGigetError(err: unknown): TemplateErrorCode {
 /**
  * Execute `git clone --depth 1 --single-branch` with progress parsing.
  *
- * Removes the `.git` directory after a successful clone. Injects auth
- * via the URL when a token is available.
+ * Removes the `.git` directory after a successful clone. Injects auth via the
+ * URL when a token is available **and the URL names a GitHub host** — the
+ * decision is made here, at the attachment point, so no caller of this
+ * primitive can leak the operator's credential to a third party by handing it
+ * an address it happens to hold a token for (DOR-1833). See
+ * {@link isGitHubCredentialHost}.
  *
  * The clone runs with {@link hardenedGitEnv}: `GIT_ALLOW_PROTOCOL` confines the
  * author-supplied URL to safe transports (blocks the `ext::`/`file::` command
@@ -299,7 +427,8 @@ export function classifyGigetError(err: unknown): TemplateErrorCode {
  *
  * @param url - Git clone URL
  * @param target - Target directory path
- * @param auth - Optional auth token to embed in URL
+ * @param auth - Optional GitHub token. Embedded in the URL only when `url`
+ *   addresses a GitHub host; for any other host the clone runs unauthenticated.
  * @param onProgress - Optional progress callback
  */
 export async function execGitClone(
@@ -308,8 +437,13 @@ export async function execGitClone(
   auth?: string,
   onProgress?: ProgressCallback
 ): Promise<void> {
+  // Two questions, both needed. `isGitHubCredentialHost` is the semantic one —
+  // may this token go to this host at all. The literal `https://` prefix is the
+  // mechanical one: the rewrite below is a string replace, and an address
+  // spelled `HTTPS://` would pass the first question while the replace matched
+  // nothing, leaving a clone that only looks authenticated.
   const cloneUrl =
-    auth && url.startsWith('https://')
+    auth && url.startsWith('https://') && isGitHubCredentialHost(url)
       ? url.replace('https://', `https://x-access-token:${auth}@`)
       : url;
 
@@ -440,7 +574,14 @@ export async function downloadTemplate(
 
     try {
       await Promise.race([
-        gigetDownload(source, { dir: targetPath, force: false, auth }),
+        gigetDownload(source, {
+          dir: targetPath,
+          force: false,
+          // giget attaches `auth` as an `Authorization: Bearer` header to the
+          // tarball URL its provider produces — a URL the REMOTE gets to choose
+          // for every source but the `github:` shorthand (DOR-1833).
+          auth: gigetTarballHostIsGitHub(source) ? auth : undefined,
+        }),
         timeoutPromise,
       ]);
     } finally {
@@ -461,6 +602,10 @@ export async function downloadTemplate(
  * repository into a specific directory without the template-shaped pre/post
  * processing of {@link downloadTemplate}. Used by the marketplace install
  * pipeline to fetch packages into the content-addressable cache.
+ *
+ * Marketplace `url` sources are deliberately open — Azure DevOps, a self-hosted
+ * Gitea, anything a package author names — so the token resolved here reaches
+ * the clone only if {@link execGitClone} finds a GitHub host to give it to.
  *
  * @param gitUrl - Fully-qualified git URL (no shorthand resolution)
  * @param destDir - Local directory to clone into (must not exist)
