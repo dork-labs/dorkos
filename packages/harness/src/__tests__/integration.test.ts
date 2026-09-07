@@ -58,11 +58,15 @@ describe('harness engine integration', () => {
     expect(lstatSync(link).isSymbolicLink()).toBe(true);
     expect(realpathSync(link)).toBe(realpathSync(join(dir, '.agents', 'skills', 'demo')));
 
-    // 2. the generated codex hooks file is valid JSON with a Stop key
+    // 2. the generated codex hooks file is valid JSON in the shape Codex
+    //    documents — the event map under a top-level `hooks` key — and the
+    //    engine has recorded that it wrote exactly those bytes
     const hooksPath = join(dir, '.codex', 'hooks.json');
     expect(existsSync(hooksPath)).toBe(true);
     const hooks = JSON.parse(readFileSync(hooksPath, 'utf8'));
-    expect(hooks).toHaveProperty('Stop');
+    expect(Object.keys(hooks).sort()).toEqual(['description', 'hooks']);
+    expect(hooks.hooks).toHaveProperty('Stop');
+    expect(existsSync(`${hooksPath}.dorkos-generated`)).toBe(true);
 
     // 3. the scaffolded CLAUDE.md points at AGENTS.md
     expect(readFileSync(join(dir, '.claude', 'CLAUDE.md'), 'utf8')).toContain('@../AGENTS.md');

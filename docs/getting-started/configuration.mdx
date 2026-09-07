@@ -695,6 +695,8 @@ Harness Sync projects your `.agents/` definitions and installed marketplace plug
 
 Some packages ship hooks: commands your coding agent runs on its own, before or after it does things. Installing a package never puts those in place on its own. DorkOS shows you each command and when it would run, and waits for you to say yes. It remembers your answer per package and per project, and asks again if a later version of the package wants to run something different, or wants to run the same thing at a different moment. Running `dorkos harness sync` yourself is the one exception: that command is you asking for everything on disk to be projected, so it installs hooks without a prompt, including ones you turned down earlier.
 
+If you wrote your own hooks file — `.codex/hooks.json` or `.cursor/hooks.json`, say — DorkOS never overwrites it and never deletes it. It names the file, leaves it exactly as you left it, and tells you where to put those hooks instead: `.claude/settings.json`, the one file it reads hooks from and copies out to every agent you run. The single exception is a `.codex/hooks.json` holding nothing but a bare list of events, which is what older versions of DorkOS wrote there and Codex never read; that one it replaces with a file Codex does read.
+
 <TypeTable
   type={{
     'harness.autoSync': {

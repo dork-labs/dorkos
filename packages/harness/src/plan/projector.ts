@@ -83,21 +83,8 @@ function planSkill(
 }
 
 /**
- * Every harness with a standalone, wholly-engine-owned hooks file. Each entry
- * runs its `generate` function over the merged Claude hooks, serializes the
- * result to the `target` path, and emits its unmapped events as drops. The
- * serialized payload differs by harness (Codex uses the bare matcher-group
- * object; Cursor and Copilot use a `{ version, hooks }` flat file), so each
- * entry owns its own `generate` that returns already-serializable content plus
- * the dropped/warning lists.
- *
- * Gemini is intentionally NOT here: its hooks live inside the SHARED
- * `.gemini/settings.json`, which is not wholly engine-owned, so it is handled as
- * an honest drop rather than a standalone generated file (see {@link planHooks}).
- */
-/**
- * The static per-harness recipe for a standalone, wholly-engine-owned hooks
- * file: where it goes and how to build its content.
+ * The static per-harness recipe for a standalone hooks file the engine
+ * generates: where it goes and how to build its content.
  */
 interface StandaloneHookSpec {
   /** The repo-relative target path for this harness's generated hooks file. */
@@ -116,13 +103,31 @@ interface StandaloneHookSpec {
   };
 }
 
+/**
+ * Every harness with its own standalone hooks file. Each entry runs its
+ * `generate` function over the merged Claude hooks, serializes the result to the
+ * `target` path, and emits its unmapped events as drops. Every one of the three
+ * writes a WRAPPED file, not a bare event map: Codex nests the event map under
+ * `{ description, hooks }`, Cursor and Copilot under `{ version, hooks }`. So
+ * each entry owns its own `generate`, returning already-serializable content
+ * plus the dropped/warning lists.
+ *
+ * The engine does not own these paths by path alone — Codex's and Cursor's own
+ * docs tell people to write them by hand. Ownership is decided at apply time by
+ * a `.dorkos-generated` sidecar (`apply/generated-ownership.ts`).
+ *
+ * Gemini is intentionally NOT here: its hooks live inside the SHARED
+ * `.gemini/settings.json`, which holds unrelated user settings, so it is handled
+ * as an honest drop rather than a standalone generated file (see
+ * {@link planHooks}).
+ */
 const STANDALONE_HOOK_HARNESSES: Partial<Record<HarnessId, StandaloneHookSpec>> = {
   codex: {
     target: CODEX_HOOKS_TARGET,
     generate: (claudeHooks) => {
-      const { hooks, dropped, warnings } = generateCodexHooks(claudeHooks);
+      const { file, dropped, warnings } = generateCodexHooks(claudeHooks);
       const content =
-        Object.keys(hooks).length > 0 ? JSON.stringify(hooks, null, 2) + '\n' : undefined;
+        Object.keys(file.hooks).length > 0 ? JSON.stringify(file, null, 2) + '\n' : undefined;
       return { content, dropped, warnings };
     },
   },
@@ -196,15 +201,15 @@ function planHooks(
 }
 
 /**
- * Generate one harness's standalone, wholly-engine-owned hooks file from the
- * Claude hooks config: drop unmappable events, and warn (without dropping) when a
- * projected hook command carries a Claude-only substitution token the target
- * harness cannot resolve.
+ * Generate one harness's standalone hooks file from the Claude hooks config:
+ * drop unmappable events, and warn (without dropping) when a projected hook
+ * command carries a Claude-only substitution token the target harness cannot
+ * resolve.
  *
  * Emits NO generate action when the merged config produces zero mappable hooks
- * for the target; the apply stage then treats any existing file at the target
- * path as an orphan to prune (the file is wholly engine-owned: gitignored,
- * regenerated each sync).
+ * for the target. The apply stage then prunes a file it can prove it wrote at
+ * that path, and reports anything else there as a conflict rather than deleting
+ * somebody's own hooks.
  */
 function planStandaloneHooks(
   harness: HarnessId,

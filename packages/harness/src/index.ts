@@ -20,5 +20,8 @@ export * from './sources/resolve-roots.js';
 export * from './sources/installed.js';
 export * from './generate/hooks.js';
 export * from './apply/apply.js';
+// The generated-hooks half of apply, kept in its own module: only the orphan
+// sweep is part of the package's surface, the rest is apply's business.
+export { sweepGeneratedOrphans } from './apply/generated-targets.js';
 export * from './report/drop-list.js';
 export * from './engine.js';

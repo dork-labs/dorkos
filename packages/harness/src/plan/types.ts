@@ -6,7 +6,10 @@ import type { HarnessId } from '../manifest/schema.js';
  * - `native`: the harness reads the canonical source directly; no file written.
  * - `symlink`: a managed symlink points at the source.
  * - `scaffold`: a one-time pointer file written only when absent (user owns it).
- * - `generate`: a wholly-engine-owned file (re)written deterministically.
+ * - `generate`: a file the engine writes deterministically. It owns the ones it
+ *   can prove it wrote — for the per-harness hooks files that proof is a
+ *   `.dorkos-generated` sidecar, since their vendors document those paths as
+ *   hand-authorable (see `apply/generated-ownership.ts`).
  * - `merge`: engine-owned entries merged INTO a user-owned file (e.g. plugin
  *   hooks into `.claude/settings.local.json`), touching only the managed keys.
  * - `drop`: no home in the target harness; reported, never written.
@@ -100,6 +103,24 @@ export interface ProjectionPlan {
 export interface DriftResult {
   /** Actions whose target does not yet match the plan (missing, stale, or wrong). */
   drifted: ProjectionAction[];
-  /** True when there is no drift — the on-disk state already matches the plan. */
+  /**
+   * Generate actions the engine cannot apply because a file it does not own
+   * occupies the target — what `--fix` will report as a conflict. Not drift: no
+   * amount of re-running fixes it, and the person has to move or delete the file
+   * first. Reported separately so `--check` can name it and still exit non-zero,
+   * without claiming a projection is merely stale.
+   */
+  blocked: ProjectionAction[];
+  /**
+   * Repo-relative paths where somebody's own file sits at a target the engine
+   * generates for *some* configuration but not this one — nothing is blocked,
+   * nothing needs fixing, and the person is simply told the file is theirs. Never
+   * a reason to exit non-zero.
+   */
+  leftAlone: string[];
+  /**
+   * True when the plan is fully realized on disk: nothing drifted AND nothing
+   * blocked. `leftAlone` entries do not make a tree unclean.
+   */
   clean: boolean;
 }

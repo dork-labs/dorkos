@@ -35,3 +35,24 @@ export function setActionContent(action: ProjectionAction, content: string): voi
 export function getActionContent(action: ProjectionAction): string | undefined {
   return ACTION_CONTENT.get(action);
 }
+
+/**
+ * Read the bytes attached to a `scaffold`/`generate` action, or fail loudly.
+ *
+ * An action that reaches the apply or check stage with no content is a
+ * projector bug, not a user-facing condition — the message names the missing
+ * call rather than writing an empty file.
+ *
+ * @param action - the projection action to look up.
+ * @returns the attached content.
+ * @throws when the projector never called {@link setActionContent} for it.
+ */
+export function requireActionContent(action: ProjectionAction): string {
+  const content = getActionContent(action);
+  if (content === undefined) {
+    throw new Error(
+      `${action.kind} action for "${action.name}" has no attached content; the projector must call setActionContent`
+    );
+  }
+  return content;
+}

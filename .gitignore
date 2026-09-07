@@ -109,6 +109,11 @@ mockups/running-figure-v3.html
 .codex/hooks.json
 .cursor/hooks.json
 .github/hooks/copilot-hooks.json
+# The ownership sidecars beside those three: one machine's digest of one
+# machine's bytes, so never committed.
+.codex/hooks.json.dorkos-generated
+.cursor/hooks.json.dorkos-generated
+.github/hooks/copilot-hooks.json.dorkos-generated
 # Transient install-transaction target backups (ADR-0304): reaped on success,
 # left on disk only after a hard crash mid-activate.
 *.dorkos-bak-*

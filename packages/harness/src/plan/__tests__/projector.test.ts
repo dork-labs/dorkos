@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { buildPlan } from '../projector.js';
 import { getActionContent } from '../content-map.js';
 import { parseHarnessManifest } from '../../manifest/schema.js';
-import type { ClaudeHooksConfig } from '../../generate/hooks.js';
+import { GENERATED_HOOKS_DESCRIPTION, type ClaudeHooksConfig } from '../../generate/hooks.js';
 
 let dir = '';
 afterEach(() => {
@@ -58,6 +58,27 @@ describe('buildPlan', () => {
     const commandDrop = plan.drops.find((a) => a.harness === 'codex' && a.artifact === 'command');
     expect(commandDrop?.kind).toBe('drop');
     expect(commandDrop?.reason).toMatch(/slash-command/);
+  });
+
+  it('writes the Codex hooks file in the shape Codex documents, not a bare event map', () => {
+    // Codex reads `{ description?, hooks: { <Event>: [...] } }` (learn.chatgpt.com/docs/hooks).
+    // The engine used to serialize the bare event map, which Codex does not
+    // document and most likely never reads (HK-01). The `description` doubles as
+    // the human-readable marker on a machine-generated file.
+    dir = fixtureRepo();
+    const manifest = parseHarnessManifest({ version: 1, harnesses: ['claude-code', 'codex'] });
+    const plan = buildPlan({ repoRoot: dir, manifest, claudeHooks, agentsMdExists: true });
+
+    const gen = plan.actions.find(
+      (a) => a.harness === 'codex' && a.artifact === 'hook' && a.kind === 'generate'
+    );
+    const parsed = JSON.parse(getActionContent(gen!)!) as {
+      description: string;
+      hooks: Record<string, unknown>;
+    };
+    expect(Object.keys(parsed).sort()).toEqual(['description', 'hooks']);
+    expect(parsed.description).toBe(GENERATED_HOOKS_DESCRIPTION);
+    expect(Object.keys(parsed.hooks)).toEqual(['Stop']);
   });
 
   it('surfaces a plan warning when a projected codex hook carries a Claude-only token', () => {

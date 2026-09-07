@@ -3,10 +3,13 @@
  *
  * `applyPlan` materializes symlinks and generated files idempotently and scaffolds
  * pointers only when absent. It never destroys hand-authored content: an existing
- * scaffold is left untouched, and a symlink target occupied by a *real* file or
- * directory surfaces as a `conflict` rather than being removed. `checkPlan` reports
- * drift without touching disk. Both read deterministic bytes for `scaffold`/`generate`
- * actions from the projector via {@link getActionContent}.
+ * scaffold is left untouched, a symlink target occupied by a *real* file or
+ * directory surfaces as a `conflict` rather than being removed, and a generated
+ * hook file the engine cannot prove it wrote is likewise a conflict, never a
+ * rewrite and never a sweep (ownership lives in `generated-ownership.ts`).
+ * `checkPlan` reports drift without touching disk. Both read deterministic bytes
+ * for `scaffold`/`generate` actions from the projector via
+ * {@link getActionContent}.
  *
  * @module apply/apply
  */
@@ -18,14 +21,24 @@ import {
   readFileSync,
   readlinkSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import type { DriftResult, ProjectionAction, ProjectionPlan } from '../plan/types.js';
-import { getActionContent } from '../plan/content-map.js';
+import { requireActionContent } from '../plan/content-map.js';
 import { AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
-import { GENERATED_HOOK_TARGETS, type ClaudeHooksConfig } from '../generate/hooks.js';
+import type { ClaudeHooksConfig } from '../generate/hooks.js';
+import { HAND_WRITTEN_HOOKS_REASON } from './generated-ownership.js';
+import {
+  applyGeneratedHookFile,
+  findBlockedGeneratedHookTargets,
+  findLeftAloneGeneratedHookFiles,
+  generatedHookOutcome,
+  isGeneratedHookTarget,
+  sweepGeneratedOrphans,
+} from './generated-targets.js';
 import {
   CLAUDE_COMMANDS_DIR,
   CLAUDE_SKILLS_DIR,
@@ -62,26 +75,20 @@ function relativeLink(repoRoot: string, source: string, target: string): string 
   return relative(dirname(join(repoRoot, target)), join(repoRoot, source));
 }
 
-/** Read the deterministic bytes the projector attached to a scaffold/generate action. */
-function requireContent(action: ProjectionAction): string {
-  const content = getActionContent(action);
-  if (content === undefined) {
-    throw new Error(
-      `${action.kind} action for "${action.name}" has no attached content; the projector must call setActionContent`
-    );
-  }
-  return content;
-}
-
 /**
  * The symlink type to request for a source path. Windows needs `'junction'` for
  * directory targets (which skill sources are) to avoid an EPERM without admin /
  * Developer Mode; POSIX ignores the type argument.
+ *
+ * The stat FOLLOWS the source deliberately. A skill source may itself be a
+ * symlink into a shared directory, and `lstat` on that answers "not a directory"
+ * — which asked Windows for a file link to a directory, the exact EPERM this
+ * function exists to avoid. A dangling source still answers `undefined`.
  */
 function symlinkType(repoRoot: string, source: string): 'junction' | 'file' | undefined {
   if (process.platform !== 'win32') return undefined;
   try {
-    return lstatSync(join(repoRoot, source)).isDirectory() ? 'junction' : 'file';
+    return statSync(join(repoRoot, source)).isDirectory() ? 'junction' : 'file';
   } catch {
     return undefined;
   }
@@ -123,16 +130,33 @@ function applyScaffold(repoRoot: string, action: ProjectionAction): void {
   const absTarget = join(repoRoot, action.target);
   if (pathExists(absTarget)) return; // user owns it — never overwrite
   mkdirSync(dirname(absTarget), { recursive: true });
-  writeFileSync(absTarget, requireContent(action));
+  writeFileSync(absTarget, requireActionContent(action));
 }
 
-/** (Re)write a generated target deterministically. */
-function applyGenerate(repoRoot: string, action: ProjectionAction): void {
+/**
+ * (Re)write a generated target deterministically.
+ *
+ * Command wrappers are wholly the engine's — their marker is the ownership
+ * predicate, and the caller has already checked it — so they are simply
+ * rewritten. The per-harness hooks files are not the engine's by path, so they
+ * go through {@link applyGeneratedHookFile} and its sidecar rules instead.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param action - the `generate` action to realize.
+ * @returns `true` when the target now matches the plan; `false` when a file the
+ *   engine does not own occupies it — a conflict, left untouched.
+ */
+function applyGenerate(repoRoot: string, action: ProjectionAction): boolean {
   if (!action.target) throw new Error(`generate action for "${action.name}" is missing target`);
-  const content = requireContent(action);
+  const content = requireActionContent(action);
   const absTarget = join(repoRoot, action.target);
+
+  if (isGeneratedHookTarget(action.target)) {
+    return applyGeneratedHookFile(absTarget, action.target, content);
+  }
   mkdirSync(dirname(absTarget), { recursive: true });
   writeFileSync(absTarget, content);
+  return true;
 }
 
 /**
@@ -149,7 +173,7 @@ function applyGenerate(repoRoot: string, action: ProjectionAction): void {
  */
 function applyMerge(repoRoot: string, action: ProjectionAction): boolean {
   if (!action.target) throw new Error(`merge action for "${action.name}" is missing target`);
-  const managed = JSON.parse(requireContent(action)) as ClaudeHooksConfig;
+  const managed = JSON.parse(requireActionContent(action)) as ClaudeHooksConfig;
   return mergeManagedHooks(join(repoRoot, action.target), managed);
 }
 
@@ -157,23 +181,28 @@ function applyMerge(repoRoot: string, action: ProjectionAction): boolean {
  * Sweep orphaned installed-plugin skill projections from `.agents/skills` and
  * `.claude/skills` (Codex and Claude Code both get namespaced symlinks now).
  *
- * A sweep candidate must be BOTH a real symlink AND carry the
- * `<pkg>__<skill>` marker — engine projections are always symlinks, so a
- * hand-authored *directory* (even one named `my__helper/`, which the authored
- * scan already skips) is never a candidate and is never removed. Among the
- * managed symlinks, any whose target is no longer in the current plan belongs to
- * an uninstalled plugin and is removed. This preserves the engine's guarantee
- * that it never destroys hand-authored content.
+ * A sweep candidate must be BOTH a real symlink AND carry the `__` infix. A
+ * plain directory is never a candidate whatever it is called, because engine
+ * projections are always symlinks — so a hand-authored `my__helper/` directory
+ * is safe by being a directory, not by being invisible to the scanner. Among the
+ * symlinks, any whose target is no longer in the current plan belongs to an
+ * uninstalled plugin and is removed. This preserves the engine's guarantee that
+ * it never destroys hand-authored content.
+ *
+ * The keep-set is every `symlink` target in the plan, of ANY provenance — not
+ * just the installed ones. A person's own skill may be NAMED with a `__`, and it
+ * then projects as an authored symlink at a path that looks managed; keeping
+ * only installed targets meant one `applyPlan` created that link and deleted it
+ * again on its way out (DOR-1844). What the sweep may TOUCH is still the narrow
+ * `__`-plus-symlink test; only what it KEEPS is wide.
  *
  * @param repoRoot - absolute path to the repository root.
- * @param plan - the current projection plan (its installed targets are kept).
+ * @param plan - the current projection plan (every symlink target is kept).
  * @returns the repo-relative paths swept.
  */
 export function sweepInstalledOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
   const managed = new Set(
-    plan.actions
-      .filter((a) => a.provenance === 'installed' && a.kind === 'symlink' && a.target)
-      .map((a) => a.target as string)
+    plan.actions.filter((a) => a.kind === 'symlink' && a.target).map((a) => a.target as string)
   );
 
   const swept: string[] = [];
@@ -183,7 +212,7 @@ export function sweepInstalledOrphans(repoRoot: string, plan: ProjectionPlan): s
     for (const entry of readdirSync(skillsDir)) {
       if (!entry.includes(INSTALLED_PROJECTION_MARKER)) continue; // looks like a managed projection…
       const abs = join(skillsDir, entry);
-      if (!isSymlink(abs)) continue; // …but only ever sweep real engine symlinks, never a hand-authored dir/file
+      if (!isSymlink(abs)) continue; // …but only ever sweep real symlinks, never a hand-authored dir/file
       const rel = `${dir}/${entry}`;
       if (managed.has(rel)) continue; // still projected — keep
       rmSync(abs, { force: true }); // a symlink — remove the link, never recurse into a target
@@ -360,74 +389,44 @@ export function sweepSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan)
 }
 
 /**
- * Prune orphaned engine-generated files (e.g. `.codex/hooks.json`).
- *
- * The engine wholly owns each path in {@link GENERATED_HOOK_TARGETS} for its
- * harness: the file is gitignored and rewritten from canonical sources on every
- * sync, so it never holds hand-authored content. When a plugin that contributed
- * the only Codex-mappable hook is uninstalled, the projector emits no `generate`
- * action for that path and the file is left stale on disk. This sweep removes any
- * such generated file the current plan no longer regenerates — the mirror of the
- * symlink orphan sweep in {@link sweepInstalledOrphans}.
- *
- * A path the plan still generates is kept (the apply pass rewrites it), so this
- * never races a live projection. A real file the engine does NOT own (anything
- * not in {@link GENERATED_HOOK_TARGETS}) is never touched.
- *
- * @param repoRoot - absolute path to the repository root.
- * @param plan - the current projection plan (its generate targets are kept).
- * @returns the repo-relative paths pruned.
- */
-export function sweepGeneratedOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
-  const regenerated = new Set(
-    plan.actions.filter((a) => a.kind === 'generate' && a.target).map((a) => a.target as string)
-  );
-
-  const swept: string[] = [];
-  for (const rel of GENERATED_HOOK_TARGETS) {
-    if (regenerated.has(rel)) continue; // still generated by the current plan, keep (apply rewrites it)
-    const abs = join(repoRoot, rel);
-    if (!pathExists(abs)) continue; // nothing to prune
-    // No symlink/content guard here (unlike the skill sweep above): every path in
-    // GENERATED_HOOK_TARGETS is a wholly-engine-owned, gitignored plain file the
-    // engine regenerates each sync, so deleting an un-regenerated one can never
-    // clobber hand-authored content. This invariant is load-bearing: a shared or
-    // partially-user-owned file (e.g. .gemini/settings.json) must NEVER be added
-    // to GENERATED_HOOK_TARGETS (project it via a merge instead). If a future
-    // target cannot guarantee sole ownership, add a content/marker guard here.
-    rmSync(abs, { force: true });
-    swept.push(rel);
-  }
-  return swept;
-}
-
-/**
  * Realize a projection plan on disk.
  *
  * `native`/`drop` actions are no-ops. `generate` is rewritten idempotently. A
  * `scaffold` is written only when absent (an existing, possibly hand-edited file
  * is left untouched). A `symlink` whose target is occupied by a *real* file or
  * directory is left intact and reported in `conflicts` — the engine never destroys
- * hand-authored content to make room for a projection.
+ * hand-authored content to make room for a projection. The per-harness hooks
+ * files split that report in two, because the two cases mean different things: a
+ * file the engine does not own at a target this plan WANTS to write is a
+ * `conflict` (a projection was blocked, and the way out is in its reason), while
+ * one at a target this plan writes nothing to is merely `leftAlone` — a
+ * statement that the file is the person's, never a fault to fix.
  *
  * With `opts.sweepOrphans`, projections for plugins no longer in the plan are
  * removed (the drift-driven uninstall sweep): orphaned installed-skill symlinks,
- * orphaned engine-generated files (e.g. a stale `.codex/hooks.json`), orphaned
- * command wrappers under `.claude/commands/<pkg>/` and `.opencode/commands/`, and
- * managed plugin hooks left in `.claude/settings.local.json`. Pass it only for a
- * full (unfiltered) plan, or live projections for harnesses outside the filter
- * would be mistaken for orphans.
+ * orphaned generated hook files the engine can prove it wrote (e.g. a stale
+ * `.codex/hooks.json`, with its sidecar), orphaned command wrappers under
+ * `.claude/commands/<pkg>/` and `.opencode/commands/`, and managed plugin hooks
+ * left in `.claude/settings.local.json`. Pass it only for a full (unfiltered)
+ * plan, or live projections for harnesses outside the filter would be mistaken
+ * for orphans.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the projection plan to apply.
  * @param opts - optional flags; `sweepOrphans` enables the installed-orphan sweep.
- * @returns the realized actions, the symlink conflicts left intact, and any swept orphans.
+ * @returns the realized actions, the blocked projections left intact, any swept
+ *   orphans, and the generated-hook paths the engine stepped over.
  */
 export function applyPlan(
   repoRoot: string,
   plan: ProjectionPlan,
   opts?: { sweepOrphans?: boolean }
-): { applied: ProjectionAction[]; conflicts: ProjectionAction[]; swept: string[] } {
+): {
+  applied: ProjectionAction[];
+  conflicts: ProjectionAction[];
+  swept: string[];
+  leftAlone: string[];
+} {
   const applied: ProjectionAction[] = [];
   const conflicts: ProjectionAction[] = [];
   const blockedWrapperDirs = findBlockedWrapperDirs(repoRoot, plan);
@@ -455,8 +454,9 @@ export function applyPlan(
           conflicts.push(action);
           break;
         }
-        applyGenerate(repoRoot, action);
-        applied.push(action);
+        if (applyGenerate(repoRoot, action)) applied.push(action);
+        // A hooks file the engine does not own — left intact, with the way out.
+        else conflicts.push({ ...action, reason: HAND_WRITTEN_HOOKS_REASON });
         break;
       case 'merge':
         if (applyMerge(repoRoot, action)) applied.push(action);
@@ -468,6 +468,11 @@ export function applyPlan(
     }
   }
 
+  // Somebody's own file at a target this plan never writes: said out loud, so a
+  // repo whose hooks the engine is NOT projecting does not go quiet about it —
+  // but kept out of `conflicts`, because nothing here was blocked.
+  const leftAlone = findLeftAloneGeneratedHookFiles(repoRoot, plan);
+
   const swept = opts?.sweepOrphans
     ? [
         ...sweepInstalledOrphans(repoRoot, plan),
@@ -477,7 +482,7 @@ export function applyPlan(
         ...sweepSettingsHooksOrphan(repoRoot, plan),
       ]
     : [];
-  return { applied, conflicts, swept };
+  return { applied, conflicts, swept, leftAlone };
 }
 
 /** Whether a single action's on-disk target diverges from the plan. */
@@ -495,11 +500,21 @@ function isDrifted(repoRoot: string, action: ProjectionAction): boolean {
       if (!action.target) return true;
       const absTarget = join(repoRoot, action.target);
       if (!pathExists(absTarget)) return true;
-      return readFileSync(absTarget, 'utf8') !== requireContent(action);
+      const content = requireActionContent(action);
+      // A direct read, so a dangling symlink at a generate target still throws
+      // here exactly as it did (AP-05 is DOR-1843's, not this function's).
+      const onDisk = readFileSync(absTarget, 'utf8');
+      if (!isGeneratedHookTarget(action.target)) return onDisk !== content;
+      // Drift is what `--fix` would CHANGE on disk — `adopt` counts, because
+      // writing the missing sidecar is a change even though the file itself is
+      // already right. `blocked` is a separate answer: somebody's own file is
+      // not stale, it is theirs, and re-running fixes nothing about it.
+      const outcome = generatedHookOutcome(absTarget, action.target, content, onDisk);
+      return outcome === 'write' || outcome === 'adopt';
     }
     case 'merge': {
       if (!action.target) return true;
-      const managed = JSON.parse(requireContent(action)) as ClaudeHooksConfig;
+      const managed = JSON.parse(requireActionContent(action)) as ClaudeHooksConfig;
       return managedHooksDrift(join(repoRoot, action.target), managed);
     }
     case 'native':
@@ -511,11 +526,25 @@ function isDrifted(repoRoot: string, action: ProjectionAction): boolean {
 /**
  * Diff a projection plan against the current on-disk state without mutating it.
  *
+ * Three answers, deliberately kept apart: what is stale and a re-run would fix
+ * (`drifted`), what a re-run would report as a conflict because somebody's own
+ * file occupies a target the plan writes (`blocked`), and what the engine simply
+ * stepped over (`leftAlone`). Only the first two make a tree unclean — a person
+ * who keeps their own `.codex/hooks.json` in a repo DorkOS projects no hooks to
+ * is not carrying a fault.
+ *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the projection plan to check.
- * @returns the drifted actions and whether the tree is clean.
+ * @returns the drifted actions, the blocked ones, the paths left alone, and
+ *   whether the tree is clean.
  */
 export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
   const drifted = plan.actions.filter((action) => isDrifted(repoRoot, action));
-  return { drifted, clean: drifted.length === 0 };
+  const blocked = findBlockedGeneratedHookTargets(repoRoot, plan);
+  return {
+    drifted,
+    blocked,
+    leftAlone: findLeftAloneGeneratedHookFiles(repoRoot, plan),
+    clean: drifted.length === 0 && blocked.length === 0,
+  };
 }

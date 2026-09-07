@@ -11,6 +11,7 @@ import {
   formatWarnings,
   project,
   scaffoldManifest,
+  GENERATED_HOOK_TARGET_HARNESSES,
   HARNESS_IDS,
   HARNESS_MANIFEST_PATH,
   type HarnessId,
@@ -108,6 +109,33 @@ function formatAction(action: ProjectionAction): string {
   return `  [${action.kind}] ${action.artifact} "${action.name}" -> ${path}  (${action.harness})${note}`;
 }
 
+/**
+ * The heading and lines for generated-hook paths the engine stepped over.
+ *
+ * Deliberately NOT a conflict: nothing was blocked, so this never changes an
+ * exit code. It exists so a person whose repo DorkOS projects no hooks into is
+ * told why their file is being ignored rather than left to guess.
+ */
+function formatLeftAlone(leftAlone: string[], harnessFilter?: HarnessId): string[] {
+  // `--harness <id>` narrows every other line of this report, so it narrows this
+  // one too: a Cursor file is not an answer to a question about Codex.
+  const shown = harnessFilter
+    ? leftAlone.filter((path) => harnessOf(path) === harnessFilter)
+    : leftAlone;
+  if (shown.length === 0) return [];
+  return [
+    '',
+    'Left alone — files DorkOS did not write, at paths it would otherwise generate:',
+    ...shown.map((path) => `  ${path}  (${harnessOf(path)})`),
+    '  Nothing to fix. Put these hooks in .claude/settings.json if you want DorkOS to carry them to every harness.',
+  ];
+}
+
+/** Which harness a generated hooks path belongs to, for the left-alone label. */
+function harnessOf(path: string): HarnessId | undefined {
+  return GENERATED_HOOK_TARGET_HARNESSES[path as keyof typeof GENERATED_HOOK_TARGET_HARNESSES];
+}
+
 /** Render a per-harness count of each actionable projection kind. */
 function summarizeActions(actions: ProjectionAction[]): string {
   if (actions.length === 0) return '  (no projected actions)';
@@ -141,8 +169,14 @@ function filterPlanToHarness(plan: ProjectionPlan, harness: HarnessId): Projecti
   };
 }
 
-/** Print the check-mode report and return its exit code (0 clean, 1 drift). */
-function reportCheck(repoRoot: string, plan: ProjectionPlan): number {
+/**
+ * Print the check-mode report and return its exit code.
+ *
+ * Non-zero for drift (a `--fix` would repair it) and for a blocked projection (a
+ * `--fix` cannot, until the person moves their file). Zero for paths merely left
+ * alone — those are reported, never counted against the tree.
+ */
+function reportCheck(repoRoot: string, plan: ProjectionPlan, harnessFilter?: HarnessId): number {
   const drift = checkPlan(repoRoot, plan);
 
   console.log('Projection summary:');
@@ -154,16 +188,27 @@ function reportCheck(repoRoot: string, plan: ProjectionPlan): number {
     console.log('');
     console.log(warningBlock);
   }
+  for (const line of formatLeftAlone(drift.leftAlone, harnessFilter)) console.log(line);
   console.log('');
 
   if (drift.clean) {
     console.log('No drift — every projection already matches the plan.');
     return 0;
   }
-  console.log(`Drift detected (${drift.drifted.length} out of sync):`);
-  for (const action of drift.drifted) console.log(formatAction(action));
-  console.log('');
-  console.log('Run `dorkos harness sync --fix` to apply.');
+
+  if (drift.drifted.length > 0) {
+    console.log(`Drift detected (${drift.drifted.length} out of sync):`);
+    for (const action of drift.drifted) console.log(formatAction(action));
+    console.log('');
+    console.log('Run `dorkos harness sync --fix` to apply.');
+  }
+  if (drift.blocked.length > 0) {
+    if (drift.drifted.length > 0) console.log('');
+    console.log(
+      `${drift.blocked.length} projection(s) blocked — a --fix cannot write these until you clear the way:`
+    );
+    for (const action of drift.blocked) console.log(formatAction(action));
+  }
   return 1;
 }
 
@@ -174,8 +219,13 @@ function reportCheck(repoRoot: string, plan: ProjectionPlan): number {
  * passed only for an unfiltered plan (a `--harness` filter would mistake other
  * harnesses' live projections for orphans).
  */
-function reportFix(repoRoot: string, plan: ProjectionPlan, sweepOrphans: boolean): number {
-  const { applied, conflicts, swept } = applyPlan(repoRoot, plan, { sweepOrphans });
+function reportFix(
+  repoRoot: string,
+  plan: ProjectionPlan,
+  sweepOrphans: boolean,
+  harnessFilter?: HarnessId
+): number {
+  const { applied, conflicts, swept, leftAlone } = applyPlan(repoRoot, plan, { sweepOrphans });
 
   console.log(`Applied ${applied.length} projection(s):`);
   for (const action of applied) console.log(formatAction(action));
@@ -193,11 +243,15 @@ function reportFix(repoRoot: string, plan: ProjectionPlan, sweepOrphans: boolean
     for (const path of swept) console.log(`  ${path}`);
   }
 
+  // Reported, never counted: a file DorkOS was not going to write anyway is not
+  // a reason to hand somebody a failing command on every sync.
+  for (const line of formatLeftAlone(leftAlone, harnessFilter)) console.log(line);
+
   if (conflicts.length === 0) return 0;
 
   console.log('');
   console.log(
-    `${conflicts.length} conflict(s) left untouched — a real file or directory occupies the target; remove or rename it, then re-run:`
+    `${conflicts.length} conflict(s) left untouched — something DorkOS does not own occupies the target. Each line says what is in the way; clear it, then re-run:`
   );
   for (const action of conflicts) console.log(formatAction(action));
   return 1;
@@ -284,7 +338,7 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
 
   // Orphan sweep only runs on a full (unfiltered) plan — see reportFix.
   const exitCode = args.fix
-    ? reportFix(repoRoot, plan, harnessFilter === undefined)
-    : reportCheck(repoRoot, plan);
+    ? reportFix(repoRoot, plan, harnessFilter === undefined, harnessFilter)
+    : reportCheck(repoRoot, plan, harnessFilter);
   return { exitCode };
 }

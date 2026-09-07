@@ -13,7 +13,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { project } from '../engine.js';
-import { applyPlan, sweepInstalledOrphans, sweepGeneratedOrphans } from '../apply/apply.js';
+import { applyPlan, sweepInstalledOrphans } from '../apply/apply.js';
+import { sweepGeneratedOrphans } from '../apply/generated-targets.js';
 import { getActionContent } from '../plan/content-map.js';
 import type { ProjectionPlan } from '../plan/types.js';
 
@@ -372,6 +373,38 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     expect(project(repo, { dorkHome }).warnings.filter((w) => w.artifact === 'hook')).toEqual([]);
   });
 
+  it('keeps an AUTHORED skill link whose name contains `__`, in the same apply that made it', () => {
+    // The sweep may only TOUCH a `__`-named symlink — but what it KEEPS used to
+    // be the installed-plugin links alone. An authored skill whose own name
+    // contains `__` projects as an authored symlink at exactly such a path, so
+    // one `applyPlan(..., { sweepOrphans: true })` created the link and then
+    // deleted it again on the way out (found by DOR-1844, which makes the
+    // scanner see those directories in the first place).
+    repo = mkdtempSync(join(tmpdir(), 'harness-authored-ns-'));
+    dorkHome = mkdtempSync(join(tmpdir(), 'harness-authored-ns-home-'));
+    mkdirSync(join(repo, '.agents'), { recursive: true });
+    writeFileSync(
+      join(repo, '.agents', 'harness.manifest.json'),
+      JSON.stringify({ version: 1, harnesses: ['claude-code', 'codex'] }, null, 2)
+    );
+    const source = join(repo, '.agents', 'skills', 'my__helper');
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, 'SKILL.md'), '# my__helper\n');
+
+    // The real scanner, the real projector, the real sweep: since DOR-1844 the
+    // scan keeps a real `__` DIRECTORY, so the plan carries an authored symlink
+    // at a path that looks managed — which is exactly the pair that used to
+    // cancel itself out inside one call.
+    const plan = project(repo, { dorkHome });
+    const { applied, swept } = applyPlan(repo, plan, { sweepOrphans: true });
+
+    expect(applied.some((a) => a.target === '.claude/skills/my__helper')).toBe(true);
+    expect(swept).toEqual([]);
+    const link = join(repo, '.claude', 'skills', 'my__helper');
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(realpathSync(link)).toBe(realpathSync(source));
+  });
+
   it('never sweeps a hand-authored `__` directory — only managed symlinks', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inst-int-'));
     const skillsDir = join(repo, '.agents', 'skills');
@@ -409,7 +442,7 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     expect(result.conflicts).toEqual([]);
     expect(existsSync(hooksPath)).toBe(true);
     const hooksFile = readFileSync(hooksPath, 'utf8');
-    expect(JSON.parse(hooksFile)).toHaveProperty('Stop');
+    expect(JSON.parse(hooksFile).hooks).toHaveProperty('Stop');
 
     // …with `${CLAUDE_PLUGIN_ROOT}` rewritten to the absolute install dir (item A):
     // the install root is known at plan time, so the folded plugin hook is portable
@@ -430,10 +463,13 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
       plan2.actions.some((a) => a.kind === 'generate' && a.target === '.codex/hooks.json')
     ).toBe(false);
 
-    // …and apply prunes the orphaned generated file (the GAP-8 fix).
+    // …and apply prunes the orphaned generated file — with the ownership sidecar
+    // that proved it was the engine's to prune (the GAP-8 fix).
     const result2 = applyPlan(repo, plan2, { sweepOrphans: true });
     expect(result2.swept).toContain('.codex/hooks.json');
+    expect(result2.swept).toContain('.codex/hooks.json.dorkos-generated');
     expect(existsSync(hooksPath)).toBe(false);
+    expect(existsSync(`${hooksPath}.dorkos-generated`)).toBe(false);
   });
 
   it('keeps a still-generated `.codex/hooks.json` and never prunes an unowned file', () => {
@@ -450,6 +486,17 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     const swept = sweepGeneratedOrphans(repo, plan);
     expect(swept).toEqual([]);
     expect(existsSync(hooksPath)).toBe(true);
+
+    // And an UNOWNED file at the same path — a person's own hooks, with no
+    // sidecar — survives a sweep that has every other reason to take it: the
+    // plugin is gone, so nothing regenerates the path.
+    const mine = '{\n  "hooks": { "Stop": [] }\n}\n';
+    writeFileSync(hooksPath, mine);
+    rmSync(join(repo, '.dork', 'plugins', 'flow'), { recursive: true, force: true });
+    rmSync(`${hooksPath}.dorkos-generated`, { force: true });
+
+    expect(sweepGeneratedOrphans(repo, project(repo, { dorkHome }))).toEqual([]);
+    expect(readFileSync(hooksPath, 'utf8')).toBe(mine);
   });
 
   it('generates cursor + copilot hook files from an authored hook, then prunes each on uninstall (FND-6 + GAP-8)', () => {
@@ -482,9 +529,13 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     const plan2 = project(repo, { dorkHome });
     const swept = sweepGeneratedOrphans(repo, plan2);
     expect(swept).toContain('.cursor/hooks.json');
+    expect(swept).toContain('.cursor/hooks.json.dorkos-generated');
     expect(swept).toContain('.github/hooks/copilot-hooks.json');
+    expect(swept).toContain('.github/hooks/copilot-hooks.json.dorkos-generated');
     expect(existsSync(cursorPath)).toBe(false);
     expect(existsSync(copilotPath)).toBe(false);
+    expect(existsSync(`${cursorPath}.dorkos-generated`)).toBe(false);
+    expect(existsSync(`${copilotPath}.dorkos-generated`)).toBe(false);
   });
 });
 

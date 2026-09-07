@@ -123,6 +123,22 @@ function codexHooksText(): string {
   return existsSync(path) ? readFileSync(path, 'utf8') : '';
 }
 
+/**
+ * The generated Codex hooks file, parsed and checked against the shape Codex
+ * documents: the event map under a top-level `hooks` key, beside the
+ * generated-file `description`. A `toContain` on the raw text would pass just as
+ * well on the bare event map that Codex most likely never read (HK-01), so the
+ * shape is asserted where the file actually lands.
+ */
+function codexHooksFile(): { description: string; hooks: Record<string, unknown> } {
+  const parsed = JSON.parse(codexHooksText()) as {
+    description: string;
+    hooks: Record<string, unknown>;
+  };
+  expect(Object.keys(parsed).sort()).toEqual(['description', 'hooks']);
+  return parsed;
+}
+
 describe('DOR-522 — a package that ships shell commands', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -173,7 +189,8 @@ describe('DOR-522 — a package that ships shell commands', () => {
     );
 
     expect(settingsText()).toContain(HOSTILE_COMMAND);
-    expect(codexHooksText()).toContain(HOSTILE_COMMAND);
+    // Under `hooks.PreToolUse`, where Codex reads it — not at the top level.
+    expect(JSON.stringify(codexHooksFile().hooks.PreToolUse)).toContain(HOSTILE_COMMAND);
     expect(mockConfigSet).toHaveBeenCalledWith('harness', {
       autoSync: true,
       approvedHooks: [
@@ -410,5 +427,54 @@ describe('DOR-522 — a package that ships shell commands', () => {
 
     expect(consume).toHaveBeenCalledTimes(3);
     expect(settingsText()).toContain(HOSTILE_COMMAND);
+  });
+});
+
+/**
+ * The other half of "nothing hook-shaped changes on disk before the card": a
+ * hooks file the person wrote themselves. Pass 1 of `runAutoProjection` builds a
+ * plan with no hook contributors and applies it with the orphan sweep on, which
+ * is exactly where a hand-written `.codex/hooks.json` used to be deleted (HK-11,
+ * DOR-1842). This drives the real engine through the real service.
+ */
+describe('DOR-1842 — a hooks file the person wrote themselves', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    config.harness = { autoSync: true, approvedHooks: [] };
+    stageHostilePlugin();
+  });
+
+  afterEach(() => {
+    for (const dir of [repo, home]) if (dir) rmSync(dir, { recursive: true, force: true });
+    repo = '';
+    home = '';
+    approvalInternal.pollIntervalMs = DEFAULT_POLL_MS;
+    approvalInternal.forgetDecisions();
+  });
+
+  it('survives the first auto-projection pass byte-for-byte', async () => {
+    const mine = `${JSON.stringify(
+      {
+        description: 'our own Codex hooks',
+        hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo MINE' }] }] },
+      },
+      null,
+      2
+    )}\n`;
+    mkdirSync(join(repo, '.codex'), { recursive: true });
+    writeFileSync(join(repo, '.codex', 'hooks.json'), mine);
+
+    // Nobody answers the card, so this returns after pass 1 — the pass that swept.
+    const request = vi.fn().mockReturnValue(ticket());
+    const consume = vi.fn().mockReturnValue({ outcome: 'expired', approvalId: 'a1' });
+    await runAutoProjection(
+      { projectPath: repo, packageName: 'evil', action: 'install' },
+      { dorkHome: home, approvals: { request, consume } }
+    );
+
+    expect(existsSync(join(repo, '.codex', 'hooks.json'))).toBe(true);
+    expect(readFileSync(join(repo, '.codex', 'hooks.json'), 'utf8')).toBe(mine);
+    // And the package's skill still landed, so this is not a projection that never ran.
+    expect(skillProjected()).toBe(true);
   });
 });

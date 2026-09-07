@@ -16,6 +16,7 @@ import {
   CURSOR_HOOKS_TARGET,
   COPILOT_HOOKS_TARGET,
 } from '../generate/hooks.js';
+import { GENERATED_SIDECAR_SUFFIX } from '../apply/generated-ownership.js';
 
 /** A skill source root and the provenance of everything found beneath it. */
 export interface SourceRoot {
@@ -68,6 +69,11 @@ export const EPHEMERAL_GITIGNORE_PATTERNS = [
   '.claude/skills/*__*', // Claude Code installed-plugin skill symlinks (<pkg>__<skill>)
   '.claude/settings.local.json', // user-owned local settings; the engine merges plugin hooks in
   CODEX_HOOKS_TARGET, // generated Codex hooks (folds in installed-plugin hooks)
-  CURSOR_HOOKS_TARGET, // generated Cursor hooks (wholly engine-owned, regenerated each sync)
-  COPILOT_HOOKS_TARGET, // generated Copilot hooks (wholly engine-owned, regenerated each sync)
+  CURSOR_HOOKS_TARGET, // generated Cursor hooks (rewritten each sync)
+  COPILOT_HOOKS_TARGET, // generated Copilot hooks (rewritten each sync)
+  // The ownership sidecars beside those three: machine-local by construction —
+  // a digest of one machine's bytes says nothing about anyone else's checkout.
+  `${CODEX_HOOKS_TARGET}${GENERATED_SIDECAR_SUFFIX}`,
+  `${CURSOR_HOOKS_TARGET}${GENERATED_SIDECAR_SUFFIX}`,
+  `${COPILOT_HOOKS_TARGET}${GENERATED_SIDECAR_SUFFIX}`,
 ] as const;
