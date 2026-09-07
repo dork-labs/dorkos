@@ -4,6 +4,8 @@
  * @module lib/connectors/managed/authority-service
  */
 import { createHash } from 'node:crypto';
+import type { ConnectorEventCapability } from '@dorkos/shared/connector-events';
+import { applyManagedEventAuthorityCommand } from './event-authority-service';
 import {
   ComposioManagedAccountError,
   type ComposioManagedAccountClient,
@@ -47,6 +49,7 @@ export class ManagedAuthorityProviderUnavailableError extends Error {
 
 /** Exact provider material required for lifecycle health and cleanup work. */
 export interface ManagedAuthorityProviderContext {
+  events?: ConnectorEventCapability;
   accounts: Pick<ComposioManagedAccountClient, 'getAccount' | 'deleteAccount'>;
   providerUserId: string;
   materialGeneration: number;
@@ -54,7 +57,8 @@ export interface ManagedAuthorityProviderContext {
   signal: AbortSignal;
 }
 
-async function lockLiveAuthorityPrincipal(
+/** Lock the exact live instance key before committing any managed authority change. */
+export async function lockLiveAuthorityPrincipal(
   tx: Parameters<Parameters<ManagedConnectorDatabase['transaction']>[0]>[0],
   principal: ManagedConnectorPrincipal
 ): Promise<void> {
@@ -219,6 +223,7 @@ function statusOf(row: typeof schema.managedConnectorAuthorityCommand.$inferSele
     ...base,
     state: 'applied' as const,
     ...(row.appliedRevisionSetHash ? { appliedRevisionSetHash: row.appliedRevisionSetHash } : {}),
+    ...(row.appliedEventScopeHash ? { appliedEventScopeHash: row.appliedEventScopeHash } : {}),
     externalCleanup: row.externalCleanup,
   };
 }
@@ -357,6 +362,8 @@ export async function applyManagedAuthorityCommand(
   provider?: ManagedAuthorityProviderContext
 ): Promise<{ status: ManagedConnectorAuthorityCommandStatus; conflict: boolean }> {
   const command = ManagedConnectorAuthorityCommandSchema.parse(rawCommand);
+  if (command.kind === 'set_event_subscription')
+    return applyManagedEventAuthorityCommand(db, principal, command, provider);
   const requestHash = managedRequestHash(command);
   const claimed = await db.transaction(async (tx) => {
     await lockLiveAuthorityPrincipal(tx, principal);

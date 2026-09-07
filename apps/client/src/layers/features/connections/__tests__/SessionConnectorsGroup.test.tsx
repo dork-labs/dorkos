@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { registerComposerInsert } from '@/layers/shared/lib';
 import { SessionConnectorsGroup } from '../ui/SessionConnectorsGroup';
 
 const navigate = vi.fn();
@@ -37,7 +38,10 @@ function sessionConnection(over: Record<string, unknown> = {}) {
 }
 
 describe('SessionConnectorsGroup', () => {
-  it('renders nothing when the canonical session has no connection access', async () => {
+  it('keeps the empty session group useful and prefills the intended session composer', async () => {
+    const user = userEvent.setup();
+    const insert = vi.fn();
+    const unregister = registerComposerInsert(insert);
     const transport = createMockTransport();
     vi.mocked(transport.getSessionConnectorConnections).mockResolvedValue({
       sessionId: 'session-1',
@@ -48,7 +52,13 @@ describe('SessionConnectorsGroup', () => {
     await waitFor(() =>
       expect(transport.getSessionConnectorConnections).toHaveBeenCalledWith('session-1')
     );
-    expect(screen.queryByTestId('session-connectors')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('session-connectors')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Ask your agent' }));
+    expect(insert).toHaveBeenCalledWith(
+      'I need access to another service. Ask me which service and actions you need, then request only that access.'
+    );
+    expect(screen.getByTestId('ask-agent-for-connection-session-1')).toBeInTheDocument();
+    unregister();
   });
 
   it('keeps inherited, session-only, and disabled access distinct with a dominating reason', async () => {

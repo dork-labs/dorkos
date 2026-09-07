@@ -21,6 +21,7 @@
  * @module shared/connector-provider
  */
 import { z } from 'zod';
+import type { ConnectorEventCapability } from './connector-events.js';
 import {
   ConnectionIdSchema,
   ConnectorCapabilityAvailabilitySchema,
@@ -35,7 +36,6 @@ import {
   type ConnectorProviderExecuteCommand,
   type ConnectorProviderExecuteResult,
   type ConnectorProviderInstanceId,
-  type ConnectorTriggerType,
   type ConnectorToolkitVersionResult,
   type ConnectorUnsupportedResult,
 } from './connector-schemas.js';
@@ -202,6 +202,8 @@ export type ConnectPoll = z.infer<typeof ConnectPollSchema>;
  * multi-account management; and {@link execute} is the only execution path.
  */
 export interface ConnectorProvider {
+  /** Signed event capability when this configured provider supports reception. */
+  readonly events?: ConnectorEventCapability;
   /** Stable configured instance identifier; multiple instances may share one type. */
   readonly instanceId: ConnectorProviderInstanceId;
   /** Backend type identifier; must equal `getCapabilities().type`. */
@@ -231,11 +233,6 @@ export interface ConnectorProvider {
 
   /** Execute one exact provider account and immutable operation revision. */
   execute(command: ConnectorProviderExecuteCommand): Promise<ConnectorProviderExecuteResult>;
-
-  /** Discover trigger types, or return typed unsupported. */
-  listTriggerTypes(
-    toolkit: string
-  ): Promise<{ status: 'ok'; triggers: ConnectorTriggerType[] } | ConnectorUnsupportedResult>;
 
   /** Discovery: which services can be connected. */
   listToolkits(): Promise<ConnectorToolkit[]>;

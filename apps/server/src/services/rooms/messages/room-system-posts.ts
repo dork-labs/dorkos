@@ -11,6 +11,7 @@
  * @module server/services/rooms/messages/room-system-posts
  */
 import { ulid } from 'ulidx';
+import type { DbTransaction } from '@dorkos/db';
 import type {
   RoomEntry,
   RoomEntryBody,
@@ -223,6 +224,40 @@ export class RoomSystemPosts {
       }),
       createdAt: new Date().toISOString(),
     });
+    this.publisher.publishEntry(entry);
+    return entry;
+  }
+
+  /** Persist one privately authorized service notice and its source receipt atomically, without waking agents. */
+  postServiceNotification(
+    roomId: string,
+    entryId: string,
+    text: string,
+    within: (tx: DbTransaction) => void,
+    bind: (tx: DbTransaction, seq: number) => void
+  ): RoomEntry {
+    const room = this.visibility.requireRoom(roomId);
+    if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    const entry = this.store.appendEntry(
+      {
+        roomId,
+        id: entryId,
+        authorId: this.authors.system().id,
+        kind: 'notice',
+        body: { text },
+        mentions: [],
+        mentionSpans: [],
+        sessionId: null,
+        ...threadPointers(this.store, roomId, undefined),
+        ...deriveCascade(entryId, {
+          authorKind: 'system',
+          maxAgentDepth: this.limitsFor(roomId).maxAgentDepth,
+        }),
+        createdAt: new Date().toISOString(),
+      },
+      within,
+      bind
+    );
     this.publisher.publishEntry(entry);
     return entry;
   }

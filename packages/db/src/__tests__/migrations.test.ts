@@ -152,7 +152,11 @@ describe('Database Migrations', () => {
       'connector_agent_requests',
       'connector_application_migrations',
       'connector_authentication_flows',
+      'connector_event_bindings',
+      'connector_event_consent_commands',
+      'connector_event_definitions',
       'connector_event_inbox',
+      'connector_event_provider_settings',
       'connector_event_receipts',
       'connector_event_subscriptions',
       'connector_legacy_agent_revocations',
@@ -248,6 +252,8 @@ describe('Database Migrations', () => {
       // Durable completed-turn event stream for log-backed runtimes
       // (DOR-189, migration 0026).
       'session_events',
+      // Stable proof that a protected source was accepted for one session.
+      'session_message_acceptance_receipts',
       // Messages typed while a session was busy, waiting their turn — the
       // server-owned queue that survives a refresh, a second window, and a
       // restart (spec persistent-session-runtime §3.1, migration 0064).

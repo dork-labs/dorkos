@@ -1,4 +1,5 @@
 import { ArrowUpRight, Cable } from 'lucide-react';
+import type { ReactNode } from 'react';
 import {
   useAgentConnectorConnections,
   useSessionConnectorConnections,
@@ -121,11 +122,17 @@ export function AgentConnectionAccessList({
 export function SessionConnectionAccessList({
   sessionId,
   onManage,
+  emptyAction,
+  footer,
 }: {
   /** Exact canonical session identifier. */
   sessionId: string;
   /** Opens the owner Connections surface for access changes. */
   onManage?: () => void;
+  /** Session-owned action shown when no connection is currently available. */
+  emptyAction?: ReactNode;
+  /** Session-owned action shown after the current access list. */
+  footer?: ReactNode;
 }) {
   const query = useSessionConnectorConnections(sessionId);
 
@@ -144,7 +151,6 @@ export function SessionConnectionAccessList({
   }
 
   const connections = query.data?.connections ?? [];
-  if (connections.length === 0) return null;
 
   return (
     <section
@@ -166,33 +172,49 @@ export function SessionConnectionAccessList({
           </Button>
         )}
       </div>
-      {connections.map((connection) => {
-        const reason = DOMINATING_REASON_COPY[connection.dominatingReason];
-        return (
-          <div
-            key={connection.connectionId}
-            data-testid={`session-connection-${connection.connectionId}`}
-            className="bg-muted/40 rounded-md px-2.5 py-2"
-          >
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-sm font-medium">
-                {serviceName(connection.toolkit)} ({connection.label})
-              </span>
-              <Badge size="xs" variant={connection.access === 'disabled' ? 'outline' : 'secondary'}>
-                {SESSION_ACCESS_COPY[connection.access]}
-              </Badge>
-            </div>
-            <p
-              className={
-                reason ? 'text-destructive mt-1 text-xs' : 'text-muted-foreground mt-1 text-xs'
-              }
-            >
-              {reason ??
-                `${connection.operationRevisionIds.length} actions available in this session.`}
+      {connections.length === 0 ? (
+        <div className="bg-muted/40 space-y-2 rounded-md px-2.5 py-3">
+          <div>
+            <p className="text-sm font-medium">No account access</p>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Ask this agent to request the service and actions it needs.
             </p>
           </div>
-        );
-      })}
+          {emptyAction}
+        </div>
+      ) : (
+        connections.map((connection) => {
+          const reason = DOMINATING_REASON_COPY[connection.dominatingReason];
+          return (
+            <div
+              key={connection.connectionId}
+              data-testid={`session-connection-${connection.connectionId}`}
+              className="bg-muted/40 rounded-md px-2.5 py-2"
+            >
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-sm font-medium">
+                  {serviceName(connection.toolkit)} ({connection.label})
+                </span>
+                <Badge
+                  size="xs"
+                  variant={connection.access === 'disabled' ? 'outline' : 'secondary'}
+                >
+                  {SESSION_ACCESS_COPY[connection.access]}
+                </Badge>
+              </div>
+              <p
+                className={
+                  reason ? 'text-destructive mt-1 text-xs' : 'text-muted-foreground mt-1 text-xs'
+                }
+              >
+                {reason ??
+                  `${connection.operationRevisionIds.length} actions available in this session.`}
+              </p>
+            </div>
+          );
+        })
+      )}
+      {connections.length > 0 && footer}
     </section>
   );
 }

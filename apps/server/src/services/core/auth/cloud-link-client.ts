@@ -55,6 +55,14 @@ import {
   type ManagedConnectorToolkitVersionRequest,
   type ManagedConnectorToolkitVersionResponse,
 } from '@dorkos/shared/connector-managed-discovery-schemas';
+import {
+  ManagedConnectorEventDefinitionPageSchema,
+  ManagedConnectorEventPullResponseSchema,
+  ManagedConnectorEventPullRequestSchema,
+  ManagedConnectorEventAckRequestSchema,
+  ManagedConnectorEventAckResponseSchema,
+} from '@dorkos/shared/connector-event-schemas';
+import type { ConnectorEventPageRequest } from '@dorkos/shared/connector-events';
 import type { ZodType } from 'zod';
 import { env } from '../../../env.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
@@ -727,4 +735,58 @@ export async function revokeInstanceKey(opts: {
   } catch {
     return false;
   }
+}
+
+/** Read exact immutable hosted event definitions through the existing linked-instance client. */
+export function requestManagedConnectorEventDefinitions(opts: {
+  baseUrl: string;
+  accessToken: string;
+  request: Omit<ConnectorEventPageRequest, 'signal'>;
+  signal: AbortSignal;
+  fetchImpl?: FetchLike;
+}) {
+  const query = managedQuery({
+    toolkitVersion: opts.request.toolkitVersion,
+    cursor: opts.request.cursor,
+    limit: opts.request.limit,
+  });
+  return requestManagedConnectorResource({
+    ...opts,
+    path: `/api/instances/connectors/toolkits/${encodeURIComponent(opts.request.toolkit)}/events?${query}`,
+    schema: ManagedConnectorEventDefinitionPageSchema,
+  });
+}
+
+/** Pull protected hosted events for durable local acceptance, without requiring a live provider. */
+export function requestManagedConnectorEventPull(opts: {
+  baseUrl: string;
+  accessToken: string;
+  limit: number;
+  signal: AbortSignal;
+  fetchImpl?: FetchLike;
+}) {
+  return requestManagedConnectorResource({
+    ...opts,
+    path: '/api/instances/connectors/events/pull',
+    method: 'POST',
+    body: ManagedConnectorEventPullRequestSchema.parse({ limit: opts.limit }),
+    schema: ManagedConnectorEventPullResponseSchema,
+  });
+}
+
+/** Acknowledge only exact lease receipts after the local database commit. */
+export function requestManagedConnectorEventAck(opts: {
+  baseUrl: string;
+  accessToken: string;
+  events: Array<{ id: string; leaseToken: string }>;
+  signal: AbortSignal;
+  fetchImpl?: FetchLike;
+}) {
+  return requestManagedConnectorResource({
+    ...opts,
+    path: '/api/instances/connectors/events/ack',
+    method: 'POST',
+    body: ManagedConnectorEventAckRequestSchema.parse({ events: opts.events }),
+    schema: ManagedConnectorEventAckResponseSchema,
+  });
 }

@@ -1,6 +1,11 @@
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  ConnectorAgentRequestAuthenticationInput,
+  ConnectorAgentRequestDecision,
+} from '@dorkos/shared/connector-agent-request-schemas';
+import type {
+  ConnectorAgentRequestItem,
   ConnectorManagementReviewDecision,
   ConnectorManagementReviewDecisionResult,
   ConnectorManagementReviewItem,
@@ -29,6 +34,100 @@ export function useConnectorManagementReview(reviewRequestId: string | null) {
     queryFn: () => transport.getConnectorManagementReview(reviewRequestId ?? ''),
     enabled: reviewRequestId !== null && reviewRequestId !== '',
   });
+}
+
+/** Read owner-visible service requests raised by runtime agents. */
+export function useConnectorAgentRequests(state?: 'pending' | 'resolved') {
+  const transport = useTransport();
+  return useQuery<ConnectorAgentRequestItem[]>({
+    queryKey: connectorKeys.agentRequestList(state),
+    queryFn: () => transport.getConnectorAgentRequests(state),
+  });
+}
+
+/** Read one exact agent request for the Connections deep link. */
+export function useConnectorAgentRequest(requestId: string | null) {
+  const transport = useTransport();
+  return useQuery<ConnectorAgentRequestItem>({
+    queryKey: connectorKeys.agentRequest(requestId ?? ''),
+    queryFn: () => transport.getConnectorAgentRequest(requestId ?? ''),
+    enabled: requestId !== null && requestId !== '',
+  });
+}
+
+/** Resolve an agent request and refresh canonical account and request views. */
+export function useResolveConnectorAgentRequest() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation<
+    ConnectorAgentRequestItem,
+    Error,
+    { requestId: string; decision: ConnectorAgentRequestDecision }
+  >({
+    mutationFn: ({ requestId, decision }) =>
+      transport.resolveConnectorAgentRequest(requestId, decision),
+    meta: { suppressErrorToast: true },
+    onSuccess: (result, { requestId }) => {
+      queryClient.setQueryData(connectorKeys.agentRequest(requestId), result);
+      void queryClient.invalidateQueries({ queryKey: connectorKeys.agentRequestList('pending') });
+      void queryClient.invalidateQueries({ queryKey: connectorKeys.agentRequestList('resolved') });
+      void queryClient.invalidateQueries({ queryKey: connectorKeys.connections() });
+    },
+  });
+}
+
+/** Start account authentication durably bound to one exact agent request. */
+export function useStartConnectorAgentRequestAuthentication(requestId: string | null) {
+  const transport = useTransport();
+  return useMutation<
+    ConnectorAuthenticationFlowState,
+    Error,
+    ConnectorAgentRequestAuthenticationInput
+  >({
+    mutationFn: (input) =>
+      transport.startConnectorAgentRequestAuthentication(requestId ?? '', input),
+    meta: { suppressErrorToast: true },
+  });
+}
+
+/** Poll the exact authentication flow associated with one owner-reviewed agent request. */
+export function useConnectorAgentRequestAuthentication(
+  requestId: string | null,
+  flowId: string | null
+) {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: connectorKeys.agentRequestAuthentication(requestId ?? '', flowId ?? ''),
+    queryFn: () => transport.pollConnectorAgentRequestAuthentication(requestId ?? '', flowId ?? ''),
+    enabled: Boolean(requestId && flowId),
+    refetchInterval: (result) => {
+      const state = result.state.data?.state;
+      return state === 'starting' || state === 'pending' ? 2_000 : false;
+    },
+    staleTime: 0,
+    meta: { suppressErrorToast: true },
+  });
+
+  useEffect(() => {
+    const state = query.data?.state;
+    if (!state || !requestId) return;
+    if (state === 'connected') {
+      void queryClient.invalidateQueries({ queryKey: connectorKeys.connections() });
+    }
+    if (
+      state === 'connected' ||
+      state === 'failed' ||
+      state === 'expired' ||
+      state === 'start_unknown'
+    ) {
+      void queryClient.invalidateQueries({ queryKey: connectorKeys.agentRequest(requestId) });
+      void queryClient.invalidateQueries({ queryKey: connectorKeys.agentRequestList('pending') });
+      void queryClient.invalidateQueries({ queryKey: connectorKeys.agentRequestList('resolved') });
+    }
+  }, [query.data?.state, queryClient, requestId]);
+
+  return query;
 }
 
 /** Resolve one pending request, then refresh its detail and both lifecycle lists. */

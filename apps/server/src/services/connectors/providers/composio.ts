@@ -22,6 +22,8 @@
  * @module services/connectors/providers/composio
  */
 import { createHash } from 'node:crypto';
+import type { ConnectorEventCapability } from '@dorkos/shared/connector-events';
+import { composioEventCapability } from './composio-events.js';
 import type {
   ConnectorCapabilities,
   ConnectorExternalAccountRef,
@@ -42,6 +44,7 @@ import type {
 } from '@dorkos/shared/connector-schemas';
 import {
   ComposioSdkClient,
+  ComposioEventClient,
   type ComposioOperationClient,
 } from '@dorkos/connector-providers/composio';
 import type { CredentialProvider } from '../../core/credential-provider.js';
@@ -147,6 +150,8 @@ export interface ComposioConnectorProviderOpts {
   client: ComposioHttpClient;
   /** Exact-version operation boundary, absent for legacy user-key configurations. */
   operationClient: ComposioOperationClient | null;
+  /** SDK event capability when project-key reception is configured. */
+  eventClient?: ConnectorEventCapability;
   /** Stable configured provider instance id. */
   instanceId?: ConnectorProviderInstanceId;
   /** Digest of the exact secret and server-owned SDK construction values. */
@@ -183,6 +188,7 @@ export interface ComposioConnectorProviderOpts {
  * swallowed — it surfaces from every method.
  */
 export class ComposioConnectorProvider implements ConnectorProvider {
+  readonly events?: ConnectorEventCapability;
   readonly instanceId: ConnectorProviderInstanceId;
   readonly type = COMPOSIO_PROVIDER_TYPE;
 
@@ -198,6 +204,7 @@ export class ComposioConnectorProvider implements ConnectorProvider {
   constructor(opts: ComposioConnectorProviderOpts) {
     this._client = opts.client;
     this._operationClient = opts.operationClient;
+    this.events = opts.eventClient ? composioEventCapability(opts.eventClient) : undefined;
     this.#executionConfigDigest = opts.executionConfigDigest;
     this.instanceId =
       opts.instanceId ??
@@ -236,7 +243,12 @@ export class ComposioConnectorProvider implements ConnectorProvider {
         accounts: { status: 'available' },
         operations,
         execution: operations,
-        triggers: { status: 'unsupported', reason: 'Trigger support is not configured.' },
+        triggers: this.events
+          ? { status: 'available' }
+          : {
+              status: 'unsupported',
+              reason: 'Notifications are not available with this account setup.',
+            },
       },
       features: {},
     };
@@ -342,13 +354,6 @@ export class ComposioConnectorProvider implements ConnectorProvider {
     });
   }
 
-  listTriggerTypes(_toolkit: string) {
-    return Promise.resolve({
-      status: 'unsupported' as const,
-      reason: 'Trigger support is not configured.',
-    });
-  }
-
   async listToolkits(): Promise<ConnectorToolkit[]> {
     // A failure propagates on purpose: the registry aggregation converts it to
     // a per-provider warning the client renders. Degrading to [] here made a
@@ -446,6 +451,8 @@ export interface MaybeCreateComposioProviderDeps {
   credentials: CredentialProvider;
   /** The reference to resolve for the API key (defaults to {@link COMPOSIO_API_KEY_REF}). */
   apiKeyRef?: string;
+  /** Independently configured signing secret reference for direct account events. */
+  webhookSecretRef?: string;
   /** The Composio `user_id` scope (defaults to {@link DEFAULT_COMPOSIO_USER_ID}). */
   userId?: string;
   /** Override the Composio API origin. */
@@ -539,8 +546,20 @@ export async function maybeCreateComposioProvider(
         serverUserId: construction.serverUserId,
         ...(construction.baseUrl !== undefined && { baseUrl: construction.baseUrl }),
       });
+  const webhookSecret = deps.webhookSecretRef
+    ? await deps.credentials.resolve(deps.webhookSecretRef)
+    : undefined;
+  const eventClient = operationClient
+    ? new ComposioEventClient({
+        apiKey: construction.apiKey,
+        serverUserId: construction.serverUserId,
+        ...(construction.baseUrl !== undefined && { baseUrl: construction.baseUrl }),
+        ...(webhookSecret?.ok && { webhookSecret: webhookSecret.secret }),
+      })
+    : undefined;
   return new ComposioConnectorProvider({
     client,
+    eventClient,
     operationClient,
     instanceId: providerInstanceId,
     executionConfigDigest: executionConfigDigest(construction),

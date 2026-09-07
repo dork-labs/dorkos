@@ -308,13 +308,6 @@ export class NangoConnectorProvider implements ConnectorProvider {
     });
   }
 
-  listTriggerTypes(_toolkit: string) {
-    return Promise.resolve({
-      status: 'unsupported' as const,
-      reason: 'Trigger support is not configured.',
-    });
-  }
-
   async listToolkits(): Promise<ConnectorToolkit[]> {
     // A failure propagates on purpose: the registry aggregation converts it to
     // a per-provider warning the client renders (never a silent empty list).

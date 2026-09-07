@@ -68,9 +68,26 @@ export const connectorAgentRequests = sqliteTable(
     requestedEventsJson: text('requested_events_json').notNull(),
     reason: text('reason').notNull(),
     resumeState: text('resume_state', {
-      enum: ['pending', 'ready', 'resumed', 'expired'],
+      enum: ['pending', 'ready', 'resumed', 'expired', 'cancelled'],
     }).notNull(),
+    /** Stable source generation used for exactly-once session acceptance. */
+    sourceGeneration: text('source_generation'),
     resumeToken: text('resume_token').notNull(),
+    /** Trusted request provenance captured from the authenticated runtime caller. */
+    originRuntime: text('origin_runtime'),
+    originAgentPath: text('origin_agent_path'),
+    originAuthorityDigest: text('origin_authority_digest'),
+    /** The server boot that owns the live approval hold, if one is still active. */
+    liveHoldBootEpoch: text('live_hold_boot_epoch'),
+    liveHoldUntil: text('live_hold_until'),
+    /** Immutable owner decision material used to build the one follow-up. */
+    outcome: text('outcome', {
+      enum: ['granted', 'denied', 'expired', 'authentication_failed', 'target_deleted'],
+    }),
+    resolvedConnectionId: text('resolved_connection_id'),
+    resolvedOperationRevisionIdsJson: text('resolved_operation_revision_ids_json'),
+    resolvedEventsJson: text('resolved_events_json'),
+    resolvedAt: text('resolved_at'),
     createdAt: text('created_at').notNull(),
   },
   (table) => [
@@ -82,3 +99,6 @@ export const connectorAgentRequests = sqliteTable(
     ),
   ]
 );
+
+export type ConnectorAgentRequest = typeof connectorAgentRequests.$inferSelect;
+export type NewConnectorAgentRequest = typeof connectorAgentRequests.$inferInsert;

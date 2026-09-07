@@ -14,6 +14,8 @@ import type {
   AdapterRegistryLike,
   AdapterContext,
   DeliveryResult,
+  PrivateNotificationOptions,
+  PrivateNotificationResult,
 } from './types.js';
 import { describeError } from './lib/describe-error.js';
 
@@ -215,6 +217,25 @@ export class AdapterRegistry implements AdapterRegistryLike {
    */
   list(): RelayAdapter[] {
     return [...this.adapters.values()];
+  }
+
+  /** Deliver only to the exact still-registered adapter without a durable payload copy. */
+  async deliverPrivateNotification(
+    subject: string,
+    text: string,
+    options: PrivateNotificationOptions
+  ): Promise<PrivateNotificationResult> {
+    const adapter = this.getBySubject(subject);
+    if (!adapter || adapter.id !== options.adapterId || !adapter.deliverPrivateNotification)
+      return { state: 'refused' };
+    return adapter.deliverPrivateNotification(
+      subject,
+      text,
+      () =>
+        this.getBySubject(subject) === adapter &&
+        adapter.id === options.adapterId &&
+        options.authorizeDispatch()
+    );
   }
 
   /**

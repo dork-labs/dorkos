@@ -35,6 +35,9 @@ import type { SlackPresenceState } from './presence.js';
 import { SlackThreadIdCodec } from '../../lib/thread-id.js';
 import { mayApprove } from '../approver-allowlist.js';
 import { FATAL_SLACK_ERRORS, SLACK_MANIFEST } from './slack-manifest.js';
+import { sendPrivateSlackNotification } from './private-notification.js';
+import type { PrivateNotificationResult } from '../../types.js';
+import { fetch as undiciFetch } from 'undici';
 import { createSlackProxyTransport } from './proxy.js';
 import { describeError } from '../../lib/describe-error.js';
 
@@ -440,6 +443,34 @@ export class SlackAdapter extends BaseRelayAdapter {
     this.threadTracker.clear();
     clearAllApprovalTimeouts(this.outboundState);
     clearCaches(this.inboundState);
+  }
+
+  /** Send one private notification, refusing stopped/replaced native clients at actual fetch. */
+  async deliverPrivateNotification(
+    subject: string,
+    text: string,
+    authorizeDispatch: () => boolean
+  ): Promise<PrivateNotificationResult> {
+    const app = this.app;
+    const channelId = this.codec.decode(subject)?.platformId;
+    const dispatcher = this.proxyDispatcher;
+    if (!app || !channelId || this.getStatus().state !== 'connected') return { state: 'refused' };
+    return sendPrivateSlackNotification({
+      token: this.config.botToken,
+      channelId,
+      text,
+      authorizeDispatch: () =>
+        this.app === app &&
+        this.getStatus().state === 'connected' &&
+        this.proxyDispatcher === dispatcher &&
+        authorizeDispatch(),
+      ...(dispatcher
+        ? {
+            fetch: (url, init) =>
+              undiciFetch(url, { ...init, dispatcher } as Parameters<typeof undiciFetch>[1]),
+          }
+        : {}),
+    });
   }
 
   /**

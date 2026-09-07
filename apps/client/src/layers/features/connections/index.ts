@@ -18,3 +18,4 @@ export { MessagePolicyCard } from './ui/MessagePolicyCard';
 export { SessionConnectorsGroup } from './ui/SessionConnectorsGroup';
 export { ConnectionAccessDialog } from './ui/ConnectionAccessDialog';
 export { ManagementReviews } from './ui/ManagementReviews';
+export { AgentRequests } from './ui/AgentRequests';

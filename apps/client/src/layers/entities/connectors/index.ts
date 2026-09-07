@@ -14,6 +14,14 @@ export { connectorKeys } from './api/query-keys';
 // --- Query hooks ---
 export { useConnectorProviders } from './model/use-connector-providers';
 export {
+  useConfigureConnectionEventSource,
+  useConnectionEventDefinitions,
+  useConnectionEventSource,
+  useConnectionEventSubscriptions,
+  useCreateConnectionEventSubscription,
+  useDeleteConnectionEventSubscription,
+} from './model/use-connector-events';
+export {
   useConnectorCatalog,
   useConnectorConnections,
   useConnectorConnection,
@@ -39,6 +47,11 @@ export type { SaveConnectorCredentialArgs } from './model/use-connector-credenti
 export {
   useConnectorManagementReviews,
   useConnectorManagementReview,
+  useConnectorAgentRequests,
+  useConnectorAgentRequest,
+  useConnectorAgentRequestAuthentication,
+  useResolveConnectorAgentRequest,
+  useStartConnectorAgentRequestAuthentication,
   useResolveConnectorManagementReview,
   usePreviewConnectorReconciliation,
   useApplyConnectorReconciliation,
@@ -53,6 +66,7 @@ export type {
 } from '@dorkos/shared/connector-provider';
 export type {
   ConnectorManagementReviewItem,
+  ConnectorAgentRequestItem,
   ConnectorManagementReviewContext,
   ConnectorReconciliationPreview,
   ConnectorReconciliationCandidate,

@@ -75,6 +75,8 @@ export interface ConnectorProviderBootstrapperOpts {
   registry: ConnectorRegistry;
   /** The credential read port the provider factories resolve their key refs through. */
   credentials: CredentialProvider;
+  /** Owner-scoped signing reference, read privately whenever Composio is reloaded. */
+  composioWebhookSecretRef?: () => string | undefined;
   /** Env-derived Nango settings (base URL, encryption key), re-read per reload. */
   nangoEnv: () => { baseUrl?: string; encryptionKey?: string };
   /** Raw-MCP server descriptors from user config (`connectors.rawMcpServers`), read at boot. */
@@ -113,6 +115,8 @@ export interface ConnectorProviderBootstrapperOpts {
    * network in tests. Production omits both and gets the real fetch clients.
    */
   makeComposioClient?: MaybeCreateComposioProviderDeps['makeClient'];
+  /** Private offline test upstream; production leaves the real vendor origin intact. */
+  composioBaseUrl?: string;
   /** See {@link makeComposioClient} — the Nango counterpart. */
   makeNangoClient?: MaybeCreateNangoProviderDeps['makeClient'];
 }
@@ -218,6 +222,8 @@ export class ConnectorProviderBootstrapper {
         create: () =>
           maybeCreateComposioProvider({
             credentials,
+            webhookSecretRef: opts.composioWebhookSecretRef?.(),
+            ...(opts.composioBaseUrl && { baseUrl: opts.composioBaseUrl }),
             ...(opts.makeComposioClient && { makeClient: opts.makeComposioClient }),
           }),
         isRefusal: () => false,

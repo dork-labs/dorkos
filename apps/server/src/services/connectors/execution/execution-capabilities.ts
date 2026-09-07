@@ -2,6 +2,8 @@
 import { z } from 'zod';
 import {
   ConnectionIdSchema,
+  ConnectorAgentConnectionRequestInputSchema,
+  ConnectorAgentRequestStatusSchema,
   ConnectorAccessibleConnectionsResponseSchema,
   ConnectorAccessibleOperationsResponseSchema,
   ConnectorExecutionResponseSchema,
@@ -23,6 +25,10 @@ import {
 import type { ConnectorExecutionAuthorizationService } from './authorization-service.js';
 import type { ConnectorExecutionBroker } from './execution-broker.js';
 import type { ConnectorRuntimeExecutionCapabilityId } from '../runtime-capability-scope.js';
+import {
+  ConnectorAgentRequestError,
+  type ConnectorAgentRequestService,
+} from '../agent-request-service.js';
 
 /** Service handles required by the connector execution capability domain. */
 export interface ConnectorExecutionCapabilityDeps {
@@ -32,6 +38,21 @@ export interface ConnectorExecutionCapabilityDeps {
   readonly broker: ConnectorExecutionBroker;
   /** Principal-bound, canonical grant discovery. */
   readonly access: ConnectorAccessQueryService;
+  /** Durable, owner-reviewed service requests for the authenticated runtime. */
+  readonly requests?: Pick<
+    ConnectorAgentRequestService,
+    'create' | 'getForRuntime' | 'waitForResolution'
+  >;
+}
+
+function requireRequestService(deps: ConnectorExecutionCapabilityDeps) {
+  if (!deps.requests) {
+    throw new CapabilityToolError({
+      error: 'Service requests are unavailable while agent identity is offline.',
+      code: 'CONNECTOR_REQUEST_UNAVAILABLE',
+    });
+  }
+  return deps.requests;
 }
 
 declare module '../../core/capabilities/capability-definition.js' {
@@ -83,6 +104,21 @@ function accessError(error: unknown): never {
           : error.code === 'runtime_authority_expired'
             ? 'CONNECTOR_PRINCIPAL_REQUIRED'
             : 'CONNECTOR_ACCESS_DENIED',
+    });
+  }
+  throw error;
+}
+
+function requestError(error: unknown): never {
+  if (error instanceof ConnectorAgentRequestError) {
+    throw new CapabilityToolError({
+      error: error.message,
+      code:
+        error.code === 'request_not_found'
+          ? 'CONNECTOR_REQUEST_NOT_FOUND'
+          : error.code === 'authority_expired' || error.code === 'principal_required'
+            ? 'CONNECTOR_PRINCIPAL_REQUIRED'
+            : 'CONNECTOR_REQUEST_REFUSED',
     });
   }
   throw error;
@@ -186,6 +222,58 @@ const listGrantedOperations = defineCapability({
   },
 });
 
+const ConnectorRequestStatusInputSchema = z.object({ requestId: z.string().min(1) }).strict();
+
+const requestConnection = defineCapability({
+  id: 'connectors.request_connection',
+  title: 'Request service access',
+  description:
+    'Ask the owner for access to one service when the granted connections do not cover the work. ' +
+    'Name only the service actions and events needed and explain why. The owner chooses the account ' +
+    'and exact access; this call never lists accounts or grants access by itself.',
+  tier: 'observe',
+  input: ConnectorAgentConnectionRequestInputSchema,
+  output: ConnectorAgentRequestStatusSchema,
+  surfaces: {},
+  invoke: async (deps, input, context) => {
+    const connectorDeps = requireExecutionDeps(deps);
+    const principal = requireRuntimePrincipal(context);
+    try {
+      const requests = requireRequestService(connectorDeps);
+      const request = await requests.create(principal, input);
+      if (request.status !== 'awaiting_owner' && request.status !== 'access_pending') {
+        return request;
+      }
+      return await requests.waitForResolution(principal, request.requestId, context.signal);
+    } catch (error) {
+      return requestError(error);
+    }
+  },
+});
+
+const getConnectionRequest = defineCapability({
+  id: 'connectors.get_connection_request',
+  title: 'Check a service request',
+  description:
+    'Check one service request created by this exact agent session. It returns the request outcome ' +
+    "without revealing the owner's account inventory.",
+  tier: 'observe',
+  input: ConnectorRequestStatusInputSchema,
+  output: ConnectorAgentRequestStatusSchema,
+  surfaces: {},
+  invoke: async (deps, input, context) => {
+    const connectorDeps = requireExecutionDeps(deps);
+    try {
+      return await requireRequestService(connectorDeps).getForRuntime(
+        requireRuntimePrincipal(context),
+        input.requestId
+      );
+    } catch (error) {
+      return requestError(error);
+    }
+  },
+});
+
 /** Internal-only operation execution capabilities, split by immutable classification. */
 export const connectorExecutionDomain: CapabilityDomain = {
   name: 'connectors',
@@ -193,6 +281,8 @@ export const connectorExecutionDomain: CapabilityDomain = {
   capabilities: [
     listGrantedConnections,
     listGrantedOperations,
+    requestConnection,
+    getConnectionRequest,
     executionCapability('connectors.execute_read', 'read'),
     executionCapability('connectors.execute_write', 'write'),
     executionCapability('connectors.execute_destructive', 'destructive'),

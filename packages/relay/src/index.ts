@@ -80,6 +80,8 @@ export type {
   RelayMetrics,
   RelayOptions,
   PublishOptions,
+  PrivateNotificationOptions,
+  PrivateNotificationResult,
 } from './types.js';
 
 // Reliability types

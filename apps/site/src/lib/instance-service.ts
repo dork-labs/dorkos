@@ -18,6 +18,7 @@ import {
   MANAGED_CONNECTOR_EXECUTION_PERMISSIONS,
   MANAGED_CONNECTOR_INSTANCE_KEY_PERMISSIONS,
   MANAGED_CONNECTOR_USAGE_PERMISSIONS,
+  MANAGED_CONNECTOR_EVENTS_PERMISSIONS,
 } from '@dorkos/shared/connector-managed-schemas';
 import {
   INSTANCE_KEY_PREFIX,
@@ -72,7 +73,7 @@ interface InstanceKeyMetadata {
 }
 
 /** Managed connector route classes carried by a linked-instance key. */
-export type ManagedConnectorPermission = 'authority' | 'execute' | 'usage';
+export type ManagedConnectorPermission = 'authority' | 'execute' | 'usage' | 'events';
 
 /** Verified owner and live instance identity for one managed connector request. */
 export interface VerifiedManagedConnectorInstance {
@@ -92,6 +93,7 @@ const CONNECTOR_PERMISSION_REQUIREMENTS = {
   authority: MANAGED_CONNECTOR_AUTHORITY_PERMISSIONS,
   execute: MANAGED_CONNECTOR_EXECUTION_PERMISSIONS,
   usage: MANAGED_CONNECTOR_USAGE_PERMISSIONS,
+  events: MANAGED_CONNECTOR_EVENTS_PERMISSIONS,
 } as const;
 
 /** Convert shared readonly permission declarations to Better Auth's request shape. */

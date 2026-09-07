@@ -3,6 +3,10 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { z } from 'zod';
 import {
+  ConnectorAgentRequestAuthenticationInputSchema,
+  ConnectorAgentRequestDecisionSchema,
+} from '@dorkos/shared/connector-agent-request-schemas';
+import {
   ConnectorManagementReviewCreateRequestSchema,
   ConnectorManagementReviewDecisionSchema,
   ConnectorReconciliationApplyRequestSchema,
@@ -24,6 +28,10 @@ import {
   type ConnectorReconciliationService,
 } from '../services/connectors/reconciliation-service.js';
 import type { ConnectorRegistry } from '../services/connectors/registry.js';
+import {
+  ConnectorAgentRequestError,
+  type ConnectorAgentRequestService,
+} from '../services/connectors/agent-request-service.js';
 
 const ReviewListQuerySchema = z
   .object({ state: z.enum(['pending', 'resolved']).optional() })
@@ -50,6 +58,11 @@ export interface ConnectorManagementRouterDeps extends ConnectorOwnerBoundaryDep
   >;
   /** Complete-catalog exact grant reconciliation. */
   readonly reconciliation: Pick<ConnectorReconciliationService, 'preview' | 'apply'>;
+  /** Owner-only review and resolution for requests raised by runtime agents. */
+  readonly agentRequests?: Pick<
+    ConnectorAgentRequestService,
+    'listForOwner' | 'getForOwner' | 'resolve' | 'startAuthentication' | 'pollAuthentication'
+  >;
   /** Request verifier used when login-off middleware did not populate an API-key user. */
   readonly verifyUser?: (req: Pick<Request, 'headers'>) => Promise<RequestUser | null>;
 }
@@ -180,6 +193,18 @@ function ownerId(owner: ConnectorOwnerAuthority): string {
 }
 
 function sendManagementError(res: Response, error: unknown): void {
+  if (error instanceof ConnectorAgentRequestError) {
+    const status =
+      error.code === 'request_not_found'
+        ? 404
+        : error.code === 'service_unavailable'
+          ? 503
+          : error.code === 'event_selection_unavailable'
+            ? 422
+            : 409;
+    res.status(status).json({ error: error.message, code: error.code });
+    return;
+  }
   if (error instanceof ConnectorManagementReviewError) {
     const status =
       error.code === 'review_not_found' || error.code === 'target_not_found' ? 404 : 409;
@@ -207,6 +232,14 @@ function sendManagementError(res: Response, error: unknown): void {
  */
 export function createConnectorManagementRouter(deps: ConnectorManagementRouterDeps): Router {
   const router = Router();
+  const requireAgentRequests = (res: Response) => {
+    if (deps.agentRequests) return deps.agentRequests;
+    res.status(503).json({
+      error: 'Agent service requests are unavailable while agent identity is offline.',
+      code: 'agent_requests_unavailable',
+    });
+    return undefined;
+  };
 
   router.use((_req, res, next) => {
     const health = deps.registry.migrationHealth();
@@ -282,6 +315,77 @@ export function createConnectorManagementRouter(deps: ConnectorManagementRouterD
     if (!input) return;
     try {
       res.json(await deps.reviews.resolve(owner, req.params.reviewRequestId, input));
+    } catch (error) {
+      sendManagementError(res, error);
+    }
+  });
+
+  router.get('/agent-requests', (req, res) => {
+    const owner = resolveConnectorOperator(req, res, deps);
+    if (!owner) return;
+    const requests = requireAgentRequests(res);
+    if (!requests) return;
+    const query = parseBody(ReviewListQuerySchema, req.query, res);
+    if (!query) return;
+    try {
+      res.json({ requests: requests.listForOwner(owner, query.state) });
+    } catch (error) {
+      sendManagementError(res, error);
+    }
+  });
+
+  router.get('/agent-requests/:requestId', (req, res) => {
+    const owner = resolveConnectorOperator(req, res, deps);
+    if (!owner) return;
+    const requests = requireAgentRequests(res);
+    if (!requests) return;
+    try {
+      res.json(requests.getForOwner(owner, req.params.requestId));
+    } catch (error) {
+      sendManagementError(res, error);
+    }
+  });
+
+  router.post('/agent-requests/:requestId/decision', async (req, res) => {
+    const owner = resolveConnectorOperator(req, res, deps);
+    if (!owner) return;
+    const requests = requireAgentRequests(res);
+    if (!requests) return;
+    const input = parseBody(ConnectorAgentRequestDecisionSchema, req.body ?? {}, res);
+    if (!input) return;
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    req.once('aborted', abort);
+    try {
+      res.json(await requests.resolve(owner, req.params.requestId, input, controller.signal));
+    } catch (error) {
+      sendManagementError(res, error);
+    } finally {
+      req.off('aborted', abort);
+    }
+  });
+
+  router.post('/agent-requests/:requestId/authentication-flows', async (req, res) => {
+    const owner = resolveConnectorOperator(req, res, deps);
+    if (!owner) return;
+    const requests = requireAgentRequests(res);
+    if (!requests) return;
+    const input = parseBody(ConnectorAgentRequestAuthenticationInputSchema, req.body ?? {}, res);
+    if (!input) return;
+    try {
+      res.status(201).json(await requests.startAuthentication(owner, req.params.requestId, input));
+    } catch (error) {
+      sendManagementError(res, error);
+    }
+  });
+
+  router.get('/agent-requests/:requestId/authentication-flows/:flowId', async (req, res) => {
+    const owner = resolveConnectorOperator(req, res, deps);
+    if (!owner) return;
+    const requests = requireAgentRequests(res);
+    if (!requests) return;
+    try {
+      res.json(await requests.pollAuthentication(owner, req.params.requestId, req.params.flowId));
     } catch (error) {
       sendManagementError(res, error);
     }

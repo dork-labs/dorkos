@@ -21,6 +21,7 @@
  *
  * @module server/services/rooms/room-service
  */
+import type { DbTransaction } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { SignalType } from '@dorkos/shared/relay-schemas';
 import type {
@@ -416,6 +417,17 @@ export class RoomService {
   ): RoomEntry {
     return this.parts.systemPosts.postMergeEvent(roomId, input);
   }
+  /** Write a service notice with its private source receipt in the same transaction; no agent dispatch. */
+  postServiceNotification(
+    roomId: string,
+    entryId: string,
+    text: string,
+    within: (tx: DbTransaction) => void,
+    bind: (tx: DbTransaction, seq: number) => void
+  ): RoomEntry {
+    return this.parts.systemPosts.postServiceNotification(roomId, entryId, text, within, bind);
+  }
+
   /** Write the room's own voice. See {@link RoomSystemPosts.postNotice}. */
   postNotice(
     roomId: string,

@@ -556,6 +556,7 @@ const connectionsSearchSchema = mergeDialogSearch(
     region: z.enum(['messaging', 'accounts']).optional(),
     review: z.string().min(1).optional(),
     flow: z.string().min(1).optional(),
+    request: z.string().min(1).optional(),
   })
 );
 

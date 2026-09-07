@@ -1,0 +1,2 @@
+ALTER TABLE "managed_connector_authority_command" ADD COLUMN "event_cleanup_after" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "managed_connector_event_cleanup_due" ON "managed_connector_authority_command" USING btree ("kind","state","external_cleanup","event_cleanup_after");

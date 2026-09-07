@@ -25,6 +25,8 @@ import type { DeliveryPipeline } from './delivery-pipeline.js';
 import type {
   RateLimitConfig,
   PublishOptions,
+  PrivateNotificationOptions,
+  PrivateNotificationResult,
   EndpointInfo,
   AdapterRegistryLike,
   AdapterContext,
@@ -303,6 +305,96 @@ export class RelayPublishPipeline {
    */
   setInitiateConsentGate(gate: InitiateConsentGate): void {
     this.initiateConsentGate = gate;
+  }
+
+  /** Native-only private notification: existing policy and metadata, with no recoverable payload copy. */
+  async deliverPrivateNotification(
+    subject: string,
+    text: string,
+    options: PrivateNotificationOptions
+  ): Promise<PrivateNotificationResult> {
+    const messageId = generateUlid();
+    const createdAt = new Date().toISOString();
+    const envelope: RelayEnvelope = {
+      id: messageId,
+      subject,
+      from: options.from,
+      createdAt,
+      payload: '[Private service notification]',
+      budget: createDefaultBudget({
+        maxHops: this.opts.maxHops,
+        ttl: Date.now() + this.opts.defaultTtlMs,
+        callBudgetRemaining: this.opts.defaultCallBudget,
+        ...options.budget,
+      }),
+    };
+    const policy = () =>
+      validateSubject(subject).valid &&
+      /^relay\.human\.(slack|telegram)\./.test(subject) &&
+      this.deps.accessControl.checkAccess(options.from, subject).allowed &&
+      (!options.from.startsWith(BRIDGE_PRINCIPAL_PREFIX) ||
+        options.serverBridgePrincipal === true) &&
+      this.evaluateInitiateConsent(options.from, subject).allowed &&
+      enforceBudget(envelope, subject).allowed;
+    const trace = (result: PrivateNotificationResult) => {
+      this.deps.sqliteIndex.updateStatus(
+        messageId,
+        '*',
+        result.state === 'delivered' ? 'delivered' : 'failed'
+      );
+      this.recordTrace({
+        messageId,
+        subject,
+        createdAt,
+        deliveredTo: result.state === 'delivered' ? 1 : 0,
+        rejected: undefined,
+        adapterResult: null,
+        ...(result.state === 'delivered'
+          ? {}
+          : {
+              error:
+                result.state === 'refused'
+                  ? 'Private notification refused.'
+                  : 'Private notification outcome unknown.',
+            }),
+      });
+      return result;
+    };
+    if (
+      !policy() ||
+      !this.deps.adapterRegistry?.deliverPrivateNotification ||
+      !text ||
+      text.length > 4_000
+    )
+      return trace({ state: 'refused' });
+    if (this.rateLimitConfig.enabled) {
+      const windowStart = new Date(
+        Date.now() - this.rateLimitConfig.windowSecs * 1000
+      ).toISOString();
+      const count = this.deps.sqliteIndex.countSenderInWindow(options.from, windowStart);
+      if (!checkRateLimit(options.from, count, this.rateLimitConfig).allowed)
+        return trace({ state: 'refused' });
+    }
+    // This index stores identifiers/timestamps only. The protected text never
+    // reaches an envelope, Maildir, dead letter, subscription buffer or trace.
+    this.deps.sqliteIndex.insertMessage({
+      id: messageId,
+      subject,
+      endpointHash: '*',
+      status: 'pending',
+      createdAt,
+      expiresAt: envelope.budget.ttl ? new Date(envelope.budget.ttl).toISOString() : null,
+      sender: options.from,
+    });
+    try {
+      const result = await this.deps.adapterRegistry.deliverPrivateNotification(subject, text, {
+        ...options,
+        authorizeDispatch: () => policy() && options.authorizeDispatch(),
+      });
+      return trace(result);
+    } catch {
+      return trace({ state: 'outcome_unknown' });
+    }
   }
 
   /**

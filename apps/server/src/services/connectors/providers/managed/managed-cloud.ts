@@ -5,6 +5,11 @@
  */
 import { randomUUID } from 'node:crypto';
 import type {
+  ConnectorEventCapability,
+  ConnectorEventPageRequest,
+} from '@dorkos/shared/connector-events';
+import type { ManagedConnectorEventDefinitionPage } from '@dorkos/shared/connector-event-schemas';
+import type {
   ConnectorCapabilities,
   ConnectorExternalAccountRef,
   ConnectorProvider,
@@ -80,6 +85,14 @@ export interface ManagedConnectorCloudPort {
   ): Promise<ManagedConnectorExecutionResponse>;
 }
 
+/** Optional hosted notification discovery; mutation authority uses the durable owner outbox. */
+export interface ManagedConnectorEventCloudPort {
+  listManagedConnectorEventDefinitions(
+    request: Omit<ConnectorEventPageRequest, 'signal'>,
+    signal: AbortSignal
+  ): Promise<ManagedConnectorEventDefinitionPage>;
+}
+
 /** Trusted local broker context attached to one server-created provider command. */
 export interface ManagedConnectorProviderExecutionContext {
   hostedRevisionId: string;
@@ -92,7 +105,7 @@ export interface ManagedConnectorProviderExecutionContext {
 /** Construction dependencies for {@link ManagedCloudConnectorProvider}. */
 export interface ManagedCloudConnectorProviderOptions {
   instanceId: ConnectorProviderInstanceId;
-  cloud: ManagedConnectorCloudPort;
+  cloud: ManagedConnectorCloudPort & Partial<ManagedConnectorEventCloudPort>;
   /** Resolve context by command object identity; undefined fails closed. */
   executionContext: (
     command: ConnectorProviderExecuteCommand
@@ -132,6 +145,8 @@ function resultNotRetained(
  */
 export class ManagedCloudConnectorProvider implements ConnectorProvider {
   readonly type = MANAGED_CLOUD_PROVIDER_TYPE;
+  readonly events?: ConnectorEventCapability;
+  private eventsAvailable = false;
   readonly instanceId: ConnectorProviderInstanceId;
   readonly #cloud: ManagedConnectorCloudPort;
   readonly #executionContext: ManagedCloudConnectorProviderOptions['executionContext'];
@@ -140,6 +155,37 @@ export class ManagedCloudConnectorProvider implements ConnectorProvider {
     this.instanceId = options.instanceId;
     this.#cloud = options.cloud;
     this.#executionContext = options.executionContext;
+    if (options.cloud.listManagedConnectorEventDefinitions) {
+      this.events = {
+        listDefinitions: async ({ signal, ...request }) => {
+          try {
+            const page = await options.cloud.listManagedConnectorEventDefinitions!(request, signal);
+            this.eventsAvailable = true;
+            return {
+              status: 'ok',
+              definitions: page.definitions.map(({ hostedDefinitionId, ...metadata }) => ({
+                ...metadata,
+                providerDefinitionRef: hostedDefinitionId,
+              })),
+              ...(page.nextCursor && { nextCursor: page.nextCursor }),
+            };
+          } catch (error) {
+            this.eventsAvailable = false;
+            throw error;
+          }
+        },
+        // Instance-side code never controls private hosted physical triggers.
+        // Consent mutations are exact owner commands in ManagedAuthoritySyncService.
+        reconcileTrigger: async () => ({ status: 'unavailable' }),
+        createTrigger: async () => ({ status: 'denied', code: 'AUTHORITY_CHANGED' }),
+        setTriggerEnabled: async () => ({ status: 'denied', code: 'AUTHORITY_CHANGED' }),
+        deleteTrigger: async () => ({ status: 'denied', code: 'AUTHORITY_CHANGED' }),
+        verifyWebhook: async () => ({
+          status: 'rejected',
+          code: 'HOSTED_SIGNATURE_BOUNDARY_REQUIRED',
+        }),
+      };
+    }
   }
 
   getCapabilities(): ConnectorCapabilities {
@@ -154,10 +200,12 @@ export class ManagedCloudConnectorProvider implements ConnectorProvider {
         accounts: { status: 'available' },
         operations: { status: 'available' },
         execution: { status: 'available' },
-        triggers: {
-          status: 'unsupported',
-          reason: 'Managed connector events are not available yet.',
-        },
+        triggers: this.eventsAvailable
+          ? { status: 'available' }
+          : {
+              status: 'unsupported',
+              reason: 'Notification availability has not been confirmed for this account.',
+            },
       },
       features: {},
     };
@@ -293,13 +341,6 @@ export class ManagedCloudConnectorProvider implements ConnectorProvider {
       'MANAGED_RESULT_UNAVAILABLE',
       'The hosted service has not confirmed a result for this attempt.'
     );
-  }
-
-  listTriggerTypes(_toolkit: string) {
-    return Promise.resolve({
-      status: 'unsupported' as const,
-      reason: 'Managed connector events are not available yet.',
-    });
   }
 
   async listToolkits(): Promise<ConnectorToolkit[]> {

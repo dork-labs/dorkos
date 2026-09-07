@@ -1,5 +1,9 @@
 /** Durable local connector event inbox with atomic leases and payload-free receipts. */
 import { ulid } from 'ulidx';
+import {
+  CONNECTOR_EVENT_BATCH_LIMIT,
+  CONNECTOR_EVENT_METADATA_WINDOW_MS,
+} from '@dorkos/shared/connector-event-schemas';
 import { connectorEventInbox, connectorEventReceipts, type Db } from '@dorkos/db';
 import type { ConnectorProviderInstanceId } from '@dorkos/shared/connector-schemas';
 
@@ -15,6 +19,8 @@ export interface EnqueueConnectorEventInput {
   providerInstanceId: ConnectorProviderInstanceId;
   /** Explicit event subscription. */
   subscriptionId: string;
+  /** Immutable receive-consent generation observed at ingress. */
+  subscriptionVersion?: number;
   /** Provider deduplication identifier. */
   providerEventId: string;
   /** Version of the normalized payload contract. */
@@ -31,6 +37,9 @@ export interface EnqueueConnectorEventInput {
 
 /** One event held by a specific worker lease. */
 export interface LeasedConnectorEvent {
+  /** Exact configured provider and consent generation. */
+  providerInstanceId: ConnectorProviderInstanceId;
+  subscriptionVersion: number;
   /** Durable inbox identifier. */
   id: string;
   /** Explicit event subscription. */
@@ -47,6 +56,8 @@ export interface LeasedConnectorEvent {
   attemptCount: number;
   /** Worker owning the active lease. */
   leaseOwner: string;
+  /** Server boot that issued the lease; separate from stable inbox identity. */
+  leaseBootEpoch: string;
   /** ISO lease deadline. */
   leasedUntil: string;
   /** ISO event expiry. */
@@ -59,17 +70,21 @@ export interface ConnectorEventInboxStoreOptions {
   db: Db;
   /** Durable ID factory. */
   createId?: () => string;
+  /** Fixed process epoch shared with private session acceptance. */
+  bootEpoch?: string;
 }
 
 /** Durable inbox used by later signed ingress and routing workers. */
 export class ConnectorEventInboxStore {
   private readonly db: Db;
   private readonly createId: () => string;
+  readonly bootEpoch: string;
 
   /** Construct the store over the canonical connector tables. */
   constructor(options: ConnectorEventInboxStoreOptions) {
     this.db = options.db;
     this.createId = options.createId ?? ulid;
+    this.bootEpoch = options.bootEpoch ?? ulid();
   }
 
   /** Persist before acknowledgement, deduplicating provider redelivery. */
@@ -90,6 +105,7 @@ export class ConnectorEventInboxStore {
           id,
           providerInstanceId: input.providerInstanceId,
           subscriptionId: input.subscriptionId,
+          subscriptionVersion: input.subscriptionVersion ?? 1,
           providerEventId: input.providerEventId,
           payloadSchemaVersion: input.payloadSchemaVersion,
           normalizedPayload: input.normalizedPayload,
@@ -112,29 +128,61 @@ export class ConnectorEventInboxStore {
 
   /** Atomically claim the next eligible event and exclude concurrent workers. */
   claimNext(workerId: string, now: string, leasedUntil: string): LeasedConnectorEvent | undefined {
+    if (
+      !Number.isFinite(Date.parse(now)) ||
+      !Number.isFinite(Date.parse(leasedUntil)) ||
+      Date.parse(leasedUntil) <= Date.parse(now)
+    )
+      throw new Error('Invalid event lease.');
     return this.db.transaction((tx) => {
       this.expireDue(tx, now);
+      this.quarantineUnobserved(now);
+      const exhausted = this.db.$client
+        .prepare(
+          `SELECT id, subscription_id, provider_event_id FROM connector_event_inbox
+        WHERE attempt_count >= 8 AND (state = 'received' OR (state = 'leased' AND leased_until <= ?))
+        AND NOT EXISTS (SELECT 1 FROM session_message_acceptance_receipts r WHERE r.source_kind = 'connector_event' AND r.source_id = connector_event_inbox.id)
+        ORDER BY received_at, id LIMIT 100`
+        )
+        .all(now) as Array<{ id: string; subscription_id: string; provider_event_id: string }>;
+      for (const terminal of exhausted) {
+        this.db.$client
+          .prepare(
+            "UPDATE connector_event_inbox SET state = 'failed', normalized_payload = '', lease_owner = NULL, leased_until = NULL, failure_code = 'attempts_exhausted' WHERE id = ?"
+          )
+          .run(terminal.id);
+        this.appendReceipt(tx, {
+          inboxId: terminal.id,
+          subscriptionId: terminal.subscription_id,
+          providerEventId: terminal.provider_event_id,
+          state: 'failed',
+          failureCode: 'attempts_exhausted',
+          recordedAt: now,
+        });
+      }
       const row = this.db.$client
         .prepare(
           `UPDATE connector_event_inbox
            SET state = 'leased', attempt_count = attempt_count + 1,
-               lease_owner = ?, leased_until = ?, failure_code = NULL
+               lease_owner = ?, lease_boot_epoch = ?, leased_until = MIN(?, expires_at), failure_code = NULL
            WHERE id = (
              SELECT id FROM connector_event_inbox
-             WHERE expires_at > ? AND (
+             WHERE attempt_count < 8 AND expires_at > ? AND (
                (state = 'received' AND (next_attempt_at IS NULL OR next_attempt_at <= ?)) OR
-               (state IN ('leased', 'dispatched') AND leased_until <= ?)
-             )
+               (state = 'leased' AND leased_until <= ?)
+             ) AND NOT EXISTS (SELECT 1 FROM session_message_acceptance_receipts acceptance WHERE acceptance.source_kind = 'connector_event' AND acceptance.source_id = connector_event_inbox.id)
              ORDER BY received_at, id
              LIMIT 1
            )
-           RETURNING id, subscription_id, provider_event_id, payload_schema_version,
-             normalized_payload, payload_protection, attempt_count, lease_owner,
+           RETURNING id, provider_instance_id, subscription_id, subscription_version, provider_event_id, payload_schema_version,
+             normalized_payload, payload_protection, attempt_count, lease_owner, lease_boot_epoch,
              leased_until, expires_at`
         )
-        .get(workerId, leasedUntil, now, now, now) as
+        .get(workerId, this.bootEpoch, leasedUntil, now, now, now) as
         | {
             id: string;
+            provider_instance_id: ConnectorProviderInstanceId;
+            subscription_version: number;
             subscription_id: string;
             provider_event_id: string;
             payload_schema_version: number;
@@ -142,6 +190,7 @@ export class ConnectorEventInboxStore {
             payload_protection: ConnectorPayloadProtection;
             attempt_count: number;
             lease_owner: string;
+            lease_boot_epoch: string;
             leased_until: string;
             expires_at: string;
           }
@@ -156,6 +205,8 @@ export class ConnectorEventInboxStore {
       });
       return {
         id: row.id,
+        providerInstanceId: row.provider_instance_id,
+        subscriptionVersion: row.subscription_version,
         subscriptionId: row.subscription_id,
         providerEventId: row.provider_event_id,
         payloadSchemaVersion: row.payload_schema_version,
@@ -163,6 +214,7 @@ export class ConnectorEventInboxStore {
         payloadProtection: row.payload_protection,
         attemptCount: row.attempt_count,
         leaseOwner: row.lease_owner,
+        leaseBootEpoch: row.lease_boot_epoch,
         leasedUntil: row.leased_until,
         expiresAt: row.expires_at,
       };
@@ -180,11 +232,12 @@ export class ConnectorEventInboxStore {
       const row = this.db.$client
         .prepare(
           `UPDATE connector_event_inbox
-           SET state = 'completed', completed_at = ?, lease_owner = NULL, leased_until = NULL
-           WHERE id = ? AND state = 'dispatched' AND lease_owner = ? AND leased_until > ?
+           SET state = 'completed', completed_at = ?, lease_owner = NULL, leased_until = NULL,
+               normalized_payload = '', next_attempt_at = NULL
+           WHERE id = ? AND state = 'dispatched' AND lease_owner = ? AND lease_boot_epoch = ? AND leased_until > ?
            RETURNING subscription_id, provider_event_id`
         )
-        .get(now, inboxId, workerId, now) as
+        .get(now, inboxId, workerId, this.bootEpoch, now) as
         { subscription_id: string; provider_event_id: string } | undefined;
       if (!row) return false;
       this.appendReceipt(tx, {
@@ -210,23 +263,40 @@ export class ConnectorEventInboxStore {
     return this.db.transaction((tx) => {
       const current = this.db.$client
         .prepare(
-          `SELECT subscription_id, provider_event_id, expires_at
+          `SELECT subscription_id, provider_event_id, expires_at, state, attempt_count
            FROM connector_event_inbox
-           WHERE id = ? AND state IN ('leased', 'dispatched') AND lease_owner = ?
+           WHERE id = ? AND state IN ('leased', 'dispatched') AND lease_owner = ? AND lease_boot_epoch = ?
              AND leased_until > ?`
         )
-        .get(inboxId, workerId, now) as
-        { subscription_id: string; provider_event_id: string; expires_at: string } | undefined;
+        .get(inboxId, workerId, this.bootEpoch, now) as
+        | {
+            subscription_id: string;
+            provider_event_id: string;
+            expires_at: string;
+            state: string;
+            attempt_count: number;
+          }
+        | undefined;
       if (!current) return false;
-      const retry = nextAttemptAt !== undefined && nextAttemptAt < current.expires_at;
+      if (current.state === 'dispatched') return this.quarantine(inboxId, now, failureCode);
+      const retry =
+        current.attempt_count < 8 &&
+        nextAttemptAt !== undefined &&
+        nextAttemptAt < current.expires_at;
       this.db.$client
         .prepare(
           `UPDATE connector_event_inbox
            SET state = ?, next_attempt_at = ?, lease_owner = NULL, leased_until = NULL,
-               failure_code = ?
+               failure_code = ?, normalized_payload = CASE WHEN ? THEN normalized_payload ELSE '' END
            WHERE id = ?`
         )
-        .run(retry ? 'received' : 'failed', retry ? nextAttemptAt : null, failureCode, inboxId);
+        .run(
+          retry ? 'received' : 'failed',
+          retry ? nextAttemptAt : null,
+          failureCode,
+          retry ? 1 : 0,
+          inboxId
+        );
       this.appendReceipt(tx, {
         inboxId,
         subscriptionId: current.subscription_id,
@@ -237,6 +307,42 @@ export class ConnectorEventInboxStore {
       });
       return true;
     });
+  }
+
+  /** Quarantine an uncertain external effect without making its source retryable. */
+  quarantine(inboxId: string, now: string, failureCode = 'dispatch_outcome_unknown'): boolean {
+    return this.db.transaction((tx) => {
+      const row = this.db.$client
+        .prepare(
+          `UPDATE connector_event_inbox SET state = 'failed', failure_code = ?,
+        lease_owner = NULL, leased_until = NULL, next_attempt_at = NULL
+        WHERE id = ? AND state = 'dispatched' RETURNING subscription_id, provider_event_id`
+        )
+        .get(failureCode, inboxId) as
+        { subscription_id: string; provider_event_id: string } | undefined;
+      if (!row) return false;
+      this.appendReceipt(tx, {
+        inboxId,
+        subscriptionId: row.subscription_id,
+        providerEventId: row.provider_event_id,
+        state: 'outcome_unknown',
+        recordedAt: now,
+        failureCode,
+      });
+      return true;
+    });
+  }
+
+  private quarantineUnobserved(now: string): void {
+    const rows = this.db.$client
+      .prepare(
+        `SELECT id FROM connector_event_inbox WHERE state = 'dispatched'
+      AND (leased_until <= ? OR lease_boot_epoch <> ?) AND NOT EXISTS
+      (SELECT 1 FROM session_message_acceptance_receipts a WHERE a.source_kind = 'connector_event' AND a.source_id = connector_event_inbox.id)
+      ORDER BY received_at, id LIMIT ?`
+      )
+      .all(now, this.bootEpoch, CONNECTOR_EVENT_BATCH_LIMIT) as Array<{ id: string }>;
+    for (const row of rows) this.quarantine(row.id, now);
   }
 
   private transitionOwned(
@@ -250,10 +356,10 @@ export class ConnectorEventInboxStore {
         .prepare(
           `UPDATE connector_event_inbox
            SET state = ?, dispatched_at = ?
-           WHERE id = ? AND state = 'leased' AND lease_owner = ? AND leased_until > ?
+           WHERE id = ? AND state = 'leased' AND lease_owner = ? AND lease_boot_epoch = ? AND leased_until > ? AND expires_at > ?
            RETURNING subscription_id, provider_event_id`
         )
-        .get(state, now, inboxId, workerId, now) as
+        .get(state, now, inboxId, workerId, this.bootEpoch, now, now) as
         { subscription_id: string; provider_event_id: string } | undefined;
       if (!row) return false;
       this.appendReceipt(tx, {
@@ -267,25 +373,60 @@ export class ConnectorEventInboxStore {
     });
   }
 
-  private expireDue(db: ReceiptWriter, now: string): void {
+  /** Erase expired content in every state without rewriting completed/failed delivery truth. */
+  sweepRetention(now: string): { cleared: number; expired: number } {
+    return this.db.transaction((tx) => this.expireDue(tx, now));
+  }
+
+  /** Delete only expired payload-free inbox/receipt metadata after the bounded dedupe window. */
+  sweepMetadata(now: string): number {
+    const deadline = new Date(Date.parse(now) - CONNECTOR_EVENT_METADATA_WINDOW_MS).toISOString();
+    return this.db.$client
+      .prepare(
+        `DELETE FROM connector_event_inbox WHERE id IN
+      (SELECT id FROM connector_event_inbox WHERE received_at <= ? AND expires_at <= ? AND normalized_payload = ''
+       AND state IN ('completed', 'failed', 'expired') ORDER BY received_at, id LIMIT ?)`
+      )
+      .run(deadline, now, CONNECTOR_EVENT_BATCH_LIMIT).changes;
+  }
+
+  private expireDue(db: ReceiptWriter, now: string): { cleared: number; expired: number } {
     const rows = this.db.$client
       .prepare(
-        `UPDATE connector_event_inbox
-         SET state = 'expired', normalized_payload = '', lease_owner = NULL, leased_until = NULL,
-             next_attempt_at = NULL
-         WHERE expires_at <= ? AND state NOT IN ('completed', 'failed', 'expired')
-         RETURNING id, subscription_id, provider_event_id`
+        `SELECT id, subscription_id, provider_event_id, state, normalized_payload
+       FROM connector_event_inbox WHERE expires_at <= ?
+       AND (normalized_payload <> '' OR state NOT IN ('completed', 'failed', 'expired'))
+       ORDER BY expires_at, id LIMIT ?`
       )
-      .all(now) as Array<{ id: string; subscription_id: string; provider_event_id: string }>;
+      .all(now, CONNECTOR_EVENT_BATCH_LIMIT) as Array<{
+      id: string;
+      subscription_id: string;
+      provider_event_id: string;
+      state: string;
+      normalized_payload: string;
+    }>;
+    let cleared = 0;
+    let expired = 0;
+    const update = this.db.$client.prepare(
+      `UPDATE connector_event_inbox SET normalized_payload = '', state = ?,
+       lease_owner = NULL, leased_until = NULL, next_attempt_at = NULL WHERE id = ?`
+    );
     for (const row of rows) {
-      this.appendReceipt(db, {
-        inboxId: row.id,
-        subscriptionId: row.subscription_id,
-        providerEventId: row.provider_event_id,
-        state: 'expired',
-        recordedAt: now,
-      });
+      if (row.normalized_payload !== '') cleared++;
+      const terminal = ['completed', 'failed', 'expired'].includes(row.state);
+      update.run(terminal ? row.state : 'expired', row.id);
+      if (!terminal) {
+        expired++;
+        this.appendReceipt(db, {
+          inboxId: row.id,
+          subscriptionId: row.subscription_id,
+          providerEventId: row.provider_event_id,
+          state: 'expired',
+          recordedAt: now,
+        });
+      }
     }
+    return { cleared, expired };
   }
 
   private appendReceipt(

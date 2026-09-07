@@ -33,6 +33,7 @@ import {
   Skeleton,
 } from '@/layers/shared/ui';
 import { connectionStatusLabel } from '../lib/presentation';
+import { ConnectionNotifications } from './ConnectionNotifications';
 
 function displayToolkit(toolkit: string): string {
   return toolkit
@@ -239,22 +240,7 @@ export function ConnectionDetailSheet({
                   )}
                 </section>
 
-                <section aria-labelledby="connection-events" className="space-y-2">
-                  <h3 id="connection-events" className="text-sm font-semibold">
-                    Events
-                  </h3>
-                  {detail.data.subscriptions.capability.status === 'available' ? (
-                    <p className="text-muted-foreground text-sm">
-                      {detail.data.subscriptions.activeCount} of{' '}
-                      {detail.data.subscriptions.totalCount} subscriptions active.
-                    </p>
-                  ) : (
-                    <p className="text-muted-foreground text-sm">
-                      Event subscriptions are unavailable:{' '}
-                      {detail.data.subscriptions.capability.reason}
-                    </p>
-                  )}
-                </section>
+                {connectionId && <ConnectionNotifications connectionId={connectionId} />}
 
                 <section aria-labelledby="connection-usage" className="space-y-2">
                   <h3 id="connection-usage" className="text-sm font-semibold">

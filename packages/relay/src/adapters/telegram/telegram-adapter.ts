@@ -8,6 +8,8 @@
  * @module relay/adapters/telegram-adapter
  */
 import { Bot } from 'grammy';
+import { sendPrivateTelegramNotification } from './private-notification.js';
+import type { PrivateNotificationResult } from '../../types.js';
 import type { Context, Filter } from 'grammy';
 import { autoRetry } from '@grammyjs/auto-retry';
 import type { Server } from 'node:http';
@@ -480,6 +482,24 @@ export class TelegramAdapter extends BaseRelayAdapter {
         this.reconnectAttempts = 0;
       }
     }
+  }
+
+  /** Send one private notification using current native credentials without the normal retry stack. */
+  async deliverPrivateNotification(
+    subject: string,
+    text: string,
+    authorizeDispatch: () => boolean
+  ): Promise<PrivateNotificationResult> {
+    const bot = this.bot;
+    const chatId = this.codec.decode(subject)?.platformId;
+    if (!bot || !chatId || this.getStatus().state !== 'connected') return { state: 'refused' };
+    return sendPrivateTelegramNotification({
+      token: this.config.token,
+      chatId,
+      text,
+      authorizeDispatch: () =>
+        this.bot === bot && this.getStatus().state === 'connected' && authorizeDispatch(),
+    });
   }
 
   /** Deliver a Relay message to Telegram. Delegates to outbound module. */

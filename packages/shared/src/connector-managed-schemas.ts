@@ -8,6 +8,7 @@
  * @module shared/connector-managed-schemas
  */
 import { z } from 'zod';
+import { ConnectorEventDestinationSchema } from './connector-event-schemas.js';
 import {
   CONNECTOR_OPERATION_SELECTION_LIMIT,
   ConnectorJsonObjectSchema,
@@ -17,7 +18,7 @@ import {
 /** Exact permissions minted onto a newly linked instance key for managed connectors. */
 export const MANAGED_CONNECTOR_INSTANCE_KEY_PERMISSIONS = {
   instance: ['link'],
-  connectors: ['authority', 'execute', 'usage'],
+  connectors: ['authority', 'execute', 'usage', 'events'],
 } as const;
 
 /** Exact permissions required for managed catalog, account, authentication, and authority calls. */
@@ -36,6 +37,12 @@ export const MANAGED_CONNECTOR_EXECUTION_PERMISSIONS = {
 export const MANAGED_CONNECTOR_USAGE_PERMISSIONS = {
   instance: ['link'],
   connectors: ['usage'],
+} as const;
+
+/** Exact permission required to pull protected events and acknowledge local acceptance. */
+export const MANAGED_CONNECTOR_EVENTS_PERMISSIONS = {
+  instance: ['link'],
+  connectors: ['events'],
 } as const;
 
 /** Immutable provider-neutral operation selector shared by local and hosted stores. */
@@ -71,6 +78,16 @@ export const ManagedConnectorAuthorityCommandSchema = z.discriminatedUnion('kind
       .max(CONNECTOR_OPERATION_SELECTION_LIMIT),
   }).strict(),
   ManagedAuthorityCommandBaseSchema.extend({
+    kind: z.literal('set_event_subscription'),
+    subscriptionId: z.string().min(1).max(256),
+    subscriptionVersion: z.number().int().positive(),
+    hostedDefinitionId: z.string().uuid(),
+    agentId: z.string().min(1).max(256),
+    destination: ConnectorEventDestinationSchema,
+    filter: ConnectorJsonObjectSchema,
+    enabled: z.boolean(),
+  }).strict(),
+  ManagedAuthorityCommandBaseSchema.extend({
     kind: z.literal('set_connection_lifecycle'),
     lifecycle: z.enum(['active', 'paused', 'disconnected']),
   }).strict(),
@@ -95,6 +112,7 @@ export const ManagedConnectorAuthorityCommandStatusSchema = z.discriminatedUnion
   ManagedAuthorityStatusBaseSchema.extend({
     state: z.literal('applied'),
     appliedRevisionSetHash: z.string().min(1).optional(),
+    appliedEventScopeHash: z.string().min(1).optional(),
     externalCleanup: z
       .enum(['not_required', 'pending', 'complete', 'failed'])
       .default('not_required'),
@@ -104,6 +122,8 @@ export const ManagedConnectorAuthorityCommandStatusSchema = z.discriminatedUnion
     rejectionCode: z.enum([
       'connection_unavailable',
       'revision_unavailable',
+      'event_definition_unavailable',
+      'invalid_event_filter',
       'permission_upgrade_required',
       'scope_conflict',
     ]),

@@ -21,6 +21,7 @@ import { apiCall } from '../lib/api-client.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 import { readJsonSource, rejectExtraPositionals, requireNonblank } from './connections-args.js';
+import { runConnectionSubscriptions } from './connections-subscriptions.js';
 import {
   DEFAULT_CONNECTIONS_COMMAND_DEPS,
   connectorReviewErrorExitCode,
@@ -32,7 +33,7 @@ import {
 /** Help text for `dorkos connections`. */
 export const CONNECTIONS_HELP = `Usage: dorkos connections <subcommand> [options]
 
-Use connector accounts already granted to one of your agents. Every program
+Use connected accounts already granted to one of your agents. Every program
 command requires --agent; leaving it out never widens access.
 
 Subcommands:
@@ -44,8 +45,10 @@ Subcommands:
       Run one exact granted operation; output is always JSON
   usage --agent <id> [--cursor <cursor>] [--limit <n>] [--json]
       Show attempts attributed to the agent
+  subscriptions --agent <id> [--cursor <cursor>] [--limit <n>] [--json]
+      Show notifications the agent is allowed to receive
   request --action <json> --idempotency-key <key> [--print | --json]
-      Ask the owner to review a connector management action
+      Ask the owner to review a connection change
   status <review-request-id> [--json]
       Read the requester-safe state of a management review
 
@@ -73,6 +76,7 @@ Examples:
   dorkos connections schema connection-01 --agent agent-01
   dorkos connections call connection-01 revision-01 --agent agent-01 --input '{"query":"hello"}'
   dorkos connections usage --agent agent-01 --limit 20
+  dorkos connections subscriptions --agent agent-01 --json
   dorkos connections request --action '{"version":1,"kind":"pause","connectionId":"connection-01"}' --idempotency-key pause-connection-01
   dorkos connections status review-01 --json`;
 
@@ -189,9 +193,11 @@ function parseCallArgs(rawArgs: string[]): CallArgs {
   };
 }
 
-function parseUsageArgs(rawArgs: string[]): UsageArgs {
-  const usage =
-    'Usage: dorkos connections usage --agent <id> [--cursor <cursor>] [--limit <n>] [--json]';
+function parseUsageArgs(
+  rawArgs: string[],
+  command: 'usage' | 'subscriptions' = 'usage'
+): UsageArgs {
+  const usage = `Usage: dorkos connections ${command} --agent <id> [--cursor <cursor>] [--limit <n>] [--json]`;
   let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs({
@@ -206,7 +212,7 @@ function parseUsageArgs(rawArgs: string[]): UsageArgs {
       strict: true,
     });
   } catch (error) {
-    rethrowUnknownOption(error, 'connections usage', usage);
+    rethrowUnknownOption(error, `connections ${command}`, usage);
   }
   const agentId = requireNonblank(parsed.values.agent, '--agent', usage);
   const cursor =
@@ -425,6 +431,8 @@ export async function runConnectionsDispatcher(
     if (subcommand === 'schema') return await runSchema(parseSchemaArgs(args));
     if (subcommand === 'call') return await runCall(parseCallArgs(args));
     if (subcommand === 'usage') return await runUsage(parseUsageArgs(args));
+    if (subcommand === 'subscriptions')
+      return await runConnectionSubscriptions(parseUsageArgs(args, 'subscriptions'));
     if (subcommand === 'request') return await runReviewRequestCommand(args, deps);
     if (subcommand === 'status') return await runReviewStatusCommand(args);
   } catch (error) {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CONNECTOR_EVENT_REVIEW_SCOPE_LIMIT,
+  ConnectorAgentConnectionRequestInputSchema,
   ConnectorExecutionResponseSchema,
   ConnectorManagementReviewActionSchema,
   ConnectorManagementReviewDecisionResultSchema,
@@ -13,6 +15,7 @@ import {
   decodeConnectorReviewAction,
   encodeConnectorReviewAction,
 } from '../connector-schemas.js';
+import { ConnectorAgentRequestDecisionSchema } from '../connector-agent-request-schemas.js';
 
 describe('connector reconciliation apply contracts', () => {
   const base = {
@@ -400,5 +403,56 @@ describe('ConnectorReviewActionSchema', () => {
     },
   ])('rejects unknown kinds, versions, and fields: $kind v$version', (candidate) => {
     expect(ConnectorReviewActionSchema.safeParse(candidate).success).toBe(false);
+  });
+});
+
+describe('agent event review bounds', () => {
+  const eventNames = Array.from(
+    { length: CONNECTOR_EVENT_REVIEW_SCOPE_LIMIT },
+    (_, index) => `gmail.event_${index}`
+  );
+  const eventScopes = eventNames.map((_, index) => ({
+    connectionId: 'connection-1',
+    definitionId: `definition-${index}`,
+    filter: {},
+    agentId: 'agent-1',
+    destination: { kind: 'agent' as const, id: 'agent-1' },
+  }));
+
+  it('advertises the same 32-event ceiling for agent requests and owner decisions', () => {
+    const request = {
+      version: 1,
+      serviceSlug: 'gmail',
+      reason: 'Watch the selected events.',
+      requestedOperations: ['gmail.read'],
+      requestedEvents: eventNames,
+    };
+    const decision = {
+      decision: 'approved' as const,
+      connectionId: 'connection-1',
+      operationRevisionIds: ['revision-read'],
+      eventScopes,
+    };
+
+    expect(ConnectorAgentConnectionRequestInputSchema.safeParse(request).success).toBe(true);
+    expect(ConnectorAgentRequestDecisionSchema.safeParse(decision).success).toBe(true);
+    expect(
+      ConnectorAgentConnectionRequestInputSchema.safeParse({
+        ...request,
+        requestedEvents: [...eventNames, 'gmail.event_32'],
+      }).success
+    ).toBe(false);
+    expect(
+      ConnectorAgentRequestDecisionSchema.safeParse({
+        ...decision,
+        eventScopes: [
+          ...eventScopes,
+          {
+            ...eventScopes[0],
+            definitionId: 'definition-32',
+          },
+        ],
+      }).success
+    ).toBe(false);
   });
 });

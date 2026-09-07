@@ -7,8 +7,10 @@ import type {
 } from '@dorkos/shared/connector-resource-schemas';
 import {
   useConnectorAuthentication,
+  useConnectorAgentRequestAuthentication,
   useConnectorCatalog,
   useStartConnectorAuthentication,
+  useStartConnectorAgentRequestAuthentication,
 } from '@/layers/entities/connectors';
 import {
   Button,
@@ -30,6 +32,8 @@ interface ConnectDialogProps {
   service: ConnectorCatalogService | null;
   /** Opaque durable flow id stored in the current URL. */
   flowId: string | null;
+  /** Exact agent request this authentication flow must remain associated with. */
+  agentRequestId?: string | null;
   /** Writes or clears the URL-backed flow identity. */
   onFlowIdChange: (flowId: string | null) => void;
   /** Clears the transient service selection after the dialog closes. */
@@ -63,6 +67,7 @@ function titleCase(value: string): string {
 export function ConnectDialog({
   service,
   flowId,
+  agentRequestId = null,
   onFlowIdChange,
   onClose,
   onChooseAccess,
@@ -71,8 +76,12 @@ export function ConnectDialog({
   const [label, setLabel] = useState('');
   const [routeOverride, setRouteOverride] = useState<string | null>(null);
   const [showProviders, setShowProviders] = useState(false);
-  const start = useStartConnectorAuthentication();
-  const flow = useConnectorAuthentication(flowId);
+  const standaloneStart = useStartConnectorAuthentication();
+  const requestStart = useStartConnectorAgentRequestAuthentication(agentRequestId);
+  const standaloneFlow = useConnectorAuthentication(agentRequestId ? null : flowId);
+  const requestFlow = useConnectorAgentRequestAuthentication(agentRequestId, flowId);
+  const start = agentRequestId ? requestStart : standaloneStart;
+  const flow = agentRequestId ? requestFlow : standaloneFlow;
   const lookup = useConnectorCatalog(flow.data?.toolkit ?? service?.serviceSlug ?? '');
   const lookedUpService = lookup.data?.pages
     .flatMap((page) => page.services)
@@ -108,15 +117,22 @@ export function ConnectDialog({
 
   const begin = () => {
     if (!resolvedService || !route) return;
-    start.mutate(
-      {
-        providerInstanceId: route.providerInstanceId,
-        toolkit: resolvedService.serviceSlug,
-        ...(label.trim() && { label: label.trim() }),
-        idempotencyKey: crypto.randomUUID(),
-      },
-      { onSuccess: (result) => onFlowIdChange(result.flowId) }
-    );
+    const common = {
+      providerInstanceId: route.providerInstanceId,
+      ...(label.trim() && { label: label.trim() }),
+    };
+    if (agentRequestId) {
+      requestStart.mutate(common, { onSuccess: (result) => onFlowIdChange(result.flowId) });
+    } else {
+      standaloneStart.mutate(
+        {
+          ...common,
+          toolkit: resolvedService.serviceSlug,
+          idempotencyKey: crypto.randomUUID(),
+        },
+        { onSuccess: (result) => onFlowIdChange(result.flowId) }
+      );
+    }
   };
 
   const terminal =
@@ -312,7 +328,9 @@ export function ConnectDialog({
                   <div>
                     <p className="text-sm font-medium">{serviceName} is connected</p>
                     <p className="text-muted-foreground mt-1 text-xs">
-                      No agent can use it until you choose access.
+                      {agentRequestId
+                        ? 'Return to the request to choose its exact actions.'
+                        : 'No agent can use it until you choose access.'}
                     </p>
                   </div>
                 </div>
@@ -324,7 +342,7 @@ export function ConnectDialog({
                     close();
                   }}
                 >
-                  Choose agents
+                  {agentRequestId ? 'Review requested access' : 'Choose agents'}
                   <ArrowUpRight className="size-4" aria-hidden />
                 </Button>
               </div>
@@ -343,9 +361,10 @@ export function ConnectDialog({
                   onClick={() => {
                     onFlowIdChange(null);
                     start.reset();
+                    if (agentRequestId) close();
                   }}
                 >
-                  Start again
+                  {agentRequestId ? 'Return to request' : 'Start again'}
                 </Button>
               </div>
             )}

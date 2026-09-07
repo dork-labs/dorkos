@@ -47,6 +47,39 @@ afterEach(async () => {
 });
 
 describe('connections real HTTP seam', () => {
+  it('reads one explicit agent using only a program key and never owner cookies or agent identity', async () => {
+    const captured: CapturedRequest[] = [];
+    const port = await listen((request, response) => {
+      captured.push({
+        method: request.method,
+        url: request.url,
+        headers: request.headers,
+        body: undefined,
+      });
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({ agentId: 'agent/a', subscriptions: [] }));
+    });
+    vi.stubEnv('DORKOS_PORT', String(port));
+    vi.stubEnv('DORKOS_API_KEY', 'program-key');
+    expect(
+      await runConnectionsDispatcher([
+        'subscriptions',
+        '--agent',
+        'agent/a',
+        '--limit',
+        '3',
+        '--json',
+      ])
+    ).toBe(0);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toMatchObject({
+      method: 'GET',
+      url: '/api/connectors/accessible/subscriptions?agentId=agent%2Fa&limit=3',
+      headers: { authorization: 'Bearer program-key' },
+    });
+    expect(captured[0].headers.cookie).toBeUndefined();
+    expect(captured[0].headers['x-dorkos-agent']).toBeUndefined();
+  });
   it('distinguishes requester-safe review lifecycle outcomes over real HTTP', async () => {
     const captured: CapturedRequest[] = [];
     const port = await listen((request, response) => {

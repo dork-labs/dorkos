@@ -6,10 +6,15 @@ import {
   account,
   apikey,
   auditLog,
+  connectorTenant,
   deviceCode,
   feedbackSubmission,
   instance,
   instanceHeartbeats,
+  managedConnectorEventBinding,
+  managedConnectorEventDefinition,
+  managedConnectorEventInbox,
+  managedConnectorEventSubscription,
   marketplaceInstallEvents,
   session,
   user,
@@ -386,6 +391,21 @@ describe('telemetry ↔ account isolation (privacy contract)', () => {
       for (const fk of userFks) {
         expect(fk.onDelete).toBe('cascade');
       }
+    }
+  });
+
+  it('cascades each managed event table directly with its owning tenant', () => {
+    for (const table of [
+      managedConnectorEventDefinition,
+      managedConnectorEventBinding,
+      managedConnectorEventSubscription,
+      managedConnectorEventInbox,
+    ]) {
+      const tenantFks = getTableConfig(table).foreignKeys.filter(
+        (fk) => getTableName(fk.reference().foreignTable) === getTableName(connectorTenant)
+      );
+      expect(tenantFks).toHaveLength(1);
+      expect(tenantFks[0].onDelete).toBe('cascade');
     }
   });
 });

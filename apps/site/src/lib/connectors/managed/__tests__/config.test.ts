@@ -23,8 +23,37 @@ describe('managed connector configuration', () => {
     });
     expect(managedCapabilityAvailability(config, 'events')).toEqual({
       status: 'unavailable',
-      reason: 'Managed account events are not configured yet.',
+      reason: 'Managed account events are awaiting production verification.',
     });
+  });
+
+  it('requires a separately attested event smoke and independent content keys without disabling actions', () => {
+    const source = {
+      DORKOS_MANAGED_CONNECTORS_ENABLED: '1',
+      DORKOS_MANAGED_CONNECTORS_LIVE_READY: '1',
+      DORKOS_MANAGED_COMPOSIO_PROJECT_KEY: 'project-key',
+      DORKOS_MANAGED_CONNECTOR_WEBHOOK_SECRET: 'separate-webhook-signing-secret',
+      DORKOS_MANAGED_CONNECTOR_EVENT_PAYLOAD_KEYS: JSON.stringify({
+        activeKeyId: 'key1',
+        keys: { key1: Buffer.alloc(32, 3).toString('base64') },
+      }),
+    };
+    expect(managedCapabilityAvailability(readManagedConnectorConfig(source), 'events').status).toBe(
+      'unavailable'
+    );
+    expect(
+      managedCapabilityAvailability(
+        readManagedConnectorConfig({ ...source, DORKOS_MANAGED_CONNECTOR_EVENTS_LIVE_READY: '1' }),
+        'events'
+      ).status
+    ).toBe('available');
+    const broken = readManagedConnectorConfig({
+      ...source,
+      DORKOS_MANAGED_CONNECTOR_EVENTS_LIVE_READY: '1',
+      DORKOS_MANAGED_CONNECTOR_EVENT_PAYLOAD_KEYS: '{invalid',
+    });
+    expect(managedCapabilityAvailability(broken, 'events').status).toBe('unavailable');
+    expect(managedCapabilityAvailability(broken, 'execution').status).toBe('available');
   });
 
   it('does not parse a malformed auth-config map optimistically', () => {

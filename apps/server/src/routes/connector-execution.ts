@@ -27,6 +27,10 @@ import {
   type ConnectorOwnerBoundaryDeps,
 } from './connector-management.js';
 import type { ConnectorRegistry } from '../services/connectors/registry.js';
+import {
+  ConnectorEventAccessError,
+  type ConnectorEventAccessQueryService,
+} from '../services/connectors/events/access-query-service.js';
 
 const AgentQuerySchema = z.object({ agentId: z.string().min(1) }).strict();
 const AgentUsageQuerySchema = z
@@ -59,6 +63,8 @@ export interface ConnectorExecutionRouterDeps extends ConnectorOwnerBoundaryDeps
   >;
   /** API-key principal minting and credential liveness. */
   readonly programPrincipals: Pick<ConnectorProgramPrincipalService, 'mint'>;
+  /** Program-only independent receive-grant visibility. */
+  readonly eventAccess: Pick<ConnectorEventAccessQueryService, 'listSubscriptions'>;
   /** Request verifier used when login-off middleware did not populate a user. */
   readonly verifyUser?: (req: Pick<Request, 'headers'>) => Promise<RequestUser | null>;
 }
@@ -115,6 +121,14 @@ function approvalToken(req: Request): string | undefined {
 }
 
 function sendProgramError(res: Response, error: unknown): void {
+  if (error instanceof ConnectorEventAccessError) {
+    res
+      .status(
+        error.code === 'credential_unavailable' ? 401 : error.code === 'invalid_cursor' ? 400 : 404
+      )
+      .json({ error: error.message, code: error.code });
+    return;
+  }
   if (error instanceof CapabilityGateRefusal) {
     res
       .status(error.decision.outcome === 'approval_required' ? 202 : 403)
@@ -218,6 +232,16 @@ export function createConnectorExecutionRouter(deps: ConnectorExecutionRouterDep
           req.params.connectionId
         )
       );
+    } catch (error) {
+      sendProgramError(res, error);
+    }
+  });
+
+  router.get('/accessible/subscriptions', async (req, res) => {
+    const principal = await resolveProgramPrincipal(req, res, deps);
+    if (!principal) return;
+    try {
+      res.json(await deps.eventAccess.listSubscriptions(principal, req.query));
     } catch (error) {
       sendProgramError(res, error);
     }

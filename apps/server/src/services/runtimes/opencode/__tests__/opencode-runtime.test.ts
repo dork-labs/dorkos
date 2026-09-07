@@ -285,6 +285,25 @@ describe('OpenCodeRuntime', () => {
   });
 
   describe('sendMessage', () => {
+    it('creates the sidecar session on a cold first send without eager initialization', async () => {
+      const harness = makeRuntime();
+      const sessionId = nextSessionId();
+
+      const { finished } = consume(
+        harness.runtime.sendMessage(sessionId, 'hello', { cwd: DIRECTORY })
+      );
+      const connection = await openTurn(harness);
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'Hello there')) {
+        connection.push(globalEvent(DIRECTORY, event));
+      }
+      await finished;
+
+      expect(harness.client.session.create).toHaveBeenCalledTimes(1);
+      expect(harness.client.session.promptAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ path: { id: OC_SESSION_A } })
+      );
+    });
+
     it('triggers promptAsync and streams demuxed mapped events including raw-wire text deltas', async () => {
       const harness = makeRuntime();
       const { runtime, client } = harness;

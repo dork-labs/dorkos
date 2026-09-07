@@ -28,6 +28,13 @@ describe('connector management routes', () => {
     preview: vi.fn(),
     apply: vi.fn(),
   };
+  const agentRequests = {
+    listForOwner: vi.fn(),
+    getForOwner: vi.fn(),
+    resolve: vi.fn(),
+    startAuthentication: vi.fn(),
+    pollAuthentication: vi.fn(),
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -43,6 +50,26 @@ describe('connector management routes', () => {
     reviews.resolve.mockResolvedValue({ review: { reviewRequestId: 'review-a' } });
     reconciliation.preview.mockResolvedValue({ previewId: 'preview-a' });
     reconciliation.apply.mockResolvedValue({ connectionId: 'connection-a' });
+    agentRequests.listForOwner.mockReturnValue([]);
+    agentRequests.getForOwner.mockReturnValue({ requestId: 'request-a' });
+    agentRequests.resolve.mockResolvedValue({ requestId: 'request-a', status: 'denied' });
+    agentRequests.startAuthentication.mockResolvedValue({
+      flowId: 'flow-a',
+      providerInstanceId: 'provider-a',
+      toolkit: 'gmail',
+      state: 'starting',
+      createdAt: '2026-09-07T12:00:00.000Z',
+      expiresAt: '2026-09-07T12:15:00.000Z',
+    });
+    agentRequests.pollAuthentication.mockResolvedValue({
+      flowId: 'flow-a',
+      providerInstanceId: 'provider-a',
+      toolkit: 'gmail',
+      state: 'failed',
+      reason: 'Sign-in was not completed.',
+      createdAt: '2026-09-07T12:00:00.000Z',
+      expiresAt: '2026-09-07T12:15:00.000Z',
+    });
   });
 
   function buildApp(
@@ -71,6 +98,7 @@ describe('connector management routes', () => {
         },
         reviews,
         reconciliation,
+        agentRequests,
         resolveOwner: () => (options.ownerUnavailable ? undefined : OWNER),
         loginEnabled: () => options.loginEnabled ?? false,
         trustedOrigins: () => ['http://localhost:4242'],
@@ -79,6 +107,60 @@ describe('connector management routes', () => {
     );
     return app;
   }
+
+  it('keeps agent service requests behind the owner boundary and forwards exact decisions', async () => {
+    const app = fixtureTarget.mount(buildApp());
+    await request(app)
+      .get('/api/connectors/agent-requests?state=pending')
+      .expect(200, { requests: [] });
+    expect(agentRequests.listForOwner).toHaveBeenCalledWith(OWNER, 'pending');
+
+    await request(app)
+      .post('/api/connectors/agent-requests/request%2Fa/decision')
+      .send({ decision: 'denied' })
+      .expect(200, { requestId: 'request-a', status: 'denied' });
+    expect(agentRequests.resolve).toHaveBeenCalledWith(
+      OWNER,
+      'request/a',
+      { decision: 'denied' },
+      expect.any(AbortSignal)
+    );
+
+    await request(app)
+      .get('/api/connectors/agent-requests')
+      .set('Authorization', 'Bearer machine')
+      .expect(403);
+    expect(agentRequests.listForOwner).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps request authentication behind the owner and exact request boundary', async () => {
+    const app = fixtureTarget.mount(buildApp());
+    await request(app)
+      .post('/api/connectors/agent-requests/request%2Fa/authentication-flows')
+      .send({ providerInstanceId: 'provider-a', label: 'Work mail' })
+      .expect(201);
+    expect(agentRequests.startAuthentication).toHaveBeenCalledWith(OWNER, 'request/a', {
+      providerInstanceId: 'provider-a',
+      label: 'Work mail',
+    });
+
+    await request(app)
+      .get('/api/connectors/agent-requests/request%2Fa/authentication-flows/flow%2Fa')
+      .expect(200);
+    expect(agentRequests.pollAuthentication).toHaveBeenCalledWith(OWNER, 'request/a', 'flow/a');
+
+    await request(app)
+      .post('/api/connectors/agent-requests/request-a/authentication-flows')
+      .send({ providerInstanceId: 'provider-a', toolkit: 'other-service' })
+      .expect(400);
+    expect(agentRequests.startAuthentication).toHaveBeenCalledTimes(1);
+
+    await request(app)
+      .get('/api/connectors/agent-requests/request-a/authentication-flows/flow-a')
+      .set('Authorization', 'Bearer machine')
+      .expect(403);
+    expect(agentRequests.pollAuthentication).toHaveBeenCalledTimes(1);
+  });
 
   it('classifies a verified API key as a program and binds the stable credential id', async () => {
     const response = await request(
@@ -413,6 +495,7 @@ describe('connector management routes', () => {
           registry: { migrationHealth: () => ({ status: 'ready', migrated: false }) },
           reviews,
           reconciliation,
+          agentRequests,
           resolveOwner: (user) => (user ? { kind: 'user', userId: user.userId } : undefined),
           loginEnabled: () => false,
           trustedOrigins: () => ['http://localhost:4242'],

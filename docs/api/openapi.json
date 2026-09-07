@@ -10113,6 +10113,1047 @@
     "parameters": {}
   },
   "paths": {
+    "/api/connectors/accessible/subscriptions": {
+      "get": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "List notifications one agent is allowed to receive",
+        "description": "Requires a verified API key and an explicit owned agent. Read-only; operation grants do not imply receive access. No event content or private service references are returned.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current agent-scoped receive grants.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agentId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "subscriptions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "connectionId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "definitionId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "eventType": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "displayName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                          },
+                          "deliveryMode": {
+                            "type": "string",
+                            "enum": [
+                              "webhook",
+                              "polling",
+                              "unknown"
+                            ]
+                          },
+                          "expectedCadenceSeconds": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "exclusiveMinimum": 0
+                          },
+                          "agentId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "destination": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "agent",
+                                  "room",
+                                  "channel"
+                                ]
+                              },
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "id"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "filter": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "scopeVersion": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "unavailable"
+                            ]
+                          },
+                          "toolkit": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "label": {
+                            "type": "string",
+                            "maxLength": 512
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "connectionId",
+                          "definitionId",
+                          "eventType",
+                          "displayName",
+                          "deliveryMode",
+                          "expectedCadenceSeconds",
+                          "agentId",
+                          "destination",
+                          "filter",
+                          "scopeVersion",
+                          "state",
+                          "toolkit",
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 100
+                    },
+                    "nextCursor": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1024
+                    }
+                  },
+                  "required": [
+                    "agentId",
+                    "subscriptions"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An agent or cursor is invalid."
+          },
+          "401": {
+            "description": "The API key is missing or no longer active."
+          },
+          "403": {
+            "description": "Agent runtime credentials cannot act as a program API key."
+          },
+          "404": {
+            "description": "The agent is not owned by this API key user."
+          }
+        }
+      }
+    },
+    "/api/connectors/connections/{connectionId}/events/definitions": {
+      "get": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "List notification types for an owned connection",
+        "description": "Owner-only. Setup mode and configured state do not imply that event delivery is ready.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current owner-scoped notification metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "definitions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "eventType": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "displayName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                          },
+                          "toolkit": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "toolkitVersion": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          },
+                          "definitionHash": {
+                            "type": "string",
+                            "pattern": "^sha256:[a-f0-9]{64}$"
+                          },
+                          "filterSchema": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "payloadSchema": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "deliveryMode": {
+                            "type": "string",
+                            "enum": [
+                              "webhook",
+                              "polling",
+                              "unknown"
+                            ]
+                          },
+                          "expectedCadenceSeconds": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "exclusiveMinimum": 0
+                          },
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          }
+                        },
+                        "required": [
+                          "eventType",
+                          "displayName",
+                          "toolkit",
+                          "toolkitVersion",
+                          "definitionHash",
+                          "filterSchema",
+                          "payloadSchema",
+                          "deliveryMode",
+                          "expectedCadenceSeconds",
+                          "id"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 100
+                    },
+                    "nextCursor": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    }
+                  },
+                  "required": [
+                    "definitions"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          },
+          "404": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          },
+          "503": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          }
+        }
+      }
+    },
+    "/api/connectors/connections/{connectionId}/events/subscriptions": {
+      "get": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "List exact notification destinations and consent state",
+        "description": "Owner-only. Setup mode and configured state do not imply that event delivery is ready.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current owner-scoped notification metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "subscriptions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "connectionId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "definitionId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "eventType": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "displayName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                          },
+                          "deliveryMode": {
+                            "type": "string",
+                            "enum": [
+                              "webhook",
+                              "polling",
+                              "unknown"
+                            ]
+                          },
+                          "expectedCadenceSeconds": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "exclusiveMinimum": 0
+                          },
+                          "agentId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "destination": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "agent",
+                                  "room",
+                                  "channel"
+                                ]
+                              },
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "id"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "filter": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "scopeVersion": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "pending",
+                              "revoked",
+                              "unavailable"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "connectionId",
+                          "definitionId",
+                          "eventType",
+                          "displayName",
+                          "deliveryMode",
+                          "expectedCadenceSeconds",
+                          "agentId",
+                          "destination",
+                          "filter",
+                          "scopeVersion",
+                          "state"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 100
+                    },
+                    "nextCursor": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  },
+                  "required": [
+                    "subscriptions"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          },
+          "404": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          },
+          "503": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Approve an exact notification destination",
+        "description": "The requestId identifies one immutable explicit owner decision. Changing its scope conflicts; revocation cannot be undone by replay.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "definitionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "filter": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "agentId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "destination": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "agent",
+                          "room",
+                          "channel"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "manageExistingTrigger": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                },
+                "required": [
+                  "definitionId",
+                  "filter",
+                  "agentId",
+                  "destination",
+                  "requestId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The exact receive consent is active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "connectionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "definitionId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "eventType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "deliveryMode": {
+                      "type": "string",
+                      "enum": [
+                        "webhook",
+                        "polling",
+                        "unknown"
+                      ]
+                    },
+                    "expectedCadenceSeconds": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "exclusiveMinimum": 0
+                    },
+                    "agentId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "destination": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "agent",
+                            "room",
+                            "channel"
+                          ]
+                        },
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "filter": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "scopeVersion": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "pending",
+                        "revoked",
+                        "unavailable"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "connectionId",
+                    "definitionId",
+                    "eventType",
+                    "displayName",
+                    "deliveryMode",
+                    "expectedCadenceSeconds",
+                    "agentId",
+                    "destination",
+                    "filter",
+                    "scopeVersion",
+                    "state"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Consent is recorded; remote acknowledgement is pending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "connectionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "definitionId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "eventType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "deliveryMode": {
+                      "type": "string",
+                      "enum": [
+                        "webhook",
+                        "polling",
+                        "unknown"
+                      ]
+                    },
+                    "expectedCadenceSeconds": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "exclusiveMinimum": 0
+                    },
+                    "agentId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "destination": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "agent",
+                            "room",
+                            "channel"
+                          ]
+                        },
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "filter": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "scopeVersion": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "pending",
+                        "revoked",
+                        "unavailable"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "connectionId",
+                    "definitionId",
+                    "eventType",
+                    "displayName",
+                    "deliveryMode",
+                    "expectedCadenceSeconds",
+                    "agentId",
+                    "destination",
+                    "filter",
+                    "scopeVersion",
+                    "state"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          },
+          "404": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          },
+          "409": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          },
+          "503": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          }
+        }
+      }
+    },
+    "/api/connectors/connections/{connectionId}/events/source": {
+      "get": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Read notification setup mode without credential material",
+        "description": "Owner-only. Setup mode and configured state do not imply that event delivery is ready.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current owner-scoped notification metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "setupMode": {
+                      "type": "string",
+                      "enum": [
+                        "managed",
+                        "byo_webhook",
+                        "unavailable"
+                      ]
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "endpoint": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uri"
+                    },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 512
+                    }
+                  },
+                  "required": [
+                    "setupMode",
+                    "configured",
+                    "endpoint",
+                    "reason"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          },
+          "404": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          },
+          "503": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Configure a write-only webhook signing secret",
+        "description": "Available only when setupMode is byo_webhook. The secret never appears in a response. Payload encryption uses a separately managed key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "webhookSecret": {
+                    "type": "string",
+                    "minLength": 16,
+                    "maxLength": 4096
+                  },
+                  "publicOrigin": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "webhookSecret",
+                  "publicOrigin"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Local signing setup was saved; this does not prove event delivery.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "setupMode": {
+                      "type": "string",
+                      "enum": [
+                        "managed",
+                        "byo_webhook",
+                        "unavailable"
+                      ]
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "endpoint": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uri"
+                    },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 512
+                    }
+                  },
+                  "required": [
+                    "setupMode",
+                    "configured",
+                    "endpoint",
+                    "reason"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          },
+          "403": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          },
+          "404": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          },
+          "503": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          }
+        }
+      }
+    },
+    "/api/connectors/connections/{connectionId}/events/subscriptions/{subscriptionId}": {
+      "delete": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Permanently revoke this notification generation",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "subscriptionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Local receive authority is closed; upstream cleanup may still be pending."
+          },
+          "403": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          },
+          "404": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          },
+          "503": {
+            "description": "Notifications are unavailable or the owner decision changed."
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": [

@@ -16,6 +16,12 @@ export const connectorKeys = {
   connections: () => [...connectorKeys.all, 'connections'] as const,
   connection: (connectionId: string) =>
     [...connectorKeys.connections(), 'detail', connectionId] as const,
+  eventDefinitions: (connectionId: string) =>
+    [...connectorKeys.connection(connectionId), 'event-definitions'] as const,
+  eventSubscriptions: (connectionId: string) =>
+    [...connectorKeys.connection(connectionId), 'event-subscriptions'] as const,
+  eventSource: (connectionId: string) =>
+    [...connectorKeys.connection(connectionId), 'event-source'] as const,
   disconnectImpact: (connectionId: string) =>
     [...connectorKeys.connection(connectionId), 'disconnect-impact'] as const,
   usage: (connectionId: string) => [...connectorKeys.connection(connectionId), 'usage'] as const,
@@ -29,4 +35,12 @@ export const connectorKeys = {
     [...connectorKeys.reviews(), 'list', state ?? 'all'] as const,
   review: (reviewRequestId: string) =>
     [...connectorKeys.reviews(), 'detail', reviewRequestId] as const,
+
+  agentRequests: () => [...connectorKeys.all, 'agent-requests'] as const,
+  agentRequestList: (state?: 'pending' | 'resolved') =>
+    [...connectorKeys.agentRequests(), 'list', state ?? 'all'] as const,
+  agentRequest: (requestId: string) =>
+    [...connectorKeys.agentRequests(), 'detail', requestId] as const,
+  agentRequestAuthentication: (requestId: string, flowId: string) =>
+    [...connectorKeys.agentRequest(requestId), 'authentication-flow', flowId] as const,
 };

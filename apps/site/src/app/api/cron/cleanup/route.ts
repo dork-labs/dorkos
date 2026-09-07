@@ -14,6 +14,9 @@
  * @module app/api/cron/cleanup
  */
 import { env } from '@/env';
+import { getDb } from '@/db/client';
+import { sweepManagedConnectorEventRetention } from '@/lib/connectors/managed/event-delivery-service';
+import { recoverManagedEventCleanup } from '@/lib/connectors/managed/event-cleanup-service';
 import { getAuth } from '@/lib/auth';
 import { runCleanup } from '@/lib/cleanup-service';
 
@@ -38,5 +41,17 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   const counts = await runCleanup(getAuth(), {});
-  return Response.json({ ok: true, counts }, { status: 200 });
+  try {
+    const eventRetention = await sweepManagedConnectorEventRetention(getDb());
+    const eventSubscriptions = await recoverManagedEventCleanup(
+      getDb(),
+      AbortSignal.timeout(25_000)
+    );
+    return Response.json({ ok: true, counts, eventRetention, eventSubscriptions }, { status: 200 });
+  } catch {
+    return Response.json(
+      { ok: false, counts, eventRetentionFailures: 1, error: 'event_cleanup_failed' },
+      { status: 500 }
+    );
+  }
 }

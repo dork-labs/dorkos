@@ -165,12 +165,17 @@ function connectorRegistry(access = vi.fn().mockResolvedValue({ connections: [] 
       authorization: { assertAvailable: vi.fn() } as never,
       broker: {} as never,
       access: { listRuntimeConnections: access } as never,
+      requests: {
+        create: vi.fn(),
+        getForRuntime: vi.fn(),
+        waitForResolution: vi.fn(),
+      } as never,
     },
   });
 }
 
 describe('in-session tool exposure', () => {
-  it('adds exactly five strict connector tools to an authenticated runtime turn', async () => {
+  it('adds exactly seven strict connector tools to an authenticated runtime turn', async () => {
     const resolvePrincipal = vi.fn().mockResolvedValue(runtimePrincipal('binding-a'));
     const registry = connectorRegistry();
     const tools = await advertisedTools(

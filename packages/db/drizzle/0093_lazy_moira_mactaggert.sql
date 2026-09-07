@@ -1,0 +1,2 @@
+ALTER TABLE `connector_event_consent_commands` ADD `recovery_after` text;--> statement-breakpoint
+CREATE INDEX `connector_event_consent_recovery_idx` ON `connector_event_consent_commands` (`recovery_after`,`created_at`);

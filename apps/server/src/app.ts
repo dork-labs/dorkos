@@ -31,6 +31,10 @@ import eventsRouter from './routes/events.js';
 import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { hostGuard } from './middleware/host-guard.js';
+import {
+  createConnectorSignedIngress,
+  type ConnectorSignedIngress,
+} from './services/connectors/events/signed-ingress.js';
 import { requestLogger } from './middleware/request-logger.js';
 import { buildAuthRateLimiter } from './middleware/auth-rate-limit.js';
 import { resolveAgentIdentity } from './middleware/agent-identity.js';
@@ -176,7 +180,7 @@ function createFirstContactMarker(message: string): () => void {
 }
 
 /** Create and configure the Express application with middleware and routes. */
-export function createApp() {
+export function createApp(options: { connectorEventIngress?: ConnectorSignedIngress } = {}) {
   const app = express();
 
   // Trust one forwarded hop, for `req.protocol` and `req.secure` and nothing
@@ -236,6 +240,12 @@ export function createApp() {
   // cookies are origin-scoped) or when the container escape hatch is set — see
   // `middleware/host-guard.ts`.
   app.use('/api', hostGuard);
+  if (options.connectorEventIngress) {
+    app.post(
+      '/api/connectors/webhooks/:providerInstanceId',
+      ...createConnectorSignedIngress(options.connectorEventIngress)
+    );
+  }
 
   // Better Auth handler — mounted BEFORE express.json because Better Auth parses
   // its own request body (mounting after express.json breaks it). Express 5

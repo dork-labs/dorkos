@@ -6,6 +6,12 @@ import { ulid } from 'ulidx';
 import { writeManifest } from '@dorkos/shared/manifest';
 import { seedAgentFace } from '@dorkos/shared/agent-face';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import {
+  ConnectorAgentConnectionRequestInputSchema,
+  ConnectorExecutionTargetSchema,
+  type ConnectorAgentConnectionRequestInput,
+  type ConnectorExecutionTarget,
+} from '@dorkos/shared/connector-schemas';
 import type { AgentManifest, McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import { getBoundary, validateBoundary } from '../lib/boundary.js';
 import { localDialHost } from '../lib/local-dial-host.js';
@@ -34,6 +40,28 @@ import type { AgentMcpServerService } from '../services/mesh/agent-mcp-server-se
  * Returns 404 for any /api/test/* path in production (route not registered).
  */
 export const testControlRouter = Router();
+
+/** Test-only bridge into the authenticated internal connector MCP listener. */
+export interface ConnectorRuntimeRequestProbe {
+  /** Open one real runtime principal, call the request tool, and close the turn. */
+  (input: {
+    readonly sessionId: string;
+    readonly agentPath: string;
+    readonly request: ConnectorAgentConnectionRequestInput;
+    readonly signal: AbortSignal;
+  }): Promise<unknown>;
+}
+
+/** Test-only bridge for one authenticated runtime read through the internal connector listener. */
+export interface ConnectorRuntimeExecutionProbe {
+  /** Open one real runtime principal, call the read tool, and close the turn. */
+  (input: {
+    readonly sessionId: string;
+    readonly agentPath: string;
+    readonly target: ConnectorExecutionTarget;
+    readonly signal: AbortSignal;
+  }): Promise<unknown>;
+}
 
 const scenarioSchema = z.object({
   name: z.string().min(1),
@@ -887,5 +915,107 @@ testControlRouter.post('/probe-mcp-oauth-server', async (req, res) => {
     );
   } finally {
     await client.close().catch(() => {});
+  }
+});
+
+const connectorRuntimeRequestProbeSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    agentPath: z.string().min(1),
+    request: ConnectorAgentConnectionRequestInputSchema,
+  })
+  .strict();
+
+const connectorRuntimeExecutionProbeSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    agentPath: z.string().min(1),
+    target: ConnectorExecutionTargetSchema,
+  })
+  .strict();
+
+/**
+ * Hold one real `connectors.request_connection` call through the authenticated
+ * internal listener so a browser can exercise the owner decision while the
+ * originating agent call is still live. The route exists only under
+ * `DORKOS_TEST_RUNTIME`; production code supplies the probe after the listener
+ * starts and still resolves the session, Mesh agent, principal, and request.
+ */
+testControlRouter.post('/connectors/request', async (req, res) => {
+  const parsed = connectorRuntimeRequestProbeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+  }
+  const probe = req.app.locals.connectorRuntimeRequestProbe as
+    ConnectorRuntimeRequestProbe | undefined;
+  if (!probe) return res.status(503).json({ error: 'Service request probe is unavailable.' });
+
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const abortClosedResponse = () => {
+    if (!res.writableEnded) controller.abort();
+  };
+  req.once('aborted', abort);
+  res.once('close', abortClosedResponse);
+  try {
+    const agentPath = await validateBoundary(parsed.data.agentPath);
+    res.json(
+      await probe({
+        sessionId: parsed.data.sessionId,
+        agentPath,
+        request: parsed.data.request,
+        signal: controller.signal,
+      })
+    );
+  } catch (error) {
+    if (controller.signal.aborted) return;
+    res
+      .status(500)
+      .json({ error: error instanceof Error ? error.message : 'Request probe failed.' });
+  } finally {
+    req.off('aborted', abort);
+    res.off('close', abortClosedResponse);
+  }
+});
+
+/** Execute one granted read operation through the authenticated internal connector listener. */
+testControlRouter.post('/connectors/execute-read', async (req, res) => {
+  const parsed = connectorRuntimeExecutionProbeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+  }
+  const probe = req.app.locals.connectorRuntimeExecutionProbe as
+    ConnectorRuntimeExecutionProbe | undefined;
+  if (!probe) return res.status(503).json({ error: 'Service access probe is unavailable.' });
+
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const abortClosedResponse = () => {
+    if (!res.writableEnded) controller.abort();
+  };
+  req.once('aborted', abort);
+  res.once('close', abortClosedResponse);
+  try {
+    const agentPath = await validateBoundary(parsed.data.agentPath);
+    res.json(
+      await probe({
+        sessionId: parsed.data.sessionId,
+        agentPath,
+        target: parsed.data.target,
+        signal: controller.signal,
+      })
+    );
+  } catch (error) {
+    if (controller.signal.aborted) return;
+    res
+      .status(500)
+      .json({ error: error instanceof Error ? error.message : 'Service access probe failed.' });
+  } finally {
+    req.off('aborted', abort);
+    res.off('close', abortClosedResponse);
   }
 });

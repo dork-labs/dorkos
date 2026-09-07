@@ -63,6 +63,8 @@ import type {
   BackpressureConfig,
   RelayOptions,
   PublishOptions,
+  PrivateNotificationOptions,
+  PrivateNotificationResult,
   MessageHandler,
   SignalHandler,
   Unsubscribe,
@@ -404,6 +406,16 @@ export class RelayCore {
   ): Promise<PublishResult> {
     this.assertOpen();
     return this.publishPipeline.publish(subject, payload, options);
+  }
+
+  /** Deliver one private native notification without Maildir, pending buffers or dead letters. */
+  async deliverPrivateNotification(
+    subject: string,
+    text: string,
+    options: PrivateNotificationOptions
+  ): Promise<PrivateNotificationResult> {
+    this.assertOpen();
+    return this.publishPipeline.deliverPrivateNotification(subject, text, options);
   }
 
   // --- Subscribe ---

@@ -5,10 +5,12 @@ import {
 } from '../runtime-capability-scope.js';
 
 describe('runtime connector capability scope', () => {
-  it('matches only two principal-bound discovery tools and three execution gates', () => {
+  it('matches only four principal-bound access tools and three execution gates', () => {
     expect(CONNECTOR_RUNTIME_CAPABILITY_IDS).toEqual([
       'connectors.list_granted_connections',
       'connectors.list_granted_operations',
+      'connectors.request_connection',
+      'connectors.get_connection_request',
       'connectors.execute_read',
       'connectors.execute_write',
       'connectors.execute_destructive',

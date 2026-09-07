@@ -172,3 +172,10 @@ export type InstanceHeartbeat = typeof instanceHeartbeats.$inferSelect;
 
 /** A row insertable into `instance_heartbeats`. */
 export type NewInstanceHeartbeat = typeof instanceHeartbeats.$inferInsert;
+
+export {
+  managedConnectorEventDefinition,
+  managedConnectorEventBinding,
+  managedConnectorEventSubscription,
+  managedConnectorEventInbox,
+} from './managed-connector-events-schema';

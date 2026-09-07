@@ -197,13 +197,6 @@ export class RawMcpConnectorProvider implements ConnectorProvider {
     });
   }
 
-  listTriggerTypes(_toolkit: string) {
-    return Promise.resolve({
-      status: 'unsupported' as const,
-      reason: 'Raw MCP trigger discovery is unavailable.',
-    });
-  }
-
   listToolkits(): Promise<ConnectorToolkit[]> {
     return Promise.resolve(
       [...this._servers.values()].map((server) => ({

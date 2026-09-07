@@ -88,6 +88,7 @@ export {
 export { triggerCommandIntent } from './trigger-command-intent.js';
 export {
   adoptQueuedMessages,
+  adoptAcceptedPrivateMessages,
   dispatchMessage,
   dispatchCommandIntent,
   emitQueueUpdate,
@@ -124,6 +125,20 @@ export {
   toQueuedMessage,
 } from './message-queue-store.js';
 export type { EnqueueInput, MoveTarget, QueuedMessageRecord } from './message-queue-store.js';
+export {
+  getPrivateSessionMessageAcceptanceService,
+  PrivateSessionMessageAcceptanceService,
+  PrivateSessionMessageRefusalError,
+  setPrivateSessionMessageAcceptanceService,
+} from './private-messages/acceptance.js';
+export type {
+  ClaimedPrivateSessionMessage,
+  PreparedPrivateSessionMessage,
+  PrivateSessionMessageAcceptance,
+  PrivateSessionMessageDraft,
+  PrivateSessionMessageSourceAdapter,
+  PrivateSessionMessageSourceRef,
+} from './private-messages/acceptance.js';
 export {
   StagedContextStore,
   getStagedContextStore,

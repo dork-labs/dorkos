@@ -16,7 +16,7 @@ import { AccountsRegion } from './AccountsRegion';
  * where every retired deep link into the old messaging dialog now lands.
  */
 export function ConnectionsPage() {
-  const { region, review, flow } = useSearch({ from: '/_shell/connections' });
+  const { region, review, flow, request } = useSearch({ from: '/_shell/connections' });
   const navigate = useNavigate({ from: '/connections' });
   const messagingRef = useRef<HTMLDivElement>(null);
   const accountsRef = useRef<HTMLDivElement>(null);
@@ -51,6 +51,7 @@ export function ConnectionsPage() {
           <AccountsRegion
             selectedReviewId={review ?? null}
             selectedFlowId={flow ?? null}
+            selectedRequestId={request ?? null}
             onSelectReview={(reviewRequestId) =>
               void navigate({ search: (previous) => ({ ...previous, review: reviewRequestId }) })
             }
@@ -67,6 +68,17 @@ export function ConnectionsPage() {
                 search: (previous) => {
                   if (flowId) return { ...previous, flow: flowId };
                   const { flow: _flow, ...rest } = previous;
+                  return rest;
+                },
+              })
+            }
+            onSelectRequest={(requestId) =>
+              void navigate({ search: (previous) => ({ ...previous, request: requestId }) })
+            }
+            onCloseRequest={() =>
+              void navigate({
+                search: (previous) => {
+                  const { request: _request, ...rest } = previous;
                   return rest;
                 },
               })

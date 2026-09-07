@@ -96,6 +96,15 @@ import type {
 } from '@dorkos/shared/room-repo';
 import type { Workspace, WorktreeScanResult } from '@dorkos/shared/workspace';
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
+import type { ConnectorAgentRequestAuthenticationInput } from '@dorkos/shared/connector-agent-request-schemas';
+import type {
+  ConfigureConnectionEventSource,
+  ConnectionEventDefinitionPage,
+  ConnectionEventSourceStatus,
+  ConnectionEventSubscription,
+  ConnectionEventSubscriptionPage,
+  CreateConnectionEventSubscription,
+} from '@dorkos/shared/connector-event-schemas';
 import type {
   ConnectionId,
   ConnectorAccessibleConnectionsResponse,
@@ -1062,6 +1071,43 @@ export const connectorStubs = {
     throw new Error(EMBEDDED_CONNECTORS_NOTICE);
   },
 
+  async listConnectionEventDefinitions(
+    _connectionId: string
+  ): Promise<ConnectionEventDefinitionPage> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async listConnectionEventSubscriptions(
+    _connectionId: string
+  ): Promise<ConnectionEventSubscriptionPage> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async createConnectionEventSubscription(
+    _connectionId: string,
+    _input: CreateConnectionEventSubscription
+  ): Promise<ConnectionEventSubscription> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async deleteConnectionEventSubscription(
+    _connectionId: string,
+    _subscriptionId: string
+  ): Promise<void> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async getConnectionEventSource(_connectionId: string): Promise<ConnectionEventSourceStatus> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async configureConnectionEventSource(
+    _connectionId: string,
+    _input: ConfigureConnectionEventSource
+  ): Promise<ConnectionEventSourceStatus> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
   async startConnectorAuthentication(
     _input: ConnectorAuthenticationFlowCreateRequest
   ): Promise<ConnectorAuthenticationFlowState> {
@@ -1154,6 +1200,32 @@ export const connectorStubs = {
   },
 
   async resolveConnectorManagementReview(): Promise<never> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async getConnectorAgentRequests(): Promise<never> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async getConnectorAgentRequest(): Promise<never> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async resolveConnectorAgentRequest(): Promise<never> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async startConnectorAgentRequestAuthentication(
+    _requestId: string,
+    _input: ConnectorAgentRequestAuthenticationInput
+  ): Promise<never> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async pollConnectorAgentRequestAuthentication(
+    _requestId: string,
+    _flowId: string
+  ): Promise<never> {
     throw new Error(EMBEDDED_CONNECTORS_NOTICE);
   },
 };

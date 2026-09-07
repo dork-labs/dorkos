@@ -186,7 +186,7 @@ describe('ConnectorEventInboxStore', () => {
     db.$client.close();
   });
 
-  it('reclaims a dispatched event only after its worker lease expires', () => {
+  it('quarantines a dispatched event after its lease expires without a blind resend', () => {
     const { db } = openFixture();
     const store = new ConnectorEventInboxStore({ db });
     const event = enqueue(store);
@@ -199,7 +199,17 @@ describe('ConnectorEventInboxStore', () => {
     ).toBeUndefined();
     expect(
       store.claimNext('worker-b', '2026-09-05T12:00:10.000Z', '2026-09-05T12:00:20.000Z')
-    ).toMatchObject({ id: event.id, leaseOwner: 'worker-b', attemptCount: 2 });
+    ).toBeUndefined();
+    expect(db.select().from(connectorEventInbox).get()).toMatchObject({
+      state: 'failed',
+      failureCode: 'dispatch_outcome_unknown',
+      attemptCount: 1,
+      normalizedPayload: '{"subject":"hello"}',
+    });
+    expect(
+      store.claimNext('worker-c', '2026-09-05T12:00:30.000Z', '2026-09-05T12:00:40.000Z')
+    ).toBeUndefined();
+    expect(store.sweepRetention('2026-09-05T13:00:00.000Z').cleared).toBe(1);
     db.$client.close();
   });
 
@@ -250,4 +260,77 @@ describe('ConnectorEventInboxStore', () => {
     });
     db.$client.close();
   });
+});
+
+/** Regressions for early terminal deletion and idle all-state retention. */
+describe('connector event content retention', () => {
+  it.each(['completed', 'failed'] as const)(
+    'clears payload immediately when %s without losing receipts',
+    (outcome) => {
+      const { db } = openFixture();
+      const store = new ConnectorEventInboxStore({ db });
+      const event = enqueue(store);
+      store.claimNext('worker', BASE, '2026-09-05T12:01:00.000Z');
+      if (outcome === 'completed') {
+        expect(store.markDispatched(event.id, 'worker', BASE)).toBe(true);
+        expect(store.complete(event.id, 'worker', BASE, 'exact-receipt')).toBe(true);
+      } else {
+        expect(store.fail(event.id, 'worker', BASE, 'destination_removed')).toBe(true);
+      }
+      expect(db.select().from(connectorEventInbox).get()).toMatchObject({
+        id: event.id,
+        state: outcome,
+        normalizedPayload: '',
+      });
+      expect(db.select().from(connectorEventReceipts).all().at(-1)).toMatchObject({
+        inboxId: event.id,
+        state: outcome,
+      });
+      db.$client.close();
+    }
+  );
+
+  it('erases residual terminal and idle payloads after restart without rewriting delivery truth', () => {
+    const { db, path } = openFixture();
+    const store = new ConnectorEventInboxStore({ db });
+    for (const state of ['completed', 'failed', 'expired', 'received', 'leased', 'dispatched']) {
+      const event = enqueue(store, state);
+      db.$client
+        .prepare('UPDATE connector_event_inbox SET state = ? WHERE id = ?')
+        .run(state, event.id);
+    }
+    db.$client.close();
+    const reopened = createDb(path);
+    const resumed = new ConnectorEventInboxStore({ db: reopened });
+    expect(resumed.sweepRetention('2026-09-05T13:00:00.000Z')).toEqual({ cleared: 6, expired: 3 });
+    expect(resumed.sweepRetention('2026-09-05T13:00:01.000Z')).toEqual({ cleared: 0, expired: 0 });
+    const rows = reopened.select().from(connectorEventInbox).all();
+    expect(rows).toHaveLength(6);
+    expect(rows.every((row) => row.normalizedPayload === '')).toBe(true);
+    expect(rows.find((row) => row.providerEventId === 'completed')?.state).toBe('completed');
+    expect(rows.find((row) => row.providerEventId === 'failed')?.state).toBe('failed');
+    expect(reopened.select().from(connectorEventReceipts).all()).toHaveLength(9);
+    reopened.$client.close();
+  });
+});
+
+it('terminates after eight pre-dispatch attempts instead of retrying until the retention deadline', () => {
+  const { db } = openFixture();
+  const store = new ConnectorEventInboxStore({ db });
+  const event = enqueue(store);
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const now = new Date(Date.parse(BASE) + attempt * 2_000).toISOString();
+    const next = new Date(Date.parse(now) + 1_000).toISOString();
+    expect(store.claimNext('worker', now, next)?.attemptCount).toBe(attempt + 1);
+    expect(store.fail(event.id, 'worker', now, 'preparation_unavailable', next)).toBe(true);
+  }
+  expect(
+    store.claimNext('ninth-worker', '2026-09-05T12:00:17.000Z', '2026-09-05T12:01:00.000Z')
+  ).toBeUndefined();
+  expect(db.select().from(connectorEventInbox).get()).toMatchObject({
+    state: 'failed',
+    normalizedPayload: '',
+    attemptCount: 8,
+  });
+  db.$client.close();
 });

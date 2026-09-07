@@ -61,8 +61,10 @@ export const connectorManagedAuthorityScopes = sqliteTable(
   'connector_managed_authority_scopes',
   {
     managedConnectionId: text('managed_connection_id').notNull(),
-    scopeKind: text('scope_kind', { enum: ['agent_grants', 'connection_lifecycle'] }).notNull(),
-    /** Agent id for grant scope; fixed `connection` for lifecycle scope. */
+    scopeKind: text('scope_kind', {
+      enum: ['agent_grants', 'connection_lifecycle', 'event_subscription'],
+    }).notNull(),
+    /** Agent id for grants, subscription id for events, or fixed `connection` for lifecycle. */
     subjectId: text('subject_id').notNull(),
     scopeVersion: integer('scope_version').notNull(),
     lastCommandId: text('last_command_id').notNull(),
@@ -93,7 +95,9 @@ export const connectorManagedAuthorityOutbox = sqliteTable(
     ownerKind: text('owner_kind', { enum: ['user', 'local_install'] }).notNull(),
     ownerId: text('owner_id').notNull(),
     managedConnectionId: text('managed_connection_id').notNull(),
-    scopeKind: text('scope_kind', { enum: ['agent_grants', 'connection_lifecycle'] }).notNull(),
+    scopeKind: text('scope_kind', {
+      enum: ['agent_grants', 'connection_lifecycle', 'event_subscription'],
+    }).notNull(),
     subjectId: text('subject_id').notNull(),
     scopeVersion: integer('scope_version').notNull(),
     requestHash: text('request_hash').notNull(),
