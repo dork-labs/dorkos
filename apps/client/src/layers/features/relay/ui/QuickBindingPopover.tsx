@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
 import {
   Popover,
   PopoverContent,
@@ -10,6 +9,7 @@ import {
   CommandEmpty,
   CommandItem,
   Button,
+  Spinner,
 } from '@/layers/shared/ui';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
@@ -87,7 +87,7 @@ export function QuickBindingPopover({
                 onSelect={() => handleSelect(agent.id)}
                 disabled={isPending}
               >
-                {isPending ? <Loader2 className="mr-2 size-3.5 animate-spin" /> : null}
+                {isPending ? <Spinner size="xs" className="mr-2" /> : null}
                 {getAgentDisplayName(agent)}
               </CommandItem>
             ))}

@@ -13,7 +13,6 @@ import {
   ArrowRight,
   Copy,
   Sparkles,
-  Loader2,
   TriangleAlert,
   Store,
   CalendarClock,
@@ -28,6 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
   Skeleton,
+  Spinner,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { useAgentCreationStore, useAppStore } from '@/layers/shared/model';
@@ -301,7 +301,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
                         )}
                       </span>
                       {isPending ? (
-                        <Loader2 className="text-muted-foreground size-(--size-icon-sm) shrink-0 animate-spin" />
+                        <Spinner className="text-muted-foreground shrink-0" />
                       ) : shape.active ? (
                         <Badge variant="secondary" className="shrink-0">
                           Active

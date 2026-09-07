@@ -38,7 +38,7 @@ declare global {
     | { state: 'install-failed'; version: string; attempts: number };
 
   /**
-   * How the desktop shell answers "Restart Server" and "Reset All Data",
+   * How the desktop shell answers "Restart" and "Reset all data",
    * mirrored from the main process's `AdminActionResult` (`main/admin/index.ts`,
    * where this union is the source of truth). Kept in sync by hand, like
    * {@link DesktopUpdateStatus}.
@@ -78,7 +78,7 @@ declare global {
     restartServer?(): Promise<DesktopAdminResult>;
     /**
      * Delete everything DorkOS has stored and restart the server on an empty
-     * data directory — the desktop half of "Reset All Data". Same optionality
+     * data directory — the desktop half of "Reset all data". Same optionality
      * and the same reason as {@link restartServer}.
      */
     resetAllData?(): Promise<DesktopAdminResult>;

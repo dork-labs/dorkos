@@ -15,7 +15,7 @@
  */
 import { useEffect, useState, type FormEvent } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { Check, ExternalLink, Loader2 } from 'lucide-react';
+import { Check, ExternalLink } from 'lucide-react';
 import type { UseQueryResult } from '@tanstack/react-query';
 import type {
   OllamaFitVerdict,
@@ -25,7 +25,7 @@ import type {
 } from '@dorkos/shared/runtime-connect';
 import { OLLAMA_TAG_PATTERN } from '@dorkos/shared/runtime-connect';
 import type { ModelTier } from '@dorkos/shared/types';
-import { Badge, Button, Input, Label } from '@/layers/shared/ui';
+import { Badge, Button, Input, Label, Spinner } from '@/layers/shared/ui';
 import { cn, localDeviceNoun } from '@/layers/shared/lib';
 import { RuntimeIdentity, type RuntimeConnectSuccess } from '@/layers/entities/runtime';
 import {
@@ -462,7 +462,7 @@ function PullProgress({ progress }: { progress: OllamaPullProgress | null }) {
       <div className="text-muted-foreground flex items-center gap-2 text-xs">
         {/* CSS spin (not motion rotate): a repeated animate-to-360 stalls after
             the first turn on re-render, so the spinner looked frozen (DOR-439). */}
-        <Loader2 className={cn('size-3.5 shrink-0', !reducedMotion && 'animate-spin')} />
+        <Spinner size="xs" className={cn('shrink-0', reducedMotion && 'animate-none')} />
         <span className="truncate">
           {status}
           {percent !== undefined ? ` · ${Math.round(percent)}%` : ''}

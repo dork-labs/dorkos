@@ -31,7 +31,7 @@
  */
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CircleAlert, Check, Loader2 } from 'lucide-react';
+import { CircleAlert, Check } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { EffortLevel } from '@dorkos/shared/types';
 import type {
@@ -42,7 +42,7 @@ import type {
 import { runtimeAuthConnectKind, runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { claudeAccountName, cn } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
-import { Badge, Button, InlineCode } from '@/layers/shared/ui';
+import { Badge, Button, InlineCode, Spinner } from '@/layers/shared/ui';
 import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
 import {
   CommandTransparencyNote,
@@ -498,11 +498,9 @@ function ProvisionConnect({
       >
         {/* CSS spin, not a motion rotate: a repeated animate-to-360 stalls after
             the first turn on re-render (DOR-439). */}
-        <Loader2
-          className={cn(
-            'text-muted-foreground size-3.5 shrink-0',
-            !reducedMotion && 'animate-spin'
-          )}
+        <Spinner
+          size="xs"
+          className={cn('text-muted-foreground shrink-0', reducedMotion && 'animate-none')}
         />
         <AnimatePresence mode="wait">
           <motion.span

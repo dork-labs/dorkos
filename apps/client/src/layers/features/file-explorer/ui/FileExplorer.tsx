@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { File, Folder, Loader2, RotateCw } from 'lucide-react';
+import { File, Folder, RotateCw } from 'lucide-react';
 import type { ExplorerEntry, FileExplorerSource } from '../model/source';
 import {
   AlertDialog,
@@ -11,6 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Button,
+  Spinner,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { useAppStore, useTransport } from '@/layers/shared/model';
@@ -166,7 +167,7 @@ export function FileExplorer({ source: sourceProp, className }: FileExplorerProp
         )}
         {rootLoading && rows.length === 0 ? (
           <div className="flex h-20 items-center justify-center">
-            <Loader2 className="text-muted-foreground size-(--size-icon-md) animate-spin" />
+            <Spinner size="md" className="text-muted-foreground" label="Loading files" />
           </div>
         ) : rootError && rows.length === 0 ? (
           <div className="text-muted-foreground flex h-20 flex-col items-center justify-center gap-2 text-xs">

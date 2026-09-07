@@ -37,7 +37,7 @@ const MAX_RECENT_RUNS = 5;
 function RunStatusIcon({ status }: { status: TaskRun['status'] }) {
   switch (status) {
     case 'running':
-      return <Spinner size="xs" className="shrink-0 text-blue-500" />;
+      return <Spinner size="xs" className="text-status-info shrink-0" />;
     case 'completed':
       return <CheckCircle2 className="size-3 shrink-0 text-green-500" aria-hidden />;
     case 'failed':
@@ -76,7 +76,7 @@ function RunningRunItem({ run, scheduleName }: RunningRunItemProps) {
   return (
     <SidebarMenuItem>
       <SidebarMenuButton className="text-sm">
-        <Spinner size="xs" className="shrink-0 text-blue-500" />
+        <Spinner size="xs" className="text-status-info shrink-0" />
         <span className="truncate">{scheduleName}</span>
         {run.startedAt && (
           <span className="text-muted-foreground/50 ml-auto shrink-0 text-xs">

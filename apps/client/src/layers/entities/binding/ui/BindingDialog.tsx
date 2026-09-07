@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Loader2, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -27,6 +27,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
   FieldDescription,
+  Spinner,
 } from '@/layers/shared/ui';
 import {
   getAgentDisplayName,
@@ -501,7 +502,7 @@ export function BindingDialog({
                     Cancel
                   </Button>
                   <Button size="sm" onClick={() => form.handleSubmit()} disabled={isSubmitDisabled}>
-                    {isLoading && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                    {isLoading && <Spinner size="xs" className="mr-1.5" />}
                     {isLoading ? 'Saving…' : isEdit ? 'Save changes' : 'Add connection'}
                   </Button>
                 </ResponsiveDialogFooter>

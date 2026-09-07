@@ -426,7 +426,7 @@ export interface RestartOutcome {
  * Stop the running server and start a replacement, optionally doing something
  * while nothing is holding the data directory.
  *
- * This is what makes Settings → Advanced work in the desktop app (DOR-542).
+ * This is what makes Settings → Danger zone work in the desktop app (DOR-542).
  * `POST /api/admin/restart` cannot: it re-execs `process.argv[0]`, which inside
  * an Electron `UtilityProcess` is the app executable rather than Node, so the
  * server exited and nothing came back — which is why the server refuses that

@@ -1,5 +1,6 @@
-import { Loader2, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
 import { Button } from '@/layers/shared/ui/button';
+import { Spinner } from '@/layers/shared/ui';
 
 interface TestStepProps {
   isPending: boolean;
@@ -23,7 +24,7 @@ export function TestStep({
     <div className="flex flex-col items-center gap-3 py-6">
       {isPending && (
         <>
-          <Loader2 className="text-muted-foreground size-8 animate-spin" />
+          <Spinner size="lg" className="text-muted-foreground" />
           <p className="text-muted-foreground text-sm">Trying to reach it…</p>
         </>
       )}

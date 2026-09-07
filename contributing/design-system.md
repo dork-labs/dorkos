@@ -1223,7 +1223,7 @@ import {
 </Table>;
 ```
 
-`Table` wraps the `<table>` in a `relative w-full overflow-auto` container for horizontal scroll. `TableRow` has hover highlight (`hover:bg-muted/50`) and a `data-[state=selected]` highlight for selection.
+`Table` wraps the `<table>` in a `relative w-full overflow-auto` container for horizontal scroll. `TableRow` has a hover highlight (`hover:bg-accent`, the app's own "you are pointing at this" token) and a `data-[state=selected]:bg-muted` highlight for selection.
 
 ### DataTable (`shared/ui/data-table.tsx`)
 

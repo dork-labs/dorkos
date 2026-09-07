@@ -1,8 +1,9 @@
 import { toast } from 'sonner';
 import { useNavigate } from '@tanstack/react-router';
-import { Ban, Hash, Loader2 } from 'lucide-react';
+import { Ban, Hash } from 'lucide-react';
 import {
   Button,
+  Spinner,
   Switch,
   Label,
   AlertDialog,
@@ -130,7 +131,7 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
         ))}
       </ul>
       <Button size="sm" onClick={handleBridge} disabled={updateBinding.isPending}>
-        {updateBinding.isPending && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+        {updateBinding.isPending && <Spinner size="xs" className="mr-1.5" />}
         Bridge to a channel
       </Button>
     </section>

@@ -1,6 +1,5 @@
-import { Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Button } from '@/layers/shared/ui';
+import { Button, Spinner } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 
 export interface ActivityLoadMoreProps {
@@ -42,7 +41,7 @@ export function ActivityLoadMore({
         disabled={isFetching}
         className="gap-2"
       >
-        {isFetching && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
+        {isFetching && <Spinner size="xs" />}
         Load 50 more events
       </Button>
     </motion.div>

@@ -18,9 +18,9 @@
  * @module features/chat/ui/message/AuthErrorActions
  */
 import { useState } from 'react';
-import { Check, Loader2, LogIn, RotateCcw } from 'lucide-react';
+import { Check, LogIn, RotateCcw } from 'lucide-react';
 import { runtimeSupportsLogin } from '@dorkos/shared/agent-runtime';
-import { Button } from '@/layers/shared/ui';
+import { Button, Spinner } from '@/layers/shared/ui';
 import { useSettingsDeepLink } from '@/layers/shared/model';
 import { useLocalCaller } from '@/layers/entities/config';
 import {
@@ -137,7 +137,7 @@ function InlineSigninActions({
       <p className="text-muted-foreground mb-2 flex items-center gap-2 text-sm" role="status">
         {login.isPending && (
           <>
-            <Loader2 aria-hidden="true" className="size-3.5 shrink-0 animate-spin" />
+            <Spinner size="xs" className="shrink-0" />
             {copy.signInPending}
           </>
         )}

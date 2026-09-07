@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, ExternalLink, Loader2, ShieldCheck } from 'lucide-react';
-import { Button } from '@/layers/shared/ui';
+import { CheckCircle2, ExternalLink, ShieldCheck } from 'lucide-react';
+import { Button, Spinner } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import type { McpSigninFlow } from '../model/use-mcp-signin-flow';
 import { McpClientCredentialsForm } from './McpClientCredentialsForm';
@@ -23,7 +23,7 @@ export interface McpSigninBodyProps {
 function WorkingLine({ children }: { children: React.ReactNode }) {
   return (
     <p className="text-muted-foreground flex items-center gap-2 text-xs">
-      <Loader2 className="size-3 animate-spin" aria-hidden />
+      <Spinner size="xs" />
       {children}
     </p>
   );

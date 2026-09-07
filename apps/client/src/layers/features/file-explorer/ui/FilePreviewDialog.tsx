@@ -29,7 +29,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileWarning, Loader2, Pencil } from 'lucide-react';
+import { FileWarning, Pencil } from 'lucide-react';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import {
   Button,
@@ -41,6 +41,7 @@ import {
   ResponsiveDialogFooter,
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
+  Spinner,
 } from '@/layers/shared/ui';
 import { baseName } from '../model/tree';
 import { provenanceLine } from '../lib/provenance';
@@ -367,7 +368,7 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
         <ResponsiveDialogBody className="min-h-0 flex-1 overflow-auto">
           {query.isPending ? (
             <div className="flex h-32 items-center justify-center">
-              <Loader2 className="text-muted-foreground size-(--size-icon-md) animate-spin" />
+              <Spinner size="md" className="text-muted-foreground" label="Loading the file" />
             </div>
           ) : query.isError || file === undefined ? (
             <PreviewNote>This file couldn’t be read.</PreviewNote>
