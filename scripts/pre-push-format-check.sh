@@ -88,12 +88,33 @@
 # that case vanishingly rare (it formats what you commit), and the failure is
 # loud and one command from fixed when it happens.
 #
+# THE OTHER GAP, same shape: a change to `.prettierrc` or `.prettierignore`
+# re-scopes the WHOLE repository — 9,918 files as of 2026-09-07 (counted with
+# `prettier.getFileInfo` over `git ls-files`) — while this gate still looks only
+# at the handful you touched, one of which is the config itself. So the one edit
+# that can red CI everywhere at once is the one edit this cannot see coming. It
+# is deliberate: checking 9,918 files takes minutes, which is the test gate's
+# job, not this one's. Run `pnpm format:check` by hand when you touch either file.
+#
 # `--diff-filter=ACMRT` drops deletions, so a push that removes files never hands
 # prettier a path that is gone; a rename reports only its DESTINATION under
-# `--name-only`, which is the path that exists. The `-f` test behind it is
-# belt-and-braces for anything the filter misses (a path that vanished between
-# the diff and the check, a symlink). `-z` because git quotes non-ASCII paths
-# unless it is emitting NUL-delimited output.
+# `--name-only`, which is the path that exists. The `-f` test behind it covers a
+# path that vanished between the diff and the check, and — because `-f` follows
+# links — a symlink to a DIRECTORY, which this repo has seventeen of under
+# `.claude/skills/`.
+#
+# SYMLINKS TO FILES NEED THEIR OWN GUARD, and this is the one place where being
+# stricter than CI would have been a bug rather than a virtue. Prettier refuses a
+# symlink handed to it BY NAME — `[error] Explicitly specified pattern "x.ts" is
+# a symbolic link.`, exit 2 — but SKIPS one silently when it finds it by walking
+# a directory. So `prettier --check .` in CI passes over exactly the file this
+# gate would have hard-refused, and the refusal would have come with a message
+# saying CI was about to fail, which was false, and no way through but
+# `--no-verify`. `[ ! -L ]` makes this gate match prettier's own traversal
+# behaviour, which is the behaviour that decides the PR.
+#
+# `-z` because git quotes non-ASCII paths unless it is emitting NUL-delimited
+# output.
 #
 # `.prettierignore` is honored by prettier itself, which skips ignored paths it
 # is handed explicitly — the same delegation .claude/hooks/format-changed.sh
@@ -202,8 +223,29 @@ files=()
 while IFS= read -r -d '' file; do
   [ -n "$file" ] || continue
   [ -f "$file" ] || continue
+  # `-f` follows the link, so this has to come after it and separately: prettier
+  # refuses a symlink named explicitly while skipping one it finds by walking a
+  # directory, and the directory walk is what CI does. See the header.
+  [ ! -L "$file" ] || continue
   files+=("$file")
 done < <(git diff --name-only -z --diff-filter=ACMRT "$merge_base" -- 2>/dev/null)
+
+# Which paths this push actually CARRIES — the committed half of the same diff.
+# Used only to say true things in the failure report. The set above is
+# deliberately over-inclusive of working-tree state, so without this the report
+# would tell someone their work in progress is "in this push" and that CI is
+# about to fail over it, and advise committing it to fix that. All three would
+# be false.
+#
+# THE DISCRIMINATOR IS "IS THE PATH IN THE PUSH", not "is the file dirty", and
+# the difference matters in one direction only. A file committed unformatted and
+# then edited again is dirty AND in the push; classifying by dirtiness would put
+# it under a heading saying CI cannot see it, which is the one error worth
+# avoiding here — a reassurance that is wrong. Classifying by path can only
+# over-warn (a dirty file whose committed bytes happen to be fine gets listed as
+# in the push), and an over-warning about a file you must tidy anyway costs
+# nothing.
+committed=$(git diff --name-only -z --diff-filter=ACMRT "$merge_base" HEAD -- 2>/dev/null | tr '\0' '\n')
 
 # An empty changed set is an instant pass, and it must not reach prettier:
 # prettier with zero file arguments is an error, and on bash 3.2 (macOS) the
@@ -241,16 +283,47 @@ if [ "$status" -ne 1 ]; then
   exit 1
 fi
 
+# TWO BUCKETS, because they warrant two different sentences. A path this push
+# carries is one CI will read; a path it does not is caught here only because the
+# set is deliberately over-inclusive of working-tree state (see the header), and
+# saying "CI will fail on this, commit it and push again" about somebody's work
+# in progress would be false twice over and would advise committing it to boot.
+in_push=''
+working=''
+while IFS= read -r file; do
+  [ -n "$file" ] || continue
+  if printf '%s\n' "$committed" | grep -qxF "$file"; then
+    in_push="${in_push}${file}"$'\n'
+  else
+    working="${working}${file}"$'\n'
+  fi
+done <<<"$unformatted"
+
 count=$(printf '%s\n' "$unformatted" | grep -c '[^[:space:]]')
-printf 'git push refused: %s file(s) in this push are not Prettier-formatted.\n\n' "$count"
-printf '%s\n' "$unformatted" | sed 's/^/  /'
-printf '\nCI runs `prettier --check .` inside the required `lint` check and will fail\n'
-printf 'on these. Fix them, commit, and push again:\n\n  pnpm exec prettier --write'
+printf 'git push refused: %s file(s) are not Prettier-formatted.\n' "$count"
+
+if [ -n "$in_push" ]; then
+  printf '\nIn this push — CI runs `prettier --check .` inside the required `lint`\n'
+  printf 'check and WILL fail on these:\n\n'
+  printf '%s' "$in_push" | sed 's/^/  /'
+fi
+
+if [ -n "$working" ]; then
+  printf '\nUncommitted in your working tree — not in this push, and CI will not see\n'
+  printf 'them until you commit them:\n\n'
+  printf '%s' "$working" | sed 's/^/  /'
+fi
+
+printf '\nFix them:\n\n  pnpm exec prettier --write'
 while IFS= read -r file; do
   [ -n "$file" ] || continue
   printf ' '
   printf '%q' "$file"
 done <<<"$unformatted"
-printf '\n\n'
+if [ -n "$in_push" ]; then
+  printf '\n\nThen commit the fixes that belong to this push and push again.\n\n'
+else
+  printf '\n\nNothing needs committing — they only have to be tidy for the push to go.\n\n'
+fi
 
 exit 1

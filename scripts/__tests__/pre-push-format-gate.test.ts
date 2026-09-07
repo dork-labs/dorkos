@@ -184,19 +184,52 @@ describe('the formatting check keeps the properties the gate depends on', () => 
     // Deletions and renames are the everyday shape of the failure this prevents:
     // prettier exits non-zero on a missing path, which would refuse honest
     // pushes. The BEHAVIOURAL guarantee — a path that is gone never reaches
-    // prettier — is pinned by the fixture suite, which drives real deletions and
-    // renames through the real script.
+    // prettier — is pinned by the fixture suite's case (d), which commits a file,
+    // moves origin/main onto that commit, and only then deletes it, so the
+    // deletion is a real `D` entry in the diff the script reads.
     //
     // This is only the cheap smoke that the filter has not been deleted as a
     // redundant-looking flag, and it is deliberately labelled as such, because
-    // the fixture suite CANNOT attribute the guarantee to it: the script drops
-    // gone paths twice, and removing this filter leaves those cases green
-    // (measured) because the `[ -f ]` test behind it still catches them. What
-    // the filter uniquely covers is the case the filesystem cannot answer — a
-    // case-only rename, where the old path still tests as existing — and no
-    // honest fixture can separate the two while both stand. Pinning the spelling
-    // is the most this file can truthfully claim.
+    // the fixture suite cannot attribute the guarantee to EITHER guard alone.
+    // Measured against the corrected fixture: removing this filter leaves case
+    // (d) green, removing the `[ -f ]` test behind it leaves case (d) green, and
+    // removing BOTH turns it red. They shadow each other. What the filter
+    // uniquely covers is the case the filesystem cannot answer — a case-only
+    // rename, where the old path still tests as existing — and no honest fixture
+    // can isolate that while the other guard stands. Pinning the spelling is the
+    // most this file can truthfully claim.
     expect(checkText).toContain('--diff-filter=ACMRT');
+  });
+
+  it('skips symlinks the way CI skips them', () => {
+    // The one place where being stricter than CI is a BUG, not a virtue.
+    // Prettier refuses a symlink handed to it by name (exit 2) and skips one it
+    // finds by walking a directory — and the directory walk is what
+    // `prettier --check .` does in the required `lint` check. Without this guard
+    // the gate hard-refuses a push over a file CI passes, while printing a
+    // message saying CI is about to fail. The behavioural proof is fixture case
+    // (o), which commits a real mode-120000 link and goes red when the guard is
+    // removed; this pins that the line has not been tidied away as a
+    // duplicate-looking neighbour of the `[ -f ]` test it must follow.
+    expect(checkText).toContain('[ ! -L "$file" ] || continue');
+  });
+
+  it('tells the truth about which files are in the push', () => {
+    // A single flat list asserted two falsehoods about an uncommitted file —
+    // that it was "in this push" and that "CI will fail" on it — and then
+    // advised committing work in progress to fix them. The split into a
+    // carries-this-push bucket and a working-tree bucket is what makes every
+    // sentence in the report true of the file it is printed under; fixture cases
+    // (i) and (p) pin both buckets and go red in both directions when the
+    // classification is forced either way.
+    expect(checkText).toContain('In this push');
+    expect(checkText).toContain('Uncommitted in your working tree');
+    // Classified by whether the PATH is in `merge-base..HEAD`, never by whether
+    // the file is dirty: a file committed unformatted and then edited again is
+    // dirty AND in the push, and a dirtiness test would file it under a heading
+    // saying CI cannot see it — the one error direction worth avoiding, because
+    // it is a reassurance that is wrong.
+    expect(checkText).toContain('"$merge_base" HEAD --');
   });
 
   it('never kills by name or by process group (Hard Rule 7)', () => {

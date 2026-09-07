@@ -116,6 +116,14 @@ pre-push:
       # would put two commands in a queue for one pipe. (Verified on lefthook
       # 2.1.12: with this command running first and not declaring `use_stdin`,
       # the `tests` command still receives git's ref line intact.)
+      #
+      # THE PRICE OF THAT, STATED: DOR-116's delete-only carve-out is the `tests`
+      # command's alone and does not extend here, so `git push origin --delete
+      # <branch>` now pays this check. It costs 26ms when the branch it is run
+      # from matches origin/main and a few hundred milliseconds otherwise —
+      # against a second consumer for one pipe, and a second copy of a ref-parsing
+      # loop to keep in step with the first. Worth it; noted so the next person to
+      # find it does not read it as an oversight.
       run: bash scripts/pre-push-format-check.sh
       fail_text: 'Formatting check failed — run the `prettier --write` command printed above, commit, and push again.'
     tests:

@@ -198,6 +198,8 @@ case_a() {
   check "a: prints the exact fix command" has \
     "pnpm exec prettier --write src/bad.ts" "$sut_out"
   check "a: says why it matters" has "prettier --check ." "$sut_out"
+  check "a: files it under the push, not the working tree" has "In this push" "$sut_out"
+  check "a: tells you to commit the fix" has "commit the fixes that belong to this push" "$sut_out"
   check "a: leaves the file alone (check, never write)" eq \
     "$UGLY_TS" "$(cat "$repo/src/bad.ts")"
 }
@@ -241,21 +243,26 @@ case_c() {
 
 # --- (d) Deletions do not break it. ------------------------------------------
 # A deleted path handed to prettier exits non-zero and refuses an honest push.
-# The surviving formatted file is what makes this case able to fail at all:
-# without it the changed set would be empty, prettier would never run, and the
-# assertion would pass by vacuum.
+#
+# THE SEEDING IS THE WHOLE CASE. `src/gone.ts` is committed and origin/main is
+# moved onto that commit BEFORE it is deleted, so the deletion is a real `D`
+# entry in `merge-base..worktree`. An earlier version of this case created and
+# deleted the file after the base was planted, which nets out of the diff
+# entirely — the case had no subject and passed against a script with both
+# deletion guards removed (measured: 48/48 green). Seeded this way it fails, and
+# `src/keep.ts` changing after the base is what keeps prettier running at all so
+# the invocation log has something to be checked against.
 #
 # WHAT THIS PINS AND WHAT IT CANNOT. The script excludes deletions twice — with
-# `--diff-filter=ACMRT` and again with the `[ -f "$file" ]` test — and only one
-# of the two is attributable here. Measured: deleting the diff-filter leaves this
-# case and (e) GREEN, because the existence test still drops every path that no
-# longer exists; deleting the existence test turns them red immediately. So this
-# pins the OUTCOME (a deleted path never reaches prettier) and not the mechanism,
-# and a fixture claiming otherwise would be claiming coverage it does not have.
-# The filter is real belt-and-braces rather than dead code — it keeps a
-# renamed-away or case-changed path out of the list before the filesystem is
-# consulted at all, which on a case-insensitive filesystem the `-f` test cannot
-# do — but no honest fixture can separate them while both stand.
+# `--diff-filter=ACMRT` and again with the `[ -f "$file" ]` test — and neither is
+# individually attributable, because each alone still drops a path that is gone.
+# Measured against this corrected fixture: removing BOTH turns the case red;
+# removing either one leaves it green. So it pins the OUTCOME (a deleted path
+# never reaches prettier) and not the mechanism. The filter is real
+# belt-and-braces rather than dead code — it keeps a renamed-away or case-changed
+# path out of the list before the filesystem is consulted at all, which on a
+# case-insensitive filesystem the `-f` test cannot do — but no honest fixture can
+# separate the two while both stand.
 case_d() {
   local repo
   repo=$(init_repo case-d)
@@ -266,9 +273,12 @@ case_d() {
     printf '%s\n' "$TIDY_TS" >src/keep.ts
     printf '%s\n' "$TIDY_TS" >src/gone.ts
     git add -A
-    git commit -qm 'two files'
+    git commit -qm 'two files, both already on origin/main'
+    git update-ref refs/remotes/origin/main HEAD
+    printf '%s\n' "$TIDY_TS" >>src/keep.ts
     git rm -q src/gone.ts
-    git commit -qm 'remove one'
+    git add -A
+    git commit -qm 'remove one, touch the other'
   ) >/dev/null 2>&1
 
   run_sut case-d
@@ -282,6 +292,14 @@ case_d() {
 # --- (e) Renames report their destination, not their source. -----------------
 # `--name-only` gives one path for a rename and it is the NEW one; the old path
 # no longer exists, so handing it over would be case (d) again by another route.
+# Seeded the same way and for the same reason: a file created and renamed after
+# the base was planted appears in the diff as a plain addition of the new name,
+# with no source path to get wrong.
+#
+# Git's rename detection means this case cannot attribute anything to
+# `--diff-filter` either — a detected rename yields the destination path with or
+# without it. It pins the outcome, which is what matters, and the deletion in
+# case (d) is where the filter's absence is felt.
 case_e() {
   local repo
   repo=$(init_repo case-e)
@@ -291,7 +309,8 @@ case_e() {
     mkdir -p src
     printf '%s\n' "$TIDY_TS" >src/old-name.ts
     git add -A
-    git commit -qm 'seed'
+    git commit -qm 'seed, already on origin/main'
+    git update-ref refs/remotes/origin/main HEAD
     git mv src/old-name.ts src/new-name.ts
     git commit -qm rename
   ) >/dev/null 2>&1
@@ -411,6 +430,15 @@ case_i() {
   check "i: refuses over uncommitted work" eq 1 "$sut_status"
   check "i: names the unstaged edit" has "tracked.ts" "$sut_out"
   check "i: names the staged addition" has "staged.ts" "$sut_out"
+  # The half the first version of this script got wrong: neither file is in the
+  # push, so claiming they are — or that CI is about to fail over them, or that
+  # committing them is the fix — would be three false statements about somebody's
+  # work in progress.
+  check "i: files them as working-tree state" has "Uncommitted in your working tree" "$sut_out"
+  check "i: never claims they are in the push" lacks "In this push" "$sut_out"
+  check "i: does not advise committing work in progress" lacks \
+    "commit the fixes that belong to this push" "$sut_out"
+  check "i: says so outright" has "Nothing needs committing" "$sut_out"
 }
 
 # --- (j) Untracked files are NOT in the set. ---------------------------------
@@ -532,6 +560,85 @@ case_n() {
     "not Prettier-formatted" "$sut_out"
 }
 
+# --- (o) Symlinks are skipped, exactly the way CI skips them. ----------------
+# THE ONE PLACE BEING STRICTER THAN CI WOULD HAVE BEEN A BUG. Prettier refuses a
+# symlink handed to it BY NAME (`[error] Explicitly specified pattern "..." is a
+# symbolic link.`, exit 2) but skips one silently when it walks a directory — and
+# the directory walk is what `prettier --check .` does in the required `lint`
+# check. So without the `-L` guard this gate hard-refuses a push over a file CI
+# passes, while printing a message saying CI is about to fail, with no way
+# through but `--no-verify`. Measured: removing the guard turns this case red.
+#
+# Both flavours, because they are stopped by different lines: a link to a FILE
+# passes `[ -f ]` (which follows) and needs `[ ! -L ]`, while a link to a
+# DIRECTORY — this repo has seventeen under `.claude/skills/` — is already
+# dropped by `[ -f ]`.
+case_o() {
+  local repo
+  repo=$(init_repo case-o)
+  install_prettier case-o
+  (
+    cd "$repo" || exit 1
+    mkdir -p src target-dir
+    printf '%s\n' "$TIDY_TS" >src/real.ts
+    printf '%s\n' "$TIDY_TS" >target-dir/inner.ts
+    ln -s real.ts src/link.ts
+    ln -s target-dir dir-link
+    git add -A
+    git commit -qm 'a file, a link to it, and a link to a directory'
+  ) >/dev/null 2>&1
+
+  # Precondition, asserted rather than assumed: git must have recorded these as
+  # symlinks (mode 120000) or the case proves nothing about symlinks at all.
+  check "o: fixture really committed a symlink" has "120000" \
+    "$(cd "$repo" && git ls-files -s src/link.ts)"
+
+  run_sut case-o
+  check "o: passes, as CI's directory walk does" eq 0 "$sut_status"
+  check "o: no output" eq "" "$sut_out"
+  check "o: the real file was checked" has "src/real.ts" "$(invocations case-o)"
+  check "o: the file symlink never reached prettier" lacks \
+    "src/link.ts" "$(invocations case-o)"
+  check "o: the directory symlink never reached prettier" lacks \
+    "dir-link" "$(invocations case-o)"
+}
+
+# --- (p) Both buckets at once, each under the right heading. -----------------
+# The mixed case is the one that can silently regress into a single list again,
+# and a single list is what made the message assert falsehoods in the first
+# place. Pins that each file lands under the heading that is true of it.
+case_p() {
+  local repo
+  repo=$(init_repo case-p)
+  install_prettier case-p
+  (
+    cd "$repo" || exit 1
+    printf '%s\n' "$UGLY_TS" >shipped.ts
+    git add -A
+    git commit -qm 'unformatted and committed — this one really is in the push'
+    printf '%s\n' "$UGLY_TS" >wip.ts
+    git add wip.ts
+  ) >/dev/null 2>&1
+
+  run_sut case-p
+  check "p: refuses" eq 1 "$sut_status"
+  check "p: counts both" has "2 file(s) are not Prettier-formatted" "$sut_out"
+  check "p: shows the push section" has "In this push" "$sut_out"
+  check "p: shows the working-tree section" has "Uncommitted in your working tree" "$sut_out"
+  # Order is load-bearing: the push section is printed first, so the committed
+  # file must appear before the heading that introduces the other bucket.
+  check "p: the committed file is under the push heading" has \
+    "shipped.ts" "$(printf '%s' "$sut_out" | sed -n '/In this push/,/Uncommitted in your working tree/p')"
+  check "p: the WIP file is not under the push heading" lacks \
+    "wip.ts" "$(printf '%s' "$sut_out" | sed -n '/In this push/,/Uncommitted in your working tree/p')"
+  check "p: the WIP file is under the working-tree heading" has \
+    "wip.ts" "$(printf '%s' "$sut_out" | sed -n '/Uncommitted in your working tree/,$p')"
+  check "p: one fix command covers both" has \
+    "pnpm exec prettier --write shipped.ts wip.ts" "$sut_out"
+  check "p: still tells you to commit the push half" has \
+    "commit the fixes that belong to this push" "$sut_out"
+}
+
 case_a
 case_b
 case_c
@@ -546,6 +653,8 @@ case_k
 case_l
 case_m
 case_n
+case_o
+case_p
 
 printf '\npre-push-format fixtures: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
