@@ -2,6 +2,10 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // What `--project <name>` matches from the repo root. Rationale:
+    // apps/server/vitest.config.ts. Pinned for every project by
+    // scripts/__tests__/vitest-projects.test.ts (DOR-1822).
+    name: 'desktop',
     environment: 'node',
     // `scripts/` is in on purpose: the build gates there decide what ships (a
     // rejected server bundle, a renderer with unsubstituted defines), and they

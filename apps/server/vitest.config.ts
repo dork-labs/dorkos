@@ -356,6 +356,14 @@ export default defineConfig({
     ],
   },
   test: {
+    // What `--project <name>` matches from the repo root. Vitest falls back to
+    // the package.json name when a project does not declare one, so for most
+    // of this repo's life the obvious `pnpm vitest run --project server`
+    // matched no project and only `--project @dorkos/server` worked — a
+    // startup error rather than a false green, but one that reads as a broken
+    // runner (DOR-1822). Every project names itself after its directory now,
+    // pinned by scripts/__tests__/vitest-projects.test.ts.
+    name: 'server',
     environment: 'node',
     // Vitest 4 no longer auto-excludes dist/, and `tsc` emits compiled
     // *.test.js there — scope discovery to source like every other package.

@@ -80,7 +80,7 @@ pnpm --filter @dorkos/server typecheck  # One package (~4s vs ~28s full)
 pnpm --filter @dorkos/server lint       # One package (~4s)
 ```
 
-The targeted run only reaches a package the root `vitest.config.ts` registers as a project, and it lists all of them, `packages/evals` included. `pnpm vitest run <path>` answering "No test files found, exiting with code 1" means your path is wrong, never that the package is unreachable (DOR-670, when it meant both). `scripts/__tests__/vitest-projects.test.ts` fails if that list and the workspace drift apart.
+The targeted run only reaches a package the root `vitest.config.ts` registers as a project, and it lists all of them, `packages/evals` included. `pnpm vitest run <path>` answering "No test files found, exiting with code 1" means your path is wrong, never that the package is unreachable (DOR-670, when it meant both). `scripts/__tests__/vitest-projects.test.ts` fails if that list and the workspace drift apart. A project is named after its directory, so `--project client` (never `--project @dorkos/client`) is the filter, and a filter matching no project is a startup error with a non-zero exit — it cannot pass silently (DOR-1822).
 
 **Three paths in the repo spend real money, and each needs its OWN flag beside its OWN key.** The shape is always the same — the flag is the decision, the key is the instrument, and a key alone arms nothing, because plenty of people leave one exported and having a key is not the same as deciding to spend.
 

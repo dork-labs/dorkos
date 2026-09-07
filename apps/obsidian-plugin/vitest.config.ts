@@ -13,6 +13,10 @@ import { defineConfig } from 'vitest/config';
  */
 export default defineConfig({
   test: {
+    // What `--project <name>` matches from the repo root. Rationale:
+    // apps/server/vitest.config.ts. Pinned for every project by
+    // scripts/__tests__/vitest-projects.test.ts (DOR-1822).
+    name: 'obsidian-plugin',
     environment: 'node',
     // `scripts/` is in on purpose, mirroring apps/desktop/vitest.config.ts:
     // the define gate there decides what ships (a bundle still carrying an

@@ -10,6 +10,10 @@ import { defineConfig } from 'vitest/config';
  */
 export default defineConfig({
   test: {
+    // What `--project <name>` matches from the repo root. Rationale:
+    // apps/server/vitest.config.ts. Pinned for every project by
+    // scripts/__tests__/vitest-projects.test.ts (DOR-1822).
+    name: 'e2e',
     include: [
       'capture/**/__tests__/**/*.test.ts',
       'multi-window/**/__tests__/**/*.test.ts',

@@ -1328,7 +1328,7 @@ npm test -- --run   # All tests pass
 3. Verify the relay package specifically:
 
 ```bash
-npx vitest run --project @dorkos/relay   # All relay tests pass
+npx vitest run --project relay   # All relay tests pass
 ```
 
 **Acceptance Criteria**:

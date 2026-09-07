@@ -11,6 +11,10 @@ export default defineConfig({
   define: clientDefines(),
   plugins: [react(), tailwindcss()],
   test: {
+    // What `--project <name>` matches from the repo root. Rationale:
+    // apps/server/vitest.config.ts. Pinned for every project by
+    // scripts/__tests__/vitest-projects.test.ts (DOR-1822).
+    name: 'client',
     environment: 'jsdom',
     // Resolve a few `@dorkos/shared` subpaths to the package's SOURCE, not its
     // built `dist/`. This is `test.alias`, NOT `resolve.alias`, on purpose: it
