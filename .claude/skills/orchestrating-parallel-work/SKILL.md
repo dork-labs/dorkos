@@ -1,6 +1,6 @@
 ---
 name: orchestrating-parallel-work
-description: Orchestrates parallel execution of AI agents with dependency analysis and batch scheduling. Use when coordinating multiple concurrent tasks, optimizing task ordering, or when multiple independent agents would benefit the workflow.
+description: Orchestrates parallel execution of AI agents with dependency analysis, batch scheduling, and the playbook for landing many branches at once. Use when coordinating multiple concurrent tasks, optimizing task ordering, sequencing batches of code changes into waves, landing parallel branches through review and merge, or rebasing a branch that fell behind other in-flight work.
 ---
 
 # Orchestrating Parallel Work
@@ -101,6 +101,147 @@ Agent(
 ```
 
 > Note: the `/flow` engine's DECOMPOSE/EXECUTE stages apply these batching patterns, but flow lives in the external marketplace plugin (`dork-labs/marketplace`, `plugins/flow/`), not this repo.
+
+## Landing Parallel Batches
+
+The patterns above cover fan-out. When the parallel work is **code that has to
+reach `main`**, fan-out is the easy half: the branches then have to survive each
+other, review, and the merge queue. This playbook is what a 20-batch programme
+of concurrent branches taught (167 findings, 2026-09); it assumes a repo where
+every change lands via PR.
+
+### Sequence batches by collision class
+
+Before dispatching anything, annotate every batch with the **collision classes**
+it touches — the directories, shared primitives, user-visible strings, and
+config files it will edit — and order the waves from that annotation, not from
+priority:
+
+- **Foundation first.** Shared primitives, design tokens, and other code many
+  batches build on go in an early wave, so later batches build on the new
+  version instead of racing it.
+- **Same-domain sweeps travel together.** All the copy edits in one wave, all
+  the layout fixes in another. Their conflicts are then resolved once, between
+  siblings that know about each other, rather than repeatedly against strangers.
+- **Dependents after their dependency.** A batch that consumes another batch's
+  output waits for it, exactly as in Pattern 2.
+- **File moves and renames last.** A move collides with every branch that has
+  the file open, and it is the one change that cannot be rebased cheaply.
+- **Cap concurrency.** The 2026-09 programme held at four live worktrees; past
+  that, rebasing cost more than the parallelism bought. Pick a ceiling from your
+  own machine and orchestrator, and hold it.
+
+### The per-batch chain
+
+Each batch runs the same chain, and no step is optional:
+
+1. **Worktree** from `origin/main`, one per batch (`isolation: "worktree"`, or
+   an explicit worktree the agent is told to work in). Never two agents in one
+   checkout. The base rule, the port model, and the cleanup protocol belong to
+   the **`working-in-worktrees`** skill (`/worktree:create`); this playbook adds
+   nothing to them.
+2. **Implement** with a self-contained brief: the task list verbatim, the
+   verification commands, and the constraint that the agent touches nothing
+   outside its batch.
+3. **Verify locally** — targeted tests for every package touched **plus every
+   test that renders a changed component**, typecheck and lint per package, and
+   for UI work, drive the real surface rather than trusting the unit tests.
+4. **Adversarial review before the PR opens.** A _separate_ agent reviews the
+   branch against the repo's review rubric — in this repo `REVIEW.md` — and the
+   brief names the failure modes to hunt (`REVIEW.md` → "Failure modes worth
+   hunting by name"). A generic "review this branch" finds nothing; the named
+   shapes found roughly forty-five real defects pre-PR. The implementer fixes;
+   the reviewer re-verifies its own findings rather than accepting the fix
+   report.
+5. **Finalize** — fragment, labels, push, PR. The mechanics (when a changelog
+   fragment is owed, what `skip-changelog` / `review:light` / `review:deep` mean,
+   review-before-open ordering, and how auto-merge behaves) belong to the
+   **`creating-pull-requests`** skill. What this playbook adds is below.
+
+### Landing rules
+
+- **Format as the last step before every push.** Run the formatter over the full
+  changed set (`git diff --name-only origin/main...HEAD`) immediately before
+  pushing, and again after any hand-resolved conflict. In this repo the pre-push
+  hook now checks that same set and prints the exact
+  `pnpm exec prettier --write <files>` line (`scripts/pre-push-format-check.sh`,
+  DOR-1839) — it deliberately never writes, so running the formatter yourself is
+  still the only thing that fixes it, and doing it first is how you skip the
+  refusal. A worktree with no `node_modules` fails that hook; install before you
+  push rather than reaching for `--no-verify`.
+- **Verify the merge is armed or queued; never assume either way.** How
+  auto-merge behaves — that a new commit drops the armed state on **every** push,
+  that the strategy flag belongs to the queue, that arming follows review — is
+  the **`creating-pull-requests`** skill's, and it is the one to read. The
+  parallel-specific delta is the check: after arming, confirm one of two things
+  is true — the PR reports an auto-merge request, **or** it appears in the merge
+  queue. A queued PR reports _no_ auto-merge request, so the first field alone
+  answers wrongly. A zero exit proves nothing, and the request silently no-ops
+  while mergeability is unknown. In this repo a janitor (`merge-tail.yml`) also
+  arms finished PRs on a 10-minute tick, so the population that actually strands
+  is the one it skips by design — unresolved review threads, any check pending,
+  failing or cancelled, a `hold`/`wip`/`blocked` label, a conflicting tree,
+  unknown mergeability (`scripts/should-arm-automerge.sh` names each reason).
+  Straight off a push, most PRs are in that set.
+- **Rebase deliberately.** When a branch falls behind, resolve to **both
+  intents** — the incoming change and yours — rather than picking a side by
+  reflex; when one side deleted what the other edited, the **deletion wins**, and
+  the edit's intent gets re-applied elsewhere if it still matters. Then run the
+  **full** suite (`pnpm test -- --run` here — the pre-push hook runs
+  affected-only, and a bare `vitest` full run skips the per-package env turbo
+  sets up), because semantic conflicts carry no markers and nothing else will
+  tell you that your renamed string broke another branch's assertion. A
+  conflicting PR runs no CI at all, so after resolving, re-push **and**
+  re-request the review that never ran.
+- **Test-merge before trusting two in-flight branches together.** Once your
+  branch is in the merge queue this is structurally handled — the queue builds
+  and tests your PR on top of `main` plus everything ahead of it. Before that,
+  do it by hand from the branch:
+
+  ```bash
+  git merge --no-commit --no-ff origin/main   # or the other branch's ref
+  pnpm test -- --run                          # the full suite, on the combined tree
+  git merge --abort                           # throw the trial merge away
+  ```
+
+### Rolling dispatch, load-aware
+
+Waves are a scheduling model, not a batching requirement. Prefer **rolling
+dispatch**: when one batch lands, top the pool back up to its ceiling rather
+than waiting for a whole wave to drain. Two conditions on that:
+
+- **Check machine load before topping up.** Other agents and the operator's own
+  dev servers share the machine; an over-subscribed machine starves hooks and
+  turns green work red. If load is high, hold the slot.
+- **Reuse veterans for repeat rebases.** Continue the agent that already owns a
+  branch (`SendMessage`) instead of spawning a fresh one — it holds the conflict
+  history a new agent would have to rediscover.
+- **Give push-capable agents foreground-only instructions.** An agent that
+  backgrounds a long command and then waits for a notification stalls
+  indefinitely; tell it to run gates in the foreground.
+- **Never stop a process you did not start**, and never by name — see the
+  process rule in `AGENTS.md`.
+
+### Close-out discipline
+
+- **Keep a follow-ups ledger during the run.** Anything deferred, out of scope,
+  or larger than its batch gets written down the moment it is found, with enough
+  context to act on later.
+- **File the ledger before declaring the programme done.** An unfiled follow-up
+  is a lost one; every entry becomes a real tracker issue with its evidence.
+- **Remove a worktree only once its content is provably on `main`.** "The PR was
+  green" is not proof, and neither is "it merged" on its own — a squash rewrites
+  history, so the test is that the PR merged **and** the branch tip is still the
+  commit that merged (anything pushed after the merge is not in `main`). In this
+  repo `/worktree:prune` and `scripts/should-reap-worktree.sh` make exactly that
+  decision; use them rather than eyeballing it, and never remove a worktree
+  holding uncommitted or unpushed work.
+
+> Non-normative: this playbook is written against the `Agent` tool so it works
+> in any harness that can spawn a subagent — and runs the same way sequentially,
+> one batch at a time, in a harness that spawns none. A session orchestrator that
+> can drive several sessions at once parallelizes the same method without
+> changing any of it.
 
 ## Agent Selection Guide
 
