@@ -8,6 +8,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   resolve: {
     alias: {
+      // The mounted protocol test executes the local server's source directly.
+      // Read this self-contained policy module from source as the server suite
+      // does, so a fresh site-only test graph does not depend on relay dist.
+      '@dorkos/relay/approver-allowlist': path.resolve(
+        __dirname,
+        '../../packages/relay/src/adapters/approver-allowlist.ts'
+      ),
       '@': path.resolve(__dirname, './src'),
     },
   },
