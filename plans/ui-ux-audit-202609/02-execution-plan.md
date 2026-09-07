@@ -29,3 +29,7 @@ Deferred-by-design: items the report flags as spec-sized (8.3, 14.1, 14.10) land
 - Hooks may starve under multi-agent load: hand-run the gates, `--no-verify` only when locally green (documented precedent).
 - Queued PRs report `autoMergeRequest: null` (normal). CONFLICTING PRs get no CI: rebase, re-push, re-dispatch review.
 - Main checkout keeps untracked `plans/ui-ux-audit-202609/`; before any `git pull` on main, remove the dir once the docs PR has merged (identical content, else pull refuses).
+
+## Close-out notes
+
+- **Sort-control copy conflict — resolved (DOR-1823, 2026-09-06).** Batch 07's fragment said the toolbar's tap areas grew "even though the button you see stays the same size", and batch 03's said "the sort control … is bigger and easier to tap". Both were true when written, in that order — batch 03 landed after batch 07 and replaced the Sort control's invisible reach with real `Button`s that visibly grow below `md` (`FilterBarSort.tsx`, `c3dd91758` after `13237d4ae`). Compiled into one release entry they would have read as a contradiction, so Sort is no longer named in batch 07's list. Status, Filter and the active-filters badge stay there: they still carry the invisible reach (`FilterBarPrimary.tsx`, `FilterBarAddFilter.tsx`, `FilterBarActiveFilters.tsx`), so "stays the same size" remains true of them. Nothing for the next release compile to re-litigate.
