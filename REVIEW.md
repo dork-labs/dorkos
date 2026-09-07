@@ -23,6 +23,76 @@ Work the diff like a senior engineer, not a linter:
 4. Rank, then cap. Order findings by severity and post the top ones within the nit
    cap. Quality over volume.
 
+## Failure modes worth hunting by name
+
+Across two large programmes of parallel PRs, nearly every defect worth finding
+was found by hunting a **named shape**; "review carefully" produced nothing, and
+almost none was visible by reading the diff. Run this list against the change in
+front of you.
+
+Three of these hunts need a shell, and the `claude-code-review` job has none (as
+the deletion sweep below says: Grep and Glob are all you get there). They are
+marked **[needs a shell]**. In that job, do not skip them silently and do not
+claim them — post the concern as 🟡, naming the exact command and the tree it
+should run against.
+
+- **A trusted region interpolating untrusted strings.** A prompt, a template, or
+  a log line fences the untrusted part and then puts somebody's raw words in the
+  preamble, outside the fence. The fix is never a better sanitizer. Hunt: for
+  every string the change assembles, ask which fragments are somebody's words,
+  and confirm each is inside the fence.
+- **Declared, validated, documented, unreachable.** A config field the settings
+  UI never renders, a frontmatter key nothing reads, a manifest path that stopped
+  matching after a move, a value accepted and then silently emptied. It looks
+  like a working feature from every angle except the one that matters. Hunt: for
+  each new field, flag, or key, find the code path that reads it AND the surface
+  that sets it.
+- **Inert where it ships** _[needs a shell]_. A feature built and tested at every
+  seam can be physically unable to run where it ships: a native SQLite addon that
+  never reaches the Obsidian vault, a migrations folder that cannot resolve
+  there, a design token that resolves to nothing in a build that never loads the
+  stylesheet defining it. Graceful degradation makes the corpse look safe. Hunt:
+  resolve every runtime dependency — native bindings, data files, config paths,
+  CSS custom properties — against each REAL install layout, with a positive
+  control.
+- **A comment is a claim.** A TSDoc asserting a security property, an invariant,
+  or a "this never throws" guarantee is an unverified assertion wearing a doc's
+  clothes, and it reads as a completed threat model. Hunt: hold every declarative
+  comment to an assertion's bar, starting with the one that sounds most
+  reassuring.
+- **A fix that makes things worse while making it better.** Surfacing an
+  allowlist corrupted it on edit; fixing a pointer highlight desynchronised what
+  a screen reader announces from what Enter does. Hunt: the recovery-path section
+  below has the test — compare against the pre-change behavior on the inputs the
+  old code handled.
+- **Semantic conflict without markers** _[needs a shell]_. Under parallel
+  branches this is the norm: your branch renames a string, reshapes a component,
+  or swaps a `<details>` for a Radix disclosure that unmounts its content — and
+  another branch's tests assert the old copy or the old structure. Git reports
+  zero conflicts, because there are none. Hunt: run the FULL suite on a tree
+  holding both changes, not the affected subset. The deletion sweep below is the
+  diff-side half of the same problem, and it does work without a shell.
+- **A clean auto-merge that composes two correct changes into a bug**
+  _[needs a shell]_. Two reviewed, individually-correct branches can land as one
+  defect — a spacing fix and a layout fix that double the same margin; a markup
+  change and an assertion change that pass apart and fail together. Hunt: when
+  the PR touches a surface another in-flight PR also touches, test-merge the two
+  and run the suite before calling either clean.
+- **Environment false-reds that read as branch defects.** A run reporting
+  `333 files failed, 0 tests failed` has a stale `@dorkos/shared` dist, never a
+  branch defect, and reporting it as one costs the author a round trip on a
+  machine problem.
+  Runner complaints about the invocation read the same way: `No test files found`
+  (a wrong path, DOR-670) and `No projects matched the filter` (a vitest project
+  is filtered by its directory basename, DOR-1822) both exit non-zero and neither
+  says anything about the branch. Hunt: before attributing a red to the author,
+  read what the runner actually said.
+
+Named here for completeness, with their own sections below: **assertions that
+cannot fail** ("A passing test is not evidence the test works"), **the
+zero-subject pass** ("Ask what the check counted"), and **scope asserted from
+where you are working** ("Deletions, renames, and moves").
+
 ## What Important (🔴) means here
 
 Reserve 🔴 Important for findings that would break behavior, lose data, leak

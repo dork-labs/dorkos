@@ -9,6 +9,8 @@ This guide covers when and how to run subagents in parallel in Claude Code workf
 | Concept                   | Location                                                                       |
 | ------------------------- | ------------------------------------------------------------------------------ |
 | Orchestration skill       | `.claude/skills/orchestrating-parallel-work/`                                  |
+| Landing playbook          | same skill → "Landing Parallel Batches"                                        |
+| Reviewer failure modes    | `REVIEW.md` → "Failure modes worth hunting by name"                            |
 | Parallel research pattern | flow plugin `ideating-features` skill (projected as `flow__ideating-features`) |
 | Parallel batch execution  | flow plugin `executing-specs` skill (the `/flow:execute` gate)                 |
 | Agent / SendMessage tools | Built-in Claude Code tools                                                     |
@@ -297,6 +299,27 @@ proceed_to_next_batch()
 | `/debug:browser`  | Parallel diagnostics      | Visual, console, network   |
 
 > The `/flow` stage skills apply these patterns but ship in the external marketplace plugin (`dork-labs/marketplace`, `plugins/flow/`), not this repo. `/debug:*` are repo-local commands.
+
+## Landing Parallel Branches
+
+The patterns above end when the agents report back. When the parallel work is
+code that has to reach `main`, the branches still have to survive each other,
+review, and the merge queue — that is a separate discipline, and it lives in
+**`orchestrating-parallel-work` → "Landing Parallel Batches"**. It is not
+repeated here; this section only says what is in it and when you need it.
+
+| You are about to…                        | Read in that section                        |
+| ---------------------------------------- | ------------------------------------------- |
+| Order more than a couple of code batches | Sequence by collision class                 |
+| Dispatch an implementer, push, or rebase | The per-batch chain, then the landing rules |
+| Top the pool back up, or call it done    | Rolling dispatch; close-out discipline      |
+
+Two pointers that section leans on, so you know where the real rules live: PR
+and auto-merge mechanics belong to **`creating-pull-requests`**, and worktree
+mechanics to **`working-in-worktrees`**. The one thing worth repeating here is
+the review step: brief the reviewing agent with the **named** failure modes in
+`REVIEW.md` ("Failure modes worth hunting by name"), because a generic "review
+this branch" reliably finds nothing.
 
 ## Git Worktrees vs Subagents
 
