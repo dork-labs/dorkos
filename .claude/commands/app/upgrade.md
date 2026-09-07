@@ -568,11 +568,12 @@ Each mode ends with a concise report:
 
 ## Traps measured on past waves (DOR-1525, 2026-08)
 
-- **The repo keeps `pnpm-lock.yaml` Prettier-formatted.** Any `pnpm install`
-  rewrites it compact and CI's `format:check` (first step of the required
-  `lint` workflow) fails. Run `pnpm exec prettier --write pnpm-lock.yaml`
-  after every install, before judging the diff (an 11k-line "phantom diff" is
-  this, not a real change).
+- **`pnpm-lock.yaml` needs no formatting step.** It is in `.prettierignore` as
+  of DOR-1715, so the file `pnpm install` writes is the file CI's
+  `format:check` accepts. Do not run `prettier --write` on it — that is a
+  verified no-op now. The 11k-line "phantom diff" this bullet used to warn
+  about _was_ the format mismatch, so a large lockfile diff today is a real
+  resolution change worth reading.
 - **`pnpm.overrides` rewrite our own workspace specs too.** An override pinned at
   a lower version silently cancels a bump you just made — compare lockfile
   importer specifiers against `package.json` after every relock. Overrides also
