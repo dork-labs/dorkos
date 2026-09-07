@@ -1,3 +1,5 @@
+/* global phase, parallel, agent, log, pipeline, workflow, args, budget */
+// The identifiers above are injected by the workflow runtime at execution time — never imported.
 // NON-NORMATIVE REFERENCE IMPLEMENTATION. Do not treat this file as the contract.
 //
 // This is the actual audit fan-out orchestration script from the September 2026 UI/UX
