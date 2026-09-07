@@ -37,6 +37,17 @@
  * calibration behind every threshold below; changing one without re-running
  * that replay is how a gate turns into noise.
  *
+ * DOR-1819 re-ran that replay and extended it, because this gate reported CLEAN
+ * on PR #1549 and the queue ejected the PR. Against #1549's own tree (base
+ * `768ecef3b`, head `f6249f228` — the commit before the operator's spec
+ * catch-up), the rules below report 5 findings where the previous version
+ * reported 0, and they are exactly the five assertion lines `30c0235f9` then had
+ * to fix; the same tree WITH that commit reports clean. Fifty-one merged,
+ * queue-green PRs that touched client copy — 21 in the first sweep, 30 in the
+ * review's — report nothing at all, eight UI-audit copy batches among them.
+ * Every threshold and clause here is pinned to one of those numbers. Re-run the
+ * replay before changing one.
+ *
  * WHY IT COMPARES CHUNKS, NOT WHOLE STRINGS. The two regressions this ticket
  * cites are both interpolated, so no whole string is shared between component
  * and spec:
@@ -122,7 +133,12 @@
  *   - Copy the change removes from a file it touched while an UNCHANGED file
  *     elsewhere still renders the same run. Removal is judged per changed file
  *     on purpose (above), so this direction is a false positive rather than a
- *     miss — say so on the PR; the check is advisory.
+ *     miss — say so on the PR; the check is advisory. The
+ *     `removed-spans-assertion` direction narrows that further to the removed
+ *     run's OWN file, deliberately (see {@link dropSupported}), which is why
+ *     replaying #1579 turns up one borderline finding — the spec's `is
+ *     required`, 0.69 of the run it sat in, still rendered from a sibling file
+ *     the change also touched.
  *
  * WHY IT IS STILL NEEDED IF `browser-test` EVER RUNS ON PRs (DOR-1818). It runs
  * in seconds against a diff, where the shards cost forty minutes on a machine
@@ -638,7 +654,10 @@ export function dropSupported(
       (text) =>
         text.length > finding.removed.length &&
         spans(finding.assertion, text, finding.ignoreCase) &&
-        text.includes(finding.removed)
+        // Folded on the same terms as the clause above it. A `/…/i` assertion
+        // that compares one way case-insensitively and the other way verbatim
+        // suppresses on a run it has no business suppressing on.
+        spans(text, finding.removed, finding.ignoreCase)
     );
   });
 }
@@ -654,12 +673,18 @@ export function dropSupported(
  * and printing it twice reads as noise. Runs after {@link dropSupported} so a
  * suppressed candidate never displaces one that survived.
  *
+ * The ASSERTION joins the position in the key, because one line can legitimately
+ * carry more than one stale string —
+ * `expect(row).toHaveText('Paused — no traffic', 'Resume routing')` is two
+ * separate fixes on one line, and keying on the position alone would report the
+ * first and swallow the second.
+ *
  * @param findings - Surviving findings, in any order.
  */
 export function collapseByPosition(findings: Finding[]): Finding[] {
   const best = new Map<string, Finding>();
   for (const finding of findings) {
-    const key = `${finding.specFile}:${finding.specLine}`;
+    const key = `${finding.specFile}:${finding.specLine}:${finding.assertion}`;
     const held = best.get(key);
     const distance = Math.abs(finding.assertion.length - finding.removed.length);
     if (held === undefined || distance < Math.abs(held.assertion.length - held.removed.length)) {
