@@ -88,6 +88,13 @@ export interface ProjectionWarning {
  * appears in `warnings` with a reason.
  */
 export interface ProjectionPlan {
+  /**
+   * The harnesses the manifest enables, in manifest order. Carried on the plan
+   * because the apply stage's orphan sweep needs it: a generated file belongs to
+   * one harness, and a harness nobody enabled is not the engine's to prune
+   * (AP-07). A plan narrowed to one harness carries only that one.
+   */
+  harnesses: HarnessId[];
   /** Actionable projections (`native` | `symlink` | `scaffold` | `generate` | `merge`). */
   actions: ProjectionAction[];
   /** Artifacts with no home in a target harness, each with a reason. */

@@ -135,6 +135,7 @@ function summarizeActions(actions: ProjectionAction[]): string {
  */
 function filterPlanToHarness(plan: ProjectionPlan, harness: HarnessId): ProjectionPlan {
   return {
+    harnesses: plan.harnesses.filter((h) => h === harness),
     actions: plan.actions.filter((a) => a.harness === harness),
     drops: plan.drops.filter((a) => a.harness === harness),
     warnings: plan.warnings.filter((w) => w.harness === harness),
@@ -197,7 +198,7 @@ function reportFix(repoRoot: string, plan: ProjectionPlan, sweepOrphans: boolean
 
   console.log('');
   console.log(
-    `${conflicts.length} conflict(s) left untouched — a real file or directory occupies the target; remove or rename it, then re-run:`
+    `${conflicts.length} conflict(s) left untouched — something DorkOS does not own occupies the target. Each line says what is in the way; clear it, then re-run:`
   );
   for (const action of conflicts) console.log(formatAction(action));
   return 1;

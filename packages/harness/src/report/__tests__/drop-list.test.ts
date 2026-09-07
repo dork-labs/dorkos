@@ -6,6 +6,7 @@ describe('formatDropList', () => {
   it('groups drops by harness with their reasons', () => {
     // The drop list is the honesty surface — each drop shows its harness + reason.
     const plan: ProjectionPlan = {
+      harnesses: ['codex'],
       actions: [],
       drops: [
         {
@@ -27,13 +28,16 @@ describe('formatDropList', () => {
 
   it('reports a clean message when there are no drops', () => {
     // No drops is a valid, honest outcome.
-    expect(formatDropList({ actions: [], drops: [], warnings: [] })).toMatch(/No drops/);
+    expect(formatDropList({ harnesses: [], actions: [], drops: [], warnings: [] })).toMatch(
+      /No drops/
+    );
   });
 });
 
 describe('formatWarnings', () => {
   it('groups warnings by harness with their reasons', () => {
     const out = formatWarnings({
+      harnesses: ['codex'],
       actions: [],
       drops: [],
       warnings: [
@@ -53,6 +57,6 @@ describe('formatWarnings', () => {
 
   it('returns an empty string when there are no warnings', () => {
     // Callers omit the block entirely when empty.
-    expect(formatWarnings({ actions: [], drops: [], warnings: [] })).toBe('');
+    expect(formatWarnings({ harnesses: [], actions: [], drops: [], warnings: [] })).toBe('');
   });
 });

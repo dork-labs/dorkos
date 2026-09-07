@@ -3,10 +3,13 @@
  *
  * `applyPlan` materializes symlinks and generated files idempotently and scaffolds
  * pointers only when absent. It never destroys hand-authored content: an existing
- * scaffold is left untouched, and a symlink target occupied by a *real* file or
- * directory surfaces as a `conflict` rather than being removed. `checkPlan` reports
- * drift without touching disk. Both read deterministic bytes for `scaffold`/`generate`
- * actions from the projector via {@link getActionContent}.
+ * scaffold is left untouched, a symlink target occupied by a *real* file or
+ * directory surfaces as a `conflict` rather than being removed, and a generated
+ * hook file the engine cannot prove it wrote is likewise a conflict, never a
+ * rewrite and never a sweep (ownership lives in `generated-ownership.ts`).
+ * `checkPlan` reports drift without touching disk. Both read deterministic bytes
+ * for `scaffold`/`generate` actions from the projector via
+ * {@link getActionContent}.
  *
  * @module apply/apply
  */
@@ -25,7 +28,23 @@ import { dirname, join, relative } from 'node:path';
 import type { DriftResult, ProjectionAction, ProjectionPlan } from '../plan/types.js';
 import { getActionContent } from '../plan/content-map.js';
 import { AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
-import { GENERATED_HOOK_TARGETS, type ClaudeHooksConfig } from '../generate/hooks.js';
+import {
+  CODEX_HOOKS_TARGET,
+  GENERATED_HOOK_TARGETS,
+  GENERATED_HOOK_TARGET_HARNESSES,
+  type ClaudeHooksConfig,
+} from '../generate/hooks.js';
+import {
+  GENERATED_SIDECAR_SUFFIX,
+  HAND_WRITTEN_HOOKS_REASON,
+  generatedSidecarPath,
+  hasGeneratedSidecar,
+  isLegacyBareCodexHooks,
+  ownsGeneratedFile,
+  removeGeneratedSidecar,
+  readFileIfPresent,
+  writeGeneratedSidecar,
+} from './generated-ownership.js';
 import {
   CLAUDE_COMMANDS_DIR,
   CLAUDE_SKILLS_DIR,
@@ -126,13 +145,76 @@ function applyScaffold(repoRoot: string, action: ProjectionAction): void {
   writeFileSync(absTarget, requireContent(action));
 }
 
-/** (Re)write a generated target deterministically. */
-function applyGenerate(repoRoot: string, action: ProjectionAction): void {
+/** True when a target is one of the per-harness hooks files the sidecar rules guard. */
+function isGeneratedHookTarget(target: string): target is (typeof GENERATED_HOOK_TARGETS)[number] {
+  return (GENERATED_HOOK_TARGETS as readonly string[]).includes(target);
+}
+
+/** Write a generated hook file and record the engine's ownership of those bytes. */
+function writeOwnedGenerated(absTarget: string, content: string): void {
+  mkdirSync(dirname(absTarget), { recursive: true });
+  writeFileSync(absTarget, content);
+  writeGeneratedSidecar(absTarget, content);
+}
+
+/**
+ * (Re)write a generated target deterministically.
+ *
+ * Command wrappers are wholly the engine's (their marker is the ownership
+ * predicate, checked by the caller) and are simply rewritten. The per-harness
+ * hooks files are NOT: Codex and Cursor both document them as files a person may
+ * write, so the engine writes one only when it can prove it wrote what is there
+ * — a `.dorkos-generated` sidecar whose digest still matches the bytes on disk.
+ *
+ * Two migrations cover files written before sidecars existed, in order:
+ *
+ * 1. the bytes are already exactly what would be written now — adopt silently by
+ *    recording the sidecar;
+ * 2. `.codex/hooks.json` holding the engine's own pre-DOR-1842 bare event map,
+ *    with no sidecar ever written — rewrite it into the shape Codex documents.
+ *
+ * Anything else is somebody's own file and is left exactly as it is.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param action - the `generate` action to realize.
+ * @returns `true` when the target now matches the plan; `false` when a file the
+ *   engine does not own occupies it — a conflict, left untouched.
+ */
+function applyGenerate(repoRoot: string, action: ProjectionAction): boolean {
   if (!action.target) throw new Error(`generate action for "${action.name}" is missing target`);
   const content = requireContent(action);
   const absTarget = join(repoRoot, action.target);
-  mkdirSync(dirname(absTarget), { recursive: true });
-  writeFileSync(absTarget, content);
+
+  if (!isGeneratedHookTarget(action.target)) {
+    mkdirSync(dirname(absTarget), { recursive: true });
+    writeFileSync(absTarget, content);
+    return true;
+  }
+
+  const onDisk = readFileIfPresent(absTarget);
+  if (onDisk === undefined) {
+    writeOwnedGenerated(absTarget, content); // absent: the engine's to create
+    return true;
+  }
+  if (ownsGeneratedFile(absTarget, onDisk)) {
+    // Ours. Rewrite only on a real change: these paths are watched, and a write
+    // that changes nothing is still a change event for whoever is watching.
+    if (onDisk !== content) writeOwnedGenerated(absTarget, content);
+    return true;
+  }
+  if (onDisk === content) {
+    writeGeneratedSidecar(absTarget, content); // migration 1: adopt, byte-for-byte
+    return true;
+  }
+  if (
+    action.target === CODEX_HOOKS_TARGET &&
+    !hasGeneratedSidecar(absTarget) &&
+    isLegacyBareCodexHooks(onDisk)
+  ) {
+    writeOwnedGenerated(absTarget, content); // migration 2: our own legacy output
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -360,45 +442,101 @@ export function sweepSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan)
 }
 
 /**
- * Prune orphaned engine-generated files (e.g. `.codex/hooks.json`).
+ * Prune orphaned generated hook files (e.g. `.codex/hooks.json`) — but only the
+ * ones the engine can prove it wrote.
  *
- * The engine wholly owns each path in {@link GENERATED_HOOK_TARGETS} for its
- * harness: the file is gitignored and rewritten from canonical sources on every
- * sync, so it never holds hand-authored content. When a plugin that contributed
- * the only Codex-mappable hook is uninstalled, the projector emits no `generate`
- * action for that path and the file is left stale on disk. This sweep removes any
- * such generated file the current plan no longer regenerates — the mirror of the
- * symlink orphan sweep in {@link sweepInstalledOrphans}.
+ * When the plugin that contributed the only Codex-mappable hook is uninstalled,
+ * the projector emits no `generate` action for that path and the file is left
+ * stale on disk. This sweep removes it, the mirror of the symlink orphan sweep in
+ * {@link sweepInstalledOrphans} — behind two guards, because Codex's and Cursor's
+ * own docs tell people to hand-write exactly these paths (HK-11):
+ *
+ * - **Ownership.** The file goes only when its `.dorkos-generated` sidecar's
+ *   digest still matches the bytes on disk. A file with no sidecar was never the
+ *   engine's; a file whose bytes no longer match one the engine edited after we
+ *   wrote it. Both are left alone, sidecar included. The file and its sidecar are
+ *   always removed together, so no half-swept path is ever left claiming
+ *   ownership; a sidecar whose file is already gone is removed on its own.
+ * - **The manifest.** A target is swept only for a harness the manifest enables.
+ *   A `.github/hooks/copilot-hooks.json` in a repo that never enabled Copilot is
+ *   not the engine's business at all (AP-07).
  *
  * A path the plan still generates is kept (the apply pass rewrites it), so this
- * never races a live projection. A real file the engine does NOT own (anything
- * not in {@link GENERATED_HOOK_TARGETS}) is never touched.
+ * never races a live projection.
  *
  * @param repoRoot - absolute path to the repository root.
- * @param plan - the current projection plan (its generate targets are kept).
- * @returns the repo-relative paths pruned.
+ * @param plan - the current projection plan (its generate targets and enabled
+ *   harnesses are both read).
+ * @returns the repo-relative paths pruned, sidecars included.
  */
 export function sweepGeneratedOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
   const regenerated = new Set(
     plan.actions.filter((a) => a.kind === 'generate' && a.target).map((a) => a.target as string)
   );
+  const enabled = new Set(plan.harnesses);
 
   const swept: string[] = [];
   for (const rel of GENERATED_HOOK_TARGETS) {
     if (regenerated.has(rel)) continue; // still generated by the current plan, keep (apply rewrites it)
+    if (!enabled.has(GENERATED_HOOK_TARGET_HARNESSES[rel])) continue; // not this repo's harness
     const abs = join(repoRoot, rel);
-    if (!pathExists(abs)) continue; // nothing to prune
-    // No symlink/content guard here (unlike the skill sweep above): every path in
-    // GENERATED_HOOK_TARGETS is a wholly-engine-owned, gitignored plain file the
-    // engine regenerates each sync, so deleting an un-regenerated one can never
-    // clobber hand-authored content. This invariant is load-bearing: a shared or
-    // partially-user-owned file (e.g. .gemini/settings.json) must NEVER be added
-    // to GENERATED_HOOK_TARGETS (project it via a merge instead). If a future
-    // target cannot guarantee sole ownership, add a content/marker guard here.
+    const sidecarRel = `${rel}${GENERATED_SIDECAR_SUFFIX}`;
+    const onDisk = readFileIfPresent(abs);
+    if (onDisk === undefined) {
+      // No readable file here. A sidecar left behind describes nothing, so it goes.
+      if (pathExists(generatedSidecarPath(abs))) {
+        removeGeneratedSidecar(abs);
+        swept.push(sidecarRel);
+      }
+      continue;
+    }
+    if (!ownsGeneratedFile(abs, onDisk)) continue; // somebody else's file — never ours to delete
     rmSync(abs, { force: true });
-    swept.push(rel);
+    removeGeneratedSidecar(abs);
+    swept.push(rel, sidecarRel);
   }
   return swept;
+}
+
+/**
+ * Generated hook targets the current plan does NOT write, but which somebody
+ * else's file occupies — so the engine is projecting no hooks to that harness at
+ * all, and the person needs to be told why.
+ *
+ * A target the plan DOES write is settled by {@link applyGenerate} instead (it
+ * reports the same conflict), so nothing is reported twice. Harness enablement is
+ * deliberately not consulted here: a hand-written file at one of these paths is
+ * worth naming whether or not its harness is on today, because it is already
+ * gitignored by the engine's own patterns and is what would block the projection
+ * the day it is enabled.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan.
+ * @returns one synthetic conflict action per unowned occupant.
+ */
+function findUnownedGeneratedHookFiles(repoRoot: string, plan: ProjectionPlan): ProjectionAction[] {
+  const planned = new Set(
+    plan.actions.filter((a) => a.kind === 'generate' && a.target).map((a) => a.target as string)
+  );
+
+  const conflicts: ProjectionAction[] = [];
+  for (const rel of GENERATED_HOOK_TARGETS) {
+    if (planned.has(rel)) continue;
+    const abs = join(repoRoot, rel);
+    const onDisk = readFileIfPresent(abs);
+    if (onDisk === undefined) continue; // nothing readable there
+    if (ownsGeneratedFile(abs, onDisk)) continue; // ours; the sweep decides its fate
+    conflicts.push({
+      kind: 'generate',
+      artifact: 'hook',
+      harness: GENERATED_HOOK_TARGET_HARNESSES[rel],
+      provenance: 'authored',
+      name: 'hooks',
+      target: rel,
+      reason: HAND_WRITTEN_HOOKS_REASON,
+    });
+  }
+  return conflicts;
 }
 
 /**
@@ -408,15 +546,18 @@ export function sweepGeneratedOrphans(repoRoot: string, plan: ProjectionPlan): s
  * `scaffold` is written only when absent (an existing, possibly hand-edited file
  * is left untouched). A `symlink` whose target is occupied by a *real* file or
  * directory is left intact and reported in `conflicts` — the engine never destroys
- * hand-authored content to make room for a projection.
+ * hand-authored content to make room for a projection. The same holds for the
+ * per-harness hooks files: one the engine cannot prove it wrote is reported in
+ * `conflicts` with the way out, whether the plan wanted to write it or not.
  *
  * With `opts.sweepOrphans`, projections for plugins no longer in the plan are
  * removed (the drift-driven uninstall sweep): orphaned installed-skill symlinks,
- * orphaned engine-generated files (e.g. a stale `.codex/hooks.json`), orphaned
- * command wrappers under `.claude/commands/<pkg>/` and `.opencode/commands/`, and
- * managed plugin hooks left in `.claude/settings.local.json`. Pass it only for a
- * full (unfiltered) plan, or live projections for harnesses outside the filter
- * would be mistaken for orphans.
+ * orphaned generated hook files the engine can prove it wrote (e.g. a stale
+ * `.codex/hooks.json`, with its sidecar), orphaned command wrappers under
+ * `.claude/commands/<pkg>/` and `.opencode/commands/`, and managed plugin hooks
+ * left in `.claude/settings.local.json`. Pass it only for a full (unfiltered)
+ * plan, or live projections for harnesses outside the filter would be mistaken
+ * for orphans.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the projection plan to apply.
@@ -455,8 +596,9 @@ export function applyPlan(
           conflicts.push(action);
           break;
         }
-        applyGenerate(repoRoot, action);
-        applied.push(action);
+        if (applyGenerate(repoRoot, action)) applied.push(action);
+        // A hooks file the engine does not own — left intact, with the way out.
+        else conflicts.push({ ...action, reason: HAND_WRITTEN_HOOKS_REASON });
         break;
       case 'merge':
         if (applyMerge(repoRoot, action)) applied.push(action);
@@ -467,6 +609,10 @@ export function applyPlan(
         break;
     }
   }
+
+  // Somebody's own file at a target this plan never writes: reported too, so a
+  // repo whose hooks the engine is NOT projecting says so instead of going quiet.
+  conflicts.push(...findUnownedGeneratedHookFiles(repoRoot, plan));
 
   const swept = opts?.sweepOrphans
     ? [
@@ -495,7 +641,20 @@ function isDrifted(repoRoot: string, action: ProjectionAction): boolean {
       if (!action.target) return true;
       const absTarget = join(repoRoot, action.target);
       if (!pathExists(absTarget)) return true;
-      return readFileSync(absTarget, 'utf8') !== requireContent(action);
+      const content = requireContent(action);
+      const onDisk = readFileSync(absTarget, 'utf8');
+      if (!isGeneratedHookTarget(action.target)) return onDisk !== content;
+      // Drift is what `--fix` would change. An owned hooks file drifts when its
+      // bytes are stale; an unowned one drifts only where a migration would
+      // adopt or rewrite it. Anything else there is somebody's own file, which
+      // `--fix` reports as a conflict rather than changing — not drift.
+      if (ownsGeneratedFile(absTarget, onDisk)) return onDisk !== content;
+      if (onDisk === content) return true; // adoptable: only the sidecar is missing
+      return (
+        action.target === CODEX_HOOKS_TARGET &&
+        !hasGeneratedSidecar(absTarget) &&
+        isLegacyBareCodexHooks(onDisk)
+      );
     }
     case 'merge': {
       if (!action.target) return true;

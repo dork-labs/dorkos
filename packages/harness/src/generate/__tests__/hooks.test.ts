@@ -3,6 +3,7 @@ import {
   generateCodexHooks,
   generateCursorHooks,
   generateCopilotHooks,
+  GENERATED_HOOKS_DESCRIPTION,
   type ClaudeHooksConfig,
 } from '../hooks.js';
 
@@ -22,9 +23,12 @@ describe('generateCodexHooks', () => {
       UserPromptSubmit: group('e'),
       SubagentStop: group('f'),
     };
-    const { hooks, dropped } = generateCodexHooks(claude);
+    const { file, dropped } = generateCodexHooks(claude);
 
-    expect(Object.keys(hooks).sort()).toEqual(
+    // The event map lives under `hooks`, in the shape Codex documents.
+    expect(Object.keys(file).sort()).toEqual(['description', 'hooks']);
+    expect(file.description).toBe(GENERATED_HOOKS_DESCRIPTION);
+    expect(Object.keys(file.hooks).sort()).toEqual(
       [
         'PostToolUse',
         'PreToolUse',
@@ -39,8 +43,8 @@ describe('generateCodexHooks', () => {
 
   it('drops a Claude event Codex has no equivalent for, with a reason', () => {
     // Notification exists in Claude but not Codex → an honest drop, not silent loss.
-    const { hooks, dropped } = generateCodexHooks({ Notification: group('x') });
-    expect(hooks).toEqual({});
+    const { file, dropped } = generateCodexHooks({ Notification: group('x') });
+    expect(file.hooks).toEqual({});
     expect(dropped).toHaveLength(1);
     expect(dropped[0].event).toBe('Notification');
     expect(dropped[0].reason).toMatch(/Codex/);
@@ -58,10 +62,10 @@ describe('generateCodexHooks', () => {
     // resolves — warn-and-project, so the operator is told the hook may not work.
     const command =
       'cd "$(git rev-parse --show-toplevel)" && node "${CLAUDE_PLUGIN_ROOT}/hooks/flow-loop.mjs"';
-    const { hooks, dropped, warnings } = generateCodexHooks({ Stop: group(command) });
+    const { file, dropped, warnings } = generateCodexHooks({ Stop: group(command) });
 
     // Still projected (warn, not drop) and not in the drop list.
-    expect(hooks).toHaveProperty('Stop');
+    expect(file.hooks).toHaveProperty('Stop');
     expect(dropped).toEqual([]);
 
     // A single warning naming the event and the offending token.
