@@ -61,6 +61,9 @@ The DorkOS client is well built and, in places, better than the industry norm �
 ### Dropped and narrowed
 
 - **Dropped — "Dev server fails to boot the client on every route"** (`raw/browser-playground.md`). An environment failure (two Vite optimize-deps chunks 404ing from a running dev server), not an application defect; the auditor states plainly that no `file:line` fix applies. Charter rule 1. **Consequence: the playground was never audited in a live browser** — every lens-6 finding below is source-read only, and a browser pass over `/dev`'s 24 pages remains an open coverage gap.
+
+  > **The browser pass has since run (DOR-1816).** All 24 pages driven live; see [the lens-6 browser pass](#the-lens-6-browser-pass-page-by-page) for what it found (F2, F3, F4 and one dev-only fix) and what it still did not look at.
+
 - **Dropped, re-filed, and FIXED — "`/session` with no id resolves to a deleted session, producing two 404s"** (`raw/browser-desktop.md` #11). Real observed behaviour, but the auditor records "route `/session` — not directly inspected", so it carried no `file:line`. Re-filed as **DOR-1836** on the trace below, and fixed in **#1651**.
 
   > **Still reproducible — trace complete, ready to re-file (DOR-1817, checked 2026-09-06).** Loading `http://localhost:6241/session` with no query params redirected to `?session=152e3ae8-1361-48fd-976e-a1a53f935741` and produced the same two 404s and the same two `[dorkos:query-error]` breadcrumbs the auditor saw, before the same clean empty state. It is two separate defects wearing one symptom, and the second is not about a deleted session at all:
