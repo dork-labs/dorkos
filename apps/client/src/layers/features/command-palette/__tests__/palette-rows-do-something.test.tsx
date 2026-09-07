@@ -20,7 +20,7 @@ import { useInteractionStore } from '@/layers/entities/interactions';
 // Reaching into another feature, as only a test may: the claim is an agreement
 // between the palette and the chat send funnel, and an agreement asserted
 // against a re-typed copy of the rule is not asserted at all.
-import { isNativeCommandContent } from '@/layers/features/chat/model/native-commands';
+import { isNativeCommandContent } from '@/layers/features/chat';
 import {
   registerPaletteCommandHandler,
   unregisterPaletteCommandHandler,

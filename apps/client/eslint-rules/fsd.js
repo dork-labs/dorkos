@@ -176,8 +176,114 @@ const noCrossSliceRelativeImport = {
   },
 };
 
+/**
+ * The feature whose `model/` segment owns `filePath`, or `null`.
+ *
+ * `model/` at ANY depth below it counts — `model/rules/x.ts` and
+ * `model/__tests__/x.test.ts` are model code as much as `model/x.ts` is.
+ *
+ * @param filePath Absolute path of the file being linted.
+ * @returns The feature's slice name, or `null` when the file is not model code
+ *   in a feature.
+ */
+function featureModelOf(filePath) {
+  const parts = filePath.split(sep);
+  const layersIndex = parts.lastIndexOf('layers');
+  if (layersIndex < 1 || parts[layersIndex - 1] !== 'src') return null;
+  if (parts[layersIndex + 1] !== 'features') return null;
+  if (parts[layersIndex + 3] !== 'model') return null;
+  return parts[layersIndex + 2] ?? null;
+}
+
+/** `@/layers/features/<slice>/model`, or a path below it. */
+const FEATURE_MODEL_SPECIFIER = /^@\/layers\/features\/([^/]+)\/model(?:\/|$)/;
+
+/**
+ * Forbids a feature's model code from importing another feature's model code.
+ *
+ * `.claude/rules/fsd-layers.md` has said this since the layer rules were
+ * written — "a feature's model/hooks must never import from another feature's
+ * model/hooks", because two features' business logic coupling is how a circular
+ * dependency between screens starts — and nothing enforced it (DOR-1284). What
+ * the same file ALLOWS is the other half of the sentence, and this rule is
+ * careful to leave it alone: UI composition across features is normal, and so
+ * is reaching a sibling through its public barrel. `@/layers/features/composer`
+ * from `chat/model/` is a contract; `@/layers/features/composer/model/x` is that
+ * feature's private wiring.
+ *
+ * Local code rather than another `no-restricted-imports` pattern, for two
+ * reasons. A pattern matches the specifier as a string, so it cannot tell a
+ * sibling's model from your OWN feature's model — `@/layers/features/chat/model/x`
+ * read from inside `chat/` is fine, and the pattern would red it. And
+ * `no-restricted-imports` options REPLACE rather than merge, so a second block
+ * scoped to a feature's `model` segment would silently drop the widgets ban the
+ * `features/**` block above it carries, for exactly those files.
+ *
+ * Two shapes are deliberately not reported, each because another rule already
+ * owns it:
+ *
+ * - The relative spelling (`../../composer/model/x`) is an error under
+ *   `no-cross-slice-relative-import`, which resolves the path instead of
+ *   matching it, and does so from anywhere in the slice rather than only from
+ *   `model/`.
+ * - `vi.mock('@/layers/features/composer/model/x')` is a stub, not a use. It
+ *   creates no dependency on the sibling's logic — it REPLACES it — and the
+ *   concrete path is the only spelling a mock has, which is the same carve-out
+ *   `.claude/rules/fsd-layers.md` already records for the barrel rule.
+ */
+const noCrossFeatureModelImport = {
+  meta: {
+    type: 'problem',
+    docs: {
+      description: "Disallow a feature's model code from importing another feature's model code.",
+      url: 'https://github.com/dork-labs/dorkos/blob/main/.claude/rules/fsd-layers.md',
+    },
+    schema: [],
+    messages: {
+      crossFeatureModel:
+        "FSD violation: features/{{own}}/model may not import features/{{other}}'s model " +
+        "('{{specifier}}'). Two features' business logic coupling is what this rule stops. " +
+        'Reach the sibling through its public barrel — `@/layers/features/{{other}}` — ' +
+        'exporting what you need from there, or lift the shared logic to entities/ or shared/.',
+    },
+  },
+
+  create(context) {
+    const own = featureModelOf(context.filename);
+    if (own === null) return {};
+
+    /**
+     * Report `node` when it names another feature's model.
+     *
+     * @param node The string literal holding the module path.
+     */
+    function checkSpecifier(node) {
+      if (!node || node.type !== 'Literal' || typeof node.value !== 'string') return;
+
+      const match = FEATURE_MODEL_SPECIFIER.exec(node.value);
+      if (match === null || match[1] === own) return;
+
+      context.report({
+        node,
+        messageId: 'crossFeatureModel',
+        data: { own, other: match[1], specifier: node.value },
+      });
+    }
+
+    return {
+      ImportDeclaration: (node) => checkSpecifier(node.source),
+      ExportNamedDeclaration: (node) => checkSpecifier(node.source),
+      ExportAllDeclaration: (node) => checkSpecifier(node.source),
+      ImportExpression: (node) => checkSpecifier(node.source),
+    };
+  },
+};
+
 /** ESLint plugin carrying the client's FSD-specific rules. */
 export default {
   meta: { name: 'fsd' },
-  rules: { 'no-cross-slice-relative-import': noCrossSliceRelativeImport },
+  rules: {
+    'no-cross-slice-relative-import': noCrossSliceRelativeImport,
+    'no-cross-feature-model-import': noCrossFeatureModelImport,
+  },
 };

@@ -41,8 +41,24 @@ import { StatusLine } from '@/layers/features/status';
 
 // FORBIDDEN: Model/hook cross-import (business logic coupling)
 // In features/chat/model/use-chat-session.ts
-import { useFiles } from '@/layers/features/files'; // WRONG — lift to entities or shared
+import { useFiles } from '@/layers/features/files/model/use-files'; // WRONG — lift to entities or shared
 ```
+
+This half is enforced, not just written down: `fsd/no-cross-feature-model-import`
+runs at `error` over `src/layers/features/*/model/**` (DOR-1284). It reports a
+model file naming another feature's model — `@/layers/features/<b>/model/...` —
+and nothing else. Three shapes stay legal on purpose, and each is a case in
+`__tests__/cross-slice-import-lint.test.ts`: your OWN feature's model however it
+is spelled, the sibling's public **barrel** (`@/layers/features/<b>`, which is
+where a cross-feature contract belongs — export what the neighbour needs from
+there), and the same import from `ui/`, where composition across features is
+allowed. The relative spelling of the violation is covered by
+`fsd/no-cross-slice-relative-import` instead, which resolves the path rather than
+matching it.
+
+The rule reads imports, not `vi.mock()`. A mock REPLACES a module rather than
+depending on it, and the concrete path is the only spelling a mock has — the
+same carve-out recorded for the barrel rule below.
 
 ### Cross-Module Rule: Entities Form a DAG
 

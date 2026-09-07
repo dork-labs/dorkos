@@ -72,5 +72,6 @@ export { useRotatingPlaceholder } from './model/use-rotating-placeholder';
 export { selectRenderedMessages } from './model/stream/derive-rendered-state';
 export { selectWaitingQueue } from './lib/queue-chips';
 export { sessionContextKey } from './lib/session-context-key';
+export { isNativeCommandContent } from './model/native-commands';
 export type { NativeCommandResult } from './model/native-commands';
 export { useStreamingAnnouncer } from './model/stream/use-streaming-announcer';
