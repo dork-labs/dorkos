@@ -381,29 +381,24 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     // deleted it again on the way out (found by DOR-1844, which makes the
     // scanner see those directories in the first place).
     repo = mkdtempSync(join(tmpdir(), 'harness-authored-ns-'));
+    dorkHome = mkdtempSync(join(tmpdir(), 'harness-authored-ns-home-'));
+    mkdirSync(join(repo, '.agents'), { recursive: true });
+    writeFileSync(
+      join(repo, '.agents', 'harness.manifest.json'),
+      JSON.stringify({ version: 1, harnesses: ['claude-code', 'codex'] }, null, 2)
+    );
     const source = join(repo, '.agents', 'skills', 'my__helper');
     mkdirSync(source, { recursive: true });
     writeFileSync(join(source, 'SKILL.md'), '# my__helper\n');
 
-    const plan: ProjectionPlan = {
-      actions: [
-        {
-          kind: 'symlink',
-          artifact: 'skill',
-          harness: 'claude-code',
-          provenance: 'authored',
-          name: 'my__helper',
-          source: '.agents/skills/my__helper',
-          target: '.claude/skills/my__helper',
-        },
-      ],
-      drops: [],
-      warnings: [],
-    };
-
+    // The real scanner, the real projector, the real sweep: since DOR-1844 the
+    // scan keeps a real `__` DIRECTORY, so the plan carries an authored symlink
+    // at a path that looks managed — which is exactly the pair that used to
+    // cancel itself out inside one call.
+    const plan = project(repo, { dorkHome });
     const { applied, swept } = applyPlan(repo, plan, { sweepOrphans: true });
 
-    expect(applied).toHaveLength(1);
+    expect(applied.some((a) => a.target === '.claude/skills/my__helper')).toBe(true);
     expect(swept).toEqual([]);
     const link = join(repo, '.claude', 'skills', 'my__helper');
     expect(lstatSync(link).isSymbolicLink()).toBe(true);

@@ -29,28 +29,14 @@ export interface SkillEntry {
  * authored skill (DOR-1844). The orphan sweep asks for the same pair, so nothing
  * hand-authored is mistaken for a projection.
  *
- * KNOWN GAP — `__` is still a bad name for an authored skill until DOR-1842
- * lands. That change widens `sweepInstalledOrphans`' keep-set from
- * `provenance: 'installed'` actions to every `symlink` action; `apply/apply.ts`
- * is its file, so nothing here touches it. All three symptoms were reproduced on
- * 2026-09-07 and none of them loses the authored SOURCE:
- *
- * 1. A real `.agents/skills/my__helper` DIRECTORY is projected and then swept in
- *    the same call: `applyPlan(..., { sweepOrphans: true })` creates
- *    `.claude/skills/my__helper` and reports `swept:
- *    ['.claude/skills/my__helper']`. Codex reads `.agents/skills` natively, so
- *    only the Claude Code link is lost.
- * 2. Because that link is planned and then removed, `dorkos harness sync
- *    --check` reports it as drift on EVERY run (`checkPlan(...).clean === false`,
- *    `drifted: ['claude-code:my__helper']`, exit 1) — a permanently red check
- *    with no state a person can reach to make it green.
- * 3. An authored `.agents/skills/my__helper` SYMLINK is indistinguishable from a
- *    managed projection by construction, so the scan skips it (correctly, by the
- *    rule above) and the sweep then deletes the link itself: `swept:
- *    ['.agents/skills/my__helper']`. The real directory behind the link
- *    survives; the link does not, and `--check` calls that clean because nothing
- *    was ever planned for it. This one is PRE-EXISTING — the old name-only rule
- *    skipped such an entry too — and is documented here rather than introduced.
+ * ONE STANDING COST, older than any of this: an authored
+ * `.agents/skills/my__helper` SYMLINK is indistinguishable from a managed
+ * projection by construction, so the scan skips it (correctly, by the rule
+ * above) and the sweep then deletes the link itself: `swept:
+ * ['.agents/skills/my__helper']`. The real directory behind the link survives;
+ * the link does not, and `--check` calls that clean because nothing was ever
+ * planned for it. The old name-only rule skipped such an entry too, so this is
+ * written down here rather than introduced.
  *
  * See contributing/harness-sync.md §4.
  */
