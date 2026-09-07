@@ -62,7 +62,7 @@ export function generateManifest(
         {
           key: 'api_key',
           label: `${toTitleCase(name)} API Key`,
-          description: `API key for the ${toTitleCase(name)} integration`,
+          description: `API key for ${toTitleCase(name)}`,
           placeholder: 'your-api-key-here',
           required: true,
         },

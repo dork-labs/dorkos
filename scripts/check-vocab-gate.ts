@@ -51,6 +51,17 @@
  * prose, not a render path, and gets swept by hand alongside the UI strings
  * it describes.
  *
+ * A second unclosed gap, measured in DOR-1814: a string handed to an ordinary
+ * function call is invisible, even when that call's return value lands in a
+ * copy position. `plural(n, 'connection', 'connections')` inside a `label:`
+ * template is the live example — the template itself is scanned, but the two
+ * words that will actually be printed are arguments to `plural` and are not.
+ * Same shape as `parts.push(\`... at a chat integration ...\`)`, where the
+ * pushed sentence ends up in a `detail:`. Closing it means either whitelisting
+ * copy-returning helpers by name or following the value, both bigger than the
+ * classifier this file has; until then, a sweep of a file with helper-built
+ * copy has to be read as well as scanned.
+ *
  * A real, currently-unclosed gap: `return 'Connection lost'` and
  * `throw new Error('Connection lost')` are not copy-bearing positions this
  * script recognizes — a bare return or throw carries no property name or JSX
@@ -66,10 +77,27 @@
  * named `*ErrorMessage`/`honestInstallError`, or a `// vocab-gate: copy`
  * marker comment) without touching the mechanism this file already has.
  *
+ * WHERE IT RUNS. The `typecheck` workflow, one step after
+ * `check-banned-words.sh` — the two halves of the split above, side by side.
+ * That is new as of DOR-1814. For its first four months this script's only CI
+ * home was the real-repo canary inside `scripts/__tests__/check-vocab-gate.test.ts`,
+ * run by `scripts-test.yml`, which is path-filtered to `scripts/**` and friends
+ * and carries no `merge_group:` trigger — so a PR touching nothing but
+ * `apps/client/src` copy never ran the gate at all. The canary test stays: it
+ * pins the mechanism, the workflow step enforces the result.
+ *
  * DATA, NOT CODE, IS WHAT A NEW WAVE EXTENDS. `vocab-gate/banned-terms.json`
  * holds one wave per retired string (Wave 1: "connection"; Wave 2: "mission
  * control"/"cockpit"; Wave 3: the typography DOR-1756 settled — "...",
- * "&apos;", "&rsquo;", "&ldquo;", "&rdquo;"); `vocab-gate/allowlist.json` holds
+ * "&apos;", "&rsquo;", "&ldquo;", "&rdquo;"; Wave 4: "integration",
+ * "connector", "adapter" and "provider", singular and plural, the four nouns
+ * ADR 260804-021140 retired for "Connections"). Wave 4 is also the wave that
+ * shows what the allowlist is FOR: all four words keep legitimate technical
+ * senses this repo uses daily — `RelayAdapter`, `ConnectorProvider`, the
+ * marketplace package types an author writes, OpenCode's model providers — and
+ * every one of them is a scoped, reasoned entry rather than a term left
+ * unbanned, because the word is correct only where the ADR's scoped-word
+ * registry says it is. `vocab-gate/allowlist.json` holds
  * every legitimate domain use the parser still flags, each with a path
  * substring, an optional term scope, and a written reason. A new wave adds a
  * wave object and whatever allowlist entries its own sweep turns up — this file
@@ -200,6 +228,17 @@ const COPY_PROP_NAMES = new Set([
   'tooltip',
   'q',
   'a',
+  // `detail` and `fix` are the other two thirds of a `CheckResult`
+  // (apps/server/src/services/observability/deep-health/): `dorkos doctor`
+  // prints all three — the label, the dimmed detail under it, and the fix line
+  // that tells a person what to do. Only `label` was scanned until DOR-1814,
+  // which is why that surface could carry "Fix the integration in Settings →
+  // Integrations" — a retired word AND a Settings tab the rename deleted —
+  // through two vocabulary waves without the gate seeing it. Left out of
+  // {@link COPY_ATTR_NAMES} deliberately: neither is a JSX copy attribute in
+  // this codebase, and a `fix=` prop would far more likely be a callback.
+  'detail',
+  'fix',
 ]);
 
 /**

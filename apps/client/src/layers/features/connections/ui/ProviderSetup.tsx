@@ -22,17 +22,13 @@ export function ProviderSetup() {
   if (isError) {
     return (
       <p role="alert" className="text-destructive text-sm">
-        Couldn’t load provider setup: {error.message}
+        Couldn’t load the setup for these services: {error.message}
       </p>
     );
   }
 
   if (!providers || providers.length === 0) {
-    return (
-      <p className="text-muted-foreground text-sm">
-        This server has no connector providers to set up.
-      </p>
-    );
+    return <p className="text-muted-foreground text-sm">This server has nothing to set up here.</p>;
   }
 
   return (

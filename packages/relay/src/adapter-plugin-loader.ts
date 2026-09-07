@@ -161,7 +161,7 @@ function extractManifest(
   return {
     type: entry.type,
     displayName: entry.id,
-    description: 'Custom adapter',
+    description: 'Custom connection',
     category: 'custom',
     builtin: false,
     configFields: [],

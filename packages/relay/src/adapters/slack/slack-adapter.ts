@@ -550,8 +550,8 @@ export class SlackAdapter extends BaseRelayAdapter {
           channel: btnBody.channel?.id ?? '',
           user: btnBody.user?.id ?? '',
           text:
-            'You are not on this integration’s approver list, so this tool call was not ' +
-            'authorized. Whoever runs this DorkOS can add you under the integration’s ' +
+            'You are not on this connection’s approver list, so this tool call was not ' +
+            'authorized. Whoever runs this DorkOS can add you under the connection’s ' +
             '“Approvers” setting.',
         });
         return;

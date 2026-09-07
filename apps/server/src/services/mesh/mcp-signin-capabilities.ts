@@ -57,7 +57,7 @@ export const mcpSigninCapabilities: CapabilityDefinition[] = [
       'back automatically once the sign-in lands, with the server named and its tools ready. ' +
       'On surfaces with no card the result’s message field carries the link and the custody ' +
       'disclosure instead — show BOTH verbatim there. DorkOS obtains and refreshes the token ' +
-      'for you either way. If this fails with code SIGNIN_NO_APP_REGISTRATION, the provider ' +
+      'for you either way. If this fails with code SIGNIN_NO_APP_REGISTRATION, the service ' +
       'will not register DorkOS automatically: tell the person they can add their own app ' +
       'credentials on the server’s card in agent settings, and do not try again unprompted.',
     // `act`, not `destructive`: the operator already approved this server at
@@ -191,7 +191,7 @@ export const mcpSigninCapabilities: CapabilityDefinition[] = [
     id: 'mcp.set_client',
     title: 'Use your own app credentials for a managed MCP server',
     description:
-      'Store the app credentials a person got from a provider that will not let DorkOS ' +
+      'Store the app credentials a person got from a service that will not let DorkOS ' +
       'register itself, so the next sign-in uses their app. Saving replaces the server’s ' +
       'stored sign-in, so the person signs in again afterwards.',
     // `act`, on the same reasoning as `mcp.signin`: the server was approved at

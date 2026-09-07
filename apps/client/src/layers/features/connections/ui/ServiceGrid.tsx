@@ -44,7 +44,7 @@ export function ServiceGrid() {
           <Cable className="text-muted-foreground/60 mx-auto size-8" aria-hidden />
           <p className="mt-3 text-sm font-medium">No services to connect yet</p>
           <p className="text-muted-foreground mx-auto mt-1 max-w-sm text-sm">
-            Add a provider key under Providers below, and the services it can reach will show up
+            Add a key under Composio &amp; Nango below, and the services it reaches will show up
             here.
           </p>
         </Card>

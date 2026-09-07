@@ -110,14 +110,14 @@ export function checkRelayAccessRules(input: RelayAccessRulesInput): CheckResult
   };
 }
 
-/** Facts needed to judge the saved chat integrations. */
+/** Facts needed to judge the saved chat connections. */
 export interface AdapterEntriesInput {
-  /** How many saved integrations DorkOS could not read. */
+  /** How many saved chat connections DorkOS could not read. */
   unparsedCount: number;
 }
 
 /**
- * Saved chat integrations whose settings could not be read.
+ * Saved chat connections whose settings could not be read.
  *
  * An unreadable entry does not start, and — because nothing about it could be
  * understood — it is kept on disk byte for byte. If it holds a bot token, that
@@ -129,15 +129,15 @@ export interface AdapterEntriesInput {
  */
 export function checkAdapterEntries(input: AdapterEntriesInput): CheckResult {
   if (input.unparsedCount === 0) {
-    return { label: 'Chat integrations are readable', status: 'pass' };
+    return { label: 'Chat connections are readable', status: 'pass' };
   }
   return {
-    label: `${input.unparsedCount} chat ${plural(input.unparsedCount, 'integration', 'integrations')} could not be read`,
+    label: `${input.unparsedCount} chat ${plural(input.unparsedCount, 'connection', 'connections')} could not be read`,
     status: 'warn',
     detail:
       'They are not running, and they were left on disk untouched so nothing is lost. ' +
       'If one holds a bot token, that token is still sitting in the file in plain text.',
-    fix: 'Fix the integration in Settings (it is encrypted on the next save), or delete it.',
+    fix: 'Fix it on the Connections page (it is encrypted on the next save), or delete it.',
   };
 }
 
@@ -189,7 +189,7 @@ export function checkDuplicateAgentIds(input: DuplicateAgentIdInput): CheckResul
   };
 }
 
-/** One relay binding: an agent reachable through a chat integration. */
+/** One relay binding: an agent reachable through a chat connection. */
 export interface RelayBinding {
   adapterId: string;
   agentId: string;
@@ -198,16 +198,16 @@ export interface RelayBinding {
 /** Facts needed to judge whether relay bindings still point at anything. */
 export interface RelayBindingGhostInput {
   bindings: readonly RelayBinding[];
-  /** Ids of every chat integration that exists. */
+  /** Ids of every chat connection that exists. */
   knownAdapterIds: ReadonlySet<string>;
   /** Ids of every agent registered in the mesh. */
   registeredAgentIds: ReadonlySet<string>;
 }
 
 /**
- * Relay bindings pointing at an integration or an agent that is gone.
+ * Relay bindings pointing at a connection or an agent that is gone.
  *
- * A ghost binding looks live in the cockpit and does nothing in practice:
+ * A ghost binding looks live in the app and does nothing in practice:
  * messages arrive at a chat connection whose other end no longer exists.
  *
  * @param input - The bindings plus the ids that currently exist.
@@ -229,7 +229,7 @@ export function checkRelayBindingGhosts(input: RelayBindingGhostInput): CheckRes
   const parts: string[] = [];
   if (missingAdapter.length > 0) {
     parts.push(
-      `${missingAdapter.length} ${plural(missingAdapter.length, 'points', 'point')} at a chat integration that no longer exists`
+      `${missingAdapter.length} ${plural(missingAdapter.length, 'points', 'point')} at a chat connection that no longer exists`
     );
   }
   if (missingAgent.length > 0) {
@@ -241,7 +241,7 @@ export function checkRelayBindingGhosts(input: RelayBindingGhostInput): CheckRes
     label: `${total} chat ${plural(total, 'connection is', 'connections are')} pointing at nothing`,
     status: 'warn',
     detail: `${capitalize(parts.join('; '))}. Messages sent through them go nowhere.`,
-    fix: 'Delete the stale connections in Settings → Integrations, or re-add what they point at.',
+    fix: 'Delete the stale connections on the Connections page, or re-add what they point at.',
   };
 }
 

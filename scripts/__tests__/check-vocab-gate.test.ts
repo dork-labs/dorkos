@@ -41,6 +41,22 @@ const PUNCTUATION_TERMS: BannedTerm[] = [
   { term: '&apos;', wave: 'wave-3', issue: 'DOR-1756' },
 ];
 
+/**
+ * Wave 4 — the four nouns ADR 260804-021140 retired for "Connections", in both
+ * numbers. Kept here as a fixture rather than read from the shipped file so the
+ * counterfactuals below assert the matcher, not the data.
+ */
+const WAVE_4_TERMS: BannedTerm[] = [
+  'integration',
+  'integrations',
+  'connector',
+  'connectors',
+  'adapter',
+  'adapters',
+  'provider',
+  'providers',
+].map((term) => ({ term, wave: 'wave-4', issue: 'DOR-1814' }));
+
 const tempDirs: string[] = [];
 
 /** A fresh temp directory, tracked for cleanup after the test. */
@@ -456,6 +472,40 @@ describe('counterfactual — would the gate have caught the pre-fix DOR-855 stri
   });
 });
 
+describe('counterfactual — would the gate have caught the pre-fix DOR-1814 strings?', () => {
+  it('YES: RelayEmptyState.tsx — the "Add Integration" button the UI audit found on screen', () => {
+    const preFix = `
+      export function RelayEmptyState() {
+        return (
+          <EmptyState
+            title="No integrations yet"
+            description="Add your first integration to start sending and receiving messages."
+          >
+            <Button>Add Integration</Button>
+          </EmptyState>
+        );
+      }
+    `;
+    // title, description and the button's JSX text — three copy positions.
+    expect(scanSource('RelayEmptyState.tsx', preFix, WAVE_4_TERMS)).toHaveLength(3);
+  });
+
+  it('YES: MarketplaceSidebar.tsx — the plural facet a singular-only ban would have missed', () => {
+    const preFix = `<FacetGroup label="Connectors" />`;
+    expect(scanSource('MarketplaceSidebar.tsx', preFix, WAVE_4_TERMS)).toHaveLength(1);
+  });
+
+  it('NO: the identifiers and import paths the ADR deliberately leaves alone', () => {
+    const code = `
+      import type { ConnectorProvider } from '@dorkos/shared/connector-provider';
+      import { RelayAdapter } from './relay-adapter.js';
+      const providers = new Map<string, ConnectorProvider>();
+      switch (kind) { case 'adapter': return new RelayAdapter(); }
+    `;
+    expect(scanSource('connector-registry.ts', code, WAVE_4_TERMS)).toEqual([]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // The shipped data files
 // ---------------------------------------------------------------------------
@@ -472,12 +522,46 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
     expect(terms).toContainEqual({ term: '&apos;', wave: 'wave-3', issue: 'DOR-1756' });
   });
 
+  it('carries the Wave 4 Connections terms in singular AND plural', () => {
+    // Both forms, because the matcher fences a word term with `\b` at each end:
+    // banning "adapter" alone leaves "Adapters" rendering on screen, which is
+    // exactly the marketplace-facet spelling of the word. A wave that shipped
+    // only the singulars would read as enforced and enforce half of itself.
+    const terms = loadBannedTerms();
+    for (const term of [
+      'integration',
+      'integrations',
+      'connector',
+      'connectors',
+      'adapter',
+      'adapters',
+      'provider',
+      'providers',
+    ]) {
+      expect(terms).toContainEqual({ term, wave: 'wave-4', issue: 'DOR-1814' });
+    }
+  });
+
   it('parses allowlist.json, and every entry carries a non-empty reason', () => {
     const entries = loadAllowlist();
     expect(entries.length).toBeGreaterThan(0);
     for (const entry of entries) {
       expect(entry.reason.length).toBeGreaterThan(0);
       expect(entry.path.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('every shipped entry is scoped to specific terms', () => {
+    // `terms` is optional in the type — omitting it exempts a path from EVERY
+    // wave, present and future, which is how a gate stops meaning anything. No
+    // shipped entry has ever needed that, and DOR-1814 leaned on the scoping
+    // hard: connector-capabilities.ts is exempt for "connector" and "adapter"
+    // and NOT for "provider", so the one sentence rewritten there cannot come
+    // back. Keep it that way — if a new entry genuinely needs every term, say
+    // so in its reason and change this test deliberately.
+    for (const entry of loadAllowlist()) {
+      expect(entry.terms, `${entry.path} allowlists every banned term`).toBeDefined();
+      expect(entry.terms?.length ?? 0).toBeGreaterThan(0);
     }
   });
 

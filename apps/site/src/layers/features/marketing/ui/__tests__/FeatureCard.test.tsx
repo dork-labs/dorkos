@@ -47,7 +47,7 @@ const gaFeature: Feature = {
 
 const betaFeature: Feature = {
   slug: 'slack-adapter',
-  name: 'Slack Adapter',
+  name: 'Slack Connection',
   product: 'relay',
   category: 'integration',
   tagline: 'Chat with your agents in Slack — no context switching required',
@@ -173,7 +173,7 @@ describe('FeatureCard', () => {
 
     it('renders the category label for integration', () => {
       render(<FeatureCard feature={betaFeature} />);
-      expect(screen.getByText('Integration')).toBeTruthy();
+      expect(screen.getByText('Connections')).toBeTruthy();
     });
 
     it('renders the category label for infrastructure', () => {

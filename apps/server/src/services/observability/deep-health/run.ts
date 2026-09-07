@@ -91,7 +91,7 @@ export async function runDeepHealthChecks(deps: DeepHealthDeps): Promise<CheckRe
   return [
     await contain('Rooms remember their conversations', () => roomTranscriptCheck(deps)),
     await contain('Agent messaging rules loaded', () => relayAccessCheck(deps)),
-    await contain('Chat integrations are readable', () => adapterEntriesCheck(deps)),
+    await contain('Chat connections are readable', () => adapterEntriesCheck(deps)),
     await contain('Chat connections point at real agents', () => bindingGhostCheck(deps)),
     await contain('Agent ids are unique', () => duplicateAgentIdCheck(deps)),
   ];
@@ -169,23 +169,23 @@ function relayAccessCheck(deps: DeepHealthDeps): CheckResult {
   });
 }
 
-/** Saved chat integrations whose settings could not be read. */
+/** Saved chat connections whose settings could not be read. */
 function adapterEntriesCheck(deps: DeepHealthDeps): CheckResult {
   if (!deps.adapters) {
     return deps.adaptersFailedToStart
-      ? failedToStart('Chat integrations are readable', 'Chat integrations')
-      : skipped('Chat integrations are readable', 'no chat integrations are set up');
+      ? failedToStart('Chat connections are readable', 'Chat connections')
+      : skipped('Chat connections are readable', 'no chat connections are set up');
   }
   return checkAdapterEntries({ unparsedCount: deps.adapters.listUnparsedEntryIds().length });
 }
 
-/** Relay bindings pointing at an integration or agent that is gone. */
+/** Relay bindings pointing at a connection or agent that is gone. */
 function bindingGhostCheck(deps: DeepHealthDeps): CheckResult {
   const label = 'Chat connections point at real agents';
   if (!deps.adapters) {
     return deps.adaptersFailedToStart
-      ? failedToStart(label, 'Chat integrations')
-      : skipped(label, 'no chat integrations are set up');
+      ? failedToStart(label, 'Chat connections')
+      : skipped(label, 'no chat connections are set up');
   }
   if (!deps.mesh) {
     return deps.meshFailedToStart

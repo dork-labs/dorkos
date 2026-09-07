@@ -18,6 +18,21 @@
       "issue": "DOR-1756",
       "note": "Typography, not vocabulary — but the same failure and the same fix. The app shipped 161 strings spelling an ellipsis \"…\" and 40 spelling it \"...\", and 88 apostrophes as `&apos;` beside 72 as `&rsquo;`, which render at different widths and read as two products. The house rule is one character each, written literally: `…`, `’`, `“`, `”` (contributing/design-system.md, \"Punctuation\"). `&quot;` joined the ban after review found it live in production copy (`&quot;{name}&quot; will stop working…`, `MessagingConnections.tsx`) — it is the escape `react/no-unescaped-entities` actually pushes authors toward for a straight `\"`, not `&ldquo;`/`&rdquo;`, which nobody in this codebase writes. A term here is matched literally, not as a whole word — see termMatcher() in check-vocab-gate.ts.",
       "terms": ["...", "&apos;", "&rsquo;", "&ldquo;", "&rdquo;", "&quot;"]
+    },
+    {
+      "id": "wave-4",
+      "issue": "DOR-1814",
+      "note": "ADR 260804-021140 retired \"integration\", \"connector\", \"adapter\" and \"provider\" as USER-FACING nouns and settled on Connections (umbrella), Messaging (the Relay region) and Accounts (the ConnectorProvider region). The copy sweep shipped in DOR-1754 (UI audit batch 08); this wave is the guard that keeps it swept. Singular AND plural are listed because a term is fenced with a word boundary — banning \"adapter\" alone leaves \"Adapters\" on screen. What the ADR deliberately does NOT retire is the architecture: RelayAdapter, ConnectorProvider, /api/connectors/providers/*, the marketplace package types authors write, and the model-provider sense OpenCode uses. Those live in the scoped-word registry in the ADR's own table, and every one of them is allowlisted per file in allowlist.json with the domain reason — never exempted here, because the word is only correct in the places that table names. Identifiers, type names, package names and code comments are out of scope for a vocabulary sweep (AGENTS.md) and the gate never reads them.",
+      "terms": [
+        "integration",
+        "integrations",
+        "connector",
+        "connectors",
+        "adapter",
+        "adapters",
+        "provider",
+        "providers"
+      ]
     }
   ]
 }

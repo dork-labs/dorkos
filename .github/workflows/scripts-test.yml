@@ -493,12 +493,16 @@ jobs:
       - name: Banned-words prose guard fixtures
         run: bash scripts/test-check-banned-words.sh
 
-      # check-vocab-gate.ts (DOR-855) rides this step rather than getting a
-      # dedicated one: its own pin suite (__tests__/check-vocab-gate.test.ts)
-      # includes a "regression canary" test that runs the real gate against
-      # this checkout, not just synthetic fixtures. A retired word landing
-      # back in apps/client or apps/site copy fails that one test right here —
-      # there is no second job to wire up, and the CLI entry point
-      # (`pnpm check:vocab-gate`) stays available for a human to run by hand.
+      # check-vocab-gate.ts (DOR-855) is pinned by this step, and ENFORCED
+      # somewhere else. Its pin suite (__tests__/check-vocab-gate.test.ts) is
+      # mostly synthetic fixtures plus one "regression canary" that runs the
+      # real gate against this checkout, and for a long time that canary was
+      # the only place the gate ran at all — which was the hole DOR-1814
+      # found: this workflow is path-filtered to `scripts/**` and friends and
+      # has no `merge_group:` trigger, so a PR touching nothing but
+      # apps/client/src copy never reached the canary. The gate itself now
+      # runs as its own step in typecheck.yml, which is unfiltered, required,
+      # and reports on merge_group. Keep both: that step enforces the result,
+      # this one proves the classifier still tells copy from an identifier.
       - name: Unit tests
         run: pnpm exec vitest run --config scripts/vitest.config.ts

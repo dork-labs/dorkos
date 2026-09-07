@@ -676,7 +676,7 @@ export class RelayPublishPipeline {
         code: 'NO_BINDING',
         reason:
           'initiate denied: no consent gate is installed, so this relay cannot tell ' +
-          'whether you allowed an agent to message this channel. Chat integrations ' +
+          'whether you allowed an agent to message this channel. Chat connections ' +
           'stay silent until the binding subsystem starts.',
       };
     }

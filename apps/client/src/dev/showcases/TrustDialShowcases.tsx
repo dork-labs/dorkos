@@ -247,10 +247,10 @@ function UnattendedDial({
 const BINDING_CONSEQUENCE = (
   <>
     At a stop that asks, an action this agent needs permission for waits for an answer: where your
-    integration can show buttons, it arrives in the chat as Approve and Deny, and only the people on
+    connection can show buttons, it arrives in the chat as Approve and Deny, and only the people on
     the approver list may answer. Either way an ask nobody answers is refused after 10 minutes and
     the agent carries on without it. Here nothing is asked at all — anyone who can send a message
-    through this integration sets off whatever the agent decides to do.
+    through this connection sets off whatever the agent decides to do.
   </>
 );
 
