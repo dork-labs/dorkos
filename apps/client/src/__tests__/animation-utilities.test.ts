@@ -6,8 +6,8 @@ import { dirname, resolve } from 'node:path';
 // Read the app's single CSS entry point straight from disk. The Radix/shadcn
 // surfaces (sheet, dialog, popover, dropdown-menu, context-menu, select,
 // tooltip, hover-card, alert-dialog) all style their arrival — and every one of
-// them but `dropdown-menu`, which leaves at once on purpose (DOR-1834), their
-// departure too — with
+// them but `dropdown-menu` and `select`, which leave at once on purpose
+// (DOR-1834, DOR-1835), their departure too — with
 // `data-[state=open]:animate-in`, `slide-in-from-*`, `fade-*`, `zoom-*`. Those
 // utilities are NOT part of core Tailwind — they come from `tw-animate-css`.
 // Without the import they resolve to nothing and every one of those surfaces
