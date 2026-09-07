@@ -22,7 +22,12 @@
  *
  * @module services/session/session-state-projector
  */
-import { StaleResumeCursorError, isBlockingInteractionEvent } from '@dorkos/shared/session-stream';
+import {
+  StaleResumeCursorError,
+  isBlockingInteractionEvent,
+  mintStreamGeneration,
+  UNOWNED_STREAM_GENERATION,
+} from '@dorkos/shared/session-stream';
 import type {
   SessionEvent,
   SessionSnapshot,
@@ -31,6 +36,7 @@ import type {
   SessionLifecycle,
 } from '@dorkos/shared/session-stream';
 import { deriveSessionActivity } from './activity/derive-activity.js';
+
 import type {
   HistoryMessage,
   PendingInteractionDTO,
@@ -441,6 +447,23 @@ export class SessionStateProjector {
 
   /** Per-session monotonic counter; `seq` of the latest ingested event. */
   private counter = 0;
+
+  /**
+   * Identifies THIS instance's seq space on the wire, for the life of the
+   * instance.
+   *
+   * {@link counter} is meaningful only relative to the instance that owns it,
+   * and a session id does NOT pin an instance: {@link rekeyProjector} can put a
+   * different projector — with an unrelated counter — behind the same id when
+   * two turns race for one canonical id. Every frame this projector's events are
+   * stamped with carries this value, so a reconnect can tell "resume where I
+   * left off" from "your counter belongs to a projector that no longer serves
+   * this session, here is a fresh snapshot". Minted per instance and never
+   * reused, so it MOVES with the instance across an ordinary rekey — a client
+   * that followed the session from its request id to its canonical id still
+   * resumes gap-free, because it really is the same seq space.
+   */
+  readonly streamGeneration = mintStreamGeneration();
 
   private status: SessionStatus = coldStatus();
 
@@ -2273,6 +2296,25 @@ export function peekProjector(sessionId: string): SessionStateProjector | undefi
 }
 
 /**
+ * Name the seq space a projector owns, or say that none is owned.
+ *
+ * The one place the "no projector" answer is decided, so every runtime's
+ * `streamGeneration` gives the same answer to the same fact. Deliberately takes
+ * the PROJECTOR and not a session id: which projector serves an id is a
+ * question only the runtime can answer — claude-code resolves it through the SDK
+ * id alias, the others read the registry — and an id-keyed helper here would be
+ * an inviting way to answer it wrongly. That is not hypothetical: the first cut
+ * of this shipped one, and on claude-code's alias path it reported "unowned"
+ * while a real projector served, which silently disarmed the whole check
+ * (DOR-1704).
+ *
+ * @param projector - Whatever the caller's own resolution found, or `undefined`.
+ */
+export function streamGenerationOf(projector: SessionStateProjector | undefined): string {
+  return projector?.streamGeneration ?? UNOWNED_STREAM_GENERATION;
+}
+
+/**
  * Drop a session's projector (e.g. on session eviction). A later
  * {@link getOrCreateProjector} for the same id yields a fresh instance.
  *
@@ -2337,6 +2379,14 @@ export function disposeProjector(sessionId: string): void {
  * projector's live subscribers (DOR-1262). The redirect removes both halves —
  * the retired id cannot mint, and re-announcing a move that already happened
  * resolves to `newId` and returns below.
+ *
+ * Both halves are also visible on the wire, through
+ * {@link SessionStateProjector.streamGeneration}. The ordinary move carries the
+ * instance, so a reader that followed the session from `oldId` to `newId` sees
+ * the same generation and resumes gap-free. The collision replaces the instance,
+ * so a reader that was on the displaced one comes back naming a generation the
+ * winner does not answer to — and is given a fresh snapshot instead of a replay
+ * out of a counter that has nothing to do with the events it holds (DOR-1704).
  *
  * No-op when `oldId === newId` (an existing session whose id never changes),
  * when `oldId` already resolves to `newId` (the same move announced twice), or

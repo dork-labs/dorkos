@@ -587,8 +587,13 @@ registry.registerPath({
     '`enableCrossClientSync` gate. On a COLD connect it emits one `snapshot` event ' +
     '(a SessionSnapshot: completed messages, in-progress turn, status, non-expired ' +
     'pending interactions, and the resume `cursor`) then goes live, emitting one ' +
-    'SessionEvent per frame. Each LIVE frame is preceded by an `id: <sessionId>-<epoch>-<seq>` ' +
-    'line; the client echoes it back as `Last-Event-ID` on reconnect. On a RESUME ' +
+    'SessionEvent per frame. Each LIVE frame is preceded by an ' +
+    '`id: <sessionId>-<epoch>-<generation>-<seq>` line; the client echoes it back as ' +
+    '`Last-Event-ID` on reconnect. The `generation` names the seq space that stamped it — ' +
+    "a session's `seq` belongs to an in-process projector, and a projector can be replaced " +
+    'behind the same session id, so a cursor whose generation no longer matches is treated ' +
+    'as foreign and answered with a fresh snapshot rather than a plausible-looking replay. ' +
+    'On a RESUME ' +
     'connect it SKIPS the snapshot and replays only events with `seq` greater than ' +
     'the cursor, then goes live. A cursor the server cannot serve gap-free falls back ' +
     'to the cold snapshot path instead of resuming. A `: keepalive` comment is sent ' +
@@ -606,19 +611,19 @@ registry.registerPath({
     params: z.object({ id: z.string().uuid() }),
     query: z.object({
       cwd: z.string().optional().openapi({ description: 'Project directory (boundary-checked).' }),
-      after: z
-        .string()
-        .optional()
-        .openapi({ description: 'Resume cursor; replay events with seq greater than this.' }),
+      after: z.string().optional().openapi({
+        description:
+          "Resume cursor; replay events with seq greater than this. A bare integer that names no server process and no event counter, so it is checked only against the replay window. Safe when it is the cursor of a snapshot just taken on the same connection, which is all DorkOS's own HTTP transport uses it for; a cursor PERSISTED across a reconnect must be the whole `Last-Event-ID`/`resume` frame id, which carries both.",
+      }),
       resume: z.string().optional().openapi({
         description:
-          'Resume token `<sessionId>-<epoch>-<seq>`, for WebSocket clients, which cannot set headers. Same meaning as `Last-Event-ID`; takes precedence over `after`.',
+          'Resume token `<sessionId>-<epoch>-<generation>-<seq>`, for WebSocket clients, which cannot set headers. Same meaning as `Last-Event-ID`; takes precedence over `after`.',
       }),
     }),
     headers: z.object({
       'Last-Event-ID': z.string().optional().openapi({
         description:
-          'Resume token `<sessionId>-<epoch>-<seq>`; replays only the gap. A token from a previous server process (epoch mismatch) or beyond the replay buffer falls back to a cold snapshot.',
+          'Resume token `<sessionId>-<epoch>-<generation>-<seq>`; replays only the gap. A token from a previous server process (epoch mismatch), from a superseded seq space (generation mismatch), in the older generation-less format, or beyond the replay buffer falls back to a cold snapshot.',
       }),
     }),
   },
@@ -4471,7 +4476,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Durable room event stream (SSE, or WebSocket at the same path)',
   description:
-    "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the DorkOS app uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<seq>`; a cursor from another room or another server process falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, or a `reaction`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached.",
+    "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. The same path also answers a WebSocket upgrade, which is what the DorkOS app uses (ADR 260805-041016) — identical contract, each message a JSON text frame, resuming from `?resume=`, with refusals as close code `4000 + status`. Event ids are `<roomId>-<epoch>-<generation>-<seq>`, the same shape the session stream uses; a cursor from another room, another server process, another seq space, or in the older generation-less format falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, or a `reaction`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached.",
   request: {
     params: RoomIdParams,
     query: z.object({
@@ -4485,7 +4490,7 @@ registry.registerPath({
         .string()
         .optional()
         .describe(
-          'Resume token `<roomId>-<epoch>-<seq>`. Takes precedence over `after`; a token from another room or another server process falls back to a cold connect.'
+          'Resume token `<roomId>-<epoch>-<generation>-<seq>`. Takes precedence over `after`; a token from another room, another server process, another seq space, or in the older generation-less format falls back to a cold connect.'
         ),
     }),
   },

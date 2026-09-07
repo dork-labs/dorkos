@@ -15,7 +15,8 @@ import { resolveCaller } from './room-caller.js';
 import { STATUS_BY_CODE } from './room-error-response.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
 import type { UpgradeDecision, UpgradeRoute } from '../services/core/streams/upgrade-router.js';
-import { parseResumeCursor } from '../lib/stream-cursor.js';
+import { UNOWNED_STREAM_GENERATION } from '@dorkos/shared/session-stream';
+import { cursorMatchesGeneration, parseResumeCursor } from '../lib/stream-cursor.js';
 import { logger } from '../lib/logger.js';
 
 /** Matches `/api/rooms/:id/events`, capturing the room id. */
@@ -84,8 +85,16 @@ export const roomEventsRoute: UpgradeRoute = {
     // seq this room will issue for the life of the connection, silently
     // suppressing every entry the reader is connected to receive. Past the end
     // is not a resume; it is a cold connect that hydrates from the snapshot.
+    //
+    // The generation is judged here for the reason the SSE handler gives: a
+    // room's seq space is the durable log and cannot be swapped mid-request.
     const maxSeq = service.maxSeq(roomId);
-    const sinceCursor = requested !== undefined && requested <= maxSeq ? requested : undefined;
+    const sinceCursor =
+      requested !== undefined &&
+      cursorMatchesGeneration(requested, UNOWNED_STREAM_GENERATION) &&
+      requested.seq <= maxSeq
+        ? requested.seq
+        : undefined;
 
     return {
       ok: true,

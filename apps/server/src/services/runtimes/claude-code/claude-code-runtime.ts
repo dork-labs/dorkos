@@ -84,6 +84,7 @@ import {
   overlayApprovalReceipts,
   overlayPermissionDenials,
   peekProjector,
+  streamGenerationOf,
 } from '../../session/index.js';
 import { mcpAuthEvidenceFrom } from '../../mesh/mcp-revocation.js';
 import type { McpAuthEvidencePort } from '../../mesh/mcp-revocation.js';
@@ -1066,12 +1067,43 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     sinceCursor?: number,
     signal?: AbortSignal
   ): AsyncIterable<SessionEvent> {
-    // Alias-aware like getSessionSnapshot: a subscription opened under the
-    // pre-remap request UUID after the rekey (or under the canonical id before
-    // it) must park on the LIVE projector, not mint a fresh empty one.
-    const projector =
-      this.resolveLiveProjector(sessionId) ?? getOrCreateProjector(sessionId, ctx.cwd ?? this.cwd);
-    return projector.subscribe(sinceCursor, signal);
+    return this.streamProjector(ctx, sessionId).subscribe(sinceCursor, signal);
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Answered off {@link resolveLiveProjector} — the SAME resolution
+   * {@link subscribeSession} binds through, and the reason this is a runtime
+   * method at all. This adapter reaches a session's projector through the SDK id
+   * alias as well as the registry, so a generation read off the bare session id
+   * would report "unowned" for a session an alias-resolved projector is actively
+   * streaming, and the mismatch check downstream would then wave every stale
+   * cursor through (DOR-1704).
+   *
+   * Peek-only, unlike {@link streamProjector}: the caller asks this BEFORE it
+   * commits to a resume, and a question must not mint the counter it is asking
+   * about. A session with no projector reads as unowned, and the fresh projector
+   * the subsequent subscribe mints refuses every cursor above 0 on its own.
+   */
+  streamGeneration(_ctx: SessionOpts, sessionId: string): string {
+    return streamGenerationOf(this.resolveLiveProjector(sessionId));
+  }
+
+  /**
+   * The projector this adapter's durable stream binds a session to.
+   *
+   * Alias-aware like getSessionSnapshot: a subscription opened under the
+   * pre-remap request UUID after the rekey (or under the canonical id before
+   * it) must park on the LIVE projector, not mint a fresh empty one.
+   *
+   * @param ctx - Session context; supplies the cwd a freshly minted projector takes.
+   * @param sessionId - Target session ID, canonical or retired.
+   */
+  private streamProjector(ctx: SessionOpts, sessionId: string): SessionStateProjector {
+    return (
+      this.resolveLiveProjector(sessionId) ?? getOrCreateProjector(sessionId, ctx.cwd ?? this.cwd)
+    );
   }
 
   /**

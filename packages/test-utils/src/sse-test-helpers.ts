@@ -225,7 +225,7 @@ function collectSseFrames(
  * The connection resolves either when `opts.until` is satisfied (the frames
  * collected so far are returned and the connection destroyed) or when the
  * server ends the stream. Frames capture the `id:` line, so resume tests can
- * assert `<sessionId>-<epoch>-<seq>` event ids.
+ * assert `<sessionId>-<epoch>-<generation>-<seq>` event ids.
  *
  * @param app - Express app instance (from `createApp()` + `finalizeApp()`)
  * @param sessionId - Target session UUID

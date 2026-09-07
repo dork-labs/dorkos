@@ -127,7 +127,7 @@ export const sessionEventsRoute: UpgradeRoute = {
       if (denied) return denied;
     }
 
-    const sinceCursor = parseResumeCursor(
+    const resume = parseResumeCursor(
       url.searchParams.get(STREAM_RESUME_PARAM) ?? undefined,
       url.searchParams.get('after') ?? undefined
     );
@@ -139,7 +139,9 @@ export const sessionEventsRoute: UpgradeRoute = {
           sessionId,
           runtime,
           ctx,
-          sinceCursor,
+          // Same reading as the SSE handler's: the cursor names its seq space
+          // by generation, so a rekey is judged by identity rather than by id.
+          resume,
           // `StreamUpgradeLocals` is `res.locals`-shaped precisely so this
           // reads the same principal an HTTP request would.
           principal: readCallerPrincipal({ headers }, { locals }),

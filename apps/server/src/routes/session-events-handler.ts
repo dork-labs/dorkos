@@ -101,7 +101,7 @@ export const sessionEventsHandler = async (
   if (!callerNamedCwd(cwdParam) && !(await assertBoundary(cwd, res, { allowDorkHome: true })))
     return;
 
-  const sinceCursor = parseResumeCursor(
+  const resume = parseResumeCursor(
     (req.headers['last-event-id'] as string | undefined) ??
       (req.query[STREAM_RESUME_PARAM] as string | undefined),
     req.query.after as string | undefined
@@ -111,7 +111,11 @@ export const sessionEventsHandler = async (
     sessionId,
     runtime,
     ctx,
-    sinceCursor,
+    // No `resourceId` is passed to the parse above, deliberately: a session's
+    // projector can be rekeyed from its request id to its canonical id, and the
+    // client that followed it there is resuming the SAME seq space. The
+    // generation is what judges that — correctly, and in both directions.
+    resume,
     // The Express chain has already run `sessionGate` and `resolveAgentIdentity`,
     // so this is the same read the fleet-wide surfaces make.
     principal: readCallerPrincipal(req, res),

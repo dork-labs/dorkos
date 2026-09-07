@@ -84,6 +84,8 @@ import {
 import {
   getOrCreateProjector,
   disposeProjector,
+  peekProjector,
+  streamGenerationOf,
 } from '../../services/session/session-state-projector.js';
 
 const app = createApp();
@@ -91,6 +93,20 @@ finalizeApp(app);
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000aa';
 const TAB = 'window-a';
+
+/**
+ * The `id:` line the stream stamps for `seq`.
+ *
+ * The generation is read off the live projector rather than written down: it
+ * names that INSTANCE's seq space, so it is minted fresh for each test, and a
+ * literal here would pin the wrong thing (see `sessions-events-generation.test.ts`).
+ *
+ * @param seq - The event's sequence number.
+ */
+function frameId(seq: number): string {
+  const generation = getOrCreateProjector(SESSION_ID).streamGeneration;
+  return `${SESSION_ID}-${STREAM_EPOCH}-${generation}-${seq}`;
+}
 
 let store: MessageQueueStore;
 /** Runs once the cold snapshot has been captured — where a live case mutates. */
@@ -122,6 +138,11 @@ beforeEach(() => {
       signal?: AbortSignal
     ): AsyncIterable<SessionEvent> =>
       getOrCreateProjector(sessionId).subscribe(sinceCursor ?? 0, signal)
+  );
+  // The third half of the same contract: a runtime names the seq space it just
+  // bound, and it must be the registry entry the two above use (DOR-1704).
+  fakeRuntime.streamGeneration = vi.fn((_ctx: SessionOpts, sessionId: string): string =>
+    streamGenerationOf(peekProjector(sessionId))
   );
 });
 
@@ -173,7 +194,7 @@ describe('GET /api/sessions/:id/events — the queue on the wire', () => {
     expect(event.queue.map((m) => m.content)).toEqual(['already waiting', 'typed in window B']);
     expect(event.queue[1]?.enqueuedBy).toBe('window-b');
     // Stamped and addressable like any other event on the stream.
-    expect(update?.id).toBe(`${SESSION_ID}-${STREAM_EPOCH}-${event.seq}`);
+    expect(update?.id).toBe(frameId(event.seq));
   });
 
   it('a removal in another window arrives as queue_update without the removed message', async () => {
@@ -239,17 +260,13 @@ describe('GET /api/sessions/:id/events — resuming across queue updates', () =>
     projector.ingest({ type: 'turn_end' }); // seq 4
 
     const { frames } = await collectDurableEvents(app, SESSION_ID, {
-      lastEventId: `${SESSION_ID}-${STREAM_EPOCH}-1`,
+      lastEventId: frameId(1),
       until: (f) => f.some((frame) => frame.id?.endsWith('-4')),
     });
 
     expect(frames.some((f) => f.event === 'snapshot')).toBe(false);
     expect(frames.map((f) => f.event)).toEqual(['turn_start', 'queue_update', 'turn_end']);
-    expect(frames.map((f) => f.id)).toEqual([
-      `${SESSION_ID}-${STREAM_EPOCH}-2`,
-      `${SESSION_ID}-${STREAM_EPOCH}-3`,
-      `${SESSION_ID}-${STREAM_EPOCH}-4`,
-    ]);
+    expect(frames.map((f) => f.id)).toEqual([frameId(2), frameId(3), frameId(4)]);
     const replayed = frames[1]?.data as Extract<SessionEvent, { type: 'queue_update' }>;
     expect(replayed.queue.map((m) => m.content)).toEqual(['one', 'two']);
   });
@@ -261,7 +278,7 @@ describe('GET /api/sessions/:id/events — resuming across queue updates', () =>
     seedQueue('survived the restart');
 
     const { frames } = await collectDurableEvents(app, SESSION_ID, {
-      lastEventId: `${SESSION_ID}-${STREAM_EPOCH - 1}-4523`,
+      lastEventId: `${SESSION_ID}-${STREAM_EPOCH - 1}-g0-4523`,
       until: (f) => f.some((frame) => frame.event === 'snapshot'),
     });
 

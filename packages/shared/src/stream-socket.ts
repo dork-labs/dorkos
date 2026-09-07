@@ -29,10 +29,12 @@
  * `WebSocket` cannot set — the constructor takes a URL and subprotocols and
  * nothing else. The cursor therefore moves into the URL, where the server's
  * existing {@link parseResumeCursor} reads it exactly as it read the header:
- * the value is the whole `<resourceId>-<epoch>-<seq>` frame id, NOT a bare
- * seq, so the epoch check that rejects a cursor minted by a previous server
- * process survives the move intact. Sending a bare seq here would silently
- * lose that check and let a restarted server replay the wrong events.
+ * the value is the whole `<resourceId>-<epoch>-<generation>-<seq>` frame id, NOT
+ * a bare seq, so both seq-space checks survive the move intact — the epoch
+ * rejects a cursor minted by a previous server process, and the generation
+ * rejects one minted by a projector that has since been replaced behind the same
+ * id. Sending a bare seq here would silently lose both and let a plausible
+ * number replay the wrong events.
  */
 export const STREAM_RESUME_PARAM = 'resume';
 
@@ -86,7 +88,8 @@ export interface StreamFrame {
   data?: unknown;
   /**
    * The resume cursor this frame advances the client to, as
-   * `<resourceId>-<epoch>-<seq>`. Present only on frames that occupy a place in
+   * `<resourceId>-<epoch>-<generation>-<seq>`. Opaque: echo it back whole.
+   * Present only on frames that occupy a place in
    * the sequence — a snapshot and an ephemeral signal carry none, exactly as
    * they carried no `id:` line over SSE.
    */

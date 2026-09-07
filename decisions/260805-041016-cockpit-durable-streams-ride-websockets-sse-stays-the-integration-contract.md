@@ -47,7 +47,7 @@ WebSockets do not draw on the per-origin HTTP socket pool at all (Chromium allow
 
 Both protocols are first-class; neither is a fallback, and the client never chooses between them at runtime — the cockpit speaks WebSocket only.
 
-- **Same paths, same contract.** `GET /api/events`, `GET /api/sessions/:id/events` and `GET /api/rooms/:id/events` each answer a WebSocket upgrade and an ordinary SSE request. Snapshot → gap-free replay → live is unchanged, and so is the `<resourceId>-<epoch>-<seq>` cursor.
+- **Same paths, same contract.** `GET /api/events`, `GET /api/sessions/:id/events` and `GET /api/rooms/:id/events` each answer a WebSocket upgrade and an ordinary SSE request. Snapshot → gap-free replay → live is unchanged, and so is the `<resourceId>-<epoch>-<seq>` cursor (which gained a `<generation>` field in the 2026-09-07 amendment below).
 - **One implementation of the sequencing.** The snapshot/replay/live logic sits behind a `DurableStreamSink` seam (`services/core/streams/`), with an SSE sink writing `event:`/`data:`/`id:` lines to an Express response and a socket sink writing JSON frames. A bug fixed in the sequencing is fixed for both by construction.
 - **The cursor moves into the URL.** A browser `WebSocket` constructor takes a URL and nothing else, so the resume cursor rides `?resume=` instead of `Last-Event-ID`. It is still the whole frame id, so the epoch check that rejects a cursor minted by a previous server process survives intact — a bare seq would have silently lost it.
 - **Liveness is a frame.** A protocol-level pong is invisible to page JavaScript, so it cannot serve as proof of life. The server sends a reserved `__heartbeat` frame, which resets the client's silence watchdog and is dropped before dispatch.
@@ -94,6 +94,24 @@ Every one of the four holes had the same shape: **an unpaired early `return true
 And because a browser cannot read a failed handshake, a refused origin is delivered as a close frame carrying `403` and logged server-side, so the cockpit reports "the server refused this stream" instead of retrying five times into a silent `disconnected`.
 
 The terminal keeps refusing at the handshake with an HTTP status, since nothing there needs to tell refusal reasons apart. Its bearer-of-unguessable-id model (ADR 260708-185521) is unchanged.
+
+## Amendment (2026-09-07)
+
+The cursor named above is now `<resourceId>-<epoch>-<generation>-<seq>` (DOR-1704).
+The epoch tells two server PROCESSES apart, which left the counter INSIDE a
+process unguarded: a session's `seq` belongs to a `SessionStateProjector`
+instance, and a rekey collision can retire one instance and put another, with an
+unrelated counter, behind the same session id. A cursor from the retired one is
+in range and monotonic in the winner's counter, so it was replayed against events
+it never followed. The generation is minted per instance, so it travels with the
+instance across an ordinary rekey and differs after a collision.
+
+Everything this ADR decided holds unchanged, and two of its points get stronger.
+"The cursor moves into the URL" now protects two checks rather than one — a bare
+seq on `?resume=` would lose the generation as well as the epoch. And "one
+implementation of the sequencing" is what made this a single fix: the generation
+was added inside the `DurableStreamSink` seam, so the WebSocket the app uses and
+the SSE stream integrators build against gained it together, by construction.
 
 ## Consequences
 

@@ -38,6 +38,7 @@ import {
   getOrCreateProjector,
   getSessionEventStore,
   peekProjector,
+  streamGenerationOf,
 } from '../../session/session-state-projector.js';
 import { logger } from '../../../lib/logger.js';
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
@@ -721,6 +722,19 @@ export class TestModeRuntime implements AgentRuntime {
       sinceCursor,
       signal
     );
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * The registry answers directly here: test-mode keys its projectors by the
+   * DorkOS session id and holds no second id to resolve through, so this reads
+   * the same entry {@link subscribeSession} binds to. Peek-only — asking which
+   * counter serves a session must not mint one, and the fresh projector a
+   * subsequent subscribe would mint refuses every cursor above 0 anyway.
+   */
+  streamGeneration(_ctx: SessionOpts, sessionId: string): string {
+    return streamGenerationOf(peekProjector(sessionId));
   }
 
   /**

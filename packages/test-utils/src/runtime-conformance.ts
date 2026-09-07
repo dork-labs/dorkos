@@ -39,6 +39,7 @@ import {
 import {
   SessionLifecycleSchema,
   SessionListEventSchema,
+  UNOWNED_STREAM_GENERATION,
   type SessionListEvent,
 } from '@dorkos/shared/session-stream';
 import type {
@@ -1702,6 +1703,91 @@ export function runtimeConformance(
           permissionMode: resolvePermissionMode(runtime),
         });
         expect(typeof result.updated).toBe('boolean');
+      });
+    });
+
+    describe('the durable stream names its seq space (DOR-1704)', () => {
+      /**
+       * Bind a session's durable stream the way the `/events` route does, and
+       * hand back the teardown. Binding is what brings the session's counter
+       * into existence, so it is the moment `streamGeneration` becomes
+       * answerable.
+       *
+       * @param runtime - The runtime under test.
+       * @param sessionId - The session to bind.
+       */
+      function bindStream(runtime: AgentRuntime, sessionId: string): () => void {
+        const abort = new AbortController();
+        const iterator = runtime
+          .subscribeSession(sessionOpts(runtime), sessionId, 0, abort.signal)
+          [Symbol.asyncIterator]();
+        return () => {
+          abort.abort();
+          void iterator.return?.(undefined);
+        };
+      }
+
+      it('names the counter subscribeSession just bound, never the unowned one', async () => {
+        // Purpose: a `seq` is a position in ONE counter, and the counter behind a
+        // session id can be REPLACED while a reader is away — at which point the
+        // reader's number is still in range, still monotonic, and points at
+        // events it never saw. `streamGeneration` is the only thing that lets a
+        // durable stream tell that apart from an ordinary resume, so it has to
+        // name the counter `subscribeSession` actually bound.
+        //
+        // This asserts the failure that is invisible every other way. A runtime
+        // that resolves a session id one way to SUBSCRIBE and another way to
+        // answer this reports "nothing owns a counter here" for a session it is
+        // streaming at that very moment — and the resume check downstream then
+        // accepts every stale cursor, because they all carry that same unowned
+        // value. Nothing throws and nothing logs; the guard is decorative. That
+        // is precisely how it shipped on the claude-code SDK-id alias path.
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+        const release = bindStream(runtime, sessionId);
+
+        try {
+          const generation = runtime.streamGeneration(sessionOpts(runtime), sessionId);
+          expect(typeof generation).toBe('string');
+          expect(
+            generation,
+            'a session whose durable stream this runtime has just bound reports no owning seq ' +
+              'space, so a cursor from a replaced counter cannot be told from a valid one'
+          ).not.toBe(UNOWNED_STREAM_GENERATION);
+        } finally {
+          release();
+        }
+      });
+
+      it('answers the same generation twice, and invents no counter to answer', async () => {
+        // Two halves of "this is a question, not a command". Stable, because a
+        // durable stream reads it beside its subscribe and compares it against
+        // what a client echoed back — a value that moved on its own would refuse
+        // every legitimate resume and re-hydrate forever. Peek-only, because
+        // asking which counter serves a session must not be the thing that mints
+        // one: a session nobody has streamed owns nothing, and has to say so.
+        const runtime = makeRuntime();
+        const bound = nextSessionId();
+        runtime.ensureSession(bound, sessionOpts(runtime));
+        const release = bindStream(runtime, bound);
+
+        try {
+          expect(runtime.streamGeneration(sessionOpts(runtime), bound)).toBe(
+            runtime.streamGeneration(sessionOpts(runtime), bound)
+          );
+        } finally {
+          release();
+        }
+
+        const untouched = nextSessionId();
+        expect(runtime.streamGeneration(sessionOpts(runtime), untouched)).toBe(
+          UNOWNED_STREAM_GENERATION
+        );
+        // Asking did not bring one into being — a second ask still says so.
+        expect(runtime.streamGeneration(sessionOpts(runtime), untouched)).toBe(
+          UNOWNED_STREAM_GENERATION
+        );
       });
     });
 

@@ -143,8 +143,8 @@ describe('GET /api/sessions/:id/events (durable snapshot → replay → live)', 
     const live = frames.slice(1);
     expect(live.map((f) => f.event)).toEqual(['turn_start', 'text_delta']);
     expect(live.map((f) => f.id)).toEqual([
-      `${SESSION_ID}-${STREAM_EPOCH}-1`,
-      `${SESSION_ID}-${STREAM_EPOCH}-2`,
+      `${SESSION_ID}-${STREAM_EPOCH}-g0-1`,
+      `${SESSION_ID}-${STREAM_EPOCH}-g0-2`,
     ]);
   });
 
@@ -192,13 +192,13 @@ describe('GET /api/sessions/:id/events (durable snapshot → replay → live)', 
       { seq: 4, type: 'turn_end' },
     ]);
 
-    const { frames } = await collectEvents({ lastEventId: `${SESSION_ID}-${STREAM_EPOCH}-2` });
+    const { frames } = await collectEvents({ lastEventId: `${SESSION_ID}-${STREAM_EPOCH}-g0-2` });
 
     expect(frames.some((f) => f.event === 'snapshot')).toBe(false);
     expect(fakeRuntime.getSessionSnapshot).not.toHaveBeenCalled();
     expect(frames.map((f) => f.id)).toEqual([
-      `${SESSION_ID}-${STREAM_EPOCH}-3`,
-      `${SESSION_ID}-${STREAM_EPOCH}-4`,
+      `${SESSION_ID}-${STREAM_EPOCH}-g0-3`,
+      `${SESSION_ID}-${STREAM_EPOCH}-g0-4`,
     ]);
     // sinceCursor parsed out of the trailing -<epoch>-<seq> despite UUID hyphens.
     expect(fakeRuntime.subscribeSession).toHaveBeenCalledWith(
@@ -219,7 +219,7 @@ describe('GET /api/sessions/:id/events (durable snapshot → replay → live)', 
     fakeRuntime.subscribeSession = finiteSubscribe([{ seq: 1, type: 'turn_start' }]);
 
     const staleEpoch = STREAM_EPOCH - 1;
-    const { frames } = await collectEvents({ lastEventId: `${SESSION_ID}-${staleEpoch}-4523` });
+    const { frames } = await collectEvents({ lastEventId: `${SESSION_ID}-${staleEpoch}-g0-4523` });
 
     expect(frames[0]?.event).toBe('snapshot');
     expect(fakeRuntime.getSessionSnapshot).toHaveBeenCalled();
