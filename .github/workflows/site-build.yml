@@ -182,7 +182,17 @@ jobs:
           # pipefail so a turbo failure below fails this step instead of being
           # swallowed by a jq that happily reads an empty stream and exits 0.
           set -o pipefail
-          if git diff --no-renames --name-only "$BASE"...HEAD | grep -qE '^(docs/|blog/|\.github/workflows/site-build\.yml$)'; then
+          # The diff is captured first and matched WITHOUT `grep -q`, because
+          # the two combine badly with the pipefail above: -q exits on the first
+          # match, git takes SIGPIPE and exits 141, and pipefail scores the
+          # pipeline as failed — i.e. as "the site is unreachable" — on exactly
+          # the large diffs that DO reach it. Reproduced against this repo
+          # (DOR-1608): `git diff --name-only <root-commit>...HEAD | grep -qE
+          # '^(docs/|apps/)'` under pipefail answers no-match with exit 141.
+          # Same trap scripts/assert-shard-union.sh already documents for its
+          # own pipefail, and claude-code-review.yml avoids by using no pipe.
+          changed=$(git diff --no-renames --name-only "$BASE"...HEAD)
+          if printf '%s\n' "$changed" | grep -E '^(docs/|blog/|\.github/workflows/site-build\.yml$)' > /dev/null; then
             echo 'a prerendered content root (docs/, blog/) or this workflow changed — building the site'
             echo 'run=true' >> "$GITHUB_OUTPUT"
             exit 0
