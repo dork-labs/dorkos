@@ -24,8 +24,9 @@ else.
    workflow engine for the whole batch. If the operator meant the workflow path, the move is
    removing the edge and letting the normal lifecycle take over, not running this command.
 
-3. **Claim in the plugin namespace only** — `audit/claimed`, never `agent/*`, and never with a
-   label write computed from a stale read (skill §5).
+3. **Claim in the plugin namespace only** — `ui-audit/in-progress` (not `audit/claimed`: Linear's
+   team-wide label-name uniqueness collides with the existing `agent/claimed`), never `agent/*`,
+   and never with a label write computed from a stale read (skill §5).
 
 4. **Land the work** by skill §7's playbook, adapted to the profile: one worktree per batch,
    batches grouped so parallel branches touch disjoint files, an adversarial review on the branch
