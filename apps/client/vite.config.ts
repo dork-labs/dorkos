@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { configDefaults } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
@@ -16,6 +17,21 @@ export default defineConfig({
     // scripts/__tests__/vitest-projects.test.ts (DOR-1822).
     name: 'client',
     environment: 'jsdom',
+    // The two lint guards' fixture slices have to sit inside `src/layers/` — the
+    // rules they prove are scoped by path — but creating and removing them from
+    // a suite's own hooks mutated `src/` while eight other suites walked it with
+    // `readdirSync` + `statSync`, and a walker that stats a name the teardown
+    // just removed dies on ENOENT (DOR-1821). Writing them here happens before
+    // the first worker starts and removing them after the last one finishes, so
+    // within one invocation there is no window in which a walk can see the
+    // transition. Two concurrent client runs in one checkout still collide —
+    // see that file's header for why that residual is left standing.
+    globalSetup: ['./__tests__/lint-fixtures.ts'],
+    // Those slices are therefore on disk while Vitest COLLECTS, and one of them
+    // is a `.test.ts` on purpose — it proves the rule reads `vi.mock`
+    // specifiers, which no import declaration carries. It is a fixture, not a
+    // suite, so collection has to skip it.
+    exclude: [...configDefaults.exclude, 'src/layers/**/__{dag,slice}-fixture-*__/**'],
     // Resolve a few `@dorkos/shared` subpaths to the package's SOURCE, not its
     // built `dist/`. This is `test.alias`, NOT `resolve.alias`, on purpose: it
     // applies only under Vitest, so the shipped browser bundle keeps resolving
