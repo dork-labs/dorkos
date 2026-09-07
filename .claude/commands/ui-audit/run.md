@@ -17,9 +17,13 @@ skill owns the procedure; this command adds only what is specific to running one
 1. **A scope is required.** There is no default. If `$ARGUMENTS` is empty, ask. Lens keys come
    from the charter's lens list.
 
-2. **Read `audits/runs/ui/profile.md` first** (skill §1). If the **profile** is missing, say so,
-   name `/ui-audit:init`, and proceed on skill §1's conservative fallback. If the **charter** is
-   missing, run `/ui-audit:init` instead of guessing: there is no audit without it.
+2. **Read `audits/runs/ui/profile.md` first** (skill §1). If the **profile** is missing and this
+   run does not intend real tracker emission (a dry or validation run), say so, name
+   `/ui-audit:init`, and proceed on skill §1's conservative fallback. If this run **does** intend
+   real tracker emission, capture the profile now, per `/ui-audit:init` contract 3, rather than
+   degrading to the markdown ledger — the fallback exists for runs that never meant to emit, not
+   as a substitute for asking. If the **charter** is missing, run `/ui-audit:init` instead of
+   guessing: there is no audit without it.
 
 3. **The cost gate is this command's own responsibility.** Print the lens count and a token
    estimate before spawning anything, using the per-lens budget in skill §2. On `full`, **wait

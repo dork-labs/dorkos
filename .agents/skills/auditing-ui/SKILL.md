@@ -42,7 +42,11 @@ questions this procedure deliberately does not hard-code, and each answer change
   what §3's degrade rule keys off.
 
 A missing profile is not a reason to guess. Say it is missing, name `/ui-audit:init`, and fall
-back to the most conservative reading (no queue, no fragment, no browser leg).
+back to the most conservative reading (no queue, no fragment, no browser leg) — **but only for a
+run that never intended real tracker emission** (dry or validation). A run that does intend real
+emission captures the profile then, per `/ui-audit:init` contract 3, rather than silently
+downgrading to the markdown ledger: the conservative fallback is for runs that were never going to
+emit, not a quiet substitute for one that was.
 
 ### Stamps, and the first run
 
@@ -131,7 +135,10 @@ app, driven at desktop and phone widths.
 cascade decides at render time). The command fills the auditor prompt's `{{#BROWSER_LEG}}` block
 for exactly those, on every scope, **whenever the profile supplies a dev command and a free
 port** — and for no other lens, since the rest read structure a browser cannot adjudicate. No dev
-command in the profile, or no profile at all, means the degrade rule below applies to all five.
+command in the profile means the degrade rule below applies to all five. **No profile at all is
+different**: when the scope includes one of these five lenses, capture the profile now (or ask)
+rather than silently skipping the browser leg — the same rule as §1's emission case, because a
+dropped browser leg here is exactly the kind of thing a missing profile must not quietly cause.
 This is the predicate; nothing else decides it.
 
 **Look, don't touch. These rules are binding, and this is the only place they are written:**
@@ -154,6 +161,16 @@ This is the predicate; nothing else decides it.
   stated coverage gap, listed with the others.
 - **Widths.** Desktop and phone at minimum (1440x900 and 390x844 are where this repo's findings
   were confirmed). Tablet where the surface has a distinct layout there.
+
+**Cold worktree + browser-leg.** Two things the September 2026 run learned the hard way, recorded
+so the next browser leg does not re-learn them. A cold worktree does not boot the client on
+`@dorkos/shared` alone — `@dorkos/marketplace`, `@dorkos/skills`, `@dorkos/extension-api`, and
+`@dorkos/icons` dists are needed too; build all of them before booting. And a client on a foreign
+port talking to the operator's real server sees CORS reject it: API-backed content comes back
+sparse and a failure toast sits on every page, which starves the `states`, `clutter`, and
+`responsive` lenses of populated surfaces at render time. Prefer the profile's own dev-server pair
+(client + server booted together on ports the profile names) over pointing a standalone client at
+someone else's server.
 
 ## 4. Synthesize
 
@@ -195,7 +212,9 @@ commands point at it rather than restating it.
   explicitly not a fence.
 - **Never write `agent/*` labels.** Those are the workflow engine's durable claim labels;
   borrowing them makes its own loops treat audit items as orphaned work to re-adopt, which
-  inverts the fence. In-progress visibility uses the plugin-namespace label **`audit/claimed`**.
+  inverts the fence. In-progress visibility uses the plugin-namespace label
+  **`ui-audit/in-progress`** (not `audit/claimed`: Linear enforces team-wide label-name
+  uniqueness, and `claimed` already exists as `agent/claimed`).
 - The fence is triple, and needs zero modification to the workflow engine: (1) an open blocker
   mechanically fails its readiness condition, so triage and groom cannot honestly arm the item;
   (2) the meta item hits groom's own "meta, never ready" rubric; (3) the dispatch engine
@@ -218,14 +237,14 @@ commands point at it rather than restating it.
 
 **All tracker I/O routes through the `/flow` plugin's `linear-adapter` skill** (AGENTS.md, and
 the adapter's own rule that no other skill may touch a tracker string). Load it and use its verbs;
-do not hand-roll a tracker call from here. Four things it settles, and two traps it documents:
+do not hand-roll a tracker call from here. Four things it settles, and three traps it documents:
 
 - **The relation verb is `link(a, b, type)` with type `blocks`, and direction matters.** The
   fence is `link(metaItem, batchItem, 'blocks')` — the meta item **blocks** the batch item, which
   is what gives the batch item the open `blockedBy` the readiness check reads. Reversed, the
   fence is not merely absent, it is backwards, and the meta item becomes the blocked one.
-- **Create the labels first.** `source/audit`, `audit/claimed`, and the `type/meta` value must
-  exist in the tracker before an emission references them.
+- **Create the labels first.** `source/audit`, `ui-audit/in-progress`, and the `type/meta` value
+  must exist in the tracker before an emission references them.
 - **Team and project** come from the profile, not from this file.
 - **Labels read back flattened to leaf names.** A grouped label arrives as `meta`, not `type/meta`,
   and as `claimed`, not `agent/claimed`. Match on the leaf when reading; never conclude from a
@@ -233,6 +252,8 @@ do not hand-roll a tracker call from here. Four things it settles, and two traps
 - **A label write REPLACES the entire label set.** Compute the union against a **fresh read taken
   immediately before the write**. A union computed from an earlier snapshot silently deletes
   labels a concurrent session added in between, which on this repo has happened live.
+- **`LINEAR_RUN_QUERY_OR_MUTATION` takes `query_or_mutation`, not `query`.** Passing `query` fails
+  validation; this is the adapter's own verified-schema trap, not something to rediscover here.
 
 ## 6. Keeping the charter current
 
