@@ -7,7 +7,7 @@ name: test
 # Both are split four ways; see TWO EVENTS, TWO DEPTHS below.
 #
 # Before this workflow existed, NO CI job ran the tests. The only enforcement
-# was the lefthook `pre-push` gate — and that gate ran all 18 package suites in
+# was the lefthook `pre-push` gate — and that gate ran every package's suite in
 # one go, which on a machine already busy with other agents takes minutes and
 # fails with rotating timeouts on a tree nobody touched. So it got bypassed:
 # `--no-verify` was used six times on 2026-07-27 alone, by three different
@@ -32,10 +32,10 @@ name: test
 # each package's test FILES across the four runners. Coverage is unchanged: the
 # union of the four shards is exactly the old single run, and each shard still
 # executes every package's suite (so the per-shard assert step below keeps its
-# "all 18 packages ran" guarantee). File-level sharding was chosen over
-# package-level filters because the suite's wall clock is dominated by one
-# package (apps/server); a package-level split cannot divide it, a file-level
-# split can.
+# "every package with a `test` script ran" guarantee). File-level sharding was
+# chosen over package-level filters because the suite's wall clock is dominated
+# by one package (apps/server); a package-level split cannot divide it, a
+# file-level split can.
 #
 # THAT SPLIT REACHES apps/server, and it is worth writing the measurement down
 # because the opposite was believed for a while (DOR-1731 was filed as "the
@@ -286,13 +286,12 @@ jobs:
       # scope — and deliberately NOT the queue leg's line with one flag
       # changed, because three of its flags must not ride here:
       #
-      #   --summarize   feeds assert-tests-executed.sh, which demands that
-      #                 EVERY package's `test` task ran. An affected subset
-      #                 cannot satisfy that by construction, so the summary
-      #                 would have no reader. Keeping the word off this line
-      #                 also keeps the flake-reporter test's `find(line
-      #                 includes 'turbo test --summarize')` matching exactly
-      #                 one line — the queue leg's.
+      #   --summarize   writes the run summary assert-tests-executed.sh reads,
+      #                 and that step is gated to `merge_group` — so on this
+      #                 line the flag would produce a file nothing opens. It
+      #                 could not be ungated either: the assertion demands that
+      #                 EVERY package's `test` task ran, which an affected
+      #                 subset cannot satisfy by construction.
       #   --retry=1     is half of a bargain whose other half is the naming
       #                 step below, and that step is queue-only. A retry with
       #                 nothing naming what it absorbed is the SILENT retry the
@@ -312,16 +311,32 @@ jobs:
       # TURBO_SCM_BASE names the comparison base explicitly — the checkout is a
       # detached merge ref with no local `main`, so turbo's default base does
       # not resolve here.
+      #
+      # It is a SHA and not `origin/<base_ref>`, and that matters more now than
+      # it did when one job ran this alone. Four shards check out
+      # independently, seconds to minutes apart; a ref is resolved at each
+      # checkout, so a merge landing on `main` in that window gives two shards
+      # DIFFERENT affected sets. The failure that produces is silent and
+      # exactly the kind this workflow exists to prevent: a package present in
+      # one shard's set and absent from another's gets a quarter of its files
+      # run and nothing notices, because the PR leg has no union check to
+      # notice with. `github.event.pull_request.base.sha` is fixed for the
+      # whole run, identical across all four shards, and is precisely the base
+      # commit of the merge ref actions/checkout materialised — so
+      # base.sha...HEAD is the PR's own diff and nobody else's. `fetch-depth:
+      # 0` above is what guarantees the commit is present to diff against.
       - name: Run the affected packages' test suites (shard ${{ matrix.shard }}/4)
         if: ${{ github.event_name == 'pull_request' }}
         env:
-          TURBO_SCM_BASE: origin/${{ github.base_ref }}
+          TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
         run: pnpm exec turbo test --affected --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/4 --passWithNoTests
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
-      # "Tasks: 29 successful, 29 total" (18 test tasks plus the 11 builds they
-      # depend on), exits 0, and takes ~280ms without starting a
-      # single test process. A job that reports green off that is worse than no
+      # "Tasks: 31 successful, 31 total" — one per package declaring a `test`
+      # script plus the builds they depend on — exits 0, and takes ~280ms without
+      # starting a single test process. (Do not trust that number; it moves
+      # every time a package gains or loses a suite. assert-tests-executed.sh
+      # derives the expected count from the tree for exactly that reason.) A job that reports green off that is worse than no
       # job, because it manufactures a signal. So the run has to PROVE it
       # executed: this reads the summary above and fails if any package's test
       # task was a cache replay, or if fewer packages ran than declare a `test`
@@ -329,9 +344,9 @@ jobs:
       # --force, and scripts/test-assert-tests-executed.sh for its fixtures.
       #
       # Per SHARD, unchanged from the single-job era: every shard runs the full
-      # task graph (the split is inside vitest, not across packages), so "all
-      # 18 packages executed, none from cache" holds on each of the four
-      # runners independently. What this step CANNOT see is a package whose
+      # task graph (the split is inside vitest, not across packages), so "every
+      # package declaring a `test` script executed, none from cache" holds on
+      # each of the four runners independently. What this step CANNOT see is a package whose
       # vitest collected zero files — that is the union check's job, in the
       # fan-in below.
       #
@@ -493,6 +508,23 @@ jobs:
     # slot-MINUTES worry in steady state, and slot-minutes move by a quarter;
     # peak concurrency per PR does go from 1 job to 4, which the
     # `cancel-in-progress` block above bounds on every superseded push.
+    #
+    # Read that 27% as a MIDDLE, not a ceiling. It is computed off a ~37-minute
+    # sweep, which is what a PR touching @dorkos/shared costs; the median PR is
+    # cheaper (p50 22.9 min over a 95-run sample), and the cheaper the sweep the
+    # worse the ratio, because the ~3.3-minute fixed cost is paid four times
+    # against a smaller base. A PR affecting almost nothing approaches the old
+    # comment's 4x — on a handful of minutes, which is why it is worth paying.
+    # The wall-clock win moves the same way and stays positive throughout.
+    #
+    # ONE SEMANTIC CHANGE worth knowing before reading a red check. When a push
+    # supersedes an in-flight PR run, the `cancel-in-progress` block cancels the
+    # shards; `needs.test-shard.result` is then `cancelled`, and the gate step
+    # below turns that into a FAILING `test` rather than a cancelled one. That
+    # is cosmetic — scripts/should-arm-automerge.sh refuses to arm on `fail` and
+    # on `cancel` alike, so nothing downstream behaves differently — but a
+    # `test: fail` on a superseded commit now means "superseded", not "broken".
+    # Read the shard jobs, which still report as cancelled, to tell them apart.
     #
     # What did NOT change: the PR leg is still affected-only, still carries no
     # execution proof and no union check, and is still there to catch a red the
