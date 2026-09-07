@@ -286,8 +286,9 @@ function overshootOf(escape: string): number {
  * **Not fixed here on purpose.** It is invisible today — the 4.3px lands in the
  * header's own 8px gap and overlaps nothing — and every candidate fix is a
  * product decision about which chip yields on Home's bar, which does not belong
- * in a coverage PR. Recorded in `plans/ui-ux-audit-202609/01-findings.md` and
- * filed under UI/UX Audit 2026-09 instead.
+ * in a coverage PR. Recorded as finding F1 in
+ * `plans/ui-ux-audit-202609/notes/260907-143000-dor-1816-browser-pass-and-deferred-coverage.md`
+ * and filed under UI/UX Audit 2026-09 instead.
  */
 const EXPECTED_ESCAPES: Readonly<Record<string, ExpectedEscape>> = {
   '/@768': {
