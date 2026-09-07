@@ -30,6 +30,47 @@ docs/api/api/
 # nobody wrote. Same reasoning as the generated API reference above.
 packages/db/drizzle/meta/
 
+# pnpm's own lockfile — written by `pnpm install`, read by pnpm and by nothing
+# else. REVIEW.md already lists it under "Do not report" as a generated file,
+# beside `docs/api/**` and `apps/server/src/core-extensions/**`, both of which
+# are ignored above; until DOR-1715 it was the one member of that group still
+# held to Prettier's style.
+#
+# THE COST OF NOT IGNORING IT was paid on two paths that behaved differently.
+# Every command that touches dependencies rewrites this file in pnpm's own
+# compact serialization (single-line flow mappings), which `prettier --check .`
+# — the Formatting gate inside the required `lint` workflow (DOR-485) —
+# rejects. Dependabot got a workflow step to repair that (DOR-1554);
+# hand-made dependency branches got only the lefthook pre-commit hook, which
+# covers it when hooks actually run, and a lockfile change is the slowest
+# full-monorepo hook run there is and therefore exactly the commit that gets
+# bypassed. PR #1457 landed red that way.
+#
+# THE RATIONALE FOR FORMATTING IT DID NOT SURVIVE MEASUREMENT. The
+# rejected-alternative note that used to live in dependabot-lockfile-repair.yml
+# argued the formatted style is what keeps a real dependency bump reviewable,
+# citing PR #1286 at 3,430+/-8,893- for a single package. That figure is the
+# one-time FORMAT CONVERSION — a Prettier-formatted base diffed against a
+# compact head — not the diff of a bump. Once both sides are the same style
+# that conversion never happens again. Measured on this lockfile (DOR-1715),
+# one single-package bump, resolver run only:
+#   * compact base -> compact bumped:      8 changed lines
+#   * formatted base -> formatted bumped: 11 changed lines
+# Compact is the SMALLER diff, because Prettier explodes every
+# `resolution: {integrity: ...}` into a five-line block — +27% on the whole
+# file (21,273 lines compact, 26,994 formatted), and 11,330 changed lines for
+# the conversion alone.
+#
+# Ignoring it makes the committed lockfile byte-reproducible from `pnpm
+# install`, the same property the docs-coverage-map.json note below defends,
+# and it makes both dependency paths identical for free: all three formatting
+# layers honor this file — the Stop hook (.claude/hooks/format-changed.sh), the
+# lefthook pre-commit glob (whose `*.yaml` pattern matches this filename) and
+# the CI gate — so no new automation has to be kept in sync with them. Do not
+# add a `prettier --write pnpm-lock.yaml` step anywhere; that is the mechanism
+# DOR-1715 removed.
+pnpm-lock.yaml
+
 # Visual-companion design mockups. Browser artifacts, not source: the skill that
 # writes them says the design decisions get captured in the spec's markdown "so
 # implementing agents can consume it without reading raw HTML mockups", and its
