@@ -59,7 +59,9 @@ back to the most conservative reading (no queue, no fragment, no browser leg).
 Stamps are **per lens**, never one global stamp: a lens skipped for six weeks still sees six
 weeks of change when it next runs. The rotation cursor names the next whole-tree lens due, in the
 charter's Lens classes order. Write a lens's stamp only when that lens actually ran, and only
-after its findings are recorded; a lens that did not run keeps its old entry untouched.
+after its findings are recorded; a lens that did not run keeps its old entry untouched. Creating
+`stamps.json` for the first time sets `rotation.cursor` to the **first** whole-tree lens in that
+order (`cva`), since nothing has run yet and the first one is therefore the one due.
 
 **Bootstrap rule: a lens with no stamp has no diff base, and the audit refuses to invent one.**
 `diff` scoping and `/ui-audit:pulse` require an existing `stamps.json`. With no stamps file, or
@@ -83,9 +85,21 @@ Lens keys come from the charter's lens list, which is their only authority.
 scoping them to a diff produces confident nonsense. They are reached through **rotation**
 instead: one whole-tree lens per pulse, cycling in the charter's order.
 
+**Coverage, which is the real budget.** Tokens are what a run costs the operator; they are not a
+stop condition an auditor can meter. Give every auditor a **coverage** budget instead: read its
+lens's source of truth in full (the token and theme files for `tokens`, the shared primitive
+directory for `cva` and `dx`, the playground registry for `playground`), then run one scripted
+sweep per violation class and open the hits. Stop when the sweeps are exhausted, and state in the
+coverage note where you stopped and what you did not reach. Never hand an agent a clock.
+
 **Cost.** Budget roughly 0.5M to 1M subagent tokens per lens, more for the ones that read the
 whole shared layer. The twelve-lens run that produced the September 2026 report came to roughly
 ten million. Print an estimate before spawning, and on `full` get explicit consent first.
+
+**A scoped run is not a small full run.** On `lens:<key>` and `surface:<route>`, the whole-tree
+scope stands but the reporting rules relax: collision class beats batch size (§4), a single-lens
+run synthesizes inline (§4), and the report says plainly which lenses did **not** run, so nobody
+reads a one-lens report as a verdict on the interface.
 
 ## 3. Fan out the auditors
 
@@ -111,6 +125,14 @@ rules section, which restates the charter's binding constraints.
 Code reading finds most of what a lens looks for. It does not find clipped layouts, strings that
 escape their container, console errors on load, or motion that reads wrong. Those need a running
 app, driven at desktop and phone widths.
+
+**Which lenses get one, and when.** Five lenses have findings a browser can confirm or upgrade:
+`responsive`, `states`, `motion`, `clutter`, and `tokens` (for theme drift and anything the
+cascade decides at render time). The command fills the auditor prompt's `{{#BROWSER_LEG}}` block
+for exactly those, on every scope, **whenever the profile supplies a dev command and a free
+port** — and for no other lens, since the rest read structure a browser cannot adjudicate. No dev
+command in the profile, or no profile at all, means the degrade rule below applies to all five.
+This is the predicate; nothing else decides it.
 
 **Look, don't touch. These rules are binding, and this is the only place they are written:**
 
@@ -138,20 +160,26 @@ app, driven at desktop and phone widths.
 The synthesizer reads the charter and every raw file, then produces one report that stands alone
 for a reader who never opens the raw files. Template: `assets/synthesizer-prompt.md`.
 
+**Spawn a synthesizer only when two or more raw files exist.** On a single-lens run step 1 is
+vacuous and the runner synthesizes **inline** — read the raw file, verify its citations, write
+the report — which is cheaper and identical in output.
+
 1. **Dedup.** The same underlying defect seen by several lenses becomes one finding. Keep the
    best evidence and note which lenses saw it.
-2. **Spot-verify citations.** Open the cited files for a meaningful sample (at least fifteen on a
-   full run, or all of them on a small one). A citation that does not hold kills or narrows the
-   finding. Record what was verified; the count is part of the report's credibility.
+2. **Spot-verify citations.** Open the cited files: **all of them at or below twenty findings, at
+   least fifteen above that.** A citation that does not hold kills or narrows the finding. Record
+   what was verified; the count is part of the report's credibility.
 3. **Drop the invalid.** Findings with no citation, findings relitigating a settled ADR, and
    recommendations that fight the design language go. Record every drop with its reason: a
    dropped finding sometimes carries a real observation that deserves re-filing with a proper
    trace, and the record is how that happens.
-4. **Batch by collision class.** Group survivors into PR-sized batches, three to fifteen findings
-   each, grouped so that two batches worked in parallel touch disjoint files. Same slice or same
-   theme is the usual proxy. Give each batch the priority of its worst finding and an effort mix.
-   Batches that must follow another (copy stragglers after the copy sweeps, file moves last) get
-   that dependency stated.
+4. **Batch by collision class.** Group survivors into PR-sized batches, grouped so that two
+   batches worked in parallel touch disjoint files. Same slice or same theme is the usual proxy.
+   Three to fifteen findings per batch **on a full run**; on a scoped run collision class wins
+   over batch size, and a one-finding batch is a legitimate result — never merge classes that
+   genuinely collide just to reach a floor. Give each batch the priority of its worst finding and
+   an effort mix. Batches that must follow another (copy stragglers after the copy sweeps, file
+   moves last) get that dependency stated.
 5. **Be honest in the summary.** Say what is good as well as what is wrong, and state plainly how
    many findings ask for deletion versus addition. Simplify-first is measurable.
 
@@ -230,9 +258,8 @@ duplicated here:
 - **`REVIEW.md`** → its **"Failure modes worth hunting by name"** section, the library a review
   brief points a reviewer at. `assets/review-brief.md` is that brief.
 
-> Both sections land in phase 1 of the codification plan
-> (`plans/ui-audit-codification-plan.md`). If your checkout predates it, that skill's landing
-> section and that rubric heading will not be there yet.
+> Both sections are on `main`. If `grep 'Landing Parallel Batches'` finds nothing in that skill,
+> your checkout predates them and you substitute your own landing method.
 
 ## Assets
 

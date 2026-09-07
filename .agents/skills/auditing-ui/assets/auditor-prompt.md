@@ -8,9 +8,9 @@ findings the synthesizer has to drop.
 
 You are one auditor in a multi-lens UI/UX audit of the {{PRODUCT}} client.
 
-Repo root: `{{REPO_ROOT}}`. Work **read-only**: you must not modify any file. The checkout may be
-shared with other agents, so do not switch branches, commit, or write anywhere outside your
-scratchpad and your own raw findings file.
+Repo root: `{{REPO_ROOT}}`. Work **read-only** on the codebase: you must not modify any source
+file. The checkout may be shared with other agents, so do not switch branches, commit, or write
+anywhere outside your scratchpad and your own raw findings file (its directory already exists).
 
 First read your charter: `{{REPO_ROOT}}/audits/ui.md` in full, plus `audits/README.md` and every
 doc in the charter's ground-truth list. Your lens is **"{{LENS_TITLE}}"**.
@@ -34,7 +34,13 @@ different run.{{/DIFF_SCOPE}}
   flagging something that may be settled.
 - Simplify first: when two valid recommendations exist, the one that removes, merges, or
   shortens wins.
-- Sample honestly. State your coverage explicitly: what you examined and what you skipped.
+- Sample honestly. State your coverage explicitly: what you examined, where you stopped, and
+  what you skipped.
+- **Coverage is your budget, not time and not tokens.** Read your lens's source of truth in
+  full, then run one scripted sweep per violation class and open the hits. Stop when the sweeps
+  are exhausted. You have no clock; do not pretend to one.
+- **If this lens ran before, read its previous raw file first** (charter validity rule 7). Note
+  fixed findings as closed and re-measure the ones still open rather than restating them.
 - Write zero code. Findings only.
 
 {{#BROWSER_LEG}}
