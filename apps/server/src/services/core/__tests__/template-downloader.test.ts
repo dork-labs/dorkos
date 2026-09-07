@@ -40,7 +40,9 @@ import {
   resolveGitAuth,
   classifyGigetError,
   execGitClone,
+  cloneRepository,
   downloadTemplate,
+  isGitHubCredentialHost,
   isSupportedTemplateSource,
   redactAuthTokens,
   TemplateDownloadError,
@@ -138,8 +140,11 @@ describe('resolveGitUrl', () => {
  * with `https://github.com/`; the giget fallback receives the RAW string,
  * dispatches on its scheme, and its git provider spawns `git clone -- <uri>`
  * with none of the `GIT_ALLOW_PROTOCOL` confinement `hardenedGitEnv` gives the
- * first strategy — while its http provider sends `resolveGitAuth()`'s GitHub
- * token to whatever host the address names.
+ * first strategy.
+ *
+ * This door narrows the transport set, and that is all it does. What may be
+ * SENT to an address it admits is a separate question, decided at the two
+ * credential-attachment points and pinned by the DOR-1833 block below.
  */
 describe('template sources — which addresses may be downloaded from', () => {
   /**
@@ -348,6 +353,247 @@ describe('classifyGigetError', () => {
   it('handles non-Error values', () => {
     expect(classifyGigetError('string error')).toBe('UNKNOWN');
     expect(classifyGigetError(42)).toBe('UNKNOWN');
+  });
+});
+
+/**
+ * Where the operator's GitHub token is allowed to travel (DOR-1833).
+ *
+ * DOR-1710/1799/1825 hardened WHICH addresses these two strategies will act on.
+ * They could not answer the other half: an `https://` address is accepted by
+ * design, and both strategies then attached the operator's `GITHUB_TOKEN` (or
+ * their `gh auth token`) to whatever host it named — `execGitClone` by
+ * rewriting the URL to `https://x-access-token:<token>@<host>/…`, giget by
+ * handing `<token>` to a provider that sends it as an `Authorization: Bearer`
+ * header. A marketplace package `name@https://evil.example.com/x.git`, or a
+ * workspace template pointing anywhere at all, collected a live GitHub
+ * credential.
+ *
+ * The rule these tests pin is that a credential goes only to the host it
+ * belongs to. The two attachment points reach that rule differently, and the
+ * difference is the interesting part:
+ *
+ * - `execGitClone` knows the exact URL it is about to clone, so an EXACT host
+ *   match decides it — never a substring or suffix test, because
+ *   `github.com.evil.com` is a stranger's host that merely contains the string.
+ * - The giget path cannot be decided by host at all. giget attaches the token
+ *   to a tarball URL the REMOTE names, so an address on github.com is worth
+ *   nothing; only the `github:` shorthand, whose tarball URL giget builds
+ *   itself, keeps the token.
+ */
+describe('the GitHub token only ever goes to GitHub', () => {
+  /** The clone URL `execGitClone` handed to `git` — argv is `[…, url, target]`. */
+  function spawnedCloneUrl(): string {
+    const args = vi.mocked(spawn).mock.calls[0][1] as string[];
+    return args[args.length - 2];
+  }
+
+  /** Run one clone to completion and return the URL git was given. */
+  async function cloneUrlFor(url: string, auth?: string): Promise<string> {
+    const mockProc = createMockProcess();
+    vi.mocked(spawn).mockReturnValue(mockProc);
+    const promise = execGitClone(url, '/tmp/target', auth);
+    mockProc._emit('close', 0);
+    await promise;
+    return spawnedCloneUrl();
+  }
+
+  describe('isGitHubCredentialHost — the comparison itself', () => {
+    it.each([
+      ['https://github.com/org/repo.git', true],
+      ['https://GITHUB.COM/org/repo.git', true],
+      ['https://gist.github.com/abc123.git', true],
+      ['https://www.github.com/org/repo.git', true],
+      // Bypass shapes: each contains `github.com`, none IS github.com.
+      ['https://github.com.evil.com/org/repo.git', false],
+      ['https://notgithub.com/org/repo.git', false],
+      ['https://evil.com/github.com/repo.git', false],
+      ['https://github.com@evil.com/org/repo.git', false],
+      ['https://evil.com/?x=https://github.com/', false],
+      // Right host, wrong everything else.
+      ['https://github.com:8443/org/repo.git', false],
+      ['http://github.com/org/repo.git', false],
+      ['https://someone:secret@github.com/org/repo.git', false],
+      // Not an https address, or not an address at all.
+      ['git@github.com:org/repo.git', false],
+      ['ssh://git@github.com/org/repo.git', false],
+      ['github:org/repo', false],
+      ['not a url', false],
+      ['', false],
+    ])('%s → %s', (url, expected) => {
+      expect(isGitHubCredentialHost(url)).toBe(expected);
+    });
+  });
+
+  describe('execGitClone — the URL rewrite', () => {
+    it('attaches the token to a github.com clone', async () => {
+      expect(await cloneUrlFor('https://github.com/org/repo.git', 'ghp_token')).toBe(
+        'https://x-access-token:ghp_token@github.com/org/repo.git'
+      );
+    });
+
+    it('sends no credential to a third-party host', async () => {
+      expect(await cloneUrlFor('https://evil.example.com/org/repo.git', 'ghp_token')).toBe(
+        'https://evil.example.com/org/repo.git'
+      );
+      expect(JSON.stringify(vi.mocked(spawn).mock.calls[0])).not.toContain('ghp_token');
+    });
+
+    it('sends no credential to a host that merely ends in github.com', async () => {
+      expect(await cloneUrlFor('https://github.com.evil.com/org/repo.git', 'ghp_token')).toBe(
+        'https://github.com.evil.com/org/repo.git'
+      );
+    });
+
+    it('sends no credential to a host that merely starts with github.com', async () => {
+      // `github.com@evil.com` reads as userinfo, not as a host: the parsed
+      // hostname is `evil.com`, which is the whole point of parsing.
+      expect(await cloneUrlFor('https://github.com@evil.com/org/repo.git', 'ghp_token')).toBe(
+        'https://github.com@evil.com/org/repo.git'
+      );
+    });
+
+    it('matches github.com whatever its casing', async () => {
+      // WHATWG `URL` lower-cases the host, so the exact lookup is case-safe.
+      expect(await cloneUrlFor('https://GITHUB.COM/org/repo.git', 'ghp_token')).toBe(
+        'https://x-access-token:ghp_token@GITHUB.COM/org/repo.git'
+      );
+    });
+
+    it('sends no credential to a homoglyph of github.com', async () => {
+      // `gіthub.com` with a Cyrillic і (U+0456). `URL` punycodes it to
+      // `xn--gthub-2of.com`, so it cannot collide with the real host.
+      const homoglyph = 'https://gіthub.com/org/repo.git';
+      expect(new URL(homoglyph).hostname).not.toBe('github.com');
+      expect(await cloneUrlFor(homoglyph, 'ghp_token')).toBe(homoglyph);
+    });
+
+    it('sends no credential to github.com on a non-standard port', async () => {
+      // `:443` normalises away, so a port that survives parsing is one GitHub
+      // does not serve — and an SSRF-shaped `localhost:22` is the same case.
+      expect(await cloneUrlFor('https://github.com:8443/org/repo.git', 'ghp_token')).toBe(
+        'https://github.com:8443/org/repo.git'
+      );
+      vi.mocked(spawn).mockClear();
+      expect(await cloneUrlFor('https://localhost:22/org/repo.git', 'ghp_token')).toBe(
+        'https://localhost:22/org/repo.git'
+      );
+    });
+
+    it('keeps the token off an address that already carries its own', async () => {
+      expect(await cloneUrlFor('https://someone:secret@github.com/org/repo.git', 'ghp_token')).toBe(
+        'https://someone:secret@github.com/org/repo.git'
+      );
+    });
+
+    it('attaches the token to the other GitHub hosts a person can name', async () => {
+      expect(await cloneUrlFor('https://gist.github.com/abc123.git', 'ghp_token')).toBe(
+        'https://x-access-token:ghp_token@gist.github.com/abc123.git'
+      );
+      vi.mocked(spawn).mockClear();
+      expect(await cloneUrlFor('https://www.github.com/org/repo.git', 'ghp_token')).toBe(
+        'https://x-access-token:ghp_token@www.github.com/org/repo.git'
+      );
+    });
+  });
+
+  describe('cloneRepository — the marketplace install path', () => {
+    it('still authenticates a github.com package clone', async () => {
+      mockEnv.GITHUB_TOKEN = 'ghp_market';
+      const mockProc = createMockProcess();
+      vi.mocked(spawn).mockReturnValue(mockProc);
+
+      const promise = cloneRepository('https://github.com/org/plugin.git', '/tmp/pkg');
+      mockProc._emit('close', 0);
+      await promise;
+
+      expect(spawnedCloneUrl()).toBe('https://x-access-token:ghp_market@github.com/org/plugin.git');
+    });
+
+    it('sends no credential when the package lives on a third-party host', async () => {
+      // A marketplace `url` source is deliberately open (Azure DevOps,
+      // self-hosted Gitea), which is exactly why the token cannot follow it.
+      mockEnv.GITHUB_TOKEN = 'ghp_market';
+      const mockProc = createMockProcess();
+      vi.mocked(spawn).mockReturnValue(mockProc);
+
+      const promise = cloneRepository('https://evil.example.com/org/plugin.git', '/tmp/pkg');
+      mockProc._emit('close', 0);
+      await promise;
+
+      expect(spawnedCloneUrl()).toBe('https://evil.example.com/org/plugin.git');
+      expect(JSON.stringify(vi.mocked(spawn).mock.calls[0])).not.toContain('ghp_market');
+    });
+  });
+
+  describe('giget fallback — the auth option', () => {
+    /** Fail the clone so the fallback runs, and report giget's `auth` argument. */
+    async function gigetAuthFor(source: string): Promise<string | undefined> {
+      // Cleared per call so a test may ask about more than one source and still
+      // read the answer for the one it just asked about.
+      vi.mocked(gigetDownload).mockClear();
+      const mockProc = createMockProcess();
+      vi.mocked(spawn).mockReturnValue(mockProc);
+      vi.mocked(gigetDownload).mockResolvedValue({
+        dir: '/tmp/target',
+        source,
+        name: 'repo',
+        tar: '',
+      });
+
+      const promise = downloadTemplate(source, '/tmp/target');
+      mockProc._emit('close', 128);
+      await promise;
+
+      const opts = vi.mocked(gigetDownload).mock.calls[0][1] as { auth?: string };
+      return opts.auth;
+    }
+
+    beforeEach(() => {
+      mockEnv.GITHUB_TOKEN = 'ghp_giget';
+    });
+
+    it('passes the token for the github: shorthand', async () => {
+      expect(await gigetAuthFor('github:org/repo')).toBe('ghp_giget');
+    });
+
+    it('withholds the token from a third-party URL', async () => {
+      expect(await gigetAuthFor('https://evil.example.com/org/repo.git')).toBeUndefined();
+    });
+
+    it('withholds the token from a host that merely ends in github.com', async () => {
+      expect(await gigetAuthFor('https://github.com.evil.com/org/repo.git')).toBeUndefined();
+    });
+
+    it('withholds the token from an https:// address even on github.com itself', async () => {
+      // The one a host check cannot catch, and the reason this path asks about
+      // the shorthand rather than the host. giget's http provider hands a
+      // `.json` source (or any JSON response) to `_httpJSON`, which reads the
+      // REMOTE'S OWN JSON and fetches whatever host its `tar` field names, with
+      // `Authorization: Bearer <token>` attached. The host below really is
+      // github.com — `github.com/<user>/<repo>/raw/…` serves any user's bytes,
+      // via a redirect to raw.githubusercontent.com — so every host check
+      // passes and the attacker still chooses where the token goes.
+      expect(
+        await gigetAuthFor('https://github.com/attacker/repo/raw/main/template.json')
+      ).toBeUndefined();
+      // Not a `.json` suffix either: giget also routes on a JSON content-type
+      // it only learns at request time, so no address shape is safe here.
+      expect(await gigetAuthFor('https://github.com/org/repo.git')).toBeUndefined();
+    });
+
+    it('withholds the token from the gitlab: and bitbucket: shorthands', async () => {
+      // giget's own providers send `auth` to gitlab.com and bitbucket.org — a
+      // GitHub token is no use there and no business of theirs.
+      expect(await gigetAuthFor('gitlab:org/repo')).toBeUndefined();
+      expect(await gigetAuthFor('bitbucket:org/repo')).toBeUndefined();
+    });
+
+    it('withholds the token from a bare owner/repo', async () => {
+      // A bare source goes to giget's public template registry, whose JSON
+      // names a `tar` URL on a host nobody can know in advance.
+      expect(await gigetAuthFor('org/repo')).toBeUndefined();
+    });
   });
 });
 

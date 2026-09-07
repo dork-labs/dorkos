@@ -23,8 +23,14 @@
 # lockfile drops the `overrides:` block this repo's root package.json declares,
 # so every job on the PR dies at `pnpm install --frozen-lockfile` with
 # ERR_PNPM_LOCKFILE_CONFIG_MISMATCH. That is repaired automatically on
-# Dependabot branches by .github/workflows/dependabot-lockfile-format.yml —
+# Dependabot branches by .github/workflows/dependabot-lockfile-repair.yml —
 # read its header before assuming a red Dependabot PR needs hand repair.
+#
+# Dependabot also regenerates the lockfile in pnpm's own compact style rather
+# than Prettier's, which used to redden the `lint` Formatting gate and needed a
+# second repair step. It no longer does: `pnpm-lock.yaml` is in
+# `.prettierignore` as of DOR-1715, so the file pnpm writes is the file the
+# gate accepts, on this path and on hand-made dependency branches alike.
 #
 # Security-CVE updates are configured separately (repo setting, enabled
 # 2026-08-24) and are NOT rate-limited by this file — a CVE fix PR opens as

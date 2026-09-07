@@ -1,45 +1,37 @@
-name: dependabot-lockfile-format
+name: dependabot-lockfile-repair
 
-# Repairs `pnpm-lock.yaml` on Dependabot PRs. Two repairs, both of which turn a
-# PR that is red on nothing but Dependabot's inability to speak pnpm into a
-# normal, mergeable dependency bump:
+# Repairs `pnpm-lock.yaml` on Dependabot PRs.
 #
-#   1. RESTORES THE pnpm CONFIG BLOCK (DOR-1644). Dependabot regenerates the
-#      lockfile without the `overrides:` block that the root package.json's
-#      `pnpm.overrides` declares (~40 entries here, several of them CVE pins).
-#      pnpm compares the two and refuses: every job on the PR dies at
-#      `pnpm install --frozen-lockfile` with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH,
-#      which reads as six unrelated broken checks rather than one config
-#      mismatch. The hand repair was `pnpm install --no-frozen-lockfile` plus a
-#      lockfile commit, on every group bump, forever (observed on PR #1407).
-#   2. REFORMATS IT WITH PRETTIER (DOR-1554). See below.
+# THE ONE REPAIR: RESTORE THE pnpm CONFIG BLOCK (DOR-1644). Dependabot
+# regenerates the lockfile without the `overrides:` block that the root
+# package.json's `pnpm.overrides` declares (~40 entries here, several of them
+# CVE pins). pnpm compares the two and refuses: every job on the PR dies at
+# `pnpm install --frozen-lockfile` with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH,
+# which reads as six unrelated broken checks rather than one config mismatch.
+# The hand repair was `pnpm install --no-frozen-lockfile` plus a lockfile
+# commit, on every group bump, forever (observed on PR #1407).
 #
-# Ordering matters: the config restore rewrites the lockfile in pnpm's own
-# style, so Prettier has to run after it, and one commit carries both.
+# This is a Dependabot-only failure mode, which is why a bot-only workflow is
+# the whole fix. Anything that regenerates the lockfile through pnpm itself —
+# a human, an agent, `pnpm install`, `pnpm update` — writes the `overrides:`
+# block from package.json as a matter of course and cannot produce the
+# mismatch. Dependabot does not speak pnpm, so it alone drops it. And when the
+# mismatch does occur it is self-announcing: `pnpm install --frozen-lockfile`
+# is the first thing every CI job that installs does, and it fails with the
+# error named above plus the exact command that fixes it, so no separate drift
+# guard is warranted (assessed in DOR-1715).
 #
-# The formatting half, in detail:
-#
-# THE PROBLEM: `pnpm install`/`pnpm update` regenerates pnpm-lock.yaml in
-# pnpm's own compact style (single-line flow mappings, double-quoted keys),
-# not Prettier's. `pnpm format:check` (`prettier --check .`) in
-# lint.yml gates every PR on the WHOLE repo being Prettier-formatted,
-# lockfile included — see the "ALSO RUNS THE FORMATTING GATE (DOR-485)"
-# comment there for why that gate exists and why it lives in a required
-# check rather than its own workflow. Dependabot always regenerates the
-# lockfile compact, so every Dependabot PR lands red on `lint`, and
-# Dependabot has no way to run `pnpm format` on its own output. Observed on
-# PR #1286: a routine electron bump, red on nothing but this, diffing
-# 3,430/-8,893 lines of pure whitespace noise against the real change.
-#
-# THE ALTERNATIVE CONSIDERED AND REJECTED: add `pnpm-lock.yaml` to
-# `.prettierignore` and stop formatting it at all. That's simpler and has
-# no CI-workflow surface, but it was rejected: the formatted style is what
-# keeps a real dependency bump reviewable — a single-package patch bump is a
-# 3-6 line diff formatted, the same bump is thousands of lines of
-# quote/indentation churn compact (verified: PR #1286 is 3,430+/-8,893- for
-# one package). That reviewability paid for itself repeatedly during this
-# repo's August 2026 dependency-upgrade programs. This workflow is the
-# smaller cost.
+# THERE USED TO BE A SECOND REPAIR — a Prettier pass over the lockfile
+# (DOR-1554) — because `prettier --check .` in lint.yml gated the whole repo on
+# Prettier formatting, lockfile included, and pnpm writes the file in its own
+# compact style. DOR-1715 deleted that step and put `pnpm-lock.yaml` in
+# `.prettierignore` instead. The measurement is in the .prettierignore entry;
+# the short version is that the reviewability argument for formatting the
+# lockfile was measuring a one-time format conversion, not a dependency bump,
+# and a bump is actually the smaller diff compact. Ignoring the file also made
+# this workflow and hand-made dependency branches behave identically, which
+# was the point: no automation here has to stay in sync with the lefthook hook
+# and the CI gate, because all three simply honor `.prettierignore`.
 #
 # WHY `pull_request_target`, NOT `pull_request`: GitHub gives workflows
 # triggered by Dependabot via `push`, `pull_request`,
@@ -61,8 +53,7 @@ name: dependabot-lockfile-format
 # too (needed, see below), but never executes anything the PR authored:
 #
 #   - NOTHING FROM THE PR'S DEPENDENCY GRAPH IS DOWNLOADED, LINKED OR RUN.
-#     The PR's own `pnpm-lock.yaml` is passed to Prettier as YAML *text* to
-#     reformat, not installed. The config-restore step (repair 1 above) is
+#     The config-restore step is
 #     `pnpm install --lockfile-only --no-frozen-lockfile --ignore-scripts`,
 #     which is a resolver run, not an install: `--lockfile-only` writes the
 #     lockfile and never creates a `node_modules`, so no package tarball from
@@ -90,51 +81,36 @@ name: dependabot-lockfile-format
 #     Dependabot token — see above.
 #     If you ever need a full install here, that is a different job with a
 #     different threat model. Do not drop `--lockfile-only` from this one.
-#   - Prettier itself runs via `pnpm dlx`, pinned to an exact version
-#     fetched fresh from the npm registry — not the version (if any) the
-#     PR's own lockfile would resolve — so a compromised transitive
-#     dependency in the PR's proposed graph can't substitute itself in.
-#   - No `--config`/`.prettierrc` is loaded (which would need
-#     `prettier-plugin-tailwindcss` on the module path — irrelevant to
-#     YAML and not worth installing here). The four Prettier options that
-#     actually affect YAML output are passed explicitly on the CLI instead
-#     of read from a file, so nothing PR-controlled is loaded as config.
-#     Verified byte-identical to `pnpm exec prettier --config .prettierrc`
-#     against this repo's real lockfile before relying on it.
 #   - The actor gate below keeps this job from ever running, with secrets,
 #     against a human-authored (and therefore adversarial-fork-capable) PR.
 #
 # WHY THE ACTOR GATE: `pull_request_target` fires for every PR touching
 # `pnpm-lock.yaml`, not just Dependabot's. Scoping to
 # `github.event.pull_request.user.login == 'dependabot[bot]'` keeps the
-# elevated-permission path exclusive to the one PR author this job trusts
-# not to hand-author `pnpm-lock.yaml` content designed to attack the
-# formatter. (`dependabot[bot]`'s login can't be spoofed by an external
-# contributor.) Since the config-restore step landed it carries a second
-# load: it is what bounds where the resolver may go — see the
-# `.npmrc`/`git+` note in the bullet above before widening it.
+# elevated-permission path exclusive to the one PR author this job trusts.
+# (`dependabot[bot]`'s login can't be spoofed by an external contributor.) It
+# is also what bounds where the resolver may go — see the `.npmrc`/`git+` note
+# in the bullet above before widening it.
 #
 # WHY `secrets.MERGE_TAIL_TOKEN`, NOT `github.token`, FOR THE PUSH: this is
 # not a style choice, it changes whether the fix actually un-blocks the PR.
 # GitHub does not create new workflow runs for events triggered by the
 # default `GITHUB_TOKEN` (documented, and load-bearing for merge-tail.yml's
-# own design — see its header). If this job pushed the reformatted commit
+# own design — see its header). If this job pushed the repaired commit
 # with `github.token`, the push would silently succeed but the
-# `lint` `pull_request` trigger would NOT re-fire on the new commit —
-# the required check would keep showing the OLD (failing) commit's result,
-# or nothing at all, and the PR would be stuck exactly as before, just less
-# visibly. A push authenticated with a real PAT is not treated as
-# actions-originated and does re-trigger `pull_request` workflows normally,
-# which is what actually flips `lint` green. `MERGE_TAIL_TOKEN` is
-# this repo's one existing "PAT with repo-write scope for a bot-shaped
-# job" secret (see merge-tail.yml); reusing it avoids provisioning a
-# second credential for the same class of problem. If it is ever unset,
-# this job fails loudly (see the guard step) rather than pushing an inert
-# commit that looks like a fix and isn't — same philosophy merge-tail.yml
-# uses for its own missing-PAT case.
+# `pull_request` triggers would NOT re-fire on the new commit — the required
+# checks would keep showing the OLD (failing) commit's result, or nothing at
+# all, and the PR would be stuck exactly as before, just less visibly. A push
+# authenticated with a real PAT is not treated as actions-originated and does
+# re-trigger `pull_request` workflows normally, which is what actually flips
+# the checks green. `MERGE_TAIL_TOKEN` is this repo's one existing "PAT with
+# repo-write scope for a bot-shaped job" secret (see merge-tail.yml); reusing
+# it avoids provisioning a second credential for the same class of problem. If
+# it is ever unset, this job fails loudly (see the guard step) rather than
+# pushing an inert commit that looks like a fix and isn't — same philosophy
+# merge-tail.yml uses for its own missing-PAT case.
 #
-# IDEMPOTENT BY CONSTRUCTION: reformatting an already-formatted lockfile
-# is a no-op (verified), and `--lockfile-only` against a lockfile that already
+# IDEMPOTENT BY CONSTRUCTION: `--lockfile-only` against a lockfile that already
 # satisfies the manifests writes nothing, so the second run this job's own push
 # triggers (synchronize, same path filter) finds nothing to commit and exits at
 # the `git diff --quiet` check below. No self-trigger loop, no extra commit.
@@ -153,10 +129,10 @@ on:
       - 'pnpm-lock.yaml'
 
 # One in flight per PR — if two events land in quick succession (e.g. a
-# force-push right after open), the later run's format+push subsumes the
+# force-push right after open), the later run's repair+push subsumes the
 # earlier one; no need for both to race a push at the same branch.
 concurrency:
-  group: dependabot-lockfile-format-${{ github.event.pull_request.number }}
+  group: dependabot-lockfile-repair-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
@@ -164,14 +140,9 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-  # Kept in sync with the `prettier`/`prettier-plugin-tailwindcss` versions
-  # in the root package.json. Only the plain `prettier` version matters for
-  # correctness (see the no-`--config` note above); bump this alongside any
-  # `prettier` upgrade so a future PR isn't reformatted with a stale binary.
-  PRETTIER_VERSION: '3.9.6'
 
 jobs:
-  format-lockfile:
+  repair-lockfile:
     # Elevated-permission gate: only Dependabot's own PRs reach a job that
     # holds `contents: write` + `MERGE_TAIL_TOKEN` under `pull_request_target`.
     if: github.event.pull_request.user.login == 'dependabot[bot]'
@@ -181,7 +152,7 @@ jobs:
       - name: Check MERGE_TAIL_TOKEN is available
         run: |
           if [ -z "${{ secrets.MERGE_TAIL_TOKEN }}" ]; then
-            echo "::error::MERGE_TAIL_TOKEN is not set. Pushing the reformatted lockfile with the default GITHUB_TOKEN would not re-trigger the lint required check (GitHub suppresses workflow runs for GITHUB_TOKEN-authored pushes), leaving the PR stuck red with no visible fix. Add a repo-scoped PAT as MERGE_TAIL_TOKEN (same secret merge-tail.yml uses) to enable this workflow."
+            echo "::error::MERGE_TAIL_TOKEN is not set. Pushing the repaired lockfile with the default GITHUB_TOKEN would not re-trigger the required checks (GitHub suppresses workflow runs for GITHUB_TOKEN-authored pushes), leaving the PR stuck red with no visible fix. Add a repo-scoped PAT as MERGE_TAIL_TOKEN (same secret merge-tail.yml uses) to enable this workflow."
             exit 1
           fi
 
@@ -199,9 +170,9 @@ jobs:
         with:
           node-version: 24
 
-      # Repair 1 (DOR-1644): put back the `overrides:`/`settings:` block
-      # Dependabot's regenerated lockfile drops, which otherwise fails every
-      # job on the PR with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH.
+      # DOR-1644: put back the `overrides:`/`settings:` block Dependabot's
+      # regenerated lockfile drops, which otherwise fails every job on the PR
+      # with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH.
       #
       # `--lockfile-only` is load-bearing and is NOT an optimisation: it is what
       # keeps this a resolver run rather than an install, so no package from the
@@ -212,20 +183,6 @@ jobs:
       # thing being repaired.
       - name: Restore pnpm config in pnpm-lock.yaml
         run: pnpm install --lockfile-only --no-frozen-lockfile --ignore-scripts
-
-      # Repair 2 (DOR-1554). Runs AFTER the restore above, which writes the
-      # lockfile in pnpm's own compact style. Still no real install — see
-      # header: this reformats the lockfile as text via a pinned,
-      # registry-fetched Prettier.
-      - name: Reformat pnpm-lock.yaml with Prettier
-        run: |
-          pnpm dlx "prettier@${PRETTIER_VERSION}" \
-            --no-config \
-            --tab-width 2 \
-            --print-width 100 \
-            --end-of-line lf \
-            --single-quote \
-            --write pnpm-lock.yaml
 
       - name: Commit and push if changed
         env:
@@ -238,7 +195,7 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           if git diff --quiet -- pnpm-lock.yaml; then
-            echo "pnpm-lock.yaml already carries its pnpm config and is Prettier-formatted — nothing to do."
+            echo "pnpm-lock.yaml already carries its pnpm config — nothing to do."
             exit 0
           fi
           git config user.name "github-actions[bot]"
@@ -249,7 +206,7 @@ jobs:
           # (a dedented line here would break the `run: |` block).
           git commit \
             -m "chore: repair pnpm-lock.yaml for Dependabot" \
-            -m "Dependabot cannot speak pnpm: it drops the root package.json's pnpm.overrides block from the lockfile (every job then dies at pnpm install --frozen-lockfile with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH, DOR-1644) and regenerates the file in pnpm's compact style, while this repo's required lint workflow gates on Prettier formatting (DOR-485, DOR-1554). Both repaired automatically by .github/workflows/dependabot-lockfile-format.yml."
+            -m "Dependabot cannot speak pnpm: it drops the root package.json's pnpm.overrides block from the lockfile, after which every job dies at pnpm install --frozen-lockfile with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH (DOR-1644). Repaired automatically by .github/workflows/dependabot-lockfile-repair.yml."
           # Push to the PR's actual branch name, not the detached HEAD this
           # job checked out (see the checkout step: we checked out a SHA).
           git push origin "HEAD:${HEAD_REF}"
