@@ -5,13 +5,19 @@
  *
  * Both resources are scoped to the caller-supplied `projectDir` (same scoping
  * convention as the session resources) and read
- * `<projectDir>/.agents/skills`, the canonical authored-skill directory both
- * Claude Code (via its `.claude/skills` projection) and Codex/OpenCode read.
- * This mirrors the scan the Codex runtime already performs to build its
- * slash-command palette (`services/runtimes/codex/scan-skill-commands.ts`):
- * `scanSkillDirs` enumerates directories, `parseSkillFile` validates each
- * `SKILL.md` against `SkillFrontmatterSchema`. Unparseable or unreadable
- * skills are skipped rather than failing the whole read.
+ * `<projectDir>/.agents/skills`, the canonical skills directory both Claude Code
+ * (via its `.claude/skills` projection) and Codex/OpenCode read. This mirrors
+ * the scan the Codex runtime already performs to build its slash-command palette
+ * (`services/runtimes/codex/scan-skill-commands.ts`): `scanSkillDirs` enumerates
+ * the directory, `parseSkillFile` validates each `SKILL.md` against
+ * `SkillFrontmatterSchema`. Unparseable or unreadable skills are skipped rather
+ * than failing the whole read.
+ *
+ * Like that palette this is a READER, so it enumerates what is physically in
+ * `.agents/skills` — symlinks followed, and the `<pkg>__<name>` projections of
+ * installed marketplace plugins included. Listing less than the agent's own
+ * harness reads off the same directory would tell it a plugin's skills do not
+ * exist while the harness is already loading them (DOR-1844).
  *
  * The list is model-facing, so it honors `disable-model-invocation: true` the
  * way Claude Code does natively: a skill its author marked person-only is not
@@ -70,10 +76,12 @@ interface SkillDetailResource {
 }
 
 /**
- * Enumerate and parse every authored skill under `<cwd>/.agents/skills`.
- * Mirrors `scanSkillCommands` (`services/runtimes/codex/scan-skill-commands.ts`):
- * a missing directory yields an empty list; an unreadable or invalid
- * `SKILL.md` is logged and skipped rather than failing the whole scan.
+ * Enumerate and parse every skill under `<cwd>/.agents/skills` — authored dirs,
+ * linked-in sources, and installed-plugin projections alike.
+ * Mirrors `scanSkillCommands` (`services/runtimes/codex/scan-skill-commands.ts`)
+ * down to the scan options: a missing directory yields an empty list; an
+ * unreadable or invalid `SKILL.md` is logged and skipped rather than failing the
+ * whole scan.
  *
  * @param cwd - Absolute project directory whose `.agents/skills` is scanned.
  */
@@ -81,7 +89,10 @@ async function listWorkspaceSkills(cwd: string): Promise<ParsedSkill<SkillFrontm
   const skillsRoot = join(cwd, AGENTS_SKILLS_DIR);
   const skills: ParsedSkill<SkillFrontmatter>[] = [];
 
-  for (const entry of scanSkillDirs(skillsRoot, AGENTS_SKILLS_DIR)) {
+  // A reader mirrors the directory; it does not re-plan it. See the module doc.
+  for (const entry of scanSkillDirs(skillsRoot, AGENTS_SKILLS_DIR, {
+    includeManagedProjections: true,
+  })) {
     const filePath = join(skillsRoot, entry.name, SKILL_FILENAME);
     try {
       const content = await readFile(filePath, 'utf-8');
@@ -121,7 +132,8 @@ export function registerSkillResources(server: McpServer, projectDir: string): v
     {
       title: 'Skills',
       description:
-        'Authored skills discovered under .agents/skills in this project directory. Name and ' +
+        'Skills discovered under .agents/skills in this project directory, including ones ' +
+        'that came from an installed package. Name and ' +
         'description only. Read dorkos://skills/{name} for the full SKILL.md body. Skills ' +
         'marked disable-model-invocation are omitted from this list — they are for a person ' +
         'to invoke, not for you to reach for — but dorkos://skills/{name} still resolves ' +
