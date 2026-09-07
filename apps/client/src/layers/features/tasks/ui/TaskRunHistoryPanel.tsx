@@ -65,7 +65,7 @@ function StatusIcon({ status }: { status: TaskRun['status'] }) {
     case 'running':
       return (
         <span title="Running" aria-label="Running">
-          <Spinner size="xs" className="text-blue-500" />
+          <Spinner size="xs" className="text-status-info" />
         </span>
       );
     case 'completed':

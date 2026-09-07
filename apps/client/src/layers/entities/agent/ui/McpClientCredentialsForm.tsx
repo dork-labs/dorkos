@@ -1,7 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
 import type { McpClientCredentials } from '@dorkos/shared/transport';
-import { Button, Input, Label, PasswordInput } from '@/layers/shared/ui';
+import { Button, Input, Label, PasswordInput, Spinner } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 
 /** Props for {@link McpClientCredentialsForm}. */
@@ -119,7 +118,7 @@ export function McpClientCredentialsForm({
           disabled={!trimmedId || saving}
           className="gap-1.5 focus-visible:ring-2"
         >
-          {saving && <Loader2 className="size-3 animate-spin" aria-hidden />}
+          {saving && <Spinner size="xs" />}
           Save and sign in
         </Button>
         <Button

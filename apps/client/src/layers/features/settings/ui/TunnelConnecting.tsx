@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Check, Loader2 } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
+import { Spinner } from '@/layers/shared/ui';
 
 /** Time after mount at which each step becomes active (milliseconds). */
 const STEP_THRESHOLDS_MS = [0, 500, 1200] as const;
@@ -114,7 +115,7 @@ export function TunnelConnecting() {
                     transition={{ duration: 0.15 }}
                     className="inline-flex"
                   >
-                    <Loader2 className="text-muted-foreground size-4 animate-spin" />
+                    <Spinner className="text-muted-foreground" />
                   </motion.span>
                 ) : null}
               </AnimatePresence>

@@ -3,7 +3,6 @@ import {
   Copy,
   ExternalLink,
   Link2,
-  Loader2,
   RefreshCw,
   TriangleAlert,
   Unplug,
@@ -25,6 +24,7 @@ import {
   FieldCard,
   FieldCardContent,
   Skeleton,
+  Spinner,
 } from '@/layers/shared/ui';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
 import {
@@ -212,11 +212,7 @@ function IdleState({
       </div>
 
       <Button onClick={() => void handleLink()} disabled={busy}>
-        {busy ? (
-          <Loader2 className="mr-1.5 size-4 animate-spin" />
-        ) : (
-          <Link2 className="mr-1.5 size-4" />
-        )}
+        {busy ? <Spinner className="mr-1.5" /> : <Link2 className="mr-1.5 size-4" />}
         {busy ? 'Starting…' : 'Link this instance'}
       </Button>
       {(consentError ?? startError) && (
@@ -265,7 +261,7 @@ function PendingState({ view }: { view: Extract<CloudLinkView, { kind: 'pending'
       </Button>
 
       <div className="text-muted-foreground flex items-center gap-2 text-sm" role="status">
-        <Loader2 className="size-4 animate-spin" />
+        <Spinner />
         <span>Waiting for you to approve on dorkos.ai…</span>
       </div>
     </div>
@@ -357,11 +353,7 @@ function RecoveryState({
         </div>
       </div>
       <Button onClick={() => void onAction()} disabled={pending}>
-        {pending ? (
-          <Loader2 className="mr-1.5 size-4 animate-spin" />
-        ) : (
-          <RefreshCw className="mr-1.5 size-4" />
-        )}
+        {pending ? <Spinner className="mr-1.5" /> : <RefreshCw className="mr-1.5 size-4" />}
         {actionLabel}
       </Button>
     </div>

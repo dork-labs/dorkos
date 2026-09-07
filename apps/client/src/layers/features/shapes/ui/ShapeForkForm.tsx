@@ -13,8 +13,7 @@
  * @module features/shapes/ui/ShapeForkForm
  */
 import { useId, useState, type FormEvent } from 'react';
-import { Loader2 } from 'lucide-react';
-import { Button, Input, Label } from '@/layers/shared/ui';
+import { Button, Input, Label, Spinner } from '@/layers/shared/ui';
 
 /** Props for {@link ShapeForkForm}. */
 export interface ShapeForkFormProps {
@@ -110,7 +109,7 @@ export function ShapeForkForm({
       )}
       <div className="flex flex-wrap gap-2 pt-1">
         <Button type="submit" size="sm" disabled={pending}>
-          {pending && <Loader2 className="size-(--size-icon-xs) animate-spin" />}
+          {pending && <Spinner size="xs" />}
           Create
         </Button>
         {/*

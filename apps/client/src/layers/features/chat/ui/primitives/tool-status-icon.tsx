@@ -1,5 +1,6 @@
-import { Loader2, Check, X, MinusCircle } from 'lucide-react';
+import { Check, X, MinusCircle } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
+import { Spinner } from '@/layers/shared/ui';
 import { toolStatus } from '@/layers/features/conversation';
 
 /**
@@ -18,9 +19,7 @@ export function getToolStatusIcon(status: ToolIconStatus): React.ReactNode {
   switch (status) {
     case 'pending':
     case 'running':
-      return (
-        <Loader2 className={cn('size-(--size-icon-xs) animate-spin', toolStatus({ status }))} />
-      );
+      return <Spinner size="xs" className={toolStatus({ status })} />;
     case 'complete':
       return <Check className={cn('size-(--size-icon-xs)', toolStatus({ status }))} />;
     case 'error':

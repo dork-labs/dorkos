@@ -1,8 +1,7 @@
 import { lazy, Suspense, useMemo } from 'react';
-import { Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useSearch, useNavigate } from '@tanstack/react-router';
-import { Drawer, DrawerContent, QueryErrorState } from '@/layers/shared/ui';
+import { Drawer, DrawerContent, QueryErrorState, Spinner } from '@/layers/shared/ui';
 import { useIsMobile } from '@/layers/shared/model';
 import { useProfileStore } from '@/layers/features/profile';
 import { useOpenConnections } from '@/layers/shared/model';
@@ -137,7 +136,7 @@ export function TeamRoute() {
                   <Suspense
                     fallback={
                       <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
-                        <Loader2 className="mr-2 size-4 animate-spin" />
+                        <Spinner className="mr-2" />
                         Loading topology…
                       </div>
                     }

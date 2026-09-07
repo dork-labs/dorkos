@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Check, ChevronDown, CircleAlert, Loader2, RefreshCw } from 'lucide-react';
+import { Check, ChevronDown, CircleAlert, RefreshCw } from 'lucide-react';
 import type { DependencyCheck, SystemRequirements } from '@dorkos/shared/agent-runtime';
 import type { RuntimeReadiness as RuntimeConnectState } from '@dorkos/shared/agent-runtime';
 import { runtimeAuthConnectKind, runtimeDisplayName } from '@dorkos/shared/agent-runtime';
@@ -16,6 +16,7 @@ import {
   ResponsiveDialogTitle,
   ResponsiveDialogDescription,
   ResponsiveDialogBody,
+  Spinner,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { PRIMARY_RUNTIME_TYPES, getRuntimeDescriptor } from '../config/runtime-descriptors';
@@ -514,8 +515,9 @@ function ProvisionProgressRow({ message }: { message: string }) {
     >
       {/* CSS spin (not motion rotate): a repeated animate-to-360 stalls after the
           first turn on re-render, so the spinner looked frozen (DOR-439). */}
-      <Loader2
-        className={cn('text-muted-foreground size-3.5 shrink-0', !reducedMotion && 'animate-spin')}
+      <Spinner
+        size="xs"
+        className={cn('text-muted-foreground shrink-0', reducedMotion && 'animate-none')}
       />
       <AnimatePresence mode="wait">
         <motion.span

@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
-import { Loader2, Plus, ShieldAlert } from 'lucide-react';
-import { Button } from '@/layers/shared/ui';
+import { Plus, ShieldAlert } from 'lucide-react';
+import { Button, Spinner } from '@/layers/shared/ui';
 import { useImportAgentMcpServer } from '@/layers/entities/agent';
 import type { CapabilityApprovalRequired, McpServerEntry } from '@dorkos/shared/transport';
 import { classifyFailure, type McpCardStatus } from '../lib/mcp-server-state';
@@ -201,7 +201,7 @@ export function DiscoveredMcpServerCard({
               className="gap-1.5 focus-visible:ring-2"
             >
               {importServer.isPending ? (
-                <Loader2 className="size-3 animate-spin" aria-hidden />
+                <Spinner size="xs" />
               ) : (
                 <Plus className="size-3.5" aria-hidden />
               )}

@@ -6,7 +6,6 @@ import {
   Folder,
   FolderOpen,
   Link2,
-  Loader2,
   Pin,
   RotateCw,
 } from 'lucide-react';
@@ -19,6 +18,7 @@ import {
   ResponsiveContextMenuItem,
   ResponsiveContextMenuSeparator,
   ResponsiveContextMenuTrigger,
+  Spinner,
 } from '@/layers/shared/ui';
 import { cn, FILE_PATH_DRAG_TYPE, hasFilePathDrag, readFilePathDrag } from '@/layers/shared/lib';
 import { parentOf } from '../model/tree';
@@ -194,7 +194,7 @@ export function FileTreeRow({
       <span className="flex size-4 flex-shrink-0 items-center justify-center">
         {isDir &&
           (loading ? (
-            <Loader2 className="text-muted-foreground size-3.5 animate-spin" />
+            <Spinner size="xs" className="text-muted-foreground" />
           ) : error ? (
             <button
               type="button"

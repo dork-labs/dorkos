@@ -1,5 +1,5 @@
-import { Loader2 } from 'lucide-react';
 import { getToolLabel } from '@/layers/shared/lib';
+import { Spinner } from '@/layers/shared/ui';
 
 interface CompactPendingRowProps {
   /** Type of interaction being handled in the input zone. */
@@ -28,7 +28,7 @@ export function CompactPendingRow({
       {...dataProps}
     >
       <div className="flex items-center gap-2">
-        <Loader2 className="size-(--size-icon-sm) shrink-0 animate-spin" />
+        <Spinner className="shrink-0" />
         <span className="truncate text-xs">{label}</span>
       </div>
     </div>

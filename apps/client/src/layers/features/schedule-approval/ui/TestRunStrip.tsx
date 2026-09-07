@@ -3,8 +3,9 @@
  *
  * @module features/schedule-approval/ui/TestRunStrip
  */
-import { Loader2, Check, X, CircleSlash } from 'lucide-react';
+import { Check, X, CircleSlash } from 'lucide-react';
 import { cn, formatCompactAge } from '@/layers/shared/lib';
+import { Spinner } from '@/layers/shared/ui';
 import type { ScheduleTestRunState } from '../model/use-schedule-test-run';
 
 /**
@@ -66,7 +67,7 @@ export function TestRunStrip({ testRun, onOpenRun, className }: TestRunStripProp
     >
       {phase === 'running' && (
         <>
-          <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />
+          <Spinner size="xs" className="shrink-0" />
           Test run in progress…
         </>
       )}
