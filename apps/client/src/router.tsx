@@ -404,7 +404,29 @@ export async function sessionRouteLoader({
     search: (prev) => ({
       ...prev,
       session: resolved.sessionId,
-      dir,
+      // **A URL that named no directory gets the resolved session's own**
+      // (DOR-1836). Every per-session read is addressed by id AND directory, so
+      // a redirect that supplies only the id leaves the window to guess: the
+      // history read asked for the transcript with no directory at all and was
+      // refused, and the detail read asked under whatever this window had
+      // selected and was told the session does not exist. Two 404s and two error
+      // breadcrumbs on the way to a conversation that was there all along.
+      //
+      // The person's own `dir` still wins whenever they gave one — this fills a
+      // blank, it never overrules.
+      //
+      // **And writing it here MOVES the window's selected directory**, which is
+      // chosen rather than incidental. `useDirectoryState` one-way-syncs `?dir=`
+      // into the app store, so a bare `/session` that resolves a conversation
+      // held one level down leaves `selectedCwd` on that subfolder — which may
+      // hold no registered agent, so the sidebar highlights nothing. That is the
+      // honest answer: `selectedCwd` means "where would new work happen", and
+      // the answer to a bare `/session` really is "wherever the conversation you
+      // are being taken to lives". The alternative — reading the transcript from
+      // one directory while claiming to be in another — is the state this whole
+      // change exists to remove. Pinned by `use-directory-state.test.tsx`'s
+      // URL-to-store sync case, so it cannot change back by accident.
+      dir: dir ?? resolved.cwd ?? undefined,
       runtime,
       prompt: resolved.isNew ? deps.prompt : undefined,
       send: resolved.isNew ? deps.send : undefined,

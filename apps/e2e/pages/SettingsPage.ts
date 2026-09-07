@@ -72,6 +72,24 @@ export class SettingsPage {
     return this.activePanel.getByRole('combobox').first();
   }
 
+  /**
+   * Appearance tab: the theme control's button, addressed by attribute rather
+   * than by role.
+   *
+   * {@link SettingsPage.themeCombobox} is the one to reach for normally. This
+   * one exists for the specs that ask a question WHILE the control's list is on
+   * screen: an open list takes the rest of the page out of the accessibility
+   * tree, so every role-based locator above it — the dialog, its panel, the
+   * button itself — stops resolving at exactly the moment the answer is "the
+   * list opened". Reading the DOM instead keeps the same element addressable
+   * either way.
+   *
+   * Theme is the first select on the tab (theme, font family, font size).
+   */
+  get themeSelectTrigger() {
+    return this.page.getByTestId('settings-dialog').locator('[data-slot="select-trigger"]').first();
+  }
+
   /** Get all toggle switches in the current tab panel. */
   get switches() {
     return this.activePanel.getByRole('switch');
