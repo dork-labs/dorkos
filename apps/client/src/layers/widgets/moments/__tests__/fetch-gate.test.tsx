@@ -33,7 +33,9 @@ import type { Transport } from '@dorkos/shared/transport';
 
 import { TransportProvider, useAppStore, configKeys } from '@/layers/shared/model';
 import { useConfig } from '@/layers/entities/config';
-import { createBootCache, HttpTransport, bootCacheStorageKey } from '@/layers/shared/lib';
+import { bootCacheStorageKey } from '@/layers/shared/lib';
+import { createBootCache } from '@/layers/shared/lib/query-persister';
+import { HttpTransport } from '@/layers/shared/lib/transport';
 import { DialogTitle } from '@/layers/shared/ui';
 
 import { MomentHost } from '@/layers/widgets/moments';

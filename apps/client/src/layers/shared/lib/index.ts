@@ -1,5 +1,9 @@
 /**
- * Shared lib — domain-agnostic utilities, Transport implementations, and helpers.
+ * Shared lib — domain-agnostic utilities and helpers.
+ *
+ * NOT the Transports. `HttpTransport` and `DirectTransport` live one subpath
+ * away, at `./transport` and `./direct-transport`, and nothing reachable from
+ * here loads either (DOR-1809; see the note where they used to be re-exported).
  *
  * @module shared/lib
  */
@@ -92,14 +96,26 @@ export { operatorStopForRuntime, resolveConfiguredStopMode } from './unattended-
 export { isSessionRequestReady } from './session-request-scope';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { buildClientReport } from './build-issue-report';
-export { HttpTransport, streamManager, RoomStreamHttpError, isFatalStreamError } from './transport';
-export {
-  UPLOAD_STALL_TIMEOUT_MS,
-  UPLOAD_STALLED_MESSAGE,
-  UPLOAD_CANCELED_MESSAGE,
-  UPLOAD_UNREADABLE_MESSAGE,
-} from './transport';
-export { DirectTransport, type DirectTransportServices } from './direct-transport';
+// The two Transport implementations are deliberately NOT on this barrel, and
+// neither is anything that has to load one (DOR-1809).
+//
+// `HttpTransport` alone is ~35 modules — a method factory per domain, the SSE
+// parser, the durable stream socket — and `DirectTransport` is another dozen.
+// Re-exported here, they were in the module graph of `import { cn } from
+// '@/layers/shared/lib'`: every consumer paid for the whole client-server seam
+// to merge two class names, and every test that touched a barrel symbol
+// evaluated a websocket client it never called.
+//
+// Withdrawing them is what makes that a structural fact rather than a
+// convention. There is no importable path from this barrel to `transport/` or
+// `direct-transport`, and `__tests__/barrel-transport-isolation.test.ts` fails
+// if one appears. The dedicated subpaths are the way in, and they are the same
+// ones the package's `exports` map already publishes to embedding hosts:
+//
+//   `@/layers/shared/lib/transport`         — HttpTransport, streamManager,
+//                                             the stream sockets, the upload
+//                                             contract, the room-stream errors
+//   `@/layers/shared/lib/direct-transport`  — DirectTransport (Obsidian)
 export { reportClientError, installClientErrorHandlers } from './client-error-reporter';
 export { getBreadcrumbs, installBreadcrumbHandlers } from './breadcrumbs';
 export {
@@ -200,16 +216,20 @@ export { humanizePackageName, packageDisplayLabel, isSingleEmoji } from './human
 export { readableForeground } from './readable-foreground';
 export { truncateMiddle } from './truncate-middle';
 export { queryClient, createQueryClientConfig, isStreamOwnedQuery } from './query-client';
+// `createBootCache` and `BootCache` are NOT here, for the same reason the two
+// Transports are not: building a cache asks `instanceof HttpTransport`, so
+// `query-persister` loads the whole HTTP transport. Its callers — the app root
+// and the two specs that drive a real cache — import
+// `@/layers/shared/lib/query-persister`. What is left below needs no transport
+// at all: the wipe a sign-out does, the allow-list, and the storage key.
 export {
-  createBootCache,
   clearBootCache,
   isBootQueryKey,
   bootCacheStorageKey,
   BOOT_CACHE_KEY_PREFIX,
   BOOT_CACHE_DISABLED_KEY,
   BOOT_CACHE_MAX_AGE_MS,
-  type BootCache,
-} from './query-persister';
+} from './boot-cache-keys';
 export { classifyContent, type ContentType } from './classify-content';
 export { resolveAgentVisual } from './resolve-agent-visual';
 export type { AgentVisual, AgentVisualSource } from './resolve-agent-visual';
@@ -293,7 +313,8 @@ export { setAskDorkBotOrigin, takeAskDorkBotOrigin } from './ask-dorkbot-origin'
 // `overnightBoundary` is deliberately NOT re-exported here, for the same reason
 // `row-grammar` is not: one of its two callers is the sidebar model, which a
 // source-level contract forbids from value-importing this barrel at all (it
-// pulls in the transport, the sound player and a dozen other side effects).
+// pulls in the sound player, the celebration engine and a dozen other side
+// effects).
 // Both callers deep-import the leaf module, which imports nothing.
 export { isNewer } from './version-compare';
 

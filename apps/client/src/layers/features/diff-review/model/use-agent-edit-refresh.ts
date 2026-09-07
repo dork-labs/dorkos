@@ -14,7 +14,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { isEditFamilyTool, editToolFilePath } from '@dorkos/shared/diff-tools';
-import { streamManager } from '@/layers/shared/lib';
+import { streamManager } from '@/layers/shared/lib/transport';
 
 /** Debounce for agent-edit bursts (matches the renderer-refresh spirit of the spec). */
 const AGENT_EDIT_REFRESH_DEBOUNCE_MS = 400;

@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { dehydrate, QueryClient } from '@tanstack/react-query';
 import { persistQueryClientRestore } from '@tanstack/react-query-persist-client';
+import { createBootCache } from '../query-persister';
 import {
   BOOT_CACHE_DISABLED_KEY,
   BOOT_CACHE_KEY_PREFIX,
   BOOT_CACHE_MAX_AGE_MS,
   bootCacheStorageKey,
   clearBootCache,
-  createBootCache,
   isBootQueryKey,
-} from '../query-persister';
+} from '../boot-cache-keys';
 // The real factory rather than the literal — the allow-list in
 // `query-persister.ts` has to spell these keys by hand (`shared/` may not import
 // an entity), so the table below is only a drift guard if one side of it is the

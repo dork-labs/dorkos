@@ -10,7 +10,7 @@
  * @module features/gen-ui/ui/LiveSessionWidget
  */
 import { useEffect, useMemo, type ReactNode } from 'react';
-import { streamManager } from '@/layers/shared/lib';
+import { streamManager } from '@/layers/shared/lib/transport';
 import {
   useSessionListStore,
   useSessionStreamState,

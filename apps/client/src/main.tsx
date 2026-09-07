@@ -10,10 +10,7 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { RouterProvider } from '@tanstack/react-router';
 import { createAppRouter } from './router';
 import {
-  HttpTransport,
-  createBootCache,
   queryClient,
-  streamManager,
   executeUiCommand,
   resolveApiBaseUrl,
   reportClientError,
@@ -24,6 +21,8 @@ import {
   registerTabOpener,
   useRenderSlot,
 } from '@/layers/shared/lib';
+import { HttpTransport, streamManager } from '@/layers/shared/lib/transport';
+import { createBootCache } from '@/layers/shared/lib/query-persister';
 import {
   TransportProvider,
   useAppStore,

@@ -42,8 +42,8 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
 // Controllable stream-manager tap: tests emit session events by invoking the
 // registered listeners directly (the real manager gates to the attached session).
 const sessionEventListeners = new Set<(sessionId: string, event: unknown) => void>();
-vi.mock('@/layers/shared/lib', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/layers/shared/lib')>()),
+vi.mock('@/layers/shared/lib/transport', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/lib/transport')>()),
   streamManager: {
     subscribeSessionEvent: (handler: (sessionId: string, event: unknown) => void) => {
       sessionEventListeners.add(handler);

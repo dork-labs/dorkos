@@ -56,7 +56,7 @@ import type {
 } from '@dorkos/shared/schemas';
 import { DEVTOOLS_CONSOLE_BATCH_MAX, DEVTOOLS_NETWORK_BATCH_MAX } from '@dorkos/shared/schemas';
 import { useSessionId } from '@/layers/entities/session';
-import { streamManager } from '@/layers/shared/lib';
+import { streamManager } from '@/layers/shared/lib/transport';
 import { useTransport } from '@/layers/shared/model';
 import { loadRasterizerSource } from '../lib/load-rasterizer';
 

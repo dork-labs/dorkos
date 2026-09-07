@@ -11,7 +11,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
 import type { HistoryMessage } from '@dorkos/shared/types';
-import { streamManager } from '@/layers/shared/lib';
+import { streamManager } from '@/layers/shared/lib/transport';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { useSessionListStore, useSessionStreamStore } from '@/layers/entities/session';
 import { createMockTransport } from '@dorkos/test-utils';

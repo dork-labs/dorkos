@@ -27,8 +27,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
-import { isFatalStreamError, SSE_RESILIENCE } from '@/layers/shared/lib';
-import { streamManager } from '@/layers/shared/lib/transport';
+import { SSE_RESILIENCE } from '@/layers/shared/lib';
+import { isFatalStreamError, streamManager } from '@/layers/shared/lib/transport';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 import { mergeRoomReactions } from '../lib/reactions';

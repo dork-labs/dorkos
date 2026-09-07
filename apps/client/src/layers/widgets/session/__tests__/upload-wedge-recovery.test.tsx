@@ -80,7 +80,7 @@ vi.mock('@/layers/entities/runtime', () => ({
 
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
-import { UPLOAD_CANCELED_MESSAGE, UPLOAD_STALLED_MESSAGE } from '@/layers/shared/lib';
+import { UPLOAD_CANCELED_MESSAGE, UPLOAD_STALLED_MESSAGE } from '@/layers/shared/lib/transport';
 import { SessionComposerBench } from '@/test-helpers/session-composer';
 import { useFileUpload } from '@/layers/features/chat/model/use-file-upload';
 import { configKeys } from '@/layers/entities/config';

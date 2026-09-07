@@ -19,7 +19,8 @@ import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { isEditFamilyTool, editToolFilePath } from '@dorkos/shared/diff-tools';
-import { streamManager, executeUiCommand } from '@/layers/shared/lib';
+import { executeUiCommand } from '@/layers/shared/lib';
+import { streamManager } from '@/layers/shared/lib/transport';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { configKeys } from '@/layers/entities/config';
 
