@@ -261,7 +261,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
   const readRoomConventionsBlock = options.roomConventions ?? readRoomConventions;
   /**
    * Sessions a Stop reached before their turn could be stopped — the boot
-   * window (DOR-1424) — and the runtime to aim the stop at when it can be.
+   * window (DOR-1424).
    *
    * **A stop pressed during boot has nothing to land on.** The runtime binds a
    * turn only once its process is up, so `interruptQuery` a moment earlier
@@ -275,6 +275,16 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
    * So the stop is remembered rather than dropped, and re-aimed once, at the
    * first thing the turn's runtime actually produces: by then the turn exists
    * and can be stopped, so it is stopped instead of run.
+   *
+   * **A SET, because the runtime to re-aim at is never this map's to remember**
+   * (DOR-1721). It used to hold the runtime the earlier stop happened to reach —
+   * which, on a first turn whose manifest was edited mid-flight, was a runtime
+   * holding no such turn, so the re-aim faithfully repeated the misaim. The one
+   * `run` that can consume a mark already holds the runtime its own turn is
+   * running on, and that is the only correct target: a mark can only survive
+   * into a run if it was set AFTER that run's top-of-run delete below, so a mark
+   * this run finds was aimed at this run's turn. All this needs to carry is
+   * whether a stop is owed.
    *
    * **`not-running` arms this, and NOTHING ELSE does** — narrowed from the
    * boolean's `!stopped`, which is not the same set (spec
@@ -296,10 +306,10 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
    * rather than implied away: a stop recorded for a turn that then dies without
    * producing anything leaves its entry until the next `run` on that session id
    * — which for a pair whose room is archived, or whose agent leaves the roster,
-   * never comes. What is retained is a string key and the runtime SINGLETON, so
-   * this is a bounded-by-sessions-ever-stopped map and not a retention of
-   * anything a session owns. Sweeping it would need a second lifetime to get
-   * wrong; being one entry per abandoned session is the cheaper mistake.
+   * never comes. What is retained is one string, so this is a
+   * bounded-by-sessions-ever-stopped set and not a retention of anything a
+   * session owns. Sweeping it would need a second lifetime to get wrong; being
+   * one entry per abandoned session is the cheaper mistake.
    *
    * **It rests on one cross-module ordering invariant**, which is worth checking
    * if this ever stops working: the first event a turn puts on the projector
@@ -313,7 +323,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
    * runtime's `'default'`). A future status event yielded before the boot would
    * spend this one shot on nothing, with every test still green.
    */
-  const stopsWaitingForATurn = new Map<string, AgentRuntime>();
+  const stopsWaitingForATurn = new Set<string>();
   /**
    * The runtime each session's live turn is running on — captured the moment
    * that turn's runtime is chosen, and the ONLY answer the stop path accepts
@@ -382,10 +392,12 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // interrupt — and the turn then runs the prompt to completion, burning a
       // whole model turn nobody wanted (DOR-1424, rooms run F2 2026-08-17).
       // Remembering it here is what lets the turn's own first output re-aim it;
-      // see {@link stopsWaitingForATurn}. What is remembered is the runtime
-      // this stop was actually delivered to, which since DOR-1721 is the one
-      // running the turn rather than whatever the manifest now says.
-      stopsWaitingForATurn.set(sessionId, target.runtime);
+      // see {@link stopsWaitingForATurn}. What is remembered is THAT a stop is
+      // owed and nothing else: the runtime this call reached may not be the one
+      // running the turn — before the turn captures one there is no way to know
+      // — and the `run` that consumes this mark holds the right answer itself
+      // (DOR-1721).
+      stopsWaitingForATurn.add(sessionId);
     }
     return receipt;
   };
@@ -712,23 +724,40 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // first thing this turn's runtime produces is the proof that the turn
         // exists, which is exactly what the earlier interrupt was missing.
         onProducing: () => {
-          const runtimeToStop = stopsWaitingForATurn.get(sessionId);
-          if (runtimeToStop === undefined) return;
-          stopsWaitingForATurn.delete(sessionId);
+          // `delete` answers whether there was a mark, so the read and the
+          // consume-once are one operation rather than two that can disagree.
+          if (!stopsWaitingForATurn.delete(sessionId)) return;
           logger.info('[rooms] a turn stopped while it was starting can be stopped now', {
             sessionId,
             roomId: request.room.id,
           });
+          // **`runtime`, the one this turn is actually running on** (DOR-1721).
+          // The earlier stop may have been delivered elsewhere — before the
+          // capture below exists, `interrupt` has only the manifest to go on,
+          // and a manifest edited inside a first turn answers with a runtime
+          // holding no such turn. Re-aiming at whatever that call reached
+          // repeated the misaim; the mark says only that a stop is owed, and
+          // this closure is what knows where it is owed.
+          //
           // Not awaited: this runs inside the collector's read of the stream the
           // interrupt is about to close, and a read that waits on its own
           // interrupt is a read that never resumes.
-          void runtimeToStop
+          void runtime
             .interruptQuery(sessionId)
-            .then((stopped) => {
-              if (stopped) return;
+            .then((receipt) => {
+              // **Read as a RECEIPT, which it has been since DOR-1425.** This
+              // was `if (stopped) return`, written against the boolean the
+              // receipt replaced — and every receipt is an object, so the
+              // truthy test always returned and this warning has not been
+              // reachable since. `acked` and `closed` are the two endings that
+              // mean the turn is over; everything else is a re-aim that arrived
+              // and still did not stop it, which is the one thing this line is
+              // for. Same reading `room-trigger.ts` gives the receipt.
+              if (receipt.outcome === 'acked' || receipt.outcome === 'closed') return;
               logger.warn('[rooms] a turn stopped during its boot could not be stopped', {
                 sessionId,
                 roomId: request.room.id,
+                ...receipt,
               });
             })
             .catch((err: unknown) => {
@@ -742,11 +771,19 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       });
       // **The turn's runtime is remembered for exactly as long as the turn**,
       // and this is the one place that knows when that is. The collector settles
-      // at the turn's own `turn_end`, at its ceiling, or when a refused dispatch
-      // cancels it — every ending there is — and the LATE window is inside it,
-      // so a halt pressed on an answer that outran the room's patience still
-      // finds the runtime it is running on. Never awaited: it outlives `run`.
-      void collecting.afterDeadline.finally(forgetTurnRuntime);
+      // on every ending a turn has, and there are five: its own `turn_end`, the
+      // ceiling giving up on one that never closes, the read off its stream
+      // failing, a refused dispatch cancelling it below, and an ACCEPTED
+      // dispatch that is then dropped without ever starting (`onSettled`, the
+      // DOR-1242 case). The LATE window is inside all of that, so a halt pressed
+      // on an answer that outran the room's patience still finds the runtime it
+      // is running on.
+      //
+      // Never awaited: it outlives `run`. The `catch` is not decoration —
+      // `collectReply` calls `onActivity` from outside its own try, so a
+      // publisher that throws rejects this promise, and an unhandled rejection
+      // out of bookkeeping would be a process-level event for a turn that ended.
+      void collecting.afterDeadline.finally(forgetTurnRuntime).catch(() => undefined);
 
       const result = await dispatchMessage({
         sessionId,
