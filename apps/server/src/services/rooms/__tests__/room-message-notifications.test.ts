@@ -514,8 +514,9 @@ describe('a mention of the operator', () => {
     });
     // The operator says something in the group first, which is what puts their
     // phone on that roster — a mention resolves against the room's members, so
-    // an identity that has never spoken there is not addressable there. It also
-    // exercises the suppression half in passing: this post raises nothing.
+    // an identity that has never spoken there is not addressable there. Setup
+    // only: this post is not a second proof of the suppression half, because it
+    // raises nothing either way (it is a plain channel line naming nobody).
     const phone = harness.service.postExternal(group.id, {
       identity: OPERATORS_PHONE,
       text: 'morning all',
