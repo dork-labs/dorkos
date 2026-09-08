@@ -650,6 +650,11 @@ export const CONFIG_WRITE_POLICY = {
   // into the files a coding agent runs on their behalf (DOR-522). An agent that
   // could append to this list could approve its own package's hooks.
   'harness.approvedHooks': 'operator-only',
+  // The refusals beside them (DOR-1849). Operator-only for the reverse of the
+  // reason above: an agent that could DELETE an entry here could clear the
+  // record of somebody turning its package down, and the next sync would ask
+  // again instead of obeying the answer already given.
+  'harness.refusedHooks': 'operator-only',
 
   'workbench.defaultViewers': 'agent-writable',
   'workbench.terminalGraceTtlMinutes': 'agent-writable',
@@ -933,6 +938,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'extensions.disabled',
       'extensions.approvedToRun',
       'harness.approvedHooks',
+      'harness.refusedHooks',
       'runtimes.opencode.binaryPath',
       'runtimes.codex.binaryPath',
       'connectors.rawMcpServers[].slug',

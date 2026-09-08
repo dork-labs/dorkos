@@ -10,7 +10,26 @@
 import type { ProjectionAction, ProjectionPlan } from '../plan/types.js';
 
 /**
- * Render `plan.drops` as a readable, honest block grouped by harness.
+ * The heading a harness-agnostic entry is grouped under, instead of a harness
+ * name it has no real relationship with.
+ *
+ * A non-portable plugin layer has no home in ANY harness, and a hook declaration
+ * the reader could not use reaches none of them — but both must carry a
+ * `HarnessId`, so both used to be filed under `codex:` and `claude-code:` in
+ * projects that run neither (contract VC-02). Grouping them here says what they
+ * really are: a fact about the package, not about one agent.
+ */
+const PACKAGE_HEADING = 'plugin layers';
+
+/** The heading each entry is filed under: its harness, or the package heading. */
+function headingFor(entry: { harness: string; harnessAgnostic?: boolean }): string {
+  return entry.harnessAgnostic === true ? PACKAGE_HEADING : entry.harness;
+}
+
+/**
+ * Render `plan.drops` as a readable, honest block grouped by harness — with
+ * everything that is NOT about one harness under a `plugin layers:` heading of
+ * its own (see {@link PACKAGE_HEADING}).
  *
  * @param plan - the projection plan whose drops to format.
  * @returns a multi-line report, or a clean-state message when there are no drops.
@@ -22,9 +41,10 @@ export function formatDropList(plan: ProjectionPlan): string {
 
   const byHarness = new Map<string, ProjectionAction[]>();
   for (const drop of plan.drops) {
-    const list = byHarness.get(drop.harness) ?? [];
+    const heading = headingFor(drop);
+    const list = byHarness.get(heading) ?? [];
     list.push(drop);
-    byHarness.set(drop.harness, list);
+    byHarness.set(heading, list);
   }
 
   const lines: string[] = ['Dropped artifacts (no home in the target harness):'];
@@ -53,9 +73,10 @@ export function formatWarnings(plan: ProjectionPlan): string {
 
   const byHarness = new Map<string, ProjectionPlan['warnings']>();
   for (const warning of plan.warnings) {
-    const list = byHarness.get(warning.harness) ?? [];
+    const heading = headingFor(warning);
+    const list = byHarness.get(heading) ?? [];
     list.push(warning);
-    byHarness.set(warning.harness, list);
+    byHarness.set(heading, list);
   }
 
   const lines: string[] = ['Warnings (may not work in the target harness, or could not be read):'];

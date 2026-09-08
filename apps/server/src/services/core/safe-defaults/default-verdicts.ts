@@ -338,6 +338,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // No installed package writes a shell command into a coding agent's hook files
   // until a person approves those exact commands (DOR-522).
   'harness.approvedHooks': [],
+  // Wiped to empty as well, and that is the safe direction here too: clearing a
+  // refusal re-arms nothing, it only means the next sync asks again (DOR-1849).
+  'harness.refusedHooks': [],
   // No static shared secret; the per-instance local token gates /mcp instead.
   'mcp.apiKey': null,
   'mcp.rateLimit.enabled': true,

@@ -47,6 +47,22 @@ export interface ProjectionAction {
   target?: string;
   /** Human-readable reason — required for `drop`, optional note otherwise. */
   reason?: string;
+  /**
+   * True when this entry is not about {@link harness} in particular.
+   *
+   * Every action must name a harness — apply is per-harness and `HarnessId` has
+   * no "DorkOS" or "none" member — but a few entries are answers about a
+   * PACKAGE rather than about one agent: a plugin layer that has no home in any
+   * harness, and a whole plugin that is not harness-portable at all. Those
+   * carry an arbitrary harness for display and were reported under its heading,
+   * so a project that does not run Codex was told about "codex: plugin layer …",
+   * and `--harness cursor` hid them entirely (contract VC-02).
+   *
+   * Setting this makes a report render the entry under its own heading and keep
+   * it under every harness filter. Absent means the ordinary case: this really
+   * is about {@link harness}.
+   */
+  harnessAgnostic?: boolean;
 }
 
 /**
@@ -106,6 +122,13 @@ export interface ProjectionWarning {
   name: string;
   /** Human-readable reason the projection may not work in this harness. */
   reason: string;
+  /**
+   * True when this warning is not about {@link harness} in particular — see
+   * {@link ProjectionAction.harnessAgnostic}. A hook declaration the reader
+   * could not use is the case here: the loss happened at read time, ahead of
+   * every harness, so it reaches none of them.
+   */
+  harnessAgnostic?: boolean;
 }
 
 /**

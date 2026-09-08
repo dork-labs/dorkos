@@ -576,6 +576,9 @@ describe('buildPlan hook gate (DOR-522)', () => {
         {
           artifact: 'hook',
           harness: 'claude-code',
+          // The harness is a placeholder: the loss happened at read time, ahead
+          // of every harness, so no filter may hide it (contract VC-02).
+          harnessAgnostic: true,
           name: 'acme:Stop',
           reason:
             '.dork/plugins/acme/hooks/hooks.json declares "Stop" in a shape this reader cannot use, so the whole event was dropped and no "Stop" hook is projected',

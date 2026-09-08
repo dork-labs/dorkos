@@ -365,6 +365,9 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
       {
         artifact: 'hook',
         harness: 'claude-code',
+        // The harness is a placeholder: the loss happened at read time, ahead of
+        // every harness, so no filter may hide it (contract VC-02).
+        harnessAgnostic: true,
         name: 'flow:hooks',
         reason:
           '.dork/plugins/flow/hooks/hooks.json could not be read (invalid JSON, or a top level that is not an object), so every hook this package declares was dropped and none are projected',

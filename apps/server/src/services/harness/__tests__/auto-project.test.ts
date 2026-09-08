@@ -15,6 +15,10 @@ vi.mock('../../core/config-manager.js', () => ({
   },
 }));
 
+// The seam is spied on, not mocked — `_internal.projectWithConsent` is the whole
+// point of this suite (`runAutoProjection` must reach the engine through it and
+// nowhere else), so it stays a real reference that `vi.spyOn` replaces.
+
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(),
 }));
@@ -25,20 +29,29 @@ import { logger } from '../../../lib/logger.js';
 const DORK_HOME = '/tmp/dork-home';
 const PROJECT = '/tmp/my-project';
 
-/** A minimal projection plan stub — `applyPlan`/`project` are stubbed, so its shape is opaque to the service. */
-const FAKE_PLAN = { actions: [], drops: [] } as never;
+/** A minimal projection plan stub — the seam is stubbed, so its shape is opaque to the trigger. */
+const FAKE_PLAN = { actions: [], drops: [], warnings: [] } as never;
+
+/** What the seam reports when a projection landed cleanly and nothing was withheld. */
+const CLEAN_RESULT = {
+  plan: FAKE_PLAN,
+  withheld: [],
+  applied: [],
+  conflicts: [],
+  swept: [],
+  leftAlone: [],
+} as never;
 
 /**
- * What the service hands the engine: the dork home, plus the per-package gate on
- * hook contribution (DOR-522). The gate itself is exercised in
- * `hook-projection-gate.test.ts`.
+ * What the trigger hands the seam: the dork home, and the sweep decision. It
+ * passes no `decisions` — the seam reads the store, and which packages are
+ * allowed is exercised against the real engine in `hook-projection-gate.test.ts`.
  */
-const PROJECT_OPTS = { dorkHome: DORK_HOME, allowPluginHooks: expect.any(Function) };
+const SEAM_OPTS = { dorkHome: DORK_HOME, sweepOrphans: true };
 
 describe('runAutoProjection', () => {
   let scaffoldSpy: ReturnType<typeof vi.spyOn>;
-  let projectSpy: ReturnType<typeof vi.spyOn>;
-  let applyPlanSpy: ReturnType<typeof vi.spyOn>;
+  let seamSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -52,23 +65,22 @@ describe('runAutoProjection', () => {
       harnesses: [],
       detected: false,
     });
-    projectSpy = vi.spyOn(_internal, 'project').mockReturnValue(FAKE_PLAN);
-    applyPlanSpy = vi
-      .spyOn(_internal, 'applyPlan')
-      .mockReturnValue({ applied: [], conflicts: [], swept: [], leftAlone: [] });
-    // No package ships hooks in these cases, so nothing is ever asked about and
-    // the plan is built with every package's hooks allowed. The hook gate has its
-    // own suite (`hook-projection-gate.test.ts`), which drives the real engine.
-    vi.spyOn(_internal, 'scanInstalledPlugins').mockReturnValue([]);
-    vi.spyOn(_internal, 'projectedHooks').mockReturnValue([]);
+    seamSpy = vi.spyOn(_internal, 'projectWithConsent').mockReturnValue(CLEAN_RESULT);
+  });
+
+  it('reaches the engine ONLY through the consent seam, and tells it to sweep', () => {
+    // The trigger's whole engine surface, asserted as a set rather than left to
+    // a reader: a second entry here would be a second way to reach `project()`,
+    // which is the failure `scripts/__tests__/harness-project-seam.test.ts`
+    // guards at the source level.
+    expect(Object.keys(_internal).sort()).toEqual(['projectWithConsent', 'scaffoldManifest']);
   });
 
   describe('global installs (no projectPath)', () => {
     it('is a deliberate no-op and never touches the engine', async () => {
       await runAutoProjection({ packageName: 'pkg', action: 'install' }, { dorkHome: DORK_HOME });
 
-      expect(projectSpy).not.toHaveBeenCalled();
-      expect(applyPlanSpy).not.toHaveBeenCalled();
+      expect(seamSpy).not.toHaveBeenCalled();
       expect(scaffoldSpy).not.toHaveBeenCalled();
       expect(mockConfigGet).not.toHaveBeenCalled(); // scope is checked before config
       expect(logger.debug).toHaveBeenCalled();
@@ -76,7 +88,7 @@ describe('runAutoProjection', () => {
 
     it('no-ops for a global uninstall too', async () => {
       await runAutoProjection({ packageName: 'pkg', action: 'uninstall' }, { dorkHome: DORK_HOME });
-      expect(applyPlanSpy).not.toHaveBeenCalled();
+      expect(seamSpy).not.toHaveBeenCalled();
     });
   });
 
@@ -90,8 +102,7 @@ describe('runAutoProjection', () => {
       );
 
       expect(mockConfigGet).toHaveBeenCalledWith('harness');
-      expect(projectSpy).not.toHaveBeenCalled();
-      expect(applyPlanSpy).not.toHaveBeenCalled();
+      expect(seamSpy).not.toHaveBeenCalled();
       expect(logger.debug).toHaveBeenCalled();
     });
   });
@@ -114,8 +125,7 @@ describe('runAutoProjection', () => {
       );
 
       expect(scaffoldSpy).toHaveBeenCalledWith(PROJECT);
-      expect(projectSpy).toHaveBeenCalledWith(PROJECT, PROJECT_OPTS);
-      expect(applyPlanSpy).toHaveBeenCalledWith(PROJECT, FAKE_PLAN, { sweepOrphans: true });
+      expect(seamSpy).toHaveBeenCalledWith(PROJECT, SEAM_OPTS);
     });
 
     it('does NOT scaffold when a manifest already exists, but still projects', async () => {
@@ -127,26 +137,24 @@ describe('runAutoProjection', () => {
       );
 
       expect(scaffoldSpy).not.toHaveBeenCalled();
-      expect(projectSpy).toHaveBeenCalledWith(PROJECT, PROJECT_OPTS);
-      expect(applyPlanSpy).toHaveBeenCalledWith(PROJECT, FAKE_PLAN, { sweepOrphans: true });
+      expect(seamSpy).toHaveBeenCalledWith(PROJECT, SEAM_OPTS);
     });
 
-    it('uninstall runs the same project + apply with sweepOrphans so orphans are pruned', async () => {
-      applyPlanSpy.mockReturnValue({
-        applied: [],
-        conflicts: [],
+    it('uninstall runs the same projection with sweepOrphans so orphans are pruned', async () => {
+      seamSpy.mockReturnValue({
+        ...(CLEAN_RESULT as unknown as Record<string, unknown>),
         swept: ['.agents/skills/pkg__helper'],
-      });
+      } as never);
 
       await runAutoProjection(
         { projectPath: PROJECT, packageName: 'pkg', action: 'uninstall' },
         { dorkHome: DORK_HOME }
       );
 
-      expect(projectSpy).toHaveBeenCalledWith(PROJECT, PROJECT_OPTS);
-      expect(applyPlanSpy).toHaveBeenCalledWith(PROJECT, FAKE_PLAN, { sweepOrphans: true });
-      // The sweep is what prunes the now-orphaned uninstall projection.
-      expect(applyPlanSpy.mock.calls[0][2]).toEqual({ sweepOrphans: true });
+      // The sweep is what prunes the now-orphaned uninstall projection, and the
+      // seam has no default for it — this trigger has to say so every time.
+      expect(seamSpy).toHaveBeenCalledWith(PROJECT, SEAM_OPTS);
+      expect(seamSpy.mock.calls[0][1]).toEqual({ dorkHome: DORK_HOME, sweepOrphans: true });
     });
 
     it('bails out (no projection) when the manifest still does not exist after scaffold', async () => {
@@ -164,8 +172,7 @@ describe('runAutoProjection', () => {
       );
 
       expect(scaffoldSpy).toHaveBeenCalledWith(PROJECT);
-      expect(projectSpy).not.toHaveBeenCalled();
-      expect(applyPlanSpy).not.toHaveBeenCalled();
+      expect(seamSpy).not.toHaveBeenCalled();
       expect(logger.debug).toHaveBeenCalled();
     });
 
@@ -173,10 +180,13 @@ describe('runAutoProjection', () => {
       // Plan has actions, but none sourced from the just-installed package —
       // the package is invisible to projection (e.g. the scanner failed to
       // recognize it). This must be loud, not an `applied: 0` info line.
-      projectSpy.mockReturnValue({
-        actions: [{ kind: 'symlink', source: '.dork/plugins/other-pkg/skills/x' }],
-        drops: [],
-        warnings: [],
+      seamSpy.mockReturnValue({
+        ...(CLEAN_RESULT as unknown as Record<string, unknown>),
+        plan: {
+          actions: [{ kind: 'symlink', source: '.dork/plugins/other-pkg/skills/x' }],
+          drops: [],
+          warnings: [],
+        },
       } as never);
 
       await runAutoProjection(
@@ -191,10 +201,13 @@ describe('runAutoProjection', () => {
     });
 
     it('does NOT warn when the installed package contributes to the plan', async () => {
-      projectSpy.mockReturnValue({
-        actions: [{ kind: 'symlink', source: '.dork/plugins/pkg/skills/helper' }],
-        drops: [],
-        warnings: [],
+      seamSpy.mockReturnValue({
+        ...(CLEAN_RESULT as unknown as Record<string, unknown>),
+        plan: {
+          actions: [{ kind: 'symlink', source: '.dork/plugins/pkg/skills/helper' }],
+          drops: [],
+          warnings: [],
+        },
       } as never);
 
       await runAutoProjection(
@@ -214,26 +227,25 @@ describe('runAutoProjection', () => {
       expect(logger.warn).not.toHaveBeenCalled();
     });
 
-    it('warns when applyPlan reports a blocking conflict but still completes', async () => {
-      applyPlanSpy.mockReturnValue({
-        applied: [],
+    it('warns when the seam reports a blocking conflict but still completes', async () => {
+      seamSpy.mockReturnValue({
+        ...(CLEAN_RESULT as unknown as Record<string, unknown>),
         conflicts: ['.codex/hooks.json'],
-        swept: [],
-      });
+      } as never);
 
       await runAutoProjection(
         { projectPath: PROJECT, packageName: 'pkg', action: 'install' },
         { dorkHome: DORK_HOME }
       );
 
-      expect(applyPlanSpy).toHaveBeenCalled();
+      expect(seamSpy).toHaveBeenCalled();
       expect(logger.warn).toHaveBeenCalled();
     });
   });
 
   describe('best-effort error handling', () => {
     it('never throws when the engine fails; logs a warning instead', async () => {
-      projectSpy.mockImplementation(() => {
+      seamSpy.mockImplementation(() => {
         throw new Error('boom');
       });
 

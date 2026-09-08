@@ -31,12 +31,13 @@ import type { ProjectionWarning } from './types.js';
  * Claude-plugin `hooks/hooks.json`, and claude-code is the only harness that takes
  * an installed plugin's hooks in their native form.
  *
- * Know how that reads: `formatWarnings` groups by harness, so a project that
- * enables codex alone still gets told about the loss — under a `claude-code:`
- * heading naming a harness it does not run. The reason line carries the file and
- * the event, which is what the person acts on. The one place the attribution
- * costs something is `dorkos harness sync --harness <id>`, which narrows the plan
- * by harness and so hides these warnings for every `<id>` but `claude-code`.
+ * It used to cost something twice over: `formatWarnings` grouped by harness, so
+ * a project running codex alone read the loss under a `claude-code:` heading
+ * naming a harness it does not run, and `dorkos harness sync --harness <id>`
+ * narrowed the plan by harness and hid the warning entirely for every `<id>` but
+ * `claude-code` (contract VC-02). Both are fixed by `harnessAgnostic`, which
+ * says out loud that this field is a placeholder: the report gives these their
+ * own heading and no harness filter drops them.
  */
 const UNREADABLE_HOOK_ATTRIBUTION: HarnessId = 'claude-code';
 
@@ -80,6 +81,7 @@ export function planUnreadableHookWarnings(
       warnings.push({
         artifact: 'hook',
         harness: UNREADABLE_HOOK_ATTRIBUTION,
+        harnessAgnostic: true,
         name: `${plugin.name}:${declaration.event ?? 'hooks'}`,
         reason: unreadableHookReason(declaration),
       });
