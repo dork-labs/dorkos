@@ -312,7 +312,9 @@ describe('installed-plugin projection via buildPlan', () => {
       expect(plan.actions.some((a) => a.name.startsWith('globex'))).toBe(false);
       expect(plan.actions.some((a) => a.target?.includes('globex'))).toBe(false);
       const globalDrop = plan.drops.find((d) => d.name === 'globex');
-      expect(globalDrop?.reason).toMatch(/global-scope/);
+      // The reason's two forms are pinned in `global-install-drop.test.ts`; here
+      // it only has to be the global-install line rather than a projection.
+      expect(globalDrop?.reason).toMatch(/^installed for all your projects\./);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

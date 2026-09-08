@@ -34,6 +34,7 @@ import {
   planHooks,
 } from './hooks-projection.js';
 import { planInstruction } from './instructions.js';
+import { globalInstallDropReason } from './global-installs.js';
 
 import { isProjectScoped, type InstalledPlugin } from '../sources/installed.js';
 import {
@@ -600,12 +601,7 @@ export function buildPlan(input: {
     );
   }
   for (const plugin of globalInstalls) {
-    all.push(
-      dropWholePlugin(
-        plugin,
-        'global-scope install; a project sync does not project global plugins (run a global sync)'
-      )
-    );
+    all.push(dropWholePlugin(plugin, globalInstallDropReason(plugin)));
   }
 
   return {
