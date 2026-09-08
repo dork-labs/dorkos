@@ -57,6 +57,15 @@ it fixes itself"), and `pending-approval` outranks everything below it. Seven of
 answers; `unmanaged (adoptable)` is a fact about where a file lives, so it belongs to the row rather than to
 any harness column.
 
+That precedence only means something if both states are reachable from a **read**, and one of them is not.
+Measured at `87d893503`: `checkPlan().blocked` is generate-only, so a real directory occupying a skill link
+target reads as `drifted` and comes back from the apply as a reason-less `conflict` — a banner that says
+"out of date, sync now", a click that changes nothing, and a banner that returns forever. The fix belongs in
+the engine, beside the predicate `--fix` already reads, and not in a second occupant probe in the server: that
+would recreate the same `--check`-versus-`--fix` split one layer up. DOR-1855 makes exactly that change; where
+it has not landed, this work makes the same one first, because a status model whose states are unreachable is
+not a status model.
+
 Two supporting moves make the single model reachable. The harness vocabulary — `HARNESS_IDS`,
 `HarnessIdSchema`, `HarnessId`, `HARNESS_LABELS` — moves down into `@dorkos/shared`, with
 `packages/harness/src/manifest/schema.ts` re-exporting it, because the browser cannot import a Node filesystem
@@ -95,3 +104,7 @@ kind is added.
 - Refusing `harnessCoverage()` in the read path means the page cannot say "this harness would actually load
   this file", only "the plan says this is where it goes". That is the weaker claim, and it is the honest one
   until the real-harness smoke tier calibrates the table.
+- A model that is only a projection inherits the engine's gaps as well as its truths. The first surface built
+  on it had to fix one of them (`checkPlan` not reporting a blocked symlink target) before it could render an
+  honest chip, and the next surface may find another. That is the cost of the rule, paid where it belongs —
+  in the engine, once, for every reader — rather than worked around in a renderer.

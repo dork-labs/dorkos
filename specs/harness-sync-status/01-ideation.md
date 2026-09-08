@@ -48,8 +48,9 @@ carrying both made DOR-144 too big to start for fourteen months.
   before the flag does.
 - A projection is the person's business, not an agent's. The read is available to anyone who may see the
   project; the write is the person's.
-- DOR-1851 (`notEnabled`, detection re-runs) and DOR-1854 (the project lock) are in review, not on `main`.
-  This is written against them landing.
+- DOR-1851 (`notEnabled`, detection re-runs), DOR-1854 (the project lock) and DOR-1855 (blocked symlink
+  targets reported by `checkPlan`) are in review, not on `main`. This is written against them landing, and
+  the specification names the fallback for each. Only DOR-1855 changes a behaviour the design depends on.
 
 **Out of scope.**
 
@@ -179,6 +180,18 @@ own is in the way) and it does **not** fix an adoptable skill (D3 says report-on
 always offers "Sync now" would therefore promise a fix it cannot deliver two times out of three. The banner
 has to pick its message from the condition and show the action only when the action changes something.
 
+And "fixes orphans" is a euphemism worth spelling out at ideation, because it decided a whole surface: the
+sweep **deletes files**. Measured at `87d893503`, a project whose projected skill was removed reports
+`orphans: [".claude/skills/beta"]` on a read and `swept: [".claude/skills/beta"]` after a sync, with the file
+gone. The terminal names those paths before the fix and after it. Any banner with that action behind it owes
+the same, so the response has to carry the list a click would remove, not only the count.
+
+**And the engine cannot yet produce that list.** `applyPlan().swept` is the union of six sweeps;
+`checkPlan().orphans` is one of them. On a repo with an authored skill deleted and a plugin uninstalled, the
+read previews **1** path and the click removes **10**; with only the plugin uninstalled the read says `clean`
+and the click removes **9**. So this work has an engine prerequisite it did not expect to have, and the
+specification carries it as its own slice rather than shipping a warning with a hole in it.
+
 ## 6) Decisions
 
 Resolved during ideation; the specification's §Decisions carries the ones the design itself surfaced.
@@ -191,3 +204,4 @@ Resolved during ideation; the specification's §Decisions carries the ones the d
 | 4   | Whether adopt gets a button                | No — report only                                                       | Contract §16 D3. A move is one-way and unrevocable, and DOR-1853 owns it after this ships.                                                                    |
 | 5   | Whether the banner always offers an action | No — the action appears only when a sync would change something        | Drift and orphans are fixable by the button; conflicts and adoptable skills are not. Offering the button anyway is a lie the person discovers by clicking it. |
 | 6   | Who may trigger a sync                     | A person, not an agent                                                 | It writes into the person's project, including a sweep. Agents already get projection automatically on install; nothing they need is behind this button.      |
+| 7   | Whether a sync that deletes may be silent  | No — the paths are named before the click and listed after it          | The sweep removes real files. The terminal has always printed the list twice; a button that prints it never is a worse tool than the command it replaces.     |
