@@ -26,6 +26,7 @@
     "@dorkos/marketplace": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@neondatabase/serverless": "^1.1.0",
+    "@vercel/functions": "^3.9.5",
     "better-auth": "1.7.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

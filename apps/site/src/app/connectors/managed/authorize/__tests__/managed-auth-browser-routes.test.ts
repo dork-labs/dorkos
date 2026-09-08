@@ -10,7 +10,9 @@ const mocks = vi.hoisted(() => ({
   createClients: vi.fn(),
 }));
 
-vi.mock('@/db/client', () => ({ getDb: () => ({ kind: 'managed-test-db' }) }));
+vi.mock('@/db/transaction-client', () => ({
+  getTransactionDb: () => ({ kind: 'managed-test-db' }),
+}));
 vi.mock('@/lib/auth', () => ({
   getAuth: () => ({ api: { getSession: mocks.getSession } }),
 }));

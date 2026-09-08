@@ -10,7 +10,7 @@ vi.mock('@/lib/connectors/managed/event-cleanup-service', () => ({
   recoverManagedEventCleanup: vi.fn().mockResolvedValue({ examined: 1, completed: 1 }),
 }));
 import { sweepManagedConnectorEventRetention } from '@/lib/connectors/managed/event-delivery-service';
-vi.mock('@/db/client', () => ({ getDb: vi.fn(() => ({ marker: 'db' })) }));
+vi.mock('@/db/transaction-client', () => ({ getTransactionDb: vi.fn(() => ({ marker: 'db' })) }));
 vi.mock('@/lib/connectors/managed/event-delivery-service', () => ({
   sweepManagedConnectorEventRetention: vi
     .fn()

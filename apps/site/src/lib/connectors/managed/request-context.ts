@@ -8,7 +8,7 @@ import {
   createComposioHostedClients,
 } from '@dorkos/connector-providers/composio';
 
-import { getDb } from '@/db/client';
+import { getTransactionDb } from '@/db/transaction-client';
 import { getAuth } from '@/lib/auth';
 import {
   verifyManagedConnectorInstance,
@@ -32,7 +32,7 @@ export async function resolveManagedConnectorPrincipal(
   const auth = getAuth();
   const verified = await verifyManagedConnectorInstance(auth, request, permission);
   if (verified.status !== 'ok') return verified;
-  const db = getDb();
+  const db = getTransactionDb();
   const tenant = await resolveConnectorTenant(db, verified.ownerId);
   return {
     status: 'ok' as const,
@@ -55,7 +55,7 @@ export type ManagedConnectorRequestContext =
       providerUserId: string;
       materialGeneration: number;
       executionConfigDigest: string;
-      db: ReturnType<typeof getDb>;
+      db: ReturnType<typeof getTransactionDb>;
       events?: ComposioEventClient;
       operations: ReturnType<typeof createComposioHostedClients>['operations'];
       accounts: ReturnType<typeof createComposioHostedClients>['accounts'];
@@ -84,7 +84,7 @@ export async function resolveManagedConnectorRequest(
   const auth = getAuth();
   const verified = await verifyManagedConnectorInstance(auth, request, permission);
   if (verified.status !== 'ok') return verified;
-  const db = getDb();
+  const db = getTransactionDb();
   const tenant = await resolveConnectorTenant(db, verified.ownerId);
   const clients = createComposioHostedClients({
     apiKey: config.projectApiKey!,

@@ -1,7 +1,7 @@
 /** Fixed signed-in browser callback for managed provider account completion. */
 import { createComposioHostedClients } from '@dorkos/connector-providers/composio';
 
-import { getDb } from '@/db/client';
+import { getTransactionDb } from '@/db/transaction-client';
 import { getAuth } from '@/lib/auth';
 import {
   completeManagedAuthentication,
@@ -45,7 +45,7 @@ export async function GET(request: Request): Promise<Response> {
   }
   try {
     const result = await completeManagedAuthentication({
-      db: getDb(),
+      db: getTransactionDb(),
       ownerId: session.user.id,
       cookieValue: flowCookie,
       sessionUri,
