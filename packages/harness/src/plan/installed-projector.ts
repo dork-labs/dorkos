@@ -201,9 +201,39 @@ function insertAfterFrontmatter(content: string, markerLine: string): string {
   return `${markerLine}\n${content}`;
 }
 
+/**
+ * The absolute install dir as it should read INSIDE generated text.
+ *
+ * A plugin writes the token with forward slashes around it —
+ * `${CLAUDE_PLUGIN_ROOT}/hooks/x.mjs` — while `join()` spells the install root
+ * with backslashes on Windows. Substituting one into the other produced half of
+ * each: `C:\Users\me\.dork\plugins\flow/hooks/x.mjs`, inside a shell command
+ * and inside a JSON string, where every backslash then has to survive JSON
+ * escaping and whatever shell the harness hands the command to. Measured on a
+ * real `windows-latest` runner (DOR-1855); nothing in this repo had ever
+ * generated one of these paths on Windows before.
+ *
+ * Forward slashes are read the same way by node, PowerShell and bash, so the
+ * whole path is spelled the one way that means the same thing everywhere.
+ *
+ * POSIX is deliberately untouched, and the platform is a PARAMETER rather than a
+ * read of `process.platform` inside: a POSIX filename may legitimately contain a
+ * backslash, and passing the platform in is what lets the Windows branch be
+ * tested from a Mac.
+ *
+ * @param absInstallDir - the plugin's absolute install directory.
+ * @param platform - the running platform, i.e. `process.platform`.
+ * @returns the install dir as it should appear in generated text.
+ */
+export function pluginRootText(absInstallDir: string, platform: NodeJS.Platform): string {
+  return platform === 'win32' ? absInstallDir.split('\\').join('/') : absInstallDir;
+}
+
 /** Build a command wrapper: rewrite the plugin-root token to absolute, mark it generated. */
 function buildCommandWrapper(content: string, absInstallDir: string, relDir: string): string {
-  const rewritten = content.split(CLAUDE_PLUGIN_ROOT_TOKEN).join(absInstallDir);
+  const rewritten = content
+    .split(CLAUDE_PLUGIN_ROOT_TOKEN)
+    .join(pluginRootText(absInstallDir, process.platform));
   return insertAfterFrontmatter(rewritten, generatedCommandMarkerLine(relDir));
 }
 
@@ -246,7 +276,9 @@ function buildOpencodeCommandWrapper(
   absInstallDir: string,
   relDir: string
 ): string {
-  const rewritten = content.split(CLAUDE_PLUGIN_ROOT_TOKEN).join(absInstallDir);
+  const rewritten = content
+    .split(CLAUDE_PLUGIN_ROOT_TOKEN)
+    .join(pluginRootText(absInstallDir, process.platform));
   const { frontmatter, body } = splitFrontmatter(rewritten);
   const description = frontmatterField(frontmatter, 'description');
   const marker = generatedCommandMarkerLine(relDir);
@@ -295,7 +327,9 @@ export function rewritePluginRootInHooks(
       ...group,
       hooks: group.hooks.map((h) => ({
         ...h,
-        command: h.command.split(CLAUDE_PLUGIN_ROOT_TOKEN).join(absInstallDir),
+        command: h.command
+          .split(CLAUDE_PLUGIN_ROOT_TOKEN)
+          .join(pluginRootText(absInstallDir, process.platform)),
       })),
     }));
   }

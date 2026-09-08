@@ -8,6 +8,7 @@ import {
   planInstalledSkills,
   planOpencodeCommandsGitignore,
   planSkillNameCollisions,
+  pluginRootText,
   rewritePluginRootInHooks,
   opencodeWrapperFilename,
 } from '../installed-projector.js';
@@ -73,7 +74,9 @@ describe('planInstalledCommands — opencode', () => {
 
       const content = getActionContent(wrapper!)!;
       // Token rewritten to the absolute install dir; no bare token remains.
-      expect(content).toContain(join(repo, '.dork/plugins/flow', 'skills/capturing/SKILL.md'));
+      expect(content).toContain(
+        `${pluginRootText(join(repo, '.dork/plugins/flow'), process.platform)}/skills/capturing/SKILL.md`
+      );
       expect(content).not.toContain('${CLAUDE_PLUGIN_ROOT}');
       // Frontmatter reduced to ONLY description; Claude-only keys stripped.
       expect(
@@ -227,7 +230,9 @@ describe('buildPlan — opencode harness', () => {
         (a) => a.kind === 'generate' && a.target === '.codex/hooks.json'
       );
       const content = getActionContent(codexHooks!)!;
-      expect(content).toContain(join(repo, '.dork/plugins/flow', 'h.mjs'));
+      expect(content).toContain(
+        `${pluginRootText(join(repo, '.dork/plugins/flow'), process.platform)}/h.mjs`
+      );
       expect(content).not.toContain('${CLAUDE_PLUGIN_ROOT}');
       expect(plan.warnings.some((w) => w.harness === 'codex' && w.artifact === 'hook')).toBe(false);
     } finally {
