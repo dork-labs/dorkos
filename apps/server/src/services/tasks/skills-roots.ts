@@ -137,8 +137,12 @@ export async function resolveRootPath(dir: string): Promise<string> {
 /**
  * Make sure `~/.dork/skills/` exists before anything watches it.
  *
- * chokidar will happily watch a path that is not there yet and pick it up when
- * it appears, so this is not required for correctness — it is so that a person
+ * Not required for correctness — `TaskFileWatcher` refuses to arm a watch on a
+ * directory that is not there and re-arms once it appears, and the reconciler
+ * covers the root every ten seconds in the meantime. (The claim this comment
+ * used to make, that chokidar picks a path up when it appears, is simply false:
+ * it watches the nearest existing ancestor and never reports on the directory
+ * at all. That measurement is what DOR-1908 is.) This exists so that a person
  * looking for where to put a global schedule finds the directory already
  * waiting rather than having to know its name.
  *
