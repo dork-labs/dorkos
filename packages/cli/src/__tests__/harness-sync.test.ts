@@ -1781,7 +1781,7 @@ describe('runHarnessSync — the manifest lines that reach nothing (DOR-1858)', 
     fs.rmSync(homeDir, { recursive: true, force: true });
   });
 
-  it('names every retired key still in the file, and still exits on the drift alone', async () => {
+  it('VC-10: names every retired key still in the file, and still exits on the drift alone', async () => {
     // The four keys nothing ever read. There is no config migration for a
     // per-repo file, so this line IS the migration notice.
     writeManifest({
@@ -1807,12 +1807,12 @@ describe('runHarnessSync — the manifest lines that reach nothing (DOR-1858)', 
     expect(check.exitCode).toBe(1);
   });
 
-  it('says nothing about a manifest that carries none of them', async () => {
+  it('VC-10: says nothing about a manifest that carries none of them', async () => {
     await runHarnessSync(syncArgs({ check: true }));
     expect(printed()).not.toContain('is no longer read');
   });
 
-  it('names a hook policy for a harness this manifest does not enable', async () => {
+  it('VC-10: names a hook policy for a harness this manifest does not enable', async () => {
     writeManifest({ hookPolicies: [{ tool: 'cursor', projection: 'none' }] });
 
     await runHarnessSync(syncArgs({ check: true }));
@@ -1822,7 +1822,7 @@ describe('runHarnessSync — the manifest lines that reach nothing (DOR-1858)', 
     );
   });
 
-  it('honours a hooks policy of none: no .codex/hooks.json is written, and the drop says why', async () => {
+  it('HK-15: honours a hooks policy of none: no .codex/hooks.json is written, and the drop says why', async () => {
     // The behaviour half, through the real CLI: a `--fix` writes every other
     // projection and leaves the hooks file it was told not to write.
     writeManifest({ hookPolicies: [{ tool: 'codex', projection: 'none' }] });
@@ -1837,7 +1837,7 @@ describe('runHarnessSync — the manifest lines that reach nothing (DOR-1858)', 
     );
   });
 
-  it('still names them under --harness, which narrows projections, not the file', async () => {
+  it('VC-10: still names them under --harness, which narrows projections, not the file', async () => {
     // Every other block answers "what happens for this harness?". These lines
     // answer "what is wrong with your manifest?", which does not change.
     writeManifest({ commandMappings: [], hookPolicies: [{ tool: 'cursor', projection: 'none' }] });
@@ -1850,7 +1850,7 @@ describe('runHarnessSync — the manifest lines that reach nothing (DOR-1858)', 
     expect(printed()).toContain('hookPolicies in .agents/harness.manifest.json names cursor');
   });
 
-  it('names the hooks file a flipped policy just orphaned, and writes nothing (DOR-1889)', async () => {
+  it('HK-15, AP-07: names the hooks file a flipped policy just orphaned, and writes nothing (DOR-1889)', async () => {
     // The other half of honouring `none`: the file the engine wrote while the
     // policy was absent is now nobody's, and `--check` has to say a `--fix`
     // would remove it. Before DOR-1889 taught `checkPlan` to preview generated
@@ -1875,7 +1875,7 @@ describe('runHarnessSync — the manifest lines that reach nothing (DOR-1858)', 
     expect(fs.existsSync(cursorHooks)).toBe(true);
   });
 
-  it('prints the same notices on --fix as on --check', async () => {
+  it('VC-10: prints the same notices on --fix as on --check', async () => {
     writeManifest({ skillBundles: [] });
 
     await runHarnessSync(syncArgs({ fix: true }));
@@ -1957,7 +1957,7 @@ describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-18
     fs.rmSync(homeDir, { recursive: true, force: true });
   });
 
-  it('refuses, and records nothing, when every target is under a none policy', async () => {
+  it('HK-15, HK-07: refuses, and records nothing, when every target is under a none policy', async () => {
     // The yes is durable and outlives the manifest. Recorded here it would sit in
     // config.json contradicting the drop line printed under it, install nothing,
     // and then install itself unprompted the day the policy line goes.
@@ -1977,7 +1977,7 @@ describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-18
     expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
   });
 
-  it('does not let a refused allow become a silent install once the policy goes', async () => {
+  it('HK-15, HK-07: does not let a refused allow become a silent install once the policy goes', async () => {
     // The whole reason the refusal exists, driven end to end.
     writeManifest({
       harnesses: ['claude-code'],
@@ -1995,7 +1995,7 @@ describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-18
     expect(printed()).toContain('dorkos harness sync --fix --allow-hooks acme');
   });
 
-  it('refuses when no enabled agent has anywhere to receive hooks, policy or not', async () => {
+  it('HK-15, HK-07: refuses when no enabled agent has anywhere to receive hooks, policy or not', async () => {
     // The other route to the same latent yes, and it names no manifest line
     // because none is to blame: OpenCode has no declarative hook config at all,
     // so `Applied 0` was printed over a stored approval that would come true the
@@ -2013,7 +2013,7 @@ describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-18
     expect(errors()).not.toContain('hookPolicies');
   });
 
-  it('asks again once an agent that can take them is turned on', async () => {
+  it('HK-15, HK-07: asks again once an agent that can take them is turned on', async () => {
     // The follow-on: the refusal left nothing stored, so enabling Claude Code
     // later withholds and asks rather than installing behind the person's back.
     writeManifest({ harnesses: ['opencode'], hookPolicies: [] });
@@ -2028,7 +2028,7 @@ describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-18
     expect(printed()).toContain('dorkos harness sync --fix --allow-hooks acme');
   });
 
-  it('records a partly-suppressed allow, and says which agents will not get them', async () => {
+  it('HK-15, HK-07: records a partly-suppressed allow, and says which agents will not get them', async () => {
     // A real yes, just narrower than "Allowed acme" reads on its own.
     writeManifest({
       harnesses: ['claude-code', 'codex'],
@@ -2044,7 +2044,7 @@ describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-18
     expect(fs.existsSync(path.join(tmpDir, '.codex', 'hooks.json'))).toBe(true);
   });
 
-  it('records without the caveat when no policy suppresses anything', async () => {
+  it('HK-15, HK-07: records without the caveat when no policy suppresses anything', async () => {
     writeManifest({ harnesses: ['claude-code', 'codex'], hookPolicies: [] });
 
     const result = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
@@ -2055,7 +2055,7 @@ describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-18
     expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(true);
   });
 
-  it('does not tell somebody to move hooks a policy would refuse to carry', async () => {
+  it('HK-15: does not tell somebody to move hooks a policy would refuse to carry', async () => {
     // The "Left alone" advice — put them in .claude/settings.json and DorkOS will
     // carry them — is false for a harness the manifest says not to write for.
     writeManifest({

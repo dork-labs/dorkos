@@ -11,7 +11,7 @@ const manifestPath = resolve(here, '../../../../../.agents/harness.manifest.json
 const liveManifest = (): unknown => JSON.parse(readFileSync(manifestPath, 'utf8'));
 
 describe('manifestNotices', () => {
-  it('says nothing about a manifest that carries none of the retired keys', () => {
+  it('VC-10: says nothing about a manifest that carries none of the retired keys', () => {
     // The quiet case has to stay quiet: a clean manifest earns no lines at all.
     const notices = manifestNotices(
       parseHarnessManifest({ version: 1, harnesses: ['claude-code'] })
@@ -19,7 +19,7 @@ describe('manifestNotices', () => {
     expect(notices).toEqual([]);
   });
 
-  it('names each retired key that is still in the file, once', () => {
+  it('VC-10: names each retired key that is still in the file, once', () => {
     // The `--check` line IS the migration notice: the manifest is a per-repo
     // file, so nothing rewrites it and the person is told what to delete.
     const notices = manifestNotices(
@@ -40,7 +40,7 @@ describe('manifestNotices', () => {
     ]);
   });
 
-  it('covers every retired key', () => {
+  it('VC-10: covers every retired key', () => {
     // The list and the lines cannot drift: retiring another key means both.
     const all = Object.fromEntries(RETIRED_MANIFEST_KEYS.map((key) => [key, []]));
     const notices = manifestNotices(parseHarnessManifest({ version: 1, ...all }));
@@ -50,7 +50,7 @@ describe('manifestNotices', () => {
     }
   });
 
-  it('names a hookPolicies entry for a harness the manifest does not enable', () => {
+  it('VC-10: names a hookPolicies entry for a harness the manifest does not enable', () => {
     // A policy for a harness that is off does nothing, which is exactly the kind
     // of silent claim this ticket is about.
     const notices = manifestNotices(
@@ -65,7 +65,7 @@ describe('manifestNotices', () => {
     ]);
   });
 
-  it('names a hookPolicies entry whose tool is not a harness at all', () => {
+  it('VC-10: names a hookPolicies entry whose tool is not a harness at all', () => {
     // A typo, or an agent DorkOS does not project to. Either way the entry is inert.
     const notices = manifestNotices(
       parseHarnessManifest({
@@ -78,7 +78,7 @@ describe('manifestNotices', () => {
     expect(notices[0]).toContain('claude-code, codex, cursor, gemini, copilot, opencode');
   });
 
-  it('says nothing about a hookPolicies entry for an enabled harness', () => {
+  it('VC-10: says nothing about a hookPolicies entry for an enabled harness', () => {
     const notices = manifestNotices(
       parseHarnessManifest({
         version: 1,
@@ -89,7 +89,7 @@ describe('manifestNotices', () => {
     expect(notices).toEqual([]);
   });
 
-  it('names a tool that hookPolicies lists twice, since only the first is read', () => {
+  it('VC-10: names a tool that hookPolicies lists twice, since only the first is read', () => {
     // `hookPolicyFor` takes the first match, so a second entry decides nothing —
     // the same silent claim as a retired key, and invisible without a line.
     const notices = manifestNotices(
@@ -107,7 +107,7 @@ describe('manifestNotices', () => {
     ]);
   });
 
-  it('says nothing when each tool appears once', () => {
+  it('VC-10: says nothing when each tool appears once', () => {
     const notices = manifestNotices(
       parseHarnessManifest({
         version: 1,
@@ -121,7 +121,7 @@ describe('manifestNotices', () => {
     expect(notices).toEqual([]);
   });
 
-  it("reports this repo's own manifest as saying nothing that reaches nothing", () => {
+  it("VC-10: reports this repo's own manifest as saying nothing that reaches nothing", () => {
     // The repo-hygiene edits DOR-1858 made — the four retired keys, and the
     // `cursor` entry for a harness this repo does not enable — kept honest by
     // the check itself. A standing notice nobody can clear is how people learn
