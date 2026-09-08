@@ -433,9 +433,12 @@ function manifestFailureDetail(err: unknown): string {
  *
  * **A `projectPath` that does not exist reads `not-set-up`**, because the
  * manifest read fails with `ENOENT` either way and this function cannot tell an
- * empty project from an absent one. Distinguishing them is the route's job: its
- * boundary validator resolves and canonicalizes the path before this is called,
- * and refuses one that leads nowhere.
+ * empty project from an absent one. Distinguishing them is the route's job, and
+ * it takes a `stat` to do it: the boundary validator does NOT refuse a path that
+ * leads nowhere — measured, `validateBoundaryOrDorkHome` canonicalizes a
+ * not-yet-existing path through its deepest existing ancestor and RETURNS it,
+ * which is what lets a workspace about to be cloned validate. `routes/harness.ts`
+ * answers `404` there.
  *
  * @param options - the project, the data directory, the decisions to obey, and
  *   what a write that just happened ran into.
