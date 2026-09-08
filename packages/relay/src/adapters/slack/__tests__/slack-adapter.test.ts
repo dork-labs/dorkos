@@ -1,3 +1,5 @@
+import { sendPrivateSlackNotification } from '../private-notification.js';
+vi.mock('../private-notification.js', () => ({ sendPrivateSlackNotification: vi.fn() }));
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SlackAdapter, SLACK_MANIFEST } from '../index.js';
 import { createMockRelay } from '../../../__tests__/fixtures.js';
@@ -148,6 +150,29 @@ describe('SlackAdapter', () => {
       }
     }
   });
+
+  it.each(['stop', 'restart'] as const)(
+    'fences a private notification when the native client changes via %s',
+    async (action) => {
+      await adapter.start(mockRelay);
+      const source = vi.fn(() => true);
+      vi.mocked(sendPrivateSlackNotification).mockImplementationOnce(async (input) => {
+        await adapter.stop();
+        if (action === 'restart') await adapter.start(mockRelay);
+        return input.authorizeDispatch()
+          ? { state: 'delivered', receiptId: 'unexpected' }
+          : { state: 'refused' };
+      });
+      expect(
+        await adapter.deliverPrivateNotification(
+          'relay.human.slack.slack-1.C123',
+          'private',
+          source
+        )
+      ).toEqual({ state: 'refused' });
+      expect(source).not.toHaveBeenCalled();
+    }
+  );
 
   // Identity
   it('has correct id, subjectPrefix, and displayName', () => {

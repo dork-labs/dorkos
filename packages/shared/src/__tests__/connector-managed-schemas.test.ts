@@ -15,7 +15,7 @@ describe('managed connector wire schemas', () => {
   it('exports the exact linked-instance connector permissions without wildcards', () => {
     expect(MANAGED_CONNECTOR_INSTANCE_KEY_PERMISSIONS).toEqual({
       instance: ['link'],
-      connectors: ['authority', 'execute', 'usage'],
+      connectors: ['authority', 'execute', 'usage', 'events'],
     });
     expect(MANAGED_CONNECTOR_AUTHORITY_PERMISSIONS).toEqual({
       instance: ['link'],

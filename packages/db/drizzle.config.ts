@@ -14,6 +14,7 @@ export default defineConfig({
     './src/schema/codex.ts',
     './src/schema/opencode.ts',
     './src/schema/session-events.ts',
+    './src/schema/session/message-acceptance.ts',
     './src/schema/workspace.ts',
     './src/schema/auth.ts',
     // Historical inputs keep generated SQL from dropping rows before application backfill.

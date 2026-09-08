@@ -36,6 +36,35 @@ describe('export-openapi', () => {
     expect(paths).not.toHaveProperty('/api/agents/{agentId}/connectors');
   });
 
+  it('documents owner notifications and server-declared source setup separately from readiness', () => {
+    const paths = generateOpenAPISpec().paths ?? {};
+    const prefix = '/api/connectors/connections/{connectionId}/events';
+    expect(paths[`${prefix}/definitions`]?.get).toBeDefined();
+    expect(paths[`${prefix}/subscriptions`]?.post?.responses).toHaveProperty('202');
+    expect(paths[`${prefix}/subscriptions/{subscriptionId}`]?.delete?.responses).toHaveProperty(
+      '204'
+    );
+    const source = paths[`${prefix}/source`];
+    expect(Object.keys(source ?? {})).toEqual(['get', 'put']);
+    expect(source?.put?.description).toContain('byo_webhook');
+    expect(JSON.stringify(source?.get?.responses)).toContain('setupMode');
+    expect(JSON.stringify(source?.get?.responses)).not.toContain('webhookSecret');
+  });
+
+  it('documents program notification reads with a mandatory agent and no mutation', () => {
+    const path = generateOpenAPISpec().paths?.['/api/connectors/accessible/subscriptions'];
+    expect(Object.keys(path ?? {})).toEqual(['get']);
+    expect(path?.get?.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'agentId', in: 'query', required: true }),
+      ])
+    );
+    expect(path?.get?.description).toContain('API key');
+    expect(JSON.stringify(path?.get?.responses)).not.toMatch(
+      /providerTriggerRef|webhookSecret|externalAccountRef/
+    );
+  });
+
   it('documents the team roster as a read with no write path', () => {
     const spec = generateOpenAPISpec();
     const team = spec.paths?.['/api/team'];

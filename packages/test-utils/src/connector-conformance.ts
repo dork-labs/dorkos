@@ -365,18 +365,5 @@ export function connectorConformance(
         });
       });
     }
-
-    it('returns typed unsupported for a capability declared unsupported', async () => {
-      const provider = makeProvider();
-      const declaration = provider.getCapabilities().capabilities.triggers;
-      const result = await provider.listTriggerTypes(toolkit);
-      if (declaration.status === 'unsupported') {
-        ConnectorUnsupportedResultSchema.parse(result);
-        expect(result).toMatchObject({ status: 'unsupported', reason: declaration.reason });
-        expect(JSON.stringify(result)).not.toMatch(/authorization|headers|https?:\/\//i);
-      } else {
-        expect(result.status).toBe('ok');
-      }
-    });
   });
 }

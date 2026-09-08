@@ -11,6 +11,8 @@ import { z } from 'zod';
 
 /** Maximum complete operation set supported by the provider discovery safety ceiling. */
 export const CONNECTOR_OPERATION_SELECTION_LIMIT = 100_000;
+/** Maximum event scopes one owner review can validate and apply atomically. */
+export const CONNECTOR_EVENT_REVIEW_SCOPE_LIMIT = 32;
 
 /** JSON value accepted by connector operation arguments and provider schemas. */
 export const ConnectorJsonValueSchema = z.json();
@@ -176,15 +178,6 @@ export const ConnectorToolkitVersionResultSchema = z
   .strict();
 /** Trusted provider metadata that pins operation discovery to one toolkit version. */
 export type ConnectorToolkitVersionResult = z.infer<typeof ConnectorToolkitVersionResultSchema>;
-
-/** Minimal trigger metadata returned by an event-capable provider. */
-export const ConnectorTriggerTypeSchema = z.object({
-  eventType: z.string().min(1),
-  displayName: z.string().min(1),
-  filterSchema: z.record(z.string(), z.unknown()),
-});
-/** Minimal trigger metadata returned by an event-capable provider. */
-export type ConnectorTriggerType = z.infer<typeof ConnectorTriggerTypeSchema>;
 
 /** Exact provider operation call after private connection resolution. */
 export interface ConnectorProviderExecuteCommand {
@@ -552,6 +545,90 @@ export const ConnectorReviewActionSchema = z.discriminatedUnion('kind', [
 ]);
 /** Validated action stored in an operator review request. */
 export type ConnectorReviewAction = z.infer<typeof ConnectorReviewActionSchema>;
+
+/** Strict runtime request for owner-reviewed access to one service. */
+export const ConnectorAgentConnectionRequestInputSchema = z
+  .object({
+    version: z.literal(1),
+    serviceSlug: z.string().min(1).max(200),
+    reason: z.string().min(1).max(2_000),
+    requestedOperations: z.array(z.string().min(1).max(500)).min(1).max(200),
+    requestedEvents: z
+      .array(z.string().min(1).max(500))
+      .max(CONNECTOR_EVENT_REVIEW_SCOPE_LIMIT)
+      .default([]),
+  })
+  .strict()
+  .superRefine((request, context) => {
+    for (const [field, values] of [
+      ['requestedOperations', request.requestedOperations],
+      ['requestedEvents', request.requestedEvents],
+    ] as const) {
+      if (new Set(values).size !== values.length) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: 'Requested service actions must be unique.',
+        });
+      }
+    }
+  });
+/** Strict runtime request for owner-reviewed access to one service. */
+export type ConnectorAgentConnectionRequestInput = z.infer<
+  typeof ConnectorAgentConnectionRequestInputSchema
+>;
+
+const ConnectorAgentRequestBaseSchema = z
+  .object({
+    requestId: z.string().min(1),
+    reviewUrl: z.string().startsWith('/connections?request='),
+    serviceSlug: z.string().min(1),
+    reason: z.string().min(1),
+    requestedOperations: z.array(z.string().min(1)),
+    requestedEvents: z.array(z.string().min(1)),
+    createdAt: z.string().datetime(),
+    expiresAt: z.string().datetime(),
+  })
+  .strict();
+
+/** Account-private-safe result returned to the originating runtime. */
+export const ConnectorAgentRequestStatusSchema = z.discriminatedUnion('status', [
+  ConnectorAgentRequestBaseSchema.extend({ status: z.literal('awaiting_owner') }).strict(),
+  ConnectorAgentRequestBaseSchema.extend({ status: z.literal('access_pending') }).strict(),
+  ConnectorAgentRequestBaseSchema.extend({
+    status: z.literal('granted'),
+    connectionId: ConnectionIdSchema,
+    grantedOperationRevisionIds: z.array(z.string().min(1)),
+    grantedEvents: z.array(z.string().min(1)),
+  }).strict(),
+  ConnectorAgentRequestBaseSchema.extend({ status: z.literal('denied') }).strict(),
+  ConnectorAgentRequestBaseSchema.extend({ status: z.literal('expired') }).strict(),
+  ConnectorAgentRequestBaseSchema.extend({ status: z.literal('authentication_failed') }).strict(),
+  ConnectorAgentRequestBaseSchema.extend({ status: z.literal('target_deleted') }).strict(),
+]);
+/** Account-private-safe result returned to the originating runtime. */
+export type ConnectorAgentRequestStatus = z.infer<typeof ConnectorAgentRequestStatusSchema>;
+
+/** Owner-only presentation for one durable agent access request. */
+export const ConnectorAgentRequestItemSchema = ConnectorAgentRequestStatusSchema.and(
+  z
+    .object({
+      agent: z.object({ id: z.string().min(1), displayName: z.string().min(1) }).strict(),
+      sessionId: z.string().min(1),
+    })
+    .strict()
+);
+/** Owner-only presentation for one durable agent access request. */
+export type ConnectorAgentRequestItem = z.infer<typeof ConnectorAgentRequestItemSchema>;
+
+/** Owner-only list of durable agent access requests. */
+export const ConnectorAgentRequestListResponseSchema = z
+  .object({ requests: z.array(ConnectorAgentRequestItemSchema) })
+  .strict();
+/** Owner-only list of durable agent access requests. */
+export type ConnectorAgentRequestListResponse = z.infer<
+  typeof ConnectorAgentRequestListResponseSchema
+>;
 
 const ConnectorManagementConnectActionSchema = ReviewActionBaseSchema.extend({
   kind: z.literal('connect'),

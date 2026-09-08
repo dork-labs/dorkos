@@ -73,11 +73,13 @@ const webEnvSchema = z.object({
   // values. LIVE_READY stays separate from ENABLED until the P7 smoke passes.
   DORKOS_MANAGED_CONNECTORS_ENABLED: z.string().optional(),
   DORKOS_MANAGED_CONNECTORS_LIVE_READY: z.string().optional(),
+  DORKOS_MANAGED_CONNECTOR_EVENTS_LIVE_READY: z.string().optional(),
   DORKOS_MANAGED_COMPOSIO_PROJECT_KEY: z.string().optional(),
   DORKOS_MANAGED_COMPOSIO_API_ORIGIN: z.string().optional(),
   DORKOS_MANAGED_CONNECTOR_CALLBACK_ORIGIN: z.string().optional(),
   DORKOS_MANAGED_CONNECTOR_AUTH_CONFIGS: z.string().optional(),
   DORKOS_MANAGED_CONNECTOR_WEBHOOK_SECRET: z.string().optional(),
+  DORKOS_MANAGED_CONNECTOR_EVENT_PAYLOAD_KEYS: z.string().optional(),
 
   // Resend — transactional email for verification/reset (cloud-only). Sending
   // throws a clear error when RESEND_API_KEY is unset.

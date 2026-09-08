@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
 import {
   AccountsList,
+  AgentRequests,
   ConnectDialog,
   ConnectionAccessDialog,
   ConnectionDetailSheet,
@@ -16,25 +17,36 @@ interface AccountsRegionProps {
   selectedReviewId?: string | null;
   /** URL-selected durable authentication flow. */
   selectedFlowId?: string | null;
+  /** URL-selected agent service request. */
+  selectedRequestId?: string | null;
   /** Put a request into the URL for reload and Back/Forward support. */
   onSelectReview?: (reviewRequestId: string) => void;
   /** Remove the selected request from the URL. */
   onCloseReview?: () => void;
   /** Put or clear an authentication flow in the URL. */
   onSelectFlow?: (flowId: string | null) => void;
+  /** Put an agent request into the URL. */
+  onSelectRequest?: (requestId: string) => void;
+  /** Remove the selected agent request from the URL. */
+  onCloseRequest?: () => void;
 }
 
 /** Account services, stable connections, owner reviews, and advanced provider setup. */
 export function AccountsRegion({
   selectedReviewId = null,
   selectedFlowId = null,
+  selectedRequestId = null,
   onSelectReview = () => undefined,
   onCloseReview = () => undefined,
   onSelectFlow = () => undefined,
+  onSelectRequest = () => undefined,
+  onCloseRequest = () => undefined,
 }: AccountsRegionProps = {}) {
   const [selectedService, setSelectedService] = useState<ConnectorCatalogService | null>(null);
   const [detailConnectionId, setDetailConnectionId] = useState<string | null>(null);
   const [accessConnectionId, setAccessConnectionId] = useState<string | null>(null);
+  const [connectingForRequest, setConnectingForRequest] = useState(false);
+  const detailOpenerRef = useRef<HTMLElement | null>(null);
 
   return (
     <section aria-labelledby="region-accounts" className="space-y-6">
@@ -54,8 +66,26 @@ export function AccountsRegion({
         <h3 id="connections-connected" className="text-sm font-semibold">
           Connected accounts
         </h3>
-        <AccountsList onOpenDetail={setDetailConnectionId} />
+        <AccountsList
+          onOpenDetail={(connectionId) => {
+            detailOpenerRef.current = document.activeElement as HTMLElement | null;
+            setDetailConnectionId(connectionId);
+          }}
+        />
       </section>
+
+      <AgentRequests
+        selectedRequestId={selectedRequestId}
+        suspended={
+          selectedRequestId !== null && (selectedService !== null || selectedFlowId !== null)
+        }
+        onSelectRequest={onSelectRequest}
+        onCloseRequest={onCloseRequest}
+        onConnectService={(service) => {
+          setConnectingForRequest(true);
+          setSelectedService(service);
+        }}
+      />
 
       {selectedFlowId && !selectedService && (
         <p className="text-muted-foreground text-xs">Your saved sign-in is ready to continue.</p>
@@ -83,13 +113,29 @@ export function AccountsRegion({
         key={selectedFlowId ?? selectedService?.serviceSlug ?? 'idle'}
         service={selectedService}
         flowId={selectedFlowId}
+        agentRequestId={
+          selectedRequestId && (connectingForRequest || selectedFlowId) ? selectedRequestId : null
+        }
         onFlowIdChange={onSelectFlow}
-        onClose={() => setSelectedService(null)}
-        onChooseAccess={setAccessConnectionId}
+        onClose={() => {
+          setSelectedService(null);
+          if (!selectedFlowId) setConnectingForRequest(false);
+        }}
+        onChooseAccess={(connectionId) => {
+          if (connectingForRequest) {
+            setConnectingForRequest(false);
+            setSelectedService(null);
+            return;
+          }
+          setAccessConnectionId(connectionId);
+        }}
       />
       <ConnectionDetailSheet
         connectionId={detailConnectionId}
-        onClose={() => setDetailConnectionId(null)}
+        onClose={() => {
+          setDetailConnectionId(null);
+          requestAnimationFrame(() => detailOpenerRef.current?.focus());
+        }}
         onManageAccess={(connectionId) => {
           setDetailConnectionId(null);
           setAccessConnectionId(connectionId);

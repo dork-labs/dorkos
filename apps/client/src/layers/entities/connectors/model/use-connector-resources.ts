@@ -9,7 +9,7 @@ import { useTransport } from '@/layers/shared/model';
 import { connectorKeys } from '../api/query-keys';
 
 /** Read one bounded, account-free page from the service catalog. */
-export function useConnectorCatalog(query: string) {
+export function useConnectorCatalog(query: string, enabled = true) {
   const transport = useTransport();
   return useInfiniteQuery({
     queryKey: connectorKeys.catalog(query),
@@ -21,6 +21,7 @@ export function useConnectorCatalog(query: string) {
       }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.nextCursor,
+    enabled,
   });
 }
 

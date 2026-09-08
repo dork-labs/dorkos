@@ -32,7 +32,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { act, render, cleanup } from '@testing-library/react';
+import { act, render, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient } from '@tanstack/react-query';
 import {
@@ -210,6 +210,15 @@ describe('the dev playground', () => {
     'renders /dev/%s with no crashed showcases',
     async (pageId) => {
       const container = await renderPage(pageId);
+
+      // The Connections showcase owns an isolated QueryClient. Wait for its
+      // pending-request query to settle so a missing fixture seed cannot race
+      // this assertion and surface as a red error card after the test passes.
+      if (pageId === 'home-inbox') {
+        await waitFor(() => {
+          expect(container.querySelector('[aria-label="Loading agent requests"]')).toBeNull();
+        });
+      }
 
       // Something rendered at all. Without this a page that returned `null`
       // would sail through the crash check by having nothing to crash.

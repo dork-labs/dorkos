@@ -1,5 +1,6 @@
 /** Durable local-to-hosted managed connector authority synchronization. */
 import { createHash } from 'node:crypto';
+import { stableStringify } from '@dorkos/shared/capabilities';
 import { ulid } from 'ulidx';
 import {
   and,
@@ -9,6 +10,9 @@ import {
   connectorManagedAuthorityScopes,
   connectorOperationRevisions,
   connectorEventSubscriptions,
+  connectorEventDefinitions,
+  connectorEventBindings,
+  sql,
   connectorProviderInstances,
   connections,
   eq,
@@ -26,7 +30,11 @@ import {
   type ManagedConnectorAuthorityCommandStatus,
   type ManagedConnectorOperationSelector,
 } from '@dorkos/shared/connector-managed-schemas';
-import type { ConnectionId, ConnectorProviderInstanceId } from '@dorkos/shared/connector-schemas';
+import {
+  ConnectorJsonObjectSchema,
+  type ConnectionId,
+  type ConnectorProviderInstanceId,
+} from '@dorkos/shared/connector-schemas';
 import type { ManagedConnectorCloudError } from '../../core/auth/cloud-link-client.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type {
@@ -161,6 +169,169 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     this.now = options.now ?? (() => new Date());
     this.createId = options.createId ?? ulid;
     this.random = options.random ?? Math.random;
+  }
+
+  /** Synchronize one exact stored receive generation through the existing authority outbox. */
+  async reconcileEventSubscription(
+    subscriptionId: string,
+    subscriptionVersion: number,
+    signal: AbortSignal
+  ): Promise<boolean> {
+    const commandId = this.stageEventSubscription(subscriptionId, subscriptionVersion);
+    if (!commandId) return false;
+    if (!this.eventSubscriptionReady(subscriptionId, subscriptionVersion))
+      await this.deliverClaimed(commandId, signal, true);
+    return this.eventSubscriptionReady(subscriptionId, subscriptionVersion);
+  }
+
+  private stageEventSubscription(
+    subscriptionId: string,
+    subscriptionVersion: number
+  ): string | undefined {
+    const selected = this.eventSelection(subscriptionId, subscriptionVersion);
+    if (!selected) return undefined;
+    return this.options.db.transaction((tx) => {
+      const prior = tx
+        .select({ row: connectorManagedAuthorityOutbox })
+        .from(connectorManagedAuthorityScopes)
+        .innerJoin(
+          connectorManagedAuthorityOutbox,
+          eq(
+            connectorManagedAuthorityOutbox.commandId,
+            connectorManagedAuthorityScopes.lastCommandId
+          )
+        )
+        .where(
+          and(
+            eq(connectorManagedAuthorityScopes.managedConnectionId, selected.managedConnectionId),
+            eq(connectorManagedAuthorityScopes.scopeKind, 'event_subscription'),
+            eq(connectorManagedAuthorityScopes.subjectId, subscriptionId)
+          )
+        )
+        .get()?.row;
+      if (prior) {
+        const parsed = ManagedConnectorAuthorityCommandSchema.safeParse(
+          JSON.parse(prior.requestJson)
+        );
+        if (
+          parsed.success &&
+          parsed.data.kind === 'set_event_subscription' &&
+          parsed.data.subscriptionVersion === subscriptionVersion
+        )
+          return prior.commandId;
+      }
+      return this.appendCommandInTransaction(tx, {
+        scopeKind: 'event_subscription',
+        subjectId: subscriptionId,
+        connectionId: selected.connectionId as ConnectionId,
+        managedConnectionId: selected.managedConnectionId,
+        providerInstanceId: selected.providerInstanceId as ConnectorProviderInstanceId,
+        executionConfigGeneration: selected.generation,
+        owner: selected.owner,
+        command: (base) => ({ ...base, ...selected.command }),
+      });
+    });
+  }
+
+  private stageEventRevocations(limit: number): void {
+    const rows = this.options.db.$client
+      .prepare(
+        `SELECT s.id, s.scope_version FROM connector_event_subscriptions s
+      JOIN connections c ON c.id = s.connection_id JOIN connector_provider_instances p ON p.id = c.provider_instance_id
+      WHERE p.mode = 'managed' AND s.revoked_at IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM connector_managed_authority_scopes scope JOIN connector_managed_authority_outbox o ON o.command_id = scope.last_command_id
+        WHERE scope.managed_connection_id = c.external_account_ref AND scope.scope_kind = 'event_subscription' AND scope.subject_id = s.id
+        AND json_extract(o.request_json, '$.subscriptionVersion') = s.scope_version AND json_extract(o.request_json, '$.enabled') = 0
+      ) ORDER BY s.updated_at LIMIT ?`
+      )
+      .all(Math.max(1, Math.min(limit, 100))) as Array<{ id: string; scope_version: number }>;
+    for (const row of rows) this.stageEventSubscription(row.id, row.scope_version);
+  }
+
+  /** Exact applied event receipt, never an arbitrary successful authority response. */
+  eventSubscriptionReady(subscriptionId: string, subscriptionVersion: number): boolean {
+    const selected = this.eventSelection(subscriptionId, subscriptionVersion);
+    if (!selected) return false;
+    const row = this.options.db
+      .select({ row: connectorManagedAuthorityOutbox })
+      .from(connectorManagedAuthorityScopes)
+      .innerJoin(
+        connectorManagedAuthorityOutbox,
+        eq(connectorManagedAuthorityOutbox.commandId, connectorManagedAuthorityScopes.lastCommandId)
+      )
+      .where(
+        and(
+          eq(connectorManagedAuthorityScopes.managedConnectionId, selected.managedConnectionId),
+          eq(connectorManagedAuthorityScopes.scopeKind, 'event_subscription'),
+          eq(connectorManagedAuthorityScopes.subjectId, subscriptionId)
+        )
+      )
+      .get()?.row;
+    if (!row || row.state !== 'applied') return false;
+    const parsed = ManagedConnectorAuthorityCommandSchema.safeParse(JSON.parse(row.requestJson));
+    return (
+      parsed.success &&
+      parsed.data.kind === 'set_event_subscription' &&
+      parsed.data.subscriptionVersion === subscriptionVersion &&
+      this.isCurrent(this.options.db, row) &&
+      this.isBindingCurrent(this.options.db, row, parsed.data)
+    );
+  }
+
+  private eventSelection(subscriptionId: string, subscriptionVersion: number) {
+    const row = this.options.db
+      .select({
+        subscription: connectorEventSubscriptions,
+        definition: connectorEventDefinitions,
+        connection: connections,
+        provider: connectorProviderInstances,
+      })
+      .from(connectorEventSubscriptions)
+      .innerJoin(connections, eq(connections.id, connectorEventSubscriptions.connectionId))
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .innerJoin(
+        connectorEventDefinitions,
+        eq(connectorEventDefinitions.id, connectorEventSubscriptions.definitionId)
+      )
+      .where(
+        and(
+          eq(connectorEventSubscriptions.id, subscriptionId),
+          eq(connectorEventSubscriptions.scopeVersion, subscriptionVersion),
+          eq(connectorProviderInstances.mode, 'managed')
+        )
+      )
+      .get();
+    if (
+      !row ||
+      !row.provider.ownerId ||
+      !row.provider.ownerKind ||
+      !row.definition.providerDefinitionRef
+    )
+      return undefined;
+    const { subscription, connection, provider, definition } = row;
+    return {
+      connectionId: connection.id,
+      managedConnectionId: connection.externalAccountRef,
+      providerInstanceId: provider.id,
+      generation: provider.executionConfigGeneration,
+      owner:
+        provider.ownerKind === 'user'
+          ? { kind: 'user' as const, userId: provider.ownerId! }
+          : { kind: 'local_install' as const, installationId: provider.ownerId! },
+      command: {
+        kind: 'set_event_subscription' as const,
+        subscriptionId,
+        subscriptionVersion,
+        hostedDefinitionId: definition.providerDefinitionRef,
+        agentId: subscription.agentId,
+        destination: { kind: subscription.destinationKind, id: subscription.destinationId },
+        filter: ConnectorJsonObjectSchema.parse(JSON.parse(subscription.filterJson)),
+        enabled: subscription.revokedAt === null,
+      },
+    };
   }
 
   /** Append and attempt one monotonic hosted lifecycle transition. */
@@ -331,8 +502,18 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       .where(eq(connectionOperationGrants.connectionId, connectionId))
       .run();
     tx.update(connectorEventSubscriptions)
-      .set({ enabled: false, updatedAt: now })
-      .where(eq(connectorEventSubscriptions.connectionId, connectionId))
+      .set({
+        enabled: false,
+        revokedAt: now,
+        scopeVersion: sql`${connectorEventSubscriptions.scopeVersion} + 1`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(connectorEventSubscriptions.connectionId, connectionId),
+          isNull(connectorEventSubscriptions.revokedAt)
+        )
+      )
       .run();
   }
 
@@ -382,11 +563,17 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
           .run();
       }
       tx.update(connectorEventSubscriptions)
-        .set({ enabled: false, updatedAt: this.now().toISOString() })
+        .set({
+          enabled: false,
+          revokedAt: this.now().toISOString(),
+          scopeVersion: sql`${connectorEventSubscriptions.scopeVersion} + 1`,
+          updatedAt: this.now().toISOString(),
+        })
         .where(
           and(
             eq(connectorEventSubscriptions.agentId, input.agentId),
-            eq(connectorEventSubscriptions.connectionId, input.connectionId)
+            eq(connectorEventSubscriptions.connectionId, input.connectionId),
+            isNull(connectorEventSubscriptions.revokedAt)
           )
         )
         .run();
@@ -407,6 +594,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     if (this.recoveryRunning) return 0;
     this.recoveryRunning = true;
     try {
+      this.stageEventRevocations(limit);
       const now = this.now();
       const commandIds = this.options.db
         .select({ commandId: connectorManagedAuthorityOutbox.commandId })
@@ -456,7 +644,8 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
             eq(connectorManagedAuthorityOutbox.state, 'superseded')
           ),
           lte(connectorManagedAuthorityOutbox.resolvedAt, resolvedBefore),
-          isNull(connectorManagedAuthorityOutbox.compactedAt)
+          isNull(connectorManagedAuthorityOutbox.compactedAt),
+          sql`NOT (${connectorManagedAuthorityOutbox.scopeKind} = 'event_subscription' AND EXISTS (SELECT 1 FROM connector_managed_authority_scopes current_scope WHERE current_scope.last_command_id = ${connectorManagedAuthorityOutbox.commandId}))`
         )
       )
       .orderBy(connectorManagedAuthorityOutbox.resolvedAt)
@@ -473,7 +662,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
   }
 
   private appendCommand(input: {
-    scopeKind: 'agent_grants' | 'connection_lifecycle';
+    scopeKind: 'agent_grants' | 'connection_lifecycle' | 'event_subscription';
     subjectId: string;
     connectionId: ConnectionId;
     managedConnectionId: string;
@@ -493,7 +682,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
   private appendCommandInTransaction(
     tx: ConnectorDbTransaction,
     input: {
-      scopeKind: 'agent_grants' | 'connection_lifecycle';
+      scopeKind: 'agent_grants' | 'connection_lifecycle' | 'event_subscription';
       subjectId: string;
       connectionId: ConnectionId;
       managedConnectionId: string;
@@ -679,6 +868,8 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       if (recoverFirst) {
         try {
           status = await this.options.cloud.readConnectorAuthorityCommand(commandId, signal);
+          if (status.state === 'pending' && command.kind === 'set_event_subscription')
+            status = await this.options.cloud.submitConnectorAuthorityCommand(command, signal);
         } catch (error) {
           if (!isManagedCloudError(error) || error.code !== 'not_found') throw error;
           status = await this.options.cloud.submitConnectorAuthorityCommand(command, signal);
@@ -703,6 +894,14 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       status.commandId !== command.commandId ||
       status.managedConnectionId !== command.managedConnectionId ||
       status.scopeVersion !== command.scopeVersion
+    ) {
+      return this.recordFailure(row, leaseOwner, { code: 'invalid_response' });
+    }
+    if (
+      command.kind === 'set_event_subscription' &&
+      status.state === 'applied' &&
+      status.appliedEventScopeHash !==
+        createHash('sha256').update(stableStringify(command)).digest('hex')
     ) {
       return this.recordFailure(row, leaseOwner, { code: 'invalid_response' });
     }
@@ -738,6 +937,28 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       if (committed && state === 'applied') {
         if (command.kind === 'replace_agent_grants') {
           this.activateCurrentAgentGrants(tx, row, command);
+        } else if (command.kind === 'set_event_subscription') {
+          tx.update(connectorEventSubscriptions)
+            .set({ enabled: command.enabled, updatedAt: now })
+            .where(
+              and(
+                eq(connectorEventSubscriptions.id, command.subscriptionId),
+                eq(connectorEventSubscriptions.scopeVersion, command.subscriptionVersion)
+              )
+            )
+            .run();
+          if (command.enabled) {
+            const subscription = tx
+              .select({ bindingId: connectorEventSubscriptions.bindingId })
+              .from(connectorEventSubscriptions)
+              .where(eq(connectorEventSubscriptions.id, command.subscriptionId))
+              .get();
+            if (subscription?.bindingId)
+              tx.update(connectorEventBindings)
+                .set({ state: 'ready', updatedAt: now })
+                .where(eq(connectorEventBindings.id, subscription.bindingId))
+                .run();
+          }
         } else if (command.lifecycle === 'active') {
           tx.update(connections)
             .set({ enabled: true, updatedAt: now })
@@ -872,6 +1093,40 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       binding.ownerId !== row.ownerId
     ) {
       return false;
+    }
+    if (command.kind === 'set_event_subscription') {
+      const selected = this.eventSelection(command.subscriptionId, command.subscriptionVersion);
+      if (
+        !selected ||
+        stableStringify(selected.command) !==
+          stableStringify({
+            kind: command.kind,
+            subscriptionId: command.subscriptionId,
+            subscriptionVersion: command.subscriptionVersion,
+            hostedDefinitionId: command.hostedDefinitionId,
+            agentId: command.agentId,
+            destination: command.destination,
+            filter: command.filter,
+            enabled: command.enabled,
+          })
+      )
+        return false;
+      if (!command.enabled) return true;
+      const definition = db
+        .select({ current: connectorEventDefinitions.current })
+        .from(connectorEventDefinitions)
+        .innerJoin(
+          connectorEventSubscriptions,
+          eq(connectorEventSubscriptions.definitionId, connectorEventDefinitions.id)
+        )
+        .where(eq(connectorEventSubscriptions.id, command.subscriptionId))
+        .get();
+      return (
+        definition?.current === true &&
+        binding.lifecycleState === 'connected' &&
+        binding.enabled &&
+        binding.authenticationStatus === 'active'
+      );
     }
     if (command.kind === 'replace_agent_grants') {
       return binding.lifecycleState === 'connected' && binding.enabled;

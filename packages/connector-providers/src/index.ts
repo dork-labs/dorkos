@@ -4,3 +4,9 @@
  * @module connector-providers
  */
 export * from './composio/index.js';
+export {
+  ConnectorEventPayloadProtector,
+  normalizeConnectorEventContent,
+  type ConnectorEventPayloadScope,
+  type ConnectorEventPayloadKeys,
+} from './event-content.js';

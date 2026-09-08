@@ -249,7 +249,9 @@ describe('ConnectionDetailSheet', () => {
     expect(
       screen.getByText('Access sync failed: Provider rejected the update.')
     ).toBeInTheDocument();
-    expect(screen.getByText(/Event subscriptions are unavailable/)).toBeInTheDocument();
+    expect(
+      await screen.findByText('This service does not report any account activity yet.')
+    ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Edit access' }));
     expect(onManageAccess).toHaveBeenCalledWith('connection-1');
 

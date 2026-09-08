@@ -6,11 +6,14 @@
 import { z } from 'zod';
 
 import { env } from '@/env';
+import { managedEventProtector } from './event-protection';
 
 const RawManagedConnectorConfigSchema = z
   .object({
     DORKOS_MANAGED_CONNECTORS_ENABLED: z.enum(['0', '1']).default('0'),
     DORKOS_MANAGED_CONNECTORS_LIVE_READY: z.enum(['0', '1']).default('0'),
+    DORKOS_MANAGED_CONNECTOR_EVENTS_LIVE_READY: z.enum(['0', '1']).default('0'),
+    DORKOS_MANAGED_CONNECTOR_EVENT_PAYLOAD_KEYS: z.string().optional(),
     DORKOS_MANAGED_COMPOSIO_PROJECT_KEY: z.string().min(1).optional(),
     DORKOS_MANAGED_COMPOSIO_API_ORIGIN: z.string().url().optional(),
     DORKOS_MANAGED_CONNECTOR_CALLBACK_ORIGIN: z.string().url().optional(),
@@ -25,6 +28,8 @@ const AuthConfigMapSchema = z.record(z.string().min(1).max(200), z.string().min(
 export interface ManagedConnectorConfig {
   enabled: boolean;
   liveReady: boolean;
+  eventsLiveReady?: boolean;
+  eventPayloadProtectionReady?: boolean;
   projectApiKey?: string;
   apiOrigin?: string;
   callbackOrigin?: string;
@@ -48,6 +53,8 @@ function deploymentConfigSource(): Record<string, string | undefined> {
   return {
     DORKOS_MANAGED_CONNECTORS_ENABLED: env.DORKOS_MANAGED_CONNECTORS_ENABLED,
     DORKOS_MANAGED_CONNECTORS_LIVE_READY: env.DORKOS_MANAGED_CONNECTORS_LIVE_READY,
+    DORKOS_MANAGED_CONNECTOR_EVENTS_LIVE_READY: env.DORKOS_MANAGED_CONNECTOR_EVENTS_LIVE_READY,
+    DORKOS_MANAGED_CONNECTOR_EVENT_PAYLOAD_KEYS: env.DORKOS_MANAGED_CONNECTOR_EVENT_PAYLOAD_KEYS,
     DORKOS_MANAGED_COMPOSIO_PROJECT_KEY: env.DORKOS_MANAGED_COMPOSIO_PROJECT_KEY,
     DORKOS_MANAGED_COMPOSIO_API_ORIGIN: env.DORKOS_MANAGED_COMPOSIO_API_ORIGIN,
     DORKOS_MANAGED_CONNECTOR_CALLBACK_ORIGIN: env.DORKOS_MANAGED_CONNECTOR_CALLBACK_ORIGIN,
@@ -93,6 +100,11 @@ export function readManagedConnectorConfig(
   return {
     enabled: raw.DORKOS_MANAGED_CONNECTORS_ENABLED === '1',
     liveReady: raw.DORKOS_MANAGED_CONNECTORS_LIVE_READY === '1',
+    eventsLiveReady: raw.DORKOS_MANAGED_CONNECTOR_EVENTS_LIVE_READY === '1',
+    eventPayloadProtectionReady: Boolean(
+      raw.DORKOS_MANAGED_CONNECTOR_EVENT_PAYLOAD_KEYS &&
+      managedEventProtector(raw.DORKOS_MANAGED_CONNECTOR_EVENT_PAYLOAD_KEYS)
+    ),
     ...(raw.DORKOS_MANAGED_COMPOSIO_PROJECT_KEY && {
       projectApiKey: raw.DORKOS_MANAGED_COMPOSIO_PROJECT_KEY,
     }),
@@ -137,12 +149,13 @@ export function managedCapabilityAvailability(
     }
   }
   if (capability === 'events') {
-    return {
-      status: 'unavailable',
-      reason: config.webhookSecret
-        ? 'Managed account events are not available yet.'
-        : 'Managed account events are not configured yet.',
-    };
+    if (!config.eventsLiveReady)
+      return {
+        status: 'unavailable',
+        reason: 'Managed account events are awaiting production verification.',
+      };
+    if (!config.webhookSecret || !config.eventPayloadProtectionReady)
+      return { status: 'unavailable', reason: 'Managed account events are not configured yet.' };
   }
   return { status: 'available' };
 }

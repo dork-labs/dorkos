@@ -26,6 +26,7 @@
  */
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { env } from '../../env.js';
+import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
 import {
   PermissionModeSchema,
   SessionSchema,
@@ -117,7 +118,6 @@ import {
   ListThreadsQuerySchema,
   RoomListResponseSchema,
   ThreadListResponseSchema,
-  RoomMemberSchema,
   RoomRosterEntrySchema,
   RoomSnapshotSchema,
   RoomWithRosterSchema,
@@ -395,6 +395,7 @@ const LocalUninstallResultSchema = z.object({
 });
 
 const registry = new OpenAPIRegistry();
+registerConnectorEventOpenApi(registry);
 
 // `relay_flow` is broadcast on the unified `/api/events` WebSocket stream, which
 // (like its `relay_bindings_changed`/`relay_adapters_changed` siblings) has

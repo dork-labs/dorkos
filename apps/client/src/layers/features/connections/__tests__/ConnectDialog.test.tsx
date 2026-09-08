@@ -68,14 +68,20 @@ const gmail: ConnectorCatalogService = {
   ],
 };
 
-function renderDialog(transport = createMockTransport(), service = gmail) {
+function renderDialog(
+  transport = createMockTransport(),
+  service: typeof gmail | null = gmail,
+  agentRequestId: string | null = null,
+  initialFlowId: string | null = null
+) {
   const chooseAccess = vi.fn();
   function Host() {
-    const [flowId, setFlowId] = useState<string | null>(null);
+    const [flowId, setFlowId] = useState<string | null>(initialFlowId);
     return (
       <ConnectDialog
         service={service}
         flowId={flowId}
+        agentRequestId={agentRequestId}
         onFlowIdChange={setFlowId}
         onClose={() => undefined}
         onChooseAccess={chooseAccess}
@@ -197,5 +203,66 @@ describe('ConnectDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     const action = await screen.findByText('Open sign-in');
     expect(action.closest('a')?.hasAttribute('href')).toBe(false);
+  });
+
+  it('keeps authentication associated with the exact agent request until explicit access review', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.startConnectorAgentRequestAuthentication).mockResolvedValue({
+      flowId: 'flow-1',
+      providerInstanceId: 'managed-1' as never,
+      toolkit: 'gmail',
+      state: 'pending',
+      authorizeUrl: 'https://provider.example/auth',
+      createdAt: '2026-09-06T00:00:00.000Z',
+      expiresAt: '2026-09-06T01:00:00.000Z',
+    });
+    vi.mocked(transport.pollConnectorAgentRequestAuthentication).mockResolvedValue({
+      flowId: 'flow-1',
+      providerInstanceId: 'managed-1' as never,
+      toolkit: 'gmail',
+      state: 'connected',
+      connectionId: 'connection-1' as never,
+      createdAt: '2026-09-06T00:00:00.000Z',
+      expiresAt: '2026-09-06T01:00:00.000Z',
+      completedAt: '2026-09-06T00:01:00.000Z',
+    });
+    const { chooseAccess } = renderDialog(transport, gmail, 'request-1');
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() =>
+      expect(transport.startConnectorAgentRequestAuthentication).toHaveBeenCalledWith(
+        'request-1',
+        expect.objectContaining({ providerInstanceId: 'managed-1' })
+      )
+    );
+    expect(transport.startConnectorAuthentication).not.toHaveBeenCalled();
+    expect(await screen.findByText('Gmail is connected')).toBeInTheDocument();
+    expect(screen.getByText(/Return to the request to choose its exact actions/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Review requested access' }));
+    expect(chooseAccess).toHaveBeenCalledWith('connection-1');
+  });
+
+  it('resumes the request-bound flow from its URL identities after a refresh', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.pollConnectorAgentRequestAuthentication).mockResolvedValue({
+      flowId: 'flow-1',
+      providerInstanceId: 'managed-1' as never,
+      toolkit: 'gmail',
+      state: 'connected',
+      connectionId: 'connection-1' as never,
+      createdAt: '2026-09-06T00:00:00.000Z',
+      expiresAt: '2026-09-06T01:00:00.000Z',
+      completedAt: '2026-09-06T00:01:00.000Z',
+    });
+
+    renderDialog(transport, null, 'request-1', 'flow-1');
+
+    expect(await screen.findByText('Gmail is connected')).toBeInTheDocument();
+    expect(transport.pollConnectorAgentRequestAuthentication).toHaveBeenCalledWith(
+      'request-1',
+      'flow-1'
+    );
+    expect(transport.pollConnectorAuthentication).not.toHaveBeenCalled();
   });
 });

@@ -113,6 +113,18 @@
       "types": "./src/connector-schemas.ts",
       "default": "./dist/connector-schemas.js"
     },
+    "./connector-event-schemas": {
+      "types": "./src/connector-event-schemas.ts",
+      "default": "./dist/connector-event-schemas.js"
+    },
+    "./connector-events": {
+      "types": "./src/connector-events.ts",
+      "default": "./dist/connector-events.js"
+    },
+    "./connector-agent-request-schemas": {
+      "types": "./src/connector-agent-request-schemas.ts",
+      "default": "./dist/connector-agent-request-schemas.js"
+    },
     "./connector-managed-schemas": {
       "types": "./src/connector-managed-schemas.ts",
       "default": "./dist/connector-managed-schemas.js"

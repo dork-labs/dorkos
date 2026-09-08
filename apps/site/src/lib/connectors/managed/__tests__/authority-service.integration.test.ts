@@ -50,7 +50,7 @@ import {
 } from '../usage-service';
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../../../../drizzle/', import.meta.url));
-const MANAGED_MIGRATION_PREFIX = '0011_';
+const MANAGED_MIGRATION_PREFIXES = ['0011_', '0012_', '0013_'];
 const EXECUTION_ATTRIBUTION = {
   surface: 'mcp' as const,
   actorKind: 'agent' as const,
@@ -64,22 +64,24 @@ function isolatedMigrationFolder(): string {
   const journal = JSON.parse(
     readFileSync(join(MIGRATIONS_DIR, 'meta', '_journal.json'), 'utf8')
   ) as { version: string; dialect: string; entries: Array<Record<string, unknown>> };
-  const migrationFile = readdirSync(MIGRATIONS_DIR).find(
-    (name) => name.startsWith(MANAGED_MIGRATION_PREFIX) && name.endsWith('.sql')
-  );
-  if (!migrationFile) throw new Error('Managed connector migration file is missing.');
-  const migrationTag = migrationFile.slice(0, -4);
-  const entry = journal.entries.find((candidate) => candidate.tag === migrationTag);
-  if (!entry) throw new Error('Managed connector migration is missing from the journal.');
+  const selected = MANAGED_MIGRATION_PREFIXES.map((prefix) => {
+    const name = readdirSync(MIGRATIONS_DIR).find(
+      (file) => file.startsWith(prefix) && file.endsWith('.sql')
+    );
+    if (!name) throw new Error('Managed migration missing.');
+    const entry = journal.entries.find((value) => value.tag === name.slice(0, -4));
+    if (!entry) throw new Error('Managed migration journal entry missing.');
+    writeFileSync(join(folder, name), readFileSync(join(MIGRATIONS_DIR, name)));
+    return entry;
+  });
   writeFileSync(
     join(folder, 'meta', '_journal.json'),
     JSON.stringify({
       version: journal.version,
       dialect: journal.dialect,
-      entries: [{ ...entry, idx: 0 }],
+      entries: selected.map((entry, idx) => ({ ...entry, idx })),
     })
   );
-  writeFileSync(join(folder, migrationFile), readFileSync(join(MIGRATIONS_DIR, migrationFile)));
   return folder;
 }
 

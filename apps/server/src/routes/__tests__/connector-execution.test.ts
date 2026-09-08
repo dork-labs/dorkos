@@ -57,6 +57,9 @@ describe('connector execution routes', () => {
         capabilities: { invoke },
         authorization: { capabilityIdForTarget },
         access: { listConnections, listOperations, listAgentUsage, listOperatorUsage },
+        eventAccess: {
+          listSubscriptions: vi.fn().mockResolvedValue({ agentId: 'agent-a', subscriptions: [] }),
+        },
         programPrincipals: {
           mint: (user, owner) =>
             user.credentialId

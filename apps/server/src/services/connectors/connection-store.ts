@@ -10,6 +10,8 @@ import {
   and,
   eq,
   inArray,
+  isNull,
+  sql,
   or,
   sessionConnectionOverrides,
   type Db,
@@ -373,8 +375,18 @@ export class ConnectionStore {
         .where(eq(connectionOperationGrants.connectionId, accountId))
         .run();
       tx.update(connectorEventSubscriptions)
-        .set({ enabled: false, updatedAt: now })
-        .where(eq(connectorEventSubscriptions.connectionId, accountId))
+        .set({
+          enabled: false,
+          revokedAt: now,
+          scopeVersion: sql`${connectorEventSubscriptions.scopeVersion} + 1`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(connectorEventSubscriptions.connectionId, accountId),
+            isNull(connectorEventSubscriptions.revokedAt)
+          )
+        )
         .run();
     });
   }
@@ -400,8 +412,18 @@ export class ConnectionStore {
         .where(eq(connectionOperationGrants.agentId, agentId))
         .run();
       tx.update(connectorEventSubscriptions)
-        .set({ enabled: false, updatedAt: now })
-        .where(eq(connectorEventSubscriptions.agentId, agentId))
+        .set({
+          enabled: false,
+          revokedAt: now,
+          scopeVersion: sql`${connectorEventSubscriptions.scopeVersion} + 1`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(connectorEventSubscriptions.agentId, agentId),
+            isNull(connectorEventSubscriptions.revokedAt)
+          )
+        )
         .run();
     });
     return [...new Set(sessionRows.map((row) => row.sessionId))];
@@ -457,11 +479,17 @@ export class ConnectionStore {
         .where(and(eq(connectionOperationGrants.connectionId, accountId), or(...grantOwners)))
         .run();
       tx.update(connectorEventSubscriptions)
-        .set({ enabled: false, updatedAt: now })
+        .set({
+          enabled: false,
+          revokedAt: now,
+          scopeVersion: sql`${connectorEventSubscriptions.scopeVersion} + 1`,
+          updatedAt: now,
+        })
         .where(
           and(
             eq(connectorEventSubscriptions.agentId, agentId),
-            eq(connectorEventSubscriptions.connectionId, accountId)
+            eq(connectorEventSubscriptions.connectionId, accountId),
+            isNull(connectorEventSubscriptions.revokedAt)
           )
         )
         .run();

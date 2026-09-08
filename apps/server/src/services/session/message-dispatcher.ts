@@ -156,6 +156,10 @@ import { ROOMS, SESSIONS } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
 import { captureDispatchScope, runInDispatch } from '../../lib/dispatch-context.js';
 import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
+import {
+  getPrivateSessionMessageAcceptanceService,
+  PrivateSessionMessageRefusalError,
+} from './private-messages/acceptance.js';
 
 /**
  * How many session ids the orphan sweep hands to one `DELETE ... IN (...)`.
@@ -657,6 +661,7 @@ function announceSteerable(
 
 /** Build the runtime-neutral port `triggerTurn` needs from a resolved runtime. */
 function turnDeps(runtime: AgentRuntime): TriggerTurnDeps {
+  const privateMessages = getPrivateSessionMessageAcceptanceService();
   return {
     acquireLock: (sid, cid, lifecycle, token) => runtime.acquireLock(sid, cid, lifecycle, token),
     releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
@@ -671,6 +676,19 @@ function turnDeps(runtime: AgentRuntime): TriggerTurnDeps {
     getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
     rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
     getCapabilities: () => runtime.getCapabilities(),
+    ...(privateMessages
+      ? {
+          preparePrivateMessage: (receiptId: string) => privateMessages.prepare(receiptId),
+          claimPrivateMessage: (
+            receiptId: string,
+            prepared: Parameters<typeof privateMessages.claim>[1]
+          ) => privateMessages.claim(receiptId, prepared),
+          cancelPrivateMessage: (receiptId: string, reason: string) =>
+            privateMessages.cancel(receiptId, reason),
+          markPrivateOutcomeUnknown: (receiptId: string, reason: string) =>
+            privateMessages.markOutcomeUnknown(receiptId, reason),
+        }
+      : {}),
   };
 }
 
@@ -725,6 +743,8 @@ export interface DispatchMessageOpts {
   onSettled?(outcome: 'ok' | 'failed'): void;
   /** Receives the `seq` of this turn's `turn_start` — its identity on the stream. */
   onTurnStart?(seq: number): void;
+  /** Server-owned receipt for a protected automatic follow-up. */
+  privateReceiptId?: string;
   /**
    * What to do when the session already has a turn open.
    *
@@ -908,6 +928,7 @@ interface DispatchPlan {
     | 'onError'
     | 'onSettled'
     | 'onTurnStart'
+    | 'privateReceiptId'
   >;
 }
 
@@ -1183,11 +1204,17 @@ function launchDispatch(
       ...(turn.accountHint ? { accountHint: turn.accountHint } : {}),
       ...(turn.settings ? { settings: turn.settings } : {}),
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),
+      ...(turn.privateReceiptId !== undefined ? { privateReceiptId: turn.privateReceiptId } : {}),
       // The turn is running: THIS is the instant the message stops waiting, and
       // every window is told so in the same beat — a queue chip that outlives
       // the message it stands for is a lie about what is still waiting.
       onTurnStart: (seq) => {
-        if (getMessageQueueStore()?.remove(messageId)) emitQueueUpdate(sessionKey);
+        if (turn.privateReceiptId !== undefined) {
+          getPrivateSessionMessageAcceptanceService()?.markTurnStarted(turn.privateReceiptId, seq);
+          emitQueueUpdate(sessionKey);
+        } else if (getMessageQueueStore()?.remove(messageId)) {
+          emitQueueUpdate(sessionKey);
+        }
         // The turn is on the projector now, so the projector — not this slot —
         // becomes the authority on whether it is still producing
         // ({@link isStillProducing}). Only for OUR launch: a stale settle must
@@ -1203,12 +1230,20 @@ function launchDispatch(
       onError: turn.onError,
       onSettled: (turnOutcome) => {
         clearIfOurs();
+        if (turn.privateReceiptId !== undefined) {
+          getPrivateSessionMessageAcceptanceService()?.settle(turn.privateReceiptId, turnOutcome);
+        }
         turn.onSettled?.(turnOutcome);
       },
     });
   } catch (err) {
     clearIfOurs();
-    returnToQueue(plan);
+    if (turn.privateReceiptId !== undefined && err instanceof PrivateSessionMessageRefusalError) {
+      getPrivateSessionMessageAcceptanceService()?.cancel(turn.privateReceiptId, err.code);
+      emitQueueUpdate(sessionKey);
+    } else {
+      returnToQueue(plan);
+    }
     // Rejected with what was thrown, unchanged: `triggerTurn` throws typed
     // errors its callers narrow on, and re-wrapping would cost them that.
     return Promise.reject(err as Error);
@@ -1224,7 +1259,12 @@ function launchDispatch(
     },
     (err: unknown) => {
       clearIfOurs();
-      returnToQueue(plan);
+      if (turn.privateReceiptId !== undefined && err instanceof PrivateSessionMessageRefusalError) {
+        getPrivateSessionMessageAcceptanceService()?.cancel(turn.privateReceiptId, err.code);
+        emitQueueUpdate(sessionKey);
+      } else {
+        returnToQueue(plan);
+      }
       throw err;
     }
   );
@@ -1358,6 +1398,12 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   // message joins a queue that is whole rather than jumping a person's own
   // older words that nothing else would ever run again.
   adoptQueuedMessages({
+    sessionId,
+    projector,
+    runtime,
+    ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+  });
+  adoptAcceptedPrivateMessages({
     sessionId,
     projector,
     runtime,
@@ -1534,6 +1580,12 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
   let swept = 0;
   for (const row of rows) {
     if (pending.has(row.id) || launching.has(row.id)) continue;
+    // Protected rows have their own adoption path because their visible queue
+    // text is only a placeholder. Generic recovery must never send it or bypass
+    // the source adapter's final authority preflight.
+    if (getPrivateSessionMessageAcceptanceService()?.findByQueueMessageId(row.id)) {
+      continue;
+    }
     // **A row a ROOM left behind is swept, never adopted** (DOR-1242). A room's
     // trigger gets no row any more, but rows written by earlier builds are still
     // on disk, and adoption would re-arm one as an ordinary `whenBusy: 'queue'`
@@ -1605,6 +1657,60 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
       sessionId: sessionKey,
       rows: swept,
     });
+  }
+  if (adopted > 0) schedulePump(sessionKey);
+  return adopted;
+}
+
+/**
+ * Adopt accepted protected rows for one session through the existing pump.
+ *
+ * Unlike {@link adoptQueuedMessages}, this path never treats queue content as
+ * runtime input. The plan carries only a receipt id; {@link triggerTurn}
+ * resolves protected content in memory and claims it at the last preflight.
+ *
+ * @param opts - Persisted destination session and its resolved runtime objects
+ * @returns Number of protected rows newly adopted by this process
+ */
+export function adoptAcceptedPrivateMessages(opts: AdoptQueuedMessagesOpts): number {
+  const service = getPrivateSessionMessageAcceptanceService();
+  const store = getMessageQueueStore();
+  if (!service || !store) return 0;
+  const sessionKey = primaryOf(opts.sessionId);
+  let adopted = 0;
+  for (const receipt of service.listAccepted(queueKeyOf(opts.sessionId))) {
+    if (pending.has(receipt.queueMessageId) || launching.has(receipt.queueMessageId)) continue;
+    const row = store.get(receipt.queueMessageId);
+    if (!row) {
+      service.cancel(receipt.id, 'accepted_queue_missing');
+      continue;
+    }
+    const dispatchId = newDispatchId();
+    recordDispatchStart({ dispatchId, origin: 'queue-recovery', sessionId: sessionKey });
+    const plan: DispatchPlan = {
+      sessionId: receipt.sessionId,
+      sessionKey,
+      clientId: `system:${receipt.sourceKind}:${receipt.sourceId}`,
+      content: row.content,
+      messageId: row.id,
+      projector: opts.projector,
+      runtime: opts.runtime,
+      budgetMs: SESSIONS.LOCK_TTL_MS,
+      startedWaitingAt: Date.now(),
+      whenBusy: 'queue',
+      answered: true,
+      transient: false,
+      turn: {
+        ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+        privateReceiptId: receipt.id,
+        onSettled: (outcome) =>
+          recordDispatchEnd(dispatchId, outcome === 'failed' ? 'failed' : 'answered'),
+      },
+    };
+    runInDispatch({ dispatchId, origin: 'queue-recovery' }, () =>
+      parkDispatch(plan, unwatchedSettle(plan))
+    );
+    adopted += 1;
   }
   if (adopted > 0) schedulePump(sessionKey);
   return adopted;

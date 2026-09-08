@@ -334,6 +334,19 @@ export interface RelayOptions {
   onDeadLetter?: (notice: DeadLetterNotice) => void;
 }
 
+/** Private native notification outcome; no queue copy or automatic retry is permitted. */
+export type PrivateNotificationResult =
+  { state: 'delivered'; receiptId: string } | { state: 'refused' | 'outcome_unknown' };
+
+/** Trusted in-process delivery options; never added to an HTTP or MCP wire schema. */
+export interface PrivateNotificationOptions {
+  adapterId: string;
+  from: string;
+  budget?: Partial<RelayBudget>;
+  serverBridgePrincipal?: boolean;
+  authorizeDispatch(): boolean;
+}
+
 export interface PublishOptions {
   from: string;
   replyTo?: string;
@@ -503,6 +516,12 @@ export interface TraceStoreLike {
  * Avoids circular dependency between types.ts and adapter-registry.ts.
  */
 export interface AdapterRegistryLike {
+  /** Bypass payload persistence for one exact native adapter and current source claim. */
+  deliverPrivateNotification?(
+    subject: string,
+    text: string,
+    options: PrivateNotificationOptions
+  ): Promise<PrivateNotificationResult>;
   setRelay(relay: RelayPublisher): void;
   deliver(
     subject: string,
@@ -529,6 +548,12 @@ export interface AdapterRegistryLike {
  * into the Relay subject hierarchy.
  */
 export interface RelayAdapter {
+  /** Optional private single-text send with a final network guard and no transport retries. */
+  deliverPrivateNotification?(
+    subject: string,
+    text: string,
+    authorizeDispatch: () => boolean
+  ): Promise<PrivateNotificationResult>;
   /** Unique identifier (e.g., 'telegram', 'webhook-github') */
   readonly id: string;
 

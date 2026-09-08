@@ -106,8 +106,22 @@ import { RelayCore, AdapterRegistry, SignalEmitter, type AgentRuntimeLike } from
 import { createRelayRouter } from './routes/relay.js';
 import { createConnectorProvidersRouter } from './routes/connector-providers.js';
 import { createConnectorExecutionRouter } from './routes/connector-execution.js';
+import { ConnectorEventAccessQueryService } from './services/connectors/events/access-query-service.js';
 import { createConnectorResourcesRouter } from './routes/connector-resources.js';
 import { createConnectorManagementRouter } from './routes/connector-management.js';
+import { createConnectorEventsRouter } from './routes/connector-events.js';
+import { ConnectorEventInboxStore } from './services/connectors/event-inbox-store.js';
+import { ConnectorSubscriptionStore } from './services/connectors/events/subscription-store.js';
+import { ConnectorSubscriptionService } from './services/connectors/events/subscription-service.js';
+import { ConnectorEventSessionSourceAdapter } from './services/connectors/events/session-source-adapter.js';
+import { CanonicalConnectorEventSessionTarget } from './services/connectors/events/session-target.js';
+import { ConnectorEventGrantService } from './services/connectors/events/grant-service.js';
+import { ConnectorEventSettingsService } from './services/connectors/events/settings-service.js';
+import { ConnectorEventIngressService } from './services/connectors/events/ingress-service.js';
+import { ManagedConnectorEventPullService } from './services/connectors/events/managed-pull-service.js';
+import { ConnectorEventDeliveryService } from './services/connectors/events/delivery-service.js';
+import { ConnectorEventNativeDestination } from './services/connectors/events/channel-destination.js';
+
 import { UnclaimedChatStore } from './services/relay/unclaimed-chat-store.js';
 import { createUnclaimedChatsRouter } from './routes/unclaimed-chats.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
@@ -134,13 +148,25 @@ import { ConnectorProgramPrincipalService } from './services/connectors/principa
 import type { ConnectorOwnerAuthority } from './services/connectors/principal/server-principal.js';
 import { ConnectorRuntimePrincipalService } from './services/connectors/principal/runtime-principal-service.js';
 import { CanonicalConnectorRuntimeAuthorityResolver } from './services/connectors/principal/runtime-authority-resolver.js';
+import {
+  ConnectorAgentRequestService,
+  ConnectorAgentRequestSourceAdapter,
+} from './services/connectors/agent-request-service.js';
+import { CanonicalConnectorAgentRequestAuthority } from './services/connectors/agent-request-authority.js';
 import { createConnectorRuntimeMcpServer } from './services/connectors/execution/runtime-mcp-server.js';
 import { isConnectorRuntimeCapabilityId } from './services/connectors/runtime-capability-scope.js';
 import {
   startConnectorRuntimeMcpListener,
   type ConnectorRuntimeMcpListener,
 } from './services/runtimes/connector-mcp/index.js';
-import type { ConnectorRuntimeToolConsumer } from './services/runtimes/connector-tools.js';
+import {
+  connectorRuntimeHeaders,
+  type ConnectorRuntimeToolConsumer,
+} from './services/runtimes/connector-tools.js';
+import type {
+  ConnectorRuntimeExecutionProbe,
+  ConnectorRuntimeRequestProbe,
+} from './routes/test-control.js';
 import { getOrCreateInstanceId } from './lib/instance-id.js';
 import {
   toSdkMcpServers,
@@ -390,6 +416,10 @@ import {
   sessionOriginResolvers,
   listRecentSessions,
   setAgentSessionSources,
+  PrivateSessionMessageAcceptanceService,
+  setPrivateSessionMessageAcceptanceService,
+  adoptAcceptedPrivateMessages,
+  getOrCreateProjector,
 } from './services/session/index.js';
 import { aggregateSessionList } from './services/session/aggregate-session-list.js';
 import { env } from './env.js';
@@ -436,6 +466,13 @@ let agentMcpServerService: AgentMcpServerService | undefined;
 let agentMcpOAuthService: AgentMcpOAuthService | undefined;
 let extensionManager: ExtensionManager | undefined;
 let connectorRuntimeMcpListener: ConnectorRuntimeMcpListener | undefined;
+let testComposioFixture:
+  | Awaited<
+      ReturnType<
+        typeof import('./services/connectors/providers/test-composio/fixture.js').startTestComposioFixture
+      >
+    >
+  | undefined;
 
 function connectorRuntimeConsumer(runtime: unknown): ConnectorRuntimeToolConsumer | undefined {
   if (
@@ -725,7 +762,8 @@ async function start() {
   // The durable message queue, wired on the same beat and for the same reason:
   // a message somebody typed and was told was accepted must outlive the request
   // that accepted it, a second window, a failed turn and a restart.
-  setMessageQueueStore(new MessageQueueStore(db));
+  const messageQueueStore = new MessageQueueStore(db);
+  setMessageQueueStore(messageQueueStore);
 
   // The durable hold for staged words, on the same beat again: the server tells
   // the person "Added context for the next reply" on a stream that survives a
@@ -2084,7 +2122,40 @@ async function start() {
     });
   }
 
-  const app = createApp();
+  const connectorEventSubscriptions = new ConnectorSubscriptionStore(db);
+  const connectorEventInbox = new ConnectorEventInboxStore({ db, bootEpoch: connectorBootEpoch });
+  const connectorEventSettings = new ConnectorEventSettingsService(
+    db,
+    credentialProvider,
+    credentialStore,
+    async () => {
+      await connectorBootstrapper.reload('composio');
+    }
+  );
+  const connectorEventIngress = new ConnectorEventIngressService(
+    connectorEventSubscriptions,
+    connectorEventInbox,
+    connectorEventSettings
+  );
+  let connectorEventDelivery: ConnectorEventDeliveryService | undefined;
+  const recoverConnectorEventDelivery = async (): Promise<void> => {
+    try {
+      await connectorEventDelivery?.recover(AbortSignal.timeout(25_000));
+    } catch {
+      logger.warn('[Connections] Notification delivery deferred');
+    }
+  };
+  const app = createApp({
+    connectorEventIngress: {
+      verifier: (id) =>
+        connectorRegistry.resolveProviderInstance(id as ConnectorProviderInstanceId)?.events,
+      accept: (id, event) => {
+        const accepted = connectorEventIngress.accept(id, event);
+        void recoverConnectorEventDelivery();
+        return accepted;
+      },
+    },
+  });
 
   // Build mcpToolDeps and register factory only when ClaudeCodeRuntime is available.
   let mcpToolDeps: Parameters<typeof createExternalMcpServer>[0] | undefined;
@@ -2218,9 +2289,19 @@ async function start() {
   // inside the factory (same pattern as TestModeRuntime above) so the
   // production module graph never loads it.
   const localOrigin = `http://${localDialHost(env.DORKOS_HOST)}:${PORT}`;
+  if (env.DORKOS_TEST_RUNTIME) {
+    const { startTestComposioFixture } =
+      await import('./services/connectors/providers/test-composio/fixture.js');
+    testComposioFixture = await startTestComposioFixture({ testRuntime: true, localOrigin });
+    const { testControlRouter } = await import('./routes/test-control.js');
+    testControlRouter.use('/composio', testComposioFixture.router);
+  }
   const connectorBootstrapper = new ConnectorProviderBootstrapper({
+    ...(testComposioFixture && { composioBaseUrl: testComposioFixture.baseUrl }),
     registry: connectorRegistry,
     credentials: credentialProvider,
+    composioWebhookSecretRef: () =>
+      connectorEventSettings.webhookSecretRef(legacyDefaultProviderInstanceId('composio')),
     nangoEnv: () => ({
       ...(env.NANGO_BASE_URL !== undefined && { baseUrl: env.NANGO_BASE_URL }),
       ...(env.NANGO_ENCRYPTION_KEY !== undefined && { encryptionKey: env.NANGO_ENCRYPTION_KEY }),
@@ -2334,6 +2415,87 @@ async function start() {
     owner.kind === 'local_install' &&
     owner.installationId === connectorOwner.installationId &&
     meshCore?.getProjectPath(agentId) !== undefined;
+  const connectorEventDestinations = {
+    authorize: (
+      owner: ConnectorOwnerAuthority,
+      agentId: string,
+      destination: import('@dorkos/shared/connector-event-schemas').ConnectorEventDestination
+    ): boolean => {
+      if (!connectorOwnsAgent(owner, agentId)) return false;
+      if (destination.kind === 'agent') return destination.id === agentId;
+      if (destination.kind === 'room') {
+        const room = roomService.getRoom(destination.id, resolveOperatorAuthorId());
+        const agentPath = meshCore?.getProjectPath(agentId);
+        return Boolean(
+          room &&
+          !room.archived &&
+          agentPath &&
+          roomService
+            .listAgentMembers(destination.id)
+            .some((member) => member.agentPath === agentPath)
+        );
+      }
+      const binding = adapterManager?.getBindingStore()?.getById(destination.id);
+      return Boolean(
+        binding &&
+        binding.agentId === agentId &&
+        binding.enabled &&
+        binding.canInitiate &&
+        binding.chatId &&
+        adapterManager
+          ?.listAdapters()
+          .some((adapter) => adapter.config.id === binding.adapterId && adapter.config.enabled)
+      );
+    },
+  };
+  const connectorEventService = new ConnectorSubscriptionService(
+    connectorEventSubscriptions,
+    connectorRegistry,
+    connectorEventDestinations
+  );
+  const managedEventConsent = {
+    reconcile: (id: string, version: number, signal: AbortSignal) =>
+      managedConnectorAuthority.reconcileEventSubscription(id, version, signal),
+    ready: (id: string, version: number) =>
+      managedConnectorAuthority.eventSubscriptionReady(id, version),
+  };
+  const connectorEventGrants = new ConnectorEventGrantService(
+    connectorEventSubscriptions,
+    connectorEventService,
+    connectorEventDestinations,
+    managedEventConsent
+  );
+  const connectorEventSessionSource = new ConnectorEventSessionSourceAdapter(
+    connectorEventSubscriptions,
+    connectorEventSettings,
+    managedEventConsent,
+    new CanonicalConnectorEventSessionTarget({
+      db,
+      sessions: runtimeRegistry,
+      ownsAgent: connectorOwnsAgent,
+    }),
+    connectorBootEpoch
+  );
+  const connectorEventPull = new ManagedConnectorEventPullService(
+    getCloudLinkManager(),
+    connectorEventIngress,
+    () => {
+      const linkGeneration = getCloudLinkManager().managedConnectorMaterialDigest();
+      if (!linkGeneration) return undefined;
+      const row = db.$client
+        .prepare(
+          "SELECT execution_config_generation FROM connector_provider_instances WHERE id = ? AND mode = 'managed' AND status = 'available'"
+        )
+        .get(managedCloudProviderInstanceId) as { execution_config_generation: number } | undefined;
+      return row
+        ? {
+            providerInstanceId: managedCloudProviderInstanceId,
+            providerGeneration: row.execution_config_generation,
+            linkGeneration,
+          }
+        : undefined;
+    }
+  );
   const connectorOperatorQueries = new ConnectorOperatorQueryService({
     db,
     registry: connectorRegistry,
@@ -2370,6 +2532,113 @@ async function start() {
       })
     : undefined;
   if (connectorRuntimePrincipals) await connectorRuntimePrincipals.initializeBoot();
+  let connectorAgentRequests: ConnectorAgentRequestService | undefined;
+  let recoverAcceptedPrivateSessions: (() => void) | undefined;
+  let acceptedPrivateSessionCursor: string | undefined;
+  if (connectorRuntimePrincipals && meshCore) {
+    const requestAuthority = new CanonicalConnectorAgentRequestAuthority({
+      db,
+      sessions: runtimeRegistry,
+      mesh: meshCore,
+      owner: connectorOwner,
+    });
+    const privateAcceptance = new PrivateSessionMessageAcceptanceService(
+      db,
+      messageQueueStore,
+      [
+        new ConnectorAgentRequestSourceAdapter(
+          db,
+          requestAuthority,
+          connectorBootEpoch,
+          connectorEventGrants
+        ),
+        connectorEventSessionSource,
+      ],
+      connectorBootEpoch
+    );
+    setPrivateSessionMessageAcceptanceService(privateAcceptance);
+    const recoveredPrivateAttempts = privateAcceptance.recoverUnobservedAttempts();
+    if (recoveredPrivateAttempts > 0) {
+      logger.warn('[Connections] Quarantined interrupted private follow-ups', {
+        count: recoveredPrivateAttempts,
+      });
+    }
+    const nudgePrivateSession = (sessionId: string): void => {
+      void Promise.all([
+        runtimeRegistry.resolveForSession(sessionId),
+        runtimeRegistry.getSessionAgentPath(sessionId),
+      ])
+        .then(([runtime, agentPath]) => {
+          if (!agentPath) return;
+          const projector = getOrCreateProjector(sessionId, agentPath);
+          adoptAcceptedPrivateMessages({
+            sessionId,
+            cwd: agentPath,
+            projector,
+            runtime,
+          });
+        })
+        .catch((error: unknown) => {
+          logger.warn('[Connections] Could not resume a private agent message', logError(error));
+        });
+    };
+    const connectorEventChannels = new ConnectorEventNativeDestination({
+      bindings: () => adapterManager?.getBindingStore(),
+      adapters: () => adapterManager?.listAdapters() ?? [],
+      agentSubject: createAgentSubjectResolver(meshCore),
+      relay: {
+        deliverPrivateNotification: (subject, text, options) =>
+          relayCore?.deliverPrivateNotification(subject, text, options) ??
+          Promise.resolve({ state: 'refused' as const }),
+      },
+    });
+    connectorEventDelivery = new ConnectorEventDeliveryService({
+      subscriptions: connectorEventSubscriptions,
+      inbox: connectorEventInbox,
+      protection: connectorEventSettings,
+      managed: managedEventConsent,
+      sessions: connectorEventSessionSource,
+      acceptance: privateAcceptance,
+      nudgeSession: nudgePrivateSession,
+      rooms: roomService,
+      channels: connectorEventChannels,
+      authorize: (owner, scope) =>
+        connectorEventDestinations.authorize(owner, scope.agentId, {
+          kind: scope.destinationKind,
+          id: scope.destinationId,
+        }),
+    });
+    recoverAcceptedPrivateSessions = () => {
+      const sessionIds = privateAcceptance.listAcceptedSessionIds(
+        100,
+        acceptedPrivateSessionCursor
+      );
+      acceptedPrivateSessionCursor = sessionIds.length === 100 ? sessionIds.at(-1) : undefined;
+      for (const sessionId of sessionIds) {
+        nudgePrivateSession(sessionId);
+      }
+    };
+    recoverAcceptedPrivateSessions();
+    connectorAgentRequests = new ConnectorAgentRequestService({
+      db,
+      registry: connectorRegistry,
+      runtimePrincipals: connectorRuntimePrincipals,
+      authority: requestAuthority,
+      bootEpoch: connectorBootEpoch,
+      managedAuthority: managedConnectorAuthority,
+      eventGrants: connectorEventGrants,
+      authentication: connectorAuthenticationFlows,
+      resume: {
+        accept: (ref) => {
+          privateAcceptance.accept(ref);
+        },
+        nudge: nudgePrivateSession,
+      },
+    });
+    void connectorAgentRequests.reconcile().catch((error: unknown) => {
+      logger.warn('[Connections] Could not recover agent service requests', logError(error));
+    });
+  }
   const connectorAccess = new ConnectorAccessQueryService(
     db,
     {
@@ -2805,12 +3074,25 @@ async function start() {
   );
   app.use(
     '/api/connectors',
+    createConnectorEventsRouter({
+      store: connectorEventSubscriptions,
+      subscriptions: connectorEventService,
+      grants: connectorEventGrants,
+      settings: connectorEventSettings,
+      managed: managedEventConsent,
+      resolveOwner: () => connectorOwner,
+      loginEnabled: () => configManager.get('auth').enabled,
+    })
+  );
+  app.use(
+    '/api/connectors',
     createConnectorManagementRouter({
       registry: connectorRegistry,
       reviews: connectorManagementReviews,
       reconciliation: connectorReconciliation,
       resolveOwner: () => connectorOwner,
       loginEnabled: () => configManager.get('auth').enabled,
+      ...(connectorAgentRequests && { agentRequests: connectorAgentRequests }),
     })
   );
   app.use(
@@ -3637,6 +3919,7 @@ async function start() {
         authorization: connectorAuthorization,
         broker: connectorBroker,
         access: connectorAccess,
+        ...(connectorAgentRequests && { requests: connectorAgentRequests }),
       },
       // The MCP-server-management domain — its deps are built above so the
       // `mcp.import` fallback closure narrows `meshCore`.
@@ -3698,6 +3981,75 @@ async function start() {
         isConnectorCapabilityId: isConnectorRuntimeCapabilityId,
       });
     }
+    if (env.DORKOS_TEST_RUNTIME) {
+      const callRuntimeConnectorTool = async (input: {
+        readonly sessionId: string;
+        readonly agentPath: string;
+        readonly signal: AbortSignal;
+        readonly name: 'connectors.request_connection' | 'connectors.execute_read';
+        readonly arguments: Record<string, unknown>;
+      }) => {
+        await runtimeRegistry.persistSessionRuntime(
+          input.sessionId,
+          'claude-code',
+          input.agentPath,
+          { interactive: false }
+        );
+        const binding = await connectorRuntimePrincipals.openTurn({
+          runtime: 'claude-code',
+          canonicalSessionId: input.sessionId,
+          agentPath: input.agentPath,
+          canonicalCwd: input.agentPath,
+          signal: input.signal,
+        });
+        const [{ Client }, { StreamableHTTPClientTransport }] = await Promise.all([
+          import('@modelcontextprotocol/sdk/client/index.js'),
+          import('@modelcontextprotocol/sdk/client/streamableHttp.js'),
+        ]);
+        const client = new Client(
+          { name: 'dorkos-e2e-connector-request', version: '1.0.0' },
+          { capabilities: {} }
+        );
+        try {
+          await client.connect(
+            new StreamableHTTPClientTransport(new URL(connectorRuntimeMcpListener!.url), {
+              requestInit: {
+                headers: connectorRuntimeHeaders({
+                  bearer: binding.bearer,
+                  runtime: 'claude-code',
+                  canonicalCwd: input.agentPath,
+                }),
+              },
+            })
+          );
+          return await client.callTool(
+            {
+              name: input.name,
+              arguments: input.arguments,
+            },
+            undefined,
+            { signal: input.signal, timeout: 120_000 }
+          );
+        } finally {
+          await client.close().catch(() => {});
+          await connectorRuntimePrincipals.revoke(binding.bindingId, 'turn_terminal');
+        }
+      };
+      const runtimeRequestProbe: ConnectorRuntimeRequestProbe = (input) =>
+        callRuntimeConnectorTool({
+          ...input,
+          name: 'connectors.request_connection',
+          arguments: { ...input.request },
+        });
+      const runtimeExecutionProbe: ConnectorRuntimeExecutionProbe = (input) =>
+        callRuntimeConnectorTool({
+          ...input,
+          name: 'connectors.execute_read',
+          arguments: { ...input.target },
+        });
+      app.locals.connectorRuntimeRequestProbe = runtimeRequestProbe;
+      app.locals.connectorRuntimeExecutionProbe = runtimeExecutionProbe;
+    }
     logger.info('[Connectors] Runtime execution listener initialized');
   }
   app.use(
@@ -3708,6 +4060,12 @@ async function start() {
       authorization: connectorAuthorization,
       access: connectorAccess,
       programPrincipals: connectorProgramPrincipals,
+      eventAccess: new ConnectorEventAccessQueryService(
+        connectorEventSubscriptions,
+        { ownsAgent: connectorOwnsAgent },
+        connectorProgramPrincipals,
+        managedEventConsent
+      ),
       resolveOwner: () => connectorOwner,
       loginEnabled: () => configManager.get('auth').enabled,
     })
@@ -3848,6 +4206,10 @@ async function start() {
   healthCheckInterval = setInterval(() => {
     claudeRuntime?.checkSessionHealth();
     sweepOrphanedMessageQueues();
+    void connectorAgentRequests?.reconcile().catch((error: unknown) => {
+      logger.warn('[Connections] Agent request recovery failed', logError(error));
+    });
+    recoverAcceptedPrivateSessions?.();
   }, INTERVALS.HEALTH_CHECK_MS);
 
   // Keep the daily snapshot honest on a server that is never restarted. The
@@ -3882,6 +4244,30 @@ async function start() {
   sessionAttachmentSweepInterval = setInterval(sweepImages, SESSION_ATTACHMENT_SWEEP_INTERVAL_MS);
 
   const recoverManagedAuthority = () => {
+    // All-state payload expiry also runs without a cloud link or live vendor.
+    const now = new Date().toISOString();
+    connectorEventInbox.sweepRetention(now);
+    connectorEventInbox.sweepMetadata(now);
+    connectorEventSessionSource.sweepPreparations(now);
+    void connectorEventGrants.recoverPending(AbortSignal.timeout(25_000)).catch(() => {
+      logger.warn('[Connectors] Notification setup deferred');
+    });
+    void connectorEventService.recoverCleanup(AbortSignal.timeout(25_000)).catch(() => {
+      logger.warn('[Connectors] Notification cleanup deferred');
+    });
+    const pendingDelivery = recoverConnectorEventDelivery();
+    void connectorEventPull
+      .recover(AbortSignal.timeout(25_000))
+      .then(async () => {
+        // The pull can commit new inbox rows while a prior delivery pass is in
+        // flight. Wait for that pass, then start another so newly pulled rows do
+        // not wait for the next maintenance tick.
+        await pendingDelivery;
+        await recoverConnectorEventDelivery();
+      })
+      .catch(() => {
+        logger.warn('[Connectors] Notification handoff deferred');
+      });
     void managedConnectorAuthority
       .recoverPending(new AbortController().signal)
       .catch((error: unknown) => {
@@ -3956,6 +4342,8 @@ async function start() {
 // Extracted so the admin router can invoke it before a restart.
 async function shutdownServices() {
   logger.info('[DorkOS] shutting down services');
+  await testComposioFixture?.close();
+  testComposioFixture = undefined;
   await connectorRuntimeMcpListener?.close();
   connectorRuntimeMcpListener = undefined;
   if (healthCheckInterval) {
@@ -4074,7 +4462,10 @@ process.on('unhandledRejection', (reason) => {
   void captureServerError(reason);
 });
 
-start().catch((err) => {
+start().catch(async (err) => {
+  // A later startup failure must not leave the owned offline listener running.
+  await testComposioFixture?.close();
+  testComposioFixture = undefined;
   // Two startup failures are addressed to the operator rather than to whoever
   // maintains DorkOS: a database that will not open, and a backup that could not
   // be written. Both carry instructions in their message and both are resolved

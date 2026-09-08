@@ -214,9 +214,10 @@ FILTERED_SPECS=(
 #     `supportsCostTracking: false` are the whole available surface. Same
 #     directory as the two chat modules above, and the extension matters for the
 #     same reason — `tests/chat/` is otherwise a cockpit-leg directory.
-#   connections/owner-management.ts — owner review, permission changes, and
-#     session access. Registered into connections.spec.ts on its sequential
-#     worker because those tests share connection credentials and reset state.
+#   connections/owner-management.ts and connections/event-notifications.ts —
+#     owner review, permission changes, notification delivery, and session
+#     access. Registered into connections.spec.ts on its sequential worker
+#     because those tests share connection credentials and reset state.
 REGISTERED_MODULES=(
   'chat/compaction.ts'
   'chat/composer-escape-and-ime.ts'
@@ -225,6 +226,7 @@ REGISTERED_MODULES=(
   'chat/live-turn-visibility.ts'
   'chat/runtime-capability-parity.ts'
   'chat/session-read-state.ts'
+  'connections/event-notifications.ts'
   'connections/owner-management.ts'
   'conversation/ask-anywhere.ts'
   'conversation/ask-parks.ts'

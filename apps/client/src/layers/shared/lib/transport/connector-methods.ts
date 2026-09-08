@@ -12,9 +12,22 @@
  */
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
 import type {
+  ConnectorAgentRequestAuthenticationInput,
+  ConnectorAgentRequestDecision,
+} from '@dorkos/shared/connector-agent-request-schemas';
+import type {
+  ConfigureConnectionEventSource,
+  ConnectionEventDefinitionPage,
+  ConnectionEventSourceStatus,
+  ConnectionEventSubscription,
+  ConnectionEventSubscriptionPage,
+  CreateConnectionEventSubscription,
+} from '@dorkos/shared/connector-event-schemas';
+import type {
   ConnectionId,
   ConnectorAccessibleConnectionsResponse,
   ConnectorAccessibleOperationsResponse,
+  ConnectorAgentRequestItem,
   ConnectorExecutionResponse,
   ConnectorManagementReviewCreateRequest,
   ConnectorManagementReviewDecision,
@@ -27,7 +40,7 @@ import type {
   ConnectorReconciliationPreviewRequest,
   ConnectorUsagePage,
 } from '@dorkos/shared/connector-schemas';
-import { fetchJSON, buildQueryString } from './http-client';
+import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import type {
   ConnectorAgentConnections,
   ConnectorAuthenticationFlowCreateRequest,
@@ -83,6 +96,65 @@ export function createConnectorMethods(baseUrl: string) {
       return fetchJSON<ConnectorConnectionDetail>(
         baseUrl,
         `/connectors/connections/${encodeURIComponent(connectionId)}`
+      );
+    },
+
+    listConnectionEventDefinitions(
+      connectionId: string,
+      cursor?: string
+    ): Promise<ConnectionEventDefinitionPage> {
+      const qs = buildQueryString({ cursor });
+      return fetchJSON<ConnectionEventDefinitionPage>(
+        baseUrl,
+        `/connectors/connections/${encodeURIComponent(connectionId)}/events/definitions${qs}`
+      );
+    },
+
+    listConnectionEventSubscriptions(
+      connectionId: string,
+      cursor?: string
+    ): Promise<ConnectionEventSubscriptionPage> {
+      const qs = buildQueryString({ cursor });
+      return fetchJSON<ConnectionEventSubscriptionPage>(
+        baseUrl,
+        `/connectors/connections/${encodeURIComponent(connectionId)}/events/subscriptions${qs}`
+      );
+    },
+
+    createConnectionEventSubscription(
+      connectionId: string,
+      input: CreateConnectionEventSubscription
+    ): Promise<ConnectionEventSubscription> {
+      return fetchJSON<ConnectionEventSubscription>(
+        baseUrl,
+        `/connectors/connections/${encodeURIComponent(connectionId)}/events/subscriptions`,
+        { method: 'POST', body: JSON.stringify(input) }
+      );
+    },
+
+    deleteConnectionEventSubscription(connectionId: string, subscriptionId: string): Promise<void> {
+      return fetchNoContent(
+        baseUrl,
+        `/connectors/connections/${encodeURIComponent(connectionId)}/events/subscriptions/${encodeURIComponent(subscriptionId)}`,
+        { method: 'DELETE' }
+      );
+    },
+
+    getConnectionEventSource(connectionId: string): Promise<ConnectionEventSourceStatus> {
+      return fetchJSON<ConnectionEventSourceStatus>(
+        baseUrl,
+        `/connectors/connections/${encodeURIComponent(connectionId)}/events/source`
+      );
+    },
+
+    configureConnectionEventSource(
+      connectionId: string,
+      input: ConfigureConnectionEventSource
+    ): Promise<ConnectionEventSourceStatus> {
+      return fetchJSON<ConnectionEventSourceStatus>(
+        baseUrl,
+        `/connectors/connections/${encodeURIComponent(connectionId)}/events/source`,
+        { method: 'PUT', body: JSON.stringify(input) }
       );
     },
 
@@ -268,6 +340,55 @@ export function createConnectorMethods(baseUrl: string) {
         baseUrl,
         `/connectors/reviews/${encodeURIComponent(reviewRequestId)}/decision`,
         { method: 'POST', body: JSON.stringify(input) }
+      );
+    },
+
+    getConnectorAgentRequests(
+      state?: 'pending' | 'resolved'
+    ): Promise<ConnectorAgentRequestItem[]> {
+      const qs = buildQueryString({ state });
+      return fetchJSON<{ requests: ConnectorAgentRequestItem[] }>(
+        baseUrl,
+        `/connectors/agent-requests${qs}`
+      ).then((response) => response.requests);
+    },
+
+    getConnectorAgentRequest(requestId: string): Promise<ConnectorAgentRequestItem> {
+      return fetchJSON<ConnectorAgentRequestItem>(
+        baseUrl,
+        `/connectors/agent-requests/${encodeURIComponent(requestId)}`
+      );
+    },
+
+    resolveConnectorAgentRequest(
+      requestId: string,
+      input: ConnectorAgentRequestDecision
+    ): Promise<ConnectorAgentRequestItem> {
+      return fetchJSON<ConnectorAgentRequestItem>(
+        baseUrl,
+        `/connectors/agent-requests/${encodeURIComponent(requestId)}/decision`,
+        { method: 'POST', body: JSON.stringify(input) }
+      );
+    },
+
+    startConnectorAgentRequestAuthentication(
+      requestId: string,
+      input: ConnectorAgentRequestAuthenticationInput
+    ): Promise<ConnectorAuthenticationFlowState> {
+      return fetchJSON<ConnectorAuthenticationFlowState>(
+        baseUrl,
+        `/connectors/agent-requests/${encodeURIComponent(requestId)}/authentication-flows`,
+        { method: 'POST', body: JSON.stringify(input) }
+      );
+    },
+
+    pollConnectorAgentRequestAuthentication(
+      requestId: string,
+      flowId: string
+    ): Promise<ConnectorAuthenticationFlowState> {
+      return fetchJSON<ConnectorAuthenticationFlowState>(
+        baseUrl,
+        `/connectors/agent-requests/${encodeURIComponent(requestId)}/authentication-flows/${encodeURIComponent(flowId)}`
       );
     },
   };

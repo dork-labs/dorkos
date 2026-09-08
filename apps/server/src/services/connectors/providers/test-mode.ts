@@ -284,13 +284,6 @@ export class TestModeConnectorProvider implements ConnectorProvider {
     };
   }
 
-  listTriggerTypes(_toolkit: string) {
-    return Promise.resolve({
-      status: 'unsupported' as const,
-      reason: 'Test mode triggers are unavailable.',
-    });
-  }
-
   listToolkits(): Promise<ConnectorToolkit[]> {
     return Promise.resolve([...TEST_TOOLKITS]);
   }

@@ -931,6 +931,16 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getConnectorCatalog: vi.fn().mockResolvedValue({ services: [], warnings: [] }),
     getConnectorConnections: vi.fn().mockResolvedValue({ connections: [] }),
     getConnectorConnection: vi.fn(),
+    listConnectionEventDefinitions: vi
+      .fn()
+      .mockResolvedValue({ definitions: [], nextCursor: undefined }),
+    listConnectionEventSubscriptions: vi
+      .fn()
+      .mockResolvedValue({ subscriptions: [], nextCursor: undefined }),
+    createConnectionEventSubscription: vi.fn(),
+    deleteConnectionEventSubscription: vi.fn(),
+    getConnectionEventSource: vi.fn(),
+    configureConnectionEventSource: vi.fn(),
     startConnectorAuthentication: vi.fn(),
     pollConnectorAuthentication: vi.fn(),
     renameConnectorConnection: vi.fn(),
@@ -958,6 +968,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getConnectorManagementReviews: vi.fn().mockResolvedValue([]),
     getConnectorManagementReview: vi.fn(),
     resolveConnectorManagementReview: vi.fn(),
+    getConnectorAgentRequests: vi.fn().mockResolvedValue([]),
+    getConnectorAgentRequest: vi.fn(),
+    resolveConnectorAgentRequest: vi.fn(),
+    startConnectorAgentRequestAuthentication: vi.fn(),
+    pollConnectorAgentRequestAuthentication: vi.fn(),
     // Managed per-agent MCP servers (spec `mcp-server-management`, DOR-891).
     // The list reads honest-empty; the writes must be stated by a test that
     // exercises them (an add can resolve to `{ status: 'approval_required' }`).

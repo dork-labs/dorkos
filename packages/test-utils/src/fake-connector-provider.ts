@@ -258,13 +258,6 @@ export class FakeConnectorProvider implements ConnectorProvider {
     return new Promise((resolve) => this.dispatchWaiters.push(resolve));
   }
 
-  listTriggerTypes(_toolkit: string) {
-    return Promise.resolve({
-      status: 'unsupported' as const,
-      reason: 'Fake trigger support is disabled.',
-    });
-  }
-
   listToolkits(): Promise<ConnectorToolkit[]> {
     return Promise.resolve([...this._toolkits]);
   }

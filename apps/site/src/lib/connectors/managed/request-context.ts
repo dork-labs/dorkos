@@ -3,7 +3,10 @@
  *
  * @module lib/connectors/managed/request-context
  */
-import { createComposioHostedClients } from '@dorkos/connector-providers/composio';
+import {
+  ComposioEventClient,
+  createComposioHostedClients,
+} from '@dorkos/connector-providers/composio';
 
 import { getDb } from '@/db/client';
 import { getAuth } from '@/lib/auth';
@@ -53,6 +56,7 @@ export type ManagedConnectorRequestContext =
       materialGeneration: number;
       executionConfigDigest: string;
       db: ReturnType<typeof getDb>;
+      events?: ComposioEventClient;
       operations: ReturnType<typeof createComposioHostedClients>['operations'];
       accounts: ReturnType<typeof createComposioHostedClients>['accounts'];
       config: ReturnType<typeof readManagedConnectorConfig>;
@@ -106,6 +110,14 @@ export async function resolveManagedConnectorRequest(
     materialGeneration,
     executionConfigDigest: clients.executionConfigDigest,
     db,
+    ...(managedCapabilityAvailability(config, 'events').status === 'available' && {
+      events: new ComposioEventClient({
+        apiKey: config.projectApiKey!,
+        serverUserId: tenant.providerUserId,
+        webhookSecret: config.webhookSecret,
+        ...(config.apiOrigin && { baseUrl: config.apiOrigin }),
+      }),
+    }),
     operations: clients.operations,
     accounts: clients.accounts,
     config,

@@ -73,6 +73,8 @@ describe('createConnectorRuntimeMcpServer', () => {
       tools: [
         { name: 'connectors.list_granted_connections' },
         { name: 'connectors.list_granted_operations' },
+        { name: 'connectors.request_connection' },
+        { name: 'connectors.get_connection_request' },
         { name: 'connectors.execute_read' },
         { name: 'connectors.execute_write' },
         { name: 'connectors.execute_destructive' },
@@ -115,6 +117,85 @@ describe('createConnectorRuntimeMcpServer', () => {
       expect.objectContaining({ serverPrincipal: principal })
     );
 
+    await Promise.all([client.close(), server.close()]);
+  });
+
+  it('creates and checks only principal-bound owner requests without account selectors', async () => {
+    const principal = createServerPrincipal({
+      kind: 'runtime',
+      owner: OWNER,
+      bindingId: 'binding-request',
+      runtime: 'codex',
+      canonicalSessionId: 'session-request',
+      agentId: 'agent-request',
+      agentPath: '/agents/request',
+      canonicalCwd: '/agents/request',
+    });
+    const status = {
+      requestId: 'request-a',
+      reviewUrl: '/connections?request=request-a',
+      serviceSlug: 'gmail',
+      reason: 'Read a message needed for this task.',
+      requestedOperations: ['gmail.read'],
+      requestedEvents: [],
+      createdAt: '2026-09-07T12:00:00.000Z',
+      expiresAt: '2026-09-07T14:00:00.000Z',
+      status: 'awaiting_owner' as const,
+    };
+    const create = vi.fn(async () => status);
+    const waitForResolution = vi.fn(async () => ({ ...status, status: 'denied' as const }));
+    const getForRuntime = vi.fn(async () => ({ ...status, status: 'denied' as const }));
+    const capabilityRegistry = composeRegistry([connectorExecutionDomain], {
+      logger: noopLogger,
+      connectorExecutionDeps: {
+        authorization: {} as never,
+        broker: {} as never,
+        access: {} as never,
+        requests: { create, waitForResolution, getForRuntime } as never,
+      },
+    });
+    const server = createConnectorRuntimeMcpServer(capabilityRegistry, principal);
+    const client = new Client({ name: 'connector-request-test', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
+
+    const requestTool = (await client.listTools()).tools.find(
+      (tool) => tool.name === 'connectors.request_connection'
+    );
+    expect(requestTool?.inputSchema).toMatchObject({
+      properties: { requestedEvents: { maxItems: 32 } },
+    });
+
+    const result = payload(
+      await client.callTool({
+        name: 'connectors.request_connection',
+        arguments: {
+          version: 1,
+          serviceSlug: 'gmail',
+          reason: status.reason,
+          requestedOperations: ['gmail.read'],
+          requestedEvents: [],
+        },
+      })
+    );
+    expect(result).toMatchObject({ requestId: 'request-a', status: 'denied' });
+    expect(create).toHaveBeenCalledWith(
+      principal,
+      expect.objectContaining({ serviceSlug: 'gmail' })
+    );
+    expect(waitForResolution).toHaveBeenCalledWith(principal, 'request-a', expect.anything());
+
+    await client.callTool({
+      name: 'connectors.get_connection_request',
+      arguments: { requestId: 'request-a' },
+    });
+    expect(getForRuntime).toHaveBeenCalledWith(principal, 'request-a');
+
+    const forbidden = await client.callTool({
+      name: 'connectors.get_connection_request',
+      arguments: { requestId: 'request-a', agentId: 'agent-other' },
+    });
+    expect(forbidden.isError).toBe(true);
     await Promise.all([client.close(), server.close()]);
   });
 
@@ -223,6 +304,11 @@ describe('createConnectorRuntimeMcpServer', () => {
         broker: new ConnectorExecutionBroker(authorization, new ConnectorUsageStore(db), {
           revalidate: (principal) => principals.revalidatePrincipal(principal),
         }),
+        requests: {
+          create: vi.fn(),
+          getForRuntime: vi.fn(),
+          waitForResolution: vi.fn(),
+        } as never,
       },
     });
     const server = createConnectorRuntimeMcpServer(capabilityRegistry, resolved.principal);

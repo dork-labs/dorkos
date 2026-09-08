@@ -24,7 +24,7 @@
  * @module services/session/message-queue-store
  */
 import { randomUUID } from 'node:crypto';
-import { sessionMessageQueue, eq, inArray, max, type Db } from '@dorkos/db';
+import { sessionMessageQueue, eq, inArray, max, type Db, type DbTransaction } from '@dorkos/db';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import { ClientContextSchema } from '@dorkos/shared/additional-context';
 import type { MessageDisposition, QueuedMessage } from '@dorkos/shared/schemas';
@@ -172,19 +172,21 @@ export class MessageQueueStore {
    * refresh, a second window, a failed turn, and a restart.
    *
    * @param input - The message, its sender, and the disposition asked for
+   * @param tx - Existing transaction when acceptance spans more than this table
    */
-  enqueue(input: EnqueueInput): QueuedMessageRecord {
+  enqueue(input: EnqueueInput, tx?: DbTransaction): QueuedMessageRecord {
+    const executor = tx ?? this.db;
     const row: SessionMessageQueueRow = {
       id: input.id ?? randomUUID(),
       sessionId: input.sessionId,
-      position: this.nextPosition(input.sessionId),
+      position: this.nextPosition(input.sessionId, executor),
       content: input.content,
       disposition: input.disposition ?? 'queue',
       clientId: input.clientId,
       enqueuedAt: Date.now(),
       contextJson: input.context ? JSON.stringify(input.context) : null,
     };
-    this.db.insert(sessionMessageQueue).values(row).run();
+    executor.insert(sessionMessageQueue).values(row).run();
     return toRecord(row);
   }
 
@@ -214,11 +216,13 @@ export class MessageQueueStore {
    * 404 at the route and a no-op everywhere else.
    *
    * @param messageId - The server-minted message id
+   * @param tx - Existing transaction when removal advances a durable receipt
    */
-  remove(messageId: string): QueuedMessageRecord | undefined {
-    const row = this.row(messageId);
+  remove(messageId: string, tx?: DbTransaction): QueuedMessageRecord | undefined {
+    const executor = tx ?? this.db;
+    const row = this.row(messageId, executor);
     if (!row) return undefined;
-    this.db.delete(sessionMessageQueue).where(eq(sessionMessageQueue.id, messageId)).run();
+    executor.delete(sessionMessageQueue).where(eq(sessionMessageQueue.id, messageId)).run();
     return toRecord(row);
   }
 
@@ -417,8 +421,11 @@ export class MessageQueueStore {
   }
 
   /** One row by message id. */
-  private row(messageId: string): SessionMessageQueueRow | undefined {
-    return this.db
+  private row(
+    messageId: string,
+    executor: Db | DbTransaction = this.db
+  ): SessionMessageQueueRow | undefined {
+    return executor
       .select()
       .from(sessionMessageQueue)
       .where(eq(sessionMessageQueue.id, messageId))
@@ -426,9 +433,9 @@ export class MessageQueueStore {
   }
 
   /** The position one full step past a session's current tail. */
-  private nextPosition(sessionId: string): number {
+  private nextPosition(sessionId: string, executor: Db | DbTransaction = this.db): number {
     const tail =
-      this.db
+      executor
         .select({ value: max(sessionMessageQueue.position) })
         .from(sessionMessageQueue)
         .where(eq(sessionMessageQueue.sessionId, sessionId))

@@ -13,6 +13,7 @@ import { ConnectionsPage } from '../../pages/ConnectionsPage.js';
 import { RightPanelPage } from '../../pages/RightPanelPage.js';
 import { describeViolation, runAxe } from '../../axe.js';
 import { registerOwnerManagementTests } from './owner-management.js';
+import { registerEventNotificationTests } from './event-notifications.js';
 
 /**
  * Browser proof of canonical Connections resources, driven against the
@@ -340,6 +341,7 @@ async function settleFiniteAnimations(locator: Locator): Promise<void> {
 }
 
 registerOwnerManagementTests({ apiUrl: API_URL, connectWorkAccountViaApi, gotoConnections });
+registerEventNotificationTests({ apiUrl: API_URL, gotoConnections });
 
 test.describe('Connections — session access status', () => {
   test('shows canonical agent access read-only and links to the exact access editor', async ({

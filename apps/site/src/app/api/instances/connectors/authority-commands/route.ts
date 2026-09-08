@@ -23,6 +23,7 @@ export async function POST(request: Request): Promise<Response> {
     body = await request.json();
     const result = await applyManagedAuthorityCommand(context.db, context.principal, body, {
       accounts: context.accounts,
+      events: context.events,
       providerUserId: context.providerUserId,
       materialGeneration: context.materialGeneration,
       executionConfigDigest: context.executionConfigDigest,

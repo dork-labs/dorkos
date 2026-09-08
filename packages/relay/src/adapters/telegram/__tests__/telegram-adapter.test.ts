@@ -1,3 +1,5 @@
+import { sendPrivateTelegramNotification } from '../private-notification.js';
+vi.mock('../private-notification.js', () => ({ sendPrivateTelegramNotification: vi.fn() }));
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TelegramAdapter, TELEGRAM_MANIFEST } from '../index.js';
 import type { RelayPublisher, RelayLogger, Unsubscribe } from '../../../types.js';
@@ -320,6 +322,29 @@ describe('TelegramAdapter', () => {
   });
 
   // --- Identity ---
+
+  it.each(['stop', 'restart'] as const)(
+    'fences a private notification when the native client changes via %s',
+    async (action) => {
+      await adapter.start(mockRelay);
+      const source = vi.fn(() => true);
+      vi.mocked(sendPrivateTelegramNotification).mockImplementationOnce(async (input) => {
+        await adapter.stop();
+        if (action === 'restart') await adapter.start(mockRelay);
+        return input.authorizeDispatch()
+          ? { state: 'delivered', receiptId: 'unexpected' }
+          : { state: 'refused' };
+      });
+      expect(
+        await adapter.deliverPrivateNotification(
+          'relay.human.telegram.tg1.-100123',
+          'private',
+          source
+        )
+      ).toEqual({ state: 'refused' });
+      expect(source).not.toHaveBeenCalled();
+    }
+  );
 
   it('has correct id, subjectPrefix, and displayName', () => {
     expect(adapter.id).toBe('tg1');

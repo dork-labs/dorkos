@@ -1,3 +1,8 @@
+import { createHash } from 'node:crypto';
+import { stableStringify } from '@dorkos/shared/capabilities';
+import { ConnectorSubscriptionStore } from '../events/subscription-store.js';
+import { ConnectorSubscriptionService } from '../events/subscription-service.js';
+import { ConnectorEventGrantService } from '../events/grant-service.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectionOperationGrants,
@@ -51,6 +56,11 @@ function statusFor(
         scopeVersion: command.scopeVersion,
         state,
         externalCleanup: 'not_required',
+        ...(command.kind === 'set_event_subscription' && {
+          appliedEventScopeHash: createHash('sha256')
+            .update(stableStringify(command))
+            .digest('hex'),
+        }),
       };
 }
 
@@ -74,12 +84,9 @@ describe('ManagedAuthoritySyncService', () => {
     });
     registry.register(
       new FakeConnectorProvider({ instanceId: PROVIDER_ID, custody: 'managed' }),
-      'managed-material-a'
+      'managed-material-a',
+      'managed'
     );
-    db.update(connectorProviderInstances)
-      .set({ mode: 'managed' })
-      .where(eq(connectorProviderInstances.id, PROVIDER_ID))
-      .run();
     db.insert(connections)
       .values({
         id: CONNECTION_ID,
@@ -154,6 +161,151 @@ describe('ManagedAuthoritySyncService', () => {
       signal: new AbortController().signal,
     });
   }
+
+  function eventReview(sync = service()) {
+    const store = new ConnectorSubscriptionStore(db);
+    const [definition] = store.discover(
+      store.connection(OWNER, CONNECTION_ID),
+      [
+        {
+          eventType: 'GMAIL_NEW_MESSAGE',
+          displayName: 'New message',
+          toolkit: 'gmail',
+          toolkitVersion: 'v1',
+          definitionHash: `sha256:${'a'.repeat(64)}`,
+          filterSchema: { type: 'object', properties: {}, additionalProperties: false },
+          payloadSchema: { type: 'object' },
+          deliveryMode: 'polling',
+          expectedCadenceSeconds: null,
+          providerDefinitionRef: '10000000-0000-4000-8000-000000000099',
+        },
+      ],
+      new Date(clock).toISOString()
+    );
+    const destinations = { authorize: () => true };
+    const subscriptions = new ConnectorSubscriptionService(
+      store,
+      { resolveProviderInstance: () => undefined },
+      destinations
+    );
+    const grants = new ConnectorEventGrantService(
+      store,
+      subscriptions,
+      destinations,
+      {
+        reconcile: (id, version, signal) => sync.reconcileEventSubscription(id, version, signal),
+        ready: (id, version) => sync.eventSubscriptionReady(id, version),
+      },
+      () => new Date(clock).toISOString()
+    );
+    const review = {
+      reviewId: 'durable-owner-event-review',
+      scopes: [
+        {
+          connectionId: CONNECTION_ID,
+          definitionId: definition!.id,
+          filter: {},
+          agentId: 'agent-a',
+          destination: { kind: 'agent' as const, id: 'agent-a' },
+        },
+      ],
+    };
+    return { store, grants, review, sync, signal: new AbortController().signal };
+  }
+
+  it('activates managed receive consent only through its exact full outbox ACK', async () => {
+    const f = eventReview();
+    const result = await f.grants.approve(OWNER, f.review, f.signal);
+    expect(result.state).toBe('ready');
+    if (result.state !== 'ready') throw new Error('Event was not acknowledged');
+    expect(submitted).toHaveLength(1);
+    expect(submitted[0]).toMatchObject({
+      kind: 'set_event_subscription',
+      subscriptionVersion: 1,
+      scopeVersion: 1,
+      hostedDefinitionId: '10000000-0000-4000-8000-000000000099',
+      agentId: 'agent-a',
+      destination: { kind: 'agent', id: 'agent-a' },
+      filter: {},
+      enabled: true,
+    });
+    expect(f.grants.ready(OWNER, result.selections, result.appliedEventScopeHash)).toBe(true);
+    expect(await f.grants.approve(OWNER, f.review, f.signal)).toEqual(result);
+    expect(submitted).toHaveLength(1);
+  });
+  it('refuses a successful-looking ACK with a different reviewed destination hash', async () => {
+    const f = eventReview();
+    vi.mocked(cloud.submitConnectorAuthorityCommand).mockImplementation(async (command) => ({
+      ...statusFor(command),
+      appliedEventScopeHash: '0'.repeat(64),
+    }));
+    const result = await f.grants.approve(OWNER, f.review, f.signal);
+    expect(result.state).toBe('pending');
+    expect(f.store.active(result.selections[0]!.subscriptionId)).toBeUndefined();
+    expect(db.select().from(connectorManagedAuthorityOutbox).get()?.state).not.toBe('applied');
+  });
+  it('stages agent-wide receive revocation through existing recovery and old approval cannot reopen it', async () => {
+    const f = eventReview();
+    const result = await f.grants.approve(OWNER, f.review, f.signal);
+    if (result.state !== 'ready') throw new Error('Event was not acknowledged');
+    f.sync.stageAgentAccessRemoval({
+      connectionId: CONNECTION_ID,
+      managedConnectionId: MANAGED_CONNECTION_ID,
+      agentId: 'agent-a',
+      providerInstanceId: PROVIDER_ID,
+      executionConfigGeneration: 1,
+      owner: OWNER,
+    });
+    expect(f.grants.ready(OWNER, result.selections, result.appliedEventScopeHash)).toBe(false);
+    expect(await f.grants.approve(OWNER, f.review, f.signal)).toEqual({
+      state: 'unavailable',
+      selections: result.selections,
+    });
+    await f.sync.recoverPending(f.signal);
+    const disable = submitted.find(
+      (command) => command.kind === 'set_event_subscription' && !command.enabled
+    );
+    expect(disable).toMatchObject({
+      subscriptionId: result.selections[0]!.subscriptionId,
+      subscriptionVersion: 2,
+      scopeVersion: 2,
+    });
+    const count = submitted.length;
+    await f.sync.recoverPending(f.signal);
+    expect(submitted).toHaveLength(count);
+  });
+  it('keeps separately approved event consent when only operation grants are removed', async () => {
+    const f = eventReview();
+    const result = await f.grants.approve(OWNER, f.review, f.signal);
+    if (result.state !== 'ready') throw new Error('Event was not acknowledged');
+    await replace(f.sync);
+    await f.sync.replaceAgentGrants({
+      connectionId: CONNECTION_ID,
+      managedConnectionId: MANAGED_CONNECTION_ID,
+      agentId: 'agent-a',
+      revisions: [],
+      operationRevisionIds: [],
+      providerInstanceId: PROVIDER_ID,
+      executionConfigGeneration: 1,
+      owner: OWNER,
+      signal: f.signal,
+    });
+    expect(f.grants.ready(OWNER, result.selections, result.appliedEventScopeHash)).toBe(true);
+    expect(submitted.filter((command) => command.kind === 'set_event_subscription')).toHaveLength(
+      1
+    );
+  });
+  it('does not apply an old hosted ACK after local receive revocation while the request was in flight', async () => {
+    const f = eventReview();
+    vi.mocked(cloud.submitConnectorAuthorityCommand).mockImplementation(async (command) => {
+      if (command.kind === 'set_event_subscription')
+        f.store.revoke(OWNER, command.subscriptionId, new Date(clock).toISOString());
+      return statusFor(command);
+    });
+    const result = await f.grants.approve(OWNER, f.review, f.signal);
+    expect(result.state).toBe('unavailable');
+    expect(f.store.active(result.selections[0]!.subscriptionId)).toBeUndefined();
+  });
 
   it('activates only the exact hosted revision even when retired metadata matches again', async () => {
     const current = db

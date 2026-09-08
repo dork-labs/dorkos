@@ -157,9 +157,14 @@ import type { CloudLinkStatus, CloudLinkSummary, StartLinkResult } from './cloud
 import type { FeedbackListItem, FeedbackSubmission } from './telemetry-events.js';
 import type { ConnectorProviderStatus } from './connector-provider.js';
 import type {
+  ConnectorAgentRequestAuthenticationInput,
+  ConnectorAgentRequestDecision,
+} from './connector-agent-request-schemas.js';
+import type {
   ConnectionId,
   ConnectorAccessibleConnectionsResponse,
   ConnectorAccessibleOperationsResponse,
+  ConnectorAgentRequestItem,
   ConnectorExecutionResponse,
   ConnectorManagementReviewCreateRequest,
   ConnectorManagementReviewDecision,
@@ -186,6 +191,14 @@ import type {
   ConnectorReconnectRequest,
   ConnectorSessionConnections,
 } from './connector-resource-schemas.js';
+import type {
+  ConfigureConnectionEventSource,
+  ConnectionEventDefinitionPage,
+  ConnectionEventSourceStatus,
+  ConnectionEventSubscription,
+  ConnectionEventSubscriptionPage,
+  CreateConnectionEventSubscription,
+} from './connector-event-schemas.js';
 
 /** A single entry in the adapter list — config plus live status. */
 export interface AdapterListItem {
@@ -2460,6 +2473,36 @@ export interface Transport extends RoomTransport {
   /** Read owner-visible detail for one stable connection. */
   getConnectorConnection(connectionId: string): Promise<ConnectorConnectionDetail>;
 
+  /** Read one bounded page of immutable notification definitions for a connection. */
+  listConnectionEventDefinitions(
+    connectionId: string,
+    cursor?: string
+  ): Promise<ConnectionEventDefinitionPage>;
+
+  /** Read one bounded page of current and revoked notification subscriptions. */
+  listConnectionEventSubscriptions(
+    connectionId: string,
+    cursor?: string
+  ): Promise<ConnectionEventSubscriptionPage>;
+
+  /** Create one explicit owner-approved notification route. */
+  createConnectionEventSubscription(
+    connectionId: string,
+    input: CreateConnectionEventSubscription
+  ): Promise<ConnectionEventSubscription>;
+
+  /** Revoke one exact notification subscription. */
+  deleteConnectionEventSubscription(connectionId: string, subscriptionId: string): Promise<void>;
+
+  /** Read secret-free notification source setup declared by the server. */
+  getConnectionEventSource(connectionId: string): Promise<ConnectionEventSourceStatus>;
+
+  /** Store write-only signing setup when the server declares a BYO webhook source. */
+  configureConnectionEventSource(
+    connectionId: string,
+    input: ConfigureConnectionEventSource
+  ): Promise<ConnectionEventSourceStatus>;
+
   /** Start one restart-safe idempotent provider authentication flow. */
   startConnectorAuthentication(
     input: ConnectorAuthenticationFlowCreateRequest
@@ -2554,6 +2597,30 @@ export interface Transport extends RoomTransport {
     reviewRequestId: string,
     input: ConnectorManagementReviewDecision
   ): Promise<ConnectorManagementReviewDecisionResult>;
+
+  /** List owner-visible service requests raised by runtime agents. */
+  getConnectorAgentRequests(state?: 'pending' | 'resolved'): Promise<ConnectorAgentRequestItem[]>;
+
+  /** Read one exact owner-visible agent service request. */
+  getConnectorAgentRequest(requestId: string): Promise<ConnectorAgentRequestItem>;
+
+  /** Deny or grant an exact account and access set for one agent request. */
+  resolveConnectorAgentRequest(
+    requestId: string,
+    input: ConnectorAgentRequestDecision
+  ): Promise<ConnectorAgentRequestItem>;
+
+  /** Start account authentication in the context of one exact agent request. */
+  startConnectorAgentRequestAuthentication(
+    requestId: string,
+    input: ConnectorAgentRequestAuthenticationInput
+  ): Promise<ConnectorAuthenticationFlowState>;
+
+  /** Poll only the authentication flow durably associated with one agent request. */
+  pollConnectorAgentRequestAuthentication(
+    requestId: string,
+    flowId: string
+  ): Promise<ConnectorAuthenticationFlowState>;
 
   // --- The claim feed (connection-scoping spec §Part 3) ---
 

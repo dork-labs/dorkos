@@ -97,6 +97,10 @@ import { withStallGuard } from './stall-guard.js';
 import { SESSIONS } from '../../config/constants.js';
 import { startSpan, SPAN, ATTR } from '../observability/index.js';
 import { logError, logger } from '../../lib/logger.js';
+import type {
+  ClaimedPrivateSessionMessage,
+  PreparedPrivateSessionMessage,
+} from './private-messages/acceptance.js';
 
 /**
  * The `seq`-less shape of a single {@link SessionEvent} member, selected by its
@@ -387,6 +391,17 @@ export interface TriggerTurnDeps {
    * to omit any context kind the runtime injects itself.
    */
   getCapabilities(): RuntimeCapabilities;
+  /** Resolve minimized protected content before the final synchronous preflight. */
+  preparePrivateMessage?(receiptId: string): Promise<PreparedPrivateSessionMessage>;
+  /** Revalidate and exclusively claim immediately before the runtime call. */
+  claimPrivateMessage?(
+    receiptId: string,
+    prepared: PreparedPrivateSessionMessage
+  ): ClaimedPrivateSessionMessage;
+  /** Cancel an accepted receipt when final authority fails before any runtime effect. */
+  cancelPrivateMessage?(receiptId: string, reason: string): void;
+  /** Quarantine a claim if no turn start can be observed. */
+  markPrivateOutcomeUnknown?(receiptId: string, reason: string): void;
 }
 
 /** Inputs for {@link triggerTurn}. */
@@ -462,6 +477,8 @@ export interface TriggerTurnOpts {
    * been through the dispatcher (there is none in production).
    */
   messageId?: string;
+  /** Server-owned receipt for a protected automatic follow-up. */
+  privateReceiptId?: string;
   /** The projector for `sessionId` (keyed by the client-facing id, which is stable). */
   projector: SessionStateProjector;
   deps: TriggerTurnDeps;
@@ -641,6 +658,8 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   // per-event tap below and recorded when the turn settles.
   const turnSpan = startSpan(SPAN.SESSION_TURN, { [ATTR.SESSION_ID]: sessionId });
   let eventCount = 0;
+  let privateDispatchClaimed = false;
+  let privatePreflightStarted = false;
   let idResolved = false;
   const tryRekey = (): void => {
     if (idResolved) return;
@@ -700,8 +719,19 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // intent, a turn's POST carries no abort signal and so has no client-side
     // deadline to stay under.
     await settleOpenTurnBefore(sessionId, projector, deps, SESSIONS.STRANDED_TURN_SETTLE_MS);
+    let dispatchContent = content;
+    if (opts.privateReceiptId !== undefined) {
+      if (!deps.preparePrivateMessage || !deps.claimPrivateMessage) {
+        throw new Error('Protected session-message preflight is not configured.');
+      }
+      privatePreflightStarted = true;
+      const prepared = await deps.preparePrivateMessage(opts.privateReceiptId);
+      const claimed = deps.claimPrivateMessage(opts.privateReceiptId, prepared);
+      privateDispatchClaimed = true;
+      dispatchContent = claimed.content;
+    }
     const tapped = tapEachEvent(
-      deps.sendMessage(sessionId, content, {
+      deps.sendMessage(sessionId, dispatchContent, {
         // Conditional, on the same idiom as the three below it. A turn with no
         // opinion about its directory must hand the runtime NO cwd, not a `cwd`
         // key holding `undefined`: the session route takes care not to stamp one
@@ -757,7 +787,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // The trigger content rides the turn_start (userMessage) so the EventLog is a
     // self-sufficient history source for log-backed runtimes (ADR-0263).
     const turn = feedProjector(projector, guarded, {
-      userMessage: content,
+      ...(opts.privateReceiptId === undefined ? { userMessage: content } : {}),
       ...(opts.onTurnStart ? { onTurnStart: opts.onTurnStart } : {}),
     })
       // guardTurnErrors already swallows source throws; this catch is the last line
@@ -792,6 +822,11 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // lock and the queue slot back here or this session is wedged for this
     // client until the lock's TTL — and the queue, which has no TTL, forever.
     releaseOnce();
+    if (privateDispatchClaimed && opts.privateReceiptId !== undefined) {
+      deps.markPrivateOutcomeUnknown?.(opts.privateReceiptId, 'runtime_effect_not_observed');
+    } else if (privatePreflightStarted && opts.privateReceiptId !== undefined) {
+      deps.cancelPrivateMessage?.(opts.privateReceiptId, 'authority_changed_before_dispatch');
+    }
     throw err;
   }
 

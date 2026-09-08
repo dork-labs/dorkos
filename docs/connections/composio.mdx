@@ -72,3 +72,19 @@ Connect the same service again and give it a label, like "personal". DorkOS sugg
 Open the account under **Connections**, choose **Agent access**, and select a named agent. Review the exact actions and versions before saving. DorkOS executes only those pinned actions through its broker. If Composio later reports a changed action or schema, the new version stays off until you review it.
 
 If an account expires, connect it again and review access for the new connection. If you paused it yourself, resume it under **Connections**. DorkOS refuses execution until that owner action is complete.
+
+## See an agent's notifications from the terminal
+
+List the notifications an agent is allowed to receive:
+
+```bash
+dorkos connections subscriptions --agent agent-01
+```
+
+Replace `agent-01` with the agent's ID. Add `--json` to include its approved destinations and filters.
+Use `--limit 20` for a shorter page, then pass the returned cursor with `--cursor` to continue.
+
+This command requires your DorkOS API key. It shows only the selected agent's approved notifications, including accounts with no action access.
+It never returns message content or service credentials. Change notification access in the DorkOS app, where the owner reviews it.
+
+Timing depends on the service. Some send notifications directly; others check periodically. An unknown timing means the service has not reported it.

@@ -41,7 +41,7 @@ The main methods are:
 - `startConnect()` and `pollConnect()` perform the reference-only connect flow. Secrets remain behind the adapter.
 - `listAccounts()` and `disconnect(externalAccountRef)` address exact private provider accounts.
 - `execute(command)` receives the exact private account reference and immutable operation revision selected by DorkOS. It must honor the supplied abort signal and return a normalized, secret-free envelope.
-- `listTriggerTypes(toolkit)` returns stable event names, display names, and a JSON Schema for subscription filters.
+- Optional `events: ConnectorEventCapability` supplies bounded immutable `listDefinitions`, exact physical trigger reconciliation and mutation, and raw webhook verification. Its definition metadata preserves actual webhook, polling, or unknown delivery timing; caller intent is never a provider trigger reference. See `packages/shared/src/connector-events.ts` for the complete port and guarded mutation contracts.
 
 ### Stable identity and lifecycle
 

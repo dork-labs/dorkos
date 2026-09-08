@@ -14,6 +14,12 @@ describe('embedded connector authority stubs', () => {
       () => connectorStubs.getAgentConnectorUsage(),
       () => connectorStubs.getOperatorConnectorUsage(),
       () => connectorStubs.getConnectorManagementReviews(),
+      () => connectorStubs.getConnectorAgentRequests(),
+      () =>
+        connectorStubs.startConnectorAgentRequestAuthentication('request-a', {
+          providerInstanceId: 'provider-a' as never,
+        }),
+      () => connectorStubs.pollConnectorAgentRequestAuthentication('request-a', 'flow-a'),
     ];
 
     for (const read of reads) {

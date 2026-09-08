@@ -56,4 +56,87 @@ describe('connector resource transport methods', () => {
     await setup().getSessionConnectorConnections('session/a');
     expect(lastCall()[0].endsWith('/connectors/sessions/session%2Fa/connections')).toBe(true);
   });
+
+  it('uses owner-only agent request routes and forwards the exact decision body', async () => {
+    stubFetch({ requests: [] });
+    await setup().getConnectorAgentRequests('pending');
+    expect(lastCall()[0]).toBe('http://localhost:4242/api/connectors/agent-requests?state=pending');
+
+    stubFetch({ requestId: 'request/a', status: 'denied' });
+    await setup().resolveConnectorAgentRequest('request/a', { decision: 'denied' });
+    const [url, init] = lastCall();
+    expect(url).toBe('http://localhost:4242/api/connectors/agent-requests/request%2Fa/decision');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe(JSON.stringify({ decision: 'denied' }));
+  });
+
+  it('keeps request authentication on its exact encoded owner route', async () => {
+    stubFetch({ state: 'starting', flowId: 'flow/a' });
+    const input = { providerInstanceId: 'provider-a' as never, label: 'Work mail' };
+    await setup().startConnectorAgentRequestAuthentication('request/a', input);
+    const [startUrl, startInit] = lastCall();
+    expect(startUrl).toBe(
+      'http://localhost:4242/api/connectors/agent-requests/request%2Fa/authentication-flows'
+    );
+    expect(startInit.method).toBe('POST');
+    expect(startInit.body).toBe(JSON.stringify(input));
+
+    stubFetch({ state: 'failed', flowId: 'flow/a' });
+    await setup().pollConnectorAgentRequestAuthentication('request/a', 'flow/a');
+    expect(lastCall()[0]).toBe(
+      'http://localhost:4242/api/connectors/agent-requests/request%2Fa/authentication-flows/flow%2Fa'
+    );
+  });
+
+  it('uses exact event discovery, subscription, and source routes', async () => {
+    stubFetch({ definitions: [], nextCursor: 'next/page' });
+    await setup().listConnectionEventDefinitions('connection/a', 'cursor/a');
+    expect(lastCall()[0]).toBe(
+      'http://localhost:4242/api/connectors/connections/connection%2Fa/events/definitions?cursor=cursor%2Fa'
+    );
+
+    stubFetch({ subscriptions: [] });
+    await setup().listConnectionEventSubscriptions('connection/a');
+    expect(lastCall()[0]).toBe(
+      'http://localhost:4242/api/connectors/connections/connection%2Fa/events/subscriptions'
+    );
+
+    const input = {
+      definitionId: 'definition-a',
+      filter: { channel: 'alerts' },
+      agentId: 'agent-a',
+      destination: { kind: 'agent' as const, id: 'agent-a' },
+      requestId: '7337caa2-c19b-4715-aab4-9f33205331f1',
+      manageExistingTrigger: false,
+    };
+    stubFetch({ id: 'subscription-a', state: 'active' });
+    await setup().createConnectionEventSubscription('connection/a', input);
+    expect(lastCall()[0]).toBe(
+      'http://localhost:4242/api/connectors/connections/connection%2Fa/events/subscriptions'
+    );
+    expect(lastCall()[1]).toMatchObject({ method: 'POST', body: JSON.stringify(input) });
+
+    stubFetch(undefined);
+    await setup().deleteConnectionEventSubscription('connection/a', 'subscription/a');
+    expect(lastCall()[0]).toBe(
+      'http://localhost:4242/api/connectors/connections/connection%2Fa/events/subscriptions/subscription%2Fa'
+    );
+    expect(lastCall()[1].method).toBe('DELETE');
+
+    stubFetch({ setupMode: 'managed', configured: false, endpoint: null, reason: null });
+    await setup().getConnectionEventSource('connection/a');
+    expect(lastCall()[0]).toBe(
+      'http://localhost:4242/api/connectors/connections/connection%2Fa/events/source'
+    );
+
+    const source = {
+      webhookSecret: 'synthetic-secret-value',
+      publicOrigin: 'https://local.example',
+    };
+    await setup().configureConnectionEventSource('connection/a', source);
+    expect(lastCall()[0]).toBe(
+      'http://localhost:4242/api/connectors/connections/connection%2Fa/events/source'
+    );
+    expect(lastCall()[1]).toMatchObject({ method: 'PUT', body: JSON.stringify(source) });
+  });
 });

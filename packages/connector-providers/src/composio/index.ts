@@ -18,3 +18,5 @@ export {
   type ComposioHostedClientMaterial,
   type ComposioHostedClients,
 } from './hosted-client-factory.js';
+export { ComposioEventClient, type ComposioEventClientOptions } from './event-client.js';
+export { ComposioWebhookVerifier } from './webhook-verifier.js';

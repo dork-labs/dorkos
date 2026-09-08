@@ -1,6 +1,94 @@
 /** Durable connector event subscription, inbox, and audit schema. */
-import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import {
+  index,
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
 import { connections, connectorProviderInstances } from './connections.js';
+
+/** Immutable event definition reviewed independently from operation grants. */
+export const connectorEventDefinitions = sqliteTable(
+  'connector_event_definitions',
+  {
+    id: text('id').primaryKey(),
+    providerInstanceId: text('provider_instance_id')
+      .notNull()
+      .references(() => connectorProviderInstances.id),
+    toolkit: text('toolkit').notNull(),
+    eventType: text('event_type').notNull(),
+    toolkitVersion: text('toolkit_version').notNull(),
+    definitionHash: text('definition_hash').notNull(),
+    providerDefinitionRef: text('provider_definition_ref').notNull().default(''),
+    definitionJson: text('definition_json').notNull(),
+    current: integer('current', { mode: 'boolean' }).notNull().default(true),
+    discoveredAt: text('discovered_at').notNull(),
+  },
+  (table) => [
+    index('connector_event_definitions_scope_idx').on(
+      table.providerInstanceId,
+      table.toolkit,
+      table.eventType
+    ),
+  ]
+);
+
+/** Separate event secrets and endpoint setup; values are credential references only. */
+export const connectorEventProviderSettings = sqliteTable('connector_event_provider_settings', {
+  providerInstanceId: text('provider_instance_id')
+    .primaryKey()
+    .references(() => connectorProviderInstances.id),
+  webhookSecretRef: text('webhook_secret_ref').notNull(),
+  payloadKeyRef: text('payload_key_ref').notNull(),
+  publicEndpoint: text('public_endpoint').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+/** Private physical trigger shared by transactional logical subscriber references. */
+export const connectorEventBindings = sqliteTable(
+  'connector_event_bindings',
+  {
+    id: text('id').primaryKey(),
+    providerInstanceId: text('provider_instance_id')
+      .notNull()
+      .references(() => connectorProviderInstances.id),
+    providerGeneration: integer('provider_generation').notNull(),
+    externalAccountRef: text('external_account_ref').notNull(),
+    definitionId: text('definition_id')
+      .notNull()
+      .references(() => connectorEventDefinitions.id),
+    filterHash: text('filter_hash').notNull(),
+    filterJson: text('filter_json').notNull(),
+    providerTriggerRef: text('provider_trigger_ref'),
+    providerTriggerUuid: text('provider_trigger_uuid'),
+    externalAccountUuid: text('external_account_uuid'),
+    ownership: text('ownership', { enum: ['borrowed', 'operator_managed', 'managed_project'] })
+      .notNull()
+      .default('borrowed'),
+    state: text('state', { enum: ['pending', 'ready', 'outcome_unknown', 'retired'] })
+      .notNull()
+      .default('pending'),
+    leaseOwner: text('lease_owner'),
+    leasedUntil: text('leased_until'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('connector_event_binding_scope_unique').on(
+      table.providerInstanceId,
+      table.providerGeneration,
+      table.externalAccountRef,
+      table.definitionId,
+      table.filterHash
+    ),
+    index('connector_event_binding_trigger_idx').on(
+      table.providerInstanceId,
+      table.providerTriggerRef
+    ),
+  ]
+);
 
 /** Explicit event subscription owned by one connection and agent. */
 export const connectorEventSubscriptions = sqliteTable(
@@ -14,6 +102,10 @@ export const connectorEventSubscriptions = sqliteTable(
     destinationKind: text('destination_kind', { enum: ['agent', 'room', 'channel'] }).notNull(),
     destinationId: text('destination_id').notNull(),
     eventType: text('event_type').notNull(),
+    definitionId: text('definition_id').references(() => connectorEventDefinitions.id),
+    bindingId: text('binding_id').references(() => connectorEventBindings.id),
+    scopeVersion: integer('scope_version').notNull().default(1),
+    revokedAt: text('revoked_at'),
     filterJson: text('filter_json').notNull(),
     filterHash: text('filter_hash').notNull(),
     deliveryMode: text('delivery_mode').notNull(),
@@ -47,6 +139,7 @@ export const connectorEventInbox = sqliteTable(
       .notNull()
       .references(() => connectorEventSubscriptions.id, { onDelete: 'cascade' }),
     providerEventId: text('provider_event_id').notNull(),
+    subscriptionVersion: integer('subscription_version').notNull().default(1),
     payloadSchemaVersion: integer('payload_schema_version').notNull(),
     normalizedPayload: text('normalized_payload').notNull(),
     payloadProtection: text('payload_protection', { enum: ['minimized', 'encrypted'] }).notNull(),
@@ -57,6 +150,7 @@ export const connectorEventInbox = sqliteTable(
     nextAttemptAt: text('next_attempt_at'),
     expiresAt: text('expires_at').notNull(),
     leaseOwner: text('lease_owner'),
+    leaseBootEpoch: text('lease_boot_epoch'),
     leasedUntil: text('leased_until'),
     receivedAt: text('received_at').notNull(),
     dispatchedAt: text('dispatched_at'),
@@ -100,5 +194,24 @@ export const connectorEventReceipts = sqliteTable(
       table.subscriptionId,
       table.providerEventId
     ),
+  ]
+);
+
+/** Immutable owner-review selections; retries cannot recreate or resurrect consent. */
+export const connectorEventConsentCommands = sqliteTable(
+  'connector_event_consent_commands',
+  {
+    ownerKind: text('owner_kind', { enum: ['user', 'local_install'] }).notNull(),
+    ownerId: text('owner_id').notNull(),
+    reviewId: text('review_id').notNull(),
+    requestHash: text('request_hash').notNull(),
+    selectionsJson: text('selections_json').notNull(),
+    /** Bounded maintenance retry; immutable review identity and selections never change. */
+    recoveryAfter: text('recovery_after'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.ownerKind, table.ownerId, table.reviewId] }),
+    index('connector_event_consent_recovery_idx').on(table.recoveryAfter, table.createdAt),
   ]
 );

@@ -19,6 +19,7 @@
  * @module services/core/auth/cloud-link
  */
 import { createHash } from 'node:crypto';
+import type { ConnectorEventPageRequest } from '@dorkos/shared/connector-events';
 import { configManager } from '../config-manager.js';
 import type {
   ManagedConnectorAuthorityCommand,
@@ -61,6 +62,9 @@ import {
   requestManagedConnectorExecutionReceipt,
   requestManagedConnectorCatalog,
   requestManagedConnectorOperationSchemas,
+  requestManagedConnectorEventDefinitions,
+  requestManagedConnectorEventPull,
+  requestManagedConnectorEventAck,
   requestManagedConnectorToolkitVersion,
   requestManagedConnectorUsage,
   readManagedConnectorAuthorityCommand,
@@ -440,6 +444,51 @@ export class CloudLinkManager {
         request,
         fetchImpl: this.fetchImpl,
         signal,
+      })
+    );
+  }
+
+  /** Discover exact server-owned notification definitions for one service. */
+  listManagedConnectorEventDefinitions(
+    request: Omit<ConnectorEventPageRequest, 'signal'>,
+    signal: AbortSignal
+  ) {
+    return this.withManagedConnectorToken((accessToken) =>
+      requestManagedConnectorEventDefinitions({
+        baseUrl: resolveCloudBaseUrl(),
+        accessToken,
+        request,
+        signal,
+        fetchImpl: this.fetchImpl,
+      })
+    );
+  }
+
+  /** Lease hosted notifications independently of live vendor readiness. */
+  pullManagedConnectorEvents(limit: number, signal: AbortSignal) {
+    return this.withManagedConnectorToken((accessToken) =>
+      requestManagedConnectorEventPull({
+        baseUrl: resolveCloudBaseUrl(),
+        accessToken,
+        limit,
+        signal,
+        fetchImpl: this.fetchImpl,
+      })
+    );
+  }
+
+  /** Confirm exact durable local handoffs; this does not claim destination completion. */
+  acknowledgeManagedConnectorEvents(
+    events: Array<{ id: string; leaseToken: string }>,
+    signal: AbortSignal
+  ) {
+    return this.withManagedConnectorToken((accessToken) =>
+      requestManagedConnectorEventAck({
+        baseUrl: resolveCloudBaseUrl(),
+        accessToken,
+        events,
+        signal,
+        fetchImpl: this.fetchImpl,
       })
     );
   }

@@ -15,6 +15,8 @@ export type ConnectorRuntimeExecutionCapabilityId =
 export const CONNECTOR_RUNTIME_CAPABILITY_IDS = Object.freeze([
   'connectors.list_granted_connections',
   'connectors.list_granted_operations',
+  'connectors.request_connection',
+  'connectors.get_connection_request',
   ...CONNECTOR_RUNTIME_EXECUTION_CAPABILITY_IDS,
 ] as const);
 
@@ -25,7 +27,7 @@ export type ConnectorRuntimeCapabilityId = (typeof CONNECTOR_RUNTIME_CAPABILITY_
  * Test exact membership without prefix inference or broader MCP registration.
  *
  * @param capabilityId - Registry capability identifier.
- * @returns Whether the identifier is one of the five private connector tools.
+ * @returns Whether the identifier is one of the private connector tools.
  */
 export function isConnectorRuntimeCapabilityId(
   capabilityId: string

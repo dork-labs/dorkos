@@ -210,13 +210,17 @@ export const managedConnectorAuthorityCommand = pgTable(
     commandId: text('command_id').notNull(),
     requestHash: text('request_hash').notNull(),
     connectionId: text('connection_id').notNull(),
-    kind: text('kind').notNull().$type<'replace_agent_grants' | 'set_connection_lifecycle'>(),
+    kind: text('kind')
+      .notNull()
+      .$type<'replace_agent_grants' | 'set_connection_lifecycle' | 'set_event_subscription'>(),
     agentId: text('agent_id'),
     scopeKey: text('scope_key').notNull(),
     scopeVersion: integer('scope_version').notNull(),
     requestPayload: jsonb('request_payload').notNull().$type<Record<string, unknown>>(),
     state: text('state').notNull().$type<'pending' | 'applied' | 'rejected' | 'superseded'>(),
     appliedRevisionSetHash: text('applied_revision_set_hash'),
+    appliedEventScopeHash: text('applied_event_scope_hash'),
+    eventBindingId: uuid('event_binding_id'),
     rejectionCode: text('rejection_code'),
     // Captured from the server-owned binding, never supplied by a caller.
     cleanupBinding: jsonb('cleanup_binding').$type<{
@@ -227,6 +231,8 @@ export const managedConnectorAuthorityCommand = pgTable(
       materialGeneration: number;
     }>(),
     cleanupClaimedAt: timestamp('cleanup_claimed_at', { withTimezone: true }),
+    /** Disable-only event maintenance retry, independent of the physical trigger lease. */
+    eventCleanupAfter: timestamp('event_cleanup_after', { withTimezone: true }),
     externalCleanup: text('external_cleanup')
       .notNull()
       .default('not_required')
@@ -239,6 +245,12 @@ export const managedConnectorAuthorityCommand = pgTable(
     // A rejected command for an unknown tenant-scoped connection remains
     // durable and queryable, so this target intentionally has no FK.
     foreignKey({ columns: [table.instanceId], foreignColumns: [instance.id] }).onDelete('cascade'),
+    index('managed_connector_event_cleanup_due').on(
+      table.kind,
+      table.state,
+      table.externalCleanup,
+      table.eventCleanupAfter
+    ),
     index('managed_connector_authority_scope').on(
       table.tenantId,
       table.instanceId,
