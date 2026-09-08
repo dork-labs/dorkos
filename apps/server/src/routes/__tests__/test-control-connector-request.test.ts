@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { readManifest } from '@dorkos/shared/manifest';
 import {
   testControlRouter,
   type ConnectorRuntimeExecutionProbe,
@@ -57,6 +58,55 @@ describe('POST /api/test/connectors/execute-read', () => {
         signal: expect.any(AbortSignal),
       })
     );
+  });
+});
+
+describe('POST /api/test/seed-agent', () => {
+  it('registers a stable denied-access principal in its own bounded fixture slot', async () => {
+    const syncFromDisk = vi.fn().mockResolvedValue('synced');
+    const app = express();
+    app.use(express.json());
+    app.locals.meshCore = { syncFromDisk };
+    app.use('/api/test', testControlRouter);
+    fixtureTarget.mount(app);
+
+    const shared = await request(fixtureServer).post('/api/test/seed-agent').send({});
+    const denied = await request(fixtureServer)
+      .post('/api/test/seed-agent')
+      .send({ slot: 'denied-access' });
+    const repeated = await request(fixtureServer)
+      .post('/api/test/seed-agent')
+      .send({ slot: 'denied-access' });
+
+    expect([shared.status, denied.status, repeated.status]).toEqual([200, 200, 200]);
+    expect(denied.body).toEqual(repeated.body);
+    expect(denied.body.agentId).not.toBe(shared.body.agentId);
+    expect(denied.body.agentDir).not.toBe(shared.body.agentDir);
+    expect(denied.body.agentDir).toBe(`${shared.body.agentDir}-denied-access`);
+    await expect(readManifest(denied.body.agentDir)).resolves.toMatchObject({
+      id: denied.body.agentId,
+      name: 'E2E Denied Agent',
+      runtime: 'codex',
+    });
+    expect(syncFromDisk).toHaveBeenNthCalledWith(1, shared.body.agentDir);
+    expect(syncFromDisk).toHaveBeenNthCalledWith(2, denied.body.agentDir);
+    expect(syncFromDisk).toHaveBeenNthCalledWith(3, denied.body.agentDir);
+  });
+
+  it('refuses caller-defined fixture slots before writing or registering an agent', async () => {
+    const syncFromDisk = vi.fn().mockResolvedValue('synced');
+    const app = express();
+    app.use(express.json());
+    app.locals.meshCore = { syncFromDisk };
+    app.use('/api/test', testControlRouter);
+    fixtureTarget.mount(app);
+
+    const response = await request(fixtureServer)
+      .post('/api/test/seed-agent')
+      .send({ slot: '../outside' });
+
+    expect(response.status).toBe(400);
+    expect(syncFromDisk).not.toHaveBeenCalled();
   });
 });
 

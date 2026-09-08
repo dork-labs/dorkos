@@ -320,7 +320,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       await expect(page.getByRole('heading', { name: 'Agent requests' })).toBeFocused();
 
       const beforeDenial = await listSubscriptions(request, harness.apiUrl, connectionId);
-      const deniedAgent = await createFreshAgent(request, harness.apiUrl, agent.agentDir);
+      const deniedAgent = await seedDeniedAgent(request, harness.apiUrl);
       const deniedCall = startAgentRequest(request, harness.apiUrl, deniedAgent, {
         sessionId: crypto.randomUUID(),
         reason: 'Read more messages for an unrelated follow-up.',
@@ -398,23 +398,12 @@ async function seedAgent(request: APIRequestContext, apiUrl: string): Promise<Se
   return (await result.json()) as SeededAgent;
 }
 
-async function createFreshAgent(
-  request: APIRequestContext,
-  apiUrl: string,
-  baseAgentDir: string
-): Promise<SeededAgent> {
-  const agentDir = `${baseAgentDir}-denied-${crypto.randomUUID()}`;
-  const result = await request.post(`${apiUrl}/api/agents`, {
-    data: {
-      path: agentDir,
-      name: 'E2E Denied Agent',
-      description: 'Requests access that the owner denies.',
-      runtime: 'claude-code',
-    },
+async function seedDeniedAgent(request: APIRequestContext, apiUrl: string): Promise<SeededAgent> {
+  const result = await request.post(`${apiUrl}/api/test/seed-agent`, {
+    data: { slot: 'denied-access' },
   });
-  expect(result.status(), await result.text()).toBe(201);
-  const manifest = (await result.json()) as { id: string };
-  return { agentDir, agentId: manifest.id };
+  expect(result.ok(), await result.text()).toBe(true);
+  return (await result.json()) as SeededAgent;
 }
 
 function startAgentRequest(

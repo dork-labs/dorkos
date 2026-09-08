@@ -467,9 +467,18 @@ testControlRouter.get('/connect-approved', (_req, res) => {
     );
 });
 
+const seedAgentSchema = z
+  .object({
+    slot: z.enum(['shared', 'denied-access']).default('shared'),
+  })
+  .default({ slot: 'shared' });
+
+/** A fixed, enum-bounded test identity slot. */
+type SeedAgentSlot = z.infer<typeof seedAgentSchema>['slot'];
+
 /**
- * Fixture directory for the seeded test agent, derived from the RESOLVED
- * directory boundary so it is in-bounds by construction.
+ * Fixture directory for a seeded test agent, derived from the RESOLVED
+ * directory boundary and a closed slot enum so it is in-bounds by construction.
  *
  * It used to be spelled `os.homedir()/tmp/dorkos-e2e-agent`, which was in-bounds
  * only by coincidence: an unconfigured boundary happens to default to the home
@@ -487,8 +496,9 @@ testControlRouter.get('/connect-approved', (_req, res) => {
  * Resolved per request rather than at module load: `app.ts` imports this router
  * statically, which runs before `initBoundary()` does at startup.
  */
-function e2eAgentDir(): string {
-  return path.join(getBoundary(), 'tmp', 'dorkos-e2e-agent');
+function e2eAgentDir(slot: SeedAgentSlot = 'shared'): string {
+  const suffix = slot === 'shared' ? '' : `-${slot}`;
+  return path.join(getBoundary(), 'tmp', `dorkos-e2e-agent${suffix}`);
 }
 
 /**
@@ -558,8 +568,8 @@ function fixtureAgentId(agentDir: string): string {
 const FIXTURE_AGENT_RUNTIME = 'codex';
 
 /**
- * Seed a test agent at a fixed path inside the directory boundary — on disk
- * AND in the mesh registry.
+ * Seed a test agent in one of two fixed slots inside the directory boundary —
+ * on disk AND in the mesh registry.
  *
  * Overwrites any existing manifest so tests always start with a clean agent.
  * Returns `{ agentDir, agentId }` so the test can navigate to `/?dir=<agentDir>`.
@@ -585,15 +595,20 @@ const FIXTURE_AGENT_RUNTIME = 'codex';
  * uses for a manifest already written by hand: it adopts the id on disk, adds
  * exactly one registry row, and announces nothing.
  *
- * **No cleanup is owed, because none accumulates.** The row is keyed to this
- * one fixed directory and `AgentRegistry.upsert` evicts a different-id row
- * sitting at the same path before inserting — so re-seeding in a per-test
- * `beforeEach` replaces the row rather than stacking rows. `POST /api/test/reset`
- * does not touch mesh, and does not need to.
+ * **No cleanup is owed, because none accumulates.** Each of the two slots maps
+ * to one fixed directory and stable id. Re-seeding replaces that slot's row
+ * rather than stacking rows. `POST /api/test/reset` does not touch mesh, and
+ * does not need to.
  *
  * Refuses when {@link FIXTURE_AGENT_RUNTIME} is registered here — see there.
  */
 testControlRouter.post('/seed-agent', async (req, res) => {
+  const input = seedAgentSchema.safeParse(req.body);
+  if (!input.success) {
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(input.error) });
+  }
   if (runtimeRegistry.has(FIXTURE_AGENT_RUNTIME)) {
     return res.status(500).json({
       error:
@@ -603,12 +618,16 @@ testControlRouter.post('/seed-agent', async (req, res) => {
         `this server does not register.`,
     });
   }
-  const agentDir = e2eAgentDir();
+  const { slot } = input.data;
+  const agentDir = e2eAgentDir(slot);
   const fixtureId = fixtureAgentId(agentDir);
+  const deniedAccess = slot === 'denied-access';
   const manifest: AgentManifest = {
     id: fixtureId,
-    name: 'E2E Test Agent',
-    description: 'Seeded by test setup — runs on the server default runtime',
+    name: deniedAccess ? 'E2E Denied Agent' : 'E2E Test Agent',
+    description: deniedAccess
+      ? 'Requests access that the owner denies.'
+      : 'Seeded by test setup — runs on the server default runtime',
     runtime: FIXTURE_AGENT_RUNTIME,
     capabilities: [],
     // A fixture agent wears a face for the same reason a real one does: no
