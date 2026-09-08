@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "260908-084301",
+      "slug": "harness-sync-status",
+      "title": "Harness Sync status — one status model, a real Skills page, and the drift banner",
+      "created": "2026-09-08",
+      "status": "specified",
+      "project": "Harness Sync",
+      "linearIssue": "DOR-1852"
+    },
+    {
       "id": "260907-171831",
       "slug": "browser-test-pr-leg",
       "title": "The browser suite should red on the PR, not on everyone else's queue entry",
