@@ -8,10 +8,12 @@
  * as an unexpected `removed` entry rather than as an unnoticed side effect
  * (HK-11 is exactly that bug).
  *
- * This is deliberately small. The full fixture DSL the test plan describes
- * (`plans/harness-sync-test-plan.md` §4) lands with DOR-1848; until then a
- * journey stages its own tree with plain `node:fs` calls and uses only
- * {@link snapshotTree} and {@link diffSnapshots} from here.
+ * This module is the SNAPSHOT half. The staging half is `./stage-repo.ts`'s
+ * `stageRepo` (DOR-1848), which builds a whole repository from a declarative
+ * spec; the two are separate because journeys that stage nothing — a clone, an
+ * agent workspace — still snapshot, and because a mid-journey mutation (a person
+ * deleting a link, a harness appearing a month later) is written with
+ * {@link writeFileAt} rather than restaged.
  *
  * @module __tests__/journeys/stage
  */

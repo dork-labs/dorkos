@@ -1,7 +1,7 @@
 {
   "name": "@dorkos/harness",
   "version": "0.0.0",
-  "description": "Cross-agent file projection engine for DorkOS — projects skills, instructions, hooks, and commands from a canonical source to every agent harness.",
+  "description": "Cross-agent file projection engine for DorkOS \u2014 projects skills, instructions, hooks, and commands from a canonical source to every agent harness.",
   "private": true,
   "type": "module",
   "scripts": {
@@ -27,7 +27,8 @@
     "./vendor": {
       "types": "./src/vendor/rulesync-maps.ts",
       "default": "./dist/vendor/rulesync-maps.js"
-    }
+    },
+    "./journeys": "./src/__tests__/journeys/index.ts"
   },
   "dependencies": {
     "@dorkos/marketplace": "workspace:*",
