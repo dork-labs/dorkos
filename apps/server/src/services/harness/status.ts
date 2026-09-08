@@ -155,6 +155,13 @@ export interface BuildHarnessStatusOptions {
    * Only the conflicts are read: a file somebody else owns at a projection
    * target is discovered when the write is attempted, so `applyPlan` is the only
    * thing that can name it. Absent means this is a plain read.
+   *
+   * **Two of `applyPlan`'s conflict paths carry no `reason`** (`apply.ts`'s
+   * symlink-EEXIST and corrupt-merge branches), so the cell they produce is a
+   * `conflict` chip with nothing under it. The state is still the right one and
+   * still changes what the person does, but the sentence is the engine's to
+   * supply — a slice-7 follow-up, not something to invent here, because a reason
+   * this model wrote would be the second voice §1.2 exists to prevent.
    */
   afterWrite?: { conflicts: readonly ProjectionAction[] };
 }
@@ -171,12 +178,21 @@ interface DraftRow {
 /**
  * The key that decides whether two entries are the same file.
  *
- * All three components are load-bearing, and each has a counter-example on the
- * J-01 fixture: two settings files both contribute a hook group named `hooks`
- * (so `source` is needed), two MCP servers share one `.mcp.json` (so `name` is),
- * and a skill and a hook declared in that skill's own frontmatter share a source
- * (so `artifact` is). The separator is a NUL because no path or artifact name
- * can contain one.
+ * Two of the three have a measured counter-example on the J-01 fixture: two
+ * settings files both contribute a hook group named `hooks` (so `source` is
+ * needed), and two MCP servers share one `.mcp.json` (so `name` is).
+ *
+ * `artifact` does NOT, and the spec's stated example for it does not hold: it
+ * offers a skill and a hook declared in that skill's own frontmatter as sharing
+ * a source, but their sources are `.claude/skills/release` and
+ * `.claude/skills/release/SKILL.md` — different strings, which `(source, name)`
+ * already tells apart. Measured on this repository, `(source, name)` and
+ * `(artifact, name)` each yield the same 57 distinct rows the full key does. It
+ * stays in the key as cheap insurance: two kinds sharing one path is a shape the
+ * inventory could grow at any time, and the cost of carrying it is one string
+ * concatenation. (The spec's claim is corrected in slice 8.)
+ *
+ * The separator is a NUL because no path or artifact name can contain one.
  */
 function rowKey(entry: { artifact: string; source?: string; name: string }): string {
   return [entry.artifact, entry.source ?? '', entry.name].join(SEP);
@@ -412,6 +428,12 @@ function manifestFailureDetail(err: unknown): string {
  * never returned here — it belongs to a build with no harness service at all,
  * which is the Obsidian transport's answer rather than this function's.
  *
+ * **A `projectPath` that does not exist reads `not-set-up`**, because the
+ * manifest read fails with `ENOENT` either way and this function cannot tell an
+ * empty project from an absent one. Distinguishing them is the route's job: its
+ * boundary validator resolves and canonicalizes the path before this is called,
+ * and refuses one that leads nowhere.
+ *
  * @param options - the project, the data directory, the decisions to obey, and
  *   what a write that just happened ran into.
  * @returns the full status response, ready to be sent as-is.
@@ -436,13 +458,18 @@ export function buildHarnessStatus(options: BuildHarnessStatusOptions): HarnessS
   const drift = checkPlan(projectPath, plan);
   const inventory = inventorySourceTree(projectPath);
 
-  const enabled = [...manifest.harnesses];
+  // De-duplicated: the manifest is a hand-editable file and `harnesses` is a
+  // plain array, so `["codex", "codex"]` parses. Left alone it draws the column
+  // twice and doubles every count that walks it.
+  const enabledSet = new Set(manifest.harnesses);
+  const enabled = [...enabledSet];
   const rows = buildRows({
     plan,
     drift,
     inventory,
     withheld,
     enabled,
+    enabledSet,
     claudeOnlyNames: new Set(manifest.claudeOnlySkills.map((entry) => entry.name)),
     conflicts: afterWrite?.conflicts ?? [],
   });
@@ -471,27 +498,56 @@ export function buildHarnessStatus(options: BuildHarnessStatusOptions): HarnessS
     },
     sweepPreview: [...drift.orphans],
     rows,
-    projectLevel: projectLevelEntries(plan),
+    projectLevel: projectLevelEntries(plan, enabledSet),
     pendingApproval: withheld.map(pendingApprovalEntry),
   };
 }
 
 /**
- * Everything the plan said that is about no harness at all.
+ * Whether a warning is really about a harness this project runs.
  *
- * `harnessAgnostic` is the discriminator and `source` is not a proxy for it: a
- * plugin-layer drop carries no source, and the unreadable-hook warning carries
- * one and is still agnostic. Filing either under a harness would tell somebody
- * who runs Codex alone that Claude Code has a problem.
+ * This is the predicate {@link buildRows} and {@link projectLevelEntries} split
+ * on, and they split on the SAME one so that every warning lands in exactly one
+ * of the two — a cell, or the project-level list, never both and never neither.
+ *
+ * Two ways to fail it. `harnessAgnostic` is the declared one: the entry was
+ * never about a harness, and the `harness` beside it is a placeholder its
+ * emitter documents as such. The second is a placeholder nobody flagged —
+ * measured on four ordinary trees, where a project enabling only OpenCode got a
+ * `claude-code` cell for its unreadable `.mcp.json`, which is either an invisible
+ * row (a renderer drawing the enabled columns finds nothing in it) or a chip for
+ * an agent the person does not run. The engine's own emitters were fixed to
+ * carry the flag; this check is the half that stays true when the next
+ * placeholder is added without it.
+ */
+function isAboutEnabledHarness(
+  warning: ProjectionWarning,
+  enabled: ReadonlySet<HarnessId>
+): boolean {
+  return warning.harnessAgnostic !== true && enabled.has(warning.harness);
+}
+
+/**
+ * Everything the plan said that is about no harness this project runs.
+ *
+ * Two populations, and neither is discriminated by `source`: a plugin-layer drop
+ * carries no source, and the unreadable-hook warning carries one and is still
+ * agnostic. The first is `harnessAgnostic`; the second is a warning naming a
+ * harness the manifest does not enable, which reaches no column and so has
+ * nowhere else honest to go (see {@link isAboutEnabledHarness}).
  *
  * Only drops and warnings are read, because only drops and warnings are ever
- * agnostic: the three emitters are `dropWholePlugin`, `dropNonPortableLayers`
- * and `planUnreadableHookWarnings`. An agnostic ACTION would be a projection
- * that reaches no harness, which is a contradiction the engine has never
- * produced — and it would need a third `kind` here rather than being folded
- * into one of these two, so it stays a decision to make rather than a default.
+ * agnostic: the emitters are `dropWholePlugin`, `dropNonPortableLayers`,
+ * `planUnreadableHookWarnings`, `planInventoryWarnings` and
+ * `planClaudeOnlySkills`. An agnostic ACTION would be a projection that reaches
+ * no harness, which is a contradiction the engine has never produced — and it
+ * would need a third `kind` here rather than being folded into one of these two,
+ * so it stays a decision to make rather than a default.
  */
-function projectLevelEntries(plan: ProjectionPlan): HarnessProjectEntry[] {
+function projectLevelEntries(
+  plan: ProjectionPlan,
+  enabled: ReadonlySet<HarnessId>
+): HarnessProjectEntry[] {
   const entry = (
     kind: 'drop' | 'warning',
     e: { artifact: ArtifactType; name: string; source?: string; reason?: string }
@@ -500,11 +556,16 @@ function projectLevelEntries(plan: ProjectionPlan): HarnessProjectEntry[] {
     artifact: ARTIFACT_KIND[e.artifact],
     name: e.name,
     ...(e.source === undefined ? {} : { source: e.source }),
-    reason: e.reason ?? '',
+    // A drop without a reason is an engine bug, not a blank line on somebody's
+    // screen: the field is required for a `drop` and the page has a paragraph
+    // shaped to hold it. Say what is missing rather than rendering nothing.
+    reason: e.reason ?? `${e.name} has no home in any agent tool, and the plan gave no reason`,
   });
   return [
     ...plan.drops.filter((d) => d.harnessAgnostic === true).map((d) => entry('drop', d)),
-    ...plan.warnings.filter((w) => w.harnessAgnostic === true).map((w) => entry('warning', w)),
+    ...plan.warnings
+      .filter((w) => !isAboutEnabledHarness(w, enabled))
+      .map((w) => entry('warning', w)),
   ];
 }
 
@@ -522,10 +583,12 @@ function buildRows(input: {
   inventory: SourceInventory;
   withheld: readonly WithheldHooks[];
   enabled: readonly HarnessId[];
+  enabledSet: ReadonlySet<HarnessId>;
   claudeOnlyNames: ReadonlySet<string>;
   conflicts: readonly ProjectionAction[];
 }): HarnessRow[] {
-  const { plan, drift, inventory, withheld, enabled, claudeOnlyNames, conflicts } = input;
+  const { plan, drift, inventory, withheld, enabled, enabledSet, claudeOnlyNames, conflicts } =
+    input;
   const index = {
     conflicts: byCell(conflicts),
     blocked: byCell(drift.blocked),
@@ -563,8 +626,11 @@ function buildRows(input: {
 
   // Pass 2 — warnings. One rides a cell that already has a state; one that names
   // a cell nothing else did becomes that cell (row 8 of the derivation table).
+  // A warning about a harness this project does not run is neither: it went to
+  // `projectLevel` instead, on the same predicate, so no warning is dropped and
+  // none reaches a column that is not drawn.
   for (const warning of plan.warnings) {
-    if (warning.harnessAgnostic === true) continue;
+    if (!isAboutEnabledHarness(warning, enabledSet)) continue;
     const row = placeWarning(warning, rows, byArtifactSource);
     const existing = row.cells.get(warning.harness);
     if (existing) existing.warnings = [...(existing.warnings ?? []), warning.reason];
@@ -575,6 +641,19 @@ function buildRows(input: {
   // built. Every enabled harness gets the cell, because the hooks reached none of
   // them; which harness would have taken them is the plan's question, and the
   // plan was never asked.
+  //
+  // KNOWN SHAPE, stated because it looks like a bug from the outside: a withheld
+  // package's row identity is not stable across a consent decision. Withheld, it
+  // is one row keyed `(hook, —, "<package>")`, named after the package, because
+  // the package is the only thing there is to name — the plan holds nothing about
+  // it. Approved, the same commands arrive as the plan's own entries and become
+  // `(hook, .claude/settings.local.json, "plugin-hooks")` plus a generated row per
+  // harness. So a client keying rows for animation or selection sees the row
+  // replaced, not updated, the moment somebody says yes. That is the honest
+  // reading rather than a defect to paper over: before the decision there is no
+  // projection to describe, and inventing the post-approval key for a projection
+  // that does not exist would put a row on the page claiming a file that is not
+  // there.
   for (const held of withheld) {
     const draft: DraftRow = {
       artifact: 'hook',
@@ -583,11 +662,15 @@ function buildRows(input: {
       cells: new Map(),
     };
     const key = rowKey(draft);
-    // The seam filters a withheld package's hooks out before the plan is built,
-    // so no row can exist under this key today. Taking the existing one if there
-    // ever is one keeps the precedence honest in both directions: the state fills
-    // a hole rather than replacing a row, and `conflict` still outranks it,
-    // because "a person has to move a file" survives "a person has to decide".
+    // UNREACHABLE TODAY, and deliberately kept. The seam filters a withheld
+    // package's hooks out before the plan is built, so nothing else can have
+    // claimed this key and `rows.get` always misses — which also means the
+    // `conflict` guard below never fires, and no test can red it. Both are here
+    // because the precedence they encode is the spec's and the cost is two lines:
+    // if a future engine change ever puts a withheld hook in the plan as well,
+    // the state fills a hole rather than replacing a row, and "a person has to
+    // move a file" still outranks "a person has to decide". Delete them the day
+    // that becomes impossible rather than leaving them to rot.
     const row = rows.get(key) ?? draft;
     const reason = WITHHELD_SENTENCE[held.reason](held.request.packageName);
     for (const harness of enabled) {

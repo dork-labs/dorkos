@@ -30,9 +30,10 @@
  * @module services/harness/__tests__/status-model
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { diffSnapshots, snapshotTree } from '@dorkos/harness/journeys';
 import { HarnessStatusResponseSchema } from '@dorkos/shared/harness-schemas';
 import type { HarnessCell, HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
 import { hookApprovalEntry, type HookDecisions } from '../hook-consent.js';
@@ -99,22 +100,22 @@ function syncEverything(repo: string, home: string): void {
   projectWithConsent(repo, { dorkHome: home, decisions, sweepOrphans: true });
 }
 
-/** Every path under a root, directories marked `/` and symlinks `@`, sorted. */
-function pathSet(root: string): string[] {
-  const out: string[] = [];
-  const walk = (dir: string, rel: string): void => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const path = rel === '' ? entry.name : `${rel}/${entry.name}`;
-      if (entry.isSymbolicLink()) out.push(`${path}@`);
-      else if (entry.isDirectory()) {
-        out.push(`${path}/`);
-        walk(join(dir, entry.name), path);
-      } else out.push(path);
-    }
-  };
-  walk(root, '');
-  return out.sort();
+/**
+ * What changed under `root` while `run` ran — added, changed and removed paths.
+ *
+ * Content-hashed, not a path listing: the projection's commonest write is a
+ * MERGE into a `.claude/settings.local.json` that already exists, which changes
+ * bytes and no paths at all. A shape-only comparison is green through it, which
+ * is the read-only claim's whole subject.
+ */
+function treeDiffWhile(root: string, run: () => void): ReturnType<typeof diffSnapshots> {
+  const before = snapshotTree(root);
+  run();
+  return diffSnapshots(before, snapshotTree(root));
 }
+
+/** A diff naming nothing — what a read is allowed to leave behind. */
+const NO_CHANGES = { added: [], changed: [], removed: [] };
 
 /** One row, found by the three components of its key. */
 function row(
@@ -292,8 +293,19 @@ describe('VC-01 — the status model derives eight states from five reads', () =
     // Not because the field is missing — this tree simply holds no `.cursor/`,
     // `.codex/` or `.opencode/` footprint for detection to find.
     expect(status.notEnabled).toEqual([]);
-    // This fixture installs no package, so nothing in it is harness-agnostic.
-    expect(status.projectLevel).toEqual([]);
+    // This fixture installs no package, so the only project-level entry is the
+    // read-time loss: `.claude/rules/testing.md` has frontmatter no reader can
+    // parse, which happened before any harness was considered.
+    expect(status.projectLevel).toEqual([
+      {
+        kind: 'warning',
+        artifact: 'rule',
+        name: '.claude/rules/testing.md',
+        source: '.claude/rules/testing.md',
+        reason:
+          '.claude/rules/testing.md has frontmatter this reader cannot parse, so its "paths" globs were not read',
+      },
+    ]);
     expect(status.pendingApproval).toEqual([]);
     expect(status.clean).toBe(false);
     expect(status.sweepPreview).toEqual([]);
@@ -321,22 +333,32 @@ describe('VC-01 — the status model derives eight states from five reads', () =
     expect(row(status, 'hook', '.claude/skills/release/SKILL.md', 'release')).toBeDefined();
   });
 
-  it('VC-01: the unparseable rule’s warning rides the claude-code cell it already had, and forks no row', () => {
-    // Seeded defect: key the warning by `(artifact, source, name)`. The warning is
-    // named after the FILE and the action after the RULE, so it stops matching and
-    // becomes a second `rule` row holding one cell and two holes.
-    const { repo, home } = stageJ01();
+  it('VC-01: a Claude-only token warning rides the hook cell it already had, and forks no row', () => {
+    // Seeded defect: key the warning by `(artifact, source, name)`. The generated
+    // hooks action is named `hooks` and the warning is named after the EVENT, so
+    // the full key stops matching and the warning becomes a second `hook` row —
+    // one carrying a cell for `Stop` that no sync will ever act on, beside the
+    // real row it belongs to.
+    const { repo, home } = stageBare('annotate', ['claude-code', 'codex']);
+    writeJsonAt(join(repo, '.claude', 'settings.json'), {
+      hooks: {
+        Stop: [{ hooks: [{ type: 'command', command: 'node ${CLAUDE_PLUGIN_ROOT}/guard.mjs' }] }],
+      },
+    });
 
     const status = statusOf(repo, home);
 
-    expect(status.rows.filter((r) => r.artifact === 'rule')).toHaveLength(3);
-    const testing = row(status, 'rule', '.claude/rules/testing.md', 'testing');
-    expect(Object.keys(testing.cells).sort()).toEqual(['claude-code', 'codex', 'cursor']);
-    expect(testing.cells['claude-code']?.state).toBe('native');
-    expect(testing.cells['claude-code']?.warnings).toEqual([
-      '.claude/rules/testing.md has frontmatter this reader cannot parse, so its "paths" globs were not read',
+    const hooks = status.rows.filter((r) => r.artifact === 'hook');
+    expect(hooks).toHaveLength(1);
+    const projected = row(status, 'hook', '.claude/settings.json', 'hooks');
+    expect(projected.cells['codex']?.state).toBe('drifted');
+    expect(projected.cells['codex']?.warnings).toEqual([
+      'hook command for "Stop" uses Claude-only "${CLAUDE_PLUGIN_ROOT}"; Codex will not resolve it, so this hook may not work',
     ]);
-    expect(status.rows.filter((r) => r.name === '.claude/rules/testing.md')).toEqual([]);
+    // The warning names the event; no row is named after it.
+    expect(status.rows.filter((r) => r.name === 'Stop')).toEqual([]);
+    // And it annotates rather than replacing: Claude Code still reads the file.
+    expect(projected.cells['claude-code']?.state).toBe('native');
   });
 
   it('VC-01: a .claude/skills skill is native for Claude Code and Cursor and dropped for Codex, with the reasons verbatim', () => {
@@ -445,6 +467,161 @@ describe('VC-01 — the status model derives eight states from five reads', () =
     expect(allCells(status).some((c) => c?.reason?.includes('mcp-servers'))).toBe(false);
   });
 
+  it('VC-01: no cell is drawn for a harness the manifest does not enable', () => {
+    // Seeded defect: drop the `enabled` check from pass 2 (`isAboutEnabledHarness`).
+    // Three emitters hard-code a placeholder harness, and the last tree here is the
+    // one that still does after the engine fix: the unconditional `.agents/skills`
+    // link is attributed to `codex` whether or not codex is enabled, so its warning
+    // names a harness this project has never run. Both readings of the resulting
+    // cell are wrong and neither is loud — a renderer drawing the enabled columns
+    // finds an empty row and the loss disappears; one drawing `Object.entries(cells)`
+    // puts a Codex chip on a Claude-Code-only project.
+    const cases: [string, string[], (repo: string) => void, string][] = [
+      [
+        'unreadable',
+        ['opencode'],
+        (repo) => writeAt(join(repo, '.mcp.json'), '{ this is not json'),
+        '.mcp.json is not valid JSON',
+      ],
+      [
+        'badrule',
+        ['codex'],
+        (repo) =>
+          writeAt(
+            join(repo, '.claude', 'rules', 'testing.md'),
+            '---\npaths: **/*.test.ts\n---\n\n# t\n'
+          ),
+        'frontmatter this reader cannot parse',
+      ],
+      ['stale', ['codex'], () => undefined, 'claudeOnlySkills entry is stale'],
+      [
+        'pluginroot',
+        ['claude-code'],
+        (repo) => {
+          stagePlugin(repo, 'acme', { layers: ['skills'] });
+          writeAt(
+            join(repo, '.dork', 'plugins', 'acme', 'skills', 'greet', 'SKILL.md'),
+            '---\nname: greet\ndescription: The greet skill\n---\n\nRun ${CLAUDE_PLUGIN_ROOT}/bin/x\n'
+          );
+        },
+        'only resolves in plugin context',
+      ],
+    ];
+
+    for (const [tag, harnesses, stage, expected] of cases) {
+      const extras =
+        tag === 'stale'
+          ? {
+              claudeOnlySkills: [
+                { name: 'ghost', path: '.claude/skills/ghost', reason: 'kept Claude-only' },
+              ],
+            }
+          : {};
+      const { repo, home } = stageBare(tag, harnesses, extras);
+      stage(repo);
+
+      const status = statusOf(repo, home);
+
+      expect(status.enabled).toEqual(harnesses);
+      for (const r of status.rows) {
+        expect(Object.keys(r.cells), `${tag}: cells of ${r.artifact}/${r.name}`).toEqual(
+          Object.keys(r.cells).filter((h) => harnesses.includes(h))
+        );
+      }
+      // And the loss is reported rather than dropped on the floor.
+      const reasons = status.projectLevel.map((e) => e.reason);
+      expect(
+        reasons.some((r) => r.includes(expected)),
+        `${tag}: ${reasons.join(' | ')}`
+      ).toBe(true);
+    }
+  });
+
+  it('VC-01: a read-time loss is project-level even when its placeholder harness is enabled', () => {
+    // Seeded defect: drop `harnessAgnostic` from `planInventoryWarnings`. With
+    // claude-code enabled the model's own not-enabled filter cannot catch it, so
+    // the loss becomes a Claude Code chip — and a `.mcp.json` that will not parse
+    // reached NOBODY. It is a read-time failure, ahead of every harness, and the
+    // engine's own module doc has always said so.
+    const { repo, home } = stageBare('readtime', ['claude-code', 'codex']);
+    writeAt(join(repo, '.mcp.json'), '{ this is not json');
+
+    const status = statusOf(repo, home);
+
+    expect(status.projectLevel).toEqual([
+      {
+        kind: 'warning',
+        artifact: 'mcp',
+        name: '.mcp.json',
+        source: '.mcp.json',
+        reason:
+          ".mcp.json is not valid JSON (Expected property name or '}' in JSON at position 2 (line 1 column 3)), so nothing it declares was inventoried",
+      },
+    ]);
+    expect(status.rows.filter((r) => r.artifact === 'mcp')).toEqual([]);
+    expect(allCells(status).some((c) => c?.state === 'warned')).toBe(false);
+  });
+
+  it('VC-01: conflict outranks drifted — after a write, the same cell reads conflict', () => {
+    // Seeded defect: swap rows 1-2 below row 4 in `deriveCell`, so a cell that is
+    // both drifted and blocked reads `drifted`. The two mean opposite things to a
+    // person — "re-run and it fixes itself" against "re-running will never fix
+    // this" — and only the second changes what they do next.
+    const { repo, home } = stageBare('precedence', ['claude-code', 'codex']);
+    writeSkill(join(repo, '.agents', 'skills', 'alpha'), 'alpha');
+
+    // Read first: the link is simply missing, so the cell is drifted.
+    const beforeWrite = statusOf(repo, home);
+    const drifted = row(beforeWrite, 'skill', '.agents/skills/alpha', 'alpha');
+    expect(drifted.cells['claude-code']?.state).toBe('drifted');
+
+    // Now somebody's own directory occupies the target, and the write reports it.
+    writeSkill(join(repo, '.claude', 'skills', 'alpha'), 'alpha');
+    const conflictAction = {
+      kind: 'symlink' as const,
+      artifact: 'skill' as const,
+      harness: 'claude-code' as const,
+      provenance: 'authored' as const,
+      name: 'alpha',
+      source: '.agents/skills/alpha',
+      target: '.claude/skills/alpha',
+      reason: 'a real directory is in the way — move it and sync again',
+    };
+
+    const status = buildHarnessStatus({
+      projectPath: repo,
+      dorkHome: home,
+      decisions: NO_DECISIONS,
+      afterWrite: { conflicts: [conflictAction] },
+    });
+
+    const cell = row(status, 'skill', '.agents/skills/alpha', 'alpha').cells['claude-code'];
+    expect(cell).toEqual({
+      state: 'conflict',
+      reason: 'a real directory is in the way — move it and sync again',
+      target: '.claude/skills/alpha',
+    });
+    expect(status.counts.conflicts).toBe(1);
+    expect(status.counts.drifted).toBe(0);
+  });
+
+  it('VC-01: counts.skills counts ROWS, not inventory entries', () => {
+    // Seeded defect: count `inventory.skills.length`. A plugin's skill is a real
+    // row on the page and is in nobody's source inventory — the inventory walks
+    // what a person AUTHORED — so the number under the profile row would read 0
+    // over a page drawing one.
+    const { repo, home } = stageBare('rowcount', ['claude-code', 'codex']);
+    stagePlugin(repo, 'acme', { layers: ['skills'] });
+
+    const status = statusOf(repo, home);
+
+    expect(status.counts.skills).toBe(1);
+    expect(status.rows.filter((r) => r.artifact === 'skill')).toHaveLength(1);
+    expect(row(status, 'skill', '.dork/plugins/acme/skills/greet', 'acme__greet').provenance).toBe(
+      'installed'
+    );
+  });
+
   it('VC-01: a real directory at a symlink target is a conflict on a read', () => {
     // Seeded defect: revert the engine prerequisite (`findBlockedSymlinkTargets` in
     // `checkPlan`). `blocked` goes to 0, the cell reads `drifted`, and the banner
@@ -493,24 +670,32 @@ describe('VC-01 — the status model derives eight states from five reads', () =
     expect(JSON.stringify(status)).not.toContain('echo ');
   });
 
-  it('VC-01: a source the inventory could not read produces a warned cell, the row-8 shape J-01 cannot make', () => {
+  it('VC-01: a skill whose loading is undocumented for one harness is a warned cell, the row-8 shape J-01 cannot make', () => {
     // Seeded defect: make every warning an annotation. This warning names a cell
-    // nothing else does — the servers it would have described were never read — so
-    // an annotation-only model draws no row at all and the loss is silent, which
-    // is the exact failure the inventory exists to end.
-    const { repo, home } = stageBare('row8', ['claude-code', 'codex']);
-    writeAt(join(repo, '.mcp.json'), '{ this is not json');
+    // nothing else does — the plan has no action and no drop for Cursor, because
+    // the vendor does not document whether it loads a skill whose frontmatter
+    // name disagrees with its directory — so an annotation-only model leaves the
+    // Cursor column blank and the person reads "fine" where the honest answer is
+    // "nobody knows".
+    const { repo, home } = stageBare('row8', ['claude-code', 'cursor']);
+    // The directory says `alpha`, the frontmatter says `beta`.
+    writeAt(
+      join(repo, '.claude', 'skills', 'alpha', 'SKILL.md'),
+      '---\nname: beta\ndescription: The beta skill\n---\n\n# beta\n'
+    );
 
     const status = statusOf(repo, home);
 
-    const unreadable = row(status, 'mcp', '.mcp.json', '.mcp.json');
-    expect(unreadable.provenance).toBe('authored');
-    expect(unreadable.cells['claude-code']?.state).toBe('warned');
-    expect(unreadable.cells['claude-code']?.reason).toContain('.mcp.json is not valid JSON');
-    // Nothing else names this cell, so it is a state rather than an annotation.
-    expect(unreadable.cells['claude-code']?.warnings).toBeUndefined();
-    // And the warning is about one harness's reader, so it forges no codex cell.
-    expect(unreadable.cells['codex']).toBeUndefined();
+    // One row, not two: the warning joined the row Claude Code's action created.
+    expect(status.rows.filter((r) => r.artifact === 'skill')).toHaveLength(1);
+    const skill = row(status, 'skill', '.claude/skills/alpha', 'alpha');
+    expect(skill.cells['cursor']?.state).toBe('warned');
+    expect(skill.cells['cursor']?.reason).toContain('whether it loads this one is undocumented');
+    // A state, not an annotation — nothing else named this cell.
+    expect(skill.cells['cursor']?.warnings).toBeUndefined();
+    // And the state is per harness: Claude Code keys skills by directory, which
+    // is documented, so its own cell is settled.
+    expect(skill.cells['claude-code']?.state).toBe('native');
   });
 
   it('VC-01: clean is false when only orphans exist, and sweepPreview names them', () => {
@@ -608,6 +793,21 @@ describe('VC-01 — the envelope', () => {
     expect(unparseable.detail).toContain('.agents/harness.manifest.json');
   });
 
+  it('VC-01: a harness listed twice in the manifest is one column, not two', () => {
+    // Seeded defect: `enabled = [...manifest.harnesses]`. `harnesses` is a plain
+    // array in a hand-editable file, so a duplicate parses; left alone it draws the
+    // chip twice and every count that walks the enabled list doubles with it.
+    const { repo, home } = stageBare('dupes', ['codex', 'codex', 'claude-code', 'codex']);
+    writeSkill(join(repo, '.agents', 'skills', 'alpha'), 'alpha');
+
+    const status = statusOf(repo, home);
+
+    expect(status.enabled).toEqual(['codex', 'claude-code']);
+    for (const r of status.rows) {
+      expect(Object.keys(r.cells).length, `${r.artifact}/${r.name}`).toBeLessThanOrEqual(2);
+    }
+  });
+
   it('VC-01: computedAt is the instant of the read', () => {
     // Seeded defect: a fixed or lazily-cached timestamp. Bounded by two readings
     // taken around the call rather than compared against a later one, so a loaded
@@ -624,26 +824,39 @@ describe('VC-01 — the envelope', () => {
     expect(computed).toBeLessThanOrEqual(after + 1000);
   });
 
-  it('VC-01: buildHarnessStatus writes nothing, on a set-up project and on one with no manifest', () => {
+  it('VC-01: buildHarnessStatus writes nothing — no path added, none removed, and no byte changed', () => {
     // Seeded defect: call `projectWithConsent` (or `applyPlan`) instead of
-    // `planWithConsent`. The J-01 tree grows `.codex/hooks.json`, `.cursor/hooks.json`
-    // and a pile of links, and a read has silently become a write.
+    // `planWithConsent`. The J-01 tree grows `.codex/hooks.json`,
+    // `.cursor/hooks.json` and a pile of links, and a read has silently become a
+    // write. The third tree is the one a path listing cannot see: a merge into a
+    // `.claude/settings.local.json` that already exists changes its bytes and
+    // adds no path at all.
     const j01 = stageJ01();
-    const repoBefore = pathSet(j01.repo);
-    const homeBefore = pathSet(j01.home);
-
-    expect(statusOf(j01.repo, j01.home).state).toBe('ready');
-
-    expect(pathSet(j01.repo)).toEqual(repoBefore);
-    expect(pathSet(j01.home)).toEqual(homeBefore);
+    expect(
+      treeDiffWhile(j01.repo, () => expect(statusOf(j01.repo, j01.home).state).toBe('ready'))
+    ).toEqual(NO_CHANGES);
+    expect(treeDiffWhile(j01.home, () => statusOf(j01.repo, j01.home))).toEqual(NO_CHANGES);
 
     const bare = tempPair('nowrite');
     writeAt(join(bare.repo, 'CLAUDE.md'), '# nothing set up\n');
-    const bareBefore = pathSet(bare.repo);
+    expect(
+      treeDiffWhile(bare.repo, () =>
+        expect(statusOf(bare.repo, bare.home).state).toBe('not-set-up')
+      )
+    ).toEqual(NO_CHANGES);
+    expect(treeDiffWhile(bare.home, () => statusOf(bare.repo, bare.home))).toEqual(NO_CHANGES);
 
-    expect(statusOf(bare.repo, bare.home).state).toBe('not-set-up');
-
-    expect(pathSet(bare.repo)).toEqual(bareBefore);
-    expect(pathSet(bare.home)).toEqual([]);
+    // A package whose hooks a person allowed, already synced: the next status is
+    // the in-place-rewrite case, where the only evidence is content.
+    const merged = stageBare('merge', ['claude-code', 'codex']);
+    writeSkill(join(merged.repo, '.agents', 'skills', 'alpha'), 'alpha');
+    stagePlugin(merged.repo, 'acme', {
+      layers: ['skills', 'hooks'],
+      hooksJson: JSON.stringify({ Stop: [{ hooks: [{ type: 'command', command: 'echo acme' }] }] }),
+    });
+    syncEverything(merged.repo, merged.home);
+    expect(treeDiffWhile(merged.repo, () => statusOf(merged.repo, merged.home))).toEqual(
+      NO_CHANGES
+    );
   });
 });
