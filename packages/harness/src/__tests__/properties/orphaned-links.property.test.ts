@@ -15,6 +15,12 @@
  *   property that catches SK-10.
  * - **P2b — `checkPlan` never throws.** For every generated tree, before and
  *   after an apply, dead links included. This is the property that catches AP-05.
+ * - **P2c — the preview equals the sweep.** For every generated tree, and again
+ *   after a skill or a plugin is taken away, `checkPlan().orphans` is exactly
+ *   the `swept` list the next `applyPlan(..., { sweepOrphans: true })` returns.
+ *   This is the property the status model's `sweepPreview` rests on: a banner
+ *   that undercounts a destructive click teaches a person the list is the whole
+ *   list (DOR-1889, and Decision 36 of `specs/harness-sync-status`).
  *
  * The predicate is restated here from the engine's rule rather than imported, so
  * a test cannot agree with a bug by sharing its code.
@@ -154,6 +160,63 @@ describe('P2b — checkPlan never throws', () => {
       );
       // Assert the generator actually produced the hostile shape under test.
       expect(deadGenerateTargets).toBeGreaterThan(0);
+    },
+    PROPERTY_TIMEOUT_MS
+  );
+});
+
+/**
+ * Assert that what a check would report is what the following apply removes.
+ *
+ * The comparison is over SORTED arrays rather than sets, so a duplicate in
+ * either list is a failure too: `orphans` is de-duplicated by construction, and
+ * a `swept` that names one path twice would mean two sweeps claiming it.
+ *
+ * @param repoRoot - the staged repository.
+ * @param plan - the plan to check and then apply.
+ * @returns how many paths were previewed (so a vacuous pass is visible).
+ */
+function expectPreviewMatchesSweep(repoRoot: string, plan: ProjectionPlan): number {
+  const preview = [...checkPlan(repoRoot, plan).orphans].sort();
+  const swept = [...applyPlan(repoRoot, plan, { sweepOrphans: true }).swept].sort();
+  expect(swept).toEqual(preview);
+  return preview.length;
+}
+
+describe('P2c — checkPlan().orphans is exactly the next applyPlan().swept', () => {
+  it(
+    'holds on every generated tree, and after a skill or a plugin is taken away',
+    () => {
+      let previewed = 0;
+      fc.assert(
+        fc.property(arbRepo(), fc.boolean(), fc.boolean(), (spec, rename, uninstall) => {
+          withRepo(spec, ({ repoRoot, dorkHome }) => {
+            // The raw tree first: hostile occupants are still in place, so this
+            // is the pass where a finder that reads somebody's own file as an
+            // orphan disagrees with the sweep that refuses to take it.
+            previewed += expectPreviewMatchesSweep(repoRoot, project(repoRoot, { dorkHome }));
+
+            // Then a source goes, the way a person takes one away.
+            if (spec.skills.length > 0) {
+              const from = join(repoRoot, '.agents', 'skills', spec.skills[0]);
+              if (rename)
+                renameSync(from, join(repoRoot, '.agents', 'skills', `${spec.skills[0]}2`));
+              else rmSync(from, { recursive: true, force: true });
+            }
+            if (uninstall && spec.plugins.length > 0) {
+              rmSync(join(repoRoot, '.dork', 'plugins', spec.plugins[0].name), {
+                recursive: true,
+                force: true,
+              });
+            }
+
+            previewed += expectPreviewMatchesSweep(repoRoot, project(repoRoot, { dorkHome }));
+          });
+        }),
+        RUNS
+      );
+      // Equality between two empty lists is not evidence of anything.
+      expect(previewed).toBeGreaterThan(0);
     },
     PROPERTY_TIMEOUT_MS
   );

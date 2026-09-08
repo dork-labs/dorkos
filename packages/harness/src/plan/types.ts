@@ -199,6 +199,22 @@ export interface ProjectionPlan {
    * checks.
    */
   notEnabled: DetectedHarness[];
+  /**
+   * The harness this plan was narrowed to, when it was narrowed at all
+   * (`dorkos harness sync --harness <id>`).
+   *
+   * Present so a narrowed plan can say so about ITSELF, rather than every
+   * caller having to remember. Such a plan omits every other harness's live
+   * projections, so anything that reads the plan as a keep-set — the six orphan
+   * finders behind `checkPlan().orphans`, and the sweeps behind
+   * `applyPlan().swept` — would read those live projections as orphans. So
+   * `checkPlan` reports no orphans for one, and `projectWithConsent` refuses to
+   * sweep one outright.
+   *
+   * Absent means the ordinary case: a plan for every enabled harness, which can
+   * answer both questions.
+   */
+  narrowedTo?: HarnessId;
 }
 
 /** The result of diffing a {@link ProjectionPlan} against the current on-disk state (`--check`). */
@@ -217,11 +233,22 @@ export interface DriftResult {
    */
   blocked: ProjectionAction[];
   /**
-   * Repo-relative paths of managed skill links whose source is gone — somebody
-   * removed or renamed `.agents/skills/<x>`, and `.claude/skills/<x>` is left
-   * pointing at nothing. No plan action names one (there is no source left to
-   * project), so they are reported here rather than in `drifted`; a `--fix`
-   * sweeps them, which is why they count against `clean`.
+   * Repo-relative paths of everything a sweep would remove — sorted, unique,
+   * and **equal to the `swept` list the next `applyPlan(..., { sweepOrphans:
+   * true })` returns** (DOR-1889).
+   *
+   * All six sweeps answer here, not one: installed skill links whose plugin is
+   * gone, dead `.claude/skills` links left by an authored skill somebody removed
+   * or renamed, generated per-harness hooks files the engine can prove it wrote
+   * (with their sidecars), Claude and OpenCode command wrappers, and the managed
+   * plugin hooks in `.claude/settings.local.json`. That last one names a file
+   * that survives — only its managed hook groups go — and it is listed because
+   * it is a path a sync changes without being asked.
+   *
+   * No plan action names any of them (there is no source left to project), so
+   * they are reported here rather than in `drifted`; a `--fix` removes them,
+   * which is why they count against `clean`. A plan narrowed to one harness
+   * reports none — see {@link ProjectionPlan.narrowedTo}.
    */
   orphans: string[];
   /**
@@ -233,8 +260,13 @@ export interface DriftResult {
   leftAlone: string[];
   /**
    * True when the plan is fully realized on disk: nothing drifted, nothing
-   * blocked, and no orphaned link. `leftAlone` entries do not make a tree
-   * unclean.
+   * blocked, and nothing a sweep would remove. `leftAlone` entries do not make a
+   * tree unclean.
+   *
+   * For a plan narrowed to one harness ({@link ProjectionPlan.narrowedTo}) this
+   * says nothing about orphans: `orphans` is empty by rule there, so a `true`
+   * means "nothing drifted or blocked for THIS harness" and the tree may still
+   * hold plenty a full sync would remove.
    */
   clean: boolean;
 }

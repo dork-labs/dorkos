@@ -10,9 +10,11 @@
  *
  * One scanner answers both questions — `--check` names these, `--fix` removes
  * them — so the report and the sweep can never disagree about what an orphan IS.
- * WHEN each runs is the CLI's business and not the same: the sweep runs only for
- * a full plan, so `dorkos harness sync --check --harness <id>` withholds this
- * list rather than naming links the matching `--fix` would not remove.
+ * A plan narrowed to one harness answers neither: `checkPlan` withholds the
+ * whole orphan list for such a plan and `applyPlan` refuses to sweep it, both in
+ * the engine off `plan.narrowedTo`, so `dorkos harness sync --check --harness
+ * <id>` never names a link the matching `--fix` would not remove (DOR-1889 moved
+ * that rule out of the CLI, where it had guarded one sweep of six).
  *
  * The predicate is narrow on purpose. An entry qualifies only when ALL of it
  * holds:

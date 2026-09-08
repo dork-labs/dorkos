@@ -21,7 +21,7 @@
  * @module apply/generated-ownership
  */
 import { createHash } from 'node:crypto';
-import { lstatSync, readFileSync, rmSync } from 'node:fs';
+import { lstatSync, readFileSync } from 'node:fs';
 import { writeFileAtomic } from './atomic-write.js';
 
 /**
@@ -104,11 +104,6 @@ export function hasGeneratedSidecar(absTarget: string): boolean {
  */
 export function writeGeneratedSidecar(absTarget: string, content: string): void {
   writeFileAtomic(generatedSidecarPath(absTarget), `${digestOf(content)}\n`);
-}
-
-/** Remove a generated target's sidecar, if it has one. */
-export function removeGeneratedSidecar(absTarget: string): void {
-  rmSync(generatedSidecarPath(absTarget), { force: true });
 }
 
 /**

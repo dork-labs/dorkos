@@ -32,11 +32,18 @@
  * projection may be called `native`, and each was once asserted regardless
  * (DOR-1847). A generator that always wrote all three could not fail P9a.
  *
+ * P2b is why `claudeCommands` and `opencodeCommands` can each be a stray FILE or
+ * an unreadable directory rather than only a directory. Both paths are scanned
+ * by `--check` as well as `--fix` since every sweep gained a `find*` half
+ * (DOR-1889), and `existsSync` says yes to both shapes while the `readdirSync`
+ * behind it throws — so a generator that only ever staged directories could not
+ * fail the property that says `checkPlan` never throws.
+ *
  * @module __tests__/properties/arb-repo
  */
 import fc from 'fast-check';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { HARNESS_IDS, type HarnessId } from '../../manifest/schema.js';
@@ -105,11 +112,33 @@ const DANGLING_LINK_TEXT: Record<DanglingKind, string> = {
 };
 
 /**
- * The state of `.claude/commands` — the directory Claude Code reads slash
- * commands from, and one of the three whose EXISTENCE decides whether a
- * projection may be called `native` (DOR-1847).
+ * The state of a slash-command directory — `.claude/commands`, which Claude Code
+ * reads and whose EXISTENCE is one of the three facts deciding whether a
+ * projection may be called `native` (DOR-1847), and the flat
+ * `.opencode/commands` beside it.
+ *
+ * The last two shapes are not exotic: both directories are enumerated by
+ * wildcard, by `--fix` and — since every sweep gained a `find*` half (DOR-1889)
+ * — by `--check` too. `existsSync` says yes to a stray FILE at that path and to
+ * a directory nobody may read, and the `readdirSync` behind it then throws
+ * ENOTDIR or EACCES out of a report whose whole job is to say what is wrong with
+ * the tree. A generator that only ever staged directories could not fail P2b.
  */
-type ClaudeCommandsState = 'absent' | 'empty' | 'populated';
+type CommandDirState = 'absent' | 'empty' | 'populated' | 'file' | 'unreadable';
+
+/**
+ * Whether this platform can stage an unreadable directory at all.
+ *
+ * Not Windows, where POSIX modes do not mean this, and not root, who reads
+ * everything regardless. Where it cannot, the shape is simply not generated —
+ * a case that stages nothing is a case that asserts nothing.
+ */
+const CAN_STAGE_UNREADABLE = process.platform !== 'win32' && process.getuid?.() !== 0;
+
+/** The command-directory shapes this generator stages, platform permitting. */
+const COMMAND_DIR_STATES: readonly CommandDirState[] = CAN_STAGE_UNREADABLE
+  ? ['absent', 'empty', 'populated', 'file', 'unreadable']
+  : ['absent', 'empty', 'populated', 'file'];
 
 /** One generated path-scoped rule: its name, and whether it declares `paths:` globs. */
 export interface RuleSpec {
@@ -145,8 +174,17 @@ export interface RepoSpec {
    * there, and each of the three used to be asserted regardless (DOR-1847).
    */
   agentsMd: boolean;
-  /** Whether `.claude/commands` is absent, present-but-empty, or holds a `.md`. */
-  claudeCommands: ClaudeCommandsState;
+  /** What is at `.claude/commands`: nothing, an empty dir, a `.md`, a file, or an unreadable dir. */
+  claudeCommands: CommandDirState;
+  /**
+   * The same five shapes at `.opencode/commands`.
+   *
+   * A separate field rather than a shared one, because the two directories are
+   * scanned by different predicates — the Claude one per package subdirectory,
+   * the OpenCode one flat — and a single value could never stage one hostile and
+   * the other ordinary.
+   */
+  opencodeCommands: CommandDirState;
   /**
    * Path-scoped rules under `.claude/rules`, some carrying `paths:` globs.
    *
@@ -307,51 +345,89 @@ export const PERSON_SKILL_LINK = '.claude/skills/mine';
  * @returns an arbitrary over {@link RepoSpec}.
  */
 export function arbRepo(): fc.Arbitrary<RepoSpec> {
-  return fc.record({
-    skills: fc.uniqueArray(fc.constantFrom(...SKILL_NAMES), { maxLength: 4 }),
-    plugins: fc.uniqueArray(
-      fc.record({
-        name: fc.constantFrom('acme', 'flow'),
-        skills: fc.uniqueArray(fc.constantFrom(...SKILL_NAMES), { maxLength: 2 }),
-        hooks: fc.boolean(),
-        commands: fc.integer({ min: 0, max: 1 }),
+  return fc
+    .record({
+      skills: fc.uniqueArray(fc.constantFrom(...SKILL_NAMES), { maxLength: 4 }),
+      plugins: fc.uniqueArray(
+        fc.record({
+          name: fc.constantFrom('acme', 'flow'),
+          skills: fc.uniqueArray(fc.constantFrom(...SKILL_NAMES), { maxLength: 2 }),
+          hooks: fc.boolean(),
+          commands: fc.integer({ min: 0, max: 1 }),
+        }),
+        { maxLength: 2, selector: (p) => p.name }
+      ),
+      authoredHooks: fc.boolean(),
+      agentsMd: fc.boolean(),
+      claudeCommands: fc.constantFrom<CommandDirState>(...COMMAND_DIR_STATES),
+      opencodeCommands: fc.constantFrom<CommandDirState>(...COMMAND_DIR_STATES),
+      rules: fc.uniqueArray(
+        fc.record({ name: fc.constantFrom(...RULE_NAMES), paths: fc.boolean() }),
+        { maxLength: 3, selector: (r) => r.name }
+      ),
+      agents: fc.uniqueArray(fc.constantFrom(...AGENT_NAMES), { maxLength: 3 }),
+      mcpServers: fc.option(fc.uniqueArray(fc.constantFrom(...MCP_NAMES), { maxLength: 2 }), {
+        nil: null,
       }),
-      { maxLength: 2, selector: (p) => p.name }
-    ),
-    authoredHooks: fc.boolean(),
-    agentsMd: fc.boolean(),
-    claudeCommands: fc.constantFrom<ClaudeCommandsState>('absent', 'empty', 'populated'),
-    rules: fc.uniqueArray(
-      fc.record({ name: fc.constantFrom(...RULE_NAMES), paths: fc.boolean() }),
-      { maxLength: 3, selector: (r) => r.name }
-    ),
-    agents: fc.uniqueArray(fc.constantFrom(...AGENT_NAMES), { maxLength: 3 }),
-    mcpServers: fc.option(fc.uniqueArray(fc.constantFrom(...MCP_NAMES), { maxLength: 2 }), {
-      nil: null,
-    }),
-    localSettingsHooks: fc.boolean(),
-    skillFrontmatterHooks: fc.boolean(),
-    linkedRulesDir: fc.boolean(),
-    deadAgentLink: fc.boolean(),
-    personSkillLink: fc.boolean(),
-    claudeSkills: fc.uniqueArray(fc.constantFrom(...CLAUDE_SKILL_DIRS), { maxLength: 3 }),
-    harnesses: fc.subarray([...HARNESS_IDS]),
-    occupant: fc.option(
-      fc.record({
-        target: fc.constantFrom(CODEX_HOOKS_TARGET, CURSOR_HOOKS_TARGET, COPILOT_HOOKS_TARGET),
-        sidecar: fc.constantFrom<SidecarState>('none', 'matching', 'stale'),
-        shape: fc.constantFrom<OccupantShape>('vendor', 'bare'),
+      localSettingsHooks: fc.boolean(),
+      skillFrontmatterHooks: fc.boolean(),
+      linkedRulesDir: fc.boolean(),
+      deadAgentLink: fc.boolean(),
+      personSkillLink: fc.boolean(),
+      claudeSkills: fc.uniqueArray(fc.constantFrom(...CLAUDE_SKILL_DIRS), { maxLength: 3 }),
+      harnesses: fc.subarray([...HARNESS_IDS]),
+      occupant: fc.option(
+        fc.record({
+          target: fc.constantFrom(CODEX_HOOKS_TARGET, CURSOR_HOOKS_TARGET, COPILOT_HOOKS_TARGET),
+          sidecar: fc.constantFrom<SidecarState>('none', 'matching', 'stale'),
+          shape: fc.constantFrom<OccupantShape>('vendor', 'bare'),
+        }),
+        { nil: null }
+      ),
+      widowedSidecar: fc.boolean(),
+      dirOccupant: fc.boolean(),
+      dangling: fc.option(fc.constantFrom<DanglingKind>('generate', 'scaffold', 'skill'), {
+        nil: null,
       }),
-      { nil: null }
-    ),
-    widowedSidecar: fc.boolean(),
-    dirOccupant: fc.boolean(),
-    dangling: fc.option(fc.constantFrom<DanglingKind>('generate', 'scaffold', 'skill'), {
-      nil: null,
-    }),
-    personLink: fc.boolean(),
-    gitignore: fc.option(fc.subarray([...EPHEMERAL_GITIGNORE_PATTERNS]), { nil: null }),
-  });
+      personLink: fc.boolean(),
+      gitignore: fc.option(fc.subarray([...EPHEMERAL_GITIGNORE_PATTERNS]), { nil: null }),
+    })
+    .map(withListableCommandDirsWhenTheyAreWrittenTo);
+}
+
+/**
+ * Keep a hostile command directory out of the one case that is a DIFFERENT bug.
+ *
+ * A plan that generates a wrapper into `.claude/commands/<pkg>/` or
+ * `.opencode/commands/` reaches `writeFileAtomic`, whose `mkdirSync` raises one
+ * of three, all measured: **EEXIST** when the flat `.opencode/commands` the
+ * wrapper goes straight into is itself a file, **ENOTDIR** when a file is the
+ * PARENT of the directory being made (`.claude/commands`, under which `<pkg>/`
+ * has to be created), and **EACCES** through a mode-000 directory. That
+ * `applyPlan` crash predates the sweeps having `find*` halves and no property
+ * here is about it; it is tracked as **DOR-1882**. Staging it would red P2, P3,
+ * P4 and P2c for a reason none of them names, which is how a generator stops
+ * being evidence.
+ *
+ * So the hostile shapes are staged only where nothing WRITES into the directory
+ * — which is every case the `--check` scans still visit, since those walks run
+ * whatever the plan says. **This narrowing expires with DOR-1882:** once a
+ * `generate` whose parent is not a writable directory is a `blocked` conflict
+ * rather than an exception, delete this function and let the shapes through.
+ *
+ * @param spec - the generated repository.
+ * @returns the same spec, with a hostile command dir downgraded where a wrapper
+ *   would be written into it.
+ */
+function withListableCommandDirsWhenTheyAreWrittenTo(spec: RepoSpec): RepoSpec {
+  if (!spec.plugins.some((plugin) => plugin.commands > 0)) return spec;
+  const listable = (state: CommandDirState): CommandDirState =>
+    state === 'file' || state === 'unreadable' ? 'empty' : state;
+  return {
+    ...spec,
+    claudeCommands: listable(spec.claudeCommands),
+    opencodeCommands: listable(spec.opencodeCommands),
+  };
 }
 
 /**
@@ -404,6 +480,15 @@ export interface MaterialisedRepo {
   occupantAbs?: string;
   /** The dead link that was actually staged, when there is one. */
   dangling?: StagedDangling;
+  /**
+   * Absolute paths this repo made mode-000.
+   *
+   * {@link withRepo} puts the mode back before it removes the tree: a directory
+   * nobody may read defeats `rmSync -r` as thoroughly as it defeats the scan
+   * under test, and a property that leaks temp directories is a property that
+   * eventually fails for the wrong reason.
+   */
+  unreadable: string[];
 }
 
 /**
@@ -417,6 +502,38 @@ function linkInto(repoRoot: string, relLink: string, linkText: string): void {
   const abs = join(repoRoot, relLink);
   mkdirSync(dirname(abs), { recursive: true });
   symlinkSync(linkText, abs);
+}
+
+/**
+ * Stage one slash-command directory in the shape the spec asked for.
+ *
+ * @param repoRoot - absolute path of the staged repository.
+ * @param relDir - the directory's repo-relative path.
+ * @param state - which of the five shapes to stage.
+ * @param commandName - the `.md` to write for the `populated` shape.
+ * @param unreadable - collects the paths made mode-000, so they can be restored.
+ */
+function stageCommandDir(
+  repoRoot: string,
+  relDir: string,
+  state: CommandDirState,
+  commandName: string,
+  unreadable: string[]
+): void {
+  if (state === 'absent') return;
+  const abs = join(repoRoot, relDir);
+  if (state === 'file') {
+    // A stray note where a directory belongs: `existsSync` says yes, and the
+    // `readdirSync` behind it raises ENOTDIR.
+    writeFileAt(abs, 'not a directory\n');
+    return;
+  }
+  mkdirSync(abs, { recursive: true });
+  if (state === 'populated') writeFileAt(join(abs, commandName), `# ${commandName}\n`);
+  if (state === 'unreadable') {
+    chmodSync(abs, 0o000);
+    unreadable.push(abs);
+  }
 }
 
 /**
@@ -434,12 +551,9 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
     harnesses: spec.harnesses,
   });
   if (spec.agentsMd) writeFileAt(join(repoRoot, 'AGENTS.md'), '# Project\n');
-  if (spec.claudeCommands !== 'absent') {
-    mkdirSync(join(repoRoot, '.claude', 'commands'), { recursive: true });
-    if (spec.claudeCommands === 'populated') {
-      writeFileAt(join(repoRoot, '.claude', 'commands', 'review.md'), '# review\n');
-    }
-  }
+  const unreadable: string[] = [];
+  stageCommandDir(repoRoot, '.claude/commands', spec.claudeCommands, 'review.md', unreadable);
+  stageCommandDir(repoRoot, '.opencode/commands', spec.opencodeCommands, 'deploy.md', unreadable);
   for (const [index, name] of spec.skills.entries()) {
     // Real frontmatter, not a bare heading: the vendor-facts coverage walk keys
     // three harnesses on the frontmatter `name` and refuses to decide about a
@@ -598,7 +712,7 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
     dangling = { kind: spec.dangling, path: rel };
   }
 
-  return { repoRoot, dorkHome, occupantAbs, dangling };
+  return { repoRoot, dorkHome, occupantAbs, dangling, unreadable };
 }
 
 /**
@@ -612,6 +726,15 @@ export function withRepo(spec: RepoSpec, body: (dirs: MaterialisedRepo) => void)
   try {
     body(dirs);
   } finally {
+    // Modes first: `rmSync -r` has to read a directory to empty it, so a
+    // mode-000 one would survive the cleanup and leak the whole temp tree.
+    for (const abs of dirs.unreadable) {
+      try {
+        chmodSync(abs, 0o755);
+      } catch {
+        /* already gone */
+      }
+    }
     for (const d of [dirs.repoRoot, dirs.dorkHome]) rmSync(d, { recursive: true, force: true });
   }
 }

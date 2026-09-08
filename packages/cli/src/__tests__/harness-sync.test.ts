@@ -125,6 +125,39 @@ function writeInstalledPlugin(root: string, name: string, skill: string): void {
   fs.writeFileSync(path.join(plugin, 'skills', skill, 'SKILL.md'), `# ${skill}\n`);
 }
 
+/**
+ * A project-scoped plugin shipping all three layers a sync projects — a skill,
+ * a slash command and a hook — so uninstalling it leaves an orphan in every
+ * directory the sweep touches.
+ */
+function writeFullInstalledPlugin(root: string, name: string): void {
+  const plugin = path.join(root, '.dork', 'plugins', name);
+  fs.mkdirSync(path.join(plugin, '.dork'), { recursive: true });
+  fs.writeFileSync(
+    path.join(plugin, '.dork', 'manifest.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      name,
+      version: '1.0.0',
+      type: 'plugin',
+      description: 'A fixture plugin',
+      layers: ['skills', 'hooks', 'commands'],
+    })
+  );
+  fs.mkdirSync(path.join(plugin, 'skills', 'greet'), { recursive: true });
+  fs.writeFileSync(path.join(plugin, 'skills', 'greet', 'SKILL.md'), '# greet\n');
+  fs.mkdirSync(path.join(plugin, 'commands'), { recursive: true });
+  fs.writeFileSync(
+    path.join(plugin, 'commands', 'hello.md'),
+    '---\ndescription: Say hello\n---\n\nSay hello.\n'
+  );
+  fs.mkdirSync(path.join(plugin, 'hooks'), { recursive: true });
+  fs.writeFileSync(
+    path.join(plugin, 'hooks', 'hooks.json'),
+    JSON.stringify({ Stop: [{ hooks: [{ type: 'command', command: 'echo acme' }] }] })
+  );
+}
+
 describe('runHarnessSync', () => {
   let tmpDir: string;
   let originalCwd: string;
@@ -559,7 +592,7 @@ describe('runHarnessSync', () => {
 
     expect(check.exitCode).toBe(1);
     const checkOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(checkOutput).toContain('Orphaned links — the skill they pointed at is gone');
+    expect(checkOutput).toContain('Orphaned projections — what they came from is gone (1):');
     expect(checkOutput).toContain('.claude/skills/demo');
     // Read-only: the dead link is still there after a check.
     expect(fs.lstatSync(projected).isSymbolicLink()).toBe(true);
@@ -590,7 +623,7 @@ describe('runHarnessSync', () => {
 
     expect(scoped.exitCode).toBe(0);
     const scopedOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(scopedOutput).not.toContain('Orphaned links');
+    expect(scopedOutput).not.toContain('Orphaned projections');
     expect(scopedOutput).toContain('No drift');
 
     // The filtered --fix it would have recommended really does leave the link,
@@ -603,9 +636,122 @@ describe('runHarnessSync', () => {
     logSpy.mockClear();
     const full = await runHarnessSync(syncArgs({ check: true, fix: false }));
     expect(full.exitCode).toBe(1);
-    expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain('Orphaned links');
+    expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain('Orphaned projections');
     await runHarnessSync(syncArgs({ check: false, fix: true }));
     expect(fs.existsSync(orphan)).toBe(false);
+  });
+
+  it('--check names every path an uninstalled plugin left, and --fix removes exactly those', async () => {
+    // Before DOR-1889 this exited 0 and said nothing: `checkPlan` answered for
+    // one sweep of six, so a tree a `--fix` was about to take nine files out of
+    // read clean. `--allow-hooks` is here because the plugin ships hooks and
+    // nobody has said yes to them yet — without it the hook projections never
+    // land, and the case would prove less than the whole sweep.
+    fs.mkdirSync(path.join(tmpDir, '.agents'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, '.agents', 'harness.manifest.json'),
+      JSON.stringify({ version: 1, harnesses: ['claude-code', 'codex', 'opencode'] }, null, 2)
+    );
+    writeFullInstalledPlugin(tmpDir, 'acme');
+    process.chdir(tmpDir);
+    await runHarnessSync(syncArgs({ check: false, fix: true, allowHooks: ['acme'] }));
+
+    // The plugin is uninstalled. Nothing else about the tree changes.
+    fs.rmSync(path.join(tmpDir, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
+    logSpy.mockClear();
+
+    const check = await runHarnessSync(syncArgs({ check: true, fix: false }));
+
+    expect(check.exitCode).toBe(1);
+    const checkOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    // Verbatim, including the one line that is NOT a deletion: the settings file
+    // survives and loses only the hook entries DorkOS merged into it, and a
+    // report that said "removed" over it without saying so would be the same
+    // sort of untruth this whole change is about.
+    expect(checkOutput).toContain(
+      [
+        'Orphaned projections — what they came from is gone (9):',
+        '  .agents/skills/acme__greet',
+        '  .claude/commands/acme/.gitignore',
+        '  .claude/commands/acme/hello.md',
+        '  .claude/settings.local.json — only the hook entries DorkOS added; your own settings stay',
+        '  .claude/skills/acme__greet',
+        '  .codex/hooks.json',
+        '  .codex/hooks.json.dorkos-generated',
+        '  .opencode/commands/.gitignore',
+        '  .opencode/commands/acme-hello.md',
+      ].join('\n')
+    );
+    expect(checkOutput).toContain(
+      'Run `dorkos harness sync --fix` to apply — the orphaned paths above are removed.'
+    );
+    // Read-only: everything it just named is still on disk.
+    expect(fs.existsSync(path.join(tmpDir, '.codex', 'hooks.json'))).toBe(true);
+
+    logSpy.mockClear();
+    const fix = await runHarnessSync(syncArgs({ check: false, fix: true }));
+
+    expect(fix.exitCode).toBe(0);
+    const fixOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    // The same nine, in the same order, under the sweep's own heading: the
+    // receipt a person reads after the command lines up with the promise the
+    // one before it made. `swept` itself comes back in sweep order; the report
+    // sorts it for display so the two lists can be compared line for line.
+    expect(fixOutput).toContain(
+      [
+        'Swept 9 orphaned projection(s) — what they came from is gone:',
+        '  .agents/skills/acme__greet',
+        '  .claude/commands/acme/.gitignore',
+        '  .claude/commands/acme/hello.md',
+        '  .claude/settings.local.json — only the hook entries DorkOS added; your own settings stay',
+        '  .claude/skills/acme__greet',
+        '  .codex/hooks.json',
+        '  .codex/hooks.json.dorkos-generated',
+        '  .opencode/commands/.gitignore',
+        '  .opencode/commands/acme-hello.md',
+      ].join('\n')
+    );
+    expect(fs.existsSync(path.join(tmpDir, '.codex', 'hooks.json'))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'commands', 'acme'))).toBe(false);
+    // The one line that promised survival kept its promise: the file is still
+    // there, and the managed hook groups are what left it.
+    const settings = path.join(tmpDir, '.claude', 'settings.local.json');
+    expect(fs.existsSync(settings)).toBe(true);
+    expect(fs.readFileSync(settings, 'utf8')).not.toContain('echo acme');
+    // And the tree is clean afterwards, so the report cannot come straight back.
+    expect((await runHarnessSync(syncArgs({ check: true, fix: false }))).exitCode).toBe(0);
+  });
+
+  it('--check --harness withholds the widened orphan set too', async () => {
+    // The guard has to travel with the set it guards. A plan narrowed to Codex
+    // has never seen the Claude or OpenCode projections, so every one of them
+    // looks orphaned to it — nine paths this run cannot act on, since the
+    // matching `--fix --harness` refuses to sweep at all.
+    fs.mkdirSync(path.join(tmpDir, '.agents'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, '.agents', 'harness.manifest.json'),
+      JSON.stringify({ version: 1, harnesses: ['claude-code', 'codex', 'opencode'] }, null, 2)
+    );
+    writeFullInstalledPlugin(tmpDir, 'acme');
+    process.chdir(tmpDir);
+    await runHarnessSync(syncArgs({ check: false, fix: true, allowHooks: ['acme'] }));
+    fs.rmSync(path.join(tmpDir, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
+    logSpy.mockClear();
+
+    const scoped = await runHarnessSync(syncArgs({ check: true, fix: false, harness: 'codex' }));
+
+    expect(scoped.exitCode).toBe(0);
+    const scopedOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(scopedOutput).not.toContain('Orphaned projections');
+    expect(scopedOutput).toContain('No drift');
+
+    // Unfiltered, on the same tree in the same state, all nine are named.
+    logSpy.mockClear();
+    const full = await runHarnessSync(syncArgs({ check: true, fix: false }));
+    expect(full.exitCode).toBe(1);
+    expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
+      'Orphaned projections — what they came from is gone (9):'
+    );
   });
 
   it('points at LOG_LEVEL=debug for the stack, and prints it when asked', async () => {

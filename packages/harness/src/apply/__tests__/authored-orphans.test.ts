@@ -135,10 +135,12 @@ describe('what the orphan sweep refuses to touch', () => {
     rmSync(join(repo, '.agents', 'skills', 'my__helper'), { recursive: true, force: true });
 
     // Asked BEFORE any sweep, so the answer is about the predicate and not about
-    // which sweep happened to run first. `--check` stays quiet about `__` links,
-    // as it always has for an uninstalled plugin's — that asymmetry is older than
-    // this rule and is not what SK-10 is about.
-    expect(checkPlan(repo, project(repo, { dorkHome })).orphans).toEqual([]);
+    // which sweep happened to run first. The authored finder passes it over and
+    // the installed one claims it, so `--check` names it ONCE — the whole point
+    // of one owner per path, now that both finders answer `orphans` (DOR-1889).
+    expect(checkPlan(repo, project(repo, { dorkHome })).orphans).toEqual([
+      '.claude/skills/my__helper',
+    ]);
 
     // And the installed sweep does take it, exactly once.
     expect(syncWithSweep()).toEqual(['.claude/skills/my__helper']);

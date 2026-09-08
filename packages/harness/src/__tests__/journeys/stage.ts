@@ -78,13 +78,25 @@ export function writeJsonAt(absPath: string, value: unknown): void {
  * Symlinks are never followed — a projected link is itself a change under test.
  * `.git/` internals are ignored (a staged repo may be a real git repo).
  *
+ * A directory it cannot READ still gets its own entry; its contents simply do
+ * not appear. The generator stages one on purpose (`arb-repo.ts`'s
+ * `'unreadable'` command dir), and nothing under it can differ between two runs
+ * of the same plan — the engine cannot write there either, which is the whole
+ * reason the shape is interesting.
+ *
  * @param root - absolute path to snapshot.
  * @returns a map of repo-relative path to what occupies it.
  */
 export function snapshotTree(root: string): Map<string, SnapshotEntry> {
   const out = new Map<string, SnapshotEntry>();
   const walk = (dir: string): void => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return; // unreadable: its own entry is already recorded by the caller
+    }
+    for (const entry of entries) {
       const abs = join(dir, entry.name);
       const rel = relative(root, abs).split(sep).join('/');
       if (rel === '.git' || rel.startsWith('.git/')) continue;
