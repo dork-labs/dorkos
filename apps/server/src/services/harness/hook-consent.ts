@@ -86,9 +86,25 @@ export interface HookDecisions {
   approved: readonly string[];
   /** `<packageName>@<digest>` entries a person turned down. */
   refused: readonly string[];
+  /**
+   * Why the lists are empty because the FILE could not be read, when that is
+   * what happened.
+   *
+   * A missing `config.json` is a fresh install and leaves this absent: nothing
+   * has been decided, and "nothing decided" is the truth. A truncated or
+   * schema-invalid one is a different thing entirely, and collapsing the two
+   * made every surface say the opposite of what was true — "you have not
+   * allowed this package yet" about a package somebody had allowed, and "no
+   * hook decisions stored yet" over a file full of them. Worse, the way out it
+   * then suggested (`--fix --allow-hooks`) opens the config store, whose
+   * corrupt-recovery backs the file up and resets EVERY setting to defaults.
+   *
+   * Carrying the reason lets each surface say the true thing and stop.
+   */
+  unreadable?: string;
 }
 
-/** Nothing decided — the shape a fresh install, or an unreadable config, resolves to. */
+/** Nothing decided — the shape a fresh install resolves to. */
 const NO_DECISIONS: HookDecisions = { approved: [], refused: [] };
 
 /**
@@ -155,25 +171,57 @@ export function storedHookDecisions(): HookDecisions {
  * Both stored lists, read straight off `config.json` without opening the store.
  *
  * For the one caller that must not write: see "Why there are two ways to READ
- * the same file" above. A missing file is a fresh install and resolves to
- * nothing decided; an unreadable or invalid one resolves the same way, which
- * fails CLOSED — every package's hooks are withheld and the person is told, and
+ * the same file" above.
+ *
+ * Three outcomes, and telling the last two apart is the whole point. A file that
+ * is not there is a fresh install: nothing decided, and every package's hooks
+ * are simply unasked. A file that IS there and cannot be read — truncated,
+ * hand-edited into invalid JSON, a `harness` block the schema rejects — is
+ * reported as {@link HookDecisions.unreadable}, so the caller says so instead of
+ * announcing that nobody has decided anything. Both fail CLOSED either way:
  * nothing is installed on the strength of a file DorkOS could not parse.
  *
+ * A file that is missing its `harness` block entirely is NOT unreadable: the
+ * schema supplies the section's defaults, which is the same answer the running
+ * server would give.
+ *
  * @param dorkHome - The resolved DorkOS data directory holding `config.json`.
- * @returns The approved and refused entries.
+ * @returns The approved and refused entries, or the reason there are none.
  */
 export function readHookDecisionsFromDisk(dorkHome: string): HookDecisions {
+  const configPath = join(dorkHome, 'config.json');
+  let text: string;
+  try {
+    text = readFileSync(configPath, 'utf8');
+  } catch (err) {
+    // Absent is the ordinary case and the honest one. Anything else about the
+    // file itself — a permission the operating system changed, a directory
+    // where the file should be — is a reason a person needs to hear.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return NO_DECISIONS;
+    return { ...NO_DECISIONS, unreadable: describeReadFailure(err) };
+  }
+
   let raw: unknown;
   try {
-    raw = JSON.parse(readFileSync(join(dorkHome, 'config.json'), 'utf8'));
-  } catch {
-    return NO_DECISIONS;
+    raw = JSON.parse(text);
+  } catch (err) {
+    return { ...NO_DECISIONS, unreadable: describeReadFailure(err) };
   }
+
   const stored = (raw as { harness?: unknown } | null)?.harness;
   const parsed = UserConfigSchema.shape.harness.safeParse(stored);
-  if (!parsed.success) return NO_DECISIONS;
+  if (!parsed.success) {
+    return {
+      ...NO_DECISIONS,
+      unreadable: `the "harness" settings are not in a shape DorkOS understands (${parsed.error.issues[0]?.message ?? 'invalid'})`,
+    };
+  }
   return { approved: parsed.data.approvedHooks, refused: parsed.data.refusedHooks };
+}
+
+/** One short clause naming what went wrong, for a message a person reads. */
+function describeReadFailure(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /**

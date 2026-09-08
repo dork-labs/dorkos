@@ -15,15 +15,17 @@
  * installing hooks nobody allowed — which is exactly what the CLI did.
  *
  * So the consent-carrying half is here, and every trigger calls it.
- * `scripts/__tests__/harness-project-seam.test.ts` holds that line: this is the
+ * `__tests__/project-seam-guard.test.ts` holds that line: this is the
  * only non-test module in `apps/server/src` or `packages/cli/src` allowed to
  * call `project(` from `@dorkos/harness`.
  *
  * ## What it does and deliberately does not do
  *
- * It partitions every hook-declaring package into approved / refused / unasked,
- * builds the plan with only the approved packages' hooks in it, applies it, and
- * reports what was withheld and why. It does NOT ask, scaffold a manifest, check
+ * It partitions every hook-declaring package into refused / approved / unasked
+ * — **in that order**, so a file that somehow says both withholds rather than
+ * installs, and everything is withheld when the file could not be read at all —
+ * builds the plan with only the approved packages' hooks in it,
+ * applies it, and reports what was withheld and why. It does NOT ask, scaffold a manifest, check
  * `harness.autoSync`, or log — those belong to the trigger, and folding any of
  * them in here is what made the previous version unusable by anything else.
  *
@@ -62,7 +64,8 @@ import {
   type ProjectionPlan,
 } from '@dorkos/harness';
 import {
-  hookApprovalEntry,
+  isHookProjectionApproved,
+  isHookProjectionRefused,
   storedHookDecisions,
   type HookDecisions,
   type HookProjectionRequest,
@@ -82,8 +85,16 @@ export const _internal = {
   projectedHooks: defaultProjectedHooks,
 };
 
-/** Why a package's hooks did not project. */
-export type WithheldReason = 'refused' | 'unasked';
+/**
+ * Why a package's hooks did not project.
+ *
+ * `unreadable-config` is not a decision at all: it means the file the decisions
+ * live in could not be read, so nothing is known about this package and nothing
+ * is going to be installed on a guess. It is kept distinct from `unasked`
+ * because the two need opposite advice — one says "allow it", the other says
+ * "fix your settings file first, and do NOT run the command that opens it".
+ */
+export type WithheldReason = 'refused' | 'unasked' | 'unreadable-config';
 
 /** One package whose hooks were left out of the plan, and what they were. */
 export interface WithheldHooks {
@@ -91,6 +102,8 @@ export interface WithheldHooks {
   reason: WithheldReason;
   /** The package, project and exact hooks — enough to ask about, or to record a yes for. */
   request: HookProjectionRequest;
+  /** Why the settings file could not be read, when {@link reason} says so. */
+  unreadable?: string;
 }
 
 /** Options for {@link planWithConsent} and {@link projectWithConsent}. */
@@ -171,10 +184,26 @@ export function planWithConsent(
   const allowed = new Set<string>();
   const withheld: WithheldHooks[] = [];
   for (const request of scanHookRequests(projectPath, opts.dorkHome)) {
-    const entry = hookApprovalEntry(request);
-    if (decisions.approved.includes(entry)) allowed.add(request.packageName);
-    else
-      withheld.push({ reason: decisions.refused.includes(entry) ? 'refused' : 'unasked', request });
+    // REFUSAL IS TESTED FIRST, and the order is the whole of it. Recording
+    // either decision clears the other, so no code path puts one entry in both
+    // lists — but both leaves are `operator-only` exactly so a person can edit
+    // `~/.dork/config.json` by hand, and a hand-edit is how a file ends up
+    // saying two things at once. Testing approval first let the approve branch
+    // win, so a command somebody had turned down installed itself with no
+    // withheld block: the one reading where the safe answer and the loud answer
+    // are the same answer.
+    if (decisions.unreadable !== undefined) {
+      // The lists are empty because the FILE could not be read, not because
+      // nobody has decided. Saying "you have not allowed this yet" here would be
+      // the opposite of the truth for anybody who had.
+      withheld.push({ reason: 'unreadable-config', request, unreadable: decisions.unreadable });
+    } else if (isHookProjectionRefused(request, decisions)) {
+      withheld.push({ reason: 'refused', request });
+    } else if (isHookProjectionApproved(request, decisions)) {
+      allowed.add(request.packageName);
+    } else {
+      withheld.push({ reason: 'unasked', request });
+    }
   }
 
   const full = _internal.project(projectPath, {

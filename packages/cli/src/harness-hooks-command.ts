@@ -75,10 +75,28 @@ export function parseHarnessHooksArgs(rawArgs: string[]): HarnessHooksArgs {
  * undecided wherever it now differs.
  *
  * @param dorkHome - The resolved DorkOS data directory.
- * @returns Always 0 — listing cannot fail in a way a person can act on.
+ * @returns 0 when the file was read, 1 when it could not be.
  */
 async function listDecisions(dorkHome: string): Promise<number> {
-  const { approved, refused } = await readStoredDecisions(dorkHome);
+  const { approved, refused, unreadable } = await readStoredDecisions(dorkHome);
+
+  // "No hook decisions stored yet" over a file full of them is the worst
+  // sentence this command could print, so an unreadable file says what it is
+  // and stops.
+  //
+  // Exit 1 here while `harness sync --fix` exits 0 for the same file, and the
+  // difference is the commands, not an oversight: sync did its whole job apart
+  // from the hooks it held back, which is a decision being obeyed rather than a
+  // failure (contract D5). Listing your decisions IS this command's only job,
+  // and it could not do it. There is no partial success to report.
+  if (unreadable !== undefined) {
+    console.error(`DorkOS could not read ${configPathFor(dorkHome)}: ${unreadable}`);
+    console.error(
+      '  Fix the file to see your decisions. Until then DorkOS holds every package’s hooks back.'
+    );
+    return 1;
+  }
+
   if (approved.length === 0 && refused.length === 0) {
     console.log('No hook decisions stored yet.');
     console.log(

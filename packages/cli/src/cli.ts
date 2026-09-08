@@ -20,6 +20,7 @@ import {
   installCliErrorHandlers,
   flushCliError,
 } from './lib/error-reporter.js';
+import { defaultDorkHome } from './lib/dork-home.js';
 
 // Early Node.js version guard — before any imports that could fail on older runtimes
 const nodeVersionIssue = checkNodeVersion();
@@ -277,7 +278,7 @@ if (process.argv[2] === 'shape') {
 // Resolve the data directory once (explicit env var > ~/.dork; the CLI always
 // runs in production mode). Shared by the early `auth` interception here and the
 // main command flow below.
-const DORK_HOME = env.DORK_HOME || path.join(os.homedir(), '.dork');
+const DORK_HOME = env.DORK_HOME || defaultDorkHome();
 
 // Opt-in error reporting (DOR-293, consolidated in DOR-318). Install early so
 // standalone CLI commands (doctor, feedback, package, harness, …) are covered —

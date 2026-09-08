@@ -210,11 +210,31 @@ describe('projectWithConsent', () => {
     ).toEqual(['unasked']);
   });
 
-  it('cannot report a package as both refused and unasked', () => {
-    // An entry in both lists is a state the store never produces (recording
-    // either side clears the other), and the seam resolves it the safe way if it
-    // ever saw one: approval wins nothing, and the reason it reports is the
-    // stronger of the two.
+  it('lets the refusal win when one entry is in BOTH lists', () => {
+    // The store never produces this state — recording either side clears the
+    // other — but the two leaves are `operator-only` precisely so a person can
+    // hand-edit `~/.dork/config.json`, and hand-editing is how both lists end up
+    // holding one entry. Testing approval first made the approve branch win, so
+    // a `curl … | sh` a person had turned down installed itself with no withheld
+    // block at all. Refusal is checked first: the safe answer, and the one that
+    // matches what the file literally says about that package.
+    const both = { approved: [entry()], refused: [entry()] };
+
+    const result = projectWithConsent(repo, {
+      dorkHome: home,
+      sweepOrphans: true,
+      decisions: both,
+    });
+
+    expect(result.withheld).toHaveLength(1);
+    expect(result.withheld[0]!.reason).toBe('refused');
+    expect(settingsText()).not.toContain(PLUGIN_COMMAND);
+    expect(codexHooksText()).not.toContain(PLUGIN_COMMAND);
+  });
+
+  it('reports a package once even when a list holds the same entry twice', () => {
+    // A hand-edited file can also repeat an entry. One package, one decision,
+    // one line in the report.
     const result = planWithConsent(repo, {
       dorkHome: home,
       decisions: { approved: [], refused: [entry(), entry()] },

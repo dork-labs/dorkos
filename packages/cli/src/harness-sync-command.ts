@@ -241,8 +241,10 @@ function summarizeActions(
  * planning to skip a package's hooks would be the same silence this whole
  * change is about (contract D5).
  */
-function reportWithheld(withheld: readonly WithheldHooks[]): void {
-  for (const entry of withheld) for (const line of formatWithheldBlock(entry)) console.log(line);
+function reportWithheld(withheld: readonly WithheldHooks[], dorkHome: string): void {
+  for (const entry of withheld) {
+    for (const line of formatWithheldBlock(entry, dorkHome)) console.log(line);
+  }
 }
 
 /**
@@ -300,6 +302,7 @@ function reportCheck(
   repoRoot: string,
   plan: ProjectionPlan,
   withheld: readonly WithheldHooks[],
+  dorkHome: string,
   harnessFilter?: HarnessId,
   enabled?: readonly HarnessId[]
 ): number {
@@ -317,7 +320,7 @@ function reportCheck(
     console.log(warningBlock);
   }
   for (const line of formatLeftAlone(drift.leftAlone, harnessFilter)) console.log(line);
-  reportWithheld(withheld);
+  reportWithheld(withheld, dorkHome);
   console.log('');
 
   if (clean) {
@@ -366,6 +369,7 @@ function reportFix(
   },
   withheld: readonly WithheldHooks[],
   codexHooksBefore: string | undefined,
+  dorkHome: string,
   harnessFilter?: HarnessId,
   enabled?: readonly HarnessId[]
 ): number {
@@ -401,7 +405,7 @@ function reportFix(
 
   // Printed AFTER what landed, so the report reads in the order it happened:
   // this is what was installed, and this is what was not.
-  reportWithheld(withheld);
+  reportWithheld(withheld, dorkHome);
 
   if (conflicts.length === 0) return 0;
 
@@ -537,6 +541,18 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     // disagree with what the app would do (contract D5).
     let decisions = await readStoredDecisions(dorkHome);
     if (args.allowHooks.length > 0) {
+      // Refused before anything opens the store, and that ordering is the whole
+      // safety of it: `initConfigManager` on an unreadable `config.json` runs
+      // `conf`'s corrupt-recovery, which backs the file up and replaces it with
+      // defaults — every setting, not just these two lists. Being told to run
+      // the command that wipes your settings is worse than the withheld hook.
+      if (decisions.unreadable !== undefined) {
+        console.error(`DorkOS could not read ${configPathFor(dorkHome)}: ${decisions.unreadable}`);
+        console.error(
+          '  Fix the file first. Allowing hooks writes to it, and DorkOS will not write over a file it cannot read.'
+        );
+        return { exitCode: 1 };
+      }
       const requests = scanHookRequests(repoRoot, dorkHome);
       const unknown = args.allowHooks.filter(
         (name) => !requests.some((request) => request.packageName === name)
@@ -581,7 +597,14 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
 
     if (!args.fix) {
       const { plan, withheld } = planWithConsent(repoRoot, consentOpts);
-      const exitCode = reportCheck(repoRoot, plan, withheld, harnessFilter, enabledHarnesses());
+      const exitCode = reportCheck(
+        repoRoot,
+        plan,
+        withheld,
+        dorkHome,
+        harnessFilter,
+        enabledHarnesses()
+      );
       return { exitCode: strictExit(exitCode, withheld, args.strict) };
     }
 
@@ -596,6 +619,7 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
       result,
       result.withheld,
       codexHooksBefore,
+      dorkHome,
       harnessFilter,
       enabledHarnesses()
     );

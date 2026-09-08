@@ -26,7 +26,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
+import { resolveDorkHome } from './dork-home.js';
 
 /** Default server port — kept in sync with `@dorkos/shared/constants`. */
 const DEFAULT_PORT = 4242;
@@ -103,12 +103,6 @@ export function getServerBaseUrl(): string {
 
   const configPort = readConfigPort();
   return `http://localhost:${configPort ?? DEFAULT_PORT}`;
-}
-
-/** The DorkOS data directory: `DORK_HOME` when set, else `~/.dork`. */
-function resolveDorkHome(): string {
-  // eslint-disable-next-line no-restricted-syntax -- DORK_HOME is set imperatively by cli.ts after module load
-  return process.env.DORK_HOME || path.join(os.homedir(), '.dork');
 }
 
 /**

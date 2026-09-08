@@ -71,7 +71,7 @@ describe('runAutoProjection', () => {
   it('reaches the engine ONLY through the consent seam, and tells it to sweep', () => {
     // The trigger's whole engine surface, asserted as a set rather than left to
     // a reader: a second entry here would be a second way to reach `project()`,
-    // which is the failure `scripts/__tests__/harness-project-seam.test.ts`
+    // which is the failure `./project-seam-guard.test.ts`
     // guards at the source level.
     expect(Object.keys(_internal).sort()).toEqual(['projectWithConsent', 'scaffoldManifest']);
   });

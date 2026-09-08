@@ -450,11 +450,13 @@ describe('runHarnessSync', () => {
     );
   });
 
-  it('says nothing about a rotted hooks.json for a package whose hooks are withheld', async () => {
-    // Nothing from that file is being installed, so naming what the salvage
-    // dropped would be a fact about a projection that is not happening. What the
-    // person is told instead is the whole package being held back, command by
-    // command — which is the bigger news and the one they can act on.
+  it('names what a rotted hooks.json lost BESIDE the withheld block, before the decision', async () => {
+    // Both, and the order matters. The withheld block lists what the reader
+    // could recover; the salvage warning names what it could not. A person
+    // deciding whether to allow this package needs both halves BEFORE they
+    // answer — reporting the loss only once the package was allowed meant
+    // deciding from a list that quietly omitted the damaged part (DOR-1724,
+    // DOR-1849).
     writeFixtureRepo(tmpDir);
     writeInstalledPlugin(tmpDir, 'acme', 'greet');
     const hooksDir = path.join(tmpDir, '.dork', 'plugins', 'acme', 'hooks');
@@ -471,9 +473,12 @@ describe('runHarnessSync', () => {
     expect(fix.exitCode).toBe(0);
 
     const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(printed).not.toContain('hooks/hooks.json declares');
+    expect(printed).toContain(
+      'hook "acme:Stop": .dork/plugins/acme/hooks/hooks.json declares one or more unusable matcher groups under "Stop"'
+    );
     expect(printed).toContain('Withheld: hooks from "acme" were not installed');
     expect(printed).toContain('still-good.sh');
+    // Withheld means withheld: the readable half did not install either.
     expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
   });
 
@@ -880,6 +885,111 @@ describe('runHarnessSync — withholding a package’s hooks', () => {
     expect(storedHarness()?.refusedHooks).toEqual([]);
   });
 
+  it('withholds a package whose entry a hand-edit put in BOTH lists', async () => {
+    // Both leaves are `operator-only` so that a person can edit
+    // `~/.dork/config.json` themselves, and a hand-edit is how one entry ends up
+    // on both lists. Measured before the fix: the command installed itself with
+    // no withheld block at all.
+    const entry = hookApprovalEntry({
+      projectPath: repoRoot(),
+      packageName: 'acme-tools',
+      hooks: [
+        { event: 'PreToolUse', matcher: 'Bash', command: 'node ./guard.mjs' },
+        { event: 'Stop', command: 'bash scripts/notify.sh' },
+      ],
+    });
+    fs.writeFileSync(
+      path.join(homeDir, 'config.json'),
+      JSON.stringify({
+        version: 1,
+        harness: { autoSync: true, approvedHooks: [entry], refusedHooks: [entry] },
+      })
+    );
+
+    const fix = await runHarnessSync(syncArgs({ fix: true }));
+
+    expect(fix.exitCode).toBe(0);
+    expect(printed()).toContain('You turned this package down earlier.');
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
+    expect(fs.readFileSync(path.join(tmpDir, '.codex', 'hooks.json'), 'utf8')).not.toContain(
+      'guard.mjs'
+    );
+  });
+
+  describe('when config.json itself cannot be read', () => {
+    /** A truncated settings file — a mid-write, or a hand-edit that lost a brace. */
+    function writeTruncatedConfig(): void {
+      fs.writeFileSync(path.join(homeDir, 'config.json'), '{ "version": 1, "harness": {');
+    }
+
+    it('says the file could not be read instead of "you have not allowed this yet"', async () => {
+      writeTruncatedConfig();
+
+      const fix = await runHarnessSync(syncArgs({ fix: true }));
+
+      expect(fix.exitCode).toBe(0);
+      const out = printed();
+      expect(out).toContain('Withheld: hooks from "acme-tools" were not installed');
+      expect(out).toContain(`DorkOS could not read ${path.join(homeDir, 'config.json')}`);
+      expect(out).toContain('Fix the file before allowing hooks.');
+      // The two things it must NOT say: a claim about what was decided, and the
+      // command whose corrupt-recovery would replace every setting with defaults.
+      expect(out).not.toContain('You have not allowed this package yet.');
+      expect(out).not.toContain('--allow-hooks acme-tools');
+      // Still fail-closed, and the file is left exactly as it was.
+      expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
+      expect(fs.readFileSync(path.join(homeDir, 'config.json'), 'utf8')).toBe(
+        '{ "version": 1, "harness": {'
+      );
+    });
+
+    it('says the same on --check', async () => {
+      writeTruncatedConfig();
+
+      await runHarnessSync(syncArgs({ check: true }));
+
+      expect(printed()).toContain(`DorkOS could not read ${path.join(homeDir, 'config.json')}`);
+      expect(printed()).not.toContain('You have not allowed this package yet.');
+    });
+
+    it('refuses --allow-hooks rather than opening the store over it', async () => {
+      // `initConfigManager` on an unreadable file runs conf's corrupt-recovery,
+      // which backs it up and resets EVERY setting to defaults. The refusal is
+      // what keeps a person's telemetry, login and accounts where they left them.
+      writeTruncatedConfig();
+
+      const result = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme-tools'] }));
+
+      expect(result.exitCode).toBe(1);
+      expect(errors()).toContain(`DorkOS could not read ${path.join(homeDir, 'config.json')}`);
+      expect(fs.readFileSync(path.join(homeDir, 'config.json'), 'utf8')).toBe(
+        '{ "version": 1, "harness": {'
+      );
+      expect(fs.readdirSync(homeDir)).toEqual(['config.json']);
+    });
+
+    it('a schema-invalid harness block is unreadable too, not "nothing decided"', async () => {
+      fs.writeFileSync(
+        path.join(homeDir, 'config.json'),
+        JSON.stringify({ version: 1, harness: { autoSync: true, approvedHooks: 'oops' } })
+      );
+
+      await runHarnessSync(syncArgs({ fix: true }));
+
+      expect(printed()).toContain('not in a shape DorkOS understands');
+      expect(printed()).not.toContain('You have not allowed this package yet.');
+    });
+
+    it('an ABSENT file is still just "not allowed yet" — that one is honest', async () => {
+      expect(fs.existsSync(path.join(homeDir, 'config.json'))).toBe(false);
+
+      await runHarnessSync(syncArgs({ fix: true }));
+
+      expect(printed()).toContain('You have not allowed this package yet.');
+      expect(printed()).not.toContain('could not read');
+    });
+  });
+
   it('refuses --allow-hooks without --fix, naming the fix', async () => {
     const result = await runHarnessSync(syncArgs({ check: true, allowHooks: ['acme-tools'] }));
 
@@ -1068,6 +1178,16 @@ describe('runHarnessHooks', () => {
     expect(out).toContain(
       'other-pkg — from another project, or from before this package changed its hooks'
     );
+  });
+
+  it('--list says the file could not be read rather than "nothing stored yet"', async () => {
+    fs.writeFileSync(path.join(homeDir, 'config.json'), '{ "version": 1, "harness": {');
+
+    const result = await runHarnessHooks({ list: true });
+
+    expect(result.exitCode).toBe(1);
+    expect(errors()).toContain(`DorkOS could not read ${path.join(homeDir, 'config.json')}`);
+    expect(printed()).not.toContain('No hook decisions stored yet.');
   });
 
   it('--revoke forgets a package and says the next sync will ask again', async () => {

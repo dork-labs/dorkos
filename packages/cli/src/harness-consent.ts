@@ -24,24 +24,14 @@
  * @module harness-consent
  */
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 import type { WithheldHooks } from '../server/services/harness/project-with-consent.js';
 
-/**
- * Resolve the dork home for installed-plugin projection, mirroring `cli.ts`.
- *
- * The `harness` namespace is intercepted in `cli.ts` *before* the block that
- * resolves and exports `process.env.DORK_HOME`, so we resolve it here with the
- * same precedence (`DORK_HOME` env var, else `~/.dork`). This lets GLOBAL-scope
- * installs project; PROJECT-scope installs are repo-relative and project even
- * when no home exists.
- *
- * @returns the resolved dork home directory.
- */
-export function resolveDorkHome(): string {
-  // eslint-disable-next-line no-restricted-syntax -- the harness branch in cli.ts runs before DORK_HOME is exported, so we mirror its `env || ~/.dork` resolution here
-  return process.env.DORK_HOME || join(homedir(), '.dork');
-}
+// The `harness` namespace is intercepted in `cli.ts` before DORK_HOME is
+// exported, so it resolves the directory the same way three other commands do —
+// through the one helper that owns that resolution. Passing a resolved home
+// lets GLOBAL-scope installs project; PROJECT-scope installs are repo-relative
+// and project even when no home exists.
+export { resolveDorkHome } from './lib/dork-home.js';
 
 /** Where a person's decisions are stored, for the messages that name the file. */
 export function configPathFor(dorkHome: string): string {
@@ -57,9 +47,30 @@ export function configPathFor(dorkHome: string): string {
 export async function readStoredDecisions(dorkHome: string): Promise<{
   approved: readonly string[];
   refused: readonly string[];
+  unreadable?: string;
 }> {
   const { readHookDecisionsFromDisk } = await import('../server/services/harness/hook-consent.js');
   return readHookDecisionsFromDisk(dorkHome);
+}
+
+/**
+ * The two lines shown when the settings file itself could not be read.
+ *
+ * It deliberately does NOT suggest `--allow-hooks`. That flag opens the config
+ * store, and `conf`'s corrupt-recovery would back the unreadable file up and
+ * replace it with defaults — resetting telemetry, login, accounts and the port
+ * along with it. Being told to run the command that wipes your settings is a
+ * worse outcome than the withheld hook.
+ *
+ * @param dorkHome - The resolved DorkOS data directory.
+ * @param reason - What went wrong, from `readHookDecisionsFromDisk`.
+ * @returns The lines to print, in order.
+ */
+export function unreadableConfigLines(dorkHome: string, reason: string): string[] {
+  return [
+    `  DorkOS could not read ${configPathFor(dorkHome)}: ${reason}`,
+    '  Fix the file before allowing hooks. Nothing is installed until DorkOS can read your answers.',
+  ];
 }
 
 /**
@@ -78,26 +89,47 @@ function triggerLabel(hook: { event: string; matcher?: string }): string {
 /**
  * The terminal block for one package whose hooks were not installed.
  *
- * Names every command, says which decision is being obeyed, and gives the exact
- * re-run — because a notice after the write is not consent, and a withheld hook
- * that is printed is (contract D5). The commands are shown as they would be
- * written into the harness file, `${CLAUDE_PLUGIN_ROOT}` already resolved, so
- * what is on screen is what would have run.
+ * Names every command the package's `hooks/hooks.json` could be read for, says
+ * which decision is being obeyed, and gives the exact re-run — because a notice
+ * after the write is not consent, and a withheld hook that is printed is
+ * (contract D5). The commands are shown as they would be written into the
+ * harness file, `${CLAUDE_PLUGIN_ROOT}` already resolved, so what is on screen
+ * is what would have run.
+ *
+ * "Could be read for" is the precise claim and not a hedge: a damaged
+ * `hooks/hooks.json` loses declarations at read time, before consent is even a
+ * question, and what it lost is reported separately in the plan's warnings —
+ * which is why those warnings are computed over EVERY hook-declaring package
+ * and not only the allowed ones (DOR-1724).
+ *
+ * A file DorkOS could not read is the one case with no re-run to offer: see
+ * {@link unreadableConfigLines}.
  *
  * @param withheld - One package's withheld hooks and the reason.
+ * @param dorkHome - The resolved DorkOS data directory, for the unreadable case.
  * @returns The lines to print, in order.
  */
-export function formatWithheldBlock(withheld: WithheldHooks): string[] {
+export function formatWithheldBlock(withheld: WithheldHooks, dorkHome: string): string[] {
   const { request, reason } = withheld;
   const triggers: string[] = request.hooks.map(triggerLabel);
   const width = Math.max(0, ...triggers.map((t: string) => t.length));
+  const commands = request.hooks.map(
+    (hook: { command: string }, i: number) => `  ${triggers[i]!.padEnd(width)}  ->  ${hook.command}`
+  );
+
+  if (reason === 'unreadable-config') {
+    return [
+      '',
+      `Withheld: hooks from "${request.packageName}" were not installed`,
+      ...commands,
+      ...unreadableConfigLines(dorkHome, withheld.unreadable ?? 'the file could not be parsed'),
+    ];
+  }
+
   return [
     '',
     `Withheld: hooks from "${request.packageName}" were not installed`,
-    ...request.hooks.map(
-      (hook: { command: string }, i: number) =>
-        `  ${triggers[i]!.padEnd(width)}  ->  ${hook.command}`
-    ),
+    ...commands,
     reason === 'refused'
       ? '  You turned this package down earlier.'
       : '  You have not allowed this package yet.',

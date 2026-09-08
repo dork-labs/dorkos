@@ -640,7 +640,14 @@ export function buildPlan(input: {
   // pre-install preview that discloses the same file runs before the install and
   // cannot see a file that rots afterwards (DOR-1724). Emitted once, not per
   // harness: the loss happened at read time, ahead of every harness.
-  warnings.push(...planUnreadableHookWarnings(hookContributors));
+  //
+  // Over `projectable`, NOT `hookContributors`: the loss is a fact about the
+  // file, and it is true whether or not the package's hooks were allowed to
+  // contribute. Reporting only the allowed ones meant a person decided whether
+  // to trust a package from a list of commands that silently omitted the ones
+  // the reader could not parse, and heard about the omission only after saying
+  // yes (DOR-1849).
+  warnings.push(...planUnreadableHookWarnings(projectable));
 
   const all: ProjectionAction[] = [];
   for (const harness of manifest.harnesses) {

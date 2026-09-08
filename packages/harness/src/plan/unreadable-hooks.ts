@@ -66,9 +66,17 @@ function unreadableHookReason(declaration: UnreadableHookDeclaration): string {
  * engine could not fully read. One warning per bad declaration, not one per
  * enabled harness — the loss happened at read time, ahead of every harness.
  *
- * @param plugins - the plugins whose hooks are actually allowed to contribute (a
- *   package excluded by the hook gate projects no hooks either way, so its
- *   salvage losses would be noise).
+ * Reported for EVERY hook-declaring package, allowed or withheld. It used to
+ * take only the allowed ones, on the reasoning that a withheld package projects
+ * nothing so its salvage losses are noise — which had it backwards. The loss
+ * happens at READ time, before consent is a question, and the consent card and
+ * the CLI's withheld block both list what the reader could recover: so a person
+ * deciding whether to allow a package was reading a list that silently omitted
+ * whatever could not be parsed, and would only be told about it AFTER saying
+ * yes. DOR-1724's promise is that a discarded hook is never silent, and it does
+ * not hold only for packages somebody already trusts.
+ *
+ * @param plugins - every scanned plugin whose hooks were read, allowed or not.
  * @returns one warning per unreadable declaration, empty when every scanned
  *   `hooks/hooks.json` was fully readable.
  */
