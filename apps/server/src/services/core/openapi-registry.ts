@@ -5232,8 +5232,9 @@ registry.registerPath({
     'every list is empty and every count is zero. ' +
     '**No file bytes**: the response carries artifact names, repo-relative paths and reasons, ' +
     'and a withheld package’s hook commands are deliberately left out of it. ' +
-    '`projectPath` must be absolute, and inside the configured directory boundary or under ' +
-    '`{dorkHome}/agents` — the subtree every DorkOS-managed agent lives in.',
+    '`projectPath` must be absolute — a relative one is refused rather than resolved against ' +
+    'wherever the server was started — and inside the configured directory boundary or under ' +
+    '`{dorkHome}/agents`, the subtree every DorkOS-managed agent lives in.',
   request: { query: HarnessStatusQuerySchema },
   responses: {
     200: {
@@ -5244,7 +5245,8 @@ registry.registerPath({
     },
     400: {
       description:
-        '`projectPath` was missing or blank, or it named something that is not a directory',
+        '`projectPath` was missing, blank or relative, or it named something that is not a ' +
+        'directory',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     403: {

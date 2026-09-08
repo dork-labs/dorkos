@@ -36,8 +36,9 @@
  *
  * ## Failures that are still failures
  *
- * A missing or blank `projectPath` is `400`; a path outside the boundary is
- * `403`; an unexpected throw is `500` with the message logged and not echoed.
+ * A missing, blank or relative `projectPath` is `400`; a path outside the
+ * boundary is `403`; an unexpected throw is `500` with the message logged and
+ * not echoed.
  *
  * **And a `projectPath` that leads nowhere is a `404`** — the case
  * {@link buildHarnessStatus} explicitly hands back to this route, because the
@@ -94,12 +95,36 @@
  */
 import { Router } from 'express';
 import { stat } from 'node:fs/promises';
+import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 import { HarnessStatusQuerySchema } from '@dorkos/shared/harness-schemas';
 import { BoundaryError, validateBoundaryOrDorkHome } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { storedHookDecisions, type HookDecisions } from '../services/harness/hook-consent.js';
 import { buildHarnessStatus } from '../services/harness/status.js';
+
+/**
+ * The shared query shape, plus the one rule that cannot live beside it.
+ *
+ * `projectPath` must be ABSOLUTE. Without this, a relative one is resolved
+ * against the server's own `process.cwd()` — still boundary-checked, so nothing
+ * escapes, but the answer describes a directory the caller never named, and
+ * which one depends on where the operator happened to start the process.
+ *
+ * The check is bolted on HERE rather than added to `HarnessStatusQuerySchema`
+ * because `@dorkos/shared/harness-schemas` is imported by the CLIENT — that is
+ * why the harness vocabulary was moved down into it at all — and `isAbsolute` is
+ * `node:path`, whose answer is platform-dependent (`C:\…` and `\\server\share`
+ * are absolute on Windows and not on POSIX). Reimplementing it as a regex in a
+ * browser-safe module would be a second, wrong copy of a platform question the
+ * server can just ask. Nothing is lost in the generated docs: `zod-to-openapi`
+ * projects no refinement, so the blankness rule beside it is invisible there
+ * too, and the OpenAPI description states the requirement in words.
+ */
+const HarnessStatusQuery = HarnessStatusQuerySchema.refine(
+  ({ projectPath }) => isAbsolute(projectPath),
+  { path: ['projectPath'], error: 'projectPath must be an absolute path' }
+);
 
 /** What the harness router reads. It writes nothing and holds no state. */
 export interface HarnessRouterDeps {
@@ -129,7 +154,7 @@ export function createHarnessRouter(deps: HarnessRouterDeps): Router {
 
   // GET /api/harness/status?projectPath=<absolute path>
   router.get('/status', async (req, res) => {
-    const parsed = HarnessStatusQuerySchema.safeParse(req.query);
+    const parsed = HarnessStatusQuery.safeParse(req.query);
     if (!parsed.success) {
       return res
         .status(400)
