@@ -2,7 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { HarnessManifestSchema, parseHarnessManifest, HARNESS_IDS } from '../schema.js';
+import {
+  HarnessManifestSchema,
+  parseHarnessManifest,
+  HARNESS_IDS,
+  RETIRED_MANIFEST_KEYS,
+} from '../schema.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // packages/harness/src/manifest/__tests__ -> repo root is five levels up.
@@ -32,21 +37,46 @@ describe('HarnessManifestSchema', () => {
     expect(() => parseHarnessManifest(stale)).toThrow();
   });
 
-  it('rejects a skillBundle that still carries a per-skill list', () => {
-    // The per-bundle `skills` array is derivable from sourceRoot and must not be stored.
-    const stale = {
+  it('accepts, and ignores, every retired key whatever it holds', () => {
+    // The four keys nothing reads (DOR-1858) stay ACCEPTED so an existing repo's
+    // manifest still parses — `--enable` validates with this schema before it
+    // writes a byte, and rejecting the file would cost a person a hand-edit
+    // before any of it worked. Their CONTENTS are no longer anybody's business,
+    // so a shape that used to be rejected (a bundle carrying a per-skill list)
+    // now parses too.
+    const carried = {
       version: 1,
+      skillWrappers: [{ target: 'codex', name: 'x', whatever: true }],
+      commandMappings: 'not even an array',
+      instructionProjections: null,
       skillBundles: [{ name: 'flow', sourceRoot: '.agents/flow/skills', skills: [{ name: 'a' }] }],
     };
-    expect(() => parseHarnessManifest(stale)).toThrow();
+    expect(() => parseHarnessManifest(carried)).not.toThrow();
+    expect(parseHarnessManifest(carried).harnesses).toEqual(['claude-code']);
+  });
+
+  it('still rejects a key it has never had', () => {
+    // Retiring four keys did not open the door: `.strict()` is what catches the
+    // derivable `sharedSkills` above, and a typo in a live key is caught the
+    // same way.
+    expect(() => parseHarnessManifest({ version: 1, harneses: ['codex'] })).toThrow();
   });
 
   it('fills defaults for a minimal manifest', () => {
     // Only `version` is required; harnesses + every policy array default.
     const m = parseHarnessManifest({ version: 1 });
     expect(m.harnesses).toEqual(['claude-code']);
-    expect(m.skillBundles).toEqual([]);
+    expect(m.hookPolicies).toEqual([]);
     expect(m.claudeOnlySkills).toEqual([]);
+  });
+
+  it('leaves a retired key it was not given off the parsed manifest', () => {
+    // How presence is detected: Zod drops an absent optional key entirely, so
+    // `manifest.skillWrappers !== undefined` is the whole test, and no JSON
+    // value can fake it.
+    const m = parseHarnessManifest({ version: 1 });
+    expect(RETIRED_MANIFEST_KEYS.every((key) => m[key] === undefined)).toBe(true);
+    expect(parseHarnessManifest({ version: 1, skillWrappers: [] }).skillWrappers).toEqual([]);
   });
 
   it('records codex hooks as a generate projection', () => {

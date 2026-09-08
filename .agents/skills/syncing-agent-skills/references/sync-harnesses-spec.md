@@ -42,10 +42,15 @@ These constraints come from the current official docs checked during this design
   - `AGENTS.md` is supported as a simpler alternative to `.cursor/rules`
   - `.cursorrules` is legacy
   - Memories are generated rules managed by Cursor rather than a normal repo file primitive
+  - Repo-local hooks live in `.cursor/hooks.json`, shaped `{ version, hooks }`
+  - Repo-local slash commands live in `.cursor/commands/*.md`
 - **Codex**
   - Project instructions are driven by `AGENTS.md`
   - Skills are discovered from `.agents/skills`
   - Built-in slash commands are documented, but repo-local custom slash command files are not
+  - Repo-local hooks live in `.codex/hooks.json`, shaped `{ description, hooks }`, and are trust-gated:
+    Codex records trust against each hook's current hash, so a changed hook is held for review until
+    it is trusted again
 
 ## Canonical Model
 
@@ -63,11 +68,11 @@ These should be the source of truth when the concept is portable:
 
 These remain the user-facing projection points:
 
-| Tool        | Skills                                                          | Instructions                     | Commands                                  | Hooks                                  | Memory                                              |
-| ----------- | --------------------------------------------------------------- | -------------------------------- | ----------------------------------------- | -------------------------------------- | --------------------------------------------------- |
-| Claude Code | `.claude/skills/`                                               | `AGENTS.md` and `CLAUDE.md`      | `.claude/commands/`                       | `.claude/settings.json`                | `CLAUDE.md`                                         |
-| Cursor      | `.cursor/skills/` only if we explicitly choose to project there | `AGENTS.md` and `.cursor/rules/` | No repo-local command format in this spec | No repo-local hook format in this spec | Cursor-managed memories, not repo canonical         |
-| Codex       | `.agents/skills/`                                               | `AGENTS.md`                      | No repo-local command format in this spec | No repo-local hook format in this spec | No separate repo memory file primitive in this spec |
+| Tool        | Skills                                                          | Instructions                     | Commands                                                                     | Hooks                                        | Memory                                              |
+| ----------- | --------------------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------- |
+| Claude Code | `.claude/skills/`                                               | `AGENTS.md` and `CLAUDE.md`      | `.claude/commands/`                                                          | `.claude/settings.json`                      | `CLAUDE.md`                                         |
+| Cursor      | `.cursor/skills/` only if we explicitly choose to project there | `AGENTS.md` and `.cursor/rules/` | `.cursor/commands/*.md` (not projected yet)                                  | `.cursor/hooks.json` (generated)             | Cursor-managed memories, not repo canonical         |
+| Codex       | `.agents/skills/`                                               | `AGENTS.md`                      | No repo-local command format (custom prompts deprecated in favour of skills) | `.codex/hooks.json` (generated, trust-gated) | No separate repo memory file primitive in this spec |
 
 ## Asset Classification
 
@@ -148,8 +153,8 @@ Slash commands are not portable across the three tools.
 Current official Anthropic docs still document custom slash commands in `.claude/commands/`. This repo is migrating command workflows into shared skills proactively for cross-agent compatibility, not because Anthropic already provides an official slash-command-to-skill migration format.
 
 - **Claude Code:** keep `.claude/commands/` as the real implementation
-- **Cursor:** no project-local slash command format is defined in this spec
-- **Codex:** do not project Claude slash commands directly; convert important commands into skills or `AGENTS.md` workflows
+- **Cursor:** Cursor reads `.cursor/commands/*.md`; nothing is projected there yet, and the drop line says so
+- **Codex:** Codex genuinely has no repo-local command format — its custom prompts were deprecated in favour of skills — so convert important commands into skills or `AGENTS.md` workflows
 
 Policy:
 
@@ -161,14 +166,20 @@ Policy:
 Hooks are also not portable as a shared file format.
 
 - **Claude Code:** `.claude/settings.json` remains canonical for Claude hooks
-- **Cursor:** no equivalent repo hook system is assumed here
-- **Codex:** no equivalent repo hook system is assumed here
+- **Cursor:** Cursor reads `.cursor/hooks.json` (`{ version, hooks }`); DorkOS generates it from the
+  canonical Claude hooks
+- **Codex:** Codex reads `.codex/hooks.json` (`{ description, hooks }`) and documents 12 events;
+  DorkOS maps 11 of them (`Interrupt` has no Claude spelling). Codex is **trust-gated** — it records
+  trust against each hook's current hash, so a regenerated file puts every hook back in the review
+  queue until `/hooks` trusts it again, which is why byte-identical regeneration matters
 
 Policy:
 
 - Keep hook logic modular in scripts when possible
 - Allow Claude hook commands to call reusable project scripts
-- If another tool later supports project hooks, add a projection adapter then
+- The canonical source is `.claude/settings.json` alone; every other harness's hooks file is
+  generated from it, never hand-edited beside it
+- `hookPolicies` in the manifest is the per-harness switch: `generate`, `native`, or `none`
 
 ## Proposed Repo Structure
 
@@ -195,36 +206,32 @@ Policy:
 
 ## Sync Manifest
 
-The sync system should eventually use a manifest rather than ad hoc file discovery.
-
-Recommended path:
-
-- `.agents/harness.manifest.json`
-
-Recommended top-level fields:
+The sync system uses a manifest rather than ad hoc file discovery. It lives at
+`.agents/harness.manifest.json`, and it is hand-authored: the engine scaffolds one when a repo has
+none and never rewrites it afterwards.
 
 ```json
 {
   "version": 1,
-  "sharedSkills": [],
+  "harnesses": ["claude-code", "codex"],
   "claudeOnlySkills": [],
-  "skillWrappers": [],
-  "commandMappings": [],
-  "instructionProjections": [],
   "hookPolicies": []
 }
 ```
 
-### Suggested manifest concepts
+### The manifest fields
 
-| Field                    | Purpose                                                              |
-| ------------------------ | -------------------------------------------------------------------- |
-| `sharedSkills`           | Skills whose source of truth is `.agents/skills`                     |
-| `claudeOnlySkills`       | Skills intentionally left in `.claude/skills`                        |
-| `skillWrappers`          | Renamed or tool-specific wrapper definitions                         |
-| `commandMappings`        | Claude command -> shared skill or AGENTS workflow mapping            |
-| `instructionProjections` | Rules for deriving `CLAUDE.md` or Cursor rule files from shared docs |
-| `hookPolicies`           | Which Claude hooks are pure Claude, and which call reusable scripts  |
+| Field              | Purpose                                                                                        |
+| ------------------ | ---------------------------------------------------------------------------------------------- |
+| `harnesses`        | The enabled projection targets                                                                 |
+| `claudeOnlySkills` | Skills intentionally left in `.claude/skills`, each with the path it lives at and why          |
+| `hookPolicies`     | Per harness: `native` (it reads the canonical file), `generate` (DorkOS writes one), or `none` |
+
+Everything else is DERIVED, so it is not stored: the scanner reconstructs the shared skills from
+`.agents/skills/*`, and a stale `sharedSkills` array is rejected rather than silently accepted.
+`skillWrappers`, `commandMappings`, `instructionProjections` and `skillBundles` were retired in
+DOR-1858 — nothing read them. A manifest carrying one still parses, and `dorkos harness sync` names
+it so you can delete it. Full detail: `contributing/harness-sync.md` §9.
 
 ## Generation Rules
 

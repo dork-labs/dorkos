@@ -6,7 +6,12 @@
  * canonical source directly), `symlink`, `scaffold`, `generate`, or `drop`.
  * Nothing a harness cannot accept is silently omitted — it lands in `plan.drops`
  * with a reason. Deterministic bytes for `scaffold`/`generate` actions are
- * attached via {@link setActionContent} so the apply stage can reproduce them.
+ * attached via `setActionContent` so the apply stage can reproduce them.
+ *
+ * The hooks half lives next door in `plan/hooks-projection.ts`: it is the one
+ * artifact kind whose answer varies per harness in three directions at once (the
+ * file shape, the events that survive translation, and `manifest.hookPolicies`),
+ * and it was most of this module.
  *
  * @module plan/projector
  */
@@ -20,19 +25,14 @@ import type {
   ProjectionPlan,
   ProjectionWarning,
 } from './types.js';
-import { setActionContent } from './content-map.js';
 import { scanSkills, AGENTS_SKILLS_DIR, type SkillEntry } from '../scan/scanner.js';
+import type { ClaudeHooksConfig } from '../generate/hooks.js';
 import {
-  generateCodexHooks,
-  generateCursorHooks,
-  generateCopilotHooks,
-  CODEX_HOOKS_TARGET,
-  CURSOR_HOOKS_TARGET,
-  COPILOT_HOOKS_TARGET,
-  type ClaudeHooksConfig,
-  type HookWarning,
-  type DroppedHook,
-} from '../generate/hooks.js';
+  collectHookSources,
+  dropSuppressedPluginHookMerge,
+  hookPolicyFor,
+  planHooks,
+} from './hooks-projection.js';
 import { planInstruction } from './instructions.js';
 
 import type { InstalledPlugin } from '../sources/installed.js';
@@ -55,8 +55,6 @@ import { planUnreadableHookWarnings } from './unreadable-hooks.js';
 import { planInventoriedArtifacts, planInventoryWarnings } from './source-artifacts.js';
 import { commandDropReason } from './command-formats.js';
 import { inventorySourceTree, type SourceInventory } from '../inventory/index.js';
-/** The one authored hooks file the engine reads — Claude Code's own project settings. */
-const CLAUDE_SETTINGS_SOURCE = '.claude/settings.json';
 
 /** The authored slash-command directory Claude Code reads (namespaced by subdirectory). */
 const CLAUDE_COMMANDS_SOURCE = CLAUDE_COMMANDS_DIR;
@@ -278,256 +276,6 @@ function planClaudeOnlySkills(input: {
 }
 
 /**
- * The static per-harness recipe for a standalone hooks file the engine
- * generates: where it goes and how to build its content.
- */
-interface StandaloneHookSpec {
-  /** The repo-relative target path for this harness's generated hooks file. */
-  target: string;
-  /**
-   * Translate the merged Claude hooks into this harness's on-disk content.
-   *
-   * @returns the deterministic file content (or `undefined` when the harness has
-   *   zero mappable events, so the file is not written and any stale one is
-   *   pruned by the apply stage), plus the dropped events and warnings.
-   */
-  generate: (claudeHooks: ClaudeHooksConfig) => {
-    content: string | undefined;
-    dropped: DroppedHook[];
-    warnings: HookWarning[];
-  };
-}
-
-/**
- * Every harness with its own standalone hooks file. Each entry runs its
- * `generate` function over the merged Claude hooks, serializes the result to the
- * `target` path, and emits its unmapped events as drops. Every one of the three
- * writes a WRAPPED file, not a bare event map: Codex nests the event map under
- * `{ description, hooks }`, Cursor and Copilot under `{ version, hooks }`. So
- * each entry owns its own `generate`, returning already-serializable content
- * plus the dropped/warning lists.
- *
- * The engine does not own these paths by path alone — Codex's and Cursor's own
- * docs tell people to write them by hand. Ownership is decided at apply time by
- * a `.dorkos-generated` sidecar (`apply/generated-ownership.ts`).
- *
- * Gemini is intentionally NOT here: its hooks live inside the SHARED
- * `.gemini/settings.json`, which holds unrelated user settings, so it is handled
- * as an honest drop rather than a standalone generated file (see
- * {@link planHooks}).
- */
-const STANDALONE_HOOK_HARNESSES: Partial<Record<HarnessId, StandaloneHookSpec>> = {
-  codex: {
-    target: CODEX_HOOKS_TARGET,
-    generate: (claudeHooks) => {
-      const { file, dropped, warnings } = generateCodexHooks(claudeHooks);
-      const content =
-        Object.keys(file.hooks).length > 0 ? JSON.stringify(file, null, 2) + '\n' : undefined;
-      return { content, dropped, warnings };
-    },
-  },
-  cursor: {
-    target: CURSOR_HOOKS_TARGET,
-    generate: (claudeHooks) => {
-      const { file, dropped, warnings } = generateCursorHooks(claudeHooks);
-      const content =
-        Object.keys(file.hooks).length > 0 ? JSON.stringify(file, null, 2) + '\n' : undefined;
-      return { content, dropped, warnings };
-    },
-  },
-  copilot: {
-    target: COPILOT_HOOKS_TARGET,
-    generate: (claudeHooks) => {
-      const { file, dropped, warnings } = generateCopilotHooks(claudeHooks);
-      const content =
-        Object.keys(file.hooks).length > 0 ? JSON.stringify(file, null, 2) + '\n' : undefined;
-      return { content, dropped, warnings };
-    },
-  },
-};
-
-/** Whether a hooks config carries at least one event — an absent one and an empty one are the same nothing. */
-function hasHooks(hooks?: ClaudeHooksConfig): boolean {
-  return hooks !== undefined && Object.keys(hooks).length > 0;
-}
-
-/**
- * Where the hooks in the merged config actually came from.
- *
- * Every line about hooks names a file, drops included: a drop with no source
- * cannot be matched back to the declaration it is about, which is how a hook
- * could be "reported" and still be silent to any check that asks whether each
- * authored source reached every harness (P6). But naming
- * `.claude/settings.json` on every line was the other error — a repository with
- * no settings file at all, whose hooks came entirely from an installed package,
- * was told its `.claude/settings.json` hooks were dropped. So the sources are
- * derived, per file and per event, from the configs that were merged.
- */
-interface HookSources {
-  /** Every file that contributed a hook, authored settings first. */
-  files: string[];
-  /** For each event, the file to name when that event is dropped. */
-  byEvent: Map<string, string>;
-}
-
-/**
- * Work out which file each merged hook event came from.
- *
- * The authored settings file wins a tie: when a repository and a package declare
- * the same event, the person's own file is the one they can act on.
- *
- * @param authoredHooks - the repo's own `.claude/settings.json` hooks.
- * @param contributors - the installed plugins allowed to contribute hooks.
- * @returns the contributing files and the per-event attribution.
- */
-function collectHookSources(
-  authoredHooks: ClaudeHooksConfig | undefined,
-  contributors: readonly InstalledPlugin[]
-): HookSources {
-  const files: string[] = [];
-  const byEvent = new Map<string, string>();
-
-  if (authoredHooks && hasHooks(authoredHooks)) {
-    files.push(CLAUDE_SETTINGS_SOURCE);
-    for (const event of Object.keys(authoredHooks)) byEvent.set(event, CLAUDE_SETTINGS_SOURCE);
-  }
-  for (const plugin of contributors) {
-    const hooks = plugin.hooks;
-    if (!hooks || !hasHooks(hooks) || !plugin.relDir) continue;
-    const file = `${plugin.relDir}/hooks/hooks.json`;
-    files.push(file);
-    for (const event of Object.keys(hooks)) if (!byEvent.has(event)) byEvent.set(event, file);
-  }
-  return { files, byEvent };
-}
-
-/**
- * Project hooks to one harness (may yield several actions + warnings).
- *
- * `claudeHooks` is the MERGED config — the repo's own hooks plus every installed
- * package's — because that is what the other harnesses' generated files carry.
- * `authoredHooks` is the repo's own half alone, and it is what decides Claude
- * Code's `native`: Claude reads `.claude/settings.json`, and a package's hooks
- * reach it through the separate `.claude/settings.local.json` merge, never that
- * file.
- *
- * **With no hooks there is no artifact, so no harness gets a line.** Not a
- * `native` for a file that may not exist, and not a `drop` either — a drop says
- * something exists that could not travel, and on a repo with no hooks at all
- * nothing did. Claude Code is measured against its own file and every other
- * harness against the merged set, because a package's hooks fail to reach
- * OpenCode and Gemini exactly as an authored one would.
- *
- * The harnesses with no hook file at all get **one drop per contributing file**,
- * so a person whose hooks came from a package is pointed at the package rather
- * than at a `.claude/settings.json` they never wrote.
- */
-function planHooks(
-  harness: HarnessId,
-  sources: HookSources,
-  claudeHooks?: ClaudeHooksConfig,
-  authoredHooks?: ClaudeHooksConfig
-): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
-  const base = (source: string): ActionBase => ({
-    artifact: 'hook',
-    harness,
-    provenance: 'authored',
-    name: 'hooks',
-    source,
-  });
-  if (harness === 'claude-code') {
-    return {
-      actions: hasHooks(authoredHooks) ? [{ ...base(CLAUDE_SETTINGS_SOURCE), kind: 'native' }] : [],
-      warnings: [],
-    };
-  }
-
-  // Nothing to project anywhere: say nothing, rather than telling somebody with
-  // no hooks that their hooks were dropped.
-  if (!hasHooks(claudeHooks)) return { actions: [], warnings: [] };
-
-  const standalone = STANDALONE_HOOK_HARNESSES[harness];
-  if (standalone) return planStandaloneHooks(harness, standalone, sources, claudeHooks);
-
-  // OpenCode has NO declarative hook config — only a code-based TypeScript
-  // plugin API — so there is no on-disk hook file to project into. Gemini's live
-  // inside the shared `.gemini/settings.json`, which also holds unrelated user
-  // settings: projecting them safely means MERGING into that file, which the
-  // apply stage does not yet support, so it is an honest drop, not a clobber.
-  const reason =
-    harness === 'opencode'
-      ? 'OpenCode has no declarative hook config (only a code-based TypeScript plugin API), so hooks cannot be projected as files'
-      : 'Gemini hooks require a safe merge into the shared .gemini/settings.json (preserving other keys); tracked as follow-up (DOR-143)';
-  return {
-    actions: sources.files.map((source) => ({ ...base(source), kind: 'drop' as const, reason })),
-    warnings: [],
-  };
-}
-
-/**
- * Generate one harness's standalone hooks file from the Claude hooks config:
- * drop unmappable events, and warn (without dropping) when a projected hook
- * command carries a Claude-only substitution token the target harness cannot
- * resolve.
- *
- * Emits NO generate action when the merged config produces zero mappable hooks
- * for the target. The apply stage then prunes a file it can prove it wrote at
- * that path, and reports anything else there as a conflict rather than deleting
- * somebody's own hooks.
- */
-function planStandaloneHooks(
-  harness: HarnessId,
-  spec: StandaloneHookSpec,
-  sources: HookSources,
-  claudeHooks?: ClaudeHooksConfig
-): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
-  if (!claudeHooks) return { actions: [], warnings: [] };
-
-  const { content, dropped, warnings } = spec.generate(claudeHooks);
-  const actions: ProjectionAction[] = [];
-
-  if (content !== undefined) {
-    const action: ProjectionAction = {
-      artifact: 'hook',
-      harness,
-      provenance: 'authored',
-      name: 'hooks',
-      kind: 'generate',
-      // The file this generated one was built from. With no authored settings —
-      // a repository whose only hooks came from a package — that is the
-      // package's own declaration, not a path nobody wrote.
-      source: sources.files[0] ?? CLAUDE_SETTINGS_SOURCE,
-      target: spec.target,
-    };
-    setActionContent(action, content);
-    actions.push(action);
-  }
-
-  for (const d of dropped) {
-    actions.push({
-      artifact: 'hook',
-      harness,
-      provenance: 'authored',
-      name: d.event,
-      // The file that declared THIS event, so a person opens the right one.
-      source: sources.byEvent.get(d.event) ?? sources.files[0] ?? CLAUDE_SETTINGS_SOURCE,
-      kind: 'drop',
-      reason: d.reason,
-    });
-  }
-
-  return {
-    actions,
-    warnings: warnings.map((w) => ({
-      artifact: 'hook' as const,
-      harness,
-      name: w.event,
-      reason: w.reason,
-    })),
-  };
-}
-
-/**
  * Project authored slash commands (`.claude/commands/**`) to one harness.
  *
  * Returns `undefined` for EVERY harness when the repository has no
@@ -737,7 +485,13 @@ export function buildPlan(input: {
       if (skillAction) all.push(skillAction);
     }
     all.push(planInstruction(harness, agentsMdExists));
-    const hookResult = planHooks(harness, hookSources, mergedHooks, claudeHooks);
+    const hookResult = planHooks(
+      harness,
+      hookSources,
+      hookPolicyFor(manifest, harness),
+      mergedHooks,
+      claudeHooks
+    );
     all.push(...hookResult.actions);
     warnings.push(...hookResult.warnings);
     const commandAction = planCommands(harness, claudeCommandsExist);
@@ -766,9 +520,21 @@ export function buildPlan(input: {
   // Installed-plugin hooks reach claude-code by merging into the user-owned
   // `.claude/settings.local.json` (one action for all plugins). Codex already
   // gets them folded into its generated hooks file above.
+  //
+  // This merge is the ONE thing the engine writes at Claude Code, so it is what
+  // a `hookPolicies` entry of `none` for claude-code switches off — the `native`
+  // reading of `.claude/settings.json` above is Claude Code's own and no
+  // manifest's to revoke. Each package that would have contributed is dropped by
+  // name, so nothing goes quiet.
   if (manifest.harnesses.includes('claude-code')) {
     const hooksMerge = planInstalledPluginHooks(hookContributors, repoRoot);
-    if (hooksMerge) all.push(hooksMerge);
+    if (hooksMerge) {
+      if (hookPolicyFor(manifest, 'claude-code') === 'none') {
+        all.push(...dropSuppressedPluginHookMerge(hookContributors));
+      } else {
+        all.push(hooksMerge);
+      }
+    }
   }
 
   // OpenCode command wrappers share one flat dir, so their gitignore is a single

@@ -169,20 +169,23 @@ function statOrNothing(abs: string): Stats | undefined {
 }
 
 /**
- * The default manifest body the scaffolder writes for a given harness set. Every
- * policy/exception array starts empty (those are derived by the scanner or filled
- * in by the user); only the `harnesses` set is decided here.
+ * The default manifest body the scaffolder writes for a given harness set.
+ *
+ * Three keys, and every policy/exception array starts empty (the scanner derives
+ * the skills; the user fills the rest in); only the `harnesses` set is decided
+ * here. It used to write four more — `skillWrappers`, `commandMappings`,
+ * `instructionProjections` and `skillBundles` — which nothing ever read, so every
+ * scaffolded repo started life with four blank blocks it would never be asked
+ * about again (DOR-1858). They are still ACCEPTED by the schema, so an existing
+ * manifest that carries them keeps working; they are simply not written into a
+ * new one.
  */
 function defaultManifest(harnesses: readonly HarnessId[]): HarnessManifest {
   return {
     version: 1,
     harnesses: [...harnesses],
     claudeOnlySkills: [],
-    skillWrappers: [],
-    commandMappings: [],
-    instructionProjections: [],
     hookPolicies: [],
-    skillBundles: [],
   };
 }
 

@@ -21,6 +21,17 @@ DorkOS abstracts the agent _runtime_ (`AgentRuntime`) but not the _files each ag
 
 We will keep `.agents/<name>` as the canonical source and project **per artifact type**: symlink identical-format artifacts (skills), scaffold instructions (ADR-302), and generate transformed ones (hooks, commands). Discovery is **hybrid** — a filesystem scan derives the common symlink case, while a **slimmed, Zod-schema'd** manifest carries only non-derivable policy and exceptions. We will **vendor** rulesync's hook-event maps and path constants (MIT, pinned to commit `b4bf09d5`, attributed) rather than adopt rulesync-the-tool, authoring Gemini's maps in-repo (rulesync has none). We own the projector, which emits an explicit per-harness drop list (honesty over false parity).
 
+## Amendment — 2026-09-08 (DOR-1858)
+
+The "slimmed, Zod-schema'd manifest carrying only non-derivable policy and exceptions" was slimmed by half and then not read. The engine read `harnesses` and `claudeOnlySkills`; `skillWrappers`, `commandMappings`, `instructionProjections`, `hookPolicies` and `skillBundles` were validated on every load and consulted by nobody. A field that is validated but never read is a claim nobody checks, which is the same fault this ADR set out to remove — this repo's own `skillWrappers` entry named a wrapper that was never built.
+
+The manifest's key set is now **`harnesses`, `claudeOnlySkills`, `hookPolicies`**, and every one of them is read.
+
+- **`hookPolicies` is honoured** in `plan/hooks-projection.ts`, per enabled harness. `generate` is what the engine already did for the harnesses with a generated hooks file; `none` and `native` stop it writing that file and turn each contributing hook source into a drop naming the manifest; an absent entry is the default, so a manifest without the block projects exactly as before. The rule underneath it: **a policy governs what the engine writes, never what a vendor reads.** Claude Code reads `.claude/settings.json` whatever a manifest says, so a `native` line for it survives every policy, and what `none` switches off there is the installed-plugin merge into `.claude/settings.local.json`. A policy asking for a mechanism a harness does not have earns a plan warning rather than a false line. Two surfaces read the policy back so they cannot contradict it: `--allow-hooks` refuses to record a durable consent for hooks the policy suppresses, and the left-alone advice stops recommending a move that would change nothing.
+- **The other four are retired**: kept in the schema as `unknown`, so an existing manifest still parses (`.strict()` would otherwise reject it, and `--enable` validates with this schema before writing a byte), and named one line at a time by `dorkos harness sync`. There is no config migration and there is not meant to be — the manifest is a per-repo file the engine does not rewrite, so the `--check` line IS the notice.
+
+The scaffolder writes the three live keys and no longer plants four empty blocks nobody would ever be asked about again. The schema stays `.strict()`, so the derivable `sharedSkills` array this ADR removed is still rejected.
+
 ## Consequences
 
 ### Positive

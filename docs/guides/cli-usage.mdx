@@ -194,6 +194,8 @@ dorkos harness sync --fix --strict          # Stop with an error if any hooks we
 
 Run it from your project root: it works on the folder you are in, and reads `.agents/harness.manifest.json` there. `--check` only reports, so it never writes anything. `--fix` is what changes files, and it creates that manifest for you if the folder has none.
 
+That manifest holds three things, and nothing else: `harnesses`, the agents you want files shared with; `claudeOnlySkills`, the skills you are deliberately keeping in Claude Code's own folder; and `hookPolicies`, one line per agent saying what to do with your hooks. A policy is `generate` (DorkOS writes that agent's hooks file), `native` (the agent reads your hooks itself) or `none` (DorkOS writes nothing for that agent, and clears away a hooks file it wrote there before). Say nothing about an agent and DorkOS does what it has always done for it. Four older keys — `skillWrappers`, `commandMappings`, `instructionProjections` and `skillBundles` — are no longer read by anything. Your file still works if it has them; DorkOS just names each one so you can delete it.
+
 Every run looks at which agents your project actually uses. If it finds one you have not turned on — a `.cursor/` folder appeared last week, say — it tells you, and tells you how to turn it on:
 
 ```bash

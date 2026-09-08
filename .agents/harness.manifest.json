@@ -68,85 +68,6 @@
       "reason": "Same undeclared drift as above. Genuinely Claude-coupled: it drives the EnterWorktree/ExitWorktree tools and the /worktree:* commands. The portable half is the janitor it points at (scripts/worktree-janitor.sh), which any harness can run."
     }
   ],
-  "skillWrappers": [
-    {
-      "target": "codex",
-      "status": "planned",
-      "name": "reading-claude-code-transcripts",
-      "sharedSource": ".claude/skills/reading-session-transcripts",
-      "targetPath": ".agents/skills/reading-claude-code-transcripts",
-      "reason": "Codex needs a Claude Code-specific name and description while preserving existing transcript path guidance."
-    }
-  ],
-  "commandMappings": [
-    {
-      "claudeCommand": "/flow:ideate",
-      "status": "plugin-owned",
-      "strategy": "marketplace-plugin",
-      "target": "flow/ideating-features",
-      "notes": "The flow plugin's IDEATE stage skill owns this. The in-repo fallback skill (ideating-features) was removed 2026-07-06; install the flow plugin to get the stage. Absorbs the legacy /ideate command (hard-removed in spec #257)."
-    },
-    {
-      "claudeCommand": "/flow:execute",
-      "status": "plugin-owned",
-      "strategy": "marketplace-plugin",
-      "target": "flow/executing-specs",
-      "notes": "The flow plugin's EXECUTE stage skill owns this. The in-repo fallback skill (implementing-specifications) was removed 2026-07-06; install the flow plugin to get the stage. Absorbs the legacy /spec:execute command (hard-removed in spec #257)."
-    },
-    {
-      "claudeCommand": "/debug:test",
-      "status": "skill-created",
-      "strategy": "shared-skill",
-      "target": "debugging-test-failures",
-      "notes": "Portable skill replacement created in `.agents/skills/debugging-test-failures`."
-    },
-    {
-      "claudeCommand": "/debug:types",
-      "status": "skill-created",
-      "strategy": "shared-skill",
-      "target": "debugging-typescript-errors",
-      "notes": "Portable skill replacement created in `.agents/skills/debugging-typescript-errors`."
-    }
-  ],
-  "instructionProjections": [
-    {
-      "source": "AGENTS.md",
-      "status": "canonical",
-      "targets": [
-        {
-          "tool": "codex",
-          "mode": "direct"
-        },
-        {
-          "tool": "cursor",
-          "mode": "direct"
-        }
-      ],
-      "notes": "AGENTS.md is the cross-tool durable instruction layer for this repo."
-    },
-    {
-      "source": "CLAUDE.md",
-      "status": "not-present",
-      "targets": [
-        {
-          "tool": "claude-code",
-          "mode": "tool-native"
-        }
-      ],
-      "notes": "No project CLAUDE.md exists yet. If introduced later, treat it as Claude-specific adapter memory rather than the canonical shared instruction file."
-    },
-    {
-      "source": ".cursor/rules",
-      "status": "undecided",
-      "targets": [
-        {
-          "tool": "cursor",
-          "mode": "projected"
-        }
-      ],
-      "notes": "Cursor rule projection is intentionally deferred until we decide whether AGENTS.md alone is sufficient."
-    }
-  ],
   "hookPolicies": [
     {
       "tool": "claude-code",
@@ -156,18 +77,11 @@
       "notes": "Claude hooks remain native until another tool exposes a stable repo-level equivalent."
     },
     {
-      "tool": "cursor",
-      "status": "unsupported-in-this-spec",
-      "projection": "none",
-      "notes": "No Cursor repo-hook projection is defined in the current sync spec."
-    },
-    {
       "tool": "codex",
       "configPath": ".codex/hooks.json",
       "status": "supported",
       "projection": "generate",
       "notes": "Codex supports repo-local hooks (.codex/hooks.json, 12 documented events, trust-gated); DorkOS maps 11 of them (Interrupt has no Claude spelling). Generated from canonical .claude/settings.json via the vendored CANONICAL_TO_CODEXCLI_EVENT_NAMES map, in the documented { description, hooks } shape. Prefer the standalone hooks.json over inline config.toml (openai/codex#17532 breaks interactive SessionStart/Stop)."
     }
-  ],
-  "skillBundles": []
+  ]
 }

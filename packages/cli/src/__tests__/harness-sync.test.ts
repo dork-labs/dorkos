@@ -1744,3 +1744,330 @@ describe('runHarnessSync — a harness added later, and the .gitignore contract'
     });
   });
 });
+
+describe('runHarnessSync — the manifest lines that reach nothing (DOR-1858)', () => {
+  let tmpDir: string;
+  let originalCwd: string;
+  let homeDir: string;
+  let logSpy: MockInstance<typeof console.log>;
+
+  /** Everything the run printed, joined so a block can be asserted verbatim. */
+  const printed = (): string => logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+
+  /** Rewrite the fixture manifest; `harnesses` defaults to the fixture's two. */
+  function writeManifest(extra: Record<string, unknown>): void {
+    fs.writeFileSync(
+      path.join(tmpDir, HARNESS_MANIFEST_PATH),
+      JSON.stringify({ version: 1, harnesses: ['claude-code', 'codex'], ...extra }, null, 2)
+    );
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tmpDir = createTempDir();
+    homeDir = createTempDir();
+    vi.stubEnv('DORK_HOME', homeDir);
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    writeFixtureRepo(tmpDir);
+    process.chdir(tmpDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  it('VC-10: names every retired key still in the file, and still exits on the drift alone', async () => {
+    // The four keys nothing ever read. There is no config migration for a
+    // per-repo file, so this line IS the migration notice.
+    writeManifest({
+      skillWrappers: [{ target: 'codex', name: 'x' }],
+      commandMappings: [],
+      instructionProjections: [],
+      skillBundles: [],
+    });
+
+    const check = await runHarnessSync(syncArgs({ check: true }));
+
+    for (const key of [
+      'skillWrappers',
+      'commandMappings',
+      'instructionProjections',
+      'skillBundles',
+    ]) {
+      expect(printed()).toContain(
+        `${key} in .agents/harness.manifest.json is no longer read — remove it`
+      );
+    }
+    // Drift, from the unprojected fixture — never the notice.
+    expect(check.exitCode).toBe(1);
+  });
+
+  it('VC-10: says nothing about a manifest that carries none of them', async () => {
+    await runHarnessSync(syncArgs({ check: true }));
+    expect(printed()).not.toContain('is no longer read');
+  });
+
+  it('VC-10: names a hook policy for a harness this manifest does not enable', async () => {
+    writeManifest({ hookPolicies: [{ tool: 'cursor', projection: 'none' }] });
+
+    await runHarnessSync(syncArgs({ check: true }));
+
+    expect(printed()).toContain(
+      'hookPolicies in .agents/harness.manifest.json names cursor, which this manifest does not enable'
+    );
+  });
+
+  it('HK-15: honours a hooks policy of none: no .codex/hooks.json is written, and the drop says why', async () => {
+    // The behaviour half, through the real CLI: a `--fix` writes every other
+    // projection and leaves the hooks file it was told not to write.
+    writeManifest({ hookPolicies: [{ tool: 'codex', projection: 'none' }] });
+
+    const fix = await runHarnessSync(syncArgs({ fix: true }));
+
+    expect(fix.exitCode).toBe(0);
+    expect(fs.existsSync(path.join(tmpDir, '.codex', 'hooks.json'))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'CLAUDE.md'))).toBe(true);
+    expect(printed()).toContain(
+      "hooks are not projected to Codex — your manifest's hookPolicies says none"
+    );
+  });
+
+  it('VC-10: still names them under --harness, which narrows projections, not the file', async () => {
+    // Every other block answers "what happens for this harness?". These lines
+    // answer "what is wrong with your manifest?", which does not change.
+    writeManifest({ commandMappings: [], hookPolicies: [{ tool: 'cursor', projection: 'none' }] });
+
+    await runHarnessSync(syncArgs({ check: true, harness: 'codex' }));
+
+    expect(printed()).toContain(
+      'commandMappings in .agents/harness.manifest.json is no longer read — remove it'
+    );
+    expect(printed()).toContain('hookPolicies in .agents/harness.manifest.json names cursor');
+  });
+
+  it('HK-15, AP-07: names the hooks file a flipped policy just orphaned, and writes nothing (DOR-1889)', async () => {
+    // The other half of honouring `none`: the file the engine wrote while the
+    // policy was absent is now nobody's, and `--check` has to say a `--fix`
+    // would remove it. Before DOR-1889 taught `checkPlan` to preview generated
+    // orphans this tree reported clean and exited 0 over a live hooks file.
+    writeManifest({ harnesses: ['claude-code', 'cursor'], hookPolicies: [] });
+    await runHarnessSync(syncArgs({ fix: true }));
+    const cursorHooks = path.join(tmpDir, '.cursor', 'hooks.json');
+    expect(fs.existsSync(cursorHooks)).toBe(true);
+
+    writeManifest({
+      harnesses: ['claude-code', 'cursor'],
+      hookPolicies: [{ tool: 'cursor', projection: 'none' }],
+    });
+    logSpy.mockClear();
+    const check = await runHarnessSync(syncArgs({ check: true }));
+
+    expect(check.exitCode).toBe(1);
+    expect(printed()).toContain('Orphaned projections');
+    expect(printed()).toContain('.cursor/hooks.json');
+    expect(printed()).toContain('the orphaned paths above are removed');
+    // `--check` never writes: the file it just named is still there.
+    expect(fs.existsSync(cursorHooks)).toBe(true);
+  });
+
+  it('VC-10: prints the same notices on --fix as on --check', async () => {
+    writeManifest({ skillBundles: [] });
+
+    await runHarnessSync(syncArgs({ fix: true }));
+
+    expect(printed()).toContain(
+      'skillBundles in .agents/harness.manifest.json is no longer read — remove it'
+    );
+  });
+});
+
+describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-1858 review)', () => {
+  let tmpDir: string;
+  let originalCwd: string;
+  let homeDir: string;
+  let logSpy: MockInstance<typeof console.log>;
+  let errorSpy: MockInstance<typeof console.error>;
+
+  const printed = (): string => logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+  const errors = (): string => errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+
+  /** Everything `~/.dork/config.json` records about hook decisions, or nothing. */
+  function storedApprovals(): string[] {
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(homeDir, 'config.json'), 'utf8')) as {
+        harness?: { approvedHooks?: string[] };
+      };
+      return raw.harness?.approvedHooks ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** A project-scoped plugin that declares one Stop hook. */
+  function writePluginWithHooks(name: string): void {
+    const plugin = path.join(tmpDir, '.dork', 'plugins', name);
+    fs.mkdirSync(path.join(plugin, '.dork'), { recursive: true });
+    fs.writeFileSync(
+      path.join(plugin, '.dork', 'manifest.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        name,
+        version: '1.0.0',
+        type: 'plugin',
+        description: 'A fixture plugin',
+        layers: ['hooks'],
+      })
+    );
+    fs.mkdirSync(path.join(plugin, 'hooks'), { recursive: true });
+    fs.writeFileSync(
+      path.join(plugin, 'hooks', 'hooks.json'),
+      JSON.stringify({ Stop: [{ hooks: [{ type: 'command', command: 'echo plugin' }] }] })
+    );
+  }
+
+  function writeManifest(shape: { harnesses: string[]; hookPolicies: unknown[] }): void {
+    fs.writeFileSync(
+      path.join(tmpDir, HARNESS_MANIFEST_PATH),
+      JSON.stringify({ version: 1, ...shape }, null, 2)
+    );
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tmpDir = createTempDir();
+    homeDir = createTempDir();
+    vi.stubEnv('DORK_HOME', homeDir);
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    writeFixtureRepo(tmpDir);
+    writePluginWithHooks('acme');
+    process.chdir(tmpDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  it('HK-15, HK-07: refuses, and records nothing, when every target is under a none policy', async () => {
+    // The yes is durable and outlives the manifest. Recorded here it would sit in
+    // config.json contradicting the drop line printed under it, install nothing,
+    // and then install itself unprompted the day the policy line goes.
+    writeManifest({
+      harnesses: ['claude-code'],
+      hookPolicies: [{ tool: 'claude-code', projection: 'none' }],
+    });
+
+    const result = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
+
+    expect(result.exitCode).toBe(1);
+    expect(storedApprovals()).toEqual([]);
+    expect(errors()).toContain('nowhere to go here');
+    expect(errors()).toContain('hookPolicies none for claude-code');
+    expect(errors()).toContain('without asking again');
+    // Nothing was applied either: the run stopped before the projection.
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
+  });
+
+  it('HK-15, HK-07: does not let a refused allow become a silent install once the policy goes', async () => {
+    // The whole reason the refusal exists, driven end to end.
+    writeManifest({
+      harnesses: ['claude-code'],
+      hookPolicies: [{ tool: 'claude-code', projection: 'none' }],
+    });
+    await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
+
+    writeManifest({ harnesses: ['claude-code'], hookPolicies: [] });
+    await runHarnessSync(syncArgs({ fix: true }));
+
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
+    // Withheld and asked about again, which is the point: the refusal did not
+    // leave a stored yes behind to fire the moment the policy stopped hiding it.
+    expect(printed()).toContain('You have not allowed this package yet.');
+    expect(printed()).toContain('dorkos harness sync --fix --allow-hooks acme');
+  });
+
+  it('HK-15, HK-07: refuses when no enabled agent has anywhere to receive hooks, policy or not', async () => {
+    // The other route to the same latent yes, and it names no manifest line
+    // because none is to blame: OpenCode has no declarative hook config at all,
+    // so `Applied 0` was printed over a stored approval that would come true the
+    // day somebody enabled Claude Code (DOR-1858 delta review, reproduced).
+    writeManifest({ harnesses: ['opencode'], hookPolicies: [] });
+
+    const result = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
+
+    expect(result.exitCode).toBe(1);
+    expect(storedApprovals()).toEqual([]);
+    expect(errors()).toContain('nowhere to go here');
+    expect(errors()).toContain('None of the agents this project uses (OpenCode)');
+    expect(errors()).toContain('Turn on an agent that can take them');
+    // No manifest line is blamed, because none is responsible.
+    expect(errors()).not.toContain('hookPolicies');
+  });
+
+  it('HK-15, HK-07: asks again once an agent that can take them is turned on', async () => {
+    // The follow-on: the refusal left nothing stored, so enabling Claude Code
+    // later withholds and asks rather than installing behind the person's back.
+    writeManifest({ harnesses: ['opencode'], hookPolicies: [] });
+    await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
+
+    writeManifest({ harnesses: ['claude-code', 'opencode'], hookPolicies: [] });
+    logSpy.mockClear();
+    await runHarnessSync(syncArgs({ fix: true }));
+
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
+    expect(printed()).toContain('You have not allowed this package yet.');
+    expect(printed()).toContain('dorkos harness sync --fix --allow-hooks acme');
+  });
+
+  it('HK-15, HK-07: records a partly-suppressed allow, and says which agents will not get them', async () => {
+    // A real yes, just narrower than "Allowed acme" reads on its own.
+    writeManifest({
+      harnesses: ['claude-code', 'codex'],
+      hookPolicies: [{ tool: 'claude-code', projection: 'none' }],
+    });
+
+    const result = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
+
+    expect(result.exitCode).toBe(0);
+    expect(storedApprovals()).toHaveLength(1);
+    expect(printed()).toContain('Not every agent gets them');
+    expect(printed()).toContain('Claude Code');
+    expect(fs.existsSync(path.join(tmpDir, '.codex', 'hooks.json'))).toBe(true);
+  });
+
+  it('HK-15, HK-07: records without the caveat when no policy suppresses anything', async () => {
+    writeManifest({ harnesses: ['claude-code', 'codex'], hookPolicies: [] });
+
+    const result = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
+
+    expect(result.exitCode).toBe(0);
+    expect(storedApprovals()).toHaveLength(1);
+    expect(printed()).not.toContain('Not every agent gets them');
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(true);
+  });
+
+  it('HK-15: does not tell somebody to move hooks a policy would refuse to carry', async () => {
+    // The "Left alone" advice — put them in .claude/settings.json and DorkOS will
+    // carry them — is false for a harness the manifest says not to write for.
+    writeManifest({
+      harnesses: ['claude-code', 'codex'],
+      hookPolicies: [{ tool: 'codex', projection: 'none' }],
+    });
+    fs.mkdirSync(path.join(tmpDir, '.codex'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, '.codex', 'hooks.json'), '{"hooks":{}}\n');
+
+    await runHarnessSync(syncArgs({ check: true }));
+
+    expect(printed()).toContain("your manifest's hookPolicies says not to write here");
+    expect(printed()).not.toContain('if you want DorkOS to carry them to every harness');
+  });
+});
