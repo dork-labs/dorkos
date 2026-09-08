@@ -1171,6 +1171,26 @@ describe('runHarnessSync — withholding a package’s hooks', () => {
     expect(out).not.toContain('codex:');
   });
 
+  it('SK-11: says a session already open needs a restart, only when it created .claude/skills', async () => {
+    // The vendor documents the restart for exactly this case: Claude Code
+    // attaches its watcher to the skill directories that exist when the session
+    // starts, so a folder that did not exist then is not being watched.
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'skills'))).toBe(false);
+
+    await runHarnessSync(syncArgs({ fix: true }));
+
+    const first = printed();
+    expect(first).toContain('Created .claude/skills/, which is where Claude Code reads skills.');
+    expect(first).toContain('restart any Claude Code session you');
+    expect(first).toContain('https://code.claude.com/docs/en/skills#live-change-detection');
+
+    // Said once. On every later sync the folder is already there, Claude Code IS
+    // watching it, and repeating the line is how people learn to skip it.
+    logSpy.mockClear();
+    await runHarnessSync(syncArgs({ fix: true }));
+    expect(printed()).not.toContain('Created .claude/skills/');
+  });
+
   it('HK-10: says the Codex hooks file changed and is held for review, once', async () => {
     await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme-tools'] }));
 

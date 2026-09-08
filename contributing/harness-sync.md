@@ -256,3 +256,45 @@ Rules a journey keeps:
 Three things do NOT count as coverage, so none of them can silence a row: an id inside a comment (the census blanks comments with the repo's shared `codeOnly` stripper before it reads a title), a case the runner never runs (`it.skip`, `it.todo`, `it.only`, an `it.each([])`), and an id mentioned anywhere but the front of the title. Write it as a prefix — `it('SK-04: …')`, or `it('J-09, AP-05: …')` for a case that pins two rows.
 
 **Editing the document alone runs nothing.** `pnpm verify` is affected-only and `meta/` belongs to no package, so after a contract edit run `pnpm vitest run packages/harness/src/__tests__/capabilities-census.test.ts` by hand. What catches it otherwise is the merge queue's full monorepo sweep — and only because `turbo.json` carries a `"@dorkos/harness#test"` override whose `inputs` name the contract and the foreign test paths. Without it the task hash does not move when the document changes, and the queue replays a cached green. `turbo-census-inputs.test.ts` guards the override, including the `$TURBO_DEFAULT$` entry and the restated `dependsOn`/`cache` — a package-scoped override REPLACES the base task rather than merging with it.
+## 10. Triggers — what starts a projection
+
+Four things call the engine, and the differences between them are the whole design. Each one answers three questions differently: does it **sweep**, does it **ask** about a package's hooks, and does it **scaffold** a harness manifest for a project that has none.
+
+| Trigger                              | When                                                            | Sweeps? | Asks? | Scaffolds? | Where                                         |
+| ------------------------------------ | --------------------------------------------------------------- | ------- | ----- | ---------- | --------------------------------------------- |
+| **Marketplace install/uninstall**    | a package is installed or removed at project scope              | yes     | yes   | yes        | `services/harness/auto-project.ts`            |
+| **Boot**                             | server start, for every agent workspace DorkOS owns             | no      | no    | yes        | `services/harness/project-agent-workspace.ts` |
+| **`.agents/skills` watcher + sweep** | a skill appears, changes or goes away; and every 10s regardless | no      | no    | **no**     | `services/harness/skills-watcher.ts`          |
+| **Turn end**                         | a turn finishes and the project's skills look different         | no      | no    | **no**     | `services/harness/skills-watcher.ts`          |
+| **`dorkos harness sync --fix`**      | a person runs it                                                | yes     | no\*  | yes        | `packages/cli/src/harness-sync-command.ts`    |
+
+\* The CLI cannot raise a card, so it **withholds** an unapproved package's hooks and prints each command it did not install; `--allow-hooks <pkg>` records the same decision a card would.
+
+Every one of them goes through `projectWithConsent` (§8 and `project-with-consent.ts`), which is the only module allowed to hold the engine's `project()`. `__tests__/project-seam-guard.test.ts` reads the source of both trees and fails on any other module that imports it, under any of six spellings.
+
+### Why the watcher does not sweep, ask or scaffold
+
+- **No sweep.** `sweepOrphans` runs five sweeps that delete files, on a tree an agent may be halfway through writing. At file-event frequency that inherits HK-11's blast radius. The visible cost: deleting a skill leaves a dead link in `.claude/skills/`. `dorkos harness sync --check` names it as an orphan and the next `--fix` prunes it.
+- **No asking.** A hooks approval card raised by a file change is a card at the wrong moment, and people learn to dismiss those. Unapproved hooks stay unapproved and are counted in the log line; the install path asks, and `--check` reports.
+- **No scaffolding.** `project()` reads `.agents/harness.manifest.json` and throws without one, so a project that has never synced is skipped with a debug line rather than having a manifest written into it because a file changed. That is the property worth remembering: **the unattended triggers only ever write into a project that is already set up for Harness Sync.**
+
+### The watcher is not reliable on its own, and the sweep is why
+
+Measured on macOS against chokidar 5 (60 trials, from `apps/server`): a skill directory created and its `SKILL.md` written in the same instant — exactly what an agent does — was **never reported at all in 22% of runs**, with or without `awaitWriteFinish`, and 35% at `depth: 2`. Node's `fs.watch` is what chokidar 5 uses there, and it drops the notification. `usePolling` fixed it outright (0/20) and was refused: it re-stats every watched file on a timer for ever, on a laptop already running several agents, to buy a few seconds.
+
+So the watcher is the fast path and a **10-second comparison** is the correct one. It `readdir`s each root's `.agents/skills` and compares the entries' modification times against the shape recorded at the end of the last projection — entries rather than the directory itself, because a `SKILL.md` written into a directory that already existed does not move the parent's mtime, and that is precisely the sequence whose event goes missing. The same recorded shape is what the turn-end trigger compares against, so the two never re-project what the other has just handled.
+
+The same exposure sits under `services/tasks/task-file-watcher.ts`, where the five-minute reconciler is what covers it.
+
+### Two more things the watcher has to get right
+
+- **Directories, never files.** A rename-replace swaps the directory entry, so a watcher holding a file's inode goes deaf (§8). Everything here watches directories.
+- **Its own output must not re-trigger it.** The engine writes an installed package's skills into `.agents/skills/<pkg>__<name>`, inside the watched directory. The exclusion is the engine's own predicate for a managed projection (`scan/scanner.ts`): the `__` marker **and** a symlink on disk. A real directory somebody named `my__helper` is authored content and still triggers (DOR-1844).
+
+### The Claude Code restart caveat
+
+Claude Code watches its skill directories, so a skill linked into an existing `.claude/skills/` shows up in a running session. A directory that **did not exist when the session started** is not being watched, and the vendor says to restart: _"If you create a top-level skills directory that didn't exist when the session started, restart Claude Code so it can watch the new directory"_ ([Skills — Live change detection](https://code.claude.com/docs/en/skills#live-change-detection), read 2026-09-08). So both `dorkos harness sync --fix` and the watcher say so — and only in the case the vendor documents, once per project, because a line printed on every sync is a line people stop reading. The claim is read out of `vendor-facts/index.ts` rather than written at the call site, so it carries its page and its date.
+
+### Switching it off
+
+`harness.autoSync` gates the install trigger, the watcher, the sweep and the turn-end re-projection alike. Off means no watcher is opened at all and nothing projects unprompted; `dorkos harness sync` still works.

@@ -258,6 +258,13 @@ import { MarketplaceInstaller } from './services/marketplace/marketplace-install
 import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
 import { backfillAgentWorkspaceSkills } from './services/harness/project-agent-workspace.js';
+import {
+  startSkillsWatcher,
+  startTurnEndReprojection,
+  type SkillsWatcherHandle,
+} from './services/harness/skills-watcher.js';
+import { onProjectorTurnBoundary } from './services/session/session-state-projector.js';
+import { DEFAULT_CWD } from './lib/resolve-root.js';
 import { describeHookProjectionCapability } from './services/harness/hook-approval.js';
 import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
 import {
@@ -511,6 +518,10 @@ function registeredAgentRoots(
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
 let taskRegistrar: TaskRegistrar | undefined;
+/** The `.agents/skills` projection watcher; absent when `harness.autoSync` is off. */
+let skillsWatcher: SkillsWatcherHandle | undefined;
+/** The turn-end half of the same trigger; absent whenever {@link skillsWatcher} is. */
+let turnEndReprojection: { stop(): void } | undefined;
 /**
  * Start watching a newly registered agent's schedule roots.
  *
@@ -3063,6 +3074,44 @@ async function start() {
     });
   }
 
+  // A skill an agent writes into `.agents/skills` reaches Claude Code within
+  // seconds instead of at the next manual sync or the next boot (DOR-1850).
+  //
+  // Deliberately outside the tasks block above: the two watch the same directory
+  // for unrelated reasons — one turns a `schedule:` block into a cron job, this
+  // one projects the skill to the harnesses that cannot read it where it sits —
+  // and switching schedules off must not switch projection off with it.
+  //
+  // The root list is re-read on every rescan rather than captured, so an agent
+  // registered after boot is picked up without a subscription of its own. The
+  // default project is in it because that is where a session with no better
+  // answer runs; `harness.autoSync` off means no watcher at all.
+  skillsWatcher = startSkillsWatcher({
+    dorkHome,
+    roots: () => [DEFAULT_CWD, ...(meshCore?.listWithPaths().map((a) => a.projectPath) ?? [])],
+  });
+  if (skillsWatcher) {
+    turnEndReprojection = startTurnEndReprojection({
+      watcher: skillsWatcher,
+      subscribe: onProjectorTurnBoundary,
+      // The runtime's own live binding is the only cheap, authoritative answer
+      // to "where did this turn run". `getSessionCwd` is optional on the runtime
+      // contract, required never to throw, and implemented by claude-code alone
+      // — so this resolves for the default runtime and returns nothing for the
+      // others, which the watcher covers for the roots it watches.
+      rootForSession: (sessionId) => {
+        for (const runtime of runtimeRegistry.listRuntimes()) {
+          const cwd = runtime.getSessionCwd?.(runtime.getInternalSessionId(sessionId) ?? sessionId);
+          if (cwd) return cwd;
+        }
+        return undefined;
+      },
+    });
+    logger.info('[HarnessSync] Watching for skills agents write', {
+      roots: skillsWatcher.watchedRoots().length,
+    });
+  }
+
   // Mount connector routes (connector-gateway spec, DOR-371). The registry
   // starts empty — provider backends (raw-MCP, Composio) register in later
   // phases — but the routing surface is already live: `recommend` reads the
@@ -4399,6 +4448,15 @@ async function shutdownServices() {
   }
   if (taskReconciler) {
     taskReconciler.stop();
+  }
+  // Both halves of the skills trigger, in the order they depend on each other:
+  // stop listening for turn boundaries first, so nothing can schedule work into
+  // a watcher that is closing its handles.
+  turnEndReprojection?.stop();
+  turnEndReprojection = undefined;
+  if (skillsWatcher) {
+    await skillsWatcher.stop();
+    skillsWatcher = undefined;
   }
   if (searchIndexer) {
     searchIndexer.stop();
