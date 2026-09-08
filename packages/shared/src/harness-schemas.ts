@@ -47,3 +47,229 @@ export const HARNESS_LABELS: Readonly<Record<HarnessId, string>> = {
   copilot: 'Copilot',
   opencode: 'OpenCode',
 };
+
+/**
+ * What one cell of the status grid says — an artifact paired with one enabled
+ * harness.
+ *
+ * Seven values, in the precedence the derivation applies them:
+ * `conflict` > `pending-approval` > `drifted` > `dropped` > `native` /
+ * `projected` > `warned`. `unmanaged` is deliberately absent: it is a fact about
+ * the FILE, not about one harness, so it rides the row as `adoptable` instead of
+ * being drawn once per column.
+ */
+export const HarnessCellStateSchema = z.enum([
+  'native',
+  'projected',
+  'drifted',
+  'dropped',
+  'warned',
+  'conflict',
+  'pending-approval',
+]);
+
+/** What one cell of the status grid says about one artifact in one harness. */
+export type HarnessCellState = z.infer<typeof HarnessCellStateSchema>;
+
+/**
+ * What kind of agent file a row is about. Mirrors the projection engine's
+ * `ArtifactType`, restated here because `@dorkos/shared` cannot import the
+ * engine — the edge runs the other way.
+ *
+ * The two lists are held together by a `satisfies Record<ArtifactType, …>`
+ * mapping table in the server's status model, so adding a kind to the engine is
+ * a compile error here rather than a silently missing row.
+ */
+export const HarnessArtifactKindSchema = z.enum([
+  'skill',
+  'instruction',
+  'hook',
+  'command',
+  'plugin',
+  'agent',
+  'rule',
+  'mcp',
+]);
+
+/** The kind of agent file one status row is about. */
+export type HarnessArtifactKind = z.infer<typeof HarnessArtifactKindSchema>;
+
+/**
+ * Where the file a row is about came from.
+ *
+ * `harness-native` is this model's fourth value and the engine has three: it
+ * marks a skill authored in a harness's own directory (`.claude/skills`) rather
+ * than in the canonical layer, which is the whole subject of the adoptable
+ * advice. `adopted` never occurs in v1 — nothing produces an adopted projection
+ * yet — and it stays in the enum because the engine's `Provenance` has it and
+ * dropping it would make the mapping table lie.
+ */
+export const HarnessProvenanceSchema = z.enum([
+  'authored',
+  'installed',
+  'adopted',
+  'harness-native',
+]);
+
+/** Where the file one status row is about came from. */
+export type HarnessProvenance = z.infer<typeof HarnessProvenanceSchema>;
+
+/**
+ * One artifact's state in one harness, with the sentence that explains it.
+ *
+ * `reason` is the projection plan's own string, never a paraphrase: the CLI
+ * prints the same words, and two surfaces describing one fact in two voices is
+ * how a person stops trusting either. `warnings` rides a cell that already has a
+ * state — a projection that landed but may not work — while a warning with no
+ * cell of its own becomes `state: 'warned'` instead.
+ */
+export const HarnessCellSchema = z.object({
+  state: HarnessCellStateSchema,
+  reason: z.string().optional(),
+  target: z.string().optional(),
+  warnings: z.array(z.string()).optional(),
+});
+
+/** One artifact's state in one harness. */
+export type HarnessCell = z.infer<typeof HarnessCellSchema>;
+
+/**
+ * One agent file, and what every enabled harness does with it.
+ *
+ * The row key is `(artifact, source, name)` and all three are load-bearing:
+ * two settings files both contribute a hook group named `hooks`, two MCP servers
+ * share one `.mcp.json`, and a skill and a hook declared in that skill's own
+ * frontmatter share a source while being different things.
+ *
+ * `cells` is keyed by harness and holds one entry per ENABLED harness, so it is
+ * a partial record over the six ids rather than a complete one.
+ */
+export const HarnessRowSchema = z.object({
+  artifact: HarnessArtifactKindSchema,
+  provenance: HarnessProvenanceSchema,
+  name: z.string(),
+  source: z.string().optional(),
+  adoptable: z.boolean(),
+  cells: z.partialRecord(HarnessIdSchema, HarnessCellSchema),
+});
+
+/** One agent file, and what every enabled harness does with it. */
+export type HarnessRow = z.infer<typeof HarnessRowSchema>;
+
+/**
+ * An entry that is about no harness at all — the plan marked it
+ * `harnessAgnostic`, so it is a fact about the project.
+ *
+ * A whole marketplace package that is not portable to anything, and a hook
+ * declaration the reader could not use before any harness was considered, both
+ * land here. They are never cells and never rows: filing them under a harness
+ * would tell somebody who runs Codex alone that Claude Code has a problem.
+ */
+export const HarnessProjectEntrySchema = z.object({
+  kind: z.enum(['drop', 'warning']),
+  artifact: HarnessArtifactKindSchema,
+  name: z.string(),
+  source: z.string().optional(),
+  reason: z.string(),
+});
+
+/** An entry that is about the project rather than about one harness. */
+export type HarnessProjectEntry = z.infer<typeof HarnessProjectEntrySchema>;
+
+/**
+ * One installed package whose hooks are held back until a person allows them.
+ *
+ * It carries the package name, the events and how many commands there are — and
+ * never the command strings themselves. The approval card is the surface built
+ * to show those, with secret redaction, a length cap, escaping and the event
+ * said in plain words; reproducing that here would mean reproducing four safety
+ * properties in a second place, and it is what keeps file content off this
+ * response entirely.
+ */
+export const HarnessPendingApprovalSchema = z.object({
+  packageName: z.string(),
+  events: z.array(z.string()),
+  commandCount: z.number().int().nonnegative(),
+  reason: z.enum(['unasked', 'refused', 'unreadable-config']),
+  detail: z.string().optional(),
+});
+
+/** One installed package whose hooks are held back until a person allows them. */
+export type HarnessPendingApproval = z.infer<typeof HarnessPendingApprovalSchema>;
+
+/**
+ * What one project's agent-file sharing looks like right now.
+ *
+ * Three fields carry contracts rather than shapes, and each is stated where it
+ * is defined below: `counts.skills` counts ROWS, `sweepPreview` is an equality
+ * with what a sync would delete, and there is no `drops` map because every
+ * non-agnostic drop is already a cell of some row.
+ *
+ * On any `state` but `ready` only `projectPath`, `state` and `detail` are
+ * meaningful: every list is empty and every count is zero.
+ */
+export const HarnessStatusResponseSchema = z.object({
+  projectPath: z.string(),
+  state: z.enum(['ready', 'not-set-up', 'unreadable', 'unavailable']),
+  detail: z.string().optional(),
+  computedAt: z.string(),
+  enabled: z.array(HarnessIdSchema),
+  notEnabled: z.array(z.object({ harness: HarnessIdSchema, signal: z.string() })),
+  clean: z.boolean(),
+  counts: z.object({
+    /**
+     * Rows whose `artifact` is `skill` — a count of ROWS, not of inventory
+     * entries. A skill present in both `.agents/skills` and `.claude/skills` is
+     * two files, two rows, and counts twice, because the number under the
+     * profile row has to match the number of rows the page draws. Measured: 6 on
+     * the J-01 fixture, 31 on this repository.
+     */
+    skills: z.number().int().nonnegative(),
+    drifted: z.number().int().nonnegative(),
+    conflicts: z.number().int().nonnegative(),
+    orphans: z.number().int().nonnegative(),
+    adoptable: z.number().int().nonnegative(),
+    pendingApproval: z.number().int().nonnegative(),
+  }),
+  /**
+   * Every path a sync would delete — repo-relative, sorted, de-duplicated.
+   *
+   * The contract is EQUALITY with the `swept` list the next sync returns, never
+   * containment: "most of what will be deleted" is a warning with a hole in it,
+   * and the hole is where the surprise lives. It is the union of all six sweeps,
+   * which is what the engine was widened to be able to answer.
+   */
+  sweepPreview: z.array(z.string()),
+  rows: z.array(HarnessRowSchema),
+  projectLevel: z.array(HarnessProjectEntrySchema),
+  pendingApproval: z.array(HarnessPendingApprovalSchema),
+});
+
+/**
+ * What one project's agent-file sharing looks like right now.
+ *
+ * There is deliberately no `drops` map beside `rows`: every non-agnostic drop is
+ * already a cell of some row, so a map is the same facts twice — measured at
+ * 46,244 bytes against 32,415 for this repository. The panels group `rows` on
+ * the client instead. `projectLevel` stays, because a harness-agnostic entry is
+ * a cell of nothing.
+ */
+export type HarnessStatusResponse = z.infer<typeof HarnessStatusResponseSchema>;
+
+/**
+ * What a sync did, and the status recomputed after it.
+ *
+ * `swept` is what was actually deleted and equals the `sweepPreview` the page
+ * showed before the click. `askedAbout` names the packages a person was shown an
+ * approval card for, so the page can say a decision is still outstanding.
+ */
+export const HarnessSyncResponseSchema = z.object({
+  status: HarnessStatusResponseSchema,
+  applied: z.number().int().nonnegative(),
+  swept: z.array(z.string()),
+  conflicts: z.number().int().nonnegative(),
+  askedAbout: z.array(z.string()),
+});
+
+/** What a sync did, and the status recomputed after it. */
+export type HarnessSyncResponse = z.infer<typeof HarnessSyncResponseSchema>;
