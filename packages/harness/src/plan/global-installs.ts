@@ -32,9 +32,16 @@ import { dropWholePlugin } from './installed-projector.js';
 const GLOBAL_INSTALL_LEAD =
   'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it.';
 
-/** The form for a package that has skills nobody outside those sessions can reach. */
+/**
+ * The form for a package that has skills nobody outside those sessions can reach.
+ *
+ * The count agrees with its noun. A bare `{n} skills` printed "Its 1 skills" for
+ * the commonest global package there is — a pack with one skill in it — and a
+ * sentence a person reads has to be a sentence.
+ */
 function globalInstallSkillsReason(count: number, names: string): string {
-  return `${GLOBAL_INSTALL_LEAD} Its ${count} skills are not shared with this project: ${names}`;
+  const held = count === 1 ? '1 skill is' : `${count} skills are`;
+  return `${GLOBAL_INSTALL_LEAD} Its ${held} not shared with this project: ${names}`;
 }
 
 /** The form for a package with nothing portable in it — a different sentence, not a blank list. */

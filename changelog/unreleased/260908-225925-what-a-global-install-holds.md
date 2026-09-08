@@ -3,6 +3,7 @@ covers:
   - 'feat(harness): a global install is enumerated, not just named (DOR-1922)'
   - 'feat(harness): say what a global install holds and who sees it (DOR-1922)'
   - 'feat(harness): one line when a package is installed twice (DOR-1922)'
+  - 'fix(harness): one skill reads as one skill in the global drop (DOR-1922)'
 ---
 
 ### Changed

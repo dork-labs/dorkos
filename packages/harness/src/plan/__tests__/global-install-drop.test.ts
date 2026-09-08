@@ -114,6 +114,11 @@ beforeAll(() => {
   // `barepkg`: a package with nothing portable in it at all.
   writeManifest(join(dorkHome, 'plugins', 'barepkg'), 'barepkg', '1.0.0', ['extensions']);
 
+  // `soloskill`: one skill, which is the commonest global package there is.
+  const solo = join(dorkHome, 'plugins', 'soloskill');
+  writeManifest(solo, 'soloskill', '1.0.0', ['skills']);
+  writeSkill(join(solo, 'skills'), 'nightly');
+
   // `ccnative`: a Claude-Code-native package, installed verbatim, so nothing on
   // disk states its version or its layers (see the SRC-12 case below).
   const cc = join(dorkHome, 'plugins', 'ccnative');
@@ -160,6 +165,22 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
     const report = formatDropList(plan);
     expect(report).toContain('plugin layers:');
     expect(report).toContain('- plugin "globex": installed for all your projects.');
+  });
+
+  it('SRC-04: a one-skill package reads as one skill, not "Its 1 skills"', () => {
+    // Seeded defect: interpolate the count into a fixed plural (`Its ${n} skills
+    // are`). The line then reads "Its 1 skills are not shared with this project",
+    // which is what a person sees for the commonest global package there is: a
+    // pack holding one skill.
+    const plan = planFor(repoWith());
+
+    const [drop] = dropsFor(plan, 'soloskill');
+    expect(drop?.reason).toBe(
+      'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. ' +
+        'Its 1 skill is not shared with this project: nightly'
+    );
+    // And the plural is untouched, so the fix is agreement rather than a rewrite.
+    expect(dropsFor(plan, 'globex')[0]?.reason).toContain('Its 2 skills are not shared');
   });
 
   it('SRC-04: a global package with no skills gets the second form', () => {

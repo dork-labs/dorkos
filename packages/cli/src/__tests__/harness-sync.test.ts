@@ -391,7 +391,7 @@ describe('runHarnessSync', () => {
     expect(printed).toContain('plugin layers:');
     expect(printed).toContain(
       '- plugin "globex": installed for all your projects. Only the Claude Code sessions ' +
-        'DorkOS runs can see it. Its 1 skills are not shared with this project: nightly'
+        'DorkOS runs can see it. Its 1 skill is not shared with this project: nightly'
     );
     expect(printed).not.toMatch(/global sync/);
     expect(printed.split('is installed twice')).toHaveLength(2);
