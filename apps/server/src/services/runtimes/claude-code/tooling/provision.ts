@@ -22,6 +22,7 @@
  *
  * @module services/runtimes/claude-code/tooling/provision
  */
+import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
@@ -218,7 +219,10 @@ async function runProvisionClaudeCode(
       resolve(result);
     };
 
-    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(cmd, args, {
+      env: runtimeEnvironment('claude-code', 'provision'),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     child.stdout?.on('data', (chunk: Buffer) => {
       onProgress?.({ stage: 'installing', message: chunk.toString() });

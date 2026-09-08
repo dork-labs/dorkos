@@ -32,6 +32,7 @@ function fakeConfig(): ConfigReadWrite & { state: Partial<UserConfig> } {
   const state: Partial<UserConfig> = {
     providers: {},
     runtimes: {
+      environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
       default: 'claude-code',
       defaultTrustStop: null,
       dorkosTools: false,

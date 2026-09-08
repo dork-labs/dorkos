@@ -2,8 +2,8 @@
  * Keep an inherited `MCP_TOOL_TIMEOUT` from cutting an in-session approval hold
  * short (DOR-987).
  *
- * The turn's SDK subprocess inherits the whole of `process.env` (see the env
- * block in `message-sender.ts`). `MCP_TOOL_TIMEOUT` is a supported claude CLI
+ * The turn's projected environment preserves `MCP_TOOL_TIMEOUT` (see
+ * `launch-resolver.ts`). This is a supported Claude CLI
  * variable — a hard wall-clock limit per MCP tool call, defaulting to ~27.8h —
  * and an operator has a real reason to lower it: a flaky external MCP server
  * that hangs. Lowered below the hold cap, it would kill every held destructive
@@ -52,14 +52,14 @@ export const MCP_TOOL_TIMEOUT_FLOOR_MS =
 
 /**
  * The `MCP_TOOL_TIMEOUT` override to spread into the SDK subprocess env, after
- * the inherited `process.env`.
+ * the approved parent-value projection.
  *
  * @param env - The environment to read (defaults to this process's).
  * @returns A one-key override when the inherited value would cut a hold short,
  *   or an empty object when there is nothing to correct.
  */
 export function mcpToolTimeoutFloorEnv(
-  // eslint-disable-next-line no-restricted-syntax -- the whole of process.env is what the subprocess inherits; this reads the one variable that inheritance makes dangerous, two lines from the `...process.env` spread it corrects (message-sender.ts)
+  // eslint-disable-next-line no-restricted-syntax -- read the one approved inherited timeout before applying the per-launch floor
   env: NodeJS.ProcessEnv = process.env
 ): Record<string, string> {
   const raw = env[MCP_TOOL_TIMEOUT];

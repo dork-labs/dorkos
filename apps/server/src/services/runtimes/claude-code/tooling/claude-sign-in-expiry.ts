@@ -176,7 +176,8 @@ async function readCredentialStore(root: string): Promise<string> {
     return runBinaryProbe(
       SECURITY_BINARY,
       ['find-generic-password', '-w', '-s', service],
-      EXPIRY_PROBE_TIMEOUT_MS
+      EXPIRY_PROBE_TIMEOUT_MS,
+      { runtime: 'claude-code', purpose: 'process-inspection' }
     );
   }
   return readFile(path.join(root, CREDENTIALS_FILENAME), 'utf-8');

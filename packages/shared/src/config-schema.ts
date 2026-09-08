@@ -21,6 +21,12 @@ import { z } from 'zod';
 import { EFFORT_LEVELS } from './constants.js';
 import { BUILTIN_MEMORY_PROVIDER_ID } from './memory-provider.js';
 import { ROOM_REPO_CAP_DEFAULTS } from './room-repo.js';
+import { RuntimeEnvironmentSchema } from './runtime-environment-schema.js';
+export {
+  RuntimeInheritedEnvNamesSchema,
+  isReservedRuntimeEnvName,
+  RUNTIME_RESERVED_ENV_NAMES,
+} from './runtime-environment-schema.js';
 
 /**
  * How long a new standing permission lasts by default, in minutes (eight hours —
@@ -2412,6 +2418,8 @@ export const UserConfigSchema = z.object({
     .default(() => ({ defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true })),
   runtimes: z
     .object({
+      /** Names the owner deliberately passes to runtime subprocesses. */
+      environment: RuntimeEnvironmentSchema,
       /** Runtime id the registry selects as its default at boot. */
       default: z.string().default('claude-code'),
       /**
@@ -2503,8 +2511,8 @@ export const UserConfigSchema = z.object({
           /**
            * Credential reference for Codex's API key (`keychain:`/`env:`/`file:`),
            * never a raw secret. `null` = delegate to `codex login` (ADR-0315). Codex
-           * never receives its key via a subprocess env var — it never sets
-           * `CodexOptions.env` — so this reference feeds the delegated-login path.
+           * uses delegated login or its own supported environment/auth files;
+           * this reserved reference is not resolved by the runtime adapter.
            */
           credentialRef: CredentialReferenceSchema.nullable().default(null),
           /** Model a new codex session starts on. See {@link DefaultModelSchema}. */
@@ -2527,6 +2535,7 @@ export const UserConfigSchema = z.object({
         })),
     })
     .default(() => ({
+      environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
       default: 'claude-code',
       defaultTrustStop: null,
       // DorkOS tools on Codex/OpenCode, OFF (spec `tool-only-room-replies`, D5).

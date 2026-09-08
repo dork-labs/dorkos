@@ -302,17 +302,17 @@ describe('what a Codex turn carries', () => {
     expect(identity?.displayName).toBe('researcher');
   });
 
-  it('keeps inheriting the parent environment when it adds the token', async () => {
+  it('projects the approved parent environment when it adds the token', async () => {
     vi.stubEnv('DORKOS_AGENT_CONTEXT_PROBE', 'inherited');
     try {
       const runtime = makeRuntime();
       await drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));
 
-      // Setting CodexOptions.env stops the SDK inheriting process.env, so the
-      // adapter must spread it back in. Losing PATH/HOME/CODEX_HOME here would
-      // break every Codex turn.
+      // Codex receives a complete, explicit environment: baseline process
+      // support survives, while an arbitrary server variable does not cross
+      // the runtime boundary unless the owner adds its exact name to config.
       const env = sdkMocks.constructorOptions.at(-1)?.env as Record<string, string>;
-      expect(env.DORKOS_AGENT_CONTEXT_PROBE).toBe('inherited');
+      expect(env).not.toHaveProperty('DORKOS_AGENT_CONTEXT_PROBE');
       expect(env.PATH ?? env.Path).toBeDefined();
     } finally {
       vi.unstubAllEnvs();
@@ -440,9 +440,12 @@ describe('what a Codex turn carries', () => {
     const runtime = makeRuntime({ mesh: null });
     await drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));
 
-    // Exactly one construction (the boot client), and no env override on it.
+    // Exactly one construction (the boot client), with the same bounded
+    // environment even though this turn has no agent identity token.
     expect(sdkMocks.constructorOptions).toHaveLength(1);
-    expect(sdkMocks.constructorOptions[0]).not.toHaveProperty('env');
+    const env = sdkMocks.constructorOptions[0]?.env as Record<string, string>;
+    expect(env.PATH ?? env.Path).toBeDefined();
+    expect(env).not.toHaveProperty('DORKOS_AGENT_TOKEN');
     // The context block still lands: knowing who you are does not require a token.
     expect(sdkMocks.prompts[0]).toContain('<agent_identity>');
   });

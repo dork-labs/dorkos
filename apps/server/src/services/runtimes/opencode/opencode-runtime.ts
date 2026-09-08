@@ -123,6 +123,10 @@ import type {
   RevokeConnectorTurnReason,
 } from '../../connectors/runtime-principal-port.js';
 import { ConnectorTurnLeaseManager, type ConnectorTurnLease } from './mcp/connector-turn-lease.js';
+import {
+  ConnectorTurnLeaseSupervisor,
+  type ConnectorTurnLeaseSupervisorHandle,
+} from '../connectors/connector-turn-lease-supervisor.js';
 
 /** Constructor dependencies for {@link OpenCodeRuntime} (composition root). */
 export interface OpenCodeRuntimeOptions {
@@ -154,6 +158,7 @@ interface ActiveTurn {
   controller: AbortController;
   phase: 'waiting' | 'setup' | 'running';
   connectorBinding?: OpenConnectorTurnResult;
+  connectorSupervisor?: ConnectorTurnLeaseSupervisorHandle;
   connectorRevocation?: Promise<void>;
 }
 
@@ -452,13 +457,16 @@ export class OpenCodeRuntime implements AgentRuntime {
 
       const meshAgent = opts?.connectorTurn ? this.meshCore?.getByPath(cwd) : undefined;
       if (this.connectorRuntimeTools && meshAgent) {
-        turn.connectorBinding = await this.connectorRuntimeTools.principals.openTurn({
-          runtime: this.type,
-          canonicalSessionId: sessionId,
-          agentPath: cwd,
-          canonicalCwd: directory,
-          signal: controller.signal,
-        });
+        turn.connectorBinding = await this.connectorRuntimeTools.principals.openTurn(
+          {
+            runtime: this.type,
+            canonicalSessionId: sessionId,
+            agentPath: cwd,
+            canonicalCwd: directory,
+            signal: controller.signal,
+          },
+          { isCurrent: () => this.activeTurns.get(sessionId) === turn }
+        );
         controller.signal.throwIfAborted();
         connectorInjection = {
           url: this.connectorRuntimeTools.listenerUrl,
@@ -475,6 +483,19 @@ export class OpenCodeRuntime implements AgentRuntime {
       const mcpResult = await this.mcp.ensureManaged(client, directory, connectorInjection, cwd);
       if (connectorInjection && !mcpResult.connectorApplied) {
         await this.revokeConnectorTurn(turn, 'setup_failed');
+      } else if (turn.connectorBinding && this.connectorRuntimeTools) {
+        const createSupervisor =
+          this.connectorRuntimeTools.createLeaseSupervisor ??
+          ((options) => new ConnectorTurnLeaseSupervisor(options));
+        turn.connectorSupervisor = createSupervisor({
+          principals: this.connectorRuntimeTools.principals,
+          bindingId: turn.connectorBinding.bindingId,
+          permit: turn.connectorBinding.renewalPermit,
+          runtime: this.type,
+          expiresAt: turn.connectorBinding.expiresAt,
+          signal: controller.signal,
+          onLost: (loss) => logger.warn('[OpenCodeRuntime] Connections lease lost', loss),
+        });
       }
       controller.signal.throwIfAborted();
 
@@ -515,6 +536,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       connectorRevokeReason = sawRuntimeError ? 'runtime_failed' : 'turn_terminal';
     } finally {
       if (controller.signal.aborted) connectorRevokeReason = 'turn_cancelled';
+      turn.connectorSupervisor?.stop();
       try {
         await this.revokeConnectorTurn(turn, connectorRevokeReason);
       } catch (err) {

@@ -30,6 +30,7 @@
  *
  * @module services/runtimes/codex/codex-runtime
  */
+import { runtimeInheritedNames } from '../shared/runtime-environment-config.js';
 import { Codex } from '@openai/codex-sdk';
 import type {
   StreamEvent,
@@ -111,6 +112,10 @@ import type {
   OpenConnectorTurnResult,
   RevokeConnectorTurnReason,
 } from '../../connectors/runtime-principal-port.js';
+import {
+  ConnectorTurnLeaseSupervisor,
+  type ConnectorTurnLeaseSupervisorHandle,
+} from '../connectors/connector-turn-lease-supervisor.js';
 
 /**
  * How long a warmed Codex MCP-status cache stays fresh before {@link CodexRuntime.getMcpStatus}
@@ -178,7 +183,7 @@ export class CodexRuntime implements AgentRuntime {
    * install hint (DOR-1334 / F9). Nothing here touches the SDK until a turn
    * actually needs it, and by then DorkOS has resolved the path itself.
    */
-  private sharedClient: { binary: string; client: Codex } | null = null;
+  private sharedClient: { binary: string; policy: string; client: Codex } | null = null;
   /** How this runtime finds its `codex` binary — see {@link CodexRuntimeOptions.resolveBinary}. */
   private readonly resolveBinary: () => Promise<string | null>;
   /** Kept so every turn's client is built with the same UI-bridge wiring. */
@@ -289,7 +294,7 @@ export class CodexRuntime implements AgentRuntime {
   /**
    * The `Codex` client for one turn.
    *
-   * Returns the shared client (subprocess inherits `process.env` untouched,
+   * Returns the shared client (subprocess receives a complete projected env,
    * `dorkos_ui` bridge only) unless this turn needs a turn-scoped one: it
    * carries an agent identity token (so the token reaches `codex exec` through
    * its environment and nowhere else), or the agent has enabled managed MCP
@@ -319,8 +324,13 @@ export class CodexRuntime implements AgentRuntime {
         buildCodexOptions(binary, this.mcpUiUrl, tokenEnv, managed, dorkosTools, connectorTools)
       );
     }
-    if (this.sharedClient?.binary !== binary) {
-      this.sharedClient = { binary, client: new Codex(buildCodexOptions(binary, this.mcpUiUrl)) };
+    const policy = JSON.stringify(runtimeInheritedNames('codex'));
+    if (this.sharedClient?.binary !== binary || this.sharedClient.policy !== policy) {
+      this.sharedClient = {
+        binary,
+        policy,
+        client: new Codex(buildCodexOptions(binary, this.mcpUiUrl)),
+      };
     }
     return this.sharedClient.client;
   }
@@ -571,19 +581,35 @@ export class CodexRuntime implements AgentRuntime {
     const controller = new AbortController();
     this.activeTurns.set(sessionId, controller);
     let connectorBinding: OpenConnectorTurnResult | undefined;
+    let connectorSupervisor: ConnectorTurnLeaseSupervisorHandle | undefined;
     let connectorRevokeReason: RevokeConnectorTurnReason = 'setup_failed';
     let connectorRuntimeFailed = false;
     try {
       let connectorTools: ConnectorRuntimeMcpInjection | null = null;
       if (this.connectorRuntimeTools && meshAgent) {
-        connectorBinding = await this.connectorRuntimeTools.principals.openTurn({
-          runtime: this.type,
-          canonicalSessionId: sessionId,
-          agentPath: cwd,
-          canonicalCwd: cwd,
-          signal: controller.signal,
-        });
+        connectorBinding = await this.connectorRuntimeTools.principals.openTurn(
+          {
+            runtime: this.type,
+            canonicalSessionId: sessionId,
+            agentPath: cwd,
+            canonicalCwd: cwd,
+            signal: controller.signal,
+          },
+          { isCurrent: () => this.activeTurns.get(sessionId) === controller }
+        );
         this.activeConnectorBindings.set(controller, connectorBinding.bindingId);
+        const createSupervisor =
+          this.connectorRuntimeTools.createLeaseSupervisor ??
+          ((options) => new ConnectorTurnLeaseSupervisor(options));
+        connectorSupervisor = createSupervisor({
+          principals: this.connectorRuntimeTools.principals,
+          bindingId: connectorBinding.bindingId,
+          permit: connectorBinding.renewalPermit,
+          runtime: this.type,
+          expiresAt: connectorBinding.expiresAt,
+          signal: controller.signal,
+          onLost: (loss) => logger.warn('[CodexRuntime] Connections lease lost', loss),
+        });
         connectorTools = {
           url: this.connectorRuntimeTools.listenerUrl,
           headers: connectorRuntimeHeaders({
@@ -733,6 +759,7 @@ export class CodexRuntime implements AgentRuntime {
       connectorRevokeReason = connectorRuntimeFailed ? 'runtime_failed' : 'turn_terminal';
     } finally {
       if (controller.signal.aborted) connectorRevokeReason = 'turn_cancelled';
+      connectorSupervisor?.stop();
       try {
         if (connectorBinding && this.activeConnectorBindings.has(controller)) {
           this.activeConnectorBindings.delete(controller);

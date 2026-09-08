@@ -19,7 +19,10 @@ const RUNTIMES = new Set<ConnectorRuntime>(['claude-code', 'codex', 'opencode'])
 function refuse(res: Response): void {
   res.status(401).json({
     jsonrpc: '2.0',
-    error: { code: -32001, message: 'Unauthorized' },
+    error: {
+      code: -32001,
+      message: 'Connections access ended. Start a new turn to continue.',
+    },
     id: null,
   });
 }

@@ -1,3 +1,4 @@
+import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -376,6 +377,7 @@ function findClaudeOnPath(): string | null {
   const locator = process.platform === 'win32' ? 'where' : 'which';
   try {
     const found = execFileSync(locator, ['claude'], {
+      env: runtimeEnvironment('claude-code', 'locator'),
       encoding: 'utf-8',
       timeout: CLI_LOCATE_TIMEOUT_MS,
     })

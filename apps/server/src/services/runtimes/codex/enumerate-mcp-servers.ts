@@ -68,7 +68,10 @@ export async function enumerateCodexMcpServers(
     const binary = await resolveBinary();
     if (!binary) return null;
 
-    const stdout = await runBinaryProbe(binary, ['mcp', 'list', '--json'], MCP_LIST_TIMEOUT_MS);
+    const stdout = await runBinaryProbe(binary, ['mcp', 'list', '--json'], MCP_LIST_TIMEOUT_MS, {
+      runtime: 'codex',
+      purpose: 'auth-probe',
+    });
     const parsed = JSON.parse(stdout) as unknown;
     if (!Array.isArray(parsed)) return [];
 

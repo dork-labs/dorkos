@@ -660,6 +660,10 @@ export const CONFIG_WRITE_POLICY = {
   'workbench.terminalGraceTtlMinutes': 'agent-writable',
   'workbench.autoOpenDiff': 'agent-writable',
 
+  // Only the owner can entrust additional environment variables to runtimes.
+  'runtimes.environment.inherit.claudeCode': 'operator-only',
+  'runtimes.environment.inherit.codex': 'operator-only',
+  'runtimes.environment.inherit.opencode': 'operator-only',
   'runtimes.default': 'agent-writable',
   // Whether Codex and OpenCode agents carry the DorkOS tools (spec
   // `tool-only-room-replies` §D5). Operator-only, and it sits on the module's
@@ -918,6 +922,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'cloud.instanceName',
       'cloud.linkedAccountLabel',
       'runtimes.codex.credentialRef',
+      'runtimes.environment.inherit.claudeCode',
+      'runtimes.environment.inherit.codex',
+      'runtimes.environment.inherit.opencode',
       'runtimes.opencode.provider',
       'runtimes.opencode.baseURL',
       'runtimes.claudeCode.defaultAccount',

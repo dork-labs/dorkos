@@ -19,6 +19,7 @@
  *
  * @module services/runtimes/opencode/server-manager
  */
+import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk';
@@ -215,13 +216,11 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     // A missing/dangling reference yields `{}` — the sidecar keeps its own auth.
     const providerEnv = await resolveOpenCodeProviderEnv();
     const child = spawn(binary, ['serve', `--hostname=${SIDECAR_HOSTNAME}`, `--port=${port}`], {
-      env: {
-        // eslint-disable-next-line no-restricted-syntax -- the sidecar must inherit the full parent environment (PATH, provider API keys), not env.ts's parsed subset
-        ...process.env,
+      env: runtimeEnvironment('opencode', 'turn', {
         ...providerEnv,
         OPENCODE_SERVER_PASSWORD: password,
         OPENCODE_CONFIG_CONTENT: JSON.stringify(OPENCODE_SIDECAR_CONFIG),
-      },
+      }),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     this.child = child;

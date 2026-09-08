@@ -18,6 +18,7 @@
  *
  * @module services/runtimes/opencode/providers/ollama-provision
  */
+import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { RuntimeProvisionProgress } from '@dorkos/shared/transport';
@@ -72,7 +73,10 @@ export interface OllamaProvisionDeps {
 async function commandExistsDefault(command: string, platform: NodeJS.Platform): Promise<boolean> {
   const probe = platform === 'win32' ? 'where' : 'which';
   try {
-    await execFileAsync(probe, [command], { timeout: COMMAND_PROBE_TIMEOUT_MS });
+    await execFileAsync(probe, [command], {
+      timeout: COMMAND_PROBE_TIMEOUT_MS,
+      env: runtimeEnvironment('opencode', 'locator'),
+    });
     return true;
   } catch {
     return false;
@@ -82,7 +86,11 @@ async function commandExistsDefault(command: string, platform: NodeJS.Platform):
 /** Default installer runner: a bounded `execFile` (args array only — never a shell, never sudo). */
 async function runCommandDefault(command: string, args: string[]): Promise<CommandOutcome> {
   try {
-    await execFileAsync(command, args, { timeout: INSTALL_TIMEOUT_MS, killSignal: 'SIGKILL' });
+    await execFileAsync(command, args, {
+      timeout: INSTALL_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
+      env: runtimeEnvironment('opencode', 'provision'),
+    });
     return { ok: true };
   } catch (err) {
     const stderr = (err as { stderr?: string }).stderr;

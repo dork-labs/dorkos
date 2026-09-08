@@ -2,8 +2,8 @@
  * What the turn's SDK subprocess is told its per-call MCP tool timeout is
  * (DOR-987).
  *
- * The subprocess inherits the whole of `process.env`, and `MCP_TOOL_TIMEOUT` is
- * a supported claude CLI variable an operator has real reason to lower (a flaky
+ * The projected subprocess environment preserves `MCP_TOOL_TIMEOUT`,
+ * a supported Claude CLI variable an operator has real reason to lower (a flaky
  * external MCP server that hangs). Lowered below the in-session approval hold's
  * cap, every held destructive call would die mid-wait and return an ERROR to the
  * model — strictly worse than the poll flow the hold replaced, which is the one

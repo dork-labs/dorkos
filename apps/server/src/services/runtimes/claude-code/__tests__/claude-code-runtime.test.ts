@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
@@ -133,6 +133,9 @@ describe('ClaudeCodeRuntime', () => {
   let agentManager: InstanceType<typeof import('../claude-code-runtime.js').ClaudeCodeRuntime>;
 
   beforeEach(async () => {
+    vi.stubEnv('MCP_API_KEY', 'synthetic-server-token');
+    vi.stubEnv('NANGO_ENCRYPTION_KEY', 'synthetic-nango-key');
+    vi.stubEnv('DO_NOT_TRACK', '1');
     vi.resetModules();
     // Re-mock after resetModules
     vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
@@ -140,6 +143,20 @@ describe('ClaudeCodeRuntime', () => {
     }));
     const mod = await import('../claude-code-runtime.js');
     agentManager = new mod.ClaudeCodeRuntime('/tmp/dorkos-test');
+  });
+
+  afterEach(async () => {
+    try {
+      const { query } = await import('@anthropic-ai/claude-agent-sdk');
+      for (const [args] of vi.mocked(query).mock.calls) {
+        expect(args.options?.env).toBeDefined();
+        expect(args.options?.env).not.toHaveProperty('MCP_API_KEY');
+        expect(args.options?.env).not.toHaveProperty('NANGO_ENCRYPTION_KEY');
+        expect(args.options?.env?.DO_NOT_TRACK).toBe('1');
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   describe('ensureSession()', () => {
@@ -221,7 +238,9 @@ describe('ClaudeCodeRuntime', () => {
           bindingId: 'binding-1',
           bearer: 'turn-secret',
           expiresAt: '2099-01-01T00:00:00.000Z',
+          renewalPermit: {} as never,
         }),
+        renew: vi.fn(),
         resolve: vi.fn().mockResolvedValue({ status: 'resolved', principal: proof }),
         revoke: vi.fn().mockResolvedValue(undefined),
       };
@@ -258,13 +277,16 @@ describe('ClaudeCodeRuntime', () => {
       agentManager.ensureSession('requested-session', { permissionMode: 'default' });
       for await (const event of agentManager.sendMessage('requested-session', 'hello')) void event;
 
-      expect(principals.openTurn).toHaveBeenCalledWith({
-        runtime: 'claude-code',
-        canonicalSessionId: 'canonical-claude-session',
-        agentPath: DEFAULT_CWD,
-        canonicalCwd: DEFAULT_CWD,
-        signal: expect.any(AbortSignal),
-      });
+      expect(principals.openTurn).toHaveBeenCalledWith(
+        {
+          runtime: 'claude-code',
+          canonicalSessionId: 'canonical-claude-session',
+          agentPath: DEFAULT_CWD,
+          canonicalCwd: DEFAULT_CWD,
+          signal: expect.any(AbortSignal),
+        },
+        { isCurrent: expect.any(Function) }
+      );
       expect(principals.resolve).toHaveBeenCalledWith({
         bearer: 'turn-secret',
         expectedRuntime: 'claude-code',

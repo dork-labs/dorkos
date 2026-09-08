@@ -174,6 +174,13 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       linkedAccountLabel: 'LEAK-5-person@example.com',
     },
     runtimes: {
+      environment: {
+        inherit: {
+          claudeCode: ['LEAK_ENV_CLAUDE'],
+          codex: ['LEAK_ENV_CODEX'],
+          opencode: ['LEAK_ENV_OPENCODE'],
+        },
+      },
       default: 'claude-code',
       // Deliberately NOT the shipped default, so the projection is shown to
       // carry the stored value rather than a schema default that would look
@@ -266,6 +273,9 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'mcp.apiKey',
       'providers',
       'runtimes.codex.credentialRef',
+      'runtimes.environment.inherit.claudeCode',
+      'runtimes.environment.inherit.codex',
+      'runtimes.environment.inherit.opencode',
       'tunnel.auth',
       'tunnel.authtoken',
       // The one entry here that is not a secret: `ui.sidebar.sections` is a
@@ -446,7 +456,7 @@ describe('projectDisclosedConfig', () => {
     // The catch-all: whatever the shape, no sentinel may appear in the JSON that
     // reaches an unauthenticated caller.
     const serialized = JSON.stringify(projectDisclosedConfig(fullyPopulatedConfig()));
-    expect(serialized).not.toMatch(/LEAK-/);
+    expect(serialized).not.toMatch(/LEAK[-_]/);
   });
 
   it('keeps raw MCP labels and transports while withholding complete URLs', () => {

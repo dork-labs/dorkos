@@ -3788,6 +3788,18 @@ export const CONFIG_MIGRATIONS = {
     // thing that writes it; see `seedHarnessRefusedHooks`.
     seedHarnessRefusedHooks(store);
   },
+  // New nested defaults only; historical migration bodies stay immutable.
+  '0.76.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    const current = store.get('runtimes') as Record<string, unknown> | undefined;
+    // conf may have filled defaults only in its parsed read copy: persist it.
+    store.set('runtimes', {
+      ...current,
+      environment: current?.environment ?? { inherit: { claudeCode: [], codex: [], opencode: [] } },
+    });
+  },
 } as const;
 
 /**

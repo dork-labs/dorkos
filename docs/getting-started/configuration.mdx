@@ -646,7 +646,7 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
     },
     'runtimes.codex.credentialRef': {
       description:
-        'Credential reference for Codex’s API key (never a raw secret). `null` delegates to `codex login`.',
+        'Reserved setting with no current effect. Codex uses its own sign-in or the supported environment keys described below.',
       type: 'string | null',
       default: 'null',
     },
@@ -678,16 +678,62 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
 />
 
 <Callout type="info">
-  DorkOS stores credentials **by reference**, never as plaintext in `config.json`. The top-level
-  `providers` block maps a provider id to a reference: `keychain:<id>` (your operating system's
-  built-in password manager), `env:<VAR>` (a process environment variable), or `file:<name>` (a
-  DorkOS-owned encrypted secret store). The reference resolves to a real key at each runtime's
-  startup, and a broken reference fails loudly instead of quietly sending an empty key. Claude
-  reads `providers.anthropic`; OpenCode reads the provider selected by
-  `runtimes.opencode.provider`. Codex never receives its key via a subprocess environment
-  variable, so `runtimes.codex.credentialRef` feeds the delegated `codex login` path instead. Net
-  effect: your API key never sits in a plain text file waiting to be read.
+  The `providers` block stores references rather than API key values in `config.json`:
+  `keychain:<id>` uses your operating system's password manager, `env:<VAR>` reads a named
+  environment variable, and `file:<name>` uses DorkOS's encrypted secret store. Claude reads
+  `providers.anthropic`; OpenCode reads the service selected by `runtimes.opencode.provider`.
+  If a reference is missing or cannot be read, DorkOS logs the reason and leaves existing
+  sign-in methods available instead of passing an empty key.
+
+Codex uses its own sign-in files or the supported `CODEX_API_KEY` and `OPENAI_API_KEY`
+environment variables. DorkOS passes those keys through its selected environment when
+present; `runtimes.codex.credentialRef` is not used. These settings do not encrypt or remove
+credentials stored by a runtime or supplied through your environment.
+
 </Callout>
+
+#### Runtime environment settings
+
+DorkOS passes a selected set of environment variables to Claude Code, Codex, OpenCode, and their setup commands.
+It preserves normal home folders, command lookup (`PATH`), Git and SSH settings, proxy and certificate settings, and `DO_NOT_TRACK`.
+Supported model sign-ins are included when the command needs them. Binary lookup, installation, and hardware checks do not receive model keys automatically.
+
+The `runtimes.environment.inherit` lists let the owner add exact names for custom tools.
+These lists start empty, including after an upgrade. Agents cannot change them through DorkOS tools.
+Put names in the config, never secret values. For example, merge this into your existing `runtimes` block:
+
+```json
+{
+  "environment": {
+    "inherit": {
+      "claudeCode": ["ACME_BUILD_TOKEN"],
+      "codex": [],
+      "opencode": []
+    }
+  }
+}
+```
+
+This passes `ACME_BUILD_TOKEN` from the environment that starts DorkOS to Claude Code and its helper commands.
+It does not create the variable or read it from your project.
+Use only names you intend that runtime and its tools to receive.
+Each list allows at most 128 names, up to 128 characters each. Duplicate names, including case variants, are rejected.
+Server-only names such as `MCP_API_KEY`, `NANGO_ENCRYPTION_KEY`, and all `DORKOS_` names cannot be added.
+
+**When upgrading:** custom variables that agents used to inherit need an explicit entry here.
+This includes `GH_TOKEN`, custom model credentials, private registry settings, and `NODE_OPTIONS` if your setup needs them.
+Standard Claude, Codex, and supported OpenCode model credentials keep working without an entry.
+Claude's Bedrock, Vertex, and Foundry environment modes pass their matching credentials when their mode flag is enabled.
+If you choose a mode only in Claude's settings file, add any environment credentials it needs explicitly.
+Other Claude cloud modes and custom Codex or OpenCode model settings also need exact-name entries for their environment variables.
+A known custom Claude mode refuses to start until its enabled mode flag is explicitly allowed.
+
+Restart DorkOS after changing its environment or inheritance lists so every running agent uses the new settings.
+Existing warm agents and the OpenCode background process keep their current environment until they stop.
+Removing a name does not erase a value already received by a process.
+
+This protects against accidental inheritance, not access by another process running as your operating system user.
+Allowed proxy, SSH, and model settings can themselves carry credentials. An allowed variable is available to that runtime's tools.
 
 ### Harness Sync
 

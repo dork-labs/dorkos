@@ -58,7 +58,10 @@ const ENVIRONMENT_COUNT_PATTERN = /\b[1-9]\d*\s+environment variables?\b/;
 
 /** Run the opencode binary with args and return trimmed stdout. Rejects on non-zero exit or timeout. */
 function runOpenCode(binary: string, args: string[]): Promise<string> {
-  return runBinaryProbe(binary, args, PROBE_TIMEOUT_MS);
+  return runBinaryProbe(binary, args, PROBE_TIMEOUT_MS, {
+    runtime: 'opencode',
+    purpose: args.includes('--version') ? 'version-probe' : 'auth-probe',
+  });
 }
 
 /** The provider whose models run locally (Ollama) — no credential is ever needed. */
@@ -124,7 +127,7 @@ export function resolveOpenCodeBinaryPath(): Promise<string | null> {
   return resolveRuntimeBinary([
     { resolve: () => binaryPath, authoritative: true },
     { resolve: ensureProvisionedOpenCodeVersion },
-    { resolve: () => findBinaryOnPath('opencode', PROBE_TIMEOUT_MS) },
+    { resolve: () => findBinaryOnPath('opencode', PROBE_TIMEOUT_MS, 'opencode') },
   ]);
 }
 

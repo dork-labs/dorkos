@@ -14,6 +14,7 @@
  *
  * @module services/runtimes/opencode/providers/provision
  */
+import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
@@ -213,7 +214,10 @@ async function runProvisionOpenCode(
       resolve(result);
     };
 
-    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(cmd, args, {
+      env: runtimeEnvironment('opencode', 'provision'),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     child.stdout?.on('data', (chunk: Buffer) => {
       onProgress?.({ stage: 'installing', message: chunk.toString() });

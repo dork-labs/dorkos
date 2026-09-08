@@ -32,7 +32,8 @@ describe('enumerateCodexMcpServers', () => {
     expect(runBinaryProbe).toHaveBeenCalledWith(
       '/vendor/bin/codex',
       ['mcp', 'list', '--json'],
-      expect.any(Number)
+      expect.any(Number),
+      { runtime: 'codex', purpose: 'auth-probe' }
     );
     // scope is user-global; status is omitted (config-time connectivity is unknown).
     expect(servers).toEqual([

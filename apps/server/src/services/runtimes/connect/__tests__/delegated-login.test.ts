@@ -69,15 +69,15 @@ describe('runDelegatedLogin', () => {
     await expect(p).resolves.toEqual({ ok: true });
     expect(calls[0].cmd).toBe('/bin/codex');
     expect(calls[0].args).toEqual(['login']);
-    // No env override on a command with none — codex spawns exactly as before
-    // this seam existed, inheriting process.env implicitly.
-    expect(calls[0].options?.env).toBeUndefined();
+    // Even a direct login command without overrides gets a complete projection.
+    expect(calls[0].options?.env).toBeDefined();
+    expect(calls[0].options?.env).not.toHaveProperty('MCP_API_KEY');
   });
 
   it('forwards an explicit command env to the spawned child (the account pin)', async () => {
     const child = new FakeChild();
     const { spawn, calls } = fakeSpawn(child);
-    const pinnedEnv = { ...process.env, CLAUDE_CONFIG_DIR: '/Users/x/.claude2' };
+    const pinnedEnv = { CLAUDE_CONFIG_DIR: '/Users/x/.claude2' };
     const p = runDelegatedLogin(
       { binary: '/bin/claude', args: ['auth', 'login'], env: pinnedEnv },
       { spawn }
@@ -203,7 +203,7 @@ describe('resolveLoginCommand (claude-code)', () => {
 
     const cmd = await resolveLoginCommand('claude-code');
 
-    expect(cmd?.env).toHaveProperty('CLAUDE_CONFIG_DIR', undefined);
+    expect(cmd?.env).not.toHaveProperty('CLAUDE_CONFIG_DIR');
   });
 
   it('uses an explicit accountRoot instead of the active account, without calling resolveActiveClaudeRoot', async () => {
@@ -502,5 +502,33 @@ describe('delegateRuntimeLogin', () => {
       expect(claude.calls).toHaveLength(1);
       expect(codex.calls).toHaveLength(1);
     });
+  });
+});
+
+describe('resolved login environment boundary', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it('preserves the Claude account pin and model credential without unrelated server authority', async () => {
+    vi.stubEnv('MCP_API_KEY', 'synthetic-server');
+    vi.stubEnv('NANGO_ENCRYPTION_KEY', 'synthetic-encryption');
+    vi.stubEnv('ANTHROPIC_API_KEY', 'synthetic-model');
+    vi.stubEnv('DO_NOT_TRACK', '1');
+    vi.mocked(resolveClaudeCliPath).mockReturnValue('/synthetic/claude');
+    vi.mocked(resolveActiveClaudeRoot).mockReturnValue('/synthetic/account');
+    vi.mocked(claudeConfigDirEnv).mockReturnValue({ CLAUDE_CONFIG_DIR: '/synthetic/account' });
+    const command = await resolveLoginCommand('claude-code');
+    const child = new FakeChild();
+    const { spawn, calls } = fakeSpawn(child);
+    expect(command).not.toBeNull();
+    const completion = runDelegatedLogin(command!, { spawn });
+    child.emit('exit', 0);
+    await expect(completion).resolves.toEqual({ ok: true });
+    expect(calls[0].options?.env).toMatchObject({
+      CLAUDE_CONFIG_DIR: '/synthetic/account',
+      ANTHROPIC_API_KEY: 'synthetic-model',
+      DO_NOT_TRACK: '1',
+    });
+    expect(calls[0].options?.env).not.toHaveProperty('MCP_API_KEY');
+    expect(calls[0].options?.env).not.toHaveProperty('NANGO_ENCRYPTION_KEY');
+    expect(JSON.stringify(calls[0].args)).not.toContain('synthetic-model');
   });
 });

@@ -268,10 +268,7 @@ async function describeHostLogin(status: ClaudeAuthStatus, root: string): Promis
  * @param root - The Claude account to report on.
  */
 async function checkHostLogin(binary: string | null, root: string): Promise<DependencyCheck> {
-  const status = await readClaudeAuthStatus(binary, {
-    ...process.env,
-    ...claudeConfigDirEnv(root),
-  });
+  const status = await readClaudeAuthStatus(binary, claudeConfigDirEnv(root));
 
   if (status?.loggedIn === true) return describeHostLogin(status, root);
 

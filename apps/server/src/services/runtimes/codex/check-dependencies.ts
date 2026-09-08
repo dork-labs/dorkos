@@ -102,7 +102,10 @@ export function resolveCodexVendoredBinary(): string | null {
 
 /** Run the codex binary with args and return trimmed stdout. Rejects on non-zero exit or timeout. */
 function runCodex(binary: string, args: string[]): Promise<string> {
-  return runBinaryProbe(binary, args, PROBE_TIMEOUT_MS);
+  return runBinaryProbe(binary, args, PROBE_TIMEOUT_MS, {
+    runtime: 'codex',
+    purpose: args.includes('--version') ? 'version-probe' : 'auth-probe',
+  });
 }
 
 /**
@@ -122,7 +125,7 @@ export function resolveCodexBinaryPath(): Promise<string | null> {
     { resolve: () => binaryPath, authoritative: true },
     { resolve: resolveCodexVendoredBinary },
     { resolve: resolveProvisionedCodexPath },
-    { resolve: () => findBinaryOnPath('codex', PROBE_TIMEOUT_MS) },
+    { resolve: () => findBinaryOnPath('codex', PROBE_TIMEOUT_MS, 'codex') },
   ]);
 }
 

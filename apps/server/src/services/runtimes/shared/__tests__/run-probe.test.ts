@@ -10,6 +10,8 @@ import {
 } from '../run-probe.js';
 import { logger } from '../../../../lib/logger.js';
 
+vi.mock('../../../core/config-manager.js', () => ({ configManager: { get: () => undefined } }));
+
 vi.mock('node:child_process', () => ({ execFile: vi.fn() }));
 vi.mock('node:fs', () => ({ existsSync: vi.fn() }));
 vi.mock('../../../../lib/logger.js', () => ({
@@ -191,5 +193,38 @@ describe('logProbeFailure', () => {
     const [, details] = vi.mocked(logger.warn).mock.calls[0] as [string, { code?: string }];
     expect(details.code).toBeUndefined();
     expect(details).toMatchObject({ error: 'probe timed out after 5000ms: /bin/codex' });
+  });
+});
+
+describe('actual probe environment purposes', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it('keeps locators credential-free and gives auth probes only selected credentials', async () => {
+    vi.stubEnv('MCP_API_KEY', 'synthetic-server');
+    vi.stubEnv('NANGO_ENCRYPTION_KEY', 'synthetic-encryption');
+    vi.stubEnv('ANTHROPIC_API_KEY', 'synthetic-claude');
+    vi.stubEnv('OPENAI_API_KEY', 'synthetic-openai');
+    vi.stubEnv('DO_NOT_TRACK', '1');
+    vi.mocked(execFile).mockClear();
+    onExecFile(() => ({ stdout: '/synthetic/bin' }));
+    vi.mocked(existsSync).mockReturnValue(true);
+    await findBinaryOnPath('codex', TIMEOUT, 'codex');
+    await runBinaryProbe('/synthetic/codex', ['login', 'status'], TIMEOUT, {
+      runtime: 'codex',
+      purpose: 'auth-probe',
+    });
+    const options = vi
+      .mocked(execFile)
+      .mock.calls.map((call) => call[2] as { env?: NodeJS.ProcessEnv });
+    expect(options).toHaveLength(2);
+    expect(options[0].env).not.toHaveProperty('OPENAI_API_KEY');
+    expect(options[1].env).toHaveProperty('OPENAI_API_KEY', 'synthetic-openai');
+    for (const { env } of options) {
+      expect(env).toHaveProperty('DO_NOT_TRACK', '1');
+      for (const name of ['ANTHROPIC_API_KEY', 'NANGO_ENCRYPTION_KEY', 'MCP_API_KEY'])
+        expect(env).not.toHaveProperty(name);
+    }
+    expect(JSON.stringify(vi.mocked(execFile).mock.calls.map((call) => call[1]))).not.toContain(
+      'synthetic-openai'
+    );
   });
 });

@@ -28,6 +28,7 @@ import {
 } from '../../principal/server-principal.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
+const TEST_TURN_OWNERSHIP = { isCurrent: () => true } as const;
 
 function payload(result: unknown): Record<string, unknown> {
   if (
@@ -270,13 +271,16 @@ describe('createConnectorRuntimeMcpServer', () => {
       makeBearer: () => 'bearer-runtime-discovery',
     });
     await principals.initializeBoot();
-    const opened = await principals.openTurn({
-      runtime: 'codex',
-      canonicalSessionId: 'session-a',
-      agentPath: '/agents/agent-a',
-      canonicalCwd: '/repo-a',
-      signal: new AbortController().signal,
-    });
+    const opened = await principals.openTurn(
+      {
+        runtime: 'codex',
+        canonicalSessionId: 'session-a',
+        agentPath: '/agents/agent-a',
+        canonicalCwd: '/repo-a',
+        signal: new AbortController().signal,
+      },
+      TEST_TURN_OWNERSHIP
+    );
     const resolved = await principals.resolve({
       bearer: opened.bearer,
       expectedRuntime: 'codex',

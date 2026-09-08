@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -38,6 +38,31 @@ describe('provisionCodex', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     armSpawn();
+    vi.stubEnv('MCP_API_KEY', 'synthetic-server');
+    vi.stubEnv('NANGO_ENCRYPTION_KEY', 'synthetic-encryption');
+    vi.stubEnv('ANTHROPIC_API_KEY', 'synthetic-model');
+    vi.stubEnv('OPENAI_API_KEY', 'synthetic-model');
+    vi.stubEnv('DO_NOT_TRACK', '1');
+  });
+
+  afterEach(() => {
+    try {
+      for (const call of vi.mocked(spawn).mock.calls) {
+        const options = call[2] as { env?: NodeJS.ProcessEnv };
+        expect(options.env).toBeDefined();
+        expect(options.env).toHaveProperty('DO_NOT_TRACK', '1');
+        for (const name of [
+          'MCP_API_KEY',
+          'NANGO_ENCRYPTION_KEY',
+          'ANTHROPIC_API_KEY',
+          'OPENAI_API_KEY',
+        ])
+          expect(options.env).not.toHaveProperty(name);
+        expect(JSON.stringify(call[1])).not.toContain('synthetic-');
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('installs successfully and resolves the provisioned binary (Codex flips to Ready)', async () => {
@@ -181,3 +206,6 @@ describe('provisionCodex', () => {
     );
   });
 });
+
+// These child-process fixtures use an empty owner inheritance policy.
+vi.mock('../../../core/config-manager.js', () => ({ configManager: { get: () => undefined } }));
