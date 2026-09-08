@@ -35,11 +35,19 @@
  * actions.
  *
  * Concurrency: this runs fire-and-forget from the install route, so two
- * project-scoped installs into the SAME repo can overlap inside `applyPlan`.
- * The engine's apply is idempotent and write-if-absent, so concurrent applies
- * converge rather than corrupt, but they are serialized only by chance, not by
- * a lock. If overlapping installs into one repo become a real workflow, add a
- * per-`projectPath` mutex here.
+ * project-scoped installs into the SAME repo can start in the same tick. They
+ * no longer overlap. The whole body — first pass, the wait for a person's answer
+ * about a package's hooks, second pass — runs inside one `withProjectLock` turn
+ * (DOR-1854), so a second install queues behind the first instead of projecting
+ * into a tree the first has half-written and half-approved. Different repos
+ * never wait on each other.
+ *
+ * That lock is IN-PROCESS. A `dorkos harness sync --fix` in a terminal, or a
+ * second DorkOS on the same repo, is not serialized with this one; what protects
+ * them is that every generated file is written atomically and the engine's bytes
+ * are deterministic, so no reader sees a half-written file and the end state is
+ * the sequential one. `project-with-consent.ts` states all of that, and the one
+ * residual it does not cover.
  *
  * @module services/harness/auto-project
  */
@@ -59,6 +67,7 @@ import {
 import { recordHookApproval } from './hook-consent.js';
 import {
   projectWithConsent as defaultProjectWithConsent,
+  withProjectLock,
   type ProjectWithConsentResult,
 } from './project-with-consent.js';
 
@@ -188,6 +197,90 @@ function projectAndLog(
 }
 
 /**
+ * Scaffold if needed, project, ask about any withheld hooks, and project again.
+ *
+ * Split out of {@link runAutoProjection} so the WHOLE of it — both passes and the
+ * approval wait between them — runs inside ONE `withProjectLock` turn. Its
+ * failures are the caller's to catch and log; it decides nothing about install
+ * scope or the `harness.autoSync` flag, which are settled before the lock is
+ * taken so a no-op never queues behind somebody else's projection.
+ *
+ * @param ctx - the plugin change that occurred, with a project root.
+ * @param opts - resolved dork home and the approval service.
+ */
+async function projectAndAsk(
+  ctx: PluginChangeContext & { projectPath: string },
+  opts: RunAutoProjectionOptions
+): Promise<void> {
+  const { projectPath, packageName, action } = ctx;
+  // GAP-5: a project with no harness manifest gets a scaffolded default so the
+  // engine has something to project instead of no-opping. Write-if-absent, so
+  // a hand-authored manifest is left untouched.
+  if (!existsSync(join(projectPath, HARNESS_MANIFEST_PATH))) {
+    const scaffold = _internal.scaffoldManifest(projectPath);
+    if (scaffold.created) {
+      logger.info('[HarnessSync] Scaffolded harness manifest for project', {
+        projectPath,
+        harnesses: scaffold.harnesses,
+      });
+    }
+    // If a manifest still does not exist (scaffold failed, or a race removed
+    // it), `project()` -> `loadManifest()` would throw ENOENT and surface as a
+    // noisy "projection failed". Bail out explicitly with a debug log instead.
+    if (!existsSync(join(projectPath, HARNESS_MANIFEST_PATH))) {
+      logger.debug('[HarnessSync] No harness manifest after scaffold; skipping projection', {
+        projectPath,
+        packageName,
+        action,
+      });
+      return;
+    }
+  }
+
+  // Hooks are the one part of a package that runs code, so they project only
+  // for packages a person has allowed (DOR-522). Everything else projects
+  // whatever the answer is.
+  const { withheld } = projectAndLog(ctx, opts.dorkHome);
+
+  if (withheld.length === 0) return;
+  if (!opts.approvals) {
+    logger.warn('[HarnessSync] No approval service; package hooks were not projected', {
+      packageName,
+      projectPath,
+      packages: withheld.map(({ request }) => request.packageName),
+    });
+    return;
+  }
+
+  // A package a person has already turned down is not asked again, and one
+  // with a card already open does not get a second. Both stay withheld either
+  // way; what is dropped is the repetition, which would otherwise fire on
+  // every later install AND on uninstalls (see `mayAskAboutHooks`).
+  const askable = withheld.map(({ request }) => request).filter(mayAskAboutHooks);
+  if (askable.length === 0) return;
+
+  // One card per package, all raised before any is awaited, so a person sees
+  // everything that is waiting instead of one card at a time.
+  const gateway = opts.approvals;
+  const decisions = await Promise.all(
+    askable.map(async (request) => ({
+      request,
+      granted: await askForHookProjection(gateway, request),
+    }))
+  );
+  const granted = decisions.filter((d) => d.granted).map((d) => d.request);
+  if (granted.length === 0) return;
+
+  // Record first, then re-project: the record is what stops the next
+  // projection asking again, and it must survive a failure in the apply. The
+  // re-projection re-reads the packages, so a package that rewrote its
+  // `hooks.json` while its card was open no longer matches what was approved
+  // and stays withheld.
+  for (const request of granted) recordHookApproval(request);
+  projectAndLog(ctx, opts.dorkHome);
+}
+
+/**
  * Project a just-changed plugin's portable assets to the project's other
  * harnesses, gated on install scope and the `harness.autoSync` config flag.
  *
@@ -238,71 +331,15 @@ export async function runAutoProjection(
   }
 
   try {
-    // GAP-5: a project with no harness manifest gets a scaffolded default so the
-    // engine has something to project instead of no-opping. Write-if-absent, so
-    // a hand-authored manifest is left untouched.
-    if (!existsSync(join(projectPath, HARNESS_MANIFEST_PATH))) {
-      const scaffold = _internal.scaffoldManifest(projectPath);
-      if (scaffold.created) {
-        logger.info('[HarnessSync] Scaffolded harness manifest for project', {
-          projectPath,
-          harnesses: scaffold.harnesses,
-        });
-      }
-      // If a manifest still does not exist (scaffold failed, or a race removed
-      // it), `project()` -> `loadManifest()` would throw ENOENT and surface as a
-      // noisy "projection failed". Bail out explicitly with a debug log instead.
-      if (!existsSync(join(projectPath, HARNESS_MANIFEST_PATH))) {
-        logger.debug('[HarnessSync] No harness manifest after scaffold; skipping projection', {
-          projectPath,
-          packageName,
-          action,
-        });
-        return;
-      }
-    }
-
-    // Hooks are the one part of a package that runs code, so they project only
-    // for packages a person has allowed (DOR-522). Everything else projects
-    // whatever the answer is.
-    const { withheld } = projectAndLog({ ...ctx, projectPath }, opts.dorkHome);
-
-    if (withheld.length === 0) return;
-    if (!opts.approvals) {
-      logger.warn('[HarnessSync] No approval service; package hooks were not projected', {
-        packageName,
-        projectPath,
-        packages: withheld.map(({ request }) => request.packageName),
-      });
-      return;
-    }
-
-    // A package a person has already turned down is not asked again, and one
-    // with a card already open does not get a second. Both stay withheld either
-    // way; what is dropped is the repetition, which would otherwise fire on
-    // every later install AND on uninstalls (see `mayAskAboutHooks`).
-    const askable = withheld.map(({ request }) => request).filter(mayAskAboutHooks);
-    if (askable.length === 0) return;
-
-    // One card per package, all raised before any is awaited, so a person sees
-    // everything that is waiting instead of one card at a time.
-    const gateway = opts.approvals;
-    const decisions = await Promise.all(
-      askable.map(async (request) => ({
-        request,
-        granted: await askForHookProjection(gateway, request),
-      }))
-    );
-    const granted = decisions.filter((d) => d.granted).map((d) => d.request);
-    if (granted.length === 0) return;
-
-    // Record first, then re-project: the record is what stops the next
-    // projection asking again, and it must survive a failure in the apply. The
-    // re-projection re-reads the packages, so a package that rewrote its
-    // `hooks.json` while its card was open no longer matches what was approved
-    // and stays withheld.
-    for (const request of granted) recordHookApproval(request);
-    projectAndLog({ ...ctx, projectPath }, opts.dorkHome);
+    // One turn per repository, held across BOTH passes and the approval wait
+    // between them — a second install into this repo would otherwise be able to
+    // run its whole projection inside that gap, and the `.agents/skills` watcher
+    // (DOR-1850) will call this seam at file-event frequency. The wait is
+    // bounded: `askForHookProjection` gives up at the card's expiry, so a card
+    // nobody answers cannot hold a repository for ever. Different repositories
+    // never wait on each other, and what happens between PROCESSES is stated in
+    // `project-with-consent.ts`.
+    await withProjectLock(projectPath, () => projectAndAsk({ ...ctx, projectPath }, opts));
   } catch (err) {
     logger.warn('[HarnessSync] Auto-projection failed (non-fatal)', {
       packageName,

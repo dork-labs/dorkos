@@ -52,6 +52,44 @@
  * A harness filter is a different matter, and {@link projectWithConsent} refuses
  * to combine one with a sweep rather than trusting the caller to remember.
  *
+ * ## Two projections into one repo: what is guaranteed
+ *
+ * Three things hold, and one deliberately does not (contract AP-10, DOR-1854).
+ *
+ * 1. **No file is ever seen half-written.** Every generated file, scaffold,
+ *    settings merge and ownership sidecar is written to a temp file and renamed
+ *    over its target (`@dorkos/harness`'s `apply/atomic-write.ts`), so a harness
+ *    reading `.codex/hooks.json` while a sync rewrites it gets the whole old file
+ *    or the whole new one.
+ * 2. **Two projections into one repo IN THIS PROCESS take turns.**
+ *    {@link withProjectLock} serializes them per repository, which matters
+ *    because a projection is not one synchronous act: `runAutoProjection` builds
+ *    and applies a plan, AWAITS a person's answer about a package's hooks, then
+ *    projects again. Without the lock a second install's whole projection could
+ *    run inside that gap.
+ * 3. **The end state converges anyway.** The engine's output is deterministic —
+ *    two applies of the same plan write identical bytes — so whichever writer
+ *    renames last leaves the same tree.
+ *
+ * **Not guaranteed: two PROCESSES.** The server's projection and a
+ * `dorkos harness sync --fix` in a terminal, or two DorkOS instances on one repo
+ * (the dev server on :6242 and the built app on :4242), are not serialized at
+ * all. Nothing here takes a lock FILE, and that is a decision rather than an
+ * omission: a lock file needs a stale-lock story — which pid, on which host,
+ * after which crash — and the CLI half runs offline with nobody to ask. Atomic
+ * writes plus deterministic bytes give the property AP-10 actually needs (every
+ * file a harness reads is complete, and the end state is the sequential one), so
+ * the lock would buy only the residual below.
+ *
+ * That residual, stated plainly: two processes applying DIFFERENT plans to one
+ * repo in the same instant can interleave a generated hooks file's two writes —
+ * the file, then its ownership sidecar — so that the sidecar ends up describing
+ * the other process's bytes. DOR-1842's rule then reads the pair as a file
+ * somebody edited by hand and reports a conflict naming the way out, which is
+ * the safe answer and a wrong one. It needs both processes to write different
+ * bytes within microseconds of each other, and the way out is the same as for a
+ * real hand edit: delete the file and re-run.
+ *
  * @module services/harness/project-with-consent
  */
 import {
@@ -63,6 +101,8 @@ import {
   type ProjectionAction,
   type ProjectionPlan,
 } from '@dorkos/harness';
+import { realpathSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   isHookProjectionApproved,
   isHookProjectionRefused,
@@ -104,6 +144,84 @@ export interface WithheldHooks {
   request: HookProjectionRequest;
   /** Why the settings file could not be read, when {@link reason} says so. */
   unreadable?: string;
+}
+
+/**
+ * One promise chain per repository: what a caller must wait on before its own
+ * turn, keyed by the realpath of the project root.
+ *
+ * An entry is removed once nothing is queued behind it, so a server that has
+ * projected into a thousand repos over a week holds no locks at all when it is
+ * idle.
+ */
+const projectLocks = new Map<string, Promise<void>>();
+
+/**
+ * The key two callers must agree on to be talking about the same repository.
+ *
+ * Realpath, because `/var/folders/…` and `/private/var/folders/…` are one
+ * directory on macOS and a worktree is routinely reached through a symlinked
+ * path — two callers naming it differently would each take their own lock and
+ * serialize nothing. A path that does not exist yet (or cannot be resolved)
+ * falls back to its absolute form, which is still stable for one process.
+ */
+function projectLockKey(projectPath: string): string {
+  try {
+    return realpathSync(projectPath);
+  } catch {
+    return resolve(projectPath);
+  }
+}
+
+/**
+ * Run `fn` with no other projection into the same repository running in this
+ * process.
+ *
+ * A projection is not one synchronous act. `runAutoProjection` applies a plan,
+ * AWAITS a person's answer about a package's hooks, and applies again; the
+ * `.agents/skills` watcher (DOR-1850) will call the seam at file-event
+ * frequency. Both of those can overlap another install's passes into the same
+ * repo, and the two would then be reading each other's half-finished view of the
+ * tree. This makes them take turns instead.
+ *
+ * Different repositories never wait on each other. A thrown or rejecting `fn`
+ * releases the lock exactly like a successful one, so one failure cannot wedge a
+ * repository for the life of the process.
+ *
+ * This is the IN-PROCESS half only; the module docs above state what happens
+ * between processes, and why nothing here takes a lock file.
+ *
+ * @param projectPath - The project root the work is about.
+ * @param fn - The work to run under the lock.
+ * @returns Whatever `fn` returns, once its turn has come and gone.
+ */
+export function withProjectLock<T>(projectPath: string, fn: () => T | Promise<T>): Promise<T> {
+  const key = projectLockKey(projectPath);
+  // `prior` is always a settled-either-way promise (see `released`), so a
+  // failing turn can never reject the turn queued behind it.
+  const prior = projectLocks.get(key) ?? Promise.resolve();
+  const turn = prior.then(fn);
+  const released = turn.then(
+    () => undefined,
+    () => undefined
+  );
+  projectLocks.set(key, released);
+  void released.then(() => {
+    // Only the LAST holder clears the entry: if somebody chained on behind us,
+    // the map already points at their release and must keep doing so.
+    if (projectLocks.get(key) === released) projectLocks.delete(key);
+  });
+  return turn;
+}
+
+/**
+ * How many repositories currently have a projection queued or running.
+ *
+ * @returns The number of live lock entries.
+ * @internal Exported so a test can assert the map does not grow without bound.
+ */
+export function projectLockCount(): number {
+  return projectLocks.size;
 }
 
 /** Options for {@link planWithConsent} and {@link projectWithConsent}. */
