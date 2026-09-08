@@ -93,7 +93,7 @@ import type { z } from 'zod';
 import type { ApprovalOrigin } from '@dorkos/shared/approval-schemas';
 
 import type { AgentIdentity } from './agent-identity/agent-identity-service.js';
-import { resolveApprovalSubject } from './approvals/approval-subject.js';
+import { resolveApprovalSubject } from './approvals/index.js';
 import { approvalTokenArgument } from './capabilities/mcp-projection.js';
 import {
   enforceCapabilityTier,

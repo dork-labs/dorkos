@@ -71,7 +71,7 @@
  */
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { McpToolGroupName } from '@dorkos/shared/mcp-tool-groups';
-import type { ApprovalSubjectDeclaration } from './approvals/approval-subject.js';
+import type { ApprovalSubjectDeclaration } from './approvals/index.js';
 import type { GatedAction } from './capabilities/tier-enforcement.js';
 
 /** One tool's tier declaration. */

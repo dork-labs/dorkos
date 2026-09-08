@@ -123,6 +123,21 @@ describe('an unattributed request says what IS known (DOR-1929)', () => {
     expect(screen.getByText('DorkOS doesn’t know who asked')).toBeInTheDocument();
   });
 
+  it('says an agent asked when the caller knows that much', () => {
+    // The schedule-approval card's case. "DorkOS doesn't know who asked" would
+    // be false there, and would sit directly above that card's own "Proposed by
+    // an agent".
+    render(<RequestingAgent hasAgentPath={false} attributedToAgent />);
+
+    expect(screen.getByText('An agent asked — DorkOS can’t say which')).toBeInTheDocument();
+  });
+
+  it('prefers "an agent asked" over the surface it came over', () => {
+    render(<RequestingAgent hasAgentPath={false} attributedToAgent origin="session" />);
+
+    expect(screen.getByText('An agent asked — DorkOS can’t say which')).toBeInTheDocument();
+  });
+
   it('never draws an agent mark for a request nothing named', () => {
     const { container } = render(<RequestingAgent hasAgentPath={false} origin="session" />);
 

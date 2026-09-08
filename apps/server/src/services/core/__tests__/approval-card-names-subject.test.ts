@@ -148,6 +148,62 @@ describe('an approval card names the agent it would remove', () => {
     expect(approvals.listPending()[0]?.otherArguments).toBeUndefined();
   });
 
+  // The case above passes just as well when `otherArguments` is never projected
+  // at ALL — which is exactly how it shipped for a round, and why this one
+  // exists. Only a request that HAS a remainder can tell "correctly empty" from
+  // "silently dropped", and what gets dropped is the `purge`-shaped argument
+  // that decides how destructive the call is.
+  //
+  // Driven through `ApprovalService.request` rather than the gate because
+  // `MCP_TOOL_TIERS` has no two-argument destructive tool to drive, and
+  // `enforceCapabilityTier` is deliberately off the capabilities barrel
+  // (`gate-bypass-scan.test.ts` pins its call sites). The store round-trip is
+  // the seam that was broken.
+  it('carries the arguments that are NOT the subject through to the card', () => {
+    approvals.request({
+      capabilityId: 'demo_two_field_destroy',
+      inputHash: 'hash-of-two-field-input',
+      summary: '"Prober" wants to run "Remove an agent" with agent: "Lab Scout", purge: yes',
+      subject: { kind: 'agent', label: 'Lab Scout', id: TARGET },
+      otherArguments: 'purge: yes',
+    });
+
+    const [pending] = approvals.listPending();
+    expect(pending?.otherArguments).toBe('purge: yes');
+    // Both halves, so the card can drop the sentence without losing an argument.
+    expect(pending?.subject?.label).toBe('Lab Scout');
+  });
+
+  it('caps a subject label a direct caller passed over the wire limit', () => {
+    // `ApprovalRequestInput` is public API, so the resolver is not the only way
+    // a subject arrives. The wire schema caps `label` at 60; a longer one stored
+    // raw makes the cockpit's own `PendingApprovalSchema.safeParse` reject the
+    // row, and the person loses the whole card rather than the tail of a name.
+    approvals.request({
+      capabilityId: 'demo_long_label',
+      inputHash: 'hash-long-label',
+      summary: 'something',
+      subject: { kind: 'agent', label: 'N'.repeat(500), id: TARGET },
+    });
+
+    const label = approvals.listPending()[0]?.subject?.label;
+    expect(label!.length).toBeLessThanOrEqual(60);
+  });
+
+  it('withholds a remainder that arrives without a subject to sit under', () => {
+    // The card only swaps the summary out for the remainder when it has a
+    // subject block to swap it FOR, so a remainder alone would be a clause
+    // nothing renders — and the summary it replaced would be gone.
+    approvals.request({
+      capabilityId: 'demo_no_subject',
+      inputHash: 'hash-without-subject',
+      summary: 'An unidentified caller wants to run "Something" with purge: yes',
+      otherArguments: 'purge: yes',
+    });
+
+    expect(approvals.listPending()[0]?.otherArguments).toBeUndefined();
+  });
+
   it('keeps the summary self-contained for the surfaces that have no card', async () => {
     // A notification and an Activity row get no heading and no subject block, so
     // the sentence still has to stand on its own.

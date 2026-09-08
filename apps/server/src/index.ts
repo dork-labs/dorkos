@@ -307,7 +307,7 @@ import {
   manifestToolGroupGrants,
   type CapabilityRegistry,
 } from './services/core/capabilities/index.js';
-import { initApprovalSubjectResolvers } from './services/core/approvals/approval-subject.js';
+import { initApprovalSubjectResolvers } from './services/core/approvals/index.js';
 import { createMcpRouter } from './routes/mcp.js';
 import { createMcpAuth } from './middleware/mcp-auth.js';
 import { validateMcpOrigin } from './middleware/mcp-origin.js';

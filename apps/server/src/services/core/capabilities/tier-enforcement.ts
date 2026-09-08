@@ -712,9 +712,14 @@ function effectiveCeiling(identity: AgentIdentity | undefined): CapabilityTier {
  * When the caller resolved a {@link ApprovalSubject}, the argument that names the
  * target renders as the registry's name for it instead of the raw id — so
  * `agentId: "01KXQ3P7ADJY9DSXMZW1XGWCV4"` becomes `agent: "Lab Scout"`. That
- * substitution happens in this one function, which is what makes it reach every
- * consumer of the summary at once: the card, the Activity feed, and the
- * notification emitter all read this sentence and none of them needed changing.
+ * substitution happens in this one function, so every surface that renders THIS
+ * SENTENCE gets the name without changing. That is a smaller set than it looks:
+ * the approvals card and the stored approval row read it, while the Activity
+ * feed composes its own line from `action.title` (`capability-gate-audit.ts`)
+ * and the notification carries the title only, deliberately without argument
+ * values (`notification-registry.ts`). So no surface loses the id by this
+ * substitution — not because they all read the sentence, but because the ones
+ * that do not never showed the id in the first place.
  *
  * The id does not disappear — it moves. The card carries it as
  * `PendingApproval.subject.id` beside the name, which is where a person checks

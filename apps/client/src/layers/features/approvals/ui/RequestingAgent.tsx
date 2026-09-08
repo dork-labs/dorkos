@@ -29,6 +29,17 @@ export interface RequestingAgentProps {
    * it once a caller is named, so the two can never contradict each other here.
    */
   origin?: ApprovalOrigin;
+  /**
+   * Whether the CALLER knows an agent asked, even though nothing named which.
+   *
+   * A narrower fact than `hasAgentPath`, and the two are not the same question.
+   * The schedule-approval card reaches this component only on the branch where
+   * an agent proposed the schedule — DorkOS itself and a file on disk are both
+   * handled before it — so there it knows the asker was an agent while holding
+   * no path to say which one. An approvals card knows no such thing: a request
+   * with no identity may equally be a person on the CLI.
+   */
+  attributedToAgent?: boolean;
   className?: string;
 }
 
@@ -48,15 +59,46 @@ const ORIGIN_LABEL: Record<ApprovalOrigin, string> = {
 };
 
 /**
- * The fallback when even the surface is unknown.
+ * The fallback when nothing at all is known about the asker.
  *
  * Plain on purpose. The sentence this replaced — "Requested without an agent
  * identity" — is internal vocabulary: "agent identity" is a thing in the code,
  * not a thing a person has a picture of. This says the same fact in words
- * somebody reads once. It is also the line the schedule-approval card falls back
- * to, so it has to be true of a proposal as well as of a tool call.
+ * somebody reads once.
+ *
+ * It is a stronger claim than the old wording, which is why it is not the only
+ * fallback. On a card that DOES know an agent asked, saying DorkOS does not know
+ * who asked would contradict the card's own next line — see
+ * {@link AGENT_UNNAMED_LABEL}.
  */
 const UNKNOWN_ORIGIN_LABEL = 'DorkOS doesn’t know who asked';
+
+/**
+ * The fallback when an agent asked and nothing recorded which one.
+ *
+ * The schedule-approval card's case: it reaches this component only on the
+ * agent-proposed branch, so "we don't know who asked" would be false there and
+ * would sit directly above that card's own "Proposed by an agent". Naming what
+ * is known, and only that, is the same rule the origin labels follow.
+ */
+const AGENT_UNNAMED_LABEL = 'An agent asked — DorkOS can’t say which';
+
+/**
+ * What to say about an asker nothing named.
+ *
+ * Most specific true thing wins: that it WAS an agent beats which surface it
+ * came over, and either beats admitting nothing. Every rung says only what is
+ * known — the point of the whole ladder is that no rung overstates.
+ *
+ * @param attributedToAgent - Whether the caller knows an agent asked.
+ * @param origin - Which surface the request arrived over, when known.
+ * @returns The sentence to render.
+ */
+function unnamedAskerLabel(attributedToAgent: boolean, origin?: ApprovalOrigin): string {
+  if (attributedToAgent) return AGENT_UNNAMED_LABEL;
+  if (origin) return ORIGIN_LABEL[origin];
+  return UNKNOWN_ORIGIN_LABEL;
+}
 
 /**
  * The mark and name of whoever asked for approval.
@@ -80,12 +122,13 @@ export function RequestingAgent({
   requestedBy,
   hasAgentPath,
   origin,
+  attributedToAgent,
   className,
 }: RequestingAgentProps) {
   if (!requestedBy) {
     return (
       <span className={cn('text-muted-foreground text-xs', className)}>
-        {origin ? ORIGIN_LABEL[origin] : UNKNOWN_ORIGIN_LABEL}
+        {unnamedAskerLabel(attributedToAgent === true, origin)}
       </span>
     );
   }

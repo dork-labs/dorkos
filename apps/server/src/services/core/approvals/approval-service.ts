@@ -393,6 +393,10 @@ function toPendingApproval(row: ApprovalRow): PendingApproval {
       ? { subject: { kind: row.subjectKind, label: row.subjectLabel, id: row.subjectId } }
       : {}),
     ...(row.origin && !row.requestedBy ? { origin: row.origin } : {}),
+    // Gated on the SUBJECT, not on itself: the card only swaps the summary out
+    // for this when it has a subject block to swap it for, so a remainder
+    // without one would be a clause nothing renders.
+    ...(row.otherArguments && row.subjectLabel ? { otherArguments: row.otherArguments } : {}),
     // The raw path stays off the wire (see `requestedByPath`'s own comment); what
     // goes out is the one bit a surface needs, which is whether there is one.
     hasAgentPath: row.requestedByPath !== null,
@@ -461,11 +465,14 @@ export class ApprovalService {
       // Stored raw and never rendered: this is the key a standing permission is
       // built on, so sweeping or shortening it would break the match.
       requestedByPath: input.requestedByPath ?? null,
-      // Already capped and swept by the resolver, which reuses the requester
-      // label's renderer — see `approvals/approval-subject.ts`.
+      // Capped HERE as well as in the resolver, for the reason `storableSummary`
+      // gives two lines up: `ApprovalRequestInput` is public API, not private to
+      // `resolveApprovalSubject`, and the wire schema caps these at 60 — so a
+      // caller passing a longer label would store a row the cockpit's own parse
+      // rejects, and a dropped card is worse than a shortened one.
       subjectKind: input.subject?.kind ?? null,
-      subjectId: input.subject?.id ?? null,
-      subjectLabel: input.subject?.label ?? null,
+      subjectId: input.subject ? renderRequesterLabel(input.subject.id) : null,
+      subjectLabel: input.subject ? renderRequesterLabel(input.subject.label) : null,
       otherArguments: input.otherArguments ? storableSummary(input.otherArguments) : null,
       // Withheld the moment a caller IS named, so the two can never contradict
       // each other on a card.

@@ -45,6 +45,13 @@
  * labelled that here. The id beside it is the answer, and it is why
  * `ApprovalSubject.id` is required rather than optional.
  *
+ * One honest limit on that claim: the id goes through the same secret sweep
+ * everything broadcast does, so an id that is a run of 32+ hex characters is
+ * replaced by `(hidden)` and stops being checkable. No id in play is that shape
+ * — ULIDs are 26 characters of Crockford base32 — and publishing a live token to
+ * every connected client is the worse failure, so the sweep wins. A future id
+ * format that IS hex would need this reconsidered, not just re-tested.
+ *
  * @module services/core/approvals/approval-subject
  */
 import type { ApprovalSubject, ApprovalSubjectKind } from '@dorkos/shared/approval-schemas';
