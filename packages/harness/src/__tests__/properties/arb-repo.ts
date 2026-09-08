@@ -14,9 +14,18 @@
  *
  * It lives in its own module because more than one property file reads it:
  * `apply-ownership.property.test.ts` (P3, P4), `orphaned-links.property.test.ts`
- * (P2, P2b), `native-source-exists.property.test.ts` (P9a) and
- * `native-reachable.property.test.ts` (P9b). Keeping one generator is the point
+ * (P2, P2b), `native-source-exists.property.test.ts` (P9a),
+ * `native-reachable.property.test.ts` (P9b) and
+ * `plan-completeness.property.test.ts` (P6). Keeping one generator is the point
  * — a hostile shape added for one property immediately hardens the others.
+ *
+ * P6 is why a generated repo also carries path-scoped rules, subagent
+ * definitions (some nested), an authored `.mcp.json`, a person's own hooks in
+ * `.claude/settings.local.json` and a skill declaring `hooks:` in its own
+ * frontmatter. The engine had no `ArtifactType` for the first three, read only
+ * one of the two settings files, and never parsed the fifth — so a generator
+ * that staged none of them could not fail a completeness check, exactly as one
+ * that always wrote `AGENTS.md` could not fail P9a.
  *
  * The three fields the last two turn on are `agentsMd`, `claudeCommands` and
  * `authoredHooks`: each names a file whose EXISTENCE decides whether a
@@ -101,6 +110,14 @@ const DANGLING_LINK_TEXT: Record<DanglingKind, string> = {
  */
 type ClaudeCommandsState = 'absent' | 'empty' | 'populated';
 
+/** One generated path-scoped rule: its name, and whether it declares `paths:` globs. */
+export interface RuleSpec {
+  /** The rule's file name below `.claude/rules`, without the `.md`. */
+  name: string;
+  /** Whether it carries a `paths:` frontmatter glob (the half Cursor and Copilot key on). */
+  paths: boolean;
+}
+
 /** One generated repository, before it is written to disk. */
 export interface RepoSpec {
   /** Authored skill names under `.agents/skills`. */
@@ -119,6 +136,23 @@ export interface RepoSpec {
   agentsMd: boolean;
   /** Whether `.claude/commands` is absent, present-but-empty, or holds a `.md`. */
   claudeCommands: ClaudeCommandsState;
+  /**
+   * Path-scoped rules under `.claude/rules`, some carrying `paths:` globs.
+   *
+   * These and the four fields below are the kinds the engine could not name
+   * before DOR-1845 — no `ArtifactType` for them, no scanner that looked. A
+   * generator that never staged one could not fail the completeness property,
+   * which is the same reason `agentsMd` and `claudeCommands` are here.
+   */
+  rules: RuleSpec[];
+  /** Subagent definitions under `.claude/agents`, some in subdirectories. */
+  agents: string[];
+  /** Server names in an authored `.mcp.json`, or no `.mcp.json` at all. */
+  mcpServers: string[] | null;
+  /** Whether a person's own hooks sit in `.claude/settings.local.json`. */
+  localSettingsHooks: boolean;
+  /** Whether the first authored skill declares hooks in its own frontmatter. */
+  skillFrontmatterHooks: boolean;
   /** The manifest's enabled harnesses (may be empty). */
   harnesses: HarnessId[];
   /** A hand-written file at one generated hook target, or none. */
@@ -155,6 +189,21 @@ const PERSON_LINK_TEXT = '../../vendor/skills/vendored';
 /** A small name alphabet, so collisions between authored and plugin skills happen. */
 const SKILL_NAMES = ['a', 'b', 'c', 'd'] as const;
 
+/** Rule file names — three is enough to make a per-harness drop list non-trivial. */
+const RULE_NAMES = ['api', 'ui', 'db'] as const;
+
+/**
+ * Subagent names, two of them nested.
+ *
+ * This repository keeps two of its seven subagents in subdirectories, and a walk
+ * that stopped at the top level would call that five — so a generator that only
+ * staged flat names could not tell the two walks apart.
+ */
+const AGENT_NAMES = ['reviewer', 'react/tanstack', 'deep/nested/helper'] as const;
+
+/** MCP server names for the generated `.mcp.json`. */
+const MCP_NAMES = ['linear', 'shadcn'] as const;
+
 /**
  * The generator: a whole small repo, hostile occupants included.
  *
@@ -174,6 +223,16 @@ export function arbRepo(): fc.Arbitrary<RepoSpec> {
     authoredHooks: fc.boolean(),
     agentsMd: fc.boolean(),
     claudeCommands: fc.constantFrom<ClaudeCommandsState>('absent', 'empty', 'populated'),
+    rules: fc.uniqueArray(
+      fc.record({ name: fc.constantFrom(...RULE_NAMES), paths: fc.boolean() }),
+      { maxLength: 3, selector: (r) => r.name }
+    ),
+    agents: fc.uniqueArray(fc.constantFrom(...AGENT_NAMES), { maxLength: 3 }),
+    mcpServers: fc.option(fc.uniqueArray(fc.constantFrom(...MCP_NAMES), { maxLength: 2 }), {
+      nil: null,
+    }),
+    localSettingsHooks: fc.boolean(),
+    skillFrontmatterHooks: fc.boolean(),
     harnesses: fc.subarray([...HARNESS_IDS]),
     occupant: fc.option(
       fc.record({
@@ -265,19 +324,53 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
       writeFileAt(join(repoRoot, '.claude', 'commands', 'review.md'), '# review\n');
     }
   }
-  for (const name of spec.skills) {
+  for (const [index, name] of spec.skills.entries()) {
     // Real frontmatter, not a bare heading: the vendor-facts coverage walk keys
     // three harnesses on the frontmatter `name` and refuses to decide about a
     // SKILL.md that has none, so a generator without it would make every harness
     // `uncertain` about every skill and P9b vacuous.
+    //
+    // The first skill may also carry its own `hooks:` — a Claude Code feature no
+    // other harness has, and one no scanner in the engine had ever parsed (HK-12).
+    const hooks =
+      spec.skillFrontmatterHooks && index === 0
+        ? 'hooks:\n  PreToolUse:\n    - matcher: Bash\n      hooks:\n        - type: command\n          command: ./check.sh\n'
+        : '';
     writeFileAt(
       join(repoRoot, '.agents', 'skills', name, 'SKILL.md'),
-      `---\nname: ${name}\ndescription: The ${name} skill\n---\n\n# ${name}\n`
+      `---\nname: ${name}\ndescription: The ${name} skill\n${hooks}---\n\n# ${name}\n`
     );
   }
   if (spec.authoredHooks) {
     writeJsonAt(join(repoRoot, '.claude', 'settings.json'), {
       hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo authored' }] }] },
+    });
+  }
+  if (spec.localSettingsHooks) {
+    // A person's own hooks, in the file the engine WRITES managed groups into and
+    // has never READ (HK-14).
+    writeJsonAt(join(repoRoot, '.claude', 'settings.local.json'), {
+      hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'echo mine' }] }] },
+    });
+  }
+  for (const rule of spec.rules) {
+    const frontmatter = rule.paths ? `---\npaths: apps/**/*.ts, packages/**/*.ts\n---\n\n` : '';
+    writeFileAt(
+      join(repoRoot, '.claude', 'rules', `${rule.name}.md`),
+      `${frontmatter}# ${rule.name} rules\n`
+    );
+  }
+  for (const agent of spec.agents) {
+    writeFileAt(
+      join(repoRoot, '.claude', 'agents', `${agent}.md`),
+      `---\nname: ${agent.split('/').join('-')}\ndescription: The ${agent} subagent\n---\n\n# ${agent}\n`
+    );
+  }
+  if (spec.mcpServers) {
+    writeJsonAt(join(repoRoot, '.mcp.json'), {
+      mcpServers: Object.fromEntries(
+        spec.mcpServers.map((name) => [name, { command: 'npx', args: [name] }])
+      ),
     });
   }
   for (const plugin of spec.plugins) {

@@ -14,6 +14,8 @@ export * from './plan/instructions.js';
 export * from './plan/command-formats.js';
 export * from './plan/installed-projector.js';
 export * from './plan/unreadable-hooks.js';
+export * from './plan/source-artifacts.js';
+export * from './inventory/index.js';
 export * from './scan/scanner.js';
 export * from './scaffold/instructions.js';
 export * from './scaffold/manifest.js';

@@ -19,6 +19,7 @@ import { CLAUDE_COMMANDS_DIR, CLAUDE_SKILLS_DIR } from './plan/installed-project
 import type { ClaudeOnlySkillLocation, ProjectionPlan } from './plan/types.js';
 import type { ClaudeHooksConfig } from './generate/hooks.js';
 import { scanInstalledPlugins } from './sources/installed.js';
+import { inventorySourceTree } from './inventory/index.js';
 
 /**
  * Read and validate `.agents/harness.manifest.json` for a repository.
@@ -142,6 +143,12 @@ export function scanClaudeOnlySkills(
  * `opts.dorkHome` is also provided, global-scope installs (`${dorkHome}/plugins`)
  * are scanned too.
  *
+ * The source-tree inventory is read here too, so the tree is walked once and
+ * `buildPlan` is handed everything it needs rather than scanning again: it is
+ * what makes the plan report the kinds the engine does not project (subagents,
+ * rules, MCP servers, `settings.local.json` and skill-frontmatter hooks) instead
+ * of being silent about them.
+ *
  * `opts.allowPluginHooks` gates which installed packages may contribute hooks —
  * shell commands the harnesses run on the person's behalf. Omitted, every
  * package's hooks project, which is what a person running `dorkos harness sync`
@@ -165,6 +172,7 @@ export function project(
   return buildPlan({
     repoRoot,
     manifest,
+    inventory: inventorySourceTree(repoRoot),
     claudeHooks: loadClaudeHooks(repoRoot),
     agentsMdExists: agentsMdExists(repoRoot),
     claudeCommandsExist: claudeCommandsExist(repoRoot),

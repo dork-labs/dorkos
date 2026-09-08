@@ -51,7 +51,9 @@ import {
   CLAUDE_SKILLS_DIR,
 } from './installed-projector.js';
 import { planUnreadableHookWarnings } from './unreadable-hooks.js';
+import { planInventoriedArtifacts, planInventoryWarnings } from './source-artifacts.js';
 import { commandDropReason } from './command-formats.js';
+import { inventorySourceTree, type SourceInventory } from '../inventory/index.js';
 /** The one authored hooks file the engine reads — Claude Code's own project settings. */
 const CLAUDE_SETTINGS_SOURCE = '.claude/settings.json';
 
@@ -190,9 +192,16 @@ function planClaudeOnlySkills(input: {
   const actions: ProjectionAction[] = [];
   const warnings: ProjectionWarning[] = [];
 
-  /** One warning about an entry, always attributed to the harness the list is for. */
-  const warn = (name: string, reason: string): void => {
-    warnings.push({ artifact: 'skill', harness: 'claude-code', name, reason });
+  /**
+   * One warning about an entry, always attributed to the harness the list is for.
+   *
+   * The `source` is the completeness check's handle on it (P6): for the one entry
+   * whose ONLY line is a warning — a skill listed Claude-only that also occupies
+   * the projection target, so {@link planSkill} withholds the symlink — a warning
+   * that named no path would read as silence about a skill that is right there.
+   */
+  const warn = (name: string, source: string, reason: string): void => {
+    warnings.push({ artifact: 'skill', harness: 'claude-code', name, source, reason });
   };
 
   for (const entry of manifest.claudeOnlySkills) {
@@ -216,11 +225,13 @@ function planClaudeOnlySkills(input: {
         // rather than conflicting with it on every apply.
         warn(
           entry.name,
+          `${AGENTS_SKILLS_DIR}/${entry.name}`,
           `claudeOnlySkills names a skill that also lives in ${AGENTS_SKILLS_DIR} — move it or drop the entry`
         );
       } else {
         warn(
           entry.name,
+          `${AGENTS_SKILLS_DIR}/${entry.name}`,
           `claudeOnlySkills names a skill that also lives in ${AGENTS_SKILLS_DIR}; ${describeLocation(location)}. The entry is redundant — drop it`
         );
       }
@@ -230,6 +241,7 @@ function planClaudeOnlySkills(input: {
     if (location.kind === 'symlink') {
       warn(
         entry.name,
+        location.path,
         `claudeOnlySkills names "${entry.name}", but ${location.path} is a symlink — a projection of ${AGENTS_SKILLS_DIR}, or a link to a skill kept elsewhere. Either way it is not a skill kept in ${CLAUDE_SKILLS_DIR}: drop the entry`
       );
       continue;
@@ -238,6 +250,7 @@ function planClaudeOnlySkills(input: {
     if (location.kind === 'missing') {
       warn(
         entry.name,
+        location.path,
         `claudeOnlySkills entry is stale: no skill at ${location.path}, and none named "${entry.name}" in ${AGENTS_SKILLS_DIR}`
       );
       continue;
@@ -246,6 +259,7 @@ function planClaudeOnlySkills(input: {
     if (!location.atProjectionTarget) {
       warn(
         entry.name,
+        location.path,
         `claudeOnlySkills names a real skill at ${location.path}, which no harness reads — Claude Code loads skills from ${CLAUDE_SKILLS_DIR}, so move it to ${CLAUDE_SKILLS_DIR}/${entry.name} or drop the entry`
       );
       continue;
@@ -375,12 +389,20 @@ function planHooks(
   claudeHooks?: ClaudeHooksConfig,
   authoredHooks?: ClaudeHooksConfig
 ): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
-  const base: ActionBase = { artifact: 'hook', harness, provenance: 'authored', name: 'hooks' };
+  // Every line about hooks names `.claude/settings.json`, drops included. A drop
+  // with no source cannot be matched back to the declaration it is about, which
+  // is how a hook could be "reported" and still be silent to any check that asks
+  // whether each authored source reached every harness (P6).
+  const base: ActionBase = {
+    artifact: 'hook',
+    harness,
+    provenance: 'authored',
+    name: 'hooks',
+    source: CLAUDE_SETTINGS_SOURCE,
+  };
   if (harness === 'claude-code') {
     return {
-      actions: hasHooks(authoredHooks)
-        ? [{ ...base, kind: 'native', source: CLAUDE_SETTINGS_SOURCE }]
-        : [],
+      actions: hasHooks(authoredHooks) ? [{ ...base, kind: 'native' }] : [],
       warnings: [],
     };
   }
@@ -466,6 +488,7 @@ function planStandaloneHooks(
       harness,
       provenance: 'authored',
       name: d.event,
+      source: CLAUDE_SETTINGS_SOURCE,
       kind: 'drop',
       reason: d.reason,
     });
@@ -509,9 +532,10 @@ function planCommands(
     harness,
     provenance: 'authored',
     name: 'commands',
+    source: CLAUDE_COMMANDS_SOURCE,
   };
   if (harness === 'claude-code') {
-    return { ...base, kind: 'native', source: CLAUDE_COMMANDS_SOURCE };
+    return { ...base, kind: 'native' };
   }
   if (harness === 'opencode') {
     // OpenCode has a flat `.opencode/commands` format, but authored `.claude/commands`
@@ -589,6 +613,18 @@ export function buildPlan(input: {
   claudeOnlySkills?: ReadonlyMap<string, ClaudeOnlySkillLocation>;
   installedPlugins?: InstalledPlugin[];
   allowPluginHooks?: (packageName: string) => boolean;
+  /**
+   * Everything the repository's source tree holds, by kind — the answer to
+   * "what is in here at all?", as opposed to "what can the engine project?".
+   *
+   * It is what makes the drop list honest about the kinds the engine does not
+   * project: subagent definitions, path-scoped rules, MCP servers, and the two
+   * hook sources `loadClaudeHooks` never reads. Defaults to scanning `repoRoot`,
+   * exactly as the skill scan below already does, so an existing caller keeps
+   * working and gets the new lines; `project()` passes one so the tree is walked
+   * once.
+   */
+  inventory?: SourceInventory;
 }): ProjectionPlan {
   const {
     repoRoot,
@@ -598,9 +634,17 @@ export function buildPlan(input: {
     claudeCommandsExist = false,
     claudeOnlySkills = new Map<string, ClaudeOnlySkillLocation>(),
     installedPlugins = [],
+    inventory = inventorySourceTree(repoRoot),
   } = input;
   const skills = scanSkills(repoRoot);
   const warnings: ProjectionWarning[] = [];
+  const claudeOnlyNames = new Set(manifest.claudeOnlySkills.map((entry) => entry.name));
+  const agentsSkillNames = new Set(skills.map((skill) => skill.name));
+
+  // Say what the tree holds and could not be read — a `.mcp.json` that will not
+  // parse, a file where `.claude/agents` should be a directory. Once per source,
+  // ahead of every harness, for the reason `planUnreadableHookWarnings` gives.
+  warnings.push(...planInventoryWarnings(inventory));
 
   // Partition installed plugins: only project-scoped, projectable-type plugins
   // contribute assets; global installs and other types are reported as drops.
@@ -661,6 +705,14 @@ export function buildPlan(input: {
     warnings.push(...hookResult.warnings);
     const commandAction = planCommands(harness, claudeCommandsExist);
     if (commandAction) all.push(commandAction);
+    // Everything the engine can now SEE but does not project: rules, subagents,
+    // MCP servers, a person's own `settings.local.json` hooks, and the hooks a
+    // skill declares in its frontmatter. Each one is a native where the harness
+    // really reads the source, and a drop naming where it would have to be
+    // otherwise — never nothing (DOR-1845).
+    all.push(
+      ...planInventoriedArtifacts({ harness, inventory, claudeOnlyNames, agentsSkillNames })
+    );
     for (const plugin of projectable) {
       const skillResult = planInstalledSkills(harness, plugin);
       all.push(...skillResult.actions);
@@ -702,7 +754,7 @@ export function buildPlan(input: {
   // `.claude/skills` (SK-04).
   const claudeOnly = planClaudeOnlySkills({
     manifest,
-    agentsSkillNames: new Set(skills.map((s) => s.name)),
+    agentsSkillNames,
     claudeOnly: claudeOnlySkills,
   });
   all.push(...claudeOnly.actions);
@@ -712,7 +764,7 @@ export function buildPlan(input: {
   // installed skill per affected enabled harness.
   warnings.push(
     ...planSkillNameCollisions({
-      authoredSkillNames: skills.map((s) => s.name),
+      authoredSkillNames: [...agentsSkillNames],
       plugins: projectable,
       harnesses: manifest.harnesses,
     })
