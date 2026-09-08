@@ -49,7 +49,7 @@ export const TARGET_HARNESS: Record<string, HarnessId> = {
 };
 
 /** How a staged occupant's sidecar relates to the file beside it. */
-export type SidecarState = 'none' | 'matching' | 'stale';
+type SidecarState = 'none' | 'matching' | 'stale';
 
 /**
  * What the staged occupant's bytes look like.
@@ -99,7 +99,7 @@ const DANGLING_LINK_TEXT: Record<DanglingKind, string> = {
  * commands from, and one of the three whose EXISTENCE decides whether a
  * projection may be called `native` (DOR-1847).
  */
-export type ClaudeCommandsState = 'absent' | 'empty' | 'populated';
+type ClaudeCommandsState = 'absent' | 'empty' | 'populated';
 
 /** One generated repository, before it is written to disk. */
 export interface RepoSpec {
