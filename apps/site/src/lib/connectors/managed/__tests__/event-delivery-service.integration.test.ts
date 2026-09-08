@@ -109,6 +109,14 @@ async function provisionBase(client: PGlite, recovery = true): Promise<void> {
   }
 }
 
+// Booting PGlite and replaying the managed-connector migrations costs seconds,
+// and every case pays it in `beforeEach`, so both budgets are real here:
+// measured at 9.8s of vitest's 10s hook default at a load average of 298 — 154ms
+// of margin — and peaking at 12.61s across three rounds at 300-405, the 5-15s
+// band, so 30s (DOR-1886). Each case seeds its own graph, so the fixture stays
+// per-case and the budget moves instead.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
 describe('managed signed event persistence and handoff', () => {
   let client: PGlite;
   let db: ManagedConnectorDatabase;

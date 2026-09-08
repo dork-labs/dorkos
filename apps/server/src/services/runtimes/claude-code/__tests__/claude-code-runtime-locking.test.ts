@@ -6,6 +6,16 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
 }));
 
+// Every case re-imports the runtime under `vi.resetModules()`, so the module
+// graph is transformed and evaluated inside `beforeEach` and the cost lands on
+// the HOOK budget: measured at 6.4s of vitest's 10s default at a load average of
+// 235, 12.2s on the run that filed DOR-1886, peaking at 15.77s across three
+// rounds at 300-405, and 22.77s once at a load of 189 in review (76% of a 30s
+// budget, with one unreproduced red in a twelve-suite batch). So 45s: this is
+// the one hook that sits near its own ceiling. Nothing below asserts a
+// duration; the default budget was the only thing failing.
+vi.setConfig({ testTimeout: 45_000, hookTimeout: 45_000 });
+
 // Type for accessing private lockManager internals for testing
 interface SessionLock {
   clientId: string;

@@ -1,6 +1,7 @@
 /**
  * @vitest-environment node
  */
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
@@ -104,110 +105,159 @@ async function createHarness(): Promise<{
   return { client, auth, handlers: toNextJsHandler(auth) };
 }
 
+// Two budgets, because two different things are slow here (DOR-1886).
+//
+// The BOOT — PGlite plus every Drizzle migration plus a Better Auth password
+// hash — is the expensive one, and sharing it moved it into `beforeAll`, where
+// it peaked at 8.3s of the 10s hook default at a load average of 254. That is
+// the 5-15s band, so the hook keeps 30s.
+//
+// The CASES are what is left, and sharing made them cheap: 144-720ms, peaking
+// at 1.58s across three rounds at a load average of 300-405. Under 5s, so 15s
+// — enough for a 9x overrun and no more. The 5s default false-failed all three
+// on the run that filed this ticket, which is what both numbers are for.
+vi.setConfig({ testTimeout: 15_000, hookTimeout: 30_000 });
+
+/**
+ * A name no other case — and no EARLIER ATTEMPT at this same case — has used.
+ *
+ * `beforeAll` builds one database for the whole file and is NOT re-run when a
+ * case retries, so every row a failed attempt wrote is still sitting there on
+ * the next one. Both gates retry (`VITEST_RETRY=2` at the pre-push gate,
+ * `--retry=1` in the merge queue), so a fixed id turns any one-off failure into
+ * a PERMANENT one: the retry re-runs the write and then reads two rows where it
+ * asserted one, or is refused a sign-up for an email the first attempt took.
+ * Measured both ways — see the header of the shared-database comment below.
+ *
+ * @param prefix - What the name should read as, before its unique tail.
+ * @returns The prefixed, unique name.
+ */
+function uniqueId(prefix: string): string {
+  return `${prefix}-${randomUUID()}`;
+}
+
 describe('PostgreSQL security audit persistence', () => {
-  beforeAll(() => vi.stubEnv('BETTER_AUTH_SECRET', 'test-secret-test-secret-test-secret-123'));
+  // ONE database for the file: the three boots that cost the most here become
+  // one, and every case reads only rows keyed to its own user, so they share a
+  // Postgres without depending on each other's order.
+  //
+  // The price is that nothing here may write a FIXED name. The database outlives
+  // a failed attempt, so every id a case writes goes through `uniqueId` above.
+  // Measured with a one-shot throw after each case's writes under
+  // `VITEST_RETRY=2`: with fixed names, case 1 read 2 rows then 3 where it
+  // asserts 1. Cases 2 and 3 sign accounts up by email, and a fixed address
+  // survives a retry only when the first attempt got far enough to delete it
+  // again (the reviewer could not make case 3 fail on a fixed address; the
+  // implementer saw a 403 on one run) — so every address goes through
+  // `uniqueId` too, rather than resting on how far a failed attempt got.
+  let client: PGlite;
+  let auth: ReturnType<typeof createAuth>;
+  let handlers: Handlers;
+
+  beforeAll(async () => {
+    vi.stubEnv('BETTER_AUTH_SECRET', 'test-secret-test-secret-test-secret-123');
+    ({ client, auth, handlers } = await createHarness());
+  });
   beforeEach(() => vi.clearAllMocks());
-  afterAll(() => vi.unstubAllEnvs());
+  afterAll(async () => {
+    await client.close();
+    vi.unstubAllEnvs();
+  });
 
   it('persists a direct audit write with a PostgreSQL UUID', async () => {
-    const { client, auth } = await createHarness();
-    try {
-      await recordAudit(auth, {
-        actorUserId: 'admin-a',
-        action: 'admin.ban_user',
-        targetUserId: 'target-a',
-        reason: 'abuse',
-        metadata: { banExpiresIn: 3600 },
-      });
+    const target = uniqueId('target');
+    await recordAudit(auth, {
+      actorUserId: 'admin-a',
+      action: 'admin.ban_user',
+      targetUserId: target,
+      reason: 'abuse',
+      metadata: { banExpiresIn: 3600 },
+    });
 
-      const rows = await listAudit(auth, { targetUserId: 'target-a' });
-      expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({
-        actorUserId: 'admin-a',
-        action: 'admin.ban_user',
-        targetUserId: 'target-a',
-        reason: 'abuse',
-        metadata: { banExpiresIn: 3600 },
-      });
-      expect(rows[0].id).toMatch(UUID_PATTERN);
-      expect(
-        (await client.query<{ type: string }>('SELECT pg_typeof(id)::text AS type FROM audit_log'))
-          .rows
-      ).toEqual([{ type: 'uuid' }]);
-    } finally {
-      await client.close();
-    }
+    const rows = await listAudit(auth, { targetUserId: target });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      actorUserId: 'admin-a',
+      action: 'admin.ban_user',
+      targetUserId: target,
+      reason: 'abuse',
+      metadata: { banExpiresIn: 3600 },
+    });
+    expect(rows[0].id).toMatch(UUID_PATTERN);
+    // Scoped to this attempt's own target, because the table is shared with the
+    // two cases below AND with this case's earlier attempts. What is being read
+    // off the column is its TYPE, which one row proves as well as every row.
+    expect(
+      (
+        await client.query<{ type: string }>(
+          'SELECT pg_typeof(id)::text AS type FROM audit_log WHERE target_user_id = $1',
+          [target]
+        )
+      ).rows
+    ).toEqual([{ type: 'uuid' }]);
   });
 
   it('keeps requested and completed audit rows after real email-confirmed account deletion', async () => {
-    const { client, auth, handlers } = await createHarness();
-    try {
-      const owner = await createSignedInUser(client, handlers, 'leaving@dork.test');
-      expect(
-        (
-          await handlers.POST(
-            post('/api/auth/delete-user', { callbackURL: '/signin' }, owner.cookie)
-          )
-        ).status
-      ).toBe(200);
-      const sent = vi.mocked(mailer.sendDeleteAccountVerification).mock.calls.at(-1);
-      if (!sent) throw new Error('Account deletion did not send its confirmation URL.');
+    const owner = await createSignedInUser(client, handlers, `${uniqueId('leaving')}@dork.test`);
+    expect(
+      (await handlers.POST(post('/api/auth/delete-user', { callbackURL: '/signin' }, owner.cookie)))
+        .status
+    ).toBe(200);
+    const sent = vi.mocked(mailer.sendDeleteAccountVerification).mock.calls.at(-1);
+    if (!sent) throw new Error('Account deletion did not send its confirmation URL.');
 
-      const callback = await handlers.GET(
-        new Request(new URL(sent[0].url), {
-          headers: { origin: ORIGIN, cookie: owner.cookie },
-        })
-      );
-      expect(callback.status).toBe(302);
-      expect(
-        (await client.query('SELECT id FROM "user" WHERE id = $1', [owner.id])).rows
-      ).toHaveLength(0);
+    const callback = await handlers.GET(
+      new Request(new URL(sent[0].url), {
+        headers: { origin: ORIGIN, cookie: owner.cookie },
+      })
+    );
+    expect(callback.status).toBe(302);
+    expect(
+      (await client.query('SELECT id FROM "user" WHERE id = $1', [owner.id])).rows
+    ).toHaveLength(0);
 
-      const audit = await listAudit(auth, { targetUserId: owner.id });
-      expect(audit).toHaveLength(2);
-      expect(audit.map(({ action }) => action).sort()).toEqual([
-        'account.self_delete.completed',
-        'account.self_delete.requested',
-      ]);
-      for (const row of audit) {
-        expect(row.id).toMatch(UUID_PATTERN);
-        expect(row.actorUserId).toBe(owner.id);
-        expect(row.targetUserId).toBe(owner.id);
-      }
-    } finally {
-      await client.close();
+    const audit = await listAudit(auth, { targetUserId: owner.id });
+    expect(audit).toHaveLength(2);
+    expect(audit.map(({ action }) => action).sort()).toEqual([
+      'account.self_delete.completed',
+      'account.self_delete.requested',
+    ]);
+    for (const row of audit) {
+      expect(row.id).toMatch(UUID_PATTERN);
+      expect(row.actorUserId).toBe(owner.id);
+      expect(row.targetUserId).toBe(owner.id);
     }
   });
 
   it('attributes a real admin action to the acting account', async () => {
-    const { client, auth, handlers } = await createHarness();
-    try {
-      const admin = await createSignedInUser(client, handlers, 'admin@dork.test', 'admin');
-      const target = await createSignedInUser(client, handlers, 'target@dork.test');
+    const admin = await createSignedInUser(
+      client,
+      handlers,
+      `${uniqueId('admin')}@dork.test`,
+      'admin'
+    );
+    const target = await createSignedInUser(client, handlers, `${uniqueId('target')}@dork.test`);
 
-      const response = await handlers.POST(
-        post('/api/auth/admin/ban-user', { userId: target.id, banReason: 'abuse' }, admin.cookie)
-      );
-      expect(response.status).toBe(200);
-      expect(
-        (
-          await client.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id = $1', [
-            target.id,
-          ])
-        ).rows
-      ).toEqual([{ banned: true }]);
+    const response = await handlers.POST(
+      post('/api/auth/admin/ban-user', { userId: target.id, banReason: 'abuse' }, admin.cookie)
+    );
+    expect(response.status).toBe(200);
+    expect(
+      (
+        await client.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id = $1', [
+          target.id,
+        ])
+      ).rows
+    ).toEqual([{ banned: true }]);
 
-      const audit = await listAudit(auth, { targetUserId: target.id });
-      expect(audit).toHaveLength(1);
-      expect(audit[0]).toMatchObject({
-        actorUserId: admin.id,
-        action: 'admin.ban_user',
-        targetUserId: target.id,
-        reason: 'abuse',
-      });
-      expect(audit[0].id).toMatch(UUID_PATTERN);
-    } finally {
-      await client.close();
-    }
+    const audit = await listAudit(auth, { targetUserId: target.id });
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({
+      actorUserId: admin.id,
+      action: 'admin.ban_user',
+      targetUserId: target.id,
+      reason: 'abuse',
+    });
+    expect(audit[0].id).toMatch(UUID_PATTERN);
   });
 });

@@ -34,6 +34,31 @@ function createSpyLogger(): RelayLogger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
+/** The two `code`s that mean a watch has stopped listening for good. */
+function isExhaustion(code: string): boolean {
+  return code === 'EMFILE' || code === 'ENOSPC';
+}
+
+/**
+ * The `code` of every watcher failure reported since a given point in the log.
+ *
+ * SINCE, not in total, and that is the whole point of this helper: an `EMFILE`
+ * from a watch that has already been closed and re-armed is over, and counting
+ * it again would make every later window look exhausted no matter what it
+ * actually reported.
+ *
+ * @param logger - The spy logger the manager under test was given.
+ * @param since - How many `warn` calls had been made when this window opened.
+ * @returns The codes reported after that point, in order.
+ */
+function watcherErrorCodesSince(logger: RelayLogger, since: number): string[] {
+  return vi
+    .mocked(logger.warn)
+    .mock.calls.slice(since)
+    .filter(([message]) => String(message).includes('[watcher-error] WatcherManager'))
+    .map(([, fields]) => String((fields as { code?: unknown } | undefined)?.code ?? 'unknown'));
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -764,24 +789,43 @@ describe('WatcherManager', () => {
   //     Sever `watcher.on('add')` and only fake-watcher tests would notice.
   //
   // Half 2 is the only wall-clock bound left in this file, and it is bounded
-  // twice over: it writes well past the ready window rather than into it, and
-  // then waits on a barrier with a generous deadline.
+  // four ways over: it writes well past the ready window rather than into it,
+  // waits on a barrier with a short deadline, re-arms that write inside one open
+  // watch, and then re-opens the WATCH itself a few times when — and only when —
+  // that watch reported the descriptor exhaustion that would explain the
+  // silence. A window that goes quiet reporting nothing is a red, immediately
+  // and without re-arming, because there is nothing for a re-arm to fix.
   // -------------------------------------------------------------------------
 
   describe('real filesystem smoke', () => {
-    /** Ceiling on each delivery — generous, and paid only on failure. */
+    /** Ceiling on the sweep's delivery — generous, and paid only on failure. */
     const SMOKE_BUDGET_MS = 20_000;
     /**
      * How long to let the platform's event stream warm up before the live write.
      *
      * Ten times the 25ms `READY_DELIVERY_GRACE_MS` that `access-control.ts`
      * measured and found holds at a load average around 130. Writing INTO that
-     * window is what made the old retry loop necessary; this test steps over it
-     * instead, and the first delivery has already happened by then anyway.
+     * window is where an event is dropped 13-40% of the time, so stepping over
+     * it is what makes ONE attempt likely to land; the re-arm below is what
+     * makes the case honest when it does not.
      */
     const READY_SETTLE_MS = 250;
+    /** Ceiling on ONE live `add`, and how many writes one open watch gets. */
+    const LIVE_ATTEMPT_MS = 2_000;
+    const LIVE_ATTEMPTS = 3;
+    /**
+     * How many times the WATCH ITSELF is re-opened, and the pause before each.
+     *
+     * Paid only by a window that delivered nothing AND reported descriptor
+     * exhaustion. Closing the watch hands its descriptors back, and the pause is
+     * what gives whatever else on this machine is holding them a chance to do
+     * the same — so a burst that one window alone would have called "exhausted,
+     * skip" is usually just delivered by the next one.
+     */
+    const LIVE_REARMS = 3;
+    const LIVE_REARM_BACKOFF_MS = 2_000;
 
-    it('reaches the handler both from the listing and from a real add event, keyed by basename', async () => {
+    it('reaches the handler both from the listing and from a real add event, keyed by basename', async (ctx) => {
       chokidarSpy.restore();
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'watcher-mgr-smoke-'));
       // A real store, not the double: `listNew` and `claim` are the two calls
@@ -790,13 +834,24 @@ describe('WatcherManager', () => {
       const store = new MaildirStore({ rootDir: tmpDir });
       await store.ensureMaildir('hash-real');
       const claimSpy = vi.spyOn(store, 'claim');
+      // A real logger, because the watcher's own error report is the only thing
+      // that separates "the watch is broken" from "the kernel is out of watch
+      // descriptors" when half 2 below delivers nothing.
+      const smokeLogger = createSpyLogger();
       const smokeManager = new WatcherManager(
         store,
         subscriptionRegistry,
         sqliteIndex,
-        circuitBreaker
+        circuitBreaker,
+        smokeLogger
       );
       const newDir = path.join(tmpDir, 'hash-real', 'new');
+      const smokeEndpoint = {
+        subject: 'relay.agent.smoke',
+        hash: 'hash-real',
+        maildirPath: path.join(tmpDir, 'hash-real'),
+        registeredAt: '2026-02-24T00:00:00.000Z',
+      };
 
       const handler = vi.fn();
       vi.mocked(subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
@@ -807,12 +862,7 @@ describe('WatcherManager', () => {
         // while it was down, which is the wider half of what the sweep covers.
         await fs.writeFile(path.join(newDir, 'msg-real.json'), JSON.stringify({ subject: 'test' }));
 
-        await smokeManager.startWatcher({
-          subject: 'relay.agent.smoke',
-          hash: 'hash-real',
-          maildirPath: path.join(tmpDir, 'hash-real'),
-          registeredAt: '2026-02-24T00:00:00.000Z',
-        });
+        await smokeManager.startWatcher(smokeEndpoint);
 
         await withDeadline(
           delivered.promise,
@@ -833,27 +883,125 @@ describe('WatcherManager', () => {
         expect(await store.listCurrent('hash-real')).toEqual([]);
 
         // --- Half 2: the live `add` path, which the sweep did not exercise.
-        const liveDelivered = deferred();
-        vi.mocked(sqliteIndex.updateStatus).mockImplementation((messageId) => {
-          if (messageId === 'msg-live') liveDelivered.resolve();
-          return true;
-        });
+        //
+        // Re-armed rather than waited on once (DOR-1850's lesson): a real
+        // chokidar event is not a promise the platform keeps. A file written in
+        // the moments after a watch opens is dropped 13-40% of the time, and
+        // sustained load exhausts the kernel's watch descriptors outright, after
+        // which `fs.watch` reports nothing at all.
+        //
+        // So this runs in WINDOWS. Inside one window the watch stays open and
+        // each attempt writes its OWN message id — a leftover from an earlier
+        // attempt would otherwise satisfy a later one's barrier — waits a
+        // bounded moment, and tidies up before the next. A window that delivers
+        // nothing then has to say WHY before anything is decided, and only one
+        // answer buys another window: this window's own watch reported EMFILE or
+        // ENOSPC. Then the watch is closed (which hands its descriptors back),
+        // the machine is given a pause, and a fresh watch opens on the same
+        // mailbox.
+        //
+        // That second question is the one this used to get wrong. Asking only
+        // "was EMFILE reported at any point" let a genuine `add` regression that
+        // happened to coincide with an fd burst skip instead of redding, and it
+        // self-skipped twice in 31 runs of healthy code at a load average of 26.
+        // A re-arm answers it: if the descriptors were the problem, the next
+        // window delivers; if the watch is broken, the next window fails again
+        // and reports nothing, which is a red.
         await new Promise<void>((resolve) => setTimeout(resolve, READY_SETTLE_MS));
-        await fs.writeFile(path.join(newDir, 'msg-live.json'), JSON.stringify({ subject: 'live' }));
 
-        await withDeadline(
-          liveDelivered.promise,
-          SMOKE_BUDGET_MS,
-          `a real chokidar 'add' on ${newDir} delivered nothing`
+        let liveId: string | undefined;
+        let rearmsTried = 0;
+        /** What the LAST window's own watch reported. The verdict rests on this. */
+        let windowCodes: string[] = [];
+        /**
+         * Where this window's watch starts answering for what the logger says.
+         *
+         * ZERO for the first window, and that is not an off-by-one: the watch it
+         * uses is the one half 1 armed, so everything reported since the test
+         * began belongs to it. ARMING is exactly when a machine out of watch
+         * descriptors says so, and a baseline taken after `startWatcher` puts a
+         * window's own EMFILE outside its own window — the window then reads as
+         * "delivered nothing, reported nothing", which is the red reserved for a
+         * broken watch. Measured twice: with the baseline after the re-arm's
+         * `startWatcher`, a seeded burst that clears reddened instead of
+         * re-arming; with it after half 1's, a genuinely exhausted machine that
+         * the previous shape skipped on 3 runs of 3 reddened on this one.
+         */
+        let windowBaseline = 0;
+
+        for (let window = 0; window <= LIVE_REARMS && !liveId; window++) {
+          if (window > 0) {
+            rearmsTried++;
+            windowBaseline = vi.mocked(smokeLogger.warn).mock.calls.length;
+            await smokeManager.closeAll();
+            await new Promise<void>((resolve) => setTimeout(resolve, LIVE_REARM_BACKOFF_MS));
+            // Nothing an earlier window left behind, so the new watch's own
+            // `sweepPending` cannot deliver a message and be mistaken for the
+            // `add` path this half exists to exercise.
+            for (const stale of await fs.readdir(newDir)) {
+              await fs.rm(path.join(newDir, stale), { force: true });
+            }
+            await smokeManager.startWatcher(smokeEndpoint);
+            await new Promise<void>((resolve) => setTimeout(resolve, READY_SETTLE_MS));
+          }
+
+          for (let attempt = 0; attempt < LIVE_ATTEMPTS && !liveId; attempt++) {
+            const id = `msg-live-${window}-${attempt}`;
+            const liveDelivered = deferred();
+            vi.mocked(sqliteIndex.updateStatus).mockImplementation((messageId) => {
+              if (messageId === id) liveDelivered.resolve();
+              return true;
+            });
+            const filePath = path.join(newDir, `${id}.json`);
+            await fs.writeFile(filePath, JSON.stringify({ subject: 'live' }));
+            try {
+              await withDeadline(
+                liveDelivered.promise,
+                LIVE_ATTEMPT_MS,
+                `a real chokidar 'add' on ${newDir} delivered nothing`
+              );
+              liveId = id;
+            } catch {
+              // Undelivered mail this attempt wrote, out of the way of the next
+              // attempt's `listNew` assertion. A late `add` for it then loses the
+              // claim to ENOENT, which is exactly what the real store does.
+              await fs.rm(filePath, { force: true });
+            }
+          }
+
+          windowCodes = watcherErrorCodesSince(smokeLogger, windowBaseline);
+          // A window that delivered nothing and reported no descriptor trouble is
+          // a fault in the watch. Re-arming would only bury it, so stop here and
+          // let the assertion below say so.
+          if (!liveId && !windowCodes.some(isExhaustion)) break;
+        }
+
+        if (liveId) {
+          expect(claimSpy).toHaveBeenCalledWith('hash-real', liveId);
+          expect(handler).toHaveBeenCalledWith({ subject: 'live' });
+          expect(await store.listNew('hash-real')).toEqual([]);
+          return;
+        }
+
+        // Nothing delivered, and the last window is what answers for it.
+        // Acceptable ONLY if that window's own watch reported the failure that
+        // means it has stopped listening for good — the condition `sweepPending`
+        // exists for, not a fault in this code. Any other error, or none at all,
+        // is a real red.
+        const exhausted = windowCodes.filter(isExhaustion);
+        expect(
+          exhausted,
+          `the watch delivered nothing across ${LIVE_ATTEMPTS} writes and reported ${
+            windowCodes.join(', ') || 'no error'
+          } — that is a fault in the watch, not descriptor pressure`
+        ).not.toEqual([]);
+        ctx.skip(
+          `watch descriptors exhausted (${exhausted.join(', ')}) on the first window and on all ${rearmsTried} re-arms after it; the startup sweep is what covers this, and half 1 above asserts it`
         );
-
-        expect(claimSpy).toHaveBeenCalledWith('hash-real', 'msg-live');
-        expect(handler).toHaveBeenCalledWith({ subject: 'live' });
-        expect(await store.listNew('hash-real')).toEqual([]);
       } finally {
         await smokeManager.closeAll();
         await fs.rm(tmpDir, { recursive: true, force: true });
       }
-    }, 30_000);
+    }, 75_000);
   });
 });
