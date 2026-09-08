@@ -50,6 +50,15 @@ export interface SkillInventoryEntry extends InventoryEntryBase {
   isSymlink: boolean;
   /** Which authored root it was found in. */
   root: SkillRoot;
+  /**
+   * The `SKILL.md`'s frontmatter `name`, trimmed — absent when it declares none.
+   *
+   * Carried because three harnesses key a skill by it and two require it to
+   * match the directory, so the projector cannot decide whether a skill in
+   * `.claude/skills` is really loadable without it
+   * (`vendor-facts/skill-rules.ts`).
+   */
+  frontmatterName?: string;
 }
 
 /** One authored slash command under `.claude/commands`. */

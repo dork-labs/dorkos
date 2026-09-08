@@ -74,8 +74,9 @@ import {
 } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
-import type { HarnessId } from '../manifest/schema.js';
+import { HARNESS_LABELS, type HarnessId } from '../manifest/schema.js';
 import { skillsFactsFor } from './index.js';
+import { evaluateSkillRules } from './skill-rules.js';
 import type { SkillsFacts } from './types.js';
 
 /** One skill a harness's documented read paths and rules would find. */
@@ -320,6 +321,13 @@ interface Candidate {
 /**
  * Apply one harness's symlink, identity and name rules to one skill directory.
  *
+ * The I/O half only: it reads the frontmatter `name` off disk and hands the
+ * decision to {@link evaluateSkillRules}, which the projector calls with the same
+ * facts so the plan and this walk cannot reach different verdicts about one
+ * directory (DOR-1845 review). The rule ladder used to live here, and its second
+ * copy — hand-written in `plan/source-artifacts.ts` — consulted three cells of
+ * the six.
+ *
  * @param harness - the harness whose rules apply, named in the message text.
  * @param facts - its skills facts.
  * @param dir - absolute path of the skill directory.
@@ -336,73 +344,17 @@ function evaluate(
   via: string,
   reachedThroughSymlink: boolean
 ): Candidate {
-  const dirName = basename(dir);
   const name = frontmatterName(skillMd);
-  const reasons: string[] = [];
-
-  if (reachedThroughSymlink && facts.symlinks === 'unknown') {
-    reasons.push(
-      `it is reached through a symlink, and ${harness} does not document whether it follows one`
-    );
-  }
-
-  let key = dirName;
-  if (facts.identity === 'frontmatter') {
-    if (name === undefined) {
-      reasons.push(
-        `frontmatter name absent, and ${harness} keys a skill by its frontmatter name - the directory name "${dirName}" is a fallback, not what the harness would use`
-      );
-    } else {
-      key = name;
-    }
-  } else if (facts.identity === 'unknown' && name !== undefined && name !== dirName) {
-    reasons.push(
-      `${harness} does not document whether a skill is keyed by its directory ("${dirName}") or its frontmatter name ("${name}"), and the two differ`
-    );
-  }
-
-  const violations: string[] = [];
-  if (facts.nameRegex && !facts.nameRegex.test(key)) {
-    violations.push(
-      `the name "${key}" breaks ${harness}'s documented charset rule ${String(facts.nameRegex)}`
-    );
-  }
-  if (facts.nameMustMatchDir === true) {
-    if (name === undefined) {
-      reasons.push(
-        `${harness} documents that a skill's frontmatter name must match its directory, and this SKILL.md has no name`
-      );
-    } else if (name !== dirName) {
-      violations.push(
-        `the frontmatter name "${name}" does not match the directory "${dirName}", which ${harness} documents as required`
-      );
-    }
-  } else if (facts.nameMustMatchDir === 'unknown' && name !== undefined && name !== dirName) {
-    reasons.push(
-      `the frontmatter name "${name}" does not match the directory "${dirName}", and ${harness} does not document whether it must`
-    );
-  }
-
-  // A broken name rule with a DOCUMENTED consequence is not uncertainty: 'skip'
-  // drops the skill outright and 'warn-and-load' loads it. Only 'unknown' is a
-  // refusal to decide, and it joins the reasons above.
-  let droppedByRule = false;
-  if (violations.length > 0) {
-    if (facts.onInvalidName === 'skip') {
-      droppedByRule = true;
-    } else if (facts.onInvalidName === 'unknown') {
-      for (const violation of violations) {
-        reasons.push(
-          `${violation}, and ${harness} does not document what it does with such a skill`
-        );
-      }
-    }
-  }
+  const outcome = evaluateSkillRules(harness, facts, {
+    dirName: basename(dir),
+    ...(name === undefined ? {} : { frontmatterName: name }),
+    reachedThroughSymlink,
+  });
 
   return {
-    found: { key, dir, skillMd, via },
-    reasons,
-    loads: reasons.length === 0 && !droppedByRule,
+    found: { key: outcome.key, dir, skillMd, via },
+    reasons: outcome.reasons,
+    loads: outcome.loads,
   };
 }
 
@@ -462,7 +414,7 @@ function applyDedupe(
       if (first) {
         uncertain.push({
           path: candidate.dir,
-          reason: `one skill is reachable at ${viaOf(root, first.dir)} and ${viaOf(root, candidate.dir)}, and ${harness} does not document whether it loads once or twice`,
+          reason: `one skill is reachable at ${viaOf(root, first.dir)} and ${viaOf(root, candidate.dir)}, and ${HARNESS_LABELS[harness]} does not document whether it loads once or twice`,
         });
         continue;
       }

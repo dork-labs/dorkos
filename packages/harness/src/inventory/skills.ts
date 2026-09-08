@@ -34,7 +34,9 @@ import { lstatSync, realpathSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { scanSkillDirs, AGENTS_SKILLS_DIR } from '../scan/scanner.js';
 import { CLAUDE_SKILLS_DIR } from '../plan/installed-projector.js';
-import { readDirEntries } from './read.js';
+import { readRawFrontmatter } from '@dorkos/skills/parser';
+import { SKILL_FILENAME } from '@dorkos/skills/constants';
+import { readDirEntries, readTextFile, relPath } from './read.js';
 import type { SkillInventoryEntry, SkillRoot, UnreadableSource } from './types.js';
 
 /**
@@ -80,6 +82,29 @@ function realpathOr(absPath: string): string {
   } catch {
     return absPath;
   }
+}
+
+/**
+ * A skill's declared frontmatter `name`, or `undefined` when it has none.
+ *
+ * Read here rather than inferred from the directory, because the difference
+ * between the two is the whole question for the three harnesses that key on the
+ * name and the two that require the pair to match. A `SKILL.md` that will not
+ * parse answers `undefined`, which is the same answer as "no name" — the hook
+ * inventory reports that parse failure separately, so the silence is not total.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param sourceDir - the skill's repo-relative directory.
+ * @returns the trimmed name, or `undefined`.
+ */
+function declaredName(repoRoot: string, sourceDir: string): string | undefined {
+  const rel = relPath(sourceDir, SKILL_FILENAME);
+  const { text } = readTextFile(join(repoRoot, rel), rel, 'skill');
+  if (text === undefined) return undefined;
+  const declared = readRawFrontmatter(text)?.data.name;
+  if (typeof declared !== 'string') return undefined;
+  const trimmed = declared.trim();
+  return trimmed === '' ? undefined : trimmed;
 }
 
 /**
@@ -130,6 +155,7 @@ function collect(
     const isSymlink = lstatSync(absEntry, { throwIfNoEntry: false })?.isSymbolicLink() === true;
     if (root === CLAUDE_SKILLS_DIR && isSymlink && isManagedProjection(repoRoot, absEntry))
       continue;
+    const declared = declaredName(repoRoot, skill.sourceDir);
     skills.push({
       kind: 'skill',
       name: skill.name,
@@ -137,6 +163,7 @@ function collect(
       provenance: 'authored',
       isSymlink,
       root,
+      ...(declared === undefined ? {} : { frontmatterName: declared }),
     });
   }
   return { skills, unreadable: [] };
