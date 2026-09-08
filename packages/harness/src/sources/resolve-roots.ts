@@ -17,6 +17,7 @@ import {
   COPILOT_HOOKS_TARGET,
 } from '../generate/hooks.js';
 import { GENERATED_SIDECAR_SUFFIX } from '../apply/generated-ownership.js';
+import { PROJECT_PLUGINS_DIR } from './installed.js';
 
 /** A skill source root and the provenance of everything found beneath it. */
 export interface SourceRoot {
@@ -57,6 +58,11 @@ export function isEphemeralProvenance(provenance: Provenance): boolean {
  * require — the single source of truth for what `dorkos harness sync` expects to
  * be ignored so installed projections are never accidentally committed.
  *
+ * Read by `apply/gitignore.ts`, which checks a target repo's own `.gitignore`
+ * against the plan and names the lines it is missing (contract AP-09). Until
+ * DOR-1851 this list had no consumer at all: it was declared here, mirrored by
+ * hand in this repo's `.gitignore`, and nothing ever looked at anybody else's.
+ *
  * Generated command wrappers (`.claude/commands/<pkg>/`) are deliberately NOT
  * listed here: a static per-subdirectory wildcard under `.claude/commands` would
  * also swallow authored namespaced commands (`.claude/commands/<ns>/`), so each
@@ -64,7 +70,7 @@ export function isEphemeralProvenance(provenance: Provenance): boolean {
  * writes inside it.
  */
 export const EPHEMERAL_GITIGNORE_PATTERNS = [
-  '.dork/plugins/', // marketplace-installed plugins (project scope)
+  `${PROJECT_PLUGINS_DIR}/`, // marketplace-installed plugins (project scope)
   `${AGENTS_SKILLS_DIR}/*__*`, // Codex installed-plugin skill symlinks (<pkg>__<skill>)
   '.claude/skills/*__*', // Claude Code installed-plugin skill symlinks (<pkg>__<skill>)
   '.claude/settings.local.json', // user-owned local settings; the engine merges plugin hooks in

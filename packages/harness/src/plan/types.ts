@@ -153,6 +153,25 @@ export interface ProjectionWarning {
 }
 
 /**
+ * A harness whose own files are in the repo, named with the path that gave it
+ * away.
+ *
+ * The manifest's `harnesses` set is decided once, when the manifest is
+ * scaffolded, and nothing looked again — so a repo that grew a `.cursor/` a
+ * month later never enabled Cursor and nobody was told (contract TR-11). Every
+ * plan now carries the ones it found that the manifest does not enable.
+ */
+export interface DetectedHarness {
+  /** The harness whose footprint is on disk. */
+  harness: HarnessId;
+  /**
+   * The repo-relative path that was found. A directory carries a trailing `/`,
+   * so the line a person reads says `.cursor/` rather than `.cursor`.
+   */
+  signal: string;
+}
+
+/**
  * The full result of planning a projection: the actionable projections, the
  * honest drop list, and any warnings. Nothing a harness cannot accept is ever
  * silently omitted — it appears in `drops` with a reason; a projection that
@@ -166,6 +185,20 @@ export interface ProjectionPlan {
   drops: ProjectionAction[];
   /** Projections that may not work, and declarations that could not be read, each with a reason. */
   warnings: ProjectionWarning[];
+  /**
+   * Harnesses whose files are in the repo that the manifest does not enable.
+   *
+   * A NOTICE, never drift: nothing is missing from disk, nothing is stale, and
+   * a person who runs one of these agents somewhere else on purpose is not
+   * wrong. So it never changes an exit code — it exists because detection used
+   * to run exactly once, at scaffold time, and a harness added afterwards was
+   * silently never projected to (TR-11).
+   *
+   * Only the not-enabled ones are here. The enabled set is the manifest's, the
+   * caller already has it, and a plan field nobody reads is a claim nobody
+   * checks.
+   */
+  notEnabled: DetectedHarness[];
 }
 
 /** The result of diffing a {@link ProjectionPlan} against the current on-disk state (`--check`). */

@@ -430,7 +430,12 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     symlinkSync('../../.dork/plugins/gone/skills/skill', orphan);
 
     // Sweep with an empty plan: nothing is "managed", so every candidate is an orphan.
-    const swept = sweepInstalledOrphans(repo, { actions: [], drops: [], warnings: [] });
+    const swept = sweepInstalledOrphans(repo, {
+      actions: [],
+      drops: [],
+      warnings: [],
+      notEnabled: [],
+    });
 
     // The symlink is swept; the hand-authored real directory is untouched.
     expect(swept).toEqual(['.agents/skills/gone__skill']);

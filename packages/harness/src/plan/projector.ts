@@ -15,6 +15,7 @@ import { HARNESS_LABELS, type HarnessId, type HarnessManifest } from '../manifes
 import type {
   ActionBase,
   ClaudeOnlySkillLocation,
+  DetectedHarness,
   ProjectionAction,
   ProjectionPlan,
   ProjectionWarning,
@@ -646,6 +647,16 @@ export function buildPlan(input: {
    * once.
    */
   inventory?: SourceInventory;
+  /**
+   * Every harness whose own files are on disk in this repo, from
+   * `detectHarnessFootprints`. The ones the manifest does not enable become
+   * {@link ProjectionPlan.notEnabled}.
+   *
+   * Passed in rather than probed, like `agentsMdExists` and the other
+   * filesystem answers: `buildPlan` stays filesystem-free. Omitted, no harness
+   * is reported as present — the honest answer for a caller that has not looked.
+   */
+  detectedHarnesses?: readonly DetectedHarness[];
 }): ProjectionPlan {
   const {
     repoRoot,
@@ -656,6 +667,7 @@ export function buildPlan(input: {
     claudeOnlySkills = new Map<string, ClaudeOnlySkillLocation>(),
     installedPlugins = [],
     inventory = inventorySourceTree(repoRoot),
+    detectedHarnesses = [],
   } = input;
   const skills = scanSkills(repoRoot);
   const warnings: ProjectionWarning[] = [];
@@ -819,5 +831,6 @@ export function buildPlan(input: {
     actions: all.filter((a) => a.kind !== 'drop'),
     drops: all.filter((a) => a.kind === 'drop'),
     warnings,
+    notEnabled: detectedHarnesses.filter((d) => !manifest.harnesses.includes(d.harness)),
   };
 }

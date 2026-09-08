@@ -45,6 +45,7 @@ import {
   CURSOR_HOOKS_TARGET,
   COPILOT_HOOKS_TARGET,
 } from '../../generate/hooks.js';
+import { EPHEMERAL_GITIGNORE_PATTERNS } from '../../sources/resolve-roots.js';
 import { writeFileAt, writeJsonAt } from '../journeys/stage.js';
 
 /** The sidecar suffix the engine writes beside a generated hook file. */
@@ -194,6 +195,16 @@ export interface RepoSpec {
    * predicate but the one that matters. It must survive every sweep.
    */
   personLink: boolean;
+  /**
+   * The repo's root `.gitignore`, as a subset of the patterns the engine
+   * declares — or `null` for a directory that is not a git checkout at all.
+   *
+   * P7 turns on this field twice over: a random subset is what makes "the lines
+   * you are missing" a moving target rather than a fixed list, and the `null`
+   * case is the one where the whole `.gitignore` contract is silent on purpose
+   * (nothing to say about git in a tree git does not have).
+   */
+  gitignore: string[] | null;
 }
 
 /** What {@link materialise} actually staged for {@link RepoSpec.dangling}. */
@@ -328,6 +339,7 @@ export function arbRepo(): fc.Arbitrary<RepoSpec> {
       nil: null,
     }),
     personLink: fc.boolean(),
+    gitignore: fc.option(fc.subarray([...EPHEMERAL_GITIGNORE_PATTERNS]), { nil: null }),
   });
 }
 
@@ -541,6 +553,16 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
     writeFileAt(
       join(repoRoot, '.claude', 'skills', spec.skills[0], 'precious.md'),
       '# do not delete\n'
+    );
+  }
+
+  // A git checkout, and whatever the person's own `.gitignore` happens to cover.
+  // `null` is a directory git does not track, where the contract says nothing.
+  if (spec.gitignore) {
+    mkdirSync(join(repoRoot, '.git'), { recursive: true });
+    writeFileAt(
+      join(repoRoot, '.gitignore'),
+      `${['node_modules/', ...spec.gitignore].join('\n')}\n`
     );
   }
 

@@ -18,6 +18,7 @@ describe('formatDropList', () => {
         },
       ],
       warnings: [],
+      notEnabled: [],
     };
     const out = formatDropList(plan);
     expect(out).toContain('codex:');
@@ -51,6 +52,7 @@ describe('formatDropList', () => {
         },
       ],
       warnings: [],
+      notEnabled: [],
     });
     expect(out).toContain('plugin layers:');
     expect(out).toMatch(/plugin layers:\n {2}- plugin "acme:extensions"/);
@@ -60,7 +62,9 @@ describe('formatDropList', () => {
 
   it('reports a clean message when there are no drops', () => {
     // No drops is a valid, honest outcome.
-    expect(formatDropList({ actions: [], drops: [], warnings: [] })).toMatch(/No drops/);
+    expect(formatDropList({ actions: [], drops: [], warnings: [], notEnabled: [] })).toMatch(
+      /No drops/
+    );
   });
 });
 
@@ -77,6 +81,7 @@ describe('formatWarnings', () => {
           reason: 'hook command for "Stop" uses Claude-only "${CLAUDE_PLUGIN_ROOT}"; Codex …',
         },
       ],
+      notEnabled: [],
     });
     expect(out).toContain('Warnings');
     expect(out).toContain('codex:');
@@ -99,6 +104,7 @@ describe('formatWarnings', () => {
           reason: '.dork/plugins/acme/hooks/hooks.json declares "Stop" in a shape …',
         },
       ],
+      notEnabled: [],
     });
     expect(out).toContain('plugin layers:');
     expect(out).not.toContain('claude-code:');
@@ -106,6 +112,6 @@ describe('formatWarnings', () => {
 
   it('returns an empty string when there are no warnings', () => {
     // Callers omit the block entirely when empty.
-    expect(formatWarnings({ actions: [], drops: [], warnings: [] })).toBe('');
+    expect(formatWarnings({ actions: [], drops: [], warnings: [], notEnabled: [] })).toBe('');
   });
 });

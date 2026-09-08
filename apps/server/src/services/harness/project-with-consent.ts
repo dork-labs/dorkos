@@ -228,6 +228,10 @@ function filterPlanToHarness(plan: ProjectionPlan, harness: HarnessId): Projecti
     actions: plan.actions.filter((a) => a.harness === harness),
     drops: plan.drops.filter((a) => a.harnessAgnostic === true || a.harness === harness),
     warnings: plan.warnings.filter((w) => w.harnessAgnostic === true || w.harness === harness),
+    // A harness that is not the one asked about is not an answer to the
+    // question, exactly like every other line of a narrowed report: `--harness
+    // codex` should not mention Cursor.
+    notEnabled: plan.notEnabled.filter((d) => d.harness === harness),
   };
 }
 

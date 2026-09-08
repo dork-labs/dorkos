@@ -13,15 +13,20 @@ import {
 import type { WithheldHooks } from '../server/services/harness/project-with-consent.js';
 
 import {
+  appendGitignoreLines,
   checkPlan,
+  enableHarnessInManifest,
   formatDropList,
   formatWarnings,
   hooksFactsFor,
+  isCanonicalLayerIgnored,
   loadManifest,
+  missingGitignoreLines,
   scaffoldManifest,
   CODEX_HOOKS_TARGET,
   GENERATED_HOOK_TARGET_HARNESSES,
   HARNESS_IDS,
+  HARNESS_LABELS,
   HARNESS_MANIFEST_PATH,
   type HarnessId,
   type ProjectionAction,
@@ -59,6 +64,25 @@ export interface HarnessSyncArgs {
    * later sync and for the app — and `dorkos harness hooks --revoke` undoes it.
    */
   allowHooks: string[];
+  /**
+   * Harnesses to turn on in `.agents/harness.manifest.json`, repeatable.
+   * Requires `--fix`.
+   *
+   * The ONE path that writes a manifest somebody else wrote (see
+   * `enableHarnessInManifest`): an explicit flag, one inserted array element,
+   * every other byte of the file left where it was. The same run then projects
+   * with the harness enabled.
+   */
+  enable: string[];
+  /**
+   * Add the missing ephemeral-projection lines to the repo's `.gitignore`.
+   * Requires `--fix`.
+   *
+   * Without it both modes only NAME the lines. Editing a file nobody asked about
+   * is not what a person runs a sync for, and `.gitignore` is one of the files
+   * people are most particular about.
+   */
+  writeGitignore: boolean;
 }
 
 /**
@@ -88,7 +112,7 @@ const SUMMARY_KINDS = ['native', 'symlink', 'scaffold', 'generate', 'merge'] as 
 
 /** One-line usage string surfaced in error messages. */
 const USAGE_LINE =
-  'Usage: dorkos harness sync [--check] [--fix] [--harness <id>] [--strict] [--allow-hooks <package>]';
+  'Usage: dorkos harness sync [--check] [--fix] [--harness <id>] [--strict] [--allow-hooks <package>] [--enable <harness>] [--write-gitignore]';
 
 /**
  * Parse raw CLI arguments for `dorkos harness sync` into a typed
@@ -112,6 +136,8 @@ export function parseHarnessSyncArgs(rawArgs: string[]): HarnessSyncArgs {
         harness: { type: 'string' },
         strict: { type: 'boolean', default: false },
         'allow-hooks': { type: 'string', multiple: true },
+        enable: { type: 'string', multiple: true },
+        'write-gitignore': { type: 'boolean', default: false },
       },
       allowPositionals: false,
       strict: true,
@@ -129,6 +155,10 @@ export function parseHarnessSyncArgs(rawArgs: string[]): HarnessSyncArgs {
     allowHooks: Array.isArray(values['allow-hooks'])
       ? values['allow-hooks'].filter((name): name is string => typeof name === 'string')
       : [],
+    enable: Array.isArray(values.enable)
+      ? values.enable.filter((id): id is string => typeof id === 'string')
+      : [],
+    writeGitignore: Boolean(values['write-gitignore']),
   };
 }
 
@@ -282,6 +312,70 @@ function readIfPresent(repoRoot: string, rel: string): string | undefined {
 }
 
 /**
+ * One line per harness whose own files are here that the manifest does not
+ * enable (contract TR-11).
+ *
+ * A NOTICE, and never anything else: it changes no exit code, because a person
+ * who runs Cursor on a different project is not wrong and a failing command
+ * nobody can clear is how people learn to stop reading the output. Detection
+ * used to happen once, when the manifest was scaffolded, so a harness added a
+ * month later was never enabled and never mentioned.
+ */
+function formatNotEnabled(plan: ProjectionPlan): string[] {
+  if (plan.notEnabled.length === 0) return [];
+  return [
+    '',
+    ...plan.notEnabled.map(
+      (found) =>
+        `${found.signal} found; ${HARNESS_LABELS[found.harness]} is not enabled — add it to ` +
+        `${HARNESS_MANIFEST_PATH} or run dorkos harness sync --fix --enable ${found.harness}`
+    ),
+  ];
+}
+
+/**
+ * The `.gitignore` lines this repo is missing for the files DorkOS writes, or
+ * confirmation that they were just added (contract AP-09).
+ *
+ * @param missing - the lines, from `missingGitignoreLines`.
+ * @param added - whether `--write-gitignore` has already appended them.
+ * @returns the block, or nothing when there is nothing missing.
+ */
+function formatGitignore(missing: readonly string[], added: boolean): string[] {
+  if (missing.length === 0) return [];
+  const lines = missing.map((line) => `  ${line}`);
+  if (added) return ['', `gitignore: added ${missing.length} line(s) to .gitignore:`, ...lines];
+  return [
+    '',
+    'gitignore: DorkOS writes these, and they are not meant to be committed — your .gitignore does not cover them yet:',
+    ...lines,
+    '  Add them with `dorkos harness sync --fix --write-gitignore`, or paste them in yourself.',
+  ];
+}
+
+/**
+ * What a gitignored `.agents/` means for everyone else who clones this project
+ * (contract AP-15).
+ *
+ * Ignoring it is a real choice some teams make, so this is an explanation rather
+ * than a warning, and it changes no exit code. It is worth saying because the
+ * consequence is invisible from here: the links DorkOS writes into `.claude/`
+ * are ordinary committable files, so a teammate gets them pointing at a folder
+ * their clone does not have.
+ */
+function formatIgnoredCanonicalLayer(repoRoot: string): string[] {
+  if (!isCanonicalLayerIgnored(repoRoot)) return [];
+  return [
+    '',
+    '.agents/ is in your .gitignore, so the shared folder stays on this computer.',
+    '  The links DorkOS writes into .claude/skills are still committed, so anyone who clones',
+    '  this project gets links pointing at files git does not have. Moving a skill into',
+    '  .agents/ would take it out of git for everyone, too.',
+    '  Either stop ignoring .agents/, or keep these skills on this machine on purpose.',
+  ];
+}
+
+/**
  * Print the check-mode report and return its exit code.
  *
  * Non-zero for drift (a `--fix` would repair it), for an orphaned link (a `--fix`
@@ -321,6 +415,11 @@ function reportCheck(
   }
   for (const line of formatLeftAlone(drift.leftAlone, harnessFilter)) console.log(line);
   reportWithheld(withheld, dorkHome);
+  for (const line of formatNotEnabled(plan)) console.log(line);
+  for (const line of formatGitignore(missingGitignoreLines(repoRoot, plan), false)) {
+    console.log(line);
+  }
+  for (const line of formatIgnoredCanonicalLayer(repoRoot)) console.log(line);
   console.log('');
 
   if (clean) {
@@ -370,6 +469,7 @@ function reportFix(
   withheld: readonly WithheldHooks[],
   codexHooksBefore: string | undefined,
   dorkHome: string,
+  writeGitignore: boolean,
   harnessFilter?: HarnessId,
   enabled?: readonly HarnessId[]
 ): number {
@@ -406,6 +506,17 @@ function reportFix(
   // Printed AFTER what landed, so the report reads in the order it happened:
   // this is what was installed, and this is what was not.
   reportWithheld(withheld, dorkHome);
+
+  for (const line of formatNotEnabled(plan)) console.log(line);
+
+  // The one write in this block, and it is the one the person asked for by
+  // passing the flag. Without it the lines are named and nothing is touched:
+  // `.gitignore` is a file people are particular about, and a sync that edits
+  // one uninvited is a sync people stop running.
+  const missingLines = missingGitignoreLines(repoRoot, plan);
+  if (writeGitignore && missingLines.length > 0) appendGitignoreLines(repoRoot, missingLines);
+  for (const line of formatGitignore(missingLines, writeGitignore)) console.log(line);
+  for (const line of formatIgnoredCanonicalLayer(repoRoot)) console.log(line);
 
   if (conflicts.length === 0) return 0;
 
@@ -472,6 +583,22 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     return { exitCode: 1 };
   }
 
+  // `--enable` writes the manifest and `--write-gitignore` writes `.gitignore`,
+  // so both belong to the write mode. Refused rather than quietly ignored, and
+  // each message names the command to run instead of restating the rule.
+  if (args.enable.length > 0 && !args.fix) {
+    console.error('--enable turns a harness on in your manifest, so it needs --fix.');
+    console.error(
+      `Run: dorkos harness sync --fix ${args.enable.map((id) => `--enable ${id}`).join(' ')}`
+    );
+    return { exitCode: 1 };
+  }
+  if (args.writeGitignore && !args.fix) {
+    console.error('--write-gitignore adds lines to your .gitignore, so it needs --fix.');
+    console.error('Run: dorkos harness sync --fix --write-gitignore');
+    return { exitCode: 1 };
+  }
+
   // Validate --harness BEFORE anything reads or writes: a rejected argument must
   // never leave a scaffolded manifest behind as its only lasting effect.
   let harnessFilter: HarnessId | undefined;
@@ -483,6 +610,18 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
       return { exitCode: 1 };
     }
     harnessFilter = args.harness as HarnessId;
+  }
+
+  // Same rule for every `--enable`, and for the same reason: a typo must not
+  // scaffold a manifest, enable the ids it understood, and then fail.
+  const unknownEnable = args.enable.filter(
+    (id) => !(HARNESS_IDS as readonly string[]).includes(id)
+  );
+  if (unknownEnable.length > 0) {
+    console.error(
+      `Unknown harness: ${unknownEnable.map((id) => `'${id}'`).join(', ')}. Known harnesses: ${HARNESS_IDS.join(', ')}`
+    );
+    return { exitCode: 1 };
   }
 
   const repoRoot = process.cwd();
@@ -522,6 +661,24 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
   // returns — so this is the backstop for what is left: an unreadable manifest, a
   // permission error, a bug.
   try {
+    // Enabling comes BEFORE the plan is built, so one command both turns the
+    // harness on and projects to it — a person who has just been told a harness
+    // is missing should not have to run the same command twice.
+    for (const id of args.enable) {
+      const enabled = enableHarnessInManifest(repoRoot, id as HarnessId);
+      if (enabled.outcome === 'unwritable') {
+        console.error(`DorkOS did not change ${enabled.path}: ${enabled.reason}.`);
+        console.error(`  Add "${id}" to its "harnesses" list yourself, then run this again.`);
+        return { exitCode: 1 };
+      }
+      console.log(
+        enabled.outcome === 'enabled'
+          ? `Enabled ${HARNESS_LABELS[enabled.harness]} in ${enabled.path}.`
+          : `${HARNESS_LABELS[enabled.harness]} was already enabled in ${enabled.path}.`
+      );
+    }
+    if (args.enable.length > 0) console.log('');
+
     // Project marketplace-installed plugins too (DOR-173). Project-scoped installs
     // (`<repoRoot>/.dork/plugins`) are repo-relative and always project; passing a
     // resolved dork home additionally projects global-scope installs.
@@ -620,6 +777,7 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
       result.withheld,
       codexHooksBefore,
       dorkHome,
+      args.writeGitignore,
       harnessFilter,
       enabledHarnesses()
     );

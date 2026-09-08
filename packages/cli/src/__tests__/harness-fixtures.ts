@@ -26,7 +26,15 @@ import type { HarnessSyncArgs } from '../harness-sync-command.js';
  * @returns a complete argument object.
  */
 export function syncArgs(partial: Partial<HarnessSyncArgs>): HarnessSyncArgs {
-  return { check: false, fix: false, strict: false, allowHooks: [], ...partial };
+  return {
+    check: false,
+    fix: false,
+    strict: false,
+    allowHooks: [],
+    enable: [],
+    writeGitignore: false,
+    ...partial,
+  };
 }
 
 /**

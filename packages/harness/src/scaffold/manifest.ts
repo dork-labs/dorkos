@@ -16,9 +16,10 @@
  *
  * @module scaffold/manifest
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, sep } from 'node:path';
 import { HARNESS_IDS, type HarnessId, type HarnessManifest } from '../manifest/schema.js';
+import type { DetectedHarness } from '../plan/types.js';
 
 /** Repo-relative path of the harness manifest the scaffolder writes. */
 export const HARNESS_MANIFEST_PATH = join('.agents', 'harness.manifest.json');
@@ -43,6 +44,23 @@ const HARNESS_DETECTION_SIGNALS: Record<HarnessId, readonly string[]> = {
   copilot: [join('.github', 'copilot-instructions.md')],
   opencode: ['.opencode'],
 };
+
+/**
+ * Signal paths that are evidence of the canonical layer rather than of one
+ * harness in particular, so they never make a harness "present" in a re-detection.
+ *
+ * `AGENTS.md` is the cross-agent instruction file five of the six harnesses read
+ * (and the one this engine asks every repo to keep), so a Claude-Code-only
+ * project has one — and, read as a Codex footprint, it would put
+ * "AGENTS.md found; Codex is not enabled" on every single sync of every repo
+ * DorkOS has ever touched, with no way to clear it. Being told a true thing
+ * forever is how a person learns to stop reading the output.
+ *
+ * It stays in {@link HARNESS_DETECTION_SIGNALS} for the SCAFFOLD, where the
+ * question is different and asked once: a repo that keeps an `AGENTS.md` and
+ * nothing else really is a reasonable place to start Codex.
+ */
+const SHARED_SIGNAL_PATHS: ReadonlySet<string> = new Set(['AGENTS.md']);
 
 /** Options for {@link scaffoldManifest}. */
 export interface ScaffoldManifestOptions {
@@ -77,6 +95,42 @@ export function detectHarnesses(repoRoot: string): HarnessId[] {
   return HARNESS_IDS.filter((id) =>
     HARNESS_DETECTION_SIGNALS[id].some((rel) => existsSync(join(repoRoot, rel)))
   );
+}
+
+/**
+ * Detect each harness whose OWN files are in the repo, with the path that gave
+ * it away — the re-detection every plan runs (contract TR-11).
+ *
+ * Two things separate it from {@link detectHarnesses}, which answers the
+ * scaffolder's one-shot question:
+ *
+ * - it names the signal, because the line a person reads has to say what was
+ *   found (`.cursor/ found; Cursor is not enabled …`), and
+ * - it ignores {@link SHARED_SIGNAL_PATHS}, so the canonical `AGENTS.md` is not
+ *   read as somebody running Codex.
+ *
+ * A directory signal is reported with a trailing `/`. The first signal a
+ * harness matches wins; the order is the table's.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @returns one entry per harness found, in canonical {@link HARNESS_IDS} order.
+ */
+export function detectHarnessFootprints(repoRoot: string): DetectedHarness[] {
+  const found: DetectedHarness[] = [];
+  for (const harness of HARNESS_IDS) {
+    for (const rel of HARNESS_DETECTION_SIGNALS[harness]) {
+      if (SHARED_SIGNAL_PATHS.has(rel)) continue;
+      const stats = statSync(join(repoRoot, rel), { throwIfNoEntry: false });
+      if (!stats) continue;
+      // Repo-relative and slash-joined whatever the platform: the signal is
+      // printed, and `.github\copilot-instructions.md` is not a path anybody
+      // wants to read (the table builds that one with `join`).
+      const shown = rel.split(sep).join('/');
+      found.push({ harness, signal: stats.isDirectory() ? `${shown}/` : shown });
+      break;
+    }
+  }
+  return found;
 }
 
 /**

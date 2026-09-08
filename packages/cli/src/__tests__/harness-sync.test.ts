@@ -67,6 +67,8 @@ describe('parseHarnessSyncArgs', () => {
       harness: undefined,
       strict: false,
       allowHooks: [],
+      enable: [],
+      writeGitignore: false,
     });
   });
 
@@ -77,6 +79,8 @@ describe('parseHarnessSyncArgs', () => {
       harness: undefined,
       strict: false,
       allowHooks: [],
+      enable: [],
+      writeGitignore: false,
     });
     expect(parseHarnessSyncArgs(['--fix'])).toEqual({
       check: false,
@@ -84,6 +88,8 @@ describe('parseHarnessSyncArgs', () => {
       harness: undefined,
       strict: false,
       allowHooks: [],
+      enable: [],
+      writeGitignore: false,
     });
   });
 
@@ -1221,5 +1227,258 @@ describe('runHarnessDispatcher', () => {
   it('returns exit code 1 for an unknown subcommand', async () => {
     expect(await runHarnessDispatcher('bogus', [])).toBe(1);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Unknown harness subcommand'));
+  });
+});
+
+/**
+ * TR-11, AP-09 and AP-15 at the CLI: a harness added after the manifest was
+ * written, the `.gitignore` lines the projections need, and what a gitignored
+ * `.agents/` means for everyone else.
+ *
+ * All three are NOTICES. None of them changes an exit code, and the first test
+ * of each half is the one that says so — a standing failing command for a
+ * harness somebody runs elsewhere, or for a `.gitignore` line, is how people
+ * learn to stop reading a report.
+ */
+describe('runHarnessSync — a harness added later, and the .gitignore contract', () => {
+  let tmpDir: string;
+  let originalCwd: string;
+  let homeDir: string;
+  let logSpy: MockInstance<typeof console.log>;
+  let errorSpy: MockInstance<typeof console.error>;
+
+  /** Everything the run printed, joined so a block can be asserted verbatim. */
+  const printed = (): string => logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+
+  /** Everything the run printed to stderr. */
+  const errors = (): string => errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+
+  /** The manifest's exact bytes. */
+  const manifestText = (): string =>
+    fs.readFileSync(path.join(tmpDir, HARNESS_MANIFEST_PATH), 'utf8');
+
+  /** Make the fixture look like a git checkout, so the gitignore half applies. */
+  function makeGitRepo(gitignore?: string): void {
+    fs.mkdirSync(path.join(tmpDir, '.git'), { recursive: true });
+    if (gitignore !== undefined) fs.writeFileSync(path.join(tmpDir, '.gitignore'), gitignore);
+  }
+
+  /** The month-later change: somebody starts using Cursor here. */
+  function addCursorDir(): void {
+    fs.mkdirSync(path.join(tmpDir, '.cursor', 'rules'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, '.cursor', 'rules', 'x.mdc'), '# rules\n');
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tmpDir = createTempDir();
+    homeDir = createTempDir();
+    vi.stubEnv('DORK_HOME', homeDir);
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    writeFixtureRepo(tmpDir);
+    process.chdir(tmpDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    vi.unstubAllEnvs();
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  describe('--enable', () => {
+    it('is parsed repeatably, beside --write-gitignore', () => {
+      const args = parseHarnessSyncArgs([
+        '--fix',
+        '--enable',
+        'cursor',
+        '--enable',
+        'gemini',
+        '--write-gitignore',
+      ]);
+      expect(args.enable).toEqual(['cursor', 'gemini']);
+      expect(args.writeGitignore).toBe(true);
+    });
+
+    it('refuses --check --enable, naming the command to run, and writes nothing', async () => {
+      const before = snapshotTree(tmpDir);
+
+      const result = await runHarnessSync(syncArgs({ check: true, enable: ['cursor'] }));
+
+      expect(result.exitCode).toBe(1);
+      expect(errors()).toContain(
+        '--enable turns a harness on in your manifest, so it needs --fix.'
+      );
+      expect(errors()).toContain('dorkos harness sync --fix --enable cursor');
+      expect(snapshotTree(tmpDir)).toEqual(before);
+    });
+
+    it('refuses --check --write-gitignore the same way', async () => {
+      const before = snapshotTree(tmpDir);
+
+      const result = await runHarnessSync(syncArgs({ check: true, writeGitignore: true }));
+
+      expect(result.exitCode).toBe(1);
+      expect(errors()).toContain('--write-gitignore adds lines to your .gitignore');
+      expect(snapshotTree(tmpDir)).toEqual(before);
+    });
+
+    it('rejects an unknown harness id before anything is written', async () => {
+      const before = manifestText();
+
+      const result = await runHarnessSync(syncArgs({ fix: true, enable: ['bogus'] }));
+
+      expect(result.exitCode).toBe(1);
+      expect(errors()).toContain("Unknown harness: 'bogus'");
+      expect(manifestText()).toBe(before);
+      expect(fs.existsSync(path.join(tmpDir, '.cursor', 'hooks.json'))).toBe(false);
+    });
+
+    it('says the harness was already on, and leaves the file byte-identical', async () => {
+      const before = manifestText();
+
+      const result = await runHarnessSync(syncArgs({ fix: true, enable: ['codex'] }));
+
+      expect(result.exitCode).toBe(0);
+      expect(printed()).toContain(`Codex was already enabled in ${HARNESS_MANIFEST_PATH}`);
+      expect(manifestText()).toBe(before);
+    });
+  });
+
+  describe('a harness that appeared after the manifest was written (TR-11)', () => {
+    it('says nothing when every harness on disk is enabled', async () => {
+      await runHarnessSync(syncArgs({ check: true }));
+      expect(printed()).not.toContain('is not enabled');
+    });
+
+    it('prints the notice and keeps the exit code it had before', async () => {
+      // The same repo, twice: the only difference is the `.cursor/` directory,
+      // so the exit code is the control and the notice is the change.
+      const withoutCursor = await runHarnessSync(syncArgs({ fix: true }));
+      logSpy.mockClear();
+
+      addCursorDir();
+      const withCursor = await runHarnessSync(syncArgs({ check: true }));
+
+      expect(withCursor.exitCode).toBe(withoutCursor.exitCode);
+      expect(withCursor.exitCode).toBe(0);
+      expect(printed()).toContain(
+        `.cursor/ found; Cursor is not enabled — add it to ${HARNESS_MANIFEST_PATH} ` +
+          'or run dorkos harness sync --fix --enable cursor'
+      );
+    });
+
+    it('is not repeated by a --harness run about a different harness', async () => {
+      addCursorDir();
+
+      await runHarnessSync(syncArgs({ check: true, harness: 'codex' }));
+
+      expect(printed()).not.toContain('is not enabled');
+    });
+
+    it('enables Cursor, projects to it in the same run, and then goes quiet', async () => {
+      await runHarnessSync(syncArgs({ fix: true }));
+      addCursorDir();
+      const before = manifestText();
+      logSpy.mockClear();
+
+      const enable = await runHarnessSync(syncArgs({ fix: true, enable: ['cursor'] }));
+
+      expect(enable.exitCode).toBe(0);
+      expect(printed()).toContain(`Enabled Cursor in ${HARNESS_MANIFEST_PATH}`);
+      // One element added, every other byte where it was.
+      expect(manifestText()).toBe(before.replace('"codex"', '"codex",\n    "cursor"'));
+      // The SAME run projected Cursor's hooks file — no second command.
+      expect(fs.existsSync(path.join(tmpDir, '.cursor', 'hooks.json'))).toBe(true);
+
+      logSpy.mockClear();
+      const after = await runHarnessSync(syncArgs({ check: true }));
+      expect(after.exitCode).toBe(0);
+      expect(printed()).not.toContain('is not enabled');
+    });
+  });
+
+  describe('the .gitignore contract (AP-09)', () => {
+    it('says nothing at all outside a git checkout', async () => {
+      writeInstalledPlugin(tmpDir, 'acme-tools', 'greet');
+
+      await runHarnessSync(syncArgs({ fix: true }));
+
+      expect(printed()).not.toContain('gitignore:');
+    });
+
+    it('names the lines a fresh repo is missing, in both modes, without writing them', async () => {
+      // The seeded case: `--fix` in a git repo with an installed plugin left
+      // `.claude/skills/acme-tools__greet` untracked and said nothing.
+      makeGitRepo();
+      writeInstalledPlugin(tmpDir, 'acme-tools', 'greet');
+
+      const fix = await runHarnessSync(syncArgs({ fix: true }));
+
+      expect(fix.exitCode).toBe(0);
+      expect(printed()).toContain('gitignore:');
+      expect(printed()).toContain('  .dork/plugins/');
+      expect(printed()).toContain('  .claude/skills/*__*');
+      expect(printed()).toContain('`dorkos harness sync --fix --write-gitignore`');
+      expect(fs.existsSync(path.join(tmpDir, '.gitignore'))).toBe(false);
+
+      logSpy.mockClear();
+      const check = await runHarnessSync(syncArgs({ check: true }));
+      expect(check.exitCode).toBe(0);
+      expect(printed()).toContain('  .dork/plugins/');
+    });
+
+    it('appends them behind the flag, preserves the file, and then goes quiet', async () => {
+      makeGitRepo('node_modules/\n');
+      writeInstalledPlugin(tmpDir, 'acme-tools', 'greet');
+
+      const result = await runHarnessSync(syncArgs({ fix: true, writeGitignore: true }));
+
+      expect(result.exitCode).toBe(0);
+      const gitignore = fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf8');
+      expect(gitignore).toBe(
+        'node_modules/\n\n# DorkOS harness sync — ephemeral projections\n' +
+          '.dork/plugins/\n.agents/skills/*__*\n.claude/skills/*__*\n.codex/hooks.json\n' +
+          '.codex/hooks.json.dorkos-generated\n'
+      );
+      expect(printed()).toContain('gitignore: added 5 line(s) to .gitignore:');
+
+      logSpy.mockClear();
+      await runHarnessSync(syncArgs({ check: true }));
+      expect(printed()).not.toContain('gitignore:');
+    });
+
+    it('accepts a broader rule the person already wrote', async () => {
+      makeGitRepo('.claude/\n.dork/\n.agents/skills/*__*\n.codex/\n');
+      writeInstalledPlugin(tmpDir, 'acme-tools', 'greet');
+
+      await runHarnessSync(syncArgs({ fix: true }));
+
+      expect(printed()).not.toContain('gitignore:');
+    });
+  });
+
+  describe('a gitignored .agents/ (AP-15)', () => {
+    it('explains what it means for anyone who clones the project', async () => {
+      makeGitRepo('node_modules/\n.agents/\n');
+
+      const result = await runHarnessSync(syncArgs({ fix: true }));
+
+      expect(result.exitCode).toBe(0);
+      expect(printed()).toContain('.agents/ is in your .gitignore');
+      expect(printed()).toContain('links pointing at files git does not have');
+      expect(printed()).toContain('Either stop ignoring .agents/');
+    });
+
+    it('is not triggered by the installed-projection patterns inside it', async () => {
+      makeGitRepo('.agents/skills/*__*\n.claude/skills/*__*\n');
+
+      await runHarnessSync(syncArgs({ fix: true }));
+
+      expect(printed()).not.toContain('.agents/ is in your .gitignore');
+    });
   });
 });

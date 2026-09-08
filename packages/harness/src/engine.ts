@@ -20,6 +20,7 @@ import type { ClaudeOnlySkillLocation, ProjectionPlan } from './plan/types.js';
 import type { ClaudeHooksConfig } from './generate/hooks.js';
 import { scanInstalledPlugins } from './sources/installed.js';
 import { inventorySourceTree } from './inventory/index.js';
+import { detectHarnessFootprints } from './scaffold/manifest.js';
 
 /**
  * Read and validate `.agents/harness.manifest.json` for a repository.
@@ -178,6 +179,10 @@ export function project(
     claudeCommandsExist: claudeCommandsExist(repoRoot),
     claudeOnlySkills: scanClaudeOnlySkills(repoRoot, manifest),
     installedPlugins,
+    // Detection is not a one-shot scaffold question any more. Every plan asks
+    // the repo which harnesses it can see, so one added after the manifest was
+    // written is reported instead of silently never projected to (TR-11).
+    detectedHarnesses: detectHarnessFootprints(repoRoot),
     ...(opts?.allowPluginHooks ? { allowPluginHooks: opts.allowPluginHooks } : {}),
   });
 }
