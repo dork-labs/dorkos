@@ -1,6 +1,6 @@
 /**
  * The `ConnectorRegistry` — the server-side seam that holds the registered
- * {@link ConnectorProvider} backends, routes an opaque `ConnectedAccountId` to
+ * {@link ConnectorProvider} backends, routes an opaque `ConnectionId` to
  * its owning provider, and aggregates accounts across every backend with
  * per-provider degradation.
  *
@@ -18,12 +18,12 @@
 import type { Db } from '@dorkos/db';
 import type {
   ConnectedAccount,
-  ConnectedAccountId,
   ConnectorProvider,
   ConnectorProviderInstanceId,
   ConnectorToolkit,
   ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
+import type { ConnectionId } from '@dorkos/shared/connector-schemas';
 import { connectorExecutionConfigDigest } from './execution/execution-config.js';
 import {
   ConnectionStore,
@@ -61,14 +61,6 @@ export interface AggregatedToolkits {
   /** One entry per provider that failed or timed out (never a hard failure). */
   warnings: ConnectorWarning[];
 }
-
-/**
- * One canonical stable connection binding — the provider-neutral metadata
- * that binds an opaque `ConnectedAccountId` to its owning backend and carries
- * the naming and disclosure fields public status surfaces read (toolkit, label,
- * custody) without exposing which provider is behind the connection.
- */
-export type ConnectedAccountBinding = StableConnectionBinding;
 
 /** Construction options for {@link ConnectorRegistry}. */
 export interface ConnectorRegistryOpts {
@@ -152,8 +144,8 @@ export class ConnectorRegistry {
   }
 
   /** Revoke one agent's durable authority for one exact stable connection. */
-  removeAgentConnectionAccess(agentId: string, accountId: ConnectedAccountId): void {
-    this._connections.removeAgentConnectionAccess(agentId, accountId);
+  removeAgentConnectionAccess(agentId: string, connectionId: ConnectionId): void {
+    this._connections.removeAgentConnectionAccess(agentId, connectionId);
   }
 
   /** Fence retained legacy consent before an agent is removed. */
@@ -269,10 +261,10 @@ export class ConnectorRegistry {
    * or disconnected, provider-expired, or its exact provider is unavailable.
    * Disconnect reads the tombstone with {@link accountBinding} instead.
    *
-   * @param accountId - The opaque account handle to route.
+   * @param connectionId - The stable connection id to route.
    */
-  providerForAccount(accountId: ConnectedAccountId): ConnectorProvider | undefined {
-    const binding = this.accountBinding(accountId);
+  providerForAccount(connectionId: ConnectionId): ConnectorProvider | undefined {
+    const binding = this.accountBinding(connectionId);
     if (!binding || binding.status !== 'active') return undefined;
     return this.resolveProviderInstance(binding.providerInstanceId);
   }
@@ -283,10 +275,10 @@ export class ConnectorRegistry {
    * management, broker routing, and retained access status. Returns
    * `undefined` when the id is unknown.
    *
-   * @param accountId - The opaque account handle to look up.
+   * @param connectionId - The stable connection id to look up.
    */
-  accountBinding(accountId: ConnectedAccountId): ConnectedAccountBinding | undefined {
-    return this._connections.binding(accountId);
+  accountBinding(connectionId: ConnectionId): StableConnectionBinding | undefined {
+    return this._connections.binding(connectionId);
   }
 
   /** Resolve the one disconnected connection a provider connect flow can safely restore. */
@@ -294,7 +286,7 @@ export class ConnectorRegistry {
     provider: ConnectorProvider,
     toolkit: string,
     label?: string
-  ): ConnectedAccountId | undefined {
+  ): ConnectionId | undefined {
     return this._connections.disconnectedConnectionFor(provider.instanceId, toolkit, label);
   }
 
@@ -315,28 +307,27 @@ export class ConnectorRegistry {
    * **Cascades to every persisted connector attachment of this account**
    * (connection-scoping spec `specs/connection-scoping/` §Part 1 Revocation):
    * both the agent-level standing table and the session-level override table
-   * are cleared for `accountId`, across every agent/session that ever
+   * are cleared for `connectionId`, across every agent/session that ever
    * attached it. A disconnected account's credential is gone — leaving a
-   * consent row pointing at it would let a future re-connect of the SAME
-   * account id (a real possibility: providers are free to reuse an id) silently
-   * inherit stale consent nobody re-confirmed. This method does not, by
+   * consent row pointing at it would let the same private provider account
+   * silently inherit stale consent after a future reconnect. This method does not, by
    * itself, call the provider's disconnect operation; the owner route does that
    * first, then commits this durable tombstone and authority cleanup.
    *
-   * @param accountId - The opaque account handle to unbind.
+   * @param connectionId - The stable connection id to disconnect.
    */
-  recordDisconnect(accountId: ConnectedAccountId): void {
-    this._connections.revokeConnection(accountId);
+  recordDisconnect(connectionId: ConnectionId): void {
+    this._connections.revokeConnection(connectionId);
   }
 
   /** Pause or resume a stable connection without changing provider authentication state. */
-  setPaused(accountId: ConnectedAccountId, paused: boolean): void {
-    this._connections.setPaused(accountId, paused);
+  setPaused(connectionId: ConnectionId, paused: boolean): void {
+    this._connections.setPaused(connectionId, paused);
   }
 
   /** Replace the operator-facing label of one stable connection. */
-  setLabel(accountId: ConnectedAccountId, label: string): void {
-    this._connections.setLabel(accountId, label);
+  setLabel(connectionId: ConnectionId, label: string): void {
+    this._connections.setLabel(connectionId, label);
   }
 
   /**

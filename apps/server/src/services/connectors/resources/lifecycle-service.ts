@@ -182,7 +182,7 @@ export class ConnectorLifecycleService {
       return {
         authoritySync: {
           status: 'failed',
-          reason: 'Managed connector synchronization is unavailable until this instance is linked.',
+          reason: 'DorkOS cannot sync this connection until this installation is linked.',
         },
         applied: false,
         externalCleanup: lifecycle === 'disconnected' ? 'pending' : 'not_required',
@@ -229,7 +229,7 @@ export class ConnectorLifecycleService {
       .where(eq(connections.id, connectionId))
       .get();
     if (!row) {
-      throw new ConnectorLifecycleError('connection_not_found', 'Connector connection not found.');
+      throw new ConnectorLifecycleError('connection_not_found', 'Connection not found.');
     }
     return ConnectorLifecycleResultSchema.parse({
       connectionId,
@@ -249,7 +249,7 @@ export class ConnectorLifecycleService {
     const parsed = ConnectionIdSchema.parse(connectionId);
     const row = this.ownedConnection(owner, parsed);
     if (!row || row.lifecycleState === 'disconnected') {
-      throw new ConnectorLifecycleError('connection_not_found', 'Connector connection not found.');
+      throw new ConnectorLifecycleError('connection_not_found', 'Connection not found.');
     }
     return row;
   }

@@ -80,15 +80,16 @@ async function resolveProgramPrincipal(
 ): Promise<ServerPrincipalProof | undefined> {
   if (presentsAgentIdentity(req, res) || getRequestAgentIdentity(res)) {
     res.status(403).json({
-      error: 'Connector program call refused.',
+      error:
+        'This service call cannot run from an active agent session. Use an API key outside the session.',
       code: 'CONNECTOR_PROGRAM_AGENT_IDENTITY_DENIED',
-      message: 'Run this program call outside an active agent identity.',
+      message: 'Run this service call with an API key outside an active agent session.',
     });
     return undefined;
   }
   if (req.headers.authorization === undefined) {
     res.status(401).json({
-      error: 'A verified API key is required for connector program calls.',
+      error: 'Use a verified API key to call this service.',
       code: 'CONNECTOR_PROGRAM_CREDENTIAL_REQUIRED',
     });
     return undefined;
@@ -98,7 +99,7 @@ async function resolveProgramPrincipal(
   const user = existing?.credential === 'api-key' ? existing : await verifier(req);
   if (user?.credential !== 'api-key' || !user.credentialId) {
     res.status(401).json({
-      error: 'A verified API key is required for connector program calls.',
+      error: 'Use a verified API key to call this service.',
       code: 'CONNECTOR_PROGRAM_CREDENTIAL_REQUIRED',
     });
     return undefined;
@@ -107,7 +108,7 @@ async function resolveProgramPrincipal(
   const principal = owner ? deps.programPrincipals.mint(user, owner) : undefined;
   if (!principal) {
     res.status(401).json({
-      error: 'Connector program authority could not be verified.',
+      error: 'DorkOS could not verify access for this API key. Sign in again or use another key.',
       code: 'CONNECTOR_PROGRAM_CREDENTIAL_REQUIRED',
     });
     return undefined;
@@ -141,7 +142,10 @@ function sendProgramError(res: Response, error: unknown): void {
     return;
   }
   if (error instanceof z.ZodError) {
-    res.status(400).json({ error: 'Validation failed', details: z.flattenError(error) });
+    res.status(400).json({
+      error: 'This service call is invalid. Check the request and try again.',
+      details: z.flattenError(error),
+    });
     return;
   }
   if (error instanceof CapabilityToolError) {
@@ -152,7 +156,8 @@ function sendProgramError(res: Response, error: unknown): void {
         : '';
     if (['CONNECTOR_TARGET_NOT_FOUND', 'CONNECTOR_OWNER_MISMATCH'].includes(code)) {
       res.status(404).json({
-        error: 'The selected connector target was not found.',
+        error:
+          'The selected connection was not found. Choose a connection this agent can use and try again.',
         code: 'CONNECTOR_TARGET_NOT_FOUND',
       });
       return;

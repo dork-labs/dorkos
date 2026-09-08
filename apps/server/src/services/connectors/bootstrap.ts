@@ -58,7 +58,11 @@ import {
   NANGO_SECRET_KEY_REF,
   type MaybeCreateNangoProviderDeps,
 } from './providers/nango.js';
-import { RawMcpConnectorProvider, type RawMcpServerDescriptor } from './providers/raw-mcp.js';
+import {
+  RawMcpConnectorProvider,
+  type RawMcpServerDescriptor,
+  type RawMcpPendingConnectResolver,
+} from './providers/raw-mcp.js';
 
 /** The test-mode provider type the credential route accepts under `DORKOS_TEST_RUNTIME`. */
 export const TEST_CONNECTOR_PROVIDER_TYPE = 'test-connector';
@@ -81,6 +85,8 @@ export interface ConnectorProviderBootstrapperOpts {
   nangoEnv: () => { baseUrl?: string; encryptionKey?: string };
   /** Raw-MCP server descriptors from user config (`connectors.rawMcpServers`), read at boot. */
   rawMcpServers: () => RawMcpServerDescriptor[];
+  /** Canonical owner/generation admission for restart-safe raw MCP polls. */
+  rawMcpPendingConnect: RawMcpPendingConnectResolver;
   /** Hosted managed provider backed by the current linked-instance token. */
   managedCloud?: {
     /** Stable provider instance registered for every valid linked key. */
@@ -187,6 +193,7 @@ function rawMcpExecutionConfigDigest(
 export class ConnectorProviderBootstrapper {
   private readonly _registry: ConnectorRegistry;
   private readonly _rawMcpServers: () => RawMcpServerDescriptor[];
+  private readonly _rawMcpPendingConnect: RawMcpPendingConnectResolver;
   private readonly _onUnregistered:
     ((providerInstanceId: string, providerType: string) => void) | undefined;
   private readonly _specs = new Map<string, ManagedProviderSpec>();
@@ -205,6 +212,7 @@ export class ConnectorProviderBootstrapper {
   constructor(opts: ConnectorProviderBootstrapperOpts) {
     this._registry = opts.registry;
     this._rawMcpServers = opts.rawMcpServers;
+    this._rawMcpPendingConnect = opts.rawMcpPendingConnect;
     this._onUnregistered = opts.onUnregistered;
     this._managedCloud = opts.managedCloud;
 
@@ -293,7 +301,10 @@ export class ConnectorProviderBootstrapper {
     // The raw-MCP baseline registers unconditionally — with the empty list too,
     // so the seam is live before anyone configures a server (gap 3).
     const rawMcpServers = this._rawMcpServers();
-    const rawMcpProvider = new RawMcpConnectorProvider({ servers: rawMcpServers });
+    const rawMcpProvider = new RawMcpConnectorProvider({
+      servers: rawMcpServers,
+      resolvePendingConnect: this._rawMcpPendingConnect,
+    });
     this._registry.register(
       rawMcpProvider,
       rawMcpExecutionConfigDigest(rawMcpProvider, rawMcpServers),

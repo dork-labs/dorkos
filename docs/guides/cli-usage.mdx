@@ -216,6 +216,35 @@ dorkos call marketplace.uninstall --input '{"name":"x"}' --approval <token>
 
 A call that needs your OK comes back with `status: approval_required` and a token instead of doing the work. Approve it in DorkOS, then run the same call again with `--approval <token>`. Change the input and the token stops matching, because one approval covers one exact action. See [Action Approvals](/docs/guides/action-approvals).
 
+**`dorkos connections`**: inspect and use only the service access granted to one named agent.
+
+```bash
+dorkos connections list --agent <agent-id> [--json]
+dorkos connections schema <connection-id> --agent <agent-id> [--json]
+dorkos connections call <connection-id> <operation-revision-id> --agent <agent-id> --input '{"query":"hello"}'
+dorkos connections call <connection-id> <operation-revision-id> --agent <agent-id> --input-file ./input.json
+dorkos connections usage --agent <agent-id> [--cursor <cursor>] [--limit 20] [--json]
+dorkos connections subscriptions --agent <agent-id> [--cursor <cursor>] [--limit 20] [--json]
+```
+
+Every connection list, schema, call, usage, and subscription command requires the canonical
+`--agent` ID. Leaving it out never widens the request to operator access. A call names one stable
+connection and one reviewed operation revision. If the outcome is unknown, inspect the receipt
+before deciding whether to try again.
+
+Changes that need you, such as pausing a connection, use the owner-review handoff:
+
+```bash
+dorkos connections request --action-file ./action.json --idempotency-key <stable-key>
+dorkos connections request --action '{"version":1,"kind":"pause","connectionId":"connection-01"}' --idempotency-key <stable-key> --print
+dorkos connections status <review-request-id> [--json]
+```
+
+The request command opens the DorkOS app, or prints its local review URL with `--print`. Review and
+apply or deny the change there. The CLI can check the opaque request status, but it cannot approve
+its own request or discover private accounts through the handoff. Reuse the same idempotency key
+only for the same intended change.
+
 **`dorkos agent`**: list, inspect, create, and edit agents.
 
 ```bash

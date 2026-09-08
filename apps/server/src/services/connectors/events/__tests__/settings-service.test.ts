@@ -59,6 +59,7 @@ async function fixture() {
     await bootstrap.reload('composio');
   });
   const bootstrap = new ConnectorProviderBootstrapper({
+    rawMcpPendingConnect: () => undefined,
     registry,
     credentials,
     nangoEnv: () => ({}),

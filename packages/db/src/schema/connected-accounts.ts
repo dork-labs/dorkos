@@ -12,7 +12,7 @@ import { sqliteTable, text, index } from 'drizzle-orm/sqlite-core';
 export const connectedAccounts = sqliteTable(
   'connected_accounts',
   {
-    /** Opaque, provider-scoped account handle (the `ConnectedAccountId`). */
+    /** Opaque, provider-scoped account handle (the `ConnectionId`). */
     accountId: text('account_id').primaryKey(),
     /** Owning backend type, e.g. `'composio' | 'nango' | 'mcp'` — routes id → provider. */
     provider: text('provider').notNull(),

@@ -201,7 +201,7 @@ export class ConnectorManagementReviewService {
       ) {
         throw new ConnectorManagementReviewError(
           'idempotency_conflict',
-          'This idempotency key already belongs to a different connector action.'
+          'This request key is already used for a different connection change.'
         );
       }
       return this.publicItem(existing.id, requester.owner);
@@ -444,7 +444,7 @@ export class ConnectorManagementReviewService {
       }
       throw new ConnectorManagementReviewError(
         'action_failed',
-        'The approved connector action may have completed. Check this request before continuing.'
+        'The approved connection change may have completed. Check this request before continuing.'
       );
     } finally {
       this.activeResolutions.delete(reviewRequestId);
@@ -643,7 +643,7 @@ export class ConnectorManagementReviewService {
         row.status !== 'available' ||
         (expectedGeneration !== undefined && row.executionConfigGeneration !== expectedGeneration)
       ) {
-        throw new ConnectorManagementReviewError('target_not_found', 'Connector target not found.');
+        throw new ConnectorManagementReviewError('target_not_found', 'Connection not found.');
       }
       const provider = this.registry.resolveProviderInstance(
         ConnectorProviderInstanceIdSchema.parse(row.id)
@@ -652,7 +652,7 @@ export class ConnectorManagementReviewService {
         !provider ||
         provider.getCapabilities().capabilities.authentication.status !== 'available'
       ) {
-        throw new ConnectorManagementReviewError('target_not_found', 'Connector target not found.');
+        throw new ConnectorManagementReviewError('target_not_found', 'Connection not found.');
       }
       return {
         targetKind: 'provider_instance',
@@ -688,7 +688,7 @@ export class ConnectorManagementReviewService {
       (expectedGeneration !== undefined && row.executionConfigGeneration !== expectedGeneration) ||
       (agentId !== undefined && !this.resolveAgent(owner, agentId))
     ) {
-      throw new ConnectorManagementReviewError('target_not_found', 'Connector target not found.');
+      throw new ConnectorManagementReviewError('target_not_found', 'Connection not found.');
     }
     if (action.kind === 'set_agent_access') {
       const revisions = this.db
@@ -703,7 +703,7 @@ export class ConnectorManagementReviewService {
         )
         .all();
       if (revisions.length !== action.operationRevisionIds.length) {
-        throw new ConnectorManagementReviewError('target_not_found', 'Connector target not found.');
+        throw new ConnectorManagementReviewError('target_not_found', 'Connection not found.');
       }
     }
     return {

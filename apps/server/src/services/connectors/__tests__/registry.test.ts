@@ -3,10 +3,10 @@ import { connectorProviderInstances, createDb, eq, runMigrations, type Db } from
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type {
   ConnectedAccount,
-  ConnectedAccountId,
   ConnectorProviderInstanceId,
   ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
+import type { ConnectionId } from '@dorkos/shared/connector-schemas';
 import { ConnectorRegistry } from '../registry.js';
 
 /** A provider whose `listAccounts` always rejects — the degradation case. */
@@ -67,7 +67,7 @@ describe('ConnectorRegistry', () => {
     const account = await connectOne(registry, composio, 'gmail', 'personal');
 
     expect(registry.providerForAccount(account.id)).toBe(composio);
-    expect(registry.providerForAccount('never-bound' as ConnectedAccountId)).toBeUndefined();
+    expect(registry.providerForAccount('never-bound' as ConnectionId)).toBeUndefined();
   });
 
   it('keeps identical private refs distinct across provider instances', async () => {
@@ -85,6 +85,18 @@ describe('ConnectorRegistry', () => {
     expect(sameExternal.id).not.toBe(account.id);
     expect(registry.providerForAccount(account.id)).toBe(composio);
     expect(registry.providerForAccount(sameExternal.id)).toBe(secondInstance);
+    const firstBinding = registry.accountBinding(account.id);
+    const secondBinding = registry.accountBinding(sameExternal.id);
+    expect(firstBinding).toMatchObject({
+      connectionId: account.id,
+      externalAccountRef: upstream.externalAccountRef,
+    });
+    expect(secondBinding).toMatchObject({
+      connectionId: sameExternal.id,
+      externalAccountRef: upstream.externalAccountRef,
+    });
+    expect(firstBinding).not.toHaveProperty('accountId');
+    expect(secondBinding).not.toHaveProperty('accountId');
   });
 
   it('retains a revoked ownership tombstone on disconnect (idempotent)', async () => {

@@ -25,6 +25,7 @@ import type {
   ConnectorProviderInstanceId,
   ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
+import type { ConnectionId } from '@dorkos/shared/connector-schemas';
 import {
   runLegacyConnectionMigration,
   type ConnectorMigrationResult,
@@ -46,7 +47,7 @@ export class ConnectorMigrationUnavailableError extends Error {
 /** Private server-side stable connection binding. */
 export interface StableConnectionBinding {
   /** Stable public connection id. */
-  accountId: ConnectedAccount['id'];
+  connectionId: ConnectionId;
   /** Stable configured provider instance. */
   providerInstanceId: ConnectorProviderInstanceId;
   /** Provider implementation type used only for compatibility routing. */
@@ -270,7 +271,7 @@ export class ConnectionStore {
   }
 
   /** Read one private binding by stable public connection id. */
-  binding(accountId: ConnectedAccount['id']): StableConnectionBinding | undefined {
+  binding(connectionId: ConnectionId): StableConnectionBinding | undefined {
     this.assertAvailable();
     const row = this.db.$client
       .prepare(
@@ -280,7 +281,7 @@ export class ConnectionStore {
          JOIN connector_provider_instances p ON p.id = c.provider_instance_id
          WHERE c.id = ?`
       )
-      .get(accountId) as
+      .get(connectionId) as
       | {
           id: string;
           provider_instance_id: string;
@@ -296,7 +297,7 @@ export class ConnectionStore {
       | undefined;
     if (!row) return undefined;
     return {
-      accountId: row.id as ConnectedAccount['id'],
+      connectionId: row.id as ConnectionId,
       providerInstanceId: row.provider_instance_id as ConnectorProviderInstanceId,
       provider: row.provider,
       externalAccountRef: row.external_account_ref as ConnectorExternalAccountRef,
@@ -336,43 +337,43 @@ export class ConnectionStore {
   }
 
   /** Pause or resume local use without overwriting provider authentication status. */
-  setPaused(accountId: ConnectedAccount['id'], paused: boolean): void {
+  setPaused(connectionId: ConnectionId, paused: boolean): void {
     this.assertAvailable();
     this.db
       .update(connections)
       .set({ enabled: !paused, updatedAt: new Date().toISOString() })
-      .where(eq(connections.id, accountId))
+      .where(eq(connections.id, connectionId))
       .run();
   }
 
   /** Replace the operator-facing label of one stable connection. */
-  setLabel(accountId: ConnectedAccount['id'], label: string): void {
+  setLabel(connectionId: ConnectionId, label: string): void {
     this.assertAvailable();
     this.db
       .update(connections)
       .set({ label, updatedAt: new Date().toISOString() })
-      .where(eq(connections.id, accountId))
+      .where(eq(connections.id, connectionId))
       .run();
   }
 
   /** Tombstone a connection and synchronously revoke local active access. */
-  revokeConnection(accountId: ConnectedAccount['id']): void {
+  revokeConnection(connectionId: ConnectionId): void {
     this.assertAvailable();
     const now = new Date().toISOString();
     this.db.transaction((tx) => {
       tx.update(connections)
         .set({ lifecycleState: 'disconnected', updatedAt: now })
-        .where(eq(connections.id, accountId))
+        .where(eq(connections.id, connectionId))
         .run();
       tx.delete(agentConnectionAttachments)
-        .where(eq(agentConnectionAttachments.connectionId, accountId))
+        .where(eq(agentConnectionAttachments.connectionId, connectionId))
         .run();
       tx.delete(sessionConnectionOverrides)
-        .where(eq(sessionConnectionOverrides.connectionId, accountId))
+        .where(eq(sessionConnectionOverrides.connectionId, connectionId))
         .run();
       tx.update(connectionOperationGrants)
         .set({ revokedAt: now })
-        .where(eq(connectionOperationGrants.connectionId, accountId))
+        .where(eq(connectionOperationGrants.connectionId, connectionId))
         .run();
       tx.update(connectorEventSubscriptions)
         .set({
@@ -383,7 +384,7 @@ export class ConnectionStore {
         })
         .where(
           and(
-            eq(connectorEventSubscriptions.connectionId, accountId),
+            eq(connectorEventSubscriptions.connectionId, connectionId),
             isNull(connectorEventSubscriptions.revokedAt)
           )
         )
@@ -434,9 +435,9 @@ export class ConnectionStore {
    * other agent and connection.
    *
    * @param agentId - Agent losing access.
-   * @param accountId - Exact stable connection being detached.
+   * @param connectionId - Exact stable connection being detached.
    */
-  removeAgentConnectionAccess(agentId: string, accountId: ConnectedAccount['id']): void {
+  removeAgentConnectionAccess(agentId: string, connectionId: ConnectionId): void {
     this.assertAvailable();
     const sessionRows = this.db
       .select({ sessionId: sessionConnectionOverrides.sessionId })
@@ -444,7 +445,7 @@ export class ConnectionStore {
       .where(
         and(
           eq(sessionConnectionOverrides.agentId, agentId),
-          eq(sessionConnectionOverrides.connectionId, accountId)
+          eq(sessionConnectionOverrides.connectionId, connectionId)
         )
       )
       .all();
@@ -470,13 +471,13 @@ export class ConnectionStore {
         .where(
           and(
             eq(agentConnectionAttachments.agentId, agentId),
-            eq(agentConnectionAttachments.connectionId, accountId)
+            eq(agentConnectionAttachments.connectionId, connectionId)
           )
         )
         .run();
       tx.update(connectionOperationGrants)
         .set({ revokedAt: now })
-        .where(and(eq(connectionOperationGrants.connectionId, accountId), or(...grantOwners)))
+        .where(and(eq(connectionOperationGrants.connectionId, connectionId), or(...grantOwners)))
         .run();
       tx.update(connectorEventSubscriptions)
         .set({
@@ -488,7 +489,7 @@ export class ConnectionStore {
         .where(
           and(
             eq(connectorEventSubscriptions.agentId, agentId),
-            eq(connectorEventSubscriptions.connectionId, accountId),
+            eq(connectorEventSubscriptions.connectionId, connectionId),
             isNull(connectorEventSubscriptions.revokedAt)
           )
         )
@@ -497,7 +498,7 @@ export class ConnectionStore {
         .where(
           and(
             eq(sessionConnectionOverrides.agentId, agentId),
-            eq(sessionConnectionOverrides.connectionId, accountId)
+            eq(sessionConnectionOverrides.connectionId, connectionId)
           )
         )
         .run();

@@ -89,6 +89,22 @@ describe('ConnectorAuthenticationFlowService', () => {
     service = new ConnectorAuthenticationFlowService({ db, registry, now: () => NOW });
   });
 
+  it('keeps initial multi-account provider flows pending when a sibling connection closes', async () => {
+    const connectionId = insertActiveConnection(db);
+    const initial = await service.start(OWNER, {
+      providerInstanceId: PROVIDER_ID,
+      toolkit: 'gmail',
+      label: 'Another account',
+      idempotencyKey: 'initial-sibling',
+    });
+    const reconnect = await service.reconnect(OWNER, connectionId, 'reconnect-existing');
+    expect(initial.state).toBe('pending');
+    expect(reconnect.state).toBe('pending');
+    expect(service.invalidateConnectionFlows(OWNER, connectionId)).toBe(1);
+    expect(service.status(OWNER, initial.flowId)).toMatchObject({ state: 'pending' });
+    expect(service.status(OWNER, reconnect.flowId)).toMatchObject({ state: 'failed' });
+  });
+
   it('claims idempotency before provider create and returns the same durable flow', async () => {
     const start = vi.spyOn(provider, 'startConnect');
     const input = {
@@ -168,7 +184,7 @@ describe('ConnectorAuthenticationFlowService', () => {
 
     expect(service.status(OWNER, started.flowId)).toMatchObject({
       state: 'failed',
-      reason: 'The provider configuration changed before authentication completed.',
+      reason: 'This service setup changed while you were signing in. Start again.',
     });
   });
 
@@ -416,7 +432,7 @@ describe('ConnectorAuthenticationFlowService', () => {
     const failed = await service.poll(OWNER, started.flowId);
     expect(failed).toMatchObject({
       state: 'failed',
-      reason: 'The provider could not complete authentication.',
+      reason: 'The service could not complete sign-in. Try again.',
     });
     expect(JSON.stringify(failed)).not.toContain('SECRET_MARKER_FROM_PROVIDER');
     expect(JSON.stringify(db.select().from(connectorAuthenticationFlows).all())).not.toContain(
@@ -440,7 +456,8 @@ describe('ConnectorAuthenticationFlowService', () => {
     });
     await expect(service.poll(OWNER, mismatched.flowId)).resolves.toMatchObject({
       state: 'failed',
-      reason: 'The provider returned an account for a different connector route.',
+      reason:
+        'This sign-in request belongs to a different service setup. Start again from Connections.',
     });
     expect(db.select().from(connections).all()).toHaveLength(0);
   });

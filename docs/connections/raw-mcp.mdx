@@ -1,44 +1,41 @@
 ---
 title: Raw MCP server
-description: Verify and inventory a configured remote MCP server
+description: Verify and inventory one preconfigured remote MCP server
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
 
 # Raw MCP server
 
-Some services run their own remote tool server that speaks MCP (the standard that lets AI tools talk to each other). You can point DorkOS at one to verify the connection and keep its account in Connections.
+Use this route when you already have a remote server that speaks MCP, the standard that lets AI tools communicate. DorkOS verifies the configured server and keeps one connection for it.
 
-<Callout type="warn">This path is built but not yet confirmed end to end. It is in alpha.</Callout>
+<Callout type="warn">
+  Raw MCP is an alpha inventory route. DorkOS verifies the real MCP handshake and tool list, but it
+  does not grant those unversioned tools to agents.
+</Callout>
 
-## What DorkOS checks
+## What DorkOS verifies
 
-DorkOS does not run a sign-in flow for this setup. It connects to the configured server and asks for its tool list. DorkOS adds the connection only when both steps work.
+DorkOS opens the configured endpoint, performs an MCP initialization, and requests the server's tool list. It records the connection only after both steps succeed. This proves that the endpoint speaks MCP; it does not prove an authenticated user session. A timeout, changed setup, cancelled flow, or failed probe creates no connection.
 
-If the server rejects the connection, times out, or cannot be reached, DorkOS shows an error and adds no account. A server that requires a new OAuth sign-in cannot connect through this alpha setup yet.
+The pending check is stored by DorkOS. Restarting the server does not make DorkOS guess from a URL or an in-memory handle. It resumes only the exact owner, configured route, generation, request, and unexpired private flow. DorkOS checks that authority again after the network probe before it records success.
 
-## What you get
+## What this route does not do
 
-This path verifies and inventories one account per configured server. It does not grant the server's tools to agents. A generic MCP tool list does not provide the immutable versions and safe classifications DorkOS requires for exact owner-reviewed access. If you need brokered actions now, use the [Composio](/docs/connections/composio) path.
+This route does not start OAuth. Its public configuration has no field for an authentication secret or custom header. The endpoint must accept DorkOS's MCP initialization and tool-list requests with those four settings alone. A service that needs DorkOS to obtain or provide a login cannot use this route.
 
-## Set it up
+It also does not expose the remote server or its tools to an agent. A generic MCP tool list does not provide the immutable versions and safe classifications required for exact owner-reviewed access. Use [Composio](/docs/connections/composio) when you need agent actions now.
+
+## Configure one server
 
 <Steps>
 
 <Step>
 
-### Have a remote MCP server ready
+### Add the server to your config
 
-You need a server you can reach over the web. The configured connection must already have access. This is usually a server you host or one that needs no sign-in.
-
-</Step>
-
-<Step>
-
-### Tell DorkOS about it in your config file
-
-Raw MCP servers live in DorkOS's config file at `~/.dork/config.json`, under `connectors.rawMcpServers`. Each entry names the service and where its server lives:
+Edit `~/.dork/config.json` and add an entry under `connectors.rawMcpServers`:
 
 ```json
 {
@@ -55,31 +52,35 @@ Raw MCP servers live in DorkOS's config file at `~/.dork/config.json`, under `co
 }
 ```
 
-The four fields:
+</Step>
 
-- `slug`: a short id for the service, like `notion`. Lowercase, no spaces.
-- `displayName`: the name you want to see on the Connections page, like `Notion`.
-- `url`: the server's address.
-- `transport`: how DorkOS talks to it. Use `http` for Streamable HTTP (most servers) or `sse` for older servers that stream over SSE (server-sent events, an older streaming style).
+<Step>
 
-DorkOS reads this list when it starts. After you add or remove an entry, restart DorkOS to pick up the change.
+### Check each field
+
+- `slug` is the stable service name. Use lowercase letters, numbers, and hyphens.
+- `displayName` is the label shown in Connections.
+- `url` is the exact remote server URL.
+- `transport` is `http` for Streamable HTTP or `sse` for an older server-sent events endpoint.
+
+DorkOS reads this list at startup. Restart it after adding, removing, or changing an entry.
 
 </Step>
 
 <Step>
 
-### Connect it
+### Verify the connection
 
-Open **Connections** in the sidebar. Your server now shows up as a tile in the Services grid. Click **Connect**. DorkOS checks the server before it adds the account.
-
-</Step>
-
-<Step>
-
-### Check its status
-
-The account appears under **Connections** after verification. It remains unavailable for agent execution in this alpha. DorkOS will not expose the remote server directly or turn its unversioned tools into broad agent access.
+Open **Connections**, choose the configured service, and select **Connect**. This flow has no sign-in URL. DorkOS polls the stored check, performs the MCP probe, and adds the connection only when the configured server responds correctly.
 
 </Step>
 
 </Steps>
+
+## One account per configured server
+
+Each raw MCP entry represents at most one account. Disconnecting it cancels pending checks for that exact service. Other configured services continue independently.
+
+DorkOS does not obtain an OAuth token for this route. The URL is stored as written in your local `config.json`, without encryption. Avoid putting secrets in it.
+
+DorkOS leaves the whole URL out of configuration snapshots returned by its tools and API, because URLs can contain credentials. The service name, label, and transport remain visible. This does not remove the URL from your local config file.

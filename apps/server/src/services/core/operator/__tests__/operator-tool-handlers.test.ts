@@ -270,6 +270,35 @@ describe('config_get', () => {
   });
 });
 
+describe('raw MCP URL disclosure through operator tools', () => {
+  it.each([
+    'https://private-user:private-password@mcp.example.com/endpoint',
+    'https://mcp.example.com/endpoint?access_token=private-query-token',
+  ])('withholds %s from config_get and the unrelated config_patch echo', async (url) => {
+    const server = { slug: 'notes', displayName: 'Notes', url, transport: 'http' };
+    mocks.configStore = { version: 1, connectors: { rawMcpServers: [server] } };
+    const read = await createConfigGetHandler()();
+    const write = await createConfigPatchHandler()({ patch: { ui: { theme: 'light' } } });
+    expect(read.isError).toBeUndefined();
+    expect(write.isError).toBeUndefined();
+    const expected = {
+      rawMcpServers: [{ slug: 'notes', displayName: 'Notes', transport: 'http' }],
+    };
+    expect(parsePayload<{ connectors: unknown }>(read).connectors).toEqual(expected);
+    expect(parsePayload<{ config: { connectors: unknown } }>(write).config.connectors).toEqual(
+      expected
+    );
+    for (const result of [read, write]) {
+      expect(result.content[0].text).not.toContain(url);
+      expect(result.content[0].text).not.toContain('private-');
+      expect(result.content[0].text).not.toContain('mcp.example.com');
+    }
+    // An unrelated write must preserve the original endpoint on disk, not sanitize it in place.
+    expect(mocks.configStore.connectors).toEqual({ rawMcpServers: [server] });
+    expect(mocks.configStore.ui).toMatchObject({ theme: 'light' });
+  });
+});
+
 describe('config_patch', () => {
   it('deep-merges and persists a valid patch (happy path)', async () => {
     const handler = createConfigPatchHandler();

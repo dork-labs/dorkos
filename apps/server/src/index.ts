@@ -125,6 +125,7 @@ import { ConnectorEventNativeDestination } from './services/connectors/events/ch
 import { UnclaimedChatStore } from './services/relay/unclaimed-chat-store.js';
 import { createUnclaimedChatsRouter } from './routes/unclaimed-chats.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
+import { createRawMcpPendingConnectResolver } from './services/connectors/resources/raw-mcp-pending-connect.js';
 import { ConnectorProviderBootstrapper } from './services/connectors/bootstrap.js';
 import { SessionConnectorAttachmentStore } from './services/connectors/attachment-store.js';
 import { registerConnectorAgentCleanup } from './services/connectors/agent-access-cleanup.js';
@@ -2305,6 +2306,11 @@ async function start() {
     nangoEnv: () => ({
       ...(env.NANGO_BASE_URL !== undefined && { baseUrl: env.NANGO_BASE_URL }),
       ...(env.NANGO_ENCRYPTION_KEY !== undefined && { encryptionKey: env.NANGO_ENCRYPTION_KEY }),
+    }),
+    rawMcpPendingConnect: createRawMcpPendingConnectResolver({
+      db,
+      registry: connectorRegistry,
+      owner: connectorOwner,
     }),
     rawMcpServers: () =>
       configManager.get('connectors').rawMcpServers.map((server) => ({

@@ -307,13 +307,16 @@ describe('connections call', () => {
   it('surfaces a server refusal and leaves stdout empty', async () => {
     apiCallMock.mockRejectedValue(
       new ApiError(403, {
-        error: 'Connector program call refused.',
+        error:
+          'This service call cannot run from an active agent session. Use an API key outside the session.',
         code: 'CONNECTOR_PROGRAM_AGENT_IDENTITY_DENIED',
       })
     );
 
     expect(await runConnectionsDispatcher(command)).toBe(1);
-    expect(console.error).toHaveBeenCalledWith('Error: Connector program call refused.');
+    expect(console.error).toHaveBeenCalledWith(
+      'Error: This service call cannot run from an active agent session. Use an API key outside the session.'
+    );
     expect(process.stdout.write).not.toHaveBeenCalled();
   });
 });

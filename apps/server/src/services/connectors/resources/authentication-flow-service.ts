@@ -1,5 +1,4 @@
 /** Durable owner authentication flows that survive server restarts. */
-import { createHash } from 'node:crypto';
 import { ulid } from 'ulidx';
 import {
   and,
@@ -16,13 +15,14 @@ import {
   type ConnectorAuthenticationFlowState,
 } from '@dorkos/shared/connector-resource-schemas';
 import type {
-  ConnectedAccountId,
+  ConnectionId,
   ConnectorProvider,
   ConnectorProviderInstanceId,
 } from '@dorkos/shared/connector-provider';
 import { ProviderConnectedAccountSchema } from '@dorkos/shared/connector-provider';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
+import { connectorAuthenticationRequestHash } from './authentication-flow-request.js';
 
 const DEFAULT_FLOW_TTL_MS = 15 * 60 * 1_000;
 
@@ -65,24 +65,6 @@ function ownerColumns(owner: ConnectorOwnerAuthority): {
   return owner.kind === 'user'
     ? { ownerKind: owner.kind, ownerId: owner.userId }
     : { ownerKind: owner.kind, ownerId: owner.installationId };
-}
-
-function requestHash(input: {
-  providerInstanceId: string;
-  toolkit: string;
-  label?: string;
-  reconnectConnectionId?: string;
-}): string {
-  return createHash('sha256')
-    .update(
-      JSON.stringify({
-        providerInstanceId: input.providerInstanceId,
-        toolkit: input.toolkit,
-        label: input.label ?? null,
-        reconnectConnectionId: input.reconnectConnectionId ?? null,
-      })
-    )
-    .digest('hex');
 }
 
 /** SQLite-backed provider authentication flow coordinator. */
@@ -138,15 +120,12 @@ export class ConnectorAuthenticationFlowService {
   /** Start or recover one idempotent reconnect for an owned stable connection. */
   async reconnect(
     owner: ConnectorOwnerAuthority,
-    connectionId: ConnectedAccountId,
+    connectionId: ConnectionId,
     idempotencyKey: string
   ): Promise<ConnectorAuthenticationFlowState> {
     const owned = this.ownedConnection(owner, connectionId);
     if (!owned) {
-      throw new ConnectorAuthenticationFlowError(
-        'connection_not_found',
-        'Connector connection not found.'
-      );
+      throw new ConnectorAuthenticationFlowError('connection_not_found', 'Connection not found.');
     }
     return this.startInternal(
       owner,
@@ -168,10 +147,7 @@ export class ConnectorAuthenticationFlowService {
   ): Promise<ConnectorAuthenticationFlowState> {
     let row = this.ownedFlow(owner, flowId);
     if (!row) {
-      throw new ConnectorAuthenticationFlowError(
-        'flow_not_found',
-        'Authentication flow not found.'
-      );
+      throw new ConnectorAuthenticationFlowError('flow_not_found', 'Sign-in request not found.');
     }
     if (row.state !== 'starting' && row.state !== 'pending') return this.toPublic(row);
 
@@ -191,7 +167,7 @@ export class ConnectorAuthenticationFlowService {
         row.id,
         'failed',
         now,
-        'The provider configuration changed before authentication completed.'
+        'This service setup changed while you were signing in. Start again.'
       );
       return this.toPublic(this.ownedFlow(owner, flowId)!);
     }
@@ -204,10 +180,7 @@ export class ConnectorAuthenticationFlowService {
     // a stale response never overwrites the first durable terminal result.
     row = this.ownedFlow(owner, flowId);
     if (!row) {
-      throw new ConnectorAuthenticationFlowError(
-        'flow_not_found',
-        'Authentication flow not found.'
-      );
+      throw new ConnectorAuthenticationFlowError('flow_not_found', 'Sign-in request not found.');
     }
     if (row.state !== 'pending') return this.toPublic(row);
     const afterPoll = this.now();
@@ -228,7 +201,7 @@ export class ConnectorAuthenticationFlowService {
         row.id,
         'failed',
         afterPoll,
-        'The provider configuration changed before authentication completed.',
+        'This service setup changed while you were signing in. Start again.',
         polledProviderFlowId
       );
       return this.toPublic(this.ownedFlow(owner, flowId)!);
@@ -239,7 +212,7 @@ export class ConnectorAuthenticationFlowService {
         row.id,
         'failed',
         afterPoll,
-        'The provider could not complete authentication.',
+        'The service could not complete sign-in. Try again.',
         polledProviderFlowId
       );
       return this.toPublic(this.ownedFlow(owner, flowId)!);
@@ -256,7 +229,7 @@ export class ConnectorAuthenticationFlowService {
         row.id,
         'failed',
         afterPoll,
-        'The provider returned an account for a different connector route.',
+        'This sign-in request belongs to a different service setup. Start again from Connections.',
         polledProviderFlowId
       );
       return this.toPublic(this.ownedFlow(owner, flowId)!);
@@ -264,7 +237,7 @@ export class ConnectorAuthenticationFlowService {
 
     const accountData = accountResult.data;
     const previous = row.reconnectConnectionId
-      ? this.registry.accountBinding(row.reconnectConnectionId as ConnectedAccountId)
+      ? this.registry.accountBinding(row.reconnectConnectionId as ConnectionId)
       : undefined;
     const sameAccount =
       previous !== undefined &&
@@ -308,7 +281,8 @@ export class ConnectorAuthenticationFlowService {
       .update(connectorAuthenticationFlows)
       .set({
         state: 'start_unknown',
-        failureReason: 'DorkOS restarted before the provider confirmed authentication setup.',
+        failureReason:
+          'DorkOS restarted before the service confirmed sign-in setup. Check Connections before trying again.',
         completedAt: now,
         updatedAt: now,
       })
@@ -316,12 +290,17 @@ export class ConnectorAuthenticationFlowService {
       .run().changes;
   }
 
-  /** Invalidate every active reconnect before its stable connection is closed. */
-  invalidateConnectionFlows(
-    owner: ConnectorOwnerAuthority,
-    connectionId: ConnectedAccountId
-  ): number {
+  /** Invalidate reconnects, and all pending checks for a single-account raw toolkit, before close. */
+  invalidateConnectionFlows(owner: ConnectorOwnerAuthority, connectionId: ConnectionId): number {
     const ownerKey = ownerColumns(owner);
+    const owned = this.ownedConnection(owner, connectionId);
+    const rawToolkit =
+      owned?.providerType === 'mcp'
+        ? and(
+            eq(connectorAuthenticationFlows.providerInstanceId, owned.providerInstanceId),
+            eq(connectorAuthenticationFlows.toolkit, owned.toolkit)
+          )
+        : undefined;
     const now = this.now().toISOString();
     return this.db
       .update(connectorAuthenticationFlows)
@@ -337,7 +316,7 @@ export class ConnectorAuthenticationFlowService {
         and(
           eq(connectorAuthenticationFlows.ownerKind, ownerKey.ownerKind),
           eq(connectorAuthenticationFlows.ownerId, ownerKey.ownerId),
-          eq(connectorAuthenticationFlows.reconnectConnectionId, connectionId),
+          or(eq(connectorAuthenticationFlows.reconnectConnectionId, connectionId), rawToolkit),
           or(
             eq(connectorAuthenticationFlows.state, 'starting'),
             eq(connectorAuthenticationFlows.state, 'pending')
@@ -350,11 +329,11 @@ export class ConnectorAuthenticationFlowService {
   private async startInternal(
     owner: ConnectorOwnerAuthority,
     input: ConnectorAuthenticationFlowCreateRequest,
-    reconnectConnectionId?: ConnectedAccountId,
+    reconnectConnectionId?: ConnectionId,
     afterClaim?: () => void
   ): Promise<ConnectorAuthenticationFlowState> {
     const ownerKey = ownerColumns(owner);
-    const hash = requestHash({
+    const hash = connectorAuthenticationRequestHash({
       providerInstanceId: input.providerInstanceId,
       toolkit: input.toolkit,
       ...(input.label !== undefined && { label: input.label }),
@@ -375,7 +354,7 @@ export class ConnectorAuthenticationFlowService {
       if (existing.requestHash !== hash) {
         throw new ConnectorAuthenticationFlowError(
           'idempotency_conflict',
-          'This authentication idempotency key belongs to a different request.'
+          'This sign-in request was already used for different account details. Start a new request.'
         );
       }
       return this.toPublic(existing);
@@ -385,7 +364,7 @@ export class ConnectorAuthenticationFlowService {
     if (!provider) {
       throw new ConnectorAuthenticationFlowError(
         'provider_not_found',
-        'Connector provider route not found.'
+        'This service setup option is not available. Choose another option and try again.'
       );
     }
     const authentication = provider.getCapabilities().capabilities.authentication;
@@ -399,7 +378,7 @@ export class ConnectorAuthenticationFlowService {
     if (generation === undefined) {
       throw new ConnectorAuthenticationFlowError(
         'provider_not_found',
-        'Connector provider route not found.'
+        'This service setup option is not available. Choose another option and try again.'
       );
     }
 
@@ -442,7 +421,7 @@ export class ConnectorAuthenticationFlowService {
           flowId,
           'start_unknown',
           afterStart,
-          'The provider configuration changed while authentication was starting.'
+          'This service setup changed while you were signing in. Start again.'
         );
       } else {
         this.db
@@ -466,7 +445,7 @@ export class ConnectorAuthenticationFlowService {
         flowId,
         'start_unknown',
         this.now(),
-        'The provider did not confirm whether authentication setup started.'
+        'The service did not confirm whether sign-in started. Check Connections before trying again.'
       );
     }
     return this.toPublic(this.ownedFlow(owner, flowId)!);
@@ -535,10 +514,7 @@ export class ConnectorAuthenticationFlowService {
   ): ConnectorAuthenticationFlowState {
     let row = this.ownedFlow(owner, flowId);
     if (!row) {
-      throw new ConnectorAuthenticationFlowError(
-        'flow_not_found',
-        'Authentication flow not found.'
-      );
+      throw new ConnectorAuthenticationFlowError('flow_not_found', 'Sign-in request not found.');
     }
     if (row.state === 'starting' || row.state === 'pending') {
       const now = this.now();
@@ -555,7 +531,7 @@ export class ConnectorAuthenticationFlowService {
             row.id,
             'failed',
             now,
-            'The provider configuration changed before authentication completed.'
+            'This service setup changed while you were signing in. Start again.'
           );
           row = this.ownedFlow(owner, flowId)!;
         }
@@ -585,12 +561,13 @@ export class ConnectorAuthenticationFlowService {
       : undefined;
   }
 
-  private ownedConnection(owner: ConnectorOwnerAuthority, connectionId: ConnectedAccountId) {
+  private ownedConnection(owner: ConnectorOwnerAuthority, connectionId: ConnectionId) {
     const ownerKey = ownerColumns(owner);
     return this.db
       .select({
         connectionId: connections.id,
         providerInstanceId: connectorProviderInstances.id,
+        providerType: connectorProviderInstances.type,
         toolkit: connections.toolkit,
         label: connections.label,
       })

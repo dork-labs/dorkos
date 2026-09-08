@@ -140,17 +140,28 @@ describe('connector execution routes', () => {
     await request(fixtureTarget.mount(buildApp()))
       .post('/api/connectors/executions')
       .send(EXECUTION)
-      .expect(401);
+      .expect(401, {
+        error: 'Use a verified API key to call this service.',
+        code: 'CONNECTOR_PROGRAM_CREDENTIAL_REQUIRED',
+      });
     await request(fixtureTarget.mount(buildApp()))
       .get('/api/connectors/accessible?agentId=agent-a')
       .set('Authorization', 'Bearer invalid')
-      .expect(401);
+      .expect(401, {
+        error: 'Use a verified API key to call this service.',
+        code: 'CONNECTOR_PROGRAM_CREDENTIAL_REQUIRED',
+      });
     await request(fixtureTarget.mount(buildApp({ user: PROGRAM_USER })))
       .post('/api/connectors/executions')
       .set('Authorization', 'Bearer verified')
       .set('X-DorkOS-Agent', 'runtime-agent-token')
       .send(EXECUTION)
-      .expect(403);
+      .expect(403, {
+        error:
+          'This service call cannot run from an active agent session. Use an API key outside the session.',
+        code: 'CONNECTOR_PROGRAM_AGENT_IDENTITY_DENIED',
+        message: 'Run this service call with an API key outside an active agent session.',
+      });
     expect(capabilityIdForTarget).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();
     expect(listConnections).not.toHaveBeenCalled();

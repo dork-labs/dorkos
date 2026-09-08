@@ -3,16 +3,16 @@
 **Spec:** `specs/white-label-connections/02-specification.md`  
 **Umbrella:** DOR-1792  
 **Project:** DorkOS Connections  
-**Branch:** programme record on `codex/connections-program`; P2 implementation on `codex/connections-execution`
-**Status:** In progress — P1 is merged; P2 is converging through independent review
-**Updated:** 2026-09-06
+**Branch:** programme record on `codex/connections-program`
+**Status:** In progress — workstreams 1–6 are merged; workstream 7 and the separate production proof remain open
+**Updated:** 2026-09-07
 
 ## Prerequisites and related work
 
 | Item    | Role                                                                              | State                                                                                                                                 |
 | ------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | DOR-738 | Independent prerequisite: raw MCP must verify authenticated initialization        | Merged in [PR #1605](https://github.com/dork-labs/dorkos/pull/1605) at `8913d60f1f0e3d317c91f11b77ba00172a344e63`; not counted in 0/7 |
-| DOR-740 | Existing issue reused and respecified for workstream 6 agent request/grant/resume | Planned                                                                                                                               |
+| DOR-740 | Existing issue reused and respecified for workstream 6 agent request/grant/resume | Merged in PR #1681 as part of the P5/P6 integration                                                                                   |
 
 ## Initial worker roster
 
@@ -25,17 +25,21 @@
 
 ## Workstream status
 
-| ID  | Workstream                          | Tracker                                                                                                                        | State       | Evidence                |
-| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------- | ----------------------- |
-| 1.1 | Contracts and migration             | [DOR-1793](https://linear.app/dorkspace/issue/DOR-1793/white-label-connections-p1-stable-provider-instance-connection-grant)   | Merged      | See P1 checkpoint below |
-| 2.1 | Authorization, execution, and usage | [DOR-1794](https://linear.app/dorkspace/issue/DOR-1794/white-label-connections-p2-enforced-connector-execution-across-dorkos)  | In progress | See P2 session below    |
-| 3.1 | Complete local experience           | [DOR-1795](https://linear.app/dorkspace/issue/DOR-1795/white-label-connections-p3-complete-connections-management-access)      | Pending     | —                       |
-| 4.1 | Managed tenant service              | [DOR-1796](https://linear.app/dorkspace/issue/DOR-1796/white-label-connections-p4-tenant-scoped-managed-connector-service-in)  | Pending     | —                       |
-| 5.1 | Managed and BYO events              | [DOR-1797](https://linear.app/dorkspace/issue/DOR-1797/white-label-connections-p5-signed-managed-and-byo-event-ingress-with)   | Pending     | —                       |
-| 6.1 | Agent request, grant, and resume    | [DOR-740](https://linear.app/dorkspace/issue/DOR-740/white-label-connections-p6-respec-dor-740-for-private-agent-requests)     | Pending     | —                       |
-| 7.1 | Rollout and production evidence     | [DOR-1798](https://linear.app/dorkspace/issue/DOR-1798/white-label-connections-p7-remove-legacy-paths-verify-all-surfaces-and) | Pending     | —                       |
+| ID  | Workstream                          | Tracker                                                                                                                        | State       | Evidence                                                                             |
+| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------------ |
+| 1.1 | Contracts and migration             | [DOR-1793](https://linear.app/dorkspace/issue/DOR-1793/white-label-connections-p1-stable-provider-instance-connection-grant)   | Merged      | See P1 checkpoint below                                                              |
+| 2.1 | Authorization, execution, and usage | [DOR-1794](https://linear.app/dorkspace/issue/DOR-1794/white-label-connections-p2-enforced-connector-execution-across-dorkos)  | Merged      | P2 record below                                                                      |
+| 3.1 | Complete local experience           | [DOR-1795](https://linear.app/dorkspace/issue/DOR-1795/white-label-connections-p3-complete-connections-management-access)      | Merged      | PR #1663                                                                             |
+| 4.1 | Managed tenant service              | [DOR-1796](https://linear.app/dorkspace/issue/DOR-1796/white-label-connections-p4-tenant-scoped-managed-connector-service-in)  | Merged      | PR #1663                                                                             |
+| 5.1 | Managed and BYO events              | [DOR-1797](https://linear.app/dorkspace/issue/DOR-1797/white-label-connections-p5-signed-managed-and-byo-event-ingress-with)   | Merged      | PR #1681                                                                             |
+| 6.1 | Agent request, grant, and resume    | [DOR-740](https://linear.app/dorkspace/issue/DOR-740/white-label-connections-p6-respec-dor-740-for-private-agent-requests)     | Merged      | PR #1681                                                                             |
+| 7.1 | Rollout and production evidence     | [DOR-1798](https://linear.app/dorkspace/issue/DOR-1798/white-label-connections-p7-remove-legacy-paths-verify-all-surfaces-and) | In progress | Alias/raw/docs cleanup; production action and notification proof remains unavailable |
 
-Root takes ownership of this record after the specification and task decomposition freeze. Implementation PRs must add verification evidence here without marking managed production capabilities available before the separate real provisioning smoke passes.
+Managed source and migrations are deployed, and the required secrets are provisioned. Both
+production readiness switches remain off. The Gmail OAuth app is still in Google Testing mode and
+the owner sign-in popup could not be completed, so there is no real connected-account, action,
+notification, usage, or revoke proof. Hermetic provider and browser fixtures do not satisfy that
+external gate.
 
 The specification incorporated both independent review rounds before implementation dispatch; PR #1599 merged the reviewed artifacts on 2026-09-05.
 
@@ -89,7 +93,7 @@ The Stage 2 adversarial review reproduced two access-boundary gaps. Removing one
 
 The same review found that a failed or still-pending registered-agent lookup could let a first message proceed without the immutable agent provenance. The submission boundary now keeps new-session sends closed for both states while preserving successful unowned-directory sessions and existing-session replies. Programmatic launch auto-send stays armed until the lookup resolves, then submits and consumes the launch prompt exactly once. Removing either the underlying pending guard or the launch latch deferral makes the real ChatPanel regressions fail. The final focused client set passed 27 tests, and the exact correction patch received an early independent code pass with no open findings.
 
-The final composition uses the actual merged DOR-1804 base, retains P1 migration `0086_perfect_whiplash` immediately after the base's `0085`, and differs from that base only in 89 P1 paths. Its Node 24.14.1 aggregate verification passed all 32 Turbo tasks in 4 minutes 6 seconds, with six tasks executed and 26 exact-tree cache hits. The full pipefail log is `.dork/flow/evidence/p1-final-verify.log`. The same Stage 1 reviewer and a fresh Stage 2 reviewer must still bind their final reports to the immutable pushed composition before the P1 pull request opens. Workstreams 2–7 remain pending; this record does not mark the wider Connections programme implemented.
+The final composition uses the actual merged DOR-1804 base, retains P1 migration `0086_perfect_whiplash` immediately after the base's `0085`, and differs from that base only in 89 P1 paths. Its Node 24.14.1 aggregate verification passed all 32 Turbo tasks in 4 minutes 6 seconds, with six tasks executed and 26 exact-tree cache hits. The full pipefail log is `.dork/flow/evidence/p1-final-verify.log`. The same Stage 1 reviewer and a fresh Stage 2 reviewer must still bind their final reports to the immutable pushed composition before the P1 pull request opens. At that P1 checkpoint, workstreams 2–7 remained pending; the current status table above supersedes this historical note.
 
 Automated review then tightened the same P1 boundaries. Migration failures now emit a bounded server-only phase, category, and safe driver or invariant code while the public `migration_failed` response remains scrubbed; mutation checks prove neither the response nor the diagnostic carries the private legacy reference, SQL, parameters, or a filesystem path. Superseded type-wide cache and attachment methods were removed, the historical direct-connect record now names the exact-instance replacement, and comments distinguish locally owned BYO deployment mode from managed provider custody and retained foreign keys from the tombstone disconnect path. A real cached-agent, hydrated-launch regression also pins the URL-first directory and immutable agent path on the first message. The exact 12-path correction received an early independent review pass with no open findings.
 

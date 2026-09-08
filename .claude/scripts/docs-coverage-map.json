@@ -310,6 +310,16 @@
       ]
     },
     {
+      "guide": "managed-connections-operations.md",
+      "description": "Provisioning, rollout, rotation, retention, incident response, and production proof for DorkOS-managed account actions and notifications",
+      "patterns": [
+        "apps/site/src/lib/connectors/managed/",
+        "apps/site/src/db/managed-connector",
+        "DORKOS_MANAGED_CONNECTOR",
+        "services/connectors/events/managed-pull"
+      ]
+    },
+    {
       "guide": "adding-a-community-adapter.md",
       "description": "Community backend authoring: CommunityAdapter port, capability matrix, the four typed errors + the eager stale-cursor and unknown-room throws, four connection outcomes, agent admission, credential discipline",
       "patterns": [

@@ -6,7 +6,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { connectorConformance } from '@dorkos/test-utils';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { ProbeOutcome } from '../../../mesh/agent-mcp-probe.js';
-import type { RemoteMcpConnection } from '../raw-mcp.js';
+import type {
+  RawMcpConnectorProviderOpts,
+  RawMcpPendingConnect,
+  RemoteMcpConnection,
+} from '../raw-mcp.js';
 import { RawMcpConnectorProvider } from '../raw-mcp.js';
 
 /** Header accepted by the listening MCP fixture. */
@@ -55,8 +59,42 @@ const NOTION: { slug: string; displayName: string; connection: RemoteMcpConnecti
   connection: { transport: 'http', url: 'https://mcp.notion.example/mcp' },
 };
 
+/** Model the required outer durable flow port for provider-only conformance tests. */
+function createProvider(opts: Omit<RawMcpConnectorProviderOpts, 'resolvePendingConnect'>) {
+  const rows = new Map<string, RawMcpPendingConnect>();
+  const provider: RawMcpConnectorProvider = new RawMcpConnectorProvider({
+    ...opts,
+    resolvePendingConnect: (current, handle) =>
+      current === provider ? rows.get(handle) : undefined,
+  });
+  const start = provider.startConnect.bind(provider);
+  provider.startConnect = async (toolkit, input) => {
+    const result = await start(toolkit, input);
+    rows.set(result.flowId, {
+      authenticationFlowId: result.flowId,
+      providerFlowId: result.flowId,
+      providerInstanceId: provider.instanceId,
+      executionConfigGeneration: 1,
+      toolkit,
+      label: input?.label ?? null,
+      ownerKind: 'local_install',
+      ownerId: 'fixture',
+      requestHash: 'fixture-request',
+      reconnectConnectionId: null,
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+    return result;
+  };
+  const disconnect = provider.disconnect.bind(provider);
+  provider.disconnect = async (externalRef) => {
+    for (const [handle, row] of rows) if (`mcp:${row.toolkit}` === externalRef) rows.delete(handle);
+    await disconnect(externalRef);
+  };
+  return provider;
+}
+
 function makeProvider(): RawMcpConnectorProvider {
-  return new RawMcpConnectorProvider({ servers: [NOTION], probe: successfulProbe });
+  return createProvider({ servers: [NOTION], probe: successfulProbe });
 }
 
 // The raw-MCP baseline must clear the same behavioral gate every backend does.
@@ -77,12 +115,13 @@ describe('RawMcpConnectorProvider — baseline semantics', () => {
     });
   });
 
-  it('rejects a second connect of an already-connected toolkit — never a second account', async () => {
+  it('re-verifies an already-connected toolkit without a second account', async () => {
     const provider = makeProvider();
     const { flowId } = await provider.startConnect('notion');
     await provider.pollConnect(flowId);
 
-    await expect(provider.startConnect('notion')).rejects.toThrow(/already connected/);
+    const repeated = await provider.startConnect('notion');
+    expect((await provider.pollConnect(repeated.flowId)).status).toBe('connected');
     const accounts = await provider.listAccounts({ toolkit: 'notion' });
     expect(accounts).toHaveLength(1);
   });
@@ -92,7 +131,7 @@ describe('RawMcpConnectorProvider — baseline semantics', () => {
 
     const start = await provider.startConnect('notion');
 
-    expect(start).toEqual({ flowId: 'mcp-flow-1' });
+    expect(start).toEqual({ flowId: expect.stringMatching(/^raw-mcp:v1:[0-9a-f-]{36}$/) });
     expect((await provider.listToolkits())[0]?.authKind).toBe('none');
   });
 
@@ -103,7 +142,7 @@ describe('RawMcpConnectorProvider — baseline semantics', () => {
       url: fixtureUrl(),
       headers: { Authorization: AUTHORIZATION },
     };
-    const provider = new RawMcpConnectorProvider({
+    const provider = createProvider({
       servers: [{ slug: 'verified', displayName: 'Verified', connection }],
     });
     const { flowId } = await provider.startConnect('verified');
@@ -115,7 +154,7 @@ describe('RawMcpConnectorProvider — baseline semantics', () => {
   });
 
   it('returns a safe unauthorized failure and creates no account when credentials are rejected', async () => {
-    const provider = new RawMcpConnectorProvider({
+    const provider = createProvider({
       servers: [
         {
           slug: 'rejected',
@@ -138,7 +177,7 @@ describe('RawMcpConnectorProvider — baseline semantics', () => {
   });
 
   it('distinguishes a bounded timeout without exposing the probe error', async () => {
-    const provider = new RawMcpConnectorProvider({
+    const provider = createProvider({
       servers: [NOTION],
       probe: () =>
         Promise.resolve({
@@ -166,7 +205,7 @@ describe('RawMcpConnectorProvider — baseline semantics', () => {
           resolveProbe = resolve;
         })
     );
-    const provider = new RawMcpConnectorProvider({ servers: [NOTION], probe });
+    const provider = createProvider({ servers: [NOTION], probe });
     const { flowId } = await provider.startConnect('notion');
 
     const first = provider.pollConnect(flowId);
@@ -185,7 +224,7 @@ describe('RawMcpConnectorProvider — baseline semantics', () => {
 
   it('does not let an in-flight second flow resurrect an account after disconnect', async () => {
     const pending: Array<(outcome: ProbeOutcome) => void> = [];
-    const provider = new RawMcpConnectorProvider({
+    const provider = createProvider({
       servers: [NOTION],
       probe: () =>
         new Promise<ProbeOutcome>((resolve) => {
@@ -210,24 +249,21 @@ describe('RawMcpConnectorProvider — baseline semantics', () => {
     await expect(provider.listAccounts()).resolves.toEqual([]);
   });
 
-  it('bounds inactive flow bookkeeping while keeping recent polls idempotent', async () => {
+  it('does not evict pending durable authority when more than100 flows start', async () => {
     const provider = makeProvider();
     const flowIds: string[] = [];
     for (let index = 0; index < 101; index += 1) {
       flowIds.push((await provider.startConnect('notion')).flowId);
     }
 
-    await expect(provider.pollConnect(flowIds[0]!)).resolves.toEqual({
-      status: 'failed',
-      error: `unknown flow '${flowIds[0]}'`,
-    });
+    await expect(provider.pollConnect(flowIds[0]!)).resolves.toMatchObject({ status: 'connected' });
     const latest = await provider.pollConnect(flowIds.at(-1)!);
     await expect(provider.pollConnect(flowIds.at(-1)!)).resolves.toEqual(latest);
     expect(latest.status).toBe('connected');
   });
 
   it('rejects a new flow when every bounded slot is actively verifying', async () => {
-    const provider = new RawMcpConnectorProvider({
+    const provider = createProvider({
       servers: [NOTION],
       probe: () => new Promise<ProbeOutcome>(() => undefined),
     });
@@ -265,7 +301,7 @@ describe('RawMcpConnectorProvider — baseline semantics', () => {
         url: 'https://mcp.slack.example/mcp',
       } as RemoteMcpConnection,
     };
-    const provider = new RawMcpConnectorProvider({
+    const provider = createProvider({
       servers: [NOTION, slack],
       probe: successfulProbe,
     });

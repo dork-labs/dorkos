@@ -92,7 +92,7 @@ function decodeUsageCursor(cursor: string): z.infer<typeof UsageCursorSchema> {
   } catch {
     throw new ConnectorAccessQueryError(
       'invalid_cursor',
-      'Connector usage cursor is invalid; use the next cursor from the previous page.'
+      'This usage page is invalid. Use the next page link from the previous result.'
     );
   }
 }
@@ -222,10 +222,7 @@ export class ConnectorAccessQueryService {
       )
       .get();
     if (!connectionExists) {
-      throw new ConnectorAccessQueryError(
-        'connection_not_found',
-        'Connector connection not found.'
-      );
+      throw new ConnectorAccessQueryError('connection_not_found', 'Connection not found.');
     }
     return ConnectorAccessibleOperationsResponseSchema.parse({
       connectionId,
@@ -288,10 +285,7 @@ export class ConnectorAccessQueryService {
       connectionId
     );
     if (rows.length === 0) {
-      throw new ConnectorAccessQueryError(
-        'connection_not_found',
-        'Connector connection not found.'
-      );
+      throw new ConnectorAccessQueryError('connection_not_found', 'Connection not found.');
     }
     return ConnectorAccessibleOperationsResponseSchema.parse({
       connectionId,
@@ -333,7 +327,7 @@ export class ConnectorAccessQueryService {
 
   private async requireOwnedAgent(owner: ConnectorOwnerAuthority, agentId: string): Promise<void> {
     if (!(await this.agentOwnership.ownsAgent(owner, agentId))) {
-      throw new ConnectorAccessQueryError('agent_not_owned', 'Connector agent not found.');
+      throw new ConnectorAccessQueryError('agent_not_owned', 'Agent not found.');
     }
   }
 
@@ -341,20 +335,20 @@ export class ConnectorAccessQueryService {
     if (!isServerPrincipal(principal) || principal.claims.kind !== 'runtime') {
       throw new ConnectorAccessQueryError(
         'runtime_authority_expired',
-        'Connector runtime authority is no longer active.'
+        'This agent session can no longer use connections. Start a new turn and try again.'
       );
     }
     if (!(await this.runtimePrincipals.revalidatePrincipal(principal))) {
       throw new ConnectorAccessQueryError(
         'runtime_authority_expired',
-        'Connector runtime authority is no longer active.'
+        'This agent session can no longer use connections. Start a new turn and try again.'
       );
     }
     await this.requireOwnedAgent(principal.claims.owner, principal.claims.agentId);
     if (!(await this.runtimePrincipals.revalidatePrincipal(principal))) {
       throw new ConnectorAccessQueryError(
         'runtime_authority_expired',
-        'Connector runtime authority is no longer active.'
+        'This agent session can no longer use connections. Start a new turn and try again.'
       );
     }
     return principal.claims;

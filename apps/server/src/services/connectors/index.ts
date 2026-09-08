@@ -18,8 +18,8 @@ export {
   type ConnectorWarning,
   type AggregatedAccounts,
   type AggregatedToolkits,
-  type ConnectedAccountBinding,
 } from './registry.js';
+export type { StableConnectionBinding } from './connection-store.js';
 export {
   ConnectorProviderBootstrapper,
   TEST_CONNECTOR_PROVIDER_TYPE,

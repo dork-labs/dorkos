@@ -137,7 +137,7 @@ function decodeCatalogCursor(cursor: string | undefined, query: string): number 
   } catch {
     throw new ConnectorOperatorQueryError(
       'invalid_cursor',
-      'Connector catalog cursor is invalid; use the next cursor from the previous page.'
+      'This catalog page is invalid. Use the next page link from the previous result.'
     );
   }
 }
@@ -894,9 +894,6 @@ export class ConnectorOperatorQueryService {
   }
 
   private connectionNotFound(): never {
-    throw new ConnectorOperatorQueryError(
-      'connection_not_found',
-      'Connector connection not found.'
-    );
+    throw new ConnectorOperatorQueryError('connection_not_found', 'Connection not found.');
   }
 }

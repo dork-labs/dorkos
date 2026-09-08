@@ -14,6 +14,11 @@ superseded-by: null
 
 Accepted. **Supersedes the Integration half of ADR 260726-193526** ("Channel" means a conversation; Relay's integrations are called "Integrations"). The Channel half of that ADR — bare "channel" means a conversation — still stands and is not touched here. **Confirms** the Connections surface named in ADR 260729-234626 (Direct connections are the front door).
 
+Implementation note (2026-09-07): the white-label Connections programme later replaced the
+provider-owned `ConnectedAccount` as a public identity with the DorkOS-owned `ConnectionId`. That
+contract and storage migration is outside this display-language decision. The Connections umbrella,
+Relay/Accounts split, and private provider terminology recorded here remain accepted.
+
 ## Context
 
 This is the **third** rename of the same surface in about four months. It is worth being honest about that up front, because the first two failed for a reason this one fixes, and the record needs to say why this is the last one rather than the next in a series.
