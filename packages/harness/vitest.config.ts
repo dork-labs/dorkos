@@ -8,6 +8,10 @@ export default defineConfig({
     name: 'harness',
     include: ['src/**/__tests__/**/*.test.ts'],
     globals: false,
+    // Real filesystem/Git cases can stall on Windows runners; correctness is
+    // the assertion, not a five-second latency budget. Keep the bound finite
+    // without changing other platforms, case counts or retry policy (DOR-1898).
+    ...(process.platform === 'win32' ? { testTimeout: 30_000 } : {}),
     // Honors the pre-push gate's VITEST_RETRY budget; 0 when unset. CI sets its
     // own budget on the command line instead (DOR-1701).
     // Rationale: apps/server/vitest.config.ts. Pinned for every project by
