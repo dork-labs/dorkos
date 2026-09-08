@@ -115,12 +115,25 @@ jobs:
       # not the shape that exercises junction creation, junction readlink text,
       # or the idempotency of a second `--fix`.
       #
-      # Turning it on cannot wedge the checkout. `git init` probes the working
+      # Turning it on cannot wedge the CHECKOUT: `git init` probes the working
       # tree for symlink support and writes a LOCAL `core.symlinks = false` when
-      # the probe fails, which overrides this global — so a runner that cannot
-      # make links quietly falls back to plain files instead of failing to check
-      # out. The probe step below then says, in the log, which of the two
-      # happened.
+      # the probe fails, which overrides this global, so git falls back to plain
+      # files rather than failing.
+      #
+      # THE SUITES ARE A DIFFERENT MATTER, and it is worth being exact about it
+      # rather than promising a graceful degradation that does not exist. A
+      # runner whose account may not create symlinks FAILS these suites; it does
+      # not quietly test the J-10 shape instead. The suites build their own
+      # links: `j10-clone-without-symlinks.test.ts` calls `readlinkSync` on a
+      # normally-cloned link (EINVAL against a plain file), and
+      # `symlink-occupants.test.ts` creates directory links with a bare
+      # `symlinkSync`. So a red here can mean the runner lost a privilege rather
+      # than the engine losing a behaviour — READ THE PROBE STEP BELOW FIRST, it
+      # says which of the two you are looking at. The same is true of a
+      # developer on Windows without Developer Mode.
+      #
+      # (Every run of this job so far has had the privilege: `mklink` succeeded
+      # and all three link kinds reported yes.)
       - name: Ask git to materialize committed symlinks, if this runner can
         run: |
           git config --global core.symlinks true
@@ -265,13 +278,32 @@ jobs:
         if: ${{ github.event_name != 'pull_request' || steps.scope.outputs.run == 'true' }}
         run: pnpm exec turbo build --filter=dorkos^...
 
-      # The whole engine package plus the CLI's `harness sync` suite — the two
-      # places `node:fs` symlink behaviour is exercised. Bare vitest from the
-      # repo root is the shape AGENTS.md prescribes for a targeted run, and the
-      # root `vitest.config.ts` registers both packages as projects.
-      - name: Run the harness engine and CLI harness-sync suites
+      # The engine package and the CLI's `harness sync` suites — the two places
+      # `node:fs` symlink behaviour is exercised. Bare vitest from the repo root
+      # is the shape AGENTS.md prescribes for a targeted run, and the root
+      # `vitest.config.ts` registers both packages as projects.
+      #
+      # TWO STEPS, ONE FILTER EACH, and that is the whole reason they are not one
+      # line. A vitest positional is a substring filter on the path, and a filter
+      # matching nothing exits 1 — "No test files found, exiting with code 1",
+      # the message DOR-670 is about. But that check is about the WHOLE run, not
+      # about each filter: measured on this workspace,
+      # `vitest run packages/harness packages/cli/src/__tests__/harness-sync-NOPE`
+      # exits 0 with 350 tests, because the engine leg matched and the CLI leg
+      # silently contributed zero. One filter per step is what turns a renamed or
+      # moved CLI suite into a red step instead of a quieter green one.
+      #
+      # The CLI filter is a PREFIX, not a file, so it picks up
+      # `harness-sync.test.ts` and `harness-sync-symlinks-off.test.ts` alike and
+      # a third `harness-sync-*.test.ts` cannot be added without this job seeing
+      # it.
+      - name: Run the harness engine suite
         if: ${{ github.event_name != 'pull_request' || steps.scope.outputs.run == 'true' }}
-        run: pnpm vitest run packages/harness packages/cli/src/__tests__/harness-sync.test.ts
+        run: pnpm vitest run packages/harness
+
+      - name: Run the CLI harness-sync suites
+        if: ${{ github.event_name != 'pull_request' || steps.scope.outputs.run == 'true' }}
+        run: pnpm vitest run packages/cli/src/__tests__/harness-sync
 
       # Says out loud, in the log, that this run tested nothing — so a green
       # check here is never mistaken for a suite that passed.

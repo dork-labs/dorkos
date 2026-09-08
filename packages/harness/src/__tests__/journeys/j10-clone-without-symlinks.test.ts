@@ -156,99 +156,125 @@ function targets(actions: { target?: string }[]): string[] {
   return actions.map((a) => a.target ?? '(none)').sort();
 }
 
+/**
+ * Each case shells out to git a dozen times — `init`, `add`, `hash-object`,
+ * `update-index`, `write-tree`, `commit-tree`, `update-ref`, `ls-tree`, and up
+ * to two clones. On a shared runner under load that is well past vitest's
+ * 5000 ms default, and the merge queue's four shards are exactly that kind of
+ * machine. A ceiling, not a budget: it bounds a wedged child process rather
+ * than describing how long these should take.
+ */
+const SLOW_UNDER_LOAD_MS = 30_000;
+
 describe('J-10 — a clone whose checkout cannot make symlinks', () => {
-  it('reports every authored link as a conflict that names symlinks, and writes nothing', () => {
-    stageProjectedRepo();
-    commitProjectedRepo();
-    const parent = cloneOrigin('core.symlinks=false');
-    clone = parent;
-    const checkout = join(parent, 'checkout');
+  it(
+    'reports every authored link as a conflict that names symlinks, and writes nothing',
+    () => {
+      stageProjectedRepo();
+      commitProjectedRepo();
+      const parent = cloneOrigin('core.symlinks=false');
+      clone = parent;
+      const checkout = join(parent, 'checkout');
 
-    // The precondition the whole journey rests on: git wrote plain files
-    // holding the link text, exactly as a Windows checkout without Developer
-    // Mode does.
-    for (const [i, link] of LINKS.entries()) {
-      expect(lstatSync(join(checkout, link)).isFile()).toBe(true);
-      expect(readFileSync(join(checkout, link), 'utf8')).toBe(`../../.agents/skills/${SKILLS[i]}`);
-    }
+      // The precondition the whole journey rests on: git wrote plain files
+      // holding the link text, exactly as a Windows checkout without Developer
+      // Mode does.
+      for (const [i, link] of LINKS.entries()) {
+        expect(lstatSync(join(checkout, link)).isFile()).toBe(true);
+        expect(readFileSync(join(checkout, link), 'utf8')).toBe(
+          `../../.agents/skills/${SKILLS[i]}`
+        );
+      }
 
-    const before = snapshotTree(checkout);
-    const drift = checkPlan(checkout, project(checkout));
+      const before = snapshotTree(checkout);
+      const drift = checkPlan(checkout, project(checkout));
 
-    // Not `drifted`: a re-run cannot fix this, and telling the person to run
-    // `--fix` is telling them to watch it refuse.
-    expect(drift.drifted).toEqual([]);
-    expect(targets(drift.blocked)).toEqual(LINKS);
-    expect(drift.orphans).toEqual([]);
-    expect(drift.clean).toBe(false);
-    for (const action of drift.blocked) {
-      expect(action.reason).toBe(SYMLINKS_OFF_REASON);
-    }
-    // The one line has to be usable on its own: it says symlinks are off and
-    // gives the command that turns them on.
-    expect(SYMLINKS_OFF_REASON).toContain('git config core.symlinks true');
+      // Not `drifted`: a re-run cannot fix this, and telling the person to run
+      // `--fix` is telling them to watch it refuse.
+      expect(drift.drifted).toEqual([]);
+      expect(targets(drift.blocked)).toEqual(LINKS);
+      expect(drift.orphans).toEqual([]);
+      expect(drift.clean).toBe(false);
+      for (const action of drift.blocked) {
+        expect(action.reason).toBe(SYMLINKS_OFF_REASON);
+      }
+      // The one line has to be usable on its own: it says symlinks are off and
+      // gives the command that turns them on.
+      expect(SYMLINKS_OFF_REASON).toContain('git config core.symlinks true');
 
-    const { applied, conflicts } = applyPlan(checkout, project(checkout), { sweepOrphans: true });
+      const { applied, conflicts } = applyPlan(checkout, project(checkout), { sweepOrphans: true });
 
-    expect(targets(conflicts)).toEqual(LINKS);
-    for (const action of conflicts) expect(action.reason).toBe(SYMLINKS_OFF_REASON);
-    expect(applied.filter((a) => a.kind === 'symlink')).toEqual([]);
-    // Their checkout, untouched — not one byte, not one path.
-    expect(diffSnapshots(before, snapshotTree(checkout))).toEqual({
-      added: [],
-      changed: [],
-      removed: [],
-    });
-  });
+      expect(targets(conflicts)).toEqual(LINKS);
+      for (const action of conflicts) expect(action.reason).toBe(SYMLINKS_OFF_REASON);
+      expect(applied.filter((a) => a.kind === 'symlink')).toEqual([]);
+      // Their checkout, untouched — not one byte, not one path.
+      expect(diffSnapshots(before, snapshotTree(checkout))).toEqual({
+        added: [],
+        changed: [],
+        removed: [],
+      });
+    },
+    SLOW_UNDER_LOAD_MS
+  );
 
-  it('is clean in a normal clone, and the committed link text is relative (AP-06)', () => {
-    stageProjectedRepo();
-    commitProjectedRepo();
-    const parent = cloneOrigin();
-    clone = parent;
-    const checkout = join(parent, 'checkout');
+  it(
+    'is clean in a normal clone, and the committed link text is relative (AP-06)',
+    () => {
+      stageProjectedRepo();
+      commitProjectedRepo();
+      const parent = cloneOrigin();
+      clone = parent;
+      const checkout = join(parent, 'checkout');
 
-    for (const [i, link] of LINKS.entries()) {
-      const text = readlinkSync(join(checkout, link));
-      // The property that makes a clone portable: no absolute path survived the
-      // commit, so the link resolves wherever the teammate put the checkout.
-      // TRUE ON WINDOWS TOO, and measured there (DOR-1855) — what differs is
-      // only how the separators are SPELLED. Git stores `../../…` in the blob
-      // and Windows hands back `..\..\…`, so the text is compared with its
-      // separators normalized and the relative-ness is compared as it stands.
-      expect(isAbsolute(text)).toBe(false);
-      expect(text.split('\\').join('/')).toBe(`../../.agents/skills/${SKILLS[i]}`);
-      // Line endings are normalized because git's own `core.autocrlf` is on by
-      // default on Windows and rewrites this file on checkout (measured on a
-      // windows-latest runner, DOR-1855). What the assertion is about is that
-      // the skill is READABLE THROUGH THE LINK, not how the checkout spells a
-      // newline.
-      expect(readFileSync(join(checkout, link, 'SKILL.md'), 'utf8').replace(/\r\n/g, '\n')).toBe(
-        `# ${SKILLS[i]}\n`
+      for (const [i, link] of LINKS.entries()) {
+        const text = readlinkSync(join(checkout, link));
+        // The property that makes a clone portable: no absolute path survived the
+        // commit, so the link resolves wherever the teammate put the checkout.
+        // TRUE ON WINDOWS TOO, and measured there (DOR-1855) — what differs is
+        // only how the separators are SPELLED. Git stores `../../…` in the blob
+        // and Windows hands back `..\..\…`, so the text is compared with its
+        // separators normalized and the relative-ness is compared as it stands.
+        expect(isAbsolute(text)).toBe(false);
+        expect(text.split('\\').join('/')).toBe(`../../.agents/skills/${SKILLS[i]}`);
+        // Line endings are normalized because git's own `core.autocrlf` is on by
+        // default on Windows and rewrites this file on checkout (measured on a
+        // windows-latest runner, DOR-1855). What the assertion is about is that
+        // the skill is READABLE THROUGH THE LINK, not how the checkout spells a
+        // newline.
+        expect(readFileSync(join(checkout, link, 'SKILL.md'), 'utf8').replace(/\r\n/g, '\n')).toBe(
+          `# ${SKILLS[i]}\n`
+        );
+      }
+
+      const before = snapshotTree(checkout);
+      expect(checkPlan(checkout, project(checkout)).clean).toBe(true);
+
+      const { conflicts, swept } = applyPlan(checkout, project(checkout), { sweepOrphans: true });
+      expect(conflicts).toEqual([]);
+      expect(swept).toEqual([]);
+      expect(diffSnapshots(before, snapshotTree(checkout))).toEqual({
+        added: [],
+        changed: [],
+        removed: [],
+      });
+    },
+    SLOW_UNDER_LOAD_MS
+  );
+
+  it(
+    'keeps every planned path forward-slashed, so a Windows plan reads the same',
+    () => {
+      stageProjectedRepo();
+      const plan = project(origin);
+      const paths = plan.actions.flatMap((a) =>
+        [a.source, a.target].filter((p) => p !== undefined)
       );
-    }
-
-    const before = snapshotTree(checkout);
-    expect(checkPlan(checkout, project(checkout)).clean).toBe(true);
-
-    const { conflicts, swept } = applyPlan(checkout, project(checkout), { sweepOrphans: true });
-    expect(conflicts).toEqual([]);
-    expect(swept).toEqual([]);
-    expect(diffSnapshots(before, snapshotTree(checkout))).toEqual({
-      added: [],
-      changed: [],
-      removed: [],
-    });
-  });
-
-  it('keeps every planned path forward-slashed, so a Windows plan reads the same', () => {
-    stageProjectedRepo();
-    const plan = project(origin);
-    const paths = plan.actions.flatMap((a) => [a.source, a.target].filter((p) => p !== undefined));
-    // Windows `path.join`/`path.relative` produce backslashes; the plan's own
-    // strings are repo-relative POSIX paths on every platform, and the Windows
-    // leg compares them against these same literals.
-    expect(paths.length).toBeGreaterThan(0);
-    expect(paths.filter((p) => p.includes('\\'))).toEqual([]);
-  });
+      // Windows `path.join`/`path.relative` produce backslashes; the plan's own
+      // strings are repo-relative POSIX paths on every platform, and the Windows
+      // leg compares them against these same literals.
+      expect(paths.length).toBeGreaterThan(0);
+      expect(paths.filter((p) => p.includes('\\'))).toEqual([]);
+    },
+    SLOW_UNDER_LOAD_MS
+  );
 });

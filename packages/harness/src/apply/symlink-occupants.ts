@@ -74,18 +74,35 @@ function withForwardSlashes(path: string): string {
 /**
  * Whether the file at `absTarget` holds exactly the link text the plan wants.
  *
+ * **Only a REGULAR file is ever opened here, and that guard is load-bearing.**
+ * `occupantKind` answers `'file'` for anything real that is not a directory —
+ * a FIFO and a unix socket included — and `readFileSync` on a FIFO with no
+ * writer blocks in `open(2)` forever. Nothing in this process can interrupt a
+ * synchronous block: not a vitest timeout, not a signal handler. So a named pipe
+ * at `.claude/skills/<x>` would hang `dorkos harness sync --check` and `--fix`
+ * outright — the command whose whole job is to TELL somebody what is wrong with
+ * their tree. `statSync().isFile()` is what keeps that from being reachable; a
+ * FIFO or a socket is the ordinary blocked conflict, and `--check` returns.
+ *
  * Separators are normalized because the two sides come from different places: git
  * writes the blob with POSIX separators on every platform, while `relativeLink`
  * builds the text with `path.relative`, which spells it with backslashes on
  * Windows. Comparing them raw would answer "no" on the one platform this case is
  * about.
+ *
+ * The comparison accepts the exact text and nothing else, save one trailing
+ * newline. Git writes a symlink blob with no newline at all, so the tolerance is
+ * for an editor that added one; a general `trim()` would call
+ * `"<link text>\n\n   my notes"`-shaped content a symlinks-off checkout, which
+ * it is not.
  */
 function holdsOwnLinkText(absTarget: string, linkText: string): boolean {
   try {
-    if (statSync(absTarget).size > MAX_LINK_TEXT_BYTES) return false;
-    return (
-      withForwardSlashes(readFileSync(absTarget, 'utf8').trim()) === withForwardSlashes(linkText)
-    );
+    const stats = statSync(absTarget);
+    if (!stats.isFile() || stats.size > MAX_LINK_TEXT_BYTES) return false;
+    const onDisk = withForwardSlashes(readFileSync(absTarget, 'utf8'));
+    const wanted = withForwardSlashes(linkText);
+    return onDisk === wanted || onDisk === `${wanted}\n` || onDisk === `${wanted}\r\n`;
   } catch {
     return false; // unreadable: not something this sentence can claim
   }

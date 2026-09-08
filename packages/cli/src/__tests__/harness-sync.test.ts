@@ -1,57 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 
 import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
 
-import {
-  runHarnessSync,
-  parseHarnessSyncArgs,
-  type HarnessSyncArgs,
-} from '../harness-sync-command.js';
+import { runHarnessSync, parseHarnessSyncArgs } from '../harness-sync-command.js';
 import { runHarnessHooks, parseHarnessHooksArgs } from '../harness-hooks-command.js';
 import { hookApprovalEntry } from '../../server/services/harness/hook-consent.js';
 import { runHarnessDispatcher } from '../commands/harness-dispatcher.js';
-
-/**
- * Fill in the flags a case does not care about.
- *
- * Every call names the ones under test and nothing else, so adding a flag to
- * `HarnessSyncArgs` does not rewrite thirty unrelated cases into noise.
- */
-function syncArgs(partial: Partial<HarnessSyncArgs>): HarnessSyncArgs {
-  return { check: false, fix: false, strict: false, allowHooks: [], ...partial };
-}
-
-function createTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-harness-sync-test-'));
-}
-
-/** Build a minimal but realistic two-harness fixture repo at `root`. */
-function writeFixtureRepo(root: string): void {
-  fs.mkdirSync(path.join(root, '.agents', 'skills', 'demo'), { recursive: true });
-  fs.writeFileSync(
-    path.join(root, '.agents', 'harness.manifest.json'),
-    JSON.stringify({ version: 1, harnesses: ['claude-code', 'codex'] }, null, 2)
-  );
-  fs.writeFileSync(
-    path.join(root, '.agents', 'skills', 'demo', 'SKILL.md'),
-    '# Demo skill\n\nA demo skill.\n'
-  );
-
-  fs.mkdirSync(path.join(root, '.claude'), { recursive: true });
-  fs.writeFileSync(
-    path.join(root, '.claude', 'settings.json'),
-    JSON.stringify(
-      { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo done' }] }] } },
-      null,
-      2
-    )
-  );
-
-  fs.writeFileSync(path.join(root, 'AGENTS.md'), '# Agents\n\nCanonical instructions.\n');
-}
+import { createTempDir, syncArgs, writeFixtureRepo } from './harness-fixtures.js';
 
 /**
  * The sorted set of every path under `root`.
@@ -557,38 +514,6 @@ describe('runHarnessSync', () => {
     expect(printed).toContain('blocked');
     expect(printed).toContain('.codex/hooks.json');
     expect(printed).toContain('.claude/settings.json');
-  });
-
-  it('--check explains a checkout with symlinks turned off, instead of calling it drift', async () => {
-    // What a teammate's clone looks like when git could not make the link: a
-    // plain file holding the path the link should have pointed at (J-10). Staged
-    // directly here rather than through a clone — the engine's journey test owns
-    // the real `git clone -c core.symlinks=false`; this one owns the printed
-    // text, which is the whole of what the person on that checkout sees.
-    writeFixtureRepo(tmpDir);
-    process.chdir(tmpDir);
-    await runHarnessSync({ check: false, fix: true }); // project `demo`
-    const projected = path.join(tmpDir, '.claude', 'skills', 'demo');
-    // Exactly what git writes for a symlink blob: the relative target path,
-    // spelled with POSIX separators on every platform. Deliberately NOT
-    // `readlinkSync`, which on Windows answers the junction's ABSOLUTE target
-    // and would stage a different shape entirely (measured on a windows-latest
-    // runner, DOR-1855).
-    fs.rmSync(projected, { force: true });
-    fs.writeFileSync(projected, '../../.agents/skills/demo');
-    logSpy.mockClear();
-
-    const check = await runHarnessSync({ check: true, fix: false });
-
-    expect(check.exitCode).toBe(1);
-    const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(printed).toContain('symlinks are turned off in this checkout');
-    expect(printed).toContain('git config core.symlinks true');
-    expect(printed).toContain('.claude/skills/demo');
-    // The report used to say the opposite of the truth: the link was "drift",
-    // and the way out was to run the `--fix` that would then refuse it.
-    expect(printed).not.toContain('Drift detected');
-    expect(printed).not.toContain('Run `dorkos harness sync --fix` to apply.');
   });
 
   it('--check reports a dead link at a generated file as drift instead of crashing', async () => {

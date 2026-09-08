@@ -18,9 +18,17 @@
  *   every platform rather than only where it happens to run.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { project } from '../../engine.js';
 import { applyPlan, checkPlan } from '../apply.js';
 import {
@@ -105,6 +113,22 @@ describe('blockingSymlinkOccupant', () => {
     expect(blockingSymlinkOccupant(join(root, 'skill'), '..\\..\\.agents\\skills\\skill')).toBe(
       SYMLINKS_OFF_REASON
     );
+  });
+
+  it('accepts one trailing newline after the link text, and nothing else', () => {
+    // Git writes the symlink blob with no newline at all, so the tolerance is
+    // for an editor that added one. A general `trim()` accepted the link text
+    // plus any amount of trailing whitespace up to 4096 bytes, which is not a
+    // shape any checkout produces.
+    const root = temp();
+    const text = '../../.agents/skills/skill';
+    writeFileSync(join(root, 'lf'), `${text}\n`);
+    writeFileSync(join(root, 'crlf'), `${text}\r\n`);
+    writeFileSync(join(root, 'padded'), `${text}\n\n\n   \n`);
+
+    expect(blockingSymlinkOccupant(join(root, 'lf'), text)).toBe(SYMLINKS_OFF_REASON);
+    expect(blockingSymlinkOccupant(join(root, 'crlf'), text)).toBe(SYMLINKS_OFF_REASON);
+    expect(blockingSymlinkOccupant(join(root, 'padded'), text)).toBe(SYMLINK_FILE_REASON);
   });
 
   it('does not mistake a real file that merely starts with the link text', () => {
@@ -225,5 +249,40 @@ describe('a differently-cased directory at a skill link target (AP-16, end to en
     expect(conflicts[0]?.reason).toContain('named "Foo"');
     // Never destroyed, whatever it is called.
     expect(existsSync(join(root, '.claude', 'skills', 'Foo', 'SKILL.md'))).toBe(true);
+  });
+
+  it('pins which comparison each platform is WIRED to, not just which one it can make', () => {
+    // `linkCheckFor` has its own unit test, and it passes whatever `apply.ts`
+    // hands it. This is the other half: that `apply.ts` hands it THIS platform.
+    // Mutating `linkCheckFor(process.platform)` to `linkCheckFor('win32')` left
+    // 381 of 381 tests green, and the regression it hides is AP-06 dying quietly
+    // — a POSIX link whose text is ABSOLUTE resolves to the right source, so a
+    // resolved-target comparison calls it clean and never repairs it. The
+    // checkout then stops being portable and nothing says so.
+    const root = stageRepo();
+    applyPlan(root, project(root), { sweepOrphans: true });
+    const link = join(root, '.claude', 'skills', 'foo');
+    rmSync(link, { force: true });
+    symlinkSync(join(root, '.agents', 'skills', 'foo'), link); // absolute text, right target
+
+    if (process.platform === 'win32') {
+      // A junction's stored target can only be absolute, so an absolute link
+      // that resolves to the source is exactly what a correct Windows
+      // projection looks like. Calling it drift would recreate every link on
+      // every run.
+      expect(checkPlan(root, project(root)).clean).toBe(true);
+      return;
+    }
+
+    const drift = checkPlan(root, project(root));
+    expect(drift.drifted.map((a) => a.target)).toEqual(['.claude/skills/foo']);
+    expect(drift.blocked).toEqual([]); // a link, not somebody's own file
+    expect(drift.clean).toBe(false);
+
+    const { conflicts } = applyPlan(root, project(root), { sweepOrphans: true });
+    expect(conflicts).toEqual([]);
+    expect(isAbsolute(readlinkSync(link))).toBe(false);
+    expect(readlinkSync(link)).toBe(join('..', '..', '.agents', 'skills', 'foo'));
+    expect(checkPlan(root, project(root)).clean).toBe(true);
   });
 });
