@@ -80,16 +80,11 @@ export async function resolveAgentTokenEnv(
 /**
  * Resolve the structurally known identity for an agent session.
  *
- * A token-backed record wins because it carries revocation and the last
- * recorded ceiling. A newly registered agent may not have launched a runtime
- * with an identity-token environment seam yet (OpenCode has no such seam), so
- * the manifest supplies its first in-session identity without minting a bearer
- * nobody will use. The manifest is the source of truth for registration and the
- * tier ceiling; the runtime boundary already proves which agent is calling.
- *
- * Once any token record exists, this never falls back around it. In particular,
- * a revoked record stays revoked rather than being replaced by an active
- * manifest-derived identity.
+ * Revocation from the trusted identity store wins. Otherwise, the manifest
+ * supplies the current per-turn identity, including for OpenCode, which has no
+ * identity-token environment seam. This preserves ADR-0043's file source of
+ * truth without minting a bearer nobody will use. If the manifest cannot be
+ * read, the last active token record is the fail-safe fallback.
  *
  * @param agentPath - Absolute registered-agent directory.
  * @returns The active or revoked identity, or undefined when it cannot be
@@ -105,10 +100,10 @@ export async function ensureInSessionAgentIdentity(
 
   try {
     const recorded = await service.describeAgent(agentPath);
-    if (recorded) return recorded;
+    if (recorded?.inactive === 'revoked') return recorded;
 
     const manifest = await readManifest(agentPath, logger);
-    if (!manifest) return undefined;
+    if (!manifest) return recorded;
     return {
       agentPath,
       displayName: manifest.displayName?.trim() || manifest.name,

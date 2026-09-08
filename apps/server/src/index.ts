@@ -157,6 +157,7 @@ import { CanonicalConnectorAgentRequestAuthority } from './services/connectors/a
 import { createConnectorRuntimeMcpServer } from './services/connectors/execution/runtime-mcp-server.js';
 import { isConnectorRuntimeCapabilityId } from './services/connectors/runtime-capability-scope.js';
 import {
+  AgentIdentitySnapshotPrincipalPort,
   createAgentRuntimeMcpServer,
   startConnectorRuntimeMcpListener,
   type ConnectorRuntimeMcpListener,
@@ -4053,20 +4054,25 @@ async function start() {
     onAttempt: createCapabilityGateAuditObserver(activityService),
   });
   if (connectorRuntimePrincipals) {
-    connectorRuntimeMcpListener = await startConnectorRuntimeMcpListener({
+    const agentScopedRuntimePrincipals = new AgentIdentitySnapshotPrincipalPort({
       principals: connectorRuntimePrincipals,
+      snapshotIdentity: ensureInSessionAgentIdentity,
+      identityWasRevoked: async (agentPath) =>
+        (await getAgentIdentityService()?.describeAgent(agentPath))?.inactive === 'revoked',
+    });
+    connectorRuntimeMcpListener = await startConnectorRuntimeMcpListener({
+      principals: agentScopedRuntimePrincipals,
       serverFactory: (principal) => createConnectorRuntimeMcpServer(capabilityRegistry!, principal),
       agentToolsEnabled: () => configManager.get('runtimes')?.dorkosTools === true,
       agentServerFactory: async (principal) => {
-        if (principal.claims.kind !== 'runtime') return null;
-        const identity = await ensureInSessionAgentIdentity(principal.claims.agentPath);
-        if (!identity || identity.inactive) return null;
+        const identity = await agentScopedRuntimePrincipals.identityFor(principal);
+        if (!identity) return null;
         return createAgentRuntimeMcpServer(capabilityRegistry!, principal, identity);
       },
     });
     for (const runtime of runtimeRegistry.listRuntimes()) {
       connectorRuntimeConsumer(runtime)?.setConnectorRuntimeTools({
-        principals: connectorRuntimePrincipals,
+        principals: agentScopedRuntimePrincipals,
         listenerUrl: connectorRuntimeMcpListener.url,
         agentToolsUrl: connectorRuntimeMcpListener.agentUrl,
         isConnectorCapabilityId: isConnectorRuntimeCapabilityId,
