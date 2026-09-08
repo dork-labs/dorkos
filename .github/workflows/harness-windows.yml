@@ -1,0 +1,280 @@
+name: harness-windows
+
+# Runs the harness projection engine's own suite, and the CLI's `harness sync`
+# suite, on a REAL Windows runner.
+#
+# WHY THIS EXISTS: the engine has a Windows branch nothing has ever executed.
+# `apply/apply.ts`'s `symlinkType()` returns `'junction'` on win32 — the only
+# directory link Windows makes without Developer Mode or admin rights — and
+# every test, every pre-push gate and every CI leg in this repo runs on macOS or
+# ubuntu, where that function returns `undefined` on its first line. Two contract
+# rows sit behind it and both were marked untested: AP-06 (links are relative, so
+# a moved or cloned checkout keeps working; on Windows a directory link is a
+# junction) and J-10 (a teammate clones the repo, on Windows without Developer
+# Mode). That is DOR-1855.
+#
+# WHAT ONLY A WINDOWS RUNNER CAN ANSWER, and why the POSIX suite cannot:
+#
+#   * A junction's stored target is ALWAYS ABSOLUTE. Node resolves the relative
+#     text against the link's parent before Windows ever sees it, so `readlink`
+#     answers `C:\repo\.agents\skills\x` where the plan said
+#     `..\..\.agents\skills\x`. The engine compared LINK TEXT, which called every
+#     junction drifted forever — `--check` could never go clean and `--fix` would
+#     delete and recreate every link on every run. The fix (compare where the
+#     link RESOLVES on win32) is pinned portably in
+#     `apply/__tests__/symlink-occupants.test.ts`, but only this job runs it
+#     against a junction Windows actually made.
+#   * `path.relative` and `path.join` spell paths with backslashes on win32,
+#     while the plan's own `source`/`target` strings are repo-relative POSIX
+#     paths on every platform. Only a Windows run proves the two never got
+#     mixed up.
+#   * The drive letter's case, an 8.3 short name in the temp path, and the `\\?\`
+#     prefix are things only the operating system knows. `realpathSync.native` is
+#     asked on both sides for exactly that reason, and only here does that matter.
+#
+# ADVISORY TODAY. A red here does not block a merge — see NOT REQUIRED YET below
+# — but it does block `merge-tail.yml` from ARMING auto-merge, because
+# scripts/should-arm-automerge.sh requires every check settled green. That is the
+# same half-gate `lint` lived in until 2026-09-02 and `site-build` lives in now.
+#
+# THE SCOPE DECISION IS INSIDE THE JOB, NOT A WORKFLOW-LEVEL `paths:` FILTER,
+# and that is the whole reason this workflow can ever be promoted. GitHub's
+# troubleshooting-required-status-checks doc: a workflow skipped by path
+# filtering reports NOTHING (not success). Under the merge queue a required
+# check that never reports blocks the queue until `check_response_timeout_
+# minutes` (60) expires, and a required check that never reports ON THE PR keeps
+# the PR out of the queue entirely — measured on PR #1246, which sat armed, green
+# and unqueueable for 15 hours. A skipped STEP, by contrast, leaves the job green
+# and the context reported. So this job always runs, always reports
+# `harness-windows`, and decides internally whether to spend the minutes.
+#
+# NOT REQUIRED YET, AND NEVER FOLDED INTO `test`. Promoting it is a
+# branch-protection change and nothing else: no edit to this file, because
+# `merge_group:` is in the `on:` list from day one. What it must NEVER become is
+# a Windows leg of the required `test` check — `test` is four-way sharded and
+# gates every merge, and hanging a second operating system off it makes every
+# merge in the repo wait on the platform this job exists to explore. Two
+# contexts, two failure domains, one promotion decision each.
+on:
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+# Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
+# hard cutoff for the Node 20 runtime (matches the other workflows here).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# Cancel superseded runs for PR pushes only. Merge-group refs are unique per
+# build (gh-readonly-queue/main/pr-<n>-<sha>), so queue runs never share a group
+# and are never cancelled by this block. Deliberately IDENTICAL in form to
+# test.yml and site-build.yml (keep them in step).
+concurrency:
+  group: harness-windows-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # THE ONE PRODUCER of the `harness-windows` context, on every event. Do not
+  # rename it, and do not split it into two same-named jobs under mutually
+  # exclusive `if`s — test.yml's header explains why one producer is the only
+  # shape whose required-check semantics are pinned down.
+  harness-windows:
+    # `windows-latest`, deliberately NOT the `windows-2022` pin
+    # desktop-release.yml carries. That pin exists because windows-latest ships
+    # Visual Studio 18, which node-gyp does not detect, and the desktop job
+    # rebuilds better-sqlite3 and node-pty against Electron's ABI. Nothing here
+    # compiles a native module: this is a pure-TypeScript vitest run over
+    # `node:fs`, so it wants the newest Windows, not the oldest one a native
+    # toolchain still recognises. Do not "fix" this to match the desktop job.
+    runs-on: windows-latest
+    # The suites take seconds on macOS; the cost here is checkout, install and
+    # the CLI's whole dependency closure on a cold Windows runner, which is
+    # slower at filesystem work than any other runner GitHub offers. That
+    # closure includes the client's bundler build, so this is minutes rather
+    # than seconds. It bounds a wedged install; it is not a performance budget.
+    timeout-minutes: 30
+    defaults:
+      run:
+        # windows-latest's default `run:` shell is pwsh. Every step below is a
+        # POSIX script or a plain command, and one shell for the whole job is one
+        # thing to reason about — so pin bash (GitHub runs it via the Git for
+        # Windows bash that ships on the image, no extra setup), the same choice
+        # and the same reason as desktop-release.yml's Windows packaging steps.
+        shell: bash
+    steps:
+      # BEFORE the checkout, because it decides what the checkout materializes.
+      #
+      # Git for Windows compiles in `core.symlinks = false`: its installer offers
+      # "Enable symbolic links" and that option writes the global `true` this
+      # step writes. Without it, a checkout of THIS repo writes 18 plain files
+      # where `.claude/skills/*` are committed symlinks — which is a real and
+      # supported shape (it is J-10, and the engine now explains it), but it is
+      # not the shape that exercises junction creation, junction readlink text,
+      # or the idempotency of a second `--fix`.
+      #
+      # Turning it on cannot wedge the checkout. `git init` probes the working
+      # tree for symlink support and writes a LOCAL `core.symlinks = false` when
+      # the probe fails, which overrides this global — so a runner that cannot
+      # make links quietly falls back to plain files instead of failing to check
+      # out. The probe step below then says, in the log, which of the two
+      # happened.
+      - name: Ask git to materialize committed symlinks, if this runner can
+        run: |
+          git config --global core.symlinks true
+          # Ask Windows directly, before git is involved at all. `mklink` is a
+          # cmd builtin, so this needs nothing installed; `//c` rather than `/c`
+          # because Git Bash rewrites a leading single slash into a path.
+          probe="$RUNNER_TEMP/symlink-probe"
+          mkdir -p "$probe"
+          printf 'x' > "$probe/target.txt"
+          if (cd "$probe" && cmd //c "mklink link.txt target.txt") > /dev/null 2>&1; then
+            echo 'RUNNER SYMLINK CAPABILITY: this account may create symlinks (mklink succeeded).'
+          else
+            echo 'RUNNER SYMLINK CAPABILITY: this account may NOT create symlinks (mklink failed) — git will fall back to plain files, and the suite exercises the J-10 shape instead.'
+          fi
+
+      # fetch-depth: 0 so the pull request's base commit exists locally for the
+      # scope step's diff. At the default depth 1 it does not, and the diff
+      # cannot be taken at all.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Says out loud what this run's filesystem could actually do, so a green
+      # check is never mistaken for coverage of a capability the runner did not
+      # have. Four facts, and every one of them is load-bearing somewhere in
+      # `apply/`:
+      #
+      #   * whether a FILE symlink can be made — the journey suites build their
+      #     own links with `fs.symlinkSync` and would fail here without it;
+      #   * whether a DIRECTORY symlink can be made — needs privilege, and is
+      #     precisely what `symlinkType()` avoids needing;
+      #   * whether a JUNCTION can be made — what `symlinkType()` asks for, and
+      #     the one that must work without privilege;
+      #   * what a junction's `readlink` TEXT is — the absolute path that the
+      #     `linkCheckFor('win32')` comment claims it is. If that claim is ever
+      #     wrong, this log line is where it shows.
+      #
+      # Plus the direct evidence: what git did with one of the repo's own
+      # committed symlinks. Never fails the job — it reports, it does not judge.
+      - name: What symlink capability did this run have?
+        run: |
+          echo "core.symlinks in this checkout: $(git config --get core.symlinks || echo '(unset)')"
+          node -e "
+            const fs = require('node:fs');
+            const os = require('node:os');
+            const path = require('node:path');
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-symlink-probe-'));
+            fs.mkdirSync(path.join(dir, 'src'));
+            fs.writeFileSync(path.join(dir, 'src.txt'), 'x');
+            const attempt = (label, make) => {
+              try { make(); console.log(label + ': yes'); return true; }
+              catch (err) { console.log(label + ': no (' + err.code + ')'); return false; }
+            };
+            attempt('file symlink', () => fs.symlinkSync(path.join(dir, 'src.txt'), path.join(dir, 'file-link')));
+            attempt('directory symlink', () => fs.symlinkSync(path.join(dir, 'src'), path.join(dir, 'dir-link'), 'dir'));
+            const junction = attempt('directory junction', () => fs.symlinkSync(path.join(dir, 'src'), path.join(dir, 'junction'), 'junction'));
+            if (junction) {
+              console.log('junction readlink text: ' + JSON.stringify(fs.readlinkSync(path.join(dir, 'junction'))));
+              console.log('junction lstat says isSymbolicLink: ' + fs.lstatSync(path.join(dir, 'junction')).isSymbolicLink());
+            }
+            const committed = '.claude/skills/writing-for-humans';
+            const stat = fs.lstatSync(committed);
+            console.log(
+              'a committed repo symlink (' + committed + '): ' +
+              (stat.isSymbolicLink() ? 'checked out as a symlink' : stat.isDirectory() ? 'checked out as a directory' : 'checked out as a plain file of ' + stat.size + ' bytes — symlinks are off in this checkout')
+            );
+          "
+
+      # Can this pull request reach the harness engine or the CLI at all?
+      #
+      # `turbo run test --filter=<pkg> --affected` INTERSECTS the filter with the
+      # changed set and derives each package's dependents from the workspace
+      # graph — so a change to `@dorkos/shared` (which the CLI depends on) counts
+      # without a hand-maintained package list here to drift. The workflow file
+      # itself is included so an edit to this gate exercises it.
+      #
+      # The base is the PR's own base SHA, not `origin/<base_ref>`: it is fixed
+      # for the whole run, so nothing another session merges mid-run can move it
+      # (AGENTS.md, "pin the base once"), and `fetch-depth: 0` above is what
+      # guarantees the commit is present to diff against.
+      #
+      # `--dry=json` is captured to a FILE and parsed with node rather than piped
+      # to `jq`. Two reasons: node is already set up and needs no assumption
+      # about the Windows image's toolbox, and a pipe under `set -o pipefail`
+      # (which `shell: bash` sets) is the SIGPIPE trap site-build.yml's scope
+      # step documents at length. No pipe, no trap.
+      - name: Decide whether this pull request can reach the harness engine
+        id: scope
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # The count is measured and printed FIRST, before the override below,
+          # so every run's log says what turbo saw. Ordered the other way, a
+          # pull request that edits this file — which is every pull request that
+          # touches this gate — exits before the turbo line ever executes, and
+          # the half of the step that decides every OTHER pull request goes
+          # untested on the one platform it runs on. That is how it was written
+          # first, and run 34192094915 proved the point by never reaching it.
+          TURBO_SCM_BASE="$BASE" pnpm exec turbo run test --filter=@dorkos/harness --filter=dorkos --affected --dry=json > affected.json
+          count=$(node -e "console.log(JSON.parse(require('node:fs').readFileSync('affected.json','utf8')).packages.length)")
+          echo "turbo reports $count affected package(s) among @dorkos/harness and dorkos"
+          changed=$(git diff --no-renames --name-only "$BASE"...HEAD)
+          if printf '%s\n' "$changed" | grep -E '^\.github/workflows/harness-windows\.yml$' > /dev/null; then
+            echo 'this workflow changed — running the suites whatever the count says'
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          elif [ "$count" -gt 0 ]; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      # THE CLI's WHOLE DEPENDENCY CLOSURE — `dorkos^...`, the caret-dots form,
+      # meaning "every workspace package `dorkos` depends on, but not `dorkos`
+      # itself" (the CLI's own esbuild bundle is not imported by any test). The
+      # engine's closure is a subset of it, so one filter covers both legs.
+      #
+      # It used to name two packages, `@dorkos/harness` and `@dorkos/shared`,
+      # and that was a hand-maintained list in all but name — it broke the first
+      # time somebody added a dependency it did not know about. DOR-1849 gave
+      # `harness-consent.ts` a dynamic import of server code, whose own imports
+      # reach `@dorkos/relay/approver-allowlist`; with relay unbuilt,
+      # `runHarnessSync` caught the module error, printed "Harness sync failed",
+      # projected nothing, and the CLI suite then failed on the tree that was
+      # never written. Reproduced on macOS by deleting `packages/relay/dist`.
+      # Deriving the set from the workspace graph is what stops that repeating —
+      # the same argument site-build.yml's header makes for the site.
+      #
+      # Through turbo, not a bare `pnpm --filter … build`, because the imports
+      # resolve through `exports` maps that point at dist/ and `pnpm --filter`
+      # would run one package's script and leave its dependencies unbuilt.
+      - name: Build what the suites import
+        if: ${{ github.event_name != 'pull_request' || steps.scope.outputs.run == 'true' }}
+        run: pnpm exec turbo build --filter=dorkos^...
+
+      # The whole engine package plus the CLI's `harness sync` suite — the two
+      # places `node:fs` symlink behaviour is exercised. Bare vitest from the
+      # repo root is the shape AGENTS.md prescribes for a targeted run, and the
+      # root `vitest.config.ts` registers both packages as projects.
+      - name: Run the harness engine and CLI harness-sync suites
+        if: ${{ github.event_name != 'pull_request' || steps.scope.outputs.run == 'true' }}
+        run: pnpm vitest run packages/harness packages/cli/src/__tests__/harness-sync.test.ts
+
+      # Says out loud, in the log, that this run tested nothing — so a green
+      # check here is never mistaken for a suite that passed.
+      - name: Nothing in this pull request can reach the harness engine
+        if: ${{ github.event_name == 'pull_request' && steps.scope.outputs.run != 'true' }}
+        run: echo 'No change in @dorkos/harness, dorkos, or anything they depend on. The merge queue runs these suites unconditionally.'
