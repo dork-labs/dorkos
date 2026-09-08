@@ -234,6 +234,8 @@ const MCP_NAMES = ['linear', 'shadcn'] as const;
 const LINKED_RULES_SOURCE = 'vendor/rules';
 /** The link into `.claude/rules` that points at {@link LINKED_RULES_SOURCE}. */
 const LINKED_RULES_LINK = '.claude/rules/shared';
+/** The one rule reached THROUGH that link, as the inventory names it. */
+export const LINKED_RULES_FILE = `${LINKED_RULES_LINK}/security.md`;
 
 /** A dead subagent link: an `.md` entry that opens as nothing. */
 const DEAD_AGENT_LINK = '.claude/agents/dead.md';
@@ -241,7 +243,7 @@ const DEAD_AGENT_LINK = '.claude/agents/dead.md';
 /** A skill a person keeps outside the canonical layer and links where Claude Code reads. */
 const PERSON_SKILL_SOURCE = 'vendor/skills/mine';
 /** The link into `.claude/skills` that reaches {@link PERSON_SKILL_SOURCE}. */
-const PERSON_SKILL_LINK = '.claude/skills/mine';
+export const PERSON_SKILL_LINK = '.claude/skills/mine';
 
 /**
  * The generator: a whole small repo, hostile occupants included.

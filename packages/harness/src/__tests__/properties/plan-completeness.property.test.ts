@@ -33,7 +33,14 @@ import { loadManifest, project } from '../../engine.js';
 import { inventorySourceTree, allEntries, type InventoryEntry } from '../../inventory/index.js';
 import type { ProjectionAction, ProjectionPlan } from '../../plan/types.js';
 import type { HarnessId } from '../../manifest/schema.js';
-import { arbRepo, withRepo, RUNS } from './arb-repo.js';
+import {
+  arbRepo,
+  withRepo,
+  RUNS,
+  LINKED_RULES_FILE,
+  PERSON_SKILL_LINK,
+  type RepoSpec,
+} from './arb-repo.js';
 
 /**
  * Whether a path the plan names covers the inventoried source.
@@ -72,7 +79,56 @@ function listsNaming(
   };
 }
 
+/**
+ * Every source path the generator staged, worked out from the SPEC rather than
+ * from the tree.
+ *
+ * The generator knows what it wrote, so this is an oracle the walk cannot agree
+ * with by construction — which is the whole point. A `.claude/skills` entry that
+ * is a dead link or a directory with no `SKILL.md` is deliberately absent: those
+ * are not skills to anybody.
+ */
+function stagedSources(spec: RepoSpec): string[] {
+  return [
+    ...spec.skills.map((name) => `.agents/skills/${name}`),
+    ...(spec.personSkillLink ? [PERSON_SKILL_LINK] : []),
+    ...(spec.claudeCommands === 'populated' ? ['.claude/commands/review.md'] : []),
+    ...spec.rules.map((rule) => `.claude/rules/${rule.name}.md`),
+    ...(spec.linkedRulesDir ? [LINKED_RULES_FILE] : []),
+    ...spec.agents.map((agent) => `.claude/agents/${agent}.md`),
+    ...(spec.mcpServers ?? []).map(() => '.mcp.json'),
+  ].sort();
+}
+
 describe('P6 — every authored artifact reaches the report, for every enabled harness', () => {
+  it('finds every artifact the generator staged, so a walk that stops early cannot pass', () => {
+    // The completeness property above cannot catch a SCANNER gap: its subject is
+    // the inventory, so an artifact the walk never sees is not a subject and the
+    // property stays green. That is exactly how a non-recursive `.claude/rules`
+    // walk and a skipped symlinked directory survived it (DOR-1845 review). This
+    // is the missing half — the walk measured against what was actually written.
+    let sourcesChecked = 0;
+
+    fc.assert(
+      fc.property(arbRepo(), (spec) => {
+        withRepo(spec, ({ repoRoot }) => {
+          const found = allEntries(inventorySourceTree(repoRoot))
+            .map((entry) => entry.source)
+            // Hook entries name a file that may hold several events, and the
+            // skill-frontmatter ones name a `SKILL.md` inside a skill directory
+            // this list already carries. Sources, deduplicated, is the comparison.
+            .filter((source) => !source.endsWith('/SKILL.md') && !source.startsWith('.claude/set'));
+          const staged = stagedSources(spec);
+          sourcesChecked += staged.length;
+          expect([...new Set(found)].sort()).toEqual([...new Set(staged)].sort());
+        });
+      }),
+      RUNS
+    );
+
+    expect(sourcesChecked).toBeGreaterThan(0);
+  });
+
   it('never leaves an inventoried source unmentioned by an enabled harness', () => {
     // Counted, not assumed: a repository the generator happened to leave empty
     // would pass this vacuously, so the pairs actually examined are tallied and
