@@ -248,6 +248,49 @@ export function registerLiveTurnVisibilityTests(deps: LiveTurnVisibilityDeps): v
   });
 
   test.describe('the todos pill advances (R-06)', () => {
+    test('clears the live task list after an identical empty history response', async ({
+      page,
+      request,
+    }, testInfo) => {
+      // Keep the HTTP history empty while real test-mode SSE fills the visible
+      // task list. The turn-end reconciliation must observe a second [] result,
+      // even though query structural sharing would preserve its data identity.
+      const historyReads = new Map<string, number>();
+      await page.route('**/api/sessions/*/tasks*', async (route) => {
+        const pathname = new URL(route.request().url()).pathname;
+        historyReads.set(pathname, (historyReads.get(pathname) ?? 0) + 1);
+        await route.fulfill({ json: { tasks: [] } });
+      });
+      const { chatPage, sessionId } = await openScenario(page, request, 'todo-progress');
+      const historyPath = `/api/sessions/${sessionId}/tasks`;
+      await expect.poll(() => historyReads.get(historyPath) ?? 0).toBeGreaterThan(0);
+      const pill = page.getByRole('button', { name: /\d+\/3 tasks/ });
+      await expect(pill).toBeHidden();
+      await chatPage.sendAndLand('show the task list before clearing it');
+      await expect(pill).toContainText('0/3 tasks');
+      await testInfo.attach('live-tasks', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
+
+      for (let task = 1; task <= 3; task += 1) {
+        await releaseStep(request, sessionId); // in progress
+        await releaseStep(request, sessionId); // completed
+        await expect(pill).toContainText(`${task}/3 tasks`);
+      }
+      const readsBeforeFinish = historyReads.get(historyPath) ?? 0;
+      await releaseStep(request, sessionId); // terminal → history invalidation
+      await expect(transcript(page)).toContainText('TODOS-DONE');
+      await expect
+        .poll(() => historyReads.get(historyPath) ?? 0)
+        .toBeGreaterThan(readsBeforeFinish);
+      await expect(pill).toBeHidden();
+      await testInfo.attach('cleared-tasks', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
+    });
+
     test('counts and statuses move as the agent works through the list', async ({
       page,
       request,

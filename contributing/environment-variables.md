@@ -27,6 +27,12 @@ Each app and package now exports a typed, validated `env` object from a local `e
 4. Update the env var reference table in this document.
 5. Access the var via `import { env } from './env'` in server files, or `import { env } from '@/env'` in client files.
 
+## Local test worker limits
+
+On a busy machine, set `VITEST_MAX_WORKERS=2 pnpm verify` to limit each Vitest task to two workers. The same opt-in works with normal Git hooks: `VITEST_MAX_WORKERS=2 git push`. Leave it unset to use the existing defaults, including in CI.
+
+Turbo passes this variable through in strict mode. It changes worker concurrency only: test selection, assertions, timeouts, retry policies, and the normal `-- --run` arguments stay unchanged. It does not enter the task cache hash. Paid-provider keys and their opt-in flags remain excluded from normal verification tasks.
+
 ## Boolean Feature Flags
 
 The `boolFlag` helper is used for all boolean feature flags:

@@ -54,6 +54,11 @@ export interface TaskState {
 
 const MAX_VISIBLE = 10;
 
+// Query results survive hook remounts in the shared cache. One process-local
+// sequence keeps their issuance order comparable with live folds across mounts.
+// Wall-clock milliseconds cannot distinguish a fetch from a later same-tick fold.
+let taskHistoryOrder = 0;
+
 /**
  * Whether a turn is still writing the plan.
  *
@@ -103,19 +108,21 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
   // this window opens onto long after its turn ended.
   const [isCollapsed, setIsCollapsed] = useState(() => !isTurnRunning(lifecycle));
 
-  // Stamped in handleTaskEvent (last live fold) and inside queryFn (when the
-  // in-flight fetch was ISSUED, not when it resolves) so an empty history
-  // response can be judged against what the live stream already knows —
-  // see the reset effect below (DOR-1632).
-  const lastLiveEventAtRef = useRef(0);
-  const fetchStartedAtRef = useRef(0);
+  const liveEventsRef = useRef<
+    Array<{ order: number; event: TaskUpdateEvent; receivedAt: number }>
+  >([]);
+  const appliedHistoryOrderRef = useRef(0);
 
   // Load historical tasks via TanStack Query (polled while a turn streams)
   const { data: initialTasks } = useQuery({
     queryKey: ['tasks', sessionId, selectedCwd],
-    queryFn: () => {
-      fetchStartedAtRef.current = Date.now();
-      return transport.getTasks(sessionId!, selectedCwd ?? undefined);
+    queryFn: async () => {
+      const fetchOrder = ++taskHistoryOrder;
+      const history = await transport.getTasks(sessionId!, selectedCwd ?? undefined);
+      // Bind issuance to this completed response. A newer in-flight request
+      // cannot make an older result authoritative; the order also distinguishes
+      // identical empty completions that query structural sharing would hide.
+      return { ...history, fetchOrder };
     },
     staleTime: 30_000,
     refetchOnWindowFocus: false,
@@ -131,63 +138,53 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
     },
   });
 
-  // Reset state when query data changes (initial load or sync invalidation).
-  // An empty response is NOT automatically a reason to wipe local state, but
-  // it is not automatically safe to ignore either — both directions are real:
-  //
-  // - IGNORE: the history fetch and the live stream race. A fetch already
-  //   in flight when a live event lands can still resolve afterward (network
-  //   latency), and its empty answer reflects server state from BEFORE that
-  //   event. Wiping local state on that stale answer was the original
-  //   DOR-1632 bug.
-  // - HONOR: a cleared task list has no live signal of its own — opencode's
-  //   `mapTodos` and claude-code's `buildTodoWriteEvent` both emit nothing
-  //   for an empty list (session-event-mapper.ts, build-task-event.ts), so a
-  //   fresh history fetch returning `[]` is the ONLY way a genuine clear
-  //   ever reaches this hook. `use-turn-end-reconcile.ts` invalidates this
-  //   query specifically to deliver that answer. Ignoring every empty
-  //   response for an unchanged scope (the first round of this fix) would
-  //   leave a cleared list stuck on screen forever.
-  //
-  // The fetch that is settling is judged by when it was ISSUED
-  // (`fetchStartedAtRef`, stamped inside `queryFn`) against the newest live
-  // fold (`lastLiveEventAtRef`, stamped in handleTaskEvent) — not by when it
-  // RESOLVED. Commit time is the wrong axis: network latency means a fetch
-  // issued before a live event can still commit after it, and a fetch's
-  // commit time tells you nothing about which happened first on the server.
-  // A fetch issued strictly before the newest fold predates it and is
-  // ignored; anything issued at or after is judged authoritative. A genuine
-  // session (or scope) change always resets, regardless of timing.
+  // A live TaskCreate/TaskUpdate is a delta, not a complete task list. Hydrate
+  // history first, then replay newer live events so an older fetch neither
+  // erases live work nor hides preexisting tasks. A full live snapshot replaces
+  // history through the same fold. Covered events are discarded after each
+  // accepted completion; a newer fetch cannot relabel an older response.
   const scopeKeyRef = useRef<string | null>(null);
-  /* eslint-disable react-hooks/set-state-in-effect -- sync TanStack Query data to local state */
   useEffect(() => {
     const scopeKey = `${sessionId ?? ''}::${selectedCwd ?? ''}`;
     const scopeChanged = scopeKeyRef.current !== scopeKey;
     scopeKeyRef.current = scopeKey;
 
-    if (initialTasks && initialTasks.tasks.length > 0) {
-      const next = createTaskFoldState();
+    if (scopeChanged) {
+      liveEventsRef.current = [];
+      appliedHistoryOrderRef.current = 0;
+      setState(createTaskFoldState());
+    }
+    if (!initialTasks || initialTasks.fetchOrder <= appliedHistoryOrderRef.current) return;
+    appliedHistoryOrderRef.current = initialTasks.fetchOrder;
+    const next = createTaskFoldState();
+    if (initialTasks.tasks.length > 0) {
       applyTaskEvent(
         next,
         { action: 'snapshot', task: initialTasks.tasks[0]!, tasks: initialTasks.tasks },
         Date.now()
       );
-      setState(next);
-    } else if (scopeChanged || fetchStartedAtRef.current >= lastLiveEventAtRef.current) {
-      setState(createTaskFoldState());
     }
+    liveEventsRef.current = liveEventsRef.current.filter(
+      ({ order }) => order > initialTasks.fetchOrder
+    );
+    for (const { event, receivedAt } of liveEventsRef.current) {
+      applyTaskEvent(next, event, receivedAt);
+    }
+    setState(next);
   }, [initialTasks, sessionId, selectedCwd]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleTaskEvent = useCallback((event: TaskUpdateEvent) => {
-    lastLiveEventAtRef.current = Date.now();
+    const receivedAt = Date.now();
+    // A full snapshot subsumes all prior deltas, even while history is pending.
+    if (event.action === 'snapshot') liveEventsRef.current = [];
+    liveEventsRef.current.push({ order: ++taskHistoryOrder, event, receivedAt });
     setState((prev) => {
       const next: TaskFoldState = {
         tasks: new Map(prev.tasks),
         statusTimestamps: new Map(prev.statusTimestamps),
         legacyCreateCount: prev.legacyCreateCount,
       };
-      applyTaskEvent(next, event, Date.now());
+      applyTaskEvent(next, event, receivedAt);
       return next;
     });
   }, []);
@@ -240,7 +237,6 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
   // lifecycle and clears the hand-collapse latch, which belongs to the
   // session that set it, not the one being switched to.
   const foldScopeKeyRef = useRef<string | null>(null);
-  /* eslint-disable react-hooks/set-state-in-effect -- follows a scope change, not render state */
   useEffect(() => {
     const scopeKey = `${sessionId ?? ''}::${selectedCwd ?? ''}`;
     if (foldScopeKeyRef.current === scopeKey) return;
@@ -250,7 +246,6 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
     collapsedByHandRef.current = false;
     setIsCollapsed(!running);
   }, [sessionId, selectedCwd, lifecycle]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const allTasks = Array.from(state.tasks.values());
   const sorted = sortTasks(allTasks, state.tasks);
