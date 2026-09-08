@@ -7,7 +7,10 @@
  * (skills, hooks) to the project's *other* harnesses (Codex, etc.) via the
  * Harness Sync engine, so a single install reaches every agent the project uses.
  *
- * The wiring is intentionally narrow in v1:
+ * This module is a TRIGGER, not the projection: everything about building a plan
+ * and obeying a person's decisions lives in `project-with-consent.ts`, which
+ * every other trigger calls too. What is left here is the part that is genuinely
+ * about a package having changed:
  *
  * - **Project-scoped only.** A global install (`projectPath` absent) is a
  *   deliberate no-op — cross-agent projection of global installs is deferred
@@ -15,11 +18,11 @@
  *   own `.dork/plugins`, so there is nothing to do without a project root.
  * - **Config-gated.** Honors the `harness.autoSync` flag (default `true`). When
  *   off, the user manages projection manually via `dorkos harness sync`.
- * - **Hook-gated.** A package's hooks are shell commands the harnesses run
- *   unattended, so they only project once a person has allowed those exact
- *   commands (DOR-522). Everything else about the package — skills, commands —
- *   projects as it always did. See `hook-approval.ts` for where the gate sits and
- *   why it is not on the install itself.
+ * - **Asks.** A package's hooks are shell commands the harnesses run
+ *   unattended, so the seam withholds them until a person allows those exact
+ *   commands (DOR-522); this is the trigger that raises the card, records the
+ *   answer, and projects again. Everything else about the package — skills,
+ *   commands — projects whatever the answer is.
  * - **Best-effort.** Every failure is caught and logged as a warning; this
  *   service never throws into the request path, mirroring the existing
  *   `refreshActivatedPlugins().catch(...)` pattern.
@@ -41,10 +44,6 @@
  * @module services/harness/auto-project
  */
 import {
-  applyPlan as defaultApplyPlan,
-  project as defaultProject,
-  projectedHooks as defaultProjectedHooks,
-  scanInstalledPlugins as defaultScanInstalledPlugins,
   scaffoldManifest as defaultScaffoldManifest,
   HARNESS_MANIFEST_PATH,
 } from '@dorkos/harness';
@@ -54,12 +53,14 @@ import { configManager } from '../core/config-manager.js';
 import { logger } from '../../lib/logger.js';
 import {
   askForHookProjection,
-  isHookProjectionApproved,
   mayAskAboutHooks,
-  recordHookApproval,
   type HookApprovalGateway,
-  type HookProjectionRequest,
 } from './hook-approval.js';
+import { recordHookApproval } from './hook-consent.js';
+import {
+  projectWithConsent as defaultProjectWithConsent,
+  type ProjectWithConsentResult,
+} from './project-with-consent.js';
 
 /** The install action that triggered auto-projection. */
 export type PluginChangeAction = 'install' | 'uninstall';
@@ -92,107 +93,43 @@ export interface RunAutoProjectionOptions {
 }
 
 /**
- * Seam for the Harness Sync engine calls, injectable so route/service tests can
- * exercise the gating logic without touching the real filesystem or git. The
- * defaults are the real `@dorkos/harness` exports.
+ * Seam for the calls this trigger makes, injectable so route/service tests can
+ * exercise the trigger logic without touching the real filesystem or git.
+ *
+ * It is deliberately two entries: the consent-carrying projection, which every
+ * trigger shares, and the manifest scaffold, which only this one does.
  *
  * @internal Exported for testing only.
  */
 export const _internal = {
   scaffoldManifest: defaultScaffoldManifest,
-  project: defaultProject,
-  applyPlan: defaultApplyPlan,
-  scanInstalledPlugins: defaultScanInstalledPlugins,
-  projectedHooks: defaultProjectedHooks,
+  projectWithConsent: defaultProjectWithConsent,
 };
 
 /**
- * Every hook-declaring package in the project, split by whether a person has
- * already allowed the exact hooks it wants to install RIGHT NOW.
- *
- * Scanning the plugins here rather than reading them back off the plan is
- * deliberate: the Claude Code settings merge is the only place the plan names
- * packages individually, and it is absent when a project does not sync to Claude
- * Code — yet those projects still get the same commands in their generated Codex
- * hooks file. The question is about packages, so it is asked of the packages.
- *
- * Read fresh on every pass, never cached across the approval wait. The allow list
- * is keyed by package NAME while a stored decision is keyed by a digest of the
- * hooks, so a package whose `hooks.json` is rewritten while its card sits
- * unanswered produces a different digest and simply is not allowed. Deciding once
- * and reusing the answer would have installed whatever the file said by the time
- * the plan was built, not what the card showed.
- *
- * @param projectPath - The project root being projected into.
- * @param dorkHome - Resolved DorkOS data directory.
- * @returns The allowed package names, and the pending requests to ask about.
- */
-function partitionHookRequests(
-  projectPath: string,
-  dorkHome: string
-): { allowed: Set<string>; pending: HookProjectionRequest[] } {
-  const plugins = _internal.scanInstalledPlugins({ dorkHome, projectRoot: projectPath });
-  const allowed = new Set<string>();
-  const pending: HookProjectionRequest[] = [];
-  for (const { packageName, hooks } of _internal.projectedHooks(plugins, projectPath)) {
-    const request: HookProjectionRequest = { projectPath, packageName, hooks };
-    if (isHookProjectionApproved(request)) allowed.add(packageName);
-    else pending.push(request);
-  }
-  return { allowed, pending };
-}
-
-/**
- * Build the plan and realize it, logging what landed, and report what a person
- * still has to be asked about.
+ * Project once and log what landed, including what a person still has to be
+ * asked about.
  *
  * Runs once for a package with no hooks to ask about, and a second time after a
  * person allows some — the engine's apply is idempotent and write-if-absent, so
- * the second pass adds the newly allowed hooks and rewrites everything else to the
- * same bytes. Both passes re-read the packages from disk (see
- * {@link partitionHookRequests}), which is what makes the second one install what
- * the card actually showed.
+ * the second pass adds the newly allowed hooks and rewrites everything else to
+ * the same bytes. Both passes re-read the packages from disk, which is what makes
+ * the second one install what the card actually showed.
  *
  * @param ctx - The plugin change that triggered this (for the log lines).
  * @param dorkHome - Resolved DorkOS data directory.
- * @returns The hook projections still waiting on a person.
+ * @returns Everything the seam reported, for the caller's ask/record loop.
  */
-function projectOnce(
+function projectAndLog(
   ctx: PluginChangeContext & { projectPath: string },
   dorkHome: string
-): { pending: HookProjectionRequest[] } {
+): ProjectWithConsentResult {
   const { projectPath, packageName, action } = ctx;
-  const { allowed, pending } = partitionHookRequests(projectPath, dorkHome);
-  const plan = _internal.project(projectPath, {
-    dorkHome,
-    allowPluginHooks: (name) => allowed.has(name),
-  });
   // `sweepOrphans` prunes projections for plugins no longer in the plan — the
-  // uninstall path. Install adds; uninstall prunes.
-  //
-  // The plan IS filtered, by `allowPluginHooks` — and that is safe, though the
-  // engine's own warning ("pass sweepOrphans only for a full, unfiltered plan")
-  // reads as though it is not. That warning is about a HARNESS-scoped filter: a
-  // plan built for one harness omits another harness's live projections, and the
-  // sweep would read them as orphans and delete them. This filter is
-  // PACKAGE-scoped and removes only hook contributions, so what the sweep sees
-  // missing is a withheld package's hooks: its managed entries in
-  // `.claude/settings.local.json`, and the generated per-harness hooks files that
-  // held nothing else. That is the correct fail-closed withdrawal, not collateral
-  // damage: commands nobody has allowed do not stay behind in a file an agent
-  // reads. They come back the moment the person says yes, on the second pass
-  // below.
-  //
-  // What the sweep can NOT reach is a hooks file the person wrote themselves. It
-  // used to: this pass has no hook contributors by design, so the plan writes no
-  // `.codex/hooks.json`, and the sweep deleted whatever was at that path — before
-  // the card was ever raised (DOR-1842). The engine now prunes a generated hooks
-  // file only when a `.dorkos-generated` sidecar proves it wrote those exact
-  // bytes. Anything else comes back as `leftAlone` (nothing was blocked, so it is
-  // not a conflict), and is logged below.
-  const { applied, conflicts, swept, leftAlone } = _internal.applyPlan(projectPath, plan, {
-    sweepOrphans: true,
-  });
+  // uninstall path. Install adds; uninstall prunes. Why it is safe beside the
+  // consent filter is stated in `project-with-consent.ts`.
+  const result = _internal.projectWithConsent(projectPath, { dorkHome, sweepOrphans: true });
+  const { plan, applied, conflicts, swept, leftAlone, withheld } = result;
 
   // An install whose package contributes NOTHING to the plan means the
   // plugin's files never reach any harness — the exact silent failure of
@@ -205,7 +142,7 @@ function projectOnce(
     action === 'install' &&
     !plan.actions.some(touchesPackage) &&
     !plan.drops.some(touchesPackage) &&
-    !pending.some((request) => request.packageName === packageName)
+    !withheld.some(({ request }) => request.packageName === packageName)
   ) {
     logger.warn('[HarnessSync] Install projected no files for package', {
       packageName,
@@ -244,10 +181,10 @@ function projectOnce(
     conflicts: conflicts.length,
     swept: swept.length,
     leftAlone: leftAlone.length,
-    awaitingApproval: pending.length,
+    awaitingApproval: withheld.length,
   });
 
-  return { pending };
+  return result;
 }
 
 /**
@@ -260,9 +197,9 @@ function projectOnce(
  * - `harness.autoSync` is `false` — the user manages projection manually.
  *
  * Otherwise, for a project-scoped install with auto-sync on: scaffold the
- * harness manifest if the project has none (GAP-5), build the projection plan
- * from disk, and apply it with the orphan sweep enabled so an uninstall prunes
- * the now-orphaned projections (GAP-8). Any failure is caught and logged as a
+ * harness manifest if the project has none (GAP-5), then hand the projection to
+ * the consent seam with the orphan sweep enabled so an uninstall prunes the
+ * now-orphaned projections (GAP-8). Any failure is caught and logged as a
  * warning; this function never throws.
  *
  * Hooks are the exception to "project everything on disk". A package whose exact
@@ -328,23 +265,23 @@ export async function runAutoProjection(
     // Hooks are the one part of a package that runs code, so they project only
     // for packages a person has allowed (DOR-522). Everything else projects
     // whatever the answer is.
-    const { pending } = projectOnce({ ...ctx, projectPath }, opts.dorkHome);
+    const { withheld } = projectAndLog({ ...ctx, projectPath }, opts.dorkHome);
 
-    if (pending.length === 0) return;
+    if (withheld.length === 0) return;
     if (!opts.approvals) {
       logger.warn('[HarnessSync] No approval service; package hooks were not projected', {
         packageName,
         projectPath,
-        packages: pending.map((p) => p.packageName),
+        packages: withheld.map(({ request }) => request.packageName),
       });
       return;
     }
 
-    // A package this process has already been told no about is not asked again,
-    // and one with a card already open does not get a second. Both stay withheld
-    // either way; what is dropped is the repetition, which would otherwise fire on
+    // A package a person has already turned down is not asked again, and one
+    // with a card already open does not get a second. Both stay withheld either
+    // way; what is dropped is the repetition, which would otherwise fire on
     // every later install AND on uninstalls (see `mayAskAboutHooks`).
-    const askable = pending.filter(mayAskAboutHooks);
+    const askable = withheld.map(({ request }) => request).filter(mayAskAboutHooks);
     if (askable.length === 0) return;
 
     // One card per package, all raised before any is awaited, so a person sees
@@ -365,7 +302,7 @@ export async function runAutoProjection(
     // `hooks.json` while its card was open no longer matches what was approved
     // and stays withheld.
     for (const request of granted) recordHookApproval(request);
-    projectOnce({ ...ctx, projectPath }, opts.dorkHome);
+    projectAndLog({ ...ctx, projectPath }, opts.dorkHome);
   } catch (err) {
     logger.warn('[HarnessSync] Auto-projection failed (non-fatal)', {
       packageName,

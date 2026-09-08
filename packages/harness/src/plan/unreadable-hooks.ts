@@ -31,12 +31,13 @@ import type { ProjectionWarning } from './types.js';
  * Claude-plugin `hooks/hooks.json`, and claude-code is the only harness that takes
  * an installed plugin's hooks in their native form.
  *
- * Know how that reads: `formatWarnings` groups by harness, so a project that
- * enables codex alone still gets told about the loss — under a `claude-code:`
- * heading naming a harness it does not run. The reason line carries the file and
- * the event, which is what the person acts on. The one place the attribution
- * costs something is `dorkos harness sync --harness <id>`, which narrows the plan
- * by harness and so hides these warnings for every `<id>` but `claude-code`.
+ * It used to cost something twice over: `formatWarnings` grouped by harness, so
+ * a project running codex alone read the loss under a `claude-code:` heading
+ * naming a harness it does not run, and `dorkos harness sync --harness <id>`
+ * narrowed the plan by harness and hid the warning entirely for every `<id>` but
+ * `claude-code` (contract VC-02). Both are fixed by `harnessAgnostic`, which
+ * says out loud that this field is a placeholder: the report gives these their
+ * own heading and no harness filter drops them.
  */
 const UNREADABLE_HOOK_ATTRIBUTION: HarnessId = 'claude-code';
 
@@ -65,9 +66,17 @@ function unreadableHookReason(declaration: UnreadableHookDeclaration): string {
  * engine could not fully read. One warning per bad declaration, not one per
  * enabled harness — the loss happened at read time, ahead of every harness.
  *
- * @param plugins - the plugins whose hooks are actually allowed to contribute (a
- *   package excluded by the hook gate projects no hooks either way, so its
- *   salvage losses would be noise).
+ * Reported for EVERY hook-declaring package, allowed or withheld. It used to
+ * take only the allowed ones, on the reasoning that a withheld package projects
+ * nothing so its salvage losses are noise — which had it backwards. The loss
+ * happens at READ time, before consent is a question, and the consent card and
+ * the CLI's withheld block both list what the reader could recover: so a person
+ * deciding whether to allow a package was reading a list that silently omitted
+ * whatever could not be parsed, and would only be told about it AFTER saying
+ * yes. DOR-1724's promise is that a discarded hook is never silent, and it does
+ * not hold only for packages somebody already trusts.
+ *
+ * @param plugins - every scanned plugin whose hooks were read, allowed or not.
  * @returns one warning per unreadable declaration, empty when every scanned
  *   `hooks/hooks.json` was fully readable.
  */
@@ -80,6 +89,7 @@ export function planUnreadableHookWarnings(
       warnings.push({
         artifact: 'hook',
         harness: UNREADABLE_HOOK_ATTRIBUTION,
+        harnessAgnostic: true,
         name: `${plugin.name}:${declaration.event ?? 'hooks'}`,
         reason: unreadableHookReason(declaration),
       });

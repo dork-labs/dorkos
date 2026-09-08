@@ -35,42 +35,20 @@
  * ## What a person is agreeing to
  *
  * One package's exact hooks, in one project: each command, the event that fires
- * it, and the matcher that narrows it. The stored record binds all of them —
- * `harness.approvedHooks` holds `<packageName>@<digest>` over the resolved project
- * path and every hook — so an update that changes what a package runs, or WHEN it
- * runs it, asks again instead of riding an old yes, and consent given in one
- * project does not carry into another.
+ * it, and the matcher that narrows it. Both the yes and the no are recorded in
+ * `hook-consent.ts`, which owns the stored form and states what the digest binds
+ * and what it cannot.
  *
- * It does NOT bind the CONTENT of a script the command invokes. A hook of the
- * form `node "${CLAUDE_PLUGIN_ROOT}/hooks/loop.mjs"` keeps its digest across an
- * update that rewrites `loop.mjs`. That is the same trade
- * `extension-load-policy.ts` states for an approved extension id, and it is the
- * honest limit of a gate on what lands in a settings file.
+ * ## Every way in is gated now
  *
- * ## Where the record lives
- *
- * `~/.dork/config.json` at `harness.approvedHooks`, classified `operator-only` in
- * `core/operator/config-write-policy.ts` — the same home, and the same reasoning,
- * as `extensions.approvedToRun`. A record of a human decision must not be
- * writable by the thing the decision is about, and user config is where this repo
- * already keeps that: `config_patch` refuses `operator-only` paths, `PATCH
- * /api/config` refuses a caller carrying agent identity, and the drift guards
- * fail the build if the classification goes missing. The residual is DOR-505's:
- * with login off, a caller that simply omits its agent header is treated as the
- * operator. Turning on Require login closes it.
- *
- * A "no" is remembered too, but only for the life of the process and only in
- * memory ({@link mayAskAboutHooks}), because a durable refusal would be a decision
- * with nothing to undo it.
- *
- * ## One way in is deliberately not gated
- *
- * `dorkos harness sync` passes no predicate and consults no record, so it installs
- * every hook on disk, including a package's that somebody refused. That is a
- * person typing a command in their own terminal to project everything they have,
- * and anyone who can run it can write the settings file directly — but it does
- * mean a refusal is not durable across it, which the docs say out loud rather than
- * leaving a person to discover.
+ * `dorkos harness sync --fix` used to pass no predicate and consult no record,
+ * so it installed every hook on disk including a package's somebody had refused
+ * — a refusal lived in this process's memory and the CLI had nothing to read. It
+ * now goes through the same seam every other trigger uses
+ * (`project-with-consent.ts`) and reads the same two lists: an unapproved
+ * package's hooks are WITHHELD, printed command by command with the exact
+ * re-run, and installed only by `--allow-hooks <package>`, which records the
+ * same entry this card writes (DOR-1849, contract D5).
  *
  * ## The two ways in still disagree, and this does not change that
  *
@@ -81,7 +59,6 @@
  *
  * @module services/harness/hook-approval
  */
-import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import type { ProjectedHook } from '@dorkos/harness';
 import type {
@@ -96,8 +73,12 @@ import {
   redactSecretsInText,
 } from '../core/approvals/index.js';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
-import { configManager } from '../core/config-manager.js';
-import { logConfigWrite } from '../core/operator/config-write.js';
+import {
+  hookApprovalEntry,
+  isHookProjectionRefused,
+  recordHookRefusal,
+  type HookProjectionRequest,
+} from './hook-consent.js';
 import { logger } from '../../lib/logger.js';
 
 /**
@@ -134,20 +115,6 @@ export function describeHookProjectionCapability(
   return { title: HOOK_PROJECTION_CAPABILITY_TITLE, tier: 'destructive' };
 }
 
-/** One package's request to install shell commands into a project's harnesses. */
-export interface HookProjectionRequest {
-  /** The project whose harness files would be written. */
-  projectPath: string;
-  /** The installed package that declared the hooks. */
-  packageName: string;
-  /**
-   * Exactly what would land: each command, the event that fires it, and the
-   * matcher that narrows it. Sorted by `projectedHooks`, so a package that only
-   * reorders its `hooks.json` is not asked about again.
-   */
-  hooks: ProjectedHook[];
-}
-
 /**
  * The slice of `ApprovalService` this gate uses.
  *
@@ -163,13 +130,12 @@ export interface HookApprovalGateway {
 }
 
 /**
- * The canonical form of a request, so two ways of naming the same thing hash the
- * same.
+ * The canonical form of a request, for the approval BINDING.
  *
  * `path.resolve` is the whole of it, and it is not cosmetic: `/x/proj` and
- * `/x/proj/` are one directory, and the cockpit is not the only caller — the CLI
- * and the API pass whatever a person or a script typed. Without this, one project
- * could hold two approvals and a person would be asked twice for the same thing.
+ * `/x/proj/` are one directory, and the app is not the only caller. The stored
+ * entry canonicalizes the same way (`hook-consent.ts`), so the token a card is
+ * granted for and the record it writes describe one thing.
  */
 function canonical(request: HookProjectionRequest): {
   projectPath: string;
@@ -181,60 +147,6 @@ function canonical(request: HookProjectionRequest): {
     packageName: request.packageName,
     hooks: request.hooks,
   };
-}
-
-/**
- * The stored form of one allowed hook projection: `<packageName>@<digest>`.
- *
- * The name is in front so a person can read their own config and see which
- * packages they have allowed. The digest behind it covers the project and every
- * hook — command, event and matcher — so the entry stops matching the moment any
- * of them changes. Binding the command text alone would let a package move an
- * allowed command from `Stop` (once, at the end) to `PreToolUse` (before every
- * single tool call) without asking.
- *
- * @param request - The package, project, and hooks to identify.
- * @returns The entry as it is stored in `harness.approvedHooks`.
- */
-export function hookApprovalEntry(request: HookProjectionRequest): string {
-  const { projectPath, hooks } = canonical(request);
-  const digest = createHash('sha256')
-    .update(
-      JSON.stringify([
-        projectPath,
-        hooks.map((hook) => [hook.event, hook.matcher ?? null, hook.command]),
-      ]),
-      'utf8'
-    )
-    .digest('hex');
-  return `${request.packageName}@${digest}`;
-}
-
-/**
- * Whether a person has already allowed exactly this package to install exactly
- * these hooks into exactly this project.
- *
- * @param request - The projection about to happen.
- * @returns True when the stored record covers it.
- */
-export function isHookProjectionApproved(request: HookProjectionRequest): boolean {
-  return configManager.get('harness').approvedHooks.includes(hookApprovalEntry(request));
-}
-
-/**
- * Record a person's yes, so the same package projecting the same hooks into the
- * same project is never asked about again.
- *
- * Idempotent: re-recording an entry that is already stored rewrites nothing.
- *
- * @param request - The projection that was allowed.
- */
-export function recordHookApproval(request: HookProjectionRequest): void {
-  const harness = configManager.get('harness');
-  const entry = hookApprovalEntry(request);
-  if (harness.approvedHooks.includes(entry)) return;
-  configManager.set('harness', { ...harness, approvedHooks: [...harness.approvedHooks, entry] });
-  logConfigWrite('approving a package hook', 'harness', harness, configManager.get('harness'));
 }
 
 /**
@@ -332,50 +244,33 @@ export function summariseHookProjection(request: HookProjectionRequest): string 
 }
 
 /**
- * Hook projections this process has already put in front of a person and been
- * told no about, plus the ones a card is open for right now.
+ * Entries with a card open right now, so a concurrent projection does not raise
+ * a second for the same package.
  *
- * ## Why there is a memory at all
+ * This is all that is left of the process-scoped memory. A refusal used to live
+ * here too, because a durable "no" would have been a decision with no way back:
+ * nothing listed the stored decisions and nothing revoked one, so a misclick
+ * would have disabled a package's hooks for ever, recoverable only by
+ * hand-editing `~/.dork/config.json`. `dorkos harness hooks --list` and
+ * `--revoke <package>` are that way back, so the refusal now goes in the file
+ * (`hook-consent.ts`) where every trigger can read it — including the CLI, which
+ * could not see this set at all and installed refused hooks because of it.
  *
- * `partitionHookRequests` rebuilds the pending list from every hook-declaring
- * package on every plugin change, and a refusal is recorded nowhere — so without
- * this, a package a person has already refused raises a fresh card on the next
- * install of some unrelated package, and again on an UNINSTALL. It keeps failing
- * closed, so it is not a hole; it is the consent-fatigue hazard this repo refused
- * twice on routine-card grounds (DOR-504, DOR-506) arriving through the back door.
- * A card a person learns to dismiss makes every other card weaker.
- *
- * ## Why it is in memory and not in the config file
- *
- * A durable "no" would be a decision with no way back. There is no cockpit surface
- * for either of these lists — granting happens on the card, and nothing revokes —
- * so a stored refusal would silently disable a plugin's hooks forever, with no
- * card ever again to explain why, recoverable only by hand-editing
- * `~/.dork/config.json`. A misclick must not be able to do that. Process-scoped
- * memory stops the repetition that actually bothers people (a run of installs in
- * one sitting) and forgets itself on the next restart, which is a slow, obvious,
- * fully reversible way back. Making refusals durable is a real product question
- * and needs a place to un-refuse first.
- *
- * An EXPIRED card is deliberately not remembered: nobody decided, so nobody said
- * no, and the person who missed it should be asked again. `askingNow` is what
- * keeps that from stacking two open cards for one package in the meantime.
+ * An EXPIRED card is still deliberately not remembered anywhere: nobody decided,
+ * so nobody said no, and the person who missed it should be asked again. This
+ * set is what keeps that from stacking two open cards for one package meanwhile.
  */
-const refusedThisProcess = new Set<string>();
-
-/** Entries with a card open right now, so a concurrent projection does not raise a second. */
 const askingNow = new Set<string>();
 
 /**
  * Whether this projection may be put in front of a person, or has already been
- * answered "no" (or is on screen right now) since the server started.
+ * answered "no" (or is on screen right now).
  *
  * @param request - The projection about to be asked about.
  * @returns True when a card would be new information.
  */
 export function mayAskAboutHooks(request: HookProjectionRequest): boolean {
-  const entry = hookApprovalEntry(request);
-  return !refusedThisProcess.has(entry) && !askingNow.has(entry);
+  return !askingNow.has(hookApprovalEntry(request)) && !isHookProjectionRefused(request);
 }
 
 /** Seams the wait loop uses, injectable so tests do not sleep in real time. */
@@ -389,9 +284,8 @@ export const _internal = {
     }),
   /** How long to wait between presentations. */
   pollIntervalMs: 5_000,
-  /** Drop the process-scoped refusal memory, so one test cannot answer for the next. */
+  /** Drop the open-card memory, so one test cannot answer for the next. */
   forgetDecisions: (): void => {
-    refusedThisProcess.clear();
     askingNow.clear();
   },
 };
@@ -451,8 +345,9 @@ export async function askForHookProjection(
       const result = gateway.consume(ticket.token, binding);
       if (result.outcome === 'granted') return true;
       if (result.outcome !== 'pending') {
-        // Only an explicit no is remembered. Expiry means nobody decided.
-        if (result.outcome === 'denied') refusedThisProcess.add(entry);
+        // Only an explicit no is recorded. Expiry means nobody decided, and
+        // the person who missed the card is asked again.
+        if (result.outcome === 'denied') recordHookRefusal(request);
         logger.info('[HarnessSync] Package hooks were not allowed', {
           packageName: request.packageName,
           projectPath: request.projectPath,

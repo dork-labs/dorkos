@@ -1,18 +1,25 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { LOG_LEVEL_MAP } from '@dorkos/shared/config-schema';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { rethrowUnknownOption } from './lib/parse-args-error.js';
+import {
+  configPathFor,
+  formatWithheldBlock,
+  readStoredDecisions,
+  resolveDorkHome,
+  withheldSummaryLine,
+} from './harness-consent.js';
+import type { WithheldHooks } from '../server/services/harness/project-with-consent.js';
 
 import {
-  applyPlan,
   checkPlan,
   formatDropList,
   formatWarnings,
+  hooksFactsFor,
   loadManifest,
-  project,
   scaffoldManifest,
+  CODEX_HOOKS_TARGET,
   GENERATED_HOOK_TARGET_HARNESSES,
   HARNESS_IDS,
   HARNESS_MANIFEST_PATH,
@@ -35,22 +42,23 @@ export interface HarnessSyncArgs {
   fix: boolean;
   /** Optional single-harness filter (one of {@link HARNESS_IDS}). */
   harness?: string;
-}
-
-/**
- * Resolve the dork home for installed-plugin projection, mirroring `cli.ts`.
- *
- * The `harness` namespace is intercepted in `cli.ts` *before* the block that
- * resolves and exports `process.env.DORK_HOME`, so we resolve it here with the
- * same precedence (`DORK_HOME` env var, else `~/.dork`). This lets GLOBAL-scope
- * installs project; PROJECT-scope installs are repo-relative and project even
- * when no home exists.
- *
- * @returns the resolved dork home directory.
- */
-function resolveDorkHome(): string {
-  // eslint-disable-next-line no-restricted-syntax -- the harness branch in cli.ts runs before DORK_HOME is exported, so we mirror its `env || ~/.dork` resolution here
-  return process.env.DORK_HOME || join(homedir(), '.dork');
+  /**
+   * Exit non-zero when any package's hooks were withheld.
+   *
+   * The default is zero, deliberately: a withheld hook is a decision being
+   * obeyed, the opposite of a conflict, and failing a mostly-done sync teaches
+   * bootstrap scripts to write `|| true`, which throws away every other failure
+   * too (contract D5). `--strict` is for the CI user who wants a stop.
+   */
+  strict: boolean;
+  /**
+   * Packages whose hooks to install and RECORD, repeatable. Requires `--fix`.
+   *
+   * Not a per-run override: it writes the same `<package>@<digest>` entry the
+   * approval card writes, into the same list, so the answer holds for every
+   * later sync and for the app — and `dorkos harness hooks --revoke` undoes it.
+   */
+  allowHooks: string[];
 }
 
 /**
@@ -67,11 +75,20 @@ function wantsDebugDetail(): boolean {
   return level !== undefined && level >= LOG_LEVEL_MAP.debug;
 }
 
-/** The four actionable projection kinds, in the order shown in the per-harness summary. */
-const SUMMARY_KINDS = ['native', 'symlink', 'scaffold', 'generate'] as const;
+/**
+ * Every actionable projection kind, in the order shown in the per-harness
+ * summary.
+ *
+ * `merge` was missing until DOR-1849, and it is the one kind that writes into a
+ * file the person owns — plugin hooks folded into `.claude/settings.local.json`.
+ * A summary that counted every other kind and silently skipped that one
+ * under-reported exactly the write worth reporting (contract VC-02).
+ */
+const SUMMARY_KINDS = ['native', 'symlink', 'scaffold', 'generate', 'merge'] as const;
 
 /** One-line usage string surfaced in error messages. */
-const USAGE_LINE = 'Usage: dorkos harness sync [--check] [--fix] [--harness <id>]';
+const USAGE_LINE =
+  'Usage: dorkos harness sync [--check] [--fix] [--harness <id>] [--strict] [--allow-hooks <package>]';
 
 /**
  * Parse raw CLI arguments for `dorkos harness sync` into a typed
@@ -93,6 +110,8 @@ export function parseHarnessSyncArgs(rawArgs: string[]): HarnessSyncArgs {
         check: { type: 'boolean', default: false },
         fix: { type: 'boolean', default: false },
         harness: { type: 'string' },
+        strict: { type: 'boolean', default: false },
+        'allow-hooks': { type: 'string', multiple: true },
       },
       allowPositionals: false,
       strict: true,
@@ -106,6 +125,10 @@ export function parseHarnessSyncArgs(rawArgs: string[]): HarnessSyncArgs {
     check: Boolean(values.check),
     fix: Boolean(values.fix),
     harness: typeof values.harness === 'string' ? values.harness : undefined,
+    strict: Boolean(values.strict),
+    allowHooks: Array.isArray(values['allow-hooks'])
+      ? values['allow-hooks'].filter((name): name is string => typeof name === 'string')
+      : [],
   };
 }
 
@@ -167,15 +190,29 @@ function harnessOf(path: string): HarnessId | undefined {
 const NOT_ENABLED_NOTE = ' (not enabled — carries the shared .agents/skills link)';
 
 /**
- * Render a per-harness count of each actionable projection kind.
+ * Render a per-harness count of each actionable projection kind, plus one line
+ * for anything held back.
+ *
+ * The withheld count is a total rather than a per-harness figure, and that is
+ * the honest shape: a withheld package's hooks are not in the plan at all, so
+ * there is no harness they landed in to attribute them to. The blocks below the
+ * summary name each package and each command.
  *
  * @param actions - the plan's actionable projections.
+ * @param withheld - every package whose hooks were held back.
  * @param enabled - the harnesses the manifest enables, so a line for one it does
  *   not can say so. Omitted, no line is annotated.
  * @returns the summary block, one line per harness.
  */
-function summarizeActions(actions: ProjectionAction[], enabled?: readonly HarnessId[]): string {
-  if (actions.length === 0) return '  (no projected actions)';
+function summarizeActions(
+  actions: ProjectionAction[],
+  withheld: readonly WithheldHooks[],
+  enabled?: readonly HarnessId[]
+): string {
+  const withheldLine = withheldSummaryLine(withheld);
+  if (actions.length === 0) {
+    return withheldLine ? `  (no projected actions)\n${withheldLine}` : '  (no projected actions)';
+  }
 
   const byHarness = new Map<HarnessId, Map<string, number>>();
   for (const action of actions) {
@@ -193,19 +230,55 @@ function summarizeActions(actions: ProjectionAction[], enabled?: readonly Harnes
     const note = enabledSet && !enabledSet.has(harness) ? NOT_ENABLED_NOTE : '';
     lines.push(`  ${harness}: ${parts.join(', ')}${note}`);
   }
+  if (withheldLine) lines.push(withheldLine);
   return lines.join('\n');
 }
 
 /**
- * Narrow a plan to a single harness, preserving action object identity so the
- * content side-table (`getActionContent`) keeps resolving for scaffold/generate.
+ * Print one block per package whose hooks were not installed.
+ *
+ * Printed in both modes: a `--check` that reported clean drift while quietly
+ * planning to skip a package's hooks would be the same silence this whole
+ * change is about (contract D5).
  */
-function filterPlanToHarness(plan: ProjectionPlan, harness: HarnessId): ProjectionPlan {
-  return {
-    actions: plan.actions.filter((a) => a.harness === harness),
-    drops: plan.drops.filter((a) => a.harness === harness),
-    warnings: plan.warnings.filter((w) => w.harness === harness),
-  };
+function reportWithheld(withheld: readonly WithheldHooks[], dorkHome: string): void {
+  for (const entry of withheld) {
+    for (const line of formatWithheldBlock(entry, dorkHome)) console.log(line);
+  }
+}
+
+/**
+ * Say out loud that a regenerated Codex hooks file is disarmed until it is
+ * trusted again (contract HK-10).
+ *
+ * Only when the BYTES changed. An unchanged file has not left Codex's trust
+ * record, so saying it every sync would be noise that teaches people to ignore
+ * the line on the one run where it is true — which is also why byte-identical
+ * idempotency (AP-01) is load-bearing here rather than merely tidy.
+ *
+ * The claim is read from the vendor-facts table rather than written here, so it
+ * carries the page it came from and the day it was read. No cell, no line: a
+ * vendor's behaviour is never asserted from memory.
+ */
+function reportCodexTrust(before: string | undefined, after: string | undefined): void {
+  if (after === undefined || after === before) return;
+  const facts = hooksFactsFor('codex');
+  if (facts?.trust !== 'per-hook-hash') return;
+  console.log('');
+  console.log(`Codex hooks changed (${CODEX_HOOKS_TARGET}).`);
+  console.log('  Codex only runs these in a project you have trusted, and it remembers what each');
+  console.log('  hook said when you trusted it — so this file changing puts them back in the');
+  console.log('  review queue. Run `/hooks` in Codex to look them over and trust them again.');
+  console.log(`  (${facts.source.url}, read ${facts.source.fetchedAt})`);
+}
+
+/** The bytes at a repo-relative path, or `undefined` when nothing is there. */
+function readIfPresent(repoRoot: string, rel: string): string | undefined {
+  try {
+    return readFileSync(join(repoRoot, rel), 'utf8');
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -228,6 +301,8 @@ function filterPlanToHarness(plan: ProjectionPlan, harness: HarnessId): Projecti
 function reportCheck(
   repoRoot: string,
   plan: ProjectionPlan,
+  withheld: readonly WithheldHooks[],
+  dorkHome: string,
   harnessFilter?: HarnessId,
   enabled?: readonly HarnessId[]
 ): number {
@@ -236,7 +311,7 @@ function reportCheck(
   const clean = drift.drifted.length === 0 && drift.blocked.length === 0 && orphans.length === 0;
 
   console.log('Projection summary:');
-  console.log(summarizeActions(plan.actions, enabled));
+  console.log(summarizeActions(plan.actions, withheld, enabled));
   console.log('');
   console.log(formatDropList(plan));
   const warningBlock = formatWarnings(plan);
@@ -245,6 +320,7 @@ function reportCheck(
     console.log(warningBlock);
   }
   for (const line of formatLeftAlone(drift.leftAlone, harnessFilter)) console.log(line);
+  reportWithheld(withheld, dorkHome);
   console.log('');
 
   if (clean) {
@@ -276,23 +352,39 @@ function reportCheck(
 }
 
 /**
- * Apply the plan, print the fix-mode report, and return its exit code (1 if conflicts).
+ * Print the fix-mode report and return its exit code (1 if conflicts).
  *
- * `sweepOrphans` removes projections whose source is gone — an uninstalled
- * plugin's, and a dead `.claude/skills` link left by an authored skill somebody
- * removed or renamed. It is passed only for an unfiltered plan (a `--harness`
- * filter would mistake other harnesses' live projections for orphans).
+ * The plan was already applied by the consent seam, which is what decides which
+ * packages' hooks were in it; this renders what happened. Withheld hooks do NOT
+ * change the exit code — `--strict`, handled by the caller, is what does.
  */
 function reportFix(
   repoRoot: string,
   plan: ProjectionPlan,
-  sweepOrphans: boolean,
-  harnessFilter?: HarnessId
+  applyResult: {
+    applied: ProjectionAction[];
+    conflicts: ProjectionAction[];
+    swept: string[];
+    leftAlone: string[];
+  },
+  withheld: readonly WithheldHooks[],
+  codexHooksBefore: string | undefined,
+  dorkHome: string,
+  harnessFilter?: HarnessId,
+  enabled?: readonly HarnessId[]
 ): number {
-  const { applied, conflicts, swept, leftAlone } = applyPlan(repoRoot, plan, { sweepOrphans });
+  const { applied, conflicts, swept, leftAlone } = applyResult;
 
   console.log(`Applied ${applied.length} projection(s):`);
   for (const action of applied) console.log(formatAction(action));
+  reportCodexTrust(codexHooksBefore, readIfPresent(repoRoot, CODEX_HOOKS_TARGET));
+  console.log('');
+  console.log('Projection summary:');
+  // `enabled` reaches here too, and it did not have to. `--fix` printed no
+  // summary at all when DOR-1847 annotated `--check`'s; it does now, and a
+  // `codex:` line reads "Codex is on" to the same person on the same project
+  // whichever mode they ran.
+  console.log(summarizeActions(plan.actions, withheld, enabled));
   console.log('');
   console.log(formatDropList(plan));
   const warningBlock = formatWarnings(plan);
@@ -311,6 +403,10 @@ function reportFix(
   // a reason to hand somebody a failing command on every sync.
   for (const line of formatLeftAlone(leftAlone, harnessFilter)) console.log(line);
 
+  // Printed AFTER what landed, so the report reads in the order it happened:
+  // this is what was installed, and this is what was not.
+  reportWithheld(withheld, dorkHome);
+
   if (conflicts.length === 0) return 0;
 
   console.log('');
@@ -318,6 +414,23 @@ function reportFix(
     `${conflicts.length} conflict(s) left untouched — something DorkOS does not own occupies the target. Each line says what is in the way; clear it, then re-run:`
   );
   for (const action of conflicts) console.log(formatAction(action));
+  return 1;
+}
+
+/**
+ * Fold `--strict` into an exit code.
+ *
+ * Withheld hooks exit 0 by default, and that is a decision rather than an
+ * oversight: a withheld hook is a recorded answer being obeyed, the opposite of
+ * a conflict, and exiting 1 on a mostly-done sync teaches bootstrap scripts to
+ * write `|| true` — which then swallows the conflicts and the failures too
+ * (contract D5). `--strict` is for the CI user who wants a stop, and it still
+ * applies everything else first.
+ */
+function strictExit(exitCode: number, withheld: readonly WithheldHooks[], strict: boolean): number {
+  if (!strict || withheld.length === 0) return exitCode;
+  console.log('');
+  console.log('--strict: exiting 1 because hooks were withheld.');
   return 1;
 }
 
@@ -345,6 +458,17 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
   if (args.check && args.fix) {
     console.error('Pass either --check or --fix, not both.');
     console.error(USAGE_LINE);
+    return { exitCode: 1 };
+  }
+
+  // `--allow-hooks` installs commands AND records the decision, so it belongs to
+  // the write mode. Refused rather than quietly ignored, and the message names
+  // the fix rather than restating the rule.
+  if (args.allowHooks.length > 0 && !args.fix) {
+    console.error("--allow-hooks installs a package's hooks, so it needs --fix.");
+    console.error(
+      `Run: dorkos harness sync --fix ${args.allowHooks.map((name) => `--allow-hooks ${name}`).join(' ')}`
+    );
     return { exitCode: 1 };
   }
 
@@ -401,21 +525,105 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     // Project marketplace-installed plugins too (DOR-173). Project-scoped installs
     // (`<repoRoot>/.dork/plugins`) are repo-relative and always project; passing a
     // resolved dork home additionally projects global-scope installs.
-    let plan = project(repoRoot, { dorkHome: resolveDorkHome() });
-    // Read AFTER `project()`, which reads the same file: a malformed manifest
-    // should fail with the message `project()` gives it, not this one — and both
-    // land in the catch below as one sentence either way.
-    const enabled = loadManifest(repoRoot).harnesses;
+    const dorkHome = resolveDorkHome();
+    const { planWithConsent, projectWithConsent, scanHookRequests } =
+      await import('../server/services/harness/project-with-consent.js');
 
-    if (harnessFilter !== undefined) {
-      plan = filterPlanToHarness(plan, harnessFilter);
+    // Which harnesses the manifest enables, so a summary line for one it does
+    // not can say so (DOR-1847). Read AFTER the projection, which reads the same
+    // file: a malformed manifest should fail with the message the engine gives
+    // it, not this one — and both land in the catch below as one sentence either
+    // way.
+    const enabledHarnesses = (): readonly HarnessId[] => loadManifest(repoRoot).harnesses;
+
+    // `--allow-hooks` is resolved and RECORDED before the plan is built, so the
+    // projection that follows reads one store — there is no per-run override to
+    // disagree with what the app would do (contract D5).
+    let decisions = await readStoredDecisions(dorkHome);
+    if (args.allowHooks.length > 0) {
+      // Refused before anything opens the store, and that ordering is the whole
+      // safety of it: `initConfigManager` on an unreadable `config.json` runs
+      // `conf`'s corrupt-recovery, which backs the file up and replaces it with
+      // defaults — every setting, not just these two lists. Being told to run
+      // the command that wipes your settings is worse than the withheld hook.
+      if (decisions.unreadable !== undefined) {
+        console.error(`DorkOS could not read ${configPathFor(dorkHome)}: ${decisions.unreadable}`);
+        console.error(
+          '  Fix the file first. Allowing hooks writes to it, and DorkOS will not write over a file it cannot read.'
+        );
+        return { exitCode: 1 };
+      }
+      const requests = scanHookRequests(repoRoot, dorkHome);
+      const unknown = args.allowHooks.filter(
+        (name) => !requests.some((request) => request.packageName === name)
+      );
+      if (unknown.length > 0) {
+        // Nothing is written when any name is wrong: a typo must not half-record
+        // a decision and leave the person to work out which half landed.
+        console.error(
+          `No installed package here declares hooks under ${unknown.map((n) => `'${n}'`).join(', ')}.`
+        );
+        console.error(
+          requests.length > 0
+            ? `  Packages with hooks in this project: ${requests.map((r) => r.packageName).join(', ')}`
+            : '  No installed package in this project declares any hooks.'
+        );
+        return { exitCode: 1 };
+      }
+      const { initConfigManager } = await import('../server/services/core/config-manager.js');
+      const { recordHookApproval } = await import('../server/services/harness/hook-consent.js');
+      initConfigManager(dorkHome);
+      for (const request of requests) {
+        if (args.allowHooks.includes(request.packageName)) recordHookApproval(request);
+      }
+      decisions = await readStoredDecisions(dorkHome);
+      console.log(
+        `Allowed ${args.allowHooks.length} package${args.allowHooks.length === 1 ? '' : 's'} to install hooks here: ${args.allowHooks.join(', ')}`
+      );
+      console.log(
+        `  Recorded in ${configPathFor(dorkHome)} — undo with \`dorkos harness hooks --revoke <package>\`.`
+      );
+      console.log('');
     }
 
-    // Orphan sweep only runs on a full (unfiltered) plan — see reportFix.
-    const exitCode = args.fix
-      ? reportFix(repoRoot, plan, harnessFilter === undefined, harnessFilter)
-      : reportCheck(repoRoot, plan, harnessFilter, enabled);
-    return { exitCode };
+    // Orphan sweep only runs on a full (unfiltered) plan: a filtered one omits
+    // every other harness's live projections, and the sweep would read them as
+    // orphans. The seam refuses the combination outright.
+    const consentOpts = {
+      dorkHome,
+      decisions,
+      ...(harnessFilter === undefined ? {} : { harness: harnessFilter }),
+    };
+
+    if (!args.fix) {
+      const { plan, withheld } = planWithConsent(repoRoot, consentOpts);
+      const exitCode = reportCheck(
+        repoRoot,
+        plan,
+        withheld,
+        dorkHome,
+        harnessFilter,
+        enabledHarnesses()
+      );
+      return { exitCode: strictExit(exitCode, withheld, args.strict) };
+    }
+
+    const codexHooksBefore = readIfPresent(repoRoot, CODEX_HOOKS_TARGET);
+    const result = projectWithConsent(repoRoot, {
+      ...consentOpts,
+      sweepOrphans: harnessFilter === undefined,
+    });
+    const exitCode = reportFix(
+      repoRoot,
+      result.plan,
+      result,
+      result.withheld,
+      codexHooksBefore,
+      dorkHome,
+      harnessFilter,
+      enabledHarnesses()
+    );
+    return { exitCode: strictExit(exitCode, result.withheld, args.strict) };
   } catch (err) {
     console.error(`Harness sync failed: ${err instanceof Error ? err.message : String(err)}`);
     console.error(`  in ${repoRoot}`);

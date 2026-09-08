@@ -331,6 +331,9 @@ export const CONFIG_DISCLOSURE = {
   // files. Names packages and digests, no secrets, and an agent that can read it
   // can already read the hook files themselves.
   'harness.approvedHooks': 'expose',
+  // The other half of the same record: which packages a person turned down.
+  // Same contents, same reasoning — package names and digests, no secrets.
+  'harness.refusedHooks': 'expose',
 
   // An open record (see EXPOSED_RECORD_PATHS): file extension -> viewer id.
   'workbench.defaultViewers': 'expose',

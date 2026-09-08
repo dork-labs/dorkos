@@ -2358,8 +2358,20 @@ export const UserConfigSchema = z.object({
        * hook until somebody says so.
        */
       approvedHooks: z.array(z.string()).default(() => []),
+      /**
+       * The hook projections a person has turned down, in exactly the same
+       * `<packageName>@<digest>` form as {@link approvedHooks} — one store, one
+       * digest, and an entry never in both.
+       *
+       * A refusal lasts because there is now a way back out of it:
+       * `dorkos harness hooks --list` shows every stored decision and
+       * `--revoke <package>` removes one. It also expires on its own — the
+       * digest covers the exact commands, so a package that changes what it
+       * wants to run stops matching and is asked about again.
+       */
+      refusedHooks: z.array(z.string()).default(() => []),
     })
-    .default(() => ({ autoSync: true, approvedHooks: [] })),
+    .default(() => ({ autoSync: true, approvedHooks: [], refusedHooks: [] })),
   workbench: z
     .object({
       /**

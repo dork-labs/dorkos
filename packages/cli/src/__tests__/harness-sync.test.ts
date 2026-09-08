@@ -5,8 +5,24 @@ import path from 'path';
 
 import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
 
-import { runHarnessSync, parseHarnessSyncArgs } from '../harness-sync-command.js';
+import {
+  runHarnessSync,
+  parseHarnessSyncArgs,
+  type HarnessSyncArgs,
+} from '../harness-sync-command.js';
+import { runHarnessHooks, parseHarnessHooksArgs } from '../harness-hooks-command.js';
+import { hookApprovalEntry } from '../../server/services/harness/hook-consent.js';
 import { runHarnessDispatcher } from '../commands/harness-dispatcher.js';
+
+/**
+ * Fill in the flags a case does not care about.
+ *
+ * Every call names the ones under test and nothing else, so adding a flag to
+ * `HarnessSyncArgs` does not rewrite thirty unrelated cases into noise.
+ */
+function syncArgs(partial: Partial<HarnessSyncArgs>): HarnessSyncArgs {
+  return { check: false, fix: false, strict: false, allowHooks: [], ...partial };
+}
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-harness-sync-test-'));
@@ -88,7 +104,13 @@ function writeFixtureRepoWithoutManifest(root: string): void {
 describe('parseHarnessSyncArgs', () => {
   it('defaults both flags to false with no args', () => {
     const args = parseHarnessSyncArgs([]);
-    expect(args).toEqual({ check: false, fix: false, harness: undefined });
+    expect(args).toEqual({
+      check: false,
+      fix: false,
+      harness: undefined,
+      strict: false,
+      allowHooks: [],
+    });
   });
 
   it('parses --check and --fix booleans', () => {
@@ -96,11 +118,15 @@ describe('parseHarnessSyncArgs', () => {
       check: true,
       fix: false,
       harness: undefined,
+      strict: false,
+      allowHooks: [],
     });
     expect(parseHarnessSyncArgs(['--fix'])).toEqual({
       check: false,
       fix: true,
       harness: undefined,
+      strict: false,
+      allowHooks: [],
     });
   });
 
@@ -176,7 +202,7 @@ describe('runHarnessSync', () => {
       process.chdir(tmpDir);
       const before = snapshotTree(tmpDir);
 
-      const result = await runHarnessSync({ check: true, fix: false });
+      const result = await runHarnessSync(syncArgs({ check: true, fix: false }));
 
       expect(snapshotTree(tmpDir)).toEqual(before);
       expect(fs.existsSync(path.join(tmpDir, '.agents', 'harness.manifest.json'))).toBe(false);
@@ -187,7 +213,7 @@ describe('runHarnessSync', () => {
       writeFixtureRepoWithoutManifest(tmpDir);
       process.chdir(tmpDir);
 
-      await runHarnessSync({ check: true, fix: false });
+      await runHarnessSync(syncArgs({ check: true, fix: false }));
 
       // fs.realpath: macOS temp dirs are symlinked (/var -> /private/var), and the
       // command reports the cwd Node resolved.
@@ -202,7 +228,7 @@ describe('runHarnessSync', () => {
       process.chdir(tmpDir);
       const before = snapshotTree(tmpDir);
 
-      const result = await runHarnessSync({ check: false, fix: false });
+      const result = await runHarnessSync(syncArgs({ check: false, fix: false }));
 
       expect(snapshotTree(tmpDir)).toEqual(before);
       expect(result.exitCode).toBe(1);
@@ -214,7 +240,7 @@ describe('runHarnessSync', () => {
       const before = snapshotTree(tmpDir);
 
       // Previously exited 0 here — a "clean" report that had just written a file.
-      const result = await runHarnessSync({ check: true, fix: false, harness: 'codex' });
+      const result = await runHarnessSync(syncArgs({ check: true, fix: false, harness: 'codex' }));
 
       expect(snapshotTree(tmpDir)).toEqual(before);
       expect(result.exitCode).toBe(1);
@@ -225,7 +251,7 @@ describe('runHarnessSync', () => {
       process.chdir(tmpDir);
       const before = snapshotTree(tmpDir);
 
-      const result = await runHarnessSync({ check: true, fix: false });
+      const result = await runHarnessSync(syncArgs({ check: true, fix: false }));
 
       expect(snapshotTree(tmpDir)).toEqual(before);
       expect(result.exitCode).toBe(1);
@@ -240,7 +266,7 @@ describe('runHarnessSync', () => {
     process.chdir(tmpDir);
     const before = snapshotTree(tmpDir);
 
-    const result = await runHarnessSync({ check: false, fix: true, harness: 'bogus' });
+    const result = await runHarnessSync(syncArgs({ check: false, fix: true, harness: 'bogus' }));
 
     expect(snapshotTree(tmpDir)).toEqual(before);
     expect(result.exitCode).toBe(1);
@@ -250,7 +276,7 @@ describe('runHarnessSync', () => {
   it('auto-scaffolds then realizes the projection on --fix', async () => {
     writeFixtureRepoWithoutManifest(tmpDir);
     process.chdir(tmpDir);
-    const fix = await runHarnessSync({ check: false, fix: true });
+    const fix = await runHarnessSync(syncArgs({ check: false, fix: true }));
 
     // The manifest was scaffolded and the plan applied with no conflicts: the
     // Claude instruction pointer and codex hooks now exist on disk.
@@ -261,7 +287,7 @@ describe('runHarnessSync', () => {
     // A second run sees the manifest already present (no re-scaffold message) and
     // is clean.
     logSpy.mockClear();
-    const second = await runHarnessSync({ check: true, fix: false });
+    const second = await runHarnessSync(syncArgs({ check: true, fix: false }));
     expect(second.exitCode).toBe(0);
     expect(logSpy).not.toHaveBeenCalledWith(
       expect.stringContaining('No manifest found; wrote a default')
@@ -271,7 +297,7 @@ describe('runHarnessSync', () => {
   it('returns exit code 1 when both --check and --fix are passed', async () => {
     writeFixtureRepo(tmpDir);
     process.chdir(tmpDir);
-    const result = await runHarnessSync({ check: true, fix: true });
+    const result = await runHarnessSync(syncArgs({ check: true, fix: true }));
     expect(result.exitCode).toBe(1);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('not both'));
   });
@@ -281,11 +307,11 @@ describe('runHarnessSync', () => {
     process.chdir(tmpDir);
 
     // --check on the un-projected fixture: drift present.
-    const firstCheck = await runHarnessSync({ check: true, fix: false });
+    const firstCheck = await runHarnessSync(syncArgs({ check: true, fix: false }));
     expect(firstCheck.exitCode).toBe(1);
 
     // --fix realizes the plan with no conflicts.
-    const fix = await runHarnessSync({ check: false, fix: true });
+    const fix = await runHarnessSync(syncArgs({ check: false, fix: true }));
     expect(fix.exitCode).toBe(0);
 
     // The projected files now exist.
@@ -296,7 +322,7 @@ describe('runHarnessSync', () => {
     expect(fs.existsSync(path.join(tmpDir, '.codex', 'hooks.json'))).toBe(true);
 
     // A second --check is clean.
-    const secondCheck = await runHarnessSync({ check: false, fix: false });
+    const secondCheck = await runHarnessSync(syncArgs({ check: false, fix: false }));
     expect(secondCheck.exitCode).toBe(0);
   });
 
@@ -310,11 +336,11 @@ describe('runHarnessSync', () => {
     process.chdir(tmpDir);
 
     // --check sees the installed skill as drift (it isn't projected yet).
-    const check = await runHarnessSync({ check: true, fix: false });
+    const check = await runHarnessSync(syncArgs({ check: true, fix: false }));
     expect(check.exitCode).toBe(1);
 
     // --fix projects it: a namespaced symlink lands in the Codex skills dir.
-    const fix = await runHarnessSync({ check: false, fix: true });
+    const fix = await runHarnessSync(syncArgs({ check: false, fix: true }));
     expect(fix.exitCode).toBe(0);
     const projected = path.join(tmpDir, '.agents', 'skills', 'acme__greet');
     expect(fs.lstatSync(projected).isSymbolicLink()).toBe(true);
@@ -354,7 +380,7 @@ describe('runHarnessSync', () => {
     );
     process.chdir(tmpDir);
 
-    const fix = await runHarnessSync({ check: false, fix: true });
+    const fix = await runHarnessSync(syncArgs({ check: false, fix: true }));
     expect(fix.exitCode).toBe(0);
 
     const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
@@ -375,7 +401,7 @@ describe('runHarnessSync', () => {
     writeInstalledPlugin(tmpDir, 'acme', 'greet');
     process.chdir(tmpDir);
 
-    await runHarnessSync({ check: true, fix: false });
+    await runHarnessSync(syncArgs({ check: true }));
 
     const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     const codexLine = printed.split('\n').find((line) => line.trim().startsWith('codex:'));
@@ -389,8 +415,9 @@ describe('runHarnessSync', () => {
 
   it('prints what a rotted plugin hooks.json lost during salvage (DOR-1724)', async () => {
     // The salvage keeps what the file still says clearly and drops the rest
-    // (DOR-646). The CLI path has no approval gate to re-ask through, so this
-    // report is the ONLY place the person is told a hook stopped being installed.
+    // (DOR-646). This report is where a person is told a hook stopped being
+    // installed — and since DOR-1849 it appears once the package's hooks are
+    // actually going in, which is when losing one of them means anything.
     writeFixtureRepo(tmpDir);
     writeInstalledPlugin(tmpDir, 'acme', 'greet');
     const hooksDir = path.join(tmpDir, '.dork', 'plugins', 'acme', 'hooks');
@@ -404,7 +431,7 @@ describe('runHarnessSync', () => {
     );
     process.chdir(tmpDir);
 
-    const fix = await runHarnessSync({ check: false, fix: true });
+    const fix = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
     expect(fix.exitCode).toBe(0);
 
     const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
@@ -423,6 +450,38 @@ describe('runHarnessSync', () => {
     );
   });
 
+  it('names what a rotted hooks.json lost BESIDE the withheld block, before the decision', async () => {
+    // Both, and the order matters. The withheld block lists what the reader
+    // could recover; the salvage warning names what it could not. A person
+    // deciding whether to allow this package needs both halves BEFORE they
+    // answer — reporting the loss only once the package was allowed meant
+    // deciding from a list that quietly omitted the damaged part (DOR-1724,
+    // DOR-1849).
+    writeFixtureRepo(tmpDir);
+    writeInstalledPlugin(tmpDir, 'acme', 'greet');
+    const hooksDir = path.join(tmpDir, '.dork', 'plugins', 'acme', 'hooks');
+    fs.mkdirSync(hooksDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(hooksDir, 'hooks.json'),
+      JSON.stringify({
+        Stop: [{ hooks: [{ command: 'still-good.sh' }] }, { hooks: 'rotted' }],
+      })
+    );
+    process.chdir(tmpDir);
+
+    const fix = await runHarnessSync(syncArgs({ fix: true }));
+    expect(fix.exitCode).toBe(0);
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(printed).toContain(
+      'hook "acme:Stop": .dork/plugins/acme/hooks/hooks.json declares one or more unusable matcher groups under "Stop"'
+    );
+    expect(printed).toContain('Withheld: hooks from "acme" were not installed');
+    expect(printed).toContain('still-good.sh');
+    // Withheld means withheld: the readable half did not install either.
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
+  });
+
   it('prints no salvage warning when every plugin hooks.json is readable (DOR-1724)', async () => {
     writeFixtureRepo(tmpDir);
     writeInstalledPlugin(tmpDir, 'acme', 'greet');
@@ -434,7 +493,7 @@ describe('runHarnessSync', () => {
     );
     process.chdir(tmpDir);
 
-    await runHarnessSync({ check: false, fix: true });
+    await runHarnessSync(syncArgs({ check: false, fix: true }));
 
     const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(printed).not.toContain('hooks/hooks.json declares');
@@ -458,7 +517,7 @@ describe('runHarnessSync', () => {
     const mine = writeHandWrittenHooks(tmpDir, '.cursor/hooks.json', 'echo MINE');
     process.chdir(tmpDir);
 
-    const fix = await runHarnessSync({ check: false, fix: true });
+    const fix = await runHarnessSync(syncArgs({ check: false, fix: true }));
 
     expect(fix.exitCode).toBe(0);
     const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
@@ -472,10 +531,10 @@ describe('runHarnessSync', () => {
     writeFixtureRepo(tmpDir);
     writeHandWrittenHooks(tmpDir, '.cursor/hooks.json', 'echo MINE');
     process.chdir(tmpDir);
-    await runHarnessSync({ check: false, fix: true }); // project everything first
+    await runHarnessSync(syncArgs({ check: false, fix: true })); // project everything first
     logSpy.mockClear();
 
-    const check = await runHarnessSync({ check: true, fix: false });
+    const check = await runHarnessSync(syncArgs({ check: true, fix: false }));
 
     expect(check.exitCode).toBe(0);
     const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
@@ -491,7 +550,7 @@ describe('runHarnessSync', () => {
     writeHandWrittenHooks(tmpDir, '.codex/hooks.json', 'echo MINE');
     process.chdir(tmpDir);
 
-    const check = await runHarnessSync({ check: true, fix: false });
+    const check = await runHarnessSync(syncArgs({ check: true, fix: false }));
 
     expect(check.exitCode).toBe(1);
     const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
@@ -507,12 +566,12 @@ describe('runHarnessSync', () => {
     // and print a stack trace over the report.
     writeFixtureRepo(tmpDir);
     process.chdir(tmpDir);
-    await runHarnessSync({ check: false, fix: true }); // project everything first
+    await runHarnessSync(syncArgs({ check: false, fix: true })); // project everything first
     fs.rmSync(path.join(tmpDir, '.codex', 'hooks.json'), { force: true });
     fs.symlinkSync('hooks.json.bak', path.join(tmpDir, '.codex', 'hooks.json'));
     logSpy.mockClear();
 
-    const check = await runHarnessSync({ check: true, fix: false });
+    const check = await runHarnessSync(syncArgs({ check: true, fix: false }));
 
     expect(check.exitCode).toBe(1);
     const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
@@ -524,7 +583,7 @@ describe('runHarnessSync', () => {
   it('--check names a link whose skill is gone, and --fix sweeps it', async () => {
     writeFixtureRepo(tmpDir);
     process.chdir(tmpDir);
-    await runHarnessSync({ check: false, fix: true }); // project `demo`
+    await runHarnessSync(syncArgs({ check: false, fix: true })); // project `demo`
     const projected = path.join(tmpDir, '.claude', 'skills', 'demo');
     expect(fs.lstatSync(projected).isSymbolicLink()).toBe(true);
 
@@ -532,7 +591,7 @@ describe('runHarnessSync', () => {
     fs.rmSync(path.join(tmpDir, '.agents', 'skills', 'demo'), { recursive: true, force: true });
     logSpy.mockClear();
 
-    const check = await runHarnessSync({ check: true, fix: false });
+    const check = await runHarnessSync(syncArgs({ check: true, fix: false }));
 
     expect(check.exitCode).toBe(1);
     const checkOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
@@ -542,13 +601,13 @@ describe('runHarnessSync', () => {
     expect(fs.lstatSync(projected).isSymbolicLink()).toBe(true);
 
     logSpy.mockClear();
-    const fix = await runHarnessSync({ check: false, fix: true });
+    const fix = await runHarnessSync(syncArgs({ check: false, fix: true }));
 
     expect(fix.exitCode).toBe(0);
     const fixOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(fixOutput).toMatch(/Swept 1 orphaned[\s\S]*\.claude\/skills\/demo/);
     expect(fs.existsSync(projected)).toBe(false);
-    expect((await runHarnessSync({ check: true, fix: false })).exitCode).toBe(0);
+    expect((await runHarnessSync(syncArgs({ check: true, fix: false }))).exitCode).toBe(0);
   });
 
   it('--check --harness withholds orphans, because --fix --harness cannot sweep them', async () => {
@@ -558,12 +617,12 @@ describe('runHarnessSync', () => {
     // report never mentioned.
     writeFixtureRepo(tmpDir);
     process.chdir(tmpDir);
-    await runHarnessSync({ check: false, fix: true });
+    await runHarnessSync(syncArgs({ check: false, fix: true }));
     fs.rmSync(path.join(tmpDir, '.agents', 'skills', 'demo'), { recursive: true, force: true });
     const orphan = path.join(tmpDir, '.claude', 'skills', 'demo');
     logSpy.mockClear();
 
-    const scoped = await runHarnessSync({ check: true, fix: false, harness: 'codex' });
+    const scoped = await runHarnessSync(syncArgs({ check: true, fix: false, harness: 'codex' }));
 
     expect(scoped.exitCode).toBe(0);
     const scopedOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
@@ -572,16 +631,16 @@ describe('runHarnessSync', () => {
 
     // The filtered --fix it would have recommended really does leave the link,
     // which is why the filtered --check must not report it.
-    const scopedFix = await runHarnessSync({ check: false, fix: true, harness: 'codex' });
+    const scopedFix = await runHarnessSync(syncArgs({ check: false, fix: true, harness: 'codex' }));
     expect(scopedFix.exitCode).toBe(0);
     expect(fs.lstatSync(orphan).isSymbolicLink()).toBe(true);
 
     // Unfiltered, it is named and it is swept.
     logSpy.mockClear();
-    const full = await runHarnessSync({ check: true, fix: false });
+    const full = await runHarnessSync(syncArgs({ check: true, fix: false }));
     expect(full.exitCode).toBe(1);
     expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain('Orphaned links');
-    await runHarnessSync({ check: false, fix: true });
+    await runHarnessSync(syncArgs({ check: false, fix: true }));
     expect(fs.existsSync(orphan)).toBe(false);
   });
 
@@ -590,7 +649,7 @@ describe('runHarnessSync', () => {
     fs.writeFileSync(path.join(tmpDir, '.agents', 'harness.manifest.json'), '{ not json');
     process.chdir(tmpDir);
 
-    const quiet = await runHarnessSync({ check: true, fix: false });
+    const quiet = await runHarnessSync(syncArgs({ check: true, fix: false }));
     expect(quiet.exitCode).toBe(1);
     const quietErrors = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(quietErrors).toContain('Re-run with LOG_LEVEL=debug to see the stack.');
@@ -598,7 +657,7 @@ describe('runHarnessSync', () => {
 
     errorSpy.mockClear();
     vi.stubEnv('LOG_LEVEL', 'debug');
-    const loud = await runHarnessSync({ check: true, fix: false });
+    const loud = await runHarnessSync(syncArgs({ check: true, fix: false }));
     expect(loud.exitCode).toBe(1);
     const loudErrors = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(loudErrors).toContain('\n    at ');
@@ -612,7 +671,7 @@ describe('runHarnessSync', () => {
     fs.writeFileSync(path.join(tmpDir, '.agents', 'harness.manifest.json'), '{ not json');
     process.chdir(tmpDir);
 
-    const check = await runHarnessSync({ check: true, fix: false });
+    const check = await runHarnessSync(syncArgs({ check: true, fix: false }));
 
     expect(check.exitCode).toBe(1);
     const errors = errorSpy.mock.calls.map((c) => String(c[0]));
@@ -626,7 +685,7 @@ describe('runHarnessSync', () => {
     writeHandWrittenHooks(tmpDir, '.github/hooks/copilot-hooks.json', 'echo MINE copilot');
     process.chdir(tmpDir);
 
-    await runHarnessSync({ check: true, fix: false, harness: 'cursor' });
+    await runHarnessSync(syncArgs({ check: true, fix: false, harness: 'cursor' }));
 
     const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(printed).toContain('.cursor/hooks.json');
@@ -637,12 +696,537 @@ describe('runHarnessSync', () => {
     writeFixtureRepo(tmpDir);
     process.chdir(tmpDir);
 
-    const scoped = await runHarnessSync({ check: true, fix: false, harness: 'codex' });
+    const scoped = await runHarnessSync(syncArgs({ check: true, fix: false, harness: 'codex' }));
     expect(scoped.exitCode).toBe(1); // codex still has the generated hooks drift
 
-    const bogus = await runHarnessSync({ check: true, fix: false, harness: 'bogus' });
+    const bogus = await runHarnessSync(syncArgs({ check: true, fix: false, harness: 'bogus' }));
     expect(bogus.exitCode).toBe(1);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Unknown harness'));
+  });
+});
+
+/**
+ * The CLI hole DOR-1849 closed: `dorkos harness sync --fix` used to pass no gate
+ * and consult no record, so it installed every hook on disk including a
+ * package's somebody had turned down. It now withholds, says so command by
+ * command, and installs only what a person allowed — which it also RECORDS, into
+ * the same list the approval card writes (contract D5).
+ */
+describe('runHarnessSync — withholding a package’s hooks', () => {
+  let tmpDir: string;
+  let originalCwd: string;
+  let homeDir: string;
+  let logSpy: MockInstance<typeof console.log>;
+  let errorSpy: MockInstance<typeof console.error>;
+
+  /** Everything the run printed, joined so a block can be asserted verbatim. */
+  const printed = (): string => logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+
+  /** Everything the run printed to stderr. */
+  const errors = (): string => errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+
+  /**
+   * The project path the command itself will see.
+   *
+   * macOS temp dirs are symlinked (`/var` -> `/private/var`) and `process.cwd()`
+   * answers with the resolved path, which is what the stored digest covers.
+   */
+  const repoRoot = (): string => fs.realpathSync(tmpDir);
+
+  /** What the config file holds, or `undefined` when the run never made one. */
+  function storedHarness(): { approvedHooks?: string[]; refusedHooks?: string[] } | undefined {
+    const configPath = path.join(homeDir, 'config.json');
+    if (!fs.existsSync(configPath)) return undefined;
+    return (JSON.parse(fs.readFileSync(configPath, 'utf8')) as { harness?: never }).harness;
+  }
+
+  /** Add a `hooks/hooks.json` to an already-written installed plugin. */
+  function writePluginHooks(name: string, hooks: unknown): void {
+    const hooksDir = path.join(tmpDir, '.dork', 'plugins', name, 'hooks');
+    fs.mkdirSync(hooksDir, { recursive: true });
+    fs.writeFileSync(path.join(hooksDir, 'hooks.json'), JSON.stringify(hooks));
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tmpDir = createTempDir();
+    homeDir = createTempDir();
+    vi.stubEnv('DORK_HOME', homeDir);
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    writeFixtureRepo(tmpDir);
+    writeInstalledPlugin(tmpDir, 'acme-tools', 'greet');
+    writePluginHooks('acme-tools', {
+      PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'node ./guard.mjs' }] }],
+      Stop: [{ hooks: [{ type: 'command', command: 'bash scripts/notify.sh' }] }],
+    });
+    process.chdir(tmpDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    vi.unstubAllEnvs();
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  it('holds the hooks back, names every command and the exact re-run, and exits 0', async () => {
+    const fix = await runHarnessSync(syncArgs({ fix: true }));
+
+    // Exit 0 is the decision, not an oversight: a withheld hook is a recorded
+    // answer being obeyed, and failing a mostly-done sync teaches bootstrap
+    // scripts `|| true` (contract D5).
+    expect(fix.exitCode).toBe(0);
+    const out = printed();
+    expect(out).toContain('Withheld: hooks from "acme-tools" were not installed');
+    expect(out).toContain('PreToolUse (matcher: Bash)  ->  node ./guard.mjs');
+    expect(out).toContain('Stop                        ->  bash scripts/notify.sh');
+    expect(out).toContain('You have not allowed this package yet.');
+    expect(out).toContain('To install them: dorkos harness sync --fix --allow-hooks acme-tools');
+    expect(out).toContain('2 hooks withheld from 1 package');
+
+    // And the commands really did not land, while the rest of the package did.
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
+    expect(fs.readFileSync(path.join(tmpDir, '.codex', 'hooks.json'), 'utf8')).not.toContain(
+      'guard.mjs'
+    );
+    expect(
+      fs.lstatSync(path.join(tmpDir, '.claude', 'skills', 'acme-tools__greet')).isSymbolicLink()
+    ).toBe(true);
+  });
+
+  it('says the same thing on --check, without touching disk', async () => {
+    const check = await runHarnessSync(syncArgs({ check: true }));
+
+    expect(printed()).toContain('Withheld: hooks from "acme-tools" were not installed');
+    // Reporting a hook it is not going to install is not drift, so the withheld
+    // block never changes what --check says about the tree.
+    expect(check.exitCode).toBe(1); // the unprojected fixture really is drifted
+    expect(fs.existsSync(path.join(homeDir, 'config.json'))).toBe(false);
+  });
+
+  it('--strict exits 1, and still applies everything else first', async () => {
+    const strict = await runHarnessSync(syncArgs({ fix: true, strict: true }));
+
+    expect(strict.exitCode).toBe(1);
+    expect(printed()).toContain('--strict: exiting 1 because hooks were withheld.');
+    // Everything that was not held back still landed.
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'CLAUDE.md'))).toBe(true);
+  });
+
+  it('--strict exits 0 once the package is allowed', async () => {
+    await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme-tools'] }));
+    logSpy.mockClear();
+
+    const strict = await runHarnessSync(syncArgs({ fix: true, strict: true }));
+    expect(strict.exitCode).toBe(0);
+    expect(printed()).not.toContain('withheld');
+  });
+
+  it('--allow-hooks installs the commands AND records the same entry the card writes', async () => {
+    const fix = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme-tools'] }));
+
+    expect(fix.exitCode).toBe(0);
+    expect(fs.readFileSync(path.join(tmpDir, '.claude', 'settings.local.json'), 'utf8')).toContain(
+      'node ./guard.mjs'
+    );
+    expect(fs.readFileSync(path.join(tmpDir, '.codex', 'hooks.json'), 'utf8')).toContain(
+      'bash scripts/notify.sh'
+    );
+    expect(printed()).not.toContain('Withheld:');
+
+    // Not a per-run override: the exact `<package>@<digest>` entry, in the one
+    // store the app reads too.
+    const entry = hookApprovalEntry({
+      projectPath: repoRoot(),
+      packageName: 'acme-tools',
+      hooks: [
+        { event: 'PreToolUse', matcher: 'Bash', command: 'node ./guard.mjs' },
+        { event: 'Stop', command: 'bash scripts/notify.sh' },
+      ],
+    });
+    expect(storedHarness()?.approvedHooks).toEqual([entry]);
+
+    // A second run needs no flag: the record is what carries the answer.
+    logSpy.mockClear();
+    await runHarnessSync(syncArgs({ fix: true }));
+    expect(printed()).not.toContain('Withheld:');
+  });
+
+  it('--allow-hooks clears a refusal for the same hooks', async () => {
+    // Both halves of "one store, one digest": the entry moves rather than being
+    // added, so a package is never approved and refused at once.
+    const entry = hookApprovalEntry({
+      projectPath: repoRoot(),
+      packageName: 'acme-tools',
+      hooks: [
+        { event: 'PreToolUse', matcher: 'Bash', command: 'node ./guard.mjs' },
+        { event: 'Stop', command: 'bash scripts/notify.sh' },
+      ],
+    });
+    fs.writeFileSync(
+      path.join(homeDir, 'config.json'),
+      JSON.stringify({
+        version: 1,
+        harness: { autoSync: true, approvedHooks: [], refusedHooks: [entry] },
+      })
+    );
+
+    // Refused first, so the block says which decision is being obeyed.
+    await runHarnessSync(syncArgs({ fix: true }));
+    expect(printed()).toContain('You turned this package down earlier.');
+
+    logSpy.mockClear();
+    await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme-tools'] }));
+    expect(storedHarness()?.approvedHooks).toEqual([entry]);
+    expect(storedHarness()?.refusedHooks).toEqual([]);
+  });
+
+  it('withholds a package whose entry a hand-edit put in BOTH lists', async () => {
+    // Both leaves are `operator-only` so that a person can edit
+    // `~/.dork/config.json` themselves, and a hand-edit is how one entry ends up
+    // on both lists. Measured before the fix: the command installed itself with
+    // no withheld block at all.
+    const entry = hookApprovalEntry({
+      projectPath: repoRoot(),
+      packageName: 'acme-tools',
+      hooks: [
+        { event: 'PreToolUse', matcher: 'Bash', command: 'node ./guard.mjs' },
+        { event: 'Stop', command: 'bash scripts/notify.sh' },
+      ],
+    });
+    fs.writeFileSync(
+      path.join(homeDir, 'config.json'),
+      JSON.stringify({
+        version: 1,
+        harness: { autoSync: true, approvedHooks: [entry], refusedHooks: [entry] },
+      })
+    );
+
+    const fix = await runHarnessSync(syncArgs({ fix: true }));
+
+    expect(fix.exitCode).toBe(0);
+    expect(printed()).toContain('You turned this package down earlier.');
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
+    expect(fs.readFileSync(path.join(tmpDir, '.codex', 'hooks.json'), 'utf8')).not.toContain(
+      'guard.mjs'
+    );
+  });
+
+  describe('when config.json itself cannot be read', () => {
+    /** A truncated settings file — a mid-write, or a hand-edit that lost a brace. */
+    function writeTruncatedConfig(): void {
+      fs.writeFileSync(path.join(homeDir, 'config.json'), '{ "version": 1, "harness": {');
+    }
+
+    it('says the file could not be read instead of "you have not allowed this yet"', async () => {
+      writeTruncatedConfig();
+
+      const fix = await runHarnessSync(syncArgs({ fix: true }));
+
+      expect(fix.exitCode).toBe(0);
+      const out = printed();
+      expect(out).toContain('Withheld: hooks from "acme-tools" were not installed');
+      expect(out).toContain(`DorkOS could not read ${path.join(homeDir, 'config.json')}`);
+      expect(out).toContain('Fix the file before allowing hooks.');
+      // The two things it must NOT say: a claim about what was decided, and the
+      // command whose corrupt-recovery would replace every setting with defaults.
+      expect(out).not.toContain('You have not allowed this package yet.');
+      expect(out).not.toContain('--allow-hooks acme-tools');
+      // Still fail-closed, and the file is left exactly as it was.
+      expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
+      expect(fs.readFileSync(path.join(homeDir, 'config.json'), 'utf8')).toBe(
+        '{ "version": 1, "harness": {'
+      );
+    });
+
+    it('says the same on --check', async () => {
+      writeTruncatedConfig();
+
+      await runHarnessSync(syncArgs({ check: true }));
+
+      expect(printed()).toContain(`DorkOS could not read ${path.join(homeDir, 'config.json')}`);
+      expect(printed()).not.toContain('You have not allowed this package yet.');
+    });
+
+    it('refuses --allow-hooks rather than opening the store over it', async () => {
+      // `initConfigManager` on an unreadable file runs conf's corrupt-recovery,
+      // which backs it up and resets EVERY setting to defaults. The refusal is
+      // what keeps a person's telemetry, login and accounts where they left them.
+      writeTruncatedConfig();
+
+      const result = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme-tools'] }));
+
+      expect(result.exitCode).toBe(1);
+      expect(errors()).toContain(`DorkOS could not read ${path.join(homeDir, 'config.json')}`);
+      expect(fs.readFileSync(path.join(homeDir, 'config.json'), 'utf8')).toBe(
+        '{ "version": 1, "harness": {'
+      );
+      expect(fs.readdirSync(homeDir)).toEqual(['config.json']);
+    });
+
+    it('a schema-invalid harness block is unreadable too, not "nothing decided"', async () => {
+      fs.writeFileSync(
+        path.join(homeDir, 'config.json'),
+        JSON.stringify({ version: 1, harness: { autoSync: true, approvedHooks: 'oops' } })
+      );
+
+      await runHarnessSync(syncArgs({ fix: true }));
+
+      expect(printed()).toContain('not in a shape DorkOS understands');
+      expect(printed()).not.toContain('You have not allowed this package yet.');
+    });
+
+    it('an ABSENT file is still just "not allowed yet" — that one is honest', async () => {
+      expect(fs.existsSync(path.join(homeDir, 'config.json'))).toBe(false);
+
+      await runHarnessSync(syncArgs({ fix: true }));
+
+      expect(printed()).toContain('You have not allowed this package yet.');
+      expect(printed()).not.toContain('could not read');
+    });
+  });
+
+  it('refuses --allow-hooks without --fix, naming the fix', async () => {
+    const result = await runHarnessSync(syncArgs({ check: true, allowHooks: ['acme-tools'] }));
+
+    expect(result.exitCode).toBe(1);
+    expect(errors()).toContain("--allow-hooks installs a package's hooks, so it needs --fix.");
+    expect(errors()).toContain('dorkos harness sync --fix --allow-hooks acme-tools');
+    expect(fs.existsSync(path.join(homeDir, 'config.json'))).toBe(false);
+  });
+
+  it('refuses a package name that declares no hooks here, and writes nothing', async () => {
+    // A typo must not half-record a decision and leave the person working out
+    // which half landed, so every name is checked before anything is written.
+    const result = await runHarnessSync(
+      syncArgs({ fix: true, allowHooks: ['acme-tools', 'no-such-pkg'] })
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(errors()).toContain("No installed package here declares hooks under 'no-such-pkg'");
+    expect(errors()).toContain('Packages with hooks in this project: acme-tools');
+    expect(fs.existsSync(path.join(homeDir, 'config.json'))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
+  });
+
+  it('counts merge actions in the summary (VC-02)', async () => {
+    // The one kind that writes into a file the person owns —
+    // `.claude/settings.local.json` — and the only one the summary used to skip.
+    await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme-tools'] }));
+
+    expect(printed()).toMatch(/claude-code: .*\d+ merge/);
+  });
+
+  it('shows an unreadable-hook warning under --harness codex (VC-02)', async () => {
+    // The loss happened at read time, ahead of every harness, so a filter that
+    // hid it for every id but `claude-code` was hiding the only report of it.
+    writePluginHooks('acme-tools', {
+      Stop: [{ hooks: [{ type: 'command', command: 'fine.sh' }] }],
+      PostToolUse: [{ hooks: [{ type: 'command' }] }],
+    });
+    await runHarnessSync(syncArgs({ fix: true, harness: 'codex', allowHooks: ['acme-tools'] }));
+
+    const out = printed();
+    expect(out).toContain('plugin layers:');
+    expect(out).toContain(
+      'hook "acme-tools:PostToolUse": .dork/plugins/acme-tools/hooks/hooks.json declares "PostToolUse" in a shape this reader cannot use'
+    );
+  });
+
+  it('shows a plugin-layer drop under --harness cursor, headed "plugin layers" (VC-02)', async () => {
+    // A non-portable layer has no home in ANY harness, so filing it under
+    // `codex:` was wrong in a project that runs Codex and invisible in one that
+    // does not.
+    const manifestPath = path.join(
+      tmpDir,
+      '.dork',
+      'plugins',
+      'acme-tools',
+      '.dork',
+      'manifest.json'
+    );
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as { layers: string[] };
+    manifest.layers = [...manifest.layers, 'extensions'];
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+
+    await runHarnessSync(syncArgs({ check: true, harness: 'cursor' }));
+
+    const out = printed();
+    expect(out).toContain('plugin layers:');
+    expect(out).toContain('plugin "acme-tools:extensions"');
+    expect(out).not.toContain('codex:');
+  });
+
+  it('says the Codex hooks file changed and is held for review, once (HK-10)', async () => {
+    await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme-tools'] }));
+
+    const first = printed();
+    expect(first).toContain('Codex hooks changed (.codex/hooks.json).');
+    expect(first).toContain('Codex only runs these in a project you have trusted');
+    expect(first).toContain('review queue');
+    expect(first).toContain('https://learn.chatgpt.com/docs/hooks');
+
+    // A second identical --fix rewrites the same bytes, so Codex's trust record
+    // has not moved and there is nothing to say. This is what makes AP-01
+    // load-bearing rather than merely tidy.
+    logSpy.mockClear();
+    await runHarnessSync(syncArgs({ fix: true }));
+    expect(printed()).not.toContain('Codex hooks changed');
+  });
+});
+
+/** `dorkos harness hooks` — the first surface for a record nothing could show (VC-05). */
+describe('runHarnessHooks', () => {
+  let tmpDir: string;
+  let originalCwd: string;
+  let homeDir: string;
+  let logSpy: MockInstance<typeof console.log>;
+  let errorSpy: MockInstance<typeof console.error>;
+
+  const printed = (): string => logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+  const errors = (): string => errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+
+  /**
+   * The entry the fixture package would produce in this project right now.
+   *
+   * `realpathSync` because macOS temp dirs are symlinked and `process.cwd()`
+   * answers with the resolved path, which is what the stored digest covers.
+   */
+  function localEntry(): string {
+    return hookApprovalEntry({
+      projectPath: fs.realpathSync(tmpDir),
+      packageName: 'acme-tools',
+      hooks: [{ event: 'Stop', command: 'bash scripts/notify.sh' }],
+    });
+  }
+
+  function writeStored(harness: Record<string, unknown>): void {
+    fs.writeFileSync(
+      path.join(homeDir, 'config.json'),
+      JSON.stringify({ version: 1, harness: { autoSync: true, ...harness } })
+    );
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tmpDir = createTempDir();
+    homeDir = createTempDir();
+    vi.stubEnv('DORK_HOME', homeDir);
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    writeFixtureRepo(tmpDir);
+    writeInstalledPlugin(tmpDir, 'acme-tools', 'greet');
+    fs.mkdirSync(path.join(tmpDir, '.dork', 'plugins', 'acme-tools', 'hooks'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, '.dork', 'plugins', 'acme-tools', 'hooks', 'hooks.json'),
+      JSON.stringify({
+        Stop: [{ hooks: [{ type: 'command', command: 'bash scripts/notify.sh' }] }],
+      })
+    );
+    process.chdir(tmpDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    vi.unstubAllEnvs();
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  it('parses --list and --revoke, and defaults a bare invocation to --list', () => {
+    expect(parseHarnessHooksArgs([])).toEqual({ list: true, revoke: undefined });
+    expect(parseHarnessHooksArgs(['--list'])).toEqual({ list: true, revoke: undefined });
+    expect(parseHarnessHooksArgs(['--revoke', 'acme-tools'])).toEqual({
+      list: false,
+      revoke: 'acme-tools',
+    });
+    expect(() => parseHarnessHooksArgs(['--nope'])).toThrow(
+      /Unknown option for 'harness hooks': --nope/
+    );
+  });
+
+  it('--list says nothing is stored, and creates no config file doing it', async () => {
+    const result = await runHarnessHooks({ list: true });
+
+    expect(result.exitCode).toBe(0);
+    expect(printed()).toContain('No hook decisions stored yet.');
+    // The read path must not open the config store: `conf`'s constructor writes
+    // the file and the directory around it (DOR-678's rule, a different route).
+    expect(fs.existsSync(path.join(homeDir, 'config.json'))).toBe(false);
+  });
+
+  it('--list names each package and whether the decision is about this project', async () => {
+    writeStored({
+      approvedHooks: [localEntry()],
+      refusedHooks: ['other-pkg@0000000000000000000000000000000000000000000000000000000000000000'],
+    });
+
+    const result = await runHarnessHooks({ list: true });
+
+    expect(result.exitCode).toBe(0);
+    const out = printed();
+    expect(out).toContain('Allowed to run commands:');
+    expect(out).toContain('acme-tools — matches the hooks installed in this project');
+    expect(out).toContain('Turned down:');
+    expect(out).toContain(
+      'other-pkg — from another project, or from before this package changed its hooks'
+    );
+  });
+
+  it('--list says the file could not be read rather than "nothing stored yet"', async () => {
+    fs.writeFileSync(path.join(homeDir, 'config.json'), '{ "version": 1, "harness": {');
+
+    const result = await runHarnessHooks({ list: true });
+
+    expect(result.exitCode).toBe(1);
+    expect(errors()).toContain(`DorkOS could not read ${path.join(homeDir, 'config.json')}`);
+    expect(printed()).not.toContain('No hook decisions stored yet.');
+  });
+
+  it('--revoke forgets a package and says the next sync will ask again', async () => {
+    writeStored({ approvedHooks: [localEntry()], refusedHooks: [] });
+
+    const result = await runHarnessHooks({ list: false, revoke: 'acme-tools' });
+
+    expect(result.exitCode).toBe(0);
+    expect(printed()).toContain('Forgot 1 decision for "acme-tools":');
+    expect(printed()).toContain('was: allowed');
+    const stored = JSON.parse(fs.readFileSync(path.join(homeDir, 'config.json'), 'utf8')) as {
+      harness: { approvedHooks: string[]; refusedHooks: string[] };
+    };
+    expect(stored.harness.approvedHooks).toEqual([]);
+
+    // And the next sync really does hold the package back again.
+    logSpy.mockClear();
+    await runHarnessSync(syncArgs({ fix: true }));
+    expect(printed()).toContain('Withheld: hooks from "acme-tools" were not installed');
+  });
+
+  it('--revoke of a package with nothing stored exits 1 and points at --list', async () => {
+    writeStored({ approvedHooks: [], refusedHooks: [] });
+
+    const result = await runHarnessHooks({ list: false, revoke: 'acme-tools' });
+
+    expect(result.exitCode).toBe(1);
+    expect(errors()).toContain("Nothing stored for 'acme-tools'.");
+    expect(errors()).toContain('dorkos harness hooks --list');
+  });
+
+  it('is reachable through the dispatcher, and its help text names it', async () => {
+    expect(await runHarnessDispatcher('hooks', ['--list'])).toBe(0);
+    logSpy.mockClear();
+    expect(await runHarnessDispatcher(undefined, [])).toBe(0);
+    expect(printed()).toContain('hooks [options]');
+    expect(printed()).toContain('--allow-hooks <pkg>');
+    expect(printed()).toContain('--revoke <pkg>');
+    expect(printed()).toContain('--strict');
   });
 });
 

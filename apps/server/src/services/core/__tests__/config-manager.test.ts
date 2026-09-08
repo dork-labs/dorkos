@@ -58,6 +58,7 @@ import {
   seedRoomRepoDefaults,
   seedDorkosToolsDefault,
   seedDisplayNameSourceDefault,
+  seedHarnessRefusedHooks,
   seedToolOnlyReplyDefaults,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
@@ -442,7 +443,11 @@ describe('ConfigManager', () => {
 
   it('exposes harness defaults (auto-sync on, no hooks allowed) on a fresh config', () => {
     const configManager = initConfigManager(testDir);
-    expect(configManager.get('harness')).toEqual({ autoSync: true, approvedHooks: [] });
+    expect(configManager.get('harness')).toEqual({
+      autoSync: true,
+      approvedHooks: [],
+      refusedHooks: [],
+    });
     expect(configManager.getDot('harness.autoSync')).toBe(true);
   });
 
@@ -3474,7 +3479,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(23);
+    expect(Object.keys(bodies)).toHaveLength(24);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')
@@ -3661,7 +3666,110 @@ describe('backfillHarnessApprovedHooks migration (DOR-522)', () => {
     const store = createMockStore({ harness: { autoSync: true } });
     backfillHarnessApprovedHooks(store);
     const parsed = UserConfigSchema.parse({ version: 1, ...store.data });
-    expect(parsed.harness).toEqual({ autoSync: true, approvedHooks: [] });
+    expect(parsed.harness).toEqual({ autoSync: true, approvedHooks: [], refusedHooks: [] });
+  });
+});
+
+describe('seedHarnessRefusedHooks migration (DOR-1849)', () => {
+  it('reserves the leaf on a `harness` block that predates it', () => {
+    // What this catches: conf merges top-level defaults SHALLOWLY, so an
+    // upgrading install with a stored `harness` block never inherits the new
+    // leaf on its own. Drop the body and it reads `undefined`.
+    const store = createMockStore({ harness: { autoSync: true, approvedHooks: ['flow@abc'] } });
+    seedHarnessRefusedHooks(store);
+    expect(store.data.harness).toEqual({
+      autoSync: true,
+      approvedHooks: ['flow@abc'],
+      refusedHooks: [],
+    });
+  });
+
+  it("seeds an EMPTY list, so an upgrade turns nothing down on a person's behalf", () => {
+    // The mirror image of `backfillHarnessApprovedHooks`: an upgrade must not
+    // hand out an approval nobody gave, and it must not record a refusal nobody
+    // made either. Everything a person has not decided about stays undecided,
+    // which is what makes the CLI ask rather than assume.
+    const store = createMockStore({ harness: { autoSync: false } });
+    seedHarnessRefusedHooks(store);
+    expect(store.data.harness).toEqual({ autoSync: false, refusedHooks: [] });
+  });
+
+  it('never overwrites a list already on file (idempotent)', () => {
+    // What this catches: a re-run — corrupt-recovery instantiates conf twice —
+    // erasing refusals somebody made, which would silently re-arm every package
+    // they turned down.
+    const store = createMockStore({
+      harness: { autoSync: true, approvedHooks: [], refusedHooks: ['evil@abc'] },
+    });
+    seedHarnessRefusedHooks(store);
+    seedHarnessRefusedHooks(store);
+    expect(store.data.harness).toEqual({
+      autoSync: true,
+      approvedHooks: [],
+      refusedHooks: ['evil@abc'],
+    });
+  });
+
+  it('repairs a non-array refusedHooks rather than trusting it', () => {
+    const store = createMockStore({ harness: { autoSync: true, refusedHooks: 'oops' } });
+    seedHarnessRefusedHooks(store);
+    expect(store.data.harness).toEqual({ autoSync: true, refusedHooks: [] });
+  });
+
+  it('does nothing when there is no `harness` block to extend', () => {
+    // The schema default supplies the whole section on read in that case, and
+    // writing a partial `harness` here would drop every other default in it.
+    const store = createMockStore({ server: { port: 4242 } });
+    expect(() => seedHarnessRefusedHooks(store)).not.toThrow();
+    expect(store.data.harness).toBeUndefined();
+  });
+
+  it('a real pre-0.75.0 config file gains harness.refusedHooks on disk (full conf path)', () => {
+    // The half neither the mock store nor a `getDot` assertion can reach (see
+    // `seedRoomRepoDefaults` above for the DOR-1496 measurement this shape comes
+    // from). `harness.refusedHooks` is a nested-leaf case, so this body is the
+    // ONLY thing that puts the leaf on the file: suppress it and this goes red
+    // while `store.get('harness').refusedHooks` still answers `[]` from Ajv's
+    // discarded copy.
+    //
+    // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
+    // `0.0.0` in a dev tree, which runs no migration at all.
+    const dir = path.join(os.tmpdir(), 'test-dork-refused-hooks-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          harness: { autoSync: false, approvedHooks: ['flow@abc'] },
+          __internal__: { migrations: { version: '0.74.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.75.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        harness: Record<string, unknown>;
+      };
+      expect(onDisk.harness.refusedHooks).toEqual([]);
+      // The upgrade adds a leaf; it changes nothing the person had set.
+      expect(onDisk.harness.autoSync).toBe(false);
+      expect(onDisk.harness.approvedHooks).toEqual(['flow@abc']);
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

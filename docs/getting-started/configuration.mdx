@@ -693,7 +693,9 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
 
 Harness Sync projects your `.agents/` definitions and installed marketplace plugins out to every agent harness. By default, installing or uninstalling a marketplace plugin re-runs this projection automatically.
 
-Some packages ship hooks: commands your coding agent runs on its own, before or after it does things. Installing a package never puts those in place on its own. DorkOS shows you each command and when it would run, and waits for you to say yes. It remembers your answer per package and per project, and asks again if a later version of the package wants to run something different, or wants to run the same thing at a different moment. Running `dorkos harness sync` yourself is the one exception: that command is you asking for everything on disk to be projected, so it installs hooks without a prompt, including ones you turned down earlier.
+Some packages ship hooks: commands your coding agent runs on its own, before or after it does things. Installing a package never puts those in place on its own. DorkOS shows you each command and when it would run, and waits for you to say yes. It remembers your answer per package and per project, and asks again if a later version of the package wants to run something different, or wants to run the same thing at a different moment.
+
+Running `dorkos harness sync --fix` yourself follows the same answers. It sets up everything else the package brought, holds its hooks back, and prints each command it did not install. If DorkOS cannot read your settings file at all, it says so and holds every package's hooks back rather than guessing. To install them, run `dorkos harness sync --fix --allow-hooks <package>`, which saves your answer in the same list. `dorkos harness hooks --list` shows every package you have decided about, and `dorkos harness hooks --revoke <package>` forgets one so DorkOS asks again.
 
 If you wrote your own hooks file — `.codex/hooks.json` or `.cursor/hooks.json`, say — DorkOS never overwrites it and never deletes it. It names the file, leaves it exactly as you left it, and tells you where to put those hooks instead: `.claude/settings.json`, the one file it reads hooks from and copies out to every agent you run. The single exception is a `.codex/hooks.json` holding nothing but a bare list of events, which is what older versions of DorkOS wrote there and Codex never read; that one it replaces with a file Codex does read.
 
@@ -707,7 +709,13 @@ If you wrote your own hooks file — `.codex/hooks.json` or `.cursor/hooks.json`
     },
     'harness.approvedHooks': {
       description:
-        'The packages you have allowed to install hook commands, one entry per package and project. DorkOS adds an entry when you approve a card; only a person can change this list.',
+        'The packages you have allowed to install hook commands, one entry per package and project. DorkOS adds an entry when you approve a card, or when you run `dorkos harness sync --fix --allow-hooks <package>`. Only a person can change this list.',
+      type: 'string[]',
+      default: '[]',
+    },
+    'harness.refusedHooks': {
+      description:
+        'The packages you have turned down, in the same form. DorkOS holds their hooks back and stops asking, until you run `dorkos harness hooks --revoke <package>` or the package changes what it wants to run. Only a person can change this list.',
       type: 'string[]',
       default: '[]',
     },

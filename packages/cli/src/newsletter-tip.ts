@@ -1,8 +1,8 @@
 // packages/cli/src/newsletter-tip.ts
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { resolveDorkHome } from './lib/dork-home.js';
 
 /** URL the tip points at — the newsletter landing page (ADR 260707-025214). */
 const NEWSLETTER_URL = 'https://dorkos.ai/newsletter';
@@ -16,9 +16,7 @@ interface NewsletterTipMarker {
 
 /** Lazily resolve the marker path so process.env.DORK_HOME (set by cli.ts) is available. */
 function getMarkerPath(): string {
-  // eslint-disable-next-line no-restricted-syntax -- DORK_HOME is set imperatively by cli.ts after module load; env.ts is parsed too early
-  const home = process.env.DORK_HOME || join(homedir(), '.dork');
-  return join(home, 'cache', 'newsletter-tip.json');
+  return join(resolveDorkHome(), 'cache', 'newsletter-tip.json');
 }
 
 /** True if the tip has already been shown once (marker present). */

@@ -181,6 +181,29 @@ dorkos cache prune [--keep-last-n <N>] # Remove older cached package versions (d
 dorkos cache clear                     # Wipe the entire cache
 ```
 
+#### Agent files
+
+**`dorkos harness`**: share one set of skills, instructions, and hooks with every coding agent you run. You keep them in `.agents/` in your project, and DorkOS copies or links them into the folders Claude Code, Codex, Cursor, Gemini, Copilot, and OpenCode each read.
+
+```bash
+dorkos harness sync                         # Show what is out of date. Writes nothing
+dorkos harness sync --fix                   # Set it all up
+dorkos harness sync --check --harness codex # Show it for one agent only
+dorkos harness sync --fix --strict          # Stop with an error if any hooks were held back
+```
+
+Run it from your project root: it works on the folder you are in, and reads `.agents/harness.manifest.json` there. `--check` only reports, so it never writes anything. `--fix` is what changes files, and it creates that manifest for you if the folder has none.
+
+Some packages ship hooks: commands your agent runs on its own, before or after it does things. `--fix` holds those back until you allow them. It sets up everything else the package brought, then prints each command it did not install and how to allow it:
+
+```bash
+dorkos harness sync --fix --allow-hooks acme-tools   # Install that package's hooks
+dorkos harness hooks --list                          # Every package you have decided about
+dorkos harness hooks --revoke acme-tools             # Forget one, so you get asked again
+```
+
+`--allow-hooks` saves your answer, so you only give it once. If DorkOS cannot read your settings file, it tells you what is wrong with it and holds every package's hooks back, and it will not write over a file it cannot read. It is the same answer you would give on the approval card in DorkOS itself, kept in the same place. Held-back hooks are not a failure, so `sync` still finishes with a success code. Add `--strict` if you want a script to stop instead.
+
 #### Feedback
 
 **`dorkos feedback`**: report a bug or request a feature. It opens a prefilled GitHub issue in your browser with your DorkOS version, operating system, runtimes, and on/off settings already filled in. You review and edit everything before submitting; DorkOS sends nothing on its own.

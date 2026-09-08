@@ -123,12 +123,48 @@ export interface SkillsFacts {
 }
 
 /**
+ * One harness's documented behaviour for reading hooks.
+ *
+ * Deliberately narrow: it records only what a shipped DorkOS output states out
+ * loud about hooks, because a cell nothing reads is a cell nobody re-fetches. It
+ * exists for the Codex trust gate (contract HK-10), which `dorkos harness sync
+ * --fix` prints after it writes a generated hooks file — and a claim about
+ * another company's software that appears in a terminal has to be traceable to
+ * the page it was read from, on the day it was read.
+ */
+export interface HooksFacts {
+  /** Repo-relative and user-scope paths the harness reads hooks from, as the vendor writes them. */
+  readPaths: ReadPaths;
+  /**
+   * Whether the harness requires the person to trust something before a hook
+   * runs, and what the trust is recorded against.
+   *
+   * - `none` — no gate is documented.
+   * - `project` — the project (or its config layer) must be trusted.
+   * - `per-hook-hash` — trust is recorded against each hook's current content,
+   *   so changing a hook's bytes puts it back behind the gate.
+   * - `unknown` — the vendor page does not say.
+   */
+  trust: 'none' | 'project' | 'per-hook-hash' | 'unknown';
+  /** Where the row came from and when. */
+  source: FactSource;
+  /** Whether the row is documentation-derived or observed against a binary. */
+  verified: FactVerification;
+  /** Caveats a single cell cannot carry. */
+  notes?: readonly string[];
+}
+
+/**
  * Everything the table records about one harness.
  *
- * Only `skills` exists today. Instructions, hooks and commands are deliberately
- * absent — see the module docs of {@link ./index.js} for why.
+ * `skills` is compiled for all six. `hooks` is present only where a shipped
+ * output makes a claim about it — Codex's trust gate today — for the reason
+ * {@link HooksFacts} gives; instructions and commands are deliberately absent,
+ * see the module docs of {@link ./index.js}.
  */
 export interface HarnessFacts {
   /** How this harness reads skills. */
   skills: SkillsFacts;
+  /** How this harness reads hooks, where a DorkOS output states something about it. */
+  hooks?: HooksFacts;
 }

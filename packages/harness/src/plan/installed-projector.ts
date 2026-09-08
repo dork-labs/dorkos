@@ -755,6 +755,8 @@ export function dropNonPortableLayers(plugin: InstalledPlugin): ProjectionAction
       kind: 'drop' as const,
       artifact: 'plugin' as const,
       harness: DROP_ATTRIBUTION,
+      // Not about Codex: a non-portable layer has no home in ANY harness.
+      harnessAgnostic: true,
       provenance: 'installed' as const,
       name: `${plugin.name}:${layer}`,
       reason: `plugin layer "${layer}" is not a portable harness asset — ${NON_PORTABLE_LAYER_REASONS[layer]}`,
@@ -767,6 +769,8 @@ export function dropWholePlugin(plugin: InstalledPlugin, reason: string): Projec
     kind: 'drop',
     artifact: 'plugin',
     harness: DROP_ATTRIBUTION,
+    // Not about Codex: a package this shape is not portable to any harness.
+    harnessAgnostic: true,
     provenance: 'installed',
     name: plugin.name,
     reason,

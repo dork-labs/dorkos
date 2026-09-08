@@ -185,7 +185,7 @@ describe('UserConfigSchema', () => {
         defaultProvider: 'worktree',
         retentionCap: null,
       },
-      harness: { autoSync: true, approvedHooks: [] },
+      harness: { autoSync: true, approvedHooks: [], refusedHooks: [] },
       workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
       runtimes: {
         default: 'claude-code',
@@ -568,7 +568,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         defaultProvider: 'worktree',
         retentionCap: null,
       },
-      harness: { autoSync: true, approvedHooks: [] },
+      harness: { autoSync: true, approvedHooks: [], refusedHooks: [] },
       workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
       runtimes: {
         default: 'claude-code',

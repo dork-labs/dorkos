@@ -78,6 +78,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'extensions.enabled',
       'harness.approvedHooks',
       'harness.autoSync',
+      'harness.refusedHooks',
       'mcp.apiKey',
       'mcp.enabled',
       'mcp.rateLimit.enabled',

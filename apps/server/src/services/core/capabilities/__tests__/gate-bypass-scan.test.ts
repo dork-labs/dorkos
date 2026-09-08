@@ -147,8 +147,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'a boot migration that CLEARS a legacy key — narrowing only, and no request reaches it (logConfigWrite: "the MCP key migration")',
       'services/shapes/shape-services.ts':
         'records which Shape is active, reachable only through applyShape, which is itself on this list and tier-gated at routes/shapes.ts (DOR-625)',
-      'services/harness/hook-approval.ts':
-        'records a package hook a PERSON just approved on the approval card; `harness.approvedHooks` is operator-only and the approval route is the gate (DOR-522)',
+      'services/harness/hook-consent.ts':
+        'records what a PERSON decided about a package hook — a yes from the approval card or from `dorkos harness sync --fix --allow-hooks`, a no from the card, and a revoke from `dorkos harness hooks --revoke`. Both leaves (`harness.approvedHooks`, `harness.refusedHooks`) are operator-only, and the approval route is the gate in front of the card (DOR-522, DOR-1849)',
       'services/extensions/extension-manager.ts':
         'four writes into `extensions`, all three of whose leaves are operator-only, so each is listed with the gate that stands in front of it: enable/disable are reached only from the three callers on the `extensionManager.enable(` and `.disable(` entries below, every one of them gated; approveToRun only from `routes/extensions-approval.ts`, which runs the strictest bar in this file; forgetRunApproval only from that same route and from a marketplace uninstall, and it only ever REMOVES an approval (logConfigWrite: "the extensions manager" / "approving an extension to run" / "withdrawing an extension run approval")',
     },

@@ -543,10 +543,14 @@ describe('buildPlan hook gate (DOR-522)', () => {
     }
   });
 
-  it('stays quiet about a disallowed package’s unreadable hooks (DOR-1724)', () => {
-    // The gate already means this package contributes no hooks to anything, so a
-    // "we dropped part of your hooks.json" line would send the operator after
-    // damage that changes nothing for them.
+  it('reports a package’s unreadable hooks whether or not the gate allows it (DOR-1724)', () => {
+    // This used to take only the ALLOWED packages, on the reasoning that a
+    // withheld package contributes nothing so its salvage losses are noise. That
+    // had it backwards: the loss happens at READ time, before consent is a
+    // question, and both the approval card and the CLI's withheld block list
+    // what the reader could recover — so a person decided whether to trust the
+    // package from a list that silently omitted the part that would not parse,
+    // and heard about it only after saying yes (DOR-1849).
     const repo = emptyRepo();
     const rotted: InstalledPlugin = {
       ...projectPlugin,
@@ -562,9 +566,22 @@ describe('buildPlan hook gate (DOR-522)', () => {
         installedPlugins: [rotted],
         allowPluginHooks: () => false,
       });
-      expect(gated.warnings.filter((w) => w.artifact === 'hook')).toEqual([]);
+      const expected = [
+        {
+          artifact: 'hook',
+          harness: 'claude-code',
+          // The harness is a placeholder: the loss happened at read time, ahead
+          // of every harness, so no filter may hide it (contract VC-02).
+          harnessAgnostic: true,
+          name: 'acme:Stop',
+          reason:
+            '.dork/plugins/acme/hooks/hooks.json declares "Stop" in a shape this reader cannot use, so the whole event was dropped and no "Stop" hook is projected',
+        },
+      ];
+      expect(gated.warnings.filter((w) => w.artifact === 'hook')).toEqual(expected);
 
-      // …and says it the moment that same package is allowed to contribute.
+      // …and says exactly the same thing when the package IS allowed. The
+      // sentence is about the file, so the gate does not change a word of it.
       const allowed = buildPlan({
         repoRoot: repo,
         manifest: MANIFEST,
@@ -572,15 +589,7 @@ describe('buildPlan hook gate (DOR-522)', () => {
         installedPlugins: [rotted],
         allowPluginHooks: () => true,
       });
-      expect(allowed.warnings.filter((w) => w.artifact === 'hook')).toEqual([
-        {
-          artifact: 'hook',
-          harness: 'claude-code',
-          name: 'acme:Stop',
-          reason:
-            '.dork/plugins/acme/hooks/hooks.json declares "Stop" in a shape this reader cannot use, so the whole event was dropped and no "Stop" hook is projected',
-        },
-      ]);
+      expect(allowed.warnings.filter((w) => w.artifact === 'hook')).toEqual(expected);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

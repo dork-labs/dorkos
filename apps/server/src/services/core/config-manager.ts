@@ -3041,6 +3041,39 @@ export function seedDisplayNameSourceDefault(store: {
 }
 
 /**
+ * Migration body: reserve `harness.refusedHooks: []` on a `harness` block that
+ * predates durable refusals (DOR-1849).
+ *
+ * `harness` is a section most stored configs already carry (the `'0.44.0'` key
+ * seeds it), and conf's pre-write merge is SHALLOW — so a stored `harness`
+ * object wins wholesale and never gains a member. That makes this body the only
+ * thing that puts the leaf on the file; see "Which of these bodies is a real
+ * no-op" above {@link CONFIG_MIGRATIONS}.
+ *
+ * Seeds the list EMPTY, the mirror image of {@link backfillHarnessApprovedHooks}
+ * and for the mirror reason: an upgrade must not hand out an approval nobody
+ * gave, and it must not record a refusal nobody made. Everything undecided stays
+ * undecided, so `dorkos harness sync --fix` withholds and asks rather than
+ * assuming an answer.
+ *
+ * Additive and idempotent — it writes only when `refusedHooks` is not already an
+ * array, so a corrupt-recovery re-run cannot erase refusals somebody made.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedHarnessRefusedHooks(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const harness = store.get('harness');
+  if (harness == null || typeof harness !== 'object') return;
+  const current = harness as Record<string, unknown>;
+  if (Array.isArray(current.refusedHooks)) return;
+  store.set('harness', { ...current, refusedHooks: [] });
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -3735,6 +3768,25 @@ export const CONFIG_MIGRATIONS = {
     // themselves (DOR-1022). A nested leaf, so this body is the only thing that
     // writes it; see `seedDisplayNameSourceDefault`.
     seedDisplayNameSourceDefault(store);
+  },
+  // 0.73.0 has merged (the display-name source) and 0.74.0 is TAGGED, so 0.75.0
+  // is the next key. Frozen from merge, not from the release bump, for the
+  // reason `'0.60.0'` above states; anything further opens `'0.76.0'`.
+  //
+  // Disjoint from every other key here: it writes one nested leaf under
+  // `harness`. `'0.44.0'` and `'0.57.0'` also touch that section — the first
+  // seeds the whole section when it is absent, the second adds `approvedHooks` —
+  // and this body writes neither member, so sequencing them any way round lands
+  // the same config.
+  '0.75.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `harness.refusedHooks` — the packages a person turned down, kept beside
+    // the ones they allowed so a refusal survives a restart and the CLI has
+    // something to obey (DOR-1849). A nested leaf, so this body is the only
+    // thing that writes it; see `seedHarnessRefusedHooks`.
+    seedHarnessRefusedHooks(store);
   },
 } as const;
 

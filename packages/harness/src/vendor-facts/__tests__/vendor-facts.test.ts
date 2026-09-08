@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { HARNESS_IDS, type HarnessId } from '../../manifest/schema.js';
-import { HARNESS_VENDOR_FACTS, VENDOR_FACTS_FETCHED_AT, skillsFactsFor } from '../index.js';
+import {
+  HARNESS_VENDOR_FACTS,
+  VENDOR_FACTS_FETCHED_AT,
+  hooksFactsFor,
+  skillsFactsFor,
+} from '../index.js';
 
 /** The canonical directory the whole skills half of the engine is organised around. */
 const CANONICAL_SKILLS_DIR = '.agents/skills';
@@ -39,6 +44,24 @@ describe('vendor-facts table', () => {
     expect(Number.isNaN(Date.parse(facts.source.fetchedAt))).toBe(false);
     expect(facts.source.quote?.length ?? 0).toBeGreaterThan(0);
     expect(facts.liveReload).not.toBe('');
+  });
+
+  it('records the Codex hook trust gate the CLI quotes back, and records it for Codex alone', () => {
+    // `dorkos harness sync --fix` tells a person that a regenerated
+    // `.codex/hooks.json` is held for review until they trust it again
+    // (contract HK-10). That is a claim about somebody else's software printed
+    // in somebody's terminal, so it has to be traceable — and it must not
+    // silently become a claim about a harness nobody read the page for.
+    const codex = hooksFactsFor('codex');
+    expect(codex).toBeDefined();
+    expect(codex!.trust).toBe('per-hook-hash');
+    expect(codex!.source.url).toMatch(/^https:\/\//);
+    expect(codex!.source.fetchedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(codex!.source.quote).toContain("records trust against the hook's current hash");
+    expect(codex!.readPaths.project).toContain('.codex/hooks.json');
+
+    const withHooks = HARNESS_IDS.filter((h) => hooksFactsFor(h) !== undefined);
+    expect(withHooks).toEqual(['codex']);
   });
 
   it('was compiled in one pass — at least one row still carries the table-wide fetch date', () => {

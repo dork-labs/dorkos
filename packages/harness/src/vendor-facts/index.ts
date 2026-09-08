@@ -26,7 +26,7 @@
  * of the vendor page it names, not a fresh quotation of the page itself; the
  * contract was compiled from those pages on the date each row carries.
  *
- * **Only `skills` rows exist.** The contract's §1.2 tabulates instructions,
+ * **Almost only `skills` rows exist.** The contract's §1.2 tabulates instructions,
  * hooks, commands, subagents, rules and MCP read paths too, but it carries no
  * per-harness vendor URL or fetch date for those cells — its provenance there is
  * mixed (vendor pages, `specs/harness-sync/spike-findings.md` from 2026-06, and
@@ -35,6 +35,13 @@
  * kinds are left out rather than given a URL that does not document them. Adding
  * them means fetching each vendor page, and {@link ./types.js#HarnessFacts} has
  * the room.
+ *
+ * Codex's `hooks` cell is the one exception, and it earns the exception the way
+ * the rule asks: it was fetched from the vendor's own page on the date it
+ * carries, and something SHIPPED reads it — `dorkos harness sync --fix` quotes
+ * the trust gate back to a person after it writes a `.codex/hooks.json`
+ * (contract HK-10). A claim about another company's software, printed in
+ * somebody's terminal, has to be traceable to the page it came from.
  *
  * @module vendor-facts
  */
@@ -112,6 +119,25 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
         'Codex documents no charset rule and no directory-match rule for a skill name, which is why the engine\'s `<pkg>__<name>` projection into `.agents/skills` is expected to load here and nowhere else with confidence: the contract\'s SK-09 calls Codex "the one harness DorkOS source-verified" and names OpenCode, Cursor and Copilot as the ones whose stated name rules `pkg__name` violates.',
         '`dedupe: none` is the vendor\'s own statement that duplicates are not merged — a different claim from "we do not know", and the reason two skills sharing a frontmatter name are a collision warning (SK-06) rather than a silent merge.',
         'The user scope also includes skills bundled with the binary; those are not a filesystem path a projection can reach, so they are not listed.',
+      ],
+    },
+    hooks: {
+      readPaths: {
+        project: ['.codex/hooks.json', '.codex/config.toml'],
+        user: ['~/.codex/hooks.json', '~/.codex/config.toml'],
+      },
+      trust: 'per-hook-hash',
+      source: {
+        url: 'https://learn.chatgpt.com/docs/hooks',
+        fetchedAt: '2026-09-07',
+        quote:
+          "Before a non-managed hook can run, Codex requires you to review and trust the exact hook definition. … Codex records trust against the hook's current hash, so new or changed hooks are marked for review and skipped until trusted. … Project-local hooks load only when the project `.codex/` layer is trusted.",
+      },
+      verified: 'docs',
+      notes: [
+        'This is the one cell a shipped output quotes back to a person: `dorkos harness sync --fix` says it after it writes a `.codex/hooks.json` whose bytes changed (contract HK-10). Both halves of the quote matter and neither implies the other — the project layer being trusted is not enough on its own, and a trusted project still holds a CHANGED hook for review.',
+        'It is what makes byte-identical idempotency (AP-01) load-bearing for Codex rather than merely tidy: a regeneration that rewrites the same hooks with different bytes disarms every one of them until the person opens `/hooks` again.',
+        "Read directly from the vendor page on the date above, unlike the `skills` rows, which are the capabilities contract's transcription. `developers.openai.com/codex/hooks` 308-redirects here.",
       ],
     },
   },
@@ -243,4 +269,19 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
  */
 export function skillsFactsFor(harness: HarnessId): HarnessFacts['skills'] {
   return HARNESS_VENDOR_FACTS[harness].skills;
+}
+
+/**
+ * The hooks facts for one harness, when the table has compiled them.
+ *
+ * `undefined` is the ordinary answer and means "nothing here has been read from
+ * that vendor's hooks page", never "that harness has no hook trust gate". A
+ * caller that prints a claim about a harness has to handle the absence rather
+ * than assume the permissive reading.
+ *
+ * @param harness - the harness to look up.
+ * @returns that harness's documented hook-reading behaviour, or `undefined`.
+ */
+export function hooksFactsFor(harness: HarnessId): HarnessFacts['hooks'] {
+  return HARNESS_VENDOR_FACTS[harness].hooks;
 }
