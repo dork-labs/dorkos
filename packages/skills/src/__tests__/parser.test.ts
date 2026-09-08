@@ -134,6 +134,26 @@ describe('parseSkillFile', () => {
     expect(readRawFrontmatter(content)).toBeNull();
   });
 
+  it('gives the same error about malformed frontmatter every time parseSkillFile is asked', () => {
+    // The same gray-matter cache trap as `readRawFrontmatter`, at the second call
+    // site. `parseSkillFile` has around ten callers — marketplace install and
+    // preview, tasks, shapes, the Codex command scan, the MCP skill resources,
+    // the operating-skills seed, the skills scanner — so whether a package's
+    // broken skill is "unparseable frontmatter" or "a name that is not a string"
+    // depended on which of them opened the file first.
+    const content = '---\nname: broken\ndescription: "unclosed\nhooks: [\n---\n\n# broken\n';
+
+    const first = parseSkillFile('/skills/broken/SKILL.md', content, SkillFrontmatterSchema);
+    const second = parseSkillFile('/skills/broken/SKILL.md', content, SkillFrontmatterSchema);
+    const third = parseSkillFile('/skills/broken/SKILL.md', content, SkillFrontmatterSchema);
+
+    expect(first.ok).toBe(false);
+    expect([second, third].map((r) => (r.ok ? 'ok' : r.error))).toEqual([
+      first.ok ? 'ok' : first.error,
+      first.ok ? 'ok' : first.error,
+    ]);
+  });
+
   it('still reads well-formed frontmatter the same way on every call', () => {
     const content = '---\nname: fine\ndescription: A fine skill\n---\n\n# fine\n';
 

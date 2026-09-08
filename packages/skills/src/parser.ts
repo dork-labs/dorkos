@@ -50,6 +50,38 @@ export interface ParseSkillFileOptions {
 }
 
 /**
+ * Split content into frontmatter and body, WITHOUT gray-matter's cache.
+ *
+ * The one place in this package that calls `matter()`, because the cache is a
+ * correctness trap and a second call site is how it came back. `gray-matter`
+ * writes its cache entry BEFORE it parses (`matter.cache[content] = file`,
+ * index.js:47), so a throw leaves the unparsed placeholder — `data: {}`,
+ * `content: the whole raw file` — cached under that content forever. The same
+ * malformed `SKILL.md` then fails one way on the first call in a process and a
+ * completely different way on every later one: `readRawFrontmatter` answered
+ * `null` and then `{ data: {} }`, and `parseSkillFile` said "Failed to parse
+ * frontmatter" and then "Invalid frontmatter: expected string at name". Which
+ * answer a caller got depended on which of this package's ten-odd readers
+ * opened the file first.
+ *
+ * Passing any options object takes gray-matter's `if (!options)` branch and
+ * skips the cache in both directions, which is the only way to make the answer
+ * depend on the content alone. Route every new reader through here rather than
+ * calling `matter()` again.
+ *
+ * @param content - Raw file content (UTF-8).
+ * @returns The frontmatter mapping and the trimmed body.
+ * @throws Whatever gray-matter throws on frontmatter it refuses to parse.
+ */
+function parseFrontmatterUncached(content: string): {
+  data: Record<string, unknown>;
+  body: string;
+} {
+  const parsed = matter(content, {});
+  return { data: parsed.data, body: parsed.content.trim() };
+}
+
+/**
  * Read a SKILL.md's frontmatter EXACTLY as the author wrote it, with no schema
  * anywhere near it.
  *
@@ -61,16 +93,6 @@ export interface ParseSkillFileOptions {
  * complaint object, and writing that back would replace the author's cron with
  * `{invalid, problem}` and lose their schedule for good (DOR-1485 review, B1).
  *
- * **The empty options object is load-bearing.** `gray-matter` writes its cache
- * entry BEFORE it parses (`matter.cache[content] = file`, index.js:47), so a
- * throw leaves the unparsed placeholder — `data: {}`, `content: the whole raw
- * file` — cached under that content forever. The same malformed `SKILL.md` then
- * answers `null` on the first call in a process and `{ data: {}, body: '---…' }`
- * on every later one, which is a reader that changes its mind about a file
- * nobody touched. Passing any options object takes the `if (!options)` branch
- * and skips the cache in both directions, which is the only way to make the
- * answer depend on the content alone.
- *
  * @param content - Raw file content (UTF-8).
  * @returns The frontmatter mapping and the trimmed body, or `null` when the
  *   content's frontmatter is malformed enough that gray-matter refuses it.
@@ -79,8 +101,7 @@ export function readRawFrontmatter(
   content: string
 ): { data: Record<string, unknown>; body: string } | null {
   try {
-    const parsed = matter(content, {});
-    return { data: parsed.data, body: parsed.content.trim() };
+    return parseFrontmatterUncached(content);
   } catch {
     return null;
   }
@@ -121,9 +142,7 @@ export function parseSkillFile<T>(
   let data: Record<string, unknown>;
   let body: string;
   try {
-    const parsed = matter(content);
-    data = parsed.data;
-    body = parsed.content.trim();
+    ({ data, body } = parseFrontmatterUncached(content));
   } catch (err) {
     return {
       ok: false,
