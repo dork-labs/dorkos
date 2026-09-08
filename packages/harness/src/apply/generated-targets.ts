@@ -46,7 +46,7 @@ function writeOwnedGenerated(absTarget: string, content: string): void {
 /**
  * What applying a generated hooks file to its current on-disk state would do.
  * One predicate, read by {@link applyGeneratedHookFile} (which acts on it), by
- * {@link findBlockedGeneratedHookTargets}, and by `apply.ts`'s drift check
+ * {@link findBlockedGenerateTargets}, and by `apply.ts`'s drift check
  * (which both report it), so the three can never disagree about who owns a file.
  */
 export type GeneratedHookOutcome = 'write' | 'adopt' | 'unchanged' | 'blocked';
