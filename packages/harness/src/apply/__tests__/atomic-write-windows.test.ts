@@ -40,7 +40,7 @@ function errno(code: string): NodeJS.ErrnoException {
 }
 
 describe('the Windows atomic-rename retry', () => {
-  it('lands the same temp file after transient EPERM responses', () => {
+  it('AP-10: lands the same temp file after transient EPERM responses', () => {
     // Seven failures outlive the original six-retry/63 ms policy that the real
     // polling-reader run exhausted on Windows.
     for (let attempt = 0; attempt < 7; attempt++) {
@@ -57,7 +57,7 @@ describe('the Windows atomic-rename retry', () => {
     expect(readdirSync(dir)).toEqual(['hooks.json']);
   });
 
-  it('stops after the finite Windows EPERM schedule and removes only its temp', () => {
+  it('AP-10, AP-11: stops after the finite Windows EPERM schedule and removes only its temp', () => {
     for (let attempt = 0; attempt <= WINDOWS_RENAME_RETRY_DELAYS_MS.length; attempt++) {
       vi.mocked(renameSync).mockImplementationOnce(() => {
         throw errno('EPERM');
@@ -73,7 +73,7 @@ describe('the Windows atomic-rename retry', () => {
     expect(readdirSync(dir).filter((name) => name.endsWith(ATOMIC_TMP_SUFFIX))).toEqual([]);
   });
 
-  it('does not retry a different Windows rename failure', () => {
+  it('AP-10: does not retry a different Windows rename failure', () => {
     vi.mocked(renameSync).mockImplementationOnce(() => {
       throw errno('EACCES');
     });
@@ -82,7 +82,7 @@ describe('the Windows atomic-rename retry', () => {
     expect(renameSync).toHaveBeenCalledTimes(1);
   });
 
-  it('does not apply the Windows retry policy on another platform', () => {
+  it('AP-10: does not apply the Windows retry policy on another platform', () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
     vi.mocked(renameSync).mockImplementationOnce(() => {
       throw errno('EPERM');

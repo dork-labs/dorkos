@@ -155,7 +155,7 @@ async function waitForReady(readyPath: string): Promise<void> {
 }
 
 describe('writeFileAtomic — what a concurrent reader can see', () => {
-  it('settles its owned reader before surfacing a write failure', async () => {
+  it('AP-10: settles its owned reader before surfacing a write failure', async () => {
     let finishReader!: (code: number) => void;
     let signalStopped!: () => void;
     let settled = false;
@@ -194,7 +194,7 @@ describe('writeFileAtomic — what a concurrent reader can see', () => {
     expect(settled).toBe(true);
   });
 
-  it('never lets a reader observe an empty or half-written file', async () => {
+  it('AP-10: never lets a reader observe an empty or half-written file', async () => {
     const dir = makeTempDir('atomic-reader-');
     const target = join(dir, 'hooks.json');
     const readyPath = join(dir, 'ready');
@@ -261,7 +261,7 @@ describe('writeFileAtomic — what a concurrent reader can see', () => {
 });
 
 describe('writeFileAtomic — the write itself', () => {
-  it('creates the parent directory and leaves no temp file behind', () => {
+  it('AP-10: creates the parent directory and leaves no temp file behind', () => {
     const dir = makeTempDir('atomic-basic-');
     const target = join(dir, 'a', 'b', 'hooks.json');
 
@@ -271,7 +271,7 @@ describe('writeFileAtomic — the write itself', () => {
     expect(readdirSync(join(dir, 'a', 'b'))).toEqual(['hooks.json']);
   });
 
-  it('replaces the file in place, keeping the permissions the platform exposes', () => {
+  it('AP-10: replaces the file in place, keeping the permissions the platform exposes', () => {
     const dir = makeTempDir('atomic-mode-');
     const target = join(dir, 'settings.local.json');
     writeFileSync(target, 'old\n');
@@ -292,7 +292,7 @@ describe('writeFileAtomic — the write itself', () => {
     }
   });
 
-  it('writes THROUGH a live symlink, exactly as a plain write did', () => {
+  it('AP-10: writes THROUGH a live symlink, exactly as a plain write did', () => {
     const dir = makeTempDir('atomic-livelink-');
     const real = join(dir, 'dotfiles', 'settings.json');
     writeFileAtomic(real, 'original\n');
@@ -308,7 +308,7 @@ describe('writeFileAtomic — the write itself', () => {
     expect(readdirSync(join(dir, 'dotfiles'))).toEqual(['settings.json']);
   });
 
-  it('replaces a DEAD symlink instead of creating a file wherever it pointed', () => {
+  it('AP-10, AP-05: replaces a DEAD symlink instead of creating a file wherever it pointed', () => {
     const dir = makeTempDir('atomic-deadlink-');
     const target = join(dir, '.codex', 'hooks.json');
     mkdirSync(join(dir, '.codex'), { recursive: true });
@@ -321,7 +321,7 @@ describe('writeFileAtomic — the write itself', () => {
     expect(existsSync(join(dir, 'nowhere.json'))).toBe(false);
   });
 
-  it('cleans its temp file up when the write cannot land, and rethrows', () => {
+  it('AP-10, AP-11: cleans its temp file up when the write cannot land, and rethrows', () => {
     const dir = makeTempDir('atomic-fail-');
     const target = join(dir, 'occupied');
     mkdirSync(target); // a directory where a file belongs: the rename cannot land

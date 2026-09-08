@@ -91,7 +91,7 @@ function plannedContent(plan: ProjectionPlan, target: string): string {
 }
 
 describe('a dead link at a generate target', () => {
-  it('is drift, and asking is not a crash', () => {
+  it('AP-05: is drift, and asking is not a crash', () => {
     stageRepo();
     stageDeadLink(GENERATE_TARGET);
     const plan = project(repo, { dorkHome });
@@ -104,7 +104,7 @@ describe('a dead link at a generate target', () => {
     expect(drift.clean).toBe(false);
   });
 
-  it('is replaced by the real file, at the real path', () => {
+  it('AP-05: is replaced by the real file, at the real path', () => {
     stageRepo();
     const pointedAt = stageDeadLink(GENERATE_TARGET);
     const plan = project(repo, { dorkHome });
@@ -125,7 +125,7 @@ describe('a dead link at a generate target', () => {
 });
 
 describe('a dead link at a scaffold target', () => {
-  it('is drift — a pointer nobody can follow is not a pointer', () => {
+  it('IN-05: is drift — a pointer nobody can follow is not a pointer', () => {
     stageRepo();
     stageDeadLink(SCAFFOLD_TARGET);
     const plan = project(repo, { dorkHome });
@@ -136,7 +136,7 @@ describe('a dead link at a scaffold target', () => {
     expect(drift.clean).toBe(false);
   });
 
-  it('is replaced by the pointer, at the real path', () => {
+  it('IN-05: is replaced by the pointer, at the real path', () => {
     stageRepo();
     const pointedAt = stageDeadLink(SCAFFOLD_TARGET);
     const plan = project(repo, { dorkHome });
@@ -150,7 +150,7 @@ describe('a dead link at a scaffold target', () => {
     expect(checkPlan(repo, plan).clean).toBe(true);
   });
 
-  it('still never overwrites a real scaffold a person has edited', () => {
+  it('IN-05: still never overwrites a real scaffold a person has edited', () => {
     // The dead-link branch must not widen into "the engine owns this path".
     stageRepo();
     writeFileAt(join(repo, SCAFFOLD_TARGET), '# my own pointer\n');
@@ -164,7 +164,7 @@ describe('a dead link at a scaffold target', () => {
 });
 
 describe('what the engine refuses to write over at a generate target', () => {
-  it('a directory is blocked, not drift — so --check never promises a --fix that dies', () => {
+  it('AP-05: a directory is blocked, not drift — so --check never promises a --fix that dies', () => {
     // Measured before this rule: `--check` printed "Run --fix to apply", and the
     // `--fix` it recommended threw EISDIR partway through the action loop.
     stageRepo();
@@ -185,7 +185,7 @@ describe('what the engine refuses to write over at a generate target', () => {
     expect(readFileSync(join(repo, GENERATE_TARGET, 'notes.md'), 'utf8')).toBe('# mine\n');
   });
 
-  it('a LIVE link is blocked, so nothing is written through it', () => {
+  it('AP-05: a LIVE link is blocked, so nothing is written through it', () => {
     // The link points OUTSIDE the repository at a file holding the engine's own
     // legacy bare event map — the one shape migration rule 2 is allowed to
     // rewrite. It rewrote that outside file, at a path no ownership rule in this
@@ -220,7 +220,7 @@ describe('what the engine refuses to write over at a generate target', () => {
     }
   });
 
-  it('reports drift for a content-less action at an absent target rather than throwing', () => {
+  it('AP-05: reports drift for a content-less action at an absent target rather than throwing', () => {
     // A `generate` action the projector never attached bytes to is a projector
     // bug, and `requireActionContent` says so loudly — but `--check` must reach
     // its report to say anything at all, so absence is settled first.

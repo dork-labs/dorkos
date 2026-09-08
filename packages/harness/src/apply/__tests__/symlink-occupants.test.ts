@@ -74,7 +74,7 @@ function volumeIsCaseInsensitive(): boolean {
 const CASE_INSENSITIVE = volumeIsCaseInsensitive();
 
 describe('blockingSymlinkOccupant', () => {
-  it('is silent for an absent target and for a link of either kind', () => {
+  it('AP-04: is silent for an absent target and for a link of either kind', () => {
     const root = temp();
     symlinkSync('../elsewhere', join(root, 'live-ish'));
     mkdirSync(join(root, 'elsewhere'), { recursive: true });
@@ -85,7 +85,7 @@ describe('blockingSymlinkOccupant', () => {
     expect(blockingSymlinkOccupant(join(root, 'dead'), '../src')).toBeUndefined();
   });
 
-  it('names a real directory and a real file, so a conflict line says what is in the way', () => {
+  it('AP-04: names a real directory and a real file, so a conflict line says what is in the way', () => {
     const root = temp();
     mkdirSync(join(root, 'a-dir'));
     writeFileSync(join(root, 'a-file'), 'something of mine\n');
@@ -94,7 +94,7 @@ describe('blockingSymlinkOccupant', () => {
     expect(blockingSymlinkOccupant(join(root, 'a-file'), '../src')).toBe(SYMLINK_FILE_REASON);
   });
 
-  it('calls a file holding exactly the link text a checkout with symlinks turned off', () => {
+  it('AP-06: calls a file holding exactly the link text a checkout with symlinks turned off', () => {
     const root = temp();
     writeFileSync(join(root, 'skill'), '../../.agents/skills/skill');
 
@@ -103,7 +103,7 @@ describe('blockingSymlinkOccupant', () => {
     );
   });
 
-  it('recognises the same file on Windows, where the plan spells the text with backslashes', () => {
+  it('AP-06: recognises the same file on Windows, where the plan spells the text with backslashes', () => {
     // git writes the symlink blob with POSIX separators on every platform, while
     // `path.relative` spells the plan's link text with backslashes on Windows.
     // Comparing raw would answer "no" on the one platform this case is about.
@@ -115,7 +115,7 @@ describe('blockingSymlinkOccupant', () => {
     );
   });
 
-  it('accepts one trailing newline after the link text, and nothing else', () => {
+  it('AP-06: accepts one trailing newline after the link text, and nothing else', () => {
     // Git writes the symlink blob with no newline at all, so the tolerance is
     // for an editor that added one. A general `trim()` accepted the link text
     // plus any amount of trailing whitespace up to 4096 bytes, which is not a
@@ -131,7 +131,7 @@ describe('blockingSymlinkOccupant', () => {
     expect(blockingSymlinkOccupant(join(root, 'padded'), text)).toBe(SYMLINK_FILE_REASON);
   });
 
-  it('does not mistake a real file that merely starts with the link text', () => {
+  it('AP-06, AP-04: does not mistake a real file that merely starts with the link text', () => {
     const root = temp();
     writeFileSync(
       join(root, 'skill'),
@@ -156,7 +156,7 @@ describe('blockingSymlinkOccupant', () => {
     expect(reason).toContain('does not tell "Foo" and "foo" apart');
   });
 
-  it('says nothing about case when the name on disk matches exactly', () => {
+  it('AP-16: says nothing about case when the name on disk matches exactly', () => {
     const root = temp();
     mkdirSync(join(root, 'foo'));
 
@@ -165,7 +165,7 @@ describe('blockingSymlinkOccupant', () => {
 });
 
 describe('linkCheckFor', () => {
-  it('compares link text everywhere but Windows, which compares where the link resolves', () => {
+  it('AP-06: compares link text everywhere but Windows, which compares where the link resolves', () => {
     expect(linkCheckFor('darwin')).toBe('link-text');
     expect(linkCheckFor('linux')).toBe('link-text');
     expect(linkCheckFor('win32')).toBe('resolved-target');
@@ -173,7 +173,7 @@ describe('linkCheckFor', () => {
 });
 
 describe('linkMatchesPlan', () => {
-  it('accepts an absolute link on Windows, which is the only kind a junction can be', () => {
+  it('AP-06: accepts an absolute link on Windows, which is the only kind a junction can be', () => {
     // A junction's stored target is always absolute — Node resolves the relative
     // text against the link's parent before Windows ever sees it. A link-text
     // comparison therefore reports every junction as drifted forever, which is
@@ -188,7 +188,7 @@ describe('linkMatchesPlan', () => {
     expect(linkMatchesPlan(target, source, 'src', 'link-text')).toBe(false);
   });
 
-  it('accepts the relative text POSIX stores, and rejects a link to somewhere else', () => {
+  it('AP-06: accepts the relative text POSIX stores, and rejects a link to somewhere else', () => {
     const root = temp();
     mkdirSync(join(root, 'src'));
     mkdirSync(join(root, 'other'));
@@ -205,7 +205,7 @@ describe('linkMatchesPlan', () => {
     );
   });
 
-  it('answers false rather than throwing for a dead link', () => {
+  it('AP-06, AP-05: answers false rather than throwing for a dead link', () => {
     const root = temp();
     symlinkSync('nowhere', join(root, 'dead'));
 
@@ -231,7 +231,7 @@ describe('a differently-cased directory at a skill link target (AP-16, end to en
     return root;
   }
 
-  it('tells the person the name on disk is cased differently, in both --check and --fix', (ctx) => {
+  it('AP-16: tells the person the name on disk is cased differently, in both --check and --fix', (ctx) => {
     if (!CASE_INSENSITIVE) {
       ctx.skip('this volume tells "Foo" and "foo" apart, so the AP-16 shape cannot exist on it');
     }
@@ -251,7 +251,7 @@ describe('a differently-cased directory at a skill link target (AP-16, end to en
     expect(existsSync(join(root, '.claude', 'skills', 'Foo', 'SKILL.md'))).toBe(true);
   });
 
-  it('pins which comparison each platform is WIRED to, not just which one it can make', () => {
+  it('AP-06: pins which comparison each platform is WIRED to, not just which one it can make', () => {
     // `linkCheckFor` has its own unit test, and it passes whatever `apply.ts`
     // hands it. This is the other half: that `apply.ts` hands it THIS platform.
     // Mutating `linkCheckFor(process.platform)` to `linkCheckFor('win32')` left

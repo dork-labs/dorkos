@@ -82,7 +82,7 @@ function syncWithSweep(): string[] {
 }
 
 describe('an authored skill that is gone', () => {
-  it('is named by --check and pruned by --fix', () => {
+  it('SK-10: is named by --check and pruned by --fix', () => {
     stageProjectedRepo(['keep', 'gone']);
     rmSync(join(repo, '.agents', 'skills', 'gone'), { recursive: true, force: true });
 
@@ -97,7 +97,7 @@ describe('an authored skill that is gone', () => {
     expect(checkPlan(repo, project(repo, { dorkHome })).clean).toBe(true);
   });
 
-  it('leaves a live projection alone, sweep after sweep', () => {
+  it('SK-10: leaves a live projection alone, sweep after sweep', () => {
     stageProjectedRepo(['keep']);
     expect(syncWithSweep()).toEqual([]);
     expect(checkPlan(repo, project(repo, { dorkHome })).orphans).toEqual([]);
@@ -105,7 +105,7 @@ describe('an authored skill that is gone', () => {
 });
 
 describe('what the orphan sweep refuses to touch', () => {
-  it('a real directory somebody put in .claude/skills', () => {
+  it('SK-10: a real directory somebody put in .claude/skills', () => {
     stageProjectedRepo([]);
     writeFileAt(join(repo, '.claude', 'skills', 'mine', 'SKILL.md'), '# mine\n');
 
@@ -116,7 +116,7 @@ describe('what the orphan sweep refuses to touch', () => {
     );
   });
 
-  it('a dead link the person made themselves, pointing outside .agents/skills', () => {
+  it('SK-10: a dead link the person made themselves, pointing outside .agents/skills', () => {
     // Someone links a skill in from a vendored checkout and the checkout moves.
     // That link is theirs to fix; DorkOS never wrote it and never removes it.
     stageProjectedRepo([]);
@@ -127,7 +127,7 @@ describe('what the orphan sweep refuses to touch', () => {
     expect(lstatSync(join(repo, '.claude', 'skills', 'vendored')).isSymbolicLink()).toBe(true);
   });
 
-  it("a dead __ link, which is the installed sweep's to take", () => {
+  it("SK-10: a dead __ link, which is the installed sweep's to take", () => {
     // An authored skill NAMED with `__` projects to a path that looks managed
     // (DOR-1844). Deleted, its dead link matches both sweeps' shapes — and one
     // path may only have one owner, or it is swept and reported twice.
@@ -149,7 +149,7 @@ describe('what the orphan sweep refuses to touch', () => {
 });
 
 describe('what the orphan sweep refuses to touch, on the plan side', () => {
-  it('a LIVE projection the plan stopped naming — a harness left the manifest', () => {
+  it('SK-10: a LIVE projection the plan stopped naming — a harness left the manifest', () => {
     // Turning Claude Code off in the manifest stops DorkOS projecting INTO it. It
     // does not make the links already there litter: they resolve, the person may
     // still be running `claude` in this repo, and deleting a working projection
@@ -164,7 +164,7 @@ describe('what the orphan sweep refuses to touch, on the plan side', () => {
     expect(existsSync(link)).toBe(true); // still resolves
   });
 
-  it('a DEAD link at a target the plan still names — that is drift, not an orphan', () => {
+  it('SK-10: a DEAD link at a target the plan still names — that is drift, not an orphan', () => {
     // The link text points at a skill that is gone while a source of its own name
     // exists, so both descriptions fit. The plan's keep-set decides: `applySymlink`
     // repairs it, and naming it an orphan too would report one path twice and
@@ -185,7 +185,7 @@ describe('what the orphan sweep refuses to touch, on the plan side', () => {
 });
 
 describe('when .claude/skills cannot be read at all', () => {
-  it('is no orphans and no crash — a file where the directory should be', () => {
+  it('SK-10, AP-11: is no orphans and no crash — a file where the directory should be', () => {
     // `checkPlan` reads this directory before it can say anything, and ENOTDIR out
     // of a drift report helps nobody. A person whose `.claude/skills` is a file
     // has a different problem, and a stack trace is not how they hear about it.

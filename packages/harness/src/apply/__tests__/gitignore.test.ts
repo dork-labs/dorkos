@@ -96,7 +96,7 @@ function plan(): ReturnType<typeof project> {
 }
 
 describe('gitignorePatternMatches', () => {
-  it('matches the shapes the constant actually uses', () => {
+  it('AP-09: matches the shapes the constant actually uses', () => {
     expect(gitignorePatternMatches('.dork/plugins/', '.dork/plugins/acme/skills/x')).toBe(true);
     // The directory itself too — but only when it IS one. A `dir/` rule says
     // nothing about a file or a symlink at that path, which is git's own rule
@@ -115,7 +115,7 @@ describe('gitignorePatternMatches', () => {
     );
   });
 
-  it('follows git on the shapes a person writes by hand', () => {
+  it('AP-09: follows git on the shapes a person writes by hand', () => {
     // A directory pattern covers everything beneath it.
     expect(gitignorePatternMatches('.claude/', '.claude/skills/acme__greet')).toBe(true);
     // A bare name matches at any depth; an anchored one only at the root.
@@ -132,7 +132,7 @@ describe('gitignorePatternMatches', () => {
     expect(gitignorePatternMatches('!.codex/hooks.json', '.codex/hooks.json')).toBe(false);
   });
 
-  it('understands every pattern the engine declares', () => {
+  it('AP-09: understands every pattern the engine declares', () => {
     // The load-bearing claim: `missingGitignoreLines` maps an uncovered path back
     // to the pattern that covers it, so a pattern in a shape this matcher cannot
     // read would silently cover nothing. Each pattern is asked about a path built
@@ -213,7 +213,7 @@ const GIT_CASES: ReadonlyArray<{
 ];
 
 describe.skipIf(!hasGit())('the matcher against real git', () => {
-  it('agrees with `git check-ignore` on every shape these paths take', () => {
+  it('AP-09: agrees with `git check-ignore` on every shape these paths take', () => {
     // P7 asks the matcher whether the matcher's own patterns cover a path, which
     // is self-referential about globbing. This is the outside bar: a real repo, a
     // real `.gitignore`, and git's own answer.
@@ -275,12 +275,12 @@ function gitSaysIgnored(root: string, path: string): boolean {
 }
 
 describe('missingGitignoreLines', () => {
-  it('says nothing at all when the root is not a git checkout', () => {
+  it('AP-09: says nothing at all when the root is not a git checkout', () => {
     stageRepo({ git: false, plugin: true });
     expect(missingGitignoreLines(repo, plan())).toEqual([]);
   });
 
-  it('names every line a fresh repo with an installed plugin is missing', () => {
+  it('AP-09: names every line a fresh repo with an installed plugin is missing', () => {
     stageRepo({ plugin: true });
     // The seeded case: nothing is ignored, so every ephemeral path is one
     // `git add .` away from a teammate's clone.
@@ -291,7 +291,7 @@ describe('missingGitignoreLines', () => {
     ]);
   });
 
-  it('names the generated hooks file and its sidecar when the plan writes one', () => {
+  it('AP-09: names the generated hooks file and its sidecar when the plan writes one', () => {
     // Their provenance is `authored` — the hooks come from
     // `.claude/settings.json` — but the file written is machine-local, and the
     // sidecar is one machine's digest. A provenance-only rule would miss both.
@@ -302,7 +302,7 @@ describe('missingGitignoreLines', () => {
     ]);
   });
 
-  it('is empty once those lines are there, and after appending them', () => {
+  it('AP-09: is empty once those lines are there, and after appending them', () => {
     stageRepo({ plugin: true, hooks: true, gitignore: '' });
     const missing = missingGitignoreLines(repo, plan());
     expect(missing.length).toBeGreaterThan(0);
@@ -310,7 +310,7 @@ describe('missingGitignoreLines', () => {
     expect(missingGitignoreLines(repo, plan())).toEqual([]);
   });
 
-  it('does not accept a directory rule for a projection that is a link', () => {
+  it('AP-09: does not accept a directory rule for a projection that is a link', () => {
     // Measured 2026-09-08: with `.dork/plugins/` and a `*__*` directory rule in the file, `--fix`
     // printed nothing while `git status` showed `?? .claude/skills/acme__greet`.
     // Git calls a symlink a file, so a `dir/` rule never covers one — and both
@@ -323,7 +323,7 @@ describe('missingGitignoreLines', () => {
     ]);
   });
 
-  it('accepts a broader rule the person already wrote', () => {
+  it('AP-09: accepts a broader rule the person already wrote', () => {
     // `.claude/` covers the skill links and the settings file; nobody should be
     // told to add a narrower line for a path git already ignores.
     stageRepo({ plugin: true, hooks: true, gitignore: '.claude/\n.dork/\n' });
@@ -334,7 +334,7 @@ describe('missingGitignoreLines', () => {
     ]);
   });
 
-  it('never names a command wrapper — the plan writes a `.gitignore` beside it', () => {
+  it('AP-09: never names a command wrapper — the plan writes a `.gitignore` beside it', () => {
     stageRepo({ plugin: true, harnesses: ['claude-code', 'opencode'] });
     const missing = missingGitignoreLines(repo, plan());
     // Both wrapper dirs are covered by the self-ignoring files the plan itself
@@ -344,7 +344,7 @@ describe('missingGitignoreLines', () => {
     expect(missing).toContain('.claude/skills/*__*');
   });
 
-  it('says nothing for a repo with nothing ephemeral in it', () => {
+  it('AP-09: says nothing for a repo with nothing ephemeral in it', () => {
     stageRepo();
     writeFileAt(join(repo, '.agents', 'skills', 'demo', 'SKILL.md'), '# demo\n');
     // Authored skills are committed on purpose, so an authored-only repo with no
@@ -354,7 +354,7 @@ describe('missingGitignoreLines', () => {
 });
 
 describe('appendGitignoreLines', () => {
-  it('creates the file when there is none', () => {
+  it('AP-09: creates the file when there is none', () => {
     stageRepo();
     appendGitignoreLines(repo, ['.dork/plugins/']);
     expect(readFileSync(join(repo, '.gitignore'), 'utf8')).toBe(
@@ -362,7 +362,7 @@ describe('appendGitignoreLines', () => {
     );
   });
 
-  it('appends after a blank line, preserving every existing byte', () => {
+  it('AP-09: appends after a blank line, preserving every existing byte', () => {
     stageRepo({ gitignore: 'node_modules/\ndist/\n' });
     appendGitignoreLines(repo, ['.dork/plugins/', '.codex/hooks.json']);
     expect(readFileSync(join(repo, '.gitignore'), 'utf8')).toBe(
@@ -370,7 +370,7 @@ describe('appendGitignoreLines', () => {
     );
   });
 
-  it('extends its own block on a second call instead of writing a second heading', () => {
+  it('AP-09: extends its own block on a second call instead of writing a second heading', () => {
     // Two calls is the ordinary case: a `--harness codex` sync and then a full
     // one, or a package installed after the first `--write-gitignore`.
     stageRepo({ gitignore: 'node_modules/\n' });
@@ -398,7 +398,7 @@ describe('appendGitignoreLines', () => {
     );
   });
 
-  it('does not run a final line into the header when the file has no trailing newline', () => {
+  it('AP-09: does not run a final line into the header when the file has no trailing newline', () => {
     stageRepo({ gitignore: 'node_modules/' });
     appendGitignoreLines(repo, ['.dork/plugins/']);
     expect(readFileSync(join(repo, '.gitignore'), 'utf8')).toBe(
@@ -408,19 +408,19 @@ describe('appendGitignoreLines', () => {
 });
 
 describe('canonicalLayerIgnoredBy', () => {
-  it('names the root file when it ignores `.agents/`', () => {
+  it('AP-15: names the root file when it ignores `.agents/`', () => {
     stageRepo({ gitignore: 'node_modules/\n.agents/\n' });
     expect(canonicalLayerIgnoredBy(repo)).toBe('.gitignore');
   });
 
-  it('answers nothing for the two installed-projection patterns inside it', () => {
+  it('AP-15: answers nothing for the two installed-projection patterns inside it', () => {
     // `.agents/skills/*__*` ignores machine-local projections, not the layer —
     // reading it as AP-15 would fire on every repo that follows the contract.
     stageRepo({ gitignore: '.agents/skills/*__*\n.claude/skills/*__*\n' });
     expect(canonicalLayerIgnoredBy(repo)).toBeUndefined();
   });
 
-  it('names `.agents/.gitignore` when that is the file doing it', () => {
+  it('AP-15: names `.agents/.gitignore` when that is the file doing it', () => {
     // The whole reason this returns a path: "stop ignoring .agents/" is advice
     // a person cannot act on until they know which of the two files to open.
     stageRepo();
@@ -428,7 +428,7 @@ describe('canonicalLayerIgnoredBy', () => {
     expect(canonicalLayerIgnoredBy(repo)).toBe('.agents/.gitignore');
   });
 
-  it('answers nothing outside a git checkout, whatever a `.gitignore` says', () => {
+  it('AP-15: answers nothing outside a git checkout, whatever a `.gitignore` says', () => {
     stageRepo({ git: false, gitignore: '.agents/\n' });
     expect(existsSync(join(repo, '.git'))).toBe(false);
     expect(canonicalLayerIgnoredBy(repo)).toBeUndefined();

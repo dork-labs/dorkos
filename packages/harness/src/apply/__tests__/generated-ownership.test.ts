@@ -79,7 +79,7 @@ function sidecarOf(target: string): string {
 }
 
 describe('generated hook file ownership', () => {
-  it('writes a sidecar holding the sha256 of exactly the bytes it wrote', () => {
+  it('HK-11: writes a sidecar holding the sha256 of exactly the bytes it wrote', () => {
     stageRepo();
     const plan = project(repo, { dorkHome });
     applyPlan(repo, plan);
@@ -90,7 +90,7 @@ describe('generated hook file ownership', () => {
     );
   });
 
-  it('adopts a pre-sidecar file whose bytes it would have written anyway (migration rule 1)', () => {
+  it('HK-11: adopts a pre-sidecar file whose bytes it would have written anyway (migration rule 1)', () => {
     stageRepo();
     const plan = project(repo, { dorkHome });
     const target = '.codex/hooks.json';
@@ -104,7 +104,7 @@ describe('generated hook file ownership', () => {
     expect(readFileSync(join(repo, target), 'utf8')).toBe(plannedContent(plan, target));
   });
 
-  it('rewrites its own pre-sidecar legacy bare event map into the documented shape (migration rule 2)', () => {
+  it('HK-01, HK-11: rewrites its own pre-sidecar legacy bare event map into the documented shape (migration rule 2)', () => {
     stageRepo();
     const plan = project(repo, { dorkHome });
     const target = '.codex/hooks.json';
@@ -124,7 +124,7 @@ describe('generated hook file ownership', () => {
     expect(existsSync(sidecarOf(target))).toBe(true);
   });
 
-  it('does not adopt a bare map keyed by an event it could never have written', () => {
+  it('HK-01, HK-11: does not adopt a bare map keyed by an event it could never have written', () => {
     // Rule 2's licence is "only DorkOS could have produced this". The old
     // generator dropped every event Codex has no home for, so `Notification` in
     // a bare map means a person wrote the file.
@@ -141,7 +141,7 @@ describe('generated hook file ownership', () => {
     expect(conflicts.map((c) => c.target)).toContain(target);
   });
 
-  it('never adopts a bare map at any path but the Codex one', () => {
+  it('HK-01, HK-11: never adopts a bare map at any path but the Codex one', () => {
     // Only `.codex/hooks.json` ever held the bare event map. Cursor's and
     // Copilot's generated files were always `{ version, hooks }`, so a bare map
     // at those paths cannot be the engine's old output — whoever wrote it, it
@@ -158,7 +158,7 @@ describe('generated hook file ownership', () => {
     expect(conflicts.map((c) => c.target)).toContain('.cursor/hooks.json');
   });
 
-  it('does not re-adopt a file it wrote that somebody has since edited into a bare map', () => {
+  it('HK-11: does not re-adopt a file it wrote that somebody has since edited into a bare map', () => {
     // The other half of rule 2's narrowness: a sidecar EXISTS here, so DorkOS
     // demonstrably wrote this path once. Its bytes no longer match, which makes
     // the edit a person's, and the legacy shape is no longer evidence of
@@ -179,7 +179,7 @@ describe('generated hook file ownership', () => {
     expect(conflicts.map((c) => c.target)).toContain(target);
   });
 
-  it('treats a hand-written Cursor file with no sidecar as a conflict (migration rule 3)', () => {
+  it('HK-11: treats a hand-written Cursor file with no sidecar as a conflict (migration rule 3)', () => {
     stageRepo();
     const plan = project(repo, { dorkHome });
     const target = '.cursor/hooks.json';
@@ -195,7 +195,7 @@ describe('generated hook file ownership', () => {
     expect(existsSync(sidecarOf(target))).toBe(false);
   });
 
-  it('treats a generated file somebody has since edited as theirs, not a rewrite target', () => {
+  it('HK-11: treats a generated file somebody has since edited as theirs, not a rewrite target', () => {
     stageRepo();
     const plan = project(repo, { dorkHome });
     applyPlan(repo, plan);
@@ -209,7 +209,7 @@ describe('generated hook file ownership', () => {
     expect(conflicts.map((c) => c.target)).toContain(target);
   });
 
-  it('does not rewrite an owned file whose content has not changed', () => {
+  it('AP-01: does not rewrite an owned file whose content has not changed', () => {
     stageRepo();
     const plan = project(repo, { dorkHome });
     applyPlan(repo, plan);
@@ -227,7 +227,7 @@ describe('generated hook file ownership', () => {
     expect(statSync(target).mtime.toISOString()).toBe(stamped.toISOString());
   });
 
-  it('sweeps an orphaned generated file together with its sidecar', () => {
+  it('AP-07: sweeps an orphaned generated file together with its sidecar', () => {
     stageRepo();
     applyPlan(repo, project(repo, { dorkHome }));
     expect(existsSync(sidecarOf('.codex/hooks.json'))).toBe(true);
@@ -242,7 +242,7 @@ describe('generated hook file ownership', () => {
     expect(existsSync(sidecarOf('.codex/hooks.json'))).toBe(false);
   });
 
-  it('sweeps its own generated file once its harness leaves the manifest', () => {
+  it('AP-07: sweeps its own generated file once its harness leaves the manifest', () => {
     stageRepo();
     applyPlan(repo, project(repo, { dorkHome }));
     const cursorHooks = join(repo, '.cursor', 'hooks.json');
@@ -263,7 +263,7 @@ describe('generated hook file ownership', () => {
     expect(existsSync(cursorHooks)).toBe(false);
   });
 
-  it('leaves a hand-written file at a disabled harness alone, and never sweeps it', () => {
+  it('HK-11, AP-07: leaves a hand-written file at a disabled harness alone, and never sweeps it', () => {
     // The other half of the rule above: ownership, not the manifest, is what
     // decides. A file the engine never wrote survives a harness leaving the
     // manifest exactly as it survives everything else.
@@ -285,7 +285,7 @@ describe('generated hook file ownership', () => {
     expect(readFileSync(join(repo, '.cursor', 'hooks.json'), 'utf8')).toBe(mine);
   });
 
-  it('reports a hand-written file at a path it is not generating as left alone, not a conflict', () => {
+  it('HK-11: reports a hand-written file at a path it is not generating as left alone, not a conflict', () => {
     // Nothing was blocked: this plan writes no Copilot hooks at all, so a person
     // who has their own file there has nothing to fix and must not be handed a
     // standing non-zero exit for it.
@@ -300,7 +300,7 @@ describe('generated hook file ownership', () => {
     expect(readFileSync(join(repo, '.github', 'hooks', 'copilot-hooks.json'), 'utf8')).toBe(mine);
   });
 
-  it('tells --check what is blocked and what it stepped over, without calling either drift', () => {
+  it('HK-11, VC-01: tells --check what is blocked and what it stepped over, without calling either drift', () => {
     stageRepo();
     const mineCursor = `${JSON.stringify({ version: 1, hooks: { stop: [] } }, null, 2)}\n`;
     writeFileAt(join(repo, '.cursor', 'hooks.json'), mineCursor);
@@ -321,7 +321,7 @@ describe('generated hook file ownership', () => {
     expect(drift.clean).toBe(false);
   });
 
-  it('removes a sidecar whose file is gone', () => {
+  it('AP-07: removes a sidecar whose file is gone', () => {
     stageRepo();
     applyPlan(repo, project(repo, { dorkHome }));
     rmSync(join(repo, '.codex', 'hooks.json'));

@@ -90,7 +90,7 @@ const CONTRACT = 'meta/harness-sync-capabilities.md';
  * renamed out of a pattern is a red rather than a quietly smaller census.
  */
 const TEST_ROOTS = [
-  { dir: 'packages/harness/src', match: /\.test\.ts$/, least: 40 },
+  { dir: 'packages/harness/src', match: /\.test\.ts$/, least: 45 },
   { dir: 'apps/server/src/services/harness/__tests__', match: /\.test\.ts$/, least: 9 },
   { dir: 'packages/cli/src/__tests__', match: /^harness-sync.*\.test\.ts$/, least: 2 },
   {
@@ -164,16 +164,17 @@ const PINNED_GAPS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Rows whose test exists but whose TITLE could not be edited in the pass that
- * built this census, pinned by exact equality so the list cannot grow quietly.
+ * Rows whose test exists but whose TITLE could not be edited yet, pinned by
+ * exact equality so the list cannot grow quietly.
  *
- * IN-05's three cases live in `apply/__tests__/dangling-targets.test.ts`, and
- * DOR-1889 held that directory open while DOR-1848 landed — retitling a file
- * another branch is rewriting buys a merge conflict and loses whichever side
- * rebases. The entry comes out with a one-line edit the moment that branch
- * lands: put `IN-05: ` in front of the three titles there, and delete this.
+ * EMPTY, and that is the point of keeping it. It held IN-05 for exactly as long
+ * as DOR-1889 held `apply/__tests__/` open — retitling a file another branch is
+ * rewriting buys a merge conflict and loses whichever side rebases — and it came
+ * out in the same commit that put `IN-05: ` in front of the three cases in
+ * `dangling-targets.test.ts`. An empty list keeps the escape hatch documented
+ * and asserts that nothing is currently using it.
  */
-const PENDING_RETITLE: readonly string[] = ['IN-05'];
+const PENDING_RETITLE: readonly string[] = [];
 
 /**
  * Every markdown table row in the contract, tagged with its section and header.
@@ -358,15 +359,15 @@ function statesBroken(state: string): boolean {
 
 describe('the harness capabilities census', () => {
   it('parsed the document and the suites, so nothing below can pass on nothing', () => {
-    // Floors at roughly 90% of what was parsed on 2026-09-08 (96 rows, 15
-    // journeys, 66 files, 616 runnable titles, 80 distinct ids claimed). They
-    // exist because every other assertion in this file quantifies over these
-    // lists: a parser that silently matched nothing would report a perfectly
-    // consistent document.
+    // Floors at roughly 90% of what was parsed on 2026-09-08, after DOR-1889
+    // landed (96 rows, 15 journeys, 69 files, 645 runnable titles, 81 distinct
+    // ids claimed). They exist because every other assertion in this file
+    // quantifies over these lists: a parser that silently matched nothing would
+    // report a perfectly consistent document.
     expect(rows.length).toBeGreaterThanOrEqual(86);
     expect(journeys.length).toBeGreaterThanOrEqual(14);
-    expect(files.length).toBeGreaterThanOrEqual(59);
-    expect(titles.length).toBeGreaterThanOrEqual(554);
+    expect(files.length).toBeGreaterThanOrEqual(62);
+    expect(titles.length).toBeGreaterThanOrEqual(580);
     // And every root really contributed, so a moved directory is a red rather
     // than a quietly smaller census.
     for (const root of TEST_ROOTS) {
@@ -434,7 +435,7 @@ describe('the harness capabilities census', () => {
   });
 
   it('names no ID the document does not define', () => {
-    expect(idsInTitles.size).toBeGreaterThanOrEqual(72);
+    expect(idsInTitles.size).toBeGreaterThanOrEqual(73);
 
     const unknown = [...idsInTitles]
       .filter((id) => !documentedIds.has(id))

@@ -63,7 +63,7 @@ function requestedType(): unknown {
 }
 
 describe('the Windows symlink type', () => {
-  it('asks for a junction when the source is a real directory', () => {
+  it('AP-06: asks for a junction when the source is a real directory', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-symtype-real-'));
     mkdirSync(join(repo, '.agents', 'skills', 'plain'), { recursive: true });
     writeFileSync(join(repo, '.agents', 'skills', 'plain', 'SKILL.md'), '# plain\n');
@@ -73,7 +73,7 @@ describe('the Windows symlink type', () => {
     expect(requestedType()).toBe('junction');
   });
 
-  it('asks for a junction when the source is itself a symlink to a directory', () => {
+  it('AP-06: asks for a junction when the source is itself a symlink to a directory', () => {
     // A skill kept elsewhere in the repo and linked into `.agents/skills`. The
     // source is a link, but what it names is a DIRECTORY, so Windows still needs
     // a junction — reading the link itself instead of what it points at asks for
@@ -90,7 +90,7 @@ describe('the Windows symlink type', () => {
     expect(requestedType()).toBe('junction');
   });
 
-  it('asks for a file link when the source is a file', () => {
+  it('AP-06: asks for a file link when the source is a file', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-symtype-file-'));
     mkdirSync(join(repo, '.agents', 'skills'), { recursive: true });
     writeFileSync(join(repo, '.agents', 'skills', 'note'), 'not a dir\n');
