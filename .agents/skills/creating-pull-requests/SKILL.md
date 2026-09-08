@@ -76,6 +76,15 @@ move the losing fragment's `covers:` items across. **Do NOT edit `CHANGELOG.md`'
 `[Unreleased]` section** — it no longer holds entries; only `/system:release` writes
 `CHANGELOG.md`.
 
+**Two habits stop the gate from turning red days later** (it hit five PRs in one week:
+#1510, #1567, #1581, #1618, #1700). (a) A commit that genuinely isn't user-facing — a
+review-nit fold, a refactor, a CI tweak — takes a `chore(` or `ci(` subject, so the
+populator mints no stub at all. (b) A user-facing commit curates its seeded stub in the
+**same commit that creates it** — rewrite the bullet for a human, delete the seeded
+comment — never leaving it for CI to catch. If a curated fragment for the batch already
+exists, fold the stub's `covers:` line into it byte-for-byte and delete the stub. Full
+mechanics: `changelog/README.md#seeded-fragments`.
+
 ### Run the changelog gate locally
 
 The gate is not "is there a fragment". It is "**is every user-facing commit claimed
