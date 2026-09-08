@@ -391,11 +391,31 @@ export async function readClaudeOnlyPlugins(
  * enumerates accounts nobody is running — reporting plugins from those would
  * describe sessions the person is not having.
  *
+ * **Total**: every failure becomes the record, including one nobody predicted.
+ * Its two callers are a person's terminal report and a read-only HTTP route, and
+ * neither may be taken down by what is in somebody's home directory — a `500`
+ * there would lose the whole status answer over a file this field is a footnote
+ * about. The root is resolved OUTSIDE the guard because the record has to carry
+ * one either way, and `inheritedClaudeRoot()` only reads an env var and joins a
+ * path.
+ *
  * @param input - the project and the DorkOS data directory.
  * @returns what Claude Code alone has, read from the inherited root.
  */
 export async function collectClaudeOnlyPlugins(
   input: Omit<ClaudeOnlyPluginsInput, 'claudeRoot'>
 ): Promise<HarnessClaudeOnly> {
-  return readClaudeOnlyPlugins({ ...input, claudeRoot: inheritedClaudeRoot() });
+  const claudeRoot = inheritedClaudeRoot();
+  try {
+    return await readClaudeOnlyPlugins({ ...input, claudeRoot });
+  } catch (err) {
+    return {
+      root: claudeRoot,
+      readAt: new Date().toISOString(),
+      unreadable: causeOf(err),
+      mayBeOverridden: true,
+      plugins: [],
+      personalHookCommands: 0,
+    };
+  }
 }

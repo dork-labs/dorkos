@@ -56,6 +56,8 @@ const NO_DECISIONS: HookDecisions = { approved: [], refused: [] };
 let boundaryRoot: string;
 let dorkHome: string;
 let outside: string;
+/** A Claude root that does not exist — see {@link pinEmptyClaudeRoot}. */
+let emptyClaudeRoot: string;
 
 /** Temp directories to remove when the suite ends. */
 const staged: string[] = [];
@@ -95,6 +97,8 @@ beforeAll(async () => {
   // `validateBoundaryOrDorkHome` resolves `{dorkHome}/agents` off this, and
   // caches by the raw value, so stubbing it here is enough.
   vi.stubEnv('DORK_HOME', dorkHome);
+  emptyClaudeRoot = join(outside, 'claude-root-that-is-not-there');
+  pinEmptyClaudeRoot();
   app.use('/api/harness', createHarnessRouter({ dorkHome, readHookDecisions: () => NO_DECISIONS }));
   failingApp.use(
     '/api/harness',
@@ -116,6 +120,10 @@ afterAll(() => {
 // before the next case: left installed, it would swallow a real failure's log.
 afterEach(() => {
   vi.restoreAllMocks();
+  // `restoreAllMocks` does not touch env stubs, and one case below repoints
+  // `$CLAUDE_CONFIG_DIR` at a fixture root. Put it back rather than leave the
+  // next case reading somebody else's fixture.
+  pinEmptyClaudeRoot();
 });
 
 /** A fresh project directory inside the boundary. */
@@ -145,6 +153,21 @@ function readStatus(projectPath: string) {
     .get('/api/harness/status')
     .query({ projectPath })
     .then((res) => res);
+}
+
+/**
+ * Point `$CLAUDE_CONFIG_DIR` at a Claude root that does not exist.
+ *
+ * The route reports the plugins a person turned on in Claude Code, and it finds
+ * that root the way a bare `claude` does — `$CLAUDE_CONFIG_DIR`, else
+ * `~/.claude`. Unpinned, every case in this file would read the settings file of
+ * whichever developer ran it, and the answers would depend on whose machine the
+ * suite was on. An ABSENT directory rather than an empty one, because absent is
+ * the case the reader is required to answer silently, so the default pin keeps
+ * that promise under test on every run too.
+ */
+function pinEmptyClaudeRoot(): void {
+  vi.stubEnv('CLAUDE_CONFIG_DIR', emptyClaudeRoot);
 }
 
 /** A diff naming nothing — what a read is allowed to leave behind. */
@@ -347,5 +370,79 @@ describe('GET /api/harness/status', () => {
     expect(errors).toHaveBeenCalledTimes(1);
     expect(errors.mock.calls[0]?.[0]).toBe('[harness] GET /status failed');
     expect(errors.mock.calls[0]?.[1]).toMatchObject({ err: READ_FAILURE, projectPath: repo });
+  });
+
+  it('SRC-08, J-07: carries what Claude Code alone has, with the root it was read from', async () => {
+    // Seeded defect one: compute `claudeOnly` inside `buildHarnessStatus`
+    // instead. The model is a pure function of what it is handed and resolves no
+    // roots, so it has no way to read this and the field arrives undefined.
+    // Seeded defect two: let the read throw rather than answer with its own
+    // record, and the case below this one turns a whole project's status into a
+    // 500 over a file in a home directory.
+    const claudeRoot = mkdtempSync(join(outside, 'claude-root-'));
+    staged.push(claudeRoot);
+    writeAt(
+      join(claudeRoot, 'settings.json'),
+      `${JSON.stringify({
+        enabledPlugins: {
+          'context7@claude-plugins-official': true,
+          'code-reviewer@dorkos': true,
+          'switched-off@claude-plugins-official': false,
+        },
+        extraKnownMarketplaces: {
+          'claude-plugins-official': {
+            source: { source: 'github', repo: 'anthropics/claude-plugins-official' },
+          },
+          dorkos: { source: { source: 'github', repo: 'dork-labs/marketplace' } },
+        },
+        hooks: { Stop: [{ hooks: [{ type: 'command', command: 'say done' }] }] },
+      })}\n`
+    );
+    vi.stubEnv('CLAUDE_CONFIG_DIR', claudeRoot);
+
+    const repo = stageProject('claude-only');
+    writeManifest(repo, ['claude-code']);
+
+    const res = await readStatus(repo);
+
+    expect(res.status).toBe(200);
+    // The schema accepts it, so the field is on the contract and not just in the
+    // body of one response.
+    expect(HarnessStatusResponseSchema.safeParse(res.body).error?.issues ?? []).toEqual([]);
+    expect(res.body.claudeOnly.root).toBe(claudeRoot);
+    expect(res.body.claudeOnly.plugins).toHaveLength(2);
+    expect(res.body.claudeOnly.plugins.map((p: { name: string }) => p.name)).toEqual([
+      'context7',
+      'code-reviewer',
+    ]);
+    expect(res.body.claudeOnly.personalHookCommands).toBe(1);
+    expect(res.body.claudeOnly.mayBeOverridden).toBe(true);
+    expect(res.body.claudeOnly.unreadable).toBeUndefined();
+    // A plugin nobody turned on is not something anybody is missing.
+    expect(JSON.stringify(res.body.claudeOnly)).not.toContain('switched-off');
+    // Nothing from that file but names, repositories and counts — no hook
+    // command a person wrote reaches the wire.
+    expect(JSON.stringify(res.body.claudeOnly)).not.toContain('say done');
+  });
+
+  it('SRC-08: an unreadable Claude settings file is a record in the field, never a 500', async () => {
+    // Seeded defect: drop the guard and let the settings read throw. The route's
+    // own catch turns it into `500 Internal server error`, and a whole project's
+    // status is lost over a file this field is a footnote about.
+    const claudeRoot = mkdtempSync(join(outside, 'claude-broken-'));
+    staged.push(claudeRoot);
+    writeAt(join(claudeRoot, 'settings.json'), '{ "enabledPlugins": {,,, ');
+    vi.stubEnv('CLAUDE_CONFIG_DIR', claudeRoot);
+
+    const repo = stageProject('claude-broken');
+    writeManifest(repo, ['claude-code']);
+
+    const res = await readStatus(repo);
+
+    expect(res.status).toBe(200);
+    expect(res.body.state).toBe('ready');
+    expect(res.body.claudeOnly.root).toBe(claudeRoot);
+    expect(res.body.claudeOnly.unreadable).toBeTruthy();
+    expect(res.body.claudeOnly.plugins).toEqual([]);
   });
 });

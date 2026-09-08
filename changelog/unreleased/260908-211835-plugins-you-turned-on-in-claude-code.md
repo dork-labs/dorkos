@@ -3,6 +3,7 @@ covers:
   - "feat(server): one key for a marketplace's repository (DOR-1921)"
   - 'feat(server): what Claude Code alone has, read and classified (DOR-1921)'
   - 'feat(cli): the plugins you turned on in Claude Code, named (DOR-1921)'
+  - "feat(server): Claude Code's own plugins on the status answer (DOR-1921)"
 ---
 
 ### Added

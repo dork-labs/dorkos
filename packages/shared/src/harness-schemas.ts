@@ -243,83 +243,6 @@ export const HarnessStatusQuerySchema = z.object({
 export type HarnessStatusQuery = z.infer<typeof HarnessStatusQuerySchema>;
 
 /**
- * What one project's agent-file sharing looks like right now.
- *
- * Three fields carry contracts rather than shapes, and each is stated where it
- * is defined below: `counts.skills` counts ROWS, `sweepPreview` is an equality
- * with what a sync would delete, and there is no `drops` map because every
- * non-agnostic drop is already a cell of some row.
- *
- * On any `state` but `ready` only `projectPath`, `state` and `detail` are
- * meaningful: every list is empty and every count is zero.
- */
-export const HarnessStatusResponseSchema = z.object({
-  projectPath: z.string(),
-  state: z.enum(['ready', 'not-set-up', 'unreadable', 'unavailable']),
-  detail: z.string().optional(),
-  computedAt: z.string(),
-  enabled: z.array(HarnessIdSchema),
-  notEnabled: z.array(z.object({ harness: HarnessIdSchema, signal: z.string() })),
-  clean: z.boolean(),
-  counts: z.object({
-    /**
-     * Rows whose `artifact` is `skill` — a count of ROWS, not of inventory
-     * entries. A skill present in both `.agents/skills` and `.claude/skills` is
-     * two files, two rows, and counts twice, because the number under the
-     * profile row has to match the number of rows the page draws. Measured: 6 on
-     * the J-01 fixture, 31 on this repository.
-     */
-    skills: z.number().int().nonnegative(),
-    drifted: z.number().int().nonnegative(),
-    conflicts: z.number().int().nonnegative(),
-    orphans: z.number().int().nonnegative(),
-    adoptable: z.number().int().nonnegative(),
-    pendingApproval: z.number().int().nonnegative(),
-  }),
-  /**
-   * Every path a sync would delete — repo-relative, sorted, de-duplicated.
-   *
-   * The contract is EQUALITY with the `swept` list the next sync returns, never
-   * containment: "most of what will be deleted" is a warning with a hole in it,
-   * and the hole is where the surprise lives. It is the union of all six sweeps,
-   * which is what the engine was widened to be able to answer.
-   */
-  sweepPreview: z.array(z.string()),
-  rows: z.array(HarnessRowSchema),
-  projectLevel: z.array(HarnessProjectEntrySchema),
-  pendingApproval: z.array(HarnessPendingApprovalSchema),
-});
-
-/**
- * What one project's agent-file sharing looks like right now.
- *
- * There is deliberately no `drops` map beside `rows`: every non-agnostic drop is
- * already a cell of some row, so a map is the same facts twice — measured at
- * 46,244 bytes against 32,415 for this repository. The panels group `rows` on
- * the client instead. `projectLevel` stays, because a harness-agnostic entry is
- * a cell of nothing.
- */
-export type HarnessStatusResponse = z.infer<typeof HarnessStatusResponseSchema>;
-
-/**
- * What a sync did, and the status recomputed after it.
- *
- * `swept` is what was actually deleted and equals the `sweepPreview` the page
- * showed before the click. `askedAbout` names the packages a person was shown an
- * approval card for, so the page can say a decision is still outstanding.
- */
-export const HarnessSyncResponseSchema = z.object({
-  status: HarnessStatusResponseSchema,
-  applied: z.number().int().nonnegative(),
-  swept: z.array(z.string()),
-  conflicts: z.number().int().nonnegative(),
-  askedAbout: z.array(z.string()),
-});
-
-/** What a sync did, and the status recomputed after it. */
-export type HarnessSyncResponse = z.infer<typeof HarnessSyncResponseSchema>;
-
-/**
  * What Claude Code alone has: the plugins a person turned on in Claude Code's
  * own settings, and the root they were read from.
  *
@@ -375,3 +298,92 @@ export type HarnessClaudeOnly = z.infer<typeof HarnessClaudeOnlySchema>;
 
 /** One plugin Claude Code alone has. @see {@link HarnessClaudeOnlySchema} */
 export type HarnessClaudeOnlyPlugin = HarnessClaudeOnly['plugins'][number];
+
+/**
+ * What one project's agent-file sharing looks like right now.
+ *
+ * Three fields carry contracts rather than shapes, and each is stated where it
+ * is defined below: `counts.skills` counts ROWS, `sweepPreview` is an equality
+ * with what a sync would delete, and there is no `drops` map because every
+ * non-agnostic drop is already a cell of some row.
+ *
+ * On any `state` but `ready` only `projectPath`, `state` and `detail` are
+ * meaningful: every list is empty and every count is zero.
+ */
+export const HarnessStatusResponseSchema = z.object({
+  projectPath: z.string(),
+  state: z.enum(['ready', 'not-set-up', 'unreadable', 'unavailable']),
+  detail: z.string().optional(),
+  computedAt: z.string(),
+  enabled: z.array(HarnessIdSchema),
+  notEnabled: z.array(z.object({ harness: HarnessIdSchema, signal: z.string() })),
+  clean: z.boolean(),
+  counts: z.object({
+    /**
+     * Rows whose `artifact` is `skill` — a count of ROWS, not of inventory
+     * entries. A skill present in both `.agents/skills` and `.claude/skills` is
+     * two files, two rows, and counts twice, because the number under the
+     * profile row has to match the number of rows the page draws. Measured: 6 on
+     * the J-01 fixture, 31 on this repository.
+     */
+    skills: z.number().int().nonnegative(),
+    drifted: z.number().int().nonnegative(),
+    conflicts: z.number().int().nonnegative(),
+    orphans: z.number().int().nonnegative(),
+    adoptable: z.number().int().nonnegative(),
+    pendingApproval: z.number().int().nonnegative(),
+  }),
+  /**
+   * Every path a sync would delete — repo-relative, sorted, de-duplicated.
+   *
+   * The contract is EQUALITY with the `swept` list the next sync returns, never
+   * containment: "most of what will be deleted" is a warning with a hole in it,
+   * and the hole is where the surprise lives. It is the union of all six sweeps,
+   * which is what the engine was widened to be able to answer.
+   */
+  sweepPreview: z.array(z.string()),
+  rows: z.array(HarnessRowSchema),
+  projectLevel: z.array(HarnessProjectEntrySchema),
+  pendingApproval: z.array(HarnessPendingApprovalSchema),
+  /**
+   * What Claude Code alone has, when the answering surface could read it.
+   *
+   * OPTIONAL, and the optionality is a fact about the model rather than a
+   * courtesy. {@link HarnessClaudeOnlySchema} describes a read of somebody's
+   * HOME directory, and the status model is a pure function of the inputs it is
+   * handed — it never resolves a Claude root, so it never produces this field.
+   * Only a surface that reads the machine adds it: `GET /api/harness/status`
+   * does, and the Obsidian transport, which answers `state: 'unavailable'` and
+   * has no home directory to read, does not.
+   */
+  claudeOnly: HarnessClaudeOnlySchema.optional(),
+});
+
+/**
+ * What one project's agent-file sharing looks like right now.
+ *
+ * There is deliberately no `drops` map beside `rows`: every non-agnostic drop is
+ * already a cell of some row, so a map is the same facts twice — measured at
+ * 46,244 bytes against 32,415 for this repository. The panels group `rows` on
+ * the client instead. `projectLevel` stays, because a harness-agnostic entry is
+ * a cell of nothing.
+ */
+export type HarnessStatusResponse = z.infer<typeof HarnessStatusResponseSchema>;
+
+/**
+ * What a sync did, and the status recomputed after it.
+ *
+ * `swept` is what was actually deleted and equals the `sweepPreview` the page
+ * showed before the click. `askedAbout` names the packages a person was shown an
+ * approval card for, so the page can say a decision is still outstanding.
+ */
+export const HarnessSyncResponseSchema = z.object({
+  status: HarnessStatusResponseSchema,
+  applied: z.number().int().nonnegative(),
+  swept: z.array(z.string()),
+  conflicts: z.number().int().nonnegative(),
+  askedAbout: z.array(z.string()),
+});
+
+/** What a sync did, and the status recomputed after it. */
+export type HarnessSyncResponse = z.infer<typeof HarnessSyncResponseSchema>;
