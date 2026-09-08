@@ -84,7 +84,9 @@ describe('a hostile source tree', () => {
       'rule:.claude/rules/dead.md',
     ]);
     expect(reasonFor(inventory.unreadable, '.claude/agents')).toContain('could not be listed');
-    expect(reasonFor(inventory.unreadable, '.claude/rules/dead.md')).toContain('could not be read');
+    expect(reasonFor(inventory.unreadable, '.claude/rules/dead.md')).toContain(
+      'is a link whose target is not there'
+    );
     expect(reasonFor(inventory.unreadable, '.mcp.json')).toContain('not valid JSON');
     expect(reasonFor(inventory.unreadable, '.agents/skills/broken/SKILL.md')).toContain(
       'frontmatter this reader cannot parse'
@@ -126,6 +128,35 @@ describe('a hostile source tree', () => {
     expect(inventory.mcpServers).toEqual([]);
     expect(inventory.unreadable.length).toBe(1);
     expect(inventory.unreadable[0].reason).toContain('is not an object');
+  });
+
+  it('never turns a dead subagent link into a native for a file that does not resolve', () => {
+    // The scan used to hand back every `.md` Dirent, dead links included, and the
+    // subagent scanner never opened the file — so `.claude/agents/dead.md ->
+    // ../../gone/missing.md` produced a `native` claim about a path that resolves
+    // to nothing, which is the false-native shape DOR-1847 closed everywhere else.
+    repo = mkdtempSync(join(tmpdir(), 'harness-hostile-agents-'));
+    dorkHome = mkdtempSync(join(tmpdir(), 'harness-hostile-agents-home-'));
+    writeJsonAt(join(repo, '.agents', 'harness.manifest.json'), {
+      version: 1,
+      harnesses: ['claude-code'],
+    });
+    writeFileAt(
+      join(repo, '.claude', 'agents', 'ok.md'),
+      '---\nname: ok\ndescription: Fine\n---\n\n# ok\n'
+    );
+    symlinkSync('../../gone/missing.md', join(repo, '.claude', 'agents', 'dead.md'));
+
+    const inventory = inventorySourceTree(repo);
+    expect(inventory.agents.map((a) => a.source)).toEqual(['.claude/agents/ok.md']);
+    expect(inventory.unreadable.map((u) => `${u.kind}:${u.source}`)).toEqual([
+      'agent:.claude/agents/dead.md',
+    ]);
+
+    const plan = project(repo, { dorkHome });
+    expect(
+      plan.actions.filter((a) => a.artifact === 'agent').map((a) => [a.kind, a.source])
+    ).toEqual([['native', '.claude/agents/ok.md']]);
   });
 
   it('reports a skills root that is a file rather than crashing the whole walk', () => {

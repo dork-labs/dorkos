@@ -92,6 +92,31 @@ describe('inventorySourceTree', () => {
     ]);
   });
 
+  it('inventories a person’s own link into .claude/skills, and still skips DorkOS’s', () => {
+    // Not every symlink in `.claude/skills` is a projection. A person who keeps a
+    // skill elsewhere in the repo and links it where Claude Code reads had it
+    // treated as DorkOS's own output and given no line at all — while the
+    // projector next door already knew the other shape ("a link to a skill kept
+    // elsewhere", `planClaudeOnlySkills`). The target decides, not the fact of
+    // being a link: into `.agents/skills` or `.dork/plugins` is ours, anywhere
+    // else is theirs.
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-person-link-'));
+
+    stageSkill(repo, 'vendor/skills/mine');
+    link(repo, '.claude/skills/mine', join(repo, 'vendor/skills/mine'));
+    stageSkill(repo, '.agents/skills/alpha');
+    link(repo, '.claude/skills/alpha', join(repo, '.agents/skills/alpha'));
+    stageSkill(repo, '.dork/plugins/flow/skills/capture');
+    link(repo, '.claude/skills/flow__capture', join(repo, '.dork/plugins/flow/skills/capture'));
+
+    const { skills } = inventorySourceTree(repo);
+    expect(skills.length).toBe(2);
+    expect(skills.map((s) => `${s.root}:${s.name}:${s.isSymlink}`)).toEqual([
+      '.agents/skills:alpha:false',
+      '.claude/skills:mine:true',
+    ]);
+  });
+
   it('counts authored commands by their namespaced name and skips generated wrappers', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inv-commands-'));
     writeFileAt(join(repo, '.claude/commands/deploy.md'), '# /deploy\n');
@@ -113,14 +138,22 @@ describe('inventorySourceTree', () => {
   it('counts subagents recursively, so a nested definition is not lost (XA-01)', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inv-agents-'));
     for (const rel of ['reviewer', 'react/tanstack', 'deep/nested/helper']) {
-      writeFileAt(join(repo, '.claude/agents', `${rel}.md`), `---\nname: x\n---\n\n# ${rel}\n`);
+      const name = rel.split('/').join('-');
+      writeFileAt(
+        join(repo, '.claude/agents', `${rel}.md`),
+        `---\nname: ${name}\ndescription: The ${name} subagent\n---\n\n# ${rel}\n`
+      );
     }
     // Not a definition: the walk takes `.md` only.
     writeFileAt(join(repo, '.claude/agents/README.txt'), 'notes\n');
 
     const { agents } = inventorySourceTree(repo);
     expect(agents.length).toBe(3);
-    expect(agents.map((a) => a.name)).toEqual(['deep/nested/helper', 'react/tanstack', 'reviewer']);
+    expect(agents.map((a) => [a.name, a.source])).toEqual([
+      ['deep-nested-helper', '.claude/agents/deep/nested/helper.md'],
+      ['react-tanstack', '.claude/agents/react/tanstack.md'],
+      ['reviewer', '.claude/agents/reviewer.md'],
+    ]);
   });
 
   it('reads each rule’s `paths:` globs, in both spellings, and leaves a rule without them bare (IN-07)', () => {
@@ -142,6 +175,79 @@ describe('inventorySourceTree', () => {
       ['style', undefined],
       ['ui', ['apps/client/**/*.tsx']],
     ]);
+  });
+
+  it('finds a rule in a subdirectory, because Claude Code discovers .claude/rules recursively', () => {
+    // "All `.md` files are discovered recursively, so you can organize rules into
+    // subdirectories like `frontend/`" — https://code.claude.com/docs/en/memory,
+    // fetched 2026-09-08. A flat walk gave a nested rule ZERO lines under every
+    // harness, which is the exact silence this whole module exists to end.
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-nested-rules-'));
+    writeFileAt(join(repo, '.claude/rules/api.md'), '---\npaths: src/**/*.ts\n---\n\n# api\n');
+    writeFileAt(
+      join(repo, '.claude/rules/frontend/nested-style.md'),
+      '---\npaths: apps/client/**/*.tsx\n---\n\n# nested style\n'
+    );
+
+    const { rules } = inventorySourceTree(repo);
+    expect(rules.length).toBe(2);
+    expect(rules.map((r) => [r.name, r.source])).toEqual([
+      ['api', '.claude/rules/api.md'],
+      ['frontend/nested-style', '.claude/rules/frontend/nested-style.md'],
+    ]);
+  });
+
+  it('descends into a linked-in directory of rules or subagents, and terminates on a loop', () => {
+    // A person keeps their company's shared rules and subagents outside the repo
+    // and links the folder in. `Dirent.isDirectory()` is false for a symlink — the
+    // same trap `scan/scanner.ts` documents for skills — so the walk saw an entry
+    // that was neither a directory nor an `.md` file and skipped it in silence.
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-linked-dirs-'));
+    outside = mkdtempSync(join(tmpdir(), 'harness-inv-company-'));
+
+    writeFileAt(
+      join(outside, 'rules', 'security.md'),
+      "---\npaths: '**/*.ts'\n---\n\n# security\n"
+    );
+    writeFileAt(
+      join(outside, 'agents', 'auditor.md'),
+      '---\nname: auditor\ndescription: Audits\n---\n\n# auditor\n'
+    );
+    mkdirSync(join(repo, '.claude', 'rules'), { recursive: true });
+    mkdirSync(join(repo, '.claude', 'agents'), { recursive: true });
+    symlinkSync(join(outside, 'rules'), join(repo, '.claude/rules/shared'));
+    symlinkSync(join(outside, 'agents'), join(repo, '.claude/agents/shared'));
+    // A link back at its own parent: the walk must stop, not recurse forever.
+    symlinkSync(join(repo, '.claude', 'rules'), join(repo, '.claude/rules/loop'));
+
+    const inventory = inventorySourceTree(repo);
+    expect(inventory.rules.map((r) => r.source)).toEqual(['.claude/rules/shared/security.md']);
+    expect(inventory.agents.map((a) => a.source)).toEqual(['.claude/agents/shared/auditor.md']);
+    expect(inventory.unreadable).toEqual([]);
+  });
+
+  it('keys a subagent by its frontmatter name, which is the only identity Claude Code uses', () => {
+    // "The subdirectory path doesn't affect how a subagent is identified or
+    // invoked, because identity comes only from the `name` frontmatter field" —
+    // https://code.claude.com/docs/en/sub-agents, fetched 2026-09-08. The report
+    // named a nested subagent `react/tanstack`, which is not a name anybody can
+    // type at it.
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-agent-names-'));
+    writeFileAt(
+      join(repo, '.claude/agents/react/tanstack.md'),
+      '---\nname: react-tanstack-expert\ndescription: React\n---\n\n# expert\n'
+    );
+    writeFileAt(join(repo, '.claude/agents/nameless.md'), '# no frontmatter at all\n');
+
+    const { agents, unreadable } = inventorySourceTree(repo);
+    expect(agents.length).toBe(2);
+    expect(agents.map((a) => [a.name, a.source])).toEqual([
+      ['nameless', '.claude/agents/nameless.md'],
+      ['react-tanstack-expert', '.claude/agents/react/tanstack.md'],
+    ]);
+    // The one with no declared name is still a file Claude Code reads, so it is
+    // inventoried under its stem — and reported, because its identity is a guess.
+    expect(unreadable.map((u) => u.source)).toEqual(['.claude/agents/nameless.md']);
   });
 
   it('records MCP server names and never a value, because an env block holds secrets (XA-03)', () => {

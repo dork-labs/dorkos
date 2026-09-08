@@ -12,7 +12,8 @@
  *
  * @module inventory/read
  */
-import { readFileSync, readdirSync, lstatSync, type Dirent } from 'node:fs';
+import { readFileSync, readdirSync, lstatSync, realpathSync, statSync } from 'node:fs';
+import type { Dirent } from 'node:fs';
 import { join, sep } from 'node:path';
 import type { ArtifactType } from '../plan/types.js';
 import type { UnreadableSource } from './types.js';
@@ -171,21 +172,42 @@ export interface ListMarkdownOptions {
   recursive?: boolean;
 }
 
+/** A path's real location, or the path itself when it does not resolve. */
+function realpathOr(absPath: string): string {
+  try {
+    return realpathSync(absPath);
+  } catch {
+    return absPath;
+  }
+}
+
 /**
  * List the `.md` files under a root, sorted by name so the inventory is
  * deterministic.
  *
- * Symlinked FILES count — linking a rule or a subagent definition in from
- * elsewhere is a thing people do, and every harness reading the directory
- * honours it. A link whose target is gone is reported by whoever later reads the
- * file, not skipped here: the entry is plainly in the directory, and the
- * inventory's job is to stop pretending it is not.
+ * **Symlinks are followed, both kinds.** A linked-in FILE is a rule or a
+ * subagent somebody keeps elsewhere, and `Dirent.isFile()` is false for one — the
+ * same trap `scan/scanner.ts` documents for skill directories. A linked-in
+ * DIRECTORY is the shape a person uses to share a whole folder of rules with
+ * their other repositories (`.claude/agents/shared -> ~/company-agents`), and
+ * `Dirent.isDirectory()` is false for that one, so it used to be neither a
+ * directory to descend into nor an `.md` file — skipped without a word.
+ *
+ * Following directory links means a link can point back into the tree, so the
+ * walk keeps a set of realpaths it has entered and refuses to enter one twice.
+ * Before, a loop terminated only because nothing ever descended through it.
+ *
+ * A DEAD `.md` link is recorded as unreadable and left out of the results. The
+ * entry is plainly in the directory, so saying nothing is wrong; but so is
+ * returning it, because a caller that never opens the file — the subagent scan
+ * used to be one — would otherwise report a `native` for a path that resolves to
+ * nothing.
  *
  * @param absRoot - absolute path of the directory to walk.
  * @param relRoot - its repo-relative path, the prefix each result carries.
  * @param kind - the artifact kind this directory holds, for any finding.
  * @param options - see {@link ListMarkdownOptions}.
- * @returns the markdown files found and any directory that could not be listed.
+ * @returns the markdown files found, and every entry that could not be read.
  */
 export function listMarkdownFiles(
   absRoot: string,
@@ -195,8 +217,13 @@ export function listMarkdownFiles(
 ): { files: MarkdownFile[]; unreadable: UnreadableSource[] } {
   const files: MarkdownFile[] = [];
   const unreadable: UnreadableSource[] = [];
+  const entered = new Set<string>();
 
   const walk = (absDir: string, relDir: string): void => {
+    const real = realpathOr(absDir);
+    if (entered.has(real)) return;
+    entered.add(real);
+
     const result = readDirEntries(absDir, relDir, kind);
     if (result.unreadable) unreadable.push(result.unreadable);
     for (const entry of result.entries) {
@@ -206,10 +233,25 @@ export function listMarkdownFiles(
         if (options.recursive) walk(absEntry, relEntry);
         continue;
       }
-      // A symlink is a file to every harness that reads these directories, and
-      // `Dirent.isFile()` is false for one — the same trap `scan/scanner.ts`
-      // documents for skill directories.
-      if (!entry.isFile() && !entry.isSymbolicLink()) continue;
+      if (entry.isSymbolicLink()) {
+        // `stat`, not `lstat`: the question is what the link resolves to.
+        const resolved = statSync(absEntry, { throwIfNoEntry: false });
+        if (resolved === undefined) {
+          if (!entry.name.endsWith('.md')) continue;
+          unreadable.push({
+            kind,
+            source: relEntry,
+            reason: `${relEntry} is a link whose target is not there, so nothing was inventoried from it`,
+          });
+          continue;
+        }
+        if (resolved.isDirectory()) {
+          if (options.recursive) walk(absEntry, relEntry);
+          continue;
+        }
+      } else if (!entry.isFile()) {
+        continue;
+      }
       if (!entry.name.endsWith('.md')) continue;
       files.push({
         name: relEntry.slice(relRoot.length + 1, -'.md'.length),

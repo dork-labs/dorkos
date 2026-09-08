@@ -8,8 +8,14 @@
  * `.github/instructions/*.instructions.md` `applyTo:`), and a projection to
  * either needs the globs. So they are read here once and carried on the entry.
  *
- * The directory is flat — Claude Code documents `.claude/rules/*.md`, and this
- * repository's 13 rules are all at the top level — so the walk does not descend.
+ * The walk is RECURSIVE. Claude Code's own memory page says so — "All `.md`
+ * files are discovered recursively, so you can organize rules into
+ * subdirectories like `frontend/`" (https://code.claude.com/docs/en/memory,
+ * fetched 2026-09-08) — and this module's first version called the directory
+ * flat because all 13 of this repository's rules happen to sit at the top level.
+ * A rule in a subdirectory got zero lines under every harness, which is the
+ * silence the inventory exists to end. A rule's name is its path below
+ * `.claude/rules` without the `.md`, the same rule commands use.
  *
  * @module inventory/rules
  */
@@ -60,7 +66,8 @@ export function inventoryRules(repoRoot: string): {
   const { files, unreadable } = listMarkdownFiles(
     join(repoRoot, CLAUDE_RULES_DIR),
     CLAUDE_RULES_DIR,
-    'rule'
+    'rule',
+    { recursive: true }
   );
 
   const rules: RuleInventoryEntry[] = [];
