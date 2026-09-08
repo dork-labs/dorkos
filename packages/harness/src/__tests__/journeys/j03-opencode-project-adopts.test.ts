@@ -32,9 +32,12 @@
  * scaffolds `codex` + `opencode`, because it enables the harnesses whose files
  * are on disk and DorkOS's own harness has left none there yet.
  *
- * Rows: J-03, SRC-07 (adopting an existing tree), IN-01 (the instruction
- * pointer), CM-03 (repo-local command wrappers), AP-07 (the sweep only ever
- * deletes what it wrote), SK-13 and XA-03 (the two silences).
+ * Rows: J-03, IN-01 (the instruction pointer), CM-03 (repo-local command
+ * wrappers), AP-07 (the sweep only ever deletes what it wrote). The two
+ * silences get no row id on purpose: SK-13 is about a symlinked or `__`-named
+ * source and XA-03 about `.mcp.json`, and neither is what a harness-native
+ * skills root nobody reads or an `opencode.json` `mcp` block is. §8 is where a
+ * row for them would go.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync, rmSync } from 'node:fs';
@@ -101,7 +104,7 @@ function linesAbout(p: ProjectionPlan, source: string): string[] {
 }
 
 describe('J-03 — an OpenCode project adopts DorkOS', () => {
-  it('J-03, SRC-07: detection enables the harnesses whose files are here, and writes nothing', () => {
+  it('J-03: detection enables the harnesses whose files are here, and writes nothing', () => {
     const repo = stageOpenCodeRepo();
     const before = snapshotTree(repo.root);
     // The fixture is a real repository, not an empty directory — without this
@@ -227,7 +230,7 @@ describe('J-03 — an OpenCode project adopts DorkOS', () => {
     expect(readText(join(repo.root, AUTHORED_COMMAND))).toBe(authored);
   });
 
-  it('J-03, SK-13, XA-03: pins the two kinds this journey is still silent about', () => {
+  it('J-03: pins the two kinds this journey is still silent about', () => {
     // THE GAP, PINNED. The contract's J-03 row says `.opencode/skills/*` should be
     // reported adoptable and `opencode.json` should be reported rather than
     // clobbered; the inventory walks `.agents/skills` and `.claude/skills` only

@@ -131,7 +131,7 @@ describe('installed-plugin projection via buildPlan', () => {
     }
   });
 
-  it('names each harness’s own command format on an installed-command drop (CM-06)', () => {
+  it('CM-06: names each harness’s own command format on an installed-command drop', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({

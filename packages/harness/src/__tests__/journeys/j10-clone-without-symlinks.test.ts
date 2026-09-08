@@ -218,7 +218,7 @@ describe('J-10 — a clone whose checkout cannot make symlinks', () => {
   );
 
   it(
-    'J-10: is clean in a normal clone, and the committed link text is relative (AP-06)',
+    'J-10, AP-06: is clean in a normal clone, and the committed link text is relative',
     () => {
       stageProjectedRepo();
       commitProjectedRepo();

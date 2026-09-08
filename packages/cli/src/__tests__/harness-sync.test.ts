@@ -1123,7 +1123,7 @@ describe('runHarnessSync — withholding a package’s hooks', () => {
     expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
   });
 
-  it('counts merge actions in the summary (VC-02)', async () => {
+  it('VC-02: counts merge actions in the summary', async () => {
     // The one kind that writes into a file the person owns —
     // `.claude/settings.local.json` — and the only one the summary used to skip.
     await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme-tools'] }));
@@ -1131,7 +1131,7 @@ describe('runHarnessSync — withholding a package’s hooks', () => {
     expect(printed()).toMatch(/claude-code: .*\d+ merge/);
   });
 
-  it('shows an unreadable-hook warning under --harness codex (VC-02)', async () => {
+  it('VC-02: shows an unreadable-hook warning under --harness codex', async () => {
     // The loss happened at read time, ahead of every harness, so a filter that
     // hid it for every id but `claude-code` was hiding the only report of it.
     writePluginHooks('acme-tools', {
@@ -1147,7 +1147,7 @@ describe('runHarnessSync — withholding a package’s hooks', () => {
     );
   });
 
-  it('shows a plugin-layer drop under --harness cursor, headed "plugin layers" (VC-02)', async () => {
+  it('VC-02: shows a plugin-layer drop under --harness cursor, headed "plugin layers"', async () => {
     // A non-portable layer has no home in ANY harness, so filing it under
     // `codex:` was wrong in a project that runs Codex and invisible in one that
     // does not.
@@ -1171,7 +1171,7 @@ describe('runHarnessSync — withholding a package’s hooks', () => {
     expect(out).not.toContain('codex:');
   });
 
-  it('says the Codex hooks file changed and is held for review, once (HK-10)', async () => {
+  it('HK-10: says the Codex hooks file changed and is held for review, once', async () => {
     await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme-tools'] }));
 
     const first = printed();

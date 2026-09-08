@@ -14,7 +14,7 @@ const SCAFFOLD_TARGETS = {
 } as const;
 
 describe('planInstruction', () => {
-  it('drops on EVERY harness when there is no AGENTS.md, and calls none of them native (IN-03)', () => {
+  it('IN-03: drops on EVERY harness when there is no AGENTS.md, and calls none of them native', () => {
     // A `native` for a file that is not there is the plan telling the operator a
     // harness reads something that does not exist. Before this, the same plan
     // could carry `codex native AGENTS.md` beside `claude-code drop … no

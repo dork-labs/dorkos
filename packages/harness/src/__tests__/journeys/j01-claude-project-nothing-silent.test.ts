@@ -153,7 +153,7 @@ function skillNatives(harnessLabel: string): Line[] {
 }
 
 describe('J-01 — a Claude Code project is told about every kind in .claude/', () => {
-  it('XA-01, XA-02, XA-03, HK-12, HK-14 (project half), IN-07: Codex is told where each kind would have to live', () => {
+  it('XA-01, XA-02, XA-03, HK-12, HK-14, IN-07: Codex is told where each kind would have to live (HK-14 here is the project half only)', () => {
     stageClaudeFirstRepo();
 
     const plan = project(repo, { dorkHome });

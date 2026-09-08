@@ -200,7 +200,7 @@ describe('buildPlan — `native` only when the source is really there', () => {
   /** Every enabled harness, so a per-harness count assertion has a subject. */
   const ALL = parseHarnessManifest({ version: 1, harnesses: [...HARNESS_IDS] });
 
-  it('drops instructions on every enabled harness when there is no AGENTS.md (IN-03)', () => {
+  it('IN-03: drops instructions on every enabled harness when there is no AGENTS.md', () => {
     // Reproduced 2026-09-07: the same plan carried `codex native AGENTS.md` and
     // `claude-code drop … no AGENTS.md to point at`.
     dir = fixtureRepo();
@@ -310,7 +310,7 @@ describe('buildPlan — `native` only when the source is really there', () => {
 });
 
 describe('buildPlan — authored skills reach every harness that reads .agents/skills', () => {
-  it('is native for cursor, gemini and copilot, which all read .agents/skills (SK-05)', () => {
+  it('SK-05: is native for cursor, gemini and copilot, which all read .agents/skills', () => {
     // All three read the canonical directory natively (vendor docs, 2026-09-07),
     // so the old "not auto-projected in v1; see DOR-143" drop told three sets of
     // users their skills did not travel when they did.
@@ -336,7 +336,7 @@ describe('buildPlan — authored skills reach every harness that reads .agents/s
 });
 
 describe('buildPlan — authored command drops name each harness’s own format', () => {
-  it('gives cursor, gemini, codex and copilot honest, harness-specific reasons (CM-04)', () => {
+  it('CM-04: gives cursor, gemini, codex and copilot honest, harness-specific reasons', () => {
     dir = fixtureRepo();
     const manifest = parseHarnessManifest({
       version: 1,
