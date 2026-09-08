@@ -5347,6 +5347,26 @@
         "apps/client/src/layers/widgets/remote-access/ui/RemoteAccessBeacon.tsx",
         "apps/client/src/AppShell.tsx"
       ]
+    },
+    {
+      "id": "260908-085032",
+      "slug": "one-status-model-answers-for-the-app-and-the-terminal",
+      "title": "One status model answers for the app and the terminal",
+      "status": "proposed",
+      "created": "2026-09-08",
+      "extractedFrom": "spec",
+      "specSlug": "harness-sync-status",
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/harness/status.ts",
+        "apps/server/src/services/harness/project-with-consent.ts",
+        "apps/server/src/routes/harness.ts",
+        "packages/shared/src/harness-schemas.ts",
+        "packages/harness/src/manifest/schema.ts",
+        "packages/cli/src/harness-sync-command.ts",
+        "apps/client/src/layers/entities/harness/"
+      ]
     }
   ]
 }
