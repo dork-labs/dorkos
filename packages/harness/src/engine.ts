@@ -2,18 +2,23 @@
  * Engine entry — convenience loaders that wire disk state into the projector.
  *
  * These read the canonical inputs (`.agents/harness.manifest.json`,
- * `.claude/settings.json`, `AGENTS.md`) and hand them to {@link buildPlan}.
+ * `.claude/settings.json`, `AGENTS.md`, `.claude/commands`, `.claude/skills`)
+ * and hand them to {@link buildPlan}. Three of them exist to answer one
+ * question the planner must not guess at: whether the file a projection would
+ * call `native` is really there.
  * They are the thin glue a CLI or server calls; the pure planning logic lives in
  * `plan/projector.ts` and stays filesystem-free.
  *
  * @module engine
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseHarnessManifest, type HarnessManifest } from './manifest/schema.js';
 import { buildPlan } from './plan/projector.js';
+import { CLAUDE_COMMANDS_DIR, CLAUDE_SKILLS_DIR } from './plan/installed-projector.js';
 import type { ProjectionPlan } from './plan/types.js';
 import type { ClaudeHooksConfig } from './generate/hooks.js';
+import { scanSkillDirs } from './scan/scanner.js';
 import { scanInstalledPlugins } from './sources/installed.js';
 
 /**
@@ -55,6 +60,55 @@ export function agentsMdExists(repoRoot: string): boolean {
 }
 
 /**
+ * Whether `.claude/commands` holds at least one slash command.
+ *
+ * Claude Code reads `.claude/commands/**\/*.md`, namespaced by subdirectory, so
+ * the walk is recursive and stops at the first `.md` it finds. This is what
+ * decides whether the plan may call Claude Code's commands `native`: an absent
+ * or command-less directory is nothing to read, and the engine asserted that
+ * `native` unconditionally until 2026-09-07.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @returns `true` when at least one `.md` lives anywhere under `.claude/commands`.
+ */
+export function claudeCommandsExist(repoRoot: string): boolean {
+  const walk = (dir: string): boolean => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith('.md')) return true;
+      // Directories only — never follow a symlink out of the tree while
+      // answering a question about this repository's own commands.
+      if (entry.isDirectory() && walk(join(dir, entry.name))) return true;
+    }
+    return false;
+  };
+  return walk(join(repoRoot, CLAUDE_COMMANDS_DIR));
+}
+
+/**
+ * The names of REAL skill directories under `.claude/skills` — never the
+ * engine's own projection symlinks, which is the whole point of the distinction.
+ *
+ * A skill listed in `manifest.claudeOnlySkills` is kept out of the canonical
+ * `.agents/skills` layer on purpose, so the only evidence it exists at all is a
+ * directory here. Without this list the projector cannot tell such a skill from
+ * a stale manifest entry, and used to say nothing about either (SK-04).
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @returns the directory names, sorted, each holding a `SKILL.md`.
+ */
+export function scanClaudeSkillDirs(repoRoot: string): string[] {
+  return scanSkillDirs(join(repoRoot, CLAUDE_SKILLS_DIR), CLAUDE_SKILLS_DIR, {
+    followSymlinks: false,
+  }).map((skill) => skill.name);
+}
+
+/**
  * Load every canonical input and build the projection plan for a repository.
  *
  * Project-scoped marketplace-installed plugins (`<repoRoot>/.dork/plugins`) are
@@ -87,6 +141,8 @@ export function project(
     manifest: loadManifest(repoRoot),
     claudeHooks: loadClaudeHooks(repoRoot),
     agentsMdExists: agentsMdExists(repoRoot),
+    claudeCommandsExist: claudeCommandsExist(repoRoot),
+    claudeSkillDirs: scanClaudeSkillDirs(repoRoot),
     installedPlugins,
     ...(opts?.allowPluginHooks ? { allowPluginHooks: opts.allowPluginHooks } : {}),
   });
