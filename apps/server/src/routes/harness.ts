@@ -72,24 +72,11 @@
 import { Router } from 'express';
 import { stat } from 'node:fs/promises';
 import { z } from 'zod';
+import { HarnessStatusQuerySchema } from '@dorkos/shared/harness-schemas';
 import { BoundaryError, validateBoundaryOrDorkHome } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { storedHookDecisions, type HookDecisions } from '../services/harness/hook-consent.js';
 import { buildHarnessStatus } from '../services/harness/status.js';
-
-/**
- * The one query a status read carries.
- *
- * `projectPath` is checked for blankness without being trimmed: a path is a
- * byte string the filesystem owns, and quietly editing one a caller sent would
- * answer about a directory they did not ask for.
- */
-const HarnessStatusQuerySchema = z.object({
-  projectPath: z
-    .string()
-    .min(1)
-    .refine((value) => value.trim().length > 0, 'projectPath must not be blank'),
-});
 
 /** What the harness router reads. It writes nothing and holds no state. */
 export interface HarnessRouterDeps {

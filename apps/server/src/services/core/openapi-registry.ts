@@ -87,6 +87,10 @@ import {
 } from '@dorkos/shared/relay-schemas';
 import { WorktreeScanResultSchema } from '@dorkos/shared/workspace';
 import {
+  HarnessStatusQuerySchema,
+  HarnessStatusResponseSchema,
+} from '@dorkos/shared/harness-schemas';
+import {
   AgentManifestSchema,
   DiscoveryCandidateSchema,
   DenialRecordSchema,
@@ -5189,6 +5193,72 @@ registry.registerPath({
     304: { description: 'The caller already has this exact photo' },
     404: {
       description: 'That identity has no photo',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// --- Harness Sync status (spec `harness-sync-status` §2.1) ---
+
+// Registered as a named component rather than inlined: the envelope is ~18 KB
+// of generated JSON, and the sync route that lands next returns it again inside
+// its own response. One `$ref` beats two copies. `register` returns the
+// ref-carrying schema — referencing the bare one inlines it anyway.
+const HarnessStatusResponseRef = registry.register(
+  'HarnessStatusResponse',
+  HarnessStatusResponseSchema
+);
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/harness/status',
+  tags: ['Harness'],
+  summary: 'What every agent tool does with every agent file in one project',
+  description:
+    'One row per agent file, one cell per agent tool the project has turned on, and the ' +
+    'projection plan’s own sentence under each — never a paraphrase, so the terminal and the ' +
+    'screen say the same thing about the same file. ' +
+    '**It writes nothing**: no manifest is scaffolded, nothing is turned on, and no settings ' +
+    'store is opened. That is DOR-678’s rule, learned when `dorkos harness sync --check` ' +
+    'scaffolded a manifest into whatever folder a person happened to be standing in. ' +
+    '**`state` answers for the project as a whole**, and has four values. `ready` — the manifest ' +
+    'parsed and everything below is populated. `not-set-up` — there is no ' +
+    '`.agents/harness.manifest.json`, answered `200` rather than `404`, because a project with ' +
+    'no manifest is a state the app is built to draw and a `404` would say the route is not ' +
+    'there. `unreadable` — there is one and it will not parse, with `detail` saying why in words ' +
+    'a person can act on. `unavailable` — a build with no harness service at all; it belongs to ' +
+    'the in-process (Obsidian) transport and is never produced here. On anything but `ready` ' +
+    'every list is empty and every count is zero. ' +
+    '**No file bytes**: the response carries artifact names, repo-relative paths and reasons, ' +
+    'and a withheld package’s hook commands are deliberately left out of it. ' +
+    '`projectPath` must be absolute, and inside the configured directory boundary or under ' +
+    '`{dorkHome}/agents` — the subtree every DorkOS-managed agent lives in.',
+  request: { query: HarnessStatusQuerySchema },
+  responses: {
+    200: {
+      description:
+        'What this project’s agent-file sharing looks like right now, in any of the three ' +
+        'states an HTTP caller can see',
+      content: { 'application/json': { schema: HarnessStatusResponseRef } },
+    },
+    400: {
+      description:
+        '`projectPath` was missing or blank, or it named something that is not a directory',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description:
+        '`projectPath` resolves outside the directory boundary and outside `{dorkHome}/agents`',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description:
+        'No directory there. Separated from `not-set-up` on purpose: a typo would otherwise ' +
+        'read as a real folder that simply has nothing set up in it',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    500: {
+      description: 'The read failed unexpectedly. The reason is logged, never echoed',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

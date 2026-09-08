@@ -206,6 +206,28 @@ export const HarnessPendingApprovalSchema = z.object({
 export type HarnessPendingApproval = z.infer<typeof HarnessPendingApprovalSchema>;
 
 /**
+ * The one query a status read carries.
+ *
+ * It lives beside the response rather than in the route because the route is
+ * not its only reader: `openapi-registry.ts` documents the same shape, and a
+ * hand-written second copy there is a copy that goes stale — the same reasoning,
+ * and the same home, as `BrowseDirectoryQuerySchema` and `SearchQuerySchema`.
+ *
+ * `projectPath` is checked for blankness without being TRIMMED. A path is a byte
+ * string the filesystem owns, and quietly editing one a caller sent would answer
+ * about a directory they did not ask for.
+ */
+export const HarnessStatusQuerySchema = z.object({
+  projectPath: z
+    .string()
+    .min(1)
+    .refine((value) => value.trim().length > 0, 'projectPath must not be blank'),
+});
+
+/** The one query a status read carries. */
+export type HarnessStatusQuery = z.infer<typeof HarnessStatusQuerySchema>;
+
+/**
  * What one project's agent-file sharing looks like right now.
  *
  * Three fields carry contracts rather than shapes, and each is stated where it
