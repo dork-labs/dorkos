@@ -14,7 +14,8 @@
  *
  * @module scaffold/instructions
  */
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
+import { writeFileAtomic } from '../apply/atomic-write.js';
 import { dirname, join, relative } from 'node:path';
 import { HARNESS_IDS, type HarnessId } from '../manifest/schema.js';
 import { planInstruction } from '../plan/instructions.js';
@@ -106,6 +107,6 @@ function writeIfAbsent(
   // is the only proof available that the directory is this run's to undo.
   const firstCreated = mkdirSync(dirname(abs), { recursive: true });
   if (firstCreated) createdDirs.push(relative(rootDir, firstCreated));
-  writeFileSync(abs, content);
+  writeFileAtomic(abs, content);
   created.push(relPath);
 }

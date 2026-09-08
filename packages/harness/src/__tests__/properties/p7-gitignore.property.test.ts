@@ -35,7 +35,7 @@ import { applyPlan } from '../../apply/apply.js';
 import { gitignorePatternMatches, missingGitignoreLines } from '../../apply/gitignore.js';
 import { EPHEMERAL_GITIGNORE_PATTERNS } from '../../sources/resolve-roots.js';
 import type { ProjectionPlan } from '../../plan/types.js';
-import { arbRepo, RUNS, withRepo } from './arb-repo.js';
+import { arbRepo, PROPERTY_TIMEOUT_MS, RUNS, withRepo } from './arb-repo.js';
 
 /**
  * Every path this plan writes whose provenance makes it ephemeral: an installed
@@ -83,74 +83,80 @@ function coveredByRepo(repoRoot: string, target: string): boolean {
 }
 
 describe('P7 — every ephemeral projection has a way to stay out of git', () => {
-  it('is covered by a declared pattern or by a self-ignoring .gitignore beside it', () => {
-    let examined = 0;
-    fc.assert(
-      fc.property(arbRepo(), (spec) => {
-        withRepo(spec, ({ repoRoot, dorkHome }) => {
-          const plan = project(repoRoot, { dorkHome });
-          applyPlan(repoRoot, plan, { sweepOrphans: true });
+  it(
+    'is covered by a declared pattern or by a self-ignoring .gitignore beside it',
+    () => {
+      let examined = 0;
+      fc.assert(
+        fc.property(arbRepo(), (spec) => {
+          withRepo(spec, ({ repoRoot, dorkHome }) => {
+            const plan = project(repoRoot, { dorkHome });
+            applyPlan(repoRoot, plan, { sweepOrphans: true });
 
-          for (const target of ephemeralTargets(plan)) {
-            examined += 1;
-            const declared = EPHEMERAL_GITIGNORE_PATTERNS.some((pattern) =>
-              gitignorePatternMatches(pattern, target)
-            );
-            expect({
-              target,
-              covered: declared || selfIgnoredOnDisk(repoRoot, target),
-            }).toEqual({ target, covered: true });
-          }
-        });
-      }),
-      RUNS
-    );
-    // A green that looked at nothing is not a green.
-    expect(examined).toBeGreaterThan(0);
-    // until DOR-1854's shared PROPERTY_TIMEOUT_MS lands
-  }, 60_000);
-
-  it('reports missing lines exactly when this repo does not already cover them', () => {
-    let reported = 0;
-    let silent = 0;
-    fc.assert(
-      fc.property(arbRepo(), (spec) => {
-        withRepo(spec, ({ repoRoot, dorkHome }) => {
-          const plan = project(repoRoot, { dorkHome });
-          applyPlan(repoRoot, plan, { sweepOrphans: true });
-
-          const missing = missingGitignoreLines(repoRoot, plan);
-          if (spec.gitignore === null) {
-            // Not a git checkout: nothing to say, and saying it anyway would be
-            // telling somebody to edit a file that decides nothing.
-            expect(missing).toEqual([]);
-            return;
-          }
-
-          const uncovered = ephemeralTargets(plan).filter(
-            (target) => !coveredByRepo(repoRoot, target) && !selfIgnoredOnDisk(repoRoot, target)
-          );
-          if (missing.length === 0) {
-            silent += 1;
-            expect(uncovered).toEqual([]);
-          } else {
-            reported += 1;
-            // Every line offered is one the engine declares, never an invention.
-            for (const line of missing) {
+            for (const target of ephemeralTargets(plan)) {
+              examined += 1;
+              const declared = EPHEMERAL_GITIGNORE_PATTERNS.some((pattern) =>
+                gitignorePatternMatches(pattern, target)
+              );
               expect({
-                line,
-                declared: (EPHEMERAL_GITIGNORE_PATTERNS as readonly string[]).includes(line),
-              }).toEqual({ line, declared: true });
+                target,
+                covered: declared || selfIgnoredOnDisk(repoRoot, target),
+              }).toEqual({ target, covered: true });
             }
-          }
-          if (uncovered.length > 0) expect(missing.length).toBeGreaterThan(0);
-        });
-      }),
-      RUNS
-    );
-    // Both sides of the claim were actually reached.
-    expect(reported).toBeGreaterThan(0);
-    expect(silent).toBeGreaterThan(0);
-    // until DOR-1854's shared PROPERTY_TIMEOUT_MS lands
-  }, 60_000);
+          });
+        }),
+        RUNS
+      );
+      // A green that looked at nothing is not a green.
+      expect(examined).toBeGreaterThan(0);
+    },
+    PROPERTY_TIMEOUT_MS
+  );
+
+  it(
+    'reports missing lines exactly when this repo does not already cover them',
+    () => {
+      let reported = 0;
+      let silent = 0;
+      fc.assert(
+        fc.property(arbRepo(), (spec) => {
+          withRepo(spec, ({ repoRoot, dorkHome }) => {
+            const plan = project(repoRoot, { dorkHome });
+            applyPlan(repoRoot, plan, { sweepOrphans: true });
+
+            const missing = missingGitignoreLines(repoRoot, plan);
+            if (spec.gitignore === null) {
+              // Not a git checkout: nothing to say, and saying it anyway would be
+              // telling somebody to edit a file that decides nothing.
+              expect(missing).toEqual([]);
+              return;
+            }
+
+            const uncovered = ephemeralTargets(plan).filter(
+              (target) => !coveredByRepo(repoRoot, target) && !selfIgnoredOnDisk(repoRoot, target)
+            );
+            if (missing.length === 0) {
+              silent += 1;
+              expect(uncovered).toEqual([]);
+            } else {
+              reported += 1;
+              // Every line offered is one the engine declares, never an invention.
+              for (const line of missing) {
+                expect({
+                  line,
+                  declared: (EPHEMERAL_GITIGNORE_PATTERNS as readonly string[]).includes(line),
+                }).toEqual({ line, declared: true });
+              }
+            }
+            if (uncovered.length > 0) expect(missing.length).toBeGreaterThan(0);
+          });
+        }),
+        RUNS
+      );
+      // Both sides of the claim were actually reached.
+      expect(reported).toBeGreaterThan(0);
+      expect(silent).toBeGreaterThan(0);
+    },
+    PROPERTY_TIMEOUT_MS
+  );
 });

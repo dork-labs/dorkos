@@ -16,8 +16,9 @@
  *
  * @module scaffold/manifest
  */
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, type Stats } from 'node:fs';
-import { dirname, join, sep } from 'node:path';
+import { existsSync, readFileSync, statSync, type Stats } from 'node:fs';
+import { join, sep } from 'node:path';
+import { writeFileAtomic } from '../apply/atomic-write.js';
 import { HARNESS_IDS, type HarnessId, type HarnessManifest } from '../manifest/schema.js';
 import type { DetectedHarness } from '../plan/types.js';
 
@@ -225,10 +226,11 @@ export function scaffoldManifest(
     harnesses = detected ? found : DEFAULT_HARNESSES;
   }
 
-  mkdirSync(dirname(abs), { recursive: true });
   // Two-space indent + trailing newline so the file reads (and diffs) like the
-  // hand-authored manifests already in the repo.
-  writeFileSync(abs, `${JSON.stringify(defaultManifest(harnesses), null, 2)}\n`);
+  // hand-authored manifests already in the repo. Atomic, because a second
+  // process scaffolding the same repo would otherwise be able to read this one
+  // half-written and fail its whole projection on an unparseable manifest.
+  writeFileAtomic(abs, `${JSON.stringify(defaultManifest(harnesses), null, 2)}\n`);
 
   return { created: true, path: HARNESS_MANIFEST_PATH, harnesses, detected };
 }

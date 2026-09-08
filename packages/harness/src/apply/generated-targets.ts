@@ -12,11 +12,12 @@
  *
  * @module apply/generated-targets
  */
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { rmSync } from 'node:fs';
+import { join } from 'node:path';
 import type { ProjectionAction, ProjectionPlan } from '../plan/types.js';
 import { requireActionContent } from '../plan/content-map.js';
 import { CODEX_HOOKS_TARGET, GENERATED_HOOK_TARGETS } from '../generate/hooks.js';
+import { writeFileAtomic } from './atomic-write.js';
 import {
   GENERATED_SIDECAR_SUFFIX,
   HAND_WRITTEN_HOOKS_REASON,
@@ -36,10 +37,22 @@ export function isGeneratedHookTarget(
   return (GENERATED_HOOK_TARGETS as readonly string[]).includes(target);
 }
 
-/** Write a generated hook file and record the engine's ownership of those bytes. */
+/**
+ * Write a generated hook file and record the engine's ownership of those bytes.
+ *
+ * The file first, its sidecar second, and both atomically. A reader arriving
+ * between the two finds the new bytes under the OLD sidecar; asked what to do,
+ * {@link generatedHookOutcome} says `adopt` — the bytes are already what its own
+ * plan would write, so it simply records the sidecar and moves on.
+ *
+ * The reverse order is worse in exactly that case: a sidecar claiming bytes that
+ * have not landed yet matches nothing on disk, and the same reader would call
+ * the engine's own file one somebody hand-edited and report a conflict over it.
+ * Transient either way — the writer is a microsecond behind — but one order
+ * resolves itself and the other raises a fault about a file nobody touched.
+ */
 function writeOwnedGenerated(absTarget: string, content: string): void {
-  mkdirSync(dirname(absTarget), { recursive: true });
-  writeFileSync(absTarget, content);
+  writeFileAtomic(absTarget, content);
   writeGeneratedSidecar(absTarget, content);
 }
 

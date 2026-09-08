@@ -20,6 +20,25 @@
  * finds there. Both read deterministic bytes for `scaffold`/`generate` actions
  * from the projector via {@link getActionContent}.
  *
+ * ## What a concurrent reader can see
+ *
+ * Every FILE this stage writes goes through `writeFileAtomic`, so a harness
+ * reading `.codex/hooks.json` while a sync rewrites it gets the whole old file
+ * or the whole new one — never an empty or half-written config (AP-10). That
+ * covers scaffolds, generated files, the generated hooks files, their ownership
+ * sidecars, and the managed-hook merge.
+ *
+ * A repaired SYMLINK is the one exception, and it is left as it is. Replacing a
+ * stale managed link is `rmSync` then `symlinkSync`, so for the microseconds
+ * between them the link is absent and a harness enumerating `.claude/skills`
+ * would list one skill fewer. It is not worth closing: the removal happens only
+ * when the link TEXT is already wrong (a source that moved), so the reader in
+ * that window would otherwise have followed a link to the wrong place, and the
+ * next scan — the same session's next skill lookup — sees the repaired link.
+ * Making it atomic means creating the link at a temp name and renaming it over
+ * the target, which on Windows means renaming a junction; that trade is not one
+ * this engine has evidence for yet.
+ *
  * @module apply/apply
  */
 import {
@@ -30,13 +49,13 @@ import {
   rmSync,
   statSync,
   symlinkSync,
-  writeFileSync,
 } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import type { DriftResult, ProjectionAction, ProjectionPlan } from '../plan/types.js';
 import { requireActionContent } from '../plan/content-map.js';
 import { AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
 import type { ClaudeHooksConfig } from '../generate/hooks.js';
+import { isAtomicTempName, isStaleAtomicTemp, writeFileAtomic } from './atomic-write.js';
 import { HAND_WRITTEN_HOOKS_REASON, readFileIfPresent } from './generated-ownership.js';
 import { findOrphanedAuthoredLinks, sweepAuthoredOrphans } from './authored-orphans.js';
 import { isDanglingSymlink, isSymlink, listDir, occupantKind, pathExists } from './link-state.js';
@@ -106,13 +125,48 @@ function symlinkType(repoRoot: string, source: string): 'junction' | 'file' | un
 }
 
 /**
+ * How many times {@link applySymlink} will look again after another writer beat
+ * it to the target.
+ *
+ * Three, not one: the loop only repeats when the path CHANGED under it, so each
+ * repeat is evidence of a real concurrent writer rather than of a wait. Two
+ * writers applying the same plan settle on the first repeat; the third is slack
+ * for a third writer, and the answer after that is whatever is actually there.
+ */
+const SYMLINK_ATTEMPTS = 3;
+
+/**
  * Create or repair a relative symlink for a `symlink` action.
+ *
+ * Every step here is a check followed by an act, and another process applying
+ * the same plan can land between the two: `symlinkSync` then throws EEXIST and
+ * takes the whole apply down with it — measured, in `__tests__/journeys/
+ * j12-two-writers.test.ts`, which reproduced it on the first run of two writers
+ * on one repo. There is no atomic create-or-adopt for a link, so the answer is
+ * to look again: an EEXIST means somebody put something here, and what they put
+ * decides the outcome exactly as it would have a moment earlier. Two writers
+ * applying the same plan therefore BOTH report the link applied, which is true —
+ * it is there, and it is theirs.
+ *
+ * Unlike the file writes, the replacement of a STALE link is still not atomic:
+ * the old link is removed before the new one is created, so a harness listing
+ * `.claude/skills` in that window sees one skill fewer. It happens only when the
+ * link text is already wrong (a source that moved), so the reader in that window
+ * would otherwise have followed a link to the wrong place, and the next lookup
+ * finds the repaired link. Closing it means creating the link at a temp name and
+ * renaming it over the target, which on Windows means renaming a junction — a
+ * trade with no evidence behind it yet.
  *
  * @returns `undefined` when the symlink now matches the plan; the one-line reason
  *   to report when a *real* (non-symlink) file or directory occupies the target —
  *   a conflict that is left untouched rather than destroyed, exactly like
  *   {@link applyScaffold}. The reason comes from the same predicate `checkPlan`
  *   reads, so the two modes can never disagree about a path neither may touch.
+ *   Exhausting {@link SYMLINK_ATTEMPTS} — three consecutive lost races against a
+ *   writer wanting DIFFERENT link text at one path — answers `undefined` too,
+ *   and deliberately invents no reason for it: nothing is blocking the path, a
+ *   re-run does fix it, and `isDrifted` reports exactly that. So the tree is
+ *   never called clean on the strength of it, which is the property that matters.
  */
 function applySymlink(repoRoot: string, action: ProjectionAction): string | undefined {
   if (!action.source || !action.target) {
@@ -121,18 +175,29 @@ function applySymlink(repoRoot: string, action: ProjectionAction): string | unde
   const absTarget = join(repoRoot, action.target);
   const linkText = relativeLink(repoRoot, action.source, action.target);
 
-  if (pathExists(absTarget)) {
-    // A real file/dir — never destroy hand-authored content, and say what it is.
-    const blocked = blockingSymlinkOccupant(absTarget, linkText);
-    if (blocked !== undefined) return blocked;
-    if (linkMatchesPlan(absTarget, join(repoRoot, action.source), linkText, LINK_CHECK)) {
-      return undefined; // already the correct managed link
+  const absSource = join(repoRoot, action.source);
+  for (let attempt = 0; attempt < SYMLINK_ATTEMPTS; attempt++) {
+    if (pathExists(absTarget)) {
+      // A real file/dir — never destroy hand-authored content, and say what it is.
+      const blocked = blockingSymlinkOccupant(absTarget, linkText);
+      if (blocked !== undefined) return blocked;
+      if (linkMatchesPlan(absTarget, absSource, linkText, LINK_CHECK)) {
+        return undefined; // already the correct managed link
+      }
+      rmSync(absTarget, { force: true }); // a stale *managed* symlink — safe to replace
     }
-    rmSync(absTarget, { force: true }); // a stale *managed* symlink — safe to replace
+    mkdirSync(dirname(absTarget), { recursive: true });
+    try {
+      symlinkSync(linkText, absTarget, symlinkType(repoRoot, action.source));
+      return undefined;
+    } catch (err) {
+      // Anything but "somebody got here first" is a real failure to report.
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    }
   }
-  mkdirSync(dirname(absTarget), { recursive: true });
-  symlinkSync(linkText, absTarget, symlinkType(repoRoot, action.source));
-  return undefined;
+  // Out of attempts: answer for what is actually there, through the same two
+  // predicates, so this can still only ever report a real occupant.
+  return blockingSymlinkOccupant(absTarget, linkText);
 }
 
 /**
@@ -146,11 +211,11 @@ function applyScaffold(repoRoot: string, action: ProjectionAction): void {
   if (!action.target) throw new Error(`scaffold action for "${action.name}" is missing target`);
   const absTarget = join(repoRoot, action.target);
   if (scaffoldPresent(absTarget)) return; // user owns it — never overwrite
-  // Nothing but a dead link can be here now. It has to go before the write, or
-  // `writeFileSync` follows it and creates the pointer wherever it points.
-  rmSync(absTarget, { force: true });
-  mkdirSync(dirname(absTarget), { recursive: true });
-  writeFileSync(absTarget, requireActionContent(action));
+  // Nothing but a dead link can be here now, and the atomic write replaces the
+  // directory entry rather than following it — so the pointer lands at THIS path
+  // instead of wherever the dead link pointed, with no removal step to leave a
+  // gap in (`atomic-write.ts`).
+  writeFileAtomic(absTarget, requireActionContent(action));
 }
 
 /**
@@ -179,18 +244,16 @@ function applyGenerate(repoRoot: string, action: ProjectionAction): string | und
   const shape = blockingGenerateOccupant(absTarget);
   if (shape !== undefined) return shape;
 
-  // A dead link is the opposite case — nothing is there to own. Remove it, so
-  // the file lands at this path instead of wherever the link pointed.
-  if (isDanglingSymlink(absTarget)) rmSync(absTarget, { force: true });
-
+  // A dead link is the opposite case — nothing is there to own, and the atomic
+  // write replaces the entry rather than following it, so the file lands at this
+  // path instead of wherever the link pointed.
   const content = requireActionContent(action);
   if (isGeneratedHookTarget(action.target)) {
     return applyGeneratedHookFile(absTarget, action.target, content)
       ? undefined
       : HAND_WRITTEN_HOOKS_REASON;
   }
-  mkdirSync(dirname(absTarget), { recursive: true });
-  writeFileSync(absTarget, content);
+  writeFileAtomic(absTarget, content);
   return undefined;
 }
 
@@ -287,8 +350,16 @@ export function sweepGeneratedCommandOrphans(repoRoot: string, plan: ProjectionP
     const subAbs = join(commandsDir, sub.name);
     for (const file of readdirSync(subAbs)) {
       const rel = `${CLAUDE_COMMANDS_DIR}/${sub.name}/${file}`;
-      if (kept.has(rel)) continue; // still projected: keep (apply rewrites it)
       const abs = join(subAbs, file);
+      // A temp file is another writer's in-flight write, and it carries the
+      // marker this sweep owns things by. Age is the only thing that can tell a
+      // stranded one from a live one, so age is what decides.
+      if (isAtomicTempName(file)) {
+        if (!sweepStaleTemp(abs)) continue;
+        swept.push(rel);
+        continue;
+      }
+      if (kept.has(rel)) continue; // still projected: keep (apply rewrites it)
       if (!isEngineGeneratedCommand(abs)) continue; // authored file (or nested dir): never touch
       rmSync(abs, { force: true });
       swept.push(rel);
@@ -329,13 +400,38 @@ export function sweepOpencodeCommandOrphans(repoRoot: string, plan: ProjectionPl
   for (const entry of readdirSync(commandsDir, { withFileTypes: true })) {
     if (!entry.isFile()) continue; // flat: only top-level engine wrapper files (and the .gitignore)
     const rel = `${OPENCODE_COMMANDS_DIR}/${entry.name}`;
-    if (kept.has(rel)) continue; // still projected: keep (apply rewrites it)
     const abs = join(commandsDir, entry.name);
+    // Same rule as the Claude wrapper dir: a live temp is untouchable, a
+    // stranded one is debris.
+    if (isAtomicTempName(entry.name)) {
+      if (sweepStaleTemp(abs)) swept.push(rel);
+      continue;
+    }
+    if (kept.has(rel)) continue; // still projected: keep (apply rewrites it)
     if (!isEngineGeneratedCommand(abs)) continue; // authored file: never touch
     rmSync(abs, { force: true });
     swept.push(rel);
   }
   return swept;
+}
+
+/**
+ * Remove an atomic-write temp file if — and only if — it is old enough to be
+ * debris a crash left behind rather than a write somebody is doing right now.
+ *
+ * The two command sweeps are the only callers, because their directories are
+ * the only ones anything enumerates by wildcard: a stranded temp there is
+ * indistinguishable from content to every other predicate in this file, while
+ * one beside `.codex/hooks.json` is a dotfile nothing ever looks at
+ * (`atomic-write.ts` states that split and why).
+ *
+ * @param abs - absolute path of the temp file.
+ * @returns `true` when it was removed.
+ */
+function sweepStaleTemp(abs: string): boolean {
+  if (!isStaleAtomicTemp(abs)) return false;
+  rmSync(abs, { force: true });
+  return true;
 }
 
 /** True when a file carries the engine's generated-command marker (never a directory). */
@@ -370,12 +466,37 @@ function findBlockedWrapperDirs(repoRoot: string, plan: ProjectionPlan): Set<str
   for (const relDir of wrapperDirs) {
     const abs = join(repoRoot, relDir);
     if (!existsSync(abs)) continue; // fresh dir: the engine will own it
-    const hasForeignContent = readdirSync(abs).some(
-      (entry) => !isEngineGeneratedCommand(join(abs, entry))
-    );
+    const hasForeignContent = readdirSync(abs).some((entry) => isForeign(join(abs, entry), entry));
     if (hasForeignContent) blocked.add(relDir);
   }
   return blocked;
+}
+
+/**
+ * Whether one entry of a wrapper directory is somebody else's content — the
+ * question that decides whether the whole directory is blocked.
+ *
+ * Two answers here are NOT "foreign", and both were bugs before DOR-1854's
+ * review found them:
+ *
+ * - **A temp file.** Another process's in-flight write, carrying the very
+ *   marker this predicate reads. It is not content and it will not be there in
+ *   a moment.
+ * - **An entry that has gone.** `readdirSync` hands back a snapshot, and a
+ *   concurrent writer renames its temp onto the target between the listing and
+ *   the read. The read then throws ENOENT, which
+ *   {@link isEngineGeneratedCommand} cannot tell from an unreadable authored
+ *   file — so it answered "foreign" and reported the engine's OWN wrapper
+ *   directory, all of it, as a conflict left untouched.
+ *
+ * @param abs - absolute path of the entry.
+ * @param name - its base name.
+ * @returns `true` only when something that is really there is really not ours.
+ */
+function isForeign(abs: string, name: string): boolean {
+  if (isAtomicTempName(name)) return false;
+  if (!existsSync(abs)) return false; // renamed away mid-scan: nothing is there to own
+  return !isEngineGeneratedCommand(abs);
 }
 
 /**

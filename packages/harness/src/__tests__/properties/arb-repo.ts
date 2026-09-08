@@ -123,8 +123,18 @@ export interface RuleSpec {
 export interface RepoSpec {
   /** Authored skill names under `.agents/skills`. */
   skills: string[];
-  /** Project-scoped installed plugins. */
-  plugins: { name: string; skills: string[]; hooks: boolean }[];
+  /**
+   * Project-scoped installed plugins.
+   *
+   * `commands` is not decoration: a plugin command projects as a generated
+   * wrapper into `.claude/commands/<pkg>/` and `.opencode/commands/`, the only
+   * two directories the engine enumerates BY WILDCARD. Every one of its
+   * ownership predicates therefore sees whatever else is in there — including
+   * another process's in-flight atomic-write temp file, which it used to delete
+   * (DOR-1854, review round 2). A generator that never shipped a command could
+   * not reach that code at all.
+   */
+  plugins: { name: string; skills: string[]; hooks: boolean; commands: number }[];
   /** Whether `.claude/settings.json` carries authored hooks. */
   authoredHooks: boolean;
   /**
@@ -304,6 +314,7 @@ export function arbRepo(): fc.Arbitrary<RepoSpec> {
         name: fc.constantFrom('acme', 'flow'),
         skills: fc.uniqueArray(fc.constantFrom(...SKILL_NAMES), { maxLength: 2 }),
         hooks: fc.boolean(),
+        commands: fc.integer({ min: 0, max: 1 }),
       }),
       { maxLength: 2, selector: (p) => p.name }
     ),
@@ -511,8 +522,14 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
       version: '1.0.0',
       type: 'plugin',
       description: `${plugin.name} plugin`,
-      layers: ['skills', 'hooks'],
+      layers: ['skills', 'hooks', 'commands'],
     });
+    for (let i = 0; i < plugin.commands; i++) {
+      writeFileAt(
+        join(dir, 'commands', `cmd-${i}.md`),
+        `---\ndescription: ${plugin.name} command ${i}\n---\n\nRun ${i}.\n`
+      );
+    }
     for (const skill of plugin.skills) {
       writeFileAt(
         join(dir, 'skills', skill, 'SKILL.md'),
@@ -601,3 +618,18 @@ export function withRepo(spec: RepoSpec, body: (dirs: MaterialisedRepo) => void)
 
 /** fast-check settings: modest run count, fixed seed so a failure is reproducible. */
 export const RUNS = { numRuns: 40, seed: 20260907 } as const;
+
+/**
+ * How long a property driven by this generator gets, in milliseconds.
+ *
+ * Every one of them materialises a whole repository per generated case — real
+ * directories, real symlinks, a real apply — forty times over, and DOR-1854's
+ * review added a `commands` layer because the swept command directories are
+ * where the concurrency bugs lived. Alone each file still runs in one to two
+ * seconds; under the full suite, with workers competing for CPU and the disk,
+ * they sat right on vitest's 5s default and timed out about one run in three
+ * (measured: 3/3 clean without the commands layer, 2 timeouts in 3 runs with
+ * it). The budget is generous on purpose — it is here to say "this is an I/O
+ * property", not to hide a hang, and a real hang still fails, just later.
+ */
+export const PROPERTY_TIMEOUT_MS = 60_000;

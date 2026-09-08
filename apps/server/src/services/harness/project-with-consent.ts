@@ -52,6 +52,44 @@
  * A harness filter is a different matter, and {@link projectWithConsent} refuses
  * to combine one with a sweep rather than trusting the caller to remember.
  *
+ * ## Two projections into one repo: what is guaranteed
+ *
+ * Three things hold, and one deliberately does not (contract AP-10, DOR-1854).
+ *
+ * 1. **No file is ever seen half-written.** Every generated file, scaffold,
+ *    settings merge and ownership sidecar is written to a temp file and renamed
+ *    over its target (`@dorkos/harness`'s `apply/atomic-write.ts`), so a harness
+ *    reading `.codex/hooks.json` while a sync rewrites it gets the whole old file
+ *    or the whole new one.
+ * 2. **Two projections into one repo IN THIS PROCESS take turns.**
+ *    {@link withProjectLock} serializes them per repository, which matters
+ *    because a projection is not one synchronous act: `runAutoProjection` builds
+ *    and applies a plan, AWAITS a person's answer about a package's hooks, then
+ *    projects again. Without the lock a second install's whole projection could
+ *    run inside that gap.
+ * 3. **The end state converges anyway.** The engine's output is deterministic —
+ *    two applies of the same plan write identical bytes — so whichever writer
+ *    renames last leaves the same tree.
+ *
+ * **Not guaranteed: two PROCESSES.** The server's projection and a
+ * `dorkos harness sync --fix` in a terminal, or two DorkOS instances on one repo
+ * (the dev server on :6242 and the built app on :4242), are not serialized at
+ * all. Nothing here takes a lock FILE, and that is a decision rather than an
+ * omission: a lock file needs a stale-lock story — which pid, on which host,
+ * after which crash — and the CLI half runs offline with nobody to ask. Atomic
+ * writes plus deterministic bytes give the property AP-10 actually needs (every
+ * file a harness reads is complete, and the end state is the sequential one), so
+ * the lock would buy only the residual below.
+ *
+ * That residual, stated plainly: two processes applying DIFFERENT plans to one
+ * repo in the same instant can interleave a generated hooks file's two writes —
+ * the file, then its ownership sidecar — so that the sidecar ends up describing
+ * the other process's bytes. DOR-1842's rule then reads the pair as a file
+ * somebody edited by hand and reports a conflict naming the way out, which is
+ * the safe answer and a wrong one. It needs both processes to write different
+ * bytes within microseconds of each other, and the way out is the same as for a
+ * real hand edit: delete the file and re-run.
+ *
  * @module services/harness/project-with-consent
  */
 import {
@@ -63,6 +101,9 @@ import {
   type ProjectionAction,
   type ProjectionPlan,
 } from '@dorkos/harness';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { realpathSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   isHookProjectionApproved,
   isHookProjectionRefused,
@@ -104,6 +145,149 @@ export interface WithheldHooks {
   request: HookProjectionRequest;
   /** Why the settings file could not be read, when {@link reason} says so. */
   unreadable?: string;
+}
+
+/**
+ * One promise chain per repository: what a caller must wait on before its own
+ * turn, keyed by the realpath of the project root.
+ *
+ * An entry is removed once nothing is queued behind it, so a server that has
+ * projected into a thousand repos over a week holds no locks at all when it is
+ * idle.
+ */
+const projectLocks = new Map<string, Promise<void>>();
+
+/** How many callers are queued or running for each repository right now. */
+const projectLockQueue = new Map<string, number>();
+
+/**
+ * The repositories the CURRENT async context already holds a turn for.
+ *
+ * A plain module-level `Set` cannot do this job, and getting that wrong is
+ * worse than not trying: while a turn is running, that key is "in flight" for
+ * everybody, so a set-based check would reject the second install into a repo —
+ * the exact caller this lock exists to make wait. `AsyncLocalStorage` is what
+ * distinguishes "called from inside the turn" from "called from somewhere else
+ * while the turn happens to be running".
+ *
+ * The store follows every `await` inside `fn`, and into anything `fn` starts.
+ * That is deliberate: work a turn spawns is logically still inside the turn, so
+ * asking for the same repository again is the same mistake wherever it is made.
+ */
+const heldByCaller = new AsyncLocalStorage<ReadonlySet<string>>();
+
+/**
+ * The key two callers must agree on to be talking about the same repository.
+ *
+ * Realpath, because `/var/folders/…` and `/private/var/folders/…` are one
+ * directory on macOS and a worktree is routinely reached through a symlinked
+ * path — two callers naming it differently would each take their own lock and
+ * serialize nothing. A path that does not exist yet (or cannot be resolved)
+ * falls back to its absolute form, which is still stable for one process.
+ */
+function projectLockKey(projectPath: string): string {
+  try {
+    return realpathSync(projectPath);
+  } catch {
+    return resolve(projectPath);
+  }
+}
+
+/**
+ * Run `fn` with no other projection into the same repository running in this
+ * process.
+ *
+ * A projection is not one synchronous act. `runAutoProjection` applies a plan,
+ * AWAITS a person's answer about a package's hooks, and applies again; the
+ * `.agents/skills` watcher (DOR-1850) will call the seam at file-event
+ * frequency. Both of those can overlap another install's passes into the same
+ * repo, and the two would then be reading each other's half-finished view of the
+ * tree. This makes them take turns instead.
+ *
+ * Different repositories never wait on each other. A thrown or rejecting `fn`
+ * releases the lock exactly like a successful one, so one failure cannot wedge a
+ * repository for the life of the process.
+ *
+ * **Not re-entrant, and it says so rather than hanging.** Asking for a
+ * repository this async context already holds used to deadlock — the inner call
+ * waited on a turn that could only finish once the inner call returned — and
+ * left the map entry pinned for the life of the process. It now rejects
+ * immediately with the path in the message.
+ *
+ * **A turn can be long.** `runAutoProjection` holds one across an approval card,
+ * and `ApprovalService` gives a person up to two hours to answer it. Everything
+ * else projecting into that ONE repository waits that long; other repositories
+ * are unaffected. That is accepted for v1 because the alternative — releasing
+ * between the two passes — reopens the interleaving this exists to close, and
+ * because the queue is per repo rather than global. If it ever bites, the fix is
+ * to make the watcher coalesce rather than to shorten the turn.
+ *
+ * This is the IN-PROCESS half only; the module docs above state what happens
+ * between processes, and why nothing here takes a lock file.
+ *
+ * @param projectPath - The project root the work is about.
+ * @param fn - The work to run under the lock.
+ * @returns Whatever `fn` returns, once its turn has come and gone.
+ * @throws When this async context already holds a turn for the same repository.
+ */
+export function withProjectLock<T>(projectPath: string, fn: () => T | Promise<T>): Promise<T> {
+  const key = projectLockKey(projectPath);
+  const held = heldByCaller.getStore();
+  if (held?.has(key)) {
+    return Promise.reject(
+      new Error(
+        `withProjectLock: re-entrant lock on ${key} — this call is already inside a turn for ` +
+          `that repository, and waiting for itself would never return. Do the work inline, or ` +
+          `take the lock once at the outermost caller.`
+      )
+    );
+  }
+  const nested = new Set(held ?? []).add(key);
+
+  // `prior` is always a settled-either-way promise (see `released`), so a
+  // failing turn can never reject the turn queued behind it.
+  const prior = projectLocks.get(key) ?? Promise.resolve();
+  projectLockQueue.set(key, (projectLockQueue.get(key) ?? 0) + 1);
+  const turn = prior.then(() => heldByCaller.run(nested, fn));
+  const released = turn.then(
+    () => undefined,
+    () => undefined
+  );
+  projectLocks.set(key, released);
+  void released.then(() => {
+    const waiting = (projectLockQueue.get(key) ?? 1) - 1;
+    if (waiting > 0) projectLockQueue.set(key, waiting);
+    else projectLockQueue.delete(key);
+    // Only the LAST holder clears the entry: if somebody chained on behind us,
+    // the map already points at their release and must keep doing so.
+    if (projectLocks.get(key) === released) projectLocks.delete(key);
+  });
+  return turn;
+}
+
+/**
+ * How many repositories currently have a projection queued or running.
+ *
+ * @returns The number of live lock entries.
+ * @internal Exported so a test can assert the map does not grow without bound.
+ */
+export function projectLockCount(): number {
+  return projectLocks.size;
+}
+
+/**
+ * How many callers are waiting for, or currently holding, one repository's turn.
+ *
+ * The number that actually says the lock is doing something: map size only ever
+ * counts repositories, so it reads `1` whether one caller is projecting or forty
+ * are queued behind it.
+ *
+ * @param projectPath - The project root to ask about.
+ * @returns The queue depth, including the caller whose turn is running.
+ * @internal Exported for testing only.
+ */
+export function projectLockQueueDepth(projectPath: string): number {
+  return projectLockQueue.get(projectLockKey(projectPath)) ?? 0;
 }
 
 /** Options for {@link planWithConsent} and {@link projectWithConsent}. */

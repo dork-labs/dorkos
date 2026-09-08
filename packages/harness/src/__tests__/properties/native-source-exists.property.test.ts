@@ -24,55 +24,59 @@ import fc from 'fast-check';
 import { join } from 'node:path';
 import { project } from '../../engine.js';
 import { resolvesOnDisk } from '../journeys/stage.js';
-import { arbRepo, withRepo, RUNS } from './arb-repo.js';
+import { arbRepo, withRepo, PROPERTY_TIMEOUT_MS, RUNS } from './arb-repo.js';
 
 describe('P9a — every `native` action points at a source on disk', () => {
-  it('never claims a harness reads a file the repository does not have', () => {
-    // Counted, not assumed: a property whose subject can be empty on every run
-    // proves nothing, so the natives seen across the whole sweep are tallied and
-    // the tally is asserted after it.
-    let nativesSeen = 0;
-    let reposWithNatives = 0;
+  it(
+    'never claims a harness reads a file the repository does not have',
+    () => {
+      // Counted, not assumed: a property whose subject can be empty on every run
+      // proves nothing, so the natives seen across the whole sweep are tallied and
+      // the tally is asserted after it.
+      let nativesSeen = 0;
+      let reposWithNatives = 0;
 
-    fc.assert(
-      fc.property(arbRepo(), (spec) => {
-        withRepo(spec, ({ repoRoot, dorkHome }) => {
-          const plan = project(repoRoot, { dorkHome });
-          const natives = plan.actions.filter((a) => a.kind === 'native');
-          nativesSeen += natives.length;
-          if (natives.length > 0) reposWithNatives += 1;
+      fc.assert(
+        fc.property(arbRepo(), (spec) => {
+          withRepo(spec, ({ repoRoot, dorkHome }) => {
+            const plan = project(repoRoot, { dorkHome });
+            const natives = plan.actions.filter((a) => a.kind === 'native');
+            nativesSeen += natives.length;
+            if (natives.length > 0) reposWithNatives += 1;
 
-          for (const action of natives) {
-            const source = action.source;
-            expect({
-              harness: action.harness,
-              artifact: action.artifact,
-              name: action.name,
-              hasSource: source !== undefined,
-            }).toEqual({
-              harness: action.harness,
-              artifact: action.artifact,
-              name: action.name,
-              hasSource: true,
-            });
-            expect({
-              harness: action.harness,
-              artifact: action.artifact,
-              source,
-              exists: resolvesOnDisk(join(repoRoot, source as string)),
-            }).toEqual({
-              harness: action.harness,
-              artifact: action.artifact,
-              source,
-              exists: true,
-            });
-          }
-        });
-      }),
-      RUNS
-    );
+            for (const action of natives) {
+              const source = action.source;
+              expect({
+                harness: action.harness,
+                artifact: action.artifact,
+                name: action.name,
+                hasSource: source !== undefined,
+              }).toEqual({
+                harness: action.harness,
+                artifact: action.artifact,
+                name: action.name,
+                hasSource: true,
+              });
+              expect({
+                harness: action.harness,
+                artifact: action.artifact,
+                source,
+                exists: resolvesOnDisk(join(repoRoot, source as string)),
+              }).toEqual({
+                harness: action.harness,
+                artifact: action.artifact,
+                source,
+                exists: true,
+              });
+            }
+          });
+        }),
+        RUNS
+      );
 
-    expect(reposWithNatives).toBeGreaterThan(0);
-    expect(nativesSeen).toBeGreaterThan(0);
-  });
+      expect(reposWithNatives).toBeGreaterThan(0);
+      expect(nativesSeen).toBeGreaterThan(0);
+    },
+    PROPERTY_TIMEOUT_MS
+  );
 });
