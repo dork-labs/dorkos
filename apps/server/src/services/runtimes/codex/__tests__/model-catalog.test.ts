@@ -48,7 +48,10 @@ class FakeAppServer extends EventEmitter {
   readonly kill = vi.fn(() => true);
 }
 
-function installProtocolResponder(child: FakeAppServer): unknown[] {
+function installProtocolResponder(
+  child: FakeAppServer,
+  options: { userAgent?: string; singlePageModels?: Array<typeof ASTRA> } = {}
+): unknown[] {
   const requests: unknown[] = [];
   let buffered = '';
   child.stdin.on('data', (chunk: Buffer) => {
@@ -61,13 +64,18 @@ function installProtocolResponder(child: FakeAppServer): unknown[] {
       requests.push(message);
       if (message.method === 'initialize') {
         child.stdout.write(
-          `${JSON.stringify({ id: message.id, result: { userAgent: 'test' } })}\n`
+          `${JSON.stringify({
+            id: message.id,
+            result: { userAgent: options.userAgent ?? 'test' },
+          })}\n`
         );
       } else if (message.method === 'model/list') {
         const cursor = (message.params as { cursor?: string }).cursor;
-        const result = cursor
-          ? { data: [SOL], nextCursor: null }
-          : { data: [ASTRA], nextCursor: 'page-2' };
+        const result = options.singlePageModels
+          ? { data: options.singlePageModels, nextCursor: null }
+          : cursor
+            ? { data: [SOL], nextCursor: null }
+            : { data: [ASTRA], nextCursor: 'page-2' };
         child.stdout.write(`${JSON.stringify({ id: message.id, result })}\n`);
       }
     }
@@ -187,6 +195,77 @@ describe('queryCodexModels', () => {
     });
 
     expect(models[0]?.displayName).toBe('GPT-6 Astrá');
+  });
+
+  it('enriches only exact returned models with context windows from the same CLI version', async () => {
+    const child = new FakeAppServer();
+    installProtocolResponder(child, {
+      userAgent: 'dorkos/0.153.4 (test)',
+      singlePageModels: [ASTRA, SOL],
+    });
+    const readContextWindows = vi.fn(
+      async () =>
+        new Map([
+          ['gpt-6-astra', 258_400],
+          ['cache-only-model', 999_999],
+        ])
+    );
+
+    const models = await queryCodexModels('/opt/codex', {
+      spawn: vi.fn(() => child as never),
+      timeoutMs: 1_000,
+      readContextWindows,
+    });
+
+    expect(readContextWindows).toHaveBeenCalledWith('0.153.4');
+    expect(models.find((model) => model.value === 'gpt-6-astra')?.contextWindow).toBe(258_400);
+    expect(models.find((model) => model.value === 'gpt-5.6-sol')?.contextWindow).toBeUndefined();
+    expect(models.some((model) => model.value === 'cache-only-model')).toBe(false);
+  });
+
+  it.each([
+    ['rejects asynchronously', () => Promise.reject(new Error('cache unavailable'))],
+    [
+      'throws synchronously',
+      () => {
+        throw new Error('cache unavailable');
+      },
+    ],
+  ])('keeps a confirmed catalog when optional context metadata %s', async (_name, read) => {
+    const child = new FakeAppServer();
+    installProtocolResponder(child, {
+      userAgent: 'dorkos/0.153.4 (test)',
+      singlePageModels: [ASTRA],
+    });
+
+    const models = await queryCodexModels('/opt/codex', {
+      spawn: vi.fn(() => child as never),
+      timeoutMs: 1_000,
+      readContextWindows: vi.fn(read),
+    });
+
+    expect(models).toHaveLength(1);
+    expect(models[0]?.value).toBe('gpt-6-astra');
+    expect(models[0]?.contextWindow).toBeUndefined();
+  });
+
+  it('returns confirmed models when optional context metadata never settles', async () => {
+    const child = new FakeAppServer();
+    installProtocolResponder(child, {
+      userAgent: 'dorkos/0.153.4 (test)',
+      singlePageModels: [ASTRA],
+    });
+
+    const models = await queryCodexModels('/opt/codex', {
+      spawn: vi.fn(() => child as never),
+      timeoutMs: 1_000,
+      contextMetadataTimeoutMs: 10,
+      readContextWindows: vi.fn(() => new Promise<ReadonlyMap<string, number>>(() => {})),
+    });
+
+    expect(models).toHaveLength(1);
+    expect(models[0]?.value).toBe('gpt-6-astra');
+    expect(models[0]?.contextWindow).toBeUndefined();
   });
 });
 

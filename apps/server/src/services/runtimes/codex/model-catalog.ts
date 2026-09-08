@@ -11,12 +11,17 @@ import { EFFORT_LEVELS } from '@dorkos/shared/constants';
 import type { EffortLevel, ModelOption } from '@dorkos/shared/types';
 import { logger, logError } from '../../../lib/logger.js';
 import { resolveCodexHome } from './codex-home.js';
+import {
+  parseCodexAppServerVersion,
+  readCodexModelContextWindows,
+} from './model-context-windows.js';
 
 const INITIALIZE_REQUEST_ID = 1;
 const FIRST_MODEL_REQUEST_ID = 2;
 const MODEL_PAGE_SIZE = 100;
 const MAX_MODEL_PAGES = 10;
 const MODEL_QUERY_TIMEOUT_MS = 15_000;
+const CONTEXT_METADATA_TIMEOUT_MS = 100;
 const MODEL_CACHE_TTL_MS = 60_000;
 const MODEL_STALE_TTL_MS = 5 * 60_000;
 const MAX_APP_SERVER_STDOUT_BYTES = 2 * 1024 * 1024;
@@ -39,6 +44,7 @@ const ModelListResponseSchema = z.object({
 type AppServerModel = z.infer<typeof AppServerModelSchema>;
 type SpawnModelServer = (binary: string, args: string[]) => ChildProcessWithoutNullStreams;
 type ReadAuthMetadata = (file: string) => Promise<{ mtimeMs: number; size: number }>;
+type ReadContextWindows = (clientVersion: string) => Promise<ReadonlyMap<string, number>>;
 
 /** Options for one bounded app-server model query. */
 export interface QueryCodexModelsOptions {
@@ -46,6 +52,10 @@ export interface QueryCodexModelsOptions {
   spawn?: SpawnModelServer;
   /** Hard deadline for the complete initialize and paginated list exchange. */
   timeoutMs?: number;
+  /** CLI-owned context-window reader; tests replace it with a deterministic map. */
+  readContextWindows?: ReadContextWindows;
+  /** Maximum part of the model-query deadline spent on optional context metadata. */
+  contextMetadataTimeoutMs?: number;
 }
 
 /** Dependencies for the cached account-aware model catalog. */
@@ -95,6 +105,17 @@ export function mapAppServerModel(model: AppServerModel): ModelOption {
   };
 }
 
+/** Add only exact model-cache matches to rows already confirmed by app-server. */
+function addContextWindows(
+  models: ModelOption[],
+  windows: ReadonlyMap<string, number>
+): ModelOption[] {
+  return models.map((model) => {
+    const contextWindow = windows.get(model.value);
+    return contextWindow === undefined ? model : { ...model, contextWindow };
+  });
+}
+
 function writeMessage(child: ChildProcessWithoutNullStreams, message: unknown): void {
   child.stdin.write(`${JSON.stringify(message)}\n`);
 }
@@ -112,6 +133,12 @@ export function queryCodexModels(
 ): Promise<ModelOption[]> {
   const spawn = options.spawn ?? ((file, args) => nodeSpawn(file, args, { stdio: 'pipe' }));
   const timeoutMs = options.timeoutMs ?? MODEL_QUERY_TIMEOUT_MS;
+  const contextMetadataTimeoutMs = options.contextMetadataTimeoutMs ?? CONTEXT_METADATA_TIMEOUT_MS;
+  const deadlineAt = Date.now() + timeoutMs;
+  const readContextWindows =
+    options.readContextWindows ??
+    ((clientVersion: string) =>
+      readCodexModelContextWindows({ codexHome: resolveCodexHome(), clientVersion }));
 
   return new Promise<ModelOption[]>((resolve, reject) => {
     let child: ChildProcessWithoutNullStreams;
@@ -126,14 +153,13 @@ export function queryCodexModels(
     child.stdout.setEncoding('utf8');
     const models: AppServerModel[] = [];
     let settled = false;
+    let appServerVersion: string | null = null;
     let pendingModelRequestId = FIRST_MODEL_REQUEST_ID;
     let pageCount = 0;
     let stdoutBytes = 0;
     let stdoutBuffer = '';
 
-    const finish = (result: { models: ModelOption[] } | { error: Error }): void => {
-      if (settled) return;
-      settled = true;
+    const closeChild = (): void => {
       clearTimeout(timer);
       try {
         child.stdin.end();
@@ -141,8 +167,53 @@ export function queryCodexModels(
       } catch {
         // The process already exited; the result that settled this exchange wins.
       }
+    };
+
+    const finish = (result: { models: ModelOption[] } | { error: Error }): void => {
+      if (settled) return;
+      settled = true;
+      closeChild();
       if ('error' in result) reject(result.error);
       else resolve(result.models);
+    };
+
+    const finishModels = (models: ModelOption[]): void => {
+      if (settled) return;
+      settled = true;
+      closeChild();
+      const clientVersion = appServerVersion;
+      if (clientVersion === null) {
+        resolve(models);
+        return;
+      }
+      const remainingMs = Math.max(0, deadlineAt - Date.now());
+      const metadataBudgetMs = Math.min(Math.max(0, contextMetadataTimeoutMs), remainingMs);
+      if (metadataBudgetMs === 0) {
+        resolve(models);
+        return;
+      }
+
+      let metadataSettled = false;
+      const metadataTimer = setTimeout(() => {
+        metadataSettled = true;
+        resolve(models);
+      }, metadataBudgetMs);
+      void Promise.resolve()
+        .then(() => readContextWindows(clientVersion))
+        .then(
+          (windows) => {
+            if (metadataSettled) return;
+            metadataSettled = true;
+            clearTimeout(metadataTimer);
+            resolve(addContextWindows(models, windows));
+          },
+          () => {
+            if (metadataSettled) return;
+            metadataSettled = true;
+            clearTimeout(metadataTimer);
+            resolve(models);
+          }
+        );
     };
 
     const send = (message: unknown): void => {
@@ -199,6 +270,9 @@ export function queryCodexModels(
           finish({ error: new Error('Codex app-server rejected initialize') });
           return;
         }
+        appServerVersion = parseCodexAppServerVersion(
+          (response.result as { userAgent?: unknown } | undefined)?.userAgent
+        );
         send({ method: 'initialized' });
         requestPage(null);
         return;
@@ -219,7 +293,7 @@ export function queryCodexModels(
         requestPage(parsed.data.nextCursor);
         return;
       }
-      finish({ models: models.map(mapAppServerModel) });
+      finishModels(models.map(mapAppServerModel));
     };
     child.stdout.on('data', (chunk: Buffer | string) => {
       if (settled) return;
