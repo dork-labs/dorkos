@@ -4,6 +4,7 @@ covers:
   - 'feat(harness): two syncs into one repo take turns (DOR-1854)'
   - 'fix(harness): the write guard strips comments the way the repo does (DOR-1854)'
   - "fix(harness): a sync stops deleting the other sync's half-written file (DOR-1854)"
+  - 'fix(harness): the two writes DOR-1851 added go through the atomic helper (DOR-1854)'
 ---
 
 ### Fixed
