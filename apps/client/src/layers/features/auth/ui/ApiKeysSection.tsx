@@ -18,6 +18,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  QueryErrorState,
   Skeleton,
 } from '@/layers/shared/ui';
 import { useCopyFeedback } from '@/layers/shared/lib';
@@ -39,7 +40,7 @@ const EXPIRY_OPTIONS: { label: string; value: string; seconds: number | null }[]
  */
 export function ApiKeysSection() {
   const nameId = useId();
-  const { data: keys, isLoading } = useApiKeys();
+  const { data: keys, isError, isFetching, isLoading, refetch } = useApiKeys();
   const create = useCreateApiKey();
   const revoke = useRevokeApiKey();
 
@@ -113,6 +114,14 @@ export function ApiKeysSection() {
       <div className="space-y-1.5">
         {isLoading ? (
           <Skeleton className="h-9 w-full" />
+        ) : isError ? (
+          <QueryErrorState
+            title="Couldn’t load API keys"
+            description="No keys were changed. Try again."
+            onRetry={() => void refetch()}
+            isRetrying={isFetching}
+            className="py-6"
+          />
         ) : keys && keys.length > 0 ? (
           keys.map((key) => (
             <ApiKeyRow

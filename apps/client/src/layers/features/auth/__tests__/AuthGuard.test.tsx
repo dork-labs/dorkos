@@ -17,7 +17,7 @@ function fakeAuthClient(): AuthClient {
     getSession: vi.fn().mockResolvedValue({ data: null, error: null }),
     apiKey: {
       create: vi.fn().mockResolvedValue({ data: null, error: null }),
-      list: vi.fn().mockResolvedValue({ data: [], error: null }),
+      list: vi.fn().mockResolvedValue({ data: { apiKeys: [], total: 0 }, error: null }),
       delete: vi.fn().mockResolvedValue({ data: { success: true }, error: null }),
     },
   };

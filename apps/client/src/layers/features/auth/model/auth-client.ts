@@ -68,6 +68,14 @@ export interface CreatedApiKey extends ApiKeyRecord {
   key: string;
 }
 
+/** Paginated API-key list returned by Better Auth's API-key plugin. */
+export interface ApiKeyList {
+  apiKeys: ApiKeyRecord[];
+  total: number;
+  limit?: number;
+  offset?: number;
+}
+
 /** The auth client surface consumed by this slice's hooks. Mirrors `better-auth/client`. */
 export interface AuthClient {
   signIn: {
@@ -88,7 +96,7 @@ export interface AuthClient {
   getSession(): Promise<AuthResult<AuthSession | null>>;
   apiKey: {
     create(input: { name?: string; expiresIn?: number | null }): Promise<AuthResult<CreatedApiKey>>;
-    list(): Promise<AuthResult<ApiKeyRecord[]>>;
+    list(): Promise<AuthResult<ApiKeyList>>;
     delete(input: { keyId: string }): Promise<AuthResult<{ success: boolean }>>;
   };
 }

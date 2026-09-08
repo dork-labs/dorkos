@@ -32,7 +32,9 @@ export function createFakeAuthClient(overrides?: {
     getSession: overrides?.getSession ?? vi.fn().mockResolvedValue({ data: null, error: null }),
     apiKey: {
       create: overrides?.apiKeyCreate ?? vi.fn().mockResolvedValue({ data: null, error: null }),
-      list: overrides?.apiKeyList ?? vi.fn().mockResolvedValue({ data: [], error: null }),
+      list:
+        overrides?.apiKeyList ??
+        vi.fn().mockResolvedValue({ data: { apiKeys: [], total: 0 }, error: null }),
       delete:
         overrides?.apiKeyDelete ??
         vi.fn().mockResolvedValue({ data: { success: true }, error: null }),
