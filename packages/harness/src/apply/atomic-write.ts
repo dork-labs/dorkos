@@ -41,13 +41,21 @@
  * ## Two things rename changes, and both are on purpose
  *
  * A rename replaces the DIRECTORY ENTRY, so a **dead symlink** at the target is
- * replaced rather than followed — which is what every call site already did by
- * hand, with an `rmSync` and a comment explaining that `writeFileSync` would
- * otherwise create the file wherever the dead link pointed. A **live** symlink
- * is still followed, by resolving the target first ({@link writeTargetOf}), so a
- * settings file somebody keeps in a dotfiles checkout is written through as it
- * always was — and the temp file lands beside the REAL file, which is also what
- * keeps the rename on one filesystem.
+ * replaced rather than followed. That is what the apply stage's own call sites
+ * already did by hand — an `rmSync` and a comment explaining that
+ * `writeFileSync` would otherwise create the file wherever the dead link pointed
+ * — and it is what the managed-hook merge should have been doing all along: a
+ * plain write there followed the dead link, put the settings somewhere else
+ * entirely, and left the path Claude Code reads as broken as it found it.
+ *
+ * A **live** symlink is still followed, by resolving the target first
+ * ({@link writeTargetOf}), so a settings file somebody keeps in a dotfiles
+ * checkout is written through as it always was — and the temp file lands beside
+ * the REAL file, which is also what keeps the rename on one filesystem. That is
+ * about this helper, not about the engine's policy: `applyGenerate` refuses a
+ * live link at a generate target long before reaching here
+ * (`generate-occupants.ts`), so the only writes that follow one are the two that
+ * always did — the settings merge and an ownership sidecar.
  *
  * The target's permission bits are carried onto the replacement, so a person who
  * has chmodded their own `.claude/settings.local.json` still has it afterwards.
