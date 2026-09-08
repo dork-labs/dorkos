@@ -50,6 +50,7 @@ import path from 'node:path';
 import type { DelegatedLoginResult } from '@dorkos/shared/runtime-connect';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../lib/logger.js';
+import { noteSigninRepaired } from '../../observability/index.js';
 import { resolveCodexBinaryPath } from '../codex/check-dependencies.js';
 import { resolveClaudeCliPath } from '../claude-code/sdk/sdk-utils.js';
 import {
@@ -367,7 +368,13 @@ export async function delegateRuntimeLogin(
     if (!cmd) {
       return { ok: false, error: `The ${type} CLI is not available to sign in.` };
     }
-    return runDelegatedLogin(cmd, deps);
+    const result = await runDelegatedLogin(cmd, deps);
+    // A login that exited 0 is the vendor's own CLI reporting it wrote a working
+    // credential for the account we pinned it to — the one moment an operator can
+    // end a standing "sign-in stopped working" condition on purpose, instead of
+    // waiting for a turn to happen to run on that same account (DOR-1910).
+    if (result.ok) noteSigninRepaired(type, signedInAccount(type, deps.accountRoot));
+    return result;
   })();
 
   inFlightLogins.set(type, { target, promise: attempt });
@@ -378,6 +385,32 @@ export async function delegateRuntimeLogin(
     // — so a login that never completed cannot wedge the runtime forever.
     inFlightLogins.delete(type);
   }
+}
+
+/**
+ * Which account a completed login just wrote a credential for, spelled the way
+ * `ClaudeCodeRuntime.getSessionAccount` spells it (`path.resolve`d), so the
+ * sign-in watch can match the two with `===`.
+ *
+ * Resolved here rather than read back off `cmd.env`: `claudeConfigDirEnv`
+ * deliberately leaves `CLAUDE_CONFIG_DIR` unset when the target IS the default
+ * root, so the env would answer "no account" for the very account most people
+ * sign in to — and an unnamed account clears every account of the runtime.
+ *
+ * `undefined` for every other runtime: `codex` has one home directory and no
+ * account concept here, so its login is evidence about the only credential it
+ * has. `undefined` is also the answer when the active root cannot be resolved at
+ * all — an unnamed account clears the runtime's whole condition, which is the
+ * right degradation for a machine that turned out to have nothing to
+ * distinguish.
+ *
+ * @param type - Runtime type the login ran for.
+ * @param accountRoot - The caller's explicit pin, when it had one.
+ */
+function signedInAccount(type: string, accountRoot: string | undefined): string | undefined {
+  if (type !== 'claude-code') return undefined;
+  const root = accountRoot ?? resolveActiveClaudeRoot();
+  return root ? path.resolve(root) : undefined;
 }
 
 /**

@@ -11,6 +11,10 @@ vi.mock('../../claude-code/claude-config-dir.js', () => ({
   claudeConfigDirEnv: vi.fn(),
 }));
 
+vi.mock('../../../observability/index.js', () => ({
+  noteSigninRepaired: vi.fn(),
+}));
+
 import {
   runDelegatedLogin,
   pipeSecretToChild,
@@ -24,6 +28,7 @@ import {
   resolveClaudeRootSet,
   claudeConfigDirEnv,
 } from '../../claude-code/claude-config-dir.js';
+import { noteSigninRepaired } from '../../../observability/index.js';
 
 /**
  * Minimal ChildProcess double: an EventEmitter (for `once('exit'|'error')`) plus
@@ -312,6 +317,88 @@ describe('delegateRuntimeLogin', () => {
         accountRoot: '/Users/x/.claude2',
       });
       expect(calls[0].cmd).toBe('/bin/claude');
+    });
+  });
+
+  /**
+   * A completed sign-in stands the "sign-in stopped working" notice down
+   * (DOR-1910).
+   *
+   * Before this, the ONLY way that notice ended was a later turn that happened
+   * to run on the same Claude account — so an operator who signed in, and even
+   * checked that Claude answered, could be left with an undismissable banner
+   * about a credential they had already fixed, because the session they tested
+   * with was bound to a different account.
+   */
+  describe('reporting the sign-in it just completed', () => {
+    beforeEach(() => {
+      vi.resetAllMocks();
+    });
+
+    it('names the account a claude-code login actually wrote to', async () => {
+      vi.mocked(resolveClaudeRootSet).mockReturnValue(['/Users/x/.claude', '/Users/x/.claude2']);
+      const child = new FakeChild();
+      const spawn = (() => {
+        queueMicrotask(() => child.emit('exit', 0));
+        return child;
+      }) as unknown as SpawnFn;
+
+      await delegateRuntimeLogin('claude-code', {
+        accountRoot: '/Users/x/.claude2',
+        resolveCommand: async () => ({ binary: '/bin/claude', args: ['auth', 'login'] }),
+        spawn,
+      });
+
+      expect(noteSigninRepaired).toHaveBeenCalledWith('claude-code', '/Users/x/.claude2');
+    });
+
+    it('falls back to the account DorkOS runs new sessions on', async () => {
+      // The reported case: Settings carries no account pin, so the login goes to
+      // the active root — and that is the account the condition is about.
+      vi.mocked(resolveActiveClaudeRoot).mockReturnValue('/Users/x/.claude');
+      const child = new FakeChild();
+      const spawn = (() => {
+        queueMicrotask(() => child.emit('exit', 0));
+        return child;
+      }) as unknown as SpawnFn;
+
+      await delegateRuntimeLogin('claude-code', {
+        resolveCommand: async () => ({ binary: '/bin/claude', args: ['auth', 'login'] }),
+        spawn,
+      });
+
+      expect(noteSigninRepaired).toHaveBeenCalledWith('claude-code', '/Users/x/.claude');
+    });
+
+    it('names no account for a runtime that has none', async () => {
+      const child = new FakeChild();
+      const spawn = (() => {
+        queueMicrotask(() => child.emit('exit', 0));
+        return child;
+      }) as unknown as SpawnFn;
+
+      await delegateRuntimeLogin('codex', {
+        resolveCommand: async () => ({ binary: '/bin/codex', args: ['login'] }),
+        spawn,
+      });
+
+      expect(noteSigninRepaired).toHaveBeenCalledWith('codex', undefined);
+    });
+
+    it('says nothing when the login did not complete', async () => {
+      const child = new FakeChild();
+      const spawn = (() => {
+        queueMicrotask(() => child.emit('exit', 1));
+        return child;
+      }) as unknown as SpawnFn;
+
+      const result = await delegateRuntimeLogin('codex', {
+        resolveCommand: async () => ({ binary: '/bin/codex', args: ['login'] }),
+        spawn,
+      });
+
+      expect(result.ok).toBe(false);
+      expect(noteSigninRepaired).not.toHaveBeenCalled();
     });
   });
 

@@ -50,7 +50,11 @@ import {
 } from '../notification-service.js';
 import { EscalationService, setEscalationService } from '../escalation-service.js';
 import type { WebPushChannel } from '../channels/web-push.js';
-import { resetSigninEpisodes, setRuntimeSigninSink } from '../../observability/index.js';
+import {
+  noteSigninRepaired,
+  resetSigninEpisodes,
+  setRuntimeSigninSink,
+} from '../../observability/index.js';
 import { watchRuntimeSigninFailures } from '../emitters/runtime-signin.js';
 
 /** How long the ladder waits before it reaches a phone, in these tests. */
@@ -821,6 +825,78 @@ describe('a machine with more than one account on one runtime', () => {
 
     expect(retired()).toHaveLength(1);
     expect(clearedRows().map((row) => row.title)).toEqual(['Your Codex sign-in is working again']);
+  });
+});
+
+/**
+ * The operator signs back in, and the notice stands down (DOR-1910).
+ *
+ * The reported bug, exactly: the default Claude account's credential died, the
+ * operator took the banner's own "Sign in" button, signed in, sent a message and
+ * got a reply — and the banner stayed, through a browser reload, because that
+ * message happened to run on a SECOND Claude account. Waiting for a turn on the
+ * dead account was the only exit, and nothing guarantees one ever comes.
+ *
+ * Driven through {@link noteSigninRepaired} — the seam a completed vendor login
+ * calls (`services/runtimes/connect/delegated-login.ts`) — into the same real
+ * notification stack as everything above, because the property under test is
+ * that a sign-in writes the `cleared` row the app's standing banner reads.
+ */
+describe('signing back in', () => {
+  it('stands the notice down on the account that was signed in', async () => {
+    const registry = registryWithAccounts('claude-code', [authErrorTurn], {
+      'sess-dead': '/home/dev/.claude',
+    });
+
+    await drain(registry, 'claude-code', 'sess-dead');
+    expect(raisedRows()).toHaveLength(1);
+    expect(clearedRows()).toEqual([]);
+
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    noteSigninRepaired('claude-code', '/home/dev/.claude');
+    await flush();
+
+    expect(retired()).toHaveLength(1);
+    expect(clearedRows().map((row) => row.title)).toEqual(['Your Claude sign-in is working again']);
+  });
+
+  it('does not cancel the phone leg for an account nobody signed in', async () => {
+    // The direction that must NOT be broken while fixing the one above: signing
+    // in to one account says nothing about a different account's credential, so
+    // the notice — and the ladder behind it — stays up.
+    const registry = registryWithAccounts('claude-code', [authErrorTurn], {
+      'sess-dead': '/home/dev/.claude',
+    });
+
+    await drain(registry, 'claude-code', 'sess-dead');
+    noteSigninRepaired('claude-code', '/home/dev/.claude3');
+    await flush();
+
+    expect(retired()).toEqual([]);
+    expect(clearedRows()).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync((ESCALATION_MINUTES + 1) * ONE_MINUTE_MS);
+    expect(sendToAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the whole condition on a runtime with one sign-in to speak of', async () => {
+    // Codex has one home directory and no account concept, so its login names no
+    // account — and the credential it just wrote is the only one there is.
+    const registry = registryRunning('codex', [authErrorTurn]);
+
+    await drain(registry, 'codex', 'sess-dead');
+    noteSigninRepaired('codex', undefined);
+    await flush();
+
+    expect(clearedRows().map((row) => row.title)).toEqual(['Your Codex sign-in is working again']);
+  });
+
+  it('says nothing when no sign-in was standing', async () => {
+    noteSigninRepaired('claude-code', '/home/dev/.claude');
+    await flush();
+
+    expect(signinRows()).toEqual([]);
+    expect(retired()).toEqual([]);
   });
 });
 

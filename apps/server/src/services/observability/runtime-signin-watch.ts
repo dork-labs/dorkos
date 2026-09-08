@@ -96,6 +96,12 @@
  * something it can try. (The account half arrived with DOR-1682, below; before
  * it, "that account" was simply "that runtime".)
  *
+ * There is a second edge, and it is the one an operator takes on purpose:
+ * finishing a sign-in ({@link noteSigninRepaired}, DOR-1910). A credential
+ * cannot be inspected, but it can be WRITTEN — which is what a completed vendor
+ * login is — and waiting for a turn instead left the app's undismissable banner
+ * standing over a sign-in somebody had already fixed.
+ *
  * Three judgement calls in that sentence, each deliberate:
  *
  * - **"Reaches the provider"**, not "finishes". Finishing proves nothing, and
@@ -360,14 +366,88 @@ function noteSigninRecovery(
     // silences a live problem; a wrong hold is corrected by the next turn.
     if (noticedAt !== undefined && noticedAt < turnStartedAt) episode.accounts.delete(key);
   }
-  // Still an account nothing has proved — the runtime's condition is one notice
-  // covering all of them, so it stays up until the last one clears.
+  reportIfEveryAccountProved(runtimeType, episode, {
+    account,
+    proof: 'A turn went through on a sign-in that had failed',
+  });
+}
+
+/**
+ * Take a completed sign-in as proof that a runtime's credential works again —
+ * the OTHER resolution edge, and the only one an operator can reach on purpose
+ * (DOR-1910).
+ *
+ * ## Why a turn is not the only honest evidence
+ *
+ * {@link noteSigninRecovery} waits for the next turn that reaches the provider,
+ * on the account that failed. That is the right edge for a condition nobody has
+ * acted on — but it is the WRONG one, on its own, the moment somebody signs in:
+ * on a machine running more than one Claude account it can take arbitrarily
+ * long, or never arrive at all. The reported case is exactly that: the dead
+ * credential was the default account, every session the operator then ran
+ * happened to be bound to a second account, and the banner — which deliberately
+ * cannot be dismissed — stood over a sign-in they had already fixed.
+ *
+ * A completed vendor login is not a guess about a credential; it IS the
+ * credential being written, by the vendor's own CLI, exiting 0 against the
+ * account root DorkOS pinned it to. That is stronger evidence than the boot-time
+ * repair this module's sibling already acts on
+ * (`emitters/runtime-signin.ts`, `retireOrphanedEpisodes`), which closes a row
+ * knowing only that nothing in this process can ever answer it.
+ *
+ * And it fails in the same self-correcting direction as everything else here: a
+ * sign-in that somehow did not take re-stands the condition on the very next
+ * turn.
+ *
+ * @param runtimeType - The runtime that was signed in.
+ * @param account - The account root the login was pinned to, spelled the same
+ *   way {@link AgentRuntime.getSessionAccount} spells it. `undefined` means the
+ *   runtime has no account concept, or the login could not name one — and, since
+ *   the sign-in it just completed is the only credential such a runtime has,
+ *   that clears the whole condition rather than nothing at all.
+ */
+export function noteSigninRepaired(runtimeType: string, account: string | undefined): void {
+  const episode = failingSince.get(runtimeType);
+  if (episode === undefined) return;
+
+  if (account === undefined) episode.accounts.clear();
+  else {
+    episode.accounts.delete(account);
+    // The unplaceable failure goes too, for the reason {@link noteSigninRecovery}
+    // gives: `null` means "we could not tell which account", and a credential on
+    // this runtime demonstrably written is the best evidence there is against it.
+    episode.accounts.delete(null);
+  }
+
+  reportIfEveryAccountProved(runtimeType, episode, {
+    account,
+    proof: 'A sign-in completed on a runtime whose credential had failed',
+  });
+}
+
+/**
+ * Close a runtime's episode and announce it — but only once nothing it was
+ * standing for is still unproven.
+ *
+ * Shared by both resolution edges so they cannot drift: one notice covers every
+ * account of a runtime, so it stays up until the last one clears, and it is
+ * retired under the episode's own `since` — the key the ladder armed on.
+ *
+ * @param runtimeType - The runtime whose episode this is.
+ * @param episode - That episode, already stripped of whatever the caller proved.
+ * @param context - What proved it, for the log line.
+ */
+function reportIfEveryAccountProved(
+  runtimeType: string,
+  episode: SigninEpisode,
+  context: { account: string | undefined; proof: string }
+): void {
   if (episode.accounts.size > 0) return;
 
   failingSince.delete(runtimeType);
-  logger.info('[Runtimes] A turn went through on a sign-in that had failed', {
+  logger.info(`[Runtimes] ${context.proof}`, {
     runtime: runtimeType,
-    account,
+    account: context.account,
   });
   report({
     runtime: runtimeType,

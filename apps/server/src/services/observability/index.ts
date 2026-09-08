@@ -31,6 +31,7 @@ export { traceRuntime } from './trace-runtime.js';
 export {
   watchRuntimeSignin,
   setRuntimeSigninSink,
+  noteSigninRepaired,
   isSigninFailing,
   resetSigninEpisodes,
   type RuntimeSigninEvent,
