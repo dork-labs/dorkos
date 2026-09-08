@@ -5200,10 +5200,11 @@ registry.registerPath({
 
 // --- Harness Sync status (spec `harness-sync-status` §2.1) ---
 
-// Registered as a named component rather than inlined: the envelope is ~18 KB
-// of generated JSON, and the sync route that lands next returns it again inside
-// its own response. One `$ref` beats two copies. `register` returns the
-// ref-carrying schema — referencing the bare one inlines it anyway.
+// Registered as a named component rather than inlined: the envelope generates
+// 453 lines — 10.5 KB as `components.schemas` holds it, 4.0 KB minified — and
+// the sync route that lands next returns it again inside its own response. One
+// `$ref` beats two copies. `register` returns the ref-carrying schema;
+// referencing the bare one inlines it anyway.
 const HarnessStatusResponseRef = registry.register(
   'HarnessStatusResponse',
   HarnessStatusResponseSchema

@@ -67,6 +67,29 @@
  * `dorkos harness sync --check` prints to anyone with a shell — and gating it
  * would make an agent unable to answer "what can you see?" about itself.
  *
+ * ## What it costs, and why nothing guards it yet
+ *
+ * {@link buildHarnessStatus} is three SYNCHRONOUS filesystem walks — the plan,
+ * the drift check, the source inventory — so for their whole duration this
+ * request owns the event loop and every other request waits. Measured in
+ * process against this repository (57 rows, three harnesses enabled): **median
+ * 26 ms per call, range 23–34 ms**, and **ten calls back to back are 268 ms of
+ * uninterrupted loop time**. Over HTTP on a machine already busy with other
+ * work, ten concurrent GETs finished in 0.9–1.4 s and pushed an unrelated
+ * `GET /api/health` p95 from about 9 ms to 44–162 ms.
+ *
+ * **No lock, no queue, no cache is added here, and that is deliberate.** The
+ * shape of the load is what settles it: this answers one page, opened by one
+ * person, for one project at a time — there is no fan-out and no poller. Slice 6
+ * reaches it through a hook that reads the query cache and never fetches on
+ * profile open, so the ordinary path costs nothing at all. A lock would turn a
+ * slow read into a queue of slow reads; a cache would need invalidating on every
+ * filesystem write any agent makes, which is a correctness problem traded for
+ * 26 ms (the spec's Performance section reaches the same conclusion, with a
+ * ≤ 150 ms budget this sits well inside). If a real repository is ever measured
+ * past that budget, the answer is pagination or a summary-first response, with
+ * the measurement attached — not a guard added on suspicion.
+ *
  * @module routes/harness
  */
 import { Router } from 'express';
