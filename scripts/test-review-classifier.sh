@@ -115,7 +115,7 @@ for shape in 'sk-ant-' 'ghs_'; do
 done
 
 # ─────────────────────────────────────────────────────────────────────────────
-# `stands` — the only thing that may turn a failed review step green (DOR-1665)
+# `stands` — both facts required before any review outcome may pass
 #
 # The stakes are asymmetric and this table is where that asymmetry is written
 # down. Saying `no` too often costs a red check on a PR that was in fact
@@ -127,7 +127,7 @@ done
 # `max_turns` and `died` stay `no` even WITH a posted verdict, on purpose: those
 # are the run saying it ended abnormally, so a re-review is genuinely owed and
 # the check has to keep saying so. Only `completed` — the run's own result
-# message reporting a clean finish, with the action failing around it — may
+# message reporting a clean finish, regardless of the action's exit — may
 # stand. Widening that set is the mutation this table exists to catch.
 # `${2:-}` rather than `$2`, so the "caller omitted the argument" case below is
 # an assertion about the classifier rather than an unbound-variable crash here.
@@ -604,7 +604,7 @@ done
 # Two directions to protect, and they fail in opposite ways:
 #   * drop `continue-on-error` and DOR-1665 comes back, loudly (red checks on
 #     reviewed PRs, and merge-tail will not arm them);
-#   * drop the gate and every failed review goes GREEN, silently — no review, no
+#   * drop the gate and a silent review goes GREEN — no review, no
 #     comment, nothing red anywhere. That one is unrecoverable by inspection,
 #     which is why the gate's whole block is pinned rather than merely detected.
 #
@@ -613,10 +613,9 @@ done
 # same way: the first version of THIS fence pinned the gate's BODY and forgot its
 # WIRING. Three mutations passed 136 checks while failing the check open, and an
 # adversarial review found them, not this suite:
-#   * `steps.claude-review.outcome` -> `.conclusion` on the gate's `if:` — the
-#     plausible one-word tidy-up, and fatal. `conclusion` is what is left AFTER
-#     `continue-on-error` is applied, so it reads `success` on exactly the runs
-#     this gate exists for and the gate never fires.
+#   * guard either verdict step with
+#     `steps.claude-review.outcome == 'failure'` — the old wiring, which skips
+#     the proof after a clean action exit and certifies a silent review as green.
 #   * `if: false` on the gate — the pinned body is untouched and never runs.
 #   * a JOB-level `continue-on-error: true` — the gate's `exit 1` happens and the
 #     job is green anyway.
@@ -640,15 +639,24 @@ check "workflow: the survivable step is the review itself" present \
 check "workflow: no job-level continue-on-error" 0 \
   "$(grep -c '^    continue-on-error:' "$workflow")"
 
-# The gate reads the failure step's own answer. A mistyped step id yields an
+# The gate reads the verdict step's own answer. A mistyped step id yields an
 # empty string, which the block below treats as red — the safe direction — but it
 # would silently reinstate the bug, so pin both ends of the wire.
-check "workflow: the step that judges a failure is the one the gate reads" present \
+check "workflow: the verdict step is the one the gate reads" present \
   "$(presence 'id: verdict' "$workflow_text")"
 # The needle is a literal GitHub Actions expression, so it must stay unexpanded.
 # shellcheck disable=SC2016
 check "workflow: the gate reads that step's verdict" present \
   "$(presence 'STANDS: ${{ steps.verdict.outputs.stands }}' "$workflow_text")"
+
+# The verdict probe must run after every review outcome that actually started.
+# Restoring the old failure-only guard leaves STANDS empty on a successful run,
+# so the always-running final gate fails visibly instead of evaluating the real
+# current-run verdict.
+check "workflow: the verdict probe covers every non-skipped review outcome" present \
+  "$(presence "$(printf '%s\n' '      - name: Verify the review result and posted verdict' \
+    '        id: verdict' \
+    "        if: always() && steps.claude-review.outcome != 'skipped'")" "$workflow_text")"
 
 # That verdict comes from the TRUSTED classifier materialized out of the default
 # branch, never from this file's own arithmetic — same rule as the classification
@@ -657,6 +665,12 @@ check "workflow: the gate reads that step's verdict" present \
 # shellcheck disable=SC2016
 check "workflow: the verdict is the trusted classifier's call" present \
   "$(presence 'stands=$(bash "$classifier" stands "$exec_file" "$posted")' "$workflow_text")"
+
+# A silent clean result is an infrastructure failure, not a finding about the
+# pull request. Keep that failure visible and actionable instead of relying on
+# the red check alone.
+check "workflow: clean success without a verdict explains the failure" present \
+  "$(presence 'review reported success but never posted a verdict' "$workflow_text")"
 
 # What counts as a posted verdict. Loosening either half — the shapes a verdict
 # can take, or the requirement that a BOT wrote it — turns "someone said
@@ -705,15 +719,16 @@ No blocking issues|REVIEW.md
 No blocking issues found|workflow
 PHRASES
 
-# Mutations 1 and 2: the gate's WIRING, which decides whether the pinned body
-# below ever executes. `steps.claude-review.outcome` is the step's real result;
-# `.conclusion` is what survives `continue-on-error` and reads `success` on every
-# run this gate exists for, so that one-word swap switches the gate off while
-# leaving its body word-perfect. `if: false` does the same thing more bluntly.
-# Pinning the two lines together also pins that the `if:` belongs to THIS step.
-check "workflow: the gate opens on the review step's real outcome" present \
+# The final gate must run even if setup failed and skipped the review. Restoring
+# the old failure-only condition skips both clean-success/no-verdict runs and
+# setup/skipped runs.
+check "workflow: the final gate always runs" present \
   "$(presence "$(printf '%s\n' '      - name: Decide the check' \
-    "        if: steps.claude-review.outcome == 'failure'")" "$workflow_text")"
+    '        if: always()')" "$workflow_text")"
+
+# shellcheck disable=SC2016
+check "workflow: the gate reads the review step's real outcome" present \
+  "$(presence 'REVIEW_OUTCOME: ${{ steps.claude-review.outcome }}' "$workflow_text")"
 
 # The gate itself, verbatim. Red is the default AND the fallthrough: the only way
 # out with status 0 is an explicit `yes`, so every unanticipated state — an empty
@@ -736,14 +751,54 @@ gate_block=$(
 # shellcheck disable=SC2016
 expected_gate=$(
   printf '%s\n' \
+    '          case "$REVIEW_OUTCOME" in' \
+    '            success | failure) ;;' \
+    '            *)' \
+    '              echo "::error::The automated review did not run to a checkable result (outcome: ${REVIEW_OUTCOME:-missing})."' \
+    '              exit 1' \
+    '              ;;' \
+    '          esac' \
+    '' \
     '          if [ "$STANDS" = yes ]; then' \
-    '            echo "The review finished and its verdict is on the PR; only the machinery around it failed."' \
+    '            if [ "$REVIEW_OUTCOME" = failure ]; then' \
+    '              echo "The review finished and its verdict is on the PR; only the machinery around it failed."' \
+    '            else' \
+    '              echo "The review finished and its verdict is on the PR."' \
+    '            fi' \
     '            exit 0' \
     '          fi' \
     '          exit 1'
 )
 check "workflow: the check gate is exactly this, and its fallthrough is red" \
   "$expected_gate" "$gate_block"
+
+# Execute the exact workflow gate body against the outcome × verdict matrix.
+# `stands` supplies the result-file + posted-verdict half; the gate supplies the
+# action-outcome half.
+gate_status() {
+  local outcome=$1 fixture=$2 posted=$3 stands_value
+  stands_value=$(stands "$fixture" "$posted")
+  REVIEW_OUTCOME=$outcome STANDS=$stands_value bash -c "$gate_block" >/dev/null 2>&1
+  printf '%s\n' "$?"
+}
+
+while read -r outcome fixture posted expected; do
+  [ -n "${outcome:-}" ] || continue
+  [ "$outcome" = missing ] && outcome=
+  check "workflow gate(outcome=${outcome:-missing}, $(basename "$fixture"), posted=$posted)" \
+    "$expected" "$(gate_status "$outcome" "$fixture" "$posted")"
+done <<MATRIX
+success $fixtures/clean-success.json yes 0
+success $fixtures/clean-success.json no 1
+failure $fixtures/clean-success.json yes 0
+failure $fixtures/clean-success.json no 1
+success $fixtures/malformed.json yes 1
+failure $fixtures/max-turns.json yes 1
+success $fixtures/does-not-exist.json yes 1
+skipped $fixtures/clean-success.json yes 1
+cancelled $fixtures/clean-success.json yes 1
+missing $fixtures/clean-success.json yes 1
+MATRIX
 
 # The gate above is only ever consulted on the events this workflow listens for,
 # so pin those too. `review` is deliberately NOT a required check and must never
