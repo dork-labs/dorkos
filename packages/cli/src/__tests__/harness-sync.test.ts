@@ -475,6 +475,72 @@ describe('runHarnessSync', () => {
     expect(printed).toContain('.claude/settings.json');
   });
 
+  it('--check reports a dead link at a generated file as drift instead of crashing', async () => {
+    // The file was moved away and a broken link left behind. There is nothing to
+    // read at that path, so there is no ownership question — it is stale, and
+    // saying so is the whole job. This used to throw ENOENT out of `checkPlan`
+    // and print a stack trace over the report.
+    writeFixtureRepo(tmpDir);
+    process.chdir(tmpDir);
+    await runHarnessSync({ check: false, fix: true }); // project everything first
+    fs.rmSync(path.join(tmpDir, '.codex', 'hooks.json'), { force: true });
+    fs.symlinkSync('hooks.json.bak', path.join(tmpDir, '.codex', 'hooks.json'));
+    logSpy.mockClear();
+
+    const check = await runHarnessSync({ check: true, fix: false });
+
+    expect(check.exitCode).toBe(1);
+    const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(printed).toContain('Drift detected');
+    expect(printed).toContain('.codex/hooks.json');
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('--check names a link whose skill is gone, and --fix sweeps it', async () => {
+    writeFixtureRepo(tmpDir);
+    process.chdir(tmpDir);
+    await runHarnessSync({ check: false, fix: true }); // project `demo`
+    const projected = path.join(tmpDir, '.claude', 'skills', 'demo');
+    expect(fs.lstatSync(projected).isSymbolicLink()).toBe(true);
+
+    // The person deletes the skill. Its projection is now a link to nothing.
+    fs.rmSync(path.join(tmpDir, '.agents', 'skills', 'demo'), { recursive: true, force: true });
+    logSpy.mockClear();
+
+    const check = await runHarnessSync({ check: true, fix: false });
+
+    expect(check.exitCode).toBe(1);
+    const checkOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(checkOutput).toContain('Orphaned links — the skill they pointed at is gone');
+    expect(checkOutput).toContain('.claude/skills/demo');
+    // Read-only: the dead link is still there after a check.
+    expect(fs.lstatSync(projected).isSymbolicLink()).toBe(true);
+
+    logSpy.mockClear();
+    const fix = await runHarnessSync({ check: false, fix: true });
+
+    expect(fix.exitCode).toBe(0);
+    const fixOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(fixOutput).toMatch(/Swept 1 orphaned[\s\S]*\.claude\/skills\/demo/);
+    expect(fs.existsSync(projected)).toBe(false);
+    expect((await runHarnessSync({ check: true, fix: false })).exitCode).toBe(0);
+  });
+
+  it('turns an engine failure into one line, not a stack trace', async () => {
+    // Defence in depth: whatever the projection engine throws — here a manifest
+    // somebody typo'd into invalid JSON — a person gets a sentence and exit 1.
+    writeFixtureRepo(tmpDir);
+    fs.writeFileSync(path.join(tmpDir, '.agents', 'harness.manifest.json'), '{ not json');
+    process.chdir(tmpDir);
+
+    const check = await runHarnessSync({ check: true, fix: false });
+
+    expect(check.exitCode).toBe(1);
+    const errors = errorSpy.mock.calls.map((c) => String(c[0]));
+    expect(errors.join('\n')).toContain('Harness sync failed');
+    expect(errors.join('\n')).not.toContain('\n    at ');
+  });
+
   it('--harness narrows the left-alone list to that harness', async () => {
     writeFixtureRepo(tmpDir);
     writeHandWrittenHooks(tmpDir, '.cursor/hooks.json', 'echo MINE cursor');

@@ -172,9 +172,10 @@ function filterPlanToHarness(plan: ProjectionPlan, harness: HarnessId): Projecti
 /**
  * Print the check-mode report and return its exit code.
  *
- * Non-zero for drift (a `--fix` would repair it) and for a blocked projection (a
- * `--fix` cannot, until the person moves their file). Zero for paths merely left
- * alone — those are reported, never counted against the tree.
+ * Non-zero for drift (a `--fix` would repair it), for an orphaned link (a `--fix`
+ * would remove it), and for a blocked projection (a `--fix` cannot do anything,
+ * until the person moves their file). Zero for paths merely left alone — those
+ * are reported, never counted against the tree.
  */
 function reportCheck(repoRoot: string, plan: ProjectionPlan, harnessFilter?: HarnessId): number {
   const drift = checkPlan(repoRoot, plan);
@@ -199,11 +200,18 @@ function reportCheck(repoRoot: string, plan: ProjectionPlan, harnessFilter?: Har
   if (drift.drifted.length > 0) {
     console.log(`Drift detected (${drift.drifted.length} out of sync):`);
     for (const action of drift.drifted) console.log(formatAction(action));
+  }
+  if (drift.orphans.length > 0) {
+    if (drift.drifted.length > 0) console.log('');
+    console.log(`Orphaned links — the skill they pointed at is gone (${drift.orphans.length}):`);
+    for (const path of drift.orphans) console.log(`  ${path}`);
+  }
+  if (drift.drifted.length > 0 || drift.orphans.length > 0) {
     console.log('');
     console.log('Run `dorkos harness sync --fix` to apply.');
   }
   if (drift.blocked.length > 0) {
-    if (drift.drifted.length > 0) console.log('');
+    if (drift.drifted.length > 0 || drift.orphans.length > 0) console.log('');
     console.log(
       `${drift.blocked.length} projection(s) blocked — a --fix cannot write these until you clear the way:`
     );
@@ -215,9 +223,10 @@ function reportCheck(repoRoot: string, plan: ProjectionPlan, harnessFilter?: Har
 /**
  * Apply the plan, print the fix-mode report, and return its exit code (1 if conflicts).
  *
- * `sweepOrphans` removes installed-plugin projections whose plugin is gone; it is
- * passed only for an unfiltered plan (a `--harness` filter would mistake other
- * harnesses' live projections for orphans).
+ * `sweepOrphans` removes projections whose source is gone — an uninstalled
+ * plugin's, and a dead `.claude/skills` link left by an authored skill somebody
+ * removed or renamed. It is passed only for an unfiltered plan (a `--harness`
+ * filter would mistake other harnesses' live projections for orphans).
  */
 function reportFix(
   repoRoot: string,
@@ -239,7 +248,7 @@ function reportFix(
 
   if (swept.length > 0) {
     console.log('');
-    console.log(`Swept ${swept.length} orphaned installed projection(s):`);
+    console.log(`Swept ${swept.length} orphaned projection(s) — what they came from is gone:`);
     for (const path of swept) console.log(`  ${path}`);
   }
 
@@ -327,18 +336,30 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     console.log('');
   }
 
-  // Project marketplace-installed plugins too (DOR-173). Project-scoped installs
-  // (`<repoRoot>/.dork/plugins`) are repo-relative and always project; passing a
-  // resolved dork home additionally projects global-scope installs.
-  let plan = project(repoRoot, { dorkHome: resolveDorkHome() });
+  // Everything from here reads or writes the tree, and a person running this in
+  // their own terminal gets a sentence when it goes wrong, never a stack. The
+  // engine is not supposed to throw for anything it finds on disk — a dead link,
+  // a file it does not own, a directory where a link should be are all answers it
+  // returns — so this is the backstop for what is left: an unreadable manifest, a
+  // permission error, a bug.
+  try {
+    // Project marketplace-installed plugins too (DOR-173). Project-scoped installs
+    // (`<repoRoot>/.dork/plugins`) are repo-relative and always project; passing a
+    // resolved dork home additionally projects global-scope installs.
+    let plan = project(repoRoot, { dorkHome: resolveDorkHome() });
 
-  if (harnessFilter !== undefined) {
-    plan = filterPlanToHarness(plan, harnessFilter);
+    if (harnessFilter !== undefined) {
+      plan = filterPlanToHarness(plan, harnessFilter);
+    }
+
+    // Orphan sweep only runs on a full (unfiltered) plan — see reportFix.
+    const exitCode = args.fix
+      ? reportFix(repoRoot, plan, harnessFilter === undefined, harnessFilter)
+      : reportCheck(repoRoot, plan, harnessFilter);
+    return { exitCode };
+  } catch (err) {
+    console.error(`Harness sync failed: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`  in ${repoRoot}`);
+    return { exitCode: 1 };
   }
-
-  // Orphan sweep only runs on a full (unfiltered) plan — see reportFix.
-  const exitCode = args.fix
-    ? reportFix(repoRoot, plan, harnessFilter === undefined, harnessFilter)
-    : reportCheck(repoRoot, plan, harnessFilter);
-  return { exitCode };
 }
