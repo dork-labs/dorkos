@@ -20,7 +20,24 @@ import { TransportProvider } from '@/layers/shared/model';
 import { SecurityPanel } from '../ui/SecurityPanel';
 import { AuthClientProvider } from '../model/auth-client-context';
 import { createFakeAuthClient } from './fake-auth-client';
-import type { AuthClient } from '../model/auth-client';
+import type { ApiKeyRecord, AuthClient, AuthSession } from '../model/auth-client';
+
+/** A resolved owner session — what `getSession` returns once somebody is signed in. */
+const SIGNED_IN_SESSION: AuthSession = {
+  user: { id: 'owner-1', email: 'owner@example.com', name: 'Owner', role: 'owner' },
+  session: { id: 's1', expiresAt: '2099-01-01T00:00:00Z', userId: 'owner-1' },
+};
+
+/** One existing key, as `/api/auth/api-key/list` returns it (never the secret). */
+const KEY: ApiKeyRecord = {
+  id: 'k1',
+  name: 'laptop',
+  start: 'dork_ab',
+  prefix: 'dork',
+  createdAt: '2026-07-01T00:00:00Z',
+  expiresAt: null,
+  enabled: true,
+};
 
 function setup(opts: { authEnabled: boolean; client?: AuthClient }) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -71,6 +88,26 @@ describe('SecurityPanel', () => {
     setup({ authEnabled: true });
     expect(await screen.findByText('API keys')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
+  });
+
+  it('keeps API keys reachable after login is turned back off (DOR-1885)', async () => {
+    // Turning "Require login" off does not delete the keys, expire the session,
+    // or stop the keys working — `/api/config` still reports `authSource:
+    // 'user-keys'` and `/mcp` still accepts them. Hiding the section behind the
+    // flag therefore left live credentials nobody could see or revoke, which is
+    // how this was reported: "I made a key and the list never shows it."
+    setup({
+      authEnabled: false,
+      client: createFakeAuthClient({
+        getSession: vi.fn().mockResolvedValue({ data: SIGNED_IN_SESSION, error: null }),
+        apiKeyList: vi.fn().mockResolvedValue({ data: { apiKeys: [KEY], total: 1 }, error: null }),
+      }),
+    });
+
+    expect(await screen.findByText('API keys')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /revoke laptop/i })).toBeInTheDocument();
+    // …and it says why they still matter with login off.
+    expect(screen.getByText(/keep working while login is off/i)).toBeInTheDocument();
   });
 
   it('owner setup: signs up, then enables auth.enabled', async () => {

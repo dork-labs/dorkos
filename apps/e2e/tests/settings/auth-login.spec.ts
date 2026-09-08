@@ -8,8 +8,17 @@ import { test, expect } from '../../fixtures';
  *      regression check);
  *   2. enabling login via Settings → Access creates the owner and the session
  *      survives a full page reload;
- *   3. signing out returns to the login screen, and signing back in restores
- *      access; the run then disables login again to restore zero-config.
+ *   3. an API key created in Settings → Access lands in the list and is still
+ *      there after a full reload;
+ *   4. signing out returns to the login screen, and signing back in restores
+ *      access; the run then disables login again to restore zero-config — and
+ *      the key is still listed afterwards, because turning login off revokes
+ *      nothing (DOR-1885).
+ *
+ * The API-key coverage lives in this file rather than a spec of its own on
+ * purpose: Playwright runs spec FILES in parallel, and a second file would race
+ * this one for the same global `user` table and `auth.enabled` flag. Here it
+ * rides the serial chain that already owns the owner account.
  *
  * ISOLATION: these tests mutate GLOBAL, PERSISTENT auth state (the `user` table
  * in SQLite + `auth.enabled` in config.json). They are `serial` and self-heal
@@ -30,6 +39,7 @@ import { test, expect } from '../../fixtures';
 
 const OWNER_EMAIL = 'owner@e2e.dorkos.local';
 const OWNER_PASSWORD = 'e2e-owner-pw-123';
+const API_KEY_NAME = 'e2e-laptop-cli';
 
 // eslint-disable-next-line no-restricted-syntax -- e2e has no env.ts; opt-in gate for a state-mutating suite
 const RUN_AUTH_E2E = !!process.env.DORKOS_E2E_AUTH;
@@ -81,11 +91,34 @@ test.describe('Auth — local login lifecycle @auth', () => {
     await expect(authPage.loginHeading).toBeHidden();
   });
 
+  test('a created API key shows in the list and survives a reload', async ({
+    basePage,
+    authPage,
+  }) => {
+    await basePage.goto();
+    await authPage.ensureSignedIn(OWNER_EMAIL, OWNER_PASSWORD);
+    await basePage.waitForAppReady();
+
+    await authPage.openAccessTab();
+    await expect(authPage.apiKeysHeading).toBeVisible();
+    await authPage.createApiKey(API_KEY_NAME);
+
+    // The row is the proof the key was persisted AND read back: the list is a
+    // fresh `GET /api/auth/api-key/list`, not the create response.
+    await expect(authPage.apiKeyRow(API_KEY_NAME)).toBeVisible();
+
+    await basePage.page.reload();
+    await basePage.waitForAppReady();
+    await authPage.openAccessTab();
+    await expect(authPage.apiKeyRow(API_KEY_NAME)).toBeVisible();
+  });
+
   test('sign out returns to the login screen; sign in restores access', async ({
     basePage,
     authPage,
   }) => {
     await basePage.goto();
+    await authPage.ensureSignedIn(OWNER_EMAIL, OWNER_PASSWORD);
     await basePage.waitForAppReady();
 
     await authPage.openAccessTab();
@@ -105,5 +138,13 @@ test.describe('Auth — local login lifecycle @auth', () => {
     await authPage.openAccessTab();
     await authPage.requireLoginSwitch.click();
     await expect(authPage.requireLoginSwitch).not.toBeChecked();
+
+    // …and the keys stay reachable, because turning login off does not revoke
+    // them: `/mcp` still accepts every one, so a list that vanished with the
+    // flag left live credentials nobody could see or revoke (DOR-1885).
+    await expect(authPage.apiKeyRow(API_KEY_NAME)).toBeVisible();
+    await expect(
+      authPage.settingsDialog.getByText(/keep working while login is off/i)
+    ).toBeVisible();
   });
 });
