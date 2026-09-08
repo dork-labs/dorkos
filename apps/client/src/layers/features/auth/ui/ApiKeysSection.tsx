@@ -33,12 +33,24 @@ const EXPIRY_OPTIONS: { label: string; value: string; seconds: number | null }[]
   { label: '90 days', value: '90d', seconds: 60 * 60 * 24 * 90 },
 ];
 
+/** Props for {@link ApiKeysSection}. */
+export interface ApiKeysSectionProps {
+  /**
+   * Whether "Require login" is on. Only changes the copy: when login is off the
+   * section says so, because the keys keep working either way and somebody who
+   * just turned login off would otherwise reasonably assume they stopped.
+   */
+  loginRequired?: boolean;
+}
+
 /**
  * Per-user API key management — create, one-time reveal, and revoke scoped keys
- * for MCP / scripts / agents. Rendered inside the Security section only when
- * login is enabled. The plaintext key is shown exactly once at creation.
+ * for MCP / scripts / agents. Rendered inside the Security section whenever
+ * somebody is signed in, which is exactly when the `/api/auth/api-key/*`
+ * endpoints answer — including after login is turned back off, when the keys are
+ * still live (DOR-1885). The plaintext key is shown exactly once at creation.
  */
-export function ApiKeysSection() {
+export function ApiKeysSection({ loginRequired = true }: ApiKeysSectionProps = {}) {
   const nameId = useId();
   const { data: keys, isError, isFetching, isLoading, refetch } = useApiKeys();
   const create = useCreateApiKey();
@@ -69,6 +81,11 @@ export function ApiKeysSection() {
           Personal keys for MCP clients, scripts, and agents. Pass a key as a{' '}
           <code className="font-mono">Bearer</code> token. The value is shown once at creation.
         </p>
+        {!loginRequired && (
+          <p className="text-muted-foreground text-xs">
+            These keep working while login is off. Revoke any you don’t need.
+          </p>
+        )}
       </div>
 
       {created ? (

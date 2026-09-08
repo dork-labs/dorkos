@@ -24,8 +24,13 @@ export class AuthPage {
    * question and became two sections of one tab.
    */
   async openAccessTab() {
-    await openFromCommandPalette(this.page, 'Settings');
-    await this.settingsDialog.waitFor({ state: 'visible' });
+    // Idempotent: the open dialog writes `?settings=…` into the URL, so a
+    // `page.reload()` mid-test comes back with Settings already up — and the
+    // command-palette button is then behind a modal that swallows the click.
+    if (!(await this.settingsDialog.isVisible().catch(() => false))) {
+      await openFromCommandPalette(this.page, 'Settings');
+      await this.settingsDialog.waitFor({ state: 'visible' });
+    }
     await this.settingsDialog.getByRole('tab', { name: /^access$/i }).click();
   }
 
@@ -37,6 +42,50 @@ export class AuthPage {
   /** The "Sign out" control shown in Settings → Access when signed in. */
   get signOutButton() {
     return this.settingsDialog.getByRole('button', { name: /sign out/i });
+  }
+
+  // ---------- API keys (Settings → Access) ----------
+
+  /** The "API keys" block inside Settings → Access. */
+  get apiKeysHeading() {
+    return this.settingsDialog.getByText('API keys', { exact: true });
+  }
+
+  /** The name field of the create-a-key form. */
+  get apiKeyNameInput() {
+    return this.settingsDialog.getByRole('textbox', { name: /^name$/i });
+  }
+
+  /** The "Create key" button. */
+  get createApiKeyButton() {
+    return this.settingsDialog.getByRole('button', { name: /^create key$/i });
+  }
+
+  /** The one-time plaintext reveal shown immediately after creation. */
+  get apiKeyReveal() {
+    return this.settingsDialog.getByText(/copy your key now/i);
+  }
+
+  /**
+   * The row for an existing key, addressed by its revoke button — the only
+   * control on the row that carries the key's name in its accessible name.
+   *
+   * @param name - The key's name, as typed into the create form.
+   */
+  apiKeyRow(name: string) {
+    return this.settingsDialog.getByRole('button', { name: `Revoke ${name}` });
+  }
+
+  /**
+   * Create a key and dismiss its one-time reveal, leaving the list on screen.
+   *
+   * @param name - The name to give the key.
+   */
+  async createApiKey(name: string) {
+    await this.apiKeyNameInput.fill(name);
+    await this.createApiKeyButton.click();
+    await this.apiKeyReveal.waitFor({ state: 'visible' });
+    await this.settingsDialog.getByRole('button', { name: /^done$/i }).click();
   }
 
   // ---------- Owner-setup dialog ----------
@@ -58,6 +107,26 @@ export class AuthPage {
   /** Heading unique to the full-bleed sign-in screen. */
   get loginHeading() {
     return this.page.getByRole('heading', { name: /sign in to dorkos/i });
+  }
+
+  /**
+   * Sign in if — and only if — the login screen is up.
+   *
+   * Every test in the suite starts with an EMPTY cookie jar (`storageState` in
+   * `playwright.config.ts` pins `cookies: []`), so a session created by an
+   * earlier test in a serial chain does not carry into the next one: once login
+   * is required, each test opens on the login screen. Callers that need the app
+   * shell say so by calling this first, rather than assuming a session they were
+   * never given.
+   *
+   * @param email - The owner's email.
+   * @param password - The owner's password.
+   */
+  async ensureSignedIn(email: string, password: string) {
+    if (await this.loginHeading.isVisible().catch(() => false)) {
+      await this.signIn(email, password);
+      await this.loginHeading.waitFor({ state: 'hidden' });
+    }
   }
 
   /** Fill and submit the full-bleed LoginScreen. */

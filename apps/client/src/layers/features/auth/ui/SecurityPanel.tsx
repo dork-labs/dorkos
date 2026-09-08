@@ -112,10 +112,18 @@ export function SecurityPanel() {
         </FieldCardContent>
       </FieldCard>
 
-      {authEnabled && (
+      {/* Keys outlive the login flag, so this card must too (DOR-1885). Turning
+          "Require login" off deletes no key, ends no session and stops nothing
+          working — `/api/config` still reports `authSource: 'user-keys'` and
+          `/mcp` still accepts every one of them. Gating the card on
+          `authEnabled` therefore hid live credentials the owner could neither
+          see nor revoke. It is gated on a SESSION instead, which is exactly when
+          `/api/auth/api-key/*` answers: signed out, those endpoints 401, and a
+          card that can only fail is worse than no card. */}
+      {(authEnabled || currentUser) && (
         <FieldCard>
           <FieldCardContent>
-            <ApiKeysSection />
+            <ApiKeysSection loginRequired={authEnabled} />
           </FieldCardContent>
         </FieldCard>
       )}
