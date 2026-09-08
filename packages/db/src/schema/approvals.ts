@@ -94,7 +94,7 @@ export const approvals = sqliteTable(
      * action names nothing.
      */
     subjectKind: text('subject_kind', {
-      enum: ['agent', 'task', 'room', 'connection'],
+      enum: ['agent', 'task'],
     }),
 
     /**

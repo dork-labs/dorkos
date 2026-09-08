@@ -49,12 +49,17 @@ export const APPROVAL_SUBJECT_LABEL_MAX_LENGTH = 60;
 /**
  * The kinds of thing an approval can act ON.
  *
- * Deliberately a closed set rather than a free string: each kind is a registry
- * the server can look a name up in, so adding one means writing the resolver
- * that makes it mean something. A kind with no resolver would render a heading
- * over an id, which is the defect this whole field exists to fix.
+ * Deliberately a closed set, and deliberately only as long as the set of
+ * registries a resolver is actually wired to (`apps/server/src/index.ts`). A
+ * kind listed here with nothing behind it would be declared, validated, and
+ * unreachable — it would type-check, pass a schema, and render a heading over
+ * an id, which is the exact defect this field exists to fix.
+ *
+ * So adding one is two edits, not one: the name here AND its resolver at boot.
+ * Rooms and connections are the obvious next two — `connectors.execute_destructive`
+ * shows a person two opaque ids today — and neither is listed until it is wired.
  */
-export const APPROVAL_SUBJECT_KINDS = ['agent', 'task', 'room', 'connection'] as const;
+export const APPROVAL_SUBJECT_KINDS = ['agent', 'task'] as const;
 
 /** What kind of thing an approval acts on. */
 export type ApprovalSubjectKind = (typeof APPROVAL_SUBJECT_KINDS)[number];
