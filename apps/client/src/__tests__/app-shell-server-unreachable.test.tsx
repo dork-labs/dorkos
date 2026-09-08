@@ -283,6 +283,27 @@ function seedYesterdaysConfig(client: QueryClient) {
   });
 }
 
+/**
+ * Seed a warm boot whose remembered config also remembers an old failure.
+ *
+ * **The real shape of the flash, not a mime of it.** `dehydrate` copies a
+ * query's WHOLE state into `localStorage`, and TanStack never resets
+ * `errorUpdateCount` or `errorUpdatedAt` on a later success — so one blip an
+ * hour ago (a server restart, a laptop waking, a logged-out tab) is still in
+ * the blob when the config read that followed it succeeded. `hydrate` restores
+ * that state verbatim, `setState` being the exact lever it pulls.
+ *
+ * @param client - The query client the shell will read from.
+ */
+function seedYesterdaysConfigAfterAnOldBlip(client: QueryClient) {
+  seedYesterdaysConfig(client);
+  const anHourAgo = Date.now() - 60 * 60 * 1000;
+  client
+    .getQueryCache()
+    .find({ queryKey: configKeys.current() })
+    ?.setState({ errorUpdateCount: 2, errorUpdatedAt: anHourAgo });
+}
+
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -371,6 +392,35 @@ describe('AppShell, when the server will not answer', () => {
     expect(await screen.findByTestId('app-shell')).toBeInTheDocument();
     await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
     expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+  });
+
+  it('does not accuse a healthy server of a failure that happened last launch', async () => {
+    // **The flash this fix exists for.** The boot cache carries the config
+    // query's `errorUpdateCount` forward for as long as the entry lives, and
+    // that counter never rewinds — so one old blip meant every later refresh
+    // opened on the failure screen, over a server answering fine, until the
+    // screen's own 5s retry cleared it. Counted rather than dated, the shell
+    // could not tell an hour-old failure from a live one.
+    vi.mocked(transport.getConfig).mockResolvedValue(settledConfig());
+
+    renderAppShell(seedYesterdaysConfigAfterAnOldBlip);
+
+    // Asserted on the FIRST paint, because the defect was only ever a flash:
+    // wait for the refetch and the screen would have cleared itself.
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+    expect(await screen.findByTestId('app-shell')).toBeInTheDocument();
+    await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+  });
+
+  it('still says so when the server that failed last launch is down again now', async () => {
+    // The other half: an old remembered failure must not DISARM the screen
+    // either. This launch's rejection is its own evidence.
+    vi.mocked(transport.getConfig).mockRejectedValue(new Error('Failed to fetch'));
+
+    renderAppShell(seedYesterdaysConfigAfterAnOldBlip);
+
+    expect(await screen.findByText(HEADLINE)).toBeInTheDocument();
   });
 
   it('waits out a slow read, then says so once the hang deadline passes', async () => {

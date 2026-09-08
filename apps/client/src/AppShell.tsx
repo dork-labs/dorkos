@@ -396,22 +396,36 @@ export function AppShell() {
   // (`dataUpdatedAt > LAUNCH_STARTED_AT`, the distinction the moments rail
   // already draws), not whether the browser remembers something.
   //
-  // **`errorUpdateCount`, not `isError`, and the difference is a hot loop.**
+  // **`errorUpdatedAt`, not `isError`, and the difference is a hot loop.**
   // TanStack resets a query with NO data back to `status: 'pending'` and clears
   // its error the instant a retry STARTS (`fetchState` in query-core), so
   // `isError` reads false for the whole of every retry — including the one the
   // failure screen's own mount kicks off. Gated on `isError`, the screen
   // mounted, triggered a refetch, saw pending, unmounted, saw the rejection,
   // and mounted again: measured at ~3000 requests in 500ms, at a server that is
-  // already down. `errorUpdateCount` only counts failures and never rewinds, so
-  // "we asked, it failed, and we still have nothing fresh" survives the retry
-  // that the answer itself sets off.
-  const { dataUpdatedAt: configAnsweredAt, errorUpdateCount: configFailures } = useConfig();
+  // already down. `errorUpdatedAt` is stamped on every rejection and never
+  // rewound by a retry or a later success, so "we asked, it failed, and we
+  // still have nothing fresh" survives the retry that the answer itself sets
+  // off.
+  //
+  // **And it is dated, which `errorUpdateCount` was not — that counter made a
+  // healthy server look dead on every refresh.** The boot cache
+  // persists whatever state the config query was in, and TanStack never resets
+  // `errorUpdateCount` on success: one blip — a dev restart, a laptop waking, a
+  // logged-out tab — left `errorUpdateCount: 2` in `localStorage` for good.
+  // Every later load then restored that count, read it as evidence, and painted
+  // the failure screen over a server that was answering fine. It cleared only
+  // when the screen's own 5s retry landed, because a restored config younger
+  // than its 30s `staleTime` means boot asks the server nothing at all —
+  // measured as a 0.3s→5.3s flash on every single refresh. So both halves of
+  // the test are now about THIS launch: fresh answer, or fresh failure.
+  const { dataUpdatedAt: configAnsweredAt, errorUpdatedAt: configFailedAt } = useConfig();
   const answeredThisLaunch = configAnsweredAt > LAUNCH_STARTED_AT;
+  const failedThisLaunch = configFailedAt > LAUNCH_STARTED_AT;
 
   // **The wedged server never errors, so failures alone cannot see it.** A
   // server that accepts the connection and then says nothing leaves the read
-  // pending forever: no rejection, no `errorUpdateCount`, and the 3s escape
+  // pending forever: no rejection, no `errorUpdatedAt`, and the 3s escape
   // below hands the window to a shell whose every query is hanging too. A
   // deadline is the only evidence available for that one — and it is
   // deliberately far longer than the 3s escape, because the cost of being wrong
@@ -427,7 +441,7 @@ export function AppShell() {
   // Either kind of evidence, and in both cases only while nothing fresh has
   // arrived — so a cockpit that IS talking to its server never sees this, and
   // one whose server comes back mid-screen loses it on the next answer.
-  const isServerUnreachable = !answeredThisLaunch && (configFailures > 0 || hangDeadlinePassed);
+  const isServerUnreachable = !answeredThisLaunch && (failedThisLaunch || hangDeadlinePassed);
 
   // Timeout fallback: if config never loads (server unreachable, fetch hangs),
   // fall through to main app after 3 seconds — better than a blank screen forever.
