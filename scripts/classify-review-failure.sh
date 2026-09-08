@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Explain why an automated Claude review failed, from the action's execution log.
+# Classify how an automated Claude review ended from the action's execution log.
 #
 # `anthropics/claude-code-action` writes every SDK message it received to
 # $RUNNER_TEMP/claude-execution-output.json (a JSON array). The last `result`
 # message says how the run ended. .github/workflows/claude-code-review.yml calls
-# this to word its failure comment.
+# this to decide whether a verdict stands and to word any failure comment.
 #
 # Why this is a script with fixtures and not inline jq (DOR-457): the workflow
 # used to split failures two ways and announce "ran out of its turn budget" for
@@ -54,10 +54,10 @@
 # `errors`. Without the fallback every error_* subtype — the whole `died` and
 # `max_turns` space after DOR-457's re-ordering — would report nothing.
 #
-# `stands` answers the one question that may turn a FAILED review step into a
-# GREEN check (DOR-1665): did the review finish, and is its verdict really on the
-# PR? It prints `yes` only when both halves hold — the class is `completed`, and
-# the caller passes the literal `yes` for <verdict-posted> having verified the
+# `stands` answers the question every review outcome must pass (DOR-1665,
+# DOR-1877): did the review finish, and is its verdict really on the PR? It
+# prints `yes` only when both halves hold — the class is `completed`, and the
+# caller passes the literal `yes` for <verdict-posted> having verified the
 # reviewer's summary comment is there. Everything else prints `no`.
 #
 # Only `completed` may stand, and the distinction is the whole point. `max_turns`

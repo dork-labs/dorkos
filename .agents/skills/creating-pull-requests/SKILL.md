@@ -186,14 +186,14 @@ Branch names carry the same force, so the choice is made before the PR exists �
 
 The `claude-code-review` workflow reviews **on-demand, not on every push**:
 
-| Event                         | Review?                                 |
-| ----------------------------- | --------------------------------------- |
-| PR opened (non-draft)         | One full review                         |
-| Draft marked ready-for-review | One full review of the final state      |
-| New commits pushed            | **No** auto-review (CI tests still run) |
-| `re-review` label applied     | One re-review, scoped to the delta      |
-| PR has merge conflicts        | **Nothing runs at all** — see below     |
-| PR edits a Claude workflow    | **Green check, no review** — see below  |
+| Event                         | Review?                                       |
+| ----------------------------- | --------------------------------------------- |
+| PR opened (non-draft)         | One full review                               |
+| Draft marked ready-for-review | One full review of the final state            |
+| New commits pushed            | **No** auto-review (CI tests still run)       |
+| `re-review` label applied     | One re-review, scoped to the delta            |
+| PR has merge conflicts        | **Nothing runs at all** — see below           |
+| PR edits this review workflow | Auto-run red; manual review works — see below |
 
 This mirrors how human teams work: pushes are work-in-progress, and the author
 pulls the reviewer back in with an explicit "ready again" signal. It avoids
@@ -234,6 +234,12 @@ action treats a manual trigger as having no PR identity:
   the `main` versions before reviewing, so a PR can never make its own reviewer run
   hooks the PR wrote. The reviewer still reads those changes from the diff. (An
   automatic run gets the same protection from the action itself.)
+
+That trusted `main` workflow can review a PR that edits
+`.github/workflows/claude-code-review.yml` and post its verdict. It does not run the
+PR's proposed workflow or final gate. The automatic run still proves the proposed
+gate fails closed when validation blocks the review. Dispatch again after the
+change lands to prove the successful-review path under the merged gate.
 
 A dispatch also cancels an automatic review already running on the same PR, and
 gets cancelled by the next automatic trigger — the newest request wins.
@@ -565,27 +571,29 @@ gh label create re-review    --description "Request another automated review pas
   fails on the missing `turbo`), pass `--no-verify` — CI runs the real gates on the
   PR regardless. This is exactly what reddened the v0.58.0 release `typecheck`.
 
-- **Any PR that edits a Claude workflow file gets a green check and no review.**
+- **Editing the automated-review workflow makes its automatic run fail closed.**
   The Claude action refuses to start unless the workflow file it is running from
   matches the copy on `main` — otherwise a PR could rewrite the workflow to steal
-  the token — and it exits _successfully_. So a PR touching
-  `.github/workflows/claude-code-review.yml` gets a green `claude-code-review`
-  check with nothing reviewed, and a PR touching `.github/workflows/claude.yml`
-  gets the same silence from `@claude` mentions on that PR. It is per file: editing
-  one does not disable the other. The steps around the action still run, so YAML
-  and shell mistakes do surface; the review itself does not. Merge first, then
-  exercise the merged version against a real PR with
-  `gh workflow run claude-code-review.yml -f pr=<number>`.
+  the token — and the action itself exits successfully. For
+  `.github/workflows/claude-code-review.yml`, the always-running verdict gate sees
+  that no review was posted and makes the check red. A manual dispatch uses the
+  trusted workflow from `main`, so it can still review the PR's head and post a
+  verdict without executing the PR's proposed workflow. The automatic run exercises
+  the proposed gate's fail-closed path; after the merge, dispatch against a real PR
+  again to prove the successful-review path under the merged version:
+  `gh workflow run claude-code-review.yml -f pr=<number>`. The guard is per file:
+  editing `.github/workflows/claude.yml` can silence `@claude` on that PR without
+  disabling `claude-code-review`, and vice versa.
 - **A finished review is a green check, even when the action failed.** The action
   re-counts turns after the run and fails the step if a clean run overshot
   `--max-turns` — which used to red a review that had already posted its findings
   and its tally, and merge-tail will not arm a PR with a red check. It no longer
   does: when the review finished and its verdict is on the PR, the check goes green
   and you get no comment at all, just a warning annotation on the Actions run
-  (DOR-1665). So a green `claude-code-review` check with a verdict comment under it
-  means the review really ran. What green does **not** prove is that a review
-  happened at all — the two blind spots above (a conflicted PR, a PR editing the
-  workflow) still produce green with nothing reviewed.
+  (DOR-1665). So a green `claude-code-review` check means the current run posted a
+  recognized verdict. A conflicting PR has no automatic run at all, while a PR
+  editing this review workflow gets a red automatic check and needs the trusted
+  manual dispatch described above.
 - **A red review check is not always a finding.** When the review breaks in a way
   that cost you the verdict, it posts a comment saying so and naming which of five
   things happened:

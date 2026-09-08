@@ -123,36 +123,37 @@ name: claude-code-review
 # it conflicted, and only its two rebase force-pushes produced runs. Rebase to
 # restore CI — or, to review without rebasing, use the `workflow_dispatch` below.
 #
-# SECOND BLIND SPOT — a PR that edits this workflow gets a GREEN check and no
-# review. That one lives in the action, not in GitHub; the `workflow_dispatch`
-# comment below has the mechanism and the way around it. It is scoped to the
-# running workflow file, so a PR editing claude.yml silences @claude on that PR
-# the same way and leaves this review working, and vice versa.
+# KNOWN LIMITATION — a PR that edits this workflow cannot review itself. The
+# action refuses to start when the running workflow differs from the default
+# branch, and the verdict gate now makes that missing review RED. The
+# `workflow_dispatch` comment below has the mechanism for testing the workflow
+# after it lands. The action's guard is scoped to the running workflow file, so a
+# PR editing claude.yml silences @claude on that PR and leaves this review
+# working, and vice versa.
 #
 # What is deliberately made loud rather than silent: an infra failure that cost
-# you a review posts a comment naming its actual cause (see "Explain the failure,
-# unless the review's verdict still stands"), and `workflow_dispatch` exists so a
-# review can be forced by hand on a PR GitHub will not dispatch events for.
+# you a review posts a comment naming its actual cause (see "Verify the review
+# result and posted verdict"), and `workflow_dispatch` exists so a review can be
+# forced by hand on a PR GitHub will not dispatch events for.
 #
-# WHAT GREEN MEANS (DOR-1665), scoped exactly, because the scope is the honest
-# part. Green means one of two things:
-#   1. the action exited zero — and that is NOT by itself proof a review
-#      happened, because both BLIND SPOTS above still apply to it; or
-#   2. the action FAILED, the review's own result message says it finished
-#      cleanly, and its verdict is verifiably on the PR.
-# Nothing else is green. Case 2 is what DOR-1665 added, and only case 2 is
-# vouched for here: the action re-checks `num_turns` against `--max-turns` after
-# a run has already ended and throws when a clean run overshot, so a thorough
-# review that had already posted its findings and its tally failed the check for
-# being two turns over a cap of 50 (PR #1409, run 33524055964). A turn cap exists
-# to stop a runaway loop, never to fail a review that finished. Case 1 is
-# untouched by that change and no stronger than it was.
+# WHAT GREEN MEANS (DOR-1665, DOR-1877), scoped exactly, because the scope is the
+# honest part. Green requires BOTH facts:
+#   1. the review's own result message says it finished cleanly; and
+#   2. a verdict-shaped bot comment from this run is verifiably on the PR.
+# Nothing less is green, including an action exit of zero with no verdict. The
+# action can report success after tool calls were refused and the model posted
+# nothing (PRs #1680 and #1681), so its exit status is an input to the gate, never
+# proof by itself. Conversely, the action can fail after the review finished and
+# posted its verdict: it re-checks `num_turns` against `--max-turns` after a run
+# ends and throws when a clean run overshot, which happened on PR #1409, run
+# 33524055964. A turn cap exists to stop a runaway loop, never to fail a review
+# that finished.
 #
-# The last three steps of this job are what implement case 2: "Claude Code
-# review" is `continue-on-error`, the step after it works out whether the verdict
-# really landed, and "Decide the check" turns that into the check's colour with
-# red as its default. Read them together, and read the block comment on each
-# before changing any of them.
+# The last three steps of this job implement that rule: "Claude Code review" is
+# `continue-on-error`, the step after it verifies the result and posted verdict
+# for every non-skipped outcome, and "Decide the check" always turns those facts
+# into the check's colour with red as its default. Read them together, and read
+# the block comment on each before changing any of them.
 #
 # The dispatch path is NOT the automatic path with a different trigger. The action
 # treats workflow_dispatch as an *automation* context with no PR identity, which
@@ -173,17 +174,21 @@ on:
   #   1. Escape hatch for the conflicted-PR blind spot above — the only way to get
   #      a review onto a PR GitHub refuses to dispatch events for.
   #   2. Debugging affordance for this file. A PR that edits this workflow gets a
-  #      GREEN `claude-code-review` check and no review: the steps below do run
+  #      RED `claude-code-review` check and no review: the steps below do run
   #      (a `pull_request` run uses the PR merge commit's copy of the workflow,
   #      not the default branch's), but `anthropics/claude-code-action` refuses to
   #      start when the workflow file's content differs from the copy on the
   #      default branch — an anti-exfiltration guard, since a PR could otherwise
-  #      rewrite this file to leak the OAuth token — and it exits SUCCESSFULLY:
+  #      rewrite this file to leak the OAuth token — and the action itself exits
+  #      successfully:
   #      "Skipping action due to workflow validation ... must ... have identical
-  #      content to the version on the repository's default branch". So a change
-  #      here is unreviewable and untestable until it lands. After merging, come
-  #      back and dispatch against a known PR number: run from the default branch
-  #      the content matches, the guard passes, and the review actually runs.
+  #      content to the version on the repository's default branch". A trusted
+  #      default-branch dispatch can still review that PR's head and post a verdict
+  #      (measured on run 34175828534). That dispatch executes the workflow and final
+  #      gate from the default branch. The automatic run still proves a proposed
+  #      gate fails closed when validation blocks the review; after merging, dispatch
+  #      against a known PR number again to prove the successful-review path under
+  #      the merged gate.
   # Dispatch already requires write access, so it needs no author gate; it is an
   # explicit human action and therefore ignores `skip-review` and draft state. It
   # still refuses fork PRs (see "Resolve target PR").
@@ -459,8 +464,8 @@ jobs:
       # regression — the alternative is running the PR's own copy — and the comment
       # it posts says so. A PR that only edits THIS FILE is unaffected: the helper is
       # already on the default branch, so this step succeeds and the run then ends in
-      # the action's own workflow-validation guard (SECOND BLIND SPOT, green check,
-      # no review) exactly as before.
+      # the action's own workflow-validation guard (KNOWN LIMITATION above). The
+      # always-running verdict gate makes that missing review red.
       - name: Materialize the trusted review helper
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -469,12 +474,9 @@ jobs:
           HELPER_DIR: ${{ runner.temp }}/trusted
         run: |
           # Fail LOUD, not merely closed. Exiting here skips "Claude Code review",
-          # so the step that explains a failure never fires either (it keys off
-          # that step's outcome) — which would leave exactly the silent red check
-          # the rest of this file exists to prevent. Say it on the PR first, then
-          # exit. The check itself is red either way: this step is not
-          # `continue-on-error`, so its failure fails the job outright, and
-          # "Decide the check" is skipped rather than consulted.
+          # so there is no result for the verdict probe to classify. Say the cause
+          # on the PR first, then exit. This step and the always-running final gate
+          # both stay red.
           refuse() {
             echo "::error::$1"
             gh pr comment "$PR_NUMBER" --repo "$REPO" --body \
@@ -531,11 +533,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Degrade to the default budget rather than aborting the step: an
-          # aborted step here would skip Claude Code review entirely (outcome
-          # 'skipped', not 'failure'), so neither the step that explains a
-          # failure nor the one that decides the check would fire — a silent red
-          # check with no review at all, exactly the DOR-396 symptom this
-          # workflow exists to prevent.
+          # aborted step here would skip Claude Code review entirely. The final
+          # gate would correctly stay red, but degrading to the default budget
+          # lets the requested review run instead of turning metadata lookup into
+          # a setup failure.
           file_count=$(gh pr view "${{ steps.target.outputs.number }}" --repo "${{ github.repository }}" --json changedFiles --jq '.changedFiles' 2>/dev/null || echo 0)
           case "$file_count" in ''|*[!0-9]*) file_count=0 ;; esac
           if [ "$file_count" -gt "$REVIEW_LARGE_PR_FILE_THRESHOLD" ]; then
@@ -852,22 +853,22 @@ jobs:
       # strings stripped, inside a fenced block so it cannot break out of the
       # comment or ping anyone.
       #
-      # This step now also decides the check (DOR-1665), because deciding it and
-      # wording it need the same two facts — how the run ended, and whether the
-      # verdict is on the PR — and asking for them twice is how the two would
-      # drift apart. It answers both, hands `stands` to the gate below, and posts
-      # a comment only when the answer is no. When the verdict DOES stand there is
-      # nothing to tell the author: the check is green and the review is sitting
-      # right there, so the machinery failure is recorded as a log annotation
-      # instead of as PR noise on every large PR.
-      - name: Explain the failure, unless the review's verdict still stands
+      # This step decides whether the review stands for EVERY action outcome
+      # (DOR-1665, DOR-1877), because deciding it and wording it need the same two
+      # facts — how the run ended, and whether the verdict is on the PR — and
+      # asking for them twice is how the two would drift apart. It answers both,
+      # hands `stands` to the gate below, and posts a comment only when the answer
+      # is no. A skipped action has no execution result to classify, so the final
+      # always-running gate handles that setup failure directly.
+      - name: Verify the review result and posted verdict
         id: verdict
-        if: steps.claude-review.outcome == 'failure'
+        if: always() && steps.claude-review.outcome != 'skipped'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EXECUTION_FILE: ${{ steps.claude-review.outputs.execution_file }}
           PR_NUMBER: ${{ steps.target.outputs.number }}
           REPO: ${{ github.repository }}
+          REVIEW_OUTCOME: ${{ steps.claude-review.outcome }}
           SINCE: ${{ steps.review-start.outputs.time }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -903,7 +904,7 @@ jobs:
             why=$(bash "$classifier" class "$exec_file") || why=unknown
             reported=$(bash "$classifier" reported "$exec_file") || reported=
           fi
-          echo "review failure class: $why (from $exec_file)"
+          echo "review result class: $why (from $exec_file)"
 
           # Was a verdict already posted? Scoped to comments this run could have
           # made, so an earlier pass's summary is not mistaken for this one's.
@@ -951,9 +952,9 @@ jobs:
           # the PR. A `gh` failure means "could not confirm", which is `no`.
           if verdict_posted; then posted=yes; else posted=no; fi
 
-          # The only route to a green check on a failed review step, and it is the
-          # trusted classifier's call, not this file's: `yes` requires the run's
-          # own result message to say it ended cleanly AND `posted` to be `yes`.
+          # The only route to a green check, and it is the trusted classifier's
+          # call, not the action's exit status: `yes` requires the run's own
+          # result message to say it ended cleanly AND `posted` to be `yes`.
           # No classifier means no verdict, which means red — the same fail-closed
           # direction as everything else that reads from the default branch.
           stands=no
@@ -964,13 +965,15 @@ jobs:
           echo "stands=$stands" >> "$GITHUB_OUTPUT"
           echo "verdict posted: $posted; review stands: $stands"
 
-          # Green from here on. Say what broke in the log — a `::warning::` shows
-          # on the run without turning the check red or adding a comment the author
-          # has no action to take — and stop before the comment below.
+          # Green from here on. A successful action needs no extra explanation.
+          # For a failed action whose clean review still stands, say what happened
+          # in the log without adding PR noise.
           if [ "$stands" = yes ]; then
-            echo "::warning::The review finished and its verdict is on this PR, so this check stays green. Something in the machinery around the review failed; the step that failed is in $RUN_URL."
-            if [ -n "$reported" ]; then
-              echo "Claude reported: $reported"
+            if [ "$REVIEW_OUTCOME" = failure ]; then
+              echo "::warning::The review finished and its verdict is on this PR, so this check stays green. Something in the machinery around the review failed; the step that failed is in $RUN_URL."
+              if [ -n "$reported" ]; then
+                echo "Claude reported: $reported"
+              fi
             fi
             exit 0
           fi
@@ -1016,7 +1019,7 @@ jobs:
               if [ "$posted" = yes ]; then
                 body="This check is red even though the review itself finished and reported success, so whatever failed is in the machinery around the review, not the review. The verdict above is the complete one. The step that failed is in the [Actions log]($RUN_URL)."
               else
-                body="This check is red because the review reported success but never posted a verdict, so nothing here has actually been reviewed. That is a problem with the reviewer, not with this PR. The step that failed is in the [Actions log]($RUN_URL). Add the \`re-review\` label to try again."
+                body="This check is red because the review reported success but never posted a verdict, so nothing here has actually been reviewed. That is a problem with the reviewer, not with this PR. The review run is in the [Actions log]($RUN_URL). Add the \`re-review\` label to try again."
               fi
               ;;
             *)
@@ -1031,41 +1034,52 @@ jobs:
 
           gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body"
 
-      # THE CHECK (DOR-1665) — but only half of it, and the half matters. This
-      # step runs ONLY when the review step failed, so it says nothing about the
-      # action's success path, where the two BLIND SPOTS in the header still apply
-      # and a green check is not by itself proof a review happened. What it
-      # decides is narrower and exact: a review that FAILED goes green only if it
-      # finished and its verdict is on the PR. A turn cap exists to stop a runaway
-      # loop, never to fail a review that finished.
+      # THE CHECK (DOR-1665, DOR-1877). This step always runs. A successful
+      # action and a failed action take the same route: both pass only when the
+      # trusted classifier found a clean result and this run posted its verdict.
+      # A skipped action means setup never reached a checkable review, so it is
+      # red.
       #
       # RED IS THE DEFAULT AND THE FALLTHROUGH, and that is the load-bearing part.
       # `stands` is `yes` only when the trusted classifier confirmed both halves.
       # Everything else lands on `exit 1`: a review that never started, one that
       # ran out of turns, one that died, one that reported success having posted
       # nothing, an unreadable execution log, a classifier that could not be
-      # materialized, and a step above that failed outright (which skips this step
-      # and fails the job on its own). Empty is not `yes`, so a mistyped step id
-      # reinstates the old red check rather than inventing a green one.
+      # materialized, and a step above that failed outright. This step still runs
+      # after prior failures because it is guarded by `always()`. Empty is not
+      # `yes`, so a mistyped step id reinstates the old red check rather than
+      # inventing a green one.
       #
       # Deliberately still `pull_request`-only, like the rest of this workflow:
       # `review` is not a required check and must never report on `merge_group`.
       #
-      # scripts/test-review-classifier.sh pins this step's `if:` line AND its
-      # whole `run:` block verbatim, because a green check with no review posted
-      # is a failure mode this repo has actually had. The `if:` is in there for a
-      # specific reason: `steps.claude-review.outcome` is the step's REAL result,
-      # while `.conclusion` is what is left after `continue-on-error` is applied
-      # and reads `success` on exactly the runs this gate exists for. Swapping one
-      # word there would switch the gate off entirely without touching a line
-      # below it.
+      # scripts/test-review-classifier.sh pins this step's `if:`, its whole
+      # `run:` block and the outcome × verdict matrix. A green check with no
+      # review posted is a failure mode this repo has actually had. Restoring the
+      # old failure-only condition on the verdict probe leaves `STANDS` empty and
+      # makes this always-running gate fail visibly. Restoring it on this final
+      # step skips the gate after a successful-but-silent action and recreates the
+      # false green.
       - name: Decide the check
-        if: steps.claude-review.outcome == 'failure'
+        if: always()
         env:
+          REVIEW_OUTCOME: ${{ steps.claude-review.outcome }}
           STANDS: ${{ steps.verdict.outputs.stands }}
         run: |
+          case "$REVIEW_OUTCOME" in
+            success | failure) ;;
+            *)
+              echo "::error::The automated review did not run to a checkable result (outcome: ${REVIEW_OUTCOME:-missing})."
+              exit 1
+              ;;
+          esac
+
           if [ "$STANDS" = yes ]; then
-            echo "The review finished and its verdict is on the PR; only the machinery around it failed."
+            if [ "$REVIEW_OUTCOME" = failure ]; then
+              echo "The review finished and its verdict is on the PR; only the machinery around it failed."
+            else
+              echo "The review finished and its verdict is on the PR."
+            fi
             exit 0
           fi
           exit 1
