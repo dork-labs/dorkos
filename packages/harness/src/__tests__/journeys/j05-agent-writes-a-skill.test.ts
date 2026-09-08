@@ -93,7 +93,7 @@ function agentWritesSkill(name: string): void {
 }
 
 describe('J-05 — an agent writes a skill while the person has Claude Code open', () => {
-  it('plans one link for Claude Code and native for the other five', () => {
+  it('J-05, SRC-06: plans one link for Claude Code and native for the other five', () => {
     stageSyncedRepo();
     agentWritesSkill('deploy-checklist');
 
@@ -114,7 +114,7 @@ describe('J-05 — an agent writes a skill while the person has Claude Code open
     ]);
   });
 
-  it('adds exactly one path — the link Claude Code reads', () => {
+  it('J-05: adds exactly one path — the link Claude Code reads', () => {
     stageSyncedRepo();
     const before = snapshotTree(repo);
 
@@ -138,7 +138,7 @@ describe('J-05 — an agent writes a skill while the person has Claude Code open
     expect(checkPlan(repo, plan()).clean).toBe(true);
   });
 
-  it('leaves the dead link behind when the skill goes away, and reports it as an orphan', () => {
+  it('J-05, TR-06: leaves the dead link behind when the skill goes away, and reports it as an orphan', () => {
     stageSyncedRepo();
     agentWritesSkill('deploy-checklist');
     applyPlan(repo, plan(), { sweepOrphans: false });
@@ -168,7 +168,7 @@ describe('J-05 — an agent writes a skill while the person has Claude Code open
     expect(checkPlan(repo, plan()).clean).toBe(true);
   });
 
-  it('links the new name on a rename, and leaves the old link for --fix', () => {
+  it('J-05: links the new name on a rename, and leaves the old link for --fix', () => {
     stageSyncedRepo();
     agentWritesSkill('old-name');
     applyPlan(repo, plan(), { sweepOrphans: false });

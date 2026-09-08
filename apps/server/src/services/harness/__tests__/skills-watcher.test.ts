@@ -14,6 +14,14 @@
  * This file is the other half: that the projection happens at all, in time, once,
  * and without the four hazards TR-06 names.
  *
+ * One property here is deliberately NOT pinned by a test: that two overlapping
+ * root passes cannot interleave (`syncRoots` chains them, and swaps its root set
+ * in synchronously). Provoking the overlap needs control of when the boundary
+ * check resolves for each root, which would mean asserting against a stub rather
+ * than against the real validator every other case here runs through — and the
+ * failure it guards against is a transiently empty root set, which is invisible
+ * from outside. It is argued in the code instead.
+ *
  * Every temp directory is resolved through `realpath` up front. Every macOS temp
  * directory sits under a symlinked `/var`, and chokidar reports the path it
  * walked — so a test that built its expectations from the unresolved root would
@@ -46,7 +54,7 @@ import { join, relative, sep } from 'node:path';
  */
 const mocks = vi.hoisted(() => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
-  harness: { autoSync: true },
+  harness: { autoSync: true, throwOnRead: false },
 }));
 const loggerMock = mocks.logger;
 
@@ -55,6 +63,9 @@ vi.mock('../../core/config-manager.js', () => ({
   configManager: {
     get: (section: string) => {
       if (section !== 'harness') throw new Error(`unexpected config read: ${section}`);
+      // `conf` can throw on read — a corrupt or unreadable `config.json` (the
+      // shape DOR-584 hit). The trigger has to survive it.
+      if (mocks.harness.throwOnRead) throw new Error('config.json is unreadable');
       return { autoSync: mocks.harness.autoSync, approvedHooks: [], refusedHooks: [] };
     },
     set: () => {
@@ -69,9 +80,11 @@ import {
   startSkillsWatcher,
   startTurnEndReprojection,
   _internal,
+  type ProjectionTrigger,
   type SkillsWatcherHandle,
 } from '../skills-watcher.js';
 import { projectLockQueueDepth, withProjectLock } from '../project-with-consent.js';
+import { initBoundary } from '../../../lib/boundary.js';
 
 // Real chokidar on macOS reports a deletion up to two seconds after it happens
 // (measured: 1.7s for an `rm -r` of a skill directory), and several cases here
@@ -151,12 +164,26 @@ function stagePackage(): void {
  * never delivered. Measured: the scan lands 3-20ms after the watch opens, which
  * is exactly the window a test writes into.
  */
-async function start({ coalesceMs = 40, sweepMs = 60 } = {}): Promise<SkillsWatcherHandle> {
+async function start({
+  coalesceMs = 40,
+  sweepMs = 60,
+  rearmMs = 0,
+  roots = (): string[] => [repo],
+}: {
+  coalesceMs?: number;
+  sweepMs?: number;
+  rearmMs?: number;
+  roots?: () => string[];
+} = {}): Promise<SkillsWatcherHandle> {
   const handle = startSkillsWatcher({
     dorkHome,
-    roots: () => [repo],
+    roots,
     coalesceMs,
     sweepMs,
+    rearmMs,
+    // The settle is what makes `ready()` an honest barrier; the production
+    // default is a tenth of a second and every case here waits on it.
+    settleMs: 60,
     // Long enough that no rescan ever fires mid-test; the tests that care about
     // the root set call `refreshRoots()` themselves.
     rootRescanMs: 600_000,
@@ -165,6 +192,21 @@ async function start({ coalesceMs = 40, sweepMs = 60 } = {}): Promise<SkillsWatc
   watcher = handle;
   await handle.ready();
   return handle;
+}
+
+/**
+ * A watcher with no roots, for the cases that count projections exactly.
+ *
+ * chokidar occasionally emits an event nobody caused (see the module docs), and
+ * a live watch over the staged repo therefore adds an idempotent projection now
+ * and then. That is harmless in production and fatal to an exact count, so the
+ * cases whose claim is "how many" drive {@link SkillsWatcherHandle.scheduleProjection}
+ * and {@link SkillsWatcherHandle.projectIfSkillsChanged} directly, with nothing
+ * else able to fire. The cases whose claim is the WATCHER keep their watch and
+ * assert on the tree instead.
+ */
+async function startWithoutWatching(): Promise<SkillsWatcherHandle> {
+  return start({ sweepMs: 0, roots: () => [] });
 }
 
 /** Poll `check` until it is true or the deadline passes. */
@@ -260,14 +302,53 @@ function infoLogs(): { message: string; fields: Record<string, unknown> }[] {
   }));
 }
 
-beforeEach(() => {
+/**
+ * The `code` of every distinct watcher failure reported so far.
+ *
+ * `armWatch` latches one `logger.error` per code and suppresses repeats, and
+ * the code is what says whether the watch merely hiccupped or has stopped
+ * listening for good (`EMFILE` — the kernel is out of watch descriptors).
+ */
+function watcherErrorCodes(): string[] {
+  return loggerMock.error.mock.calls
+    .filter(([message]) => String(message).includes('[watcher-error] SkillsWatcher'))
+    .map(([, fields]) => String((fields as { code?: unknown } | undefined)?.code ?? 'unknown'));
+}
+
+/**
+ * Every projection the logs attribute to one trigger.
+ *
+ * The counting spy cannot separate a projection the SWEEP decided on from one
+ * the live watch caused — and the watch causes them unbidden, because chokidar
+ * emits a `change` for an untouched file now and then (the module docs measure
+ * it). Every firing logs the trigger that caused it, whether it applied anything
+ * or not, so this is how a claim about the comparison's DECISION is asserted
+ * without a global count that the watcher can move underneath it.
+ */
+function projectionsTriggeredBy(trigger: ProjectionTrigger): string[] {
+  return [
+    ...loggerMock.info.mock.calls,
+    ...loggerMock.debug.mock.calls,
+    ...loggerMock.warn.mock.calls,
+  ]
+    .filter(([, fields]) => (fields as { trigger?: string } | undefined)?.trigger === trigger)
+    .map(([message]) => String(message));
+}
+
+beforeEach(async () => {
   vi.clearAllMocks();
   mocks.harness.autoSync = true;
+  mocks.harness.throwOnRead = false;
   stageRepo();
+  // The REAL boundary, set to the temp tree, so the default
+  // `validateBoundaryOrDorkHome` path is what every case here runs through —
+  // the boundary cases below narrow it and assert the refusal.
+  await initBoundary(realpathSync(tmpdir()));
   projections = vi.spyOn(_internal, 'projectWithConsent');
 });
 
 afterEach(async () => {
+  delete process.env.DORK_HOME;
   await watcher?.stop();
   watcher = undefined;
   await new Promise((r) => setTimeout(r, 200));
@@ -278,7 +359,17 @@ afterEach(async () => {
 });
 
 describe('a skill an agent writes reaches Claude Code (SRC-06, TR-06)', () => {
-  it('links a new skill into .claude/skills within the debounce window, and nothing else', async () => {
+  it('SRC-06, TR-06, J-05: links a new skill into .claude/skills within the debounce window, and nothing else', async () => {
+    // The backstop stays ON for the three outcome cases below, and that is a
+    // decision rather than a convenience. Their claim is the PROMISE — the skill
+    // reaches Claude Code — which the system keeps by the watch when it delivers
+    // and by the comparison when it does not. Disabling the comparison asserts a
+    // guarantee the system explicitly does not make: measured on this machine, a
+    // twenty-run loop exhausts the kernel's watch descriptors (EMFILE, which is
+    // why `armWatch` installs an error handler at all) and the watch simply
+    // stops reporting. That is not a bug the test should be red for; it is the
+    // condition the backstop was built for. The WATCH path has its own case
+    // below, and the predicate and handler wiring are asserted directly.
     const handle = await start();
     // One baseline projection first, so the diff below measures ADDING A SKILL
     // rather than the scaffolds a never-projected repo also gains.
@@ -309,7 +400,7 @@ describe('a skill an agent writes reaches Claude Code (SRC-06, TR-06)', () => {
     );
   });
 
-  it('never sweeps: a deleted skill leaves its link behind for --check to report', async () => {
+  it('TR-06: never sweeps — a deleted skill leaves its link behind for --check to report', async () => {
     const handle = await start();
     writeAt(join(skillsDir(), 'gone-soon', 'SKILL.md'), skillBody('gone-soon'));
     const link = join(repo, '.claude', 'skills', 'gone-soon');
@@ -339,7 +430,7 @@ describe('a skill an agent writes reaches Claude Code (SRC-06, TR-06)', () => {
     }
   });
 
-  it('projects a renamed skill and leaves the old link, for the same reason', async () => {
+  it('TR-06: projects a renamed skill and leaves the old link, for the same reason', async () => {
     const handle = await start();
     writeAt(join(skillsDir(), 'old-name', 'SKILL.md'), skillBody('old-name'));
     await waitUntil(
@@ -368,7 +459,7 @@ describe('a skill an agent writes reaches Claude Code (SRC-06, TR-06)', () => {
     });
   });
 
-  it('does not spend the skill on a bare mkdir — the link appears when SKILL.md lands', async () => {
+  it('TR-06: does not spend the skill on a bare mkdir — the link appears when SKILL.md lands', async () => {
     const handle = await start();
     mkdirSync(join(skillsDir(), 'half-written'), { recursive: true });
     const link = join(repo, '.claude', 'skills', 'half-written');
@@ -387,7 +478,73 @@ describe('a skill an agent writes reaches Claude Code (SRC-06, TR-06)', () => {
     expect(occupied(link)).toBe(true);
   });
 
-  it('wires no addDir handler at all — a directory is never a trigger by itself', () => {
+  it('is a skill only one level down — a nested SKILL.md is not one', () => {
+    const dir = skillsDir();
+    // `<skills>/<name>/SKILL.md` is a skill. `<skills>/<a>/<b>/SKILL.md` is a
+    // file inside somebody's skill, and projecting `<a>/<b>` as though it were
+    // one would put a link in `.claude/skills` pointing at half a skill.
+    expect(isAuthoredSkillFile(join(dir, 'ok', 'SKILL.md'), dir)).toBe(true);
+    expect(isAuthoredSkillFile(join(dir, 'a', 'b', 'SKILL.md'), dir)).toBe(false);
+    expect(isAuthoredSkillFile(join(dir, 'SKILL.md'), dir)).toBe(false);
+    // And not a file that merely lives beside one.
+    expect(isAuthoredSkillFile(join(dir, 'ok', 'README.md'), dir)).toBe(false);
+    // Nor a dot-directory, which is where editors and DorkOS keep their own things.
+    expect(isAuthoredSkillFile(join(dir, '.hidden', 'SKILL.md'), dir)).toBe(false);
+  });
+
+  it('SRC-06: is the WATCH that projects when the watch is alive, not the backstop', async (ctx) => {
+    // The one case that depends on chokidar actually delivering, so "a green
+    // suite that only proves the backstop works" is not true of this file. The
+    // backstop is off, and the assertion is on the TRIGGER the firing carries.
+    //
+    // Tolerant of a dropped event on purpose, and bounded. Measured on this
+    // machine, sustained load exhausts the kernel's watch descriptors and
+    // `fs.watch` throws EMFILE, after which the watch reports nothing at all —
+    // which is the condition the backstop exists for, not a fault in this code.
+    // So the honest claim is "when the watch is alive it is what fires", and the
+    // exhausted case SKIPS rather than passes: a test that has quietly stopped
+    // asserting anything should be visible in the report.
+    const handle = await start({ sweepMs: 0, coalesceMs: 20 });
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const name = `live-${attempt}`;
+      // Counted per attempt, not cumulatively: a firing left over from an
+      // earlier attempt would otherwise satisfy the wait without this attempt's
+      // file having been seen at all.
+      const before = projectionsTriggeredBy('skill-file').length;
+      writeAt(join(skillsDir(), name, 'SKILL.md'), skillBody(name));
+      try {
+        await waitUntil(
+          () => projectionsTriggeredBy('skill-file').length > before,
+          'the watch to deliver an event',
+          3000
+        );
+      } catch {
+        continue;
+      }
+      await handle.flush();
+      // The link for the file THIS attempt wrote — the earlier attempts' files
+      // are still on disk and would be linked by any projection at all.
+      expect(occupied(join(repo, '.claude', 'skills', name))).toBe(true);
+      return;
+    }
+
+    // Five writes, nothing delivered. Acceptable only if the watch reported the
+    // one failure that means it has stopped listening for good; any other error,
+    // or none, is a real red.
+    const exhausted = watcherErrorCodes().filter((code) => code === 'EMFILE' || code === 'ENOSPC');
+    expect(
+      exhausted,
+      `the watch delivered nothing across five writes and reported ${
+        watcherErrorCodes().join(', ') || 'no error'
+      } — that is a fault in the watch, not descriptor pressure`
+    ).not.toEqual([]);
+    ctx.skip(
+      `watch descriptors exhausted (${exhausted.join(', ')}); the comparison is what covers this, and its own cases assert it`
+    );
+  });
+
+  it('TR-06: wires no addDir handler at all — a directory is never a trigger by itself', () => {
     // Read off the source rather than inferred from behaviour, because the
     // behaviour is not decisive: chokidar occasionally emits a spurious `change`
     // for an untouched SKILL.md when a sibling directory appears (observed here,
@@ -422,15 +579,179 @@ describe('a skill an agent writes reaches Claude Code (SRC-06, TR-06)', () => {
   });
 });
 
-describe('the sweep catches what the watcher drops', () => {
-  it('projects a skill whose event was never reported, and stops once it has', async () => {
-    // Measured against chokidar 5 on macOS: a skill directory created and its
-    // SKILL.md written in the same instant is never reported at all in 22% of
-    // runs (13 of 60, `apps/server`). The sweep is what keeps the promise, so it
-    // is driven here directly rather than by hoping for the miss.
-    const handle = await start({ sweepMs: 0 });
+describe('nothing is written outside the directory boundary', () => {
+  it('refuses a project the boundary does not cover, and writes nothing there', async () => {
+    // A repo the operator fenced off. The manifest is there, so the ONLY thing
+    // between DorkOS and an unattended write into it is the boundary.
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'skills-watcher-outside-')));
+    try {
+      writeAt(
+        join(outside, '.agents', 'harness.manifest.json'),
+        JSON.stringify({ version: 1, harnesses: ['claude-code'], claudeOnlySkills: [] })
+      );
+      writeAt(join(outside, '.agents', 'skills', 'theirs', 'SKILL.md'), skillBody('theirs'));
 
-    // Nothing has changed since the watch opened and recorded the shape.
+      // The boundary is this repo, and nothing else.
+      await initBoundary(repo);
+      const handle = await startWithoutWatching();
+
+      // The turn-end path: a session bound to that directory. `routes/tasks.ts`
+      // can create one with no boundary call at all, so this input is exactly as
+      // unchecked as it looks.
+      handle.projectIfSkillsChanged(outside, 'turn-end');
+      handle.scheduleProjection(outside, 'skill-file');
+      await handle.flush();
+
+      expect(projections).not.toHaveBeenCalled();
+      expect(existsSync(join(outside, '.claude'))).toBe(false);
+      expect(existsSync(join(outside, '.claude', 'skills', 'theirs'))).toBe(false);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('does not even watch a default project outside the boundary', async () => {
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'skills-watcher-outside-')));
+    try {
+      mkdirSync(join(outside, '.agents', 'skills'), { recursive: true });
+      await initBoundary(repo);
+
+      const handle = await start({ sweepMs: 0, roots: () => [repo, outside] });
+
+      // Watched: the one in bounds. Not watched: the one that is not — a watch
+      // is surveillance of a directory the operator fenced off, and it costs a
+      // handle DorkOS has no business holding.
+      expect(handle.watchedRoots()).toEqual([repo]);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('still covers the agent homes DorkOS owns, which sit outside a scoped boundary', async () => {
+    // `validateBoundaryOrDorkHome`, not `validateBoundary`: DorkBot and every
+    // marketplace-installed agent live under `<dorkHome>/agents/*` by design, and
+    // a Docker deployment scoped to /workspace would otherwise refuse the very
+    // homes this trigger keeps current.
+    const agentHome = join(dorkHome, 'agents', 'dorkbot');
+    writeAt(
+      join(agentHome, '.agents', 'harness.manifest.json'),
+      JSON.stringify({ version: 1, harnesses: ['claude-code'], claudeOnlySkills: [] })
+    );
+    writeAt(join(agentHome, '.agents', 'skills', 'self-use', 'SKILL.md'), skillBody('self-use'));
+
+    // Cleared in `afterEach`, not here: a failure below would otherwise leak it
+    // into every test that ran afterwards.
+    process.env.DORK_HOME = dorkHome;
+    await initBoundary(repo);
+    const handle = await startWithoutWatching();
+
+    handle.scheduleProjection(agentHome, 'sweep');
+    await handle.flush();
+
+    // The link is the decisive evidence: nothing else in this test could have
+    // created it, and the boundary is the only thing that could have stopped it.
+    expect(projections).toHaveBeenCalled();
+    expect(occupied(join(agentHome, '.claude', 'skills', 'self-use'))).toBe(true);
+  });
+});
+
+describe('a root whose .agents/skills does not exist yet', () => {
+  it('SRC-06: is not deaf for the life of the process — the watch opens when the directory does', async () => {
+    // chokidar cannot watch a path that is not there: pointed at an absent
+    // directory it silently watches an ancestor and never picks the directory
+    // up. Measured — `getWatched()` holds no entry for it ten seconds later. So
+    // this root has NO watcher, and the re-arm is what rescues it.
+    rmSync(skillsDir(), { recursive: true, force: true });
+    const handle = await start({ sweepMs: 0, rearmMs: 50 });
+    expect(handle.watchedRoots()).toEqual([]);
+
+    const started = Date.now();
+    writeAt(join(skillsDir(), 'first-ever', 'SKILL.md'), skillBody('first-ever'));
+
+    await waitUntil(
+      () => occupied(join(repo, '.claude', 'skills', 'first-ever')),
+      'the first skill of a project to be linked'
+    );
+    const elapsed = Date.now() - started;
+
+    // Seconds, not the ten the backstop alone would have cost.
+    expect(elapsed).toBeLessThan(2000);
+    // And the root is a properly watched one from here on.
+    expect(handle.watchedRoots()).toEqual([repo]);
+  });
+
+  it('does not project a root that already had skills just because a watch opened', async () => {
+    // The shape is written down when the root is TAKEN ON, so the first
+    // comparison after boot finds nothing new. Without that, every root DorkOS
+    // watches would be projected once per start — duplicating the boot backfill
+    // and printing a line about work nobody asked for.
+    const handle = await start({ coalesceMs: 0, sweepMs: 0, rearmMs: 0 });
+    expect(handle.watchedRoots()).toEqual([repo]);
+
+    // Asserted on the trigger, never on a count: the live watch adds idempotent
+    // projections of its own at unpredictable moments, and one landing inside
+    // this test's own `flush()` is what made a delta count flaky (red 2 runs in
+    // 5). `turn-end` is the trigger used deliberately, because the watcher only
+    // ever stamps `skill-file` or `skill-dir` — so a `turn-end` line can only
+    // have come from a call made here.
+    //
+    // The claim that stands is precisely that: when the shape is unchanged, this
+    // path RETURNS before scheduling, so there is no firing for a later event to
+    // be folded into. It is not that a stamp cannot be overwritten — inside a
+    // coalescing window the trigger is last-writer-wins (`schedule` says so), so
+    // a firing this path DID start could be re-stamped by an event arriving
+    // behind it. That is why the negative half writes no files.
+    handle.projectIfSkillsChanged(repo, 'turn-end');
+    await handle.flush();
+
+    expect(projectionsTriggeredBy('turn-end')).toEqual([]);
+
+    // Non-vacuity, proved on a root nothing has recorded AND nothing is
+    // watching — so the positive half cannot be confused by an event either.
+    const unrecorded = realpathSync(mkdtempSync(join(tmpdir(), 'skills-watcher-other-')));
+    try {
+      writeAt(
+        join(unrecorded, '.agents', 'harness.manifest.json'),
+        JSON.stringify({ version: 1, harnesses: ['claude-code'], claudeOnlySkills: [] })
+      );
+      writeAt(join(unrecorded, '.agents', 'skills', 'theirs', 'SKILL.md'), skillBody('theirs'));
+
+      handle.projectIfSkillsChanged(unrecorded, 'turn-end');
+      await handle.flush();
+
+      expect(projectionsTriggeredBy('turn-end')).not.toEqual([]);
+      expect(occupied(join(unrecorded, '.claude', 'skills', 'theirs'))).toBe(true);
+    } finally {
+      rmSync(unrecorded, { recursive: true, force: true });
+    }
+  });
+
+  it('re-arms without projecting a root whose directory is still absent', async () => {
+    rmSync(skillsDir(), { recursive: true, force: true });
+    const handle = await start({ sweepMs: 0, rearmMs: 30 });
+
+    await holdsFor(() => projections.mock.calls.length === 0, 'nothing to project yet', 300);
+    expect(handle.watchedRoots()).toEqual([]);
+  });
+});
+
+describe('the sweep catches what the watcher drops', () => {
+  it('SRC-06: projects a skill whose event was never reported, and stops once it has', async () => {
+    // Two measured ways a real event never arrives: a root whose `.agents/skills`
+    // did not exist when the watch opened is deaf until the re-arm reaches it,
+    // and a file written in the moments after `ready` is dropped 13-40% of the
+    // time. The comparison is what keeps the promise either way, so it is driven
+    // here directly rather than by hoping for the miss.
+    const handle = await startWithoutWatching();
+
+    // The first look at a project nothing has recorded: DorkOS has no picture to
+    // compare against, so it projects and writes one down.
+    handle.projectIfSkillsChanged(repo, 'sweep');
+    await handle.flush();
+    expect(projections.mock.calls.length).toBe(1);
+    projections.mockClear();
+
+    // Nothing has changed since.
     handle.projectIfSkillsChanged(repo, 'sweep');
     await handle.flush();
     expect(projections).not.toHaveBeenCalled();
@@ -452,7 +773,7 @@ describe('the sweep catches what the watcher drops', () => {
   it('notices a SKILL.md written into a directory that already existed', async () => {
     // The parent's own modification time does not move for this one, which is
     // why the shape reads the entries rather than the directory.
-    const handle = await start({ sweepMs: 0 });
+    const handle = await startWithoutWatching();
     mkdirSync(join(skillsDir(), 'late'), { recursive: true });
     handle.projectIfSkillsChanged(repo, 'sweep');
     await handle.flush();
@@ -467,7 +788,7 @@ describe('the sweep catches what the watcher drops', () => {
   });
 
   it('projects a project it has never recorded, rather than assuming nothing changed', async () => {
-    const handle = await start({ sweepMs: 0 });
+    const handle = await startWithoutWatching();
     // A root nobody is watching: the turn-end trigger's whole case.
     const unwatched = realpathSync(mkdtempSync(join(tmpdir(), 'skills-watcher-other-')));
     try {
@@ -489,9 +810,9 @@ describe('the sweep catches what the watcher drops', () => {
 });
 
 describe('the trigger obeys the hook gate and never asks (hazard 2)', () => {
-  it('installs no hooks for a package nobody has allowed, and raises no card', async () => {
+  it('TR-06: installs no hooks for a package nobody has allowed, and raises no card', async () => {
     stagePackage();
-    const handle = await start({ sweepMs: 0 });
+    const handle = await startWithoutWatching();
 
     // Driven through the watcher's own entry point rather than a file write:
     // the claim under test is what a FIRING installs, and a test that also had
@@ -524,7 +845,7 @@ describe('the trigger obeys the hook gate and never asks (hazard 2)', () => {
     expect(loggerMock.warn).not.toHaveBeenCalled();
   });
 
-  it('leaves a hand-written .codex/hooks.json byte-identical across a hundred firings', async () => {
+  it('TR-06: leaves a hand-written .codex/hooks.json byte-identical across a hundred firings', async () => {
     // Hand-authored, in the shape a person would write. The engine never
     // overwrites a hooks file it did not write, and a trigger that fires on
     // every file change is the one most likely to prove otherwise.
@@ -532,27 +853,30 @@ describe('the trigger obeys the hook gate and never asks (hazard 2)', () => {
     const authored = '{\n  "description": "mine",\n  "hooks": {}\n}\n';
     writeAt(codexHooks, authored);
 
-    const handle = await start({ coalesceMs: 0, sweepMs: 0 });
+    const handle = await start({ coalesceMs: 0, sweepMs: 0, roots: () => [] });
     for (let i = 0; i < 100; i++) {
       handle.scheduleProjection(repo, 'turn-end');
       await handle.flush();
     }
 
-    expect(projections.mock.calls.length).toBe(100);
+    // At least a hundred: chokidar occasionally adds a spurious `change` of its
+    // own (see the module docs), and the claim under test is the file's bytes,
+    // not the exact number of times the engine was asked.
+    expect(projections.mock.calls.length).toBeGreaterThanOrEqual(100);
     expect(readFileSync(codexHooks, 'utf8')).toBe(authored);
   });
 });
 
 describe('the watcher never re-fires on its own output (hazard 4)', () => {
-  it('ignores the <pkg>__<name> links the projection writes into the watched directory', async () => {
+  it('TR-06: ignores the <pkg>__<name> links the projection writes into the watched directory', async () => {
     stagePackage();
-    const handle = await start({ sweepMs: 0 });
+    const handle = await startWithoutWatching();
 
     writeAt(join(skillsDir(), 'mine', 'SKILL.md'), skillBody('mine'));
     handle.scheduleProjection(repo, 'skill-file');
     await handle.flush();
 
-    // The engine wrote a link INSIDE the directory being watched. chokidar
+    // The engine wrote a link INSIDE the directory a watch would cover. chokidar
     // reports the SKILL.md reachable through it, so the exclusion is the only
     // thing between that and a projection of the projection's own output.
     const link = join(skillsDir(), 'acme__helper');
@@ -571,22 +895,133 @@ describe('the watcher never re-fires on its own output (hazard 4)', () => {
   });
 
   it('still projects a real directory whose name happens to carry the marker', async () => {
-    const handle = await start();
-    // DOR-1844: `__` in the name is half the predicate. A real directory
-    // somebody authored is theirs, and hiding it would lose a skill.
+    // DOR-1844: `__` in the name is half the predicate, and a real directory
+    // somebody authored is theirs. Asserted on the predicate rather than on a
+    // delivered event, because the predicate IS the claim — driving it through
+    // chokidar would add a dependency on event delivery that says nothing about
+    // whether the marker rule is right.
+    const handle = await startWithoutWatching();
     writeAt(join(skillsDir(), 'my__helper', 'SKILL.md'), skillBody('my-helper'));
 
-    await waitUntil(
-      () => occupied(join(repo, '.claude', 'skills', 'my__helper')),
-      'the authored skill to be linked'
+    expect(isAuthoredSkillFile(join(skillsDir(), 'my__helper', 'SKILL.md'), skillsDir())).toBe(
+      true
     );
+
+    handle.scheduleProjection(repo, 'skill-file');
     await handle.flush();
+    expect(occupied(join(repo, '.claude', 'skills', 'my__helper'))).toBe(true);
+  });
+});
+
+describe('a change is only written off once it has actually been projected', () => {
+  it('retries a projection that threw, instead of recording the change as dealt with', async () => {
+    const handle = await startWithoutWatching();
+    // Establish a record first, so the retry below is about the failure rather
+    // than about this being a project DorkOS has never seen.
+    handle.projectIfSkillsChanged(repo, 'sweep');
+    await handle.flush();
+    projections.mockClear();
+    projections.mockImplementationOnce(() => {
+      throw new Error('disk went away mid-plan');
+    });
+
+    writeAt(join(skillsDir(), 'flaky', 'SKILL.md'), skillBody('flaky'));
+    handle.projectIfSkillsChanged(repo, 'sweep');
+    await handle.flush();
+
+    expect(projections.mock.calls.length).toBe(1);
+    expect(occupied(join(repo, '.claude', 'skills', 'flaky'))).toBe(false);
+    expect(loggerMock.warn).toHaveBeenCalled();
+
+    // The failure must not have retired the change. Recording what it merely
+    // NOTICED would have: the next comparison would find nothing new and this
+    // skill would never be projected by anything.
+    handle.projectIfSkillsChanged(repo, 'sweep');
+    await handle.flush();
+
+    expect(projections.mock.calls.length).toBe(2);
+    expect(occupied(join(repo, '.claude', 'skills', 'flaky'))).toBe(true);
+  });
+
+  it('projects a skill that landed WHILE a projection was running', async () => {
+    const handle = await startWithoutWatching();
+    const real = projections.getMockImplementation();
+    // The plan is built from the tree as it is when the engine is called, so a
+    // file that arrives after that is not in it. Recording the tree AFTERWARDS
+    // would write this skill off as seen without anything ever planning it.
+    projections.mockImplementationOnce(
+      (...args: Parameters<typeof _internal.projectWithConsent>) => {
+        const result = (real ?? _internal.projectWithConsent)(...args);
+        // AFTER the plan was built and applied — the agent kept working while
+        // the projection ran, which is the ordinary case, not an exotic one.
+        writeAt(join(skillsDir(), 'slipped-in', 'SKILL.md'), skillBody('slipped-in'));
+        return result;
+      }
+    );
+
+    writeAt(join(skillsDir(), 'first', 'SKILL.md'), skillBody('first'));
+    handle.projectIfSkillsChanged(repo, 'sweep');
+    await handle.flush();
+
+    expect(occupied(join(repo, '.claude', 'skills', 'first'))).toBe(true);
+    expect(occupied(join(repo, '.claude', 'skills', 'slipped-in'))).toBe(false);
+
+    // The next comparison still sees it as new, because the shape that was
+    // recorded is the one the projection PLANNED from.
+    handle.projectIfSkillsChanged(repo, 'sweep');
+    await handle.flush();
+
+    expect(occupied(join(repo, '.claude', 'skills', 'slipped-in'))).toBe(true);
+  });
+
+  it('does not re-project for ever over its own <pkg>__<name> links', async () => {
+    stagePackage();
+    const handle = await startWithoutWatching();
+
+    handle.scheduleProjection(repo, 'skill-file');
+    await handle.flush();
+    expect(occupied(join(skillsDir(), 'acme__helper'))).toBe(true);
+    const settled = projections.mock.calls.length;
+
+    // The engine wrote into the very directory the shape is read from. If those
+    // links counted, every comparison from here on would see a change.
+    for (let i = 0; i < 3; i++) {
+      handle.projectIfSkillsChanged(repo, 'sweep');
+      await handle.flush();
+    }
+    expect(projections.mock.calls.length).toBe(settled);
+  });
+});
+
+describe('one bad read does not wedge a repository', () => {
+  it('survives a config store that throws, and keeps projecting afterwards', async () => {
+    const handle = await startWithoutWatching();
+    // `conf` throws on a corrupt or unreadable `config.json` (DOR-584). The read
+    // sits at the top of a firing, so a throw there used to escape as an
+    // unhandled rejection AND leave the root's in-flight marker set for ever.
+    mocks.harness.throwOnRead = true;
+
+    writeAt(join(skillsDir(), 'after-the-throw', 'SKILL.md'), skillBody('after-the-throw'));
+    handle.scheduleProjection(repo, 'skill-file');
+    await handle.flush();
+
+    expect(projections).not.toHaveBeenCalled();
+    expect(loggerMock.warn).toHaveBeenCalled();
+
+    // The root is still alive: the next firing runs rather than coalescing into
+    // a projection that can never start.
+    mocks.harness.throwOnRead = false;
+    handle.scheduleProjection(repo, 'skill-file');
+    await handle.flush();
+
+    expect(projections.mock.calls.length).toBe(1);
+    expect(occupied(join(repo, '.claude', 'skills', 'after-the-throw'))).toBe(true);
   });
 });
 
 describe('one firing per root is ever queued (the lock bound)', () => {
   it('holds twenty events behind one queued projection, and loses none of them', async () => {
-    const handle = await start({ coalesceMs: 30, sweepMs: 0 });
+    const handle = await start({ coalesceMs: 30, sweepMs: 0, roots: () => [] });
     let release = (): void => {};
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -632,7 +1067,7 @@ describe('one firing per root is ever queued (the lock bound)', () => {
 });
 
 describe('the Claude Code restart caveat (SK-11)', () => {
-  it('says a restart is needed when the projection had to create .claude/skills', async () => {
+  it('SK-11: says a restart is needed when the projection had to create .claude/skills', async () => {
     const handle = await start();
     expect(existsSync(join(repo, '.claude', 'skills'))).toBe(false);
 
@@ -649,7 +1084,31 @@ describe('the Claude Code restart caveat (SK-11)', () => {
     expect(caveat?.fields.source).toBe(`${facts.source.url}, read ${facts.source.fetchedAt}`);
   });
 
-  it('says it once per project, and softens it when the directory was already there', async () => {
+  it('SK-11: says nothing when the projection never reached .claude/skills', async () => {
+    // A Codex-only project that genuinely APPLIES something: its own hooks are
+    // generated into `.codex/hooks.json`. So this is not the empty case — work
+    // landed, and none of it landed where Claude Code reads, which is exactly
+    // when a line about restarting Claude Code would be about nothing.
+    stageRepo(['codex']);
+    writeAt(
+      join(repo, '.claude', 'settings.json'),
+      JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo bye' }] }] } })
+    );
+    const handle = await startWithoutWatching();
+
+    writeAt(join(skillsDir(), 'codex-only', 'SKILL.md'), skillBody('codex-only'));
+    handle.scheduleProjection(repo, 'skill-file');
+    await handle.flush();
+
+    const applied = (await (projections.mock.results[0]?.value as Promise<{ applied: unknown[] }>))
+      .applied;
+    expect(applied.length).toBeGreaterThan(0);
+    expect(existsSync(join(repo, '.codex', 'hooks.json'))).toBe(true);
+    expect(existsSync(join(repo, '.claude', 'skills'))).toBe(false);
+    expect(infoLogs().filter((line) => line.fields.restartRequired !== undefined)).toEqual([]);
+  });
+
+  it('SK-11: says it once per project, and softens it when the directory was already there', async () => {
     const handle = await start();
     mkdirSync(join(repo, '.claude', 'skills'), { recursive: true });
 
@@ -678,7 +1137,7 @@ describe('harness.autoSync gates the whole trigger', () => {
   });
 
   it('stops projecting when it is switched off while running', async () => {
-    const handle = await start();
+    const handle = await startWithoutWatching();
     mocks.harness.autoSync = false;
     handle.scheduleProjection(repo, 'turn-end');
     await handle.flush();
@@ -688,7 +1147,7 @@ describe('harness.autoSync gates the whole trigger', () => {
 
   it('refuses a project that has no harness manifest, and scaffolds none', async () => {
     rmSync(join(repo, '.agents', 'harness.manifest.json'));
-    const handle = await start();
+    const handle = await startWithoutWatching();
 
     writeAt(join(skillsDir(), 'orphan', 'SKILL.md'), skillBody('orphan'));
     handle.scheduleProjection(repo, 'skill-file');
@@ -746,9 +1205,9 @@ describe('a turn that ends re-projects the project it ran in (TR-07)', () => {
    * so a suite that also had the watcher on this repo would not be measuring the
    * turn-end path at all.
    */
-  function turnEnds(): {
+  function turnEnds(rootFor?: () => string | undefined): {
     handle: SkillsWatcherHandle;
-    fire: (sessionId: string, kind: 'turn_end' | 'interaction_resolved') => void;
+    fire: (sessionId: string, kind: 'turn_end' | 'interaction_resolved') => Promise<void>;
     setRoot: (value: string | undefined) => void;
     stop: () => void;
   } {
@@ -756,6 +1215,9 @@ describe('a turn that ends re-projects the project it ran in (TR-07)', () => {
       dorkHome,
       roots: () => [],
       coalesceMs: 10,
+      sweepMs: 0,
+      rearmMs: 0,
+      settleMs: 0,
       rootRescanMs: 600_000,
     });
     if (!handle) throw new Error('watcher did not start');
@@ -771,11 +1233,19 @@ describe('a turn that ends re-projects the project it ran in (TR-07)', () => {
           listener = undefined;
         };
       },
-      rootForSession: () => root,
+      rootForSession: () => Promise.resolve(rootFor ? rootFor() : root),
     });
     return {
       handle,
-      fire: (id, kind) => listener?.(id, kind),
+      // The listener detaches its own work so the projector's ingest is never
+      // held up, which makes "the turn ended" and "the projection was scheduled"
+      // two different moments. Waited on through the hook's own barrier rather
+      // than by counting ticks: production awaits `resolveForSession`, so how
+      // many turns of the event loop that takes is not a fixed number.
+      fire: async (id, kind) => {
+        listener?.(id, kind);
+        await hook.settled();
+      },
       setRoot: (value) => {
         root = value;
       },
@@ -783,34 +1253,34 @@ describe('a turn that ends re-projects the project it ran in (TR-07)', () => {
     };
   }
 
-  it('projects the first time a turn ends in a project, and not again unchanged', async () => {
+  it('TR-07: projects the first time a turn ends in a project, and not again unchanged', async () => {
     const turns = turnEnds();
     expect(turns.handle.watchedRoots()).toEqual([]);
 
     // DorkOS has no record of what this tree looked like before the session, so
     // the first turn projects rather than assuming nothing happened.
-    turns.fire('s1', 'turn_end');
+    await turns.fire('s1', 'turn_end');
     await turns.handle.flush();
     expect(projections.mock.calls.length).toBe(1);
     expect(occupied(join(repo, '.claude', 'skills', 'baseline'))).toBe(true);
 
     // Nothing about the project's skills changed, so there is nothing to do.
-    turns.fire('s1', 'turn_end');
+    await turns.fire('s1', 'turn_end');
     await turns.handle.flush();
     expect(projections.mock.calls.length).toBe(1);
 
     turns.stop();
   });
 
-  it('projects again once a turn has changed which skills the project has', async () => {
+  it('TR-07: projects again once a turn has changed which skills the project has', async () => {
     const turns = turnEnds();
-    turns.fire('s1', 'turn_end');
+    await turns.fire('s1', 'turn_end');
     await turns.handle.flush();
     projections.mockClear();
 
     writeAt(join(skillsDir(), 'written-by-a-turn', 'SKILL.md'), skillBody('written-by-a-turn'));
 
-    turns.fire('s1', 'turn_end');
+    await turns.fire('s1', 'turn_end');
     await turns.handle.flush();
 
     expect(projections.mock.calls.length).toBe(1);
@@ -818,10 +1288,10 @@ describe('a turn that ends re-projects the project it ran in (TR-07)', () => {
     turns.stop();
   });
 
-  it('ignores a person answering a prompt mid-turn', async () => {
+  it('TR-07: ignores a person answering a prompt mid-turn', async () => {
     const turns = turnEnds();
 
-    turns.fire('s1', 'interaction_resolved');
+    await turns.fire('s1', 'interaction_resolved');
     await turns.handle.flush();
 
     // The runtime is still writing at that moment, which is the one point a
@@ -830,22 +1300,65 @@ describe('a turn that ends re-projects the project it ran in (TR-07)', () => {
     turns.stop();
   });
 
-  it('does nothing for a session no runtime can place', async () => {
+  it('TR-07: does nothing for a session no runtime can place', async () => {
     const turns = turnEnds();
     turns.setRoot(undefined);
 
-    turns.fire('s1', 'turn_end');
+    await turns.fire('s1', 'turn_end');
     await turns.handle.flush();
 
     expect(projections).not.toHaveBeenCalled();
     turns.stop();
   });
 
-  it('stops listening when the hook is stopped', async () => {
+  it('TR-07: writes nothing when the session ran outside the boundary, and says why', async () => {
+    // The whole shape of the hazard, driven through the REAL path rather than
+    // through `projectIfSkillsChanged` directly: a session whose working
+    // directory a scheduled task bound with no boundary call at all
+    // (`routes/tasks.ts`), in a repo that carries an old manifest — so the
+    // manifest gate lets it through and only the boundary does not.
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'skills-watcher-outside-')));
+    try {
+      writeAt(
+        join(outside, '.agents', 'harness.manifest.json'),
+        JSON.stringify({ version: 1, harnesses: ['claude-code'], claudeOnlySkills: [] })
+      );
+      writeAt(join(outside, '.agents', 'skills', 'theirs', 'SKILL.md'), skillBody('theirs'));
+      await initBoundary(repo);
+
+      const turns = turnEnds(() => outside);
+      await turns.fire('s1', 'turn_end');
+      await turns.handle.flush();
+
+      expect(projections).not.toHaveBeenCalled();
+      expect(existsSync(join(outside, '.claude'))).toBe(false);
+      // And it is not silent about it — once, so a boundary that is refusing
+      // every turn is findable rather than merely quiet.
+      expect(
+        loggerMock.debug.mock.calls.filter(([message]) =>
+          String(message).includes('outside the directory boundary')
+        )
+      ).toHaveLength(1);
+
+      // Said once per root, not once per turn.
+      await turns.fire('s2', 'turn_end');
+      await turns.handle.flush();
+      expect(
+        loggerMock.debug.mock.calls.filter(([message]) =>
+          String(message).includes('outside the directory boundary')
+        )
+      ).toHaveLength(1);
+      turns.stop();
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('TR-07: stops listening when the hook is stopped', async () => {
     const turns = turnEnds();
     turns.stop();
 
-    turns.fire('s1', 'turn_end');
+    await turns.fire('s1', 'turn_end');
     await turns.handle.flush();
 
     expect(projections).not.toHaveBeenCalled();

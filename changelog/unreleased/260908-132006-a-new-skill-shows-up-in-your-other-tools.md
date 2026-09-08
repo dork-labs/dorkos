@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(harness): the trigger stays inside the boundary, and a fresh project is not deaf (DOR-1850)'
   - 'feat(harness): a skill an agent writes is projected within seconds (DOR-1850)'
 ---
 
@@ -11,3 +12,4 @@ covers:
 ### Note for people upgrading
 
 - DorkOS adds these links while you work and never removes them on its own, which is deliberate: it will not delete files in a folder you may be editing right now. So a skill you delete leaves a dead link behind. `dorkos harness sync --check` lists them and `dorkos harness sync --fix` clears them out (DOR-1850)
+- This only ever touches projects you have already set up for syncing, and only inside the folder your `DORKOS_BOUNDARY` allows. A project DorkOS has never synced is left completely alone (DOR-1850)

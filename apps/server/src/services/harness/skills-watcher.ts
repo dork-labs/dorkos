@@ -17,12 +17,15 @@
  * 1. **A watcher** on `<root>/.agents/skills` for every root the caller names —
  *    registered agent workspaces and the default project. This is the fast path:
  *    the file lands, and the link follows a fraction of a second later.
- * 2. **A sweep** over the same roots every {@link SKILLS_SWEEP_MS}, because the
- *    fast path is not a reliable one. Measured on macOS against chokidar 5, a
- *    skill directory created and its `SKILL.md` written in the same instant —
- *    what an agent actually does — is never reported at all in **22% of runs**
- *    (13 of 60). Without the sweep, roughly one skill in five would silently not
- *    arrive, which is the bug this module exists to fix.
+ * 2. **A sweep** over the same roots every {@link SKILLS_SWEEP_MS}, plus a
+ *    re-arm every {@link SKILLS_REARM_MS}, because the fast path has two holes
+ *    and neither is a small steady-state loss rate. chokidar cannot watch a
+ *    directory that does not exist, so a project whose `.agents/skills` has not
+ *    been created yet is **completely deaf** until the re-arm opens a watch on
+ *    it; and a file written in the moments after a watch opens is dropped 13-40%
+ *    of the time. A long-lived watcher over an existing directory misses
+ *    nothing (0 of 40, measured). {@link SKILLS_SWEEP_MS} carries both
+ *    measurements.
  * 3. **A turn-end re-projection** for the project a DorkOS-managed session ran
  *    in, which is how a repo NOBODY is watching still gets synced — a person's
  *    own checkout, a room worktree, any directory a session was pointed at.
@@ -30,6 +33,15 @@
  * The last two share one record of what each project's skills last looked like
  * ({@link SkillsWatcherHandle.projectIfSkillsChanged}), so neither re-projects
  * what the other has already dealt with.
+ *
+ * ## Nothing here writes outside the boundary
+ *
+ * A projection writes real files, and the directories this module is handed are
+ * not pre-checked: `DEFAULT_CWD` is an environment variable, and a session's
+ * working directory comes from a runtime binding that a scheduled task can set
+ * without any boundary call. So every root is judged twice — once before it is
+ * watched at all, and once in {@link projectRoot}, which is the single point
+ * every trigger's write passes through.
  *
  * ## The four hazards, and what this module does about each
  *
@@ -93,13 +105,17 @@
  * twice, in fact — a burst inside {@link SKILLS_COALESCE_MS} becomes one
  * projection, and everything during a held lock becomes one more.
  *
- * ## Two deliberate differences from the scheduler's watcher
+ * ## Three deliberate differences from the scheduler's watcher
  *
  * `services/tasks/task-file-watcher.ts` watches the same directory for a
  * different reason, and this module copies its chokidar shape — `depth: 1`, and
  * `awaitWriteFinish: { stabilityThreshold: 50, pollInterval: 25 }`, so a file
- * still being written is not read half-formed. Two things differ:
+ * still being written is not read half-formed. Three things differ:
  *
+ * - **A watch is only opened when there is something to watch.** The scheduler
+ *   points chokidar at the path whether or not it exists, which for an absent
+ *   `.agents/skills` means no watch at all and no way to notice (see
+ *   {@link armWatch}). {@link rearm} is what comes back for it.
  * - **`ignoreInitial: true`.** The scheduler has to build its whole row set from
  *   what is already on disk, so it cannot ignore the initial scan. A projection
  *   of what is already there is `backfillAgentWorkspaceSkills`'s job at boot;
@@ -133,6 +149,7 @@ import {
   skillsFactsFor,
 } from '@dorkos/harness';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
+import { validateBoundaryOrDorkHome } from '../../lib/boundary.js';
 import type { TurnBoundaryKind } from '../session/session-state-projector.js';
 import { configManager } from '../core/config-manager.js';
 import { logger } from '../../lib/logger.js';
@@ -179,26 +196,70 @@ export const SKILLS_COALESCE_MS = 250;
 export const SKILLS_ROOT_RESCAN_MS = 300_000;
 
 /**
- * How often each watched root's skills are compared against what DorkOS last
- * saw, whatever the watcher did or did not report.
+ * How often each root's skills are compared against what DorkOS last projected,
+ * whatever the watcher did or did not report.
  *
- * **This is not belt and braces — the watcher alone cannot keep the promise.**
- * Measured on macOS against chokidar 5 (60 trials, `apps/server`): a skill
- * directory created and its `SKILL.md` written in the same instant — which is
- * exactly what an agent does — was **never reported at all in 22% of runs**,
- * with or without `awaitWriteFinish`, and 35% at `depth: 2`. Node's `fs.watch`
- * is what chokidar 5 uses on macOS, and it drops the notification. The same
- * exposure sits under the scheduler's watcher, where the five-minute reconciler
- * is what covers it.
+ * **This is not belt and braces — there are two ways a real event never
+ * arrives**, and neither is a steady-state loss rate:
  *
- * So a missed event costs seconds rather than costing the skill: the sweep
- * `readdir`s one directory per root and compares its entries' modification
- * times against the shape recorded at the end of the last projection. `usePolling`
- * would also fix it (0/20 missed, measured) and was refused — it re-stats every
- * watched file on a timer for ever, on a laptop that is already running several
- * agents, to buy a few seconds over this.
+ * 1. **A deaf root.** chokidar cannot watch a path that does not exist; pointed
+ *    at an absent `.agents/skills` it silently watches an ancestor instead and
+ *    never picks the directory up ({@link armWatch} has the measurement). That
+ *    is a 100% loss for that root until {@link SKILLS_REARM_MS} opens the real
+ *    watch — and if the re-arm did not exist, for the life of the process.
+ * 2. **The moments after a watch opens.** Measured against chokidar 5 on macOS,
+ *    a skill written immediately after `ready` is dropped 13-40% of the time;
+ *    the same watcher, left to settle first, missed 0 of 40, and a long-lived
+ *    one missed 0 of 40 over the same writes. So this is a STARTUP artefact,
+ *    not the ~22% steady-state loss an earlier version of this file claimed —
+ *    {@link SKILLS_SETTLE_MS} is what actually addresses it.
+ * 3. **A watch that has died.** The kernel's watch descriptors are a shared,
+ *    finite resource, and this repo is routinely several agents plus the
+ *    operator's own two servers on one machine. Measured here: a twenty-run test
+ *    loop exhausted them outright and `fs.watch` began throwing `EMFILE` — at
+ *    which point the watch reports nothing, for ever, and says so exactly once
+ *    (the error handler in {@link armWatch}). Nothing in this module can prevent
+ *    that; the comparison is what makes it cost seconds instead of the skill.
+ *
+ * What the comparison then buys is that neither of those can cost a skill: it
+ * `readdir`s one directory per root and compares its entries' modification times
+ * against the shape the last projection planned from. Its cost is one `readdir`
+ * plus one `lstat` per skill per root per tick — measured at **201 syscalls and
+ * 0.49 ms** for a root holding 200 skills, which at this interval is about
+ * 0.005% of one core per root. `usePolling` would also cover both cases (0/20
+ * missed, measured) and was refused because it pays a comparable cost against
+ * every watched FILE on a much shorter timer, for ever, on a laptop already
+ * running several agents.
+ *
+ * The same two exposures sit under the scheduler's watcher, where the
+ * five-minute reconciler is what covers them.
  */
 export const SKILLS_SWEEP_MS = 10_000;
+
+/**
+ * How often a root whose `.agents/skills` did not exist is checked to see
+ * whether it does now.
+ *
+ * One `existsSync` per such root per tick, and only for roots that have no watch
+ * — a project that already has skills never reaches it. Short, because this is
+ * the whole latency of the FIRST skill in a project. Measured end to end against
+ * the built CLI, on a project whose `.agents/skills` did not exist at boot: 432
+ * ms from the file landing to the link existing, against the ~9.8s
+ * {@link SKILLS_SWEEP_MS} alone would have cost.
+ */
+export const SKILLS_REARM_MS = 1_000;
+
+/**
+ * How long after chokidar reports `ready` a watch is treated as live.
+ *
+ * Measured against chokidar 5 on macOS: a file written in the instant after
+ * `ready` is never reported 13-40% of the time, while the same watcher given
+ * this long to settle first missed 0 of 40. A server's watchers live for hours
+ * and are past this window before anything happens, so the cost is a tenth of a
+ * second at boot; what it buys is that `ready()` is an honest barrier rather
+ * than an optimistic one.
+ */
+export const SKILLS_SETTLE_MS = 100;
 
 /** What caused a projection to be scheduled, for the log line. */
 export type ProjectionTrigger =
@@ -209,7 +270,9 @@ export type ProjectionTrigger =
   /** A turn ended in a session whose project's skills had changed. */
   | 'turn-end'
   /** The periodic comparison caught a change the watcher never reported. */
-  | 'sweep';
+  | 'sweep'
+  /** `.agents/skills` appeared and a watch was opened on it for the first time. */
+  | 'watch-armed';
 
 /**
  * Seam for the one engine call this trigger makes, injectable so a test can
@@ -252,8 +315,13 @@ export interface SkillsWatcherHandle {
    * @param trigger - What asked, for the log line.
    */
   projectIfSkillsChanged(root: string, trigger: ProjectionTrigger): void;
-  /** Rebuild the watched set from the caller's root list, now. */
-  refreshRoots(): void;
+  /**
+   * Rebuild the watched set from the caller's root list, now.
+   *
+   * Asynchronous because deciding whether a root may be watched at all means
+   * asking the boundary, which resolves the path on disk.
+   */
+  refreshRoots(): Promise<void>;
   /** The roots currently being watched, resolved through symlinks. */
   watchedRoots(): string[];
   /**
@@ -292,10 +360,24 @@ export interface SkillsWatcherOptions {
   roots: () => readonly string[];
   /** Override {@link SKILLS_COALESCE_MS}. @internal For tests. */
   coalesceMs?: number;
+  /**
+   * Whether DorkOS may write into a directory at all.
+   *
+   * Defaults to the server's own boundary
+   * (`validateBoundaryOrDorkHome` — agent homes under `<dorkHome>/agents/*` are
+   * inside it by that helper's own rule). Injectable because a test needs to
+   * decide the answer without booting a server, and because the default reads
+   * module state (`initBoundary`) this module does not own.
+   */
+  withinBoundary?: (path: string) => Promise<boolean>;
   /** Override {@link SKILLS_ROOT_RESCAN_MS}. @internal For tests. */
   rootRescanMs?: number;
   /** Override {@link SKILLS_SWEEP_MS}; `0` switches the sweep off. @internal For tests. */
   sweepMs?: number;
+  /** Override {@link SKILLS_REARM_MS}; `0` switches re-arming off. @internal For tests. */
+  rearmMs?: number;
+  /** Override {@link SKILLS_SETTLE_MS}. @internal For tests. */
+  settleMs?: number;
 }
 
 /** One root's pending work. */
@@ -386,6 +468,11 @@ export function isAuthoredSkillFile(filePath: string, skillsDir: string): boolea
  * existed leaves the parent untouched, which is precisely the create-then-write
  * sequence whose event the watcher most often loses.
  *
+ * The engine's own `<pkg>__<name>` links are left OUT, by the same predicate the
+ * event filter uses. They are this module's output, not its input: counting them
+ * would make the shape recorded before a projection differ from the tree after
+ * it, and the next comparison would project again over nothing, for ever.
+ *
  * @param absRoot - The project root, resolved.
  * @returns A comparable shape, or `-` when the directory cannot be read.
  */
@@ -400,6 +487,7 @@ function skillsShape(absRoot: string): string {
   const parts: string[] = [];
   for (const entry of entries) {
     if (entry.name.startsWith('.')) continue;
+    if (isManagedProjection(join(dir, entry.name))) continue;
     try {
       parts.push(`${entry.name}:${lstatSync(join(dir, entry.name)).mtimeMs}`);
     } catch {
@@ -409,6 +497,30 @@ function skillsShape(absRoot: string): string {
     }
   }
   return parts.sort().join('|');
+}
+
+/**
+ * Whether DorkOS may write into a directory, by the server's own boundary rule.
+ *
+ * `validateBoundaryOrDorkHome` rather than `validateBoundary`: the agent
+ * workspaces DorkOS creates live under `<dorkHome>/agents/*` by design, and a
+ * `DORKOS_BOUNDARY`-scoped deployment would otherwise refuse the very homes this
+ * trigger exists to keep current. That helper narrows to the `agents` subtree
+ * and nothing else in dork home, so the credential store stays out of reach.
+ *
+ * Any throw is a refusal, including the one an uninitialized boundary raises. A
+ * projection writes files; the safe reading of "I could not tell" is no.
+ *
+ * @param path - The project root to judge.
+ * @returns True when a projection may write there.
+ */
+async function defaultWithinBoundary(path: string): Promise<boolean> {
+  try {
+    await validateBoundaryOrDorkHome(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -454,45 +566,104 @@ export function startSkillsWatcher(opts: SkillsWatcherOptions): SkillsWatcherHan
   }
 
   const coalesceMs = opts.coalesceMs ?? SKILLS_COALESCE_MS;
+  const withinBoundary = opts.withinBoundary ?? defaultWithinBoundary;
+  const settleMs = opts.settleMs ?? SKILLS_SETTLE_MS;
+  /**
+   * Every root this watcher is responsible for, in-bounds and canonical.
+   *
+   * Kept apart from {@link watchers} because the two genuinely differ: a root
+   * whose `.agents/skills` does not exist yet has no watcher at all (chokidar
+   * cannot watch a path that is not there — see {@link armWatch}) and is still
+   * fully our responsibility.
+   */
+  const roots = new Set<string>();
+  /** Only the roots whose `.agents/skills` exists and is being watched. */
   const watchers = new Map<string, { watcher: FSWatcher; ready: Promise<void> }>();
   const states = new Map<string, RootState>();
   /** Roots the restart caveat has already been said for, once each. */
   const restartNoteSaid = new Set<string>();
-  /** What each root's skills looked like when DorkOS last finished with it. */
+  /** Roots refused by the boundary, so the refusal is said once rather than per tick. */
+  const refusedRoots = new Set<string>();
+  /** What each root's skills looked like when DorkOS last projected it. */
   const shapes = new Map<string, string>();
+  /** The root-set passes, chained so two can never interleave. */
+  let syncing: Promise<void> = Promise.resolve();
   let stopped = false;
 
-  /** Project one root, once, under the lock — the whole of what a firing does. */
+  /**
+   * Project one root, once, under the lock — the whole of what a firing does,
+   * and the ONE place a write is gated.
+   *
+   * Every path into this module ends here, so the boundary check, the
+   * `harness.autoSync` check and the manifest check live here rather than at
+   * each caller. Nothing throws out of it: a firing runs from a filesystem
+   * event or a timer, where a rejection has nowhere to go but the process-wide
+   * unhandled-rejection path — and a throw that escaped would leave the root
+   * wedged, because the caller clears its in-flight marker in the same chain.
+   */
   async function projectRoot(absRoot: string, trigger: ProjectionTrigger): Promise<void> {
-    if (stopped) return;
-    // Re-read rather than trusting the value at startup: a person who turns
-    // projection off mid-session has turned it off for this too.
-    if (!configManager.get('harness').autoSync) {
-      logger.debug('[HarnessSync] Skipping watched projection (harness.autoSync=false)', {
-        root: absRoot,
-      });
-      return;
-    }
-    // No manifest, no projection, and nothing scaffolded — see the module docs.
-    if (!existsSync(join(absRoot, HARNESS_MANIFEST_PATH))) {
-      logger.debug('[HarnessSync] Skipping watched projection — the project has no manifest', {
-        root: absRoot,
-        trigger,
-      });
-      return;
-    }
-
-    const claudeSkillsExisted = existsSync(join(absRoot, CLAUDE_SKILLS_DIR));
     try {
-      // Recorded around the projection rather than before it: the engine writes
-      // an installed package's canonical links INTO this directory, so a shape
-      // taken beforehand would look changed on the next sweep for ever.
+      if (stopped) return;
+
+      // THE WRITE GATE. A projection writes symlinks, `.claude/CLAUDE.md` and a
+      // managed block in `.claude/settings.local.json`, so the directory it
+      // writes into has to be one DorkOS is allowed to write into. The roots
+      // this module is handed are NOT pre-checked: `DEFAULT_CWD` is an env var,
+      // and a session's working directory comes from a runtime binding that
+      // `routes/tasks.ts` can set with no boundary call at all — the read
+      // resolvers say so in as many words ("the caller must still judge the
+      // directory they get back", `resolve-read-cwd.ts`). So it is judged here,
+      // at the one point every trigger passes through.
+      //
+      // `validateBoundaryOrDorkHome` rather than `validateBoundary`, because the
+      // agent workspaces DorkOS creates live under `<dorkHome>/agents/*` by
+      // design and a boundary-scoped deployment would otherwise refuse the very
+      // homes this trigger exists to keep current.
+      if (!(await withinBoundary(absRoot))) {
+        if (!refusedRoots.has(absRoot)) {
+          refusedRoots.add(absRoot);
+          logger.debug('[HarnessSync] Refusing to project outside the directory boundary', {
+            root: absRoot,
+            trigger,
+          });
+        }
+        return;
+      }
+
+      // Re-read rather than trusting the value at startup: a person who turns
+      // projection off mid-session has turned it off for this too.
+      if (!configManager.get('harness').autoSync) {
+        logger.debug('[HarnessSync] Skipping watched projection (harness.autoSync=false)', {
+          root: absRoot,
+          trigger,
+        });
+        return;
+      }
+      // No manifest, no projection, and nothing scaffolded — see the module docs.
+      if (!existsSync(join(absRoot, HARNESS_MANIFEST_PATH))) {
+        logger.debug('[HarnessSync] Skipping watched projection — the project has no manifest', {
+          root: absRoot,
+          trigger,
+        });
+        return;
+      }
+
+      const claudeSkillsExisted = existsSync(join(absRoot, CLAUDE_SKILLS_DIR));
+      // The shape the projection is ABOUT, read before the plan is built, and
+      // committed as the record only once the projection has succeeded. Both
+      // halves of that are load-bearing. Recorded at detection instead, a
+      // projection that throws is never retried — the change has already been
+      // written down as dealt with. Recorded AFTER instead, a skill an agent
+      // writes DURING the projection is captured by the post-snapshot and is
+      // never planned by anything: the plan that ran never saw it, and the next
+      // comparison thinks it did.
+      const planned = skillsShape(absRoot);
       const result = await withProjectLock(absRoot, () =>
         // `sweepOrphans: false` is the third hazard, and the seam has no default
         // for it precisely so this line has to be written on purpose.
         _internal.projectWithConsent(absRoot, { dorkHome: opts.dorkHome, sweepOrphans: false })
       );
-      shapes.set(absRoot, skillsShape(absRoot));
+      shapes.set(absRoot, planned);
       const { applied, conflicts, withheld, leftAlone } = result;
 
       if (applied.length === 0 && conflicts.length === 0) {
@@ -555,17 +726,32 @@ export function startSkillsWatcher(opts: SkillsWatcherOptions): SkillsWatcherHan
     const trigger = state.trigger;
     // Assigned in the same tick the promise is created, so nothing can slip a
     // second firing for this root into the gap.
-    const run = projectRoot(state.absRoot, trigger).then(() => {
-      state.inFlight = undefined;
-      if (state.again) {
-        state.again = false;
-        schedule(state.absRoot, trigger);
-      } else if (!state.timer) {
-        // Nothing is pending: drop the entry so a server that has watched a
-        // thousand repos over a week holds no state when it is idle.
-        states.delete(key);
+    const run = (async () => {
+      try {
+        await projectRoot(state.absRoot, trigger);
+      } catch (err) {
+        // `projectRoot` contains its own failures, so reaching this is a defect
+        // in it rather than a projection that went wrong. It is caught anyway
+        // because the `finally` below is what keeps the root alive: a rejection
+        // that escaped here would leave `inFlight` set for ever, and every later
+        // event for this repository would coalesce into a firing that never runs.
+        logger.warn('[HarnessSync] Skills trigger threw outside its own guard', {
+          root: state.absRoot,
+          trigger,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        state.inFlight = undefined;
+        if (state.again) {
+          state.again = false;
+          schedule(state.absRoot, trigger);
+        } else if (!state.timer) {
+          // Nothing is pending: drop the entry so a server that has watched a
+          // thousand repos over a week holds no state when it is idle.
+          states.delete(key);
+        }
       }
-    });
+    })();
     state.inFlight = run;
   }
 
@@ -575,6 +761,11 @@ export function startSkillsWatcher(opts: SkillsWatcherOptions): SkillsWatcherHan
     const key = canonicalize(root);
     const state = states.get(key) ?? { absRoot: key, again: false, trigger };
     states.set(key, state);
+    // Last writer wins inside a coalescing window: a burst of events with
+    // different causes becomes one firing, stamped with the most recent. That is
+    // the honest reading of a coalesced projection — and it is why a test that
+    // wants to attribute a firing to one trigger has to pick a trigger nothing
+    // else emits, rather than assuming the stamp cannot be overwritten.
     state.trigger = trigger;
     // A firing is already queued on the lock or running: do NOT queue a second,
     // and do not open a window either. This is the queue bound —
@@ -598,28 +789,64 @@ export function startSkillsWatcher(opts: SkillsWatcherOptions): SkillsWatcherHan
   function projectIfSkillsChanged(root: string, trigger: ProjectionTrigger): void {
     if (stopped) return;
     const absRoot = canonicalize(root);
-    const current = skillsShape(absRoot);
     const previous = shapes.get(absRoot);
-    shapes.set(absRoot, current);
+    // Deliberately does NOT record what it just read. The record is what
+    // "DorkOS has dealt with this" means, and only a projection that finished
+    // can say that — writing it here would retire a change on the strength of
+    // having NOTICED it, so a projection that then failed would never be
+    // retried by anything. `projectRoot` commits the shape it planned from.
+    //
     // No record at all means DorkOS has never looked at this project. Treating
     // that as "unchanged" is how the first skill of a session would be the one
     // that never arrived.
-    if (previous !== undefined && previous === current) return;
+    if (previous !== undefined && previous === skillsShape(absRoot)) return;
     schedule(absRoot, trigger);
   }
 
   /** Catch every root up on what the watcher did not report. */
   function sweep(): void {
-    for (const absRoot of watchers.keys()) projectIfSkillsChanged(absRoot, 'sweep');
+    for (const absRoot of roots) projectIfSkillsChanged(absRoot, 'sweep');
   }
 
-  /** Open one chokidar watch over a root's `.agents/skills`. */
-  function watchRoot(absRoot: string): void {
+  /**
+   * Open a watch for any root whose `.agents/skills` has appeared since the last
+   * look, and project what is in it.
+   *
+   * This is not tidiness — without it such a root is deaf for the life of the
+   * process. See {@link armWatch} for what chokidar actually does with a path
+   * that is not there.
+   */
+  function rearm(): void {
+    if (stopped) return;
+    for (const absRoot of roots) {
+      if (watchers.has(absRoot)) continue;
+      if (!armWatch(absRoot)) continue;
+      projectIfSkillsChanged(absRoot, 'watch-armed');
+    }
+  }
+
+  /**
+   * Open one chokidar watch over a root's `.agents/skills`, if there is one to
+   * open.
+   *
+   * **A watch on a path that does not exist is not a watch.** Measured against
+   * chokidar 5 on macOS: pointed at an absent `.agents/skills`, it watches the
+   * nearest EXISTING ancestor instead, emits a single raw `rename` when the
+   * directory is created, and never watches the directory itself —
+   * `getWatched()` still holds no entry for it ten seconds later. The root is
+   * then deaf for the life of the process, which is why this answers `false`
+   * rather than pretending, and why {@link rearm} exists to come back and open
+   * it the moment the directory appears.
+   *
+   * Creating the directory here would be a write into somebody's repository
+   * because a server started, which is exactly what this module does not do.
+   *
+   * @param absRoot - The project root, canonical and already in bounds.
+   * @returns `true` when a watch is now open on the skills directory.
+   */
+  function armWatch(absRoot: string): boolean {
     const skillsDir = join(absRoot, AGENTS_SKILLS_DIR);
-    // chokidar happily watches a path that does not exist yet and picks it up
-    // when it appears, which is what a project that has never had a skill needs.
-    // Creating the directory here would be a write into somebody's repository
-    // because a server started, which is exactly what this module does not do.
+    if (!existsSync(skillsDir)) return false;
     const watcher = chokidar.watch(skillsDir, {
       persistent: true,
       ignoreInitial: true,
@@ -666,53 +893,114 @@ export function startSkillsWatcher(opts: SkillsWatcherOptions): SkillsWatcherHan
     });
 
     // Settled either way: a watch that errors out must not leave `ready()`
-    // pending for the life of the process.
+    // pending for the life of the process. The settle after it is not padding —
+    // measured against chokidar 5 on macOS, a file written in the instant after
+    // `ready` is dropped 13-40% of the time, while the same watcher left to
+    // settle for {@link SKILLS_SETTLE_MS} first missed 0 of 40. A production
+    // watcher lives for hours so it is past this window immediately; what the
+    // wait buys is that `ready()` means what it says.
     const ready = new Promise<void>((resolve) => {
-      watcher.on('ready', () => resolve());
-      watcher.on('error', () => resolve());
+      const settle = (): void => {
+        const timer = setTimeout(resolve, settleMs);
+        timer.unref?.();
+      };
+      watcher.on('ready', settle);
+      watcher.on('error', settle);
     });
     watchers.set(absRoot, { watcher, ready });
-    // Seeded now, so the first sweep compares against what was here when the
-    // watch opened rather than projecting every root ten seconds after boot.
-    if (!shapes.has(absRoot)) shapes.set(absRoot, skillsShape(absRoot));
     logger.debug('[HarnessSync] Watching for skills an agent writes', { skillsDir });
+    return true;
   }
 
-  /** Bring the watched set in line with the caller's current root list. */
-  function syncRoots(): void {
+  /**
+   * Bring the root set in line with the caller's current list, refusing every
+   * directory the boundary does not cover.
+   *
+   * The refusal is here as well as in {@link projectRoot} on purpose, and they
+   * are not the same check: this one stops DorkOS WATCHING a directory the
+   * operator fenced off, and that one stops it WRITING into one. A root can only
+   * be dropped from the watch set by the caller's list changing, so the write
+   * gate has to stand on its own.
+   */
+  async function syncRoots(): Promise<void> {
+    // Serialized, because the boundary is asked per root and the answers are
+    // awaited: the five-minute rescan and a caller's own `refreshRoots()` can
+    // otherwise be halfway through building their sets at the same time, each
+    // closing watchers the other just opened. Chaining costs nothing when
+    // nobody overlaps, which is every ordinary tick.
+    syncing = syncing.then(runSyncRoots, runSyncRoots);
+    return syncing;
+  }
+
+  /** One pass of {@link syncRoots}; never called concurrently with itself. */
+  async function runSyncRoots(): Promise<void> {
     if (stopped) return;
     const wanted = new Set<string>();
     for (const root of opts.roots()) {
-      if (root.length > 0) wanted.add(canonicalize(root));
+      if (root.length === 0) continue;
+      const absRoot = canonicalize(root);
+      if (!(await withinBoundary(absRoot))) {
+        if (!refusedRoots.has(absRoot)) {
+          refusedRoots.add(absRoot);
+          logger.debug('[HarnessSync] Not watching a project outside the directory boundary', {
+            root: absRoot,
+          });
+        }
+        continue;
+      }
+      wanted.add(absRoot);
     }
+    if (stopped) return;
+
+    // Everything from here down is synchronous, and that is the point: `roots`
+    // is what the sweep and the re-arm iterate, so a pass that emptied it and
+    // refilled it across an `await` would leave a window in which those two
+    // cover nothing at all. The new set is built above, and swapped in here.
     for (const [absRoot, entry] of watchers) {
       if (wanted.has(absRoot)) continue;
       watchers.delete(absRoot);
       void entry.watcher.close();
     }
+    roots.clear();
     for (const absRoot of wanted) {
-      if (!watchers.has(absRoot)) watchRoot(absRoot);
+      const isNew = !shapes.has(absRoot);
+      roots.add(absRoot);
+      // Seeded when the root is TAKEN ON, not when a watch opens on it, and the
+      // difference is the whole of the deaf-root case. Seeded at arm time, a
+      // root whose `.agents/skills` appears later has its very first skill
+      // written down as "what was already here" the instant the watch opens —
+      // so the re-arm finds nothing changed and that skill is never projected.
+      // Seeded here it is `-`, and the directory appearing is a change.
+      if (isNew) shapes.set(absRoot, skillsShape(absRoot));
+      if (!watchers.has(absRoot)) armWatch(absRoot);
     }
   }
 
-  syncRoots();
-  const rescan = setInterval(syncRoots, opts.rootRescanMs ?? SKILLS_ROOT_RESCAN_MS);
+  const firstSync = syncRoots();
+  const rescan = setInterval(() => void syncRoots(), opts.rootRescanMs ?? SKILLS_ROOT_RESCAN_MS);
   rescan.unref?.();
   const sweepMs = opts.sweepMs ?? SKILLS_SWEEP_MS;
   const sweeper = sweepMs > 0 ? setInterval(sweep, sweepMs) : undefined;
   sweeper?.unref?.();
+  const rearmMs = opts.rearmMs ?? SKILLS_REARM_MS;
+  const rearmer = rearmMs > 0 ? setInterval(rearm, rearmMs) : undefined;
+  rearmer?.unref?.();
+
+  /** Every open watch's first scan, plus the settle that makes it trustworthy. */
+  const watchesLive = async (): Promise<void> => {
+    await firstSync;
+    await Promise.all([...watchers.values()].map((entry) => entry.ready));
+  };
 
   return {
     scheduleProjection: schedule,
     projectIfSkillsChanged,
     refreshRoots: syncRoots,
     watchedRoots: () => [...watchers.keys()],
-    async ready(): Promise<void> {
-      await Promise.all([...watchers.values()].map((entry) => entry.ready));
-    },
+    ready: watchesLive,
     async flush(): Promise<void> {
       // A barrier is only a barrier if nothing is still arriving behind it.
-      await Promise.all([...watchers.values()].map((entry) => entry.ready));
+      await watchesLive();
       for (;;) {
         let progressed = false;
         for (const [key, state] of [...states]) {
@@ -733,6 +1021,8 @@ export function startSkillsWatcher(opts: SkillsWatcherOptions): SkillsWatcherHan
       stopped = true;
       clearInterval(rescan);
       if (sweeper) clearInterval(sweeper);
+      if (rearmer) clearInterval(rearmer);
+      roots.clear();
       const running: Promise<void>[] = [];
       for (const state of states.values()) {
         if (state.timer) clearTimeout(state.timer);
@@ -765,10 +1055,27 @@ export interface TurnEndReprojectionOptions {
    * Where a session's turn ran, or `undefined` when nothing knows.
    *
    * Today that is the runtime's own live binding (`AgentRuntime.getSessionCwd`),
-   * which claude-code is the sole implementor of. See the residual in
-   * {@link startTurnEndReprojection}.
+   * which claude-code is the sole implementor of, reached through the session's
+   * bound runtime rather than by asking every registered one. See the residual
+   * in {@link startTurnEndReprojection}.
    */
-  rootForSession: (sessionId: string) => string | undefined;
+  rootForSession: (sessionId: string) => Promise<string | undefined>;
+}
+
+/** What {@link startTurnEndReprojection} answers. */
+export interface TurnEndReprojection {
+  /** Stop listening for turn boundaries. */
+  stop(): void;
+  /**
+   * Resolve once every turn this hook is still placing has been placed.
+   *
+   * The listener detaches its work — it runs inside the projector's event
+   * ingest, which must not be held up — so "the turn ended" and "the projection
+   * was scheduled" are two different moments. This is the barrier between them.
+   *
+   * @internal Exported for testing only; nothing in the server waits on it.
+   */
+  settled(): Promise<void>;
 }
 
 /**
@@ -817,18 +1124,43 @@ export interface TurnEndReprojectionOptions {
  *
  * @param opts - The watcher to schedule on, the boundary subscription, and the
  *   session-to-project resolver.
- * @returns A handle that unsubscribes.
+ * @returns A handle that unsubscribes, and can be waited on.
  */
-export function startTurnEndReprojection(opts: TurnEndReprojectionOptions): { stop(): void } {
+export function startTurnEndReprojection(opts: TurnEndReprojectionOptions): TurnEndReprojection {
+  /** Placements in flight, so {@link TurnEndReprojection.settled} can wait for them. */
+  const placing = new Set<Promise<void>>();
+
   const unsubscribe = opts.subscribe((sessionId, kind) => {
     // A turn that ENDED, and nothing else. `interaction_resolved` is a person
     // answering a prompt mid-turn — the runtime is still writing, which is the
     // one moment a projection must not run.
     if (kind !== 'turn_end') return;
-    const root = opts.rootForSession(sessionId);
-    if (root === undefined || root.length === 0) return;
-    opts.watcher.projectIfSkillsChanged(root, 'turn-end');
+    // Detached, and it has to be: this runs inside the projector's event
+    // ingest, where anything awaited would hold up the turn's own stream. The
+    // work it starts is bounded by the watcher's coalescing and its lock.
+    const placement = (async () => {
+      try {
+        const root = await opts.rootForSession(sessionId);
+        if (root === undefined || root.length === 0) return;
+        opts.watcher.projectIfSkillsChanged(root, 'turn-end');
+      } catch (err) {
+        logger.warn('[HarnessSync] Could not place a finished turn (non-fatal)', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    })();
+    placing.add(placement);
+    void placement.finally(() => placing.delete(placement));
   });
 
-  return { stop: unsubscribe };
+  return {
+    stop: unsubscribe,
+    async settled(): Promise<void> {
+      // A placement can start another only through the watcher, never through
+      // this set, so one drain is enough — but the loop costs nothing and says
+      // so without the reader having to work it out.
+      while (placing.size > 0) await Promise.all([...placing]);
+    },
+  };
 }

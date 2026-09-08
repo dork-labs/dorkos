@@ -262,6 +262,7 @@ import {
   startSkillsWatcher,
   startTurnEndReprojection,
   type SkillsWatcherHandle,
+  type TurnEndReprojection,
 } from './services/harness/skills-watcher.js';
 import { onProjectorTurnBoundary } from './services/session/session-state-projector.js';
 import { DEFAULT_CWD } from './lib/resolve-root.js';
@@ -521,7 +522,7 @@ let taskRegistrar: TaskRegistrar | undefined;
 /** The `.agents/skills` projection watcher; absent when `harness.autoSync` is off. */
 let skillsWatcher: SkillsWatcherHandle | undefined;
 /** The turn-end half of the same trigger; absent whenever {@link skillsWatcher} is. */
-let turnEndReprojection: { stop(): void } | undefined;
+let turnEndReprojection: TurnEndReprojection | undefined;
 /**
  * Start watching a newly registered agent's schedule roots.
  *
@@ -3095,21 +3096,46 @@ async function start() {
       watcher: skillsWatcher,
       subscribe: onProjectorTurnBoundary,
       // The runtime's own live binding is the only cheap, authoritative answer
-      // to "where did this turn run". `getSessionCwd` is optional on the runtime
-      // contract, required never to throw, and implemented by claude-code alone
-      // — so this resolves for the default runtime and returns nothing for the
-      // others, which the watcher covers for the roots it watches.
-      rootForSession: (sessionId) => {
-        for (const runtime of runtimeRegistry.listRuntimes()) {
-          const cwd = runtime.getSessionCwd?.(runtime.getInternalSessionId(sessionId) ?? sessionId);
-          if (cwd) return cwd;
-        }
-        return undefined;
+      // to "where did this turn run". Resolved through the session's OWN runtime
+      // (ADR-0255's per-session binding, the same `resolveForSession` +
+      // `getInternalSessionId` pair `lib/transcript-excerpt.ts` uses) rather
+      // than by asking every registered runtime in turn: that shortcut would
+      // hand one runtime a session id belonging to another, and the first
+      // non-empty answer would win whether or not it was about this session.
+      // `getSessionCwd` is optional on the contract and implemented by
+      // claude-code alone, so this answers for the default runtime and nothing
+      // for the others — which the watcher covers for the roots it watches.
+      //
+      // Whatever it answers is still judged against the boundary before a single
+      // file is written: a session's directory is not a checked input.
+      rootForSession: async (sessionId) => {
+        const runtime = await runtimeRegistry.resolveForSession(sessionId);
+        return runtime.getSessionCwd?.(runtime.getInternalSessionId(sessionId) ?? sessionId);
       },
     });
-    logger.info('[HarnessSync] Watching for skills agents write', {
-      roots: skillsWatcher.watchedRoots().length,
-    });
+    // Logged once the first root pass has actually finished. Read synchronously
+    // it was always `0`: taking a root on means asking the boundary about it,
+    // which resolves the path on disk, so nothing is watched yet in the tick
+    // `startSkillsWatcher` returns. Not awaited either — boot does not wait on a
+    // log line — so this rides the same promise the watcher already had.
+    //
+    // The count is WATCHES, not roots, and the difference is real: a project
+    // whose `.agents/skills` does not exist yet cannot be watched at all
+    // (chokidar silently watches an ancestor instead), so it is covered by the
+    // re-arm until the directory appears. Calling it a watched root would be a
+    // number that says nothing went wrong when the watch is not there.
+    const watcher = skillsWatcher;
+    void watcher
+      .ready()
+      .then(() => {
+        logger.info('[HarnessSync] Watching for skills agents write', {
+          watching: watcher.watchedRoots().length,
+        });
+      })
+      .catch(() => {
+        // `ready()` settles either way; a rejection here would be a defect in it
+        // rather than anything a person can act on.
+      });
   }
 
   // Mount connector routes (connector-gateway spec, DOR-371). The registry
