@@ -35,10 +35,14 @@
  *
  * **1. Firing before the skill exists (TR-06).** A skill directory is created
  * first and its `SKILL.md` written a moment later. The scanner skips a directory
- * with no `SKILL.md`, so a projection between the two does nothing — and the one
- * that matters never happens, because nothing fires again. So a bare `mkdir`
- * triggers NOTHING here: only a `SKILL.md` arriving, changing or going away, or
- * a skill directory being removed. `addDir` is deliberately not wired up.
+ * with no `SKILL.md`, so a projection between the two does nothing — and if that
+ * were the only firing, the skill would never be projected at all. So a
+ * directory is never a trigger here: `addDir` is not wired up, and what fires is
+ * a `SKILL.md` arriving, changing or going away, or a skill directory being
+ * removed. The projection that matters is the one the FILE causes, and it always
+ * still comes. (A projection may happen at `mkdir` time anyway, from the
+ * spurious `change` chokidar sometimes emits for a sibling — see the note at the
+ * end. That is harmless precisely because it does not consume the trigger.)
  *
  * **2. Installing hooks nobody allowed.** A package's hooks are shell commands a
  * harness runs unattended. `project()` from `@dorkos/harness` installs every one

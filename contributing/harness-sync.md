@@ -258,7 +258,7 @@ Three things do NOT count as coverage, so none of them can silence a row: an id 
 **Editing the document alone runs nothing.** `pnpm verify` is affected-only and `meta/` belongs to no package, so after a contract edit run `pnpm vitest run packages/harness/src/__tests__/capabilities-census.test.ts` by hand. What catches it otherwise is the merge queue's full monorepo sweep — and only because `turbo.json` carries a `"@dorkos/harness#test"` override whose `inputs` name the contract and the foreign test paths. Without it the task hash does not move when the document changes, and the queue replays a cached green. `turbo-census-inputs.test.ts` guards the override, including the `$TURBO_DEFAULT$` entry and the restated `dependsOn`/`cache` — a package-scoped override REPLACES the base task rather than merging with it.
 ## 10. Triggers — what starts a projection
 
-Four things call the engine, and the differences between them are the whole design. Each one answers three questions differently: does it **sweep**, does it **ask** about a package's hooks, and does it **scaffold** a harness manifest for a project that has none.
+Five things call the engine, and the differences between them are the whole design. Each one answers three questions differently: does it **sweep**, does it **ask** about a package's hooks, and does it **scaffold** a harness manifest for a project that has none.
 
 | Trigger                              | When                                                            | Sweeps? | Asks? | Scaffolds? | Where                                         |
 | ------------------------------------ | --------------------------------------------------------------- | ------- | ----- | ---------- | --------------------------------------------- |
@@ -270,7 +270,7 @@ Four things call the engine, and the differences between them are the whole desi
 
 \* The CLI cannot raise a card, so it **withholds** an unapproved package's hooks and prints each command it did not install; `--allow-hooks <pkg>` records the same decision a card would.
 
-Every one of them goes through `projectWithConsent` (§8 and `project-with-consent.ts`), which is the only module allowed to hold the engine's `project()`. `__tests__/project-seam-guard.test.ts` reads the source of both trees and fails on any other module that imports it, under any of six spellings.
+Every one of them goes through `projectWithConsent` (§8 and `project-with-consent.ts`), which is the only module allowed to hold the engine's `project()` — with one exemption, and it is granted because it is STRICTER than consent rather than looser: the boot pass denies every installed package's hooks outright (`project-agent-workspace.ts`, contract HK-08), which the seam cannot express because its whole job is to honour an approval. `__tests__/project-seam-guard.test.ts` reads the source of both trees, fails on any other module that imports `project()` under any of six spellings, and pins that exemption to the reason it was given.
 
 ### Why the watcher does not sweep, ask or scaffold
 
