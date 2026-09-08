@@ -76,6 +76,7 @@
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/meta/harness-sync-capabilities.md",
+        "$TURBO_ROOT$/scripts/lib/code-only.mjs",
         "$TURBO_ROOT$/apps/server/src/services/harness/__tests__/**",
         "$TURBO_ROOT$/apps/server/src/services/runtimes/codex/__tests__/scan-skill-commands.test.ts",
         "$TURBO_ROOT$/apps/server/src/services/runtimes/codex/__tests__/skill-parity.test.ts",

@@ -1,9 +1,10 @@
 /**
  * The turbo `inputs` override that lets the census see the files it reads.
  *
- * `capabilities-census.test.ts` reads four things that do not belong to
- * `@dorkos/harness`: the contract in `meta/`, the server's harness tests, the
- * two Codex skill readers, and the CLI's `harness-sync*` tests. Turbo's `test`
+ * `capabilities-census.test.ts` reads five things that do not belong to
+ * `@dorkos/harness`: the contract in `meta/`, the repo's shared comment
+ * stripper, the server's harness tests, the two Codex skill readers, and the
+ * CLI's `harness-sync*` tests. Turbo's `test`
  * task declares no `inputs`, so it is keyed on the package's own files — meaning
  * a renamed CLI test title, or a whole row deleted from the contract, would
  * change nothing turbo hashes and the merge queue's full sweep would REPLAY a
@@ -27,19 +28,34 @@
  * `turbo test`, which is a required merge-queue check, and — because of the very
  * override it guards — it re-runs when any of the foreign paths changes.
  *
- * Proof the override does what it claims, measured 2026-09-08 at this commit
- * with `turbo run test --filter=@dorkos/harness --dry=json`:
+ * ## Proving it, without pinning a number
  *
- * | change                                          | without override   | with override      |
- * | ----------------------------------------------- | ------------------ | ------------------ |
- * | nothing                                         | `a18491d603572762` | `e342570c4dd381e7` |
- * | one line appended to the contract               | `a18491d603572762` | `e0bda73eca2cd083` |
- * | one line appended to `harness-sync.test.ts`     | —                  | `a24fa65a59a37b36` |
- * | one line appended to the server's harness tests | —                  | `6330c97321a4e864` |
- * | one line appended to `scan-skill-commands`      | `a18491d603572762` | `13261f6042e73c57` |
+ * The hashes themselves are machine-specific — every `globalPassThroughEnv`
+ * value folds into them — so quoting one here would be a number that reds on
+ * somebody else's laptop and says nothing when it does. What is portable is the
+ * RELATIONSHIP, and it is reproducible in a minute:
  *
- * The three "without override" hashes are one hash. That is the bug: the
- * contract changed, a foreign test title changed, and turbo could not tell.
+ * ```sh
+ * h() { pnpm exec turbo run test --filter=@dorkos/harness --dry=json \
+ *   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
+ *       const j=JSON.parse(s);console.log(j.tasks.find(t=>t.taskId==="@dorkos/harness#test").hash)})'; }
+ * h                                                    # baseline
+ * echo >> meta/harness-sync-capabilities.md && h       # differs WITH the override
+ * sed -i '' -e '$d' meta/harness-sync-capabilities.md  # undo the one appended line
+ * ```
+ *
+ * The undo is a `sed`, not a pathspec checkout: this repo's git-guard hook
+ * refuses `git checkout -- <path>` outright, because it silently reverts
+ * uncommitted work and has eaten some here (AGENTS.md Hard Rule 6). The first
+ * draft of this recipe ended with one, and the hook blocked the very edit that
+ * removed it. `echo` appends exactly one line, so dropping the last one puts
+ * the file back.
+ *
+ * Measured 2026-09-08 with each of the SIX foreign inputs touched one at a
+ * time — seven runs counting the baseline: **without the override all seven
+ * produce one identical hash** — the contract changed, the stripper changed, a
+ * foreign test title changed, and turbo could not tell — **and with it all
+ * seven differ.** That, not a digest, is the property.
  *
  * @module __tests__/turbo-census-inputs
  */
@@ -64,6 +80,8 @@ const TASK = '@dorkos/harness#test';
 const REQUIRED_INPUTS: Readonly<Record<string, string>> = {
   $TURBO_DEFAULT$: "the package's own files, which an explicit `inputs` would otherwise replace",
   '$TURBO_ROOT$/meta/harness-sync-capabilities.md': 'the contract the census parses',
+  '$TURBO_ROOT$/scripts/lib/code-only.mjs':
+    'the shared stripper the census blanks comments with, so a title in a docstring is not coverage',
   '$TURBO_ROOT$/apps/server/src/services/harness/__tests__/**':
     'the server test titles the census reads',
   '$TURBO_ROOT$/apps/server/src/services/runtimes/codex/__tests__/scan-skill-commands.test.ts':
