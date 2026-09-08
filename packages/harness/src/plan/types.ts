@@ -173,11 +173,14 @@ export interface DriftResult {
   /** Actions whose target does not yet match the plan (missing, stale, or wrong). */
   drifted: ProjectionAction[];
   /**
-   * Generate actions the engine cannot apply because a file it does not own
-   * occupies the target — what `--fix` will report as a conflict. Not drift: no
-   * amount of re-running fixes it, and the person has to move or delete the file
-   * first. Reported separately so `--check` can name it and still exit non-zero,
-   * without claiming a projection is merely stale.
+   * Actions the engine cannot apply because something it does not own occupies
+   * the target — what `--fix` will report as a conflict. Both projection kinds
+   * that write a path are here: a `generate` whose file is somebody else's, and
+   * a `symlink` with a real file or directory where the link goes. Not drift: no
+   * amount of re-running fixes it, and the person has to move or delete what is
+   * there first — or, for the commonest case by far, turn symlinks on in a clone
+   * that has them off (J-10). Reported separately so `--check` can name it and
+   * still exit non-zero, without claiming a projection is merely stale.
    */
   blocked: ProjectionAction[];
   /**

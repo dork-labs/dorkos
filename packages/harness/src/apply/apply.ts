@@ -27,7 +27,6 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  readlinkSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -40,7 +39,8 @@ import { AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.
 import type { ClaudeHooksConfig } from '../generate/hooks.js';
 import { HAND_WRITTEN_HOOKS_REASON, readFileIfPresent } from './generated-ownership.js';
 import { findOrphanedAuthoredLinks, sweepAuthoredOrphans } from './authored-orphans.js';
-import { isDanglingSymlink, isSymlink, listDir, pathExists } from './link-state.js';
+import { isDanglingSymlink, isSymlink, listDir, occupantKind, pathExists } from './link-state.js';
+import { blockingSymlinkOccupant, linkCheckFor, linkMatchesPlan } from './symlink-occupants.js';
 import {
   applyGeneratedHookFile,
   findBlockedGenerateTargets,
@@ -61,6 +61,14 @@ import { mergeManagedHooks, sweepManagedHooks, managedHooksDrift } from './setti
 
 /** Skill projection dirs an installed-orphan sweep must scan (Codex + Claude Code). */
 const INSTALLED_SKILL_DIRS = [AGENTS_SKILLS_DIR, CLAUDE_SKILLS_DIR] as const;
+
+/**
+ * How this platform decides whether a link on disk is the link the plan wants.
+ *
+ * Resolved once at module scope: it is a property of the running platform, not
+ * of any one path, and `--check` and `--fix` must ask the same question.
+ */
+const LINK_CHECK = linkCheckFor(process.platform);
 
 /**
  * True when a scaffold target already holds a pointer.
@@ -100,11 +108,13 @@ function symlinkType(repoRoot: string, source: string): 'junction' | 'file' | un
 /**
  * Create or repair a relative symlink for a `symlink` action.
  *
- * @returns `true` when the symlink now matches the plan; `false` when a *real*
- *   (non-symlink) file or directory occupies the target — a conflict that is left
- *   untouched rather than destroyed, exactly like {@link applyScaffold}.
+ * @returns `undefined` when the symlink now matches the plan; the one-line reason
+ *   to report when a *real* (non-symlink) file or directory occupies the target —
+ *   a conflict that is left untouched rather than destroyed, exactly like
+ *   {@link applyScaffold}. The reason comes from the same predicate `checkPlan`
+ *   reads, so the two modes can never disagree about a path neither may touch.
  */
-function applySymlink(repoRoot: string, action: ProjectionAction): boolean {
+function applySymlink(repoRoot: string, action: ProjectionAction): string | undefined {
   if (!action.source || !action.target) {
     throw new Error(`symlink action for "${action.name}" is missing source/target`);
   }
@@ -112,13 +122,17 @@ function applySymlink(repoRoot: string, action: ProjectionAction): boolean {
   const linkText = relativeLink(repoRoot, action.source, action.target);
 
   if (pathExists(absTarget)) {
-    if (!isSymlink(absTarget)) return false; // a real file/dir — never destroy hand-authored content
-    if (readlinkSync(absTarget) === linkText) return true; // already the correct managed symlink
+    // A real file/dir — never destroy hand-authored content, and say what it is.
+    const blocked = blockingSymlinkOccupant(absTarget, linkText);
+    if (blocked !== undefined) return blocked;
+    if (linkMatchesPlan(absTarget, join(repoRoot, action.source), linkText, LINK_CHECK)) {
+      return undefined; // already the correct managed link
+    }
     rmSync(absTarget, { force: true }); // a stale *managed* symlink — safe to replace
   }
   mkdirSync(dirname(absTarget), { recursive: true });
   symlinkSync(linkText, absTarget, symlinkType(repoRoot, action.source));
-  return true;
+  return undefined;
 }
 
 /**
@@ -457,10 +471,13 @@ export function applyPlan(
 
   for (const action of plan.actions) {
     switch (action.kind) {
-      case 'symlink':
-        if (applySymlink(repoRoot, action)) applied.push(action);
-        else conflicts.push(action); // a real file/dir blocks the symlink — left intact
+      case 'symlink': {
+        const blockedReason = applySymlink(repoRoot, action);
+        // A real file/dir blocks the link — left intact, with the way out.
+        if (blockedReason === undefined) applied.push(action);
+        else conflicts.push({ ...action, reason: blockedReason });
         break;
+      }
       case 'scaffold':
         applyScaffold(repoRoot, action);
         applied.push(action);
@@ -517,8 +534,15 @@ function isDrifted(repoRoot: string, action: ProjectionAction): boolean {
     case 'symlink': {
       if (!action.source || !action.target) return true;
       const absTarget = join(repoRoot, action.target);
-      if (!isSymlink(absTarget)) return true;
-      return readlinkSync(absTarget) !== relativeLink(repoRoot, action.source, action.target);
+      // A real file or directory here is BLOCKED, not stale — `--fix` will refuse
+      // it, so calling it drift would tell the person to run a command they then
+      // watch decline. `checkPlan` reports it in `blocked` instead. Absent, and a
+      // link of either kind pointing somewhere else, are the real drift.
+      const kind = occupantKind(absTarget);
+      if (kind === 'absent') return true;
+      if (kind === 'file' || kind === 'directory') return false;
+      const linkText = relativeLink(repoRoot, action.source, action.target);
+      return !linkMatchesPlan(absTarget, join(repoRoot, action.source), linkText, LINK_CHECK);
     }
     case 'scaffold':
       return !action.target || !scaffoldPresent(join(repoRoot, action.target));
@@ -557,11 +581,37 @@ function isDrifted(repoRoot: string, action: ProjectionAction): boolean {
 }
 
 /**
+ * Symlink targets a real file or directory occupies — what `--fix` will report as
+ * a conflict, gathered without touching disk.
+ *
+ * The twin of {@link findBlockedGenerateTargets}, reading the same predicate
+ * `applySymlink` reads, so `--check` and `--fix` say the same sentence about the
+ * same path. The commonest instance by far is not anybody's mistake: a clone
+ * whose `core.symlinks` is off has a plain file at EVERY authored link (J-10).
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (its symlink targets are checked).
+ * @returns the blocked symlink actions, each carrying its reason.
+ */
+function findBlockedSymlinkTargets(repoRoot: string, plan: ProjectionPlan): ProjectionAction[] {
+  const blocked: ProjectionAction[] = [];
+  for (const action of plan.actions) {
+    if (action.kind !== 'symlink' || !action.source || !action.target) continue;
+    const reason = blockingSymlinkOccupant(
+      join(repoRoot, action.target),
+      relativeLink(repoRoot, action.source, action.target)
+    );
+    if (reason !== undefined) blocked.push({ ...action, reason });
+  }
+  return blocked;
+}
+
+/**
  * Diff a projection plan against the current on-disk state without mutating it.
  *
  * Four answers, deliberately kept apart: what is stale and a re-run would fix
  * (`drifted`), what a re-run would report as a conflict because somebody's own
- * file occupies a target the plan writes (`blocked`), what a re-run would sweep
+ * file occupies a target the plan writes or links (`blocked`), what a re-run would sweep
  * because the skill it pointed at is gone (`orphans`), and what the engine simply
  * stepped over (`leftAlone`). The first three make a tree unclean — each is
  * something a `--fix` would change on disk — and the last does not: a person who
@@ -580,7 +630,10 @@ function isDrifted(repoRoot: string, action: ProjectionAction): boolean {
  */
 export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
   const drifted = plan.actions.filter((action) => isDrifted(repoRoot, action));
-  const blocked = findBlockedGenerateTargets(repoRoot, plan);
+  const blocked = [
+    ...findBlockedGenerateTargets(repoRoot, plan),
+    ...findBlockedSymlinkTargets(repoRoot, plan),
+  ];
   const orphans = findOrphanedAuthoredLinks(repoRoot, plan);
   return {
     drifted,

@@ -559,6 +559,38 @@ describe('runHarnessSync', () => {
     expect(printed).toContain('.claude/settings.json');
   });
 
+  it('--check explains a checkout with symlinks turned off, instead of calling it drift', async () => {
+    // What a teammate's clone looks like when git could not make the link: a
+    // plain file holding the path the link should have pointed at (J-10). Staged
+    // directly here rather than through a clone — the engine's journey test owns
+    // the real `git clone -c core.symlinks=false`; this one owns the printed
+    // text, which is the whole of what the person on that checkout sees.
+    writeFixtureRepo(tmpDir);
+    process.chdir(tmpDir);
+    await runHarnessSync({ check: false, fix: true }); // project `demo`
+    const projected = path.join(tmpDir, '.claude', 'skills', 'demo');
+    // Exactly what git writes for a symlink blob: the relative target path,
+    // spelled with POSIX separators on every platform. Deliberately NOT
+    // `readlinkSync`, which on Windows answers the junction's ABSOLUTE target
+    // and would stage a different shape entirely (measured on a windows-latest
+    // runner, DOR-1855).
+    fs.rmSync(projected, { force: true });
+    fs.writeFileSync(projected, '../../.agents/skills/demo');
+    logSpy.mockClear();
+
+    const check = await runHarnessSync({ check: true, fix: false });
+
+    expect(check.exitCode).toBe(1);
+    const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(printed).toContain('symlinks are turned off in this checkout');
+    expect(printed).toContain('git config core.symlinks true');
+    expect(printed).toContain('.claude/skills/demo');
+    // The report used to say the opposite of the truth: the link was "drift",
+    // and the way out was to run the `--fix` that would then refuse it.
+    expect(printed).not.toContain('Drift detected');
+    expect(printed).not.toContain('Run `dorkos harness sync --fix` to apply.');
+  });
+
   it('--check reports a dead link at a generated file as drift instead of crashing', async () => {
     // The file was moved away and a broken link left behind. There is nothing to
     // read at that path, so there is no ownership question — it is stale, and
