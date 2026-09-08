@@ -182,10 +182,13 @@ on:
   #      rewrite this file to leak the OAuth token — and the action itself exits
   #      successfully:
   #      "Skipping action due to workflow validation ... must ... have identical
-  #      content to the version on the repository's default branch". So a change
-  #      here is unreviewable and untestable until it lands. After merging, come
-  #      back and dispatch against a known PR number: run from the default branch
-  #      the content matches, the guard passes, and the review actually runs.
+  #      content to the version on the repository's default branch". A trusted
+  #      default-branch dispatch can still review that PR's head and post a verdict
+  #      (measured on run 34175828534). That dispatch executes the workflow and final
+  #      gate from the default branch. The automatic run still proves a proposed
+  #      gate fails closed when validation blocks the review; after merging, dispatch
+  #      against a known PR number again to prove the successful-review path under
+  #      the merged gate.
   # Dispatch already requires write access, so it needs no author gate; it is an
   # explicit human action and therefore ignores `skip-review` and draft state. It
   # still refuses fork PRs (see "Resolve target PR").
