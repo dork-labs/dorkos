@@ -43,6 +43,42 @@ const baseTunnel = {
   domain: null,
 } as unknown as TunnelReport;
 
+/** How the cockpit was started, for the cases where that is the subject. */
+interface SetupOptions {
+  /**
+   * What the browser remembers about the tunnel from a PREVIOUS launch.
+   *
+   * Present means a warm boot: the config query is seeded exactly the way
+   * `hydrate` seeds it out of the boot cache — see
+   * {@link rememberFromLastLaunch}.
+   */
+  remembered?: Partial<TunnelReport>;
+}
+
+/**
+ * Seed the config query the way a warm boot does.
+ *
+ * **The real mechanism, not a mime of it.** `['config','current']` is on the
+ * boot cache's allow-list (`shared/lib/boot-cache-keys.ts`), so the WHOLE
+ * config — tunnel block included — is written to `localStorage` and restored on
+ * the next load, up to 24 hours later. `hydrate` restores the entry with the
+ * `dataUpdatedAt` of its ORIGINAL fetch rather than restamping it to now, which
+ * is the only reason a launch comparison can tell the two apart. `setState` is
+ * the exact lever it pulls.
+ *
+ * @param client - The query client the model will read from.
+ * @param tunnel - The tunnel block as it was when the blob was written.
+ */
+function rememberFromLastLaunch(client: QueryClient, tunnel: Partial<TunnelReport>): void {
+  const anHourAgo = Date.now() - 60 * 60 * 1000;
+  client.setQueryData(configKeys.current(), {
+    tunnel: { ...baseTunnel, ...tunnel },
+  } as unknown as ServerConfig);
+  client.getQueryCache().find({ queryKey: configKeys.current() })?.setState({
+    dataUpdatedAt: anHourAgo,
+  });
+}
+
 /**
  * Mount the model over one mock transport.
  *
@@ -53,12 +89,13 @@ const baseTunnel = {
  * because nothing had happened YET, which is the one way a test like that can
  * be worthless.
  */
-function setup(initial: Partial<TunnelReport> = {}) {
+function setup(initial: Partial<TunnelReport> = {}, options: SetupOptions = {}) {
   let served: TunnelReport = { ...baseTunnel, ...initial };
   const transport: Transport = createMockTransport({
     getConfig: vi.fn(() => Promise.resolve({ tunnel: served } as unknown as ServerConfig)),
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  if (options.remembered !== undefined) rememberFromLastLaunch(queryClient, options.remembered);
 
   const { result } = renderHook(
     () => {
@@ -870,5 +907,73 @@ describe('two readers, one reduction (DOR-1743)', () => {
     expect(toast.error).not.toHaveBeenCalled();
     expect(result.current.rowView.state).toBe('off');
     expect(result.current.beaconView.state).toBe('off');
+  });
+});
+
+describe('a tunnel the browser remembers is not a tunnel that is up', () => {
+  /**
+   * The warm-boot half of the model, and the reason it needs its own block.
+   *
+   * `['config','current']` rides the boot cache, so a reload starts with a
+   * server report already in hand — one written up to 24 hours ago, about a
+   * tunnel that has had all that time to stop. Everything in this block is the
+   * difference between "the server said so" and "the browser remembered it".
+   */
+
+  it('does not offer a link to a tunnel that stopped since the last launch', async () => {
+    // The concrete harm: the beacon draws only when remote access `isLive`, and
+    // what it draws is a copyable URL and a QR code. Reduced from a remembered
+    // config, it offered both for an ngrok address that answers nothing — you
+    // scan it on your phone and get a dead page.
+    const { result } = setup(
+      { connected: false, isRunning: false, url: null },
+      { remembered: { connected: true, isRunning: true, url: 'https://gone.ngrok.app' } }
+    );
+
+    // Asserted on the FIRST paint, before the real read lands, because that is
+    // the whole of the defect: the remembered answer is what the first frame
+    // reduces.
+    expect(result.current.remote.isLive).toBe(false);
+    expect(result.current.remote.url).toBeNull();
+    expect(result.current.remote.hasServerReport).toBe(false);
+
+    await settled(result);
+    expect(result.current.remote.state).toBe('off');
+  });
+
+  it('does not announce a tunnel that was already off as having just turned off', async () => {
+    // The baseline seeds from the FIRST report the announcer accepts. Seeded
+    // from a remembered `on`, this launch's honest `off` read as a transition
+    // and fired "Remote access turned off" at somebody who had turned it off
+    // yesterday and touched nothing today.
+    const { result } = setup(
+      { connected: false, isRunning: false, url: null },
+      { remembered: { connected: true, isRunning: true, url: 'https://gone.ngrok.app' } }
+    );
+
+    // Waited on the STATE and not on `hasServerReport`, which is the thing
+    // under test: with the old gate that flag was already true on the first
+    // paint, so `settled` returned before this launch had asked anything and
+    // the assertion below passed over a defect it never reached.
+    await waitFor(() => expect(result.current.remote.state).toBe('off'));
+
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.warning).not.toHaveBeenCalled();
+  });
+
+  it('still announces a tunnel that drops after the launch has been answered', async () => {
+    // The other half: forgetting the remembered report must not make the model
+    // deaf. Once THIS launch has an answer, a change is still news.
+    const { result, serverReports } = setup(
+      { connected: true, isRunning: true, url: 'https://abc.ngrok.app' },
+      { remembered: { connected: true, isRunning: true, url: 'https://abc.ngrok.app' } }
+    );
+    await settled(result);
+    expect(result.current.remote.state).toBe('connected');
+
+    await serverReports({ connected: false, isRunning: false, url: null });
+
+    expect(result.current.remote.state).toBe('off');
+    expect(toast.error).toHaveBeenCalled();
   });
 });

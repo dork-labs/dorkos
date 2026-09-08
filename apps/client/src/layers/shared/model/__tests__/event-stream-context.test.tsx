@@ -226,6 +226,58 @@ describe('refetch-on-reconnect', () => {
     expect(predicate({ queryKey: ['sessions'], meta: {} })).toBe(true);
   });
 
+  it('invalidates along the path a real reconnect actually takes', async () => {
+    // **The transition production makes, which is not the one above.** A
+    // recovery runs through `WSConnection.connect()`, and the first thing that
+    // does is announce `connecting` — so the sequence a person's browser
+    // produces is `reconnecting → connecting → connected`, never
+    // `reconnecting → connected`. Gated on the immediately previous state, this
+    // handler was satisfied only by a transition the connection never makes,
+    // and the re-sync it exists for never ran once outside this file.
+    renderHook(() => useEventStream(), { wrapper: Wrapper });
+
+    fireState('reconnecting', 1);
+    mockInvalidateQueries.mockClear();
+    fireState('connecting', 1);
+    fireState('connected', 0);
+
+    await vi.waitFor(() => expect(mockInvalidateQueries).toHaveBeenCalledOnce());
+  });
+
+  it('invalidates after the stream gave up and later came back', async () => {
+    // The outage that most needs a re-sync. A stream that exhausts its retry
+    // ladder says `disconnected`, not `reconnecting`, and the wake-up that
+    // follows — the tab coming back to the foreground — reconnects from there.
+    // So the laptop that slept for an hour has to re-sync too, and by the same
+    // rule: the stream was down, and now it is not.
+    renderHook(() => useEventStream(), { wrapper: Wrapper });
+
+    fireState('disconnected', 5);
+    mockInvalidateQueries.mockClear();
+    fireState('connecting', 5);
+    fireState('connected', 0);
+
+    await vi.waitFor(() => expect(mockInvalidateQueries).toHaveBeenCalledOnce());
+  });
+
+  it('spends one outage on exactly one invalidation', async () => {
+    // The latch has to be cleared when it fires. Left armed, every later
+    // `connected` — a heartbeat re-announce, a visibility wake that finds the
+    // socket already open — would sweep the whole cache again.
+    renderHook(() => useEventStream(), { wrapper: Wrapper });
+
+    fireState('reconnecting', 1);
+    fireState('connecting', 1);
+    fireState('connected', 0);
+    await vi.waitFor(() => expect(mockInvalidateQueries).toHaveBeenCalled());
+    mockInvalidateQueries.mockClear();
+
+    fireState('connected', 0);
+    await import('@/layers/shared/lib/query-client');
+
+    expect(mockInvalidateQueries).not.toHaveBeenCalled();
+  });
+
   it('does not invalidate on initial connecting → connected', async () => {
     renderHook(() => useEventStream(), { wrapper: Wrapper });
 

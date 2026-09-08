@@ -61,8 +61,23 @@ let reconnectInvalidationInstalled: boolean =
   import.meta.hot?.data?.reconnectInvalidationInstalled === true;
 
 /**
+ * The states that mean the stream was DOWN, as opposed to merely opening.
+ *
+ * `connecting` is deliberately absent, and that is the whole distinction this
+ * set exists to draw: it is the state the manager starts in
+ * (`listConnectionState`, `stream-manager.ts`) and the state every single
+ * connect attempt passes through, so treating it as an outage would re-sync the
+ * whole cache on the first connect of every page load — undoing the boot
+ * cache's purpose and re-asking the server for everything it had just answered.
+ */
+const DOWN_STATES: ReadonlySet<ConnectionState> = new Set<ConnectionState>([
+  'reconnecting',
+  'disconnected',
+]);
+
+/**
  * Invalidate TanStack Query caches whenever the global stream recovers from a
- * disconnect (reconnecting → connected). Server state may have changed while
+ * disconnect (see {@link DOWN_STATES}). Server state may have changed while
  * the stream was down; a full invalidation is the honest re-sync.
  *
  * **Except for caches a stream of their own already owns.** A query that
@@ -85,9 +100,21 @@ function installReconnectInvalidation(): void {
     import.meta.hot.data.reconnectInvalidationInstalled = true;
   }
 
-  let previousState: ConnectionState = streamManager.getListConnectionState();
+  // **Whether the stream has been DOWN since the last time it was up — not what
+  // it said one message ago.** This used to compare against the immediately
+  // previous state and fire only on `reconnecting → connected`, a transition
+  // the connection never actually makes: recovery runs through `connect()`,
+  // which announces `connecting` first (`ws-connection.ts`), so every real
+  // reconnect arrived as `connecting → connected` and the re-sync this whole
+  // handler exists for never ran. A latch spans that intermediate state, which
+  // is the only way to tell a recovery from a first connect.
+  //
+  // Reset the moment it is spent, so one outage buys exactly one invalidation.
+  let wasDown = DOWN_STATES.has(streamManager.getListConnectionState());
   streamManager.subscribeListConnectionState((state) => {
-    if (state === 'connected' && previousState === 'reconnecting') {
+    if (DOWN_STATES.has(state)) wasDown = true;
+    if (state === 'connected' && wasDown) {
+      wasDown = false;
       import('@/layers/shared/lib/query-client').then(
         ({ queryClient, isStreamOwnedQuery }) => {
           queryClient.invalidateQueries({ predicate: (query) => !isStreamOwnedQuery(query) });
@@ -97,7 +124,6 @@ function installReconnectInvalidation(): void {
         }
       );
     }
-    previousState = state;
   });
 }
 

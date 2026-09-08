@@ -21,6 +21,7 @@
 
 import { useEffect } from 'react';
 import { useConfig } from '@/layers/entities/config';
+import { LAUNCH_STARTED_AT } from '@/layers/shared/lib';
 import { tunnelHost } from '../lib/tunnel-host';
 import { readTunnelReport, type TunnelReport } from './tunnel-report';
 import { useRemoteAccessStore, type TunnelState } from './remote-access-store';
@@ -38,7 +39,7 @@ export interface RemoteAccessSnapshot {
   /** Whether an ngrok auth token is saved on the server — the one-time setup. */
   tokenConfigured: boolean;
   /**
-   * Whether the server has actually told us anything yet.
+   * Whether the server has told us anything THIS launch.
    *
    * Before it has, every field above is a PLACEHOLDER and not a fact: `off` is
    * what "we have not asked yet" looks like, and a reader that cannot tell the
@@ -46,6 +47,10 @@ export interface RemoteAccessSnapshot {
    * been made twice here — a toast announcing "Remote access is on" about a
    * tunnel that had been on all along, and a beacon rippling at page load for
    * the same reason.
+   *
+   * "This launch" and not "ever", because the boot cache remembers the config
+   * across reloads — see {@link useRemoteAccessReducer}. A tunnel the browser
+   * remembers is not a tunnel that is up.
    */
   hasServerReport: boolean;
   /**
@@ -121,11 +126,14 @@ export function useRemoteAccessSnapshot(): RemoteAccessSnapshot {
  * shell's own sync hook can guarantee the store is current even on a route
  * where nothing draws remote access.
  *
- * **Nothing is reduced until the config read has actually ANSWERED.** An
+ * **Nothing is reduced until the server has answered THIS launch.** An
  * unanswered query reads as `off`, and applying that would put a placeholder in
  * the store dressed as a fact — which is precisely what makes the next, real
- * answer look like a change. The store already starts at `off`, so waiting
- * costs nothing and buys `hasServerReport` its meaning.
+ * answer look like a change. A config restored from the boot cache is the same
+ * mistake wearing better clothes: it is a real answer to a question asked
+ * yesterday, and a tunnel is exactly the kind of fact that does not keep. The
+ * store already starts at `off`, so waiting costs nothing and buys
+ * `hasServerReport` its meaning.
  *
  * @returns The raw server block.
  * @internal
@@ -144,7 +152,21 @@ export function useRemoteAccessReducer(): { tunnel: TunnelReport | undefined } {
   // merely spoke again.
   const { status: reportedStatus, url: reportedUrl } = readTunnelReport(tunnel);
   const tokenConfigured = !!tunnel?.tokenConfigured;
-  const answered = serverConfig !== undefined;
+  // **Answered THIS launch, because a remembered tunnel is not a running one.**
+  // `['config','current']` is on the boot cache's allow-list
+  // (`shared/lib/boot-cache-keys.ts`), and the blob carries the WHOLE config —
+  // the tunnel block included, up to 24 hours old. So `serverConfig !==
+  // undefined` stopped meaning "the server told us" the moment that cache
+  // shipped: on a warm boot it is true before a single request has gone out,
+  // and what it is true ABOUT is last night's tunnel.
+  //
+  // Reduced anyway, it put `connected` and a dead ngrok URL into the store as
+  // fact — which is what `hasServerReport` exists to prevent, and what the
+  // beacon and ⌘K then offered as a link and a QR code somebody could scan.
+  // The launch comparison is the same evidence test `AppShell` and the moments
+  // rail already use, and a query that has never resolved reports
+  // `dataUpdatedAt: 0`, safely before it.
+  const answered = serverConfig !== undefined && dataUpdatedAt > LAUNCH_STARTED_AT;
 
   const applyServerReport = useRemoteAccessStore((s) => s.applyServerReport);
   const noteTokenConfigured = useRemoteAccessStore((s) => s.noteTokenConfigured);
