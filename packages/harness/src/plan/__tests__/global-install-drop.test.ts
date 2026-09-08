@@ -1,6 +1,6 @@
 /**
- * SRC-04, slice A1 — the line a person reads about a package installed for
- * every project.
+ * SRC-04 and SRC-12, slice A1 — the two lines a person reads about a package
+ * installed for every project.
  *
  * Before this slice the drop said `global-scope install; a project sync does not
  * project global plugins (run a global sync)`. There is no global sync: `dorkos
@@ -8,7 +8,8 @@
  * `--allow-hooks`, `--enable` and `--write-gitignore`, and nothing accepts a
  * scope. The sentence sent people looking for a command that has never existed,
  * and it could not say what was in the package anyway. These cases pin the two
- * honest forms that replace it.
+ * honest forms that replace it, and the notice a package installed at BOTH
+ * scopes earns.
  *
  * **The staged HOME is snapshotted across the whole file** (`beforeAll` /
  * `afterAll`). `buildPlan` is pure and the scan only reads, so nothing here may
@@ -172,5 +173,62 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
         'It has no skills to share.'
     );
     expect(drop?.reason).not.toMatch(/skills are not shared/);
+  });
+});
+
+describe('SRC-12 — the same package installed at both scopes', () => {
+  /** The frozen notice, with the package name interpolated where the copy says `{pkg}`. */
+  function notice(pkg: string): string {
+    return (
+      `is installed twice: once for all your projects, and once in this project. ` +
+      `Claude Code uses the all-projects copy, even here. Codex shows both. ` +
+      `Uninstall one if you only meant to have one. ` +
+      `Run dorkos uninstall ${pkg} --project .  to remove this project's copy. ` +
+      `Run dorkos uninstall ${pkg}  to remove the all-projects copy. ` +
+      `Both need DorkOS running, and both ask you first.`
+    );
+  }
+
+  it('SRC-12: the same name at both scopes produces exactly one project-level notice carrying both scopes', () => {
+    // Seeded defect: emit it per harness. This project runs three agent tools, so
+    // the notice appears three times — about a package, under a tool's heading.
+    const plan = planFor(repoWith({ name: 'globex', version: '2.0.0' }));
+
+    const notices = plan.drops.filter((d) => d.reason?.startsWith('is installed twice'));
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({
+      kind: 'drop',
+      artifact: 'plugin',
+      name: 'globex',
+      harnessAgnostic: true,
+      reason: notice('globex'),
+    });
+    // Both scopes are carried: the global copy still earns its own drop beside
+    // the notice, and the project copy still projects.
+    expect(dropsFor(plan, 'globex')).toHaveLength(2);
+    expect(plan.actions.some((a) => a.name === 'globex__greet')).toBe(true);
+    // Once in the report, under the package heading rather than a tool's.
+    const report = formatDropList(plan);
+    expect(report.split('is installed twice')).toHaveLength(2);
+    expect(report).toContain('plugin layers:');
+  });
+
+  it('SRC-12: the notice is still produced when one copy has no readable DorkOS manifest, and carries no version numbers', () => {
+    // Seeded defect: gate the notice on the global copy's own manifest being
+    // readable — anything that would let it quote a version. The notice then goes
+    // missing on exactly the packages whose manifests say least.
+    //
+    // A `.dork/manifest.json` that will not PARSE removes the package from the
+    // scan entirely (`readPluginManifest` answers `undefined`), so the shape that
+    // reaches a plan with nothing to quote is the Claude-Code-native package:
+    // installed verbatim, no DorkOS manifest, no version and no layers on disk.
+    const plan = planFor(repoWith({ name: 'ccnative', version: '3.1.4' }));
+
+    const notices = plan.drops.filter((d) => d.reason?.startsWith('is installed twice'));
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.reason).toBe(notice('ccnative'));
+    // No version number anywhere in it, from either copy.
+    expect(notices[0]?.reason).not.toMatch(/\d+\.\d+\.\d+/);
+    expect(notices[0]?.reason).not.toContain('3.1.4');
   });
 });

@@ -253,6 +253,20 @@ function stagePlugin(
   if (parts.hooksJson !== undefined) writeAt(join(plugin, 'hooks', 'hooks.json'), parts.hooksJson);
 }
 
+/** Install a package of this name for every project, under the staged dork home. */
+function stageGlobalPlugin(home: string, name: string): void {
+  const plugin = join(home, 'plugins', name);
+  writeJsonAt(join(plugin, '.dork', 'manifest.json'), {
+    schemaVersion: 1,
+    name,
+    version: '9.9.9',
+    type: 'plugin',
+    description: `The ${name} package`,
+    layers: ['skills'],
+  });
+  writeSkill(join(plugin, 'skills', 'greet'), 'greet');
+}
+
 /**
  * A Claude-Code-only project with one plugin whose skill mentions
  * `${CLAUDE_PLUGIN_ROOT}`.
@@ -484,6 +498,41 @@ describe('VC-01 — the status model derives eight states from five reads', () =
     ]);
     expect(status.rows.some((r) => r.name.startsWith('acme:'))).toBe(false);
     expect(allCells(status).some((c) => c?.reason?.includes('mcp-servers'))).toBe(false);
+  });
+
+  it('SRC-12: a package installed at both scopes earns one project-level notice, in no cell', () => {
+    // Seeded defect: emit the notice per harness. It is a fact about the package
+    // and the agent tools disagree about what it means, so a per-tool entry both
+    // triples the line and files it under a heading that cannot be honest about
+    // it. The engine flags it `harnessAgnostic`; this is the half of the claim
+    // that the status model routes such an entry to `projectLevel` and to no cell.
+    const { repo, home } = stageBare('bothscopes', ['claude-code', 'codex', 'cursor']);
+    stagePlugin(repo, 'globex', { layers: ['skills'] });
+    stageGlobalPlugin(home, 'globex');
+
+    const status = statusOf(repo, home);
+
+    const notices = status.projectLevel.filter((e) => e.reason.startsWith('is installed twice'));
+    expect(notices).toEqual([
+      {
+        kind: 'drop',
+        artifact: 'plugin',
+        name: 'globex',
+        reason:
+          'is installed twice: once for all your projects, and once in this project. ' +
+          'Claude Code uses the all-projects copy, even here. Codex shows both. ' +
+          'Uninstall one if you only meant to have one. ' +
+          "Run dorkos uninstall globex --project .  to remove this project's copy. " +
+          'Run dorkos uninstall globex  to remove the all-projects copy. ' +
+          'Both need DorkOS running, and both ask you first.',
+      },
+    ]);
+    // Never a cell, and never a row: three tools run here and none of them is
+    // what the line is about.
+    expect(allCells(status).some((c) => c?.reason?.includes('installed twice'))).toBe(false);
+    expect(status.rows.some((r) => r.name === 'globex')).toBe(false);
+    // No version number, from either copy (the project one is 1.0.0, the global 9.9.9).
+    expect(notices[0]?.reason).not.toMatch(/\d+\.\d+\.\d+/);
   });
 
   it('VC-01: a stale claudeOnlySkills entry is project-level even with Claude Code enabled', () => {

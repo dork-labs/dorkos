@@ -34,7 +34,7 @@ import {
   planHooks,
 } from './hooks-projection.js';
 import { planInstruction } from './instructions.js';
-import { globalInstallDropReason } from './global-installs.js';
+import { globalInstallDropReason, planBothScopesNotices } from './global-installs.js';
 
 import { isProjectScoped, type InstalledPlugin } from '../sources/installed.js';
 import {
@@ -603,6 +603,12 @@ export function buildPlan(input: {
   for (const plugin of globalInstalls) {
     all.push(dropWholePlugin(plugin, globalInstallDropReason(plugin)));
   }
+
+  // The same package at both scopes: one notice for the package, never one per
+  // agent tool (SRC-12). It says what each tool does with the pair and resolves
+  // nothing, because a DorkOS-side precedence would be unenforceable — the
+  // projection is a symlink in a directory the tool reads on its own terms.
+  all.push(...planBothScopesNotices(installedPlugins));
 
   return {
     actions: all.filter((a) => a.kind !== 'drop'),

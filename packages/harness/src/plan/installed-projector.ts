@@ -814,7 +814,14 @@ export function dropNonPortableLayers(plugin: InstalledPlugin): ProjectionAction
     }));
 }
 
-/** Drop a whole plugin (one action) with the given reason — for global or unsupported-type plugins. */
+/**
+ * Drop a whole plugin (one action) with the given reason.
+ *
+ * Three emitters use it: a global install, a package whose type is not
+ * harness-portable, and the both-scopes notice (`plan/global-installs.ts`). All
+ * three are answers about a PACKAGE rather than about one agent tool, which is
+ * what {@link ProjectionAction.harnessAgnostic} says here.
+ */
 export function dropWholePlugin(plugin: InstalledPlugin, reason: string): ProjectionAction {
   return {
     kind: 'drop',

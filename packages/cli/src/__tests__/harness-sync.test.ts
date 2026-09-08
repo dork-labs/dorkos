@@ -130,6 +130,25 @@ function writeInstalledPlugin(root: string, name: string, skill: string): void {
   fs.writeFileSync(path.join(plugin, 'skills', skill, 'SKILL.md'), `# ${skill}\n`);
 }
 
+/** The same package, installed for every project under the staged DORK_HOME. */
+function writeGlobalPlugin(home: string, name: string, skill: string): void {
+  const plugin = path.join(home, 'plugins', name);
+  fs.mkdirSync(path.join(plugin, '.dork'), { recursive: true });
+  fs.writeFileSync(
+    path.join(plugin, '.dork', 'manifest.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      name,
+      version: '9.9.9',
+      type: 'plugin',
+      description: 'A fixture plugin',
+      layers: ['skills'],
+    })
+  );
+  fs.mkdirSync(path.join(plugin, 'skills', skill), { recursive: true });
+  fs.writeFileSync(path.join(plugin, 'skills', skill, 'SKILL.md'), `# ${skill}\n`);
+}
+
 /**
  * A project-scoped plugin shipping all three layers a sync projects — a skill,
  * a slash command and a hook — so uninstalling it leaves an orphan in every
@@ -349,6 +368,35 @@ describe('runHarnessSync', () => {
     expect(fs.lstatSync(projected).isSymbolicLink()).toBe(true);
     expect(fs.realpathSync(projected)).toBe(
       fs.realpathSync(path.join(tmpDir, '.dork', 'plugins', 'acme', 'skills', 'greet'))
+    );
+  });
+
+  it('SRC-04, SRC-12: says what a global install holds, and names a package installed at both scopes once', async () => {
+    // Two things a person reads in the terminal, both about a package rather than
+    // about one agent tool, so both land under the `plugin layers:` heading.
+    //
+    // Seeded defect for the first: restore the old drop string. The block then
+    // tells the reader to "run a global sync", which no `dorkos harness sync`
+    // flag has ever accepted. Seeded defect for the second: emit the both-scopes
+    // notice per harness — this project runs three, so it prints three times.
+    writeFixtureRepo(tmpDir);
+    writeInstalledPlugin(tmpDir, 'acme', 'greet');
+    writeGlobalPlugin(homeDir, 'acme', 'greet');
+    writeGlobalPlugin(homeDir, 'globex', 'nightly');
+    process.chdir(tmpDir);
+
+    await runHarnessSync(syncArgs({ check: true, fix: false }));
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(printed).toContain('plugin layers:');
+    expect(printed).toContain(
+      '- plugin "globex": installed for all your projects. Only the Claude Code sessions ' +
+        'DorkOS runs can see it. Its 1 skills are not shared with this project: nightly'
+    );
+    expect(printed).not.toMatch(/global sync/);
+    expect(printed.split('is installed twice')).toHaveLength(2);
+    expect(printed).toContain(
+      "Run dorkos uninstall acme --project .  to remove this project's copy."
     );
   });
 
