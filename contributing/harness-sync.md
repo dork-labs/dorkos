@@ -303,7 +303,7 @@ Two rules about that recorded shape, both of which were bugs first:
 
 The engine's own `<pkg>__<name>` links are excluded from the shape by the same predicate the event filter uses — they are this trigger's output, not its input.
 
-Both holes sit under `services/tasks/task-file-watcher.ts` too, where the five-minute reconciler is what covers them.
+All three holes sat under `services/tasks/task-file-watcher.ts` too, and DOR-1908 reproduced every one of them there: the absent root was never discovered (no events at all, `getWatched()` empty ten seconds after the `mkdir`), a schedule written straight after `ready` was lost 3 times in 40 against 0 in 40 with the settle, and 80 of 80 trial watches on this machine raised `EMFILE` and then reported nothing. The scheduler now answers them in the same three shapes, with one difference worth knowing about: its watch arms with `ignoreInitial: true` and a **catch-up scan** after the settle, because it has to build a whole row set rather than react to a change, and a scan reads a root the same way its reconciler does. `TaskFileWatcher` reports which roots have no live watch, and `TaskReconciler` covers exactly those every ten seconds instead of every five minutes.
 
 ### Two more things the watcher has to get right
 

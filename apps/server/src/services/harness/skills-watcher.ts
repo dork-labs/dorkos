@@ -105,22 +105,34 @@
  * twice, in fact — a burst inside {@link SKILLS_COALESCE_MS} becomes one
  * projection, and everything during a held lock becomes one more.
  *
- * ## Three deliberate differences from the scheduler's watcher
+ * ## Where this and the scheduler's watcher agree, and where they do not
  *
  * `services/tasks/task-file-watcher.ts` watches the same directory for a
- * different reason, and this module copies its chokidar shape — `depth: 1`, and
+ * different reason, and the two share a chokidar shape — `depth: 1`, and
  * `awaitWriteFinish: { stabilityThreshold: 50, pollInterval: 25 }`, so a file
- * still being written is not read half-formed. Three things differ:
+ * still being written is not read half-formed.
  *
- * - **A watch is only opened when there is something to watch.** The scheduler
- *   points chokidar at the path whether or not it exists, which for an absent
- *   `.agents/skills` means no watch at all and no way to notice (see
- *   {@link armWatch}). {@link rearm} is what comes back for it.
- * - **`ignoreInitial: true`.** The scheduler has to build its whole row set from
- *   what is already on disk, so it cannot ignore the initial scan. A projection
- *   of what is already there is `backfillAgentWorkspaceSkills`'s job at boot;
- *   this trigger is about what appears WHILE DorkOS is running, and firing one
- *   projection per watched root at startup would only duplicate that pass.
+ * They also share the three answers to the three holes, which they did NOT when
+ * this module was written: refusing to arm on an absent directory, a re-arm, a
+ * settle after `ready`, an error handler that latches, and a cheap per-root
+ * comparison on a ten-second cadence. DOR-1908 took them there. Two bullets that
+ * stood here — "the scheduler points chokidar at a path whether or not it
+ * exists" and "the scheduler cannot ignore the initial scan" — described a build
+ * that no longer exists, and are gone rather than corrected.
+ *
+ * What genuinely still differs:
+ *
+ * - **What replaces the initial scan.** Both pass `ignoreInitial: true`. Here
+ *   there is nothing to replace it with, and nothing to replace: a projection of
+ *   what is already on disk is `backfillAgentWorkspaceSkills`'s job at boot, and
+ *   this trigger is about what appears WHILE DorkOS is running. The scheduler
+ *   has to build a whole row set, so it runs an explicit catch-up scan after the
+ *   settle instead — through the same door its reconciler reads roots with.
+ * - **What the comparison compares.** {@link skillsShape} reads the ENTRIES'
+ *   modification times, because only the SET of skills changes what a projection
+ *   would do. A schedule is the opposite: editing the `cron:` inside an existing
+ *   `SKILL.md` is the whole change and moves no entry, so `taskRootShape` stats
+ *   the file. That one is also why the shapes could not simply be shared.
  * - **Directories, never files.** Every file the engine writes lands by
  *   temp-file-plus-rename, which swaps the directory entry — measured on macOS,
  *   a path-watcher on such a file sees nothing at all across three replaces
@@ -231,8 +243,9 @@ export const SKILLS_ROOT_RESCAN_MS = 300_000;
  * every watched FILE on a much shorter timer, for ever, on a laptop already
  * running several agents.
  *
- * The same two exposures sit under the scheduler's watcher, where the
- * five-minute reconciler is what covers them.
+ * The same exposures sit under the scheduler's watcher, which since DOR-1908
+ * answers them the same way: its reconciler drops from five minutes to ten
+ * seconds for exactly the roots whose watch is deaf or dead.
  */
 export const SKILLS_SWEEP_MS = 10_000;
 
