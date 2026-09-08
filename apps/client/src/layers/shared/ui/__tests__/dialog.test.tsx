@@ -81,3 +81,45 @@ describe('a dialog is a card at every width', () => {
     expect(panel.className).not.toContain('sm:rounded-lg');
   });
 });
+
+// The close button spent five days in the bottom-left corner of every settings,
+// marketplace and schedule dialog, because it was placed IN the panel's flow —
+// `self-start justify-self-end` reads as top-right in a grid and as "left, under
+// the content" in the `flex flex-col` panel `ResponsiveDialogContent` builds.
+// jsdom lays nothing out, so these read the rule: the control is positioned out
+// of flow, against the panel's own corner, and asks the panel's layout nothing.
+describe('the close button sits in the corner of any dialog', () => {
+  function closeButton(panelClassName?: string) {
+    render(
+      <Dialog open>
+        <DialogContent className={panelClassName}>
+          <DialogTitle>Rename this room</DialogTitle>
+          <DialogDescription>Pick a new name.</DialogDescription>
+        </DialogContent>
+      </Dialog>
+    );
+    return screen.getByRole('button', { name: 'Close' });
+  }
+
+  it('anchors the control to the panel rather than to a cell in its layout', () => {
+    expect(closeButton()).toHaveClass('absolute', 'top-4', 'right-4');
+  });
+
+  it('places it the same way when the panel is a flex column', () => {
+    // What `ResponsiveDialogContent` does to every dialog that goes through it.
+    // A caller's `className` wins the merge, so any placement this file derives
+    // from `grid` is a placement the caller can silently delete.
+    const button = closeButton('flex flex-col');
+    expect(button).toHaveClass('absolute', 'top-4', 'right-4');
+    for (const inFlowPlacement of [
+      'sticky',
+      'row-span-full',
+      'self-start',
+      'justify-self-end',
+      '-mt-2',
+      '-mr-2',
+    ]) {
+      expect(button).not.toHaveClass(inFlowPlacement);
+    }
+  });
+});
