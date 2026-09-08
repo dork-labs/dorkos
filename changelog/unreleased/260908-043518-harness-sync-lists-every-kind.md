@@ -5,6 +5,11 @@ covers:
   - 'feat(harness): every kind in .claude/ is listed, and none stays silent (DOR-1845)'
   - 'docs(harness): say what the sync now lists (DOR-1845)'
   - 'docs(contributing): how the source inventory and its reason tables work (DOR-1845)'
+  - 'fix(skills): the gray-matter cache trap is closed at both call sites (DOR-1845)'
+  - 'fix(harness): the inventory walks what the harness reads (DOR-1845)'
+  - 'fix(harness): a drop names the file it is about, and the facts decide who reads it (DOR-1845)'
+  - 'test(harness): the generator stages the shapes that were silent (DOR-1845)'
+  - "docs(harness): the contract's resolved cells, and the traps behind them (DOR-1845)"
 ---
 
 ### Added
