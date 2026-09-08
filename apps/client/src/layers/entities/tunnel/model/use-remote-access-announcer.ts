@@ -19,6 +19,7 @@
 import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { useConfig } from '@/layers/entities/config';
+import { LAUNCH_STARTED_AT } from '@/layers/shared/lib';
 import { readTunnelReport, type ReportedStatus } from './tunnel-report';
 import { useRemoteAccessStore } from './remote-access-store';
 
@@ -26,12 +27,21 @@ import { useRemoteAccessStore } from './remote-access-store';
  * Announce remote-access changes the person did not make.
  *
  * Nothing is announced on load, however the tunnel already was: the baseline is
- * seeded only once the config query has actually answered, so opening the app
- * with a tunnel already up is not mistaken for it having just come up.
+ * seeded only once the config query has answered THIS launch, so opening the
+ * app with a tunnel already up is not mistaken for it having just come up — and
+ * neither is a tunnel the browser merely remembers from a previous one.
  */
 export function useRemoteAccessAnnouncer(): void {
-  const { data: serverConfig } = useConfig();
-  const hasServerReport = serverConfig !== undefined;
+  const { data: serverConfig, dataUpdatedAt } = useConfig();
+  // **The baseline has to be an answer from THIS launch.** The boot cache
+  // restores `['config','current']` from `localStorage`, tunnel block and all,
+  // so on a warm reload this used to seed the baseline from what remote access
+  // was doing yesterday. Turn the tunnel off, come back tomorrow, and the first
+  // real answer read as a transition off — announcing "Remote access turned
+  // off" about something that had been off the whole time, on a load where
+  // nobody touched anything. Same evidence test as `AppShell` and the moments
+  // rail; a never-resolved query reports `dataUpdatedAt: 0`, safely before it.
+  const hasServerReport = serverConfig !== undefined && dataUpdatedAt > LAUNCH_STARTED_AT;
   const { status: reportedStatus, url: reportedUrl } = readTunnelReport(serverConfig?.tunnel);
 
   const previousStatusRef = useRef<ReportedStatus | undefined>(undefined);
