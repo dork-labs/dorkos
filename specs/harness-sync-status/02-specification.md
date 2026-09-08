@@ -503,8 +503,28 @@ project in a state the page is built to render — "DorkOS isn't sharing agent f
 turning that into an error class makes every caller re-derive the difference between "no such endpoint" and
 "nothing set up here".
 
-**Failures that are still failures:** a missing or blank `projectPath` is `400`; a path outside the boundary
-is `403`; an unexpected throw is `500` with the message logged, not echoed.
+**Failures that are still failures:** a missing, blank or **relative** `projectPath` is `400`; a path outside
+the boundary is `403`; an unexpected throw is `500` with the message logged, not echoed.
+
+Two more the first draft of this section missed, both settled at implementation (DOR-1892):
+
+- **A `projectPath` that leads nowhere is `404`, not a `200 not-set-up`.** The status model reads `ENOENT`
+  the same way whether a project is empty or absent and says so in its own docs, and the boundary validator
+  does **not** settle it either — measured, `validateBoundaryOrDorkHome` canonicalizes a not-yet-existing path
+  through its deepest existing ancestor and RETURNS it, which is deliberately what lets a workspace about to
+  be cloned validate. So the route takes one `stat` after the boundary check. Telling somebody "DorkOS isn't
+  sharing agent files for this folder yet" about a folder that is not there is the thing this prevents, and
+  `404` is what `GET /api/directory` — the other route on this validator — already answers.
+- **A `projectPath` that is a file, not a directory, is `400`.** The same `stat`, the same neighbour's answer
+  (`Not a directory`). Without it the manifest read fails with `ENOTDIR` rather than `ENOENT` and the caller
+  gets `unreadable` carrying a raw `ENOTDIR: not a directory, open …` where the parse-failure sentence belongs.
+
+**Relative is refused rather than resolved.** `path.isAbsolute` is checked in the route, not in
+`HarnessStatusQuerySchema`: that schema lives in `@dorkos/shared/harness-schemas`, which the client imports,
+and `node:path` is both a Node module and a platform-dependent answer (`C:\…` is absolute on Windows and not
+on POSIX). A relative path would otherwise resolve against the server's own `process.cwd()` — still
+boundary-checked, so nothing escapes, but the answer describes a directory the caller never named, chosen by
+wherever the operator started the process.
 
 #### 2.2 `POST /api/harness/sync`
 
@@ -1149,19 +1169,23 @@ cases J-01 cannot produce.
 
 `apps/server/src/routes/__tests__/harness.test.ts`.
 
-| Case                                                                                                                                            | Seeded defect                                                      |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `AP-03 / DOR-678`: a GET on a manifest-less repo answers `not-set-up` **and a whole-tree path-set snapshot is byte-identical before and after** | call `scaffoldManifest` in the route                               |
-| a GET on an agent home under `{dorkHome}/agents/*` answers `200`                                                                                | swap `validateBoundaryOrDorkHome` for `validateBoundary` → `403`   |
-| a GET outside the boundary answers `403`                                                                                                        | drop the validator                                                 |
-| a POST on a manifest-less repo answers `409 harness_not_set_up` and writes nothing                                                              | let `loadManifest` throw → a `500` and a stack in the log          |
-| `VC-05`: a POST presenting an agent identity answers `403`; the same call without one, `200`                                                    | drop the `resolveDecisionAuthority` bar                            |
-| `TR-08`: a POST repairs a deleted link, and the **returned** status is `clean`                                                                  | return the pre-apply status                                        |
-| `AP-07`: a POST sweeps an uninstalled package's projections — exact before/after tree diff — and `swept` names every path it deleted            | pass `sweepOrphans: false`; the swept paths survive                |
-| the GET's `sweepPreview` **equals** the next POST's `swept` — set equality, on the ten-path fixture of §2.2.1                                   | revert Slice 2b's union: the preview is 1 path and the sweep is 10 |
-| `HK-11`: a hand-written `.codex/hooks.json` with no sidecar survives the POST and is reported as a conflict                                     | widen the sweep past sidecar-matched files                         |
-| `VC-02`: the POST raises one card per unapproved package and returns without awaiting it                                                        | `await` the cards; the test times out                              |
-| `runAutoProjection`'s existing suite passes unchanged after the asking half is extracted                                                        | drop `reproject` from the extracted signature                      |
+| Case                                                                                                                                            | Seeded defect                                                                |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `AP-03 / DOR-678`: a GET on a manifest-less repo answers `not-set-up` **and a whole-tree path-set snapshot is byte-identical before and after** | call `scaffoldManifest` in the route                                         |
+| a GET on an agent home under `{dorkHome}/agents/*` answers `200`                                                                                | swap `validateBoundaryOrDorkHome` for `validateBoundary` → `403`             |
+| a GET outside the boundary answers `403`                                                                                                        | drop the validator                                                           |
+| a GET on a path inside the boundary that does not exist answers `404`, not `200 not-set-up`                                                     | drop the `stat`; the validator returns the path and the model reads `ENOENT` |
+| a GET on a path that is a file answers `400`                                                                                                    | drop the `isDirectory` check; `200 unreadable` carries a raw `ENOTDIR`       |
+| a GET with a relative `projectPath` answers `400`                                                                                               | drop the `isAbsolute` refinement; it resolves against the server's cwd       |
+| a GET whose dependency throws answers `500` with `{ error: 'Internal server error' }` and nothing of the failure, and logs it                   | echo `err.message` into the body                                             |
+| a POST on a manifest-less repo answers `409 harness_not_set_up` and writes nothing                                                              | let `loadManifest` throw → a `500` and a stack in the log                    |
+| `VC-05`: a POST presenting an agent identity answers `403`; the same call without one, `200`                                                    | drop the `resolveDecisionAuthority` bar                                      |
+| `TR-08`: a POST repairs a deleted link, and the **returned** status is `clean`                                                                  | return the pre-apply status                                                  |
+| `AP-07`: a POST sweeps an uninstalled package's projections — exact before/after tree diff — and `swept` names every path it deleted            | pass `sweepOrphans: false`; the swept paths survive                          |
+| the GET's `sweepPreview` **equals** the next POST's `swept` — set equality, on the ten-path fixture of §2.2.1                                   | revert Slice 2b's union: the preview is 1 path and the sweep is 10           |
+| `HK-11`: a hand-written `.codex/hooks.json` with no sidecar survives the POST and is reported as a conflict                                     | widen the sweep past sidecar-matched files                                   |
+| `VC-02`: the POST raises one card per unapproved package and returns without awaiting it                                                        | `await` the cards; the test times out                                        |
+| `runAutoProjection`'s existing suite passes unchanged after the asking half is extracted                                                        | drop `reproject` from the extracted signature                                |
 
 **No `FakeAgentRuntime`.** These routes touch no runtime; the fixture is a temp repo plus a fake
 `HookApprovalGateway` (the narrow interface `hook-approval.ts` exports for exactly this). Wiring a runtime in
