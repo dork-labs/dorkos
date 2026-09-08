@@ -89,9 +89,12 @@ describe('formatWarnings', () => {
     expect(out).toContain('${CLAUDE_PLUGIN_ROOT}');
   });
 
-  it('files a read-time loss under "plugin layers" rather than the harness it names', () => {
+  it('files a package’s read-time loss under "plugin layers" rather than the harness it names', () => {
     // An unreadable hook declaration reaches no harness at all, so `claude-code`
     // on it is a placeholder the report must not repeat back (contract VC-02).
+    // The `source` is what says WHICH agnostic heading: it is a file inside the
+    // package's own install directory. `planUnreadableHookWarnings` has carried
+    // one since DOR-1845's review; this fixture predated that and omitted it.
     const out = formatWarnings({
       actions: [],
       drops: [],
@@ -101,12 +104,37 @@ describe('formatWarnings', () => {
           harness: 'claude-code',
           harnessAgnostic: true,
           name: 'acme:Stop',
+          source: '.dork/plugins/acme/hooks/hooks.json',
           reason: '.dork/plugins/acme/hooks/hooks.json declares "Stop" in a shape …',
         },
       ],
       notEnabled: [],
     });
     expect(out).toContain('plugin layers:');
+    expect(out).not.toContain('claude-code:');
+  });
+
+  it('files the person’s own unreadable file under "this project"', () => {
+    // The other agnostic bucket, and the reason there are two: a `.mcp.json` at
+    // the repo root is not a plugin layer, and a project with nothing installed
+    // was reading `plugin layers:` over a file it wrote itself.
+    const out = formatWarnings({
+      actions: [],
+      drops: [],
+      warnings: [
+        {
+          artifact: 'mcp',
+          harness: 'claude-code',
+          harnessAgnostic: true,
+          name: '.mcp.json',
+          source: '.mcp.json',
+          reason: '.mcp.json is not valid JSON …',
+        },
+      ],
+      notEnabled: [],
+    });
+    expect(out).toContain('this project:');
+    expect(out).not.toContain('plugin layers:');
     expect(out).not.toContain('claude-code:');
   });
 

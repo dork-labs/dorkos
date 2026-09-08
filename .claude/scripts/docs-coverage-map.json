@@ -281,7 +281,9 @@
       "description": "@dorkos/harness projects .agents/ skills/hooks/tasks + marketplace plugins to every harness",
       "patterns": [
         "packages/harness/",
-        "harness-sync-command"
+        "harness-sync-command",
+        "apps/server/src/services/harness/",
+        "harness-schemas"
       ]
     },
     {

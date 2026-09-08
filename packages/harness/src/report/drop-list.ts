@@ -10,8 +10,8 @@
 import type { ProjectionAction, ProjectionPlan } from '../plan/types.js';
 
 /**
- * The heading a harness-agnostic entry is grouped under, instead of a harness
- * name it has no real relationship with.
+ * The heading an entry about an installed PACKAGE is grouped under, instead of a
+ * harness name it has no real relationship with.
  *
  * A non-portable plugin layer has no home in ANY harness, and a hook declaration
  * the reader could not use reaches none of them — but both must carry a
@@ -21,15 +21,60 @@ import type { ProjectionAction, ProjectionPlan } from '../plan/types.js';
  */
 const PACKAGE_HEADING = 'plugin layers';
 
-/** The heading each entry is filed under: its harness, or the package heading. */
-function headingFor(entry: { harness: string; harnessAgnostic?: boolean }): string {
-  return entry.harnessAgnostic === true ? PACKAGE_HEADING : entry.harness;
+/**
+ * The heading for everything else that is about no single harness: something in
+ * the person's OWN tree that no agent tool is to blame for.
+ *
+ * The two need separate headings because `plugin layers:` is a lie about them.
+ * Once the read-time losses started declaring themselves agnostic (DOR-1891), a
+ * project with no packages installed at all was printing `plugin layers:` over a
+ * rule in `.claude/rules/`, its own root `.mcp.json`, and a stale
+ * `claudeOnlySkills` entry in its manifest — three files the person wrote, filed
+ * under a word for something they had never used.
+ */
+const PROJECT_HEADING = 'this project';
+
+/** Where an installed package's files live, and the one thing that marks an entry as being about one. */
+const PLUGIN_DIR_PREFIX = '.dork/plugins/';
+
+/**
+ * Whether an agnostic entry is about an installed package rather than about the
+ * person's own tree.
+ *
+ * Sourced entries answer by path — a `hooks/hooks.json` under `.dork/plugins/` is
+ * a package's, a `.mcp.json` at the root is the project's. The sourceless ones
+ * are all `artifact: 'plugin'` (a whole package, or one of its layers) and have
+ * nothing but their kind to go on, which is enough because nothing else emits
+ * that artifact without a source.
+ *
+ * So this leans on every agnostic emitter carrying a `source` when it has one to
+ * carry, which is the same property that lets a warning be matched to the
+ * artifact it concerns. An emitter that forgets lands its entry here, under a
+ * heading about the person's own tree — wrong, and quiet. Both halves are pinned
+ * in `__tests__/drop-list.test.ts`.
+ */
+function isAboutAPackage(entry: { artifact: string; source?: string }): boolean {
+  return entry.source === undefined
+    ? entry.artifact === 'plugin'
+    : entry.source.startsWith(PLUGIN_DIR_PREFIX);
+}
+
+/** The heading each entry is filed under: its harness, or one of the two agnostic ones. */
+function headingFor(entry: {
+  harness: string;
+  harnessAgnostic?: boolean;
+  artifact: string;
+  source?: string;
+}): string {
+  if (entry.harnessAgnostic !== true) return entry.harness;
+  return isAboutAPackage(entry) ? PACKAGE_HEADING : PROJECT_HEADING;
 }
 
 /**
  * Render `plan.drops` as a readable, honest block grouped by harness — with
- * everything that is NOT about one harness under a `plugin layers:` heading of
- * its own (see {@link PACKAGE_HEADING}).
+ * everything that is NOT about one harness under a heading of its own:
+ * `plugin layers:` for an installed package's, `this project:` for the person's
+ * own tree (see {@link PACKAGE_HEADING} and {@link PROJECT_HEADING}).
  *
  * @param plan - the projection plan whose drops to format.
  * @returns a multi-line report, or a clean-state message when there are no drops.
