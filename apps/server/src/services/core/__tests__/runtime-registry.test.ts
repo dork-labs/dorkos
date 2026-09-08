@@ -577,11 +577,12 @@ describe('RuntimeRegistry', () => {
         expect(row?.agentPath).toBe('/first/path');
       });
 
-      it('seeds the trust stop only for a session a person is watching', async () => {
-        // The interactive-only boundary at the seam that decides it. A room turn
-        // reaches this same method (`room-turn-runner`) and must never inherit
-        // the cockpit's default, so the runtime's declared modes — the thing that
-        // turns a configured stop into a mode id — ride only the flagged call.
+      it('resolves the trust stop only for a session a person is watching', async () => {
+        // The interactive-only boundary at the seam that decides it. RESOLVING a
+        // stop into a mode id needs the runtime's declared modes, and they ride
+        // only the flagged call — so a caller that has not said a person is
+        // watching gets no resolution here. What an unattended caller may do is
+        // resolve its own and hand it over, which is the next test.
         interactiveDefaults = { permissionMode: 'bypassPermissions' };
 
         await registry.persistSessionRuntime('session-attended', 'claude-code', undefined, {
@@ -593,6 +594,55 @@ describe('RuntimeRegistry', () => {
           db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, id)).get();
         expect(read('session-attended')?.permissionMode).toBe('bypassPermissions');
         expect(read('session-unattended')?.permissionMode).toBeNull();
+      });
+
+      it('seeds a mode an unattended caller resolved for itself (DOR-1917)', async () => {
+        // The room path's half of the same rule: nobody is watching, so it does
+        // not claim to be interactive — it asks for the operator's level by name
+        // at its own call site and hands the answer over. Without this a room
+        // session's SECOND turn falls back to the runtime's default even though
+        // its first ran at full power.
+        await registry.persistSessionRuntime('session-room', 'claude-code', undefined, {
+          permissionMode: 'bypassPermissions',
+        });
+
+        expect(
+          db
+            .select()
+            .from(sessionMetadata)
+            .where(eq(sessionMetadata.sessionId, 'session-room'))
+            .get()?.permissionMode
+        ).toBe('bypassPermissions');
+      });
+
+      it('never lets that seed overwrite a mode already on the row', async () => {
+        // "Applies to new conversations, running ones keep their settings." A row
+        // that already names a mode was written by somebody's choice, and a
+        // binding write is not a place to revisit it.
+        //
+        // The stored mode is one this runtime DECLARES, deliberately: an
+        // undeclared one is dropped by `claimedPermissionMode` before any seed
+        // is considered, so a test that stored one would pass for a reason that
+        // has nothing to do with the rule it names.
+        db.insert(sessionMetadata)
+          .values({
+            sessionId: 'session-chosen',
+            permissionMode: 'default',
+            createdAt: new Date().toISOString(),
+          })
+          .run();
+
+        await registry.persistSessionRuntime('session-chosen', 'claude-code', undefined, {
+          permissionMode: 'bypassPermissions',
+        });
+
+        expect(
+          db
+            .select()
+            .from(sessionMetadata)
+            .where(eq(sessionMetadata.sessionId, 'session-chosen'))
+            .get()?.permissionMode
+        ).toBe('default');
       });
 
       it("hands the resolver the runtime's OWN declared modes, never a table here", async () => {

@@ -83,7 +83,12 @@
  * @module services/session/trigger-turn
  */
 import type { MessageOpts, SseResponse, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
-import type { InterruptReceipt, SessionSettings, StreamEvent } from '@dorkos/shared/types';
+import type {
+  InterruptReceipt,
+  PermissionModeId,
+  SessionSettings,
+  StreamEvent,
+} from '@dorkos/shared/types';
 import type { ClientContext, RoomContextData } from '@dorkos/shared/additional-context';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
@@ -464,9 +469,32 @@ export interface TriggerTurnOpts {
    * Deliberately narrower than `SessionSettings`: model and effort are the two
    * a caller may resolve for one turn. `permissionMode` and `fastMode` are
    * posture, not preference, and must not be smuggled in as a per-send override
-   * that outranks what the person set on the session.
+   * that outranks what the person set on the session. A first-turn permission
+   * seed has its own field, {@link TriggerTurnOpts.newSessionPermissionMode},
+   * precisely so it cannot arrive disguised as a preference.
    */
   settings?: Pick<SessionSettings, 'model' | 'effort'>;
+  /**
+   * The permission mode a session with NO stored settings should start its very
+   * first turn at (DOR-1917).
+   *
+   * **A seed, never an override, and the name is the whole guarantee.** It is
+   * separate from {@link TriggerTurnOpts.settings} because the condition it
+   * rides under cannot be expressed in that field: a room's `session_metadata`
+   * row is written after its turn starts, so the first turn cannot inherit a
+   * posture the ordinary way, while every later turn must. A caller sends this
+   * only for a session it has established has no stored settings — and since
+   * there is nothing stored, there is nothing to outrank. Every runtime resolves
+   * a turn as `per-send → persisted → its own default`, so on any other session
+   * this would silently beat a person's choice.
+   *
+   * The room turn runner is the only caller, and it sends the operator's own
+   * configured power level, resolved through `resolveUnattendedPermissionMode`
+   * against the runtime the turn landed on and clamped to entries written on
+   * this machine. The session route never sends one: by the time it dispatches,
+   * the row exists and governs.
+   */
+  newSessionPermissionMode?: PermissionModeId;
   /**
    * The dispatcher's id for this message, handed to the runtime so a `result`
    * can be correlated back to the message that caused it.
@@ -744,6 +772,11 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         ...(accountHint !== undefined ? { accountHint } : {}),
         ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),
         ...settings,
+        // After `settings`, and it cannot collide with it: that type has no
+        // permission key. See the field's docblock for why it is not in there.
+        ...(opts.newSessionPermissionMode !== undefined
+          ? { permissionMode: opts.newSessionPermissionMode }
+          : {}),
       }),
       () => {
         signalFirstEvent();

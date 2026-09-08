@@ -61,6 +61,7 @@ import {
   deriveSessionActivity,
   persistenceModeFor,
   resolveUnattendedSessionDefaults,
+  resolveUnattendedPermissionMode,
   type SessionStateProjector,
 } from '../session/index.js';
 import type {
@@ -338,9 +339,15 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
    * everything the pump yields BEFORE it (`plan.statusEvents`) is on the wrong
    * side of it. That is inert today because the only producer of a status event
    * there is the auto-permission-mode downgrade, and a room turn cannot be
-   * `permissionMode: 'auto'` (it passes no `interactive` flag, so it takes the
-   * runtime's `'default'`). A future status event yielded before the boot would
-   * spend this one shot on nothing, with every test still green.
+   * `permissionMode: 'auto'`. **Read the current reason, not the old one**
+   * (DOR-1917): a room turn used to take the runtime's own `'default'` because
+   * it asked for no configured mode at all, and it now follows the operator's
+   * trust stop like every other unattended surface. What keeps `'auto'` out is
+   * narrower — `resolveTrustStops` returns the FIRST mode declared at a stop,
+   * and claude-code declares `acceptEdits` before `auto` at `act`, so no stop
+   * resolves to it. An adapter that reorders those two declarations makes this
+   * reachable. A future status event yielded before the boot would spend this
+   * one shot on nothing, with every test still green.
    */
   const stopsWaitingForATurn = new Set<string>();
   /**
@@ -580,6 +587,15 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // closing it would mean holding the session lock across a config read on
       // the room's hot path to fix a race a person can only lose by changing a
       // setting in the same instant a room message arrives.
+      //
+      // **For the permission mode that window has a direction worth naming**: the
+      // change that loses is a TIGHTENING, which is the one direction the product
+      // says out loud everywhere else (`isTightening` in `permission-semantics`,
+      // and `permissionModePendingUntilNextTurn` on the session route). It is one
+      // turn, and it is reachable only by lowering the default in the same beat a
+      // room message arrives for a session that has no row yet — but a tightening
+      // that silently does not land is worth knowing about, not worth rounding
+      // off into the model-and-effort sentence above.
       // Which `runtimes.*` section holds this runtime's defaults, and whether it
       // takes an effort at all, are the RUNTIME's own declarations. They are
       // handed to the resolver rather than looked up there: the registry imports
@@ -589,14 +605,39 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // and {@link resolveUnattendedSessionDefaults} is the same call a
       // relay-triggered turn makes, so the two surfaces answer identically for
       // one agent rather than drifting the way they did (DOR-1344).
-      const seed =
-        (await runtimeRegistry.getSessionSettings(sessionId)) === null
-          ? await resolveUnattendedSessionDefaults({
-              runtimeType,
-              agentPath: request.agentPath,
-              declared: runtime.getCapabilities().settings,
-            })
-          : {};
+      //
+      // **The power level rides the same seed, and it is asked for SEPARATELY**
+      // (DOR-1917). `resolveUnattendedSessionDefaults` answers model and effort
+      // and no permission tier — not because a room may not have one, but
+      // because a permission mode arriving as a side effect of asking about a
+      // model would be an escalation nobody wrote down. So the room asks
+      // {@link resolveUnattendedPermissionMode} by name, which is the same
+      // question the scheduled-run path asks and the same mapping the dial
+      // renders from. That is what makes a room the third surface to follow the
+      // operator's level rather than the one left behind (ADR 260822-235802 as
+      // amended by 260908-170643): a person who set every new conversation to
+      // Full autonomy was getting a room agent that stopped to ask, in the one
+      // place nobody is there to answer. Unset config resolves to `undefined`
+      // and the runtime's own default stands, byte-for-byte as before.
+      const isNewSession = (await runtimeRegistry.getSessionSettings(sessionId)) === null;
+      // **And only for a message somebody on this machine wrote.** A bridged
+      // Telegram or Slack chat is a projection of a relay binding into a room,
+      // so a stranger's message reaches this same path — and a binding carries
+      // its own grant precisely because nobody picked a mode for messages from
+      // off this machine (DOR-604). Seeding the operator's level here would make
+      // the bridged path strictly looser than the binding beside it, for the
+      // same sender, which is the one thing the amended ADR promises it is not.
+      const unattendedMode =
+        isNewSession && !request.externalAuthor
+          ? resolveUnattendedPermissionMode({ capabilities: runtime.getCapabilities() })
+          : undefined;
+      const seed = isNewSession
+        ? await resolveUnattendedSessionDefaults({
+            runtimeType,
+            agentPath: request.agentPath,
+            declared: runtime.getCapabilities().settings,
+          })
+        : {};
 
       // **A room turn always persists something, whatever the runtime.**
       //
@@ -833,6 +874,11 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // below (`message-dispatcher.test.ts`).
         ...(roomConventions !== null ? { systemPromptAppend: roomConventions } : {}),
         settings: seed,
+        // The power level travels in its OWN argument, not folded into the seed
+        // above: `settings` is preference and this is posture, and a field named
+        // for the one condition it may ride under is what keeps a future caller
+        // from sending it for a session that already has a row (DOR-1917).
+        ...(unattendedMode !== undefined ? { newSessionPermissionMode: unattendedMode } : {}),
         projector,
         runtime,
         // **Refuse a stranger AT ACCEPTANCE**, unlike a person's own message: a
@@ -926,11 +972,12 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // The registry binds a session that has no runtime yet and leaves a bound
       // one untouched, so a resumed session is a no-op.
       //
-      // No `interactive` flag, deliberately: the configured default trust stop
-      // is for sessions a person is watching (spec `trust-dial`, decision 6).
-      // A room turn runs into the dark, so it keeps the runtime's own default —
-      // the same reason the seed above carries model and effort and nothing
-      // about permissions.
+      // Still no `interactive` flag: nobody is watching a room turn, and that
+      // flag says they are. The power level travels the other way instead — the
+      // mode resolved above, handed over explicitly, so the ROW carries what
+      // this turn is already running with and every turn after it inherits the
+      // ordinary way (DOR-1917). It seeds a column still holding NULL and can
+      // never overwrite a choice somebody made on this conversation.
       //
       // **BELOW the `!accepted` return, and its failure is LOGGED rather than
       // thrown.** Both halves of that are load-bearing, and it used to be one
@@ -951,7 +998,16 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // model has spoken may throw past here. What is lost when this fails is one
       // runtime-attribution row, which the next turn on this session rewrites.
       try {
-        await runtimeRegistry.persistSessionRuntime(canonicalId, runtimeType, request.agentPath);
+        await runtimeRegistry.persistSessionRuntime(
+          canonicalId,
+          runtimeType,
+          request.agentPath,
+          // Omitted, never passed as `{ permissionMode: undefined }`, when
+          // nothing is configured: the argument's absence is what says "no
+          // preference" here, and an object holding an undefined key would
+          // announce an opinion this call does not have.
+          ...(unattendedMode !== undefined ? [{ permissionMode: unattendedMode }] : [])
+        );
       } catch (err) {
         logger.warn('[rooms] could not record which runtime owns this session', {
           sessionId: canonicalId,

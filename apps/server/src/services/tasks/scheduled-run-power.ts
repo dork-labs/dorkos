@@ -8,12 +8,17 @@
  * conversation to run at full autonomy still got a scheduled run that stopped to
  * ask — the one place nobody is there to answer.
  *
- * The ladder is the operator's own: the configured trust stop
- * ({@link resolveUnattendedDefaultStop}), mapped through the target runtime's
- * capability profile by {@link resolveTrustStops} — the same function the dial
- * renders from, so a resolved default lands on exactly the mode the dial would
- * show as selected. When nothing is configured, or the runtime declares no mode
- * at that stop, or the runtime is not registered at all, the answer is
+ * The ladder is the operator's own, and it is shared with the other unattended
+ * surface that follows it — a room turn — through
+ * {@link resolveUnattendedPermissionMode}: the configured trust stop mapped
+ * through the target runtime's capability profile by `resolveTrustStops`, the
+ * same function the dial renders from, so a resolved default lands on exactly
+ * the mode the dial would show as selected. All this module adds is the
+ * FALLBACK, which is the one thing the two surfaces do not share: a scheduled
+ * run has always had a mode and lands on the constant below, while a room turn
+ * has never had one and keeps taking the runtime's own default. When nothing is
+ * configured, or the runtime declares no mode at that stop, or the runtime is
+ * not registered at all, the answer here is
  * `'acceptEdits'`: byte-for-byte what every scheduled run got before this
  * module, and what anyone who never answered the power door still gets.
  *
@@ -34,9 +39,8 @@
 import type { PermissionMode } from '@dorkos/shared/types';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { UserConfig } from '@dorkos/shared/config-schema';
-import { resolveTrustStops } from '@dorkos/shared/permission-semantics';
 import { runtimeRegistry } from '../core/runtime-registry.js';
-import { resolveUnattendedDefaultStop } from '../session/resolve-session-defaults.js';
+import { resolveUnattendedPermissionMode } from '../session/resolve-session-defaults.js';
 
 /**
  * What every scheduled run started at before the operator's stop was consulted,
@@ -105,19 +109,13 @@ export function resolveScheduledRunPermissionMode(opts: {
   capabilities: RuntimeCapabilities | undefined;
   runtimes?: UserConfig['runtimes'];
 }): PermissionMode {
-  const { capabilities } = opts;
-  if (!capabilities) return SCHEDULED_RUN_FALLBACK_MODE;
-
-  const stop = resolveUnattendedDefaultStop({
-    configSection: capabilities.settings.configSection,
+  const mode = resolveUnattendedPermissionMode({
+    capabilities: opts.capabilities,
     ...(opts.runtimes !== undefined ? { runtimes: opts.runtimes } : {}),
   });
-  if (!stop) return SCHEDULED_RUN_FALLBACK_MODE;
-
-  const match = resolveTrustStops(capabilities.permissionModes.values).find((s) => s.stop === stop);
   // The cast is the wire's legacy narrowing, not a claim about this id — the
   // same one `resolveTrustMode` documents: `PermissionMode` is a closed enum of
   // the ids the shipped runtimes happen to use, while a mode id is whatever its
   // runtime declared. This one came from the runtime's own profile.
-  return match ? (match.mode.id as PermissionMode) : SCHEDULED_RUN_FALLBACK_MODE;
+  return mode === undefined ? SCHEDULED_RUN_FALLBACK_MODE : (mode as PermissionMode);
 }

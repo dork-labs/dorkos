@@ -109,6 +109,27 @@ export interface RoomTurnRequest {
   /** The entry that triggered this turn. */
   entry: RoomEntry;
   /**
+   * Whether the entry that triggered this turn was written by somebody OUTSIDE
+   * this machine — a person in a bridged Telegram or Slack chat.
+   *
+   * **A trust boundary, not a label** (`AuthorOrigin` in `room-schemas.ts`: "the
+   * difference between 'a person on this machine wrote this' and 'a stranger on
+   * the internet wrote this'"). It exists for one decision, and the decision is
+   * the runner's: a room turn follows the operator's configured power level
+   * (DOR-1917), and a stranger's message must not be what starts a session at
+   * it. Bridged rooms are projections of a relay binding, and a binding carries
+   * its own grant precisely because nobody picked a mode for messages arriving
+   * from off this machine (DOR-604). Without this flag the bridged path would be
+   * strictly looser than the binding beside it, for the same sender.
+   *
+   * Derived from the author's STORED natural key through `authorOrigin()`, the
+   * one derivation there is, so it is a property of who wrote the entry and not
+   * of what else was happening when the turn ran. An author the registry cannot
+   * find reads as external: losing the operator's power level costs a prompt,
+   * while reporting a stranger as local would lose the boundary.
+   */
+  externalAuthor: boolean;
+  /**
    * The words the turn is triggered with — what reaches the model as the visible
    * user message, byte for byte.
    *

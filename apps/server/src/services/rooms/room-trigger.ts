@@ -178,7 +178,7 @@ import {
   type TriggerTarget,
 } from './room-claims.js';
 import type { BridgedRoomFraming } from '../relay/chat-bridge/room-context-framing.js';
-import { toAuthorRef, type AuthorRegistry } from './author-registry.js';
+import { authorOrigin, toAuthorRef, type AuthorRegistry } from './author-registry.js';
 import { isLiveAuthor } from './handles/author-handles.js';
 import {
   evaluateCascade,
@@ -524,6 +524,29 @@ const PRESENCE_REPUBLISH_MS = 10_000;
 function sameActivity(a: SessionActivity | undefined, b: SessionActivity | undefined): boolean {
   if (a === undefined || b === undefined) return a === b;
   return a.toolName === b.toolName && a.target === b.target;
+}
+
+/**
+ * Whether the author of a triggering entry is somebody OUTSIDE this machine.
+ *
+ * The one decision it feeds is `RoomTurnRequest.externalAuthor`: a room turn
+ * follows the operator's configured power level (DOR-1917), and a message from a
+ * bridged Telegram or Slack chat must not be what starts a session at it.
+ *
+ * **An unresolvable author is external.** `authorOrigin` answers `'local'` for
+ * any key that does not carry the external prefix, and an empty string is such a
+ * key — so a failed lookup folded into a `?? ''` default would quietly grant the
+ * operator's power level on the strength of a missing row. The two cases are kept
+ * apart here: no record at all is the conservative answer, a stored key is the
+ * real derivation. Losing the power level for one turn costs a prompt.
+ *
+ * @param authors - The registry holding the stored author records.
+ * @param authorId - The author of the entry that triggered this turn.
+ */
+function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string): boolean {
+  const naturalKey = authors.getMany([authorId]).get(authorId)?.naturalKey;
+  if (naturalKey === undefined) return true;
+  return authorOrigin(naturalKey) !== 'local';
 }
 
 /**
@@ -2193,6 +2216,18 @@ export class RoomTriggerDispatcher {
         cwd,
         sessionId: target.sessionId,
         entry,
+        // **Who wrote it, as a trust boundary** — see `RoomTurnRequest`. Read
+        // off the author's stored key, and read HERE because this is where the
+        // registry is.
+        //
+        // The missing-record case is spelled out rather than folded into a
+        // `?? ''` default, because `authorOrigin('')` answers `'local'` — an
+        // empty string does not start with the external prefix — and that is
+        // the permissive direction. An author this dispatcher cannot resolve is
+        // treated as external: losing the operator's power level for one turn
+        // costs a prompt, while reading an unknown author as local would hand
+        // it out on the strength of a failed lookup.
+        externalAuthor: isEntryAuthorExternal(this.deps.authors, entry.authorId),
         // The message, unchanged. A trigger asks the agent exactly what was
         // said; only the welcome-back offer below asks something else.
         prompt: entry.body.text,
@@ -2890,6 +2925,9 @@ export class RoomTriggerDispatcher {
         cwd,
         sessionId: input.sessionId,
         entry,
+        // Never external: `entry` here is the greeter's own status post, written
+        // by this machine, and nobody off it can ask for an aside turn.
+        externalAuthor: false,
         prompt: input.prompt,
         roomContext: turnContext.context,
         attachmentProjection: turnContext.projection,
