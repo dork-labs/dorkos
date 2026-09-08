@@ -160,6 +160,17 @@ Each batch runs the same chain, and no step is optional:
 
 ### Landing rules
 
+- **A commit either isn't user-facing, or fills its own stub.** A commit that is
+  genuinely not user-facing — a review-nit fold, a refactor, a CI tweak — takes a
+  `chore(` or `ci(` subject, so the populator mints no stub at all. A user-facing
+  commit curates its seeded stub in the same commit that creates it (rewrite the
+  bullet for a human, delete the seeded comment) rather than leaving it for CI to
+  catch; if a curated fragment for the batch already exists, fold the stub's
+  `covers:` line into it byte-for-byte — matching the commit subject exactly, since
+  a missing ticket suffix breaks coverage — and delete the stub. Five PRs failed the
+  `fragment-present` gate this way in one week (#1510, #1567, #1581, #1618, #1700).
+  Mechanics: **`creating-pull-requests`** skill and
+  `changelog/README.md#seeded-fragments`.
 - **Format as the last step before every push.** Run the formatter over the full
   changed set (`git diff --name-only origin/main...HEAD`) immediately before
   pushing, and again after any hand-resolved conflict. In this repo the pre-push
