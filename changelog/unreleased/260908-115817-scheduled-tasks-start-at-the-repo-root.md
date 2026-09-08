@@ -1,6 +1,6 @@
 ---
 covers:
-  - 'fix(server): scheduled tasks start at the repo root in dev too'
+  - 'fix(server): scheduled tasks start at the repo root in dev too (DOR-1859)'
 ---
 
 ### Fixed
