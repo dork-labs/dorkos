@@ -43,9 +43,9 @@
  * @vitest-environment node
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -84,7 +84,7 @@ const ROUNDS = 50;
  * into the program text.
  */
 const WRITER_SOURCE = `
-const { existsSync, rmSync, writeFileSync } = await import('node:fs');
+const { existsSync, lstatSync, rmSync, writeFileSync } = await import('node:fs');
 const { project } = await import(process.env.ENGINE_URL);
 const { applyPlan } = await import(process.env.APPLY_URL);
 const repo = process.env.REPO_PATH;
@@ -92,24 +92,59 @@ const opts = { dorkHome: process.env.DORK_HOME };
 const planOnce = process.env.PLAN_ONCE === '1';
 let held = planOnce ? project(repo, opts) : null;
 writeFileSync(process.env.READY_PATH, 'ready');
-const deadline = Date.now() + 30000;
+const deadline = Date.now() + Number(process.env.BARRIER_TIMEOUT_MS ?? 30000);
 while (!existsSync(process.env.BARRIER_PATH)) {
   if (Date.now() > deadline) throw new Error('the barrier never opened');
 }
 const churn = process.env.CHURN_PATH;
+let assumeLinkOnce = process.env.CHURN_ASSUME_LINK_ONCE === '1';
+function removeProjectedLinkForChurn(path) {
+  const deadline = Date.now() + 1000;
+  const sleep = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    try {
+      const isLink = assumeLinkOnce || lstatSync(path).isSymbolicLink();
+      assumeLinkOnce = false;
+      if (!isLink) {
+        if (Date.now() > deadline) throw new Error('the churn path remained a real directory');
+        Atomics.wait(sleep, 0, 0, 5);
+        continue;
+      }
+      rmSync(path, { force: true });
+      return;
+    } catch (error) {
+      if (error?.code === 'ENOENT') return;
+      // A second Windows writer can expose the directory it creates before it
+      // finishes marking that entry as a junction. Never recurse into it: wait
+      // until it is a link, then remove only the link itself.
+      if (
+        error?.code !== 'ERR_FS_EISDIR' &&
+        error?.code !== 'EISDIR' &&
+        error?.code !== 'EPERM'
+      )
+        throw error;
+      if (Date.now() > deadline) throw error;
+      Atomics.wait(sleep, 0, 0, 5);
+    }
+  }
+}
 const start = Date.now();
 for (let i = 0; i < Number(process.env.ROUNDS); i++) {
-  if (churn) rmSync(churn, { force: true });
+  if (churn) removeProjectedLinkForChurn(churn);
   applyPlan(repo, held ?? project(repo, opts), { sweepOrphans: process.env.SWEEP === '1' });
 }
 writeFileSync(process.env.DONE_PATH, JSON.stringify({ start, end: Date.now() }));
 `;
 
 const temps: string[] = [];
+const activeWriters: Writer[] = [];
 
-afterEach(() => {
+async function cleanupOwnedFixtures(): Promise<void> {
+  await settleWriters(activeWriters.splice(0));
   for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+}
+
+afterEach(cleanupOwnedFixtures);
 
 /** A fresh temp directory that is cleaned up after the test. */
 function makeTempDir(prefix: string): string {
@@ -207,6 +242,8 @@ function expectOverlap(writers: Writer[]): void {
 
 /** One writer child, started but held at the barrier. */
 interface Writer {
+  /** The exact owned child, retained so a failed test can terminate only it. */
+  child: ChildProcess;
   /** Resolves when the child exits, rejecting on any non-zero exit. */
   exited: Promise<void>;
   /** The file the child touches once it is at the barrier. */
@@ -247,7 +284,21 @@ function spawnWriter(control: string, label: string, env: Record<string, string>
       code === 0 ? resolve() : reject(new Error(`writer ${label} exited ${code}: ${stderr}`))
     );
   });
-  return { exited, readyPath, donePath };
+  // Attach a rejection handler immediately: a writer can fail before the test
+  // reaches its explicit await, but the original promise still carries that
+  // failure to the assertion.
+  void exited.catch(() => undefined);
+  const writer = { child, exited, readyPath, donePath };
+  activeWriters.push(writer);
+  return writer;
+}
+
+/** Stop any writers a failed assertion left alive, then wait until every child is gone. */
+async function settleWriters(writers: Writer[]): Promise<void> {
+  for (const writer of writers) {
+    if (writer.child.exitCode === null && writer.child.signalCode === null) writer.child.kill();
+  }
+  await Promise.allSettled(writers.map((writer) => writer.exited));
 }
 
 /** Resolve once every writer has reached the barrier. */
@@ -276,6 +327,52 @@ function generatedPairs(repo: string): { target: string; bytes: string; sidecar?
 }
 
 describe('J-12 — two writers on one repo', () => {
+  it('never recursively deletes a real directory passed as the churn path', async () => {
+    const { repo, dorkHome } = stageRepo('j12-safe-churn-', ['alpha']);
+    const control = makeTempDir('j12-safe-churn-control-');
+    const churn = join(repo, 'real-directory');
+    mkdirSync(churn, { recursive: true });
+    writeFileSync(join(churn, 'occupant'), 'owned fixture\n');
+    const writer = spawnWriter(control, 'safe-churn', {
+      REPO_PATH: repo,
+      DORK_HOME: dorkHome,
+      SWEEP: '0',
+      ROUNDS: '1',
+      CHURN_PATH: churn,
+      CHURN_ASSUME_LINK_ONCE: '1',
+    });
+    await waitForReady([writer]);
+    writeFileSync(join(control, 'barrier'), 'go');
+
+    await expect(writer.exited).rejects.toThrow(/churn path remained a real directory/);
+
+    expect(readFileSync(join(churn, 'occupant'), 'utf8')).toBe('owned fixture\n');
+  });
+
+  it('settles an owned writer still waiting at the barrier before fixture cleanup', async () => {
+    const { repo, dorkHome } = stageRepo('j12-cleanup-', ['alpha']);
+    const control = makeTempDir('j12-cleanup-control-');
+    const writer = spawnWriter(control, 'held', {
+      REPO_PATH: repo,
+      DORK_HOME: dorkHome,
+      SWEEP: '0',
+      BARRIER_TIMEOUT_MS: '1000',
+    });
+    await waitForReady([writer]);
+    expect({
+      exitCode: writer.child.exitCode,
+      signalCode: writer.child.signalCode,
+      killed: writer.child.killed,
+    }).toEqual({ exitCode: null, signalCode: null, killed: false });
+
+    await cleanupOwnedFixtures();
+
+    await expect(writer.exited).rejects.toThrow(/writer held exited/);
+    expect(writer.child.killed).toBe(true);
+    expect(writer.child.exitCode !== null || writer.child.signalCode !== null).toBe(true);
+    expect(existsSync(repo)).toBe(false);
+  });
+
   it('converges on the sequential tree when both writers read the same repo', async () => {
     const { repo, dorkHome } = stageRepo('j12-race-', ['alpha', 'beta']);
     const control = makeTempDir('j12-control-');
@@ -304,6 +401,9 @@ describe('J-12 — two writers on one repo', () => {
     expectOverlap(writers);
     // Nothing is stale, nothing is blocked, nothing is orphaned.
     expect(checkPlan(repo, project(repo, { dorkHome })).clean).toBe(true);
+    expect(readFileSync(join(repo, '.agents', 'skills', 'research', 'SKILL.md'), 'utf8')).toContain(
+      '# research'
+    );
     // …and the tree is the one a single sync leaves, path for path and byte for byte.
     expect(scrubbedSnapshot(repo)).toEqual(scrubbedSnapshot(sequential.repo));
 

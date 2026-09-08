@@ -37,13 +37,12 @@
  *   cannot do any more is leave a reader holding half a file. The end state is
  *   whichever writer renamed last, which is the same bytes either way when both
  *   apply the same plan (the engine's output is deterministic).
- * - **No EPERM retry on Windows.** A rename onto a file another process has
- *   open can fail there where POSIX would succeed, and the usual answer is a
- *   short retry loop. Nothing here does that, because nothing here has ever run
- *   on Windows: writing the loop now would mean guessing which error codes to
- *   retry and how often, and shipping it untested is how a retry loop becomes a
- *   silent data-loss path. The first real Windows run (AP-06, DOR-1855) decides
- *   it, and this paragraph is the note to whoever does it.
+ * - **A bounded Windows sharing retry.** The first real Windows concurrency run
+ *   found NTFS returning `EPERM` when a reader held the destination during the
+ *   rename. {@link renameOverExisting} retries only that measured combination:
+ *   Windows, `rename`, and `EPERM`. It never unlinks the destination, never
+ *   retries another failure, and gives the original error back after a finite
+ *   1,024 ms window.
  *
  * ## The cost of rename: a path-watcher stops seeing the file
  *
@@ -81,8 +80,8 @@
  * (`generate-occupants.ts`), so the only writes that follow one are the two that
  * always did — the settings merge and an ownership sidecar.
  *
- * The target's permission bits are carried onto the replacement, so a person who
- * has chmodded their own `.claude/settings.local.json` still has it afterwards.
+ * The target permissions the platform exposes are carried onto the replacement:
+ * exact mode bits on POSIX and the writable bit Node exposes on Windows.
  *
  * ## The temp file, and who is allowed to touch it
  *
@@ -157,6 +156,40 @@ export const ATOMIC_TMP_SUFFIX = '.dorkos-tmp';
  * any threshold short enough to race one is the bug this exists to prevent.
  */
 export const STALE_TEMP_AGE_MS = 60_000;
+
+/**
+ * Delays between Windows retries when an atomic rename races an open reader.
+ *
+ * A real Windows reader can reopen the destination continuously rather than
+ * holding it for one known interval. Sixty-four 16 ms scheduler windows give
+ * the rename repeated chances to land while keeping the requested-delay budget
+ * to 1,024 ms. Scheduler delays can make elapsed time longer. The sequence is
+ * exported only so the boundary test can prove the loop stops; callers use
+ * {@link writeFileAtomic}.
+ *
+ * @internal
+ */
+export const WINDOWS_RENAME_RETRY_DELAYS_MS = Object.freeze(Array.from({ length: 64 }, () => 16));
+
+/** Block this synchronous filesystem operation for a bounded retry delay. */
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/** Rename a completed temp file over its target, with the measured Windows retry. */
+function renameOverExisting(tmp: string, target: string): void {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      renameSync(tmp, target);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      const delay = WINDOWS_RENAME_RETRY_DELAYS_MS[attempt];
+      if (process.platform !== 'win32' || code !== 'EPERM' || delay === undefined) throw error;
+      sleepSync(delay);
+    }
+  }
+}
 
 /**
  * Whether a directory entry is one of this module's temp files.
@@ -243,7 +276,7 @@ export function writeFileAtomic(absPath: string, content: string): void {
     writeFileSync(tmp, content);
     const mode = existingMode(target);
     if (mode !== undefined) chmodSync(tmp, mode);
-    renameSync(tmp, target);
+    renameOverExisting(tmp, target);
   } catch (err) {
     rmSync(tmp, { force: true });
     throw err;

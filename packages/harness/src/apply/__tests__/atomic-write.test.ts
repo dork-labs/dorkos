@@ -104,6 +104,28 @@ interface ReaderReport {
   seen: [string, number][];
 }
 
+/** Run writes while owning the reader process, settling it before surfacing a write failure. */
+async function writeWhileReaderRuns(
+  ready: Promise<void>,
+  write: () => void,
+  stop: () => void,
+  exited: Promise<number>
+): Promise<number> {
+  let writeError: unknown;
+  try {
+    await ready;
+    write();
+  } catch (error) {
+    writeError = error;
+  } finally {
+    stop();
+  }
+
+  const exitCode = await exited;
+  if (writeError) throw writeError;
+  return exitCode;
+}
+
 const temps: string[] = [];
 
 /** A fresh temp directory, realpath-resolved (macOS `/var` is a link to `/private/var`). */
@@ -133,6 +155,45 @@ async function waitForReady(readyPath: string): Promise<void> {
 }
 
 describe('writeFileAtomic — what a concurrent reader can see', () => {
+  it('settles its owned reader before surfacing a write failure', async () => {
+    let finishReader!: (code: number) => void;
+    let signalStopped!: () => void;
+    let settled = false;
+    const readerStopped = new Promise<void>((resolve) => {
+      signalStopped = resolve;
+    });
+    const readerExited = new Promise<number>((resolve) => {
+      finishReader = (code) => {
+        settled = true;
+        resolve(code);
+      };
+    });
+    const writeFailure = new Error('measured write failure');
+
+    const result = writeWhileReaderRuns(
+      Promise.resolve(),
+      () => {
+        throw writeFailure;
+      },
+      signalStopped,
+      readerExited
+    );
+    let resultSettled = false;
+    void result
+      .finally(() => {
+        resultSettled = true;
+      })
+      .catch(() => undefined);
+    await readerStopped;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(settled).toBe(false);
+    expect(resultSettled).toBe(false);
+    finishReader(0);
+
+    await expect(result).rejects.toBe(writeFailure);
+    expect(settled).toBe(true);
+  });
+
   it('never lets a reader observe an empty or half-written file', async () => {
     const dir = makeTempDir('atomic-reader-');
     const target = join(dir, 'hooks.json');
@@ -166,16 +227,18 @@ describe('writeFileAtomic — what a concurrent reader can see', () => {
       child.on('close', (code) => resolve(code ?? -1));
     });
 
-    try {
-      await waitForReady(readyPath);
-      for (let round = 0; round < ROUNDS; round++) {
-        writeFileAtomic(target, round % 2 === 0 ? b.content : a.content);
-      }
-    } finally {
-      writeFileSync(stopPath, 'stop');
-    }
+    const exitCode = await writeWhileReaderRuns(
+      waitForReady(readyPath),
+      () => {
+        for (let round = 0; round < ROUNDS; round++) {
+          writeFileAtomic(target, round % 2 === 0 ? b.content : a.content);
+        }
+      },
+      () => writeFileSync(stopPath, 'stop'),
+      exited
+    );
 
-    expect(await exited, stderr).toBe(0);
+    expect(exitCode, stderr).toBe(0);
     const report = JSON.parse(readFileSync(outPath, 'utf8')) as ReaderReport;
 
     // A run that barely sampled proves nothing, so it fails rather than passing.
@@ -208,16 +271,25 @@ describe('writeFileAtomic — the write itself', () => {
     expect(readdirSync(join(dir, 'a', 'b'))).toEqual(['hooks.json']);
   });
 
-  it('replaces the file in place, keeping the permission bits it had', () => {
+  it('replaces the file in place, keeping the permissions the platform exposes', () => {
     const dir = makeTempDir('atomic-mode-');
     const target = join(dir, 'settings.local.json');
     writeFileSync(target, 'old\n');
     chmodSync(target, 0o600);
 
+    const beforeMode = statSync(target).mode & 0o777;
     writeFileAtomic(target, 'new\n');
 
     expect(readFileSync(target, 'utf8')).toBe('new\n');
-    expect(statSync(target).mode & 0o777).toBe(0o600);
+    const afterMode = statSync(target).mode & 0o777;
+    if (process.platform === 'win32') {
+      // Windows exposes only the writable bit through chmod/stat. It reports
+      // the unsupported read/execute bits from the platform default (0o666),
+      // so an exact POSIX mask is not a promise this filesystem can make.
+      expect(afterMode & 0o200).toBe(beforeMode & 0o200);
+    } else {
+      expect(afterMode).toBe(0o600);
+    }
   });
 
   it('writes THROUGH a live symlink, exactly as a plain write did', () => {
