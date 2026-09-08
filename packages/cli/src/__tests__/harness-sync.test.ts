@@ -1754,7 +1754,7 @@ describe('runHarnessSync — the manifest lines that reach nothing (DOR-1858)', 
   /** Everything the run printed, joined so a block can be asserted verbatim. */
   const printed = (): string => logSpy.mock.calls.map((c) => String(c[0])).join('\n');
 
-  /** Rewrite the fixture manifest, keeping its two harnesses. */
+  /** Rewrite the fixture manifest; `harnesses` defaults to the fixture's two. */
   function writeManifest(extra: Record<string, unknown>): void {
     fs.writeFileSync(
       path.join(tmpDir, HARNESS_MANIFEST_PATH),
@@ -1848,6 +1848,31 @@ describe('runHarnessSync — the manifest lines that reach nothing (DOR-1858)', 
       'commandMappings in .agents/harness.manifest.json is no longer read — remove it'
     );
     expect(printed()).toContain('hookPolicies in .agents/harness.manifest.json names cursor');
+  });
+
+  it('names the hooks file a flipped policy just orphaned, and writes nothing (DOR-1889)', async () => {
+    // The other half of honouring `none`: the file the engine wrote while the
+    // policy was absent is now nobody's, and `--check` has to say a `--fix`
+    // would remove it. Before DOR-1889 taught `checkPlan` to preview generated
+    // orphans this tree reported clean and exited 0 over a live hooks file.
+    writeManifest({ harnesses: ['claude-code', 'cursor'], hookPolicies: [] });
+    await runHarnessSync(syncArgs({ fix: true }));
+    const cursorHooks = path.join(tmpDir, '.cursor', 'hooks.json');
+    expect(fs.existsSync(cursorHooks)).toBe(true);
+
+    writeManifest({
+      harnesses: ['claude-code', 'cursor'],
+      hookPolicies: [{ tool: 'cursor', projection: 'none' }],
+    });
+    logSpy.mockClear();
+    const check = await runHarnessSync(syncArgs({ check: true }));
+
+    expect(check.exitCode).toBe(1);
+    expect(printed()).toContain('Orphaned projections');
+    expect(printed()).toContain('.cursor/hooks.json');
+    expect(printed()).toContain('the orphaned paths above are removed');
+    // `--check` never writes: the file it just named is still there.
+    expect(fs.existsSync(cursorHooks)).toBe(true);
   });
 
   it('prints the same notices on --fix as on --check', async () => {
