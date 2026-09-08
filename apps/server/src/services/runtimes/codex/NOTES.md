@@ -193,6 +193,12 @@ write churn described above no longer applies. Not re-verified live (no re-probe
 `logs_2.sqlite` growth at 0.147.0); recorded from the changelog per
 `research/runtime-upgrades/codex-sdk/0.144.1-to-0.147.0/impact-assessment.md`.
 
+**2026-09-08 update:** the SDK and bundled CLI now move together at `0.153.4`.
+The account-aware `app-server` probe on that version returned the current six-model
+catalog and marked `gpt-6-astra` as the default. The same probe on `0.147.0` logged a
+model-cache schema error and omitted Astra, which is why the two packages must remain
+on the same current version.
+
 ## Additional live-verified facts for 2.4 / 2.5
 
 - **JSONL events are stdout-only; tracing lines are stderr-only** (verified with separate
@@ -244,16 +250,17 @@ write churn described above no longer applies. Not re-verified live (no re-probe
 
 ## Verdict: `supportsSteer: false`, `supportsContextStaging: false` — task 4.4 (persistent-session-runtime)
 
-Probed 2026-08-15 against `@openai/codex-sdk@0.147.0` (the version `apps/server` resolves —
-`~0.147.0` in `apps/server/package.json`) and the system `codex-cli 0.145.0`
+Originally probed 2026-08-15 against `@openai/codex-sdk@0.147.0` and the system
+`codex-cli 0.145.0`
 (`/Users/doriancollier/.local/bin/codex`). Both capability flags stay `false`: the SDK
 exposes **no primitive to hand a message to a running turn**, so there is nothing to steer
 into or stage onto mid-turn. AC6 asks for a probe rather than a declaration; here is what
-was run.
+was run. Rechecked 2026-09-08 against the current SDK and bundled CLI `0.153.4`; the
+SDK surface still exposes only turn start/resume operations and no mid-turn input.
 
 ### (a) Static probe — the SDK surface (definitive for "does a primitive exist")
 
-`node_modules/.pnpm/@openai+codex-sdk@0.147.0/node_modules/@openai/codex-sdk/dist/index.d.ts`
+`node_modules/.pnpm/@openai+codex-sdk@0.153.4/node_modules/@openai/codex-sdk/dist/index.d.ts`
 (278 lines). The `Thread` class (the SDK's whole turn API) declares exactly:
 
 ```ts
@@ -299,4 +306,4 @@ as an `additionalContext` entry. Nothing a person typed is lost, and the runtime
 described as able to do something it cannot.
 
 **If a future SDK adds a mid-turn primitive, that is a FOLLOW-UP (declare + implement +
-conformance), not a scope expansion here — what was measured on 0.147.0 is `false`.**
+conformance), not a scope expansion here — the result remains `false` at 0.153.4.**

@@ -1025,6 +1025,23 @@ describe('ModelConfigPopover', () => {
   // shown marked "(not available)" with a plain hint, and never auto-switched.
   // ---------------------------------------------------------------------------
   describe('vanished saved model', () => {
+    it('treats an empty catalog as a discovery failure instead of a vanished model', () => {
+      mockUseModels.mockImplementation(() => ({
+        data: [],
+        isLoading: false,
+        isError: false,
+        refetch: mockRefetch,
+      }));
+
+      render(<ModelConfigPopover {...defaultProps({ model: 'gpt-6-astra' })} />);
+
+      expect(screen.getByTestId('model-catalog-unavailable')).toHaveTextContent(
+        'Model choices couldn’t be loaded. Check the runtime in Settings, then try again.'
+      );
+      expect(screen.queryByTestId('model-unavailable-saved')).not.toBeInTheDocument();
+      expect(screen.queryByRole('radiogroup', { name: 'Model selection' })).not.toBeInTheDocument();
+    });
+
     it('marks a vanished saved model unavailable with a plain hint (small list)', () => {
       const onChangeModel = vi.fn();
       render(<ModelConfigPopover {...defaultProps({ model: 'ollama/gone:7b', onChangeModel })} />);
