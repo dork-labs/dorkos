@@ -4,6 +4,7 @@
   "concurrency": "15",
   "globalPassThroughEnv": [
     "VITEST_RETRY",
+    "VITEST_MAX_WORKERS",
     "CLIENT_DIST_PATH",
     "DO_NOT_TRACK",
     "DORK_HOME",
