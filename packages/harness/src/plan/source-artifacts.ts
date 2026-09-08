@@ -36,6 +36,7 @@ import type { ProjectionAction, ProjectionWarning } from './types.js';
 import type { HookInventoryEntry, HookOrigin, SourceInventory } from '../inventory/types.js';
 import { CLAUDE_SKILLS_DIR } from './installed-projector.js';
 import { AGENTS_SKILLS_DIR } from '../scan/scanner.js';
+import { skillsFactsFor, VENDOR_FACTS_FETCHED_AT } from '../vendor-facts/index.js';
 
 /**
  * The day every vendor page behind the tables in this module was read.
@@ -92,7 +93,7 @@ const AGENT_PLACEMENTS = {
   },
   copilot: {
     kind: 'drop',
-    reason: `not projected yet — Copilot keeps project subagents in .github/agents/*.agent.md ${CITED}`,
+    reason: `not projected yet — Copilot keeps project subagents in .github/agents, as NAME.agent.md or NAME.md ${CITED}`,
   },
 } satisfies Record<HarnessId, Placement>;
 
@@ -216,25 +217,64 @@ function frontmatterHookPlacement(harness: HarnessId): Placement {
 }
 
 /**
- * How each harness is told about a real skill directory kept in
- * `.claude/skills` that the manifest does not list.
+ * How each harness reaches a skill kept in `.claude/skills` that the manifest
+ * does not list.
  *
  * `manifest.claudeOnlySkills` is the way to say a Claude-only placement is
  * deliberate, and `planClaudeOnlySkills` accounts for every entry on it. This is
- * the rest: a skill somebody (or some agent) made where only Claude Code reads,
- * with nothing anywhere saying so. It is real, it works in exactly one harness,
- * and it was invisible.
+ * the rest: a skill somebody (or some agent) made where Claude Code reads, with
+ * nothing anywhere saying so. It was invisible.
+ *
+ * **The answer comes from `vendor-facts`, not from a sentence in this file.**
+ * Claude Code is not the only harness that reads `.claude/skills` — OpenCode,
+ * Cursor and Copilot all list it among their own read paths — so "kept in
+ * .claude/skills, which only Claude Code reads" would have been a fresh stale
+ * drop of exactly the shape SK-05 records, contradicted by this repository's own
+ * table two directories away. Asking `skillsFactsFor()` means there is one place
+ * that claim lives, and a vendor change moves both.
+ *
+ * The link case is the honest middle. A person's skill LINKED into
+ * `.claude/skills` is only confidently read by a harness that documents
+ * following symlinks, which of the four is Claude Code alone; the other three
+ * read the directory but say nothing about links, so a `native` there would be
+ * the over-claim P9b exists to catch. Those get a drop that says exactly that,
+ * rather than a false yes or a false no.
  *
  * @param harness - the harness the line is for.
- * @returns how that harness reaches a skill kept only in `.claude/skills`.
+ * @param linked - whether the skill is reached through a symlink.
+ * @returns how that harness reaches a skill kept in `.claude/skills`.
  */
-function claudeSkillsDirPlacement(harness: HarnessId): Placement {
-  if (harness === 'claude-code') {
-    return { kind: 'native', reason: `Claude Code reads ${CLAUDE_SKILLS_DIR} directly` };
+function claudeSkillsDirPlacement(
+  harness: HarnessId,
+  linked: boolean,
+  alsoCanonical: boolean
+): Placement {
+  const label = HARNESS_LABELS[harness];
+  // A skill that is in BOTH roots. `planSkill` already answers for the canonical
+  // copy, so a second line telling somebody to "move it to .agents/skills" — where
+  // it already is — is advice that contradicts the line above it. One honest
+  // sentence about the copy that is actually in the way instead.
+  if (alsoCanonical) {
+    return {
+      kind: harness === 'claude-code' ? 'native' : 'drop',
+      reason: `a second copy of a skill that also lives in ${AGENTS_SKILLS_DIR}; this one sits at the path DorkOS projects the canonical skill to, so it blocks that projection — remove it, or remove the canonical copy`,
+    };
+  }
+  const facts = skillsFactsFor(harness);
+  const cited = `(vendor docs, ${VENDOR_FACTS_FETCHED_AT})`;
+
+  if (!facts.readPaths.project.includes(CLAUDE_SKILLS_DIR)) {
+    return {
+      kind: 'drop',
+      reason: `kept in ${CLAUDE_SKILLS_DIR}, which ${label} does not read ${cited} — move it to ${AGENTS_SKILLS_DIR} to share it, or list it in manifest.claudeOnlySkills to say the Claude-only placement is deliberate`,
+    };
+  }
+  if (!linked || facts.symlinks === 'followed') {
+    return { kind: 'native', reason: `${label} reads ${CLAUDE_SKILLS_DIR} directly ${cited}` };
   }
   return {
     kind: 'drop',
-    reason: `kept in ${CLAUDE_SKILLS_DIR}, which only Claude Code reads — move it to ${AGENTS_SKILLS_DIR} to share it with ${HARNESS_LABELS[harness]}, or list it in manifest.claudeOnlySkills to say the Claude-only placement is deliberate`,
+    reason: `kept in ${CLAUDE_SKILLS_DIR} as a symlink; ${label} reads that directory but does not document whether it follows a link ${cited} — move the skill into ${AGENTS_SKILLS_DIR} to be sure it travels`,
   };
 }
 
@@ -356,12 +396,15 @@ export function planInventoriedArtifacts(input: InventoriedArtifactInput): Proje
     if (skill.root !== CLAUDE_SKILLS_DIR) continue;
     if (claudeOnlyNames.has(skill.name) && !agentsSkillNames.has(skill.name)) continue;
     actions.push(
-      actionFrom(claudeSkillsDirPlacement(harness), {
-        artifact: 'skill',
-        harness,
-        name: skill.name,
-        source: skill.source,
-      })
+      actionFrom(
+        claudeSkillsDirPlacement(harness, skill.isSymlink, agentsSkillNames.has(skill.name)),
+        {
+          artifact: 'skill',
+          harness,
+          name: skill.name,
+          source: skill.source,
+        }
+      )
     );
   }
 

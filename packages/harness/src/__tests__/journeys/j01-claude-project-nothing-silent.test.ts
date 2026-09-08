@@ -16,8 +16,10 @@
  * Claude-only drops — never silent") turned into an exact assertion.
  *
  * Rows: J-01, XA-01 (subagents), XA-02 (rules), XA-03 (MCP), HK-12
- * (skill-frontmatter hooks), HK-14 (`settings.local.json` hooks), IN-07
- * (path-scoped instructions).
+ * (skill-frontmatter hooks), HK-14 (project half — `.claude/settings.local.json`;
+ * the row's `~/.claude/settings.json` half is global scope and belongs to
+ * DOR-1857, and nothing here reads a home directory), IN-07 (path-scoped
+ * instructions).
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -144,9 +146,17 @@ function lines(actions: ProjectionAction[]): Line[] {
     .sort((a, b) => a.join('|').localeCompare(b.join('|')));
 }
 
-/** The Claude-only skill drop reason, per harness — the same sentence with one name in it. */
+/**
+ * The drop reason for a skill kept in `.claude/skills`, for a harness that does
+ * not read that directory.
+ *
+ * Only Codex and Gemini CLI are in that position; OpenCode, Cursor and Copilot
+ * all list `.claude/skills` among their own read paths, so telling their users
+ * the skill was dropped would be a fresh SK-05. The placement asks `vendor-facts`
+ * rather than asserting a sentence, and this fixture pins both sides of it.
+ */
 function skillDrop(harnessLabel: string): string {
-  return `kept in .claude/skills, which only Claude Code reads — move it to .agents/skills to share it with ${harnessLabel}, or list it in manifest.claudeOnlySkills to say the Claude-only placement is deliberate`;
+  return `kept in .claude/skills, which ${harnessLabel} does not read (vendor docs, 2026-09-07) — move it to .agents/skills to share it, or list it in manifest.claudeOnlySkills to say the Claude-only placement is deliberate`;
 }
 
 /** The six skill drop lines for one harness. */
@@ -154,8 +164,17 @@ function skillDrops(harnessLabel: string): Line[] {
   return SKILLS.map((name): Line => ['skill', name, skillDrop(harnessLabel)]);
 }
 
+/** The six skill `native` lines for a harness that reads `.claude/skills`. */
+function skillNatives(harnessLabel: string): Line[] {
+  return SKILLS.map((name): Line => [
+    'skill',
+    name,
+    `${harnessLabel} reads .claude/skills directly (vendor docs, 2026-09-07)`,
+  ]);
+}
+
 describe('J-01 — a Claude Code project is told about every kind in .claude/', () => {
-  it('XA-01, XA-02, XA-03, HK-12, HK-14, IN-07: Codex is told where each kind would have to live', () => {
+  it('XA-01, XA-02, XA-03, HK-12, HK-14 (project half), IN-07: Codex is told where each kind would have to live', () => {
     const staged = stageClaudeFirstRepo();
     repo = staged.repoRoot;
     dorkHome = staged.home;
@@ -209,7 +228,6 @@ describe('J-01 — a Claude Code project is told about every kind in .claude/', 
 
     expect(dropsFor(plan, 'cursor')).toEqual(
       [
-        ...skillDrops('Cursor'),
         ['instruction', 'AGENTS.md', 'no AGENTS.md — nothing to read or point at'],
         ['command', 'commands', 'not projected yet — Cursor reads .cursor/commands/*.md'],
         ...RULES.map((rule): Line => [
@@ -235,13 +253,19 @@ describe('J-01 — a Claude Code project is told about every kind in .claude/', 
       ].sort((a, b) => a.join('|').localeCompare(b.join('|')))
     );
 
-    expect(nativesFor(plan, 'cursor').filter(([artifact]) => artifact === 'agent')).toEqual([
+    // Two things Cursor keeps that the first version of this fixture dropped: the
+    // subagent (it reads `.claude/agents`) and all six skills (it reads
+    // `.claude/skills`). Both answers come from `vendor-facts`, not from prose.
+    expect(nativesFor(plan, 'cursor')).toEqual(
       [
-        'agent',
-        'reviewer',
-        'Cursor reads .claude/agents directly; a same-named file in .cursor/agents would take precedence (vendor docs, 2026-09-07)',
-      ],
-    ]);
+        ...skillNatives('Cursor'),
+        [
+          'agent',
+          'reviewer',
+          'Cursor reads .claude/agents directly; a same-named file in .cursor/agents would take precedence (vendor docs, 2026-09-07)',
+        ],
+      ].sort((a, b) => a.join('|').localeCompare(b.join('|')))
+    );
   });
 
   it('J-01: Claude Code reads every one of the seven kinds where it already sits', () => {
@@ -253,7 +277,7 @@ describe('J-01 — a Claude Code project is told about every kind in .claude/', 
 
     expect(nativesFor(plan, 'claude-code')).toEqual(
       [
-        ...SKILLS.map((name): Line => ['skill', name, 'Claude Code reads .claude/skills directly']),
+        ...skillNatives('Claude Code'),
         ['command', 'commands', '(no reason given)'],
         ['hook', 'hooks', '(no reason given)'],
         [

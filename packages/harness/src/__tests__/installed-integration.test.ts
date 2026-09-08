@@ -369,6 +369,7 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
         // every harness, so no filter may hide it (contract VC-02).
         harnessAgnostic: true,
         name: 'flow:hooks',
+        source: '.dork/plugins/flow/hooks/hooks.json',
         reason:
           '.dork/plugins/flow/hooks/hooks.json could not be read (invalid JSON, or a top level that is not an object), so every hook this package declares was dropped and none are projected',
       },

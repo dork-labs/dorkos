@@ -91,6 +91,10 @@ export function planUnreadableHookWarnings(
         harness: UNREADABLE_HOOK_ATTRIBUTION,
         harnessAgnostic: true,
         name: `${plugin.name}:${declaration.event ?? 'hooks'}`,
+        // The declaring file, so the completeness check can match this warning to
+        // the source it is about. Without it a warning is the only thing said
+        // about a declaration and still reads as silence (DOR-1845 review).
+        source: declaration.path,
         reason: unreadableHookReason(declaration),
       });
     }

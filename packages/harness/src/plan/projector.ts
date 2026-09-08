@@ -368,6 +368,56 @@ function hasHooks(hooks?: ClaudeHooksConfig): boolean {
 }
 
 /**
+ * Where the hooks in the merged config actually came from.
+ *
+ * Every line about hooks names a file, drops included: a drop with no source
+ * cannot be matched back to the declaration it is about, which is how a hook
+ * could be "reported" and still be silent to any check that asks whether each
+ * authored source reached every harness (P6). But naming
+ * `.claude/settings.json` on every line was the other error — a repository with
+ * no settings file at all, whose hooks came entirely from an installed package,
+ * was told its `.claude/settings.json` hooks were dropped. So the sources are
+ * derived, per file and per event, from the configs that were merged.
+ */
+interface HookSources {
+  /** Every file that contributed a hook, authored settings first. */
+  files: string[];
+  /** For each event, the file to name when that event is dropped. */
+  byEvent: Map<string, string>;
+}
+
+/**
+ * Work out which file each merged hook event came from.
+ *
+ * The authored settings file wins a tie: when a repository and a package declare
+ * the same event, the person's own file is the one they can act on.
+ *
+ * @param authoredHooks - the repo's own `.claude/settings.json` hooks.
+ * @param contributors - the installed plugins allowed to contribute hooks.
+ * @returns the contributing files and the per-event attribution.
+ */
+function collectHookSources(
+  authoredHooks: ClaudeHooksConfig | undefined,
+  contributors: readonly InstalledPlugin[]
+): HookSources {
+  const files: string[] = [];
+  const byEvent = new Map<string, string>();
+
+  if (authoredHooks && hasHooks(authoredHooks)) {
+    files.push(CLAUDE_SETTINGS_SOURCE);
+    for (const event of Object.keys(authoredHooks)) byEvent.set(event, CLAUDE_SETTINGS_SOURCE);
+  }
+  for (const plugin of contributors) {
+    const hooks = plugin.hooks;
+    if (!hooks || !hasHooks(hooks) || !plugin.relDir) continue;
+    const file = `${plugin.relDir}/hooks/hooks.json`;
+    files.push(file);
+    for (const event of Object.keys(hooks)) if (!byEvent.has(event)) byEvent.set(event, file);
+  }
+  return { files, byEvent };
+}
+
+/**
  * Project hooks to one harness (may yield several actions + warnings).
  *
  * `claudeHooks` is the MERGED config — the repo's own hooks plus every installed
@@ -383,26 +433,27 @@ function hasHooks(hooks?: ClaudeHooksConfig): boolean {
  * nothing did. Claude Code is measured against its own file and every other
  * harness against the merged set, because a package's hooks fail to reach
  * OpenCode and Gemini exactly as an authored one would.
+ *
+ * The harnesses with no hook file at all get **one drop per contributing file**,
+ * so a person whose hooks came from a package is pointed at the package rather
+ * than at a `.claude/settings.json` they never wrote.
  */
 function planHooks(
   harness: HarnessId,
+  sources: HookSources,
   claudeHooks?: ClaudeHooksConfig,
   authoredHooks?: ClaudeHooksConfig
 ): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
-  // Every line about hooks names `.claude/settings.json`, drops included. A drop
-  // with no source cannot be matched back to the declaration it is about, which
-  // is how a hook could be "reported" and still be silent to any check that asks
-  // whether each authored source reached every harness (P6).
-  const base: ActionBase = {
+  const base = (source: string): ActionBase => ({
     artifact: 'hook',
     harness,
     provenance: 'authored',
     name: 'hooks',
-    source: CLAUDE_SETTINGS_SOURCE,
-  };
+    source,
+  });
   if (harness === 'claude-code') {
     return {
-      actions: hasHooks(authoredHooks) ? [{ ...base, kind: 'native' }] : [],
+      actions: hasHooks(authoredHooks) ? [{ ...base(CLAUDE_SETTINGS_SOURCE), kind: 'native' }] : [],
       warnings: [],
     };
   }
@@ -412,37 +463,19 @@ function planHooks(
   if (!hasHooks(claudeHooks)) return { actions: [], warnings: [] };
 
   const standalone = STANDALONE_HOOK_HARNESSES[harness];
-  if (standalone) return planStandaloneHooks(harness, standalone, claudeHooks);
+  if (standalone) return planStandaloneHooks(harness, standalone, sources, claudeHooks);
 
-  if (harness === 'opencode') {
-    // OpenCode has NO declarative hook config — only a code-based TypeScript
-    // plugin API — so there is no on-disk hook file to project into. Honest drop.
-    return {
-      actions: [
-        {
-          ...base,
-          kind: 'drop',
-          reason:
-            'OpenCode has no declarative hook config (only a code-based TypeScript plugin API), so hooks cannot be projected as files',
-        },
-      ],
-      warnings: [],
-    };
-  }
-
-  // Gemini: hooks live inside the shared `.gemini/settings.json`, which also
-  // holds unrelated user settings. Projecting them safely means MERGING into
-  // that file (and pruning only the engine-managed entries), which the current
+  // OpenCode has NO declarative hook config — only a code-based TypeScript
+  // plugin API — so there is no on-disk hook file to project into. Gemini's live
+  // inside the shared `.gemini/settings.json`, which also holds unrelated user
+  // settings: projecting them safely means MERGING into that file, which the
   // apply stage does not yet support, so it is an honest drop, not a clobber.
+  const reason =
+    harness === 'opencode'
+      ? 'OpenCode has no declarative hook config (only a code-based TypeScript plugin API), so hooks cannot be projected as files'
+      : 'Gemini hooks require a safe merge into the shared .gemini/settings.json (preserving other keys); tracked as follow-up (DOR-143)';
   return {
-    actions: [
-      {
-        ...base,
-        kind: 'drop',
-        reason:
-          'Gemini hooks require a safe merge into the shared .gemini/settings.json (preserving other keys); tracked as follow-up (DOR-143)',
-      },
-    ],
+    actions: sources.files.map((source) => ({ ...base(source), kind: 'drop' as const, reason })),
     warnings: [],
   };
 }
@@ -461,6 +494,7 @@ function planHooks(
 function planStandaloneHooks(
   harness: HarnessId,
   spec: StandaloneHookSpec,
+  sources: HookSources,
   claudeHooks?: ClaudeHooksConfig
 ): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
   if (!claudeHooks) return { actions: [], warnings: [] };
@@ -475,7 +509,10 @@ function planStandaloneHooks(
       provenance: 'authored',
       name: 'hooks',
       kind: 'generate',
-      source: CLAUDE_SETTINGS_SOURCE,
+      // The file this generated one was built from. With no authored settings —
+      // a repository whose only hooks came from a package — that is the
+      // package's own declaration, not a path nobody wrote.
+      source: sources.files[0] ?? CLAUDE_SETTINGS_SOURCE,
       target: spec.target,
     };
     setActionContent(action, content);
@@ -488,7 +525,8 @@ function planStandaloneHooks(
       harness,
       provenance: 'authored',
       name: d.event,
-      source: CLAUDE_SETTINGS_SOURCE,
+      // The file that declared THIS event, so a person opens the right one.
+      source: sources.byEvent.get(d.event) ?? sources.files[0] ?? CLAUDE_SETTINGS_SOURCE,
       kind: 'drop',
       reason: d.reason,
     });
@@ -693,6 +731,10 @@ export function buildPlan(input: {
   // yes (DOR-1849).
   warnings.push(...planUnreadableHookWarnings(projectable));
 
+  // Which file each merged hook came from, so no line about hooks names a
+  // `.claude/settings.json` the repository does not have.
+  const hookSources = collectHookSources(claudeHooks, hookContributors);
+
   const all: ProjectionAction[] = [];
   for (const harness of manifest.harnesses) {
     for (const skill of skills) {
@@ -700,7 +742,7 @@ export function buildPlan(input: {
       if (skillAction) all.push(skillAction);
     }
     all.push(planInstruction(harness, agentsMdExists));
-    const hookResult = planHooks(harness, mergedHooks, claudeHooks);
+    const hookResult = planHooks(harness, hookSources, mergedHooks, claudeHooks);
     all.push(...hookResult.actions);
     warnings.push(...hookResult.warnings);
     const commandAction = planCommands(harness, claudeCommandsExist);
