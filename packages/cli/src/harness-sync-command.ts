@@ -10,6 +10,7 @@ import {
   checkPlan,
   formatDropList,
   formatWarnings,
+  loadManifest,
   project,
   scaffoldManifest,
   GENERATED_HOOK_TARGET_HARNESSES,
@@ -114,9 +115,11 @@ export function parseHarnessSyncArgs(rawArgs: string[]): HarnessSyncArgs {
  *
  * `reason` is required on a drop and optional elsewhere, and the optional ones
  * are exactly the lines that look arbitrary without it: a `native` action writes
- * no file, and a scheduled plugin skill is linked into `.agents/skills` for the
- * DorkOS scheduler even when no enabled harness reads that directory. Drops are
- * rendered by `formatDropList`, not here, so this never double-prints a reason.
+ * no file, and EVERY installed plugin skill is linked into `.agents/skills`
+ * whatever harnesses are enabled — for the five harnesses that read it and for
+ * the DorkOS scheduler, which watches that directory and no other (DOR-1518,
+ * DOR-1847). Drops are rendered by `formatDropList`, not here, so this never
+ * double-prints a reason.
  */
 function formatAction(action: ProjectionAction): string {
   const path = action.target ?? action.source ?? '(no path)';
@@ -151,8 +154,27 @@ function harnessOf(path: string): HarnessId | undefined {
   return GENERATED_HOOK_TARGET_HARNESSES[path as keyof typeof GENERATED_HOOK_TARGET_HARNESSES];
 }
 
-/** Render a per-harness count of each actionable projection kind. */
-function summarizeActions(actions: ProjectionAction[]): string {
+/**
+ * The suffix on a summary line for a harness the manifest does not enable.
+ *
+ * One projection answers to no harness list: every installed plugin skill is
+ * linked into `.agents/skills` whatever is enabled, and every action must name a
+ * harness, so those links are attributed to Codex — the harness whose own
+ * directory that is. On a Claude-Code-only project the summary therefore grew a
+ * `codex:` line, which reads as "Codex is on" to anybody who has not read
+ * `installed-projector.ts`. It is not; the line is about the shared directory.
+ */
+const NOT_ENABLED_NOTE = ' (not enabled — carries the shared .agents/skills link)';
+
+/**
+ * Render a per-harness count of each actionable projection kind.
+ *
+ * @param actions - the plan's actionable projections.
+ * @param enabled - the harnesses the manifest enables, so a line for one it does
+ *   not can say so. Omitted, no line is annotated.
+ * @returns the summary block, one line per harness.
+ */
+function summarizeActions(actions: ProjectionAction[], enabled?: readonly HarnessId[]): string {
   if (actions.length === 0) return '  (no projected actions)';
 
   const byHarness = new Map<HarnessId, Map<string, number>>();
@@ -162,12 +184,14 @@ function summarizeActions(actions: ProjectionAction[]): string {
     byHarness.set(action.harness, counts);
   }
 
+  const enabledSet = enabled ? new Set(enabled) : undefined;
   const lines: string[] = [];
   for (const [harness, counts] of [...byHarness.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const parts = SUMMARY_KINDS.filter((kind) => counts.has(kind)).map(
       (kind) => `${counts.get(kind)} ${kind}`
     );
-    lines.push(`  ${harness}: ${parts.join(', ')}`);
+    const note = enabledSet && !enabledSet.has(harness) ? NOT_ENABLED_NOTE : '';
+    lines.push(`  ${harness}: ${parts.join(', ')}${note}`);
   }
   return lines.join('\n');
 }
@@ -201,13 +225,18 @@ function filterPlanToHarness(plan: ProjectionPlan, harness: HarnessId): Projecti
  * forever. So `clean` is recomputed here rather than read off `DriftResult`, whose
  * own `clean` folds in the orphans this run is not reporting.
  */
-function reportCheck(repoRoot: string, plan: ProjectionPlan, harnessFilter?: HarnessId): number {
+function reportCheck(
+  repoRoot: string,
+  plan: ProjectionPlan,
+  harnessFilter?: HarnessId,
+  enabled?: readonly HarnessId[]
+): number {
   const drift = checkPlan(repoRoot, plan);
   const orphans = harnessFilter === undefined ? drift.orphans : [];
   const clean = drift.drifted.length === 0 && drift.blocked.length === 0 && orphans.length === 0;
 
   console.log('Projection summary:');
-  console.log(summarizeActions(plan.actions));
+  console.log(summarizeActions(plan.actions, enabled));
   console.log('');
   console.log(formatDropList(plan));
   const warningBlock = formatWarnings(plan);
@@ -373,6 +402,10 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     // (`<repoRoot>/.dork/plugins`) are repo-relative and always project; passing a
     // resolved dork home additionally projects global-scope installs.
     let plan = project(repoRoot, { dorkHome: resolveDorkHome() });
+    // Read AFTER `project()`, which reads the same file: a malformed manifest
+    // should fail with the message `project()` gives it, not this one — and both
+    // land in the catch below as one sentence either way.
+    const enabled = loadManifest(repoRoot).harnesses;
 
     if (harnessFilter !== undefined) {
       plan = filterPlanToHarness(plan, harnessFilter);
@@ -381,7 +414,7 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     // Orphan sweep only runs on a full (unfiltered) plan — see reportFix.
     const exitCode = args.fix
       ? reportFix(repoRoot, plan, harnessFilter === undefined, harnessFilter)
-      : reportCheck(repoRoot, plan, harnessFilter);
+      : reportCheck(repoRoot, plan, harnessFilter, enabled);
     return { exitCode };
   } catch (err) {
     console.error(`Harness sync failed: ${err instanceof Error ? err.message : String(err)}`);

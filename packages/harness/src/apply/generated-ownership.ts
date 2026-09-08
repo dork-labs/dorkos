@@ -22,7 +22,6 @@
  */
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { CANONICAL_TO_CODEXCLI_EVENT_NAMES } from '../vendor/rulesync-maps.js';
 
 /**
  * The suffix of the ownership sidecar written beside every generated hook file.
@@ -117,17 +116,36 @@ export function ownsGeneratedFile(absTarget: string, onDisk: string): boolean {
 
 /**
  * The only keys the engine could ever have written into its old bare Codex map:
- * the CODEX spellings, and nothing else.
+ * the ten CODEX spellings the pre-DOR-1842 generator could emit, and nothing
+ * else.
  *
  * `generateCodexHooks` translated each Claude event through the canonical
  * vocabulary into Codex's own name and DROPPED every event Codex has no home
  * for, so a Claude-only name like `Notification` was never written to this file
  * by DorkOS. Admitting the Claude vocabulary here would hand rule 2 a licence
  * over files only a person could have authored.
+ *
+ * FROZEN ON PURPOSE, not derived from `CANONICAL_TO_CODEXCLI_EVENT_NAMES`.
+ * This is a claim about what a PAST version of the engine wrote, so it cannot
+ * track a map the present one extends: `SessionEnd` joined the Codex map in
+ * DOR-1847, and deriving from it would make a hand-written bare `SessionEnd` map
+ * — a file no DorkOS build has ever produced — adoptable and rewritable. Every
+ * later map addition would widen the rule the same way, one silent step at a
+ * time. Nothing may be added here; the list only ever shrinks, and only if a
+ * spelling is shown never to have shipped.
  */
-const CODEX_WRITABLE_EVENT_NAMES: ReadonlySet<string> = new Set<string>(
-  Object.values(CANONICAL_TO_CODEXCLI_EVENT_NAMES)
-);
+const CODEX_WRITABLE_EVENT_NAMES: ReadonlySet<string> = new Set<string>([
+  'SessionStart',
+  'PreToolUse',
+  'PostToolUse',
+  'UserPromptSubmit',
+  'Stop',
+  'PermissionRequest',
+  'SubagentStart',
+  'SubagentStop',
+  'PreCompact',
+  'PostCompact',
+]);
 
 /**
  * Whether a sidecar-less `.codex/hooks.json` is the engine's OWN pre-DOR-1842

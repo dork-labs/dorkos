@@ -743,7 +743,7 @@ Command propagation after a scoped install/uninstall: `refreshActivatedPlugins(c
 
 ### What is deliberately not solved here
 
-- **Other external harnesses' commands.** Projection gives the external `claude` CLI full command/skill/hook parity. Cursor and Codex still have no repo-local slash-command format, so a plugin's commands drop for them with an honest reason (skills and hooks do project to Codex).
+- **Other external harnesses' commands.** Projection gives the external `claude` CLI full command/skill/hook parity, and OpenCode gets flat wrappers. Nothing writes into Cursor's `.cursor/commands/`, Gemini CLI's `.gemini/commands/` or Copilot's `.github/prompts/` yet, so a plugin's commands drop for those three — with a reason naming the format they do have, rather than denying it exists (DOR-1847). Codex is the one harness with genuinely nowhere to put them: its custom prompts were deprecated in favour of skills. Skills and hooks do project to Codex.
 - **Unregistered agents.** The cross-scope scan walks only _registered_ agents. An install left under an unregistered directory is invisible to the scan by design; surfacing it moves to agent-unregistration time (spec Phase 2.3), not directory discovery.
 - **Extension enable state.** Extension enable/disable is global — it has no per-agent dimension. Installing an extension-bearing package to a single agent still affects every agent; the conflict detector _warns_ at agent scope (spec Phase 2.4) rather than pretending the scoping is real.
 

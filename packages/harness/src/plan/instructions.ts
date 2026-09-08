@@ -9,9 +9,15 @@
  * agent-workspace instruction scaffolder, so the per-harness target + pointer
  * content live in exactly one place.
  *
+ * With no `AGENTS.md`, EVERY harness drops — the native readers included. A
+ * `native` names a file the harness reads where it already sits, so claiming one
+ * for a file that is not there is the plan asserting something untrue; the same
+ * plan used to carry `codex native AGENTS.md` beside `claude-code drop … no
+ * AGENTS.md` (IN-03, reproduced 2026-09-07).
+ *
  * @module plan/instructions
  */
-import type { HarnessId } from '../manifest/schema.js';
+import { HARNESS_LABELS, type HarnessId } from '../manifest/schema.js';
 import type { ActionBase, ProjectionAction } from './types.js';
 import { setActionContent } from './content-map.js';
 
@@ -31,11 +37,14 @@ export function instructionPointer(relativePath: string): string {
   );
 }
 
+/** The one reason every harness gets when the canonical instruction file is absent. */
+const NO_AGENTS_MD_REASON = 'no AGENTS.md — nothing to read or point at';
+
 /**
  * Project the canonical AGENTS.md instruction to one harness.
  *
  * @param harness - the target harness.
- * @param agentsMdExists - whether a canonical AGENTS.md is present to point at.
+ * @param agentsMdExists - whether a canonical AGENTS.md is present to read or point at.
  * @returns the projection action (`native`, `scaffold`, or `drop`).
  */
 export function planInstruction(harness: HarnessId, agentsMdExists: boolean): ProjectionAction {
@@ -47,43 +56,35 @@ export function planInstruction(harness: HarnessId, agentsMdExists: boolean): Pr
     source: 'AGENTS.md',
   };
 
+  if (!agentsMdExists) return { ...base, kind: 'drop', reason: NO_AGENTS_MD_REASON };
+
   switch (harness) {
     case 'claude-code':
-      return scaffoldInstruction(
-        base,
-        agentsMdExists,
-        '.claude/CLAUDE.md',
-        CLAUDE_INSTRUCTION_CONTENT
-      );
+      return scaffoldInstruction(base, '.claude/CLAUDE.md', CLAUDE_INSTRUCTION_CONTENT);
     case 'codex':
     case 'cursor':
     case 'opencode':
-      return { ...base, kind: 'native', reason: `${harness} reads AGENTS.md directly` };
+      return {
+        ...base,
+        kind: 'native',
+        reason: `${HARNESS_LABELS[harness]} reads AGENTS.md directly`,
+      };
     case 'gemini':
-      return scaffoldInstruction(
-        base,
-        agentsMdExists,
-        'GEMINI.md',
-        instructionPointer('./AGENTS.md')
-      );
+      return scaffoldInstruction(base, 'GEMINI.md', instructionPointer('./AGENTS.md'));
     case 'copilot':
       return scaffoldInstruction(
         base,
-        agentsMdExists,
         '.github/copilot-instructions.md',
         instructionPointer('../AGENTS.md')
       );
   }
 }
 
-/** Emit a scaffold instruction action, or a drop when there is no AGENTS.md to point at. */
-function scaffoldInstruction(
-  base: ActionBase,
-  agentsMdExists: boolean,
-  target: string,
-  content: string
-): ProjectionAction {
-  if (!agentsMdExists) return { ...base, kind: 'drop', reason: 'no AGENTS.md to point at' };
+/**
+ * Emit a scaffold instruction action. Only reached once `AGENTS.md` is known to
+ * exist — the absent case is one drop for every harness, decided above.
+ */
+function scaffoldInstruction(base: ActionBase, target: string, content: string): ProjectionAction {
   const action: ProjectionAction = { ...base, kind: 'scaffold', target };
   setActionContent(action, content);
   return action;

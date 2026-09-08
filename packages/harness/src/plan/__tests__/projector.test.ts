@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildPlan } from '../projector.js';
 import { getActionContent } from '../content-map.js';
-import { parseHarnessManifest } from '../../manifest/schema.js';
+import { parseHarnessManifest, HARNESS_IDS } from '../../manifest/schema.js';
 import { GENERATED_HOOKS_DESCRIPTION, type ClaudeHooksConfig } from '../../generate/hooks.js';
 
 let dir = '';
@@ -22,6 +22,23 @@ function fixtureRepo(): string {
   mkdirSync(join(d, '.agents', 'skills', 'demo'), { recursive: true });
   writeFileSync(join(d, '.agents', 'skills', 'demo', 'SKILL.md'), '# demo\n');
   return d;
+}
+
+/**
+ * A plan over `fixtureRepo()` that HAS authored commands to talk about.
+ *
+ * Since DOR-1847 a repo with no `.claude/commands` gets no command action at
+ * all — for any harness — so a case about how a command drops has to stage one
+ * first, or it is asserting on an empty list.
+ */
+function planWithCommands(manifest: ReturnType<typeof parseHarnessManifest>) {
+  return buildPlan({
+    repoRoot: dir,
+    manifest,
+    claudeHooks,
+    agentsMdExists: true,
+    claudeCommandsExist: true,
+  });
 }
 
 describe('buildPlan', () => {
@@ -55,7 +72,10 @@ describe('buildPlan', () => {
     expect(gen?.target).toBe('.codex/hooks.json');
     expect(getActionContent(gen!)).toContain('Stop');
 
-    const commandDrop = plan.drops.find((a) => a.harness === 'codex' && a.artifact === 'command');
+    const withCommands = planWithCommands(manifest);
+    const commandDrop = withCommands.drops.find(
+      (a) => a.harness === 'codex' && a.artifact === 'command'
+    );
     expect(commandDrop?.kind).toBe('drop');
     expect(commandDrop?.reason).toMatch(/slash-command/);
   });
@@ -173,5 +193,171 @@ describe('buildPlan', () => {
     const drop = plan.drops.find((a) => a.harness === 'gemini' && a.artifact === 'hook');
     expect(drop?.kind).toBe('drop');
     expect(drop?.reason).toMatch(/settings\.json/);
+  });
+});
+
+describe('buildPlan — `native` only when the source is really there', () => {
+  /** Every enabled harness, so a per-harness count assertion has a subject. */
+  const ALL = parseHarnessManifest({ version: 1, harnesses: [...HARNESS_IDS] });
+
+  it('drops instructions on every enabled harness when there is no AGENTS.md (IN-03)', () => {
+    // Reproduced 2026-09-07: the same plan carried `codex native AGENTS.md` and
+    // `claude-code drop … no AGENTS.md to point at`.
+    dir = fixtureRepo();
+    const plan = buildPlan({ repoRoot: dir, manifest: ALL, claudeHooks, agentsMdExists: false });
+
+    const instructionDrops = plan.drops.filter((a) => a.artifact === 'instruction');
+    expect(instructionDrops).toHaveLength(HARNESS_IDS.length);
+    expect(new Set(instructionDrops.map((a) => a.harness))).toEqual(new Set(HARNESS_IDS));
+    expect(plan.actions.filter((a) => a.artifact === 'instruction')).toEqual([]);
+  });
+
+  it('still projects instructions to every harness when AGENTS.md exists', () => {
+    dir = fixtureRepo();
+    const plan = buildPlan({ repoRoot: dir, manifest: ALL, claudeHooks, agentsMdExists: true });
+    expect(plan.actions.filter((a) => a.artifact === 'instruction')).toHaveLength(
+      HARNESS_IDS.length
+    );
+    expect(plan.drops.filter((a) => a.artifact === 'instruction')).toEqual([]);
+  });
+
+  it('emits NO claude-code hook action when .claude/settings.json declares no hooks', () => {
+    // There is no artifact, so there is nothing to call native and nothing to
+    // drop either — a drop line implies something exists that could not travel.
+    dir = fixtureRepo();
+    const plan = buildPlan({ repoRoot: dir, manifest: ALL, agentsMdExists: true });
+
+    const claudeHookActions = [...plan.actions, ...plan.drops].filter(
+      (a) => a.artifact === 'hook' && a.harness === 'claude-code'
+    );
+    expect(claudeHookActions).toEqual([]);
+  });
+
+  it('calls claude-code hooks native only once .claude/settings.json really declares some', () => {
+    dir = fixtureRepo();
+    const plan = buildPlan({ repoRoot: dir, manifest: ALL, claudeHooks, agentsMdExists: true });
+    const native = plan.actions.find(
+      (a) => a.artifact === 'hook' && a.harness === 'claude-code' && a.kind === 'native'
+    );
+    expect(native?.source).toBe('.claude/settings.json');
+  });
+
+  it('says NOTHING about hooks or commands, on any harness, when the repo has neither', () => {
+    // The rule is universal, not a Claude Code carve-out. A repo with no
+    // `.claude/commands` and no hooks used to be handed five command drops and
+    // two hook drops — "no repo-local slash-command format", "OpenCode has no
+    // declarative hook config" — about artifacts it does not have. Claude Code
+    // was the only harness kept quiet, which made the silence look like a bug in
+    // the other five rather than the correct answer for all six.
+    dir = fixtureRepo();
+    const plan = buildPlan({
+      repoRoot: dir,
+      manifest: ALL,
+      agentsMdExists: true,
+      claudeCommandsExist: false,
+    });
+
+    const lines = [...plan.actions, ...plan.drops].filter(
+      (a) => a.artifact === 'command' || a.artifact === 'hook'
+    );
+    expect(lines).toEqual([]);
+    // The plan is not empty — the skills and instructions are still in it — so
+    // this is silence about two artifacts, not a plan that failed to build.
+    expect(plan.actions.length).toBeGreaterThan(0);
+  });
+
+  it('drops hooks for OpenCode and Gemini once the repo really has some', () => {
+    // The other half of the same rule: the drops are honest when there IS an
+    // artifact, and both of these harnesses genuinely cannot take one.
+    dir = fixtureRepo();
+    const plan = buildPlan({ repoRoot: dir, manifest: ALL, claudeHooks, agentsMdExists: true });
+
+    const hookDrops = plan.drops.filter((a) => a.artifact === 'hook');
+    expect(new Set(hookDrops.map((a) => a.harness))).toEqual(new Set(['opencode', 'gemini']));
+  });
+
+  it('emits NO claude-code command action when .claude/commands does not exist', () => {
+    // `projector.ts` asserted `native` with `source: .claude/commands` whether or
+    // not the directory was there (reproduced 2026-09-07).
+    dir = fixtureRepo();
+    const plan = buildPlan({
+      repoRoot: dir,
+      manifest: ALL,
+      claudeHooks,
+      agentsMdExists: true,
+      claudeCommandsExist: false,
+    });
+    const claudeCommandActions = [...plan.actions, ...plan.drops].filter(
+      (a) => a.artifact === 'command' && a.harness === 'claude-code'
+    );
+    expect(claudeCommandActions).toEqual([]);
+  });
+
+  it('calls claude-code commands native once the directory holds at least one .md', () => {
+    dir = fixtureRepo();
+    const plan = buildPlan({
+      repoRoot: dir,
+      manifest: ALL,
+      claudeHooks,
+      agentsMdExists: true,
+      claudeCommandsExist: true,
+    });
+    const native = plan.actions.find(
+      (a) => a.artifact === 'command' && a.harness === 'claude-code' && a.kind === 'native'
+    );
+    expect(native?.source).toBe('.claude/commands');
+  });
+});
+
+describe('buildPlan — authored skills reach every harness that reads .agents/skills', () => {
+  it('is native for cursor, gemini and copilot, which all read .agents/skills (SK-05)', () => {
+    // All three read the canonical directory natively (vendor docs, 2026-09-07),
+    // so the old "not auto-projected in v1; see DOR-143" drop told three sets of
+    // users their skills did not travel when they did.
+    dir = fixtureRepo();
+    const manifest = parseHarnessManifest({
+      version: 1,
+      harnesses: ['cursor', 'gemini', 'copilot'],
+    });
+    const plan = buildPlan({ repoRoot: dir, manifest, claudeHooks, agentsMdExists: true });
+
+    const skillActions = plan.actions.filter((a) => a.artifact === 'skill' && a.name === 'demo');
+    expect(skillActions).toHaveLength(3);
+    for (const action of skillActions) {
+      expect({ harness: action.harness, kind: action.kind, source: action.source }).toEqual({
+        harness: action.harness,
+        kind: 'native',
+        source: '.agents/skills/demo',
+      });
+      expect(action.reason).toContain('.agents/skills');
+    }
+    expect(plan.drops.filter((a) => a.artifact === 'skill')).toEqual([]);
+  });
+});
+
+describe('buildPlan — authored command drops name each harness’s own format', () => {
+  it('gives cursor, gemini, codex and copilot honest, harness-specific reasons (CM-04)', () => {
+    dir = fixtureRepo();
+    const manifest = parseHarnessManifest({
+      version: 1,
+      harnesses: ['codex', 'cursor', 'gemini', 'copilot'],
+    });
+    const plan = planWithCommands(manifest);
+
+    const byHarness = new Map(
+      plan.drops
+        .filter((d) => d.artifact === 'command' && d.provenance === 'authored')
+        .map((d) => [d.harness, d.reason ?? ''])
+    );
+    expect(byHarness.size).toBe(4);
+    expect(byHarness.get('cursor')).toContain('.cursor/commands/*.md');
+    expect(byHarness.get('gemini')).toContain('.gemini/commands/*.toml');
+    expect(byHarness.get('copilot')).toContain('.github/prompts/*.prompt.md');
+    // Codex really has none: custom prompts were deprecated in favour of skills.
+    expect(byHarness.get('codex')).toMatch(/no repo-local slash-command format/);
+    for (const [harness, reason] of byHarness) {
+      if (harness === 'codex') continue;
+      expect(reason).not.toMatch(/no repo-local slash-command format/);
+    }
   });
 });

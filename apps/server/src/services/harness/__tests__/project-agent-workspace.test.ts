@@ -256,6 +256,16 @@ describe('projectAgentWorkspace', () => {
     // The package's skills DO project — the gate covers hooks and nothing else.
     const installedSkill = join(agentDir, '.claude', 'skills', 'flow__drain');
     expect(lstatSync(installedSkill).isSymbolicLink()).toBe(true);
+    // …and into `.agents/skills` as well, whatever harnesses the workspace
+    // enables (DOR-1518 for scheduled skills, DOR-1847 for the rest). A
+    // workspace manifest is claude-code-only, so nothing else would plan this
+    // link — and an agent whose turn runs on Codex or OpenCode reads exactly
+    // this directory. It resolves to the plugin's own copy, never a duplicate.
+    const canonicalLink = join(agentDir, '.agents', 'skills', 'flow__drain');
+    expect(lstatSync(canonicalLink).isSymbolicLink()).toBe(true);
+    expect(realpathSync(canonicalLink)).toBe(
+      realpathSync(join(agentDir, '.dork', 'plugins', 'flow', 'skills', 'drain'))
+    );
     // As do the workspace's own seeded skills, which is the point of the pass.
     expect(
       lstatSync(join(agentDir, '.claude', 'skills', 'operating-dorkos')).isSymbolicLink()

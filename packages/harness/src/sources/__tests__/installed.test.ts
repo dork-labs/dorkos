@@ -209,8 +209,8 @@ describe('scanInstalledPlugins', () => {
     //
     // BOTH portable roots are covered, and `.dork/tasks` is the half that
     // matters more: a task skill carrying a `schedule:` block is linked into
-    // `.agents/skills` by `planScheduledSkillLinks` whatever harnesses the
-    // project enables (DOR-1518), and what lands there gets offered for
+    // `.agents/skills` by `planCanonicalSkillLinks` whatever harnesses the
+    // project enables (DOR-1518, DOR-1847), and what lands there gets offered for
     // approval and then RUNS. `skills/` alone leaving `.dork/tasks/` unguarded
     // is a live mutant, so it is named here rather than left to the reader.
     projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));

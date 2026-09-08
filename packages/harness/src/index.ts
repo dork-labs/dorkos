@@ -11,6 +11,7 @@ export * from './vendor/gemini-maps.js';
 export * from './plan/types.js';
 export * from './plan/projector.js';
 export * from './plan/instructions.js';
+export * from './plan/command-formats.js';
 export * from './plan/installed-projector.js';
 export * from './plan/unreadable-hooks.js';
 export * from './scan/scanner.js';

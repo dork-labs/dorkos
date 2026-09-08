@@ -8,14 +8,35 @@
  *
  * The vocabulary is the sharp edge. The old `generateCodexHooks` translated
  * Claude events into CODEX spellings and dropped every event Codex has no home
- * for, so the only keys it could ever have written are the ten values of
- * `CANONICAL_TO_CODEXCLI_EVENT_NAMES`. A file keyed by anything else — a Claude
- * name Codex never took, an invented one — is somebody else's, whatever it looks
- * like.
+ * for, so the only keys it could ever have written are the TEN spelled out
+ * below. A file keyed by anything else — a Claude name Codex never took, an
+ * invented one, or a spelling the map has gained SINCE — is somebody else's,
+ * whatever it looks like.
+ *
+ * Those ten are written out here rather than read from
+ * `CANONICAL_TO_CODEXCLI_EVENT_NAMES`, and so is the frozen set the
+ * implementation checks against. Deriving either from the live map makes this
+ * test agree with whatever the map says today, so a map addition — `SessionEnd`
+ * in DOR-1847 — would quietly hand rule 2 a licence over a file shape no DorkOS
+ * build has ever written, and the suite would stay green while it happened.
  */
 import { describe, it, expect } from 'vitest';
 import { isLegacyBareCodexHooks } from '../generated-ownership.js';
 import { CANONICAL_TO_CODEXCLI_EVENT_NAMES } from '../../vendor/rulesync-maps.js';
+
+/** The exact Codex spellings the pre-DOR-1842 generator could emit. */
+const PRE_SIDECAR_CODEX_EVENTS = [
+  'SessionStart',
+  'PreToolUse',
+  'PostToolUse',
+  'UserPromptSubmit',
+  'Stop',
+  'PermissionRequest',
+  'SubagentStart',
+  'SubagentStop',
+  'PreCompact',
+  'PostCompact',
+] as const;
 
 /** A bare event map keyed by `event`, the shape the engine used to write. */
 function bare(event: string): string {
@@ -23,11 +44,29 @@ function bare(event: string): string {
 }
 
 describe('isLegacyBareCodexHooks', () => {
-  it('recognises a bare map keyed by an event Codex actually has', () => {
-    for (const event of Object.values(CANONICAL_TO_CODEXCLI_EVENT_NAMES)) {
+  it('recognises a bare map keyed by any of the ten events the old generator emitted', () => {
+    expect(PRE_SIDECAR_CODEX_EVENTS).toHaveLength(10);
+    for (const event of PRE_SIDECAR_CODEX_EVENTS) {
       expect({ event, legacy: isLegacyBareCodexHooks(bare(event)) }).toEqual({
         event,
         legacy: true,
+      });
+    }
+  });
+
+  it('rejects a Codex spelling the map has gained since the bare shape was retired', () => {
+    // The frozen list is a claim about what a PAST build wrote, so it may not
+    // track the present map. `SessionEnd` joined `CANONICAL_TO_CODEXCLI_EVENT_NAMES`
+    // in DOR-1847, long after the bare shape stopped being written — so a bare
+    // `SessionEnd` map is a person's file, and rule 2 must not overwrite it.
+    const gained = Object.values(CANONICAL_TO_CODEXCLI_EVENT_NAMES).filter(
+      (event) => !PRE_SIDECAR_CODEX_EVENTS.includes(event as never)
+    );
+    expect(gained).toEqual(['SessionEnd']);
+    for (const event of gained) {
+      expect({ event, legacy: isLegacyBareCodexHooks(bare(event)) }).toEqual({
+        event,
+        legacy: false,
       });
     }
   });

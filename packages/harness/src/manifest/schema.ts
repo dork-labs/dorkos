@@ -20,6 +20,24 @@ export const HarnessIdSchema = z.enum(HARNESS_IDS);
 export type HarnessId = z.infer<typeof HarnessIdSchema>;
 
 /**
+ * How each harness is named in prose a person reads — drop reasons, projection
+ * notes, warnings.
+ *
+ * The id is the key in a manifest and a CLI flag; it is not the product's name.
+ * `gemini` is Gemini CLI, `claude-code` is Claude Code. One map, so a reason
+ * built in the projector and one built in the installed-plugin projector call
+ * the same harness the same thing.
+ */
+export const HARNESS_LABELS: Readonly<Record<HarnessId, string>> = {
+  'claude-code': 'Claude Code',
+  codex: 'Codex',
+  cursor: 'Cursor',
+  gemini: 'Gemini CLI',
+  copilot: 'Copilot',
+  opencode: 'OpenCode',
+};
+
+/**
  * A skill intentionally kept Claude-only (not promoted to the canonical
  * `.agents/skills/` layer), with the reason it has not yet been made portable.
  * This is non-derivable exception data the scanner cannot reconstruct.

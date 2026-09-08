@@ -7,6 +7,13 @@
  * cross-agent translation tables. To update it, follow the re-vendor checklist
  * in `contributing/harness-sync.md`.
  *
+ * A few entries are DorkOS's own, where the vendor documents an event the pinned
+ * snapshot does not carry. Each is marked inline
+ * `// DorkOS addition (<ticket>, <vendor url>, <date>)` and quotes the vendor
+ * page it came from, so the next re-vendor can tell them from the snapshot and
+ * either adopt them upstream or keep them. Nothing else in the pinned tables is
+ * hand-edited, and the reverse maps stay derived (§3 step 5).
+ *
  * Source:   https://github.com/dyoshikawa/rulesync
  * Pinned:   commit b4bf09d5 (npm rulesync@9.0.2)
  * Files:    src/types/hooks.ts, src/constants/{claudecode,codexcli,copilot,cursor}-paths.ts
@@ -138,7 +145,15 @@ export const CLAUDE_HOOK_EVENTS: readonly HookEvent[] = [
   'elicitationResult',
 ];
 
-/** Hook events supported by Codex CLI. */
+/**
+ * Hook events supported by Codex CLI.
+ *
+ * Codex documents TWELVE events; the vendored snapshot carried ten. `sessionEnd`
+ * is added below as a DorkOS addition — Claude Code has the same event, so a
+ * `SessionEnd` hook was being dropped as "Codex has no equivalent" when Codex
+ * has one. The twelfth, `Interrupt`, has no Claude spelling and so no canonical
+ * key to map from; it is named here rather than left looking like an oversight.
+ */
 export const CODEXCLI_HOOK_EVENTS: readonly HookEvent[] = [
   'sessionStart',
   'preToolUse',
@@ -150,6 +165,9 @@ export const CODEXCLI_HOOK_EVENTS: readonly HookEvent[] = [
   'subagentStop',
   'preCompact',
   'postCompact',
+  // DorkOS addition (DOR-1847, https://learn.chatgpt.com/docs/hooks, 2026-09-07):
+  // "When the main thread ends: `SessionEnd` (doesn't run for subagents)".
+  'sessionEnd',
 ];
 
 /** Hook events supported by Cursor. */
@@ -178,15 +196,23 @@ export const CURSOR_HOOK_EVENTS: readonly HookEvent[] = [
 ];
 
 /**
- * Hook events supported by GitHub Copilot (cloud coding agent).
+ * Hook events supported by GitHub Copilot.
  *
- * GitHub documents an eight-event surface for `.github/hooks/*.json`:
- * `sessionStart`, `sessionEnd`, `userPromptSubmitted` (`beforeSubmitPrompt`),
- * `preToolUse`, `postToolUse`, `agentStop` (`stop`), `subagentStop`, and
- * `errorOccurred` (`afterError`). `subagentStart` is intentionally absent: it
- * is not part of the documented cloud-agent surface.
+ * The vendored snapshot carried the eight-event surface the concepts page
+ * describes (`docs.github.com/en/copilot/concepts/agents/hooks`). GitHub's hooks
+ * REFERENCE documents FOURTEEN events for the same `.github/hooks/*.json` file,
+ * and five of the six extra ones have a Claude spelling, so they were being
+ * dropped as having no Copilot home. They are added below, each quoted from the
+ * reference's own events table.
  *
- * @see https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-hooks
+ * One documented event has no Claude counterpart, and so no canonical key to map
+ * from: `userPromptTransformed`. Every other row of the fourteen is covered, so
+ * the map targets thirteen — and reaches twelve of Claude's thirty, because
+ * `errorOccurred` maps from the canonical `afterError`, which Claude Code has no
+ * spelling for either.
+ *
+ * @see https://docs.github.com/en/copilot/reference/hooks-configuration
+ * @see https://docs.github.com/en/copilot/concepts/agents/hooks
  */
 export const COPILOT_HOOK_EVENTS: readonly HookEvent[] = [
   'sessionStart',
@@ -197,6 +223,24 @@ export const COPILOT_HOOK_EVENTS: readonly HookEvent[] = [
   'stop',
   'subagentStop',
   'afterError',
+  // DorkOS addition (DOR-1847,
+  // https://docs.github.com/en/copilot/reference/hooks-configuration, 2026-09-07).
+  // Quoted from that page's events table, one row each:
+  //   `preCompact`          — "Context compaction is about to begin (manual or automatic)."
+  //   `permissionRequest`   — "Fires before the permission service runs (rules engine,
+  //                            session approvals, auto-allow/auto-deny, and user prompting)."
+  //   `notification`        — "Fires asynchronously when the CLI emits a system notification".
+  //   `postToolUseFailure`  — "After a tool completes with a failure."
+  //   `subagentStart`       — "A subagent is spawned (before it runs)."
+  // Two of them are CLI-only in practice: the same table's "Cloud agent" column
+  // says `notification` "Does not fire" there, and `permissionRequest` "either
+  // does not fire or has no effect" because tool calls are pre-approved. They are
+  // still valid entries in the file, which is why they map rather than drop.
+  'preCompact',
+  'permissionRequest',
+  'notification',
+  'postToolUseFailure',
+  'subagentStart',
 ];
 
 /**
@@ -274,6 +318,9 @@ export const CANONICAL_TO_CODEXCLI_EVENT_NAMES: Record<string, string> = {
   subagentStop: 'SubagentStop',
   preCompact: 'PreCompact',
   postCompact: 'PostCompact',
+  // DorkOS addition (DOR-1847, https://learn.chatgpt.com/docs/hooks, 2026-09-07):
+  // "When the main thread ends: `SessionEnd` (doesn't run for subagents)".
+  sessionEnd: 'SessionEnd',
 };
 
 /** Map Codex CLI PascalCase event names back to canonical camelCase. */
@@ -314,7 +361,7 @@ export const CURSOR_TO_CANONICAL_EVENT_NAMES: Record<string, string> = Object.fr
   Object.entries(CANONICAL_TO_CURSOR_EVENT_NAMES).map(([k, v]) => [v, k])
 );
 
-/** Map canonical camelCase event names to GitHub Copilot (cloud agent) camelCase. */
+/** Map canonical camelCase event names to GitHub Copilot camelCase. */
 export const CANONICAL_TO_COPILOT_EVENT_NAMES: Record<string, string> = {
   sessionStart: 'sessionStart',
   sessionEnd: 'sessionEnd',
@@ -324,6 +371,15 @@ export const CANONICAL_TO_COPILOT_EVENT_NAMES: Record<string, string> = {
   stop: 'agentStop',
   subagentStop: 'subagentStop',
   afterError: 'errorOccurred',
+  // DorkOS addition (DOR-1847,
+  // https://docs.github.com/en/copilot/reference/hooks-configuration, 2026-09-07).
+  // The reference's events table spells each of these exactly as the JSON key
+  // below — see the quotes on {@link COPILOT_HOOK_EVENTS} for the row text.
+  preCompact: 'preCompact',
+  permissionRequest: 'permissionRequest',
+  notification: 'notification',
+  postToolUseFailure: 'postToolUseFailure',
+  subagentStart: 'subagentStart',
 };
 
 /** Map GitHub Copilot (cloud agent) camelCase event names back to canonical camelCase. */

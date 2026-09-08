@@ -2,8 +2,9 @@
  * The shared repository generator for the engine's property tests (T0).
  *
  * `arbRepo()` produces a whole small repository — authored skills, plugins,
- * authored hooks, a random enabled-harness subset — and then stages **hostile
- * occupants** on top of it: a file somebody wrote by hand at a generated hook
+ * authored hooks, an optional `AGENTS.md`, an optional `.claude/commands`, a
+ * random enabled-harness subset — and then stages **hostile occupants** on top
+ * of it: a file somebody wrote by hand at a generated hook
  * target, a real directory at a skill link target, a widowed ownership sidecar,
  * a **dead symlink** at one of the three kinds of target the engine writes (a
  * `generate` target, a `scaffold` target, a `symlink` target), and a **person's
@@ -12,16 +13,21 @@
  * generated repo is materialised into a real temp dir; nothing here is mocked.
  *
  * It lives in its own module because more than one property file reads it:
- * `apply-ownership.property.test.ts` (P3, P4) and
- * `orphaned-links.property.test.ts` (P2, P2b). Keeping one generator is the
- * point — a hostile shape added for one property immediately hardens the other.
+ * `apply-ownership.property.test.ts` (P3, P4), `orphaned-links.property.test.ts`
+ * (P2, P2b), `native-source-exists.property.test.ts` (P9a) and
+ * `native-reachable.property.test.ts` (P9b). Keeping one generator is the point
+ * — a hostile shape added for one property immediately hardens the others.
+ *
+ * The three fields the last two turn on are `agentsMd`, `claudeCommands` and
+ * `authoredHooks`: each names a file whose EXISTENCE decides whether a
+ * projection may be called `native`, and each was once asserted regardless
+ * (DOR-1847). A generator that always wrote all three could not fail P9a.
  *
  * @module __tests__/properties/arb-repo
  */
 import fc from 'fast-check';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { HARNESS_IDS, type HarnessId } from '../../manifest/schema.js';
@@ -43,7 +49,7 @@ export const TARGET_HARNESS: Record<string, HarnessId> = {
 };
 
 /** How a staged occupant's sidecar relates to the file beside it. */
-export type SidecarState = 'none' | 'matching' | 'stale';
+type SidecarState = 'none' | 'matching' | 'stale';
 
 /**
  * What the staged occupant's bytes look like.
@@ -88,6 +94,13 @@ const DANGLING_LINK_TEXT: Record<DanglingKind, string> = {
   skill: '../../.agents/skills/zz-gone',
 };
 
+/**
+ * The state of `.claude/commands` — the directory Claude Code reads slash
+ * commands from, and one of the three whose EXISTENCE decides whether a
+ * projection may be called `native` (DOR-1847).
+ */
+type ClaudeCommandsState = 'absent' | 'empty' | 'populated';
+
 /** One generated repository, before it is written to disk. */
 export interface RepoSpec {
   /** Authored skill names under `.agents/skills`. */
@@ -96,6 +109,16 @@ export interface RepoSpec {
   plugins: { name: string; skills: string[]; hooks: boolean }[];
   /** Whether `.claude/settings.json` carries authored hooks. */
   authoredHooks: boolean;
+  /**
+   * Whether a canonical `AGENTS.md` exists at the repo root.
+   *
+   * With `authoredHooks` and `claudeCommands`, this is what lets P9a fail: a
+   * plan may only call something `native` when the file behind it is really
+   * there, and each of the three used to be asserted regardless (DOR-1847).
+   */
+  agentsMd: boolean;
+  /** Whether `.claude/commands` is absent, present-but-empty, or holds a `.md`. */
+  claudeCommands: ClaudeCommandsState;
   /** The manifest's enabled harnesses (may be empty). */
   harnesses: HarnessId[];
   /** A hand-written file at one generated hook target, or none. */
@@ -149,6 +172,8 @@ export function arbRepo(): fc.Arbitrary<RepoSpec> {
       { maxLength: 2, selector: (p) => p.name }
     ),
     authoredHooks: fc.boolean(),
+    agentsMd: fc.boolean(),
+    claudeCommands: fc.constantFrom<ClaudeCommandsState>('absent', 'empty', 'populated'),
     harnesses: fc.subarray([...HARNESS_IDS]),
     occupant: fc.option(
       fc.record({
@@ -233,9 +258,22 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
     version: 1,
     harnesses: spec.harnesses,
   });
-  writeFileAt(join(repoRoot, 'AGENTS.md'), '# Project\n');
+  if (spec.agentsMd) writeFileAt(join(repoRoot, 'AGENTS.md'), '# Project\n');
+  if (spec.claudeCommands !== 'absent') {
+    mkdirSync(join(repoRoot, '.claude', 'commands'), { recursive: true });
+    if (spec.claudeCommands === 'populated') {
+      writeFileAt(join(repoRoot, '.claude', 'commands', 'review.md'), '# review\n');
+    }
+  }
   for (const name of spec.skills) {
-    writeFileAt(join(repoRoot, '.agents', 'skills', name, 'SKILL.md'), `# ${name}\n`);
+    // Real frontmatter, not a bare heading: the vendor-facts coverage walk keys
+    // three harnesses on the frontmatter `name` and refuses to decide about a
+    // SKILL.md that has none, so a generator without it would make every harness
+    // `uncertain` about every skill and P9b vacuous.
+    writeFileAt(
+      join(repoRoot, '.agents', 'skills', name, 'SKILL.md'),
+      `---\nname: ${name}\ndescription: The ${name} skill\n---\n\n# ${name}\n`
+    );
   }
   if (spec.authoredHooks) {
     writeJsonAt(join(repoRoot, '.claude', 'settings.json'), {
@@ -253,7 +291,10 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
       layers: ['skills', 'hooks'],
     });
     for (const skill of plugin.skills) {
-      writeFileAt(join(dir, 'skills', skill, 'SKILL.md'), `# ${skill}\n`);
+      writeFileAt(
+        join(dir, 'skills', skill, 'SKILL.md'),
+        `---\nname: ${skill}\ndescription: The ${skill} skill\n---\n\n# ${skill}\n`
+      );
     }
     if (plugin.hooks) {
       writeJsonAt(join(dir, 'hooks', 'hooks.json'), {

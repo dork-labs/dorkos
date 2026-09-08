@@ -11,8 +11,10 @@
  * - **skills** project as symlinks into the harness's skill dir, always
  *   namespaced `<pkg>__<name>` so an installed skill can never silently overwrite
  *   an authored one (claude-code → `.claude/skills`, codex → `.agents/skills`).
- *   OpenCode reads `.agents/skills` directly, so it takes the same skills
- *   `native` (via the Codex namespaced symlink) rather than a symlink of its own.
+ *   OpenCode, Cursor, Gemini CLI and Copilot read `.agents/skills` directly, so
+ *   they take the same skills `native` rather than a symlink of their own — and
+ *   the link they read is planned whatever harnesses are enabled (see
+ *   {@link planCanonicalSkillLinks}), which is what makes that `native` true.
  * - **commands** project as generated repo-local wrappers, with every
  *   `${CLAUDE_PLUGIN_ROOT}` rewritten to the absolute install dir and a marker
  *   line marking the file engine-generated (the sweep-ownership predicate):
@@ -30,14 +32,15 @@
  *   What the scanner could not READ out of a plugin's `hooks/hooks.json` is
  *   reported separately, by `plan/unreadable-hooks.ts`.
  *
- * One projection is NOT for a harness at all. A plugin skill that carries a
- * `schedule:` block is a scheduled task, and the DorkOS scheduler watches exactly
- * one project skills root — `.agents/skills` — so such a skill is linked there
- * whatever harnesses the project enables (see
- * {@link planScheduledSkillLinks}). Without it, the stock project (harnesses
- * `['claude-code']`) projected the flow plugin's scheduled skills only into
- * `.claude/skills`, which nothing watches, and their schedules were never offered
- * for approval (DOR-1518).
+ * One projection answers to no harness list at all. `.agents/skills` is the one
+ * directory five of the six harnesses read AND the only project skills root the
+ * DorkOS scheduler watches, so every installed plugin skill is linked there
+ * whatever harnesses the project enables (see {@link planCanonicalSkillLinks}).
+ * It arrived for schedules — the stock project (harnesses `['claude-code']`)
+ * projected the flow plugin's scheduled skills only into `.claude/skills`, which
+ * nothing watches, so their schedules were never offered for approval (DOR-1518)
+ * — and DOR-1847 widened it to every installed skill, because an OpenCode- or
+ * Cursor-only project had the same hole with none of the schedules.
  *
  * A cross-harness caveat the projector also warns on: Claude Code keys a skill by
  * its DIRECTORY name (so `<pkg>__<name>` namespacing protects it), but OpenCode
@@ -50,12 +53,13 @@
  * @module plan/installed-projector
  */
 import { join } from 'node:path';
-import type { HarnessId } from '../manifest/schema.js';
+import { HARNESS_LABELS, type HarnessId } from '../manifest/schema.js';
 import type { ProjectionAction, ProjectionWarning } from './types.js';
 import type { InstalledPlugin } from '../sources/installed.js';
 import { emptyHooksConfig } from '../generate/hooks.js';
 import type { ClaudeHooksConfig, HookMatcherGroup } from '../generate/hooks.js';
 import { setActionContent } from './content-map.js';
+import { commandDropReason } from './command-formats.js';
 // Codex reads `.agents/skills/<name>` directly; Claude Code reads `.claude/skills`.
 // Installed-plugin skills are symlinked there under their namespaced name
 // (shared with the scanner + sweep).
@@ -148,19 +152,26 @@ const NON_PORTABLE_LAYER_REASONS: Record<string, string> = {
 const DROP_ATTRIBUTION: HarnessId = 'codex';
 
 /**
- * The harness a scheduler-driven `.agents/skills` link is attributed to.
+ * The harness an unconditional `.agents/skills` link is attributed to.
  *
- * The link exists for the DorkOS scheduler, not for a harness, but every
+ * The link exists for the directory, not for one harness, but every
  * {@link ProjectionAction} must name one and `HarnessId` has no "DorkOS" member.
  * Codex is the honest answer available: `.agents/skills` is the directory it
- * reads, so the link genuinely serves Codex too whenever Codex is enabled — and
- * when it is not, {@link SCHEDULE_LINK_REASON} on the action says plainly why the
- * link is there anyway.
+ * reads, so the link genuinely serves Codex whenever Codex is enabled — and when
+ * it is not, the reason on the action ({@link SCHEDULE_LINK_REASON} or
+ * {@link CANONICAL_LINK_REASON}) says plainly why the link is there anyway.
  */
 const SCHEDULE_LINK_ATTRIBUTION: HarnessId = 'codex';
 
 /** The note carried on a scheduler-driven link, so the report never looks arbitrary. */
 const SCHEDULE_LINK_REASON = `skill declares a schedule; linked into ${AGENTS_SKILLS_DIR} so the DorkOS scheduler can find it (the only project skills root it watches)`;
+
+/**
+ * The note carried on every other unconditional link — the reason a package's
+ * skills land in `.agents/skills` even in a project that enables nothing which
+ * reads it today.
+ */
+const CANONICAL_LINK_REASON = `linked into ${AGENTS_SKILLS_DIR}, the one skills directory Codex, OpenCode, Cursor, Gemini CLI and Copilot all read (vendor docs, 2026-09-07)`;
 
 /** The marker comment inserted into a generated command wrapper. */
 function generatedCommandMarkerLine(relDir: string): string {
@@ -426,84 +437,79 @@ function pluginRootSkillWarning(
  * Project one installed plugin's skills to a single harness.
  *
  * claude-code and codex get namespaced `<pkg>__<name>` symlinks into their skill
- * dir. OpenCode reads `.agents/skills` (and `.claude/skills`) directly, so it
- * takes each skill `native` — no symlink of its own — relying on the Codex/Claude
- * Code namespaced symlink already on disk. A skill whose `SKILL.md` still
- * references `${CLAUDE_PLUGIN_ROOT}` projects but earns a warning (the token will
- * not resolve off disk). Harnesses with no skill home drop the whole plugin.
+ * dir. OpenCode, Cursor, Gemini CLI and Copilot all read `.agents/skills`
+ * directly (vendor docs, 2026-09-07), so each takes the skill `native` — no
+ * symlink of its own — and the reason NAMES the `.agents/skills` link it reads,
+ * which {@link planCanonicalSkillLinks} plans whatever harnesses are enabled.
+ *
+ * That link used to be planned only by the codex target, so with codex disabled
+ * OpenCode's `native` pointed at a directory nothing had linked into and the
+ * skills reached nobody (SK-05, reproduced 2026-09-07 with
+ * `harnesses: ['opencode']`), while Cursor, Gemini and Copilot were handed a
+ * whole-plugin drop for a directory they read perfectly well.
+ *
+ * A skill whose `SKILL.md` still references `${CLAUDE_PLUGIN_ROOT}` projects but
+ * earns a warning (the token will not resolve off disk).
+ *
+ * @param harness - the target harness.
+ * @param plugin - the project-scoped installed plugin.
+ * @returns the per-skill actions and any plugin-root warnings for them.
  */
 export function planInstalledSkills(
   harness: HarnessId,
   plugin: InstalledPlugin
 ): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
   const dir = INSTALLED_SKILL_TARGET_DIRS[harness];
-  if (dir) {
-    const actions: ProjectionAction[] = [];
-    const warnings: ProjectionWarning[] = [];
-    for (const skill of plugin.skills) {
-      const namespaced = `${plugin.name}__${skill.name}`;
-      actions.push({
-        kind: 'symlink',
-        artifact: 'skill',
-        harness,
-        provenance: 'installed',
-        name: namespaced,
-        source: skill.sourceDir,
-        target: `${dir}/${namespaced}`,
-      });
-      const warning = pluginRootSkillWarning(harness, namespaced, skill.usesPluginRoot);
-      if (warning) warnings.push(warning);
-    }
-    return { actions, warnings };
+  const actions: ProjectionAction[] = [];
+  const warnings: ProjectionWarning[] = [];
+
+  for (const skill of plugin.skills) {
+    const namespaced = `${plugin.name}__${skill.name}`;
+    const base = {
+      artifact: 'skill',
+      harness,
+      provenance: 'installed',
+      name: namespaced,
+      source: skill.sourceDir,
+    } as const;
+    actions.push(
+      dir
+        ? { ...base, kind: 'symlink', target: `${dir}/${namespaced}` }
+        : {
+            ...base,
+            kind: 'native',
+            reason: `${HARNESS_LABELS[harness]} reads ${AGENTS_SKILLS_DIR} directly; this plugin's skills are linked at ${AGENTS_SKILLS_DIR}/${namespaced}`,
+          }
+    );
+    const warning = pluginRootSkillWarning(harness, namespaced, skill.usesPluginRoot);
+    if (warning) warnings.push(warning);
   }
 
-  if (harness === 'opencode') {
-    const actions: ProjectionAction[] = [];
-    const warnings: ProjectionWarning[] = [];
-    for (const skill of plugin.skills) {
-      const namespaced = `${plugin.name}__${skill.name}`;
-      actions.push({
-        kind: 'native',
-        artifact: 'skill',
-        harness,
-        provenance: 'installed',
-        name: namespaced,
-        source: skill.sourceDir,
-        reason: `OpenCode reads ${AGENTS_SKILLS_DIR} directly (via the Codex namespaced symlink)`,
-      });
-      const warning = pluginRootSkillWarning(harness, namespaced, skill.usesPluginRoot);
-      if (warning) warnings.push(warning);
-    }
-    return { actions, warnings };
-  }
-
-  return {
-    actions: [
-      {
-        kind: 'drop',
-        artifact: 'plugin',
-        harness,
-        provenance: 'installed',
-        name: plugin.name,
-        reason: `installed-plugin skills are not auto-projected to ${harness} in v1; see DOR-143`,
-      },
-    ],
-    warnings: [],
-  };
+  return { actions, warnings };
 }
 
 /**
- * Link every schedule-bearing installed skill into `.agents/skills`, whatever
- * harnesses the project enables.
+ * Link EVERY installed skill into `.agents/skills`, whatever harnesses the
+ * project enables.
  *
- * A skill's `schedule:` block makes it a scheduled task, and the DorkOS
- * scheduler watches exactly two roots: `<dorkHome>/skills` and
- * `<project>/.agents/skills` (`specs/universal-scheduled-tasks` §DD2). Never
- * `.claude/skills`. So on the stock project — manifest `harnesses` defaults to
- * `['claude-code']` — a plugin's scheduled skills projected only into a directory
- * nothing watches, and the person was never offered the schedule to approve
- * (DOR-1518). This rule is the fix: the schedule, not the harness list, decides
- * that the link exists.
+ * `.agents/skills` is the one skills directory five of the six harnesses read —
+ * Codex, OpenCode, Cursor, Gemini CLI and Copilot; only Claude Code does not —
+ * AND the only project skills root the DorkOS scheduler watches (the other is
+ * `<dorkHome>/skills`; `specs/universal-scheduled-tasks` §DD2). Never
+ * `.claude/skills`. So the link is not a per-harness projection at all: it is the
+ * one place a package's skills have to be for anything else to find them.
+ *
+ * It arrived scoped to schedules (DOR-1518): on the stock project — manifest
+ * `harnesses` defaults to `['claude-code']` — a plugin's scheduled skills
+ * projected only into a directory nothing watches, and the person was never
+ * offered the schedule to approve. DOR-1847 widened it to every installed skill,
+ * because the same hole swallowed an OpenCode- or Cursor-only project's ordinary
+ * skills with no schedule involved: the codex target was the only thing that ever
+ * planned this link, so with codex disabled nothing did.
+ *
+ * The action still says WHY it is there: {@link SCHEDULE_LINK_REASON} when the
+ * skill declares a schedule (the sharper reason, and the one a person is asked
+ * to approve against), {@link CANONICAL_LINK_REASON} otherwise.
  *
  * It runs ONCE per plan, not per harness, and stands down entirely when an
  * enabled harness already links installed skills into `.agents/skills` (Codex
@@ -513,8 +519,8 @@ export function planInstalledSkills(
  * hardcoding "codex", so it stays correct if another harness adopts the
  * directory.
  *
- * Only project-scoped plugins reach here; a globally installed plugin's
- * scheduled skill is still undiscoverable, because no projection stage targets
+ * Only project-scoped plugins reach here; a globally installed plugin's skills
+ * are still undiscoverable, because no projection stage targets
  * `<dorkHome>/skills` at all (see `sources/installed.ts`).
  *
  * One interaction worth knowing: `dorkos harness sync --harness <id> --fix`
@@ -525,10 +531,10 @@ export function planInstalledSkills(
  * projection) passes an unfiltered plan and is unaffected.
  *
  * @param input - the projectable project-scoped plugins and the enabled harnesses.
- * @returns the scheduler-driven symlink actions and any plugin-root warnings for
- *   them (both empty when an enabled harness already covers the directory).
+ * @returns the symlink actions and any plugin-root warnings for them (both empty
+ *   when an enabled harness already covers the directory).
  */
-export function planScheduledSkillLinks(input: {
+export function planCanonicalSkillLinks(input: {
   plugins: readonly InstalledPlugin[];
   harnesses: readonly HarnessId[];
 }): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
@@ -541,7 +547,6 @@ export function planScheduledSkillLinks(input: {
   const warnings: ProjectionWarning[] = [];
   for (const plugin of input.plugins) {
     for (const skill of plugin.skills) {
-      if (!skill.hasSchedule) continue;
       const namespaced = `${plugin.name}__${skill.name}`;
       actions.push({
         kind: 'symlink',
@@ -551,7 +556,7 @@ export function planScheduledSkillLinks(input: {
         name: namespaced,
         source: skill.sourceDir,
         target: `${AGENTS_SKILLS_DIR}/${namespaced}`,
-        reason: SCHEDULE_LINK_REASON,
+        reason: skill.hasSchedule ? SCHEDULE_LINK_REASON : CANONICAL_LINK_REASON,
       });
       const warning = pluginRootSkillWarning(
         SCHEDULE_LINK_ATTRIBUTION,
@@ -575,8 +580,10 @@ export function planScheduledSkillLinks(input: {
  * `description`; its shared-dir `.gitignore` is emitted once by
  * {@link planOpencodeCommandsGitignore}, not per plugin. Both rewrite every
  * `${CLAUDE_PLUGIN_ROOT}` to the absolute install dir and mark each wrapper
- * engine-generated. Other harnesses have no repo-local slash-command format, so a
- * plugin that ships commands drops with a reason.
+ * engine-generated. Nothing projects into the other harnesses' command
+ * directories yet, so a plugin that ships commands drops for them — with a
+ * reason naming that harness's own documented format, or its genuine absence in
+ * Codex's case (see `plan/command-formats.ts`).
  *
  * @param harness - the target harness.
  * @param plugin - the project-scoped installed plugin.
@@ -601,7 +608,7 @@ export function planInstalledCommands(
       harness,
       provenance: 'installed',
       name: `${plugin.name}:commands`,
-      reason: `installed-plugin slash commands need a repo-local command format; ${harness} has none`,
+      reason: commandDropReason(harness),
     },
   ];
 }
