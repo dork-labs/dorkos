@@ -40,12 +40,16 @@ export function isGeneratedHookTarget(
 /**
  * Write a generated hook file and record the engine's ownership of those bytes.
  *
- * The file first, its sidecar second, and both atomically. The order is the
- * whole safety of it: a reader that arrives between the two finds bytes with no
- * sidecar, which the ownership rule reads as "somebody else's file" and leaves
- * alone — cautious and recoverable. The reverse order would publish a claim over
- * bytes that are not there yet, and the next sync would rewrite whatever WAS
- * there on the strength of it.
+ * The file first, its sidecar second, and both atomically. A reader arriving
+ * between the two finds the new bytes under the OLD sidecar; asked what to do,
+ * {@link generatedHookOutcome} says `adopt` — the bytes are already what its own
+ * plan would write, so it simply records the sidecar and moves on.
+ *
+ * The reverse order is worse in exactly that case: a sidecar claiming bytes that
+ * have not landed yet matches nothing on disk, and the same reader would call
+ * the engine's own file one somebody hand-edited and report a conflict over it.
+ * Transient either way — the writer is a microsecond behind — but one order
+ * resolves itself and the other raises a fault about a file nobody touched.
  */
 function writeOwnedGenerated(absTarget: string, content: string): void {
   writeFileAtomic(absTarget, content);
