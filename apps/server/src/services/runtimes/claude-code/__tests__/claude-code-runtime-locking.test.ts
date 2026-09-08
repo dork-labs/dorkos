@@ -7,9 +7,10 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 }));
 
 // Every case re-imports the runtime under `vi.resetModules()`, so the module
-// graph is transformed and evaluated inside `beforeEach` — measured at 6.4s of
-// vitest's 10s hook default on a machine already running other agents' suites,
-// and at 12.2s on the run that filed DOR-1886. Nothing below asserts a
+// graph is transformed and evaluated inside `beforeEach` and the cost lands on
+// the HOOK budget: measured at 6.4s of vitest's 10s default at a load average of
+// 235, 12.2s on the run that filed DOR-1886, and peaking at 15.77s across three
+// rounds at 300-405 — the top of the 5-15s band, so 30s. Nothing below asserts a
 // duration; the default budget was the only thing failing.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 

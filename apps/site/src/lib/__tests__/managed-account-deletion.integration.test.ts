@@ -254,9 +254,12 @@ async function completeAccountDeletion(
 }
 
 // Booting PGlite, running every Drizzle migration and hashing a Better Auth
-// password costs seconds per case: measured at 6.9s end to end at a load average
-// of 273, against vitest's 5s test and 10s hook defaults (DOR-1886).
-vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+// password costs seconds per case, and every case pays it INSIDE its own body —
+// so the TEST budget is the one that has to cover it; the hooks here only stub
+// an env var and clear mocks, and keep the default. Measured at 6.9s against
+// vitest's 5s default at a load average of 273, peaking at
+// 11.33s across three rounds at 300-405: the 5-15s band, so 30s (DOR-1886).
+vi.setConfig({ testTimeout: 30_000 });
 
 describe('managed event account deletion', () => {
   beforeAll(() => vi.stubEnv('BETTER_AUTH_SECRET', 'test-secret-test-secret-test-secret-123'));

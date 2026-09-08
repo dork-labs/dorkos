@@ -82,8 +82,9 @@ import { GET as getToolkitVersion } from '../toolkits/[toolkit]/version/route';
 import { GET as getOperationSchemas } from '../toolkits/[toolkit]/operations/route';
 
 // The shared PGlite this file boots in `beforeAll` runs every managed-connector
-// migration: measured at 6.3s of vitest's 10s hook default at a load average of
-// 271 (DOR-1886).
+// migration, so both budgets are real here: measured at 6.3s of vitest's 10s
+// hook default at a load average of 271 and peaking at 13.42s across three
+// rounds at 300-405 — the 5-15s band, so 30s (DOR-1886).
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../../../../../drizzle/', import.meta.url));

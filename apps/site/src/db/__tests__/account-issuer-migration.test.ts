@@ -16,11 +16,12 @@ import { describe, expect, it, vi } from 'vitest';
 import * as authSchema from '../auth-schema';
 
 // Booting PGlite and replaying the migrations costs seconds, and every case
-// here pays it: at a load average of 280 this file failed with `Test timed out
-// in 5000ms` at 5063ms, on a branch that touches nothing near it (DOR-1886).
-// One database per case is what the pre-migration states under test require, so
-// the budget moves rather than the fixture.
-vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+// pays it INSIDE its own body — so this is a test budget, and there is no hook
+// here to give one to. At a load average of 280 the file failed with `Test timed
+// out in 5000ms` at 5063ms, and its peak across three rounds at 300-405 was
+// 8.07s: the 5-15s band, so 30s (DOR-1886). One database per case is what the
+// pre-migration states under test require, so the budget moves, not the fixture.
+vi.setConfig({ testTimeout: 30_000 });
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../../drizzle/', import.meta.url));
 const ISSUER_MIGRATION_PREFIX = '0010_';

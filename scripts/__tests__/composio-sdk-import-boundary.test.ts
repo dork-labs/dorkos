@@ -4,10 +4,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 // The first case shells out to `git ls-files` and then reads all ~7,100 tracked
 // source files synchronously, which is a whole-repo scan inside vitest's 5s
-// default. Measured here at 1.8-2.7s at a load average of 280-400 with a warm
-// page cache, and reported over 5s on the run that filed DOR-1886 — so the
-// margin is under two, and the budget is what moves, never the scan.
-vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+// default. It peaked at 2.67s across three rounds at a load average of 300-405
+// with a warm page cache, and was reported over 5s on the run that filed
+// DOR-1886 — under 5s, so 15s rather than 30s. That is ~5.6x the measured peak:
+// room for the tree to roughly quintuple, or for a cold page cache on a fresh CI
+// checkout, and no more. There is no hook here to budget. The scan itself never
+// shrinks to fit — if this file ever needs more than 15s, the scan is what
+// should change.
+vi.setConfig({ testTimeout: 15_000 });
 
 const ALLOWED_COMPOSIO_SDK_ROOTS = ['packages/connector-providers/src/composio/'] as const;
 

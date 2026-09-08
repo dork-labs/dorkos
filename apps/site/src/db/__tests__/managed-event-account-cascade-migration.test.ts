@@ -12,11 +12,13 @@ import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // Booting PGlite and replaying the migrations costs seconds, and every case
-// here pays it: at a load average of 280 this file failed with `Test timed out
-// in 5000ms` at 5503ms, on a branch that touches nothing near it (DOR-1886).
-// One database per case is what the 0013-vs-head states under test require, so
-// the budget moves rather than the fixture.
-vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+// pays it INSIDE its own body, so the TEST budget is the one that has to cover
+// it; the only hook here closes clients in milliseconds and keeps the default.
+// At a load average of 280 the file failed with `Test timed
+// out in 5000ms` at 5503ms, and its peak across three rounds at 300-405 was
+// 8.22s: the 5-15s band, so 30s (DOR-1886). One database per case is what the
+// 0013-vs-head states under test require, so the budget moves, not the fixture.
+vi.setConfig({ testTimeout: 30_000 });
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../../drizzle/', import.meta.url));
 const clients: PGlite[] = [];

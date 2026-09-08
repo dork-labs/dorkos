@@ -50,9 +50,11 @@ import {
 } from '../usage-service';
 
 // Booting PGlite and replaying the managed-connector migrations costs seconds,
-// and every case here pays it in `beforeEach`: measured at 6.1s of vitest's 10s
-// hook default at a load average of 296 (DOR-1886). Each case seeds its own
-// graph, so the fixture stays per-case and the budget moves instead.
+// and every case pays it in `beforeEach`, so both budgets are real here:
+// measured at 6.1s of vitest's 10s hook default at a load average of 296 and
+// peaking at 12.14s across three rounds at 300-405 — the 5-15s band, so 30s
+// (DOR-1886). Each case seeds its own graph, so the fixture stays per-case and
+// the budget moves instead.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../../../../drizzle/', import.meta.url));

@@ -1,6 +1,7 @@
 /**
  * @vitest-environment node
  */
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
@@ -104,15 +105,51 @@ async function createHarness(): Promise<{
   return { client, auth, handlers: toNextJsHandler(auth) };
 }
 
-// Booting PGlite, running every Drizzle migration and hashing a Better Auth
-// password takes ~3s on an idle machine, and vitest's 5s default false-failed
-// all three cases here on one already running other agents' suites (DOR-1886).
-vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+// Two budgets, because two different things are slow here (DOR-1886).
+//
+// The BOOT — PGlite plus every Drizzle migration plus a Better Auth password
+// hash — is the expensive one, and sharing it moved it into `beforeAll`, where
+// it peaked at 8.3s of the 10s hook default at a load average of 254. That is
+// the 5-15s band, so the hook keeps 30s.
+//
+// The CASES are what is left, and sharing made them cheap: 144-720ms, peaking
+// at 1.58s across three rounds at a load average of 300-405. Under 5s, so 15s
+// — enough for a 9x overrun and no more. The 5s default false-failed all three
+// on the run that filed this ticket, which is what both numbers are for.
+vi.setConfig({ testTimeout: 15_000, hookTimeout: 30_000 });
+
+/**
+ * A name no other case — and no EARLIER ATTEMPT at this same case — has used.
+ *
+ * `beforeAll` builds one database for the whole file and is NOT re-run when a
+ * case retries, so every row a failed attempt wrote is still sitting there on
+ * the next one. Both gates retry (`VITEST_RETRY=2` at the pre-push gate,
+ * `--retry=1` in the merge queue), so a fixed id turns any one-off failure into
+ * a PERMANENT one: the retry re-runs the write and then reads two rows where it
+ * asserted one, or is refused a sign-up for an email the first attempt took.
+ * Measured both ways — see the header of the shared-database comment below.
+ *
+ * @param prefix - What the name should read as, before its unique tail.
+ * @returns The prefixed, unique name.
+ */
+function uniqueId(prefix: string): string {
+  return `${prefix}-${randomUUID()}`;
+}
 
 describe('PostgreSQL security audit persistence', () => {
-  // ONE database for the file. Every case below reads only rows keyed to its own
-  // user, so they share a Postgres without depending on each other's order — and
-  // the three boots that cost the most here become one.
+  // ONE database for the file: the three boots that cost the most here become
+  // one, and every case reads only rows keyed to its own user, so they share a
+  // Postgres without depending on each other's order.
+  //
+  // The price is that nothing here may write a FIXED name. The database outlives
+  // a failed attempt, so every id a case writes goes through `uniqueId` above.
+  // Measured with a one-shot throw after each case's writes under
+  // `VITEST_RETRY=2`: with fixed names, case 1 read 2 rows then 3 where it
+  // asserts 1, and case 3 was refused its admin sign-up with a 403 because the
+  // first attempt already took the address. Case 2 survived on its own — it
+  // deletes its account, which frees the email again — but only if it gets far
+  // enough to do so, so it takes a unique address too rather than resting on
+  // that.
   let client: PGlite;
   let auth: ReturnType<typeof createAuth>;
   let handlers: Handlers;
@@ -128,39 +165,40 @@ describe('PostgreSQL security audit persistence', () => {
   });
 
   it('persists a direct audit write with a PostgreSQL UUID', async () => {
+    const target = uniqueId('target');
     await recordAudit(auth, {
       actorUserId: 'admin-a',
       action: 'admin.ban_user',
-      targetUserId: 'target-a',
+      targetUserId: target,
       reason: 'abuse',
       metadata: { banExpiresIn: 3600 },
     });
 
-    const rows = await listAudit(auth, { targetUserId: 'target-a' });
+    const rows = await listAudit(auth, { targetUserId: target });
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       actorUserId: 'admin-a',
       action: 'admin.ban_user',
-      targetUserId: 'target-a',
+      targetUserId: target,
       reason: 'abuse',
       metadata: { banExpiresIn: 3600 },
     });
     expect(rows[0].id).toMatch(UUID_PATTERN);
-    // Scoped to this case's own target, because the table is shared with the two
-    // below. What is being read off the column is its TYPE, which one row proves
-    // exactly as well as every row would.
+    // Scoped to this attempt's own target, because the table is shared with the
+    // two cases below AND with this case's earlier attempts. What is being read
+    // off the column is its TYPE, which one row proves as well as every row.
     expect(
       (
         await client.query<{ type: string }>(
           'SELECT pg_typeof(id)::text AS type FROM audit_log WHERE target_user_id = $1',
-          ['target-a']
+          [target]
         )
       ).rows
     ).toEqual([{ type: 'uuid' }]);
   });
 
   it('keeps requested and completed audit rows after real email-confirmed account deletion', async () => {
-    const owner = await createSignedInUser(client, handlers, 'leaving@dork.test');
+    const owner = await createSignedInUser(client, handlers, `${uniqueId('leaving')}@dork.test`);
     expect(
       (await handlers.POST(post('/api/auth/delete-user', { callbackURL: '/signin' }, owner.cookie)))
         .status
@@ -192,8 +230,13 @@ describe('PostgreSQL security audit persistence', () => {
   });
 
   it('attributes a real admin action to the acting account', async () => {
-    const admin = await createSignedInUser(client, handlers, 'admin@dork.test', 'admin');
-    const target = await createSignedInUser(client, handlers, 'target@dork.test');
+    const admin = await createSignedInUser(
+      client,
+      handlers,
+      `${uniqueId('admin')}@dork.test`,
+      'admin'
+    );
+    const target = await createSignedInUser(client, handlers, `${uniqueId('target')}@dork.test`);
 
     const response = await handlers.POST(
       post('/api/auth/admin/ban-user', { userId: target.id, banReason: 'abuse' }, admin.cookie)
