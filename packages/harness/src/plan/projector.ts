@@ -11,10 +11,10 @@
  * @module plan/projector
  */
 import { join } from 'node:path';
-import type { HarnessId, HarnessManifest } from '../manifest/schema.js';
+import { HARNESS_LABELS, type HarnessId, type HarnessManifest } from '../manifest/schema.js';
 import type { ActionBase, ProjectionAction, ProjectionPlan, ProjectionWarning } from './types.js';
 import { setActionContent } from './content-map.js';
-import { scanSkills, type SkillEntry } from '../scan/scanner.js';
+import { scanSkills, AGENTS_SKILLS_DIR, type SkillEntry } from '../scan/scanner.js';
 import {
   generateCodexHooks,
   generateCursorHooks,
@@ -27,28 +27,63 @@ import {
   type DroppedHook,
 } from '../generate/hooks.js';
 import { planInstruction } from './instructions.js';
+
 import type { InstalledPlugin } from '../sources/installed.js';
 import {
   planInstalledSkills,
   planInstalledCommands,
   planInstalledPluginHooks,
   planOpencodeCommandsGitignore,
-  planScheduledSkillLinks,
+  planCanonicalSkillLinks,
   planSkillNameCollisions,
   dropNonPortableLayers,
   dropWholePlugin,
   mergeHookConfigs,
   rewritePluginRootInHooks,
   PROJECTABLE_PLUGIN_TYPES,
+  CLAUDE_COMMANDS_DIR,
+  CLAUDE_SKILLS_DIR,
 } from './installed-projector.js';
 import { planUnreadableHookWarnings } from './unreadable-hooks.js';
+import { commandDropReason } from './command-formats.js';
+/** The one authored hooks file the engine reads — Claude Code's own project settings. */
+const CLAUDE_SETTINGS_SOURCE = '.claude/settings.json';
 
-/** Project a single skill to one harness. */
+/** The authored slash-command directory Claude Code reads (namespaced by subdirectory). */
+const CLAUDE_COMMANDS_SOURCE = CLAUDE_COMMANDS_DIR;
+
+/**
+ * The reason every harness but Claude Code takes an authored skill `native`.
+ *
+ * Claude Code is the ONLY harness that does not read `.agents/skills` — Codex,
+ * OpenCode, Cursor, Gemini CLI and Copilot all do, per their own docs fetched
+ * 2026-09-07 (`meta/harness-sync-capabilities.md` §1.1). Cursor, Gemini and
+ * Copilot used to be told their skills were dropped ("not auto-projected in v1;
+ * see DOR-143"), which was true when written and had been wrong for a while
+ * (SK-05).
+ *
+ * @param harness - the harness reading the canonical directory.
+ * @returns the note carried on the `native` action.
+ */
+function readsAgentsSkillsReason(harness: HarnessId): string {
+  return `${HARNESS_LABELS[harness]} reads ${AGENTS_SKILLS_DIR} directly (vendor docs, 2026-09-07)`;
+}
+
+/**
+ * Project a single authored skill (one found in `.agents/skills`) to one harness.
+ *
+ * Returns `undefined` for the one case with nothing honest to say: a skill the
+ * manifest lists in `claudeOnlySkills` that ALSO lives as a real directory in
+ * `.claude/skills`. Planning the usual claude-code symlink there would conflict
+ * with that directory on every apply, so the plan says nothing and
+ * {@link planClaudeOnlySkills} raises a warning naming the contradiction instead.
+ */
 function planSkill(
   harness: HarnessId,
   skill: SkillEntry,
-  manifest: HarnessManifest
-): ProjectionAction {
+  manifest: HarnessManifest,
+  claudeSkillDirs: ReadonlySet<string>
+): ProjectionAction | undefined {
   const base: ActionBase = {
     artifact: 'skill',
     harness,
@@ -58,28 +93,112 @@ function planSkill(
   };
 
   const isClaudeOnly = manifest.claudeOnlySkills.some((c) => c.name === skill.name);
-  if (harness !== 'claude-code' && isClaudeOnly) {
-    return {
-      ...base,
-      kind: 'drop',
-      reason: `claude-only skill (manifest.claudeOnlySkills); not projected to ${harness}`,
-    };
+  if (isClaudeOnly) {
+    if (harness !== 'claude-code') {
+      return { ...base, kind: 'drop', reason: CLAUDE_ONLY_DROP_REASON };
+    }
+    // Listed Claude-only AND already a real directory where Claude reads: the
+    // manifest and the canonical layer disagree, and a symlink over that
+    // directory is a standing conflict. Warned about, never planned.
+    if (claudeSkillDirs.has(skill.name)) return undefined;
   }
 
-  switch (harness) {
-    case 'claude-code':
-      return { ...base, kind: 'symlink', target: `.claude/skills/${skill.name}` };
-    case 'codex':
-      return { ...base, kind: 'native', reason: 'Codex reads .agents/skills directly' };
-    case 'opencode':
-      return { ...base, kind: 'native', reason: 'OpenCode reads .agents/skills directly' };
-    default:
-      return {
-        ...base,
-        kind: 'drop',
-        reason: `skills not auto-projected to ${harness} in v1; see DOR-143`,
-      };
+  if (harness === 'claude-code') {
+    return { ...base, kind: 'symlink', target: `${CLAUDE_SKILLS_DIR}/${skill.name}` };
   }
+  return { ...base, kind: 'native', reason: readsAgentsSkillsReason(harness) };
+}
+
+/** The one reason a harness other than Claude Code is told about a Claude-only skill. */
+const CLAUDE_ONLY_DROP_REASON =
+  'claude-only skill, kept in .claude/skills by manifest.claudeOnlySkills';
+
+/**
+ * Account for every `manifest.claudeOnlySkills` entry against where the skill
+ * actually lives.
+ *
+ * The manifest names skills deliberately kept out of the canonical layer. The
+ * projector used to consult the list only while walking `.agents/skills`, so an
+ * entry that lives solely in `.claude/skills` — all 13 in this repository —
+ * produced no line at all: not an action, not a drop, nothing (SK-04, reproduced
+ * 2026-09-07). Three states, three honest answers:
+ *
+ * - **only in `.claude/skills`** — Claude Code reads it where it sits (`native`),
+ *   and every other enabled harness is told why it did not travel.
+ * - **in both roots** — the manifest contradicts the canonical layer. Warned,
+ *   with no claude-code symlink planned (see {@link planSkill}); the per-harness
+ *   drops for the other harnesses still come from there.
+ * - **in neither** — the entry is stale. Warned, so a list nobody prunes does not
+ *   quietly become fiction.
+ *
+ * @param input - the manifest, the authored skill names found in `.agents/skills`,
+ *   and the real directory names found in `.claude/skills`.
+ * @returns the claude-code `native` actions, the per-harness drops, and the warnings.
+ */
+function planClaudeOnlySkills(input: {
+  manifest: HarnessManifest;
+  agentsSkillNames: ReadonlySet<string>;
+  claudeSkillDirs: ReadonlySet<string>;
+}): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
+  const { manifest, agentsSkillNames, claudeSkillDirs } = input;
+  const actions: ProjectionAction[] = [];
+  const warnings: ProjectionWarning[] = [];
+
+  for (const entry of manifest.claudeOnlySkills) {
+    const inAgents = agentsSkillNames.has(entry.name);
+    const inClaude = claudeSkillDirs.has(entry.name);
+
+    if (inAgents && inClaude) {
+      warnings.push({
+        artifact: 'skill',
+        harness: 'claude-code',
+        name: entry.name,
+        reason:
+          'claudeOnlySkills names a skill that also lives in .agents/skills — move it or drop the entry',
+      });
+      continue;
+    }
+    // Already covered by the `.agents/skills` walk: it produces the claude-code
+    // symlink and the per-harness drops for this entry.
+    if (inAgents) continue;
+
+    if (!inClaude) {
+      warnings.push({
+        artifact: 'skill',
+        harness: 'claude-code',
+        name: entry.name,
+        reason: `claudeOnlySkills entry is stale: no skill named "${entry.name}" in ${CLAUDE_SKILLS_DIR} or ${AGENTS_SKILLS_DIR}`,
+      });
+      continue;
+    }
+
+    const source = `${CLAUDE_SKILLS_DIR}/${entry.name}`;
+    for (const harness of manifest.harnesses) {
+      actions.push(
+        harness === 'claude-code'
+          ? {
+              artifact: 'skill',
+              harness,
+              provenance: 'authored',
+              name: entry.name,
+              source,
+              kind: 'native',
+              reason: `Claude Code reads ${CLAUDE_SKILLS_DIR} directly`,
+            }
+          : {
+              artifact: 'skill',
+              harness,
+              provenance: 'authored',
+              name: entry.name,
+              source,
+              kind: 'drop',
+              reason: CLAUDE_ONLY_DROP_REASON,
+            }
+      );
+    }
+  }
+
+  return { actions, warnings };
 }
 
 /**
@@ -151,15 +270,30 @@ const STANDALONE_HOOK_HARNESSES: Partial<Record<HarnessId, StandaloneHookSpec>> 
   },
 };
 
-/** Project hooks to one harness (may yield several actions + warnings). */
+/**
+ * Project hooks to one harness (may yield several actions + warnings).
+ *
+ * `claudeHooks` is the MERGED config — the repo's own hooks plus every installed
+ * package's — because that is what the other harnesses' generated files carry.
+ * `authoredHooks` is the repo's own half alone, and it is what decides Claude
+ * Code's `native`: Claude reads `.claude/settings.json`, and a package's hooks
+ * reach it through the separate `.claude/settings.local.json` merge, never that
+ * file. With no authored hooks there is no artifact at all, so Claude Code gets
+ * NO action — not a `native` for a file that may not exist, and not a `drop`
+ * either, which would claim something exists that could not travel.
+ */
 function planHooks(
   harness: HarnessId,
-  claudeHooks?: ClaudeHooksConfig
+  claudeHooks?: ClaudeHooksConfig,
+  authoredHooks?: ClaudeHooksConfig
 ): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
   const base: ActionBase = { artifact: 'hook', harness, provenance: 'authored', name: 'hooks' };
   if (harness === 'claude-code') {
+    const hasAuthoredHooks = authoredHooks !== undefined && Object.keys(authoredHooks).length > 0;
     return {
-      actions: [{ ...base, kind: 'native', source: '.claude/settings.json' }],
+      actions: hasAuthoredHooks
+        ? [{ ...base, kind: 'native', source: CLAUDE_SETTINGS_SOURCE }]
+        : [],
       warnings: [],
     };
   }
@@ -228,7 +362,7 @@ function planStandaloneHooks(
       provenance: 'authored',
       name: 'hooks',
       kind: 'generate',
-      source: '.claude/settings.json',
+      source: CLAUDE_SETTINGS_SOURCE,
       target: spec.target,
     };
     setActionContent(action, content);
@@ -257,8 +391,22 @@ function planStandaloneHooks(
   };
 }
 
-/** Project slash commands to one harness. */
-function planCommands(harness: HarnessId): ProjectionAction {
+/**
+ * Project authored slash commands (`.claude/commands/**`) to one harness.
+ *
+ * Returns `undefined` for Claude Code when the repository has no
+ * `.claude/commands` holding a command: there is nothing to read, so there is
+ * nothing to call `native`. The engine asserted that `native` unconditionally
+ * until 2026-09-07, source path and all.
+ *
+ * Every other harness drops, and each drop names that harness's OWN repo-local
+ * command format (see `plan/command-formats.ts`) rather than claiming none
+ * exists — four of the five have one.
+ */
+function planCommands(
+  harness: HarnessId,
+  claudeCommandsExist: boolean
+): ProjectionAction | undefined {
   const base: ActionBase = {
     artifact: 'command',
     harness,
@@ -266,7 +414,8 @@ function planCommands(harness: HarnessId): ProjectionAction {
     name: 'commands',
   };
   if (harness === 'claude-code') {
-    return { ...base, kind: 'native', source: '.claude/commands' };
+    if (!claudeCommandsExist) return undefined;
+    return { ...base, kind: 'native', source: CLAUDE_COMMANDS_SOURCE };
   }
   if (harness === 'opencode') {
     // OpenCode has a flat `.opencode/commands` format, but authored `.claude/commands`
@@ -279,12 +428,7 @@ function planCommands(harness: HarnessId): ProjectionAction {
         'authored .claude/commands are Claude-namespaced; only installed-plugin commands project to .opencode/commands in v1',
     };
   }
-  return {
-    ...base,
-    kind: 'drop',
-    reason:
-      'no repo-local slash-command format; behavior travels as a mapped skill (commandMappings)',
-  };
+  return { ...base, kind: 'drop', reason: commandDropReason(harness) };
 }
 
 /**
@@ -301,10 +445,11 @@ function planCommands(harness: HarnessId): ProjectionAction {
  * layers drop with reasons. Global-scoped installs and non-plugin package types
  * are dropped (reported, never projected by a project sync).
  *
- * One projection ignores the harness list: a plugin skill carrying a `schedule:`
- * block is linked into `.agents/skills` regardless, because that is the only
- * project skills root the DorkOS scheduler watches (DOR-1518, see
- * {@link planScheduledSkillLinks}).
+ * One projection ignores the harness list: every installed plugin skill is linked
+ * into `.agents/skills` regardless of which harnesses are enabled, because that
+ * is the one directory Codex, OpenCode, Cursor, Gemini CLI and Copilot all read,
+ * and the only project skills root the DorkOS scheduler watches (DOR-1518,
+ * DOR-1847; see {@link planCanonicalSkillLinks}).
  *
  * `input.allowPluginHooks` is the one lever over WHICH installed packages get to
  * contribute hooks. It gates hooks and nothing else: a package it excludes still
@@ -313,9 +458,17 @@ function planCommands(harness: HarnessId): ProjectionAction {
  * running `dorkos harness sync` in their own terminal asks for. See
  * {@link projectedHookCommands} for the list a caller needs to decide.
  *
+ * Three inputs describe files whose EXISTENCE decides whether a projection may
+ * be called `native`: `agentsMdExists`, `claudeCommandsExist`, and the hooks in
+ * `claudeHooks`. `buildPlan` stays filesystem-free, so `engine.ts` reads all
+ * three off disk (`project()` always passes them). They default to "absent",
+ * which is the honest reading for a caller that does not say — a plan may never
+ * claim a harness reads a file nobody has confirmed is there (P9a).
+ *
  * @param input - the repo root, validated manifest, optional Claude hooks,
- *   whether a canonical `AGENTS.md` exists, any installed plugins, and an optional
- *   per-package gate on hook contribution.
+ *   whether a canonical `AGENTS.md` exists, whether `.claude/commands` holds a
+ *   command, the real skill directories in `.claude/skills`, any installed
+ *   plugins, and an optional per-package gate on hook contribution.
  * @returns the actionable projections, the honest drop list, and any warnings —
  *   about a projection that landed but may not work in the target harness, or a
  *   source declaration the engine could not read at all.
@@ -325,11 +478,29 @@ export function buildPlan(input: {
   manifest: HarnessManifest;
   claudeHooks?: ClaudeHooksConfig;
   agentsMdExists: boolean;
+  /** Whether `.claude/commands` exists and holds at least one `.md`. Defaults to `false`. */
+  claudeCommandsExist?: boolean;
+  /**
+   * Names of REAL skill directories under `.claude/skills` (never the engine's
+   * own projection symlinks). Defaults to none. Read by the
+   * `manifest.claudeOnlySkills` accounting, which cannot otherwise tell a
+   * Claude-only skill kept there from a stale manifest entry.
+   */
+  claudeSkillDirs?: readonly string[];
   installedPlugins?: InstalledPlugin[];
   allowPluginHooks?: (packageName: string) => boolean;
 }): ProjectionPlan {
-  const { repoRoot, manifest, claudeHooks, agentsMdExists, installedPlugins = [] } = input;
+  const {
+    repoRoot,
+    manifest,
+    claudeHooks,
+    agentsMdExists,
+    claudeCommandsExist = false,
+    claudeSkillDirs = [],
+    installedPlugins = [],
+  } = input;
   const skills = scanSkills(repoRoot);
+  const claudeSkillDirSet = new Set(claudeSkillDirs);
   const warnings: ProjectionWarning[] = [];
 
   // Partition installed plugins: only project-scoped, projectable-type plugins
@@ -374,12 +545,16 @@ export function buildPlan(input: {
 
   const all: ProjectionAction[] = [];
   for (const harness of manifest.harnesses) {
-    for (const skill of skills) all.push(planSkill(harness, skill, manifest));
+    for (const skill of skills) {
+      const skillAction = planSkill(harness, skill, manifest, claudeSkillDirSet);
+      if (skillAction) all.push(skillAction);
+    }
     all.push(planInstruction(harness, agentsMdExists));
-    const hookResult = planHooks(harness, mergedHooks);
+    const hookResult = planHooks(harness, mergedHooks, claudeHooks);
     all.push(...hookResult.actions);
     warnings.push(...hookResult.warnings);
-    all.push(planCommands(harness));
+    const commandAction = planCommands(harness, claudeCommandsExist);
+    if (commandAction) all.push(commandAction);
     for (const plugin of projectable) {
       const skillResult = planInstalledSkills(harness, plugin);
       all.push(...skillResult.actions);
@@ -404,17 +579,28 @@ export function buildPlan(input: {
     if (ocGitignore) all.push(ocGitignore);
   }
 
-  // A schedule-bearing plugin skill reaches `.agents/skills` whatever harnesses
-  // are enabled — it is the only project skills root the DorkOS scheduler
-  // watches, so a schedule that lands anywhere else is a schedule nobody is ever
-  // asked to approve (DOR-1518). Stands down when an enabled harness already
-  // links installed skills there, so the target is planned exactly once.
-  const scheduled = planScheduledSkillLinks({
+  // Every installed plugin skill reaches `.agents/skills` whatever harnesses are
+  // enabled: it is the one directory five of the six read, and the only project
+  // skills root the DorkOS scheduler watches (DOR-1518, DOR-1847). Stands down
+  // when an enabled harness already links installed skills there, so the target
+  // is planned exactly once.
+  const canonicalLinks = planCanonicalSkillLinks({
     plugins: projectable,
     harnesses: manifest.harnesses,
   });
-  all.push(...scheduled.actions);
-  warnings.push(...scheduled.warnings);
+  all.push(...canonicalLinks.actions);
+  warnings.push(...canonicalLinks.warnings);
+
+  // Account for every `manifest.claudeOnlySkills` entry, including the ones the
+  // `.agents/skills` walk above never sees because they live only in
+  // `.claude/skills` (SK-04).
+  const claudeOnly = planClaudeOnlySkills({
+    manifest,
+    agentsSkillNames: new Set(skills.map((s) => s.name)),
+    claudeSkillDirs: claudeSkillDirSet,
+  });
+  all.push(...claudeOnly.actions);
+  warnings.push(...claudeOnly.warnings);
 
   // Skill-name collisions (frontmatter-keyed harnesses): warn once per colliding
   // installed skill per affected enabled harness.
