@@ -122,11 +122,11 @@ function buildMcpServersConfig(
       // `env_http_headers`, never `http_headers`. This config object is
       // flattened into `--config key=value` arguments on the `codex exec`
       // command line, so a value written here lands in the spawned argv, where
-      // any process running as this user can read it with `ps`. Both values are
-      // credentials — the MCP bearer, and an identity that can post as this
-      // agent — so the config carries only the NAMES of the environment
-      // variables holding them, and Codex resolves the values inside the
-      // subprocess. `buildCodexOptions` puts them there.
+      // any process running as this user can read it with `ps`. The authorization
+      // bearer is a credential; the runtime and cwd headers bind it to this
+      // adapter and directory. The config therefore carries only the NAMES of
+      // the environment variables holding all three, and Codex resolves their
+      // values inside the subprocess. `buildCodexOptions` puts them there.
       env_http_headers: dorkosHeaderEnvNames(dorkosTools),
     };
   }

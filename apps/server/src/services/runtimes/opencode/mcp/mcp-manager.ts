@@ -308,9 +308,9 @@ export class OpenCodeMcpManager {
       );
     }
 
-    // The `dorkos` tool server is resolved on EVERY reconcile, and its identity
-    // token is freshly minted each time (spec `tool-only-room-replies` §D4). It
-    // is written LAST so a managed server can never shadow the name DorkOS owns.
+    // The `dorkos` tool server is resolved on EVERY reconcile from this exact
+    // turn's binding (spec `tool-only-room-replies` §D4). It is written LAST so
+    // a managed server can never shadow the name DorkOS owns.
     const servers: Record<string, OpenCodeMcpServerConfig> = {
       ...managed.servers,
       ...(await this.resolveDorkosServer(agentCwd, connectorTools)),
@@ -326,12 +326,11 @@ export class OpenCodeMcpManager {
         : {}),
     };
 
-    // A re-minted token changes `headers`, so it changes this signature, so the
-    // no-op early return below does NOT fire and the server is re-added with the
-    // fresh credential. That falls out of hashing the whole desired set rather
-    // than its names — true by accident before DOR-1613, and pinned by a test
-    // now, because the alternative is a session whose token quietly expires
-    // mid-life and whose every room write then 401s.
+    // Every turn gets a fresh bearer and binding headers, so it gets a distinct
+    // signature. The no-op early return below therefore cannot reuse a prior
+    // turn's authority: the server is re-added with the exact current binding.
+    // That falls out of hashing the whole desired set rather than its names,
+    // and is pinned by a test.
     const signature = JSON.stringify(servers);
     const prev = this.injectedByCwd.get(cwd);
     // Nothing desired and nothing we ever injected here: no reconcile to do, and
