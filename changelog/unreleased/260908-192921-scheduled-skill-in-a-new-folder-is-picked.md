@@ -1,6 +1,9 @@
 ---
 covers:
   - 'fix(server): a schedule in a new folder is found in seconds (DOR-1908)'
+  # Containment for the catch-up scan this same change introduced — never
+  # shipped, so it has no user-facing bullet of its own.
+  - 'fix(server): one bad schedule file cannot cost a root the rest (DOR-1908)'
 ---
 
 ### Fixed
