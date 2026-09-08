@@ -187,9 +187,8 @@ function planClaudeOnlySkills(input: {
   manifest: HarnessManifest;
   agentsSkillNames: ReadonlySet<string>;
   claudeOnly: ReadonlyMap<string, ClaudeOnlySkillLocation>;
-}): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
+}): { warnings: ProjectionWarning[] } {
   const { manifest, agentsSkillNames, claudeOnly } = input;
-  const actions: ProjectionAction[] = [];
   const warnings: ProjectionWarning[] = [];
 
   /**
@@ -265,32 +264,16 @@ function planClaudeOnlySkills(input: {
       continue;
     }
 
-    for (const harness of manifest.harnesses) {
-      actions.push(
-        harness === 'claude-code'
-          ? {
-              artifact: 'skill',
-              harness,
-              provenance: 'authored',
-              name: entry.name,
-              source: location.path,
-              kind: 'native',
-              reason: `Claude Code reads ${CLAUDE_SKILLS_DIR} directly`,
-            }
-          : {
-              artifact: 'skill',
-              harness,
-              provenance: 'authored',
-              name: entry.name,
-              source: location.path,
-              kind: 'drop',
-              reason: CLAUDE_ONLY_DROP_REASON,
-            }
-      );
-    }
+    // A real directory at `.claude/skills/<name>` needs no line from here: the
+    // inventory walks that directory, so `planInventoriedArtifacts` already
+    // accounts for it, from the vendor facts, for every enabled harness. This
+    // branch used to emit its own — `native` for Claude Code and a flat drop for
+    // everyone else — which contradicted the other path about two identical
+    // directories and told OpenCode users their skill was dropped from a
+    // directory OpenCode reads (DOR-1845 review).
   }
 
-  return { actions, warnings };
+  return { warnings };
 }
 
 /**
@@ -752,9 +735,14 @@ export function buildPlan(input: {
     // skill declares in its frontmatter. Each one is a native where the harness
     // really reads the source, and a drop naming where it would have to be
     // otherwise — never nothing (DOR-1845).
-    all.push(
-      ...planInventoriedArtifacts({ harness, inventory, claudeOnlyNames, agentsSkillNames })
-    );
+    const inventoried = planInventoriedArtifacts({
+      harness,
+      inventory,
+      claudeOnlyNames,
+      agentsSkillNames,
+    });
+    all.push(...inventoried.actions);
+    warnings.push(...inventoried.warnings);
     for (const plugin of projectable) {
       const skillResult = planInstalledSkills(harness, plugin);
       all.push(...skillResult.actions);
@@ -799,7 +787,6 @@ export function buildPlan(input: {
     agentsSkillNames,
     claudeOnly: claudeOnlySkills,
   });
-  all.push(...claudeOnly.actions);
   warnings.push(...claudeOnly.warnings);
 
   // Skill-name collisions (frontmatter-keyed harnesses): warn once per colliding
