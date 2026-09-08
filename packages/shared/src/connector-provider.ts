@@ -58,15 +58,6 @@ export const ConnectorCustodySchema = z.enum(['managed', 'self-host', 'external'
 export type ConnectorCustody = z.infer<typeof ConnectorCustodySchema>;
 
 /**
- * Stable DorkOS connection id for one account of one service. The provider's
- * own handle stays in a separate private binding. Branded so a bare string
- * cannot be passed where a connection id is due.
- */
-export const ConnectedAccountIdSchema = ConnectionIdSchema;
-/** Stable DorkOS id for one connected account. See {@link ConnectedAccountIdSchema}. */
-export type ConnectedAccountId = ConnectionId;
-
-/**
  * Static capability + custody descriptor for one backend (mirrors
  * `RuntimeCapabilities`). Capability flags carry genuinely-boolean backend
  * differences so there is no forked code across providers.
@@ -129,7 +120,7 @@ export type ConnectedAccountStatus = z.infer<typeof ConnectedAccountStatusSchema
  */
 export const ConnectedAccountSchema = z.object({
   /** Stable DorkOS connection id. */
-  id: ConnectedAccountIdSchema,
+  id: ConnectionIdSchema,
   /** Owning backend type — SERVER-ONLY, never in a public account DTO. */
   provider: z.string(),
   /** Service slug this account belongs to, e.g. `'gmail'`. */
@@ -240,9 +231,9 @@ export interface ConnectorProvider {
   /**
    * Begin connecting `toolkit`; returns a pollable flow id and, when browser
    * action is required, an authorization URL. Secrets stay server-side. A
-   * single-account backend (`supportsMultiAccount: false`)
-   * rejects a second connect of an already-connected toolkit rather than
-   * creating a duplicate.
+   * single-account backend (`supportsMultiAccount: false`) must not create a
+   * duplicate account; it may re-verify the existing connection or reject the
+   * repeated request.
    *
    * @param toolkit - Service slug to connect (must appear in `listToolkits`).
    * @param opts - Optional connect options; `label` disambiguates multiple accounts.
@@ -250,7 +241,7 @@ export interface ConnectorProvider {
   startConnect(toolkit: string, opts?: { label?: string }): Promise<ConnectStart>;
 
   /**
-   * Poll a connect flow to completion; resolves to the new account handle.
+   * Poll a connect flow to completion; resolves to the connected account handle.
    * Failure is TYPED on the result (`status: 'failed'`), never thrown.
    *
    * @param flowId - The opaque flow id from {@link startConnect}.

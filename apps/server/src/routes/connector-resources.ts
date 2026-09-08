@@ -67,7 +67,10 @@ function requestSignal(req: Request): { signal: AbortSignal; dispose: () => void
 
 function sendResourceError(res: Response, error: unknown): void {
   if (error instanceof ZodError) {
-    res.status(400).json({ error: 'Invalid connector resource request.', details: error.issues });
+    res.status(400).json({
+      error: 'This connection request is invalid. Check the request and try again.',
+      details: error.issues,
+    });
     return;
   }
   if (error instanceof ConnectorAuthenticationFlowError) {
@@ -86,7 +89,7 @@ function sendResourceError(res: Response, error: unknown): void {
     res.status(404).json({ error: error.message, code: error.code });
     return;
   }
-  res.status(500).json({ error: 'Connector resource request failed.' });
+  res.status(500).json({ error: 'DorkOS could not complete this connection request. Try again.' });
 }
 
 async function withSignal<T>(req: Request, run: (signal: AbortSignal) => Promise<T>): Promise<T> {

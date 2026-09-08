@@ -65,6 +65,10 @@ Use a provider's trustworthy operation metadata to classify an operation. If tha
 
 `mode` and custody answer different questions. A Composio instance configured with the operator's own key is `mode: 'byo'` and still has `custody: 'managed'` because Composio holds the end-user token.
 
+Mode also determines who supplies and pays for the provider project. In DorkOS-managed mode,
+DorkOS supplies the server project key. In BYO mode, the operator supplies and pays for it. Do not
+describe a BYO Composio route as self-hosted merely because its project key is stored locally.
+
 ## Add a provider
 
 ### 1. Create one instance-bound adapter
@@ -93,7 +97,22 @@ An authenticated runtime receives five private DorkOS tools. Two read-only tools
 
 Return every capability in `getCapabilities()`. When a capability is unavailable, return typed unsupported results from the matching method. Paginate catalog and operation discovery to a configured ceiling and surface truncation; do not silently use a vendor's default subset as the complete catalog.
 
-For triggers, return a stable `eventType` and `filterSchema` for each supported event. Event payloads later enter DorkOS through the protected durable inbox. Audit receipts remain payload-free, so provider-specific delivery metadata must be sufficient for deduplication and verification without copying secrets into receipts.
+For events, return a stable `eventType`, immutable definition generation, delivery timing, and
+`filterSchema` for each supported activity. Receiving an event is a separate grant from performing
+an operation. Each subscription must name one exact connection, definition, validated filter,
+agent, and destination. Never infer receive access from an operation grant or silently retarget a
+deleted destination.
+
+Event content enters DorkOS through the protected durable inbox. Audit receipts remain payload-free,
+so provider-specific delivery metadata must support deduplication and verification without copying
+secrets into receipts. Direct BYO delivery depends on the upstream service's webhook retry behavior;
+it has no hosted offline buffer. Managed delivery may retain encrypted content for its documented
+window. Neither path promises exactly-once delivery.
+
+Raw MCP is an inventory route. It performs an authenticated protocol initialization and tool-list
+request using credentials already configured on the remote server. It does not start OAuth, and its
+unversioned tools are not eligible for agent execution until a provider can supply the immutable
+version and classification required by the broker.
 
 ### 5. Wire the conformance suite
 

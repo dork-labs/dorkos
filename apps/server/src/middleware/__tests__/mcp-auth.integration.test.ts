@@ -41,6 +41,7 @@ import { createMcpAuth } from '../mcp-auth.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../env.js';
+import { createConfigGetHandler } from '../../services/core/operator/operator-tool-handlers.js';
 
 const DOMAIN = 'dork.test';
 const OWNER_EMAIL = 'owner' + '@' + DOMAIN;
@@ -70,13 +71,19 @@ const RESOURCES_READ = {
  * app-wide session gate, then a `/mcp` route guarded by the real `createMcpAuth`
  * middleware — so `req.body` peeking behaves exactly as production. The stub
  * handler returns `{ ok: true }` only when the middleware calls `next()`.
+ * `config_get` additionally uses the real operator handler and stored config projection.
  */
 function buildApp(): express.Express {
   const app = express();
   app.all('/api/auth/*splat', toNodeHandler(getAuth()!));
   app.use(express.json({ limit: '1mb' }));
   app.use(sessionGate);
-  app.post('/mcp', createMcpAuth({ surface: 'mcp' }), (_req, res) => res.json({ ok: true }));
+  app.post('/mcp', createMcpAuth({ surface: 'mcp' }), async (req, res) => {
+    if (req.body?.method === 'tools/call' && req.body.params?.name === 'config_get') {
+      return res.json(await createConfigGetHandler()());
+    }
+    return res.json({ ok: true });
+  });
   return app;
 }
 
@@ -138,6 +145,7 @@ describe('createMcpAuth — /mcp end-to-end (integration)', () => {
     // Reset the shared runtime knobs each test toggles.
     setAuthEnabled(false);
     setLegacyKey(null);
+    configManager.set('connectors', { rawMcpServers: [] });
     (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = undefined;
   });
 
@@ -150,6 +158,30 @@ describe('createMcpAuth — /mcp end-to-end (integration)', () => {
       const res = await postMcp(server).send(READ_ONLY_CALL);
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
+    });
+
+    it.each([
+      'https://private-user:private-password@mcp.example.com/endpoint',
+      'https://mcp.example.com/endpoint?access_token=private-query-token',
+    ])('withholds a stored raw MCP URL from tokenless config_get: %s', async (url) => {
+      const entry = { slug: 'notes', displayName: 'Notes', url, transport: 'http' as const };
+      configManager.set('connectors', { rawMcpServers: [entry] });
+      const response = await postMcp(server).send({
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        params: { name: 'config_get' },
+        id: 2,
+      });
+      expect(response.status).toBe(200);
+      expect(response.body.isError).toBeUndefined();
+      const text = response.body.content[0].text as string;
+      expect(JSON.parse(text).connectors).toEqual({
+        rawMcpServers: [{ slug: 'notes', displayName: 'Notes', transport: 'http' }],
+      });
+      expect(text).not.toContain(url);
+      expect(text).not.toContain('private-');
+      expect(text).not.toContain('mcp.example.com');
+      expect(configManager.get('connectors').rawMcpServers).toEqual([entry]);
     });
 
     it('allows a tokenless discovery tools/list', async () => {

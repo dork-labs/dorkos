@@ -6,7 +6,7 @@ import {
   runMigrations,
   type Db,
 } from '@dorkos/db';
-import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
+import type { ConnectionId } from '@dorkos/shared/connector-schemas';
 import { SessionConnectorAttachmentStore } from '../attachment-store.js';
 
 /** Seed the canonical parents required by attachment foreign keys. */
@@ -54,7 +54,7 @@ describe('SessionConnectorAttachmentStore', () => {
 
   it('refuses to create an ownerless canonical override', () => {
     const strictStore = new SessionConnectorAttachmentStore(db);
-    const gmail = 'gmail:personal' as ConnectedAccountId;
+    const gmail = 'gmail:personal' as ConnectionId;
 
     expect(() => strictStore.setState('unknown-session', gmail, 'attached')).toThrow(
       /no agent owner/i
@@ -63,22 +63,22 @@ describe('SessionConnectorAttachmentStore', () => {
   });
 
   it('setState/listForSession round-trip, and a re-set replaces the state', () => {
-    const gmail = 'gmail:personal' as ConnectedAccountId;
+    const gmail = 'gmail:personal' as ConnectionId;
     store.setState('session-1', gmail, 'attached');
     expect(store.listForSession('session-1')).toMatchObject([
-      { accountId: gmail, state: 'attached' },
+      { connectionId: gmail, state: 'attached' },
     ]);
     store.setState('session-1', gmail, 'detached');
     expect(store.listForSession('session-1')).toMatchObject([
-      { accountId: gmail, state: 'detached' },
+      { connectionId: gmail, state: 'detached' },
     ]);
     expect(store.listForSession('session-1')).toHaveLength(1);
   });
 
   describe('rekey()', () => {
     it('moves every override row to the new session id', () => {
-      const gmail = 'gmail:personal' as ConnectedAccountId;
-      const slack = 'slack:team' as ConnectedAccountId;
+      const gmail = 'gmail:personal' as ConnectionId;
+      const slack = 'slack:team' as ConnectionId;
       store.setState('old-id', gmail, 'detached');
       store.setState('old-id', slack, 'attached');
 
@@ -88,31 +88,31 @@ describe('SessionConnectorAttachmentStore', () => {
       expect(store.listForSession('new-id')).toHaveLength(2);
       expect(store.listForSession('new-id')).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ accountId: gmail, state: 'detached' }),
-          expect.objectContaining({ accountId: slack, state: 'attached' }),
+          expect.objectContaining({ connectionId: gmail, state: 'detached' }),
+          expect.objectContaining({ connectionId: slack, state: 'attached' }),
         ])
       );
     });
 
     it("when the new id already has its own override for an account, the new id's row wins", () => {
-      const gmail = 'gmail:personal' as ConnectedAccountId;
+      const gmail = 'gmail:personal' as ConnectionId;
       store.setState('old-id', gmail, 'attached');
       store.setState('new-id', gmail, 'detached');
 
       store.rekey('old-id', 'new-id');
 
       expect(store.listForSession('new-id')).toMatchObject([
-        { accountId: gmail, state: 'detached' },
+        { connectionId: gmail, state: 'detached' },
       ]);
       expect(store.listForSession('new-id')).toHaveLength(1);
     });
 
     it('is a no-op when the ids match', () => {
-      const gmail = 'gmail:personal' as ConnectedAccountId;
+      const gmail = 'gmail:personal' as ConnectionId;
       store.setState('same-id', gmail, 'attached');
       store.rekey('same-id', 'same-id');
       expect(store.listForSession('same-id')).toMatchObject([
-        { accountId: gmail, state: 'attached' },
+        { connectionId: gmail, state: 'attached' },
       ]);
     });
   });

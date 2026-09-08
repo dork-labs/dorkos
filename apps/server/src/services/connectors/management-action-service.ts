@@ -144,7 +144,7 @@ export class ConnectorManagementActionService implements ConnectorManagementActi
           if (!this.managedAuthority) {
             throw new ConnectorManagementActionError(
               'managed_sync_unavailable',
-              'Managed connector synchronization is unavailable. Relink and try again.'
+              'DorkOS cannot update this connection right now. Relink it and try again.'
             );
           }
           const staged = this.managedAuthority.stageAgentAccessRemoval({
@@ -179,7 +179,7 @@ export class ConnectorManagementActionService implements ConnectorManagementActi
   private requireOwnedConnection(owner: ConnectorOwnerAuthority, connectionId: ConnectionId) {
     const binding = this.registry.accountBinding(connectionId);
     if (!binding) {
-      throw new ConnectorManagementActionError('target_not_found', 'Connector target not found.');
+      throw new ConnectorManagementActionError('target_not_found', 'Connection not found.');
     }
     const row = this.db.$client
       .prepare(
@@ -197,7 +197,7 @@ export class ConnectorManagementActionService implements ConnectorManagementActi
         }
       | undefined;
     if (!row || row.owner_kind !== owner.kind || row.owner_id !== ownerId(owner)) {
-      throw new ConnectorManagementActionError('target_not_found', 'Connector target not found.');
+      throw new ConnectorManagementActionError('target_not_found', 'Connection not found.');
     }
     return {
       ...binding,
@@ -216,7 +216,7 @@ export class ConnectorManagementActionService implements ConnectorManagementActi
     if (requested.length !== operationRevisionIds.length) {
       throw new ConnectorManagementActionError(
         'revision_not_found',
-        'Connector operation selection is invalid.'
+        'The selected actions are invalid. Review access and try again.'
       );
     }
     const binding = this.requireOwnedConnection(owner, connectionId);
@@ -240,7 +240,7 @@ export class ConnectorManagementActionService implements ConnectorManagementActi
     if (valid.length !== requested.length) {
       throw new ConnectorManagementActionError(
         'revision_not_found',
-        'Connector operation selection is no longer available.'
+        'One or more selected actions are no longer available. Review access and try again.'
       );
     }
 
@@ -248,7 +248,7 @@ export class ConnectorManagementActionService implements ConnectorManagementActi
       if (!this.managedAuthority) {
         throw new ConnectorManagementActionError(
           'managed_sync_unavailable',
-          'Managed connector synchronization is unavailable. Relink and try again.'
+          'DorkOS cannot update this connection right now. Relink it and try again.'
         );
       }
       const byId = new Map(valid.map((revision) => [revision.id, revision]));

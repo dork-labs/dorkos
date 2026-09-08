@@ -13,6 +13,12 @@ superseded-by: null
 
 Accepted. Amended by ADR 260905-205123 (accepted 2026-09-07), which retires the assumption that provider execution is handed to an agent through provider MCP configuration. The swappable provider seam, Composio/Nango/raw-MCP choices, and structural custody disclosure remain in force.
 
+Implementation amendment (2026-09-07): the shipped raw-MCP route performs protocol initialization
+and tool inventory against an endpoint that is reachable exactly as configured. It does not start
+OAuth, accept an authentication secret or header, or expose the unversioned tools for agent
+execution. This explicitly retires the Decision section's clause that every installation gets “raw
+MCP over OAuth 2.1.” The provider choices and custody rules remain accepted.
+
 ## Context
 
 Shapes need agents to act on a user's real accounts (Gmail, Slack, Linear), but raw MCP has no multi-account model: the authorization draft scopes one OAuth connection to one account, GitHub discussion #234 proposed a per-call multi-user mechanism and was closed unadopted by its own author, and #193/#483 remain open and stalled (`research/20260718_connector-gateway-spike.md` §1.1). Real-world workarounds — an Atlassian user told two accounts require two separate MCP connections, Google Workspace MCP's `login_hint` patch — confirm this is a genuine protocol gap, not a theoretical one. D4 in `plans/shapes-program.md` set direction on 2026-07-17 (founder: "MCP gateway adapter") — build a `ConnectorProvider` abstraction rather than depend on any single vendor — but deferred the concrete provider picks and the custody disclosure to the W5 research spike (DOR-365). That spike verified the provider landscape, licenses, and custody models against primary sources (docs, repo `LICENSE` files, npm metadata, funding announcements), including a same-day AGPL-vs-Apache-2.0 name collision worth flagging (`research/20260718_connector-gateway-spike.md` §1.2, §5).

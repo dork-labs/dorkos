@@ -209,6 +209,7 @@ describe('maybeCreateTestModeConnectorProvider — the credential gate', () => {
     // The exact wiring index.ts uses under DORKOS_TEST_RUNTIME: the bootstrapper's
     // test-connector spec runs this factory on boot and on every credential reload.
     bootstrapper = new ConnectorProviderBootstrapper({
+      rawMcpPendingConnect: () => undefined,
       registry,
       credentials,
       nangoEnv: () => ({}),
@@ -259,6 +260,7 @@ describe('maybeCreateTestModeConnectorProvider — the credential gate', () => {
 
   it('is entirely absent without the test-mode seam — the production bootstrapper refuses the type', async () => {
     const production = new ConnectorProviderBootstrapper({
+      rawMcpPendingConnect: () => undefined,
       registry,
       credentials: fakeCredentials(secrets),
       nangoEnv: () => ({}),

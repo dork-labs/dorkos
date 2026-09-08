@@ -1,6 +1,6 @@
 ---
 title: Connections
-description: Let people reach your agents, and let your agents act in the apps you already use
+description: Let people reach your agents, and let your agents use the services you choose
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -9,54 +9,28 @@ import { Steps, Step } from 'fumadocs-ui/components/steps';
 
 # Connections
 
-The **Connections** page is everything outside DorkOS, in one place. It has two halves:
+The **Connections** page brings the outside world into one place. It has two regions:
 
-- **Messaging** — where people and platforms reach your agents, like Telegram and Slack. Set this up so an agent can message you the moment it finishes, and you can message it back. See the [Relay Messaging](/docs/guides/relay-messaging) guide.
-- **Accounts** — services your agents can act on for you, like Gmail, GitHub, or Notion. You connect an account once, then review the exact actions each named agent may use.
+- **Messaging** lets people reach your agents through services such as Slack and Telegram. See [Relay Messaging](/docs/guides/relay-messaging).
+- **Accounts** lets agents use services such as Gmail. You choose an account, a named agent, and the exact actions or notifications it may use.
 
-This page covers the **Accounts** half: connecting a service your agents act on.
+This guide covers Accounts.
 
 <Callout type="warn">
-  Accounts are new and still in alpha. The whole flow is covered by automated browser tests against
-  a test provider, but it has not been confirmed with real vendor accounts yet. Treat it as preview,
-  not finished.
+  Accounts are in alpha. The complete flow is tested with an offline service fixture. A real vendor
+  account has not completed the production proof yet. Managed services stay unavailable until each
+  production readiness check passes.
 </Callout>
 
-## Connect a service from the Connections page
-
-Here is the whole path, start to finish:
+## Connect an account in three steps
 
 <Steps>
 
 <Step>
 
-### Open Connections
+### Choose a service
 
-Click **Connections** in the sidebar, then scroll to the **Accounts** region.
-
-</Step>
-
-<Step>
-
-### Find your service
-
-Look in the **Services** grid. Some services connect directly, through their own sign-in, and are ready right away. Others connect through a carrier that holds the sign-in for you (Composio or Nango). If the service you want needs a carrier, open the **Composio & Nango** section at the bottom, add a key from one, and the services it reaches appear in the grid above. No restart needed.
-
-</Step>
-
-<Step>
-
-### Connect a service
-
-Find the service in the grid and click **Connect**. You can add a label like "work", which helps when you later connect a second account of the same service.
-
-</Step>
-
-<Step>
-
-### Read where your sign-in lives
-
-Before anything opens, DorkOS shows you one plain sentence saying where your login will be stored. This is the custody line (more below). Read it, then click **Open the sign-in page**.
+Open **Connections**, find **Accounts**, and choose a service. DorkOS shows only setup routes that are configured. When more than one route is ready, you can change the route before continuing.
 
 </Step>
 
@@ -64,73 +38,80 @@ Before anything opens, DorkOS shows you one plain sentence saying where your log
 
 ### Sign in
 
-The service's own sign-in page opens in a new tab. You sign in there, never inside DorkOS. You can even close the DorkOS dialog while you finish; DorkOS keeps checking and records the account when the sign-in completes.
+Read where the service will keep your login access. Add a label such as “work” if you plan to connect the service more than once. Open the sign-in page and finish the service's flow. You can close the DorkOS dialog while the flow continues.
 
 </Step>
 
 <Step>
 
-### See your account
+### Choose agent access
 
-The account appears under **Connected**, named like "Gmail (work)", with its own custody line and a disconnect button.
-
-</Step>
-
-<Step>
-
-### Review agent access
-
-Open the connected account and choose **Agent access**. Select a named agent and review the exact actions it may use. DorkOS pins those actions to the reviewed versions. New or changed actions stay off until you review them.
+Open the new connection and choose **Agent access**. Pick a named agent, then review the exact actions it may use. Notification access is a separate choice. New or changed actions stay off until you review them.
 
 </Step>
 
 </Steps>
 
-## Account changes stay with you
+You can connect several accounts for one service. Labels keep a personal account separate from a work account. Access always belongs to the exact connection you selected.
 
-Agents and programs can ask for a connection or access change, but they cannot approve it. Open **Connections** to review the account, agent, and exact actions before deciding. An approval to connect is separate from finishing the service's sign-in.
+## Agents can ask, but you decide
 
-## Connect more than one account
+An agent can ask for a service and explain why it needs access. The request does not reveal your private account list and does not grant anything. DorkOS opens an owner review where you choose the connection, actions, notifications, and destination.
 
-You can connect two accounts of the same service and keep them apart. A personal Gmail and a work Gmail show up as two separate rows, each with its own label. Each account has its own stable identity and private provider binding. You grant an agent actions on the exact account you intend; neither account borrows the other's access.
+If the request is still attached to a live turn, the agent receives the result there. After a restart, DorkOS can continue the exact recorded session once. A denied, expired, failed, or deleted request grants no access.
 
-## Where your login lives (custody)
+## Actions and notifications are separate
 
-Every account connection moves your login somewhere. DorkOS tells you where, in plain words, before you connect and again on each connected account. This is the honest part: you always know who holds the keys.
+An action grant lets an agent run a reviewed operation, such as reading a profile. It does not let the agent receive account activity.
 
-There are three custody types:
+A notification grant names all of these:
 
-- **Direct**: DorkOS verifies a remote tool server using the connection details you configured. Any login stays with that server. Direct server execution is not available in this alpha because DorkOS cannot yet verify immutable action metadata from a generic MCP endpoint.
-- **Managed**: a trusted company (Composio) holds your login in its own secure vault, not on your computer. This is the easiest path for services that don't connect directly.
-- **Self-host**: your own server (Nango) holds the login, on infrastructure you control. Nothing leaves your systems.
+- the exact connection;
+- the activity type and any supported filter;
+- the receiving agent;
+- the destination, such as an agent session, room, or supported messaging destination.
 
-You pick the path per service. You can hold a direct GitHub and a managed Gmail at the same time.
+To change a notification's scope, remove it and create a reviewed replacement. Standalone notification editing and pause controls are not part of this release. Pausing the whole connection remains available.
 
-## Which path to pick
+Delivery timing comes from the service. Some services send webhooks, some check on a schedule, and some do not report their timing. DorkOS does not label every notification as real time.
 
-When you click Connect, DorkOS routes the service for you:
+## Choose where account access runs
 
-- A configured raw MCP server appears as a direct connection option. DorkOS can verify and inventory it, but cannot grant its unversioned actions to an agent in this alpha.
-- If the service has a purpose-built two-way messaging adapter in DorkOS (like Slack), that lives on the **Messaging** half of this page instead. It is richer than a generic connection.
-- If neither fits, a carrier (Composio, or Nango if you self-host) connects the long tail of services.
-- If you already run your own remote tool server for the service, you can point straight at it.
+| Route                 | Who supplies the service project | Who holds the service login | Hosted offline notification buffer                            |
+| --------------------- | -------------------------------- | --------------------------- | ------------------------------------------------------------- |
+| DorkOS-managed        | DorkOS                           | Composio's vault            | Yes, after that capability passes its separate readiness gate |
+| Your Composio project | You                              | Composio's vault            | No. Your installation receives events directly.               |
+| Nango on your server  | You                              | Your Nango database         | No                                                            |
+| Raw MCP server        | You configure the server         | The remote server           | No                                                            |
 
-## Set up a carrier
+DorkOS does not charge for account actions in this release. Usage records distinguish which party's service project handled an attempt, but there is no billing or invoice flow.
 
 <Cards>
   <Card
-    title="Composio (managed)"
+    title="Composio"
     href="/docs/connections/composio"
-    description="The simple default for services that don't connect directly. Composio's secure vault holds the sign-in."
+    description="Compare DorkOS-managed and bring-your-own Composio routes."
   />
   <Card
     title="Raw MCP server"
     href="/docs/connections/raw-mcp"
-    description="Verify and inventory a configured remote tool server. Agent execution is not available for this path yet."
+    description="Verify and inventory one preconfigured remote MCP server."
   />
   <Card
-    title="Nango (self-host)"
+    title="Nango on your server"
     href="/docs/connections/nango"
-    description="Keep every login on infrastructure you control."
+    description="Keep service login access on infrastructure you control."
   />
 </Cards>
+
+## When login is off
+
+A local DorkOS installation without login has one local owner. Keep it on a trusted machine and network. Do not expose an installation without login to the public internet.
+
+Program commands still name an agent and can use only that agent's approved connections. Omitting `--agent` never widens access. An agent or program can request a change, but the owner review in the app is the only place that can approve it.
+
+## Remove access
+
+Removing an agent's access stops its next action and revokes its notification grants for that connection. Pausing a connection stops local use without deleting it. Disconnecting closes local authority first, then asks the service route to remove its private account.
+
+An external cleanup can remain pending when the service is unavailable. DorkOS keeps the local connection closed while it waits. A request already sent to another service cannot be recalled.

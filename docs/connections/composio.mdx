@@ -1,90 +1,98 @@
 ---
-title: Composio (managed)
-description: Connect a service like Gmail through Composio's secure vault
+title: Composio
+description: Choose DorkOS-managed access or connect your own Composio project
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
 
-# Composio (managed)
+# Composio
 
-Composio is the simple default for connecting a service. It handles the sign-in for you and holds your login in its own secure vault. You give DorkOS one Composio key, and it lets you connect services like Gmail, Slack, and Notion.
+Composio connects services such as Gmail to DorkOS. Composio holds each service's login access in its vault. DorkOS keeps the stable connection, your agent choices, and the exact action versions you approved.
 
 <Callout type="warn">
-  This path is built and browser-tested against a test provider, but not yet confirmed with a real
-  Composio account. It is in alpha. Try it in a safe account first.
+  DorkOS-managed Composio is configured with production readiness off. The Google app is limited to
+  its owner test account, and the real account proof has not completed. This page describes the
+  shipped behavior, not public availability.
 </Callout>
 
-## Before you connect: where your login lives
+## Pick a route
 
-DorkOS shows you this before you connect, and again on each connected account. For Gmail it reads:
+| Route                 | Project key                              | Who pays Composio | Cloud link   | Offline notification buffer                                       |
+| --------------------- | ---------------------------------------- | ----------------- | ------------ | ----------------------------------------------------------------- |
+| DorkOS-managed        | DorkOS keeps a server-only project key   | DorkOS            | Required     | Up to the original delivery deadline after event readiness passes |
+| Your Composio project | Your installation keeps your project key | You               | Not required | None in DorkOS hosting                                            |
 
-> Connecting gmail takes you to that service to sign in. Composio stores your connected accounts' login access in its own secure vault, not on your computer. Your agents can then act for you; your password is never shared, and you can disconnect anytime.
+Both routes use Composio's vault for the connected service login. Bring-your-own setup changes who supplies the Composio project. It does not move Gmail or another service's login token into DorkOS.
 
-In short: your password never touches DorkOS or Composio. Composio holds a token that lets your agents act, and you can disconnect at any time.
+DorkOS billing is off. Usage records identify the route and attempt, but DorkOS does not charge you or create an invoice.
 
-## What DorkOS stores
-
-DorkOS keeps only your Composio key, saved in its encrypted secret store (never plain text on disk, never sent to the browser, never written to a log). It does not store the logins for Gmail, Slack, or any other service you connect. Those live in Composio's vault. That is the whole point of the managed path.
-
-## Set it up
+## Use your own Composio project
 
 <Steps>
 
 <Step>
 
-### Get a Composio API key
+### Create a project key
 
-Create an account at Composio and copy a project API key from its dashboard. This key lets DorkOS connect accounts and execute the exact actions you grant through the broker.
-
-A Composio user account key that begins with `uak_` can still manage existing connections, but the SDK cannot provide DorkOS with pinned action schemas for that key type. DorkOS therefore reports action discovery and execution as unavailable instead of sending an unverified action.
+Create a Composio project and copy its project API key. A user account key beginning with `uak_` can manage existing accounts, but it cannot provide the pinned action schemas DorkOS requires. DorkOS leaves action discovery and execution unavailable for that key type.
 
 </Step>
 
 <Step>
 
-### Give the key to DorkOS
+### Save the key
 
-Open **Connections** in the sidebar and scroll to the **Composio & Nango** section. Paste the key into the Composio card and click **Save key**. The card shows **Ready** right away, and the services Composio can reach appear in the grid above. Removing the key later turns the provider off again and stops brokered execution for its accounts.
-
-</Step>
-
-<Step>
-
-### Connect a service
-
-Click **Connect** on a service tile (for example, Gmail). DorkOS shows the custody sentence first, then a button that opens the service's sign-in page in a new tab. You sign in there, not in DorkOS. When the sign-in completes, the account shows up under **Connected accounts**.
+Open **Connections**, expand **Composio & Nango**, and paste the key into the Composio card. Your browser sends it to your local DorkOS server when you save. The server keeps it in the local encrypted credential store, does not return or echo it after saving, and leaves it out of normal logs.
 
 </Step>
 
 <Step>
 
-### Connect a second account (optional)
+### Connect and review
 
-Connect the same service again and give it a label, like "personal". DorkOS suggests one when a first account already exists. Both accounts show up in your list, each with its own label and its own custody line.
+Choose a service, add an optional label, and open the sign-in page. After the connection appears, choose a named agent and review the exact actions it may run. A changed action schema or classification creates a new version that stays off until another review.
 
 </Step>
 
 </Steps>
 
-## Give an agent access
+Your installation calls Composio directly for this route. It also receives signed notifications directly when you configure them. If your installation is offline, recovery depends on the service's own retry behavior. DorkOS hosting does not relay or buffer bring-your-own notifications in this release.
 
-Open the account under **Connections**, choose **Agent access**, and select a named agent. Review the exact actions and versions before saving. DorkOS executes only those pinned actions through its broker. If Composio later reports a changed action or schema, the new version stays off until you review it.
+## Use DorkOS-managed access
 
-If an account expires, connect it again and review access for the new connection. If you paused it yourself, resume it under **Connections**. DorkOS refuses execution until that owner action is complete.
+When this route is available, the service tile opens an owner-bound sign-in flow. DorkOS uses its server project key and a private account identity derived from your signed-in owner and linked installation. The browser cannot choose another owner, installation, Composio user, or callback.
 
-## See an agent's notifications from the terminal
+Action inputs pass through DorkOS hosting and Composio to the service. Results return through the same path. Agents receive neither the project key nor the service login token. DorkOS keeps payload-free usage receipts with the action name, reviewed revision, attempt, outcome, and payer route. Those receipts do not contain action inputs or results.
 
-List the notifications an agent is allowed to receive:
+Managed availability has two separate switches:
+
+- common readiness covers catalog, sign-in, and actions;
+- event readiness covers new notification intake.
+
+A configured key does not make either switch healthy by itself. Each switch stays off until its own production proof passes.
+
+## Add notifications
+
+Open a connected account and choose **Notifications**. Select an activity type, any supported filter, the receiving agent, and the destination. Action access does not grant notification access.
+
+For a managed notification, DorkOS hosting keeps an encrypted delivery copy until your linked installation stores it or the original seven-day window ends. Your installation then keeps its protected copy until the destination outcome is known or that same deadline ends. Cleanup runs in bounded sweeps, so physical deletion can happen after the logical deadline.
+
+Removing a notification closes its local permission immediately. DorkOS then removes the upstream subscription when it still owns that subscription and the service is available. To change a filter, agent, or destination, remove the notification and create a reviewed replacement.
+
+## Inspect approved access from the CLI
+
+Every program command names the agent whose access it may inspect or use:
 
 ```bash
-dorkos connections subscriptions --agent agent-01
+dorkos connections list --agent <agent-id> --json
+dorkos connections schema <connection-id> --agent <agent-id> --json
+dorkos connections usage --agent <agent-id> --limit 20 --json
+dorkos connections subscriptions --agent <agent-id> --json
 ```
 
-Replace `agent-01` with the agent's ID. Add `--json` to include its approved destinations and filters.
-Use `--limit 20` for a shorter page, then pass the returned cursor with `--cursor` to continue.
+These commands return stable DorkOS connection IDs. They do not expose Composio account references, credentials, sign-in URLs, or notification content.
 
-This command requires your DorkOS API key. It shows only the selected agent's approved notifications, including accounts with no action access.
-It never returns message content or service credentials. Change notification access in the DorkOS app, where the owner reviews it.
+## Disconnect
 
-Timing depends on the service. Some send notifications directly; others check periodically. An unknown timing means the service has not reported it.
+Disconnecting closes local action and notification authority before DorkOS asks Composio to remove the account. If that external cleanup fails, the connection stays closed and the app shows that cleanup is pending. Do not repeat an action whose outcome is unknown. Check its existing receipt first.

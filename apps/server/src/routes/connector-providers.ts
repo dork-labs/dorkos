@@ -63,7 +63,9 @@ export function createConnectorProvidersRouter(deps: ConnectorProvidersRouterDep
     const provider = req.params.provider;
     const credentialName = bootstrapper.credentialNameFor(provider);
     if (!credentialName) {
-      res.status(400).json({ error: `Unknown connector provider '${provider}'` });
+      res.status(400).json({
+        error: 'This service setup option is not available. Choose another option and try again.',
+      });
       return;
     }
     // Express 5: req.body is undefined on an empty PUT — default to {} so the
@@ -78,7 +80,9 @@ export function createConnectorProvidersRouter(deps: ConnectorProvidersRouterDep
       // A non-refusal factory error (a genuine bug). Generic on purpose: this
       // path must never echo anything derived from the stored secret.
       logger.error(`[Connectors] Provider reload failed after credential save`, { provider });
-      res.status(500).json({ error: 'The key was saved, but the provider failed to start.' });
+      res.status(500).json({
+        error: 'The key was saved, but DorkOS could not start this service. Try again.',
+      });
     }
   });
 
@@ -86,7 +90,9 @@ export function createConnectorProvidersRouter(deps: ConnectorProvidersRouterDep
     const provider = req.params.provider;
     const credentialName = bootstrapper.credentialNameFor(provider);
     if (!credentialName) {
-      res.status(400).json({ error: `Unknown connector provider '${provider}'` });
+      res.status(400).json({
+        error: 'This service setup option is not available. Choose another option and try again.',
+      });
       return;
     }
     // Idempotent: the store's delete is safe when the name is absent, and the

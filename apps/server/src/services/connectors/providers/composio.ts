@@ -180,7 +180,7 @@ export interface ComposioConnectorProviderOpts {
  *   rather than falsely reporting success — like `startConnect`, revoke is an
  *   interactive action.
  * - `startConnect` — MAY throw: connect is an interactive settings action with no
- *   failure type on the port (mirrors raw-MCP rejecting a duplicate connect), so
+ *   failure type on the port, so
  *   a transport failure or a missing authorize URL throws a clear error the UI
  *   surfaces for retry.
  *
@@ -367,10 +367,10 @@ export class ComposioConnectorProvider implements ConnectorProvider {
   }
 
   async startConnect(toolkit: string, opts?: { label?: string }): Promise<ConnectStart> {
-    // Connect is an interactive settings action with NO failure type on the port
-    // (mirrors raw-MCP rejecting a duplicate connect), so a transport failure
-    // here throws a clear error rather than degrading — the UI shows it and the
-    // user retries. The label is carried as Composio's human-readable account
+    // Connect is an interactive settings action with NO failure type on the port,
+    // so a transport failure here throws a clear error rather than degrading.
+    // The UI shows the error and the user retries. The label is carried as
+    // Composio's human-readable account
     // alias, the disambiguator between two accounts of one toolkit (spike §1.3).
     const request = await this._client.initiateConnection({
       toolkit,

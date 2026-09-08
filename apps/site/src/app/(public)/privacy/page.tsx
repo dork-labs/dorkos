@@ -4,7 +4,7 @@ import { AnalyticsPreferenceControl } from '@/layers/widgets/cookie-consent';
 import { siteConfig } from '@/config/site';
 import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 
-const description = 'What DorkOS collects, what it never touches, and the choices you have.';
+const description = 'How DorkOS handles your information and the choices you have.';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy',
@@ -25,7 +25,7 @@ export default function PrivacyPolicyPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Privacy Policy</h1>
-          <p className="text-warm-gray text-lg">Last updated: July 13, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: September 7, 2026</p>
           <p className="text-warm-gray leading-relaxed">
             DorkOS is made by Blaze Ventures, LLC. When this page says “we,” that is who we mean.
           </p>
@@ -35,8 +35,10 @@ export default function PrivacyPolicyPage() {
           <h2 className="text-charcoal font-mono text-base font-semibold">The short version</h2>
           <ul className="text-warm-gray ml-5 list-disc space-y-1.5 leading-relaxed">
             <li>
-              The DorkOS app runs on your own computer. Your code and your chats with the AI go
-              straight to the model vendor you picked. We never see them.
+              The DorkOS app runs on your computer. Agents send information to the AI services you
+              choose. Optional DorkOS-managed connections also send account actions and selected
+              notifications through our servers and Composio. You choose which accounts and agents
+              can use them.
             </li>
             <li>
               This website collects almost nothing: your email if you subscribe, plus your name and
@@ -53,12 +55,12 @@ export default function PrivacyPolicyPage() {
 
         <section className="space-y-4">
           <h2 className="text-charcoal font-mono text-xl font-semibold">
-            Two different things: the app and the website
+            The app, website, and hosted services
           </h2>
           <p className="text-warm-gray leading-relaxed">
-            DorkOS is software you install and run on your own machine. This website, dorkos.ai, is
-            where you read about it, sign up for the newsletter, and browse the Marketplace. They
-            have different privacy stories, so we cover them one at a time.
+            DorkOS includes an app you run, this website, and optional hosted services. Each handles
+            different information. Connecting an account or turning on notifications can send
+            information beyond your computer, as explained below.
           </p>
         </section>
 
@@ -67,21 +69,25 @@ export default function PrivacyPolicyPage() {
             The DorkOS app: it runs on your machine
           </h2>
           <p className="text-warm-gray leading-relaxed">
-            DorkOS runs on your own computer. Your sessions, your agent chats, and your code stay on
-            your machine, in files you control. We do not have a copy.
+            Your installation keeps local files, settings, and session records on your computer. An
+            agent sends prompts, code, and other information it needs to the AI service you choose.
+            That service handles the information under its own terms and privacy policy.
           </p>
           <p className="text-warm-gray leading-relaxed">
-            When an agent works, it sends your prompts and code to the AI vendor you chose, like
-            Anthropic or OpenAI, using your own API key or login. That exchange is between you and
-            them, under their privacy policy. DorkOS just passes it along and keeps nothing.
+            Information from connected accounts can become part of an agent’s work. For example, an
+            email result may be sent to your chosen AI service. A notification sent to a room or
+            messaging channel can be visible to other people there. Choose accounts, agents, and
+            destinations with this in mind.
           </p>
           <p className="text-warm-gray leading-relaxed">
-            The app sends us nothing unless you turn it on. If you choose to help, it can share a
-            small daily heartbeat and anonymous marketplace install counts so we can see roughly how
-            many people run DorkOS. It is anonymous, not personal. It sends a random install id, the
-            DorkOS version, your platform and chip type, which runtimes you have on, whether the
-            tunnel and cloud link are enabled, and rough counts. It never sends your prompts, your
-            code, file paths, your hostname or username, or anything from your sessions.
+            Optional usage telemetry is separate from the information needed to run hosted features.
+            The settings below control telemetry. They do not disable account access or a
+            notification you enabled. If you choose to help, the app can share a small daily
+            heartbeat and anonymous marketplace install counts so we can see roughly how many people
+            run DorkOS. It sends a random install id, the DorkOS version, your platform and chip
+            type, which runtimes you have on, whether the tunnel and cloud link are enabled, and
+            rough counts. It never sends your prompts, code, file paths, hostname, username, or
+            session content as telemetry.
           </p>
           <p className="text-warm-gray leading-relaxed">
             The first time you run DorkOS, it shows a notice explaining this and sends nothing on
@@ -94,6 +100,105 @@ export default function PrivacyPolicyPage() {
               telemetry page
             </Link>{' '}
             shows the exact payload, word for word.
+          </p>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-charcoal font-mono text-xl font-semibold">
+            Optional DorkOS-managed connections
+          </h2>
+          <p className="text-warm-gray leading-relaxed">
+            You can choose DorkOS-managed access when connecting a supported service. DorkOS uses
+            Composio to link your service account and carry out approved actions. Composio holds the
+            service account’s login access in its vault. Our servers hold the project key used to
+            make those requests. Agents do not receive those credentials.
+          </p>
+          <p className="text-warm-gray leading-relaxed">
+            When an agent uses this access, the action’s inputs pass through our servers and
+            Composio to the connected service. The result returns through the same path. Inputs and
+            results can include email text, documents, task details, or other information needed for
+            that action.
+          </p>
+          <p className="text-warm-gray leading-relaxed">
+            We store records needed to connect the right account and enforce your choices. These
+            include your DorkOS account and linked installation, connected service references, agent
+            access, and notification settings. We also record action names, request identifiers,
+            status, timing, and usage information. Action receipts do not store an action’s input or
+            result content.
+          </p>
+          <p className="text-warm-gray leading-relaxed">
+            You choose which agents can perform approved actions. Receiving notifications requires a
+            separate choice of activity and destination. Granting action access does not also grant
+            notification access.
+          </p>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-charcoal font-mono text-xl font-semibold">
+            Notification content and retention
+          </h2>
+          <p className="text-warm-gray leading-relaxed">
+            For managed notifications, Composio sends selected account activity to our servers. We
+            keep an encrypted delivery copy so your linked installation can collect it later. Our
+            service can decrypt that copy to deliver it. This encryption does not hide the content
+            from DorkOS.
+          </p>
+          <p className="text-warm-gray leading-relaxed">
+            The delivery window ends seven days after our servers receive the event. Retries and
+            transfer to your installation do not restart that window. We clear the hosted content
+            sooner when your installation confirms it has stored the event. That confirmation does
+            not mean an agent has acted on it or a person has read it.
+          </p>
+          <p className="text-warm-gray leading-relaxed">
+            Your installation keeps its own protected delivery copy until delivery is recorded,
+            cancelled, or the original window ends. Clearing a delivery copy does not erase a
+            message already delivered to an agent, room, messaging service, or AI service.
+          </p>
+          <p className="text-warm-gray leading-relaxed">
+            Scheduled cleanup clears expired content in bounded batches, so an outage or backlog can
+            delay physical deletion. Expired content cannot start a new delivery. We keep separate
+            event identifiers and delivery status for a 30-day cleanup window to prevent duplicate
+            processing.
+          </p>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-charcoal font-mono text-xl font-semibold">
+            Using your own service account
+          </h2>
+          <p className="text-warm-gray leading-relaxed">
+            If you use your own Composio project, your installation contacts Composio directly.
+            DorkOS hosting does not carry those account actions or buffer those direct
+            notifications. Composio and the connected service still handle the information. Your
+            local setup holds the project key and notification signing secret.
+          </p>
+          <p className="text-warm-gray leading-relaxed">
+            Other service routes can have different data paths. Review their setup and the service’s
+            privacy policy before granting access. Ordinary Slack and Telegram conversations use
+            your Messaging setup; account notifications have separate permissions.
+          </p>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-charcoal font-mono text-xl font-semibold">
+            Stopping access and deleting data
+          </h2>
+          <p className="text-warm-gray leading-relaxed">
+            You can remove an agent’s access, remove a notification, or disconnect an account in the
+            app. These choices stop new authorized use once the relevant change takes effect. An
+            installation that is offline may need to reconnect to receive a hosted permission
+            change. A request already sent to another service cannot be recalled.
+          </p>
+          <p className="text-warm-gray leading-relaxed">
+            Disconnecting asks Composio to remove the linked account. Cleanup can remain pending if
+            a service is unavailable or the required access has been revoked. Removing one
+            notification does not remove another notification that shares the same service setup.
+          </p>
+          <p className="text-warm-gray leading-relaxed">
+            Removing access does not erase every record. DorkOS can retain account history, usage
+            records, security records, and temporary delivery records. It does not erase messages
+            already delivered or records held by Composio, your connected service, or your AI
+            service. Use those services’ controls for their records.
           </p>
         </section>
 
@@ -138,8 +243,10 @@ export default function PrivacyPolicyPage() {
                 If analytics is off, we do not.
               </li>
               <li>
-                You can delete your account, and everything tied to it, any time from your account
-                page. That also erases the analytics record tied to your account.
+                You can delete your account from your account page. This removes the account and its
+                active hosted account-access data. Required security and audit records, temporary
+                cleanup records, and records held by other services can remain. We also ask PostHog
+                to erase the analytics record tied to your account.
               </li>
             </ul>
           </div>
@@ -201,8 +308,22 @@ export default function PrivacyPolicyPage() {
             <li>We never sell your data.</li>
             <li>We never run ads.</li>
             <li>We never track you across other websites.</li>
-            <li>We never read the code or chats inside your DorkOS app.</li>
+            <li>
+              Your installation does not upload its whole session history or codebase to us for
+              managed connections. Our hosted service processes the action and notification content
+              described above when you use it.
+            </li>
           </ul>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-charcoal font-mono text-xl font-semibold">Other services</h2>
+          <p className="text-warm-gray leading-relaxed">
+            Composio, each connected service, and the AI service you choose have their own terms and
+            privacy practices. Their retention, deletion, and model-training rules can differ. This
+            policy does not promise that another service deletes its logs or never uses data for
+            training.
+          </p>
         </section>
 
         <section className="space-y-4">
@@ -210,7 +331,9 @@ export default function PrivacyPolicyPage() {
           <ul className="text-warm-gray ml-5 list-disc space-y-1.5 leading-relaxed">
             <li>Turn cookie-based analytics off (or on) with the switch above, any time.</li>
             <li>Unsubscribe from any email with one click.</li>
-            <li>Delete your account and its data from your account page.</li>
+            <li>
+              Delete your account from your account page, subject to the retention limits above.
+            </li>
             <li>
               Email us to ask what we hold or to have it removed:{' '}
               <a

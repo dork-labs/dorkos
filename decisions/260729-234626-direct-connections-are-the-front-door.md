@@ -13,6 +13,10 @@ superseded-by: null
 
 Accepted. Amended by ADR 260905-205123 (accepted 2026-09-07), which retires “Direct connection is the default lane,” “No DorkOS-held platform key,” and the consequence that the catalog must invert around direct custody. Direct OAuth/BYO and the Google, Slack, counsel-review, and direct-custody decisions still govern those routes.
 
+Implementation note (2026-09-07): the current raw-MCP route is authenticated inventory for a
+preconfigured server. It does not implement this ADR's direct OAuth lane or agent execution. The
+direct OAuth decision remains guidance for a future route and is not a claim that it ships today.
+
 ## Context
 
 ADR 260718-045630 built the `ConnectorProvider` port with Composio (managed), Nango (self-host), and raw MCP (baseline). The connector-completion program shipped it end to end, and the first real-user test plus an adversarial design review (2026-07-29, `connections-ux-critique` artifact, DOR-745 thread) re-measured the landscape:

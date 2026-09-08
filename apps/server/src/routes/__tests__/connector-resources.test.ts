@@ -61,8 +61,22 @@ describe('connector resource routes', () => {
       expect.objectContaining({ query: 'gmail', limit: 20, signal: expect.any(AbortSignal) })
     );
 
-    await api().get('/api/connectors/catalog?unknown=private').expect(400);
+    const invalid = await api().get('/api/connectors/catalog?unknown=private').expect(400);
+    expect(invalid.body).toMatchObject({
+      error: 'This connection request is invalid. Check the request and try again.',
+      details: expect.any(Array),
+    });
     expect(deps.query.catalog).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a useful generic error without exposing an internal failure', async () => {
+    vi.mocked(deps.query.listConnections).mockImplementationOnce(() => {
+      throw new Error('private upstream detail');
+    });
+
+    await api().get('/api/connectors/connections').expect(500, {
+      error: 'DorkOS could not complete this connection request. Try again.',
+    });
   });
 
   it('refuses inherited agent identity before every owner resource read', async () => {

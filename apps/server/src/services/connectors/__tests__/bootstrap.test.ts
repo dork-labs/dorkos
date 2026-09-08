@@ -87,6 +87,7 @@ describe('ConnectorProviderBootstrapper', () => {
     managedCloud?: ConstructorParameters<typeof ConnectorProviderBootstrapper>[0]['managedCloud'];
   }) {
     return new ConnectorProviderBootstrapper({
+      rawMcpPendingConnect: () => undefined,
       registry,
       credentials: fakeCredentials(secrets),
       nangoEnv: opts?.nangoEnv ?? (() => ({})),
@@ -193,6 +194,7 @@ describe('ConnectorProviderBootstrapper', () => {
 
       const restartedRegistry = new ConnectorRegistry({ db });
       const restarted = new ConnectorProviderBootstrapper({
+        rawMcpPendingConnect: () => undefined,
         registry: restartedRegistry,
         credentials: fakeCredentials(secrets),
         nangoEnv: () => ({}),

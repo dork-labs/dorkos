@@ -411,12 +411,12 @@ export const CONFIG_DISCLOSURE = {
   // Names the DorkOS account this install is linked to, often an email address.
   'cloud.linkedAccountLabel': 'withhold',
 
-  // Configured raw-MCP servers (connector-completion spec): endpoint metadata,
-  // not credentials — the remote server manages its own sign-in ('external'
-  // custody), so nothing here names where a secret lives.
+  // Raw-MCP URLs may contain userinfo, query tokens, or secret path segments.
+  // Withhold the complete URL rather than guessing which parts are credentials;
+  // retain only the service label, stable slug, and transport in public snapshots.
   'connectors.rawMcpServers[].slug': 'expose',
   'connectors.rawMcpServers[].displayName': 'expose',
-  'connectors.rawMcpServers[].url': 'expose',
+  'connectors.rawMcpServers[].url': 'withhold',
   'connectors.rawMcpServers[].transport': 'expose',
 
   // The per-provider credential-reference map. Replaced by `providersConfigured`,

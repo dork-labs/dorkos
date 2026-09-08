@@ -14,7 +14,7 @@
  * @module services/connectors/attachment-store
  */
 import { sessionConnectionOverrides, eq, and, type Db } from '@dorkos/db';
-import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
+import type { ConnectionId } from '@dorkos/shared/connector-schemas';
 
 /** One session's override state for one account. */
 export type SessionConnectorOverrideState = 'attached' | 'detached';
@@ -23,7 +23,7 @@ export type SessionConnectorOverrideState = 'attached' | 'detached';
 export interface SessionConnectorOverride {
   sessionId: string;
   agentId?: string;
-  accountId: ConnectedAccountId;
+  connectionId: ConnectionId;
   state: SessionConnectorOverrideState;
   needsReconciliation: boolean;
   updatedAt: string;
@@ -77,10 +77,10 @@ export class SessionConnectorAttachmentStore {
     return owner;
   }
 
-  /** Write (or replace) the override for one session's account. */
+  /** Write (or replace) the override for one session's connection. */
   setState(
     sessionId: string,
-    accountId: ConnectedAccountId,
+    connectionId: ConnectionId,
     state: SessionConnectorOverrideState,
     agentId?: string
   ): void {
@@ -90,7 +90,7 @@ export class SessionConnectorAttachmentStore {
       .insert(sessionConnectionOverrides)
       .values({
         sessionId,
-        connectionId: accountId,
+        connectionId,
         state,
         agentId: owner,
         needsReconciliation: false,
@@ -118,7 +118,7 @@ export class SessionConnectorAttachmentStore {
       .map((row) => ({
         sessionId: row.sessionId,
         ...(row.agentId && { agentId: row.agentId }),
-        accountId: row.connectionId as ConnectedAccountId,
+        connectionId: row.connectionId as ConnectionId,
         state: row.state as SessionConnectorOverrideState,
         needsReconciliation: row.needsReconciliation,
         updatedAt: row.updatedAt,
@@ -145,7 +145,7 @@ export class SessionConnectorAttachmentStore {
    * already carry its own override for the same account — in that
    * conflict the NEW id's row wins (mirrors the projector rekey's "active
    * wins") and the old row is dropped rather than violating the
-   * `(sessionId, accountId)` primary key. A no-op when the ids match.
+   * `(sessionId, connectionId)` primary key. A no-op when the ids match.
    *
    * @param oldSessionId - The session id overrides were recorded under (request UUID).
    * @param newSessionId - The canonical session id to move them to.
@@ -173,7 +173,7 @@ export class SessionConnectorAttachmentStore {
         eq(sessionConnectionOverrides.connectionId, row.connectionId)
       );
       if (existing) {
-        // The new id already has its own explicit override for this account
+        // The new id already has its own explicit override for this connection
         // — it wins; the old row would otherwise collide on the primary key.
         this._db.delete(sessionConnectionOverrides).where(where).run();
       } else {

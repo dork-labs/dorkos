@@ -89,6 +89,7 @@ describe('connector-providers router', () => {
     testConnector?: boolean;
   }) {
     const bootstrapper = new ConnectorProviderBootstrapper({
+      rawMcpPendingConnect: () => undefined,
       registry,
       credentials,
       nangoEnv: opts?.nangoEnv ?? (() => ({})),
@@ -210,6 +211,9 @@ describe('connector-providers router', () => {
       .put('/api/connectors/providers/gmail/credential')
       .send({ secret: SECRET });
     expect(unknown.status).toBe(400);
+    expect(unknown.body).toEqual({
+      error: 'This service setup option is not available. Choose another option and try again.',
+    });
 
     const emptyBody = await request(fixtureServer)
       .put('/api/connectors/providers/composio/credential')
@@ -225,6 +229,9 @@ describe('connector-providers router', () => {
       '/api/connectors/providers/gmail/credential'
     );
     expect(unknownDelete.status).toBe(400);
+    expect(unknownDelete.body).toEqual({
+      error: 'This service setup option is not available. Choose another option and try again.',
+    });
   });
 
   it('accepts test-connector only when the test-mode spec is wired', async () => {

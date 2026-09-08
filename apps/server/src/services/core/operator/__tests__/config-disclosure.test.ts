@@ -223,8 +223,14 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         {
           slug: 'notion',
           displayName: 'Notion',
-          url: 'https://mcp.notion.example',
+          url: 'https://LEAK-10-user:LEAK-11-password@mcp.notion.example/mcp',
           transport: 'http',
+        },
+        {
+          slug: 'calendar',
+          displayName: 'Calendar',
+          url: 'https://mcp.calendar.example/mcp?access_token=LEAK-12-query-token',
+          transport: 'sse',
         },
       ],
     },
@@ -256,6 +262,7 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
     expect(pathsWithVerdict('withhold').sort()).toEqual([
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',
+      'connectors.rawMcpServers[].url',
       'mcp.apiKey',
       'providers',
       'runtimes.codex.credentialRef',
@@ -440,6 +447,19 @@ describe('projectDisclosedConfig', () => {
     // reaches an unauthenticated caller.
     const serialized = JSON.stringify(projectDisclosedConfig(fullyPopulatedConfig()));
     expect(serialized).not.toMatch(/LEAK-/);
+  });
+
+  it('keeps raw MCP labels and transports while withholding complete URLs', () => {
+    const config = UserConfigSchema.parse(fullyPopulatedConfig());
+    const projected = projectDisclosedConfig(config);
+    expect(projected.connectors).toEqual({
+      rawMcpServers: [
+        { slug: 'notion', displayName: 'Notion', transport: 'http' },
+        { slug: 'calendar', displayName: 'Calendar', transport: 'sse' },
+      ],
+    });
+    expect(config.connectors.rawMcpServers[0].url).toContain('LEAK-11-password');
+    expect(config.connectors.rawMcpServers[1].url).toContain('LEAK-12-query-token');
   });
 
   it('replaces withheld credentials with boolean presence flags', () => {

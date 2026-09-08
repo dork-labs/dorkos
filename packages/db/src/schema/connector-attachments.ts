@@ -11,7 +11,7 @@ export const agentConnectorAttachments = sqliteTable(
   {
     /** The agent (mesh `agentId`) this attachment belongs to. */
     agentId: text('agent_id').notNull(),
-    /** The connected account id (`ConnectedAccountId`). */
+    /** The connected account id (`ConnectionId`). */
     accountId: text('account_id').notNull(),
     /** ISO 8601 timestamp the standing attachment was created. */
     attachedAt: text('attached_at').notNull(),
@@ -34,7 +34,7 @@ export const sessionConnectorAttachments = sqliteTable(
   {
     /** The session this override belongs to. */
     sessionId: text('session_id').notNull(),
-    /** The connected account id (`ConnectedAccountId`). */
+    /** The connected account id (`ConnectionId`). */
     accountId: text('account_id').notNull(),
     /** `'attached' | 'detached'` — the override direction. */
     state: text('state', { enum: ['attached', 'detached'] }).notNull(),

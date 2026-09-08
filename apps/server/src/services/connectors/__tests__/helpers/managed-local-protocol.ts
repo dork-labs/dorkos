@@ -77,6 +77,7 @@ export async function proveLocalHostedProtocol(input: {
       configuredOwner: { ownerKind: owner.kind, ownerId: owner.installationId },
     });
     const bootstrapper = new ConnectorProviderBootstrapper({
+      rawMcpPendingConnect: () => undefined,
       registry,
       credentials: {
         resolve: (ref) =>

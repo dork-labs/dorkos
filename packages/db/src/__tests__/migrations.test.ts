@@ -141,7 +141,7 @@ describe('Database Migrations', () => {
       // agentPath, never its manifest ULID (ADR 260726-170126, migration 0034).
       'authors',
       'codex_threads',
-      // Derived cache binding a ConnectedAccountId → owning connector provider
+      // Derived cache binding a ConnectionId → owning connector provider
       // (connector-gateway spec §Detailed Design 2, migration 0029).
       'connected_accounts',
       // Provider instances, stable DorkOS connections, immutable operation
