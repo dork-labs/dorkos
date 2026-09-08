@@ -39,6 +39,7 @@ import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { diffSnapshots, snapshotTree } from '@dorkos/harness/journeys';
 import { HarnessStatusResponseSchema } from '@dorkos/shared/harness-schemas';
 import { initBoundary } from '../../lib/boundary.js';
+import { logger } from '../../lib/logger.js';
 import type { HookDecisions } from '../../services/harness/hook-consent.js';
 import { createHarnessRouter } from '../harness.js';
 
@@ -62,6 +63,29 @@ const staged: string[] = [];
 const app = express();
 const testServer = listeningServer(app);
 
+/**
+ * The message a broken dependency carries, with a path in it on purpose.
+ *
+ * The 500 case is about what does NOT come back, and a message a caller could
+ * have guessed proves nothing: this one names a directory the request never
+ * mentioned, so finding any of it in the body is unambiguous.
+ */
+const READ_FAILURE = new Error('config store unreadable at /Users/someone/private-notes/.dork');
+
+/**
+ * A second app whose hook-decision reader throws, so the 500 path has a way in.
+ *
+ * It is a second MOUNT rather than a mutable dependency because the route reads
+ * `deps` once, when the router is built. Of the route's three 500 branches this
+ * reaches one — the guarded `buildHarnessStatus` call, where the injected reader
+ * runs. The other two are the non-`BoundaryError` throw out of the validator and
+ * the non-ENOENT/EACCES throw out of `stat`, and neither is reachable through a
+ * dependency: both take the real module. They are the same two lines of `catch`,
+ * so one case is what there is to have.
+ */
+const failingApp = express();
+const failingServer = listeningServer(failingApp);
+
 beforeAll(async () => {
   boundaryRoot = realpathSync(mkdtempSync(join(tmpdir(), 'harness-route-boundary-')));
   dorkHome = realpathSync(mkdtempSync(join(tmpdir(), 'harness-route-home-')));
@@ -72,6 +96,15 @@ beforeAll(async () => {
   // caches by the raw value, so stubbing it here is enough.
   vi.stubEnv('DORK_HOME', dorkHome);
   app.use('/api/harness', createHarnessRouter({ dorkHome, readHookDecisions: () => NO_DECISIONS }));
+  failingApp.use(
+    '/api/harness',
+    createHarnessRouter({
+      dorkHome,
+      readHookDecisions: () => {
+        throw READ_FAILURE;
+      },
+    })
+  );
 });
 
 afterAll(() => {
@@ -79,6 +112,8 @@ afterAll(() => {
   for (const dir of staged.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
+// The logger spy in the 500 case is the only mock here, and it has to come off
+// before the next case: left installed, it would swallow a real failure's log.
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -243,7 +278,74 @@ describe('GET /api/harness/status', () => {
     expect(parsed.error?.issues ?? []).toEqual([]);
     expect(res.body.state).toBe('ready');
     expect(res.body.enabled).toEqual(['claude-code', 'codex']);
-    expect(res.body.counts.skills).toBeGreaterThan(0);
+    // Every number here is knowable on this fixture, so every number is stated.
+    // One skill in `.claude/skills`, which Claude Code reads where it stands and
+    // Codex cannot see, plus the instruction row for the `AGENTS.md` that is not
+    // there — two rows, and the skill is the adoptable one.
+    expect(res.body.counts).toEqual({
+      skills: 1,
+      drifted: 0,
+      conflicts: 0,
+      orphans: 0,
+      adoptable: 1,
+      pendingApproval: 0,
+    });
+    expect(
+      res.body.rows.map((r: { artifact: string; name: string; source?: string }) => [
+        r.artifact,
+        r.name,
+        r.source,
+      ])
+    ).toEqual([
+      ['skill', 'release', '.claude/skills/release'],
+      ['instruction', 'AGENTS.md', 'AGENTS.md'],
+    ]);
+    expect(res.body.rows[0].provenance).toBe('harness-native');
+    expect(res.body.rows[0].adoptable).toBe(true);
+    expect(Object.keys(res.body.rows[0].cells)).toEqual(['claude-code', 'codex']);
+    expect(res.body.projectLevel).toEqual([]);
+    expect(res.body.sweepPreview).toEqual([]);
     expect(diffSnapshots(before, snapshotTree(repo))).toEqual(NO_CHANGES);
+  });
+
+  it('answers 400 for a relative projectPath rather than resolving it against the server cwd', async () => {
+    // Seeded defect: drop the `isAbsolute` refinement and this reds with a 403,
+    // because the path is then resolved against the RUNNER's cwd and lands
+    // outside this suite's temp boundary. In production, where the server's cwd
+    // is normally inside the boundary, the same defect answers 200 instead —
+    // about a directory the caller never named, chosen by wherever the operator
+    // happened to start the process. Neither answer is the request that was
+    // made, which is why the refusal is up front rather than left to the
+    // boundary to catch by luck.
+    const res = await readStatus('some/relative/project');
+
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toContain('projectPath must be an absolute path');
+  });
+
+  it('answers 500 with nothing of the failure in it when a dependency throws', async () => {
+    // Seeded defect: echo `err.message` into the body — `{ error: toErrorMessage(err) }`
+    // — and this reds. Every one of the eight cases above stays green through
+    // that change, because none of them can reach the 500 path at all: the state
+    // a person can act on is always a 200, so the only way in is a dependency
+    // that breaks, and the only thing worth asserting about it is what does NOT
+    // come back.
+    const errors = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    const repo = stageProject('boom');
+    writeManifest(repo, ['claude-code']);
+
+    const res = await request(failingServer)
+      .get('/api/harness/status')
+      .query({ projectPath: repo });
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Internal server error' });
+    // Not just the message: nothing the failure carried, in any field.
+    expect(JSON.stringify(res.body)).not.toContain('private-notes');
+    expect(JSON.stringify(res.body)).not.toContain('config store');
+    // And it was not silently swallowed either — the operator can still see it.
+    expect(errors).toHaveBeenCalledTimes(1);
+    expect(errors.mock.calls[0]?.[0]).toBe('[harness] GET /status failed');
+    expect(errors.mock.calls[0]?.[1]).toMatchObject({ err: READ_FAILURE, projectPath: repo });
   });
 });
