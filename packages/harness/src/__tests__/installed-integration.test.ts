@@ -239,10 +239,13 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     );
   });
 
-  it('links a plugin’s scheduled skill into `.agents/skills` on a claude-code-only project, and sweeps it on uninstall (DOR-1518)', () => {
+  it('links a plugin’s skills into `.agents/skills` on a claude-code-only project, and sweeps them on uninstall (DOR-1518, DOR-1847)', () => {
     // The shape that made the flow plugin's schedules undiscoverable: a stock
     // project enables `claude-code` alone, so the plugin's scheduled skill only
-    // ever reached `.claude/skills`, which the scheduler does not watch.
+    // ever reached `.claude/skills`, which the scheduler does not watch. DOR-1847
+    // widened the link from the scheduled skill to every one of them, for the
+    // same reason one directory over: `.agents/skills` is also what Codex,
+    // OpenCode, Cursor, Gemini CLI and Copilot read.
     repo = mkdtempSync(join(tmpdir(), 'harness-sched-int-'));
     mkdirSync(join(repo, '.agents'), { recursive: true });
     writeFileSync(
@@ -285,19 +288,23 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     expect(realpathSync(link)).toBe(realpathSync(join(plugin, 'skills', 'drain')));
     expect(readFileSync(join(link, 'SKILL.md'), 'utf8')).toContain('name: drain');
 
-    // The unscheduled sibling is not dragged along — it has no business there.
-    expect(existsSync(join(repo, '.agents', 'skills', 'flow__grooming'))).toBe(false);
+    // The unscheduled sibling is linked there too now, and resolves the same way.
+    const sibling = join(repo, '.agents', 'skills', 'flow__grooming');
+    expect(lstatSync(sibling).isSymbolicLink()).toBe(true);
+    expect(realpathSync(sibling)).toBe(realpathSync(join(plugin, 'skills', 'grooming')));
     // Both still reach Claude Code, exactly as before.
     expect(existsSync(join(repo, '.claude', 'skills', 'flow__drain'))).toBe(true);
     expect(existsSync(join(repo, '.claude', 'skills', 'flow__grooming'))).toBe(true);
 
-    // Uninstall: the link is an ordinary managed projection, so the existing
-    // orphan sweep removes it with no special casing.
+    // Uninstall: each link is an ordinary managed projection, so the existing
+    // orphan sweep removes them with no special casing.
     rmSync(plugin, { recursive: true, force: true });
     const plan2 = project(repo);
     const result2 = applyPlan(repo, plan2, { sweepOrphans: true });
     expect(result2.swept).toContain('.agents/skills/flow__drain');
+    expect(result2.swept).toContain('.agents/skills/flow__grooming');
     expect(existsSync(link)).toBe(false);
+    expect(existsSync(sibling)).toBe(false);
   });
 
   it('warns, naming the file and the events, when a rotted hooks.json is salvaged (DOR-1724)', () => {

@@ -9,15 +9,15 @@
  *    version-stamped: absent files are written, DorkOS's own unmodified older
  *    copies are rewritten, and anything a person edited or authored is left
  *    alone.
- * 2. **Project** — link `.agents/` into the layout each harness reads. Codex and
- *    OpenCode read `.agents/skills/` natively, but Claude Code — the DEFAULT
- *    runtime — only sees skills under `.claude/skills/`, so without this the
- *    whole self-use pack is invisible to the runtime most agents run on,
- *    including DorkBot's. The Harness Sync engine already knows how to bridge
- *    that gap (a relative symlink per skill, `plan/projector.ts`); nothing was
- *    calling it on an agent workspace. {@link projectAgentWorkspace} is that
- *    call — deliberately the *only* new code path: it owns no symlink logic of
- *    its own.
+ * 2. **Project** — link `.agents/` into the layout each harness reads. Codex,
+ *    OpenCode, Cursor, Gemini CLI and Copilot read `.agents/skills/` natively,
+ *    but Claude Code — the DEFAULT runtime — only sees skills under
+ *    `.claude/skills/`, so without this the whole self-use pack is invisible to
+ *    the runtime most agents run on, including DorkBot's. The Harness Sync
+ *    engine already knows how to bridge that gap (a relative symlink per skill,
+ *    `plan/projector.ts`); nothing was calling it on an agent workspace.
+ *    {@link projectAgentWorkspace} is that call — deliberately the *only* new
+ *    code path: it owns no symlink logic of its own.
  *
  * **Seed before project, always.** {@link projectAgentWorkspace} returns early
  * when `.agents/skills/` does not exist. Run it first and a workspace that has
@@ -51,9 +51,9 @@
  *   without Developer Mode and the engine has no catch of its own.
  * - **Claude Code only, which is why no hooks are generated.** A scaffolded
  *   agent workspace enables ONLY claude-code ({@link AGENT_WORKSPACE_HARNESSES}).
- *   That is the honest scope: Codex and OpenCode read `.agents/skills/` natively
- *   and need no projection at all, so enabling them would buy nothing — and it
- *   would cost something real. `project()` merges the workspace's own
+ *   That is the honest scope: every other harness reads `.agents/skills/`
+ *   natively and needs no projection of its own, so enabling them would buy
+ *   nothing — and it would cost something real. `project()` merges the workspace's own
  *   `.claude/settings.json` hooks (`loadClaudeHooks`, unconditional) with every
  *   installed package's hooks and generates a `.codex/hooks.json` from them, so
  *   a codex-enabled manifest turns this unattended pass into a writer of shell
@@ -69,6 +69,16 @@
  *   marketplace plugins are not projected into every agent's home — only the
  *   workspace's own `.agents/` assets and its own `.dork/plugins`. Cross-agent
  *   projection of global installs is a separate decision (DOR-143 / DOR-174).
+ * - **One projection lands OUTSIDE `.claude/`, on purpose.** An installed
+ *   package's skills are linked into `<agentDir>/.agents/skills/<pkg>__<name>`
+ *   whatever harnesses the manifest enables — the engine plans that link
+ *   unconditionally, because `.agents/skills` is the only skills root the DorkOS
+ *   scheduler watches (DOR-1518) and the one directory five of the six harnesses
+ *   read (DOR-1847). So a claude-code-only workspace does get `.agents/skills`
+ *   links for its packages, beside the pack it was seeded with. Nothing is
+ *   duplicated: the link resolves to the package's own copy, and the orphan
+ *   sweep already scans that directory — though this pass does not sweep at all,
+ *   see below.
  * - **No orphan sweep.** `sweepOrphans` runs five sweeps, not one: it prunes
  *   installed-plugin symlinks, generated hook files, generated command wrappers,
  *   OpenCode commands, and the managed block in `.claude/settings.local.json`.

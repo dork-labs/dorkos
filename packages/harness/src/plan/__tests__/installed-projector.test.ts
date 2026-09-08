@@ -79,10 +79,15 @@ describe('installed-plugin projection via buildPlan', () => {
         '.claude/skills/acme__alpha',
         '.claude/skills/acme__beta',
       ]);
-      // No `native` plugin action: the plugin reaches Claude via projected files.
-      expect(plan.actions.some((a) => a.provenance === 'installed' && a.kind === 'native')).toBe(
-        false
-      );
+      // Nothing about the PLUGIN is native — it reaches Claude Code and Codex as
+      // projected files, never as an SDK activation. (Cursor takes the SKILLS
+      // native off the `.agents/skills` link, which is the row above; the check
+      // is scoped to the plugin-level artifact so it still means what it says.)
+      expect(
+        plan.actions.some(
+          (a) => a.provenance === 'installed' && a.kind === 'native' && a.artifact === 'plugin'
+        )
+      ).toBe(false);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
@@ -136,7 +141,10 @@ describe('installed-plugin projection via buildPlan', () => {
           d.harness === 'codex' &&
           d.name === 'acme:commands'
       );
-      expect(drop?.reason).toMatch(/repo-local command format/);
+      // Codex is the one harness with genuinely no repo-local command format:
+      // its custom prompts were deprecated in favour of skills. The other
+      // harnesses' drops now name their own format instead (CM-06).
+      expect(drop?.reason).toMatch(/no repo-local slash-command format/);
       // The `commands` layer is NOT reported as a non-portable-layer drop anymore.
       // `reason` is optional on ProjectionAction (required only by convention for
       // drops), so it is narrowed rather than asserted — an absent reason cannot
@@ -230,7 +238,7 @@ describe('installed-plugin projection via buildPlan', () => {
     }
   });
 
-  it('drops non-portable layers with reasons, and the unsupported harness with a reason', () => {
+  it('drops non-portable layers with reasons, and no longer drops a harness that reads .agents/skills', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -245,12 +253,25 @@ describe('installed-plugin projection via buildPlan', () => {
       expect(dropNames).toContain('acme:mcp-servers');
       expect(dropNames).not.toContain('acme:skills');
       expect(dropNames).not.toContain('acme:hooks');
-      // cursor cannot take installed skills in v1 — one whole-plugin drop.
+      // Cursor used to get one whole-plugin drop ("not auto-projected to cursor
+      // in v1; see DOR-143"). It reads `.agents/skills` natively, and the link
+      // there is now planned whatever harnesses are enabled, so the honest answer
+      // is a per-skill `native` and no drop at all (SK-05).
       expect(
-        plan.drops.some(
+        plan.drops.filter(
           (d) => d.provenance === 'installed' && d.harness === 'cursor' && d.name === 'acme'
         )
-      ).toBe(true);
+      ).toEqual([]);
+      expect(
+        plan.actions
+          .filter(
+            (a) => a.provenance === 'installed' && a.harness === 'cursor' && a.artifact === 'skill'
+          )
+          .map((a) => ({ kind: a.kind, name: a.name }))
+      ).toEqual([
+        { kind: 'native', name: 'acme__alpha' },
+        { kind: 'native', name: 'acme__beta' },
+      ]);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
@@ -558,7 +579,7 @@ describe('buildPlan hook gate (DOR-522)', () => {
   });
 });
 
-describe('schedule-bearing plugin skills reach the watched skills root', () => {
+describe('installed plugin skills reach the watched skills root (DOR-1518, DOR-1847)', () => {
   /** The manifest a stock project has: Claude Code only, which never sees `.agents/skills`. */
   const CLAUDE_ONLY = parseHarnessManifest({ version: 1, harnesses: ['claude-code'] });
 
@@ -613,7 +634,11 @@ describe('schedule-bearing plugin skills reach the watched skills root', () => {
     }
   });
 
-  it('leaves an unscheduled plugin skill to the enabled harnesses alone', () => {
+  it('links an UNSCHEDULED plugin skill there too, with the reason that applies to it', () => {
+    // This was the opposite assertion until DOR-1847: `alpha` has no schedule,
+    // so nothing linked it into `.agents/skills` and an OpenCode-, Cursor-,
+    // Gemini- or Copilot-only project never saw it. The link is unconditional
+    // now; only the REASON differs between a scheduled skill and an ordinary one.
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -623,9 +648,14 @@ describe('schedule-bearing plugin skills reach the watched skills root', () => {
         installedPlugins: [withScheduledSkill],
       });
 
-      // `alpha` has no schedule: Claude Code still gets it, nothing else does.
       expect(symlinkTargets(plan)).toContain('.claude/skills/acme__alpha');
-      expect(symlinkTargets(plan)).not.toContain('.agents/skills/acme__alpha');
+      expect(symlinkTargets(plan)).toContain('.agents/skills/acme__alpha');
+
+      const scheduled = plan.actions.find((a) => a.target === '.agents/skills/acme__drain');
+      const ordinary = plan.actions.find((a) => a.target === '.agents/skills/acme__alpha');
+      expect(scheduled?.reason).toContain('scheduler');
+      expect(ordinary?.reason).not.toContain('scheduler');
+      expect(ordinary?.reason).toContain('.agents/skills');
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
@@ -680,6 +710,122 @@ describe('schedule-bearing plugin skills reach the watched skills root', () => {
       );
       // One for the Claude Code projection, one for the scheduler link.
       expect(warned).toHaveLength(2);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('installed skills reach .agents/skills whatever harnesses are enabled (SK-05)', () => {
+  /** Every planned symlink target for installed content, in plan order. */
+  function installedLinks(plan: ReturnType<typeof buildPlan>): string[] {
+    return plan.actions
+      .filter((a) => a.provenance === 'installed' && a.kind === 'symlink')
+      .map((a) => a.target as string);
+  }
+
+  /** Plan `projectPlugin` against one harness set. */
+  function planFor(harnesses: string[]): ReturnType<typeof buildPlan> {
+    const repo = emptyRepo();
+    try {
+      return buildPlan({
+        repoRoot: repo,
+        manifest: parseHarnessManifest({ version: 1, harnesses }),
+        agentsMdExists: false,
+        installedPlugins: [projectPlugin],
+      });
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }
+
+  it('links them for an opencode-only project, and says so on the native action', () => {
+    // Reproduced 2026-09-07: with `harnesses: ['opencode']` the plan claimed
+    // `native` "via the Codex namespaced symlink" while nothing linked the
+    // directory at all, so the skills reached nobody.
+    const plan = planFor(['opencode']);
+
+    expect(installedLinks(plan)).toEqual([
+      '.agents/skills/acme__alpha',
+      '.agents/skills/acme__beta',
+    ]);
+    const natives = plan.actions.filter(
+      (a) => a.provenance === 'installed' && a.harness === 'opencode' && a.artifact === 'skill'
+    );
+    expect(natives).toHaveLength(2);
+    for (const action of natives) {
+      expect(action.kind).toBe('native');
+      expect(action.reason).toContain(`.agents/skills/${action.name}`);
+    }
+  });
+
+  it('links them for a cursor-only project, which used to be a whole-plugin drop', () => {
+    const plan = planFor(['cursor']);
+
+    expect(installedLinks(plan)).toEqual([
+      '.agents/skills/acme__alpha',
+      '.agents/skills/acme__beta',
+    ]);
+    const natives = plan.actions.filter(
+      (a) => a.provenance === 'installed' && a.harness === 'cursor' && a.artifact === 'skill'
+    );
+    expect(natives.map((a) => a.name)).toEqual(['acme__alpha', 'acme__beta']);
+    expect(natives.every((a) => a.kind === 'native')).toBe(true);
+    // No whole-plugin drop for a harness that reads the directory just fine.
+    expect(
+      plan.drops.filter(
+        (d) => d.provenance === 'installed' && d.harness === 'cursor' && d.name === 'acme'
+      )
+    ).toEqual([]);
+  });
+
+  it('links them for a claude-code-only project too, beside its own .claude/skills links', () => {
+    // Unconditional: `.agents/skills` is the one directory five harnesses read,
+    // so a package's skills are there whether or not one of them is enabled today.
+    const plan = planFor(['claude-code']);
+
+    expect(installedLinks(plan)).toEqual([
+      '.claude/skills/acme__alpha',
+      '.claude/skills/acme__beta',
+      '.agents/skills/acme__alpha',
+      '.agents/skills/acme__beta',
+    ]);
+  });
+
+  it('plans each .agents/skills link exactly once when codex is enabled as well', () => {
+    const plan = planFor(['claude-code', 'codex', 'opencode']);
+    const links = installedLinks(plan);
+    expect(links.filter((t) => t === '.agents/skills/acme__alpha')).toHaveLength(1);
+    expect(links.filter((t) => t === '.agents/skills/acme__beta')).toHaveLength(1);
+  });
+
+  it('warns once per unlinked-token skill per plan, never twice for the same link', () => {
+    const repo = emptyRepo();
+    try {
+      const plan = buildPlan({
+        repoRoot: repo,
+        manifest: parseHarnessManifest({ version: 1, harnesses: ['opencode'] }),
+        agentsMdExists: false,
+        installedPlugins: [
+          {
+            ...projectPlugin,
+            skills: [
+              {
+                name: 'alpha',
+                sourceDir: '.dork/plugins/acme/skills/alpha',
+                usesPluginRoot: true,
+                hasSchedule: false,
+              },
+            ],
+          },
+        ],
+      });
+      // One for the opencode native projection, one for the canonical link.
+      expect(
+        plan.warnings.filter(
+          (w) => w.name === 'acme__alpha' && w.reason.includes('${CLAUDE_PLUGIN_ROOT}')
+        )
+      ).toHaveLength(2);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

@@ -481,7 +481,7 @@ function scanPluginsRoot(pluginsRoot: string, scope: InstalledScope): InstalledP
       // the scheduler. The scheduler's global watched root is `<dorkHome>/skills`,
       // and no projection stage targets it — `buildPlan` is repo-relative end to
       // end, and every apply/sweep path resolves against a `repoRoot`. The
-      // project-scope fix below (`planScheduledSkillLinks`) therefore has no
+      // project-scope fix below (`planCanonicalSkillLinks`) therefore has no
       // global twin; giving it one means building a global sync first, not
       // widening this scan.
       plugins.push({
