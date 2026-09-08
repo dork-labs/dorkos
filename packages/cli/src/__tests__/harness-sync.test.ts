@@ -8,7 +8,12 @@ import { runHarnessSync, parseHarnessSyncArgs } from '../harness-sync-command.js
 import { runHarnessHooks, parseHarnessHooksArgs } from '../harness-hooks-command.js';
 import { hookApprovalEntry } from '../../server/services/harness/hook-consent.js';
 import { runHarnessDispatcher } from '../commands/harness-dispatcher.js';
-import { createTempDir, syncArgs, writeFixtureRepo } from './harness-fixtures.js';
+import {
+  createTempDir,
+  pinEmptyClaudeRoot,
+  syncArgs,
+  writeFixtureRepo,
+} from './harness-fixtures.js';
 
 /**
  * The sorted set of every path under `root`.
@@ -173,6 +178,7 @@ describe('runHarnessSync', () => {
     // from the developer's real ~/.dork.
     homeDir = createTempDir();
     vi.stubEnv('DORK_HOME', homeDir);
+    pinEmptyClaudeRoot(homeDir);
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
@@ -862,6 +868,7 @@ describe('runHarnessSync — withholding a package’s hooks', () => {
     tmpDir = createTempDir();
     homeDir = createTempDir();
     vi.stubEnv('DORK_HOME', homeDir);
+    pinEmptyClaudeRoot(homeDir);
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -1301,6 +1308,7 @@ describe('runHarnessHooks', () => {
     tmpDir = createTempDir();
     homeDir = createTempDir();
     vi.stubEnv('DORK_HOME', homeDir);
+    pinEmptyClaudeRoot(homeDir);
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -1496,6 +1504,7 @@ describe('runHarnessSync — a harness added later, and the .gitignore contract'
     tmpDir = createTempDir();
     homeDir = createTempDir();
     vi.stubEnv('DORK_HOME', homeDir);
+    pinEmptyClaudeRoot(homeDir);
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     writeFixtureRepo(tmpDir);
@@ -1822,6 +1831,7 @@ describe('runHarnessSync — the manifest lines that reach nothing (DOR-1858)', 
     tmpDir = createTempDir();
     homeDir = createTempDir();
     vi.stubEnv('DORK_HOME', homeDir);
+    pinEmptyClaudeRoot(homeDir);
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
     writeFixtureRepo(tmpDir);
@@ -1997,6 +2007,7 @@ describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-18
     tmpDir = createTempDir();
     homeDir = createTempDir();
     vi.stubEnv('DORK_HOME', homeDir);
+    pinEmptyClaudeRoot(homeDir);
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     writeFixtureRepo(tmpDir);
@@ -2124,5 +2135,180 @@ describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-18
 
     expect(printed()).toContain("your manifest's hookPolicies says not to write here");
     expect(printed()).not.toContain('if you want DorkOS to carry them to every harness');
+  });
+});
+
+/**
+ * SRC-08, J-07 and HK-14's user half at the CLI: the "Installed in Claude Code
+ * only" block, where it sits in the report, and what happens to the rest of the
+ * report when the settings file cannot be read.
+ *
+ * The block is assembled here, beside `formatDropList`'s output and never inside
+ * it — putting it in the engine would make `@dorkos/harness` read a home
+ * directory, which three of its own module docs forbid by name. So its POSITION
+ * is the thing worth pinning: it belongs after the drops, which are about this
+ * project, and before the not-enabled notices, which are about what to turn on
+ * next.
+ */
+describe('runHarnessSync — what Claude Code alone has', () => {
+  let tmpDir: string;
+  let originalCwd: string;
+  let homeDir: string;
+  let claudeRoot: string;
+  let logSpy: MockInstance<typeof console.log>;
+  let errorSpy: MockInstance<typeof console.error>;
+
+  /** Everything the run printed, as one string. */
+  const printed = (): string => logSpy.mock.calls.map((call) => String(call[0])).join('\n');
+
+  /** Stage `<claudeRoot>/settings.json`. */
+  function writeClaudeSettings(settings: unknown): void {
+    fs.writeFileSync(
+      path.join(claudeRoot, 'settings.json'),
+      typeof settings === 'string' ? settings : JSON.stringify(settings, null, 2)
+    );
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tmpDir = createTempDir();
+    homeDir = createTempDir();
+    claudeRoot = createTempDir();
+    vi.stubEnv('DORK_HOME', homeDir);
+    vi.stubEnv('CLAUDE_CONFIG_DIR', claudeRoot);
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    writeFixtureRepo(tmpDir);
+    // A harness on disk the manifest does not enable, so the not-enabled notice
+    // this block has to precede is really in the output.
+    fs.mkdirSync(path.join(tmpDir, '.cursor', 'rules'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, '.cursor', 'rules', 'x.mdc'), '# rules\n');
+    process.chdir(tmpDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    vi.unstubAllEnvs();
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
+    for (const dir of [tmpDir, homeDir, claudeRoot]) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Seeded defect one: move the block above `formatDropList`, and the ordering
+  // below reds.
+  it('SRC-08, J-07, HK-14: prints the block after the drops and before the not-enabled notices', async () => {
+    writeClaudeSettings({
+      enabledPlugins: {
+        'context7@claude-plugins-official': true,
+        'persona-toolkit@dork-labs': true,
+        'never-turned-on@claude-plugins-official': false,
+      },
+      extraKnownMarketplaces: {
+        'claude-plugins-official': {
+          source: { source: 'github', repo: 'anthropics/claude-plugins-official' },
+        },
+      },
+      hooks: {
+        Stop: [{ hooks: [{ type: 'command', command: 'afplay /System/Sounds/Glass.aiff' }] }],
+      },
+    });
+
+    const result = await runHarnessSync(syncArgs({ check: true }));
+
+    const output = printed();
+    const drops = output.search(/Dropped artifacts|No drops/);
+    const block = output.indexOf('Installed in Claude Code only');
+    const notEnabled = output.indexOf('is not enabled');
+    expect({ drops: drops >= 0, block: block >= 0, notEnabled: notEnabled >= 0 }).toEqual({
+      drops: true,
+      block: true,
+      notEnabled: true,
+    });
+    expect(drops).toBeLessThan(block);
+    expect(block).toBeLessThan(notEnabled);
+
+    // The root it read, the count, the two rungs, and HK-14's line — the whole
+    // block, in its frozen wording.
+    expect(output).toContain(`  Read from ${claudeRoot}`);
+    expect(output).toContain(
+      '  You turned on 2 plugins in Claude Code. Your other agent tools cannot see them.'
+    );
+    expect(output).toContain(
+      '  Your personal Claude Code settings run 1 command automatically. Only Claude Code runs it.'
+    );
+    expect(output).toContain(
+      '  DorkOS can install these for this project, so every agent tool here gets them:'
+    );
+    expect(output).toContain('    - context7 (from anthropics/claude-plugins-official)');
+    expect(output).toContain('  Run: dorkos install context7 --project .');
+    expect(output).toContain(
+      '  DorkOS has to be running, and it asks you to approve the install first.'
+    );
+    expect(output).toContain('  DorkOS cannot tell where these came from:');
+    expect(output).toContain('    - persona-toolkit (from a source Claude Code calls "dork-labs")');
+    expect(output).toContain(
+      '  Your company can also turn plugins on or off, in a settings file DorkOS cannot read. So this list may'
+    );
+    expect(output).toContain('  not be the whole story.');
+    // A plugin nobody turned on is not something anybody is missing.
+    expect(output).not.toContain('never-turned-on');
+    // Nothing is installed from here: the offer is a printed command.
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('SRC-08: says nothing at all when no plugin is turned on in Claude Code', async () => {
+    writeClaudeSettings({ enabledPlugins: {}, theme: 'dark' });
+
+    await runHarnessSync(syncArgs({ check: true }));
+
+    expect(printed()).not.toContain('Installed in Claude Code only');
+  });
+
+  // Seeded defect two: let the read throw instead of answering with the
+  // unreadable record, and the whole report after it is lost.
+  it('SRC-08: reports an unreadable settings file and leaves the rest of the report intact', async () => {
+    writeClaudeSettings('{ "enabledPlugins": {,,,');
+
+    const result = await runHarnessSync(syncArgs({ check: true }));
+
+    const output = printed();
+    expect(output).toContain(
+      `  DorkOS could not read ${claudeRoot}/settings.json, so it cannot tell you what Claude Code has.`
+    );
+    expect(output).toContain('  Nothing else in this report is affected.');
+    // And it is not affected: the summary before it and the notice after it are
+    // both still here, and the exit code is the one the projection earned.
+    expect(output).toContain('Projection summary:');
+    expect(output).toContain('is not enabled');
+    expect(result.exitCode).toBe(1);
+    expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('Harness sync failed'));
+  });
+
+  it('SRC-08: prints the same block from --fix, in the same place', async () => {
+    writeClaudeSettings({
+      enabledPlugins: { 'context7@claude-plugins-official': true },
+      extraKnownMarketplaces: {
+        'claude-plugins-official': {
+          source: { source: 'github', repo: 'anthropics/claude-plugins-official' },
+        },
+      },
+    });
+
+    await runHarnessSync(syncArgs({ fix: true }));
+
+    const output = printed();
+    expect(output).toContain('Installed in Claude Code only');
+    expect(output).toContain('  Run: dorkos install context7 --project .');
+    expect(output.search(/Dropped artifacts|No drops/)).toBeLessThan(
+      output.indexOf('Installed in Claude Code only')
+    );
+    expect(output.indexOf('Installed in Claude Code only')).toBeLessThan(
+      output.indexOf('is not enabled')
+    );
+    expect(output).toContain(
+      '  You turned on 1 plugin in Claude Code. Your other agent tools cannot see them.'
+    );
   });
 });

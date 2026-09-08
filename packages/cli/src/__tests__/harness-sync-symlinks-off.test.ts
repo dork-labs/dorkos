@@ -14,7 +14,12 @@ import path from 'path';
 import { spawnSync } from 'node:child_process';
 
 import { runHarnessSync } from '../harness-sync-command.js';
-import { createTempDir, syncArgs, writeFixtureRepo } from './harness-fixtures.js';
+import {
+  createTempDir,
+  pinEmptyClaudeRoot,
+  syncArgs,
+  writeFixtureRepo,
+} from './harness-fixtures.js';
 
 /**
  * Every case here drives the real engine over a real temp tree, and one of them
@@ -39,6 +44,7 @@ describe('a checkout that could not make the links', () => {
     // resolves DORK_HOME (else ~/.dork) to scan global installs.
     homeDir = createTempDir();
     vi.stubEnv('DORK_HOME', homeDir);
+    pinEmptyClaudeRoot(homeDir);
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
