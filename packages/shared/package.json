@@ -328,6 +328,10 @@
     "./instance-lock": {
       "types": "./src/instance-lock.ts",
       "default": "./dist/instance-lock.js"
+    },
+    "./harness-schemas": {
+      "types": "./src/harness-schemas.ts",
+      "default": "./dist/harness-schemas.js"
     }
   },
   "scripts": {

@@ -1,41 +1,21 @@
 import { z } from 'zod';
 
-/**
- * The agent harnesses Harness Sync can project to. Claude Code is the canonical
- * authoring harness; the rest are projection targets.
- */
-export const HARNESS_IDS = [
-  'claude-code',
-  'codex',
-  'cursor',
-  'gemini',
-  'copilot',
-  'opencode',
-] as const;
+// The harness vocabulary — HARNESS_IDS, HarnessIdSchema, HarnessId and
+// HARNESS_LABELS — lives in @dorkos/shared/harness-schemas now (DOR-1890): the
+// client needs HarnessId and HARNESS_LABELS to draw a chip row and cannot
+// import this package, which is a Node filesystem engine. Importing and
+// re-exporting here keeps every existing consumer of this module's four names
+// working unchanged, and gives the rest of this module the local bindings it
+// still needs, while leaving exactly one definition.
+import {
+  HARNESS_IDS,
+  HarnessIdSchema,
+  HARNESS_LABELS,
+  type HarnessId,
+} from '@dorkos/shared/harness-schemas';
 
-/** Zod schema for a single harness identifier (one of {@link HARNESS_IDS}). */
-export const HarnessIdSchema = z.enum(HARNESS_IDS);
-
-/** A supported agent harness identifier. */
-export type HarnessId = z.infer<typeof HarnessIdSchema>;
-
-/**
- * How each harness is named in prose a person reads — drop reasons, projection
- * notes, warnings.
- *
- * The id is the key in a manifest and a CLI flag; it is not the product's name.
- * `gemini` is Gemini CLI, `claude-code` is Claude Code. One map, so a reason
- * built in the projector and one built in the installed-plugin projector call
- * the same harness the same thing.
- */
-export const HARNESS_LABELS: Readonly<Record<HarnessId, string>> = {
-  'claude-code': 'Claude Code',
-  codex: 'Codex',
-  cursor: 'Cursor',
-  gemini: 'Gemini CLI',
-  copilot: 'Copilot',
-  opencode: 'OpenCode',
-};
+export { HARNESS_IDS, HarnessIdSchema, HARNESS_LABELS };
+export type { HarnessId };
 
 /**
  * A skill intentionally kept Claude-only (not promoted to the canonical
