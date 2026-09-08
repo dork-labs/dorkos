@@ -2,9 +2,11 @@ import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AlertTriangle, ChevronDown, RotateCcw } from 'lucide-react';
 import type { ErrorCategory } from '@dorkos/shared/types';
+import { describeKnownModelError } from '@dorkos/shared/runtime-error-classification';
 import { Button, LinkifiedText, containsUrl } from '@/layers/shared/ui';
 import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
 import { AuthErrorActions } from './AuthErrorActions';
+import { ModelErrorActions } from './ModelErrorActions';
 
 /** Runtime name in the auth heading ("Sign in to X again") when unresolved. */
 const AUTH_HEADING_FALLBACK_NAME = 'your agent';
@@ -39,6 +41,16 @@ const ERROR_COPY: Record<ErrorCategory, { heading: string; subtext: string; retr
       heading: 'Sign in again',
       subtext: 'Your login stopped working. Sign in again to pick up where you left off.',
       retryable: true,
+    },
+    model_unavailable: {
+      heading: 'Model unavailable',
+      subtext: 'Choose another model from the model menu.',
+      retryable: false,
+    },
+    runtime_update_required: {
+      heading: 'Codex update required',
+      subtext: 'Update DorkOS, then try this model again.',
+      retryable: false,
     },
   };
 
@@ -110,6 +122,8 @@ interface ErrorMessageBlockProps {
    * it did — the card only claims to be sending when something is.
    */
   onSigninComplete?: () => boolean;
+  /** Opens the active session's model control for a permanent model rejection. */
+  onChooseModel?: () => void;
 }
 
 /**
@@ -143,21 +157,44 @@ export function ErrorMessageBlock({
   runtimeLabel,
   sessionId,
   onSigninComplete,
+  onChooseModel,
 }: ErrorMessageBlockProps) {
   const [showDetails, setShowDetails] = useState(false);
-  const isAuthError = category === 'auth_error';
+  // Sessions recorded before model failures were classified still contain the
+  // raw HTTP JSON. Upgrade that copy at render time so an existing failed
+  // session gets the same recovery guidance as a new live failure.
+  const legacyModelError = useMemo(() => describeKnownModelError(message), [message]);
+  const effectiveCategory = legacyModelError?.category ?? category;
+  const effectiveMessage = legacyModelError?.message ?? message;
+  const effectiveDetails = legacyModelError
+    ? details?.includes(legacyModelError.details ?? '')
+      ? details
+      : [details, legacyModelError.details].filter(Boolean).join('\n')
+    : details;
+  const isAuthError = effectiveCategory === 'auth_error';
   // Defensive lookup: an unrecognized category falls back to execution-error
   // copy (forward-compat) rather than crashing on an undefined entry.
-  const copy = category ? (ERROR_COPY[category] ?? ERROR_COPY.execution_error) : null;
-  const derivedHeading = isAuthError ? authHeading(runtimeLabel) : copy?.heading;
+  const copy = effectiveCategory
+    ? (ERROR_COPY[effectiveCategory] ?? ERROR_COPY.execution_error)
+    : null;
+  const derivedHeading = isAuthError
+    ? authHeading(runtimeLabel)
+    : effectiveCategory === 'runtime_update_required' && runtimeLabel
+      ? `${runtimeLabel} update required`
+      : copy?.heading;
   const derivedSubtext = isAuthError ? authSubtext(runtimeLabel) : copy?.subtext;
-  const heading = headingOverride ?? derivedHeading ?? 'Error';
-  const runtimeText = message.trim();
+  const heading = legacyModelError
+    ? (derivedHeading ?? 'Error')
+    : (headingOverride ?? derivedHeading ?? 'Error');
+  const runtimeText = effectiveMessage.trim();
   // Category copy that explains the failure keeps the subtext slot; anywhere
   // else the runtime's own words win, with the category sentence as fallback.
-  const explainsItself = category !== undefined && SELF_EXPLANATORY_CATEGORIES.has(category);
+  const explainsItself =
+    effectiveCategory !== undefined && SELF_EXPLANATORY_CATEGORIES.has(effectiveCategory);
   const subtext =
-    subtextOverride ??
+    (legacyModelError && subtextOverride?.trim() === message.trim()
+      ? undefined
+      : subtextOverride) ??
     (explainsItself ? derivedSubtext : runtimeText || derivedSubtext) ??
     runtimeText;
   // `subtext` is trimmed before comparing because two of the three callers
@@ -185,9 +222,9 @@ export function ErrorMessageBlock({
   // Never lost: a message that earns no prose line joins the raw details
   // instead of falling off the screen.
   const detailsText =
-    isRedundant || runtimeMessage !== null || details?.includes(runtimeText)
-      ? details
-      : [details, runtimeText].filter(Boolean).join('\n');
+    isRedundant || runtimeMessage !== null || effectiveDetails?.includes(runtimeText)
+      ? effectiveDetails
+      : [effectiveDetails, runtimeText].filter(Boolean).join('\n');
   // When a category is provided, use its retryable flag. When no category,
   // trust the caller — if they passed onRetry, they want the button.
   const retryable = copy?.retryable ?? !!onRetry;
@@ -257,6 +294,10 @@ export function ErrorMessageBlock({
               onRetry={onRetry}
               onSigninComplete={onSigninComplete}
             />
+          )}
+          {(effectiveCategory === 'model_unavailable' ||
+            effectiveCategory === 'runtime_update_required') && (
+            <ModelErrorActions category={effectiveCategory} onChooseModel={onChooseModel} />
           )}
         </div>
         {!isAuthError && retryable && onRetry && (

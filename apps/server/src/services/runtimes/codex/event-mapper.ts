@@ -40,6 +40,7 @@ import type {
 import type { StreamEvent, TaskItem } from '@dorkos/shared/types';
 import { UiCommandSchema } from '@dorkos/shared/schemas';
 import {
+  describeCodexDiagnostic,
   describeRuntimeError,
   type RuntimeErrorCopy,
 } from '@dorkos/shared/runtime-error-classification';
@@ -317,9 +318,16 @@ function mapThreadItem(item: ThreadItem, phase: ItemPhase, ctx: CodexEventContex
     case 'todo_list':
       return mapTodoList(item, ctx);
     case 'error': {
-      // Non-fatal error item — surfaced as a typed, NON-terminal error event.
-      // Remember the RAW message: turn.failed dedupes against it (see
-      // mapCodexEvent) and compares the CLI's text, not what a person is shown.
+      // Codex 0.147 reports these known warnings as error items even when the
+      // turn continues. Keep them in the transient status strip, not the red
+      // error treatment or durable failure history. Do not feed them into the
+      // terminal dedupe state: if turn.failed repeats the same words, that
+      // terminal verdict must still remain visible.
+      const diagnostic = describeCodexDiagnostic(item.message);
+      if (diagnostic) return [{ type: 'system_status', data: { message: diagnostic } }];
+
+      // Unknown item errors remain visible. Remember the RAW message so a
+      // following turn.failed with the same failure does not render it twice.
       ctx.lastErrorMessage = item.message;
       // The item is where a dead sign-in actually lands: live traffic reports it
       // here first and repeats it on `turn.failed`, which then dedupes itself
@@ -333,15 +341,17 @@ function mapThreadItem(item: ThreadItem, phase: ItemPhase, ctx: CodexEventContex
       // while the Codex sign-in is fine. Narrowing costs us the vaguer wordings
       // here; `turn.failed` still catches those when the turn really dies.
       //
-      // ONLY the auth case gains a `category`, and that asymmetry is deliberate:
-      // an item error has always shipped without one, and the client renders a
-      // category-less error by showing its `message` (ErrorMessageBlock falls
-      // back to it) while a categorised one shows that category's fixed copy
-      // instead. Categorising an ordinary item failure would therefore HIDE the
-      // only account of what went wrong. An auth failure has somewhere better to
-      // send them, and its raw text survives in `details`.
+      // Only failures with an actionable recovery gain a `category`, and that
+      // asymmetry is deliberate. A category-less item error renders its exact
+      // message; categorising an ordinary item failure would hide its only
+      // useful account. Auth and known model failures have a better next step,
+      // and their raw text survives in `details`.
       const copy = codexErrorCopy(item.message, { diagnostic: true });
-      if (copy.category !== 'auth_error') {
+      if (
+        copy.category !== 'auth_error' &&
+        copy.category !== 'model_unavailable' &&
+        copy.category !== 'runtime_update_required'
+      ) {
         return [{ type: 'error', data: { message: item.message, code: 'item_error' } }];
       }
       return [{ type: 'error', data: { ...copy, code: 'item_error' } }];

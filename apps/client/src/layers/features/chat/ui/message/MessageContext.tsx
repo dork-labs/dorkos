@@ -36,6 +36,8 @@ interface MessageContextValue {
    * whether it did, which is what lets the card say so.
    */
   onSigninComplete?: () => boolean;
+  /** Opens the active session's model picker from a model error card. */
+  onChooseModel?: () => void;
   /** Tool call ID being handled in the input zone, or null. */
   inputZoneToolCallId: string | null;
   /** Text animation effect for streaming text. When undefined, StreamingText uses its default. */
@@ -85,6 +87,7 @@ export function MessageProvider({
       value.onToolDecided,
       value.onRetry,
       value.onSigninComplete,
+      value.onChooseModel,
       value.inputZoneToolCallId,
       value.textEffect,
       value.runtimeLabel,

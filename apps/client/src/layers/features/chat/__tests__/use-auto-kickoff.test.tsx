@@ -82,6 +82,33 @@ describe('useAutoKickoff', () => {
     expect(useAgentBirthStore.getState().records['sess-1'].fired).toBe(true);
   });
 
+  it('waits for first-turn prerequisites before marking the greeting as fired', () => {
+    seedBirth('sess-1');
+    const submitKickoff = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = renderHook(
+      ({ ready }: { ready: boolean }) =>
+        useAutoKickoff({
+          sessionId: 'sess-1',
+          cwd: RECORD.path,
+          status: 'idle',
+          messages: [],
+          hydrated: true,
+          canStart: ready,
+          submitKickoff,
+          submitContent: vi.fn().mockResolvedValue(undefined),
+        }),
+      { initialProps: { ready: false } }
+    );
+
+    expect(submitKickoff).not.toHaveBeenCalled();
+    expect(useAgentBirthStore.getState().records['sess-1'].fired).toBe(false);
+
+    rerender({ ready: true });
+
+    expect(submitKickoff).toHaveBeenCalledTimes(1);
+    expect(useAgentBirthStore.getState().records['sess-1'].fired).toBe(true);
+  });
+
   it('does not re-fire when the same session remounts (fired latch + module guard)', () => {
     seedBirth('sess-1');
     const submitKickoff = vi.fn().mockResolvedValue(undefined);

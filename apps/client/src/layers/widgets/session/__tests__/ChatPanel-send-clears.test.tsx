@@ -110,7 +110,7 @@ vi.mock('../ui/SessionComposer', async () => {
 });
 
 import { ChatPanel } from '../ui/ChatPanel';
-import { TransportProvider, useAppStore } from '@/layers/shared/model';
+import { TransportProvider, useAgentBirthStore, useAppStore } from '@/layers/shared/model';
 import { agentKeys } from '@/layers/entities/agent';
 import {
   sessionKeys,
@@ -169,6 +169,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   routerSearch.current = {};
   useAppStore.setState({ selectedCwd: null });
+  useAgentBirthStore.setState({ records: {} });
   useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
   useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
   useSessionListStore.setState({
@@ -190,6 +191,62 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
+  it('waits for newborn-agent provenance, then starts Codex with the registered path', async () => {
+    let resolveAgent!: (agent: AgentManifest | null) => void;
+    const getAgentByPath = vi.fn(
+      () =>
+        new Promise<AgentManifest | null>((resolve) => {
+          resolveAgent = resolve;
+        })
+    );
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    useAppStore.setState({ selectedCwd: '/test/dir' });
+    useAgentBirthStore.getState().register(SESSION_ID, {
+      name: 'scout',
+      displayName: 'Scout',
+      agentId: 'agent-scout',
+      bornAt: '2026-09-08T00:00:00.000Z',
+      path: '/test/dir',
+      runtime: 'codex',
+      kickoffMessage: '<dork-kickoff>Say hello</dork-kickoff>',
+    });
+
+    renderPanel(createMockTransport({ getAgentByPath, postMessage }), undefined, undefined, {
+      launchRuntime: 'codex',
+    });
+    await waitFor(() => expect(getAgentByPath).toHaveBeenCalledWith('/test/dir'));
+
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(useAgentBirthStore.getState().records[SESSION_ID].fired).toBe(false);
+
+    act(() => {
+      resolveAgent({
+        workspace: { mode: 'home' },
+        id: 'agent-scout',
+        name: 'scout',
+        description: '',
+        runtime: 'codex',
+        capabilities: [],
+        behavior: { responseMode: 'always' },
+        registeredAt: '2026-09-08T00:00:00.000Z',
+        registeredBy: 'test',
+        personaEnabled: true,
+        enabledToolGroups: {},
+        mcpServers: [],
+      });
+    });
+
+    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
+    expect(postMessage).toHaveBeenCalledWith(
+      SESSION_ID,
+      '<dork-kickoff>Say hello</dork-kickoff>',
+      '/test/dir',
+      expect.objectContaining({ runtime: 'codex', agentPath: '/test/dir' })
+    );
+  });
+
   it('keeps a manual first send closed while agent provenance is pending', async () => {
     const getAgentByPath = vi.fn(() => new Promise<never>(() => {}));
     const postMessage = vi

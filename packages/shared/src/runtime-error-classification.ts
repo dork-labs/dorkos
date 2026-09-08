@@ -173,6 +173,88 @@ export interface RuntimeErrorCopy {
 }
 
 /**
+ * Turn a known nonfatal Codex error item into calm status copy.
+ *
+ * Codex 0.147 reports model metadata warnings and its WebSocket fallback as
+ * `error` items even when the turn continues normally. The exact, narrow
+ * patterns here keep unknown item errors visible while preventing these known
+ * diagnostics from being presented as failed turns.
+ *
+ * @param message - The Codex error item's raw text.
+ * @returns Short status copy for a known diagnostic, otherwise `null`.
+ */
+export function describeCodexDiagnostic(message: string): string | null {
+  const metadata = message.match(
+    /^Model metadata for [`'"]([^`'"]+)[`'"] not found\.\s*Defaulting to fallback metadata\b/i
+  );
+  if (metadata) return `Using fallback settings for ${metadata[1]}.`;
+
+  const modelSwitch = message.match(
+    /^This session was recorded with model [`'"]([^`'"]+)[`'"] but is resuming with [`'"]([^`'"]+)[`'"]\./i
+  );
+  if (modelSwitch) return `Resumed with ${modelSwitch[2]} instead of ${modelSwitch[1]}.`;
+
+  if (/^Falling back from WebSockets to HTTPS\b/i.test(message)) {
+    return 'Codex switched to a standard connection.';
+  }
+
+  return null;
+}
+
+/** Read a nested backend message from a JSON error envelope. */
+function nestedErrorMessage(raw: string): string {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return raw;
+    const outer = parsed as Record<string, unknown>;
+    if (outer.error && typeof outer.error === 'object') {
+      const nested = outer.error as Record<string, unknown>;
+      if (typeof nested.message === 'string') return nested.message;
+    }
+    return typeof outer.message === 'string' ? outer.message : raw;
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * Explain known model rejections that otherwise arrive as raw JSON.
+ *
+ * The match is deliberately specific to the two Codex responses with a clear
+ * remedy. Unknown JSON and ordinary failures stay untouched. When copy is
+ * translated, the original payload remains in `details` for troubleshooting.
+ *
+ * @param message - A runtime error message, possibly a JSON envelope.
+ * @returns Actionable model error copy, otherwise `null`.
+ */
+export function describeKnownModelError(message: string): RuntimeErrorCopy | null {
+  const nested = nestedErrorMessage(message);
+  const updateRequired = nested.match(
+    /The ['"`]([^'"`]+)['"`] model requires a newer version of Codex\b/i
+  );
+  if (updateRequired) {
+    return {
+      message: `The Codex version DorkOS is using is too old for ${updateRequired[1]}. Update DorkOS, then try this model again.`,
+      category: 'runtime_update_required',
+      details: message,
+    };
+  }
+
+  const unavailable = nested.match(
+    /The ['"`]([^'"`]+)['"`] model is not supported when using Codex with a ChatGPT account\b/i
+  );
+  if (unavailable) {
+    return {
+      message: `${unavailable[1]} isn’t available with a ChatGPT account. Choose another model from the model menu.`,
+      category: 'model_unavailable',
+      details: message,
+    };
+  }
+
+  return null;
+}
+
+/**
  * What one backend failure should say and be categorised as, decided in one
  * place so every runtime's every error channel answers the same way (DOR-1656).
  *
@@ -205,6 +287,8 @@ export function describeRuntimeError(input: {
   unambiguousOnly?: boolean;
 }): RuntimeErrorCopy {
   const { runtimeType, message, code, unambiguousOnly = false } = input;
+  const modelError = describeKnownModelError(message);
+  if (modelError) return modelError;
   if (!detectAuthError({ message, code, unambiguousOnly })) {
     return { message, category: 'execution_error' };
   }

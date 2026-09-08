@@ -182,6 +182,53 @@ describe('ErrorMessageBlock', () => {
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
   });
 
+  it('gives a rejected model a clear next step without offering a dead-end retry', () => {
+    const onRetry = vi.fn();
+    const onChooseModel = vi.fn();
+    render(
+      <ErrorMessageBlock
+        message="gpt-5.4 isn’t available with a ChatGPT account. Choose another model from the model menu."
+        category="model_unavailable"
+        onRetry={onRetry}
+        onChooseModel={onChooseModel}
+      />
+    );
+
+    expect(screen.getByText('Model unavailable')).toBeInTheDocument();
+    expect(screen.getByText(/Choose another model from the model menu/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose model' }));
+    expect(onChooseModel).toHaveBeenCalledOnce();
+  });
+
+  it('upgrades a legacy raw model rejection at render time', () => {
+    const onRetry = vi.fn();
+    const onChooseModel = vi.fn();
+    const raw =
+      '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-6-astra\' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again."}}';
+    render(
+      <ErrorMessageBlock
+        message={raw}
+        category="execution_error"
+        onRetry={onRetry}
+        onChooseModel={onChooseModel}
+      />
+    );
+
+    expect(screen.getByText('Codex update required')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'The Codex version DorkOS is using is too old for gpt-6-astra. Update DorkOS, then try this model again.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose another model' }));
+    expect(onChooseModel).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByText('Details'));
+    expect(screen.getByText(raw)).toBeInTheDocument();
+  });
+
   it('does not show retry button when onRetry is not provided', () => {
     render(<ErrorMessageBlock message="Error" category="execution_error" />);
 

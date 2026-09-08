@@ -45,6 +45,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
     onToolDecided,
     onRetry,
     onSigninComplete,
+    onChooseModel,
     inputZoneToolCallId,
     textEffect,
     runtimeLabel,
@@ -149,6 +150,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           // position-gated (see the sibling test in `ErrorMessageBlock`): a
           // broken login is broken now, whenever it broke.
           onSigninComplete={onSigninComplete}
+          onChooseModel={onChooseModel}
           runtimeLabel={runtimeLabel}
           sessionId={sessionId}
         />

@@ -111,6 +111,8 @@ interface SessionTranscriptProps {
    * whether it did.
    */
   onSigninComplete?: () => boolean;
+  /** Opens the active session's model picker from a model error card. */
+  onChooseModel?: () => void;
   /** Tool call ID rendered in the input zone (to skip in the transcript). */
   inputZoneToolCallId?: string | null;
   /** Text animation effect for streaming text. */
@@ -159,6 +161,7 @@ export function SessionTranscript({
   onToolDecided,
   onRetry,
   onSigninComplete,
+  onChooseModel,
   inputZoneToolCallId = null,
   textEffect,
   runtimeLabel,
@@ -332,6 +335,7 @@ export function SessionTranscript({
           onToolDecided={onToolDecided}
           onRetry={onRetry}
           onSigninComplete={onSigninComplete}
+          onChooseModel={onChooseModel}
           inputZoneToolCallId={inputZoneToolCallId}
           textEffect={textEffect}
           runtimeLabel={runtimeLabel}
@@ -357,6 +361,7 @@ export function SessionTranscript({
       onToolDecided,
       onRetry,
       onSigninComplete,
+      onChooseModel,
       inputZoneToolCallId,
       textEffect,
       runtimeLabel,

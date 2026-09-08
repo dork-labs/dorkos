@@ -511,7 +511,7 @@ describe('CreateAgentDialog', () => {
       id: 'id',
       name: 'scout',
       displayName: 'Scout',
-      runtime: 'claude-code',
+      runtime: 'codex',
       registeredAt: '2026-07-20T00:00:00.000Z',
       _path: '/home/test/.dork/agents/scout',
       capabilities: [],
@@ -534,9 +534,18 @@ describe('CreateAgentDialog', () => {
     const record = useAgentBirthStore.getState().records[navigatedSessionId!];
     expect(record).toBeDefined();
     expect(record.path).toBe('/home/test/.dork/agents/scout');
+    expect(record.runtime).toBe('codex');
     expect(record.fired).toBe(false);
     expect(record.kickoffMessage).toContain('<dork-kickoff>');
     expect(record.kickoffMessage).toContain('.dork/SOUL.md');
+    expect(mockNavigate).toHaveBeenLastCalledWith({
+      to: '/session',
+      search: {
+        dir: '/home/test/.dork/agents/scout',
+        session: navigatedSessionId,
+        runtime: 'codex',
+      },
+    });
   });
 
   it('onboarding (onCreated set): parks a birth without navigating, then the first session claims + fires it once', async () => {

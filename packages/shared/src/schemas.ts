@@ -1482,7 +1482,15 @@ export const PendingInteractionDTOSchema = z
 export type PendingInteractionDTO = z.infer<typeof PendingInteractionDTOSchema>;
 
 export const ErrorCategorySchema = z
-  .enum(['max_turns', 'execution_error', 'budget_exceeded', 'output_format_error', 'auth_error'])
+  .enum([
+    'max_turns',
+    'execution_error',
+    'budget_exceeded',
+    'output_format_error',
+    'auth_error',
+    'model_unavailable',
+    'runtime_update_required',
+  ])
   .openapi('ErrorCategory');
 
 export type ErrorCategory = z.infer<typeof ErrorCategorySchema>;

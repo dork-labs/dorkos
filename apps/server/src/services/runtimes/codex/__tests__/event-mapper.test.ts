@@ -39,6 +39,14 @@ import {
 } from './codex-scenarios.js';
 
 const SESSION_ID = 'session-1';
+const METADATA_WARNING =
+  'Model metadata for `gpt-6-astra` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.';
+const MODEL_SWITCH_WARNING =
+  'This session was recorded with model `gpt-6-astra` but is resuming with `gpt-5.4`. Consider switching back to `gpt-6-astra` as it may affect Codex performance.';
+const CODEX_UPDATE_ERROR =
+  '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-6-astra\' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again."}}';
+const CHATGPT_MODEL_ERROR =
+  '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-5.4\' model is not supported when using Codex with a ChatGPT account."}}';
 
 function makeContext(): CodexEventContext {
   return createCodexEventContext(SESSION_ID);
@@ -631,6 +639,19 @@ describe('mapCodexEvent', () => {
       ]);
     });
 
+    it.each([
+      [METADATA_WARNING, 'Using fallback settings for gpt-6-astra.'],
+      [MODEL_SWITCH_WARNING, 'Resumed with gpt-5.4 instead of gpt-6-astra.'],
+      [
+        'Falling back from WebSockets to HTTPS. stream disconnected before completion',
+        'Codex switched to a standard connection.',
+      ],
+    ])('maps a known nonfatal item diagnostic to a calm status notice', (message, expected) => {
+      expect(
+        mapCodexEvent(codexItemCompleted(errorThreadItem('diagnostic', message)), makeContext())
+      ).toEqual([{ type: 'system_status', data: { message: expected } }]);
+    });
+
     it('maps turn.completed to usage session_status followed by terminal done', () => {
       const events = mapCodexEvent(codexTurnCompleted(DEFAULT_USAGE), makeContext());
       expect(events).toEqual([
@@ -731,6 +752,63 @@ describe('mapCodexEvent', () => {
       expect(events.map((e) => e.type)).toEqual(['session_status', 'error', 'done']);
       expect(events[0]!.data).toMatchObject({ terminalReason: 'error' });
       expect(events[1]!.data).toMatchObject({ message: 'connection lost', code: 'turn_failed' });
+    });
+
+    it('does not let a preceding diagnostic dedupe away a terminal failure with the same text', () => {
+      const ctx = makeContext();
+      mapCodexEvent(codexItemCompleted(errorThreadItem('diagnostic', METADATA_WARNING)), ctx);
+
+      const events = mapCodexEvent(codexTurnFailed(METADATA_WARNING), ctx);
+      expect(events.map((event) => event.type)).toEqual(['session_status', 'error', 'done']);
+      expect(events[1]!.data).toMatchObject({
+        message: METADATA_WARNING,
+        code: 'turn_failed',
+        category: 'execution_error',
+      });
+    });
+
+    it('maps a nested model/version rejection to actionable copy with raw details', () => {
+      const events = mapCodexEvent(codexTurnFailed(CODEX_UPDATE_ERROR), makeContext());
+      expect(events[1]).toEqual({
+        type: 'error',
+        data: {
+          message:
+            'The Codex version DorkOS is using is too old for gpt-6-astra. Update DorkOS, then try this model again.',
+          code: 'turn_failed',
+          category: 'runtime_update_required',
+          details: CODEX_UPDATE_ERROR,
+        },
+      });
+    });
+
+    it('classifies a nested model rejection even when Codex reports it as an item error', () => {
+      const events = mapCodexEvent(
+        codexItemCompleted(errorThreadItem('model-error', CHATGPT_MODEL_ERROR)),
+        makeContext()
+      );
+      expect(events).toEqual([
+        {
+          type: 'error',
+          data: {
+            message:
+              'gpt-5.4 isn’t available with a ChatGPT account. Choose another model from the model menu.',
+            category: 'model_unavailable',
+            details: CHATGPT_MODEL_ERROR,
+            code: 'item_error',
+          },
+        },
+      ]);
+    });
+
+    it('does not misclassify a ChatGPT model rejection as a sign-in failure', () => {
+      const events = mapCodexEvent(codexTurnFailed(CHATGPT_MODEL_ERROR), makeContext());
+      expect(events[1]?.data).toEqual({
+        message:
+          'gpt-5.4 isn’t available with a ChatGPT account. Choose another model from the model menu.',
+        code: 'turn_failed',
+        category: 'model_unavailable',
+        details: CHATGPT_MODEL_ERROR,
+      });
     });
 
     it('maps a stream-level error to a NON-terminal system_status diagnostic', () => {
