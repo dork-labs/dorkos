@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(harness): --check names everything a --fix would remove (DOR-1889)'
+  - 'fix(harness): a --check that cannot list a folder answers anyway (DOR-1889)'
 ---
 
 ### Fixed
