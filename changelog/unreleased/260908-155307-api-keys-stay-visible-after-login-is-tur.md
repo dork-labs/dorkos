@@ -5,6 +5,4 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- API keys stay visible after login is turned off (DOR-1885)
+- Your API keys stay listed in Settings → Access after you turn "Require login" back off. Turning login off never revoked those keys — they kept working for MCP clients and scripts — but the list disappeared, so there was no way to see them or revoke one.
