@@ -6,6 +6,13 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
 }));
 
+// Every case re-imports the runtime under `vi.resetModules()`, so the module
+// graph is transformed and evaluated inside `beforeEach` — measured at 6.4s of
+// vitest's 10s hook default on a machine already running other agents' suites,
+// and at 12.2s on the run that filed DOR-1886. Nothing below asserts a
+// duration; the default budget was the only thing failing.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
 // Type for accessing private lockManager internals for testing
 interface SessionLock {
   clientId: string;

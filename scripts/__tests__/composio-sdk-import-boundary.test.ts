@@ -1,6 +1,13 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// The first case shells out to `git ls-files` and then reads all ~7,100 tracked
+// source files synchronously, which is a whole-repo scan inside vitest's 5s
+// default. Measured here at 1.8-2.7s at a load average of 280-400 with a warm
+// page cache, and reported over 5s on the run that filed DOR-1886 — so the
+// margin is under two, and the budget is what moves, never the scan.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const ALLOWED_COMPOSIO_SDK_ROOTS = ['packages/connector-providers/src/composio/'] as const;
 
