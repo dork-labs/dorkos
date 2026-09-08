@@ -10,6 +10,11 @@ covers:
   - 'fix(harness): a drop names the file it is about, and the facts decide who reads it (DOR-1845)'
   - 'test(harness): the generator stages the shapes that were silent (DOR-1845)'
   - "docs(harness): the contract's resolved cells, and the traps behind them (DOR-1845)"
+  - 'test(harness): the half of completeness that measures the walk (DOR-1845)'
+  - 'refactor(harness): one rule ladder, so the plan and the reader cannot drift (DOR-1845)'
+  - 'fix(harness): one .claude/skills answer, and the facts give it (DOR-1845)'
+  - 'test(harness): P9c, and the .claude/skills the generator never staged (DOR-1845)'
+  - 'docs(harness): the contract stops calling four kinds silent (DOR-1845)'
 ---
 
 ### Added
