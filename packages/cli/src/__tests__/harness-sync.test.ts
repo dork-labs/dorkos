@@ -1860,3 +1860,144 @@ describe('runHarnessSync — the manifest lines that reach nothing (DOR-1858)', 
     );
   });
 });
+
+describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-1858 review)', () => {
+  let tmpDir: string;
+  let originalCwd: string;
+  let homeDir: string;
+  let logSpy: MockInstance<typeof console.log>;
+  let errorSpy: MockInstance<typeof console.error>;
+
+  const printed = (): string => logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+  const errors = (): string => errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+
+  /** Everything `~/.dork/config.json` records about hook decisions, or nothing. */
+  function storedApprovals(): string[] {
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(homeDir, 'config.json'), 'utf8')) as {
+        harness?: { approvedHooks?: string[] };
+      };
+      return raw.harness?.approvedHooks ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** A project-scoped plugin that declares one Stop hook. */
+  function writePluginWithHooks(name: string): void {
+    const plugin = path.join(tmpDir, '.dork', 'plugins', name);
+    fs.mkdirSync(path.join(plugin, '.dork'), { recursive: true });
+    fs.writeFileSync(
+      path.join(plugin, '.dork', 'manifest.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        name,
+        version: '1.0.0',
+        type: 'plugin',
+        description: 'A fixture plugin',
+        layers: ['hooks'],
+      })
+    );
+    fs.mkdirSync(path.join(plugin, 'hooks'), { recursive: true });
+    fs.writeFileSync(
+      path.join(plugin, 'hooks', 'hooks.json'),
+      JSON.stringify({ Stop: [{ hooks: [{ type: 'command', command: 'echo plugin' }] }] })
+    );
+  }
+
+  function writeManifest(harnesses: string[], hookPolicies: unknown[]): void {
+    fs.writeFileSync(
+      path.join(tmpDir, HARNESS_MANIFEST_PATH),
+      JSON.stringify({ version: 1, harnesses, hookPolicies }, null, 2)
+    );
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tmpDir = createTempDir();
+    homeDir = createTempDir();
+    vi.stubEnv('DORK_HOME', homeDir);
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    writeFixtureRepo(tmpDir);
+    writePluginWithHooks('acme');
+    process.chdir(tmpDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  it('refuses, and records nothing, when every target is under a none policy', async () => {
+    // The yes is durable and outlives the manifest. Recorded here it would sit in
+    // config.json contradicting the drop line printed under it, install nothing,
+    // and then install itself unprompted the day the policy line goes.
+    writeManifest(['claude-code'], [{ tool: 'claude-code', projection: 'none' }]);
+
+    const result = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
+
+    expect(result.exitCode).toBe(1);
+    expect(storedApprovals()).toEqual([]);
+    expect(errors()).toContain('nowhere to go here');
+    expect(errors()).toContain('hookPolicies none for claude-code');
+    expect(errors()).toContain('without asking again');
+    // Nothing was applied either: the run stopped before the projection.
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
+  });
+
+  it('does not let a refused allow become a silent install once the policy goes', async () => {
+    // The whole reason the refusal exists, driven end to end.
+    writeManifest(['claude-code'], [{ tool: 'claude-code', projection: 'none' }]);
+    await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
+
+    writeManifest(['claude-code'], []);
+    await runHarnessSync(syncArgs({ fix: true }));
+
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
+    // Withheld and asked about again, which is the point: the refusal did not
+    // leave a stored yes behind to fire the moment the policy stopped hiding it.
+    expect(printed()).toContain('You have not allowed this package yet.');
+    expect(printed()).toContain('dorkos harness sync --fix --allow-hooks acme');
+  });
+
+  it('records a partly-suppressed allow, and says which agents will not get them', async () => {
+    // A real yes, just narrower than "Allowed acme" reads on its own.
+    writeManifest(['claude-code', 'codex'], [{ tool: 'claude-code', projection: 'none' }]);
+
+    const result = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
+
+    expect(result.exitCode).toBe(0);
+    expect(storedApprovals()).toHaveLength(1);
+    expect(printed()).toContain('Not every agent gets them');
+    expect(printed()).toContain('Claude Code');
+    expect(fs.existsSync(path.join(tmpDir, '.codex', 'hooks.json'))).toBe(true);
+  });
+
+  it('records without the caveat when no policy suppresses anything', async () => {
+    writeManifest(['claude-code', 'codex'], []);
+
+    const result = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
+
+    expect(result.exitCode).toBe(0);
+    expect(storedApprovals()).toHaveLength(1);
+    expect(printed()).not.toContain('Not every agent gets them');
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(true);
+  });
+
+  it('does not tell somebody to move hooks a policy would refuse to carry', async () => {
+    // The "Left alone" advice — put them in .claude/settings.json and DorkOS will
+    // carry them — is false for a harness the manifest says not to write for.
+    writeManifest(['claude-code', 'codex'], [{ tool: 'codex', projection: 'none' }]);
+    fs.mkdirSync(path.join(tmpDir, '.codex'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, '.codex', 'hooks.json'), '{"hooks":{}}\n');
+
+    await runHarnessSync(syncArgs({ check: true }));
+
+    expect(printed()).toContain("your manifest's hookPolicies says not to write here");
+    expect(printed()).not.toContain('if you want DorkOS to carry them to every harness');
+  });
+});

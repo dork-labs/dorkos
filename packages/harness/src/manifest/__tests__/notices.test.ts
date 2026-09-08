@@ -89,9 +89,43 @@ describe('manifestNotices', () => {
     expect(notices).toEqual([]);
   });
 
-  it("reports this repo's own manifest as carrying no retired key", () => {
-    // The repo-hygiene edit DOR-1858 made, kept honest by the check itself.
-    const notices = manifestNotices(parseHarnessManifest(liveManifest()));
-    expect(notices.filter((line) => line.includes('is no longer read'))).toEqual([]);
+  it('names a tool that hookPolicies lists twice, since only the first is read', () => {
+    // `hookPolicyFor` takes the first match, so a second entry decides nothing —
+    // the same silent claim as a retired key, and invisible without a line.
+    const notices = manifestNotices(
+      parseHarnessManifest({
+        version: 1,
+        harnesses: ['claude-code', 'codex'],
+        hookPolicies: [
+          { tool: 'codex', projection: 'generate' },
+          { tool: 'codex', projection: 'none' },
+        ],
+      })
+    );
+    expect(notices).toEqual([
+      'hookPolicies in .agents/harness.manifest.json names codex more than once — only the first entry is read',
+    ]);
+  });
+
+  it('says nothing when each tool appears once', () => {
+    const notices = manifestNotices(
+      parseHarnessManifest({
+        version: 1,
+        harnesses: ['claude-code', 'codex'],
+        hookPolicies: [
+          { tool: 'codex', projection: 'generate' },
+          { tool: 'claude-code', projection: 'none' },
+        ],
+      })
+    );
+    expect(notices).toEqual([]);
+  });
+
+  it("reports this repo's own manifest as saying nothing that reaches nothing", () => {
+    // The repo-hygiene edits DOR-1858 made — the four retired keys, and the
+    // `cursor` entry for a harness this repo does not enable — kept honest by
+    // the check itself. A standing notice nobody can clear is how people learn
+    // to stop reading the output, so this repo's own manifest earns none.
+    expect(manifestNotices(parseHarnessManifest(liveManifest()))).toEqual([]);
   });
 });

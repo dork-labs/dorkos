@@ -207,8 +207,13 @@ export function sweepGeneratedOrphans(repoRoot: string, plan: ProjectionPlan): s
 
 /**
  * Generated hook paths where somebody's own file sits and the current plan wants
- * to write NOTHING — the first auto-projection pass, which has no hook
- * contributors by design, or a harness the manifest never enabled.
+ * to write NOTHING. Three ways a target gets there: the first auto-projection
+ * pass, which has no hook contributors by design; a harness the manifest never
+ * enabled; and — since DOR-1858 — a harness whose `hookPolicies` entry says
+ * `none` or `native`, which is the person instructing the engine not to write
+ * this file. The third is why the CLI's advice line reads the manifest before it
+ * suggests moving hooks into `.claude/settings.json`: under that policy, moving
+ * them would change nothing.
  *
  * Nothing is blocked in that case: the engine had no projection to make there, so
  * this is a statement, not a fault. It is reported separately from `conflicts`

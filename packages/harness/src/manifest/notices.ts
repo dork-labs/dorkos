@@ -42,6 +42,20 @@ export function manifestNotices(manifest: HarnessManifest): string[] {
     }
   }
 
+  // Only the FIRST entry for a tool is read (`hookPolicyFor` takes it), so a
+  // second one is a policy somebody wrote that decides nothing — the same silent
+  // claim as a retired key, and invisible without this line.
+  const seen = new Set<string>();
+  for (const policy of manifest.hookPolicies) {
+    if (seen.has(policy.tool)) {
+      lines.push(
+        `hookPolicies in ${HARNESS_MANIFEST_PATH} names ${policy.tool} more than once — only the first entry is read`
+      );
+      continue;
+    }
+    seen.add(policy.tool);
+  }
+
   const enabled = new Set<string>(manifest.harnesses);
   for (const policy of manifest.hookPolicies) {
     if (enabled.has(policy.tool)) continue;

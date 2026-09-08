@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildPlan } from '../projector.js';
+import { pluginHookReach } from '../hooks-projection.js';
 import { parseHarnessManifest } from '../../manifest/schema.js';
 import type { ClaudeHooksConfig } from '../../generate/hooks.js';
 import type { InstalledPlugin } from '../../sources/installed.js';
@@ -214,5 +215,55 @@ describe('retired manifest keys', () => {
     });
 
     expect(carried).toEqual(plain);
+  });
+});
+
+describe('pluginHookReach', () => {
+  const reach = (harnesses: string[], hookPolicies: unknown[] = []) =>
+    pluginHookReach(parseHarnessManifest({ version: 1, harnesses, hookPolicies }));
+
+  it('reports every enabled harness an installed package can reach', () => {
+    // The default: nothing suppressed, so a recorded yes really installs something.
+    expect(reach(['claude-code', 'codex'])).toEqual({
+      reached: ['claude-code', 'codex'],
+      suppressed: [],
+    });
+  });
+
+  it('counts a none policy as suppressed, whichever harness it names', () => {
+    expect(reach(['claude-code'], [{ tool: 'claude-code', projection: 'none' }])).toEqual({
+      reached: [],
+      suppressed: [{ harness: 'claude-code', projection: 'none' }],
+    });
+    expect(reach(['codex'], [{ tool: 'codex', projection: 'none' }])).toEqual({
+      reached: [],
+      suppressed: [{ harness: 'codex', projection: 'none' }],
+    });
+  });
+
+  it('counts native as suppressed for a generate harness, and not for Claude Code', () => {
+    // `native` on Codex means the engine writes nothing, so a package's hooks do
+    // not arrive. On Claude Code `native` IS the default, and the merge runs.
+    expect(reach(['codex'], [{ tool: 'codex', projection: 'native' }]).reached).toEqual([]);
+    expect(reach(['claude-code'], [{ tool: 'claude-code', projection: 'native' }]).reached).toEqual(
+      ['claude-code']
+    );
+  });
+
+  it('blames no manifest line for a harness that could never receive hooks', () => {
+    // OpenCode has nowhere to write with or without a policy, so calling it
+    // "suppressed" would send somebody to delete a line that changes nothing.
+    expect(reach(['opencode'])).toEqual({ reached: [], suppressed: [] });
+    expect(reach(['gemini'], [{ tool: 'gemini', projection: 'none' }])).toEqual({
+      reached: [],
+      suppressed: [],
+    });
+  });
+
+  it('separates the partly-suppressed case from the wholly-suppressed one', () => {
+    expect(reach(['claude-code', 'codex'], [{ tool: 'claude-code', projection: 'none' }])).toEqual({
+      reached: ['codex'],
+      suppressed: [{ harness: 'claude-code', projection: 'none' }],
+    });
   });
 });

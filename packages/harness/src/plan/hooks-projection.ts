@@ -314,6 +314,54 @@ export function hookPolicyFor(
 }
 
 /**
+ * Where an installed package's hooks would land in this repo, and where the
+ * manifest stops them.
+ *
+ * The question `--allow-hooks` has to answer before it records a durable yes.
+ * Consent is stored per package and outlives the manifest that was in force
+ * when it was given, so recording one against a projection the manifest
+ * suppresses is a yes that goes live, unprompted, the day somebody deletes a
+ * `hookPolicies` line (DOR-1858 review).
+ *
+ * It is derived from the same two facts {@link planHooks} uses, and it has to
+ * stay that way — a second copy of "which harnesses can receive hooks" would be
+ * free to disagree with the plan the person is looking at:
+ *
+ * - a harness with no hooks mechanism at all (OpenCode, Gemini) is not
+ *   `suppressed`, it is simply not reachable, and no manifest line is to blame;
+ * - `none` stops every harness, and `native` stops the ones the engine writes a
+ *   file for — both mean "the engine writes nothing here", which is exactly what
+ *   an installed package's hooks need in order to arrive.
+ *
+ * @param manifest - the validated manifest, for its enabled set and policies.
+ * @returns the enabled harnesses an installed package's hooks would reach, and
+ *   the ones a `hookPolicies` entry stops them reaching, each with that entry's
+ *   `projection`.
+ */
+export function pluginHookReach(manifest: HarnessManifest): {
+  reached: HarnessId[];
+  suppressed: { harness: HarnessId; projection: HookProjection }[];
+} {
+  const reached: HarnessId[] = [];
+  const suppressed: { harness: HarnessId; projection: HookProjection }[] = [];
+
+  for (const harness of manifest.harnesses) {
+    // The harnesses with nowhere to write are out of this question entirely:
+    // their hooks never arrive, policy or no policy, so blaming the manifest
+    // would send somebody to delete a line that changes nothing.
+    const writes = harness === 'claude-code' || STANDALONE_HOOK_HARNESSES[harness] !== undefined;
+    if (!writes) continue;
+
+    const policy = hookPolicyFor(manifest, harness);
+    const stopped = policy === 'none' || (policy === 'native' && harness !== 'claude-code');
+    if (stopped && policy) suppressed.push({ harness, projection: policy });
+    else reached.push(harness);
+  }
+
+  return { reached, suppressed };
+}
+
+/**
  * The drops that stand in for a suppressed `.claude/settings.local.json` merge:
  * one per package whose hooks would have been merged, naming its own file.
  *

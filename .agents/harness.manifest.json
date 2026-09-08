@@ -77,12 +77,6 @@
       "notes": "Claude hooks remain native until another tool exposes a stable repo-level equivalent."
     },
     {
-      "tool": "cursor",
-      "status": "unsupported-in-this-spec",
-      "projection": "none",
-      "notes": "No Cursor repo-hook projection is defined in the current sync spec."
-    },
-    {
       "tool": "codex",
       "configPath": ".codex/hooks.json",
       "status": "supported",

@@ -82,7 +82,7 @@ describe('scaffoldManifest', () => {
     expect(parsed.hookPolicies).toEqual([]);
   });
 
-  it('writes only the three keys the engine reads', () => {
+  it('writes its version and the three keys the engine reads, and nothing else', () => {
     // A scaffolded manifest used to start life with four blank blocks nothing
     // ever read (DOR-1858). The file a person opens now says only what matters.
     dir = freshDir();

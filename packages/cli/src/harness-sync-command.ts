@@ -4,12 +4,12 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { rethrowUnknownOption } from './lib/parse-args-error.js';
 import {
-  configPathFor,
   formatWithheldBlock,
   readStoredDecisions,
   resolveDorkHome,
   withheldSummaryLine,
 } from './harness-consent.js';
+import { resolveAllowHooks } from './harness-sync-allow-hooks.js';
 import type { WithheldHooks } from '../server/services/harness/project-with-consent.js';
 
 import {
@@ -25,6 +25,7 @@ import {
   loadManifest,
   manifestNotices,
   missingGitignoreLines,
+  pluginHookReach,
   scaffoldManifest,
   CLAUDE_SETTINGS_LOCAL_TARGET,
   CODEX_HOOKS_TARGET,
@@ -192,18 +193,43 @@ function formatAction(action: ProjectionAction): string {
  * exit code. It exists so a person whose repo DorkOS projects no hooks into is
  * told why their file is being ignored rather than left to guess.
  */
-function formatLeftAlone(leftAlone: string[], harnessFilter?: HarnessId): string[] {
+function formatLeftAlone(
+  leftAlone: string[],
+  manifest: HarnessManifest,
+  harnessFilter?: HarnessId
+): string[] {
   // `--harness <id>` narrows every other line of this report, so it narrows this
   // one too: a Cursor file is not an answer to a question about Codex.
   const shown = harnessFilter
     ? leftAlone.filter((path) => harnessOf(path) === harnessFilter)
     : leftAlone;
   if (shown.length === 0) return [];
+
+  // The advice below is only true where writing the hooks down would actually
+  // make DorkOS carry them. A `hookPolicies` entry of `none` or `native` is the
+  // person's own instruction not to, so telling them to move their hooks into
+  // `.claude/settings.json` would send them to do work that changes nothing —
+  // and they would come back to the same untouched file (DOR-1858 review).
+  const stopped = new Set(pluginHookReach(manifest).suppressed.map((s) => s.harness));
+  const carried = shown.filter((path) => {
+    const harness = harnessOf(path);
+    return harness === undefined || !stopped.has(harness);
+  });
+
   return [
     '',
     'Left alone — files DorkOS did not write, at paths it would otherwise generate:',
-    ...shown.map((path) => `  ${path}  (${harnessOf(path)})`),
-    '  Nothing to fix. Put these hooks in .claude/settings.json if you want DorkOS to carry them to every harness.',
+    ...shown.map((path) => {
+      const harness = harnessOf(path);
+      const note =
+        harness && stopped.has(harness)
+          ? " — your manifest's hookPolicies says not to write here"
+          : '';
+      return `  ${path}  (${harness})${note}`;
+    }),
+    carried.length > 0
+      ? '  Nothing to fix. Put these hooks in .claude/settings.json if you want DorkOS to carry them to every harness.'
+      : '  Nothing to fix, and nothing to move: your manifest tells DorkOS not to write these files.',
   ];
 }
 
@@ -496,7 +522,7 @@ function reportCheck(
     console.log('');
     console.log(warningBlock);
   }
-  for (const line of formatLeftAlone(drift.leftAlone, harnessFilter)) console.log(line);
+  for (const line of formatLeftAlone(drift.leftAlone, manifest, harnessFilter)) console.log(line);
   reportWithheld(withheld, dorkHome);
   for (const line of formatNotEnabled(plan)) console.log(line);
   for (const line of formatManifestNotices(manifest)) console.log(line);
@@ -597,7 +623,7 @@ function reportFix(
 
   // Reported, never counted: a file DorkOS was not going to write anyway is not
   // a reason to hand somebody a failing command on every sync.
-  for (const line of formatLeftAlone(leftAlone, harnessFilter)) console.log(line);
+  for (const line of formatLeftAlone(leftAlone, manifest, harnessFilter)) console.log(line);
 
   // Printed AFTER what landed, so the report reads in the order it happened:
   // this is what was installed, and this is what was not.
@@ -811,49 +837,16 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     // disagree with what the app would do (contract D5).
     let decisions = await readStoredDecisions(dorkHome);
     if (args.allowHooks.length > 0) {
-      // Refused before anything opens the store, and that ordering is the whole
-      // safety of it: `initConfigManager` on an unreadable `config.json` runs
-      // `conf`'s corrupt-recovery, which backs the file up and replaces it with
-      // defaults — every setting, not just these two lists. Being told to run
-      // the command that wipes your settings is worse than the withheld hook.
-      if (decisions.unreadable !== undefined) {
-        console.error(`DorkOS could not read ${configPathFor(dorkHome)}: ${decisions.unreadable}`);
-        console.error(
-          '  Fix the file first. Allowing hooks writes to it, and DorkOS will not write over a file it cannot read.'
-        );
-        return { exitCode: 1 };
-      }
-      const requests = scanHookRequests(repoRoot, dorkHome);
-      const unknown = args.allowHooks.filter(
-        (name) => !requests.some((request) => request.packageName === name)
-      );
-      if (unknown.length > 0) {
-        // Nothing is written when any name is wrong: a typo must not half-record
-        // a decision and leave the person to work out which half landed.
-        console.error(
-          `No installed package here declares hooks under ${unknown.map((n) => `'${n}'`).join(', ')}.`
-        );
-        console.error(
-          requests.length > 0
-            ? `  Packages with hooks in this project: ${requests.map((r) => r.packageName).join(', ')}`
-            : '  No installed package in this project declares any hooks.'
-        );
-        return { exitCode: 1 };
-      }
-      const { initConfigManager } = await import('../server/services/core/config-manager.js');
-      const { recordHookApproval } = await import('../server/services/harness/hook-consent.js');
-      initConfigManager(dorkHome);
-      for (const request of requests) {
-        if (args.allowHooks.includes(request.packageName)) recordHookApproval(request);
-      }
-      decisions = await readStoredDecisions(dorkHome);
-      console.log(
-        `Allowed ${args.allowHooks.length} package${args.allowHooks.length === 1 ? '' : 's'} to install hooks here: ${args.allowHooks.join(', ')}`
-      );
-      console.log(
-        `  Recorded in ${configPathFor(dorkHome)} — undo with \`dorkos harness hooks --revoke <package>\`.`
-      );
-      console.log('');
+      const resolved = await resolveAllowHooks({
+        repoRoot,
+        dorkHome,
+        manifest: readManifest(),
+        allowHooks: args.allowHooks,
+        decisions,
+        scanHookRequests,
+      });
+      if ('exitCode' in resolved) return { exitCode: resolved.exitCode };
+      decisions = resolved.decisions;
     }
 
     // Orphan sweep only runs on a full (unfiltered) plan: a filtered one omits
