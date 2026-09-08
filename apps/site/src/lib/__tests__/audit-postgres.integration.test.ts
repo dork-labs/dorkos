@@ -145,11 +145,11 @@ describe('PostgreSQL security audit persistence', () => {
   // a failed attempt, so every id a case writes goes through `uniqueId` above.
   // Measured with a one-shot throw after each case's writes under
   // `VITEST_RETRY=2`: with fixed names, case 1 read 2 rows then 3 where it
-  // asserts 1, and case 3 was refused its admin sign-up with a 403 because the
-  // first attempt already took the address. Case 2 survived on its own — it
-  // deletes its account, which frees the email again — but only if it gets far
-  // enough to do so, so it takes a unique address too rather than resting on
-  // that.
+  // asserts 1. Cases 2 and 3 sign accounts up by email, and a fixed address
+  // survives a retry only when the first attempt got far enough to delete it
+  // again (the reviewer could not make case 3 fail on a fixed address; the
+  // implementer saw a 403 on one run) — so every address goes through
+  // `uniqueId` too, rather than resting on how far a failed attempt got.
   let client: PGlite;
   let auth: ReturnType<typeof createAuth>;
   let handlers: Handlers;
