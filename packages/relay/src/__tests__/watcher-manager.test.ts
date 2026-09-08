@@ -764,24 +764,30 @@ describe('WatcherManager', () => {
   //     Sever `watcher.on('add')` and only fake-watcher tests would notice.
   //
   // Half 2 is the only wall-clock bound left in this file, and it is bounded
-  // twice over: it writes well past the ready window rather than into it, and
-  // then waits on a barrier with a generous deadline.
+  // three ways over: it writes well past the ready window rather than into it,
+  // waits on a barrier with a short deadline, and re-arms that write a few times
+  // before it will call a missing event a failure — and even then it only reds
+  // when the watcher did NOT report the descriptor exhaustion that explains it.
   // -------------------------------------------------------------------------
 
   describe('real filesystem smoke', () => {
-    /** Ceiling on each delivery — generous, and paid only on failure. */
+    /** Ceiling on the sweep's delivery — generous, and paid only on failure. */
     const SMOKE_BUDGET_MS = 20_000;
     /**
      * How long to let the platform's event stream warm up before the live write.
      *
      * Ten times the 25ms `READY_DELIVERY_GRACE_MS` that `access-control.ts`
      * measured and found holds at a load average around 130. Writing INTO that
-     * window is what made the old retry loop necessary; this test steps over it
-     * instead, and the first delivery has already happened by then anyway.
+     * window is where an event is dropped 13-40% of the time, so stepping over
+     * it is what makes ONE attempt likely to land; the re-arm below is what
+     * makes the case honest when it does not.
      */
     const READY_SETTLE_MS = 250;
+    /** Ceiling on ONE live `add`, and how many times the write is re-armed. */
+    const LIVE_ATTEMPT_MS = 3_000;
+    const LIVE_ATTEMPTS = 5;
 
-    it('reaches the handler both from the listing and from a real add event, keyed by basename', async () => {
+    it('reaches the handler both from the listing and from a real add event, keyed by basename', async (ctx) => {
       chokidarSpy.restore();
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'watcher-mgr-smoke-'));
       // A real store, not the double: `listNew` and `claim` are the two calls
@@ -790,11 +796,16 @@ describe('WatcherManager', () => {
       const store = new MaildirStore({ rootDir: tmpDir });
       await store.ensureMaildir('hash-real');
       const claimSpy = vi.spyOn(store, 'claim');
+      // A real logger, because the watcher's own error report is the only thing
+      // that separates "the watch is broken" from "the kernel is out of watch
+      // descriptors" when half 2 below delivers nothing.
+      const smokeLogger = createSpyLogger();
       const smokeManager = new WatcherManager(
         store,
         subscriptionRegistry,
         sqliteIndex,
-        circuitBreaker
+        circuitBreaker,
+        smokeLogger
       );
       const newDir = path.join(tmpDir, 'hash-real', 'new');
 
@@ -833,27 +844,76 @@ describe('WatcherManager', () => {
         expect(await store.listCurrent('hash-real')).toEqual([]);
 
         // --- Half 2: the live `add` path, which the sweep did not exercise.
-        const liveDelivered = deferred();
-        vi.mocked(sqliteIndex.updateStatus).mockImplementation((messageId) => {
-          if (messageId === 'msg-live') liveDelivered.resolve();
-          return true;
-        });
+        //
+        // Re-armed rather than waited on once (DOR-1850's lesson): a real
+        // chokidar event is not a promise the platform keeps. A file written in
+        // the moments after a watch opens is dropped 13-40% of the time, and
+        // sustained load exhausts the kernel's watch descriptors outright, after
+        // which `fs.watch` reports nothing at all. So each attempt writes its
+        // OWN file — a leftover from an earlier attempt would otherwise satisfy
+        // a later one's barrier — waits a bounded window, and tidies up before
+        // the next. Measured at a load average around 280, the single-shot form
+        // this replaces missed the event and burned its whole 20s budget.
         await new Promise<void>((resolve) => setTimeout(resolve, READY_SETTLE_MS));
-        await fs.writeFile(path.join(newDir, 'msg-live.json'), JSON.stringify({ subject: 'live' }));
 
-        await withDeadline(
-          liveDelivered.promise,
-          SMOKE_BUDGET_MS,
-          `a real chokidar 'add' on ${newDir} delivered nothing`
+        let liveId: string | undefined;
+        for (let attempt = 0; attempt < LIVE_ATTEMPTS && !liveId; attempt++) {
+          const id = `msg-live-${attempt}`;
+          const liveDelivered = deferred();
+          vi.mocked(sqliteIndex.updateStatus).mockImplementation((messageId) => {
+            if (messageId === id) liveDelivered.resolve();
+            return true;
+          });
+          const filePath = path.join(newDir, `${id}.json`);
+          await fs.writeFile(filePath, JSON.stringify({ subject: 'live' }));
+          try {
+            await withDeadline(
+              liveDelivered.promise,
+              LIVE_ATTEMPT_MS,
+              `a real chokidar 'add' on ${newDir} delivered nothing`
+            );
+            liveId = id;
+          } catch {
+            // Undelivered mail this attempt wrote, out of the way of the next
+            // attempt's `listNew` assertion. A late `add` for it then loses the
+            // claim to ENOENT, which is exactly what the real store does.
+            await fs.rm(filePath, { force: true });
+          }
+        }
+
+        if (liveId) {
+          expect(claimSpy).toHaveBeenCalledWith('hash-real', liveId);
+          expect(handler).toHaveBeenCalledWith({ subject: 'live' });
+          expect(await store.listNew('hash-real')).toEqual([]);
+          return;
+        }
+
+        // Nothing delivered across every attempt. Acceptable ONLY if the watcher
+        // reported the failure that means it has stopped listening for good —
+        // the condition `sweepPending` exists for, not a fault in this code. Any
+        // other error, or none at all, is a real red.
+        const codes = vi
+          .mocked(smokeLogger.warn)
+          .mock.calls.filter(([message]) =>
+            String(message).includes('[watcher-error] WatcherManager')
+          )
+          .map(([, fields]) =>
+            String((fields as { code?: unknown } | undefined)?.code ?? 'unknown')
+          );
+        const exhausted = codes.filter((code) => code === 'EMFILE' || code === 'ENOSPC');
+        expect(
+          exhausted,
+          `the watch delivered nothing across ${LIVE_ATTEMPTS} writes and reported ${
+            codes.join(', ') || 'no error'
+          } — that is a fault in the watch, not descriptor pressure`
+        ).not.toEqual([]);
+        ctx.skip(
+          `watch descriptors exhausted (${exhausted.join(', ')}); the startup sweep is what covers this, and half 1 above asserts it`
         );
-
-        expect(claimSpy).toHaveBeenCalledWith('hash-real', 'msg-live');
-        expect(handler).toHaveBeenCalledWith({ subject: 'live' });
-        expect(await store.listNew('hash-real')).toEqual([]);
       } finally {
         await smokeManager.closeAll();
         await fs.rm(tmpDir, { recursive: true, force: true });
       }
-    }, 30_000);
+    }, 45_000);
   });
 });
