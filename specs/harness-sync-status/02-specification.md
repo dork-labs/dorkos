@@ -850,12 +850,18 @@ export const HarnessRowSchema = z.object({
   cells: z.record(HarnessIdSchema, HarnessCellSchema),
 });
 
-/** A project-level entry: `harnessAgnostic` in the plan, so it is about no harness at all (§1.3). */
+/**
+ * A project-level entry: about no harness at all (§1.3). Shipped with four kinds
+ * rather than the two drafted here — `write` for a file a sync creates that
+ * reaches no column (DOR-1891), and `notice` for what is wrong with the manifest
+ * itself, carried verbatim from `manifestNotices` (DOR-1906).
+ */
 export const HarnessProjectEntrySchema = z.object({
-  kind: z.enum(['drop', 'warning']),
+  kind: z.enum(['drop', 'warning', 'write', 'notice']),
   artifact: HarnessArtifactKindSchema,
   name: z.string(),
   source: z.string().optional(),
+  target: z.string().optional(),
   reason: z.string(),
 });
 

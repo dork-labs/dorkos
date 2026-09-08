@@ -12,16 +12,17 @@
  *
  * ## Where it gets its facts
  *
- * Five facts from four calls, and nothing else:
+ * Six facts from five calls, and nothing else:
  *
  * ```
  * loadManifest(projectPath)                    → the enabled set + the declared Claude-only names
+ * manifestNotices(manifest)                    → what is wrong with the manifest itself
  * planWithConsent(projectPath, …)              → { plan, withheld }
  * checkPlan(projectPath, plan)                 → { drifted, blocked, orphans, leftAlone, clean }
  * inventorySourceTree(projectPath)             → what is authored in the tree
  * ```
  *
- * After a write a sixth joins them — `applyPlan`'s `conflicts`, handed in
+ * After a write a seventh joins them — `applyPlan`'s `conflicts`, handed in
  * through {@link BuildHarnessStatusOptions.afterWrite} — because a file somebody
  * else owns at a target is only discovered when the write is attempted.
  *
@@ -45,8 +46,10 @@
  */
 import {
   checkPlan,
+  HARNESS_MANIFEST_PATH,
   inventorySourceTree,
   loadManifest,
+  manifestNotices,
   type ArtifactType,
   type DriftResult,
   type HarnessManifest,
@@ -451,6 +454,11 @@ export function buildHarnessStatus(options: BuildHarnessStatusOptions): HarnessS
     return emptyStatus(projectPath, 'unreadable', manifestFailureDetail(err));
   }
 
+  // Read the moment the manifest parses, and from the engine's own function, so
+  // the page and `dorkos harness sync` carry the same sentences about the same
+  // file rather than two derivations of one fact (DOR-1906).
+  const notices = manifestNotices(manifest);
+
   const { plan, withheld } = planWithConsent(projectPath, {
     dorkHome,
     ...(decisions === undefined ? {} : { decisions }),
@@ -498,7 +506,7 @@ export function buildHarnessStatus(options: BuildHarnessStatusOptions): HarnessS
     },
     sweepPreview: [...drift.orphans],
     rows,
-    projectLevel: projectLevelEntries(plan, enabledSet),
+    projectLevel: projectLevelEntries(plan, enabledSet, notices),
     pendingApproval: withheld.map(pendingApprovalEntry),
   };
 }
@@ -528,9 +536,16 @@ function isAboutEnabledHarness(
 }
 
 /**
- * Everything the plan said that is about no harness this project runs.
+ * Everything about this project that is about no harness it runs.
  *
- * Two populations, and neither is discriminated by `source`: a plugin-layer drop
+ * The manifest notices go FIRST, and they are the one population that does not
+ * come from the plan at all: they are about `.agents/harness.manifest.json`
+ * itself — a retired key, a hook policy naming a tool this manifest does not
+ * enable (DOR-1906) — so nothing in the plan could ever hold them. First because
+ * they are the cheapest thing on the list to fix and the only one whose fix is a
+ * line to delete.
+ *
+ * Then two plan populations, and neither is discriminated by `source`: a plugin-layer drop
  * carries no source, and the unreadable-hook warning carries one and is still
  * agnostic. The first is `harnessAgnostic`; the second is a warning naming a
  * harness the manifest does not enable, which reaches no column and so has
@@ -552,7 +567,8 @@ function isAboutEnabledHarness(
  */
 function projectLevelEntries(
   plan: ProjectionPlan,
-  enabled: ReadonlySet<HarnessId>
+  enabled: ReadonlySet<HarnessId>,
+  notices: readonly string[]
 ): HarnessProjectEntry[] {
   const entry = (
     kind: 'drop' | 'warning' | 'write',
@@ -569,12 +585,38 @@ function projectLevelEntries(
     reason: e.reason ?? `${e.name} has no home in any agent tool, and the plan gave no reason`,
   });
   return [
+    ...notices.map(noticeEntry),
     ...plan.drops.filter((d) => d.harnessAgnostic === true).map((d) => entry('drop', d)),
     ...plan.warnings
       .filter((w) => !isAboutEnabledHarness(w, enabled))
       .map((w) => entry('warning', w)),
     ...plan.actions.filter(isUnattributedWrite(enabled)).map((a) => entry('write', a)),
   ];
+}
+
+/**
+ * One line about the manifest itself, as a project-level entry (DOR-1906).
+ *
+ * The sentence is `manifestNotices`' own, unchanged — the CLI prints the same
+ * words through `formatManifestNotices`, and the engine function is called once
+ * here rather than the derivation being repeated, so the terminal and the screen
+ * cannot disagree about which key is dead.
+ *
+ * **`name` is the manifest file, not the key or the tool the line is about, and
+ * that is a deliberate limit rather than an oversight.** `manifestNotices`
+ * returns sentences; the subject lives inside the sentence. Recovering it here
+ * would mean either matching prose or re-deriving which keys are retired and
+ * which policies reach nothing — a second model of a thing the engine already
+ * decided, which is exactly what this module's header refuses to do for a plan's
+ * `reason`, and which would fall silently out of step the day a fifth notice
+ * family is added. Naming the file is true of every line (each one says
+ * "X in `.agents/harness.manifest.json` …"), and the sentence beneath it already
+ * names the key or the tool in plain words. The honest fix is for
+ * `manifestNotices` to return its subject beside its sentence; that belongs in
+ * the engine, and is a follow-up.
+ */
+function noticeEntry(reason: string): HarnessProjectEntry {
+  return { kind: 'notice', artifact: 'manifest', name: HARNESS_MANIFEST_PATH, reason };
 }
 
 /**

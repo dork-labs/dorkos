@@ -907,6 +907,53 @@ describe('VC-01 — the envelope', () => {
     }
   });
 
+  it('VC-01: what is wrong with the manifest itself reaches projectLevel as notices', () => {
+    // DOR-1906. Seeded defect: drop the `manifestNotices` call and both lines
+    // vanish from the payload while `dorkos harness sync` keeps printing them —
+    // the terminal and the screen disagreeing about one file, which is the whole
+    // thing VC-01 exists to stop. Seeded the other way — re-derive the retired
+    // keys here instead of asking the engine — and the strings drift the day the
+    // engine rewords one, which is why they are asserted verbatim.
+    const { repo, home } = stageBare('notices', ['claude-code'], {
+      skillWrappers: { deploy: { wrapper: '.claude/commands/deploy.md' } },
+      hookPolicies: [{ tool: 'cursor', projection: 'none' }],
+    });
+
+    const notices = statusOf(repo, home).projectLevel.filter((e) => e.kind === 'notice');
+
+    expect(notices).toEqual([
+      {
+        kind: 'notice',
+        artifact: 'manifest',
+        name: '.agents/harness.manifest.json',
+        reason: 'skillWrappers in .agents/harness.manifest.json is no longer read — remove it',
+      },
+      {
+        kind: 'notice',
+        artifact: 'manifest',
+        name: '.agents/harness.manifest.json',
+        reason:
+          'hookPolicies in .agents/harness.manifest.json names cursor, which this manifest does not enable',
+      },
+    ]);
+  });
+
+  it('VC-01: a manifest with nothing wrong with it produces no notices', () => {
+    // The floor under the case above: without it, an implementation that emitted
+    // a notice for every manifest — or one line per enabled harness — passes the
+    // first test's `filter` and puts a permanent complaint on every project's
+    // page. Seeded defect: drop `manifestNotices`' own guards.
+    const { repo, home } = stageBare('notices-clean', ['claude-code', 'cursor'], {
+      hookPolicies: [{ tool: 'cursor', projection: 'generate' }],
+    });
+    writeSkill(join(repo, '.agents', 'skills', 'alpha'), 'alpha');
+
+    const status = statusOf(repo, home);
+
+    expect(status.state).toBe('ready');
+    expect(status.projectLevel.filter((e) => e.kind === 'notice')).toEqual([]);
+  });
+
   it('VC-01: computedAt is the instant of the read', () => {
     // Seeded defect: a fixed or lazily-cached timestamp. Bounded by two readings
     // taken around the call rather than compared against a later one, so a loaded
