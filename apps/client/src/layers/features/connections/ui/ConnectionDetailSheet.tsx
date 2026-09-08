@@ -336,11 +336,7 @@ export function ConnectionDetailSheet({
                       <RefreshCw className="size-4" aria-hidden /> Reconnect
                     </Button>
                     {connection?.lifecycle !== 'disconnected' && (
-                      <Button
-                        variant="ghost"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => setConfirmDisconnect(true)}
-                      >
+                      <Button variant="ghost" onClick={() => setConfirmDisconnect(true)}>
                         <Trash2 className="size-4" aria-hidden /> Disconnect
                       </Button>
                     )}

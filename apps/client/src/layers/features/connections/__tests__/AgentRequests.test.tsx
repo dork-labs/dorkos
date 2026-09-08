@@ -7,6 +7,7 @@ import type { ConnectorAgentRequestItem } from '@dorkos/shared/connector-schemas
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { gmailFilterSchema } from './event-filter-fixtures';
 import { AgentRequests } from '../ui/AgentRequests';
 
 Element.prototype.hasPointerCapture = () => false;
@@ -285,6 +286,55 @@ describe('AgentRequests', () => {
             connectionId: 'connection-1',
             definitionId: 'definition-1',
             filter: { folder: 'inbox' },
+            agentId: 'agent-1',
+            destination: { kind: 'agent', id: 'agent-1' },
+          },
+        ],
+      })
+    );
+    expect(transport.createConnectionEventSubscription).not.toHaveBeenCalled();
+  });
+
+  it('includes defaults and an explicit blank in the exact owner-approved event scope', async () => {
+    const user = userEvent.setup();
+    const transport = transportFor({ ...REQUEST, requestedEvents: ['gmail.message_received'] });
+    vi.mocked(transport.listConnectionEventDefinitions).mockResolvedValue({
+      definitions: [
+        {
+          id: 'definition-defaults',
+          eventType: 'gmail.message_received',
+          displayName: 'New email',
+          toolkit: 'gmail',
+          toolkitVersion: '2026-09-01',
+          definitionHash: `sha256:${'1'.repeat(64)}`,
+          filterSchema: gmailFilterSchema,
+          payloadSchema: {},
+          deliveryMode: 'polling',
+          expectedCadenceSeconds: null,
+        },
+      ],
+    });
+    renderRequests(transport);
+    await user.click(await screen.findByRole('combobox', { name: 'Account activity' }));
+    await user.click(await screen.findByRole('option', { name: 'New email' }));
+    expect(screen.getByRole('textbox', { name: 'Labels' })).toHaveValue('INBOX');
+    expect(screen.getByRole('textbox', { name: 'Query' })).toHaveValue('');
+    expect(screen.getByRole('spinbutton', { name: 'Interval' })).toHaveValue(1.5);
+    await user.clear(screen.getByRole('textbox', { name: 'Labels' }));
+    await user.type(screen.getByRole('textbox', { name: 'Labels' }), 'owner-label');
+    const grant = screen.getByRole('button', { name: 'Grant access' });
+    await waitFor(() => expect(grant).toBeEnabled());
+    await user.click(grant);
+    await waitFor(() =>
+      expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
+        decision: 'approved',
+        connectionId: 'connection-1',
+        operationRevisionIds: ['read-v1', 'write-v1'],
+        eventScopes: [
+          {
+            connectionId: 'connection-1',
+            definitionId: 'definition-defaults',
+            filter: { interval: 1.5, labelIds: 'owner-label', query: '', userId: 'me' },
             agentId: 'agent-1',
             destination: { kind: 'agent', id: 'agent-1' },
           },

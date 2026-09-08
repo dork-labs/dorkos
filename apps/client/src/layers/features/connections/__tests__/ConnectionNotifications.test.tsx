@@ -12,6 +12,7 @@ import type {
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { gmailFilterSchema } from './event-filter-fixtures';
 import { ConnectionNotifications } from '../ui/ConnectionNotifications';
 
 Element.prototype.hasPointerCapture = () => false;
@@ -113,6 +114,99 @@ async function choose(user: ReturnType<typeof userEvent.setup>, label: string, o
 }
 
 describe('ConnectionNotifications', () => {
+  it('submits validated defaults exactly and keeps owner edits across rerenders', async () => {
+    const user = userEvent.setup();
+    const create = vi
+      .fn()
+      .mockResolvedValue({ status: 'active', subscriptionId: 'subscription-a' });
+    const transport = createMockTransport({
+      getConnectionEventSource: vi.fn().mockResolvedValue({
+        setupMode: 'managed',
+        configured: false,
+        endpoint: null,
+        reason: null,
+      }),
+      listConnectionEventDefinitions: vi.fn().mockResolvedValue({
+        definitions: [{ ...definition, filterSchema: gmailFilterSchema, deliveryMode: 'polling' }],
+      }),
+      listConnectionEventSubscriptions: vi.fn().mockResolvedValue({ subscriptions: [] }),
+      createConnectionEventSubscription: create,
+    });
+    const view = renderNotifications(transport);
+    await choose(user, 'Account activity', 'New email');
+    expect(screen.getByRole('spinbutton', { name: 'Interval' })).toHaveValue(1.5);
+    expect(screen.getByRole('textbox', { name: 'Labels' })).toHaveValue('INBOX');
+    expect(screen.getByRole('textbox', { name: 'Query' })).toHaveValue('');
+    expect(screen.getByRole('textbox', { name: 'User' })).toHaveValue('me');
+    expect(screen.getByRole('textbox', { name: 'Query' })).toHaveAccessibleDescription(
+      expect.stringContaining('Examples (not selected)')
+    );
+    expect(screen.getByText('Check timing is unavailable')).toBeVisible();
+    await user.clear(screen.getByRole('spinbutton', { name: 'Interval' }));
+    expect(screen.getByRole('button', { name: 'Set up notification' })).toBeDisabled();
+    await user.type(screen.getByRole('spinbutton', { name: 'Interval' }), '1.5');
+    await user.clear(screen.getByRole('textbox', { name: 'Labels' }));
+    await user.type(screen.getByRole('textbox', { name: 'User' }), '-edited');
+    view.rerenderConnection('connection-a');
+    await choose(user, 'Agent', 'Researcher');
+    expect(screen.getByRole('textbox', { name: 'User' })).toHaveValue('me-edited');
+    await user.click(screen.getByRole('button', { name: 'Set up notification' }));
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith(
+        'connection-a',
+        expect.objectContaining({
+          definitionId: 'definition-a',
+          agentId: 'agent-a',
+          destination: { kind: 'agent', id: 'agent-a' },
+          filter: { interval: 1.5, labelIds: '', query: '', userId: 'me-edited' },
+        })
+      )
+    );
+  });
+
+  it('renders an empty enum default as a real choice and submits it exactly', async () => {
+    const user = userEvent.setup();
+    const create = vi
+      .fn()
+      .mockResolvedValue({ status: 'active', subscriptionId: 'subscription-a' });
+    const transport = createMockTransport({
+      getConnectionEventSource: vi.fn().mockResolvedValue({
+        setupMode: 'managed',
+        configured: false,
+        endpoint: null,
+        reason: null,
+      }),
+      listConnectionEventDefinitions: vi.fn().mockResolvedValue({
+        definitions: [
+          {
+            ...definition,
+            filterSchema: {
+              type: 'object',
+              properties: {
+                folder: { type: 'string', title: 'Folder', enum: ['', 'inbox'], default: '' },
+              },
+            },
+          },
+        ],
+      }),
+      listConnectionEventSubscriptions: vi.fn().mockResolvedValue({ subscriptions: [] }),
+      createConnectionEventSubscription: create,
+    });
+    renderNotifications(transport);
+    await choose(user, 'Account activity', 'New email');
+    expect(screen.getByRole('combobox', { name: 'Folder' })).toHaveTextContent('Leave blank');
+    await choose(user, 'Folder', 'inbox');
+    await choose(user, 'Folder', 'Leave blank');
+    await choose(user, 'Agent', 'Researcher');
+    await user.click(screen.getByRole('button', { name: 'Set up notification' }));
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith(
+        'connection-a',
+        expect.objectContaining({ filter: { folder: '' } })
+      )
+    );
+  });
+
   it('shows pending, active, and revoked history across explicit pages', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport({

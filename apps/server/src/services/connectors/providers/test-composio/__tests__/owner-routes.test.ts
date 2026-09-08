@@ -193,7 +193,7 @@ describe('offline Composio through real owner and signed ingress routes', () => 
     expect(setup.status).toBe(200);
     expect(await setup.json()).toMatchObject({ setupMode: 'byo_webhook', configured: true });
     const discovered = await (await f.call(`${prefix}/definitions`)).json();
-    expect(discovered.definitions).toHaveLength(3);
+    expect(discovered.definitions).toHaveLength(4);
     expect(discovered.definitions[1]).toMatchObject({ deliveryMode: 'unknown' });
     const body = {
       manageExistingTrigger: false,

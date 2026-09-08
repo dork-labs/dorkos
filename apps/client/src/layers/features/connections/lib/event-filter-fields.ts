@@ -5,6 +5,8 @@ export interface EventFilterField {
   required: boolean;
   type: 'string' | 'number' | 'integer' | 'boolean';
   options?: string[];
+  defaultValue?: string | number | boolean;
+  examples?: Array<string | number | boolean>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -19,7 +21,13 @@ const OBJECT_SCHEMA_KEYS = new Set([
   'required',
   'type',
 ]);
-const FIELD_SCHEMA_KEYS = new Set([...SCHEMA_ANNOTATION_KEYS, 'enum', 'type']);
+const FIELD_SCHEMA_KEYS = new Set([
+  ...SCHEMA_ANNOTATION_KEYS,
+  'enum',
+  'type',
+  'default',
+  'examples',
+]);
 
 function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
   return Object.keys(value).every((key) => allowed.has(key));
@@ -75,15 +83,57 @@ export function readEventFilterFields(schema: Record<string, unknown>): EventFil
       }
       options = rawOptions;
     }
+    const accepts = (value: unknown): value is string | number | boolean => {
+      if (rawType === 'boolean') return typeof value === 'boolean';
+      if (rawType === 'string') {
+        return typeof value === 'string' && (!options || options.includes(value));
+      }
+      return (
+        typeof value === 'number' &&
+        Number.isFinite(value) &&
+        (rawType !== 'integer' || Number.isInteger(value))
+      );
+    };
+    // Annotations are suggestions, but malformed suggestions must not become
+    // owner consent. In particular, never coerce a string to a numeric default.
+    const hasDefault = Object.hasOwn(raw, 'default');
+    if (hasDefault && !accepts(raw.default)) return null;
+    if (
+      Object.hasOwn(raw, 'examples') &&
+      (!Array.isArray(raw.examples) || !raw.examples.every(accepts))
+    )
+      return null;
     fields.push({
       name,
       label: typeof raw.title === 'string' && raw.title.trim() !== '' ? raw.title : name,
       required: required.has(name),
       type: rawType,
       ...(options && { options }),
+      ...(hasDefault && { defaultValue: raw.default as string | number | boolean }),
+      ...(Array.isArray(raw.examples) && {
+        examples: raw.examples as Array<string | number | boolean>,
+      }),
     });
   }
   return fields;
+}
+
+/** Initialize one newly selected definition from validated defaults, never examples. */
+export function initialEventFilterValues(
+  fields: EventFilterField[]
+): Record<string, string | boolean> {
+  const entries: Array<[string, string | boolean]> = [];
+  for (const field of fields) {
+    if (field.defaultValue !== undefined) {
+      entries.push([
+        field.name,
+        typeof field.defaultValue === 'boolean' ? field.defaultValue : String(field.defaultValue),
+      ]);
+    } else if (field.type === 'boolean' && field.required) {
+      entries.push([field.name, false]);
+    }
+  }
+  return Object.fromEntries(entries);
 }
 
 /** Convert controlled form strings to the exact primitive values described by the schema. */
@@ -96,11 +146,11 @@ export function buildEventFilter(
     const value = values[field.name];
     if (field.type === 'boolean') {
       if (typeof value === 'boolean') result[field.name] = value;
-      else if (field.required) return null;
+      else if (field.required || field.defaultValue !== undefined) return null;
       continue;
     }
-    if (typeof value !== 'string' || value.trim() === '') {
-      if (field.required) return null;
+    if (typeof value !== 'string' || (field.type !== 'string' && value.trim() === '')) {
+      if (field.required || field.defaultValue !== undefined) return null;
       continue;
     }
     if (field.options && !field.options.includes(value)) return null;
@@ -111,6 +161,8 @@ export function buildEventFilter(
       }
       result[field.name] = parsed;
     } else {
+      // Presence and minimum length are different JSON Schema constraints.
+      // Preserve explicit blanks/whitespace for exact provider reconciliation.
       result[field.name] = value;
     }
   }
