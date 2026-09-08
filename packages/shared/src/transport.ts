@@ -145,6 +145,7 @@ import type {
   ApplyShapeResult,
   ForkShapeResult,
 } from './marketplace-schemas.js';
+import type { HarnessStatusResponse } from './harness-schemas.js';
 import type { RoomTransport } from './transport-rooms.js';
 import type { ReadCursor, ReadCursorThreadKind } from './read-cursor-schemas.js';
 import type {
@@ -2081,6 +2082,15 @@ export interface Transport extends RoomTransport {
    * @param name - Source name. Will be URL-encoded.
    */
   removeMarketplaceSource(name: string): Promise<void>;
+
+  // --- Harness Sync (spec `harness-sync-status` §5) ---
+
+  /**
+   * Read what DorkOS shares with each agent tool for one project. Never writes.
+   *
+   * @param projectPath - The project root, absolute.
+   */
+  getHarnessStatus(projectPath: string): Promise<HarnessStatusResponse>;
 
   // --- Approvals (spec `agent-trust` §3.3) ---
 

@@ -1077,6 +1077,12 @@ Every chip carries its `reason` as its accessible description and its `title`; a
 marker whose description is the warning text. Nothing that has a reason hides it — the panel below repeats it
 in full, so the tooltip is a convenience, never the only copy.
 
+**That last sentence holds for `dropped` and for nothing else yet.** The "Not shared with `<harness>`" panel is
+built out of the `dropped` cells, so those reasons have a second, reachable copy. A `drifted`, `conflict` or
+`pending-approval` reason has only the chip's description until Slice 7 ships the banner and the "What changed"
+summary — and a `title` on a non-focusable chip is out of reach for a sighted keyboard user. Recorded because
+the sentence above reads as covering all seven states and does not (DOR-1893 review, closed by DOR-1895).
+
 #### The not-enabled notice
 
 > **Cursor files are in this folder, but DorkOS isn't sharing to it.**
