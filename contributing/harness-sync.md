@@ -345,3 +345,30 @@ Honouring a `none` that used to be ignored turns a previously generated hooks fi
 **The four retired keys.** `skillWrappers`, `commandMappings`, `instructionProjections` and `skillBundles` are **accepted and ignored** (DOR-1858). Nothing ever read them, and the engine has its own source for everything they described: plugin command wrappers, `plan/command-formats.ts`, the scaffolded instruction pointers of ADR-302, and the scanner instead of a bundle list. They stay in the schema so an existing manifest still parses — `.strict()` would otherwise reject the file, and `--enable` validates with the same schema before it writes a byte.
 
 **There is no config migration**, and there is not meant to be: the manifest is a per-repo file the engine does not rewrite, not `~/.dork/config.json`. `dorkos harness sync` names each retired key it finds — one line, `--check` and `--fix` alike — and that line IS the migration notice. It sits beside the other thing the report says about the manifest rather than about a projection: a `hookPolicies` entry naming a harness the manifest does not enable, or a `tool` that is not a harness at all. Both are notices; neither ever changes an exit code (`manifest/notices.ts`).
+
+## 12. The status model
+
+The engine answers per harness, and every surface that draws a screen needs the same answer arranged the other way round: per FILE, with one column for each agent tool. That arrangement is [`apps/server/src/services/harness/status.ts`](../apps/server/src/services/harness/status.ts) — `buildHarnessStatus()`, a plain read-only function over an options bag, so the CLI can pass the consent copy it reads off disk instead of opening the config store.
+
+It lives in the server rather than in `@dorkos/harness` because two of its states need the hook-consent record, and the engine has no approval primitive and no config store — dragging both in for one call site would be an architectural regression. It builds its plan through `planWithConsent`, never through the engine's bare `project()`, which is the seam the consent guard holds.
+
+Each **row** is one agent file, keyed by `(artifact, source, name)`. All three components are load-bearing: two settings files both contribute a hook group named `hooks`, two MCP servers share one `.mcp.json`, and a skill and a hook declared in that skill's own frontmatter share a source. Each **cell** is that file paired with one enabled harness.
+
+The derivation runs top to bottom and **the first match wins**:
+
+1. after a write, the action is in `applyPlan().conflicts` → `conflict`
+2. on a read, the action is in `checkPlan().blocked` → `conflict`
+3. the cell is a hook from a package whose commands nobody has allowed → `pending-approval`
+4. the action is in `checkPlan().drifted` → `drifted`
+5. the action is in `plan.drops` → `dropped`
+6. the action is in `plan.actions` with `kind: 'native'` → `native`
+7. the action is in `plan.actions` with any other kind → `projected`
+8. nothing above names the cell and a `ProjectionWarning` does → `warned`
+
+`conflict` outranks `drifted` because "re-run and it fixes itself" and "re-running will never fix this" mean opposite things to a person. A warning that lands on a cell some other row already decided rides it as `warnings[]` instead of replacing it.
+
+Three rules sit beside the ladder. **A warning attaches, it does not fork a row**: it joins the row sharing its `(artifact, source)`, choosing by `name` when more than one does, and becomes its own row only when it matches none. **Anything `harnessAgnostic` is project-level** — a package that is portable to nothing, a hook declaration read before any harness was considered — and is never a cell and never a row; `source` absence is not the discriminator, because the unreadable-hook warning carries one. **`adoptable` is row-level**, read straight off the inventory: a real `.claude/skills` directory that is not also in `.agents/skills` and is not named in `manifest.claudeOnlySkills`.
+
+**A wrong chip is a plan bug.** Every sentence the model shows is the plan's own `reason` string, unchanged, so the fix goes into the projector and both the terminal and the screen get it at once. For the same reason `harnessCoverage()` is not called here: it is the oracle a projection is measured against, and running it in the read path would put a second, independent model of six vendors' behaviour on a screen where it could disagree with the first.
+
+`sweepPreview` is `checkPlan().orphans` — every path a sync would delete, equal to the next `swept` and never a subset of it — and `clean` is false whenever anything drifted, anything is blocked, **or** anything would be swept. A tree whose only fault is orphans is not clean, and reading `clean` without the orphans is what once let a "nothing to do" screen sit over a click that removed nine files.
