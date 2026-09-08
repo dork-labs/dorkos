@@ -70,6 +70,18 @@
       "dependsOn": ["^build"],
       "cache": true
     },
+    "@dorkos/harness#test": {
+      "dependsOn": ["^build"],
+      "cache": true,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/meta/harness-sync-capabilities.md",
+        "$TURBO_ROOT$/apps/server/src/services/harness/__tests__/**",
+        "$TURBO_ROOT$/apps/server/src/services/runtimes/codex/__tests__/scan-skill-commands.test.ts",
+        "$TURBO_ROOT$/apps/server/src/services/runtimes/codex/__tests__/skill-parity.test.ts",
+        "$TURBO_ROOT$/packages/cli/src/__tests__/harness-sync*.test.ts"
+      ]
+    },
     "test:watch": {
       "cache": false,
       "persistent": true
