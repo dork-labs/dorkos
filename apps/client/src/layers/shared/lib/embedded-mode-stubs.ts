@@ -179,6 +179,7 @@ import type {
   ApplyShapeResult,
   ForkShapeResult,
 } from '@dorkos/shared/marketplace-schemas';
+import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
 import type {
   CloudLinkStatus,
   CloudLinkSummary,
@@ -850,6 +851,50 @@ export const marketplaceStubs = {
 
   async removeMarketplaceSource(_name: string): Promise<void> {
     throw new Error('Marketplace is not supported in embedded mode');
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Harness Sync stubs
+// ---------------------------------------------------------------------------
+
+/**
+ * What an Obsidian vault is told about agent-file sharing: that it happens
+ * somewhere else.
+ *
+ * **This read is the documented exception to the file's convention.** Every
+ * other list operation here answers with an empty array, and this one must not:
+ * an empty `rows` is a page saying "you have no skills" to somebody with
+ * thirty-one, which is the exact lie the status model exists to fix
+ * (Decision 26). `unavailable` is a state the page draws its own copy for, so
+ * the reader gets "Agent file sharing runs in the DorkOS app." instead of a
+ * confident zero.
+ *
+ * The envelope is otherwise `status.ts`'s own empty one, field for field — a
+ * full {@link HarnessStatusResponse} rather than a partial cast, so a field
+ * added to the schema fails a test here rather than reading `undefined` in a
+ * vault.
+ *
+ * @internal
+ */
+export const harnessStubs = {
+  async getHarnessStatus(projectPath: string): Promise<HarnessStatusResponse> {
+    return {
+      projectPath,
+      state: 'unavailable',
+      detail: 'Agent file sharing runs in the DorkOS app.',
+      computedAt: new Date().toISOString(),
+      enabled: [],
+      notEnabled: [],
+      // Nothing is out of date, because nothing is set up to be out of date —
+      // the same reading `status.ts` gives every state but `ready`.
+      clean: true,
+      counts: { skills: 0, drifted: 0, conflicts: 0, orphans: 0, adoptable: 0, pendingApproval: 0 },
+      sweepPreview: [],
+      rows: [],
+      projectLevel: [],
+      pendingApproval: [],
+    };
   },
 };
 

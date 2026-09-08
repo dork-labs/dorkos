@@ -11,6 +11,7 @@ import type {
   TaskRun,
 } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
+import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
 import type { RoomEntry, RoomEntryListResponse } from '@dorkos/shared/room-schemas';
 import type { WorktreeScanResult } from '@dorkos/shared/workspace';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -193,6 +194,31 @@ export function mockRoomEntryPage(
   threadRoots: RoomEntry[] = []
 ): RoomEntryListResponse {
   return { entries, threadRoots };
+}
+
+/**
+ * The harness status a test sees when it has said nothing about harnesses:
+ * `ready`, clean, and empty.
+ *
+ * Empty rather than populated, because a default with skills in it would put
+ * chips on every surface that happens to draw the status and make unrelated
+ * snapshots move. `ready` rather than `not-set-up`, because the empty-and-set-up
+ * tree is the one a component's ordinary path renders.
+ */
+function mockHarnessStatus(): HarnessStatusResponse {
+  return {
+    projectPath: '/test/project',
+    state: 'ready',
+    computedAt: '2026-09-08T09:00:00.000Z',
+    enabled: [],
+    notEnabled: [],
+    clean: true,
+    counts: { skills: 0, drifted: 0, conflicts: 0, orphans: 0, adoptable: 0, pendingApproval: 0 },
+    sweepPreview: [],
+    rows: [],
+    projectLevel: [],
+    pendingApproval: [],
+  };
 }
 
 /** Create a mock Transport with all methods stubbed via `vi.fn()`. */
@@ -829,6 +855,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     listMarketplaceSources: vi.fn().mockResolvedValue([]),
     addMarketplaceSource: vi.fn(),
     removeMarketplaceSource: vi.fn().mockResolvedValue(undefined),
+    // Harness Sync (spec `harness-sync-status` §5). A clean `ready` status with
+    // nothing in it: every existing client test keeps compiling and none of them
+    // has to know what a harness is to run. A test that cares passes its own
+    // status through `overrides`.
+    getHarnessStatus: vi.fn().mockResolvedValue(mockHarnessStatus()),
     // The Inbox (spec `notification-system`)
     listNotifications: vi
       .fn()

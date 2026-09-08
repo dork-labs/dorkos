@@ -1,6 +1,7 @@
 /**
  * Embedded-mode stub methods factory — composes the server-only subsystem
- * stubs (Tasks, Relay, Mesh registry, Marketplace, tunnel/admin, activity)
+ * stubs (Tasks, Relay, Mesh registry, Marketplace, Harness Sync, tunnel/admin,
+ * activity)
  * into a single method bag for `DirectTransport`.
  *
  * These subsystems only exist on the server; see `embedded-mode-stubs.ts`
@@ -19,6 +20,7 @@ import {
   approvalStubs,
   notificationStubs,
   marketplaceStubs,
+  harnessStubs,
   shapeStubs,
   workspaceStubs,
   roomStubs,
@@ -43,6 +45,7 @@ export function createEmbeddedStubMethods() {
     ...notificationStubs,
     ...meshStubs,
     ...marketplaceStubs,
+    ...harnessStubs,
     ...shapeStubs,
     ...workspaceStubs,
     ...roomStubs,
