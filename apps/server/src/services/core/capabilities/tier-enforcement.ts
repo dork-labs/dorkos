@@ -159,6 +159,7 @@ import {
   WIDEST_CAPABILITY_TIER,
   type CapabilityTier,
 } from '@dorkos/shared/capabilities';
+import type { ApprovalOrigin, ApprovalSubject } from '@dorkos/shared/approval-schemas';
 
 import { isTrustedCaller } from './trusted-caller.js';
 // Type-only, so the value-level dependency stays one-directional: `registry.ts`
@@ -170,11 +171,14 @@ import {
   readApprovalInputPath,
   redactSecretsInText,
   renderRequesterLabel,
-  summaryFields,
+  joinSummaryFields,
+  summaryFieldsNamingSubject,
   type ApprovalConsumeResult,
   type ApprovalConnectorAuthority,
   type ApprovalService,
   type ApprovalTicket,
+  describeRemainingArguments,
+  type ApprovalSubjectDeclaration,
 } from '../approvals/index.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -219,6 +223,20 @@ export interface GatedAction {
    * channel that reaches this gate produces the same card.
    */
   approvalDetailField?: string;
+  /**
+   * Which argument names the thing being acted on, and which registry knows it
+   * by name (DOR-1929).
+   *
+   * Distinct from {@link approvalDisplayFields}, which answers "show this" — this
+   * answers "this one IS the target", and only the second can be looked up. An
+   * action declaring it gets a card that names its subject; an action without
+   * one renders exactly as it always did.
+   *
+   * The gate does not resolve it: resolution is async and this function is not.
+   * The caller resolves it (`approvals/approval-subject.ts`) and passes the
+   * result as {@link TierEnforcementRequest.subject}.
+   */
+  approvalSubject?: ApprovalSubjectDeclaration;
 }
 
 /** The MCP tool argument a retry passes its approval token in. */
@@ -496,6 +514,24 @@ export interface TierEnforcementRequest {
   connectorAuthority?: ApprovalConnectorAuthority;
   /** Whether the path-only standing permission lookup may run. Defaults true. */
   standingGrantEligible?: boolean;
+  /**
+   * The thing this call would act on, already named (DOR-1929).
+   *
+   * Resolved by the caller because resolution is async and this gate is not —
+   * see `approvals/approval-subject.ts`. Absent means "could not be named", and
+   * every consequence of that is the card reading exactly as it did before.
+   */
+  subject?: ApprovalSubject;
+  /**
+   * Which surface this request arrived over, recorded only so an UNATTRIBUTED
+   * card can say the true thing DorkOS knows about it.
+   *
+   * Never consulted by any decision here. It changes no ceiling, no binding and
+   * no outcome — a request's origin is not evidence of anything, and treating it
+   * as evidence is exactly how "it came from a session" would become a
+   * privilege a caller could claim by choosing a surface.
+   */
+  origin?: ApprovalOrigin;
 }
 
 /** What {@link initCapabilityTierGate} wires the gate to at boot. */
@@ -671,23 +707,49 @@ function effectiveCeiling(identity: AgentIdentity | undefined): CapabilityTier {
  * person deciding an irreversible action should be able to see that DorkOS does
  * not know who asked.
  *
+ * ## The subject field is rendered by NAME, and only here
+ *
+ * When the caller resolved a {@link ApprovalSubject}, the argument that names the
+ * target renders as the registry's name for it instead of the raw id — so
+ * `agentId: "01KXQ3P7ADJY9DSXMZW1XGWCV4"` becomes `agent: "Lab Scout"`. That
+ * substitution happens in this one function, which is what makes it reach every
+ * consumer of the summary at once: the card, the Activity feed, and the
+ * notification emitter all read this sentence and none of them needed changing.
+ *
+ * The id does not disappear — it moves. The card carries it as
+ * `PendingApproval.subject.id` beside the name, which is where a person checks
+ * one against the other. Keeping BOTH in this sentence would spend the summary's
+ * length budget re-printing the thing the subject block already shows, and the
+ * budget is what stops a padded argument from crowding out a real one.
+ *
+ * With no subject resolved, nothing here changes: the raw id renders as it
+ * always did. That is the whole fail-closed story — a card can lose the name,
+ * never the argument.
+ *
  * @param action - The capability or tool being requested.
  * @param input - The parsed input the approval is bound to.
  * @param identity - The agent asking, when it identified itself.
+ * @param subject - The named target, when the caller could resolve one.
  * @returns The card summary.
  */
 export function describeGatedAttempt(
   action: GatedAction,
   input: unknown,
-  identity?: AgentIdentity
+  identity?: AgentIdentity,
+  subject?: ApprovalSubject
 ): string {
   const who = identity
     ? `${JSON.stringify(renderRequesterLabel(identity.displayName || identity.agentPath))} `
     : 'An unidentified caller ';
-  const fields = summaryFields(input, action.approvalDisplayFields);
-  const detail = fields.length
-    ? ` with ${fields.map(({ field, value }) => `${field}: ${value}`).join(', ')}`
-    : '';
+  const clause = joinSummaryFields(
+    summaryFieldsNamingSubject(
+      input,
+      action.approvalDisplayFields,
+      subject,
+      action.approvalSubject?.field
+    )
+  );
+  const detail = clause ? ` with ${clause}` : '';
   // The title is declared in DorkOS's own source, never by the caller, so it needs
   // no escaping — but the whole sentence gets the secret sweep anyway, because
   // this string is broadcast.
@@ -899,6 +961,8 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     interactive = false,
     connectorAuthority,
     standingGrantEligible = true,
+    subject,
+    origin,
   } = request;
 
   // The TIER decides whether to gate — never whether the caller identified
@@ -1050,11 +1114,17 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     let ticket: ApprovalTicket;
     try {
       const detail = detailFor(action, input);
+      const remaining = subject ? describeRemainingArguments(action, input) : undefined;
       ticket = gate!.approvals.request({
         ...binding,
-        summary: describeGatedAttempt(action, input, identity),
+        summary: describeGatedAttempt(action, input, identity, subject),
         ...(detail !== undefined ? { detail } : {}),
         ...(requestedBy ? { requestedBy } : {}),
+        ...(subject ? { subject } : {}),
+        ...(remaining !== undefined ? { otherArguments: remaining } : {}),
+        // Recorded only when nothing named the caller, because that is the only
+        // case it says anything a person does not already have.
+        ...(!requestedBy && origin ? { origin } : {}),
         ...(connectorAuthority ? { connectorAuthority } : {}),
         // The raw path alongside the display label, because a standing
         // permission keys on the agent and a label is not a key. An anonymous

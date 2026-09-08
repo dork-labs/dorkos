@@ -255,7 +255,10 @@ describe('ScheduleApprovalCard — what it says', () => {
     // name invented from nothing would put a request under a mark it never earned.
     renderCard(proposal({ proposedByAgentPath: null, proposedByName: null }));
 
-    expect(await screen.findByText('Requested without an agent identity')).toBeInTheDocument();
+    // The shared fallback's wording moved to plainer words (DOR-1929); what this
+    // case pins is unchanged — an unstamped proposal must not be credited to an
+    // agent that does not exist.
+    expect(await screen.findByText('DorkOS doesn’t know who asked')).toBeInTheDocument();
     expect(slot('ask-detail')).toHaveTextContent('Proposed by an agent');
   });
 

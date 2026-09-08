@@ -71,6 +71,7 @@
  */
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { McpToolGroupName } from '@dorkos/shared/mcp-tool-groups';
+import type { ApprovalSubjectDeclaration } from './approvals/approval-subject.js';
 import type { GatedAction } from './capabilities/tier-enforcement.js';
 
 /** One tool's tier declaration. */
@@ -95,6 +96,22 @@ export interface McpToolTier {
    * `__tests__/mcp-tool-gate.test.ts`.
    */
   approvalDisplayFields?: readonly string[];
+  /**
+   * Which argument names the thing being acted on, and the registry that knows
+   * its name (DOR-1929).
+   *
+   * A different question from `approvalDisplayFields`. That one is "show this";
+   * this one is "this argument IS the target", which is the only kind of
+   * argument that can be looked up. Declaring it turns
+   * `agentId: "01KXQ3P7ADJY9DSXMZW1XGWCV4"` on the card into `agent: "Lab Scout"`,
+   * with the id kept beside it as the part nothing can rename.
+   *
+   * Expected on a `destructive` tool whose target is an opaque id, and pinned in
+   * both directions by `__tests__/mcp-tool-gate.test.ts` — a card that cannot
+   * say WHICH thing it is about to destroy is the defect this closes, and it is
+   * cheaper to fail the test than to ship the card.
+   */
+  approvalSubject?: ApprovalSubjectDeclaration;
 }
 
 /**
@@ -127,6 +144,9 @@ export const MCP_TOOL_TIERS = {
     tier: 'destructive',
     title: 'Delete a scheduled task',
     approvalDisplayFields: ['id'],
+    // Without this the card said `id: "01K…"`, which names nothing a person
+    // recognizes — the same defect `mesh_unregister` was reported for.
+    approvalSubject: { field: 'id', kind: 'task' },
   },
   tasks_get_run_history: { tier: 'observe', title: "Read a scheduled task's run history" },
 
@@ -203,6 +223,10 @@ export const MCP_TOOL_TIERS = {
     // a card is its own kind of dishonest.
     title: 'Remove an agent and its setup file, and turn off its scheduled tasks',
     approvalDisplayFields: ['agentId'],
+    // The reported defect (DOR-1929): four of these arrived reading only
+    // `agentId: "01KXQ3P7ADJY9DSXMZW1XGWCV4"`, and a person was asked to approve
+    // four irreversible deletions they had no way to tell apart.
+    approvalSubject: { field: 'agentId', kind: 'agent' },
   },
   mesh_status: { tier: 'observe', title: 'Read mesh health' },
   mesh_inspect: { tier: 'observe', title: 'Inspect one agent' },
@@ -311,6 +335,7 @@ export function gatedActionForMcpTool(toolName: string): GatedAction {
     ...(declared.approvalDisplayFields
       ? { approvalDisplayFields: declared.approvalDisplayFields }
       : {}),
+    ...(declared.approvalSubject ? { approvalSubject: declared.approvalSubject } : {}),
   };
 }
 

@@ -14,6 +14,7 @@ import {
   type ApprovalDecision,
 } from '../model/settling-approvals';
 import { useStandingGrantPolicy } from '../model/use-standing-grant-policy';
+import { ApprovalSubject } from './ApprovalSubject';
 import { RequestingAgent } from './RequestingAgent';
 
 const staggerItem = {
@@ -166,18 +167,35 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
               {TIER_LABEL[approval.tier]}
             </Badge>
           </div>
+          {/* WHAT this would act on, named, directly under the title — the first
+              thing the eye lands on after "cannot be undone". Above the summary
+              and never instead of it: the summary is still the whole sentence,
+              and on a destructive card it is still never clamped. Absent when
+              the server could not name the target, in which case the card reads
+              exactly as it did before this existed. */}
+          {approval.subject && <ApprovalSubject subject={approval.subject} />}
           {/* Never clamped for an action that cannot be undone: truncating the
             consequence is how a padded argument used to push the real one out of
             view. The server caps each value and the whole sentence, so showing it
-            in full is bounded. Lower tiers stay clamped — they are routine. */}
-          <p
-            className={cn(
-              'text-muted-foreground mt-0.5 text-xs break-words',
-              approval.tier !== 'destructive' && 'line-clamp-2'
-            )}
-          >
-            {approval.summary}
-          </p>
+            in full is bounded. Lower tiers stay clamped — they are routine.
+
+            WHICH sentence depends on what the card has already drawn. With a
+            subject resolved, the title is the heading above and the name is in
+            bold right under it, so the full summary would say both a second time
+            — a wall of text exactly where a person is deciding. The server sends
+            the remainder instead (`otherArguments`), and when nothing remains the
+            card says nothing rather than repeating itself. Without a subject this
+            is the whole summary, unchanged. */}
+          {(approval.subject ? approval.otherArguments : approval.summary) !== undefined && (
+            <p
+              className={cn(
+                'text-muted-foreground mt-0.5 text-xs break-words',
+                approval.tier !== 'destructive' && 'line-clamp-2'
+              )}
+            >
+              {approval.subject ? approval.otherArguments : approval.summary}
+            </p>
+          )}
           {/* The one argument that IS the decision, shown whole (DOR-1698).
               The summary above caps every value at 80 characters so no argument
               can crowd out another — right for a package name, wrong when the
@@ -198,6 +216,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
             <RequestingAgent
               requestedBy={approval.requestedBy}
               hasAgentPath={approval.hasAgentPath}
+              origin={approval.origin}
             />
             <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
               {formatTimeLeft(approval.expiresAt, now)}

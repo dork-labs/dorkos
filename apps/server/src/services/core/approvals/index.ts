@@ -52,6 +52,8 @@ export {
   redactSecretsInText,
   renderRequesterLabel,
   summaryFields,
+  joinSummaryFields,
+  summaryFieldsNamingSubject,
   REDACTED_SUMMARY_VALUE,
 } from './approval-summary.js';
 export {
@@ -60,3 +62,13 @@ export {
   type DecisionAuthorityResult,
   type LoginEnabledLookup,
 } from './decision-authority.js';
+export {
+  initApprovalSubjectResolvers,
+  resetApprovalSubjectResolvers,
+  resolveApprovalSubject,
+  describeRemainingArguments,
+  type ApprovalSubjectDeclaration,
+  type SubjectBearingAction,
+  type ApprovalSubjectResolver,
+  type ApprovalSubjectResolvers,
+} from './approval-subject.js';

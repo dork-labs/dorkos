@@ -307,6 +307,7 @@ import {
   manifestToolGroupGrants,
   type CapabilityRegistry,
 } from './services/core/capabilities/index.js';
+import { initApprovalSubjectResolvers } from './services/core/approvals/approval-subject.js';
 import { createMcpRouter } from './routes/mcp.js';
 import { createMcpAuth } from './middleware/mcp-auth.js';
 import { validateMcpOrigin } from './middleware/mcp-origin.js';
@@ -4027,6 +4028,28 @@ async function start() {
   // `authorizeCapability`. Until this call the gate REFUSES destructive
   // invocations rather than allowing them, so a wiring mistake here fails loudly
   // instead of silently opening the gate.
+  // Teach the approval card to name what it is about to act on (DOR-1929). The
+  // registries are the ones the tools' own handlers already use, so a card names
+  // a thing exactly when the call that follows would find it.
+  //
+  // Wired beside the tier gate rather than inside it: this is legibility, not
+  // enforcement, and the two fail in opposite directions on purpose. An unwired
+  // tier gate REFUSES; unwired resolvers just leave the raw ids on the card, the
+  // way they read before this existed. Nothing here may ever be able to block a
+  // call — a card that cannot look up a name must still be a card.
+  initApprovalSubjectResolvers({
+    // `displayName` falls back to the slug, exactly as every other agent surface
+    // resolves a name. Both come from the agent's own `agent.json`, so both are
+    // agent-editable — which is why the card shows the id beside the name.
+    agent: (id) => {
+      const agent = meshCore?.get(id);
+      return agent ? (agent.displayName ?? agent.name) : undefined;
+    },
+    task: (id) => {
+      const task = taskStore?.getTask(id);
+      return task ? (task.displayName ?? task.name) : undefined;
+    },
+  });
   initCapabilityTierGate({
     approvals: approvalService,
     onAttempt: createCapabilityGateAuditObserver(activityService),
