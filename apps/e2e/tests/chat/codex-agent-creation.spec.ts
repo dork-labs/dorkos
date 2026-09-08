@@ -11,10 +11,13 @@ test.describe('Codex agent creation @smoke', () => {
     const displayName = `Codex Birth ${randomUUID().slice(0, 8)}`;
     let agentId: string | undefined;
 
-    // This is a browser contract test, so intercept the model-bearing edge after
-    // the app has decided which runtime owns the turn. The request itself is the
-    // regression proof: before DOR-1927 the create flow dropped `runtime` from
-    // the URL, then the newborn kickoff raced agent provenance and never posted.
+    // The wizard always offers the three primary runtime identities, independent
+    // of installation readiness, and agent creation only persists that identity.
+    // Intercept the first model-bearing edge after the app decides which runtime
+    // owns the turn, so this stays portable to CI machines without Codex. The
+    // request itself is the regression proof: before DOR-1927 the create flow
+    // dropped `runtime` from the URL, then the newborn kickoff raced agent
+    // provenance and never posted.
     await page.route('**/api/sessions/*/messages', async (route) => {
       const incoming = route.request();
       if (incoming.method() !== 'POST') {
@@ -65,6 +68,7 @@ test.describe('Codex agent creation @smoke', () => {
       expect(created.ok()).toBe(true);
       const agent = (await created.json()) as { id: string; _path: string; runtime: string };
       agentId = agent.id;
+      expect(agent.runtime).toBe('codex');
 
       await expect(page).toHaveURL(/[?&]runtime=codex(?:&|$)/);
       const landedUrl = new URL(page.url());

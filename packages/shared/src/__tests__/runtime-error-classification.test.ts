@@ -40,7 +40,7 @@ describe('describeKnownModelError', () => {
   it('extracts an update-required model error from nested JSON and keeps the raw payload', () => {
     expect(describeKnownModelError(CODEX_UPDATE_ERROR)).toEqual({
       message:
-        'The Codex version DorkOS is using is too old for gpt-6-astra. Update DorkOS, then try this model again.',
+        'The Codex version DorkOS is using is too old for gpt-6-astra. Update DorkOS (or your custom Codex installation), then try again. You can also choose another model.',
       category: 'runtime_update_required',
       details: CODEX_UPDATE_ERROR,
     });

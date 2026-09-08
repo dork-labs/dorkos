@@ -49,7 +49,8 @@ const ERROR_COPY: Record<ErrorCategory, { heading: string; subtext: string; retr
     },
     runtime_update_required: {
       heading: 'Codex update required',
-      subtext: 'Update DorkOS, then try this model again.',
+      subtext:
+        'Update DorkOS (or your custom Codex installation), then try again. You can also choose another model.',
       retryable: false,
     },
   };

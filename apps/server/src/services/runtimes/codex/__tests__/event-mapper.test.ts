@@ -773,7 +773,7 @@ describe('mapCodexEvent', () => {
         type: 'error',
         data: {
           message:
-            'The Codex version DorkOS is using is too old for gpt-6-astra. Update DorkOS, then try this model again.',
+            'The Codex version DorkOS is using is too old for gpt-6-astra. Update DorkOS (or your custom Codex installation), then try again. You can also choose another model.',
           code: 'turn_failed',
           category: 'runtime_update_required',
           details: CODEX_UPDATE_ERROR,

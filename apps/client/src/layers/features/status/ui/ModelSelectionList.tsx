@@ -82,9 +82,8 @@ export function ModelLoadError({ onRetry }: { onRetry: () => void }) {
  * Two kinds of string reach {@link ModelIdLine}. OpenCode builds a description as
  * `` `${providerName} · ${modelId}` `` (`opencode/providers/models.ts`) and the
  * vanished-model banner draws a raw saved id, so both END on the identifier —
- * the case worth protecting. Codex's descriptions are fixed sentences in this
- * repo (`codex/runtime-constants.ts`), and claude-code's arrive from its SDK, so
- * far always as sentences too — every description observed ends either on an id
+ * the case worth protecting. Codex and Claude Code descriptions arrive from
+ * their runtime model catalogs; every description observed ends either on an id
  * or on prose.
  *
  * The tell is the LAST word: an id carries a path or tag separator inside it,

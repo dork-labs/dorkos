@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(codex): make model failures actionable'
+  - 'fix(codex): clarify update recovery'
 ---
 
 ### Fixed

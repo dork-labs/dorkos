@@ -234,7 +234,7 @@ export function describeKnownModelError(message: string): RuntimeErrorCopy | nul
   );
   if (updateRequired) {
     return {
-      message: `The Codex version DorkOS is using is too old for ${updateRequired[1]}. Update DorkOS, then try this model again.`,
+      message: `The Codex version DorkOS is using is too old for ${updateRequired[1]}. Update DorkOS (or your custom Codex installation), then try again. You can also choose another model.`,
       category: 'runtime_update_required',
       details: message,
     };

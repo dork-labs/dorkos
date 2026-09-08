@@ -218,7 +218,7 @@ describe('ErrorMessageBlock', () => {
     expect(screen.getByText('Codex update required')).toBeInTheDocument();
     expect(
       screen.getByText(
-        'The Codex version DorkOS is using is too old for gpt-6-astra. Update DorkOS, then try this model again.'
+        'The Codex version DorkOS is using is too old for gpt-6-astra. Update DorkOS (or your custom Codex installation), then try again. You can also choose another model.'
       )
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
