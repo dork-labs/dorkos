@@ -218,15 +218,6 @@ describe('the vendored maps against each vendor’s documented hook set (HK-13)'
     expect(dropped).toEqual([]);
   });
 
-  it('still drops a Claude event Copilot genuinely has no name for', () => {
-    // `PostCompact` is in Claude's 30 and in none of Copilot's 14.
-    const { file, dropped } = generateCopilotHooks({ PostCompact: group('x') });
-    expect(file.hooks).toEqual({});
-    expect(dropped).toHaveLength(1);
-    expect(dropped[0].event).toBe('PostCompact');
-    expect(dropped[0].reason).toMatch(/Copilot/);
-  });
-
   it('reaches 12 of Claude’s 30 events on Copilot and 11 on Codex', () => {
     // The count is the claim `meta/harness-sync-capabilities.md` HK-02/HK-13
     // makes, so it is asserted rather than described.

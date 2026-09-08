@@ -125,7 +125,7 @@ describe('installed-plugin projection via buildPlan', () => {
     }
   });
 
-  it('drops installed commands for a harness with no repo-local command format (codex)', () => {
+  it('names each harness’s own command format on an installed-command drop (CM-06)', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -145,6 +145,14 @@ describe('installed-plugin projection via buildPlan', () => {
       // its custom prompts were deprecated in favour of skills. The other
       // harnesses' drops now name their own format instead (CM-06).
       expect(drop?.reason).toMatch(/no repo-local slash-command format/);
+      // Cursor is in this manifest too, and gets the honest reason — asserted
+      // here rather than left to the authored half, because the installed drop
+      // is a separate call site that shared the same stale sentence.
+      const cursorDrop = plan.drops.find(
+        (d) => d.provenance === 'installed' && d.artifact === 'command' && d.harness === 'cursor'
+      );
+      expect(cursorDrop?.reason).toContain('.cursor/commands/*.md');
+      expect(cursorDrop?.reason).not.toMatch(/no repo-local slash-command format/);
       // The `commands` layer is NOT reported as a non-portable-layer drop anymore.
       // `reason` is optional on ProjectionAction (required only by convention for
       // drops), so it is narrowed rather than asserted — an absent reason cannot

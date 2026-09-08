@@ -59,6 +59,31 @@ export type ActionBase = Pick<
 >;
 
 /**
+ * Where one `manifest.claudeOnlySkills` entry's declared `path` actually points.
+ *
+ * The manifest is the only evidence such a skill exists — it is deliberately NOT
+ * in `.agents/skills`, so the scanner never sees it — and the entry says where it
+ * is kept. Resolving that claim is a filesystem question, so `engine.ts` answers
+ * it and `buildPlan` stays pure (see `scanClaudeOnlySkills`).
+ */
+export interface ClaudeOnlySkillLocation {
+  /** The repo-relative path resolved: the entry's own `path`, or the default `.claude/skills/<name>`. */
+  path: string;
+  /**
+   * What is on disk there: a real directory holding a `SKILL.md`, a symlink
+   * (whatever it points at), or nothing usable.
+   */
+  kind: 'directory' | 'symlink' | 'missing';
+  /**
+   * Whether {@link path} is exactly `.claude/skills/<name>` — the one place
+   * Claude Code would load this skill from, and the target its projection
+   * symlink would occupy. A directory anywhere else is a real skill in a place
+   * no harness reads.
+   */
+  atProjectionTarget: boolean;
+}
+
+/**
  * Something the operator has to be told about a projection that no `drop` line
  * covers. Two kinds live here:
  *

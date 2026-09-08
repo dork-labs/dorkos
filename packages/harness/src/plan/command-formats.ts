@@ -25,15 +25,22 @@
 import { HARNESS_LABELS, type HarnessId } from '../manifest/schema.js';
 
 /**
- * Each harness's documented repo-local slash-command location. A harness absent
- * from this map has no such format at all.
+ * The repo-local slash-command location of each harness that has one AND has
+ * nothing projected into it yet — the three whose drops this map exists to
+ * phrase honestly.
+ *
+ * Claude Code and OpenCode are deliberately absent, and their absence is not a
+ * claim that they have no format: both do (`.claude/commands/**\/*.md` and the
+ * flat `.opencode/commands/*.md`), and both are already WRITTEN to — Claude Code
+ * reads its own directory natively and OpenCode gets generated wrappers. Neither
+ * ever reaches {@link commandDropReason}, so listing them here would be a value
+ * no call site can produce, which is a claim nothing checks. Codex is absent for
+ * the different reason {@link CODEX_NO_COMMAND_FORMAT_REASON} states.
  */
 export const HARNESS_COMMAND_FORMATS: Partial<Record<HarnessId, string>> = {
-  'claude-code': '.claude/commands/**/*.md',
   cursor: '.cursor/commands/*.md',
   gemini: '.gemini/commands/*.toml',
   copilot: '.github/prompts/*.prompt.md (VS Code)',
-  opencode: '.opencode/commands/*.md',
 };
 
 /** The reason Codex commands drop: there is genuinely nowhere to put them. */
@@ -42,7 +49,12 @@ export const CODEX_NO_COMMAND_FORMAT_REASON =
 
 /**
  * The honest reason a command drops for one harness: it names that harness's own
- * command format when it has one, and says so plainly when it does not.
+ * command format when it has one and nothing writes there yet, and says so
+ * plainly when the harness genuinely has none.
+ *
+ * Only ever called for a harness that drops. Claude Code and OpenCode do not:
+ * both have a command home the engine already uses, so neither reaches here and
+ * neither is in {@link HARNESS_COMMAND_FORMATS}.
  *
  * @param harness - the harness the command did not reach.
  * @returns a reason naming either the format nothing writes to yet, or its absence.

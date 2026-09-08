@@ -24,6 +24,23 @@ function fixtureRepo(): string {
   return d;
 }
 
+/**
+ * A plan over `fixtureRepo()` that HAS authored commands to talk about.
+ *
+ * Since DOR-1847 a repo with no `.claude/commands` gets no command action at
+ * all — for any harness — so a case about how a command drops has to stage one
+ * first, or it is asserting on an empty list.
+ */
+function planWithCommands(manifest: ReturnType<typeof parseHarnessManifest>) {
+  return buildPlan({
+    repoRoot: dir,
+    manifest,
+    claudeHooks,
+    agentsMdExists: true,
+    claudeCommandsExist: true,
+  });
+}
+
 describe('buildPlan', () => {
   it('projects a skill as a symlink for claude-code and native for codex', () => {
     // claude-code symlinks .agents/skills into .claude/skills; codex reads it directly.
@@ -55,7 +72,10 @@ describe('buildPlan', () => {
     expect(gen?.target).toBe('.codex/hooks.json');
     expect(getActionContent(gen!)).toContain('Stop');
 
-    const commandDrop = plan.drops.find((a) => a.harness === 'codex' && a.artifact === 'command');
+    const withCommands = planWithCommands(manifest);
+    const commandDrop = withCommands.drops.find(
+      (a) => a.harness === 'codex' && a.artifact === 'command'
+    );
     expect(commandDrop?.kind).toBe('drop');
     expect(commandDrop?.reason).toMatch(/slash-command/);
   });
@@ -222,6 +242,40 @@ describe('buildPlan — `native` only when the source is really there', () => {
     expect(native?.source).toBe('.claude/settings.json');
   });
 
+  it('says NOTHING about hooks or commands, on any harness, when the repo has neither', () => {
+    // The rule is universal, not a Claude Code carve-out. A repo with no
+    // `.claude/commands` and no hooks used to be handed five command drops and
+    // two hook drops — "no repo-local slash-command format", "OpenCode has no
+    // declarative hook config" — about artifacts it does not have. Claude Code
+    // was the only harness kept quiet, which made the silence look like a bug in
+    // the other five rather than the correct answer for all six.
+    dir = fixtureRepo();
+    const plan = buildPlan({
+      repoRoot: dir,
+      manifest: ALL,
+      agentsMdExists: true,
+      claudeCommandsExist: false,
+    });
+
+    const lines = [...plan.actions, ...plan.drops].filter(
+      (a) => a.artifact === 'command' || a.artifact === 'hook'
+    );
+    expect(lines).toEqual([]);
+    // The plan is not empty — the skills and instructions are still in it — so
+    // this is silence about two artifacts, not a plan that failed to build.
+    expect(plan.actions.length).toBeGreaterThan(0);
+  });
+
+  it('drops hooks for OpenCode and Gemini once the repo really has some', () => {
+    // The other half of the same rule: the drops are honest when there IS an
+    // artifact, and both of these harnesses genuinely cannot take one.
+    dir = fixtureRepo();
+    const plan = buildPlan({ repoRoot: dir, manifest: ALL, claudeHooks, agentsMdExists: true });
+
+    const hookDrops = plan.drops.filter((a) => a.artifact === 'hook');
+    expect(new Set(hookDrops.map((a) => a.harness))).toEqual(new Set(['opencode', 'gemini']));
+  });
+
   it('emits NO claude-code command action when .claude/commands does not exist', () => {
     // `projector.ts` asserted `native` with `source: .claude/commands` whether or
     // not the directory was there (reproduced 2026-09-07).
@@ -288,7 +342,7 @@ describe('buildPlan — authored command drops name each harness’s own format'
       version: 1,
       harnesses: ['codex', 'cursor', 'gemini', 'copilot'],
     });
-    const plan = buildPlan({ repoRoot: dir, manifest, claudeHooks, agentsMdExists: true });
+    const plan = planWithCommands(manifest);
 
     const byHarness = new Map(
       plan.drops

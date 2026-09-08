@@ -11,14 +11,13 @@
  *
  * @module engine
  */
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseHarnessManifest, type HarnessManifest } from './manifest/schema.js';
 import { buildPlan } from './plan/projector.js';
 import { CLAUDE_COMMANDS_DIR, CLAUDE_SKILLS_DIR } from './plan/installed-projector.js';
-import type { ProjectionPlan } from './plan/types.js';
+import type { ClaudeOnlySkillLocation, ProjectionPlan } from './plan/types.js';
 import type { ClaudeHooksConfig } from './generate/hooks.js';
-import { scanSkillDirs } from './scan/scanner.js';
 import { scanInstalledPlugins } from './sources/installed.js';
 
 /**
@@ -91,21 +90,47 @@ export function claudeCommandsExist(repoRoot: string): boolean {
 }
 
 /**
- * The names of REAL skill directories under `.claude/skills` — never the
- * engine's own projection symlinks, which is the whole point of the distinction.
+ * Resolve every `manifest.claudeOnlySkills` entry's declared `path` against disk.
  *
- * A skill listed in `manifest.claudeOnlySkills` is kept out of the canonical
- * `.agents/skills` layer on purpose, so the only evidence it exists at all is a
- * directory here. Without this list the projector cannot tell such a skill from
- * a stale manifest entry, and used to say nothing about either (SK-04).
+ * A skill on that list is kept out of the canonical `.agents/skills` layer on
+ * purpose, so the scanner never sees it and the manifest entry is the only
+ * evidence it exists. The entry says where: its `path`, or — for an entry
+ * written before `path` was required — the conventional
+ * `.claude/skills/<name>`. Reading the entry's own claim rather than assuming
+ * the convention is what stops the projector reporting a real skill at
+ * `docs/skills/oddball` as a stale entry (DOR-1847 review).
+ *
+ * A **symlink** is reported as such whatever it points at: `claudeOnlySkills` is
+ * for skills kept as real directories where Claude Code reads, and a link there
+ * is either the engine's own projection of a canonical skill or a skill that
+ * lives somewhere else. Both make the entry wrong, and the projector says so.
+ *
+ * The lookup is the filesystem's, so its case behaviour is the filesystem's: an
+ * entry whose case does not match its directory resolves on macOS and does not
+ * on Linux. Match the case.
  *
  * @param repoRoot - absolute path to the repository root.
- * @returns the directory names, sorted, each holding a `SKILL.md`.
+ * @param manifest - the validated manifest whose `claudeOnlySkills` to resolve.
+ * @returns one {@link ClaudeOnlySkillLocation} per entry, keyed by entry name.
  */
-export function scanClaudeSkillDirs(repoRoot: string): string[] {
-  return scanSkillDirs(join(repoRoot, CLAUDE_SKILLS_DIR), CLAUDE_SKILLS_DIR, {
-    followSymlinks: false,
-  }).map((skill) => skill.name);
+export function scanClaudeOnlySkills(
+  repoRoot: string,
+  manifest: HarnessManifest
+): Map<string, ClaudeOnlySkillLocation> {
+  const resolved = new Map<string, ClaudeOnlySkillLocation>();
+  for (const entry of manifest.claudeOnlySkills) {
+    const defaultPath = `${CLAUDE_SKILLS_DIR}/${entry.name}`;
+    const path = entry.path.trim() === '' ? defaultPath : entry.path;
+    const abs = join(repoRoot, path);
+
+    let kind: ClaudeOnlySkillLocation['kind'] = 'missing';
+    const stats = lstatSync(abs, { throwIfNoEntry: false });
+    if (stats?.isSymbolicLink()) kind = 'symlink';
+    else if (stats?.isDirectory() && existsSync(join(abs, 'SKILL.md'))) kind = 'directory';
+
+    resolved.set(entry.name, { path, kind, atProjectionTarget: path === defaultPath });
+  }
+  return resolved;
 }
 
 /**
@@ -136,13 +161,14 @@ export function project(
     dorkHome: opts?.dorkHome,
     projectRoot: repoRoot,
   });
+  const manifest = loadManifest(repoRoot);
   return buildPlan({
     repoRoot,
-    manifest: loadManifest(repoRoot),
+    manifest,
     claudeHooks: loadClaudeHooks(repoRoot),
     agentsMdExists: agentsMdExists(repoRoot),
     claudeCommandsExist: claudeCommandsExist(repoRoot),
-    claudeSkillDirs: scanClaudeSkillDirs(repoRoot),
+    claudeOnlySkills: scanClaudeOnlySkills(repoRoot, manifest),
     installedPlugins,
     ...(opts?.allowPluginHooks ? { allowPluginHooks: opts.allowPluginHooks } : {}),
   });

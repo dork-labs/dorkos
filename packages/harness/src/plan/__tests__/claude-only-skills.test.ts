@@ -1,20 +1,32 @@
 /**
  * `manifest.claudeOnlySkills` — the exception list, measured against where the
- * skill actually lives (SK-04).
+ * skill actually is (SK-04).
  *
  * The list names skills deliberately kept out of the canonical `.agents/skills`
- * layer. Before this, the drop only fired for a skill the scanner found IN
- * `.agents/skills`, so an entry that lives solely in `.claude/skills` — all 13 in
- * this repo — produced no line at all, and one present in BOTH made claude-code
- * plan a symlink over the real directory (a conflict, reproduced 2026-09-07).
+ * layer, so the scanner never sees them and the manifest entry is the only
+ * evidence they exist. Before this, the drop only fired for a skill the scanner
+ * found IN `.agents/skills` — so an entry living solely in `.claude/skills` (all
+ * 13 in this repo) produced no line at all, and one present in BOTH made
+ * claude-code plan a symlink over the real directory (a conflict, reproduced
+ * 2026-09-07).
+ *
+ * Every case here resolves the entry through the REAL loader
+ * (`scanClaudeOnlySkills`) against a real staged tree, rather than hand-feeding
+ * the projector a map: the entry's `path` is the claim under test, and a test
+ * that supplies the answer cannot fail on the loader misreading it.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildPlan } from '../projector.js';
-import { parseHarnessManifest, type HarnessId } from '../../manifest/schema.js';
+import { scanClaudeOnlySkills } from '../../engine.js';
+import {
+  parseHarnessManifest,
+  type HarnessManifest,
+  type HarnessId,
+} from '../../manifest/schema.js';
 
 let dir = '';
 afterEach(() => {
@@ -22,44 +34,47 @@ afterEach(() => {
   dir = '';
 });
 
-/** Write a real skill directory (never a symlink) at `<repo>/<rel>/<name>`. */
-function writeSkill(repo: string, rel: string, name: string): void {
-  mkdirSync(join(repo, rel, name), { recursive: true });
-  writeFileSync(join(repo, rel, name, 'SKILL.md'), `# ${name}\n`);
-}
-
-/** A repo with `only` in `.claude/skills` and `both` in both skill roots. */
-function stage(opts: { inClaude: string[]; inAgents: string[] }): string {
-  const repo = mkdtempSync(join(tmpdir(), 'harness-claudeonly-'));
-  for (const name of opts.inClaude) writeSkill(repo, '.claude/skills', name);
-  for (const name of opts.inAgents) writeSkill(repo, '.agents/skills', name);
-  return repo;
+/** Write a real skill directory (never a symlink) at `<repo>/<rel>`. */
+function writeSkill(repo: string, rel: string): void {
+  mkdirSync(join(repo, rel), { recursive: true });
+  writeFileSync(join(repo, rel, 'SKILL.md'), `---\nname: ${rel.split('/').pop()}\n---\n`);
 }
 
 const THREE: readonly HarnessId[] = ['claude-code', 'codex', 'opencode'];
 
-/** The manifest shape under test: `harnesses` plus one `claudeOnlySkills` entry. */
-function manifestFor(names: string[], harnesses: readonly HarnessId[] = THREE) {
+/** A manifest with one `claudeOnlySkills` entry per `{ name, path }` pair given. */
+function manifestFor(
+  entries: { name: string; path?: string }[],
+  harnesses: readonly HarnessId[] = THREE
+): HarnessManifest {
   return parseHarnessManifest({
     version: 1,
     harnesses: [...harnesses],
-    claudeOnlySkills: names.map((name) => ({
+    claudeOnlySkills: entries.map(({ name, path }) => ({
       name,
-      path: `.claude/skills/${name}`,
+      path: path ?? `.claude/skills/${name}`,
       reason: 'kept Claude-only for the test',
     })),
   });
 }
 
-describe('claudeOnlySkills — the skill lives only in .claude/skills', () => {
+/** Plan `manifest` over a fresh temp repo, resolving its entries off real disk. */
+function planIn(manifest: HarnessManifest, stage: (repo: string) => void) {
+  dir = mkdtempSync(join(tmpdir(), 'harness-claudeonly-'));
+  stage(dir);
+  return buildPlan({
+    repoRoot: dir,
+    manifest,
+    agentsMdExists: false,
+    claudeOnlySkills: scanClaudeOnlySkills(dir, manifest),
+  });
+}
+
+describe('claudeOnlySkills — a real directory where Claude Code reads', () => {
   it('is native for claude-code and an honest drop for every other enabled harness', () => {
-    dir = stage({ inClaude: ['secret'], inAgents: [] });
-    const plan = buildPlan({
-      repoRoot: dir,
-      manifest: manifestFor(['secret']),
-      agentsMdExists: false,
-      claudeSkillDirs: ['secret'],
-    });
+    const plan = planIn(manifestFor([{ name: 'secret' }]), (repo) =>
+      writeSkill(repo, '.claude/skills/secret')
+    );
 
     const native = plan.actions.filter((a) => a.artifact === 'skill' && a.name === 'secret');
     expect(native).toHaveLength(1);
@@ -85,12 +100,9 @@ describe('claudeOnlySkills — the skill lives only in .claude/skills', () => {
 
 describe('claudeOnlySkills — the skill lives in BOTH skill roots', () => {
   it('warns and plans no claude-code symlink, so the real directory is never a conflict', () => {
-    dir = stage({ inClaude: ['dual'], inAgents: ['dual'] });
-    const plan = buildPlan({
-      repoRoot: dir,
-      manifest: manifestFor(['dual']),
-      agentsMdExists: false,
-      claudeSkillDirs: ['dual'],
+    const plan = planIn(manifestFor([{ name: 'dual' }]), (repo) => {
+      writeSkill(repo, '.claude/skills/dual');
+      writeSkill(repo, '.agents/skills/dual');
     });
 
     const warnings = plan.warnings.filter((w) => w.artifact === 'skill' && w.name === 'dual');
@@ -109,27 +121,74 @@ describe('claudeOnlySkills — the skill lives in BOTH skill roots', () => {
   });
 });
 
-describe('claudeOnlySkills — the skill lives in NEITHER skill root', () => {
-  it('warns that the entry is stale rather than silently listing a skill nobody has', () => {
-    dir = stage({ inClaude: [], inAgents: [] });
-    const plan = buildPlan({
-      repoRoot: dir,
-      manifest: manifestFor(['ghost']),
-      agentsMdExists: false,
-      claudeSkillDirs: [],
+describe('claudeOnlySkills — the entry points somewhere else entirely', () => {
+  it('says the skill is real and unread, rather than calling a present skill stale', () => {
+    // Reproduced in review: `path: docs/skills/oddball` with a real skill there
+    // was reported as a stale entry — a wrong statement about a skill that is
+    // right where the manifest says. It is also NOT a `native`: Claude Code
+    // loads skills from `.claude/skills`, so nothing reads it there.
+    const plan = planIn(manifestFor([{ name: 'oddball', path: 'docs/skills/oddball' }]), (repo) =>
+      writeSkill(repo, 'docs/skills/oddball')
+    );
+
+    const warnings = plan.warnings.filter((w) => w.name === 'oddball');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].reason).toContain('docs/skills/oddball');
+    expect(warnings[0].reason).toContain('which no harness reads');
+    expect(warnings[0].reason).not.toMatch(/stale/);
+
+    expect(plan.actions.filter((a) => a.name === 'oddball')).toEqual([]);
+    expect(plan.drops.filter((a) => a.name === 'oddball')).toEqual([]);
+  });
+});
+
+describe('claudeOnlySkills — the entry’s path is a symlink', () => {
+  it('warns that a link is not a skill kept in .claude/skills, whatever it points at', () => {
+    const plan = planIn(manifestFor([{ name: 'linked' }]), (repo) => {
+      writeSkill(repo, '.agents/skills/linked');
+      mkdirSync(join(repo, '.claude', 'skills'), { recursive: true });
+      symlinkSync(
+        join('..', '..', '.agents', 'skills', 'linked'),
+        join(repo, '.claude/skills/linked')
+      );
     });
+
+    const warnings = plan.warnings.filter((w) => w.name === 'linked');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].reason).toContain('is a symlink');
+    expect(warnings[0].reason).toContain('drop the entry');
+
+    // The projection itself is STILL planned. Withholding it would leave the
+    // link unowned by the plan, and the orphan sweep would prune a working one.
+    expect(
+      plan.actions.some((a) => a.artifact === 'skill' && a.target === '.claude/skills/linked')
+    ).toBe(true);
+  });
+});
+
+describe('claudeOnlySkills — nothing is there at all', () => {
+  it('warns that the entry is stale rather than silently listing a skill nobody has', () => {
+    const plan = planIn(manifestFor([{ name: 'ghost' }]), () => {});
 
     const warnings = plan.warnings.filter((w) => w.artifact === 'skill' && w.name === 'ghost');
     expect(warnings).toHaveLength(1);
     expect(warnings[0].reason).toMatch(/stale/);
+    expect(warnings[0].reason).toContain('.claude/skills/ghost');
     expect(plan.actions.filter((a) => a.name === 'ghost')).toEqual([]);
     expect(plan.drops.filter((a) => a.name === 'ghost')).toEqual([]);
+  });
+
+  it('treats a directory with no SKILL.md as nothing, because no harness would load it', () => {
+    const plan = planIn(manifestFor([{ name: 'empty' }]), (repo) =>
+      mkdirSync(join(repo, '.claude', 'skills', 'empty'), { recursive: true })
+    );
+    expect(plan.warnings.filter((w) => w.name === 'empty')[0]?.reason).toMatch(/stale/);
   });
 });
 
 describe('claudeOnlySkills — this repo’s own manifest', () => {
   /** This repository's live `.agents/harness.manifest.json`, parsed. */
-  function repoManifest() {
+  function repoManifest(): HarnessManifest {
     const path = fileURLToPath(
       new URL('../../../../../.agents/harness.manifest.json', import.meta.url)
     );
@@ -139,18 +198,14 @@ describe('claudeOnlySkills — this repo’s own manifest', () => {
   it('drops all 13 Claude-only skills once per non-claude harness, and warns about none', () => {
     // The shape the review reproduced: every entry is a real directory in
     // `.claude/skills` and none of them is in `.agents/skills`, so the honest
-    // answer is one drop per entry per other harness — 13 × 2 here — and not a
+    // answer is one drop per entry per other harness — 13 x 2 here — and not a
     // single warning, because nothing about the manifest is stale.
     const manifest = repoManifest();
     expect(manifest.claudeOnlySkills.length).toBe(13);
     expect(manifest.harnesses.length).toBeGreaterThan(1);
 
-    dir = stage({ inClaude: manifest.claudeOnlySkills.map((c) => c.name), inAgents: [] });
-    const plan = buildPlan({
-      repoRoot: dir,
-      manifest,
-      agentsMdExists: false,
-      claudeSkillDirs: manifest.claudeOnlySkills.map((c) => c.name),
+    const plan = planIn(manifest, (repo) => {
+      for (const entry of manifest.claudeOnlySkills) writeSkill(repo, entry.path);
     });
 
     const drops = plan.drops.filter(
@@ -166,8 +221,8 @@ describe('claudeOnlySkills — this repo’s own manifest', () => {
   });
 
   it('every entry’s `path` points at the `.claude/skills` directory it names', () => {
-    // The manifest's `path` is the only place the entry says WHERE the skill is
-    // kept; a stale one sends whoever reads it to a directory that is not there.
+    // The manifest's `path` is now what the engine resolves, so a wrong one is
+    // no longer cosmetic: it decides whether the skill is found at all.
     const manifest = repoManifest();
     expect(manifest.claudeOnlySkills.length).toBe(13);
     for (const entry of manifest.claudeOnlySkills) {

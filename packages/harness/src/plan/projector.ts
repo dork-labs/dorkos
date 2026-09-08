@@ -12,7 +12,13 @@
  */
 import { join } from 'node:path';
 import { HARNESS_LABELS, type HarnessId, type HarnessManifest } from '../manifest/schema.js';
-import type { ActionBase, ProjectionAction, ProjectionPlan, ProjectionWarning } from './types.js';
+import type {
+  ActionBase,
+  ClaudeOnlySkillLocation,
+  ProjectionAction,
+  ProjectionPlan,
+  ProjectionWarning,
+} from './types.js';
 import { setActionContent } from './content-map.js';
 import { scanSkills, AGENTS_SKILLS_DIR, type SkillEntry } from '../scan/scanner.js';
 import {
@@ -82,7 +88,7 @@ function planSkill(
   harness: HarnessId,
   skill: SkillEntry,
   manifest: HarnessManifest,
-  claudeSkillDirs: ReadonlySet<string>
+  claudeOnly: ReadonlyMap<string, ClaudeOnlySkillLocation>
 ): ProjectionAction | undefined {
   const base: ActionBase = {
     artifact: 'skill',
@@ -97,10 +103,13 @@ function planSkill(
     if (harness !== 'claude-code') {
       return { ...base, kind: 'drop', reason: CLAUDE_ONLY_DROP_REASON };
     }
-    // Listed Claude-only AND already a real directory where Claude reads: the
-    // manifest and the canonical layer disagree, and a symlink over that
-    // directory is a standing conflict. Warned about, never planned.
-    if (claudeSkillDirs.has(skill.name)) return undefined;
+    // Listed Claude-only AND already a real directory at the very path the
+    // projection would occupy: the manifest and the canonical layer disagree,
+    // and the symlink is a standing conflict on every apply. Warned about, never
+    // planned. A symlink there is the engine's own projection and IS planned —
+    // withholding it would make the sweep treat a working link as an orphan.
+    const location = claudeOnly.get(skill.name);
+    if (location?.kind === 'directory' && location.atProjectionTarget) return undefined;
   }
 
   if (harness === 'claude-code') {
@@ -115,64 +124,99 @@ const CLAUDE_ONLY_DROP_REASON =
 
 /**
  * Account for every `manifest.claudeOnlySkills` entry against where the skill
- * actually lives.
+ * actually is.
  *
- * The manifest names skills deliberately kept out of the canonical layer. The
- * projector used to consult the list only while walking `.agents/skills`, so an
- * entry that lives solely in `.claude/skills` — all 13 in this repository —
- * produced no line at all: not an action, not a drop, nothing (SK-04, reproduced
- * 2026-09-07). Three states, three honest answers:
+ * The manifest names skills deliberately kept out of the canonical layer, and it
+ * is the ONLY evidence they exist — the scanner walks `.agents/skills` and these
+ * are not there. So the entry's own `path` is the claim under test, and
+ * {@link ClaudeOnlySkillLocation} (resolved by `engine.ts`) is what it resolved
+ * to. Five states, five honest answers:
  *
- * - **only in `.claude/skills`** — Claude Code reads it where it sits (`native`),
- *   and every other enabled harness is told why it did not travel.
- * - **in both roots** — the manifest contradicts the canonical layer. Warned,
- *   with no claude-code symlink planned (see {@link planSkill}); the per-harness
- *   drops for the other harnesses still come from there.
- * - **in neither** — the entry is stale. Warned, so a list nobody prunes does not
- *   quietly become fiction.
+ * - **a real directory at `.claude/skills/<name>`** — Claude Code reads it where
+ *   it sits (`native`), and every other enabled harness is told why it did not
+ *   travel. The only state that produces actions.
+ * - **a real directory somewhere else** — the skill is real and no harness loads
+ *   it: `claudeOnlySkills` is about skills kept where Claude Code reads, and
+ *   Claude Code reads `.claude/skills`. Warned, naming the path. Reporting this
+ *   as "stale" was a wrong statement about a skill that is right there.
+ * - **a symlink** — either the engine's own projection of a canonical skill, in
+ *   which case the entry contradicts itself, or a link to a skill kept outside
+ *   the repo, in which case `.claude/skills` is not where it lives. Both readings
+ *   say the entry is wrong, so both get the same warning. The projection itself
+ *   is still planned; withholding it would make the sweep prune a working link.
+ * - **also in `.agents/skills`** — the walk already produces this entry's
+ *   claude-code projection and its per-harness drops, so nothing is added here.
+ *   When a real directory sits at the projection target too, that is the
+ *   conflict {@link planSkill} withholds, and it is warned about.
+ * - **nothing there at all** — the entry is stale. Warned, so a list nobody
+ *   prunes does not quietly become fiction.
+ *
+ * **The path check is the filesystem's, not a string compare**, so its case
+ * behaviour is the filesystem's: an entry whose case does not match its
+ * directory resolves on macOS and reads stale on Linux. Match the case.
  *
  * @param input - the manifest, the authored skill names found in `.agents/skills`,
- *   and the real directory names found in `.claude/skills`.
+ *   and each entry's resolved location keyed by name.
  * @returns the claude-code `native` actions, the per-harness drops, and the warnings.
  */
 function planClaudeOnlySkills(input: {
   manifest: HarnessManifest;
   agentsSkillNames: ReadonlySet<string>;
-  claudeSkillDirs: ReadonlySet<string>;
+  claudeOnly: ReadonlyMap<string, ClaudeOnlySkillLocation>;
 }): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
-  const { manifest, agentsSkillNames, claudeSkillDirs } = input;
+  const { manifest, agentsSkillNames, claudeOnly } = input;
   const actions: ProjectionAction[] = [];
   const warnings: ProjectionWarning[] = [];
 
+  /** One warning about an entry, always attributed to the harness the list is for. */
+  const warn = (name: string, reason: string): void => {
+    warnings.push({ artifact: 'skill', harness: 'claude-code', name, reason });
+  };
+
   for (const entry of manifest.claudeOnlySkills) {
+    const location = claudeOnly.get(entry.name) ?? {
+      path: `${CLAUDE_SKILLS_DIR}/${entry.name}`,
+      kind: 'missing' as const,
+      atProjectionTarget: true,
+    };
     const inAgents = agentsSkillNames.has(entry.name);
-    const inClaude = claudeSkillDirs.has(entry.name);
 
-    if (inAgents && inClaude) {
-      warnings.push({
-        artifact: 'skill',
-        harness: 'claude-code',
-        name: entry.name,
-        reason:
-          'claudeOnlySkills names a skill that also lives in .agents/skills — move it or drop the entry',
-      });
-      continue;
-    }
-    // Already covered by the `.agents/skills` walk: it produces the claude-code
-    // symlink and the per-harness drops for this entry.
-    if (inAgents) continue;
-
-    if (!inClaude) {
-      warnings.push({
-        artifact: 'skill',
-        harness: 'claude-code',
-        name: entry.name,
-        reason: `claudeOnlySkills entry is stale: no skill named "${entry.name}" in ${CLAUDE_SKILLS_DIR} or ${AGENTS_SKILLS_DIR}`,
-      });
+    if (location.kind === 'symlink') {
+      warn(
+        entry.name,
+        `claudeOnlySkills names "${entry.name}", but ${location.path} is a symlink — a projection of ${AGENTS_SKILLS_DIR}, or a link to a skill kept elsewhere. Either way it is not a skill kept in ${CLAUDE_SKILLS_DIR}: drop the entry`
+      );
       continue;
     }
 
-    const source = `${CLAUDE_SKILLS_DIR}/${entry.name}`;
+    if (inAgents) {
+      if (location.kind === 'directory' && location.atProjectionTarget) {
+        warn(
+          entry.name,
+          `claudeOnlySkills names a skill that also lives in ${AGENTS_SKILLS_DIR} — move it or drop the entry`
+        );
+      }
+      // Otherwise the `.agents/skills` walk already covers it: it produces the
+      // claude-code symlink and the per-harness drops for this entry.
+      continue;
+    }
+
+    if (location.kind === 'missing') {
+      warn(
+        entry.name,
+        `claudeOnlySkills entry is stale: no skill at ${location.path}, and none named "${entry.name}" in ${AGENTS_SKILLS_DIR}`
+      );
+      continue;
+    }
+
+    if (!location.atProjectionTarget) {
+      warn(
+        entry.name,
+        `claudeOnlySkills names a real skill at ${location.path}, which no harness reads — Claude Code loads skills from ${CLAUDE_SKILLS_DIR}, so move it to ${CLAUDE_SKILLS_DIR}/${entry.name} or drop the entry`
+      );
+      continue;
+    }
+
     for (const harness of manifest.harnesses) {
       actions.push(
         harness === 'claude-code'
@@ -181,7 +225,7 @@ function planClaudeOnlySkills(input: {
               harness,
               provenance: 'authored',
               name: entry.name,
-              source,
+              source: location.path,
               kind: 'native',
               reason: `Claude Code reads ${CLAUDE_SKILLS_DIR} directly`,
             }
@@ -190,7 +234,7 @@ function planClaudeOnlySkills(input: {
               harness,
               provenance: 'authored',
               name: entry.name,
-              source,
+              source: location.path,
               kind: 'drop',
               reason: CLAUDE_ONLY_DROP_REASON,
             }
@@ -270,6 +314,11 @@ const STANDALONE_HOOK_HARNESSES: Partial<Record<HarnessId, StandaloneHookSpec>> 
   },
 };
 
+/** Whether a hooks config carries at least one event — an absent one and an empty one are the same nothing. */
+function hasHooks(hooks?: ClaudeHooksConfig): boolean {
+  return hooks !== undefined && Object.keys(hooks).length > 0;
+}
+
 /**
  * Project hooks to one harness (may yield several actions + warnings).
  *
@@ -278,9 +327,14 @@ const STANDALONE_HOOK_HARNESSES: Partial<Record<HarnessId, StandaloneHookSpec>> 
  * `authoredHooks` is the repo's own half alone, and it is what decides Claude
  * Code's `native`: Claude reads `.claude/settings.json`, and a package's hooks
  * reach it through the separate `.claude/settings.local.json` merge, never that
- * file. With no authored hooks there is no artifact at all, so Claude Code gets
- * NO action — not a `native` for a file that may not exist, and not a `drop`
- * either, which would claim something exists that could not travel.
+ * file.
+ *
+ * **With no hooks there is no artifact, so no harness gets a line.** Not a
+ * `native` for a file that may not exist, and not a `drop` either — a drop says
+ * something exists that could not travel, and on a repo with no hooks at all
+ * nothing did. Claude Code is measured against its own file and every other
+ * harness against the merged set, because a package's hooks fail to reach
+ * OpenCode and Gemini exactly as an authored one would.
  */
 function planHooks(
   harness: HarnessId,
@@ -289,14 +343,17 @@ function planHooks(
 ): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
   const base: ActionBase = { artifact: 'hook', harness, provenance: 'authored', name: 'hooks' };
   if (harness === 'claude-code') {
-    const hasAuthoredHooks = authoredHooks !== undefined && Object.keys(authoredHooks).length > 0;
     return {
-      actions: hasAuthoredHooks
+      actions: hasHooks(authoredHooks)
         ? [{ ...base, kind: 'native', source: CLAUDE_SETTINGS_SOURCE }]
         : [],
       warnings: [],
     };
   }
+
+  // Nothing to project anywhere: say nothing, rather than telling somebody with
+  // no hooks that their hooks were dropped.
+  if (!hasHooks(claudeHooks)) return { actions: [], warnings: [] };
 
   const standalone = STANDALONE_HOOK_HARNESSES[harness];
   if (standalone) return planStandaloneHooks(harness, standalone, claudeHooks);
@@ -394,19 +451,25 @@ function planStandaloneHooks(
 /**
  * Project authored slash commands (`.claude/commands/**`) to one harness.
  *
- * Returns `undefined` for Claude Code when the repository has no
- * `.claude/commands` holding a command: there is nothing to read, so there is
- * nothing to call `native`. The engine asserted that `native` unconditionally
- * until 2026-09-07, source path and all.
+ * Returns `undefined` for EVERY harness when the repository has no
+ * `.claude/commands` holding a command. There is no artifact, so there is
+ * nothing to call `native` and nothing to drop — a repo that has never written a
+ * slash command should not be told, five times over, that its commands did not
+ * travel. The engine asserted Claude Code's `native` unconditionally until
+ * 2026-09-07, source path and all, and went on naming the other five long after
+ * that was fixed.
  *
- * Every other harness drops, and each drop names that harness's OWN repo-local
- * command format (see `plan/command-formats.ts`) rather than claiming none
- * exists — four of the five have one.
+ * Once commands DO exist, every harness but Claude Code drops, and each drop
+ * names that harness's OWN repo-local command format (see
+ * `plan/command-formats.ts`) rather than claiming none exists — four of the five
+ * have one.
  */
 function planCommands(
   harness: HarnessId,
   claudeCommandsExist: boolean
 ): ProjectionAction | undefined {
+  if (!claudeCommandsExist) return undefined;
+
   const base: ActionBase = {
     artifact: 'command',
     harness,
@@ -414,7 +477,6 @@ function planCommands(
     name: 'commands',
   };
   if (harness === 'claude-code') {
-    if (!claudeCommandsExist) return undefined;
     return { ...base, kind: 'native', source: CLAUDE_COMMANDS_SOURCE };
   }
   if (harness === 'opencode') {
@@ -460,14 +522,15 @@ function planCommands(
  *
  * Three inputs describe files whose EXISTENCE decides whether a projection may
  * be called `native`: `agentsMdExists`, `claudeCommandsExist`, and the hooks in
- * `claudeHooks`. `buildPlan` stays filesystem-free, so `engine.ts` reads all
- * three off disk (`project()` always passes them). They default to "absent",
- * which is the honest reading for a caller that does not say — a plan may never
- * claim a harness reads a file nobody has confirmed is there (P9a).
+ * `claudeHooks`. A fourth, `claudeOnlySkills`, resolves where each manifest
+ * exception really is. `buildPlan` stays filesystem-free, so `engine.ts` reads
+ * all of them off disk (`project()` always passes them). They default to
+ * "absent", which is the honest reading for a caller that does not say — a plan
+ * may never claim a harness reads a file nobody has confirmed is there (P9a).
  *
  * @param input - the repo root, validated manifest, optional Claude hooks,
  *   whether a canonical `AGENTS.md` exists, whether `.claude/commands` holds a
- *   command, the real skill directories in `.claude/skills`, any installed
+ *   command, where each `claudeOnlySkills` entry resolves to, any installed
  *   plugins, and an optional per-package gate on hook contribution.
  * @returns the actionable projections, the honest drop list, and any warnings —
  *   about a projection that landed but may not work in the target harness, or a
@@ -481,12 +544,15 @@ export function buildPlan(input: {
   /** Whether `.claude/commands` exists and holds at least one `.md`. Defaults to `false`. */
   claudeCommandsExist?: boolean;
   /**
-   * Names of REAL skill directories under `.claude/skills` (never the engine's
-   * own projection symlinks). Defaults to none. Read by the
-   * `manifest.claudeOnlySkills` accounting, which cannot otherwise tell a
-   * Claude-only skill kept there from a stale manifest entry.
+   * Where each `manifest.claudeOnlySkills` entry's declared `path` resolves to,
+   * keyed by the entry's name. Defaults to empty, which reads every entry as
+   * stale — the honest answer for a caller that has not looked.
+   *
+   * These skills are deliberately absent from `.agents/skills`, so the scanner
+   * never sees them and the manifest is the only evidence they exist. See
+   * {@link ClaudeOnlySkillLocation} and `engine.ts`'s `scanClaudeOnlySkills`.
    */
-  claudeSkillDirs?: readonly string[];
+  claudeOnlySkills?: ReadonlyMap<string, ClaudeOnlySkillLocation>;
   installedPlugins?: InstalledPlugin[];
   allowPluginHooks?: (packageName: string) => boolean;
 }): ProjectionPlan {
@@ -496,11 +562,10 @@ export function buildPlan(input: {
     claudeHooks,
     agentsMdExists,
     claudeCommandsExist = false,
-    claudeSkillDirs = [],
+    claudeOnlySkills = new Map<string, ClaudeOnlySkillLocation>(),
     installedPlugins = [],
   } = input;
   const skills = scanSkills(repoRoot);
-  const claudeSkillDirSet = new Set(claudeSkillDirs);
   const warnings: ProjectionWarning[] = [];
 
   // Partition installed plugins: only project-scoped, projectable-type plugins
@@ -546,7 +611,7 @@ export function buildPlan(input: {
   const all: ProjectionAction[] = [];
   for (const harness of manifest.harnesses) {
     for (const skill of skills) {
-      const skillAction = planSkill(harness, skill, manifest, claudeSkillDirSet);
+      const skillAction = planSkill(harness, skill, manifest, claudeOnlySkills);
       if (skillAction) all.push(skillAction);
     }
     all.push(planInstruction(harness, agentsMdExists));
@@ -597,7 +662,7 @@ export function buildPlan(input: {
   const claudeOnly = planClaudeOnlySkills({
     manifest,
     agentsSkillNames: new Set(skills.map((s) => s.name)),
-    claudeSkillDirs: claudeSkillDirSet,
+    claudeOnly: claudeOnlySkills,
   });
   all.push(...claudeOnly.actions);
   warnings.push(...claudeOnly.warnings);

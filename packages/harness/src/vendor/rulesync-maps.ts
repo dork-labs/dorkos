@@ -205,9 +205,11 @@ export const CURSOR_HOOK_EVENTS: readonly HookEvent[] = [
  * dropped as having no Copilot home. They are added below, each quoted from the
  * reference's own events table.
  *
- * The two documented events with no Claude counterpart, and so no canonical key
- * to map from, are `userPromptTransformed` and — as a Copilot NAME — nothing
- * else; every other row is covered.
+ * One documented event has no Claude counterpart, and so no canonical key to map
+ * from: `userPromptTransformed`. Every other row of the fourteen is covered, so
+ * the map targets thirteen — and reaches twelve of Claude's thirty, because
+ * `errorOccurred` maps from the canonical `afterError`, which Claude Code has no
+ * spelling for either.
  *
  * @see https://docs.github.com/en/copilot/reference/hooks-configuration
  * @see https://docs.github.com/en/copilot/concepts/agents/hooks
