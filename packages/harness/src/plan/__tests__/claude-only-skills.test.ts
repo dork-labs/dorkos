@@ -71,30 +71,52 @@ function planIn(manifest: HarnessManifest, stage: (repo: string) => void) {
 }
 
 describe('claudeOnlySkills — a real directory where Claude Code reads', () => {
-  it('is native for claude-code and an honest drop for every other enabled harness', () => {
+  it('is native for every harness that reads .claude/skills, listed or not', () => {
+    // The manifest entry says what a person INTENDED, and the vendor facts say
+    // what each harness does. OpenCode's own docs list `.claude/skills` among its
+    // read paths, so it loads this skill whatever the manifest calls it — and the
+    // engine dropped it for OpenCode until DOR-1845's review, which is SK-05's
+    // stale-drop shape on the path that runs on this repository. Codex does not
+    // read that directory, so for Codex the drop is the true answer.
     const plan = planIn(manifestFor([{ name: 'secret' }]), (repo) =>
       writeSkill(repo, '.claude/skills/secret')
     );
 
-    const native = plan.actions.filter((a) => a.artifact === 'skill' && a.name === 'secret');
-    expect(native).toHaveLength(1);
-    expect(native[0]).toMatchObject({
-      kind: 'native',
-      harness: 'claude-code',
-      source: '.claude/skills/secret',
-    });
+    const natives = plan.actions.filter((a) => a.artifact === 'skill' && a.name === 'secret');
+    expect(new Set(natives.map((a) => a.harness))).toEqual(new Set(['claude-code', 'opencode']));
+    for (const native of natives) {
+      expect(native).toMatchObject({ kind: 'native', source: '.claude/skills/secret' });
+    }
+    // The listed half changes the wording and nothing else.
+    expect(natives.find((a) => a.harness === 'opencode')?.reason).toContain(
+      'listed in manifest.claudeOnlySkills, but OpenCode reads .claude/skills directly'
+    );
 
     const drops = plan.drops.filter((d) => d.artifact === 'skill' && d.name === 'secret');
-    expect(drops).toHaveLength(THREE.length - 1);
-    expect(new Set(drops.map((d) => d.harness))).toEqual(new Set(['codex', 'opencode']));
-    for (const drop of drops) {
-      expect(drop.reason).toBe(
-        'claude-only skill, kept in .claude/skills by manifest.claudeOnlySkills'
-      );
-    }
+    expect(drops.map((d) => d.harness)).toEqual(['codex']);
+    expect(drops[0].reason).toContain('Codex does not read .claude/skills');
+
     // Nothing is written for it: the directory is already where Claude reads.
     expect(plan.actions.some((a) => a.target?.includes('secret'))).toBe(false);
     expect(plan.warnings.filter((w) => w.name === 'secret')).toEqual([]);
+  });
+
+  it('says the same thing about an unlisted directory as a listed one', () => {
+    // Two identical directories, one named by the manifest and one not. Before
+    // the two code paths were unified they got opposite answers for OpenCode.
+    const plan = planIn(manifestFor([{ name: 'listed' }]), (repo) => {
+      writeSkill(repo, '.claude/skills/listed');
+      writeSkill(repo, '.claude/skills/unlisted');
+    });
+
+    for (const harness of THREE) {
+      const kinds = (name: string): string[] =>
+        [...plan.actions, ...plan.drops]
+          .filter((a) => a.artifact === 'skill' && a.name === name && a.harness === harness)
+          .map((a) => a.kind);
+      expect([harness, kinds('listed')]).toEqual([harness, kinds('unlisted')]);
+      expect([harness, kinds('listed').length]).toEqual([harness, 1]);
+    }
   });
 });
 
@@ -224,14 +246,25 @@ describe('claudeOnlySkills — the entry’s path is a symlink to something else
       symlinkSync(join('..', '..', 'vault', 'vaulted'), join(repo, '.claude/skills/vaulted'));
     });
 
-    const warnings = plan.warnings.filter((w) => w.name === 'vaulted');
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0].reason).toContain('is a symlink');
-    expect(warnings[0].reason).toContain('drop the entry');
-    expect(warnings[0].reason).not.toContain('redundant');
-    // Nothing is claimed for it either way.
-    expect(plan.actions.filter((a) => a.name === 'vaulted')).toEqual([]);
-    expect(plan.drops.filter((a) => a.name === 'vaulted')).toEqual([]);
+    const entryWarning = plan.warnings.filter(
+      (w) => w.name === 'vaulted' && w.reason.includes('drop the entry')
+    );
+    expect(entryWarning).toHaveLength(1);
+    expect(entryWarning[0].reason).toContain('is a symlink');
+    expect(entryWarning[0].reason).not.toContain('redundant');
+
+    // The link is also a real skill a person put where Claude Code reads, so it
+    // gets the same per-harness account any other `.claude/skills` skill gets.
+    // Claude Code documents following symlinks, so it loads; Codex does not read
+    // the directory at all; OpenCode reads it and documents nothing about links,
+    // so the plan refuses to decide exactly as `harnessCoverage` does.
+    expect(
+      plan.actions.filter((a) => a.name === 'vaulted').map((a) => [a.harness, a.kind])
+    ).toEqual([['claude-code', 'native']]);
+    expect(plan.drops.filter((a) => a.name === 'vaulted').map((a) => a.harness)).toEqual(['codex']);
+    const undecided = plan.warnings.filter((w) => w.name === 'vaulted' && w.harness === 'opencode');
+    expect(undecided).toHaveLength(1);
+    expect(undecided[0].reason).toContain('does not document whether it follows one');
   });
 });
 
@@ -264,11 +297,13 @@ describe('claudeOnlySkills — this repo’s own manifest', () => {
     return parseHarnessManifest(JSON.parse(readFileSync(path, 'utf8')));
   }
 
-  it('drops all 13 Claude-only skills once per non-claude harness, and warns about none', () => {
-    // The shape the review reproduced: every entry is a real directory in
-    // `.claude/skills` and none of them is in `.agents/skills`, so the honest
-    // answer is one drop per entry per other harness — 13 x 2 here — and not a
-    // single warning, because nothing about the manifest is stale.
+  it('accounts for all 13 Claude-only skills per harness, by what that harness reads', () => {
+    // Every entry is a real directory in `.claude/skills` and none is in
+    // `.agents/skills`, so each gets exactly one line per enabled harness — and
+    // WHICH line is the vendor's answer, not the manifest's. Claude Code and
+    // OpenCode both read that directory (their own docs), so both load all 13;
+    // Codex does not, so all 13 are honest drops there. Not a single warning:
+    // nothing about the manifest is stale, and no name breaks a rule.
     const manifest = repoManifest();
     expect(manifest.claudeOnlySkills.length).toBe(13);
     expect(manifest.harnesses.length).toBeGreaterThan(1);
@@ -277,16 +312,25 @@ describe('claudeOnlySkills — this repo’s own manifest', () => {
       for (const entry of manifest.claudeOnlySkills) writeSkill(repo, entry.path);
     });
 
-    const drops = plan.drops.filter(
-      (d) =>
-        d.artifact === 'skill' &&
-        d.reason === 'claude-only skill, kept in .claude/skills by manifest.claudeOnlySkills'
-    );
-    expect(drops).toHaveLength(manifest.claudeOnlySkills.length * (manifest.harnesses.length - 1));
+    const listedNames = new Set(manifest.claudeOnlySkills.map((entry) => entry.name));
+    const linesFor = (harness: HarnessId, from: 'actions' | 'drops'): number =>
+      plan[from].filter(
+        (a) => a.artifact === 'skill' && listedNames.has(a.name) && a.harness === harness
+      ).length;
+
+    for (const harness of manifest.harnesses) {
+      const reads = harness === 'claude-code' || harness === 'opencode';
+      expect({
+        harness,
+        natives: linesFor(harness, 'actions'),
+        drops: linesFor(harness, 'drops'),
+      }).toEqual({
+        harness,
+        natives: reads ? 13 : 0,
+        drops: reads ? 0 : 13,
+      });
+    }
     expect(plan.warnings.filter((w) => w.artifact === 'skill')).toEqual([]);
-    expect(
-      plan.actions.filter((a) => a.artifact === 'skill' && a.harness === 'claude-code')
-    ).toHaveLength(manifest.claudeOnlySkills.length);
   });
 
   it('every entry’s `path` points at the `.claude/skills` directory it names', () => {

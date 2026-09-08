@@ -74,8 +74,9 @@ import {
 } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
-import type { HarnessId } from '../manifest/schema.js';
+import { HARNESS_LABELS, type HarnessId } from '../manifest/schema.js';
 import { skillsFactsFor } from './index.js';
+import { evaluateSkillRules } from './skill-rules.js';
 import type { SkillsFacts } from './types.js';
 
 /** One skill a harness's documented read paths and rules would find. */
@@ -113,6 +114,16 @@ export interface CoverageResult {
   discovered: DiscoveredSkill[];
   /** Everything whose outcome depends on a cell the vendor never documented. */
   uncertain: Uncertain[];
+  /**
+   * Everything a DOCUMENTED rule says the harness refuses — today, a name that
+   * breaks a stated rule on a harness whose `onInvalidName` is `'skip'`.
+   *
+   * Neither discovered nor uncertain, and it needs its own list because "absent
+   * from both" is indistinguishable from "the walk never reached it". No vendor
+   * row is `'skip'` yet, so this is always empty; the day one is, the walk says
+   * why, and so does the plan, from the same reason string.
+   */
+  skipped: Uncertain[];
 }
 
 /** Options for {@link harnessCoverage}. */
@@ -315,10 +326,19 @@ interface Candidate {
   reasons: string[];
   /** Whether the documented rules are enough to say it loads. Never true when `reasons` is non-empty. */
   loads: boolean;
+  /** Set when a DOCUMENTED rule says the harness refuses it; becomes a `skipped` entry. */
+  droppedReason?: string;
 }
 
 /**
  * Apply one harness's symlink, identity and name rules to one skill directory.
+ *
+ * The I/O half only: it reads the frontmatter `name` off disk and hands the
+ * decision to {@link evaluateSkillRules}, which the projector calls with the same
+ * facts so the plan and this walk cannot reach different verdicts about one
+ * directory (DOR-1845 review). The rule ladder used to live here, and its second
+ * copy — hand-written in `plan/source-artifacts.ts` — consulted three cells of
+ * the six.
  *
  * @param harness - the harness whose rules apply, named in the message text.
  * @param facts - its skills facts.
@@ -336,73 +356,21 @@ function evaluate(
   via: string,
   reachedThroughSymlink: boolean
 ): Candidate {
-  const dirName = basename(dir);
   const name = frontmatterName(skillMd);
-  const reasons: string[] = [];
-
-  if (reachedThroughSymlink && facts.symlinks === 'unknown') {
-    reasons.push(
-      `it is reached through a symlink, and ${harness} does not document whether it follows one`
-    );
-  }
-
-  let key = dirName;
-  if (facts.identity === 'frontmatter') {
-    if (name === undefined) {
-      reasons.push(
-        `frontmatter name absent, and ${harness} keys a skill by its frontmatter name - the directory name "${dirName}" is a fallback, not what the harness would use`
-      );
-    } else {
-      key = name;
-    }
-  } else if (facts.identity === 'unknown' && name !== undefined && name !== dirName) {
-    reasons.push(
-      `${harness} does not document whether a skill is keyed by its directory ("${dirName}") or its frontmatter name ("${name}"), and the two differ`
-    );
-  }
-
-  const violations: string[] = [];
-  if (facts.nameRegex && !facts.nameRegex.test(key)) {
-    violations.push(
-      `the name "${key}" breaks ${harness}'s documented charset rule ${String(facts.nameRegex)}`
-    );
-  }
-  if (facts.nameMustMatchDir === true) {
-    if (name === undefined) {
-      reasons.push(
-        `${harness} documents that a skill's frontmatter name must match its directory, and this SKILL.md has no name`
-      );
-    } else if (name !== dirName) {
-      violations.push(
-        `the frontmatter name "${name}" does not match the directory "${dirName}", which ${harness} documents as required`
-      );
-    }
-  } else if (facts.nameMustMatchDir === 'unknown' && name !== undefined && name !== dirName) {
-    reasons.push(
-      `the frontmatter name "${name}" does not match the directory "${dirName}", and ${harness} does not document whether it must`
-    );
-  }
-
-  // A broken name rule with a DOCUMENTED consequence is not uncertainty: 'skip'
-  // drops the skill outright and 'warn-and-load' loads it. Only 'unknown' is a
-  // refusal to decide, and it joins the reasons above.
-  let droppedByRule = false;
-  if (violations.length > 0) {
-    if (facts.onInvalidName === 'skip') {
-      droppedByRule = true;
-    } else if (facts.onInvalidName === 'unknown') {
-      for (const violation of violations) {
-        reasons.push(
-          `${violation}, and ${harness} does not document what it does with such a skill`
-        );
-      }
-    }
-  }
+  const outcome = evaluateSkillRules(harness, facts, {
+    dirName: basename(dir),
+    ...(name === undefined ? {} : { frontmatterName: name }),
+    reachedThroughSymlink,
+  });
 
   return {
-    found: { key, dir, skillMd, via },
-    reasons,
-    loads: reasons.length === 0 && !droppedByRule,
+    found: { key: outcome.key, dir, skillMd, via },
+    reasons: outcome.reasons,
+    loads: outcome.loads,
+    // Carried, not discarded: a documented refusal is an answer, and dropping it
+    // here would leave the walk silent about a skill it decided against while the
+    // plan named the rule (DOR-1845 review).
+    ...(outcome.droppedReason === undefined ? {} : { droppedReason: outcome.droppedReason }),
   };
 }
 
@@ -462,7 +430,7 @@ function applyDedupe(
       if (first) {
         uncertain.push({
           path: candidate.dir,
-          reason: `one skill is reachable at ${viaOf(root, first.dir)} and ${viaOf(root, candidate.dir)}, and ${harness} does not document whether it loads once or twice`,
+          reason: `one skill is reachable at ${viaOf(root, first.dir)} and ${viaOf(root, candidate.dir)}, and ${HARNESS_LABELS[harness]} does not document whether it loads once or twice`,
         });
         continue;
       }
@@ -487,9 +455,10 @@ function applyDedupe(
  * Walks `root` the way {@link ./index.js#HARNESS_VENDOR_FACTS} says `harness`
  * walks it, treating every directory that directly contains a `SKILL.md` as a
  * skill, and applying that harness's symlink, identity, name and dedupe rules.
- * Every skill lands in exactly one of the two returned lists: `discovered` when
- * the harness's own documentation is enough to claim it loads, `uncertain` when
- * the answer depends on a cell the vendor never wrote down.
+ * Every skill lands in exactly one of the returned lists: `discovered` when the
+ * harness's own documentation is enough to claim it loads, `uncertain` when the
+ * answer depends on a cell the vendor never wrote down, and `skipped` when a
+ * documented rule says the harness refuses it outright.
  *
  * @param harness - the harness to model.
  * @param root - absolute path of the tree to walk (a repo checkout, an agent workspace).
@@ -506,6 +475,7 @@ export function harnessCoverage(
   const cwd = resolve(opts?.cwd ?? absRoot);
 
   const uncertain: Uncertain[] = [];
+  const skipped: Uncertain[] = [];
   const candidates: DiscoveredSkill[] = [];
 
   for (const { abs, via } of readDirs(facts, absRoot, cwd)) {
@@ -526,7 +496,7 @@ export function harnessCoverage(
       if (!statOrUndefined(skillMd)?.isFile()) continue;
       const reachedThroughSymlink = lstatOrUndefined(dir)?.isSymbolicLink() === true;
 
-      const { found, reasons, loads } = evaluate(
+      const { found, reasons, loads, droppedReason } = evaluate(
         harness,
         facts,
         dir,
@@ -535,6 +505,7 @@ export function harnessCoverage(
         reachedThroughSymlink
       );
       for (const reason of reasons) uncertain.push({ path: dir, reason });
+      if (droppedReason !== undefined) skipped.push({ path: dir, reason: droppedReason });
       if (loads) candidates.push(found);
     }
   }
@@ -542,5 +513,6 @@ export function harnessCoverage(
   return {
     discovered: applyDedupe(harness, facts, absRoot, candidates, uncertain),
     uncertain,
+    skipped,
   };
 }

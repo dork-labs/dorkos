@@ -20,8 +20,20 @@ export type ProjectionKind = 'native' | 'symlink' | 'scaffold' | 'generate' | 'm
  * The kind of agent file being projected. `plugin` covers plugin-level actions
  * that are not a single skill/hook/command — a whole installed plugin activated
  * natively, or a non-portable plugin layer that is dropped.
+ *
+ * `agent` (a subagent definition under `.claude/agents`), `rule` (a path-scoped
+ * `.claude/rules/*.md`) and `mcp` (a server in `.mcp.json`) arrived with the
+ * source-tree inventory (DOR-1845). The engine projects none of the three yet;
+ * having a name for them is what lets `dorkos harness sync` report them as
+ * honest drops instead of being blind to their existence, which is what it was
+ * for this repository's own 13 rules, 7 subagents and `.mcp.json`.
+ *
+ * Adding a kind here means teaching `inventory/` to find it and
+ * `plan/source-artifacts.ts` where each harness keeps it. Both read the list
+ * through `satisfies Record<...>` tables, so the compiler names the gap.
  */
-export type ArtifactType = 'skill' | 'instruction' | 'hook' | 'command' | 'plugin';
+export type ArtifactType =
+  'skill' | 'instruction' | 'hook' | 'command' | 'plugin' | 'agent' | 'rule' | 'mcp';
 
 /**
  * Where an artifact came from. Drives the gitignore policy (installed/adopted
@@ -120,6 +132,15 @@ export interface ProjectionWarning {
   harness: HarnessId;
   /** The artifact's name (e.g. the hook event). */
   name: string;
+  /**
+   * Repo-relative source path, when the warning is about a source the inventory
+   * can name. Present so the completeness check (P6) can match a warning to the
+   * artifact it concerns: a `drop` and a `native` both carry a `source`, and a
+   * warning that is the ONLY thing said about an artifact — a `claudeOnlySkills`
+   * entry contradicted by the canonical layer, say — has to be matchable the
+   * same way or the artifact reads as silent.
+   */
+  source?: string;
   /** Human-readable reason the projection may not work in this harness. */
   reason: string;
   /**

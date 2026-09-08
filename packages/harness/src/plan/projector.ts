@@ -51,7 +51,9 @@ import {
   CLAUDE_SKILLS_DIR,
 } from './installed-projector.js';
 import { planUnreadableHookWarnings } from './unreadable-hooks.js';
+import { planInventoriedArtifacts, planInventoryWarnings } from './source-artifacts.js';
 import { commandDropReason } from './command-formats.js';
+import { inventorySourceTree, type SourceInventory } from '../inventory/index.js';
 /** The one authored hooks file the engine reads — Claude Code's own project settings. */
 const CLAUDE_SETTINGS_SOURCE = '.claude/settings.json';
 
@@ -185,14 +187,20 @@ function planClaudeOnlySkills(input: {
   manifest: HarnessManifest;
   agentsSkillNames: ReadonlySet<string>;
   claudeOnly: ReadonlyMap<string, ClaudeOnlySkillLocation>;
-}): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
+}): { warnings: ProjectionWarning[] } {
   const { manifest, agentsSkillNames, claudeOnly } = input;
-  const actions: ProjectionAction[] = [];
   const warnings: ProjectionWarning[] = [];
 
-  /** One warning about an entry, always attributed to the harness the list is for. */
-  const warn = (name: string, reason: string): void => {
-    warnings.push({ artifact: 'skill', harness: 'claude-code', name, reason });
+  /**
+   * One warning about an entry, always attributed to the harness the list is for.
+   *
+   * The `source` is the completeness check's handle on it (P6): for the one entry
+   * whose ONLY line is a warning — a skill listed Claude-only that also occupies
+   * the projection target, so {@link planSkill} withholds the symlink — a warning
+   * that named no path would read as silence about a skill that is right there.
+   */
+  const warn = (name: string, source: string, reason: string): void => {
+    warnings.push({ artifact: 'skill', harness: 'claude-code', name, source, reason });
   };
 
   for (const entry of manifest.claudeOnlySkills) {
@@ -216,11 +224,13 @@ function planClaudeOnlySkills(input: {
         // rather than conflicting with it on every apply.
         warn(
           entry.name,
+          `${AGENTS_SKILLS_DIR}/${entry.name}`,
           `claudeOnlySkills names a skill that also lives in ${AGENTS_SKILLS_DIR} — move it or drop the entry`
         );
       } else {
         warn(
           entry.name,
+          `${AGENTS_SKILLS_DIR}/${entry.name}`,
           `claudeOnlySkills names a skill that also lives in ${AGENTS_SKILLS_DIR}; ${describeLocation(location)}. The entry is redundant — drop it`
         );
       }
@@ -230,6 +240,7 @@ function planClaudeOnlySkills(input: {
     if (location.kind === 'symlink') {
       warn(
         entry.name,
+        location.path,
         `claudeOnlySkills names "${entry.name}", but ${location.path} is a symlink — a projection of ${AGENTS_SKILLS_DIR}, or a link to a skill kept elsewhere. Either way it is not a skill kept in ${CLAUDE_SKILLS_DIR}: drop the entry`
       );
       continue;
@@ -238,6 +249,7 @@ function planClaudeOnlySkills(input: {
     if (location.kind === 'missing') {
       warn(
         entry.name,
+        location.path,
         `claudeOnlySkills entry is stale: no skill at ${location.path}, and none named "${entry.name}" in ${AGENTS_SKILLS_DIR}`
       );
       continue;
@@ -246,37 +258,22 @@ function planClaudeOnlySkills(input: {
     if (!location.atProjectionTarget) {
       warn(
         entry.name,
+        location.path,
         `claudeOnlySkills names a real skill at ${location.path}, which no harness reads — Claude Code loads skills from ${CLAUDE_SKILLS_DIR}, so move it to ${CLAUDE_SKILLS_DIR}/${entry.name} or drop the entry`
       );
       continue;
     }
 
-    for (const harness of manifest.harnesses) {
-      actions.push(
-        harness === 'claude-code'
-          ? {
-              artifact: 'skill',
-              harness,
-              provenance: 'authored',
-              name: entry.name,
-              source: location.path,
-              kind: 'native',
-              reason: `Claude Code reads ${CLAUDE_SKILLS_DIR} directly`,
-            }
-          : {
-              artifact: 'skill',
-              harness,
-              provenance: 'authored',
-              name: entry.name,
-              source: location.path,
-              kind: 'drop',
-              reason: CLAUDE_ONLY_DROP_REASON,
-            }
-      );
-    }
+    // A real directory at `.claude/skills/<name>` needs no line from here: the
+    // inventory walks that directory, so `planInventoriedArtifacts` already
+    // accounts for it, from the vendor facts, for every enabled harness. This
+    // branch used to emit its own — `native` for Claude Code and a flat drop for
+    // everyone else — which contradicted the other path about two identical
+    // directories and told OpenCode users their skill was dropped from a
+    // directory OpenCode reads (DOR-1845 review).
   }
 
-  return { actions, warnings };
+  return { warnings };
 }
 
 /**
@@ -354,6 +351,56 @@ function hasHooks(hooks?: ClaudeHooksConfig): boolean {
 }
 
 /**
+ * Where the hooks in the merged config actually came from.
+ *
+ * Every line about hooks names a file, drops included: a drop with no source
+ * cannot be matched back to the declaration it is about, which is how a hook
+ * could be "reported" and still be silent to any check that asks whether each
+ * authored source reached every harness (P6). But naming
+ * `.claude/settings.json` on every line was the other error — a repository with
+ * no settings file at all, whose hooks came entirely from an installed package,
+ * was told its `.claude/settings.json` hooks were dropped. So the sources are
+ * derived, per file and per event, from the configs that were merged.
+ */
+interface HookSources {
+  /** Every file that contributed a hook, authored settings first. */
+  files: string[];
+  /** For each event, the file to name when that event is dropped. */
+  byEvent: Map<string, string>;
+}
+
+/**
+ * Work out which file each merged hook event came from.
+ *
+ * The authored settings file wins a tie: when a repository and a package declare
+ * the same event, the person's own file is the one they can act on.
+ *
+ * @param authoredHooks - the repo's own `.claude/settings.json` hooks.
+ * @param contributors - the installed plugins allowed to contribute hooks.
+ * @returns the contributing files and the per-event attribution.
+ */
+function collectHookSources(
+  authoredHooks: ClaudeHooksConfig | undefined,
+  contributors: readonly InstalledPlugin[]
+): HookSources {
+  const files: string[] = [];
+  const byEvent = new Map<string, string>();
+
+  if (authoredHooks && hasHooks(authoredHooks)) {
+    files.push(CLAUDE_SETTINGS_SOURCE);
+    for (const event of Object.keys(authoredHooks)) byEvent.set(event, CLAUDE_SETTINGS_SOURCE);
+  }
+  for (const plugin of contributors) {
+    const hooks = plugin.hooks;
+    if (!hooks || !hasHooks(hooks) || !plugin.relDir) continue;
+    const file = `${plugin.relDir}/hooks/hooks.json`;
+    files.push(file);
+    for (const event of Object.keys(hooks)) if (!byEvent.has(event)) byEvent.set(event, file);
+  }
+  return { files, byEvent };
+}
+
+/**
  * Project hooks to one harness (may yield several actions + warnings).
  *
  * `claudeHooks` is the MERGED config — the repo's own hooks plus every installed
@@ -369,18 +416,27 @@ function hasHooks(hooks?: ClaudeHooksConfig): boolean {
  * nothing did. Claude Code is measured against its own file and every other
  * harness against the merged set, because a package's hooks fail to reach
  * OpenCode and Gemini exactly as an authored one would.
+ *
+ * The harnesses with no hook file at all get **one drop per contributing file**,
+ * so a person whose hooks came from a package is pointed at the package rather
+ * than at a `.claude/settings.json` they never wrote.
  */
 function planHooks(
   harness: HarnessId,
+  sources: HookSources,
   claudeHooks?: ClaudeHooksConfig,
   authoredHooks?: ClaudeHooksConfig
 ): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
-  const base: ActionBase = { artifact: 'hook', harness, provenance: 'authored', name: 'hooks' };
+  const base = (source: string): ActionBase => ({
+    artifact: 'hook',
+    harness,
+    provenance: 'authored',
+    name: 'hooks',
+    source,
+  });
   if (harness === 'claude-code') {
     return {
-      actions: hasHooks(authoredHooks)
-        ? [{ ...base, kind: 'native', source: CLAUDE_SETTINGS_SOURCE }]
-        : [],
+      actions: hasHooks(authoredHooks) ? [{ ...base(CLAUDE_SETTINGS_SOURCE), kind: 'native' }] : [],
       warnings: [],
     };
   }
@@ -390,37 +446,19 @@ function planHooks(
   if (!hasHooks(claudeHooks)) return { actions: [], warnings: [] };
 
   const standalone = STANDALONE_HOOK_HARNESSES[harness];
-  if (standalone) return planStandaloneHooks(harness, standalone, claudeHooks);
+  if (standalone) return planStandaloneHooks(harness, standalone, sources, claudeHooks);
 
-  if (harness === 'opencode') {
-    // OpenCode has NO declarative hook config — only a code-based TypeScript
-    // plugin API — so there is no on-disk hook file to project into. Honest drop.
-    return {
-      actions: [
-        {
-          ...base,
-          kind: 'drop',
-          reason:
-            'OpenCode has no declarative hook config (only a code-based TypeScript plugin API), so hooks cannot be projected as files',
-        },
-      ],
-      warnings: [],
-    };
-  }
-
-  // Gemini: hooks live inside the shared `.gemini/settings.json`, which also
-  // holds unrelated user settings. Projecting them safely means MERGING into
-  // that file (and pruning only the engine-managed entries), which the current
+  // OpenCode has NO declarative hook config — only a code-based TypeScript
+  // plugin API — so there is no on-disk hook file to project into. Gemini's live
+  // inside the shared `.gemini/settings.json`, which also holds unrelated user
+  // settings: projecting them safely means MERGING into that file, which the
   // apply stage does not yet support, so it is an honest drop, not a clobber.
+  const reason =
+    harness === 'opencode'
+      ? 'OpenCode has no declarative hook config (only a code-based TypeScript plugin API), so hooks cannot be projected as files'
+      : 'Gemini hooks require a safe merge into the shared .gemini/settings.json (preserving other keys); tracked as follow-up (DOR-143)';
   return {
-    actions: [
-      {
-        ...base,
-        kind: 'drop',
-        reason:
-          'Gemini hooks require a safe merge into the shared .gemini/settings.json (preserving other keys); tracked as follow-up (DOR-143)',
-      },
-    ],
+    actions: sources.files.map((source) => ({ ...base(source), kind: 'drop' as const, reason })),
     warnings: [],
   };
 }
@@ -439,6 +477,7 @@ function planHooks(
 function planStandaloneHooks(
   harness: HarnessId,
   spec: StandaloneHookSpec,
+  sources: HookSources,
   claudeHooks?: ClaudeHooksConfig
 ): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
   if (!claudeHooks) return { actions: [], warnings: [] };
@@ -453,7 +492,10 @@ function planStandaloneHooks(
       provenance: 'authored',
       name: 'hooks',
       kind: 'generate',
-      source: CLAUDE_SETTINGS_SOURCE,
+      // The file this generated one was built from. With no authored settings —
+      // a repository whose only hooks came from a package — that is the
+      // package's own declaration, not a path nobody wrote.
+      source: sources.files[0] ?? CLAUDE_SETTINGS_SOURCE,
       target: spec.target,
     };
     setActionContent(action, content);
@@ -466,6 +508,8 @@ function planStandaloneHooks(
       harness,
       provenance: 'authored',
       name: d.event,
+      // The file that declared THIS event, so a person opens the right one.
+      source: sources.byEvent.get(d.event) ?? sources.files[0] ?? CLAUDE_SETTINGS_SOURCE,
       kind: 'drop',
       reason: d.reason,
     });
@@ -509,9 +553,10 @@ function planCommands(
     harness,
     provenance: 'authored',
     name: 'commands',
+    source: CLAUDE_COMMANDS_SOURCE,
   };
   if (harness === 'claude-code') {
-    return { ...base, kind: 'native', source: CLAUDE_COMMANDS_SOURCE };
+    return { ...base, kind: 'native' };
   }
   if (harness === 'opencode') {
     // OpenCode has a flat `.opencode/commands` format, but authored `.claude/commands`
@@ -589,6 +634,18 @@ export function buildPlan(input: {
   claudeOnlySkills?: ReadonlyMap<string, ClaudeOnlySkillLocation>;
   installedPlugins?: InstalledPlugin[];
   allowPluginHooks?: (packageName: string) => boolean;
+  /**
+   * Everything the repository's source tree holds, by kind — the answer to
+   * "what is in here at all?", as opposed to "what can the engine project?".
+   *
+   * It is what makes the drop list honest about the kinds the engine does not
+   * project: subagent definitions, path-scoped rules, MCP servers, and the two
+   * hook sources `loadClaudeHooks` never reads. Defaults to scanning `repoRoot`,
+   * exactly as the skill scan below already does, so an existing caller keeps
+   * working and gets the new lines; `project()` passes one so the tree is walked
+   * once.
+   */
+  inventory?: SourceInventory;
 }): ProjectionPlan {
   const {
     repoRoot,
@@ -598,9 +655,17 @@ export function buildPlan(input: {
     claudeCommandsExist = false,
     claudeOnlySkills = new Map<string, ClaudeOnlySkillLocation>(),
     installedPlugins = [],
+    inventory = inventorySourceTree(repoRoot),
   } = input;
   const skills = scanSkills(repoRoot);
   const warnings: ProjectionWarning[] = [];
+  const claudeOnlyNames = new Set(manifest.claudeOnlySkills.map((entry) => entry.name));
+  const agentsSkillNames = new Set(skills.map((skill) => skill.name));
+
+  // Say what the tree holds and could not be read — a `.mcp.json` that will not
+  // parse, a file where `.claude/agents` should be a directory. Once per source,
+  // ahead of every harness, for the reason `planUnreadableHookWarnings` gives.
+  warnings.push(...planInventoryWarnings(inventory));
 
   // Partition installed plugins: only project-scoped, projectable-type plugins
   // contribute assets; global installs and other types are reported as drops.
@@ -649,6 +714,10 @@ export function buildPlan(input: {
   // yes (DOR-1849).
   warnings.push(...planUnreadableHookWarnings(projectable));
 
+  // Which file each merged hook came from, so no line about hooks names a
+  // `.claude/settings.json` the repository does not have.
+  const hookSources = collectHookSources(claudeHooks, hookContributors);
+
   const all: ProjectionAction[] = [];
   for (const harness of manifest.harnesses) {
     for (const skill of skills) {
@@ -656,11 +725,24 @@ export function buildPlan(input: {
       if (skillAction) all.push(skillAction);
     }
     all.push(planInstruction(harness, agentsMdExists));
-    const hookResult = planHooks(harness, mergedHooks, claudeHooks);
+    const hookResult = planHooks(harness, hookSources, mergedHooks, claudeHooks);
     all.push(...hookResult.actions);
     warnings.push(...hookResult.warnings);
     const commandAction = planCommands(harness, claudeCommandsExist);
     if (commandAction) all.push(commandAction);
+    // Everything the engine can now SEE but does not project: rules, subagents,
+    // MCP servers, a person's own `settings.local.json` hooks, and the hooks a
+    // skill declares in its frontmatter. Each one is a native where the harness
+    // really reads the source, and a drop naming where it would have to be
+    // otherwise — never nothing (DOR-1845).
+    const inventoried = planInventoriedArtifacts({
+      harness,
+      inventory,
+      claudeOnlyNames,
+      agentsSkillNames,
+    });
+    all.push(...inventoried.actions);
+    warnings.push(...inventoried.warnings);
     for (const plugin of projectable) {
       const skillResult = planInstalledSkills(harness, plugin);
       all.push(...skillResult.actions);
@@ -702,17 +784,16 @@ export function buildPlan(input: {
   // `.claude/skills` (SK-04).
   const claudeOnly = planClaudeOnlySkills({
     manifest,
-    agentsSkillNames: new Set(skills.map((s) => s.name)),
+    agentsSkillNames,
     claudeOnly: claudeOnlySkills,
   });
-  all.push(...claudeOnly.actions);
   warnings.push(...claudeOnly.warnings);
 
   // Skill-name collisions (frontmatter-keyed harnesses): warn once per colliding
   // installed skill per affected enabled harness.
   warnings.push(
     ...planSkillNameCollisions({
-      authoredSkillNames: skills.map((s) => s.name),
+      authoredSkillNames: [...agentsSkillNames],
       plugins: projectable,
       harnesses: manifest.harnesses,
     })

@@ -14,9 +14,18 @@
  *
  * It lives in its own module because more than one property file reads it:
  * `apply-ownership.property.test.ts` (P3, P4), `orphaned-links.property.test.ts`
- * (P2, P2b), `native-source-exists.property.test.ts` (P9a) and
- * `native-reachable.property.test.ts` (P9b). Keeping one generator is the point
+ * (P2, P2b), `native-source-exists.property.test.ts` (P9a),
+ * `native-reachable.property.test.ts` (P9b) and
+ * `plan-completeness.property.test.ts` (P6). Keeping one generator is the point
  * — a hostile shape added for one property immediately hardens the others.
+ *
+ * P6 is why a generated repo also carries path-scoped rules, subagent
+ * definitions (some nested), an authored `.mcp.json`, a person's own hooks in
+ * `.claude/settings.local.json` and a skill declaring `hooks:` in its own
+ * frontmatter. The engine had no `ArtifactType` for the first three, read only
+ * one of the two settings files, and never parsed the fifth — so a generator
+ * that staged none of them could not fail a completeness check, exactly as one
+ * that always wrote `AGENTS.md` could not fail P9a.
  *
  * The three fields the last two turn on are `agentsMd`, `claudeCommands` and
  * `authoredHooks`: each names a file whose EXISTENCE decides whether a
@@ -101,6 +110,14 @@ const DANGLING_LINK_TEXT: Record<DanglingKind, string> = {
  */
 type ClaudeCommandsState = 'absent' | 'empty' | 'populated';
 
+/** One generated path-scoped rule: its name, and whether it declares `paths:` globs. */
+export interface RuleSpec {
+  /** The rule's file name below `.claude/rules`, without the `.md`. */
+  name: string;
+  /** Whether it carries a `paths:` frontmatter glob (the half Cursor and Copilot key on). */
+  paths: boolean;
+}
+
 /** One generated repository, before it is written to disk. */
 export interface RepoSpec {
   /** Authored skill names under `.agents/skills`. */
@@ -119,6 +136,47 @@ export interface RepoSpec {
   agentsMd: boolean;
   /** Whether `.claude/commands` is absent, present-but-empty, or holds a `.md`. */
   claudeCommands: ClaudeCommandsState;
+  /**
+   * Path-scoped rules under `.claude/rules`, some carrying `paths:` globs.
+   *
+   * These and the four fields below are the kinds the engine could not name
+   * before DOR-1845 — no `ArtifactType` for them, no scanner that looked. A
+   * generator that never staged one could not fail the completeness property,
+   * which is the same reason `agentsMd` and `claudeCommands` are here.
+   */
+  rules: RuleSpec[];
+  /** Subagent definitions under `.claude/agents`, some in subdirectories. */
+  agents: string[];
+  /** Server names in an authored `.mcp.json`, or no `.mcp.json` at all. */
+  mcpServers: string[] | null;
+  /** Whether a person's own hooks sit in `.claude/settings.local.json`. */
+  localSettingsHooks: boolean;
+  /** Whether the first authored skill declares hooks in its own frontmatter. */
+  skillFrontmatterHooks: boolean;
+  /**
+   * Whether a whole directory of rules is linked in from outside `.claude/rules`
+   * — the shape a person uses to share one rule set across their repositories.
+   * `Dirent.isDirectory()` is false for it, so the walk saw neither a directory
+   * nor an `.md` file and said nothing.
+   */
+  linkedRulesDir: boolean;
+  /**
+   * Whether an `.md` entry under `.claude/agents` is a link to a file that moved.
+   * It looks exactly like a subagent to a scan that never opens it, which is how
+   * a `native` was claimed for a path that resolves to nothing.
+   */
+  deadAgentLink: boolean;
+  /**
+   * Whether a person's own skill is linked into `.claude/skills` from elsewhere
+   * in the repository. Not every link there is DorkOS's projection, and treating
+   * them all as one gave a real skill no line at all.
+   */
+  personSkillLink: boolean;
+  /**
+   * Real skill directories in `.claude/skills`, by directory name — see
+   * {@link CLAUDE_SKILL_DIRS} for why the alphabet is awkward on purpose.
+   */
+  claudeSkills: (typeof CLAUDE_SKILL_DIRS)[number][];
   /** The manifest's enabled harnesses (may be empty). */
   harnesses: HarnessId[];
   /** A hand-written file at one generated hook target, or none. */
@@ -156,6 +214,73 @@ const PERSON_LINK_TEXT = '../../vendor/skills/vendored';
 const SKILL_NAMES = ['a', 'b', 'c', 'd'] as const;
 
 /**
+ * Rule file names, one of them NESTED.
+ *
+ * Claude Code discovers `.claude/rules` recursively, and this generator staged
+ * only flat names — so a walk that stopped at the top level kept P6 green while
+ * giving a nested rule zero lines under every harness (DOR-1845 review). Same
+ * reasoning as the nested subagent names below.
+ */
+const RULE_NAMES = ['api', 'ui', 'frontend/style'] as const;
+
+/**
+ * Subagent names, two of them nested.
+ *
+ * This repository keeps two of its seven subagents in subdirectories, and a walk
+ * that stopped at the top level would call that five — so a generator that only
+ * staged flat names could not tell the two walks apart.
+ */
+const AGENT_NAMES = ['reviewer', 'react/tanstack', 'deep/nested/helper'] as const;
+
+/** MCP server names for the generated `.mcp.json`. */
+const MCP_NAMES = ['linear', 'shadcn'] as const;
+
+/** Where a linked-in directory of rules is staged, and the link that reaches it. */
+const LINKED_RULES_SOURCE = 'vendor/rules';
+/** The link into `.claude/rules` that points at {@link LINKED_RULES_SOURCE}. */
+const LINKED_RULES_LINK = '.claude/rules/shared';
+/** The one rule reached THROUGH that link, as the inventory names it. */
+export const LINKED_RULES_FILE = `${LINKED_RULES_LINK}/security.md`;
+
+/** A dead subagent link: an `.md` entry that opens as nothing. */
+const DEAD_AGENT_LINK = '.claude/agents/dead.md';
+
+/**
+ * Real skill directories staged in `.claude/skills`, with the names that decide
+ * the placement.
+ *
+ * Every generated skill used to go to `.agents/skills`, and the single
+ * `.claude/skills` entry was a link named `mine` — a name that satisfies every
+ * harness's charset rule and matches its own frontmatter. So the whole
+ * name-rule half of the placement was unreachable, and a `native` claimed for a
+ * directory OpenCode and Cursor would refuse to decide about passed every
+ * property green (DOR-1845 review). `.claude/skills` is exactly where an agent
+ * drops a directory under whatever name it liked, so the alphabet says so:
+ *
+ * - `tidy` — lower-case, hyphen-free, frontmatter name matching. Loads everywhere.
+ * - `My_Skill` — an upper-case underscore name that breaks Cursor's and
+ *   OpenCode's documented charset rule.
+ * - `mismatched` — a name that does not match its own frontmatter, which two
+ *   harnesses document as required and two more say nothing about.
+ * - `nameless` — no frontmatter name at all, which the frontmatter-keyed
+ *   harnesses cannot key on.
+ */
+const CLAUDE_SKILL_DIRS = ['tidy', 'My_Skill', 'mismatched', 'nameless'] as const;
+
+/** What each staged `.claude/skills` directory declares as its frontmatter name. */
+const CLAUDE_SKILL_FRONTMATTER: Record<(typeof CLAUDE_SKILL_DIRS)[number], string | null> = {
+  tidy: 'tidy',
+  My_Skill: 'My_Skill',
+  mismatched: 'something-else',
+  nameless: null,
+};
+
+/** A skill a person keeps outside the canonical layer and links where Claude Code reads. */
+const PERSON_SKILL_SOURCE = 'vendor/skills/mine';
+/** The link into `.claude/skills` that reaches {@link PERSON_SKILL_SOURCE}. */
+export const PERSON_SKILL_LINK = '.claude/skills/mine';
+
+/**
  * The generator: a whole small repo, hostile occupants included.
  *
  * @returns an arbitrary over {@link RepoSpec}.
@@ -174,6 +299,20 @@ export function arbRepo(): fc.Arbitrary<RepoSpec> {
     authoredHooks: fc.boolean(),
     agentsMd: fc.boolean(),
     claudeCommands: fc.constantFrom<ClaudeCommandsState>('absent', 'empty', 'populated'),
+    rules: fc.uniqueArray(
+      fc.record({ name: fc.constantFrom(...RULE_NAMES), paths: fc.boolean() }),
+      { maxLength: 3, selector: (r) => r.name }
+    ),
+    agents: fc.uniqueArray(fc.constantFrom(...AGENT_NAMES), { maxLength: 3 }),
+    mcpServers: fc.option(fc.uniqueArray(fc.constantFrom(...MCP_NAMES), { maxLength: 2 }), {
+      nil: null,
+    }),
+    localSettingsHooks: fc.boolean(),
+    skillFrontmatterHooks: fc.boolean(),
+    linkedRulesDir: fc.boolean(),
+    deadAgentLink: fc.boolean(),
+    personSkillLink: fc.boolean(),
+    claudeSkills: fc.uniqueArray(fc.constantFrom(...CLAUDE_SKILL_DIRS), { maxLength: 3 }),
     harnesses: fc.subarray([...HARNESS_IDS]),
     occupant: fc.option(
       fc.record({
@@ -245,6 +384,19 @@ export interface MaterialisedRepo {
 }
 
 /**
+ * Make a symlink at a repo-relative path, creating its parent directory first.
+ *
+ * @param repoRoot - absolute path of the staged repository.
+ * @param relLink - repo-relative path the link sits at.
+ * @param linkText - the literal link text, never resolved here.
+ */
+function linkInto(repoRoot: string, relLink: string, linkText: string): void {
+  const abs = join(repoRoot, relLink);
+  mkdirSync(dirname(abs), { recursive: true });
+  symlinkSync(linkText, abs);
+}
+
+/**
  * Materialise a generated repo spec into a fresh temp dir.
  *
  * @param spec - the generated repository to write.
@@ -265,20 +417,79 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
       writeFileAt(join(repoRoot, '.claude', 'commands', 'review.md'), '# review\n');
     }
   }
-  for (const name of spec.skills) {
+  for (const [index, name] of spec.skills.entries()) {
     // Real frontmatter, not a bare heading: the vendor-facts coverage walk keys
     // three harnesses on the frontmatter `name` and refuses to decide about a
     // SKILL.md that has none, so a generator without it would make every harness
     // `uncertain` about every skill and P9b vacuous.
+    //
+    // The first skill may also carry its own `hooks:` — a Claude Code feature no
+    // other harness has, and one no scanner in the engine had ever parsed (HK-12).
+    const hooks =
+      spec.skillFrontmatterHooks && index === 0
+        ? 'hooks:\n  PreToolUse:\n    - matcher: Bash\n      hooks:\n        - type: command\n          command: ./check.sh\n'
+        : '';
     writeFileAt(
       join(repoRoot, '.agents', 'skills', name, 'SKILL.md'),
-      `---\nname: ${name}\ndescription: The ${name} skill\n---\n\n# ${name}\n`
+      `---\nname: ${name}\ndescription: The ${name} skill\n${hooks}---\n\n# ${name}\n`
     );
   }
   if (spec.authoredHooks) {
     writeJsonAt(join(repoRoot, '.claude', 'settings.json'), {
       hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo authored' }] }] },
     });
+  }
+  if (spec.localSettingsHooks) {
+    // A person's own hooks, in the file the engine WRITES managed groups into and
+    // has never READ (HK-14).
+    writeJsonAt(join(repoRoot, '.claude', 'settings.local.json'), {
+      hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'echo mine' }] }] },
+    });
+  }
+  for (const rule of spec.rules) {
+    const frontmatter = rule.paths ? `---\npaths: apps/**/*.ts, packages/**/*.ts\n---\n\n` : '';
+    writeFileAt(
+      join(repoRoot, '.claude', 'rules', `${rule.name}.md`),
+      `${frontmatter}# ${rule.name} rules\n`
+    );
+  }
+  for (const agent of spec.agents) {
+    writeFileAt(
+      join(repoRoot, '.claude', 'agents', `${agent}.md`),
+      `---\nname: ${agent.split('/').join('-')}\ndescription: The ${agent} subagent\n---\n\n# ${agent}\n`
+    );
+  }
+  if (spec.mcpServers) {
+    writeJsonAt(join(repoRoot, '.mcp.json'), {
+      mcpServers: Object.fromEntries(
+        spec.mcpServers.map((name) => [name, { command: 'npx', args: [name] }])
+      ),
+    });
+  }
+  if (spec.linkedRulesDir) {
+    writeFileAt(
+      join(repoRoot, LINKED_RULES_SOURCE, 'security.md'),
+      "---\npaths: '**/*.ts'\n---\n\n# security\n"
+    );
+    linkInto(repoRoot, LINKED_RULES_LINK, `../../${LINKED_RULES_SOURCE}`);
+  }
+  if (spec.deadAgentLink) {
+    linkInto(repoRoot, DEAD_AGENT_LINK, '../../gone/missing.md');
+  }
+  for (const dir of spec.claudeSkills) {
+    const declared = CLAUDE_SKILL_FRONTMATTER[dir];
+    const name = declared === null ? '' : `name: ${declared}\n`;
+    writeFileAt(
+      join(repoRoot, '.claude', 'skills', dir, 'SKILL.md'),
+      `---\n${name}description: The ${dir} skill\n---\n\n# ${dir}\n`
+    );
+  }
+  if (spec.personSkillLink) {
+    writeFileAt(
+      join(repoRoot, PERSON_SKILL_SOURCE, 'SKILL.md'),
+      '---\nname: mine\ndescription: A skill kept outside the canonical layer\n---\n\n# mine\n'
+    );
+    linkInto(repoRoot, PERSON_SKILL_LINK, `../../${PERSON_SKILL_SOURCE}`);
   }
   for (const plugin of spec.plugins) {
     const dir = join(repoRoot, '.dork', 'plugins', plugin.name);
@@ -334,9 +545,7 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
   }
 
   if (spec.personLink) {
-    const abs = join(repoRoot, PERSON_LINK_PATH);
-    mkdirSync(dirname(abs), { recursive: true });
-    symlinkSync(PERSON_LINK_TEXT, abs);
+    linkInto(repoRoot, PERSON_LINK_PATH, PERSON_LINK_TEXT);
   }
 
   // The dead link goes on last, and only where nothing else is: two hostile

@@ -574,6 +574,9 @@ describe('buildPlan hook gate (DOR-522)', () => {
           // of every harness, so no filter may hide it (contract VC-02).
           harnessAgnostic: true,
           name: 'acme:Stop',
+          // The declaring file, so the completeness check can match this warning
+          // to the source it is about (DOR-1845).
+          source: '.dork/plugins/acme/hooks/hooks.json',
           reason:
             '.dork/plugins/acme/hooks/hooks.json declares "Stop" in a shape this reader cannot use, so the whole event was dropped and no "Stop" hook is projected',
         },

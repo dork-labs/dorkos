@@ -16,7 +16,7 @@
  * @module __tests__/journeys/stage
  */
 import { createHash } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, readlinkSync, lstatSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, readlinkSync, lstatSync, statSync } from 'node:fs';
 import { writeFileSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 
@@ -143,7 +143,13 @@ export function readText(absPath: string): string {
 }
 
 /**
- * Whether a path exists on disk (a dangling symlink counts as existing).
+ * Whether something OCCUPIES a path — a dangling symlink counts, because a dead
+ * link is still a thing sitting where the engine may want to write.
+ *
+ * This is the ownership question: "is the target free?", "did the sweep take the
+ * person's link?". For "would a reader find something here?", use
+ * {@link resolvesOnDisk} — the two differ on exactly the case that matters, and
+ * asking the wrong one is how a `native` claim about a dead link passed P9a.
  *
  * @param absPath - the absolute path to probe.
  * @returns `true` when something occupies the path.
@@ -151,6 +157,27 @@ export function readText(absPath: string): string {
 export function existsOnDisk(absPath: string): boolean {
   try {
     lstatSync(absPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether a path RESOLVES to something a reader could open — a dangling symlink
+ * does not.
+ *
+ * The question a `native` claim has to answer: the plan says a harness reads the
+ * file where it sits, and a link pointing at a file that was moved away is not a
+ * file anybody reads. `existsOnDisk` answers `true` for one, which is why a
+ * phantom subagent could be reported as `native` with P9a green.
+ *
+ * @param absPath - the absolute path to probe.
+ * @returns `true` when the path resolves, following symlinks.
+ */
+export function resolvesOnDisk(absPath: string): boolean {
+  try {
+    statSync(absPath);
     return true;
   } catch {
     return false;

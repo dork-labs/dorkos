@@ -12,7 +12,10 @@
  *
  * The property is the general form of all four: over generated repositories —
  * with and without each of those files — every `native` action carries a
- * `source`, and that source exists in the tree. It fails on the unfixed engine.
+ * `source`, and that source RESOLVES in the tree. Resolves, not merely exists: a
+ * dangling symlink occupies a path and opens as nothing, and asking `lstat`
+ * about one let a phantom `native` subagent through this property green
+ * (DOR-1845 review). It fails on the unfixed engine.
  *
  * `arbRepo()` is shared with the ownership properties (`./arb-repo.ts`).
  */
@@ -20,7 +23,7 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { join } from 'node:path';
 import { project } from '../../engine.js';
-import { existsOnDisk } from '../journeys/stage.js';
+import { resolvesOnDisk } from '../journeys/stage.js';
 import { arbRepo, withRepo, RUNS } from './arb-repo.js';
 
 describe('P9a — every `native` action points at a source on disk', () => {
@@ -56,7 +59,7 @@ describe('P9a — every `native` action points at a source on disk', () => {
               harness: action.harness,
               artifact: action.artifact,
               source,
-              exists: existsOnDisk(join(repoRoot, source as string)),
+              exists: resolvesOnDisk(join(repoRoot, source as string)),
             }).toEqual({
               harness: action.harness,
               artifact: action.artifact,
