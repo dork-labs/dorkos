@@ -155,11 +155,21 @@
  * {@link SCAFFOLDED_INSTRUCTION_EXCLUDES}, asked of the planner rather than
  * spelled here.
  *
+ * **One more thing the projection writes here now, and it is not fixed text.**
+ * Since DOR-1847 every installed plugin skill is linked into `.agents/skills`
+ * whatever harnesses are enabled, so a room whose repo carries a project-scoped
+ * package gets links there too. Those are covered by
+ * {@link installedSkillLinkExcludes}, which asks the planner for its own targets
+ * and lists them one by one — never a `*__*` glob, which would also hide an
+ * authored `my__helper` and hand it to the reap (DOR-1880). Because the list
+ * depends on what a repo has installed, the block is built per repo
+ * ({@link excludeBlockFor}) rather than being a module constant.
+ *
  * The list is complete for the harnesses DorkOS scaffolds
  * ({@link AGENT_WORKSPACE_HARNESSES} — claude-code alone), and that completeness
- * is pinned by a test that runs the REAL planner over a created worktree and
- * asks `git check-ignore` about every target it plans. A new engine target
- * reddens it; nobody has to remember this paragraph.
+ * is pinned by a test that runs the REAL planner over a created worktree —
+ * installed package included — and asks `git check-ignore` about every target it
+ * plans. A new engine target reddens it; nobody has to remember this paragraph.
  *
  * **A room that commits its own `.agents/harness.manifest.json` enabling other
  * harnesses is outside that guarantee, deliberately.** The projection respects a
@@ -185,7 +195,13 @@ import path from 'node:path';
 import type { RoomContextFiles } from '@dorkos/shared/additional-context';
 import { slugifyAgentName } from '@dorkos/shared/validation';
 import { OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
-import { planInstruction } from '@dorkos/harness';
+import {
+  buildPlan,
+  parseHarnessManifest,
+  planInstruction,
+  scanInstalledPlugins,
+  AGENTS_SKILLS_DIR,
+} from '@dorkos/harness';
 import { logger } from '../../../lib/logger.js';
 import { RoomError } from '../room-errors.js';
 import { PROJECTED_ATTACHMENTS_ROOT } from '../attachments/attachment-paths.js';
@@ -327,15 +343,90 @@ const SCAFFOLDED_INSTRUCTION_EXCLUDES: readonly string[] = AGENT_WORKSPACE_HARNE
  * ever received an attachment permanently dirty, and therefore never reaped and
  * never mergeable.
  */
-const EXCLUDE_BLOCK = [
-  '# --- DorkOS: generated for the agent, not anybody’s work (room-worktree-manager.ts) ---',
-  '/.claude/skills/',
-  '/.agents/harness.manifest.json',
-  `/${DORKOS_TEMP_DIR}/`,
-  ...SCAFFOLDED_INSTRUCTION_EXCLUDES,
-  ...SEEDED_PACK_EXCLUDES,
-  '# --- end DorkOS ---',
-].join('\n');
+/**
+ * The `info/exclude` lines that hide the `.agents/skills` links an installed
+ * package's skills project into — asked of the PLANNER, never globbed.
+ *
+ * Since DOR-1847 every installed plugin skill is linked into `.agents/skills`
+ * whatever harnesses are enabled, because that is the one directory five of the
+ * six read and the only skills root the scheduler watches. In a room worktree
+ * those links are ours and nobody else's, and nothing hid them: a room whose
+ * repo carries a project-scoped package read `?? .agents/skills/acme__alpha`
+ * forever, so it was never reaped and never mergeable (DOR-1880).
+ *
+ * **A `*__*` glob would have been the easy fix and the wrong one.** The engine's
+ * ownership predicate is the PAIR — the name carries `__` and the entry is a
+ * symlink — precisely because a person may author a directory called
+ * `my__helper`, and a glob cannot tell the two apart. Hiding one would put a
+ * room member's own skill behind `git status` and then let the reap delete it,
+ * which is the exact failure the module doc forbids. So the lines are the
+ * planner's own targets, one per link, exactly like
+ * {@link SCAFFOLDED_INSTRUCTION_EXCLUDES}.
+ *
+ * The plan is built against {@link AGENT_WORKSPACE_HARNESSES} rather than read
+ * from a manifest FILE, because there need not be one: `info/exclude` lives in
+ * the common git directory and is written from the room's main checkout, which
+ * the projection never scaffolds a manifest into — only worktrees get one. It
+ * costs nothing in accuracy for this one artifact: the `.agents/skills` link is
+ * planned whatever harnesses are enabled, so a room that commits its own
+ * manifest gets the identical set of link paths.
+ *
+ * Best-effort: an unreadable `.dork/plugins` yields no lines rather than
+ * refusing a worktree. That self-heals — {@link withExcludeBlock} REPLACES a
+ * block whose content has moved, and this runs again at the next worktree
+ * creation and on the pack refresh.
+ *
+ * @param repoDir - The room's main checkout, whose `.dork/plugins` decides the list.
+ * @returns One `/`-anchored exclude line per planned link, sorted.
+ */
+function installedSkillLinkExcludes(repoDir: string): string[] {
+  try {
+    const plan = buildPlan({
+      repoRoot: repoDir,
+      manifest: parseHarnessManifest({
+        version: 1,
+        harnesses: [...AGENT_WORKSPACE_HARNESSES],
+      }),
+      agentsMdExists: false,
+      installedPlugins: scanInstalledPlugins({ projectRoot: repoDir }),
+      // The same gate the agent-workspace projection passes: this is an
+      // unattended read, and a package's hooks are nobody's business here.
+      allowPluginHooks: () => false,
+    });
+    return plan.actions
+      .filter((a) => a.kind === 'symlink' && a.target?.startsWith(`${AGENTS_SKILLS_DIR}/`))
+      .map((a) => `/${a.target as string}`)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Build the block for one repository.
+ *
+ * Everything in it is fixed except the installed-package links, which depend on
+ * what that repo has installed — so this is a function of the repo rather than a
+ * module constant, and {@link withExcludeBlock} rewrites a stale block in place.
+ *
+ * @param installedLinks - The lines from {@link installedSkillLinkExcludes}.
+ * @returns The marker-delimited block, without a trailing newline.
+ */
+function excludeBlockFor(installedLinks: readonly string[]): string {
+  return [
+    '# --- DorkOS: generated for the agent, not anybody’s work (room-worktree-manager.ts) ---',
+    '/.claude/skills/',
+    '/.agents/harness.manifest.json',
+    `/${DORKOS_TEMP_DIR}/`,
+    ...SCAFFOLDED_INSTRUCTION_EXCLUDES,
+    ...SEEDED_PACK_EXCLUDES,
+    ...installedLinks,
+    '# --- end DorkOS ---',
+  ].join('\n');
+}
+
+/** The block with no installed packages — the shape every repo shares. */
+const EXCLUDE_BLOCK = excludeBlockFor([]);
 
 /**
  * How an EXISTING block is recognized — a version-free sentinel, never the
@@ -1264,7 +1355,7 @@ export class RoomWorktreeManager {
       } catch (err) {
         if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err;
       }
-      const next = withExcludeBlock(current);
+      const next = withExcludeBlock(current, excludeBlockFor(installedSkillLinkExcludes(repoDir)));
       if (next === current) return;
       await fs.mkdir(infoDir, { recursive: true });
       await fs.writeFile(file, next, 'utf-8');
@@ -1284,13 +1375,14 @@ export class RoomWorktreeManager {
  * caller can skip the write entirely — this runs at every worktree creation.
  *
  * @param current - What the file holds now, or `''` when it does not exist.
+ * @param block - The block to install; defaults to the package-free shape.
  * @returns What it should hold, ending in a newline.
  */
-function withExcludeBlock(current: string): string {
+function withExcludeBlock(current: string, block: string = EXCLUDE_BLOCK): string {
   const start = current.indexOf(EXCLUDE_SENTINEL);
   if (start === -1) {
     const separator = current === '' || current.endsWith('\n') ? '' : '\n';
-    return `${current}${separator}${EXCLUDE_BLOCK}\n`;
+    return `${current}${separator}${block}\n`;
   }
 
   // An unterminated block — hand-edited, or a write that died mid-file — takes
@@ -1299,7 +1391,7 @@ function withExcludeBlock(current: string): string {
   const endAt = current.indexOf(EXCLUDE_END, start);
   const after = endAt === -1 ? '' : current.slice(endAt + EXCLUDE_END.length).replace(/^\n/, '');
   const before = current.slice(0, start);
-  return `${before}${EXCLUDE_BLOCK}\n${after}`;
+  return `${before}${block}\n${after}`;
 }
 
 /** Whether a path is a directory that exists. */

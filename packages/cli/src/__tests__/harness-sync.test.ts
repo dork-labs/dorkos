@@ -362,6 +362,31 @@ describe('runHarnessSync', () => {
     expect(printed).toMatch(/flow__drain.*—.*scheduler/);
   });
 
+  it('does not let the shared-link summary line read as "Codex is enabled"', async () => {
+    // Every action must name a harness, and the unconditional `.agents/skills`
+    // link is attributed to Codex — whose directory that is. On a Claude-Code-only
+    // project that put a bare `codex: 1 symlink` line in the summary, which says
+    // Codex is on to anybody who has not read the projector.
+    fs.mkdirSync(path.join(tmpDir, '.agents'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, '.agents', 'harness.manifest.json'),
+      JSON.stringify({ version: 1, harnesses: ['claude-code'] }, null, 2)
+    );
+    writeInstalledPlugin(tmpDir, 'acme', 'greet');
+    process.chdir(tmpDir);
+
+    await runHarnessSync({ check: true, fix: false });
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    const codexLine = printed.split('\n').find((line) => line.trim().startsWith('codex:'));
+    expect(codexLine).toBeDefined();
+    expect(codexLine).toContain('(not enabled — carries the shared .agents/skills link)');
+    // The harness that IS enabled keeps a clean line.
+    const claudeLine = printed.split('\n').find((line) => line.trim().startsWith('claude-code:'));
+    expect(claudeLine).toBeDefined();
+    expect(claudeLine).not.toContain('not enabled');
+  });
+
   it('prints what a rotted plugin hooks.json lost during salvage (DOR-1724)', async () => {
     // The salvage keeps what the file still says clearly and drops the rest
     // (DOR-646). The CLI path has no approval gate to re-ask through, so this

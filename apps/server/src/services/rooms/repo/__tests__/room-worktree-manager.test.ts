@@ -446,8 +446,11 @@ describe('RoomWorktreeManager', () => {
       // this without anybody remembering the exclude block exists.
       //
       // The fixture turns on everything the plan branches on: authored skills,
-      // an AGENTS.md to point at, and a `.claude/settings.json` for the hooks
-      // path to read.
+      // an AGENTS.md to point at, a `.claude/settings.json` for the hooks path to
+      // read, and — since DOR-1847 — a project-scoped installed package, whose
+      // skills are linked into `.agents/skills` whatever harnesses are enabled.
+      // Without the package this test's own comment was not true of it: the
+      // plan it ran had no `.agents/skills` link in it to check (DOR-1880).
       await service.enable(ROOM_ID, OPERATOR);
       const repoDir = store.repoPath(ROOM_ID);
       await mkdir(path.join(repoDir, '.agents', 'skills', 'house-style'), { recursive: true });
@@ -463,6 +466,22 @@ describe('RoomWorktreeManager', () => {
         JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'true' }] }] } }),
         'utf-8'
       );
+      const plugin = path.join(repoDir, '.dork', 'plugins', 'acme');
+      await mkdir(path.join(plugin, '.dork'), { recursive: true });
+      await writeFile(
+        path.join(plugin, '.dork', 'manifest.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          name: 'acme',
+          version: '1.0.0',
+          type: 'plugin',
+          description: 'A fixture plugin',
+          layers: ['skills'],
+        }),
+        'utf-8'
+      );
+      await mkdir(path.join(plugin, 'skills', 'greet'), { recursive: true });
+      await writeFile(path.join(plugin, 'skills', 'greet', 'SKILL.md'), '# greet\n', 'utf-8');
       await commitAll(
         repoDir,
         'a room with everything',
@@ -478,6 +497,9 @@ describe('RoomWorktreeManager', () => {
       ];
       // A plan with nothing in it would pass this test vacuously.
       expect(targets.length).toBeGreaterThan(0);
+      // …and the branch DOR-1880 is about has to be IN it, or the fixture has
+      // quietly stopped exercising what its comment claims.
+      expect(targets).toContain('.agents/skills/acme__greet');
 
       const visible: string[] = [];
       for (const target of targets) {
