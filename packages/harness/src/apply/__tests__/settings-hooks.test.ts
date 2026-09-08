@@ -54,7 +54,7 @@ function stopCommands(repoRoot: string): string[] {
 }
 
 describe('managed settings hooks: explicit sentinel ownership (review blocker 1)', () => {
-  it('keeps exactly one copy of a pathless plugin hook across three syncs (idempotent re-sync)', () => {
+  it('HK-06, AP-01: keeps exactly one copy of a pathless plugin hook across three syncs (idempotent re-sync)', () => {
     repo = buildRepoWithPathlessHookPlugin();
 
     for (let i = 0; i < 3; i++) {
@@ -67,14 +67,14 @@ describe('managed settings hooks: explicit sentinel ownership (review blocker 1)
     expect(copies).toHaveLength(1);
   });
 
-  it('converges: --check reports clean immediately after apply', () => {
+  it('HK-06, AP-01: converges: --check reports clean immediately after apply', () => {
     repo = buildRepoWithPathlessHookPlugin();
     const plan = project(repo);
     applyPlan(repo, plan, { sweepOrphans: true });
     expect(checkPlan(repo, plan).clean).toBe(true);
   });
 
-  it('sweeps a pathless managed hook on uninstall', () => {
+  it('HK-06, AP-08: sweeps a pathless managed hook on uninstall', () => {
     repo = buildRepoWithPathlessHookPlugin();
     applyPlan(repo, project(repo), { sweepOrphans: true });
     expect(stopCommands(repo)).toContain('npx prettier --check .');
@@ -89,7 +89,7 @@ describe('managed settings hooks: explicit sentinel ownership (review blocker 1)
     expect(settings.hooks).toBeUndefined();
   });
 
-  it('never sweeps a USER hook that happens to reference .dork/plugins (no false positives)', () => {
+  it('HK-06, AP-07: never sweeps a USER hook that happens to reference .dork/plugins (no false positives)', () => {
     repo = buildRepoWithPathlessHookPlugin();
     // A user-authored hook whose command legitimately mentions the install root.
     mkdirSync(join(repo, '.claude'), { recursive: true });
@@ -112,7 +112,7 @@ describe('managed settings hooks: explicit sentinel ownership (review blocker 1)
     expect(commands).not.toContain('npx prettier --check .');
   });
 
-  it('tags managed groups with the owning plugin so a multi-plugin uninstall is per-plugin', () => {
+  it('HK-06: tags managed groups with the owning plugin so a multi-plugin uninstall is per-plugin', () => {
     repo = buildRepoWithPathlessHookPlugin();
     // Second plugin with its own pathless hook.
     const other = join(repo, '.dork', 'plugins', 'other');
@@ -149,7 +149,7 @@ describe('managed settings hooks: explicit sentinel ownership (review blocker 1)
 });
 
 describe('managed settings hooks: corrupt target aborts the merge (review blocker 2)', () => {
-  it('reports a conflict and leaves a corrupt settings.local.json byte-identical', () => {
+  it('HK-06, AP-11: reports a conflict and leaves a corrupt settings.local.json byte-identical', () => {
     repo = buildRepoWithPathlessHookPlugin();
     const settingsPath = join(repo, '.claude', 'settings.local.json');
     mkdirSync(join(repo, '.claude'), { recursive: true });
@@ -166,7 +166,7 @@ describe('managed settings hooks: corrupt target aborts the merge (review blocke
     expect(readFileSync(settingsPath, 'utf8')).toBe(corrupt);
   });
 
-  it('sweep is also a no-op on a corrupt file (never rewrites what it cannot parse)', () => {
+  it('HK-06, AP-07: sweep is also a no-op on a corrupt file (never rewrites what it cannot parse)', () => {
     repo = buildRepoWithPathlessHookPlugin();
     const settingsPath = join(repo, '.claude', 'settings.local.json');
     mkdirSync(join(repo, '.claude'), { recursive: true });
@@ -182,7 +182,7 @@ describe('managed settings hooks: corrupt target aborts the merge (review blocke
 });
 
 describe('command wrappers: authored directory collision (review nit 4)', () => {
-  it('conflicts instead of co-opting an authored .claude/commands/<pkg>/ dir', () => {
+  it('CM-02: conflicts instead of co-opting an authored .claude/commands/<pkg>/ dir', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-cmdconflict-'));
     mkdirSync(join(repo, '.agents'), { recursive: true });
     writeFileSync(

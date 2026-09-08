@@ -87,7 +87,7 @@ export type OccupantShape = 'vendor' | 'bare';
  * under `.claude/skills` that points into `.agents/skills` it is an ORPHAN — the
  * skill it pointed at is gone, and the engine prunes it.
  */
-export type DanglingKind = 'generate' | 'scaffold' | 'skill';
+type DanglingKind = 'generate' | 'scaffold' | 'skill';
 
 /** The repo-relative path each {@link DanglingKind} stages its dead link at. */
 const DANGLING_TARGETS: Record<DanglingKind, string> = {
@@ -141,7 +141,7 @@ const COMMAND_DIR_STATES: readonly CommandDirState[] = CAN_STAGE_UNREADABLE
   : ['absent', 'empty', 'populated', 'file'];
 
 /** One generated path-scoped rule: its name, and whether it declares `paths:` globs. */
-export interface RuleSpec {
+interface RuleSpec {
   /** The rule's file name below `.claude/rules`, without the `.md`. */
   name: string;
   /** Whether it carries a `paths:` frontmatter glob (the half Cursor and Copilot key on). */
@@ -256,7 +256,7 @@ export interface RepoSpec {
 }
 
 /** What {@link materialise} actually staged for {@link RepoSpec.dangling}. */
-export interface StagedDangling {
+interface StagedDangling {
   /** Which kind of target the dead link sits at. */
   kind: DanglingKind;
   /** Its repo-relative path. */

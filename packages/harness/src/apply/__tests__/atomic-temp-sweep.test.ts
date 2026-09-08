@@ -113,7 +113,7 @@ function resync(repo: string, dorkHome: string): ReturnType<typeof applyPlan> {
 }
 
 describe('a live temp file is somebody else’s write in progress', () => {
-  it('survives the Claude wrapper sweep and the OpenCode sweep', () => {
+  it('AP-10, AP-07: survives the Claude wrapper sweep and the OpenCode sweep', () => {
     const { repo, dorkHome } = stageProjectedRepo();
     stageTemp(repo, CLAUDE_TEMP, CLAUDE_WRAPPER);
     stageTemp(repo, OPENCODE_TEMP, OPENCODE_WRAPPER);
@@ -130,7 +130,7 @@ describe('a live temp file is somebody else’s write in progress', () => {
     expect(swept.filter((p) => p.endsWith(ATOMIC_TMP_SUFFIX))).toEqual([]);
   });
 
-  it('does not make the engine’s own wrapper directory look foreign', () => {
+  it('AP-10, AP-07: does not make the engine’s own wrapper directory look foreign', () => {
     const { repo, dorkHome } = stageProjectedRepo();
     stageTemp(repo, CLAUDE_TEMP, CLAUDE_WRAPPER);
 
@@ -142,7 +142,7 @@ describe('a live temp file is somebody else’s write in progress', () => {
     expect(applied.some((a) => a.target === CLAUDE_WRAPPER)).toBe(true);
   });
 
-  it('is not foreign when it has already been renamed away mid-scan', () => {
+  it('AP-10, AP-07: is not foreign when it has already been renamed away mid-scan', () => {
     const { repo, dorkHome } = stageProjectedRepo();
     // `readdirSync` hands back a snapshot; the writer renames its temp onto the
     // target a moment later, so the per-entry read finds nothing. A dead link
@@ -157,7 +157,7 @@ describe('a live temp file is somebody else’s write in progress', () => {
 });
 
 describe('a stranded temp file is debris, and only the command dirs take it', () => {
-  it('sweeps one older than the threshold, in both command directories', () => {
+  it('AP-10, AP-07: sweeps one older than the threshold, in both command directories', () => {
     const { repo, dorkHome } = stageProjectedRepo();
     stageTemp(repo, CLAUDE_TEMP, CLAUDE_WRAPPER, STALE_TEMP_AGE_MS * 2);
     stageTemp(repo, OPENCODE_TEMP, OPENCODE_WRAPPER, STALE_TEMP_AGE_MS * 2);
@@ -173,7 +173,7 @@ describe('a stranded temp file is debris, and only the command dirs take it', ()
     );
   });
 
-  it('leaves a stranded one alone where nothing scans by wildcard', () => {
+  it('AP-10, AP-07: leaves a stranded one alone where nothing scans by wildcard', () => {
     const { repo, dorkHome } = stageProjectedRepo();
     // `.codex/` is read by name, never enumerated, so debris there is inert —
     // and sweeping it would mean walking directories the engine has no other
@@ -188,7 +188,7 @@ describe('a stranded temp file is debris, and only the command dirs take it', ()
     expect(swept.filter((p) => p.endsWith(ATOMIC_TMP_SUFFIX))).toEqual([]);
   });
 
-  it('never takes one that is merely a moment old', () => {
+  it('AP-10, AP-07: never takes one that is merely a moment old', () => {
     const { repo, dorkHome } = stageProjectedRepo();
     // Half the threshold: old enough that a naive mtime check might round it
     // away, nowhere near old enough to be debris.

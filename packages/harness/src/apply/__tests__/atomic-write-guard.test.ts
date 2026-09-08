@@ -88,7 +88,7 @@ function fsWriteCalls(source: string, fileName = 'scan.ts'): string[] {
 describe('every generated file is written atomically', () => {
   const files = sourceFiles();
 
-  it('is looking at the engine, so a clean result means something', () => {
+  it('AP-10: is looking at the engine, so a clean result means something', () => {
     // A walk that found nothing — a moved directory, a wrong root — would report
     // a clean engine for ever.
     expect(files.length).toBeGreaterThan(30);
@@ -97,7 +97,7 @@ describe('every generated file is written atomically', () => {
     expect(fsWriteCalls(readFileSync(join(SRC, HELPER), 'utf8'), HELPER)).not.toEqual([]);
   });
 
-  it('routes every write through writeFileAtomic — nothing else touches fs directly', () => {
+  it('AP-10: routes every write through writeFileAtomic — nothing else touches fs directly', () => {
     const violations = files
       .filter((file) => file !== HELPER && !isTest(file))
       .flatMap((file) =>
@@ -112,7 +112,7 @@ describe('every generated file is written atomically', () => {
     ).toEqual([]);
   });
 
-  it('catches the shapes a new write site would actually take', () => {
+  it('AP-10: catches the shapes a new write site would actually take', () => {
     expect(fsWriteCalls(`writeFileSync(abs, content);`)).toEqual(['1: writeFileSync']);
     expect(fsWriteCalls(`  fs.writeFileSync(abs, content);`)).toEqual(['1: writeFileSync']);
     expect(fsWriteCalls(`await writeFile(abs, content);`)).toEqual(['1: writeFile']);
@@ -129,7 +129,7 @@ describe('every generated file is written atomically', () => {
     ]);
   });
 
-  it('does not fire on the helper being used, or on prose about the old way', () => {
+  it('AP-10: does not fire on the helper being used, or on prose about the old way', () => {
     expect(fsWriteCalls(`writeFileAtomic(abs, content);`)).toEqual([]);
     expect(fsWriteCalls(` * \`writeFileSync\` fails with EISDIR here.`)).toEqual([]);
     expect(fsWriteCalls(`// writeFileSync(abs, content) would truncate first`)).toEqual([]);
@@ -140,7 +140,7 @@ describe('every generated file is written atomically', () => {
     expect(fsWriteCalls(`const hint = 'call writeFileSync(abs) instead';`)).toEqual([]);
   });
 
-  it('is honest about the alias it cannot see', () => {
+  it('AP-10: is honest about the alias it cannot see', () => {
     // Pinned so the limitation is a decision somebody can find, not a surprise
     // the next person discovers by shipping past it. If this ever needs to
     // close, the tool is a type-aware pass, not a wider regex.

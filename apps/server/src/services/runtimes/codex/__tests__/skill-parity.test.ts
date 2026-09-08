@@ -202,7 +202,7 @@ describe('Codex skill parity (J-15)', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('gives each reader the whole .agents/skills directory, minus only its own documented filter', async () => {
+  it('J-15, AP-14, SK-14: gives each reader the whole .agents/skills directory, minus only its own documented filter', async () => {
     const asCodexSees = readAgentsSkillsAsCodexWould(root);
 
     // First: the fixture really is the interesting shape. Two plain authored

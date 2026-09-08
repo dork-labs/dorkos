@@ -44,7 +44,7 @@ function bare(event: string): string {
 }
 
 describe('isLegacyBareCodexHooks', () => {
-  it('recognises a bare map keyed by any of the ten events the old generator emitted', () => {
+  it('HK-01: recognises a bare map keyed by any of the ten events the old generator emitted', () => {
     expect(PRE_SIDECAR_CODEX_EVENTS).toHaveLength(10);
     for (const event of PRE_SIDECAR_CODEX_EVENTS) {
       expect({ event, legacy: isLegacyBareCodexHooks(bare(event)) }).toEqual({
@@ -54,7 +54,7 @@ describe('isLegacyBareCodexHooks', () => {
     }
   });
 
-  it('rejects a Codex spelling the map has gained since the bare shape was retired', () => {
+  it('HK-01: rejects a Codex spelling the map has gained since the bare shape was retired', () => {
     // The frozen list is a claim about what a PAST build wrote, so it may not
     // track the present map. `SessionEnd` joined `CANONICAL_TO_CODEXCLI_EVENT_NAMES`
     // in DOR-1847, long after the bare shape stopped being written — so a bare
@@ -71,7 +71,7 @@ describe('isLegacyBareCodexHooks', () => {
     }
   });
 
-  it('rejects a bare map keyed by an event the engine could never have written', () => {
+  it('HK-01, HK-11: rejects a bare map keyed by an event the engine could never have written', () => {
     // `Notification` is a Claude event with no Codex equivalent — the old
     // generator DROPPED it rather than writing it, so a file naming it was
     // written by a person, not by DorkOS.
@@ -79,7 +79,7 @@ describe('isLegacyBareCodexHooks', () => {
     expect(isLegacyBareCodexHooks(bare('MadeUpEvent'))).toBe(false);
   });
 
-  it("rejects the vendor shape's keys on the vocabulary alone", () => {
+  it("HK-01: rejects the vendor shape's keys on the vocabulary alone", () => {
     // Neither `hooks` nor `description` is a Codex event name, so the vocabulary
     // rules the documented file out by itself — which is exactly why the
     // function carries no separate check for it. The values here are ARRAYS on
@@ -94,7 +94,7 @@ describe('isLegacyBareCodexHooks', () => {
     expect(isLegacyBareCodexHooks(`${JSON.stringify({ description: [] }, null, 2)}\n`)).toBe(false);
   });
 
-  it('rejects anything that is not a non-empty object of arrays', () => {
+  it('HK-01: rejects anything that is not a non-empty object of arrays', () => {
     expect(isLegacyBareCodexHooks('not json')).toBe(false);
     expect(isLegacyBareCodexHooks('[]')).toBe(false);
     expect(isLegacyBareCodexHooks('null')).toBe(false);

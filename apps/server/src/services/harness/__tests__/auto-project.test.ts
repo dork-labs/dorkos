@@ -68,7 +68,7 @@ describe('runAutoProjection', () => {
     seamSpy = vi.spyOn(_internal, 'projectWithConsent').mockReturnValue(CLEAN_RESULT);
   });
 
-  it('reaches the engine ONLY through the consent seam, and tells it to sweep', () => {
+  it('HK-07: reaches the engine ONLY through the consent seam, and tells it to sweep', () => {
     // The trigger's whole engine surface, asserted as a set rather than left to
     // a reader: a second entry here would be a second way to reach `project()`,
     // which is the failure `./project-seam-guard.test.ts`
@@ -108,7 +108,7 @@ describe('runAutoProjection', () => {
   });
 
   describe('project-scoped + autoSync on', () => {
-    it('scaffolds the manifest when absent, then projects with the orphan sweep', async () => {
+    it('TR-02: scaffolds the manifest when absent, then projects with the orphan sweep', async () => {
       // Absent on the first check; the scaffold creates it, so the post-scaffold
       // re-check sees it and projection proceeds.
       vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValue(true);
@@ -128,7 +128,7 @@ describe('runAutoProjection', () => {
       expect(seamSpy).toHaveBeenCalledWith(PROJECT, SEAM_OPTS);
     });
 
-    it('does NOT scaffold when a manifest already exists, but still projects', async () => {
+    it('TR-02: does NOT scaffold when a manifest already exists, but still projects', async () => {
       vi.mocked(existsSync).mockReturnValue(true); // manifest present
 
       await runAutoProjection(
@@ -140,7 +140,7 @@ describe('runAutoProjection', () => {
       expect(seamSpy).toHaveBeenCalledWith(PROJECT, SEAM_OPTS);
     });
 
-    it('uninstall runs the same projection with sweepOrphans so orphans are pruned', async () => {
+    it('TR-02, AP-08: uninstall runs the same projection with sweepOrphans so orphans are pruned', async () => {
       seamSpy.mockReturnValue({
         ...(CLEAN_RESULT as unknown as Record<string, unknown>),
         swept: ['.agents/skills/pkg__helper'],
@@ -176,7 +176,7 @@ describe('runAutoProjection', () => {
       expect(logger.debug).toHaveBeenCalled();
     });
 
-    it('warns when an install contributes NOTHING to the plan (silent zero-projection, DOR-264)', async () => {
+    it('VC-08: warns when an install contributes NOTHING to the plan (silent zero-projection, DOR-264)', async () => {
       // Plan has actions, but none sourced from the just-installed package —
       // the package is invisible to projection (e.g. the scanner failed to
       // recognize it). This must be loud, not an `applied: 0` info line.
@@ -200,7 +200,7 @@ describe('runAutoProjection', () => {
       );
     });
 
-    it('does NOT warn when the installed package contributes to the plan', async () => {
+    it('VC-08: does NOT warn when the installed package contributes to the plan', async () => {
       seamSpy.mockReturnValue({
         ...(CLEAN_RESULT as unknown as Record<string, unknown>),
         plan: {
@@ -218,7 +218,7 @@ describe('runAutoProjection', () => {
       expect(logger.warn).not.toHaveBeenCalled();
     });
 
-    it('does NOT emit the zero-projection warning for an uninstall (its package is GONE from the plan by design)', async () => {
+    it('VC-08: does NOT emit the zero-projection warning for an uninstall (its package is GONE from the plan by design)', async () => {
       await runAutoProjection(
         { projectPath: PROJECT, packageName: 'pkg', action: 'uninstall' },
         { dorkHome: DORK_HOME }
@@ -244,7 +244,7 @@ describe('runAutoProjection', () => {
   });
 
   describe('best-effort error handling', () => {
-    it('never throws when the engine fails; logs a warning instead', async () => {
+    it('AP-11: never throws when the engine fails; logs a warning instead', async () => {
       seamSpy.mockImplementation(() => {
         throw new Error('boom');
       });

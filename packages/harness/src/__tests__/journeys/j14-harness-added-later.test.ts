@@ -25,14 +25,14 @@
  * a red rather than an unnoticed side effect.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { project } from '../../engine.js';
 import { applyPlan, checkPlan } from '../../apply/apply.js';
 import { enableHarnessInManifest } from '../../scaffold/enable-harness.js';
 import type { ProjectionPlan } from '../../plan/types.js';
-import { diffSnapshots, snapshotTree, writeFileAt, writeJsonAt } from './stage.js';
+import { diffSnapshots, snapshotTree, writeFileAt } from './stage.js';
+import { stageRepo, type StagedRepo } from './stage-repo.js';
 
 /** The manifest, exactly as a person would have hand-written it. */
 const MANIFEST_BODY = `{
@@ -45,11 +45,13 @@ const MANIFEST_BODY = `{
 }
 `;
 
+let staged: StagedRepo | undefined;
 let repo = '';
 let dorkHome = '';
 
 afterEach(() => {
-  for (const d of [repo, dorkHome]) if (d) rmSync(d, { recursive: true, force: true });
+  staged?.cleanup();
+  staged = undefined;
   repo = '';
   dorkHome = '';
 });
@@ -61,15 +63,18 @@ function plan(): ProjectionPlan {
 
 /** Stage a two-harness repo, project it once, and assert the baseline is clean. */
 function stageSyncedRepo(): void {
-  repo = mkdtempSync(join(tmpdir(), 'harness-j14-repo-'));
-  dorkHome = mkdtempSync(join(tmpdir(), 'harness-j14-home-'));
-
-  writeFileAt(join(repo, '.agents', 'harness.manifest.json'), MANIFEST_BODY);
-  writeFileAt(join(repo, 'AGENTS.md'), '# Our project\n\nHouse rules.\n');
-  writeFileAt(join(repo, '.agents', 'skills', 'demo', 'SKILL.md'), '# demo\n');
-  writeJsonAt(join(repo, '.claude', 'settings.json'), {
-    hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo bye' }] }] },
+  staged = stageRepo({
+    manifest: { harnesses: ['claude-code', 'codex'], claudeOnlySkills: [] },
+    agents: { agentsMd: true, skills: ['demo'] },
+    claude: { settingsHooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo bye' }] }] } },
   });
+  repo = staged.root;
+  dorkHome = staged.dorkHome;
+
+  // The manifest the DSL writes is the one this journey asserts the exact bytes
+  // of after `--enable` inserts into it — an assertion about formatting, so it
+  // has to read the formatting the fixture really staged.
+  expect(readFileSync(join(repo, '.agents', 'harness.manifest.json'), 'utf8')).toBe(MANIFEST_BODY);
 
   expect(applyPlan(repo, plan(), { sweepOrphans: true }).conflicts).toEqual([]);
   expect(checkPlan(repo, plan()).clean).toBe(true);
@@ -77,7 +82,6 @@ function stageSyncedRepo(): void {
 
 /** The month-later change: somebody starts using Cursor in this repo. */
 function addCursor(): void {
-  mkdirSync(join(repo, '.cursor', 'rules'), { recursive: true });
   writeFileAt(
     join(repo, '.cursor', 'rules', 'x.mdc'),
     '---\ndescription: house rules\n---\n\nBe careful.\n'
@@ -85,7 +89,7 @@ function addCursor(): void {
 }
 
 describe('J-14 — a harness added after the manifest was written', () => {
-  it('notices Cursor without calling it drift', () => {
+  it('J-14, TR-11: notices Cursor without calling it drift', () => {
     stageSyncedRepo();
     expect(plan().notEnabled).toEqual([]);
 
@@ -98,7 +102,7 @@ describe('J-14 — a harness added after the manifest was written', () => {
     expect(checkPlan(repo, after).clean).toBe(true);
   });
 
-  it('enables Cursor with one inserted element and projects it in the same run', () => {
+  it('J-14, TR-11: enables Cursor with one inserted element and projects it in the same run', () => {
     stageSyncedRepo();
     addCursor();
     const before = snapshotTree(repo);
@@ -135,7 +139,7 @@ describe('J-14 — a harness added after the manifest was written', () => {
     ]);
   });
 
-  it('says nothing about Cursor once it is enabled, and stays clean', () => {
+  it('J-14, TR-11: says nothing about Cursor once it is enabled, and stays clean', () => {
     stageSyncedRepo();
     addCursor();
     enableHarnessInManifest(repo, 'cursor');
@@ -148,7 +152,7 @@ describe('J-14 — a harness added after the manifest was written', () => {
     expect(existsSync(join(repo, '.cursor', 'hooks.json'))).toBe(true);
   });
 
-  it('leaves the manifest alone when the harness is already enabled', () => {
+  it('J-14, TR-11: leaves the manifest alone when the harness is already enabled', () => {
     stageSyncedRepo();
     const before = snapshotTree(repo);
 

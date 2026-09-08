@@ -65,7 +65,7 @@ describe('inventorySourceTree', () => {
     });
   });
 
-  it('counts skills in both authored roots, follows a linked-in source, and skips DorkOS projections', () => {
+  it('SK-13: counts skills in both authored roots, follows a linked-in source, and skips DorkOS projections', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inv-skills-'));
     outside = mkdtempSync(join(tmpdir(), 'harness-inv-outside-'));
 
@@ -117,7 +117,7 @@ describe('inventorySourceTree', () => {
     ]);
   });
 
-  it('counts authored commands by their namespaced name and skips generated wrappers', () => {
+  it('CM-04: counts authored commands by their namespaced name and skips generated wrappers', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inv-commands-'));
     writeFileAt(join(repo, '.claude/commands/deploy.md'), '# /deploy\n');
     writeFileAt(join(repo, '.claude/commands/flow/capture.md'), '# /flow:capture\n');
@@ -135,7 +135,7 @@ describe('inventorySourceTree', () => {
     ]);
   });
 
-  it('counts subagents recursively, so a nested definition is not lost (XA-01)', () => {
+  it('XA-01: counts subagents recursively, so a nested definition is not lost', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inv-agents-'));
     for (const rel of ['reviewer', 'react/tanstack', 'deep/nested/helper']) {
       const name = rel.split('/').join('-');
@@ -156,7 +156,7 @@ describe('inventorySourceTree', () => {
     ]);
   });
 
-  it('reads each rule’s `paths:` globs, in both spellings, and leaves a rule without them bare (IN-07)', () => {
+  it('IN-07: reads each rule’s `paths:` globs, in both spellings, and leaves a rule without them bare', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inv-rules-'));
     writeFileAt(
       join(repo, '.claude/rules/api.md'),
@@ -250,7 +250,7 @@ describe('inventorySourceTree', () => {
     expect(unreadable.map((u) => u.source)).toEqual(['.claude/agents/nameless.md']);
   });
 
-  it('records MCP server names and never a value, because an env block holds secrets (XA-03)', () => {
+  it('XA-03: records MCP server names and never a value, because an env block holds secrets', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inv-mcp-'));
     writeJsonAt(join(repo, '.mcp.json'), {
       mcpServers: {
@@ -266,7 +266,7 @@ describe('inventorySourceTree', () => {
     expect(JSON.stringify(mcpServers)).not.toContain('RESEND_API_KEY');
   });
 
-  it('reads hooks from both settings files and from skill frontmatter, skipping DorkOS’s own groups (HK-12, HK-14)', () => {
+  it('HK-12, HK-14: reads hooks from both settings files and from skill frontmatter, skipping DorkOS’s own groups', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inv-hooks-'));
     writeJsonAt(join(repo, '.claude/settings.json'), {
       hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo authored' }] }] },

@@ -49,7 +49,7 @@ const projectPlugin: InstalledPlugin = {
 };
 
 describe('installed-plugin projection via buildPlan', () => {
-  it('symlinks installed skills into both the Claude Code and Codex skill dirs (namespaced)', () => {
+  it('SK-02: symlinks installed skills into both the Claude Code and Codex skill dirs (namespaced)', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -93,7 +93,7 @@ describe('installed-plugin projection via buildPlan', () => {
     }
   });
 
-  it('generates repo-local command wrappers for Claude Code with the token rewritten to absolute', () => {
+  it('CM-01: generates repo-local command wrappers for Claude Code with the token rewritten to absolute', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -131,7 +131,7 @@ describe('installed-plugin projection via buildPlan', () => {
     }
   });
 
-  it('names each harness’s own command format on an installed-command drop (CM-06)', () => {
+  it('CM-06: names each harness’s own command format on an installed-command drop', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -171,7 +171,7 @@ describe('installed-plugin projection via buildPlan', () => {
     }
   });
 
-  it('merges installed-plugin hooks into .claude/settings.local.json for Claude Code', () => {
+  it('HK-06: merges installed-plugin hooks into .claude/settings.local.json for Claude Code', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -191,7 +191,7 @@ describe('installed-plugin projection via buildPlan', () => {
     }
   });
 
-  it('warns when a projected installed skill still references ${CLAUDE_PLUGIN_ROOT}', () => {
+  it('SK-07: warns when a projected installed skill still references ${CLAUDE_PLUGIN_ROOT}', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -220,7 +220,7 @@ describe('installed-plugin projection via buildPlan', () => {
     }
   });
 
-  it('namespaces installed skills so they never collide with an authored skill of the same name', () => {
+  it('SK-02: namespaces installed skills so they never collide with an authored skill of the same name', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -252,7 +252,7 @@ describe('installed-plugin projection via buildPlan', () => {
     }
   });
 
-  it('drops non-portable layers with reasons, and no longer drops a harness that reads .agents/skills', () => {
+  it('SK-05: drops non-portable layers with reasons, and no longer drops a harness that reads .agents/skills', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -291,7 +291,7 @@ describe('installed-plugin projection via buildPlan', () => {
     }
   });
 
-  it('scope mapping: a global install is dropped, never projected into project dirs', () => {
+  it('SRC-04, AP-12: scope mapping: a global install is dropped, never projected into project dirs', () => {
     const repo = emptyRepo();
     try {
       const globalPlugin: InstalledPlugin = {
@@ -319,7 +319,7 @@ describe('installed-plugin projection via buildPlan', () => {
     }
   });
 
-  it('folds installed-plugin hooks into the generated Codex hooks file', () => {
+  it('HK-05: folds installed-plugin hooks into the generated Codex hooks file', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -369,7 +369,7 @@ describe('mergeHookConfigs', () => {
 });
 
 describe('projectedHooks', () => {
-  it('reports each command with the event and matcher that fire it, plugin root resolved', () => {
+  it('VC-04: reports each command with the event and matcher that fire it, plugin root resolved', () => {
     const plugin: InstalledPlugin = {
       ...projectPlugin,
       hooks: {
@@ -487,7 +487,7 @@ describe('buildPlan hook gate (DOR-522)', () => {
     return out;
   }
 
-  it('withholds a disallowed package from BOTH the settings merge and the generated hook files', () => {
+  it('HK-07: withholds a disallowed package from BOTH the settings merge and the generated hook files', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -507,7 +507,7 @@ describe('buildPlan hook gate (DOR-522)', () => {
     }
   });
 
-  it('projects the same package once it is allowed', () => {
+  it('HK-07: projects the same package once it is allowed', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -523,7 +523,7 @@ describe('buildPlan hook gate (DOR-522)', () => {
     }
   });
 
-  it('gates per package, not all-or-nothing', () => {
+  it('HK-07: gates per package, not all-or-nothing', () => {
     const repo = emptyRepo();
     const other: InstalledPlugin = {
       ...projectPlugin,
@@ -549,7 +549,7 @@ describe('buildPlan hook gate (DOR-522)', () => {
     }
   });
 
-  it('reports a package’s unreadable hooks whether or not the gate allows it (DOR-1724)', () => {
+  it('HK-09: reports a package’s unreadable hooks whether or not the gate allows it (DOR-1724)', () => {
     // This used to take only the ALLOWED packages, on the reasoning that a
     // withheld package contributes nothing so its salvage losses are noise. That
     // had it backwards: the loss happens at READ time, before consent is a
@@ -636,7 +636,7 @@ describe('installed plugin skills reach the watched skills root (DOR-1518, DOR-1
       .map((a) => a.target as string);
   }
 
-  it('links a scheduled skill into .agents/skills even when only claude-code is enabled', () => {
+  it('SK-03: links a scheduled skill into .agents/skills even when only claude-code is enabled', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -660,7 +660,7 @@ describe('installed plugin skills reach the watched skills root (DOR-1518, DOR-1
     }
   });
 
-  it('links an UNSCHEDULED plugin skill there too, with the reason that applies to it', () => {
+  it('SK-02: links an UNSCHEDULED plugin skill there too, with the reason that applies to it', () => {
     // This was the opposite assertion until DOR-1847: `alpha` has no schedule,
     // so nothing linked it into `.agents/skills` and an OpenCode-, Cursor-,
     // Gemini- or Copilot-only project never saw it. The link is unconditional
@@ -709,7 +709,7 @@ describe('installed plugin skills reach the watched skills root (DOR-1518, DOR-1
     }
   });
 
-  it('warns about an unresolved plugin-root token in a scheduled skill it links', () => {
+  it('SK-07: warns about an unresolved plugin-root token in a scheduled skill it links', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -765,7 +765,7 @@ describe('installed skills reach .agents/skills whatever harnesses are enabled (
     }
   }
 
-  it('links them for an opencode-only project, and says so on the native action', () => {
+  it('SK-05: links them for an opencode-only project, and says so on the native action', () => {
     // Reproduced 2026-09-07: with `harnesses: ['opencode']` the plan claimed
     // `native` "via the Codex namespaced symlink" while nothing linked the
     // directory at all, so the skills reached nobody.
@@ -785,7 +785,7 @@ describe('installed skills reach .agents/skills whatever harnesses are enabled (
     }
   });
 
-  it('links them for a cursor-only project, which used to be a whole-plugin drop', () => {
+  it('SK-05: links them for a cursor-only project, which used to be a whole-plugin drop', () => {
     const plan = planFor(['cursor']);
 
     expect(installedLinks(plan)).toEqual([
@@ -805,7 +805,7 @@ describe('installed skills reach .agents/skills whatever harnesses are enabled (
     ).toEqual([]);
   });
 
-  it('links them for a claude-code-only project too, beside its own .claude/skills links', () => {
+  it('SK-05: links them for a claude-code-only project too, beside its own .claude/skills links', () => {
     // Unconditional: `.agents/skills` is the one directory five harnesses read,
     // so a package's skills are there whether or not one of them is enabled today.
     const plan = planFor(['claude-code']);

@@ -134,7 +134,7 @@ function sync(repoRoot: string, home: string): void {
 }
 
 describe('checkPlan().orphans is the next applyPlan().swept', () => {
-  it('names all ten paths when a skill is deleted and a plugin uninstalled', () => {
+  it('AP-07, VC-01: names all ten paths when a skill is deleted and a plugin uninstalled', () => {
     const built = stageRepo();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -169,7 +169,7 @@ describe('checkPlan().orphans is the next applyPlan().swept', () => {
     expect([...swept].sort()).toEqual([...preview].sort());
   });
 
-  it('is not clean when only the plugin is uninstalled, and names the nine paths', () => {
+  it('AP-07, VC-01: is not clean when only the plugin is uninstalled, and names the nine paths', () => {
     const built = stageRepo();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -203,7 +203,7 @@ describe('checkPlan().orphans is the next applyPlan().swept', () => {
 });
 
 describe('each find half, against the case its sweep owns', () => {
-  it('findInstalledOrphans names an uninstalled plugin’s links, never a real directory', () => {
+  it('AP-07, AP-08: findInstalledOrphans names an uninstalled plugin’s links, never a real directory', () => {
     const built = stageRepo();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -219,7 +219,7 @@ describe('each find half, against the case its sweep owns', () => {
     expect(found.sort()).toEqual(['.agents/skills/acme__greet', '.claude/skills/acme__greet']);
   });
 
-  it('findOrphanedAuthoredLinks names a link whose skill was deleted, not one that resolves', () => {
+  it('AP-07, SK-10: findOrphanedAuthoredLinks names a link whose skill was deleted, not one that resolves', () => {
     const built = stageRepo();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -238,7 +238,7 @@ describe('each find half, against the case its sweep owns', () => {
     expect(found).toEqual(['.claude/skills/alpha']);
   });
 
-  it('findGeneratedOrphans names a hooks file it owns with its sidecar, never a hand-written one', () => {
+  it('AP-07, HK-11: findGeneratedOrphans names a hooks file it owns with its sidecar, never a hand-written one', () => {
     const built = stageRepo();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -254,7 +254,7 @@ describe('each find half, against the case its sweep owns', () => {
     expect(found).toEqual(['.codex/hooks.json', '.codex/hooks.json.dorkos-generated']);
   });
 
-  it('findGeneratedCommandOrphans names the wrapper and its .gitignore, never an authored file', () => {
+  it('AP-07, CM-01: findGeneratedCommandOrphans names the wrapper and its .gitignore, never an authored file', () => {
     const built = stageRepo();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -271,7 +271,7 @@ describe('each find half, against the case its sweep owns', () => {
     ]);
   });
 
-  it('findOpencodeCommandOrphans names the wrapper and its .gitignore, never an authored file', () => {
+  it('AP-07, CM-03: findOpencodeCommandOrphans names the wrapper and its .gitignore, never an authored file', () => {
     const built = stageRepo();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -289,7 +289,7 @@ describe('each find half, against the case its sweep owns', () => {
     ]);
   });
 
-  it('findSettingsHooksOrphan names the settings file only while managed hooks are in it', () => {
+  it('AP-07, HK-06: findSettingsHooksOrphan names the settings file only while managed hooks are in it', () => {
     const built = stageRepo();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -309,7 +309,7 @@ describe('each find half, against the case its sweep owns', () => {
 });
 
 describe('an atomic-write temp file in a swept command directory', () => {
-  it('is named in the preview once it is debris, and never while it is live', () => {
+  it('AP-07, AP-10: is named in the preview once it is debris, and never while it is live', () => {
     const built = stageRepo();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -334,7 +334,7 @@ describe('an atomic-write temp file in a swept command directory', () => {
 });
 
 describe('a plan narrowed to one harness', () => {
-  it('reports no orphans, because a --fix on it sweeps nothing', () => {
+  it('AP-07: reports no orphans, because a --fix on it sweeps nothing', () => {
     const built = stageRepo();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -365,7 +365,7 @@ describe('a command directory that cannot be listed', () => {
   // nobody may read, and the bare `readdirSync` behind it then raised ENOTDIR or
   // EACCES — out of the middle of the one command a person runs to be TOLD what
   // is wrong with their tree (`apply.ts`'s own invariant, and AP-05).
-  it('is nothing to list rather than an exception, when it is a file', () => {
+  it('AP-11, VC-01: is nothing to list rather than an exception, when it is a file', () => {
     const built = stageRepo();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -381,7 +381,7 @@ describe('a command directory that cannot be listed', () => {
     expect(checkPlan(repo, plan).orphans).toEqual([]);
   });
 
-  it.runIf(CAN_STAGE_UNREADABLE)('is nothing to list when nobody may read it', () => {
+  it.runIf(CAN_STAGE_UNREADABLE)('AP-11, VC-01: is nothing to list when nobody may read it', () => {
     const built = stageRepo();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -392,25 +392,28 @@ describe('a command directory that cannot be listed', () => {
     expect(() => checkPlan(repo, project(repo, { dorkHome }))).not.toThrow();
   });
 
-  it.runIf(CAN_STAGE_UNREADABLE)('is nothing to list when one wrapper dir is unreadable', () => {
-    const built = stageRepo();
-    repo = built.repoRoot;
-    dorkHome = built.home;
-    sync(repo, dorkHome);
-    // The dir itself lists fine; the per-package walk inside it is the one that
-    // cannot read, which is a second bare `readdirSync` and a second throw.
-    makeUnreadable(join(repo, '.claude', 'commands', 'acme'));
+  it.runIf(CAN_STAGE_UNREADABLE)(
+    'AP-11, VC-01: is nothing to list when one wrapper dir is unreadable',
+    () => {
+      const built = stageRepo();
+      repo = built.repoRoot;
+      dorkHome = built.home;
+      sync(repo, dorkHome);
+      // The dir itself lists fine; the per-package walk inside it is the one that
+      // cannot read, which is a second bare `readdirSync` and a second throw.
+      makeUnreadable(join(repo, '.claude', 'commands', 'acme'));
 
-    const drift = checkPlan(repo, project(repo, { dorkHome }));
+      const drift = checkPlan(repo, project(repo, { dorkHome }));
 
-    // Nothing was read there, so nothing is claimed about it: the wrapper files
-    // are neither named as orphans nor mistaken for gone.
-    expect(drift.orphans.filter((p) => p.startsWith('.claude/commands/'))).toEqual([]);
-  });
+      // Nothing was read there, so nothing is claimed about it: the wrapper files
+      // are neither named as orphans nor mistaken for gone.
+      expect(drift.orphans.filter((p) => p.startsWith('.claude/commands/'))).toEqual([]);
+    }
+  );
 });
 
 describe('a wrapper directory nobody can read', () => {
-  it.runIf(CAN_STAGE_UNREADABLE)('is not tidied away as though it were empty', () => {
+  it.runIf(CAN_STAGE_UNREADABLE)('AP-07: is not tidied away as though it were empty', () => {
     const built = stageRepo();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -429,7 +432,7 @@ describe('a wrapper directory nobody can read', () => {
     expect(result.swept.filter((p) => p.startsWith('.claude/commands/ghost'))).toEqual([]);
   });
 
-  it('is still tidied away when it really is empty', () => {
+  it('AP-07, AP-08: is still tidied away when it really is empty', () => {
     const built = stageRepo();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -446,7 +449,7 @@ describe('a wrapper directory nobody can read', () => {
 });
 
 describe('applyPlan refuses to sweep a plan narrowed to one harness', () => {
-  it('throws rather than deleting the other harnesses’ live projections', () => {
+  it('AP-07: throws rather than deleting the other harnesses’ live projections', () => {
     const built = stageRepo();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -474,7 +477,7 @@ describe('applyPlan refuses to sweep a plan narrowed to one harness', () => {
 });
 
 describe('the orphan list is sorted and unique as it leaves the engine', () => {
-  it('needs no sorting by its reader', () => {
+  it('VC-01: needs no sorting by its reader', () => {
     const built = stageRepo();
     repo = built.repoRoot;
     dorkHome = built.home;

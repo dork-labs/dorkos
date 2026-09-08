@@ -27,7 +27,8 @@
     "./vendor": {
       "types": "./src/vendor/rulesync-maps.ts",
       "default": "./dist/vendor/rulesync-maps.js"
-    }
+    },
+    "./journeys": "./src/__tests__/journeys/index.ts"
   },
   "dependencies": {
     "@dorkos/marketplace": "workspace:*",

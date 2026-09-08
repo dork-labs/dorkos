@@ -89,7 +89,7 @@ describe('a checkout that could not make the links', () => {
   }
 
   it(
-    '--check explains a checkout with symlinks turned off, instead of calling it drift',
+    'J-10, AP-06: --check explains a checkout with symlinks turned off, instead of calling it drift',
     async () => {
       await stageSymlinksOffCheckout();
 
@@ -107,7 +107,7 @@ describe('a checkout that could not make the links', () => {
   );
 
   it(
-    '--fix says the same thing, so the two modes never disagree in print',
+    'J-10, AP-06: --fix says the same thing, so the two modes never disagree in print',
     async () => {
       // The mode a person reaches for after reading `--check`. It refuses, and the
       // refusal has to carry the way out — otherwise the sentence that names
@@ -130,7 +130,7 @@ describe('a checkout that could not make the links', () => {
   );
 
   it(
-    'never hangs on a named pipe at a link target, and calls it an ordinary conflict',
+    'AP-04: never hangs on a named pipe at a link target, and calls it an ordinary conflict',
     (ctx) => {
       // `occupantKind` answers `'file'` for anything real that is not a directory,
       // a FIFO included, and `readFileSync` on a FIFO with no writer BLOCKS IN

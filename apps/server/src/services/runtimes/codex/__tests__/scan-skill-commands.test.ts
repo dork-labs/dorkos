@@ -34,7 +34,7 @@ describe('scanSkillCommands', () => {
     await rm(cwd, { recursive: true, force: true });
   });
 
-  it('maps each project skill to a /<name> command with its frontmatter description', async () => {
+  it('SK-08: maps each project skill to a /<name> command with its frontmatter description', async () => {
     await writeSkill(cwd, 'deploy', 'Ship the app to production');
     await writeSkill(cwd, 'analyze', 'Analyze the codebase');
 
@@ -51,7 +51,7 @@ describe('scanSkillCommands', () => {
     expect(scanSkillCommands(cwd)).toEqual([]);
   });
 
-  it('skips a skill whose SKILL.md has invalid frontmatter, keeping the rest', async () => {
+  it('SK-08: skips a skill whose SKILL.md has invalid frontmatter, keeping the rest', async () => {
     await writeSkill(cwd, 'good', 'A valid skill');
     // Missing required `description` → parse fails, skill is skipped (not fatal).
     const badDir = path.join(cwd, '.agents', 'skills', 'bad');
@@ -67,7 +67,7 @@ describe('scanSkillCommands', () => {
     ]);
   });
 
-  it('leaves a user-invocable:false skill out of the palette', async () => {
+  it('SK-08: leaves a user-invocable:false skill out of the palette', async () => {
     await writeSkill(cwd, 'deploy', 'Ship the app to production');
     await writeSkill(cwd, 'house-style', 'Background knowledge', 'user-invocable: false\n');
 
@@ -76,7 +76,7 @@ describe('scanSkillCommands', () => {
     ]);
   });
 
-  it('keeps a disable-model-invocation:true skill — person-only is what a palette is for', async () => {
+  it('SK-08: keeps a disable-model-invocation:true skill — person-only is what a palette is for', async () => {
     await writeSkill(cwd, 'release', 'Cut a release', 'disable-model-invocation: true\n');
 
     expect(scanSkillCommands(cwd)).toEqual([
@@ -84,7 +84,7 @@ describe('scanSkillCommands', () => {
     ]);
   });
 
-  it('hides a skill that says user-invocable: no — YAML 1.1 words mean what they say', async () => {
+  it('SK-08: hides a skill that says user-invocable: no — YAML 1.1 words mean what they say', async () => {
     // gray-matter (js-yaml v4, YAML 1.2 core) hands `no` over as the STRING
     // "no". Treating that as "not a boolean, ignore it" would leave a skill
     // its author hid sitting in the palette.
@@ -94,7 +94,7 @@ describe('scanSkillCommands', () => {
     expect(scanSkillCommands(cwd).map((c) => c.command)).toEqual(['deploy']);
   });
 
-  it('keeps a skill whose user-invocable value is unreadable, rather than dropping it', async () => {
+  it('SK-08: keeps a skill whose user-invocable value is unreadable, rather than dropping it', async () => {
     // Degrade to visible, never delete: an unparseable optional field must not
     // make the whole skill disappear from the palette.
     await writeSkill(cwd, 'deploy', 'Ship the app', 'user-invocable: maybe\n');
@@ -102,7 +102,7 @@ describe('scanSkillCommands', () => {
     expect(scanSkillCommands(cwd).map((c) => c.command)).toEqual(['deploy']);
   });
 
-  it('keeps a skill that declares user-invocable:true explicitly', async () => {
+  it('SK-08: keeps a skill that declares user-invocable:true explicitly', async () => {
     await writeSkill(cwd, 'deploy', 'Ship the app', 'user-invocable: true\n');
 
     expect(scanSkillCommands(cwd).map((c) => c.command)).toEqual(['deploy']);

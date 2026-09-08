@@ -15,7 +15,6 @@
  * the warning paths can be asserted.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createHash } from 'node:crypto';
 import {
   existsSync,
   lstatSync,
@@ -32,9 +31,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OPERATING_SKILLS_PACK, OPERATING_SKILLS_VERSION } from '@dorkos/operating-skills';
 import { seedOperatingSkills } from '@dorkos/operating-skills';
-import { writeSkillFile } from '@dorkos/skills/writer';
-import { parseSkillFile } from '@dorkos/skills/parser';
-import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
+import { readSeededSkill, writeStalePackSkill } from './journeys/pack-stamp.js';
 
 vi.mock('../../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -98,58 +95,6 @@ function buildEmptyAgentWorkspace(name: string): string {
 }
 
 /**
- * Write a pack skill stamped as DorkOS's own at an OLDER pack version, exactly
- * as `seed.ts` would have written it back then.
- *
- * The content hash has to match the trimmed body or `decide()` classifies the
- * file as user-edited and returns `preserved` — which would make the ratchet
- * test assert the opposite of what it claims to. `writeSkillFile` is the same
- * writer the seeder uses, so the frontmatter shape cannot drift from it here.
- *
- * @param agentDir - Workspace root to write into.
- * @param name - Pack skill name (must be a real one, or nothing upgrades it).
- * @param body - The older body this stamp claims to describe.
- * @param version - The pack version to stamp, lower than the current one.
- */
-async function writeStalePackSkill(
-  agentDir: string,
-  name: string,
-  body: string,
-  version: number
-): Promise<void> {
-  const skill = OPERATING_SKILLS_PACK.find((s) => s.name === name);
-  if (!skill) throw new Error(`${name} is not in the pack; the ratchet test would prove nothing`);
-  await writeSkillFile(
-    join(agentDir, '.agents', 'skills'),
-    name,
-    {
-      name,
-      description: skill.description,
-      metadata: {
-        dorkosPack: 'operating-dorkos',
-        dorkosPackVersion: String(version),
-        dorkosContentHash: createHash('sha256').update(body.trim()).digest('hex'),
-      },
-    },
-    body
-  );
-}
-
-/** Read a seeded SKILL.md back through the same parser the seeder decides with. */
-function readSeededSkill(agentDir: string, name: string): { body: string; version?: string } {
-  const filePath = join(agentDir, '.agents', 'skills', name, 'SKILL.md');
-  const parsed = parseSkillFile(filePath, readFileSync(filePath, 'utf-8'), SkillFrontmatterSchema, {
-    requireNameMatch: false,
-  });
-  if (!parsed.ok) throw new Error(`Could not parse ${filePath}: ${parsed.error}`);
-  const version = parsed.definition.meta.metadata?.dorkosPackVersion;
-  return {
-    body: parsed.definition.body,
-    version: typeof version === 'string' ? version : undefined,
-  };
-}
-
-/**
  * Install a project-scoped marketplace plugin into a workspace that ships BOTH
  * a skill and a hook, modelled on the real `flow` plugin. The hook is a shell
  * command a harness would run unattended — exactly what must not be projected
@@ -200,7 +145,7 @@ afterEach(() => {
 });
 
 describe('projectAgentWorkspace', () => {
-  it('scaffolds a harness manifest and links each skill where Claude Code reads it', () => {
+  it('TR-03, IN-04: scaffolds a harness manifest and links each skill where Claude Code reads it', () => {
     const agentDir = buildAgentWorkspace('dorkbot', ['operating-dorkos', 'running-agents']);
 
     const result = projectAgentWorkspace(agentDir);
@@ -222,7 +167,7 @@ describe('projectAgentWorkspace', () => {
     }
   });
 
-  it('is idempotent — a second run changes nothing and reports no conflict', () => {
+  it('AP-01: is idempotent — a second run changes nothing and reports no conflict', () => {
     const agentDir = buildAgentWorkspace('dorkbot');
 
     const first = projectAgentWorkspace(agentDir);
@@ -241,7 +186,7 @@ describe('projectAgentWorkspace', () => {
     );
   });
 
-  it('projects an installed package skills but never its shell hooks', () => {
+  it('HK-08: projects an installed package skills but never its shell hooks', () => {
     // The regression guard for the gate. `project()` with no `allowPluginHooks`
     // lets EVERY installed package contribute hooks, and this pass runs
     // unattended (agent creation, server boot) with nobody to approve them —
@@ -280,7 +225,7 @@ describe('projectAgentWorkspace', () => {
     expect(settings).not.toContain('git rev-parse');
   });
 
-  it('scaffolds a Claude-Code-only manifest so no hooks file is ever generated', () => {
+  it('HK-08: scaffolds a Claude-Code-only manifest so no hooks file is ever generated', () => {
     // `allowPluginHooks` gates INSTALLED-package hooks only. The workspace's own
     // `.claude/settings.json` hooks come in through `loadClaudeHooks`, merged
     // unconditionally, and a codex-enabled manifest turns them into a generated
@@ -341,7 +286,7 @@ describe('projectAgentWorkspace', () => {
     expect(manifest.harnesses).toEqual(['claude-code', 'codex']);
   });
 
-  it('keeps failing diagnosably when .claude/settings.json cannot be parsed', () => {
+  it('AP-11: keeps failing diagnosably when .claude/settings.json cannot be parsed', () => {
     // A trailing comma in a hand-edited settings file makes the engine's parse
     // throw on every boot. That must not crash anything, and the warning has to
     // name the workspace and the reason — it is the only signal a person gets.
@@ -391,7 +336,7 @@ describe('projectAgentWorkspace', () => {
     );
   });
 
-  it('reports a conflict instead of destroying a real file at a projection target', () => {
+  it('AP-04: reports a conflict instead of destroying a real file at a projection target', () => {
     const agentDir = buildAgentWorkspace('hand-authored');
     mkdirSync(join(agentDir, '.claude', 'skills', 'operating-dorkos'), { recursive: true });
     const authored = join(agentDir, '.claude', 'skills', 'operating-dorkos', 'SKILL.md');
@@ -435,7 +380,7 @@ describe('backfillAgentWorkspaceSkills', () => {
     );
   });
 
-  it('seeds a workspace that has no .agents/skills at all, and links it on the SAME pass', async () => {
+  it('SRC-05, TR-04: seeds a workspace that has no .agents/skills at all, and links it on the SAME pass', async () => {
     // The ordering guard, and the case that motivated DOR-671: 12 of the 13
     // agents on the machine this was measured on had no `.agents/skills/` at
     // all. `projectAgentWorkspace` returns early when that directory is absent,
@@ -462,7 +407,7 @@ describe('backfillAgentWorkspaceSkills', () => {
     }
   });
 
-  it('upgrades an unmodified pack skill stamped with an older version', async () => {
+  it('SRC-05: upgrades an unmodified pack skill stamped with an older version', async () => {
     // The version ratchet. Pack bumps have carried safety corrections — v4
     // retracted "`dorkos uninstall` is the person's ungated path", v6 retracted
     // "`tasks_delete` carries no gate of its own" — and before this pass an
@@ -482,7 +427,7 @@ describe('backfillAgentWorkspaceSkills', () => {
     });
   });
 
-  it('leaves a registered workspace outside dork home completely untouched', async () => {
+  it('AP-13: leaves a registered workspace outside dork home completely untouched', async () => {
     // A registered agent can point at a person's own git repository. Booting the
     // server is not permission to write a harness manifest and a `.claude/` tree
     // into one, so the pass draws its boundary at `<dorkHome>/agents/`.
@@ -507,7 +452,7 @@ describe('backfillAgentWorkspaceSkills', () => {
     expect(existsSync(join(outside, '.agents', 'harness.manifest.json'))).toBe(false);
   });
 
-  it('never seeds a workspace outside dork home (DOR-662)', async () => {
+  it('AP-13: never seeds a workspace outside dork home (DOR-662)', async () => {
     // The boundary now guards a WRITE of skill content, not just symlinks. A dev
     // server must not be able to seed into the operator's real `~/.dork/agents`,
     // and a boot must not seed into somebody's repository at all — repairing
@@ -526,7 +471,7 @@ describe('backfillAgentWorkspaceSkills', () => {
     expect(listTree(outside)).toEqual(['README.md']);
   });
 
-  it('never clobbers a hand-authored skill that shares a pack name', async () => {
+  it('SRC-05, AP-13: never clobbers a hand-authored skill that shares a pack name', async () => {
     // Both sides at once, which nothing exercised before: until the pass seeded,
     // a workspace like this had nothing to project, so the projection never even
     // reached the conflicting target.
@@ -613,7 +558,7 @@ describe('backfillAgentWorkspaceSkills', () => {
     expect(summary.projected).toBe(1);
   });
 
-  it('does not follow a symlink inside the agents directory out to a real repo', async () => {
+  it('AP-13: does not follow a symlink inside the agents directory out to a real repo', async () => {
     // The bypass in the other direction: a link planted under `<dorkHome>/agents`
     // must not make somebody's repository writable by this pass.
     const outside = join(tmpRoot, 'someones-real-repo');
@@ -722,7 +667,7 @@ describe('backfillAgentWorkspaceSkills', () => {
     );
   });
 
-  it('does not mistake a sibling of the agents directory for one of its own', async () => {
+  it('AP-13: does not mistake a sibling of the agents directory for one of its own', async () => {
     // `<dorkHome>/agents-backup` shares a string prefix with `<dorkHome>/agents`
     // without being inside it.
     const sibling = join(tmpRoot, 'agents-backup', 'copied-agent');
@@ -799,7 +744,7 @@ describe('backfillAgentWorkspaceSkills', () => {
     );
   });
 
-  it('is idempotent across boots', async () => {
+  it('TR-04, AP-01: is idempotent across boots', async () => {
     const agentDir = buildAgentWorkspace('rebooting-agent');
 
     await backfillAgentWorkspaceSkills([agentDir], tmpRoot);

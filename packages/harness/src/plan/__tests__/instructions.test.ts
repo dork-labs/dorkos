@@ -14,7 +14,7 @@ const SCAFFOLD_TARGETS = {
 } as const;
 
 describe('planInstruction', () => {
-  it('drops on EVERY harness when there is no AGENTS.md, and calls none of them native (IN-03)', () => {
+  it('IN-03: drops on EVERY harness when there is no AGENTS.md, and calls none of them native', () => {
     // A `native` for a file that is not there is the plan telling the operator a
     // harness reads something that does not exist. Before this, the same plan
     // could carry `codex native AGENTS.md` beside `claude-code drop … no
@@ -30,7 +30,7 @@ describe('planInstruction', () => {
     }
   });
 
-  it('is native for the three harnesses that read AGENTS.md once it exists', () => {
+  it('IN-01: is native for the three harnesses that read AGENTS.md once it exists', () => {
     const actions = NATIVE_READERS.map((harness) => planInstruction(harness, true));
     expect(actions).toHaveLength(3);
     for (const action of actions) {
@@ -39,7 +39,7 @@ describe('planInstruction', () => {
     }
   });
 
-  it('scaffolds a pointer for the three harnesses that cannot read AGENTS.md, once it exists', () => {
+  it('IN-01: scaffolds a pointer for the three harnesses that cannot read AGENTS.md, once it exists', () => {
     const entries = Object.entries(SCAFFOLD_TARGETS) as [keyof typeof SCAFFOLD_TARGETS, string][];
     expect(entries).toHaveLength(3);
     for (const [harness, target] of entries) {

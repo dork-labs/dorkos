@@ -3,7 +3,7 @@ import { formatDropList, formatWarnings } from '../drop-list.js';
 import type { ProjectionPlan } from '../../plan/types.js';
 
 describe('formatDropList', () => {
-  it('groups drops by harness with their reasons', () => {
+  it('VC-01, VC-02: groups drops by harness with their reasons', () => {
     // The drop list is the honesty surface — each drop shows its harness + reason.
     const plan: ProjectionPlan = {
       actions: [],
@@ -26,7 +26,7 @@ describe('formatDropList', () => {
     expect(out).toContain('no slash-command format');
   });
 
-  it('files a drop that is not about one harness under "plugin layers", not under its placeholder', () => {
+  it('VC-02: files a drop that is not about one harness under "plugin layers", not under its placeholder', () => {
     // A non-portable plugin layer has no home in ANY harness, and it must still
     // carry a `HarnessId` — so it used to be printed under `codex:` in projects
     // that do not run Codex (contract VC-02).
@@ -69,7 +69,7 @@ describe('formatDropList', () => {
 });
 
 describe('formatWarnings', () => {
-  it('groups warnings by harness with their reasons', () => {
+  it('VC-01: groups warnings by harness with their reasons', () => {
     const out = formatWarnings({
       actions: [],
       drops: [],

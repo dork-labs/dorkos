@@ -108,7 +108,7 @@ function expectHandWrittenFilesIntact(repoRoot: string): void {
 }
 
 describe('J-02 — an existing Codex project adopts DorkOS', () => {
-  it('adds the plugin skill link, leaves all three hand-written hooks files alone, and names each', () => {
+  it('J-02, HK-11, AP-07: adds the plugin skill link, leaves all three hand-written hooks files alone, and names each', () => {
     const staged = stageCodexFirstRepo();
     repo = staged.repoRoot;
     dorkHome = staged.home;
@@ -139,7 +139,7 @@ describe('J-02 — an existing Codex project adopts DorkOS', () => {
     ]);
   });
 
-  it('still never overwrites the hand-written Codex file once the plugin hooks are allowed', () => {
+  it('J-02, HK-11: still never overwrites the hand-written Codex file once the plugin hooks are allowed', () => {
     const staged = stageCodexFirstRepo();
     repo = staged.repoRoot;
     dorkHome = staged.home;

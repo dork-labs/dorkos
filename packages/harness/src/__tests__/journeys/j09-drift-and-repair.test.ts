@@ -114,7 +114,7 @@ function targets(actions: { target?: string }[]): string[] {
 }
 
 describe('J-09 — drift and repair', () => {
-  it('names every stale projection and every dead link, and repairs exactly those', () => {
+  it('J-09, AP-01, SK-10: names every stale projection and every dead link, and repairs exactly those', () => {
     stageProjectedRepo();
 
     // The person edits the generated hooks file. Its sidecar stops matching, so
@@ -165,7 +165,7 @@ describe('J-09 — drift and repair', () => {
     expect(checkPlan(repo, plan()).clean).toBe(true);
   });
 
-  it('treats a dead link at the generated hooks file as drift and ends fully clean', () => {
+  it('J-09, AP-05: treats a dead link at the generated hooks file as drift and ends fully clean', () => {
     stageProjectedRepo();
 
     // Same week, but the hooks file was moved away and a broken link left behind.

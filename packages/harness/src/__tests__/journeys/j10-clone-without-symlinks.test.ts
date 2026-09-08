@@ -168,7 +168,7 @@ const SLOW_UNDER_LOAD_MS = 30_000;
 
 describe('J-10 — a clone whose checkout cannot make symlinks', () => {
   it(
-    'reports every authored link as a conflict that names symlinks, and writes nothing',
+    'J-10, AP-06: reports every authored link as a conflict that names symlinks, and writes nothing',
     () => {
       stageProjectedRepo();
       commitProjectedRepo();
@@ -218,7 +218,7 @@ describe('J-10 — a clone whose checkout cannot make symlinks', () => {
   );
 
   it(
-    'is clean in a normal clone, and the committed link text is relative (AP-06)',
+    'J-10, AP-06: is clean in a normal clone, and the committed link text is relative',
     () => {
       stageProjectedRepo();
       commitProjectedRepo();
@@ -262,7 +262,7 @@ describe('J-10 — a clone whose checkout cannot make symlinks', () => {
   );
 
   it(
-    'keeps every planned path forward-slashed, so a Windows plan reads the same',
+    'J-10, AP-16: keeps every planned path forward-slashed, so a Windows plan reads the same',
     () => {
       stageProjectedRepo();
       const plan = project(origin);
