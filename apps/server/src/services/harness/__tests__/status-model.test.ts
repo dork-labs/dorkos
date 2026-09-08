@@ -253,6 +253,25 @@ function stagePlugin(
   if (parts.hooksJson !== undefined) writeAt(join(plugin, 'hooks', 'hooks.json'), parts.hooksJson);
 }
 
+/**
+ * A Claude-Code-only project with one plugin whose skill mentions
+ * `${CLAUDE_PLUGIN_ROOT}`.
+ *
+ * Two placeholder harnesses meet in this one tree: the warning about the token
+ * is emitted once per harness including Codex, and the unconditional
+ * `.agents/skills` link is attributed to Codex too — neither of which this
+ * project runs.
+ */
+function stagePluginRootSkill(): { repo: string; home: string } {
+  const { repo, home } = stageBare('pluginroot', ['claude-code']);
+  stagePlugin(repo, 'acme', { layers: ['skills'] });
+  writeAt(
+    join(repo, '.dork', 'plugins', 'acme', 'skills', 'greet', 'SKILL.md'),
+    '---\nname: greet\ndescription: The greet skill\n---\n\nRun ${CLAUDE_PLUGIN_ROOT}/bin/x\n'
+  );
+  return { repo, home };
+}
+
 describe('VC-01 — the status model derives eight states from five reads', () => {
   it('VC-01: J-01 derives 17 rows and 51 cells, with no enabled harness missing a cell', () => {
     // Seeded defect: a `rows: []` early return. Asserted first and on its own,
@@ -565,20 +584,51 @@ describe('VC-01 — the status model derives eight states from five reads', () =
         reasons.some((r) => r.includes(expected)),
         `${tag}: ${reasons.join(' | ')}`
       ).toBe(true);
-
-      if (tag === 'pluginroot') {
-        // One skill is one row and one count. The warning used to carry no
-        // source, so it matched no row and became a second `acme__greet` — two
-        // rows and `counts.skills` of 2 for a single directory.
-        expect(status.rows.filter((r) => r.artifact === 'skill')).toHaveLength(1);
-        expect(status.counts.skills).toBe(1);
-        // And the link a sync WILL write for a harness this project does not
-        // enable is named rather than invisible.
-        expect(status.projectLevel).toContainEqual(
-          expect.objectContaining({ kind: 'write', target: '.agents/skills/acme__greet' })
-        );
-      }
     }
+  });
+
+  it('VC-01: a plugin-root warning annotates its skill instead of forking a second row', () => {
+    // Seeded defect: revert `source` on `pluginRootSkillWarning`. The warning
+    // then matches no row and becomes a second `acme__greet` — one directory
+    // drawn twice, above a count that agrees with the duplicate.
+    const { repo, home } = stagePluginRootSkill();
+
+    const status = statusOf(repo, home);
+
+    expect(status.rows.filter((r) => r.artifact === 'skill')).toHaveLength(1);
+    const skill = row(status, 'skill', '.dork/plugins/acme/skills/greet', 'acme__greet');
+    expect(skill.cells['claude-code']?.warnings).toEqual([
+      'skill SKILL.md references ${CLAUDE_PLUGIN_ROOT}, which only resolves in plugin context; the projected copy will not expand it',
+    ]);
+  });
+
+  it('VC-01: one plugin skill is one row and one skill count', () => {
+    // The number under the profile row has to match the number of rows the page
+    // draws, and the duplicate above is exactly how the two come apart.
+    const { repo, home } = stagePluginRootSkill();
+
+    const status = statusOf(repo, home);
+
+    expect(status.counts.skills).toBe(1);
+    expect(status.counts.skills).toBe(status.rows.filter((r) => r.artifact === 'skill').length);
+  });
+
+  it('VC-01: a link a sync will write for a harness nobody enabled is still named', () => {
+    // Seeded defect: stop routing unattributed writes to `projectLevel`. The
+    // `.agents/skills` link exists for the directory rather than for one reader,
+    // so the plan attributes it to Codex whether or not Codex is on — and on a
+    // Claude-Code-only project it then appears in no column at all while a sync
+    // creates the file. A preview that omits a file the click creates has the
+    // same hole as one that omits a file the click deletes.
+    const { repo, home } = stagePluginRootSkill();
+
+    const status = statusOf(repo, home);
+
+    expect(status.projectLevel).toContainEqual(
+      expect.objectContaining({ kind: 'write', target: '.agents/skills/acme__greet' })
+    );
+    // And it is a project-level entry, not a Codex cell on a project without Codex.
+    for (const r of status.rows) expect(Object.keys(r.cells)).toEqual(['claude-code']);
   });
 
   it('VC-01: a read-time loss is project-level even when its placeholder harness is enabled', () => {
