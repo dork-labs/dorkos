@@ -11,8 +11,14 @@ import { cn } from '@/layers/shared/lib/utils';
 import { collapsedChipLabel, harnessRowCells, isRowFullyShared } from '../lib/harness-status';
 import { HarnessStateChip } from './HarnessStateChip';
 
-/** The one sentence an adoptable skill gets, and the only advice on the row. */
-export const ADOPTABLE_ADVICE =
+/**
+ * The one sentence an adoptable skill gets, and the only advice on the row.
+ *
+ * Module-private: the row is the only thing that says it, and the tests that
+ * check the wording assert the literal — a test comparing a string against the
+ * constant that produced it cannot fail on a copy change.
+ */
+const ADOPTABLE_ADVICE =
   'Lives in .claude/skills. Move it to .agents/skills so every agent can read it.';
 
 /** What a {@link SkillHarnessRow} draws. */

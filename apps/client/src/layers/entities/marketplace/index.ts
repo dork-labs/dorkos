@@ -35,8 +35,9 @@ export { useAddMarketplaceSource } from './model/use-add-marketplace-source';
 
 export { useRemoveMarketplaceSource } from './model/use-remove-marketplace-source';
 
-// --- UI ---
-// What an agent has installed: a package fact with no surface of its own, so it
-// lives with the query that serves it rather than in whichever feature drew it
-// first. `ScopeBadge` stays slice-private — it is a cell of this list.
-export { SkillPacksList } from './ui/SkillPacksList';
+// No UI. `SkillPacksList` drew the profile's Skills page until the harness
+// status arrived: it listed installed skill-packs and told a person with
+// thirty-one skills they had none, because a skill-pack is one of the ways a
+// skill gets into a folder and not the only one. `entities/harness` answers the
+// same question from what is actually on disk, so the list and the `ScopeBadge`
+// that was its only cell are deleted rather than left compiling beside it.

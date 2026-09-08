@@ -181,8 +181,13 @@ export function collapsedChipLabel(count: number): string {
   return `Shared with all ${count}`;
 }
 
-/** One file a tool cannot see, and the plan's own sentence about why. */
-export interface HarnessDropEntry {
+/**
+ * One file a tool cannot see, and the plan's own sentence about why.
+ *
+ * Not exported: it is reachable through {@link HarnessDropGroup}, which is what
+ * the panels take, and a name nothing imports is a name that goes stale.
+ */
+interface HarnessDropEntry {
   /** Stable per panel — `(artifact, source, name)`, the row key. */
   key: string;
   /** What kind of agent file it is. */

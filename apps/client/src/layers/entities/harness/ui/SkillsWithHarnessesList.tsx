@@ -26,6 +26,15 @@ const HARNESS_DOCS_URL = 'https://dorkos.ai/docs/guides/cli-usage#agent-files';
 export interface SkillsWithHarnessesListProps {
   /** The agent's project directory — what "shared here" is scoped to. */
   projectPath: string;
+  /**
+   * Whether the zero-skills state draws its own "Browse skill-packs" link.
+   *
+   * False when the surface around this list already keeps one — the profile's
+   * Skills page has it at the foot, and two links to one place on one screen is
+   * one more than a person needs. Defaults to true, because a list mounted on
+   * its own still has to answer "so where do I get some".
+   */
+  showBrowseLink?: boolean;
 }
 
 /**
@@ -58,7 +67,7 @@ function LoadingRows() {
 /**
  * A path in, a list out — with one chip per agent tool on every row.
  *
- * Entity UI, the same reasoning `SkillPacksList`'s own doc gave: it takes a
+ * Entity UI, for the reason the skill-pack list it replaced gave: it takes a
  * project directory and draws what is in it, and no surface owns the shape of a
  * row, which is what keeps a second one from drifting. The profile's Skills page
  * composes it.
@@ -72,7 +81,10 @@ function LoadingRows() {
  * a person they have no skills, which is the failure this whole page exists to
  * end.
  */
-export function SkillsWithHarnessesList({ projectPath }: SkillsWithHarnessesListProps) {
+export function SkillsWithHarnessesList({
+  projectPath,
+  showBrowseLink = true,
+}: SkillsWithHarnessesListProps) {
   const { data: status, isPending, error, refetch } = useHarnessStatus(projectPath);
   const [showEveryHarness, setShowEveryHarness] = useState(false);
   const toggleId = useId();
@@ -99,7 +111,7 @@ export function SkillsWithHarnessesList({ projectPath }: SkillsWithHarnessesList
     return (
       <div className="flex flex-col items-start gap-1 py-2">
         <p className="text-muted-foreground text-xs">No skills here yet.</p>
-        {navigate && (
+        {showBrowseLink && navigate && (
           <Button
             variant="ghost"
             size="sm"
