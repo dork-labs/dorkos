@@ -18,7 +18,11 @@ import {
   HARNESS_STATUS_UNAVAILABLE,
   HARNESS_STATUS_UNREADABLE,
 } from '../../__fixtures__/harness-status';
+import { SkillHarnessRow } from '../SkillHarnessRow';
 import { SkillsWithHarnessesList } from '../SkillsWithHarnessesList';
+
+/** The row every enabled tool shares — the one that collapses. */
+const SHARED_SKILL_ROW = HARNESS_STATUS_ALL_SHARED.rows[0];
 
 function createWrapper(transport: Transport) {
   const queryClient = new QueryClient({
@@ -152,7 +156,11 @@ describe('SkillsWithHarnessesList — the collapse', () => {
     expect(within(warned).queryByRole('button')).not.toBeInTheDocument();
   });
 
-  it('lets the collapsed chip expand its own row', async () => {
+  it('lets the collapsed chip expand its own row, and collapse it again from the keyboard', async () => {
+    // Purpose: the chip is a toggle, not a one-way door. It used to render only
+    // while collapsed, so pressing it unmounted it: focus fell to <body>, the
+    // row had no control left, and 18 of this repository's 31 rows could never
+    // be re-collapsed. The same element has to survive both presses.
     const user = userEvent.setup();
     await renderWithStatus(HARNESS_STATUS_ALL_SHARED);
 
@@ -160,10 +168,59 @@ describe('SkillsWithHarnessesList — the collapse', () => {
     const chip = within(row).getByRole('button', { name: 'Shared with all 3' });
     expect(chip).toHaveAttribute('aria-expanded', 'false');
 
-    await user.click(chip);
+    chip.focus();
+    await user.keyboard('{Enter}');
 
-    expect(within(row).getAllByRole('listitem')).toHaveLength(3);
+    expect(document.activeElement).toBe(chip);
+    expect(chip).toHaveAttribute('aria-expanded', 'true');
     expect(within(row).getByRole('listitem', { name: 'Claude Code reads it' })).toBeInTheDocument();
+    expect(within(row).getByRole('listitem', { name: 'Codex shared' })).toBeInTheDocument();
+    expect(within(row).getByRole('listitem', { name: 'Cursor shared' })).toBeInTheDocument();
+
+    await user.keyboard('{Enter}');
+
+    expect(document.activeElement).toBe(chip);
+    expect(chip).toHaveAttribute('aria-expanded', 'false');
+    expect(
+      within(row).queryByRole('listitem', { name: 'Claude Code reads it' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps the chips in manifest order, never sorted', async () => {
+    // Purpose: the order in `.agents/harness.manifest.json` is the order the
+    // person wrote. Sorting it would make one row read differently on two
+    // screens, and the collapsed chip's own title is not enough to pin it.
+    const user = userEvent.setup();
+    await renderWithStatus(HARNESS_STATUS_READY);
+    await screen.findByRole('group', { name: 'release' });
+
+    await user.click(screen.getByRole('switch', { name: 'Show every agent tool' }));
+    const row = screen.getByRole('group', { name: 'browser-testing' });
+
+    expect(
+      within(row)
+        .getAllByRole('listitem')
+        .map((chip) => chip.getAttribute('aria-label'))
+    ).toEqual(['Claude Code reads it', 'Codex can’t see it', 'Cursor shared']);
+  });
+
+  it('clips the source path at its FRONT, keeping the path itself left-to-right', () => {
+    // Purpose: a skill's path is identified by its leaf and its head is what
+    // every row repeats, so the ellipsis belongs at the start. `dir="rtl"` is
+    // the whole mechanism, and the `<bdi dir="ltr">` inside it is required
+    // rather than decorative — without it the bidi algorithm claims any neutral
+    // character at either end of the path and paints it at the opposite one.
+    render(<SkillHarnessRow row={SHARED_SKILL_ROW} enabled={['claude-code']} showEveryHarness />);
+
+    const path = screen.getByTitle('.agents/skills/release');
+    expect(path).toHaveAttribute('dir', 'rtl');
+    expect(path).toHaveClass('truncate');
+    // A right-to-left box would otherwise align a path that FITS to the right.
+    expect(path).toHaveClass('text-left');
+
+    const isolated = path.querySelector('bdi');
+    expect(isolated).toHaveAttribute('dir', 'ltr');
+    expect(isolated).toHaveTextContent('.agents/skills/release');
   });
 
   it('expands every row at once from the page-level toggle', async () => {

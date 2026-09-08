@@ -4,8 +4,10 @@
  * @module entities/harness/ui/SkillHarnessRow
  */
 import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import type { HarnessId, HarnessRow } from '@dorkos/shared/harness-schemas';
 import { HARNESS_LABELS } from '@dorkos/shared/harness-schemas';
+import { cn } from '@/layers/shared/lib/utils';
 import { collapsedChipLabel, harnessRowCells, isRowFullyShared } from '../lib/harness-status';
 import { HarnessStateChip } from './HarnessStateChip';
 
@@ -43,8 +45,15 @@ export interface SkillHarnessRowProps {
  * current on it, the row draws one chip instead of three identical ones, because
  * with thirty-one skills a wall of identical chips is what a person reads past
  * to find the row that matters. Any exception expands the row automatically —
- * nothing a person has to act on is ever behind a click. The collapsed chip is a
+ * nothing a person has to act on is ever behind a click. The summary chip is a
  * button, and its description names the tools, so nothing is unreachable either.
+ *
+ * **That chip is a toggle and stays mounted through both presses.** It used to
+ * render only while collapsed, so activating it removed the very element that
+ * was activated: focus fell to `<body>`, the row was left with no control, and
+ * the eighteen collapsed rows this repository has could be opened once and never
+ * closed. It is now a disclosure in the ordinary sense — `aria-expanded` says
+ * which way it is, pressing it again goes back, and focus never leaves it.
  *
  * **The row is a `group`, not a list item.** Its name is the skill's name, which
  * a screen reader announces on entering it; a bare list item would announce
@@ -55,8 +64,11 @@ export function SkillHarnessRow({ row, enabled, showEveryHarness }: SkillHarness
   const [expandedHere, setExpandedHere] = useState(false);
 
   const cells = harnessRowCells(row, enabled);
-  const collapsible = isRowFullyShared(row, enabled);
-  const collapsed = collapsible && !showEveryHarness && !expandedHere;
+  // The row's own toggle exists only while the page-level one is off: two
+  // controls over one thing, both live, is a control that lies about what it
+  // does. While "Show every agent tool" is on, it IS the control.
+  const collapsible = isRowFullyShared(row, enabled) && !showEveryHarness;
+  const collapsed = collapsible && !expandedHere;
 
   return (
     <div role="group" aria-label={row.name} className="flex flex-col gap-1 py-1.5">
@@ -74,23 +86,27 @@ export function SkillHarnessRow({ row, enabled, showEveryHarness }: SkillHarness
       </div>
 
       <ul aria-label="Agent tools" className="flex flex-wrap items-center gap-1">
-        {collapsed ? (
+        {collapsible && (
           <li>
             <button
               type="button"
-              aria-expanded={false}
+              aria-expanded={!collapsed}
               title={cells.map(({ harness }) => HARNESS_LABELS[harness]).join(' · ')}
-              onClick={() => setExpandedHere(true)}
-              className="bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground text-3xs focus-visible:ring-ring inline-flex items-center rounded-full px-2 py-0.5 leading-tight transition-colors focus-visible:ring-2 focus-visible:outline-none"
+              onClick={() => setExpandedHere((open) => !open)}
+              className="bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground text-3xs focus-visible:ring-ring inline-flex items-center gap-1 rounded-full px-2 py-0.5 leading-tight transition-colors focus-visible:ring-2 focus-visible:outline-none"
             >
               {collapsedChipLabel(cells.length)}
+              <ChevronDown
+                aria-hidden
+                className={cn('size-2.5 transition-transform', collapsed && '-rotate-90')}
+              />
             </button>
           </li>
-        ) : (
+        )}
+        {!collapsed &&
           cells.map(({ harness, cell }) => (
             <HarnessStateChip key={harness} harness={harness} cell={cell} />
-          ))
-        )}
+          ))}
       </ul>
 
       {row.adoptable && <p className="text-muted-foreground text-3xs">{ADOPTABLE_ADVICE}</p>}
