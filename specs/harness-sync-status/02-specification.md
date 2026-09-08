@@ -520,7 +520,7 @@ Two more the first draft of this section missed, both settled at implementation 
   gets `unreadable` carrying a raw `ENOTDIR: not a directory, open …` where the parse-failure sentence belongs.
 
 **Relative is refused rather than resolved.** `path.isAbsolute` is checked in the route, not in
-`HarnessStatusQuerySchema`: that schema lives in `@dorkos/shared/harness-schemas`, which the client imports,
+`HarnessStatusQuerySchema`: that schema lives in `@dorkos/shared/harness-schemas`, which the client is built to import,
 and `node:path` is both a Node module and a platform-dependent answer (`C:\…` is absolute on Windows and not
 on POSIX). A relative path would otherwise resolve against the server's own `process.cwd()` — still
 boundary-checked, so nothing escapes, but the answer describes a directory the caller never named, chosen by

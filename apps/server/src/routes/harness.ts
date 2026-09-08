@@ -112,7 +112,7 @@ import { buildHarnessStatus } from '../services/harness/status.js';
  * which one depends on where the operator happened to start the process.
  *
  * The check is bolted on HERE rather than added to `HarnessStatusQuerySchema`
- * because `@dorkos/shared/harness-schemas` is imported by the CLIENT — that is
+ * because `@dorkos/shared/harness-schemas` is what the CLIENT is built to import — that is
  * why the harness vocabulary was moved down into it at all — and `isAbsolute` is
  * `node:path`, whose answer is platform-dependent (`C:\…` and `\\server\share`
  * are absolute on Windows and not on POSIX). Reimplementing it as a regex in a
