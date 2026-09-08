@@ -23,7 +23,7 @@ Related ADRs: [0307](../decisions/0307-second-and-third-runtimes-opencode-and-co
 | Config migrations                   | `apps/server/src/services/core/config-manager.ts` (`CONFIG_MIGRATIONS`)                           |
 | Shared session infrastructure       | `apps/server/src/services/session/` (lock manager, EventLog, projector, aggregation)              |
 | Status-line label bound             | `packages/shared/src/constants.ts` (`STATUS_VALUE_MAX_CHARS`)                                     |
-| Bound enforcement (model catalogs)  | `apps/server/src/services/runtimes/__tests__/model-catalog-labels.test.ts`                        |
+| Status-line compaction              | `apps/client/src/layers/features/status/lib/status-labels.ts`                                     |
 | Client visual identity              | `apps/client/src/layers/entities/runtime/config/runtime-descriptors.ts`                           |
 | Adapter icons                       | `packages/icons/src/adapter-logos.tsx`                                                            |
 | Needs-setup UX                      | `apps/client/src/layers/entities/runtime/ui/RuntimeSetupDialog.tsx`                               |
@@ -208,18 +208,17 @@ a permission-mode label is drawn whole, and the row's own CSS truncation is all 
 stops it. That truncation fires when the whole row overflows, so an overlong label
 takes width from its neighbours instead of capping itself.
 
-`13` is the width of the longest name in the two places that _are_ asserted: the
-`CODEX_MODELS` catalog (`GPT-5.3 Codex`) and the client's runtime descriptors
-(`Claude Code`).
+`13` is the width of the longest client-authored runtime descriptor (`Claude Code`).
+Model names come from each runtime's account-aware catalog and are therefore treated
+as relayed strings.
 
 The split that matters is authorship, not length:
 
-| String                                                                                                               | Rule                      | Enforced by                                                                                                                                 |
-| -------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `displayName` in a **static, hand-written** model catalog (`CODEX_MODELS`)                                           | Must fit outright         | `apps/server/src/services/runtimes/__tests__/model-catalog-labels.test.ts`                                                                  |
-| `RuntimeDescriptor.label` (step 8)                                                                                   | Must fit outright         | `apps/client/src/layers/features/status/__tests__/status-labels.test.ts` (`describe('the compactness invariant the slot budget rests on')`) |
-| `permissionModes.values[].label`                                                                                     | Keep it short             | Nothing. Cut to the bound below the widest tier; drawn whole at the widest                                                                  |
-| Any name your adapter merely **relays** from a third party — a provider's model display name from OpenCode's catalog | Truncated, never rejected | `compactStatusValue` (`apps/client/src/layers/features/status/lib/status-labels.ts`)                                                        |
+| String                                                                          | Rule                      | Enforced by                                                                                                                                 |
+| ------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RuntimeDescriptor.label` (step 8)                                              | Must fit outright         | `apps/client/src/layers/features/status/__tests__/status-labels.test.ts` (`describe('the compactness invariant the slot budget rests on')`) |
+| `permissionModes.values[].label`                                                | Keep it short             | Nothing. Cut to the bound below the widest tier; drawn whole at the widest                                                                  |
+| Any model name your adapter **relays** from its runtime's account-aware catalog | Truncated, never rejected | `compactStatusValue` (`apps/client/src/layers/features/status/lib/status-labels.ts`)                                                        |
 
 **Shipped permission labels already overshoot, so do not read them as a licence.**
 `'Bypass permissions'` (18 characters) ships in both `claude-code` and `opencode`,
@@ -230,18 +229,9 @@ the widest tier draws is tracked as DOR-461 — not something a new adapter shou
 to.
 
 **Relayed strings are cut, not rejected — deliberately.** DorkOS does not control
-what a third-party provider calls its model, and failing a session because a
-provider chose a verbose name would be the wrong trade. A static catalog is
-different: DorkOS wrote it, so it can be held to the bound, and a shipped
-`GPT-5.3 Cod…` on a wide desktop is a bug in the number rather than a budget doing
-its job (DOR-452).
-
-**If your runtime ships a static catalog, register it.** Add it to
-`FIRST_PARTY_CATALOGS` in `model-catalog-labels.test.ts`; a runtime that resolves
-its catalog at runtime (Claude Code from the SDK, OpenCode from its sidecar's
-provider list) deliberately stays off that list. Note the test lives in the
-_parent_ `runtimes/__tests__/` directory, so
-`pnpm vitest run apps/server/src/services/runtimes/<name>/` does not run it.
+what a runtime calls a model, and failing a session because a model has a verbose
+name would be the wrong trade. Keep DorkOS-authored labels within the bound and let
+`compactStatusValue` handle catalog values.
 
 Raising the bound is legitimate but not free: `FULL_SLOT_COST_PX` in
 `apps/client/src/layers/features/status/model/status-budget.ts` is derived from

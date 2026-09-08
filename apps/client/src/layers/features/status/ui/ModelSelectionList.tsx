@@ -340,7 +340,8 @@ export function ModelSelectionList({
 
   // The saved model can stop existing (provider switched, model deleted). Surface
   // it as unavailable and let the person pick another, never auto-switch (spec §11).
-  const missingSaved = selectedModel.length > 0 && !models.some((m) => m.value === selectedModel);
+  const missingSaved =
+    models.length > 0 && selectedModel.length > 0 && !models.some((m) => m.value === selectedModel);
   const banner = missingSaved ? <UnavailableSavedModel value={selectedModel} /> : null;
 
   // A shortened, unconfirmed menu has to admit it. Otherwise the list looks
@@ -357,6 +358,17 @@ export function ModelSelectionList({
     () => (useSearchableMenu ? groupByTier(filteredModels) : []),
     [filteredModels, useSearchableMenu]
   );
+
+  if (models.length === 0) {
+    return (
+      <div
+        className="border-border text-muted-foreground text-2xs rounded-xl border border-dashed p-3 leading-snug"
+        data-testid="model-catalog-unavailable"
+      >
+        Model choices couldn’t be loaded. Check the runtime in Settings, then try again.
+      </div>
+    );
+  }
 
   if (!useSearchableMenu) {
     return (

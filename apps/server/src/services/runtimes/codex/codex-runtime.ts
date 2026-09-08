@@ -85,7 +85,8 @@ import {
   type CodexThreadRecord,
 } from './thread-map.js';
 import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
-import { CODEX_CAPABILITIES, CODEX_MODELS } from './runtime-constants.js';
+import { CODEX_CAPABILITIES } from './runtime-constants.js';
+import { CodexModelCatalog } from './model-catalog.js';
 import {
   dorkosToolsPosture,
   resolveDorkosMcpInjection,
@@ -139,6 +140,8 @@ export interface CodexRuntimeOptions {
    * for tests; production passes nothing.
    */
   resolveBinary?: () => Promise<string | null>;
+  /** Account-aware model catalog; injectable so runtime tests never spawn app-server. */
+  modelCatalog?: Pick<CodexModelCatalog, 'getSupportedModels'>;
   /**
    * Loopback URL of the scoped `dorkos_ui` MCP server
    * ({@link ./codex-ui-mcp-server}) that exposes `control_ui` to Codex for
@@ -181,6 +184,8 @@ export class CodexRuntime implements AgentRuntime {
   private sharedClient: { binary: string; client: Codex } | null = null;
   /** How this runtime finds its `codex` binary — see {@link CodexRuntimeOptions.resolveBinary}. */
   private readonly resolveBinary: () => Promise<string | null>;
+  /** Models visible to the same binary and Codex account a real turn uses. */
+  private readonly modelCatalog: Pick<CodexModelCatalog, 'getSupportedModels'>;
   /** Kept so every turn's client is built with the same UI-bridge wiring. */
   private readonly mcpUiUrl: string | undefined;
   /**
@@ -235,6 +240,8 @@ export class CodexRuntime implements AgentRuntime {
     this.threadMap = options.threadMap;
     this.defaultCwd = options.defaultCwd ?? DEFAULT_CWD;
     this.resolveBinary = options.resolveBinary ?? resolveCodexBinaryPath;
+    this.modelCatalog =
+      options.modelCatalog ?? new CodexModelCatalog({ resolveBinary: this.resolveBinary });
     this.mcpUiUrl = options.mcpUiUrl;
     // No SDK client is built here on purpose — see `sharedClient`.
   }
@@ -1023,7 +1030,7 @@ export class CodexRuntime implements AgentRuntime {
   // --- Capabilities ---
 
   async getSupportedModels(): Promise<ModelOption[]> {
-    return CODEX_MODELS;
+    return this.modelCatalog.getSupportedModels();
   }
 
   /** Codex exposes no subagent registry. */
