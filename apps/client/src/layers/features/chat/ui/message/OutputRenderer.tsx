@@ -35,9 +35,12 @@ const dorkosJsonStyles = {
   numberValue: 'text-blue-400',
   otherValue: 'text-muted-foreground',
   punctuation: 'text-muted-foreground',
-  collapseIcon: 'text-muted-foreground',
-  expandIcon: 'text-muted-foreground',
-  collapsedContent: 'text-muted-foreground',
+  collapseIcon:
+    'text-muted-foreground mr-1 cursor-pointer text-[1.2em] select-none after:content-["▾"]',
+  expandIcon:
+    'text-muted-foreground mr-1 cursor-pointer text-[1.2em] select-none after:content-["▸"]',
+  collapsedContent:
+    'text-muted-foreground mr-1 cursor-pointer after:text-[0.8em] after:content-["…"]',
 };
 
 /** Maximum characters before truncation (~5KB). */
