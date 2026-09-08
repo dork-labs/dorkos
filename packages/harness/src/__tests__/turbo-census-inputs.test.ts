@@ -27,18 +27,19 @@
  * `turbo test`, which is a required merge-queue check, and — because of the very
  * override it guards — it re-runs when any of the foreign paths changes.
  *
- * Proof the override does what it claims, measured 2026-09-08 with
- * `turbo run test --filter=@dorkos/harness --dry=json`:
+ * Proof the override does what it claims, measured 2026-09-08 at this commit
+ * with `turbo run test --filter=@dorkos/harness --dry=json`:
  *
  * | change                                          | without override   | with override      |
  * | ----------------------------------------------- | ------------------ | ------------------ |
- * | nothing                                         | `07ef17965c78f9a9` | `88dd1bc987596bdd` |
- * | one line appended to the contract               | `07ef17965c78f9a9` | `f31980116439a6ba` |
- * | one line appended to `harness-sync.test.ts`     | —                  | `2fdd3d7041aaf83c` |
- * | one line appended to the server's harness tests | —                  | `41942a0cfddb8a5e` |
+ * | nothing                                         | `a18491d603572762` | `e342570c4dd381e7` |
+ * | one line appended to the contract               | `a18491d603572762` | `e0bda73eca2cd083` |
+ * | one line appended to `harness-sync.test.ts`     | —                  | `a24fa65a59a37b36` |
+ * | one line appended to the server's harness tests | —                  | `6330c97321a4e864` |
+ * | one line appended to `scan-skill-commands`      | `a18491d603572762` | `13261f6042e73c57` |
  *
- * The two "without override" hashes are the same hash. That is the bug: the
- * contract changed and turbo could not tell.
+ * The three "without override" hashes are one hash. That is the bug: the
+ * contract changed, a foreign test title changed, and turbo could not tell.
  *
  * @module __tests__/turbo-census-inputs
  */
