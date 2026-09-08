@@ -1,5 +1,5 @@
 /** Signed-in owner handoff from DorkOS to the provider consent screen. */
-import { getDb } from '@/db/client';
+import { getTransactionDb } from '@/db/transaction-client';
 import { getAuth } from '@/lib/auth';
 import {
   bindManagedAuthenticationBrowser,
@@ -24,7 +24,7 @@ export async function GET(request: Request): Promise<Response> {
   const nonce = url.searchParams.get('nonce');
   if (!flowId || !nonce) return Response.json({ error: 'not_found' }, { status: 404 });
   const bound = await bindManagedAuthenticationBrowser({
-    db: getDb(),
+    db: getTransactionDb(),
     ownerId: session.user.id,
     flowId,
     nonce,

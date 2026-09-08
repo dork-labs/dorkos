@@ -4,10 +4,12 @@
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
+import { neon } from '@neondatabase/serverless';
 import type { ComposioOperationClient } from '@dorkos/connector-providers/composio';
 import { memoryAdapter } from 'better-auth/adapters/memory';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
+import { drizzle as drizzleHttp } from 'drizzle-orm/neon-http';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -25,6 +27,7 @@ const state = vi.hoisted(() => {
     authMemory: undefined as unknown as Record<string, Array<Record<string, unknown>>>,
     accounts: undefined as unknown as Record<string, unknown>,
     db: undefined as unknown as ManagedConnectorDatabase,
+    httpDb: undefined as unknown as ManagedConnectorDatabase,
     expectedProviderUserId: '',
     operations: undefined as unknown as Record<string, unknown>,
     providerCalls: { createLink: 0, getAccount: 0, execute: 0, completeAuth: 0 },
@@ -37,9 +40,10 @@ vi.mock('@/lib/mailer', () => ({
   sendResetPassword: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('@/db/transaction-client', () => ({ getTransactionDb: () => state.db }));
 vi.mock('@/db/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/db/client')>()),
-  getDb: () => state.db,
+  getDb: () => state.httpDb,
 }));
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/auth')>()),
@@ -68,6 +72,8 @@ import { POST as applyAuthorityCommand } from '../authority-commands/route';
 import { GET as getConnection } from '../connections/[managedConnectionId]/route';
 import { GET as getConnectionUsage } from '../connections/[managedConnectionId]/usage/route';
 import { GET as listConnections } from '../connections/route';
+import { GET as listCatalog } from '../catalog/route';
+import { POST as acknowledgeEvents } from '../events/ack/route';
 import { GET as getExecutionReceipt } from '../executions/[attemptId]/route';
 import { POST as executeOperation } from '../executions/route';
 
@@ -81,7 +87,7 @@ function bearerRequest(key: string, path = '/connections', body?: unknown): Requ
   const url = new URL(`/api/instances/connectors${path}`, 'https://dorkos.test');
   if (!body) {
     url.searchParams.set('version', '1');
-    if (path === '/connections' || path.endsWith('/usage')) {
+    if (path === '/connections' || path === '/catalog' || path.endsWith('/usage')) {
       url.searchParams.set('limit', '100');
     }
   }
@@ -103,6 +109,17 @@ describe('mounted managed connection isolation', () => {
     client = new PGlite();
     const database = drizzle(client, { schema: siteSchema });
     state.db = database as unknown as ManagedConnectorDatabase;
+    // Ordinary reads still use the offline fixture, but the legacy constructor
+    // retains the actual HTTP driver's unsupported interactive transaction API.
+    // Returning state.db for both getters would hide a route wired to getDb().
+    const http = drizzleHttp(neon('postgresql://fixture:fixture@127.0.0.1:1/fixture'));
+    state.httpDb = new Proxy(state.db, {
+      get(target, property, receiver) {
+        if (property === 'transaction') return http.transaction.bind(http);
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
     await migrate(database, { migrationsFolder: MIGRATIONS_DIR });
     state.authMemory = {
       user: [],
@@ -142,6 +159,7 @@ describe('mounted managed connection isolation', () => {
       },
     };
     state.operations = {
+      listToolkitPage: async () => ({ toolkits: [], truncated: false }),
       execute: async (input: Parameters<ComposioOperationClient['execute']>[0]) => {
         state.providerCalls.execute += 1;
         if (!(await input.authorizeDispatch())) {
@@ -228,6 +246,25 @@ describe('mounted managed connection isolation', () => {
             : JSON.stringify(verified.key.metadata),
       });
     }
+
+    const catalog = await listCatalog(bearerRequest(ownerAFirst.key, '/catalog'));
+    expect(catalog.status).toBe(200);
+    expect(await catalog.json()).toMatchObject({ version: 1, toolkits: [] });
+
+    // Buffered event acknowledgement resolves the readiness-independent principal
+    // constructor, then requires its transaction even when this lease is absent.
+    const ack = await acknowledgeEvents(
+      bearerRequest(ownerAFirst.key, '/events/ack', {
+        events: [
+          {
+            id: '00000000-0000-4000-8000-000000000001',
+            leaseToken: '00000000-0000-4000-8000-000000000002',
+          },
+        ],
+      })
+    );
+    expect(ack.status).toBe(200);
+    expect(await ack.json()).toEqual({ acknowledged: 0 });
 
     for (const linked of [ownerAFirst, ownerASecond, ownerB]) {
       const empty = await listConnections(bearerRequest(linked.key));

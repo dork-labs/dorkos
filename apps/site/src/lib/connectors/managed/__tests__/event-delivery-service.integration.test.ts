@@ -18,7 +18,7 @@ import {
 } from '@dorkos/shared/connector-event-schemas';
 import * as eventConfig from '../config';
 import * as eventProtection from '../event-protection';
-import * as dbClient from '@/db/client';
+import * as dbClient from '@/db/transaction-client';
 import { POST as receiveSignedEvent } from '@/app/api/connectors/managed/events/route';
 import * as schema from '@/db/schema';
 import {
@@ -702,7 +702,7 @@ describe('managed signed event persistence and handoff', () => {
 
   it('mounts offline event cleanup behind the existing cron authentication with real database receipts', async () => {
     const f = await pendingCleanup();
-    vi.spyOn(dbClient, 'getDb').mockReturnValue(db);
+    vi.spyOn(dbClient, 'getTransactionDb').mockReturnValue(db);
     vi.spyOn(authModule, 'getAuth').mockReturnValue({} as never);
     vi.spyOn(cleanupModule, 'runCleanup').mockResolvedValue({
       unverifiedUsers: 0,
@@ -1048,7 +1048,7 @@ describe('managed signed event persistence and handoff', () => {
       authConfigByToolkit: {},
     });
     vi.spyOn(eventProtection, 'managedEventProtector').mockReturnValue(protector);
-    return vi.spyOn(dbClient, 'getDb').mockReturnValue(db);
+    return vi.spyOn(dbClient, 'getTransactionDb').mockReturnValue(db);
   }
   it('verifies the actual raw hosted route before tenant lookup and commits encrypted content before 202', async () => {
     const f = await seed();

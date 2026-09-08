@@ -18,10 +18,11 @@ import {
 import { stableStringify } from '@dorkos/shared/capabilities';
 import { and, desc, eq, exists, gt, isNull, lte, or, sql } from 'drizzle-orm';
 
-import { getDb, schema } from '@/db/client';
+import { schema } from '@/db/client';
+import type { getTransactionDb } from '@/db/transaction-client';
 
 /** Site database surface used by the managed service. */
-export type ManagedConnectorDatabase = ReturnType<typeof getDb>;
+export type ManagedConnectorDatabase = ReturnType<typeof getTransactionDb>;
 
 /** Verified tenant/instance identity supplied by the route boundary. */
 export interface ManagedConnectorPrincipal {

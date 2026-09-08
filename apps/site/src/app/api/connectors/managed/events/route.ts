@@ -1,7 +1,7 @@
 /** Raw signed project webhook ingress; no tenant/account lookup occurs before verification. */
 import { ComposioWebhookVerifier } from '@dorkos/connector-providers/composio';
 import { CONNECTOR_EVENT_MAX_RAW_BYTES } from '@dorkos/shared/connector-event-schemas';
-import { getDb } from '@/db/client';
+import { getTransactionDb } from '@/db/transaction-client';
 import { readManagedConnectorConfig } from '@/lib/connectors/managed/config';
 import { managedEventProtector } from '@/lib/connectors/managed/event-protection';
 import { acceptManagedConnectorEvent } from '@/lib/connectors/managed/event-ingress-service';
@@ -51,7 +51,7 @@ export async function POST(request: Request): Promise<Response> {
     });
     if (verified.status !== 'verified')
       return Response.json({ error: 'invalid_signature' }, { status: 401 });
-    const db = getDb();
+    const db = getTransactionDb();
     await sweepManagedConnectorEventRetention(db);
     const result = await acceptManagedConnectorEvent(db, verified.event, protector);
     return result === 'accepted'
