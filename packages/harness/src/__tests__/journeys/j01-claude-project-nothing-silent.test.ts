@@ -22,20 +22,20 @@
  * instructions).
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { project } from '../../engine.js';
 import { applyPlan } from '../../apply/apply.js';
 import type { HarnessId } from '../../manifest/schema.js';
 import type { ProjectionAction, ProjectionPlan } from '../../plan/types.js';
-import { diffSnapshots, snapshotTree, writeFileAt, writeJsonAt } from './stage.js';
+import { diffSnapshots, snapshotTree } from './stage.js';
+import { stageRepo, type RuleFileSpec, type StagedRepo } from './stage-repo.js';
 
+let staged: StagedRepo | undefined;
 let repo = '';
 let dorkHome = '';
 
 afterEach(() => {
-  for (const d of [repo, dorkHome]) if (d) rmSync(d, { recursive: true, force: true });
+  staged?.cleanup();
+  staged = undefined;
   repo = '';
   dorkHome = '';
 });
@@ -57,11 +57,14 @@ const COMMANDS = ['deploy', 'review'] as const;
  * reason, and a rule that hits the trap is still a rule Claude Code reads, so it
  * has to keep its per-harness lines and get a warning, not vanish.
  */
-const RULES = [
+const RULES: readonly (RuleFileSpec | string)[] = [
   { name: 'api', paths: 'apps/server/src/routes/**/*.ts' },
   { name: 'testing', paths: '**/*.test.ts' },
-  { name: 'style', paths: undefined },
-] as const;
+  'style',
+];
+
+/** The three rule names, in the order they are staged. */
+const RULE_NAMES = RULES.map((rule) => (typeof rule === 'string' ? rule : rule.name));
 
 /** The one rule above whose frontmatter YAML will not parse. */
 const RULE_WITH_UNPARSEABLE_GLOBS = 'testing';
@@ -76,54 +79,30 @@ const MCP_SERVERS = ['linear', 'shadcn'] as const;
  * claude-code alone, and the drop lists under test are the ones a person sees
  * once they turn Codex and Cursor on.
  */
-function stageClaudeFirstRepo(): { repoRoot: string; home: string } {
-  const repoRoot = mkdtempSync(join(tmpdir(), 'harness-j01-repo-'));
-  const home = mkdtempSync(join(tmpdir(), 'harness-j01-home-'));
-
-  writeJsonAt(join(repoRoot, '.agents', 'harness.manifest.json'), {
-    version: 1,
-    harnesses: ['claude-code', 'codex', 'cursor'],
-  });
-  writeFileAt(join(repoRoot, 'CLAUDE.md'), '# Our project\n\nHouse rules.\n');
-
-  for (const name of SKILLS) {
-    const hooks =
-      name === SKILL_WITH_HOOKS
-        ? 'hooks:\n  PreToolUse:\n    - matcher: Bash\n      hooks:\n        - type: command\n          command: ./scripts/guard.sh\n'
-        : '';
-    writeFileAt(
-      join(repoRoot, '.claude', 'skills', name, 'SKILL.md'),
-      `---\nname: ${name}\ndescription: The ${name} skill\n${hooks}---\n\n# ${name}\n`
-    );
-  }
-  for (const name of COMMANDS) {
-    writeFileAt(join(repoRoot, '.claude', 'commands', `${name}.md`), `# /${name}\n`);
-  }
-  writeFileAt(
-    join(repoRoot, '.claude', 'agents', 'reviewer.md'),
-    '---\nname: reviewer\ndescription: Reviews a diff\n---\n\n# reviewer\n'
-  );
-  for (const rule of RULES) {
-    const frontmatter = rule.paths ? `---\npaths: ${rule.paths}\n---\n\n` : '';
-    writeFileAt(
-      join(repoRoot, '.claude', 'rules', `${rule.name}.md`),
-      `${frontmatter}# ${rule.name}\n`
-    );
-  }
-  writeJsonAt(join(repoRoot, '.claude', 'settings.json'), {
-    hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo done' }] }] },
-  });
-  writeJsonAt(join(repoRoot, '.claude', 'settings.local.json'), {
-    hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'echo mine' }] }] },
-  });
-  writeJsonAt(join(repoRoot, '.mcp.json'), {
-    mcpServers: {
-      linear: { command: 'npx', args: ['linear-mcp'], env: { LINEAR_API_KEY: 'lin_secret' } },
-      shadcn: { command: 'npx', args: ['shadcn@latest', 'mcp'] },
+function stageClaudeFirstRepo(): void {
+  staged = stageRepo({
+    manifest: { harnesses: ['claude-code', 'codex', 'cursor'] },
+    claude: {
+      rootClaudeMd: '# Our project\n\nHouse rules.\n',
+      skills: SKILLS.map((name) => ({
+        name,
+        ...(name === SKILL_WITH_HOOKS ? { frontmatterHooks: true } : {}),
+      })),
+      commands: [...COMMANDS],
+      agents: ['reviewer'],
+      rules: RULES,
+      settingsHooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo done' }] }] },
+      settingsLocalHooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'echo mine' }] }] },
+      mcpJson: {
+        mcpServers: {
+          linear: { command: 'npx', args: ['linear-mcp'], env: { LINEAR_API_KEY: 'lin_secret' } },
+          shadcn: { command: 'npx', args: ['shadcn@latest', 'mcp'] },
+        },
+      },
     },
   });
-
-  return { repoRoot, home };
+  repo = staged.root;
+  dorkHome = staged.dorkHome;
 }
 
 /** One report line, reduced to what a person reads: kind, name, and the reason verbatim. */
@@ -175,9 +154,7 @@ function skillNatives(harnessLabel: string): Line[] {
 
 describe('J-01 — a Claude Code project is told about every kind in .claude/', () => {
   it('XA-01, XA-02, XA-03, HK-12, HK-14 (project half), IN-07: Codex is told where each kind would have to live', () => {
-    const staged = stageClaudeFirstRepo();
-    repo = staged.repoRoot;
-    dorkHome = staged.home;
+    stageClaudeFirstRepo();
 
     const plan = project(repo, { dorkHome });
 
@@ -195,9 +172,9 @@ describe('J-01 — a Claude Code project is told about every kind in .claude/', 
           'reviewer',
           'not projected yet — Codex keeps project subagents in .codex/agents/*.toml, one TOML file per agent (vendor docs, 2026-09-07)',
         ],
-        ...RULES.map((rule): Line => [
+        ...RULE_NAMES.map((name): Line => [
           'rule',
-          rule.name,
+          name,
           'Codex has no path-scoped rules format — its only per-directory mechanism is a nested AGENTS.md (vendor docs, 2026-09-07)',
         ]),
         ...MCP_SERVERS.map((name): Line => [
@@ -220,9 +197,7 @@ describe('J-01 — a Claude Code project is told about every kind in .claude/', 
   });
 
   it('XA-01: Cursor keeps the subagent — it reads .claude/agents itself — and drops the rest', () => {
-    const staged = stageClaudeFirstRepo();
-    repo = staged.repoRoot;
-    dorkHome = staged.home;
+    stageClaudeFirstRepo();
 
     const plan = project(repo, { dorkHome });
 
@@ -230,9 +205,9 @@ describe('J-01 — a Claude Code project is told about every kind in .claude/', 
       [
         ['instruction', 'AGENTS.md', 'no AGENTS.md — nothing to read or point at'],
         ['command', 'commands', 'not projected yet — Cursor reads .cursor/commands/*.md'],
-        ...RULES.map((rule): Line => [
+        ...RULE_NAMES.map((name): Line => [
           'rule',
-          rule.name,
+          name,
           'not projected yet — Cursor keeps path-scoped rules in .cursor/rules/*.mdc under a "globs" key, and ignores a plain .md there (vendor docs, 2026-09-07)',
         ]),
         ...MCP_SERVERS.map((name): Line => [
@@ -269,9 +244,7 @@ describe('J-01 — a Claude Code project is told about every kind in .claude/', 
   });
 
   it('J-01: Claude Code reads every one of the seven kinds where it already sits', () => {
-    const staged = stageClaudeFirstRepo();
-    repo = staged.repoRoot;
-    dorkHome = staged.home;
+    stageClaudeFirstRepo();
 
     const plan = project(repo, { dorkHome });
 
@@ -295,9 +268,9 @@ describe('J-01 — a Claude Code project is told about every kind in .claude/', 
           'reviewer',
           'Claude Code reads .claude/agents recursively, keying each definition by its frontmatter name (vendor docs, 2026-09-07)',
         ],
-        ...RULES.map((rule): Line => [
+        ...RULE_NAMES.map((name): Line => [
           'rule',
-          rule.name,
+          name,
           'Claude Code reads .claude/rules/*.md and applies each rule to the files its "paths" frontmatter names (vendor docs, 2026-09-07)',
         ]),
         ...MCP_SERVERS.map((name): Line => [
@@ -315,9 +288,7 @@ describe('J-01 — a Claude Code project is told about every kind in .claude/', 
   });
 
   it('IN-07: a rule whose globs will not parse keeps every line and earns one warning', () => {
-    const staged = stageClaudeFirstRepo();
-    repo = staged.repoRoot;
-    dorkHome = staged.home;
+    stageClaudeFirstRepo();
 
     const plan = project(repo, { dorkHome });
 
@@ -344,9 +315,7 @@ describe('J-01 — a Claude Code project is told about every kind in .claude/', 
     // generated hook files with their ownership sidecars, and nothing touching
     // the six skills, two commands, subagent, three rules, `.mcp.json` or either
     // settings file.
-    const staged = stageClaudeFirstRepo();
-    repo = staged.repoRoot;
-    dorkHome = staged.home;
+    stageClaudeFirstRepo();
 
     const before = snapshotTree(repo);
     const plan = project(repo, { dorkHome });

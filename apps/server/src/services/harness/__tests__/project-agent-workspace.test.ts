@@ -15,7 +15,6 @@
  * the warning paths can be asserted.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createHash } from 'node:crypto';
 import {
   existsSync,
   lstatSync,
@@ -32,9 +31,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OPERATING_SKILLS_PACK, OPERATING_SKILLS_VERSION } from '@dorkos/operating-skills';
 import { seedOperatingSkills } from '@dorkos/operating-skills';
-import { writeSkillFile } from '@dorkos/skills/writer';
-import { parseSkillFile } from '@dorkos/skills/parser';
-import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
+import { readSeededSkill, writeStalePackSkill } from './journeys/pack-stamp.js';
 
 vi.mock('../../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -95,58 +92,6 @@ function buildEmptyAgentWorkspace(name: string): string {
   const agentDir = join(tmpRoot, 'agents', name);
   mkdirSync(agentDir, { recursive: true });
   return agentDir;
-}
-
-/**
- * Write a pack skill stamped as DorkOS's own at an OLDER pack version, exactly
- * as `seed.ts` would have written it back then.
- *
- * The content hash has to match the trimmed body or `decide()` classifies the
- * file as user-edited and returns `preserved` — which would make the ratchet
- * test assert the opposite of what it claims to. `writeSkillFile` is the same
- * writer the seeder uses, so the frontmatter shape cannot drift from it here.
- *
- * @param agentDir - Workspace root to write into.
- * @param name - Pack skill name (must be a real one, or nothing upgrades it).
- * @param body - The older body this stamp claims to describe.
- * @param version - The pack version to stamp, lower than the current one.
- */
-async function writeStalePackSkill(
-  agentDir: string,
-  name: string,
-  body: string,
-  version: number
-): Promise<void> {
-  const skill = OPERATING_SKILLS_PACK.find((s) => s.name === name);
-  if (!skill) throw new Error(`${name} is not in the pack; the ratchet test would prove nothing`);
-  await writeSkillFile(
-    join(agentDir, '.agents', 'skills'),
-    name,
-    {
-      name,
-      description: skill.description,
-      metadata: {
-        dorkosPack: 'operating-dorkos',
-        dorkosPackVersion: String(version),
-        dorkosContentHash: createHash('sha256').update(body.trim()).digest('hex'),
-      },
-    },
-    body
-  );
-}
-
-/** Read a seeded SKILL.md back through the same parser the seeder decides with. */
-function readSeededSkill(agentDir: string, name: string): { body: string; version?: string } {
-  const filePath = join(agentDir, '.agents', 'skills', name, 'SKILL.md');
-  const parsed = parseSkillFile(filePath, readFileSync(filePath, 'utf-8'), SkillFrontmatterSchema, {
-    requireNameMatch: false,
-  });
-  if (!parsed.ok) throw new Error(`Could not parse ${filePath}: ${parsed.error}`);
-  const version = parsed.definition.meta.metadata?.dorkosPackVersion;
-  return {
-    body: parsed.definition.body,
-    version: typeof version === 'string' ? version : undefined,
-  };
 }
 
 /**
