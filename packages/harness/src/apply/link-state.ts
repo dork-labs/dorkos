@@ -91,6 +91,28 @@ export function isDanglingSymlink(absPath: string): boolean {
 }
 
 /**
+ * The entry names in a directory, or `undefined` when it could not be listed at
+ * all — the one primitive here that keeps "nothing is in it" apart from "nobody
+ * could look".
+ *
+ * Most callers do not need the difference: a path that cannot be listed has
+ * nothing to scan, which is what {@link listDir} answers. The difference matters
+ * to anything that DELETES on an empty listing, because an empty array from a
+ * failed read is a directory somebody's content may still be in — so that one
+ * caller asks this instead (`apply.ts`'s wrapper-dir tidy-up).
+ *
+ * @param absDir - the absolute directory to list.
+ * @returns the entry names, or `undefined` when the listing failed.
+ */
+export function tryListDir(absDir: string): string[] | undefined {
+  try {
+    return readdirSync(absDir);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The entry names in a directory, or none when there is no directory to read.
  *
  * The skill projection dirs are scanned by both `--check` and `--fix`, and
@@ -99,15 +121,14 @@ export function isDanglingSymlink(absPath: string): boolean {
  * and throws on the other two, out of the middle of a report whose whole job is
  * to tell somebody what is wrong with their tree.
  *
+ * Every failure collapses to "nothing to list", which is the safe answer for a
+ * SCAN and the wrong one for a deletion — see {@link tryListDir}.
+ *
  * @param absDir - the absolute directory to list.
  * @returns the entry names, or an empty array when it cannot be listed.
  */
 export function listDir(absDir: string): string[] {
-  try {
-    return readdirSync(absDir);
-  } catch {
-    return [];
-  }
+  return tryListDir(absDir) ?? [];
 }
 
 /**

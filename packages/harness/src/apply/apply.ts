@@ -65,6 +65,7 @@ import {
   listDirEntries,
   occupantKind,
   pathExists,
+  tryListDir,
 } from './link-state.js';
 import { blockingSymlinkOccupant, linkCheckFor, linkMatchesPlan } from './symlink-occupants.js';
 import {
@@ -424,14 +425,22 @@ export function sweepGeneratedCommandOrphans(repoRoot: string, plan: ProjectionP
   const orphans = findGeneratedCommandOrphans(repoRoot, plan);
   for (const rel of orphans) rmSync(join(repoRoot, rel), { force: true });
 
-  // The same throw-safe listers as the finder, so the sweep can never walk a
-  // shape the preview declined to walk — and an empty answer here means "no
-  // wrapper dir to tidy", exactly as it means "nothing to remove" there.
+  // The same throw-safe lister as the finder for the OUTER walk, so the sweep
+  // can never walk a shape the preview declined to walk.
+  //
+  // The inner question is a different one and gets a different call. This is the
+  // only place in the engine that deletes on an EMPTY listing, and `listDir`
+  // answers `[]` both for a directory with nothing in it and for one nobody
+  // could read — so it would have read "could not look" as "nothing is here" and
+  // removed a directory whose contents it never saw. `tryListDir` keeps the two
+  // apart, and only a real empty listing is a wrapper dir worth tidying away.
+  // (Measured before: `rmSync` on a mode-000 dir does not quietly decline, it
+  // throws EACCES out of the middle of an apply.)
   const commandsDir = join(repoRoot, CLAUDE_COMMANDS_DIR);
   for (const sub of listDirEntries(commandsDir)) {
     if (!sub.isDirectory()) continue;
     const subAbs = join(commandsDir, sub.name);
-    if (listDir(subAbs).length === 0) rmSync(subAbs, { recursive: true, force: true });
+    if (tryListDir(subAbs)?.length === 0) rmSync(subAbs, { recursive: true, force: true });
   }
   return orphans;
 }

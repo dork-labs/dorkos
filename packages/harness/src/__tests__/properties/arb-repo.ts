@@ -399,16 +399,21 @@ export function arbRepo(): fc.Arbitrary<RepoSpec> {
  * Keep a hostile command directory out of the one case that is a DIFFERENT bug.
  *
  * A plan that generates a wrapper into `.claude/commands/<pkg>/` or
- * `.opencode/commands/` reaches `writeFileAtomic`, whose `mkdirSync` throws
- * ENOTDIR through a file and EACCES through an unreadable directory — an
- * `applyPlan` crash that predates the sweeps having `find*` halves and that no
- * property here is about. Staging it would red P2, P3, P4 and P2c for a reason
- * none of them names, which is how a generator stops being evidence.
+ * `.opencode/commands/` reaches `writeFileAtomic`, whose `mkdirSync` raises one
+ * of three, all measured: **EEXIST** when the flat `.opencode/commands` the
+ * wrapper goes straight into is itself a file, **ENOTDIR** when a file is the
+ * PARENT of the directory being made (`.claude/commands`, under which `<pkg>/`
+ * has to be created), and **EACCES** through a mode-000 directory. That
+ * `applyPlan` crash predates the sweeps having `find*` halves and no property
+ * here is about it; it is tracked as **DOR-1882**. Staging it would red P2, P3,
+ * P4 and P2c for a reason none of them names, which is how a generator stops
+ * being evidence.
  *
  * So the hostile shapes are staged only where nothing WRITES into the directory
  * — which is every case the `--check` scans still visit, since those walks run
- * whatever the plan says. The crash itself is worth its own ticket, not a
- * silently widened property.
+ * whatever the plan says. **This narrowing expires with DOR-1882:** once a
+ * `generate` whose parent is not a writable directory is a `blocked` conflict
+ * rather than an exception, delete this function and let the shapes through.
  *
  * @param spec - the generated repository.
  * @returns the same spec, with a hostile command dir downgraded where a wrapper

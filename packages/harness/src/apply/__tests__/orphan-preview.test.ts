@@ -409,6 +409,42 @@ describe('a command directory that cannot be listed', () => {
   });
 });
 
+describe('a wrapper directory nobody can read', () => {
+  it.runIf(CAN_STAGE_UNREADABLE)('is not tidied away as though it were empty', () => {
+    const built = stageRepo();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+    sync(repo, dorkHome);
+    // A wrapper-shaped directory the plan does not name, which nobody may read.
+    // It may hold anything; the sweep cannot know, and "could not look" is not
+    // "nothing is here". Before `tryListDir` the empty-listing test said yes and
+    // `rmSync` threw EACCES out of the middle of the apply.
+    const ghost = join(repo, '.claude', 'commands', 'ghost');
+    mkdirSync(ghost, { recursive: true });
+    makeUnreadable(ghost);
+
+    const result = applyPlan(repo, project(repo, { dorkHome }), { sweepOrphans: true });
+
+    expect(existsSync(ghost)).toBe(true);
+    expect(result.swept.filter((p) => p.startsWith('.claude/commands/ghost'))).toEqual([]);
+  });
+
+  it('is still tidied away when it really is empty', () => {
+    const built = stageRepo();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+    sync(repo, dorkHome);
+    // The discriminating half: a readable empty wrapper dir still goes, so the
+    // fix above is a narrower predicate rather than a disabled one.
+    const empty = join(repo, '.claude', 'commands', 'leftover');
+    mkdirSync(empty, { recursive: true });
+
+    applyPlan(repo, project(repo, { dorkHome }), { sweepOrphans: true });
+
+    expect(existsSync(empty)).toBe(false);
+  });
+});
+
 describe('applyPlan refuses to sweep a plan narrowed to one harness', () => {
   it('throws rather than deleting the other harnesses’ live projections', () => {
     const built = stageRepo();
