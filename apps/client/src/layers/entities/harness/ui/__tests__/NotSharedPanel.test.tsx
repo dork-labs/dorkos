@@ -86,10 +86,17 @@ describe('ProjectLevelNoticesPanel', () => {
     const trigger = screen.getByRole('button', { name: /^Project-level notices/ });
     await user.click(trigger);
 
-    expect(screen.getByText('drop · plugin @dork-labs/relay-kit')).toBeInTheDocument();
-    expect(screen.getByText('warning · mcp .mcp.json')).toBeInTheDocument();
-    expect(screen.getByText('write · skill .agents/skills')).toBeInTheDocument();
-    expect(screen.getByText('notice · manifest hookPolicy.gemini')).toBeInTheDocument();
+    // Plain words, not the API's own `kind` values: a person reading their own
+    // screen should not have to learn four terms of art first. The sentence
+    // under each heading is still the engine's, verbatim.
+    expect(
+      screen.getAllByRole('listitem').map((entry) => entry.firstElementChild?.textContent)
+    ).toEqual([
+      'Not shared · plugin @dork-labs/relay-kit',
+      'Could not read · mcp .mcp.json',
+      'Will be written · skill .agents/skills',
+      'Notice · manifest hookPolicy.gemini',
+    ]);
 
     for (const entry of projectLevel) {
       expect(screen.getByText(entry.reason)).toBeInTheDocument();

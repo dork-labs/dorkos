@@ -57,8 +57,9 @@ export { NotEnabledNotice } from './ui/NotEnabledNotice';
 export type { NotEnabledNoticeProps } from './ui/NotEnabledNotice';
 
 // --- Fixtures ---
-// The statuses the tests and the Dev Playground showcase both draw, so a
-// showcase and a test are never looking at two different trees.
+// Exported from the production barrel because the Dev Playground showcase
+// (DOR-1894) draws them, and a showcase that built its own statuses would be a
+// second, drifting copy of the shapes these components are tested against.
 export {
   HARNESS_STATUS_ALL_SHARED,
   HARNESS_STATUS_NOT_SET_UP,

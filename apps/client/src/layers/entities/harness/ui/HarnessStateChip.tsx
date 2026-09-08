@@ -49,9 +49,17 @@ export interface HarnessStateChipProps {
  *
  * The reason rides `title`, which the accessibility tree reads as the chip's
  * DESCRIPTION once the label has named it — the same split `ProvenanceChip`
- * makes for its warning. Nothing is hidden behind it: the panel below repeats
- * every reason in full, so the tooltip is a convenience and never the only copy
- * of a sentence.
+ * makes for its warning.
+ *
+ * **Which reasons have a second home, exactly.** A `dropped` reason does: the
+ * "Not shared with `<harness>`" panel repeats it in full and verbatim, so for
+ * those the tooltip really is a convenience. A `drifted`, `conflict` or
+ * `pending-approval` reason does NOT — today this description is its only copy,
+ * and a `title` on a non-focusable `<li>` is out of reach for a sighted keyboard
+ * user. The banner and the "what changed" summary are where those three get
+ * said out loud, and they arrive with the sync (DOR-1895). Until then this is a
+ * known gap rather than a covered one, and it is stated here so nobody reads
+ * the panel's promise as covering all seven states.
  *
  * A cell that landed but may not work keeps its state chip and gains a marker
  * beside the words, whose own description is the warning text. Two facts, two

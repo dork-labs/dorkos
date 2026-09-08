@@ -240,15 +240,32 @@ export function groupDropsByHarness(
 }
 
 /**
- * The heading half of a project-level entry: what kind of thing happened, then
- * what it happened to.
+ * What each project-level `kind` means, said in words rather than in the field's
+ * own value.
  *
- * `drop · plugin some-package`. The kind is the response's own word and the
- * artifact is the response's own word, so nothing here is a paraphrase of
- * either.
+ * `kind` is an API discriminator — `drop`, `warning`, `write`, `notice` — and
+ * four terms of art at the top of a line are four things to learn before the
+ * sentence underneath can be read. These are the same four facts in plain words.
+ * The line under them is untouched: it is still the engine's own sentence,
+ * verbatim, which is the part that must never be reworded.
+ */
+const PROJECT_ENTRY_WORDS = {
+  drop: 'Not shared',
+  warning: 'Could not read',
+  write: 'Will be written',
+  notice: 'Notice',
+} satisfies Record<HarnessProjectEntry['kind'], string>;
+
+/**
+ * The heading half of a project-level entry: what happened, then what it
+ * happened to.
+ *
+ * `Not shared · plugin some-package`. The artifact and the name are the
+ * response's own words; only the kind is translated, and only out of a field
+ * name into English.
  *
  * @param entry - The project-level entry.
  */
 export function projectEntryHeading(entry: HarnessProjectEntry): string {
-  return `${entry.kind} · ${entry.artifact} ${entry.name}`;
+  return `${PROJECT_ENTRY_WORDS[entry.kind]} · ${entry.artifact} ${entry.name}`;
 }
