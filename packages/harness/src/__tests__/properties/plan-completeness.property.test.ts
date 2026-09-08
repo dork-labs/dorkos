@@ -91,6 +91,7 @@ function listsNaming(
 function stagedSources(spec: RepoSpec): string[] {
   return [
     ...spec.skills.map((name) => `.agents/skills/${name}`),
+    ...spec.claudeSkills.map((dir) => `.claude/skills/${dir}`),
     ...(spec.personSkillLink ? [PERSON_SKILL_LINK] : []),
     ...(spec.claudeCommands === 'populated' ? ['.claude/commands/review.md'] : []),
     ...spec.rules.map((rule) => `.claude/rules/${rule.name}.md`),

@@ -172,6 +172,11 @@ export interface RepoSpec {
    * them all as one gave a real skill no line at all.
    */
   personSkillLink: boolean;
+  /**
+   * Real skill directories in `.claude/skills`, by directory name — see
+   * {@link CLAUDE_SKILL_DIRS} for why the alphabet is awkward on purpose.
+   */
+  claudeSkills: (typeof CLAUDE_SKILL_DIRS)[number][];
   /** The manifest's enabled harnesses (may be empty). */
   harnesses: HarnessId[];
   /** A hand-written file at one generated hook target, or none. */
@@ -240,6 +245,36 @@ export const LINKED_RULES_FILE = `${LINKED_RULES_LINK}/security.md`;
 /** A dead subagent link: an `.md` entry that opens as nothing. */
 const DEAD_AGENT_LINK = '.claude/agents/dead.md';
 
+/**
+ * Real skill directories staged in `.claude/skills`, with the names that decide
+ * the placement.
+ *
+ * Every generated skill used to go to `.agents/skills`, and the single
+ * `.claude/skills` entry was a link named `mine` — a name that satisfies every
+ * harness's charset rule and matches its own frontmatter. So the whole
+ * name-rule half of the placement was unreachable, and a `native` claimed for a
+ * directory OpenCode and Cursor would refuse to decide about passed every
+ * property green (DOR-1845 review). `.claude/skills` is exactly where an agent
+ * drops a directory under whatever name it liked, so the alphabet says so:
+ *
+ * - `tidy` — lower-case, hyphen-free, frontmatter name matching. Loads everywhere.
+ * - `My_Skill` — an upper-case underscore name that breaks Cursor's and
+ *   OpenCode's documented charset rule.
+ * - `mismatched` — a name that does not match its own frontmatter, which two
+ *   harnesses document as required and two more say nothing about.
+ * - `nameless` — no frontmatter name at all, which the frontmatter-keyed
+ *   harnesses cannot key on.
+ */
+const CLAUDE_SKILL_DIRS = ['tidy', 'My_Skill', 'mismatched', 'nameless'] as const;
+
+/** What each staged `.claude/skills` directory declares as its frontmatter name. */
+const CLAUDE_SKILL_FRONTMATTER: Record<(typeof CLAUDE_SKILL_DIRS)[number], string | null> = {
+  tidy: 'tidy',
+  My_Skill: 'My_Skill',
+  mismatched: 'something-else',
+  nameless: null,
+};
+
 /** A skill a person keeps outside the canonical layer and links where Claude Code reads. */
 const PERSON_SKILL_SOURCE = 'vendor/skills/mine';
 /** The link into `.claude/skills` that reaches {@link PERSON_SKILL_SOURCE}. */
@@ -277,6 +312,7 @@ export function arbRepo(): fc.Arbitrary<RepoSpec> {
     linkedRulesDir: fc.boolean(),
     deadAgentLink: fc.boolean(),
     personSkillLink: fc.boolean(),
+    claudeSkills: fc.uniqueArray(fc.constantFrom(...CLAUDE_SKILL_DIRS), { maxLength: 3 }),
     harnesses: fc.subarray([...HARNESS_IDS]),
     occupant: fc.option(
       fc.record({
@@ -439,6 +475,14 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
   }
   if (spec.deadAgentLink) {
     linkInto(repoRoot, DEAD_AGENT_LINK, '../../gone/missing.md');
+  }
+  for (const dir of spec.claudeSkills) {
+    const declared = CLAUDE_SKILL_FRONTMATTER[dir];
+    const name = declared === null ? '' : `name: ${declared}\n`;
+    writeFileAt(
+      join(repoRoot, '.claude', 'skills', dir, 'SKILL.md'),
+      `---\n${name}description: The ${dir} skill\n---\n\n# ${dir}\n`
+    );
   }
   if (spec.personSkillLink) {
     writeFileAt(
