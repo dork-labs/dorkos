@@ -233,7 +233,7 @@ describe('what the engine refuses to write over at a generate target', () => {
       name: 'contentless',
       target: '.codex/never-written.json',
     };
-    const plan: ProjectionPlan = { actions: [action], drops: [], warnings: [] };
+    const plan: ProjectionPlan = { actions: [action], drops: [], warnings: [], notEnabled: [] };
 
     expect(checkPlan(repo, plan).drifted).toEqual([action]);
   });

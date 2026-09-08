@@ -42,6 +42,10 @@ Some packages ship hooks: commands your agent runs on its own. Sync holds
 those back until you allow them, prints each command it held back, and
 carries on with everything else.
 
+Every run also says what it noticed: a harness you use here but have not
+turned on, and the lines your .gitignore is missing for the files DorkOS
+writes. Neither changes the exit code, and neither is acted on without a flag.
+
 Options (sync):
       --check                 Report drift. Never writes anything (default)
       --fix                   Realize the plan on disk
@@ -50,6 +54,10 @@ Options (sync):
       --strict                Exit 1 if any hooks were held back
       --allow-hooks <pkg>     Install that package's hooks and remember it.
                               Needs --fix. Repeatable
+      --enable <harness>      Turn a harness on in your manifest and set it up.
+                              Needs --fix. Repeatable
+      --write-gitignore       Add the lines your .gitignore is missing for the
+                              files DorkOS writes. Needs --fix
 
 Options (hooks):
       --list                  Show every decision you have made (default)
@@ -60,6 +68,8 @@ Examples:
   dorkos harness sync --fix
   dorkos harness sync --check --harness codex
   dorkos harness sync --fix --allow-hooks acme-tools
+  dorkos harness sync --fix --enable cursor
+  dorkos harness sync --fix --write-gitignore
   dorkos harness hooks --list
   dorkos harness hooks --revoke acme-tools
 `;

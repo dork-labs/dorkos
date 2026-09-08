@@ -52,6 +52,7 @@ function linkPlan(name: string): ProjectionPlan {
     ],
     drops: [],
     warnings: [],
+    notEnabled: [],
   };
 }
 

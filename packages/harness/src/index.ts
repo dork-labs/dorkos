@@ -19,10 +19,12 @@ export * from './inventory/index.js';
 export * from './scan/scanner.js';
 export * from './scaffold/instructions.js';
 export * from './scaffold/manifest.js';
+export * from './scaffold/enable-harness.js';
 export * from './sources/resolve-roots.js';
 export * from './sources/installed.js';
 export * from './generate/hooks.js';
 export * from './apply/apply.js';
+export * from './apply/gitignore.js';
 // The generated-hooks half of apply, kept in its own module: only the orphan
 // sweep is part of the package's surface, the rest is apply's business.
 export { sweepGeneratedOrphans } from './apply/generated-targets.js';

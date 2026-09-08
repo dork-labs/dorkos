@@ -194,6 +194,22 @@ dorkos harness sync --fix --strict          # Stop with an error if any hooks we
 
 Run it from your project root: it works on the folder you are in, and reads `.agents/harness.manifest.json` there. `--check` only reports, so it never writes anything. `--fix` is what changes files, and it creates that manifest for you if the folder has none.
 
+Every run looks at which agents your project actually uses. If it finds one you have not turned on — a `.cursor/` folder appeared last week, say — it tells you, and tells you how to turn it on:
+
+```bash
+dorkos harness sync --fix --enable cursor   # Turn Cursor on and set it up, in one go
+```
+
+`--enable` is the only thing that ever writes to your manifest, and all it does is add the name to the list. Your own spacing, indenting and key order stay exactly as you left them. You can pass it more than once. Nothing is turned on behind your back: without the flag, DorkOS only mentions it. If your manifest has a problem, DorkOS says what is wrong with it and changes nothing.
+
+Some of what DorkOS writes belongs to this computer, not to your project: links into installed packages, the hooks files it rebuilds on every sync. If your `.gitignore` does not cover them yet, both modes print the exact lines to add, and one flag adds them for you:
+
+```bash
+dorkos harness sync --fix --write-gitignore # Add the missing lines to .gitignore
+```
+
+It only ever appends, under a comment saying where the lines came from, and it leaves the rest of the file alone. If you ignore `.agents/` itself, DorkOS says what that means: your skills stay on this computer, while the links it writes into `.claude/skills` still get committed — so anyone who clones your project gets links pointing at files they do not have.
+
 Some packages ship hooks: commands your agent runs on its own, before or after it does things. `--fix` holds those back until you allow them. It sets up everything else the package brought, then prints each command it did not install and how to allow it:
 
 ```bash

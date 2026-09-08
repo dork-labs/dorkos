@@ -28,6 +28,16 @@ import { scanSkillDirs, CLAUDE_PLUGIN_ROOT_TOKEN, type SkillEntry } from '../sca
 import { emptyHooksConfig } from '../generate/hooks.js';
 import type { ClaudeHooksConfig, HookCommand, HookMatcherGroup } from '../generate/hooks.js';
 
+/**
+ * The repo-relative directory project-scoped marketplace installs live in.
+ *
+ * Repo-relative and slash-joined because that is what it is used for: building
+ * an {@link InstalledPlugin.relDir}, and naming the directory in the
+ * `.gitignore` contract (`EPHEMERAL_GITIGNORE_PATTERNS`). Join it against a
+ * project root to get a path to read.
+ */
+export const PROJECT_PLUGINS_DIR = '.dork/plugins';
+
 /** Where an installed plugin lives — its install scope. */
 export type InstalledScope = 'global' | 'project';
 
@@ -495,7 +505,7 @@ function scanPluginsRoot(pluginsRoot: string, scope: InstalledScope): InstalledP
       continue;
     }
 
-    const relDir = `.dork/plugins/${entry.name}`;
+    const relDir = `${PROJECT_PLUGINS_DIR}/${entry.name}`;
     const { hooks, unreadable } = readPluginHooks(pluginDir, relDir);
     plugins.push({
       name: manifest.name,
@@ -532,6 +542,6 @@ export function scanInstalledPlugins(opts: {
   const globalPlugins = opts.dorkHome
     ? scanPluginsRoot(join(opts.dorkHome, 'plugins'), 'global')
     : [];
-  const projectPlugins = scanPluginsRoot(join(opts.projectRoot, '.dork', 'plugins'), 'project');
+  const projectPlugins = scanPluginsRoot(join(opts.projectRoot, PROJECT_PLUGINS_DIR), 'project');
   return [...globalPlugins, ...projectPlugins];
 }

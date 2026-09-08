@@ -16,12 +16,28 @@
  *
  * @module scaffold/manifest
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, type Stats } from 'node:fs';
+import { dirname, join, sep } from 'node:path';
 import { HARNESS_IDS, type HarnessId, type HarnessManifest } from '../manifest/schema.js';
+import type { DetectedHarness } from '../plan/types.js';
 
-/** Repo-relative path of the harness manifest the scaffolder writes. */
-export const HARNESS_MANIFEST_PATH = join('.agents', 'harness.manifest.json');
+/**
+ * Repo-relative path of the harness manifest the scaffolder writes.
+ *
+ * A forward-slash LITERAL, like every other repo-relative constant the engine
+ * exports (`AGENTS_SKILLS_DIR`, `CLAUDE_SKILLS_DIR`, `PROJECT_PLUGINS_DIR`, the
+ * three hook targets). It was built with `join()` until DOR-1851, which meant it
+ * came out as `.agents\harness.manifest.json` on Windows — and this string is
+ * PRINTED: `dorkos harness sync` puts it in the missing-manifest error, in the
+ * "add it to …" notice for a harness that is not enabled, and in the line
+ * `--enable` prints after writing. So a Windows user read one backslash path in
+ * a report whose every other path used forward slashes (DOR-1855 settled the
+ * same rule for generated text, `pluginRootText`).
+ *
+ * Joining it against a root still works everywhere: `path.join` normalises the
+ * separator for the platform it is running on.
+ */
+export const HARNESS_MANIFEST_PATH = '.agents/harness.manifest.json';
 
 /**
  * The default harness set written when the repo shows no detectable harness
@@ -43,6 +59,23 @@ const HARNESS_DETECTION_SIGNALS: Record<HarnessId, readonly string[]> = {
   copilot: [join('.github', 'copilot-instructions.md')],
   opencode: ['.opencode'],
 };
+
+/**
+ * Signal paths that are evidence of the canonical layer rather than of one
+ * harness in particular, so they never make a harness "present" in a re-detection.
+ *
+ * `AGENTS.md` is the cross-agent instruction file five of the six harnesses read
+ * (and the one this engine asks every repo to keep), so a Claude-Code-only
+ * project has one — and, read as a Codex footprint, it would put
+ * "AGENTS.md found; Codex is not enabled" on every single sync of every repo
+ * DorkOS has ever touched, with no way to clear it. Being told a true thing
+ * forever is how a person learns to stop reading the output.
+ *
+ * It stays in {@link HARNESS_DETECTION_SIGNALS} for the SCAFFOLD, where the
+ * question is different and asked once: a repo that keeps an `AGENTS.md` and
+ * nothing else really is a reasonable place to start Codex.
+ */
+const SHARED_SIGNAL_PATHS: ReadonlySet<string> = new Set(['AGENTS.md']);
 
 /** Options for {@link scaffoldManifest}. */
 export interface ScaffoldManifestOptions {
@@ -77,6 +110,61 @@ export function detectHarnesses(repoRoot: string): HarnessId[] {
   return HARNESS_IDS.filter((id) =>
     HARNESS_DETECTION_SIGNALS[id].some((rel) => existsSync(join(repoRoot, rel)))
   );
+}
+
+/**
+ * Detect each harness whose OWN files are in the repo, with the path that gave
+ * it away — the re-detection every plan runs (contract TR-11).
+ *
+ * Two things separate it from {@link detectHarnesses}, which answers the
+ * scaffolder's one-shot question:
+ *
+ * - it names the signal, because the line a person reads has to say what was
+ *   found (`.cursor/ found; Cursor is not enabled …`), and
+ * - it ignores {@link SHARED_SIGNAL_PATHS}, so the canonical `AGENTS.md` is not
+ *   read as somebody running Codex.
+ *
+ * A directory signal is reported with a trailing `/`. The first signal a
+ * harness matches wins; the order is the table's.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @returns one entry per harness found, in canonical {@link HARNESS_IDS} order.
+ */
+export function detectHarnessFootprints(repoRoot: string): DetectedHarness[] {
+  const found: DetectedHarness[] = [];
+  for (const harness of HARNESS_IDS) {
+    for (const rel of HARNESS_DETECTION_SIGNALS[harness]) {
+      if (SHARED_SIGNAL_PATHS.has(rel)) continue;
+      const stats = statOrNothing(join(repoRoot, rel));
+      if (!stats) continue;
+      // Repo-relative and slash-joined whatever the platform: the signal is
+      // printed, and `.github\copilot-instructions.md` is not a path anybody
+      // wants to read (the table builds that one with `join`).
+      const shown = rel.split(sep).join('/');
+      found.push({ harness, signal: stats.isDirectory() ? `${shown}/` : shown });
+      break;
+    }
+  }
+  return found;
+}
+
+/**
+ * What is at a path, or nothing — never a throw.
+ *
+ * `throwIfNoEntry: false` only suppresses ENOENT and ENOTDIR; a symlink loop
+ * (ELOOP) or an unreadable parent (EACCES) still throws. This runs on EVERY
+ * plan, from the CLI and from the server's unattended auto-projection, so a
+ * `.cursor` that happens to be a symlink cycle would have taken down every sync
+ * in the repo — to answer a question whose whole purpose is a one-line notice.
+ * A path that cannot be read is a harness that cannot be detected, which is the
+ * same answer as absent and a far better outcome than a broken sync.
+ */
+function statOrNothing(abs: string): Stats | undefined {
+  try {
+    return statSync(abs, { throwIfNoEntry: false });
+  } catch {
+    return undefined;
+  }
 }
 
 /**
