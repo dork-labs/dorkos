@@ -824,12 +824,18 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     const { planWithConsent, projectWithConsent, scanHookRequests } =
       await import('../server/services/harness/project-with-consent.js');
 
-    // The manifest itself, for the two things the report says ABOUT it rather
-    // than about a projection: which harnesses it enables, so a summary line for
-    // one it does not can say so (DOR-1847), and the statements in it that reach
-    // nothing (DOR-1858). Read AFTER the projection, which reads the same file: a
-    // malformed manifest should fail with the message the engine gives it, not
-    // this one — and both land in the catch below as one sentence either way.
+    // The manifest itself, for the things the run needs from it directly rather
+    // than through a plan: which harnesses it enables, so a summary line for one
+    // it does not can say so (DOR-1847); the statements in it that reach nothing
+    // (DOR-1858); and whether a `--allow-hooks` yes could reach anything at all.
+    //
+    // WHEN it is read depends on the path, and both are fine. `--allow-hooks`
+    // reads it BEFORE the plan is built, because refusing to record a durable
+    // decision has to happen before the store is opened. Every other path reads
+    // it after the projection. The error text is the same either way: this is
+    // `loadManifest`, the engine's own loader, so a malformed manifest fails with
+    // the engine's message wherever it is called from, and both land in the catch
+    // below as one sentence.
     const readManifest = (): HarnessManifest => loadManifest(repoRoot);
 
     // `--allow-hooks` is resolved and RECORDED before the plan is built, so the

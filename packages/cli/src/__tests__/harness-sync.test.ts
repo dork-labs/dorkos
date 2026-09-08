@@ -1930,10 +1930,10 @@ describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-18
     );
   }
 
-  function writeManifest(harnesses: string[], hookPolicies: unknown[]): void {
+  function writeManifest(shape: { harnesses: string[]; hookPolicies: unknown[] }): void {
     fs.writeFileSync(
       path.join(tmpDir, HARNESS_MANIFEST_PATH),
-      JSON.stringify({ version: 1, harnesses, hookPolicies }, null, 2)
+      JSON.stringify({ version: 1, ...shape }, null, 2)
     );
   }
 
@@ -1961,7 +1961,10 @@ describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-18
     // The yes is durable and outlives the manifest. Recorded here it would sit in
     // config.json contradicting the drop line printed under it, install nothing,
     // and then install itself unprompted the day the policy line goes.
-    writeManifest(['claude-code'], [{ tool: 'claude-code', projection: 'none' }]);
+    writeManifest({
+      harnesses: ['claude-code'],
+      hookPolicies: [{ tool: 'claude-code', projection: 'none' }],
+    });
 
     const result = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
 
@@ -1976,10 +1979,13 @@ describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-18
 
   it('does not let a refused allow become a silent install once the policy goes', async () => {
     // The whole reason the refusal exists, driven end to end.
-    writeManifest(['claude-code'], [{ tool: 'claude-code', projection: 'none' }]);
+    writeManifest({
+      harnesses: ['claude-code'],
+      hookPolicies: [{ tool: 'claude-code', projection: 'none' }],
+    });
     await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
 
-    writeManifest(['claude-code'], []);
+    writeManifest({ harnesses: ['claude-code'], hookPolicies: [] });
     await runHarnessSync(syncArgs({ fix: true }));
 
     expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
@@ -1989,9 +1995,45 @@ describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-18
     expect(printed()).toContain('dorkos harness sync --fix --allow-hooks acme');
   });
 
+  it('refuses when no enabled agent has anywhere to receive hooks, policy or not', async () => {
+    // The other route to the same latent yes, and it names no manifest line
+    // because none is to blame: OpenCode has no declarative hook config at all,
+    // so `Applied 0` was printed over a stored approval that would come true the
+    // day somebody enabled Claude Code (DOR-1858 delta review, reproduced).
+    writeManifest({ harnesses: ['opencode'], hookPolicies: [] });
+
+    const result = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
+
+    expect(result.exitCode).toBe(1);
+    expect(storedApprovals()).toEqual([]);
+    expect(errors()).toContain('nowhere to go here');
+    expect(errors()).toContain('None of the agents this project uses (OpenCode)');
+    expect(errors()).toContain('Turn on an agent that can take them');
+    // No manifest line is blamed, because none is responsible.
+    expect(errors()).not.toContain('hookPolicies');
+  });
+
+  it('asks again once an agent that can take them is turned on', async () => {
+    // The follow-on: the refusal left nothing stored, so enabling Claude Code
+    // later withholds and asks rather than installing behind the person's back.
+    writeManifest({ harnesses: ['opencode'], hookPolicies: [] });
+    await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
+
+    writeManifest({ harnesses: ['claude-code', 'opencode'], hookPolicies: [] });
+    logSpy.mockClear();
+    await runHarnessSync(syncArgs({ fix: true }));
+
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'settings.local.json'))).toBe(false);
+    expect(printed()).toContain('You have not allowed this package yet.');
+    expect(printed()).toContain('dorkos harness sync --fix --allow-hooks acme');
+  });
+
   it('records a partly-suppressed allow, and says which agents will not get them', async () => {
     // A real yes, just narrower than "Allowed acme" reads on its own.
-    writeManifest(['claude-code', 'codex'], [{ tool: 'claude-code', projection: 'none' }]);
+    writeManifest({
+      harnesses: ['claude-code', 'codex'],
+      hookPolicies: [{ tool: 'claude-code', projection: 'none' }],
+    });
 
     const result = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
 
@@ -2003,7 +2045,7 @@ describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-18
   });
 
   it('records without the caveat when no policy suppresses anything', async () => {
-    writeManifest(['claude-code', 'codex'], []);
+    writeManifest({ harnesses: ['claude-code', 'codex'], hookPolicies: [] });
 
     const result = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme'] }));
 
@@ -2016,7 +2058,10 @@ describe('runHarnessSync — a durable yes for hooks a policy suppresses (DOR-18
   it('does not tell somebody to move hooks a policy would refuse to carry', async () => {
     // The "Left alone" advice — put them in .claude/settings.json and DorkOS will
     // carry them — is false for a harness the manifest says not to write for.
-    writeManifest(['claude-code', 'codex'], [{ tool: 'codex', projection: 'none' }]);
+    writeManifest({
+      harnesses: ['claude-code', 'codex'],
+      hookPolicies: [{ tool: 'codex', projection: 'none' }],
+    });
     fs.mkdirSync(path.join(tmpDir, '.codex'), { recursive: true });
     fs.writeFileSync(path.join(tmpDir, '.codex', 'hooks.json'), '{"hooks":{}}\n');
 

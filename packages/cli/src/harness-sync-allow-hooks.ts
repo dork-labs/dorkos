@@ -80,25 +80,42 @@ export async function resolveAllowHooks(opts: {
     return { exitCode: 1 };
   }
 
-  // A yes recorded here is DURABLE and outlives the manifest that was in
-  // force when it was given, so it must not be recorded against a projection
-  // the manifest currently suppresses. Refused when nothing at all would be
-  // installed: the person would otherwise be told "Allowed acme" over a drop
-  // line saying the opposite, get no `settings.local.json`, and then have
-  // the hooks install themselves unprompted the day that `hookPolicies` line
-  // is deleted (DOR-1858 review, reproduced).
+  // A yes recorded here is DURABLE and outlives the manifest that was in force
+  // when it was given, so it must not be recorded when nothing in this project
+  // can receive those hooks. The condition is `reached.length === 0` and nothing
+  // narrower: whether a `hookPolicies` line is to blame changes only the
+  // SENTENCE, never the answer. Both routes end the same way — the person is
+  // told "Allowed acme" over an `Applied 0`, gets no `settings.local.json`, and
+  // then has the hooks install themselves unprompted the day the manifest
+  // changes (both reproduced in review).
   const reach = pluginHookReach(manifest);
-  if (reach.reached.length === 0 && reach.suppressed.length > 0) {
+  if (reach.reached.length === 0) {
     console.error('DorkOS did not record that: those hooks have nowhere to go here.');
-    for (const { harness, projection } of reach.suppressed) {
+    if (reach.suppressed.length > 0) {
+      // A manifest line is to blame, so name it — that is the thing to edit.
+      for (const { harness, projection } of reach.suppressed) {
+        console.error(
+          `  ${HARNESS_MANIFEST_PATH} says hookPolicies ${projection} for ${harness}, so DorkOS installs nothing for ${HARNESS_LABELS[harness]}.`
+        );
+      }
       console.error(
-        `  ${HARNESS_MANIFEST_PATH} says hookPolicies ${projection} for ${harness}, so DorkOS installs nothing for ${HARNESS_LABELS[harness]}.`
+        '  Saying yes now would install them the day that line goes, without asking again.'
       );
+      console.error('  Remove the line, then run this again.');
+    } else {
+      // No line to blame: every agent this project runs simply has no place
+      // DorkOS writes hooks to. Pointing at the manifest here would send
+      // somebody hunting for a policy that is not there.
+      console.error(
+        `  None of the agents this project uses (${manifest.harnesses
+          .map((h) => HARNESS_LABELS[h])
+          .join(', ')}) has a place DorkOS writes hooks to.`
+      );
+      console.error(
+        '  Saying yes now would install them the day you turn on one that does, without asking again.'
+      );
+      console.error('  Turn on an agent that can take them, then run this again.');
     }
-    console.error(
-      '  Saying yes now would install them the day that line goes, without asking again.'
-    );
-    console.error('  Remove the line, then run this again.');
     return { exitCode: 1 };
   }
 

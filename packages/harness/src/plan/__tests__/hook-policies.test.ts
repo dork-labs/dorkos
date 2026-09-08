@@ -267,3 +267,48 @@ describe('pluginHookReach', () => {
     });
   });
 });
+
+describe('pluginHookReach agrees with the plan', () => {
+  // Two readers of one rule: `--allow-hooks` asks `pluginHookReach` whether a
+  // package's hooks can land, and the person then reads a plan built by
+  // `planHooks`. If they ever disagree, the CLI refuses a yes the plan would
+  // have honoured, or records one it would not — so the agreement is asserted
+  // over the whole matrix rather than trusted to two similar-looking branches.
+  const HARNESSES = ['claude-code', 'codex', 'cursor', 'gemini', 'copilot', 'opencode'] as const;
+  const POLICIES = [undefined, 'native', 'generate', 'none'] as const;
+
+  it('includes a harness exactly when the plan carries a hooks projection to it', () => {
+    dir = fixtureRepo();
+    const plugins = [pluginWithHooks()];
+
+    for (const harness of HARNESSES) {
+      for (const projection of POLICIES) {
+        const manifest = parseHarnessManifest({
+          version: 1,
+          harnesses: [harness],
+          hookPolicies: projection === undefined ? [] : [{ tool: harness, projection }],
+        });
+        const plan = buildPlan({
+          repoRoot: dir,
+          manifest,
+          claudeHooks,
+          agentsMdExists: true,
+          installedPlugins: plugins,
+        });
+
+        // What the plan really does with this project's hooks for this harness:
+        // a generated file, or the merge into the user-owned settings file.
+        const projected = plan.actions.some(
+          (a) => a.artifact === 'hook' && (a.kind === 'generate' || a.kind === 'merge')
+        );
+        const reached = pluginHookReach(manifest).reached.includes(harness);
+
+        expect({ harness, projection, reached }).toEqual({
+          harness,
+          projection,
+          reached: projected,
+        });
+      }
+    }
+  });
+});
