@@ -101,6 +101,11 @@ async function openRow(id: string) {
   await userEvent.click(document.querySelector(`[data-profile-row="${id}"]`)!);
 }
 
+/** Go back to the property list from a pushed page. */
+async function goBack() {
+  await userEvent.click(screen.getByRole('button', { name: 'Back to profile' }));
+}
+
 /**
  * The Skills page, once it is on screen and the read has landed.
  *
@@ -238,5 +243,47 @@ describe('the Skills page', () => {
 
     expect(await screen.findByText('This agent’s folder isn’t known here.')).toBeInTheDocument();
     expect(getHarnessStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe('the Skills row’s count', () => {
+  it('says nothing until the page has been opened, then says how many there are', async () => {
+    // Purpose: Decision 28, from the reader's side. "Skills 0" about an agent
+    // with six is the lie this change removes; silence is the honest middle
+    // state, and `countValue(null)` was already built to draw it.
+    const { getHarnessStatus } = await renderProfile();
+
+    // The row's accessible name is its label and its value in one string, so
+    // "Skills" alone IS the row saying nothing rather than saying zero.
+    expect(screen.getByRole('button', { name: 'Skills' })).toBeInTheDocument();
+
+    await openSkillsPage();
+    await waitFor(() => expect(getHarnessStatus).toHaveBeenCalledWith(PROJECT_PATH));
+    await goBack();
+
+    expect(
+      await screen.findByRole('button', {
+        name: `Skills: ${HARNESS_STATUS_READY.counts.skills} skills`,
+      })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Skills: 6 skills' })).toBeInTheDocument();
+  });
+
+  it('never fires the status read from a profile open alone', async () => {
+    // Purpose: the cost half of Decision 28. `buildHarnessStatus` is three
+    // synchronous filesystem walks — about 22 ms of blocked event loop — and
+    // this profile opens on every `/session`. Seeded defect: drop
+    // `enabled: false` from `use-harness-status-cached.ts` and this reds at 1.
+    const { getHarnessStatus } = await renderProfile();
+
+    // Let every effect, microtask and timer TanStack might use run first: a
+    // request that fires one tick late still costs the same 22 ms.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(getHarnessStatus).not.toHaveBeenCalled();
+    // Second, and not first: with the flag gone the call count is what reds,
+    // and a profile that failed to render would pass the line above by drawing
+    // nothing at all. This is what stops that.
+    expect(screen.getByRole('button', { name: 'Skills' })).toBeInTheDocument();
   });
 });
