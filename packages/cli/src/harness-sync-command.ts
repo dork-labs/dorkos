@@ -19,7 +19,7 @@ import {
   formatDropList,
   formatWarnings,
   hooksFactsFor,
-  isCanonicalLayerIgnored,
+  canonicalLayerIgnoredBy,
   loadManifest,
   missingGitignoreLines,
   scaffoldManifest,
@@ -364,14 +364,16 @@ function formatGitignore(missing: readonly string[], added: boolean): string[] {
  * their clone does not have.
  */
 function formatIgnoredCanonicalLayer(repoRoot: string): string[] {
-  if (!isCanonicalLayerIgnored(repoRoot)) return [];
+  const ignoredBy = canonicalLayerIgnoredBy(repoRoot);
+  if (ignoredBy === undefined) return [];
   return [
     '',
-    '.agents/ is in your .gitignore, so the shared folder stays on this computer.',
+    `.agents/ is ignored by ${ignoredBy}, so the shared folder stays on this computer.`,
     '  The links DorkOS writes into .claude/skills are still committed, so anyone who clones',
     '  this project gets links pointing at files git does not have. Moving a skill into',
     '  .agents/ would take it out of git for everyone, too.',
-    '  Either stop ignoring .agents/, or keep these skills on this machine on purpose.',
+    `  Either stop ignoring .agents/ in ${ignoredBy}, or keep these skills on this machine`,
+    '  on purpose.',
   ];
 }
 
@@ -583,6 +585,19 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     return { exitCode: 1 };
   }
 
+  // A typo is reported BEFORE the mode requirement, so `--check --enable curser`
+  // says which word is wrong rather than sending the person to re-run the same
+  // typo with `--fix`. Nothing has read or written the tree yet either way.
+  const unknownEnable = args.enable.filter(
+    (id) => !(HARNESS_IDS as readonly string[]).includes(id)
+  );
+  if (unknownEnable.length > 0) {
+    console.error(
+      `Unknown harness: ${unknownEnable.map((id) => `'${id}'`).join(', ')}. Known harnesses: ${HARNESS_IDS.join(', ')}`
+    );
+    return { exitCode: 1 };
+  }
+
   // `--enable` writes the manifest and `--write-gitignore` writes `.gitignore`,
   // so both belong to the write mode. Refused rather than quietly ignored, and
   // each message names the command to run instead of restating the rule.
@@ -612,14 +627,16 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     harnessFilter = args.harness as HarnessId;
   }
 
-  // Same rule for every `--enable`, and for the same reason: a typo must not
-  // scaffold a manifest, enable the ids it understood, and then fail.
-  const unknownEnable = args.enable.filter(
-    (id) => !(HARNESS_IDS as readonly string[]).includes(id)
-  );
-  if (unknownEnable.length > 0) {
+  // `--enable` turns a harness on for the whole project, and the run that does
+  // it should be the run that sets it up. Narrowed to another harness it would
+  // write the manifest and then project nothing for what it had just enabled —
+  // a half-done job whose missing half a person has no reason to expect.
+  if (args.enable.length > 0 && harnessFilter !== undefined) {
     console.error(
-      `Unknown harness: ${unknownEnable.map((id) => `'${id}'`).join(', ')}. Known harnesses: ${HARNESS_IDS.join(', ')}`
+      '--enable turns a harness on for the whole project, so it does not take --harness.'
+    );
+    console.error(
+      `Run: dorkos harness sync --fix ${args.enable.map((id) => `--enable ${id}`).join(' ')}`
     );
     return { exitCode: 1 };
   }

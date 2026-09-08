@@ -200,7 +200,7 @@ Every run looks at which agents your project actually uses. If it finds one you 
 dorkos harness sync --fix --enable cursor   # Turn Cursor on and set it up, in one go
 ```
 
-`--enable` is the only thing that ever writes to your manifest, and all it does is add the name to the list. Your own formatting, comments and key order stay exactly as you left them. You can pass it more than once. Nothing is turned on behind your back: without the flag, DorkOS only mentions it.
+`--enable` is the only thing that ever writes to your manifest, and all it does is add the name to the list. Your own spacing, indenting and key order stay exactly as you left them. You can pass it more than once. Nothing is turned on behind your back: without the flag, DorkOS only mentions it. If your manifest has a problem, DorkOS says what is wrong with it and changes nothing.
 
 Some of what DorkOS writes belongs to this computer, not to your project: links into installed packages, the hooks files it rebuilds on every sync. If your `.gitignore` does not cover them yet, both modes print the exact lines to add, and one flag adds them for you:
 

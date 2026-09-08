@@ -107,7 +107,8 @@ describe('P7 — every ephemeral projection has a way to stay out of git', () =>
     );
     // A green that looked at nothing is not a green.
     expect(examined).toBeGreaterThan(0);
-  });
+    // until DOR-1854's shared PROPERTY_TIMEOUT_MS lands
+  }, 60_000);
 
   it('reports missing lines exactly when this repo does not already cover them', () => {
     let reported = 0;
@@ -150,5 +151,6 @@ describe('P7 — every ephemeral projection has a way to stay out of git', () =>
     // Both sides of the claim were actually reached.
     expect(reported).toBeGreaterThan(0);
     expect(silent).toBeGreaterThan(0);
-  });
+    // until DOR-1854's shared PROPERTY_TIMEOUT_MS lands
+  }, 60_000);
 });

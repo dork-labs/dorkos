@@ -18,27 +18,37 @@
  * 1. {@link missingGitignoreLines} — which lines this repo's root `.gitignore`
  *    is missing for the projections this plan makes.
  * 2. {@link appendGitignoreLines} — add them, append-only, under one comment.
- * 3. {@link isCanonicalLayerIgnored} — whether `.agents/` itself is ignored,
- *    which changes what committing a projection even means (AP-15).
+ * 3. {@link canonicalLayerIgnoredBy} — whether `.agents/` itself is ignored, and
+ *    by which file, since that changes what committing a projection even means
+ *    (AP-15).
  *
  * **No `.git` directory, no answer.** Every function here returns the empty /
- * false answer when the repo root holds no `.git`, because a `.gitignore` in a
+ * absent answer when the repo root holds no `.git`, because a `.gitignore` in a
  * directory git does not track is not a fact about anything, and telling
  * somebody to edit one would be noise.
  *
- * **The matcher is deliberately small.** Git's ignore semantics are large; the
- * patterns under test are not (a directory prefix, a `*__*` glob under one
- * directory, a handful of exact file paths). So it implements the shapes those
- * take — `*`, `**`, a trailing `/`, a leading `/`, and the bare-name rule — and
- * `__tests__/gitignore.test.ts` asserts that every pattern in the constant is a
- * shape it understands, so a pattern added in a shape it does not is a red
- * rather than a silent miss. It does NOT implement negation: a `!` line is
- * skipped, so a repo that re-includes an ephemeral path is told nothing rather
- * than told something wrong.
+ * **The matcher walks the path the way git does.** A `.gitignore` is not a set
+ * of patterns to test a path against — it is an ordered list applied per path
+ * COMPONENT, where the last matching line wins and a `!` line un-ignores. Both
+ * halves are load-bearing here, and a matcher that skipped `!` lines got the
+ * common `dir/*` + `!dir/keep` idiom backwards in the dangerous direction: with
+ * `.claude/*` and `!.claude/skills/` in a repo's file, git TRACKS
+ * `.claude/skills/pkg__skill` and a negation-blind matcher called it covered,
+ * so the one repo that needed the warning was the one that never got it. The
+ * one rule git states that a naive last-match-wins misses is also implemented:
+ * a file under an excluded DIRECTORY cannot be re-included, because git never
+ * descends into it.
+ *
+ * What is deliberately small is the glob vocabulary: `*` within a segment, `**`
+ * across segments, `?`, a trailing `/` for a directory, a leading `/` or an
+ * embedded one for anchoring, a leading double-star segment and the bare-name rule for
+ * "at any depth". `__tests__/gitignore.test.ts` checks the whole thing against
+ * real `git check-ignore` on a real repo wherever git is on PATH, and asserts
+ * that every pattern in the constant is a shape it understands.
  *
  * @module apply/gitignore
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ProjectionPlan } from '../plan/types.js';
 import { getActionContent } from '../plan/content-map.js';
@@ -59,9 +69,9 @@ const CANONICAL_DIR = AGENTS_SKILLS_DIR.split('/')[0] as string;
  * A path INSIDE the project install root, used to ask whether that root is
  * ignored.
  *
- * A `dir/` pattern ignores what is in a directory, never the directory's own
- * path, so the question has to be asked of something inside it. No package is
- * named: the answer is the same for every one of them.
+ * The install root is a directory, and the question worth asking is whether its
+ * CONTENTS reach git, so it is asked of a path inside it. No package is named:
+ * the answer is the same for every one of them.
  */
 const INSTALL_ROOT_PROBE = `${PROJECT_PLUGINS_DIR}/any-package`;
 
@@ -69,35 +79,109 @@ const INSTALL_ROOT_PROBE = `${PROJECT_PLUGINS_DIR}/any-package`;
 const APPEND_HEADER = '# DorkOS harness sync — ephemeral projections';
 
 /**
- * Whether a repo-relative path is ignored by a `.gitignore` pattern.
+ * What is at the end of a path, as far as a `dir/` pattern is concerned.
  *
- * Supported shapes, which is all the constant uses and nearly all a person
- * writes for these paths:
+ * `'file'` covers a SYMLINK too, deliberately: git treats a link as a file
+ * whatever it points at, so a `*__*` DIRECTORY rule does not ignore `.claude/skills/pkg__skill`
+ * even though that link resolves to a directory. Both of the engine's `*__*`
+ * families are links, so this is the difference between a repo being warned and
+ * a repo committing its projections.
+ */
+export type LeafKind = 'dir' | 'file';
+
+/**
+ * Whether a repo-relative path is ignored by a whole `.gitignore` file's lines.
  *
- * - `dir/` — that directory and everything under it.
- * - `a/b/c` — that exact path, and anything under it if it is a directory.
- * - `*` within a segment (`skills/*__*`), `**` across segments.
- * - a pattern with no `/` matches that name at ANY depth, as git does.
- * - a leading `/` anchors to the repo root, which these paths already are.
+ * Git's own procedure, as far as these paths need it: walk the path one
+ * component at a time, and at each level let the LAST line that matches that
+ * exact component decide — a `!` line deciding "not ignored". A component that
+ * ends up ignored is a directory git never descends into, so everything under it
+ * is ignored and cannot be re-included, which is the one rule a plain
+ * last-match-wins over the full path would get wrong.
  *
- * @param pattern - one `.gitignore` line, already stripped of comments/blanks.
+ * Every component but the last is a directory by construction — git only
+ * descends through directories — so a `dir/` line decides those. The LAST one is
+ * whatever `leafKind` says, and getting that wrong is not academic: a repo
+ * whose rule is a `*__*` DIRECTORY one has git tracking `.claude/skills/pkg__skill`, because that
+ * projection is a symlink and git calls a link a file. The kind is passed in
+ * rather than probed here so this stays pure and answers the same way for a
+ * target the plan has not written yet.
+ *
+ * @param patterns - the file's lines, in order, blanks and comments removed.
  * @param relPath - a repo-relative, slash-separated path.
+ * @param leafKind - what the last component is; a file by default, which is what
+ *   every path this module asks about turns out to be but one.
+ * @returns `true` when git would not track that path.
+ */
+export function isPathIgnored(
+  patterns: readonly string[],
+  relPath: string,
+  leafKind: LeafKind = 'file'
+): boolean {
+  const segments = relPath.split('/').filter((segment) => segment !== '');
+  let ignored = false;
+  let prefix = '';
+  for (const [index, segment] of segments.entries()) {
+    // An excluded directory is never descended into, so nothing inside it can be
+    // re-included — git says so, and it is why negation is a per-level answer.
+    if (ignored) return true;
+    prefix = prefix === '' ? segment : `${prefix}/${segment}`;
+    const isDir = index < segments.length - 1 || leafKind === 'dir';
+    for (const pattern of patterns) {
+      const decision = decidePattern(pattern, prefix, isDir);
+      if (decision !== undefined) ignored = decision;
+    }
+  }
+  return ignored;
+}
+
+/**
+ * Whether a repo-relative path is ignored by ONE `.gitignore` pattern.
+ *
+ * The single-pattern question, which is what "does the engine declare a line
+ * that would cover this?" means. A `!` line ignores nothing on its own, so it
+ * answers `false` here; negation only means something in the ordered list
+ * {@link isPathIgnored} reads.
+ *
+ * @param pattern - one `.gitignore` line.
+ * @param relPath - a repo-relative, slash-separated path.
+ * @param leafKind - what the last component is; a file by default.
  * @returns `true` when the pattern ignores that path.
  */
-export function gitignorePatternMatches(pattern: string, relPath: string): boolean {
+export function gitignorePatternMatches(
+  pattern: string,
+  relPath: string,
+  leafKind: LeafKind = 'file'
+): boolean {
+  return isPathIgnored([pattern], relPath, leafKind);
+}
+
+/**
+ * What one pattern says about one path COMPONENT: ignore it, un-ignore it, or
+ * nothing at all.
+ *
+ * Matching is exact against the component — the "and everything under it" half
+ * belongs to {@link isPathIgnored}'s walk, not to the pattern. A `dir/` rule
+ * says nothing about a component that is not a directory.
+ */
+function decidePattern(pattern: string, path: string, isDir: boolean): boolean | undefined {
   const trimmed = pattern.trim();
-  if (trimmed === '' || trimmed.startsWith('#') || trimmed.startsWith('!')) return false;
+  if (trimmed === '' || trimmed.startsWith('#')) return undefined;
+  const negated = trimmed.startsWith('!');
+  const rule = negated ? trimmed.slice(1) : trimmed;
 
-  const dirOnly = trimmed.endsWith('/');
-  const body = (dirOnly ? trimmed.slice(0, -1) : trimmed).replace(/^\//, '');
-  if (body === '') return false;
+  const dirOnly = rule.endsWith('/');
+  if (dirOnly && !isDir) return undefined;
+  let body = (dirOnly ? rule.slice(0, -1) : rule).replace(/^\//, '');
+  // A leading double-star segment is git's own spelling of "at any depth", so it un-anchors
+  // the rest rather than demanding a directory in front of it.
+  const anyDepth = body.startsWith('**/');
+  if (anyDepth) body = body.slice(3);
+  if (body === '') return undefined;
 
-  const anchored = trimmed.startsWith('/') || body.includes('/');
+  const anchored = !anyDepth && (rule.startsWith('/') || body.includes('/'));
   const prefix = anchored ? '^' : '^(?:.*/)?';
-  // A directory pattern never matches the directory's own path — only what is
-  // inside it. Anything else matches the path itself, or anything beneath it.
-  const suffix = dirOnly ? '/.*$' : '(?:/.*)?$';
-  return new RegExp(`${prefix}${globToRegExpBody(body)}${suffix}`).test(relPath);
+  return new RegExp(`${prefix}${globToRegExpBody(body)}$`).test(path) ? !negated : undefined;
 }
 
 /** Translate one glob body into a regular-expression body. */
@@ -123,13 +207,17 @@ function globToRegExpBody(body: string): string {
   return out;
 }
 
-/** Every usable pattern in a `.gitignore` file, or `[]` when there is none. */
+/**
+ * Every usable line of a `.gitignore` file, IN ORDER, or `[]` when there is none.
+ *
+ * Negations are kept: they are lines like any other, and the order they sit in
+ * is what decides the answer (see {@link isPathIgnored}). Dropping them was the
+ * bug — a repo whose file said `.claude/*` then `!.claude/skills/` was told its
+ * projections were covered when git tracks them.
+ */
 function readGitignore(absPath: string): string[] {
   if (!existsSync(absPath)) return [];
-  return readFileSync(absPath, 'utf8')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line !== '' && !line.startsWith('#') && !line.startsWith('!'));
+  return readLines(readFileSync(absPath, 'utf8'));
 }
 
 /** Whether the repo root is a git checkout at all (a worktree's `.git` is a file). */
@@ -152,25 +240,54 @@ function isGitRepo(repoRoot: string): boolean {
  *   one machine's bytes. The constant has always listed all six; AP-09 names
  *   them explicitly.
  */
-function ephemeralPaths(plan: ProjectionPlan, repoRoot: string): string[] {
-  const paths = new Set<string>();
+function ephemeralPaths(plan: ProjectionPlan, repoRoot: string): EphemeralPath[] {
+  const paths = new Map<string, LeafKind>();
   for (const action of plan.actions) {
     if (isEphemeralProvenance(action.provenance)) {
-      if (action.source) paths.add(action.source);
-      if (action.target && action.kind !== 'native') paths.add(action.target);
+      if (action.source) paths.set(action.source, onDiskKind(repoRoot, action.source, 'file'));
+      // A projection is a link or a written file, and git calls both a file —
+      // which is what decides whether a `dir/` rule in the repo covers it.
+      if (action.target && action.kind !== 'native') paths.set(action.target, 'file');
       continue;
     }
     if (action.target && action.target in GENERATED_HOOK_TARGET_HARNESSES) {
-      paths.add(action.target);
-      paths.add(`${action.target}${GENERATED_SIDECAR_SUFFIX}`);
+      paths.set(action.target, 'file');
+      paths.set(`${action.target}${GENERATED_SIDECAR_SUFFIX}`, 'file');
     }
   }
   // The install directory itself, which no action names when a package
   // contributes only hooks — and which is the biggest thing here to commit by
   // accident. Probed on disk rather than inferred, because it belongs to the
   // marketplace installer, not to this plan.
-  if (existsSync(join(repoRoot, PROJECT_PLUGINS_DIR))) paths.add(INSTALL_ROOT_PROBE);
-  return [...paths];
+  if (existsSync(join(repoRoot, PROJECT_PLUGINS_DIR))) paths.set(INSTALL_ROOT_PROBE, 'dir');
+  return [...paths].map(([path, kind]) => ({ path, kind }));
+}
+
+/** One ephemeral path and what a `dir/` rule would see at the end of it. */
+interface EphemeralPath {
+  /** The repo-relative path. */
+  path: string;
+  /** What is (or will be) at its last component. */
+  kind: LeafKind;
+}
+
+/**
+ * What is at a path on disk, or `fallback` when nothing is there yet.
+ *
+ * `lstatSync`, never `statSync`: a symlink is a file to git whatever it resolves
+ * to, and the two `*__*` families the engine writes are symlinks to directories.
+ * Reading through them would say `dir` and hand a `*__*` directory rule a match
+ * git does not make. Wrapped, because a path that cannot be read must not take
+ * down a sync (the same lesson as `detectHarnessFootprints`).
+ */
+function onDiskKind(repoRoot: string, relPath: string, fallback: LeafKind): LeafKind {
+  try {
+    const stats = lstatSync(join(repoRoot, relPath), { throwIfNoEntry: false });
+    if (!stats) return fallback;
+    return stats.isDirectory() ? 'dir' : 'file';
+  } catch {
+    return fallback;
+  }
 }
 
 /**
@@ -192,15 +309,16 @@ function selfIgnored(plan: ProjectionPlan, target: string): boolean {
   if (!own) return false;
   if (name === ROOT_GITIGNORE) return true;
   const content = getActionContent(own);
-  return content !== undefined && readLines(content).some((p) => gitignorePatternMatches(p, name));
+  // A wrapper `.md` and the `.gitignore` beside it are both files.
+  return content !== undefined && isPathIgnored(readLines(content), name, 'file');
 }
 
-/** The usable pattern lines of a `.gitignore` body held in memory. */
+/** The usable lines of a `.gitignore` body held in memory, in order. */
 function readLines(content: string): string[] {
   return content
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => line !== '' && !line.startsWith('#') && !line.startsWith('!'));
+    .filter((line) => line !== '' && !line.startsWith('#'));
 }
 
 /**
@@ -225,11 +343,11 @@ export function missingGitignoreLines(repoRoot: string, plan: ProjectionPlan): s
   const present = readGitignore(join(repoRoot, ROOT_GITIGNORE));
   const missing = new Set<string>();
 
-  for (const path of ephemeralPaths(plan, repoRoot)) {
-    if (present.some((pattern) => gitignorePatternMatches(pattern, path))) continue;
+  for (const { path, kind } of ephemeralPaths(plan, repoRoot)) {
+    if (isPathIgnored(present, path, kind)) continue;
     if (selfIgnored(plan, path)) continue;
     const covering = EPHEMERAL_GITIGNORE_PATTERNS.filter((pattern) =>
-      gitignorePatternMatches(pattern, path)
+      gitignorePatternMatches(pattern, path, kind)
     );
     if (covering.length === 0) missing.add(path);
     else for (const pattern of covering) missing.add(pattern);
@@ -246,13 +364,15 @@ function order(declared: readonly string[], line: string): number {
 }
 
 /**
- * Append lines to the repo's root `.gitignore`, under one comment, creating the
- * file when there is none.
+ * Add lines to the repo's root `.gitignore` under ONE DorkOS comment, creating
+ * the file when there is none.
  *
- * Append-only on purpose: the file is the person's, it may carry ordering that
- * matters to them, and nothing here is ever a reason to rewrite a line they
- * wrote. The existing bytes are preserved exactly, with a newline added first if
- * the file did not end with one.
+ * Insert-only, never a rewrite: the file is the person's, it may carry ordering
+ * that matters to them, and nothing here is a reason to touch a line they wrote.
+ * A first run appends the comment and its lines at the end; a later run — a
+ * `--harness codex` sync followed by a full one, say — extends the block that is
+ * already there rather than stamping a second copy of the same heading down the
+ * file.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param lines - the lines to add, already known to be missing.
@@ -261,14 +381,36 @@ function order(declared: readonly string[], line: string): number {
 export function appendGitignoreLines(repoRoot: string, lines: readonly string[]): string {
   const abs = join(repoRoot, ROOT_GITIGNORE);
   const existing = existsSync(abs) ? readFileSync(abs, 'utf8') : '';
-  const head = existing === '' ? '' : existing.endsWith('\n') ? `${existing}\n` : `${existing}\n\n`;
-  writeFileSync(abs, `${head}${APPEND_HEADER}\n${lines.join('\n')}\n`);
+  writeFileSync(abs, withGitignoreLines(existing, lines));
   return ROOT_GITIGNORE;
 }
 
 /**
- * Whether `.agents/` — the canonical layer every projection is made FROM — is
- * itself ignored by git (contract AP-15).
+ * The `.gitignore` body with `lines` added under the single DorkOS heading —
+ * extending that block when it exists, appending it when it does not.
+ *
+ * Kept pure so the placement is testable without a filesystem, and because the
+ * end of an existing block is the one thing here that is easy to get subtly
+ * wrong: it runs to the first blank line, so a person's own lines below the
+ * block stay below it.
+ */
+function withGitignoreLines(existing: string, lines: readonly string[]): string {
+  if (existing.trim() === '') return `${APPEND_HEADER}\n${lines.join('\n')}\n`;
+
+  const body = existing.endsWith('\n') ? existing.slice(0, -1) : existing;
+  const rows = body.split('\n');
+  const header = rows.indexOf(APPEND_HEADER);
+  if (header === -1) return `${body}\n\n${APPEND_HEADER}\n${lines.join('\n')}\n`;
+
+  let end = header + 1;
+  while (end < rows.length && rows[end]?.trim() !== '') end += 1;
+  rows.splice(end, 0, ...lines);
+  return `${rows.join('\n')}\n`;
+}
+
+/**
+ * Which `.gitignore` keeps `.agents/` — the canonical layer every projection is
+ * made FROM — out of git, if any (contract AP-15).
  *
  * Some teams do ignore it, and it is not wrong, but it changes what the rest of
  * the engine's output means: the canonical skills and instructions become local
@@ -276,21 +418,30 @@ export function appendGitignoreLines(repoRoot: string, lines: readonly string[])
  * ordinary committable files pointing into a directory a teammate's clone will
  * not have.
  *
+ * The FILE is the answer rather than a boolean, because "stop ignoring it" is
+ * advice a person can only act on once they know which of the two files to open
+ * — and the second one, `.agents/.gitignore`, is easy to forget you wrote.
+ *
  * Asked of `.agents/harness.manifest.json` rather than of the directory, so the
  * two `*__*` patterns — which ignore only installed projections inside it — are
- * never mistaken for ignoring the layer. A `.agents/.gitignore` that ignores its
- * own directory counts too.
+ * never mistaken for ignoring the layer.
  *
  * @param repoRoot - absolute path to the repository root.
- * @returns `true` when git would not track the canonical layer.
+ * @returns the repo-relative path of the `.gitignore` that ignores the canonical
+ *   layer, or `undefined` when git would track it (and when this is not a git
+ *   checkout at all).
  */
-export function isCanonicalLayerIgnored(repoRoot: string): boolean {
-  if (!isGitRepo(repoRoot)) return false;
-  const probe = HARNESS_MANIFEST_PATH.split(/[\\/]/).join('/');
-  const root = readGitignore(join(repoRoot, ROOT_GITIGNORE));
-  if (root.some((pattern) => gitignorePatternMatches(pattern, probe))) return true;
+export function canonicalLayerIgnoredBy(repoRoot: string): string | undefined {
+  if (!isGitRepo(repoRoot)) return undefined;
+  const probe = HARNESS_MANIFEST_PATH;
+  // The probe is the manifest FILE; `.agents/` still matches at the directory
+  // component in front of it, which is the question being asked.
+  if (isPathIgnored(readGitignore(join(repoRoot, ROOT_GITIGNORE)), probe, 'file')) {
+    return ROOT_GITIGNORE;
+  }
 
-  const own = readGitignore(join(repoRoot, CANONICAL_DIR, ROOT_GITIGNORE));
+  const ownPath = `${CANONICAL_DIR}/${ROOT_GITIGNORE}`;
+  const own = readGitignore(join(repoRoot, ownPath));
   const withinCanonical = probe.slice(`${CANONICAL_DIR}/`.length);
-  return own.some((pattern) => gitignorePatternMatches(pattern, withinCanonical));
+  return isPathIgnored(own, withinCanonical, 'file') ? ownPath : undefined;
 }

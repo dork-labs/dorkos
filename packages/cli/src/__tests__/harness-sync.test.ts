@@ -181,8 +181,9 @@ describe('runHarnessSync', () => {
       // fs.realpath: macOS temp dirs are symlinked (/var -> /private/var), and the
       // command reports the cwd Node resolved.
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(fs.realpathSync(tmpDir)));
-      // The exported constant, not a literal: it is built with `join()`, so the
-      // separator is a backslash on Windows.
+      // The exported constant rather than a literal typed here, so this stays one
+      // claim about one string — which DOR-1851 made a forward-slash path on every
+      // platform, since this line is read by a person.
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(HARNESS_MANIFEST_PATH));
     });
 
@@ -1337,6 +1338,56 @@ describe('runHarnessSync — a harness added later, and the .gitignore contract'
       expect(fs.existsSync(path.join(tmpDir, '.cursor', 'hooks.json'))).toBe(false);
     });
 
+    it('reports the typo, not the missing --fix, when both are wrong', async () => {
+      // Order matters to the person: being sent to re-run `--fix --enable curser`
+      // is being sent to make the same mistake with a longer command.
+      const result = await runHarnessSync(syncArgs({ check: true, enable: ['curser'] }));
+
+      expect(result.exitCode).toBe(1);
+      expect(errors()).toContain("Unknown harness: 'curser'");
+      expect(errors()).not.toContain('needs --fix');
+    });
+
+    it('refuses to enable a harness in a run narrowed to a different one', async () => {
+      // It would write the manifest and then project nothing for what it just
+      // turned on — the half-done job nobody would think to check for.
+      const before = manifestText();
+
+      const result = await runHarnessSync(
+        syncArgs({ fix: true, enable: ['cursor'], harness: 'codex' })
+      );
+
+      expect(result.exitCode).toBe(1);
+      expect(errors()).toContain('does not take --harness');
+      expect(manifestText()).toBe(before);
+    });
+
+    it('adds the harnesses key to a manifest that leaves it to the default', async () => {
+      // A manifest of `{"version": 1}` is valid and means `["claude-code"]`, so
+      // the notice fires for it — and the command it names has to work.
+      fs.writeFileSync(path.join(tmpDir, HARNESS_MANIFEST_PATH), '{\n  "version": 1\n}\n');
+      addCursorDir();
+
+      const result = await runHarnessSync(syncArgs({ fix: true, enable: ['cursor'] }));
+
+      expect(result.exitCode).toBe(0);
+      expect(manifestText()).toBe(
+        '{\n  "version": 1,\n  "harnesses": ["claude-code", "cursor"]\n}\n'
+      );
+      expect(fs.existsSync(path.join(tmpDir, '.cursor', 'hooks.json'))).toBe(true);
+    });
+
+    it('refuses a manifest the engine would reject, and leaves it alone', async () => {
+      const body = '{\n  "version": 1,\n  "harnesses": ["codex"],\n  "sharedSkills": ["a"]\n}\n';
+      fs.writeFileSync(path.join(tmpDir, HARNESS_MANIFEST_PATH), body);
+
+      const result = await runHarnessSync(syncArgs({ fix: true, enable: ['cursor'] }));
+
+      expect(result.exitCode).toBe(1);
+      expect(errors()).toContain('sharedSkills');
+      expect(manifestText()).toBe(body);
+    });
+
     it('says the harness was already on, and leaves the file byte-identical', async () => {
       const before = manifestText();
 
@@ -1459,6 +1510,40 @@ describe('runHarnessSync — a harness added later, and the .gitignore contract'
 
       expect(printed()).not.toContain('gitignore:');
     });
+
+    it('says nothing when a re-include means git tracks a projection anyway', async () => {
+      // `dir/*` plus a re-include is a common idiom, and git really does track
+      // `.claude/skills/pkg__skill` under it — so the repo that most needs the
+      // warning is the one a negation-blind matcher called covered.
+      makeGitRepo('.claude/*\n!.claude/skills/\n.dork/\n.agents/skills/*__*\n.codex/\n');
+      writeInstalledPlugin(tmpDir, 'acme-tools', 'greet');
+
+      await runHarnessSync(syncArgs({ fix: true }));
+
+      expect(printed()).toContain('  .claude/skills/*__*');
+    });
+
+    it('extends its own block instead of stamping a second heading', async () => {
+      // Two runs is the ordinary case, not a corner: a narrowed sync followed by
+      // a full one, or a plugin installed after the first `--write-gitignore`.
+      makeGitRepo('node_modules/\n');
+      await runHarnessSync(syncArgs({ fix: true, writeGitignore: true }));
+      writeInstalledPlugin(tmpDir, 'acme-tools', 'greet');
+      await runHarnessSync(syncArgs({ fix: true, writeGitignore: true }));
+
+      const gitignore = fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf8');
+      expect(gitignore.split('\n').filter((line) => line.startsWith('# DorkOS'))).toHaveLength(1);
+      expect(gitignore).toBe(
+        'node_modules/\n\n# DorkOS harness sync — ephemeral projections\n' +
+          '.codex/hooks.json\n.codex/hooks.json.dorkos-generated\n' +
+          '.dork/plugins/\n.agents/skills/*__*\n.claude/skills/*__*\n'
+      );
+      // And a third run, with nothing left to add, changes nothing at all.
+      logSpy.mockClear();
+      await runHarnessSync(syncArgs({ fix: true, writeGitignore: true }));
+      expect(fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf8')).toBe(gitignore);
+      expect(printed()).not.toContain('gitignore:');
+    });
   });
 
   describe('a gitignored .agents/ (AP-15)', () => {
@@ -1468,9 +1553,20 @@ describe('runHarnessSync — a harness added later, and the .gitignore contract'
       const result = await runHarnessSync(syncArgs({ fix: true }));
 
       expect(result.exitCode).toBe(0);
-      expect(printed()).toContain('.agents/ is in your .gitignore');
+      expect(printed()).toContain('.agents/ is ignored by .gitignore');
       expect(printed()).toContain('links pointing at files git does not have');
-      expect(printed()).toContain('Either stop ignoring .agents/');
+      expect(printed()).toContain('Either stop ignoring .agents/ in .gitignore');
+    });
+
+    it('names the .agents/.gitignore when that is the file doing it', async () => {
+      // "Stop ignoring it" is advice nobody can act on until they know which
+      // file to open, and this is the one people forget they wrote.
+      makeGitRepo('node_modules/\n');
+      fs.writeFileSync(path.join(tmpDir, '.agents', '.gitignore'), '*\n');
+
+      await runHarnessSync(syncArgs({ fix: true }));
+
+      expect(printed()).toContain('.agents/ is ignored by .agents/.gitignore');
     });
 
     it('is not triggered by the installed-projection patterns inside it', async () => {
@@ -1478,7 +1574,7 @@ describe('runHarnessSync — a harness added later, and the .gitignore contract'
 
       await runHarnessSync(syncArgs({ fix: true }));
 
-      expect(printed()).not.toContain('.agents/ is in your .gitignore');
+      expect(printed()).not.toContain('.agents/ is ignored by');
     });
   });
 });

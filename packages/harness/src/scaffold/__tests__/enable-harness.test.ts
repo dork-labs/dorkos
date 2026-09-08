@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { enableHarnessInManifest } from '../enable-harness.js';
 import { HARNESS_MANIFEST_PATH } from '../manifest.js';
+import { parseHarnessManifest } from '../../manifest/schema.js';
 
 let repo = '';
 
@@ -99,8 +100,14 @@ describe('enableHarnessInManifest', () => {
     // so where the "insertion" starts is ambiguous even though the edit is not.
     // `singleInsertion` still has to answer — that is the pure-insertion claim.
     for (const [body, expected] of [
-      ['{\n  "harnesses": []\n}\n', '{\n  "harnesses": ["cursor"]\n}\n'],
-      ['{\n  "harnesses": [\n  ]\n}\n', '{\n  "harnesses": [\n    "cursor"\n  ]\n}\n'],
+      [
+        '{\n  "version": 1,\n  "harnesses": []\n}\n',
+        '{\n  "version": 1,\n  "harnesses": ["cursor"]\n}\n',
+      ],
+      [
+        '{\n  "version": 1,\n  "harnesses": [\n  ]\n}\n',
+        '{\n  "version": 1,\n  "harnesses": [\n    "cursor"\n  ]\n}\n',
+      ],
     ] as const) {
       const abs = stageManifest(body);
       expect(enableHarnessInManifest(repo, 'cursor').outcome).toBe('enabled');
@@ -117,7 +124,7 @@ describe('enableHarnessInManifest', () => {
     // array of objects after the one being edited, no trailing comma anywhere.
     const body = [
       '{',
-      '  "skillBundles": [{ "name": "a", "skills": ["x"] }],',
+      '  "skillBundles": [{ "name": "a", "sourceRoot": ".agents/bundles/a" }],',
       '  "harnesses": ["claude-code"],',
       '  "version": 1,',
       '  "hookPolicies": []',
@@ -130,12 +137,25 @@ describe('enableHarnessInManifest', () => {
 
     const after = readFileSync(abs, 'utf8');
     expect(singleInsertion(body, after)).toBe(', "gemini"');
-    expect(after).toContain('"skillBundles": [{ "name": "a", "skills": ["x"] }],');
+    expect(after).toContain(
+      '"skillBundles": [{ "name": "a", "sourceRoot": ".agents/bundles/a" }],'
+    );
     expect(after.endsWith('}\n')).toBe(true);
   });
 
+  it('treats the schema default as enabled, since that is what the engine loads', () => {
+    // No `harnesses` key means `["claude-code"]` to every reader of this file,
+    // so saying "not enabled" about Claude Code here would be a claim about the
+    // text rather than about what runs.
+    const abs = stageManifest('{\n  "version": 1\n}\n');
+    const before = readFileSync(abs, 'utf8');
+
+    expect(enableHarnessInManifest(repo, 'claude-code').outcome).toBe('already-enabled');
+    expect(readFileSync(abs, 'utf8')).toBe(before);
+  });
+
   it('says so and writes nothing when the harness is already enabled', () => {
-    const abs = stageManifest('{\n  "harnesses": ["cursor"]\n}\n');
+    const abs = stageManifest('{\n  "version": 1,\n  "harnesses": ["cursor"]\n}\n');
     const before = readFileSync(abs, 'utf8');
 
     expect(enableHarnessInManifest(repo, 'cursor')).toEqual({
@@ -157,29 +177,69 @@ describe('enableHarnessInManifest', () => {
     expect(readFileSync(abs, 'utf8')).toBe(before);
   });
 
-  it('refuses a manifest with no harnesses list', () => {
-    const abs = stageManifest('{\n  "version": 1\n}\n');
-    const before = readFileSync(abs, 'utf8');
+  it('adds the whole key when the manifest has none, keeping the defaulted set', () => {
+    // `{"version": 1}` is a VALID manifest: the schema defaults `harnesses` to
+    // `["claude-code"]`. So the notice prints for it, and `--enable` refusing
+    // would be the tool pointing at a command it had just declined to run.
+    // Writing `["cursor"]` would be worse than refusing — it would turn Claude
+    // Code off on the way past.
+    const body = '{\n  "version": 1\n}\n';
+    const abs = stageManifest(body);
+
+    const result = enableHarnessInManifest(repo, 'cursor');
+
+    expect(result.outcome).toBe('enabled');
+    const after = readFileSync(abs, 'utf8');
+    expect(after).toBe('{\n  "version": 1,\n  "harnesses": ["claude-code", "cursor"]\n}\n');
+    expect(singleInsertion(body, after)).toBe(',\n  "harnesses": ["claude-code", "cursor"]');
+    // And the file the engine now loads says what the run just did.
+    expect(parseHarnessManifest(JSON.parse(after)).harnesses).toEqual(['claude-code', 'cursor']);
+  });
+
+  it('refuses a manifest the engine would then reject, and writes nothing', () => {
+    // `sharedSkills` is the stale key the strict schema exists to catch
+    // (`manifest/schema.ts`). Checking only `Array.isArray(harnesses)` let this
+    // file be MODIFIED and then fail to load: the run exited 1 having edited a
+    // manifest nobody asked it to touch.
+    const body = '{\n  "harnesses": ["codex"],\n  "sharedSkills": ["a"]\n}\n';
+    const abs = stageManifest(body);
 
     const result = enableHarnessInManifest(repo, 'cursor');
 
     expect(result.outcome).toBe('unwritable');
-    expect(result.outcome === 'unwritable' && result.reason).toContain('"harnesses"');
-    expect(readFileSync(abs, 'utf8')).toBe(before);
+    expect(result.outcome === 'unwritable' && result.reason).toContain(
+      'not a valid harness manifest'
+    );
+    expect(readFileSync(abs, 'utf8')).toBe(body);
   });
 
-  it('edits the root list, not a same-named key nested inside another value', () => {
-    // Nothing in the schema nests a `harnesses` key today. The scanner is
-    // depth-aware anyway, because the day something does, a first-match search
-    // would quietly edit the wrong list.
-    const body =
-      '{\n  "instructionProjections": [{ "path": "x", "harnesses": ["codex"] }],\n  "harnesses": ["claude-code"]\n}\n';
+  it('edits the root list, not the same spelling inside somebody\u2019s note', () => {
+    // The strict schema forbids a nested `harnesses` KEY, but nothing stops a
+    // person writing the spelling in a string — and a regex-based finder would
+    // edit that. The scanner walks strings and depth, so it reaches neither.
+    const body = `{
+  "version": 1,
+  "instructionProjections": [
+    {
+      "source": "AGENTS.md",
+      "status": "planned",
+      "targets": [],
+      "notes": "the \\"harnesses\\": [\\"codex\\"] spelling, inside a string"
+    }
+  ],
+  "harnesses": ["claude-code"]
+}
+`;
     const abs = stageManifest(body);
 
-    enableHarnessInManifest(repo, 'codex');
+    const result = enableHarnessInManifest(repo, 'codex');
 
+    expect(result.outcome).toBe('enabled');
     const after = readFileSync(abs, 'utf8');
-    expect(after).toContain('{ "path": "x", "harnesses": ["codex"] }');
-    expect(JSON.parse(after)).toMatchObject({ harnesses: ['claude-code', 'codex'] });
+    expect(singleInsertion(body, after)).toBe(', "codex"');
+    expect(after).toContain(
+      '"notes": "the \\"harnesses\\": [\\"codex\\"] spelling, inside a string"'
+    );
+    expect(parseHarnessManifest(JSON.parse(after)).harnesses).toEqual(['claude-code', 'codex']);
   });
 });

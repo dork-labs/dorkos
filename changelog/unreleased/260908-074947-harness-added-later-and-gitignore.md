@@ -2,6 +2,8 @@
 covers:
   - 'feat(harness,cli): a harness added later, and gitignore lines (DOR-1851)'
   - 'docs(harness,cli): the one manifest write path, and gitignore (DOR-1851)'
+  - 'docs(cli): dorkos harness --help lists the two new flags (DOR-1851)'
+  - 'fix(harness,cli): a gitignore re-include leaks, and six more (DOR-1851)'
 ---
 
 ### Added

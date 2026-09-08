@@ -24,7 +24,8 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { HarnessId } from '../manifest/schema.js';
+import { ZodError } from 'zod';
+import { parseHarnessManifest, type HarnessId } from '../manifest/schema.js';
 import { HARNESS_MANIFEST_PATH } from './manifest.js';
 
 /** What {@link enableHarnessInManifest} did, or why it could not. */
@@ -86,23 +87,36 @@ export function enableHarnessInManifest(repoRoot: string, harness: HarnessId): E
     };
   }
 
-  const existing = (parsed as { harnesses?: unknown }).harnesses;
-  if (!Array.isArray(existing)) {
-    return { outcome: 'unwritable', harness, path, reason: 'it has no "harnesses" list' };
+  // Validated with the SAME strict schema the engine loads with, before a byte is
+  // written. `Array.isArray` alone was not enough: a manifest carrying a stale
+  // key the schema rejects (`sharedSkills`) passed that check, got the harness
+  // inserted, and then failed to load — leaving a file the person did not write
+  // and a sync that still exits 1. Refusing costs them one hand-edit; the other
+  // way costs them a file they now have to un-edit first.
+  let manifest;
+  try {
+    manifest = parseHarnessManifest(parsed);
+  } catch (err) {
+    return { outcome: 'unwritable', harness, path, reason: schemaReason(err) };
   }
+
+  // The VALIDATED set, so an absent `harnesses` key reads as the schema's own
+  // default rather than as nothing — the difference between adding Cursor and
+  // silently turning Claude Code off.
+  const existing = manifest.harnesses;
   if (existing.includes(harness)) return { outcome: 'already-enabled', harness, path };
 
-  const span = findHarnessesArray(before);
-  if (!span) {
+  const edit = plannedEdit(before, existing, harness);
+  if (!edit) {
     return {
       outcome: 'unwritable',
       harness,
       path,
-      reason: 'the "harnesses" list could not be located in the file as written',
+      reason: 'its "harnesses" list could not be located in the file as written',
     };
   }
 
-  const { text: after, inserted } = insertElement(before, span, harness);
+  const { text: after, inserted } = edit;
   if (!isExactlyOneHarnessAdded(after, parsed, existing, harness)) {
     return {
       outcome: 'unwritable',
@@ -116,35 +130,76 @@ export function enableHarnessInManifest(repoRoot: string, harness: HarnessId): E
   return { outcome: 'enabled', harness, path, inserted };
 }
 
-/** Where the top-level `harnesses` array starts and ends, as indexes of `[` and `]`. */
-interface ArraySpan {
-  /** Index of the opening `[`. */
+/**
+ * The first thing wrong with a manifest, as one sentence naming the key.
+ *
+ * A `ZodError`'s own `message` is a pretty-printed JSON array, so the first line
+ * of it is `[` — which is what a person would have been shown. This says
+ * `sharedSkills: Unrecognized key` instead.
+ */
+function schemaReason(err: unknown): string {
+  const issue = err instanceof ZodError ? err.issues[0] : undefined;
+  if (!issue) return `it is not a valid harness manifest (${String(err)})`;
+  const at = issue.path.length > 0 ? `${issue.path.join('.')}: ` : '';
+  return `it is not a valid harness manifest (${at}${issue.message})`;
+}
+
+/**
+ * The text edit that adds one harness: an element inserted into the `harnesses`
+ * array, or — when the file has no such key — the whole key, carrying the set
+ * the schema was defaulting to plus the new one.
+ *
+ * That second case is why this is not simply "insert an element". A manifest of
+ * `{"version": 1}` is VALID, and the notice that sent the person here prints for
+ * it, so `--enable` refusing with "add it yourself" would be the tool pointing at
+ * a command it had just declined to run. And writing `["cursor"]` there would be
+ * worse than refusing: the schema had been defaulting the set to `["claude-code"]`,
+ * so the edit that turned Cursor on would have turned Claude Code off.
+ */
+function plannedEdit(
+  text: string,
+  existing: readonly string[],
+  harness: HarnessId
+): { text: string; inserted: string } | undefined {
+  const array = findValueSpan(text, 'harnesses', '[');
+  if (array) return insertInto(text, array, JSON.stringify(harness));
+
+  const root = findRootObject(text);
+  if (!root) return undefined;
+  const list = [...existing, harness].map((id) => JSON.stringify(id)).join(', ');
+  return insertInto(text, root, `"harnesses": [${list}]`);
+}
+
+/** Where a JSON container starts and ends, as indexes of its brackets. */
+interface Span {
+  /** Index of the opening `[` or `{`. */
   open: number;
-  /** Index of the closing `]`. */
+  /** Index of the matching closing bracket. */
   close: number;
 }
 
 /**
- * Locate the ROOT object's `harnesses` array in the raw text.
+ * Locate the value of a ROOT-object key in the raw text, when it opens with
+ * `opener`.
  *
- * Depth-aware rather than a regex: a `"harnesses"` key nested inside some future
- * per-entry object is not the one being edited, and a plain search would find
- * whichever came first in the file.
+ * Depth-aware rather than a regex: a `"harnesses"` key nested inside some other
+ * entry is not the one being edited, and a plain search would find whichever
+ * came first in the file.
  */
-function findHarnessesArray(text: string): ArraySpan | undefined {
+function findValueSpan(text: string, key: string, opener: '[' | '{'): Span | undefined {
   let depth = 0;
   let i = 0;
   while (i < text.length) {
     const ch = text[i];
     if (ch === '"') {
       const end = endOfString(text, i);
-      // A key of the ROOT object: depth 1, and followed by `:` then `[`.
-      if (depth === 1 && text.slice(i + 1, end) === 'harnesses') {
+      // A key of the ROOT object: depth 1, and followed by `:` then the opener.
+      if (depth === 1 && text.slice(i + 1, end) === key) {
         const colon = skipWhitespace(text, end + 1);
         if (text[colon] === ':') {
           const open = skipWhitespace(text, colon + 1);
-          if (text[open] === '[') {
-            const close = endOfArray(text, open);
+          if (text[open] === opener) {
+            const close = endOfContainer(text, open);
             if (close !== undefined) return { open, close };
           }
         }
@@ -159,6 +214,14 @@ function findHarnessesArray(text: string): ArraySpan | undefined {
   return undefined;
 }
 
+/** The document's own outermost `{ … }`, the container a missing key is added to. */
+function findRootObject(text: string): Span | undefined {
+  const open = text.indexOf('{');
+  if (open === -1) return undefined;
+  const close = endOfContainer(text, open);
+  return close === undefined ? undefined : { open, close };
+}
+
 /** Index of the closing quote of the JSON string starting at `start`. */
 function endOfString(text: string, start: number): number {
   for (let i = start + 1; i < text.length; i++) {
@@ -171,8 +234,8 @@ function endOfString(text: string, start: number): number {
   return text.length;
 }
 
-/** Index of the `]` closing the array whose `[` is at `open`, or undefined. */
-function endOfArray(text: string, open: number): number | undefined {
+/** Index of the bracket closing the container opened at `open`, or undefined. */
+function endOfContainer(text: string, open: number): number | undefined {
   let depth = 0;
   for (let i = open; i < text.length; i++) {
     const ch = text[i];
@@ -197,37 +260,33 @@ function skipWhitespace(text: string, from: number): number {
 }
 
 /**
- * Insert one element into an array, in the file's own layout, as a pure
+ * Insert one entry into a JSON container, in the file's own layout, as a pure
  * insertion — nothing already in the file moves or changes.
  *
- * A multi-line array gets the element on its own line, indented like the line
- * the last element ends on (or one step in from the `[` when the array is
- * empty). A single-line array gets `, "x"`. Either way the element goes AFTER
- * the last one, so no trailing comma is ever introduced and none is needed.
+ * One routine for both containers, because the placement question is the same
+ * one: an array gains `"cursor"`, the root object gains
+ * `"harnesses": ["claude-code", "cursor"]`, and each goes after the last thing
+ * already inside. A multi-line container puts it on its own line, indented like
+ * the line the last entry ends on (or one step in from the bracket when the
+ * container is empty); a single-line one gets `, x`. Either way the entry goes
+ * AFTER the last, so no trailing comma is ever introduced and none is needed.
  */
-function insertElement(
-  text: string,
-  span: ArraySpan,
-  value: string
-): { text: string; inserted: string } {
+function insertInto(text: string, span: Span, entry: string): { text: string; inserted: string } {
   const inner = text.slice(span.open + 1, span.close);
   const multiline = inner.includes('\n');
-  const element = JSON.stringify(value);
 
-  // Empty array: the element goes straight after the `[`, so the closing `]`
-  // and whatever whitespace sits in front of it are untouched.
+  // Empty container: the entry goes straight after the bracket, so the closing
+  // one and whatever whitespace sits in front of it are untouched.
   if (inner.trim() === '') {
     const inserted = multiline
-      ? `\n${indentOfLineAt(text, span.open)}${indentUnit(text)}${element}`
-      : element;
+      ? `\n${indentOfLineAt(text, span.open)}${indentUnit(text)}${entry}`
+      : entry;
     return { text: splice(text, span.open + 1, inserted), inserted };
   }
 
-  const lastElementEnd = span.open + 1 + trimmedEnd(inner);
-  const inserted = multiline
-    ? `,\n${indentOfLineAt(text, lastElementEnd)}${element}`
-    : `, ${element}`;
-  return { text: splice(text, lastElementEnd, inserted), inserted };
+  const lastEntryEnd = span.open + 1 + trimmedEnd(inner);
+  const inserted = multiline ? `,\n${indentOfLineAt(text, lastEntryEnd)}${entry}` : `, ${entry}`;
+  return { text: splice(text, lastEntryEnd, inserted), inserted };
 }
 
 /** `text` with `insertion` placed at `at`, and nothing else changed. */

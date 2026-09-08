@@ -9,13 +9,23 @@
  * staged trees, because "is this covered" is a question about a file on disk.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   appendGitignoreLines,
+  canonicalLayerIgnoredBy,
   gitignorePatternMatches,
-  isCanonicalLayerIgnored,
+  isPathIgnored,
   missingGitignoreLines,
 } from '../gitignore.js';
 import { EPHEMERAL_GITIGNORE_PATTERNS } from '../../sources/resolve-roots.js';
@@ -88,7 +98,13 @@ function plan(): ReturnType<typeof project> {
 describe('gitignorePatternMatches', () => {
   it('matches the shapes the constant actually uses', () => {
     expect(gitignorePatternMatches('.dork/plugins/', '.dork/plugins/acme/skills/x')).toBe(true);
+    // The directory itself too — but only when it IS one. A `dir/` rule says
+    // nothing about a file or a symlink at that path, which is git's own rule
+    // and the difference between warning a repo and letting it commit a link.
+    expect(gitignorePatternMatches('.dork/plugins/', '.dork/plugins', 'dir')).toBe(true);
     expect(gitignorePatternMatches('.dork/plugins/', '.dork/plugins')).toBe(false);
+    expect(gitignorePatternMatches('*__*/', '.claude/skills/acme__greet')).toBe(false);
+    expect(gitignorePatternMatches('*__*', '.claude/skills/acme__greet')).toBe(true);
     expect(gitignorePatternMatches('.claude/skills/*__*', '.claude/skills/acme__greet')).toBe(true);
     expect(gitignorePatternMatches('.claude/skills/*__*', '.claude/skills/greet')).toBe(false);
     // One segment, so a nested path with `__` deeper down is not this pattern's.
@@ -133,6 +149,131 @@ describe('gitignorePatternMatches', () => {
   });
 });
 
+/**
+ * Whether git is on PATH, so the conformance block below can run for real.
+ *
+ * Skipped rather than faked when it is not: a matcher checked only against the
+ * test author's own idea of git is the thing that produced the negation bug.
+ */
+function hasGit(): boolean {
+  try {
+    execFileSync('git', ['--version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Every shape the conformance block puts to real git: a `.gitignore` body, the
+ * path to ask about, and what is at the end of it — which decides what a `dir/`
+ * rule says, and which `check-ignore` reads off the tree.
+ */
+const GIT_CASES: ReadonlyArray<{
+  gitignore: string;
+  path: string;
+  kind?: 'dir' | 'file' | 'symlink';
+}> = [
+  // The two shapes that made this block necessary: a person's `dir/*` plus a
+  // re-include. Git TRACKS the file; a negation-blind matcher called it covered.
+  { gitignore: '.claude/*\n!.claude/skills/\n', path: '.claude/skills/pkg__skill' },
+  { gitignore: '.dork/*\n!.dork/plugins\n', path: '.dork/plugins/acme/skills/x' },
+  // ...and the same idiom where the re-include does NOT apply.
+  { gitignore: '.claude/*\n!.claude/agents/\n', path: '.claude/skills/pkg__skill' },
+  // A negation under an excluded DIRECTORY: git cannot re-include, and says so.
+  { gitignore: '.claude/\n!.claude/skills/pkg__skill\n', path: '.claude/skills/pkg__skill' },
+  // Order decides: the same two lines the other way round.
+  { gitignore: '!.claude/skills/\n.claude/*\n', path: '.claude/skills/pkg__skill' },
+  // The engine's own declared shapes.
+  { gitignore: '.dork/plugins/\n', path: '.dork/plugins/acme/skills/x' },
+  { gitignore: '.dork/plugins/\n', path: '.dork/plugins', kind: 'dir' },
+  // A `dir/` rule against each of the three things a leaf can be. Git calls a
+  // SYMLINK a file whatever it points at, and both `*__*` families the engine
+  // writes ARE symlinks to directories — so a repo whose rule is a `*__*`
+  // directory one has git tracking its projections, and a matcher that assumed
+  // "a `dir/` line could only name a directory" said nothing (measured
+  // 2026-09-08: `--fix` printed no gitignore block while `git status` showed
+  // `?? .claude/skills/acme__greet`).
+  { gitignore: '*__*/\n', path: '.claude/skills/acme__greet', kind: 'symlink' },
+  { gitignore: '*__*/\n', path: '.claude/skills/acme__greet', kind: 'dir' },
+  { gitignore: 'hooks.json/\n', path: '.codex/hooks.json', kind: 'file' },
+  { gitignore: 'plugins/\n', path: '.dork/plugins', kind: 'dir' },
+  { gitignore: '.claude/skills/*__*\n', path: '.claude/skills/acme__greet' },
+  { gitignore: '.claude/skills/*__*\n', path: '.claude/skills/greet' },
+  { gitignore: '.codex/hooks.json\n', path: '.codex/hooks.json' },
+  { gitignore: '.codex/hooks.json\n', path: '.codex/hooks.json.dorkos-generated' },
+  { gitignore: '.claude/settings.local.json\n', path: '.claude/settings.local.json' },
+  // Anchoring, depth, and the bare-name rule.
+  { gitignore: 'node_modules\n', path: 'packages/x/node_modules/y' },
+  { gitignore: '/.dork\n', path: '.dork/plugins/acme' },
+  { gitignore: '/.dork\n', path: 'x/.dork/plugins' },
+  { gitignore: '.claude/**\n', path: '.claude/settings.local.json' },
+  { gitignore: '**/hooks.json\n', path: '.codex/hooks.json' },
+  { gitignore: '# a comment\n\n.agents/\n', path: '.agents/harness.manifest.json' },
+];
+
+describe.skipIf(!hasGit())('the matcher against real git', () => {
+  it('agrees with `git check-ignore` on every shape these paths take', () => {
+    // P7 asks the matcher whether the matcher's own patterns cover a path, which
+    // is self-referential about globbing. This is the outside bar: a real repo, a
+    // real `.gitignore`, and git's own answer.
+    for (const testCase of GIT_CASES) {
+      const root = mkdtempSync(join(tmpdir(), 'harness-gitignore-git-'));
+      const kind = testCase.kind ?? 'file';
+      try {
+        execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' });
+        writeFileSync(join(root, '.gitignore'), testCase.gitignore);
+        // `check-ignore` reads the tree, so each leaf is staged as what it is.
+        mkdirSync(join(root, kind === 'dir' ? testCase.path : dirOf(testCase.path)), {
+          recursive: true,
+        });
+        if (kind === 'file') writeFileSync(join(root, testCase.path), '');
+        if (kind === 'symlink') {
+          // A link to a real directory: the shape every installed projection has.
+          mkdirSync(join(root, '.agents', 'skills', 'acme__greet'), { recursive: true });
+          symlinkSync('../../.agents/skills/acme__greet', join(root, testCase.path));
+        }
+
+        const ours = isPathIgnored(
+          readLines(testCase.gitignore),
+          testCase.path,
+          kind === 'dir' ? 'dir' : 'file'
+        );
+        expect({ ...testCase, ignored: ours }).toEqual({
+          ...testCase,
+          ignored: gitSaysIgnored(root, testCase.path),
+        });
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+});
+
+/** The parent directory of a repo-relative path, or `.` when it has none. */
+function dirOf(path: string): string {
+  const slash = path.lastIndexOf('/');
+  return slash === -1 ? '.' : path.slice(0, slash);
+}
+
+/** The usable lines of a `.gitignore` body, mirroring what the module reads. */
+function readLines(body: string): string[] {
+  return body
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#'));
+}
+
+/** git's own verdict: `check-ignore -q` exits 0 for ignored, 1 for tracked. */
+function gitSaysIgnored(root: string, path: string): boolean {
+  try {
+    execFileSync('git', ['check-ignore', '-q', '--', path], { cwd: root, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe('missingGitignoreLines', () => {
   it('says nothing at all when the root is not a git checkout', () => {
     stageRepo({ git: false, plugin: true });
@@ -167,6 +308,19 @@ describe('missingGitignoreLines', () => {
     expect(missing.length).toBeGreaterThan(0);
     appendGitignoreLines(repo, missing);
     expect(missingGitignoreLines(repo, plan())).toEqual([]);
+  });
+
+  it('does not accept a directory rule for a projection that is a link', () => {
+    // Measured 2026-09-08: with `.dork/plugins/` and a `*__*` directory rule in the file, `--fix`
+    // printed nothing while `git status` showed `?? .claude/skills/acme__greet`.
+    // Git calls a symlink a file, so a `dir/` rule never covers one — and both
+    // of these projections are symlinks.
+    stageRepo({ plugin: true, gitignore: '.dork/plugins/\n*__*/\n' });
+
+    expect(missingGitignoreLines(repo, plan())).toEqual([
+      '.agents/skills/*__*',
+      '.claude/skills/*__*',
+    ]);
   });
 
   it('accepts a broader rule the person already wrote', () => {
@@ -216,6 +370,34 @@ describe('appendGitignoreLines', () => {
     );
   });
 
+  it('extends its own block on a second call instead of writing a second heading', () => {
+    // Two calls is the ordinary case: a `--harness codex` sync and then a full
+    // one, or a package installed after the first `--write-gitignore`.
+    stageRepo({ gitignore: 'node_modules/\n' });
+    appendGitignoreLines(repo, ['.codex/hooks.json']);
+    appendGitignoreLines(repo, ['.dork/plugins/']);
+
+    expect(readFileSync(join(repo, '.gitignore'), 'utf8')).toBe(
+      'node_modules/\n\n# DorkOS harness sync — ephemeral projections\n' +
+        '.codex/hooks.json\n.dork/plugins/\n'
+    );
+  });
+
+  it('keeps a person\u2019s own lines below the block below it', () => {
+    // The block ends at the first blank line, so an unrelated section a person
+    // keeps at the bottom of the file stays at the bottom of the file.
+    stageRepo({
+      gitignore:
+        '# DorkOS harness sync — ephemeral projections\n.codex/hooks.json\n\n# mine\n*.log\n',
+    });
+
+    appendGitignoreLines(repo, ['.dork/plugins/']);
+
+    expect(readFileSync(join(repo, '.gitignore'), 'utf8')).toBe(
+      '# DorkOS harness sync — ephemeral projections\n.codex/hooks.json\n.dork/plugins/\n\n# mine\n*.log\n'
+    );
+  });
+
   it('does not run a final line into the header when the file has no trailing newline', () => {
     stageRepo({ gitignore: 'node_modules/' });
     appendGitignoreLines(repo, ['.dork/plugins/']);
@@ -225,28 +407,30 @@ describe('appendGitignoreLines', () => {
   });
 });
 
-describe('isCanonicalLayerIgnored', () => {
-  it('is true when the root file ignores `.agents/`', () => {
+describe('canonicalLayerIgnoredBy', () => {
+  it('names the root file when it ignores `.agents/`', () => {
     stageRepo({ gitignore: 'node_modules/\n.agents/\n' });
-    expect(isCanonicalLayerIgnored(repo)).toBe(true);
+    expect(canonicalLayerIgnoredBy(repo)).toBe('.gitignore');
   });
 
-  it('is false for the two installed-projection patterns inside it', () => {
+  it('answers nothing for the two installed-projection patterns inside it', () => {
     // `.agents/skills/*__*` ignores machine-local projections, not the layer —
     // reading it as AP-15 would fire on every repo that follows the contract.
     stageRepo({ gitignore: '.agents/skills/*__*\n.claude/skills/*__*\n' });
-    expect(isCanonicalLayerIgnored(repo)).toBe(false);
+    expect(canonicalLayerIgnoredBy(repo)).toBeUndefined();
   });
 
-  it('is true for a `.agents/.gitignore` that ignores its own directory', () => {
+  it('names `.agents/.gitignore` when that is the file doing it', () => {
+    // The whole reason this returns a path: "stop ignoring .agents/" is advice
+    // a person cannot act on until they know which of the two files to open.
     stageRepo();
     writeFileSync(join(repo, '.agents', '.gitignore'), '*\n');
-    expect(isCanonicalLayerIgnored(repo)).toBe(true);
+    expect(canonicalLayerIgnoredBy(repo)).toBe('.agents/.gitignore');
   });
 
-  it('is false outside a git checkout, whatever a `.gitignore` says', () => {
+  it('answers nothing outside a git checkout, whatever a `.gitignore` says', () => {
     stageRepo({ git: false, gitignore: '.agents/\n' });
     expect(existsSync(join(repo, '.git'))).toBe(false);
-    expect(isCanonicalLayerIgnored(repo)).toBe(false);
+    expect(canonicalLayerIgnoredBy(repo)).toBeUndefined();
   });
 });

@@ -1,10 +1,19 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  rmSync,
+  symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   scaffoldManifest,
   detectHarnesses,
+  detectHarnessFootprints,
   DEFAULT_HARNESSES,
   HARNESS_MANIFEST_PATH,
 } from '../manifest.js';
@@ -126,5 +135,65 @@ describe('scaffoldManifest', () => {
     expect(result.harnesses).toEqual(['codex']);
     // The pre-existing file is left byte-for-byte intact.
     expect(readFileSync(join(dir, HARNESS_MANIFEST_PATH), 'utf8')).toBe(existing);
+  });
+});
+
+/**
+ * The re-detection every plan runs (TR-11) — deliberately NOT the same question
+ * the scaffolder asks.
+ */
+describe('HARNESS_MANIFEST_PATH', () => {
+  it('is a forward-slash path on every platform, because it is printed', () => {
+    // It was `join('.agents', 'harness.manifest.json')` until DOR-1851, so on
+    // Windows it read `.agents\\harness.manifest.json` — in the missing-manifest
+    // error, in the "add it to …" notice, and in the line `--enable` prints,
+    // beside paths that all used `/`. Measured on a real `windows-latest`
+    // runner, which is also the only place this assertion can fail.
+    expect(HARNESS_MANIFEST_PATH).toBe('.agents/harness.manifest.json');
+    expect(HARNESS_MANIFEST_PATH).not.toContain('\\');
+  });
+});
+
+describe('detectHarnessFootprints', () => {
+  it('does not read the canonical AGENTS.md as a Codex footprint', () => {
+    // The whole reason this function exists beside `detectHarnesses`. Every repo
+    // DorkOS touches has an `AGENTS.md` — it is the canonical instruction file
+    // five harnesses read and the one the engine asks people to keep — so
+    // counting it as Codex's own would print "AGENTS.md found; Codex is not
+    // enabled" on every sync of every Claude-Code-only project, forever, with no
+    // way to clear it but to enable a harness the person does not run.
+    dir = freshDir();
+    writeFileSync(join(dir, 'AGENTS.md'), '# Project\n');
+
+    expect(detectHarnessFootprints(dir)).toEqual([]);
+    // The SCAFFOLD still counts it: asked once, on a repo with nothing else,
+    // Codex is a reasonable place to start.
+    expect(detectHarnesses(dir)).toEqual(['codex']);
+  });
+
+  it('reports a harness that has left its own directory behind, with the path', () => {
+    dir = freshDir();
+    mkdirSync(join(dir, '.codex'), { recursive: true });
+    mkdirSync(join(dir, '.cursor'), { recursive: true });
+    writeFileSync(join(dir, 'GEMINI.md'), '# gemini\n');
+
+    expect(detectHarnessFootprints(dir)).toEqual([
+      { harness: 'codex', signal: '.codex/' },
+      { harness: 'cursor', signal: '.cursor/' },
+      // A file signal carries no trailing slash; a directory one does.
+      { harness: 'gemini', signal: 'GEMINI.md' },
+    ]);
+  });
+
+  it('treats a signal path it cannot read as absent instead of throwing', () => {
+    // `throwIfNoEntry: false` suppresses ENOENT and ENOTDIR only. This runs on
+    // EVERY plan, including the server's unattended auto-projection, so a
+    // `.cursor` that is a symlink loop used to take down every sync in the repo
+    // to answer a question worth one line of output.
+    dir = freshDir();
+    symlinkSync('.cursor', join(dir, '.cursor'));
+
+    expect(() => detectHarnessFootprints(dir)).not.toThrow();
+    expect(detectHarnessFootprints(dir)).toEqual([]);
   });
 });
