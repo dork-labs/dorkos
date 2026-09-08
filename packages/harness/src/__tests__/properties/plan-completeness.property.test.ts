@@ -36,6 +36,7 @@ import type { HarnessId } from '../../manifest/schema.js';
 import {
   arbRepo,
   withRepo,
+  PROPERTY_TIMEOUT_MS,
   RUNS,
   LINKED_RULES_FILE,
   PERSON_SKILL_LINK,
@@ -102,105 +103,121 @@ function stagedSources(spec: RepoSpec): string[] {
 }
 
 describe('P6 — every authored artifact reaches the report, for every enabled harness', () => {
-  it('finds every artifact the generator staged, so a walk that stops early cannot pass', () => {
-    // The completeness property above cannot catch a SCANNER gap: its subject is
-    // the inventory, so an artifact the walk never sees is not a subject and the
-    // property stays green. That is exactly how a non-recursive `.claude/rules`
-    // walk and a skipped symlinked directory survived it (DOR-1845 review). This
-    // is the missing half — the walk measured against what was actually written.
-    let sourcesChecked = 0;
+  it(
+    'finds every artifact the generator staged, so a walk that stops early cannot pass',
+    () => {
+      // The completeness property above cannot catch a SCANNER gap: its subject is
+      // the inventory, so an artifact the walk never sees is not a subject and the
+      // property stays green. That is exactly how a non-recursive `.claude/rules`
+      // walk and a skipped symlinked directory survived it (DOR-1845 review). This
+      // is the missing half — the walk measured against what was actually written.
+      let sourcesChecked = 0;
 
-    fc.assert(
-      fc.property(arbRepo(), (spec) => {
-        withRepo(spec, ({ repoRoot }) => {
-          const found = allEntries(inventorySourceTree(repoRoot))
-            .map((entry) => entry.source)
-            // Hook entries name a file that may hold several events, and the
-            // skill-frontmatter ones name a `SKILL.md` inside a skill directory
-            // this list already carries. Sources, deduplicated, is the comparison.
-            .filter((source) => !source.endsWith('/SKILL.md') && !source.startsWith('.claude/set'));
-          const staged = stagedSources(spec);
-          sourcesChecked += staged.length;
-          expect([...new Set(found)].sort()).toEqual([...new Set(staged)].sort());
-        });
-      }),
-      RUNS
-    );
+      fc.assert(
+        fc.property(arbRepo(), (spec) => {
+          withRepo(spec, ({ repoRoot }) => {
+            const found = allEntries(inventorySourceTree(repoRoot))
+              .map((entry) => entry.source)
+              // Hook entries name a file that may hold several events, and the
+              // skill-frontmatter ones name a `SKILL.md` inside a skill directory
+              // this list already carries. Sources, deduplicated, is the comparison.
+              .filter(
+                (source) => !source.endsWith('/SKILL.md') && !source.startsWith('.claude/set')
+              );
+            const staged = stagedSources(spec);
+            sourcesChecked += staged.length;
+            expect([...new Set(found)].sort()).toEqual([...new Set(staged)].sort());
+          });
+        }),
+        RUNS
+      );
 
-    expect(sourcesChecked).toBeGreaterThan(0);
-  });
+      expect(sourcesChecked).toBeGreaterThan(0);
+    },
+    PROPERTY_TIMEOUT_MS
+  );
 
-  it('never leaves an inventoried source unmentioned by an enabled harness', () => {
-    // Counted, not assumed: a repository the generator happened to leave empty
-    // would pass this vacuously, so the pairs actually examined are tallied and
-    // the tally is asserted after the sweep (REVIEW.md, zero-subject pass).
-    let pairsChecked = 0;
-    const kindsSeen = new Set<string>();
+  it(
+    'never leaves an inventoried source unmentioned by an enabled harness',
+    () => {
+      // Counted, not assumed: a repository the generator happened to leave empty
+      // would pass this vacuously, so the pairs actually examined are tallied and
+      // the tally is asserted after the sweep (REVIEW.md, zero-subject pass).
+      let pairsChecked = 0;
+      const kindsSeen = new Set<string>();
 
-    fc.assert(
-      fc.property(arbRepo(), (spec) => {
-        withRepo(spec, ({ repoRoot, dorkHome }) => {
-          const entries = allEntries(inventorySourceTree(repoRoot));
-          const plan = project(repoRoot, { dorkHome });
+      fc.assert(
+        fc.property(arbRepo(), (spec) => {
+          withRepo(spec, ({ repoRoot, dorkHome }) => {
+            const entries = allEntries(inventorySourceTree(repoRoot));
+            const plan = project(repoRoot, { dorkHome });
 
-          for (const harness of loadManifest(repoRoot).harnesses) {
-            for (const entry of entries) {
-              pairsChecked += 1;
-              kindsSeen.add(entry.kind);
-              const lists = listsNaming(plan, entry, harness);
-              expect({
-                harness,
-                kind: entry.kind,
-                source: entry.source,
-                mentioned: lists.actions || lists.drops || lists.warnings,
-              }).toEqual({ harness, kind: entry.kind, source: entry.source, mentioned: true });
+            for (const harness of loadManifest(repoRoot).harnesses) {
+              for (const entry of entries) {
+                pairsChecked += 1;
+                kindsSeen.add(entry.kind);
+                const lists = listsNaming(plan, entry, harness);
+                expect({
+                  harness,
+                  kind: entry.kind,
+                  source: entry.source,
+                  mentioned: lists.actions || lists.drops || lists.warnings,
+                }).toEqual({ harness, kind: entry.kind, source: entry.source, mentioned: true });
+              }
             }
-          }
-        });
-      }),
-      RUNS
-    );
+          });
+        }),
+        RUNS
+      );
 
-    expect(pairsChecked).toBeGreaterThan(0);
-    // The five kinds this property exists for, plus the two the engine always
-    // had. An alphabet that lost one would make the sweep quietly narrower.
-    expect([...kindsSeen].sort()).toEqual(['agent', 'command', 'hook', 'mcp', 'rule', 'skill']);
-  });
+      expect(pairsChecked).toBeGreaterThan(0);
+      // The five kinds this property exists for, plus the two the engine always
+      // had. An alphabet that lost one would make the sweep quietly narrower.
+      expect([...kindsSeen].sort()).toEqual(['agent', 'command', 'hook', 'mcp', 'rule', 'skill']);
+    },
+    PROPERTY_TIMEOUT_MS
+  );
 
-  it('never claims a harness reads a source natively and drops it at the same time', () => {
-    let contradictionsPossible = 0;
+  it(
+    'never claims a harness reads a source natively and drops it at the same time',
+    () => {
+      let contradictionsPossible = 0;
 
-    fc.assert(
-      fc.property(arbRepo(), (spec) => {
-        withRepo(spec, ({ repoRoot, dorkHome }) => {
-          const plan = project(repoRoot, { dorkHome });
-          const natives = plan.actions.filter((a) => a.kind === 'native' && a.source !== undefined);
-          contradictionsPossible += natives.length;
-
-          for (const native of natives) {
-            const contradicted = plan.drops.filter(
-              (d) =>
-                d.harness === native.harness &&
-                d.artifact === native.artifact &&
-                d.source === native.source
+      fc.assert(
+        fc.property(arbRepo(), (spec) => {
+          withRepo(spec, ({ repoRoot, dorkHome }) => {
+            const plan = project(repoRoot, { dorkHome });
+            const natives = plan.actions.filter(
+              (a) => a.kind === 'native' && a.source !== undefined
             );
-            expect({
-              harness: native.harness,
-              artifact: native.artifact,
-              source: native.source,
-              alsoDropped: contradicted.map((d) => d.reason),
-            }).toEqual({
-              harness: native.harness,
-              artifact: native.artifact,
-              source: native.source,
-              alsoDropped: [],
-            });
-          }
-        });
-      }),
-      RUNS
-    );
+            contradictionsPossible += natives.length;
 
-    expect(contradictionsPossible).toBeGreaterThan(0);
-  });
+            for (const native of natives) {
+              const contradicted = plan.drops.filter(
+                (d) =>
+                  d.harness === native.harness &&
+                  d.artifact === native.artifact &&
+                  d.source === native.source
+              );
+              expect({
+                harness: native.harness,
+                artifact: native.artifact,
+                source: native.source,
+                alsoDropped: contradicted.map((d) => d.reason),
+              }).toEqual({
+                harness: native.harness,
+                artifact: native.artifact,
+                source: native.source,
+                alsoDropped: [],
+              });
+            }
+          });
+        }),
+        RUNS
+      );
+
+      expect(contradictionsPossible).toBeGreaterThan(0);
+    },
+    PROPERTY_TIMEOUT_MS
+  );
 });

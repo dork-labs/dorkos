@@ -116,6 +116,15 @@
  *   swept, because a sweep there would have to walk directories the engine has
  *   no other reason to walk.
  *
+ * {@link STALE_TEMP_AGE_MS} is a **margin, not a guarantee**, and the difference
+ * matters: a writer suspended mid-apply, a stalled network mount, or a share
+ * whose server clock runs more than a minute behind can all leave a LIVE temp
+ * looking older than the threshold — and then the sweep takes it, the writer's
+ * rename fails with ENOENT out of `applyPlan`, and that plan is half applied
+ * until the next sync completes it. That is the same failure the threshold
+ * exists to prevent, pushed out to a case none of these paths have ever hit; the
+ * honest fix if it ever does is a liveness signal rather than a bigger number.
+ *
  * @module apply/atomic-write
  */
 import { randomBytes } from 'node:crypto';

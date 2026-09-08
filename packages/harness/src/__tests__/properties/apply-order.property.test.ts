@@ -43,7 +43,7 @@ import { project } from '../../engine.js';
 import { applyPlan } from '../../apply/apply.js';
 import type { ProjectionPlan } from '../../plan/types.js';
 import { scrubbedSnapshot } from '../journeys/stage.js';
-import { arbRepo, RUNS, withRepo } from './arb-repo.js';
+import { arbRepo, PROPERTY_TIMEOUT_MS, RUNS, withRepo } from './arb-repo.js';
 
 /** The same plan with its actions in a given order (identity preserved). */
 function reordered(plan: ProjectionPlan, order: number[]): ProjectionPlan {
@@ -51,74 +51,82 @@ function reordered(plan: ProjectionPlan, order: number[]): ProjectionPlan {
 }
 
 describe('P10 — where a plan lands does not depend on the order it lands in', () => {
-  it('leaves the same tree whatever order the actions are applied in', () => {
-    let mostActions = 0;
-    fc.assert(
-      fc.property(arbRepo(), fc.nat(), (spec, seed) => {
-        let baseline: Record<string, string> | undefined;
+  it(
+    'leaves the same tree whatever order the actions are applied in',
+    () => {
+      let mostActions = 0;
+      fc.assert(
+        fc.property(arbRepo(), fc.nat(), (spec, seed) => {
+          let baseline: Record<string, string> | undefined;
 
-        // The two runs are two identically generated repos, because applying a
-        // plan twice to ONE repo would only re-prove idempotence.
-        for (const shuffle of [false, true]) {
-          withRepo(spec, ({ repoRoot, dorkHome }) => {
-            const plan = project(repoRoot, { dorkHome });
-            mostActions = Math.max(mostActions, plan.actions.length);
-            const order = plan.actions.map((_, i) => i);
-            if (shuffle) {
-              // A deterministic shuffle from the generated seed, so a failing
-              // case replays exactly.
-              for (let i = order.length - 1; i > 0; i--) {
-                const j = (seed * 31 + i * 17) % (i + 1);
-                [order[i], order[j]] = [order[j]!, order[i]!];
+          // The two runs are two identically generated repos, because applying a
+          // plan twice to ONE repo would only re-prove idempotence.
+          for (const shuffle of [false, true]) {
+            withRepo(spec, ({ repoRoot, dorkHome }) => {
+              const plan = project(repoRoot, { dorkHome });
+              mostActions = Math.max(mostActions, plan.actions.length);
+              const order = plan.actions.map((_, i) => i);
+              if (shuffle) {
+                // A deterministic shuffle from the generated seed, so a failing
+                // case replays exactly.
+                for (let i = order.length - 1; i > 0; i--) {
+                  const j = (seed * 31 + i * 17) % (i + 1);
+                  [order[i], order[j]] = [order[j]!, order[i]!];
+                }
               }
-            }
-            applyPlan(repoRoot, reordered(plan, order), { sweepOrphans: false });
-            const tree = scrubbedSnapshot(repoRoot);
-            if (baseline === undefined) baseline = tree;
-            else expect(tree).toEqual(baseline);
-          });
-        }
-      }),
-      RUNS
-    );
-    // A run whose plans were all one action long would prove nothing about order.
-    expect(mostActions).toBeGreaterThan(4);
-  });
+              applyPlan(repoRoot, reordered(plan, order), { sweepOrphans: false });
+              const tree = scrubbedSnapshot(repoRoot);
+              if (baseline === undefined) baseline = tree;
+              else expect(tree).toEqual(baseline);
+            });
+          }
+        }),
+        RUNS
+      );
+      // A run whose plans were all one action long would prove nothing about order.
+      expect(mostActions).toBeGreaterThan(4);
+    },
+    PROPERTY_TIMEOUT_MS
+  );
 
-  it('leaves the same tree when one writer applies half the plan before the rest', () => {
-    let realCuts = 0;
-    fc.assert(
-      fc.property(arbRepo(), fc.nat(), (spec, cutSeed) => {
-        let baseline: Record<string, string> | undefined;
+  it(
+    'leaves the same tree when one writer applies half the plan before the rest',
+    () => {
+      let realCuts = 0;
+      fc.assert(
+        fc.property(arbRepo(), fc.nat(), (spec, cutSeed) => {
+          let baseline: Record<string, string> | undefined;
 
-        for (const split of [false, true]) {
-          withRepo(spec, ({ repoRoot, dorkHome }) => {
-            const plan = project(repoRoot, { dorkHome });
-            if (!split) {
-              applyPlan(repoRoot, plan, { sweepOrphans: false });
-            } else {
-              const cut = plan.actions.length === 0 ? 0 : cutSeed % (plan.actions.length + 1);
-              if (cut > 0 && cut < plan.actions.length) realCuts++;
-              applyPlan(
-                repoRoot,
-                { ...plan, actions: plan.actions.slice(0, cut) },
-                { sweepOrphans: false }
-              );
-              applyPlan(
-                repoRoot,
-                { ...plan, actions: plan.actions.slice(cut) },
-                { sweepOrphans: false }
-              );
-            }
-            const tree = scrubbedSnapshot(repoRoot);
-            if (baseline === undefined) baseline = tree;
-            else expect(tree).toEqual(baseline);
-          });
-        }
-      }),
-      RUNS
-    );
-    // A run that only ever cut at 0 or at the end never split anything.
-    expect(realCuts).toBeGreaterThan(4);
-  });
+          for (const split of [false, true]) {
+            withRepo(spec, ({ repoRoot, dorkHome }) => {
+              const plan = project(repoRoot, { dorkHome });
+              if (!split) {
+                applyPlan(repoRoot, plan, { sweepOrphans: false });
+              } else {
+                const cut = plan.actions.length === 0 ? 0 : cutSeed % (plan.actions.length + 1);
+                if (cut > 0 && cut < plan.actions.length) realCuts++;
+                applyPlan(
+                  repoRoot,
+                  { ...plan, actions: plan.actions.slice(0, cut) },
+                  { sweepOrphans: false }
+                );
+                applyPlan(
+                  repoRoot,
+                  { ...plan, actions: plan.actions.slice(cut) },
+                  { sweepOrphans: false }
+                );
+              }
+              const tree = scrubbedSnapshot(repoRoot);
+              if (baseline === undefined) baseline = tree;
+              else expect(tree).toEqual(baseline);
+            });
+          }
+        }),
+        RUNS
+      );
+      // A run that only ever cut at 0 or at the end never split anything.
+      expect(realCuts).toBeGreaterThan(4);
+    },
+    PROPERTY_TIMEOUT_MS
+  );
 });

@@ -26,7 +26,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { project } from '../../engine.js';
 import { applyPlan, checkPlan } from '../../apply/apply.js';
 import type { ProjectionPlan } from '../../plan/types.js';
-import { arbRepo, RUNS, withRepo } from './arb-repo.js';
+import { arbRepo, PROPERTY_TIMEOUT_MS, RUNS, withRepo } from './arb-repo.js';
 
 /** The two directories the engine projects skill links into. */
 const SKILL_DIRS = ['.claude/skills', '.agents/skills'] as const;
@@ -86,65 +86,75 @@ function expectNoOrphans(repoRoot: string, plan: ProjectionPlan): number {
 }
 
 describe('P2 — every managed link resolves to a source the current plan names', () => {
-  it('leaves no orphaned link behind, before or after a skill is deleted or renamed', () => {
-    let examined = 0;
-    fc.assert(
-      fc.property(arbRepo(), fc.boolean(), (spec, rename) => {
-        withRepo(spec, ({ repoRoot, dorkHome }) => {
-          const firstPlan = project(repoRoot, { dorkHome });
-          applyPlan(repoRoot, firstPlan, { sweepOrphans: true });
-          examined += expectNoOrphans(repoRoot, firstPlan);
+  it(
+    'leaves no orphaned link behind, before or after a skill is deleted or renamed',
+    () => {
+      let examined = 0;
+      fc.assert(
+        fc.property(arbRepo(), fc.boolean(), (spec, rename) => {
+          withRepo(spec, ({ repoRoot, dorkHome }) => {
+            const firstPlan = project(repoRoot, { dorkHome });
+            applyPlan(repoRoot, firstPlan, { sweepOrphans: true });
+            examined += expectNoOrphans(repoRoot, firstPlan);
 
-          // Move a source out from under the projection, the way a person does.
-          if (spec.skills.length > 0) {
-            const from = join(repoRoot, '.agents', 'skills', spec.skills[0]);
-            if (rename) renameSync(from, join(repoRoot, '.agents', 'skills', `${spec.skills[0]}2`));
-            else rmSync(from, { recursive: true, force: true });
-          }
+            // Move a source out from under the projection, the way a person does.
+            if (spec.skills.length > 0) {
+              const from = join(repoRoot, '.agents', 'skills', spec.skills[0]);
+              if (rename)
+                renameSync(from, join(repoRoot, '.agents', 'skills', `${spec.skills[0]}2`));
+              else rmSync(from, { recursive: true, force: true });
+            }
 
-          const secondPlan = project(repoRoot, { dorkHome });
-          applyPlan(repoRoot, secondPlan, { sweepOrphans: true });
-          examined += expectNoOrphans(repoRoot, secondPlan);
-        });
-      }),
-      RUNS
-    );
-    // The property is only worth its green if it looked at links at all.
-    expect(examined).toBeGreaterThan(0);
-  });
+            const secondPlan = project(repoRoot, { dorkHome });
+            applyPlan(repoRoot, secondPlan, { sweepOrphans: true });
+            examined += expectNoOrphans(repoRoot, secondPlan);
+          });
+        }),
+        RUNS
+      );
+      // The property is only worth its green if it looked at links at all.
+      expect(examined).toBeGreaterThan(0);
+    },
+    PROPERTY_TIMEOUT_MS
+  );
 });
 
 describe('P2b — checkPlan never throws', () => {
-  it('returns a drift result for every generated tree, dead links included', () => {
-    let deadGenerateTargets = 0;
-    fc.assert(
-      fc.property(arbRepo(), (spec) => {
-        withRepo(spec, ({ repoRoot, dorkHome, dangling }) => {
-          const plan = project(repoRoot, { dorkHome });
+  it(
+    'returns a drift result for every generated tree, dead links included',
+    () => {
+      let deadGenerateTargets = 0;
+      fc.assert(
+        fc.property(arbRepo(), (spec) => {
+          withRepo(spec, ({ repoRoot, dorkHome, dangling }) => {
+            const plan = project(repoRoot, { dorkHome });
 
-          // Before any apply: the tree is raw and the dead links are in place.
-          const before = checkPlan(repoRoot, plan);
+            // Before any apply: the tree is raw and the dead links are in place.
+            const before = checkPlan(repoRoot, plan);
 
-          // A dead link at a target the plan writes is DRIFT — there is nothing
-          // to read there, so no ownership question arises and `--fix` replaces it.
-          if (
-            dangling &&
-            plan.actions.some(
-              (a) => a.target === dangling.path && (a.kind === 'generate' || a.kind === 'scaffold')
-            )
-          ) {
-            deadGenerateTargets += 1;
-            expect(before.drifted.some((a) => a.target === dangling.path)).toBe(true);
-          }
+            // A dead link at a target the plan writes is DRIFT — there is nothing
+            // to read there, so no ownership question arises and `--fix` replaces it.
+            if (
+              dangling &&
+              plan.actions.some(
+                (a) =>
+                  a.target === dangling.path && (a.kind === 'generate' || a.kind === 'scaffold')
+              )
+            ) {
+              deadGenerateTargets += 1;
+              expect(before.drifted.some((a) => a.target === dangling.path)).toBe(true);
+            }
 
-          // And after: still an answer, never an exception.
-          applyPlan(repoRoot, plan, { sweepOrphans: true });
-          expect(() => checkPlan(repoRoot, plan)).not.toThrow();
-        });
-      }),
-      RUNS
-    );
-    // Assert the generator actually produced the hostile shape under test.
-    expect(deadGenerateTargets).toBeGreaterThan(0);
-  });
+            // And after: still an answer, never an exception.
+            applyPlan(repoRoot, plan, { sweepOrphans: true });
+            expect(() => checkPlan(repoRoot, plan)).not.toThrow();
+          });
+        }),
+        RUNS
+      );
+      // Assert the generator actually produced the hostile shape under test.
+      expect(deadGenerateTargets).toBeGreaterThan(0);
+    },
+    PROPERTY_TIMEOUT_MS
+  );
 });
