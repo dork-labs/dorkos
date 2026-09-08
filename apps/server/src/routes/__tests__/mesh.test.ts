@@ -289,6 +289,26 @@ describe('Mesh routes', () => {
       );
     });
 
+    it('accepts a project that is the validated scan root', async () => {
+      meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
+
+      const res = await request(fixtureServer)
+        .post('/api/mesh/agents')
+        .send({
+          path: '/home/user/project',
+          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+          scanRoot: '/home/user/project',
+        });
+
+      expect(res.status).toBe(201);
+      expect(meshCore.registerByPath).toHaveBeenCalledWith(
+        '/home/user/project',
+        expect.objectContaining({ name: 'Test Agent', runtime: 'claude-code' }),
+        undefined,
+        '/home/user/project'
+      );
+    });
+
     it('returns 400 when the scan root is not an ancestor of the agent path', async () => {
       const res = await request(fixtureServer)
         .post('/api/mesh/agents')

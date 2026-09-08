@@ -6,8 +6,21 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
 import { EmptyState } from '@/layers/shared/ui';
 import { TopologyPreview } from '@/layers/features/mesh';
 import { OpenMeshSwitchRow, OpenMeshNoticeRow } from '@/layers/entities/mesh';
+import { CandidateCard } from '@/layers/entities/discovery';
+import type { DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 
-/** Mesh feature component showcases: the topology preview, the mesh-wide switch. */
+const FAILED_IMPORT_CANDIDATE: DiscoveryCandidate = {
+  path: '/Users/kai/Projects/scout',
+  strategy: 'codex',
+  hints: {
+    suggestedName: 'Scout',
+    detectedRuntime: 'codex',
+    inferredCapabilities: ['code-review', 'search'],
+  },
+  discoveredAt: '2026-09-08T00:00:00.000Z',
+};
+
+/** Mesh feature showcases for topology, visibility, and project import states. */
 export function MeshShowcases() {
   const [switchOn, setSwitchOn] = useState(false);
   const [noticeOn, setNoticeOn] = useState(false);
@@ -59,6 +72,22 @@ export function MeshShowcases() {
         <ShowcaseDemo>
           <div className="w-full max-w-2xl">
             <OpenMeshNoticeRow checked={noticeOn} onCheckedChange={setNoticeOn} />
+          </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="CandidateCard — Import failed"
+        description="A discovered project stays visible after an import fails, with a clear retry action."
+      >
+        <ShowcaseDemo responsive>
+          <div className="max-w-2xl">
+            <CandidateCard
+              candidate={FAILED_IMPORT_CANDIDATE}
+              registrationFailed
+              onApprove={() => {}}
+              onSkip={() => {}}
+            />
           </div>
         </ShowcaseDemo>
       </PlaygroundSection>

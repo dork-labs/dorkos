@@ -76,6 +76,12 @@ vi.mock('@/layers/entities/config', () => ({
 }));
 
 vi.mock('@/layers/entities/discovery', () => ({
+  useCandidateRegistration: () => ({
+    failedPaths: new Set(),
+    pendingPaths: new Set(),
+    registerCandidate: vi.fn(),
+    resetFailures: vi.fn(),
+  }),
   useDiscoveryScan: () => ({ startScan: vi.fn() }),
   useDiscoveryStore: () => ({
     candidates: [],

@@ -16,7 +16,8 @@
  */
 import { createRef } from 'react';
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { CandidateCard } from '../ui/CandidateCard';
@@ -50,5 +51,41 @@ describe('CandidateCard', () => {
     // onto whatever this ref holds, so pointing it anywhere else is the same
     // as not forwarding it at all.
     expect(ref.current).toBe(card);
+  });
+
+  it('keeps a failed project actionable with a retry button', async () => {
+    const user = userEvent.setup();
+    const onApprove = vi.fn();
+    render(
+      <TooltipProvider>
+        <CandidateCard candidate={CANDIDATE} onApprove={onApprove} registrationFailed />
+      </TooltipProvider>
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Couldn’t add this project. Try again.');
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(onApprove).toHaveBeenCalledWith(CANDIDATE);
+  });
+
+  it('disables every action while the project is being added', () => {
+    const { container } = render(
+      <TooltipProvider>
+        <CandidateCard
+          candidate={CANDIDATE}
+          onApprove={vi.fn()}
+          onSkip={vi.fn()}
+          onDeny={vi.fn()}
+          registrationPending
+        />
+      </TooltipProvider>
+    );
+
+    expect(container.querySelector('[data-slot="candidate-card"]')).toHaveAttribute(
+      'aria-busy',
+      'true'
+    );
+    expect(screen.getByRole('button', { name: 'Adding…' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Skip' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Deny' })).toBeDisabled();
   });
 });
