@@ -526,6 +526,60 @@ describe('runHarnessSync', () => {
     expect((await runHarnessSync({ check: true, fix: false })).exitCode).toBe(0);
   });
 
+  it('--check --harness withholds orphans, because --fix --harness cannot sweep them', async () => {
+    // The sweep runs only on a full plan. Naming an orphan under a filter meant
+    // `--check --harness codex` exited 1 and told the person to run a `--fix`
+    // that exits 0 and leaves the link — forever, with no way out but a flag the
+    // report never mentioned.
+    writeFixtureRepo(tmpDir);
+    process.chdir(tmpDir);
+    await runHarnessSync({ check: false, fix: true });
+    fs.rmSync(path.join(tmpDir, '.agents', 'skills', 'demo'), { recursive: true, force: true });
+    const orphan = path.join(tmpDir, '.claude', 'skills', 'demo');
+    logSpy.mockClear();
+
+    const scoped = await runHarnessSync({ check: true, fix: false, harness: 'codex' });
+
+    expect(scoped.exitCode).toBe(0);
+    const scopedOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(scopedOutput).not.toContain('Orphaned links');
+    expect(scopedOutput).toContain('No drift');
+
+    // The filtered --fix it would have recommended really does leave the link,
+    // which is why the filtered --check must not report it.
+    const scopedFix = await runHarnessSync({ check: false, fix: true, harness: 'codex' });
+    expect(scopedFix.exitCode).toBe(0);
+    expect(fs.lstatSync(orphan).isSymbolicLink()).toBe(true);
+
+    // Unfiltered, it is named and it is swept.
+    logSpy.mockClear();
+    const full = await runHarnessSync({ check: true, fix: false });
+    expect(full.exitCode).toBe(1);
+    expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain('Orphaned links');
+    await runHarnessSync({ check: false, fix: true });
+    expect(fs.existsSync(orphan)).toBe(false);
+  });
+
+  it('points at LOG_LEVEL=debug for the stack, and prints it when asked', async () => {
+    writeFixtureRepo(tmpDir);
+    fs.writeFileSync(path.join(tmpDir, '.agents', 'harness.manifest.json'), '{ not json');
+    process.chdir(tmpDir);
+
+    const quiet = await runHarnessSync({ check: true, fix: false });
+    expect(quiet.exitCode).toBe(1);
+    const quietErrors = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(quietErrors).toContain('Re-run with LOG_LEVEL=debug to see the stack.');
+    expect(quietErrors).not.toContain('\n    at ');
+
+    errorSpy.mockClear();
+    vi.stubEnv('LOG_LEVEL', 'debug');
+    const loud = await runHarnessSync({ check: true, fix: false });
+    expect(loud.exitCode).toBe(1);
+    const loudErrors = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(loudErrors).toContain('\n    at ');
+    expect(loudErrors).not.toContain('Re-run with LOG_LEVEL=debug');
+  });
+
   it('turns an engine failure into one line, not a stack trace', async () => {
     // Defence in depth: whatever the projection engine throws — here a manifest
     // somebody typo'd into invalid JSON — a person gets a sentence and exit 1.
