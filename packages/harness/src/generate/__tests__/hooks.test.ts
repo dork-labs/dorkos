@@ -6,6 +6,7 @@ import {
   GENERATED_HOOKS_DESCRIPTION,
   type ClaudeHooksConfig,
 } from '../hooks.js';
+import { CANONICAL_TO_CLAUDE_EVENT_NAMES } from '../../vendor/rulesync-maps.js';
 
 /** A one-command matcher group, the shape both Claude and Codex use. */
 function group(command: string) {
@@ -13,8 +14,11 @@ function group(command: string) {
 }
 
 describe('generateCodexHooks', () => {
-  it('maps all six repo Claude events to Codex event keys (6/6)', () => {
-    // The six events wired in .claude/settings.json each resolve to a Codex event.
+  it('maps the six most common Claude events to Codex event keys (6/6)', () => {
+    // Five of these are wired in this repo's own .claude/settings.json today
+    // (PreToolUse, PostToolUse, SessionStart, Stop, SubagentStop); every one of
+    // the six resolves to a Codex event. The whole-map counts are asserted in the
+    // HK-13 block below.
     const claude: ClaudeHooksConfig = {
       PreToolUse: group('a'),
       PostToolUse: group('b'),
@@ -162,11 +166,13 @@ describe('generateCopilotHooks', () => {
   });
 
   it('drops a Claude event Copilot has no equivalent for, with a Copilot-named reason', () => {
-    // Copilot's cloud-agent surface has no `preCompact` -> honest drop naming Copilot.
-    const { file, dropped } = generateCopilotHooks({ PreCompact: group('x') });
+    // Was `PreCompact`, which Copilot's own hooks reference does document and
+    // which now maps (DOR-1847). `PostCompact` is in Claude's 30 and in none of
+    // Copilot's 14, so it is the honest subject for this drop.
+    const { file, dropped } = generateCopilotHooks({ PostCompact: group('x') });
     expect(file.hooks).toEqual({});
     expect(dropped).toHaveLength(1);
-    expect(dropped[0].event).toBe('PreCompact');
+    expect(dropped[0].event).toBe('PostCompact');
     expect(dropped[0].reason).toMatch(/Copilot/);
   });
 
@@ -178,5 +184,59 @@ describe('generateCopilotHooks', () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0].reason).toContain('${CLAUDE_PLUGIN_ROOT}');
     expect(warnings[0].reason).toMatch(/Copilot/);
+  });
+});
+
+describe('the vendored maps against each vendor’s documented hook set (HK-13)', () => {
+  it('maps Claude SessionEnd to Codex SessionEnd, which used to drop as nonexistent', () => {
+    // learn.chatgpt.com/docs/hooks (2026-09-07): "When the main thread ends:
+    // `SessionEnd` (doesn't run for subagents)". The vendored Codex map carried
+    // 10 of the 12 documented events and SessionEnd was not one of them.
+    const { file, dropped } = generateCodexHooks({ SessionEnd: group('bye') });
+    expect(Object.keys(file.hooks)).toEqual(['SessionEnd']);
+    expect(dropped).toEqual([]);
+  });
+
+  it('maps the five Copilot events that were dropped as having no equivalent', () => {
+    // docs.github.com/en/copilot/reference/hooks-configuration (2026-09-07)
+    // documents 14 events; the vendored map targeted 8, so these five Claude
+    // events were reported as having no Copilot home when they do.
+    const { file, dropped } = generateCopilotHooks({
+      PreCompact: group('a'),
+      PermissionRequest: group('b'),
+      Notification: group('c'),
+      PostToolUseFailure: group('d'),
+      SubagentStart: group('e'),
+    });
+    expect(Object.keys(file.hooks).sort()).toEqual([
+      'notification',
+      'permissionRequest',
+      'postToolUseFailure',
+      'preCompact',
+      'subagentStart',
+    ]);
+    expect(dropped).toEqual([]);
+  });
+
+  it('still drops a Claude event Copilot genuinely has no name for', () => {
+    // `PostCompact` is in Claude's 30 and in none of Copilot's 14.
+    const { file, dropped } = generateCopilotHooks({ PostCompact: group('x') });
+    expect(file.hooks).toEqual({});
+    expect(dropped).toHaveLength(1);
+    expect(dropped[0].event).toBe('PostCompact');
+    expect(dropped[0].reason).toMatch(/Copilot/);
+  });
+
+  it('reaches 12 of Claude’s 30 events on Copilot and 11 on Codex', () => {
+    // The count is the claim `meta/harness-sync-capabilities.md` HK-02/HK-13
+    // makes, so it is asserted rather than described.
+    const everyClaudeEvent: ClaudeHooksConfig = Object.fromEntries(
+      Object.values(CANONICAL_TO_CLAUDE_EVENT_NAMES).map((event) => [event, group('x')])
+    );
+    expect(Object.keys(everyClaudeEvent)).toHaveLength(30);
+
+    expect(Object.keys(generateCopilotHooks(everyClaudeEvent).file.hooks)).toHaveLength(12);
+    expect(Object.keys(generateCodexHooks(everyClaudeEvent).file.hooks)).toHaveLength(11);
+    expect(Object.keys(generateCursorHooks(everyClaudeEvent).file.hooks)).toHaveLength(10);
   });
 });
