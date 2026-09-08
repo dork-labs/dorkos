@@ -123,7 +123,7 @@ import type {
   QueuedMessage,
 } from '@dorkos/shared/schemas';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
-import type { SessionSettings } from '@dorkos/shared/types';
+import type { PermissionModeId, SessionSettings } from '@dorkos/shared/types';
 import type {
   AdditionalContext,
   ClientContext,
@@ -722,6 +722,12 @@ export interface DispatchMessageOpts {
   accountHint?: string;
   /** Per-turn execution settings, when the caller has resolved them itself. */
   settings?: Pick<SessionSettings, 'model' | 'effort'>;
+  /**
+   * First-turn permission seed for a session with no stored settings. Passed
+   * straight through; `TriggerTurnOpts.newSessionPermissionMode` is the
+   * authority on the one condition it may be sent under.
+   */
+  newSessionPermissionMode?: PermissionModeId;
   /** The projector for `sessionId` (keyed by the stable client-facing id). */
   projector: SessionStateProjector;
   /** The runtime this session resolves to. */
@@ -924,6 +930,7 @@ interface DispatchPlan {
     | 'systemPromptAppend'
     | 'accountHint'
     | 'settings'
+    | 'newSessionPermissionMode'
     | 'stallTimeoutMs'
     | 'onError'
     | 'onSettled'
@@ -1203,6 +1210,9 @@ function launchDispatch(
         : {}),
       ...(turn.accountHint ? { accountHint: turn.accountHint } : {}),
       ...(turn.settings ? { settings: turn.settings } : {}),
+      ...(turn.newSessionPermissionMode !== undefined
+        ? { newSessionPermissionMode: turn.newSessionPermissionMode }
+        : {}),
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),
       ...(turn.privateReceiptId !== undefined ? { privateReceiptId: turn.privateReceiptId } : {}),
       // The turn is running: THIS is the instant the message stops waiting, and

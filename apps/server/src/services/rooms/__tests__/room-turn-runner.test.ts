@@ -43,6 +43,25 @@ const DECLARED_CAPABILITIES = {
   logBackedHistory: false,
   nativeContext: [],
   settings: { configSection: 'claudeCode', supportsEffort: true, sections: [] },
+  /**
+   * Claude Code's own dial, in its own declared ORDER, because the order is
+   * load-bearing: `resolveTrustStops` takes the first mode declared at a stop,
+   * so `acceptEdits` before `auto` is what makes the `act` stop mean
+   * `acceptEdits`. Written out here rather than imported from the adapter — this
+   * file fixtures every other capability by hand, and a fixture that tracked the
+   * adapter could not notice the adapter changing under it.
+   */
+  permissionModes: {
+    supported: true,
+    default: 'default',
+    values: [
+      { id: 'default', label: 'Default', description: '', stop: 'ask' },
+      { id: 'acceptEdits', label: 'Accept edits', description: '', stop: 'act' },
+      { id: 'plan', label: 'Plan', description: '', stop: 'ask', axis: 'working' },
+      { id: 'bypassPermissions', label: 'Bypass', description: '', stop: 'autonomy' },
+      { id: 'auto', label: 'Auto', description: '', stop: 'act' },
+    ],
+  },
 };
 const getCapabilities = vi.fn().mockReturnValue(DECLARED_CAPABILITIES);
 
@@ -247,6 +266,13 @@ interface TriggerCall {
   roomContext?: RoomContextData;
   /** The execution settings the runner resolved for this turn (model, effort). */
   settings?: Record<string, unknown>;
+  /**
+   * The first-turn permission seed, which travels in its OWN argument rather
+   * than inside {@link TriggerCall.settings} — posture is not preference, and
+   * the separate field is what stops a future caller sending one for a session
+   * that already has a row (DOR-1917).
+   */
+  newSessionPermissionMode?: string;
   /** The runtime the real dispatcher resolves the canonical id through. */
   runtime: { getInternalSessionId: (sessionId: string) => string | undefined };
   /**
@@ -352,6 +378,9 @@ function request(
   return {
     room,
     authorId: 'author-ana',
+    // A person on this machine, unless a test says otherwise — the ordinary
+    // case, and the one the operator's power level follows.
+    externalAuthor: false,
     agentPath: '/repo/ana',
     sessionId: null,
     entry,
@@ -2274,6 +2303,184 @@ describe('what a room turn runs with (execution defaults)', () => {
 
     expect(viaRelay).toEqual(triggered[0].settings);
     expect(viaRelay).toEqual({ model: 'claude-haiku-4-5', effort: 'low' });
+  });
+});
+
+/**
+ * A room agent runs at the power level the operator chose (DOR-1917).
+ *
+ * The reported break, in the operator's own words: "I've set my power setting to
+ * Full autonomy. I expect all new sessions to start with Full autonomy, but
+ * that's not happening." Create a room, add an agent, @-mention it — and the
+ * session that starts stopped to ask, in the one place nobody is there to
+ * answer.
+ *
+ * Two wires carried the setting before this, and rooms were on neither: the
+ * `interactive: true` flag (the chat send path) and `resolveUnattendedDefaultStop`
+ * asked for by name (scheduled runs). The `full-power-defaults` programme
+ * promised "unattended surfaces at the operator's power level" and ADR
+ * 260822-235802 wired tasks and bindings; a room has no per-surface permission
+ * control of its own, so the grant had nowhere to land at all.
+ *
+ * Seeded defects, each red before the code stood:
+ *
+ * - Dropping `permissionMode` from the room's per-turn seed reddens "the FIRST
+ *   turn already runs at it" — the row is written after the turn starts, so a
+ *   fix that only seeds the row leaves the turn that matters at ask-first.
+ * - Dropping the fourth argument to `persistSessionRuntime` reddens "and the row
+ *   carries it, so every turn after inherits it" — turn one is right and turn
+ *   two silently falls back.
+ * - Resolving the stop for a session that already has a row reddens "leaves a
+ *   room conversation that already has settings alone".
+ */
+describe('what power a room turn runs at (DOR-1917)', () => {
+  beforeEach(() => {
+    triggered.length = 0;
+    persistSessionRuntime.mockClear();
+    turnBehaviour = saysAndCloses('green');
+    storedSettings = null;
+    runtimesConfig = USER_CONFIG_DEFAULTS.runtimes;
+    agentManifest = null;
+    registeredRuntimes = ['claude-code', 'codex', 'opencode', 'test-mode'];
+    sessionOwners.clear();
+  });
+
+  /** The `runtimes` section with one stop set, global tier. */
+  function atStop(stop: 'ask' | 'act' | 'autonomy'): UserConfig['runtimes'] {
+    return { ...USER_CONFIG_DEFAULTS.runtimes, defaultTrustStop: stop };
+  }
+
+  it('runs a new room session at the operator’s Full autonomy, on the FIRST turn', async () => {
+    runtimesConfig = atStop('autonomy');
+
+    await createSessionRoomTurnRunner().run(request());
+
+    // The turn itself, not merely the row it leaves behind. The row is written
+    // after the turn starts, so a seed that reached only the row would leave the
+    // one turn a person is waiting on stopping to ask.
+    expect(triggered[0].newSessionPermissionMode).toBe('bypassPermissions');
+    // And NOT folded into the preference bag beside it.
+    expect(triggered[0].settings).toEqual({});
+  });
+
+  it('records that level on the row, so every turn after it inherits the ordinary way', async () => {
+    runtimesConfig = atStop('autonomy');
+
+    await createSessionRoomTurnRunner().run(request());
+
+    expect(persistSessionRuntime).toHaveBeenLastCalledWith(
+      expect.any(String),
+      'claude-code',
+      '/repo/ana',
+      { permissionMode: 'bypassPermissions' }
+    );
+  });
+
+  it('resolves the stop through the runtime’s own vocabulary, not a mode id', async () => {
+    // `act` is `acceptEdits` on Claude Code and something else elsewhere. The
+    // stop is what config stores; the mapping is the runtime's, and it is the
+    // same one the dial renders from — including the first-declared rule that
+    // makes `act` mean `acceptEdits` rather than `auto`.
+    runtimesConfig = atStop('act');
+
+    await createSessionRoomTurnRunner().run(request());
+
+    expect(triggered[0].newSessionPermissionMode).toBe('acceptEdits');
+  });
+
+  it('lets the per-runtime setting beat the global one', async () => {
+    runtimesConfig = {
+      ...USER_CONFIG_DEFAULTS.runtimes,
+      defaultTrustStop: 'autonomy',
+      claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultTrustStop: 'ask' },
+    };
+
+    await createSessionRoomTurnRunner().run(request());
+
+    expect(triggered[0].newSessionPermissionMode).toBe('default');
+  });
+
+  it('sends no permission mode at all when no stop is configured', async () => {
+    // The shipped default, and the whole safety argument for this change: an
+    // install whose operator never answered the power door behaves byte for byte
+    // as it did — no mode on the turn, and no fourth argument on the row, so the
+    // runtime's own default still decides.
+    await createSessionRoomTurnRunner().run(request());
+
+    expect(triggered[0].newSessionPermissionMode).toBeUndefined();
+    expect(triggered[0].settings).toEqual({});
+    expect(persistSessionRuntime).toHaveBeenLastCalledWith(
+      expect.any(String),
+      'claude-code',
+      '/repo/ana'
+    );
+  });
+
+  it('leaves a room conversation that already has settings alone', async () => {
+    // "Applies to new conversations — running ones keep their settings." A room
+    // that has been talking is a running conversation, and raising it under the
+    // agent mid-thread is exactly what a person changing a default does not
+    // expect.
+    runtimesConfig = atStop('autonomy');
+    storedSettings = { permissionMode: 'default' };
+
+    await createSessionRoomTurnRunner().run(request({ sessionId: 'room-session-with-a-row' }));
+
+    expect(triggered[0].newSessionPermissionMode).toBeUndefined();
+    expect(triggered[0].settings).toEqual({});
+    expect(persistSessionRuntime).toHaveBeenLastCalledWith(
+      expect.any(String),
+      'claude-code',
+      '/repo/ana'
+    );
+  });
+
+  it('never lets a stranger on a bridged chat start a session at that level', async () => {
+    // A bridged Telegram or Slack chat is a projection of a relay binding into a
+    // room, so an off-machine sender's message reaches this same path. A binding
+    // carries its own grant precisely because nobody picked a mode for messages
+    // from off this machine (DOR-604) — so seeding the operator's level from a
+    // stranger's message would make the bridged path strictly looser than the
+    // binding beside it, for the very same sender.
+    runtimesConfig = atStop('autonomy');
+
+    await createSessionRoomTurnRunner().run(request({ externalAuthor: true }));
+
+    expect(triggered[0].newSessionPermissionMode).toBeUndefined();
+    expect(persistSessionRuntime).toHaveBeenLastCalledWith(
+      expect.any(String),
+      'claude-code',
+      '/repo/ana'
+    );
+  });
+
+  it('still carries the model and effort for that stranger’s turn', async () => {
+    // The clamp is about POWER and nothing else. Which model an agent is does
+    // not depend on who is speaking to it, and a change that clamped the whole
+    // seed would quietly undo DOR-1344 on the bridged path.
+    runtimesConfig = {
+      ...atStop('autonomy'),
+      claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultModel: 'opus' },
+    };
+
+    await createSessionRoomTurnRunner().run(request({ externalAuthor: true }));
+
+    expect(triggered[0].settings).toEqual({ model: 'opus' });
+    expect(triggered[0].newSessionPermissionMode).toBeUndefined();
+  });
+
+  it('carries the model and the power level together on one first turn', async () => {
+    // The two seeds share a path now; this is what would notice one of them
+    // dropping the other.
+    runtimesConfig = {
+      ...atStop('autonomy'),
+      claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultModel: 'opus' },
+    };
+
+    await createSessionRoomTurnRunner().run(request());
+
+    expect(triggered[0].settings).toEqual({ model: 'opus' });
+    expect(triggered[0].newSessionPermissionMode).toBe('bypassPermissions');
   });
 });
 

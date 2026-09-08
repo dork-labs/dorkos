@@ -2,6 +2,21 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260908-170643",
+      "slug": "rooms-are-an-unattended-surface-and-follow-the-operator-level",
+      "title": "A room turn is an unattended surface and follows the operator's power level",
+      "status": "accepted",
+      "created": "2026-09-08",
+      "amends": ["260822-235802"],
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/rooms/room-turn-runner.ts",
+        "apps/server/src/services/session/resolve-session-defaults.ts",
+        "apps/server/src/services/core/runtime-registry.ts",
+        "apps/server/src/services/tasks/scheduled-run-power.ts"
+      ]
+    },
+    {
       "id": "260905-205123",
       "slug": "dorkos-brokers-connector-calls-and-may-host-a-managed-provider",
       "title": "DorkOS brokers connector calls and may host a tenant-scoped managed provider",

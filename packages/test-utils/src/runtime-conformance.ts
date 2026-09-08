@@ -1692,6 +1692,42 @@ export function runtimeConformance(
         ).toBeUndefined();
       });
 
+      it('honors a per-send permissionMode on a session it has never seen (DOR-1917)', async () => {
+        // **The seam a room turn's first reply depends on.** A room binds its
+        // `session_metadata` row AFTER the turn starts, so the first turn cannot
+        // inherit a stored posture — the runner passes the operator's resolved
+        // mode on the send instead, and every adapter must read it. Each of the
+        // three resolves a turn as `per-send → persisted → its own default`, and
+        // this is what says so once for all of them rather than in three separate
+        // reads of three adapters.
+        //
+        // Deliberately NOT `ensureSession` first: the property is about a session
+        // the runtime is meeting for the first time on the send itself, which is
+        // exactly the room's case.
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        const mode = resolvePermissionMode(runtime);
+
+        for await (const _event of runtime.sendMessage(sessionId, messageContent, {
+          cwd: projectDir,
+          permissionMode: mode,
+        })) {
+          void _event;
+        }
+
+        // Read back the way the session list does. A backend that hydrates from
+        // a native store may answer null before it has anything to report — the
+        // contract this pins is "if you report a mode, it is the one you were
+        // handed", never "you must report one".
+        const session = await runtime.getSession(projectDir, sessionId);
+        if (session?.permissionMode !== undefined) {
+          expect(
+            session.permissionMode,
+            'a per-send permissionMode on a first turn must be the mode the session runs and reports'
+          ).toBe(mode);
+        }
+      });
+
       it('updateSession answers `updated: false` for a session it does not have', async () => {
         // The one case the boolean carried and the object must keep carrying:
         // the route turns it into a 404. A runtime that auto-creates on PATCH

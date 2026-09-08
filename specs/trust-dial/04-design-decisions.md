@@ -83,6 +83,7 @@ Settings gains a single "New sessions start in" Trust Dial in the card that alre
 - The stored value is the runtime-neutral **stop**, resolved through each runtime's capability profile; no runtime mode ids in config.
 - Resolution follows the existing session-defaults ladder (seeded into `session_metadata` at first write; running sessions keep their setting).
 - The default applies to **interactive sessions only** — tasks, bindings, and rooms keep their own defaults and stricter gates, including the bypass clamp on file-sourced schedules.
+  - **Superseded in part.** Live code comments cite this clause by name, so it is corrected here rather than left to be read as current. Tasks moved onto the operator's stop in ADR `260822-235802`, and rooms in ADR `260908-170643` (DOR-1917) — a room has no per-surface permission control of its own, so "keeps its own defaults" was never true of it in the way it is true of a task or a binding. What still stands, unchanged: bindings keep their own grant (an absent one is not consent, DOR-604), the bypass clamp on file-sourced schedules is untouched, and a room turn triggered by somebody off this machine (a bridged chat) is clamped back to the runtime's default.
 - The shipped default remains **Ask first**; autonomy-by-default is always an explicit, acknowledged choice.
 
 ## Final Design Summary

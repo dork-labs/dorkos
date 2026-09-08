@@ -25,6 +25,7 @@ import {
   readAgentExecutionDefaults,
   describeExecutionDefaults,
   resolveUnattendedDefaultStop,
+  resolveUnattendedPermissionMode,
 } from '../resolve-session-defaults.js';
 
 /** The least manifest that validates, for the on-disk half of the ladder. */
@@ -900,5 +901,111 @@ describe('resolveUnattendedDefaultStop', () => {
     // fall through, never a reason to refuse the work.
     expect(resolveUnattendedDefaultStop()).toBeNull();
     expect(resolveUnattendedDefaultStop({ configSection: 'claudeCode' })).toBeNull();
+  });
+});
+
+/**
+ * The stop, as the runtime's own mode id — the one call a surface nobody is
+ * watching makes when it follows the operator's power level (DOR-1917).
+ *
+ * The two callers are a scheduled run and a room turn, and the thing that must
+ * stay true across them is that the same stop lands on the same mode the DIAL
+ * would show as selected. Driven against the REAL shipped capability profiles
+ * rather than a fixture, because that is the claim: a second copy of the mapping
+ * is how a default and the dial came to disagree in the first place.
+ */
+describe('resolveUnattendedPermissionMode', () => {
+  it("answers the runtime's own id for the configured stop", () => {
+    expect(
+      resolveUnattendedPermissionMode({
+        capabilities: CLAUDE_CODE_CAPABILITIES,
+        runtimes: runtimes({ defaultTrustStop: 'autonomy' }),
+      })
+    ).toBe('bypassPermissions');
+  });
+
+  it('takes the FIRST mode a runtime declares at a stop, exactly as the dial does', () => {
+    // Claude Code declares `acceptEdits` and `auto` at `act`, in that order.
+    // Which one the middle stop means is the runtime's declared order to decide,
+    // and this is the assertion that would notice the two answers drifting.
+    expect(
+      resolveUnattendedPermissionMode({
+        capabilities: CLAUDE_CODE_CAPABILITIES,
+        runtimes: runtimes({ defaultTrustStop: 'act' }),
+      })
+    ).toBe('acceptEdits');
+  });
+
+  it('resolves one shared stop against each runtime\u2019s OWN declaration', () => {
+    // One setting, answered per runtime through that runtime's profile. The
+    // three shipped adapters happen to have converged on the same id at this
+    // stop, so asserting "three different ids" would be asserting a coincidence
+    // — what has to hold is that each answer is a mode that runtime actually
+    // declares AT the configured stop, which is what makes the setting portable
+    // when an adapter names its own differently.
+    const config = runtimes({ defaultTrustStop: 'autonomy' });
+
+    for (const capabilities of [
+      CLAUDE_CODE_CAPABILITIES,
+      CODEX_CAPABILITIES,
+      OPENCODE_CAPABILITIES,
+    ]) {
+      const mode = resolveUnattendedPermissionMode({ capabilities, runtimes: config });
+      expect(
+        capabilities.permissionModes.values.find((declared) => declared.id === mode)?.stop
+      ).toBe('autonomy');
+    }
+  });
+
+  it('lets a per-runtime override beat the global stop', () => {
+    expect(
+      resolveUnattendedPermissionMode({
+        capabilities: CLAUDE_CODE_CAPABILITIES,
+        runtimes: runtimes({
+          defaultTrustStop: 'autonomy',
+          claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultTrustStop: 'ask' },
+        }),
+      })
+    ).toBe('default');
+  });
+
+  it('answers undefined on a fresh install, so the runtime decides', () => {
+    // The safety floor of the whole change: an operator who never answered the
+    // power door gets no mode from here, and every surface that asks keeps
+    // whatever it did before.
+    expect(
+      resolveUnattendedPermissionMode({
+        capabilities: CLAUDE_CODE_CAPABILITIES,
+        runtimes: runtimes(),
+      })
+    ).toBeUndefined();
+  });
+
+  it('answers undefined for a runtime that is not registered', () => {
+    expect(
+      resolveUnattendedPermissionMode({
+        capabilities: undefined,
+        runtimes: runtimes({ defaultTrustStop: 'autonomy' }),
+      })
+    ).toBeUndefined();
+  });
+
+  it('answers undefined for a runtime that declares no mode at that stop', () => {
+    // A stop a runtime cannot take is a preference it has no way to honor —
+    // not an error, and not a near-miss to round off to the closest mode.
+    expect(
+      resolveUnattendedPermissionMode({
+        capabilities: {
+          ...CLAUDE_CODE_CAPABILITIES,
+          permissionModes: {
+            supported: true,
+            values: CLAUDE_CODE_CAPABILITIES.permissionModes.values.filter(
+              (mode) => mode.stop !== 'autonomy'
+            ),
+          },
+        },
+        runtimes: runtimes({ defaultTrustStop: 'autonomy' }),
+      })
+    ).toBeUndefined();
   });
 });

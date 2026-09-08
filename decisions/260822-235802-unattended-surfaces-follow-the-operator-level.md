@@ -14,6 +14,13 @@ amends: null
 
 Accepted — extracted from spec `full-power-defaults`.
 
+**Amended by ADR `260908-170643`**, which adds the surface this decision's
+enumeration left out. "Scheduled tasks and relay bindings" below is the list of
+surfaces wired at the time, not the boundary of the principle: a room turn is an
+unattended surface too, and is the one with no per-instance control and no
+confirm of its own. Read the Decision section as covering rooms as well, with the
+clamp that amendment adds for entries written off this machine.
+
 ## Context
 
 Scheduled tasks and relay bindings — the surfaces nobody watches — hardcoded middle-stop defaults (`acceptEdits` on task create and the scheduler fallback; the prompting mode on bindings; `canInitiate: false`). Post-flip, an operator who chose full power still had to raise every task and binding by hand, while the marketplace/content clamp (which prevents _downloaded content_ from raising its own power) must not loosen.

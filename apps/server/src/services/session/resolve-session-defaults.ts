@@ -34,12 +34,20 @@
  * at one stop. A runtime with no mode at the configured stop contributes
  * nothing and starts at its own default.
  *
- * **Interactive sessions only.** The permission tier answers only when the
- * caller passes the runtime's declared modes, and only the interactive
- * session-creation path does (`RuntimeRegistry.persistSessionRuntime` with
- * `interactive: true`). Tasks, bindings and rooms carry their own permission
- * mode and their own stricter gates — including the bypass clamp on
- * file-sourced schedules — and this default must never reach them (decision 6).
+ * **THIS function answers the permission tier for interactive sessions only.**
+ * It answers one when the caller passes the runtime's declared modes, and only
+ * the interactive session-creation path does
+ * (`RuntimeRegistry.persistSessionRuntime` with `interactive: true`).
+ *
+ * That is a rule about this entry point, not about who may follow the operator's
+ * level. A surface nobody is watching asks {@link resolveUnattendedPermissionMode}
+ * BY NAME instead, so the asking is visible in the diff — scheduled runs
+ * (`tasks/scheduled-run-power.ts`) and room turns (`rooms/room-turn-runner.ts`)
+ * both do. Relay bindings and agent-to-agent DMs still do not: those carry a
+ * grant a person set on the binding, and an absent one there is not consent
+ * (DOR-604). The bypass clamp on file-sourced schedules is untouched by any of
+ * it — content power and operator power stay separate ladders (ADR
+ * 260822-235802, amended by 260908-170643).
  *
  * ## Where the answer lands
  *
@@ -305,12 +313,17 @@ export function resolveSessionDefaults(opts: {
  * Two call sites resolving the same question is how they came apart; this is
  * the one place that answers it, so they cannot again.
  *
- * **No permission tier, ever.** {@link resolveSessionDefaults} answers the trust
- * stop only for a caller that hands it the runtime's declared modes, and no
- * caller here does: the configured default is for sessions a person is watching
- * (spec `trust-dial`, decision 6). A room and a relay binding each carry their
- * own permission mode and their own stricter gates, and the answer here must
- * never displace one.
+ * **No permission tier, ever — from THIS call.** {@link resolveSessionDefaults}
+ * answers the trust stop only for a caller that hands it the runtime's declared
+ * modes, and this one deliberately does not: model and effort are the two keys
+ * both surfaces want the same answer to, and a permission mode arriving as a
+ * side effect of asking about a model would be an escalation nobody wrote down.
+ *
+ * A caller that wants the operator's power level says so separately, with
+ * {@link resolveUnattendedPermissionMode} — the room runner does and the relay
+ * resolver does not, which is exactly the difference between the two surfaces: a
+ * relay binding carries a grant a person set on it, and this must never displace
+ * one (DOR-604).
  *
  * **New sessions only.** A session that already has settings is a running
  * conversation and keeps them — "applies to new conversations, running ones keep
@@ -361,12 +374,12 @@ export async function resolveUnattendedSessionDefaults(opts: {
  *
  * **Why this is separate from {@link resolveSessionDefaults} rather than a flag
  * on it.** That function deliberately answers a permission tier only for a
- * caller that hands it the runtime's declared modes, which is what keeps an
- * attended-session default out of rooms and relay bindings (spec `trust-dial`,
- * decision 6). Unattended surfaces that DO want the operator's level — a
- * scheduled run, which the person configured on purpose and which has its own
- * confirm at creation — ask for it here, by name, so the asking is visible in
- * the diff rather than hidden in an argument.
+ * caller that hands it the runtime's declared modes, which is what keeps a
+ * permission mode from riding along on a question about models (spec
+ * `trust-dial`, decision 6). Unattended surfaces that DO want the operator's
+ * level — a scheduled run, and a room turn — ask for it here, by name, so the
+ * asking is visible in the diff rather than hidden in an argument. A relay
+ * binding still does not ask: it carries a grant a person set on it (DOR-604).
  *
  * @param opts.configSection - Which `runtimes.*` key holds the target runtime's
  *   own defaults, from its declared `settings.configSection`. Omitted, `null`,
@@ -388,6 +401,56 @@ export function resolveUnattendedDefaultStop(opts?: {
   const section = isRuntimesConfigSection(declared) ? declared : undefined;
   const configured = section ? runtimes?.[section] : undefined;
   return configured?.defaultTrustStop ?? runtimes?.defaultTrustStop ?? null;
+}
+
+/**
+ * The operator's configured power level as ONE runtime's own mode id, for a
+ * surface nobody is watching — {@link resolveUnattendedDefaultStop}'s answer put
+ * through that runtime's capability profile.
+ *
+ * Two unattended surfaces ask for this by name, and they must keep answering
+ * identically for the same runtime: a scheduled run
+ * (`tasks/scheduled-run-power.ts`) and a room turn
+ * (`rooms/room-turn-runner.ts`). Before this existed the task path had its own
+ * copy of the stop-to-mode mapping and the room path had none at all, so an
+ * operator who chose Full autonomy got a scheduled run at full power and a room
+ * agent that stopped to ask — in the one place nobody is there to answer
+ * (DOR-1917).
+ *
+ * **A mode id is not portable, so the profile is an argument.** `acceptEdits` on
+ * Claude Code edits files and stops before a command; on Codex it runs commands
+ * in the workspace and cannot pause. The caller says which runtime's vocabulary
+ * it means, exactly as `resolveScheduledRunPermissionMode` documents.
+ *
+ * **This never raises a session above what a person chose.** It reads a stop the
+ * operator set through the consent-gated config route and nothing else. Nothing
+ * configured, no profile in hand, or a runtime that declares no mode at that
+ * stop all answer `undefined` — "no preference, the runtime decides", which is
+ * byte-for-byte the behavior anyone who never answered the power door has.
+ *
+ * @param opts.capabilities - The target runtime's capability profile.
+ *   **Required, and passed in rather than looked up here**, so every call site
+ *   is compile-forced to say which runtime's vocabulary it means. `undefined` —
+ *   an unregistered runtime, or a test with no registry — answers `undefined`.
+ * @param opts.runtimes - The `runtimes` config section; defaults to the stored
+ *   one, with the same pre-boot tolerance {@link resolveUnattendedDefaultStop}
+ *   documents.
+ * @returns The runtime's own id for the configured stop, or `undefined` when
+ *   there is nothing to honor.
+ */
+export function resolveUnattendedPermissionMode(opts: {
+  capabilities: RuntimeCapabilities | undefined;
+  runtimes?: UserConfig['runtimes'];
+}): PermissionModeId | undefined {
+  const { capabilities } = opts;
+  if (!capabilities) return undefined;
+  return resolveTrustMode({
+    stop: resolveUnattendedDefaultStop({
+      configSection: capabilities.settings.configSection,
+      ...(opts.runtimes !== undefined ? { runtimes: opts.runtimes } : {}),
+    }),
+    descriptors: capabilities.permissionModes.values,
+  });
 }
 
 /**

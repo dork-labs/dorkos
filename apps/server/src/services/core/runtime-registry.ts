@@ -1,5 +1,5 @@
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
-import type { SessionSettings } from '@dorkos/shared/types';
+import type { PermissionModeId, SessionSettings } from '@dorkos/shared/types';
 import { EffortLevelSchema } from '@dorkos/shared/schemas';
 // The module directly rather than the `../session/index.js` barrel. There is no
 // cycle to dodge today — nothing that barrel exports imports this file, and
@@ -259,11 +259,22 @@ export class RuntimeRegistry {
    * @param runtime - Runtime type string (e.g. `'claude-code'`, `'codex'`)
    * @param agentPath - Optional path to the agent that owns this session
    * @param opts.interactive - Whether a PERSON is starting this session and will
-   *   be watching it. Only then does the row inherit the configured default trust
-   *   stop (spec `trust-dial`, decision 6) — a room, a scheduled task and a relay
-   *   binding each carry their own permission mode and their own stricter gates,
-   *   and must never be handed the cockpit's. Defaults to `false`, so the
-   *   dangerous direction is the one a caller has to ask for by name.
+   *   be watching it. Only then does this call RESOLVE the configured default
+   *   trust stop itself, because resolving one needs the runtime's declared
+   *   modes and withholding them is how an unattended caller is told "not for
+   *   you" (spec `trust-dial`, decision 6). Defaults to `false`, so the
+   *   dangerous direction is the one a caller has to ask for by name. It is not
+   *   the only way a row can get a mode — see {@link opts.permissionMode}, which
+   *   is how a surface nobody is watching follows the operator's level on
+   *   purpose.
+   * @param opts.permissionMode - A mode an UNATTENDED caller resolved itself and
+   *   wants the new row seeded with. The other half of the same rule: a surface
+   *   that follows the operator's power level on purpose asks for it by name at
+   *   its own call site (`resolveUnattendedPermissionMode`), so the asking is
+   *   visible in the diff rather than hidden in a flag. Rooms are the one such
+   *   caller (ADR 260822-235802 as amended, DOR-1917). Seeds only — it fills a
+   *   column still holding NULL and never outranks {@link opts.interactive}'s
+   *   answer or a choice already on the row.
    * @returns `true` when this call BOUND the session — whether it inserted the
    *   row or claimed an unbound one — and `false` when the session was already
    *   bound. Lets the caller fire a once-per-session side effect (e.g. the
@@ -275,14 +286,18 @@ export class RuntimeRegistry {
     sessionId: string,
     runtime: string,
     agentPath?: string,
-    opts?: { interactive?: boolean }
+    opts?: { interactive?: boolean; permissionMode?: PermissionModeId }
   ): Promise<boolean> {
     const db = this.requireDb('persistSessionRuntime');
     // The agent tier is read here, where the owning agent is actually known.
     // Read unconditionally rather than only for a row that turns out to be new:
     // the INSERT is what decides that, and it cannot await mid-statement.
     const agent = await readAgentExecutionDefaults(agentPath);
-    const seed = this.seedForNewRow(runtime, { agent, interactive: opts?.interactive === true });
+    const seed = this.seedForNewRow(runtime, {
+      agent,
+      interactive: opts?.interactive === true,
+      ...(opts?.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),
+    });
     const result = await db
       .insert(sessionMetadata)
       .values({
@@ -614,14 +629,25 @@ export class RuntimeRegistry {
    * @param opts.agent - The owning agent's manifest model/effort, when the caller
    *   knows which agent that is. Omitted → the server default alone.
    * @param opts.interactive - Whether this row belongs to a session a person is
-   *   watching. The permission mode rides ONLY on those: the runtime's declared
-   *   modes are what turns a configured stop into a mode id, and withholding
-   *   them is how an unattended surface is told "not for you" (see
+   *   watching. Only then is a configured stop RESOLVED here: the runtime's
+   *   declared modes are what turn a stop into a mode id, and withholding them
+   *   is how an unattended caller is told "not from this call" (see
    *   {@link resolveSessionDefaults}).
+   * @param opts.permissionMode - A mode an unattended caller resolved for
+   *   itself, through `resolveUnattendedPermissionMode`, and wants the new row
+   *   seeded with (DOR-1917). Applied only where the ladder above produced none,
+   *   so an interactive answer always wins. It never overwrites a mode already
+   *   on the row either — that is `claimedPermissionMode`'s `coalesce`, one
+   *   layer down, and it is what actually holds the "running conversations keep
+   *   their settings" line for this column.
    */
   private seedForNewRow(
     runtime: string,
-    opts: { agent?: AgentExecutionDefaults; interactive: boolean }
+    opts: {
+      agent?: AgentExecutionDefaults;
+      interactive: boolean;
+      permissionMode?: PermissionModeId;
+    }
   ): Partial<typeof sessionMetadata.$inferInsert> {
     // Read off the REGISTERED runtime, not a table here: a runtime that is not
     // registered on this server has nothing declared to read, so it gets no
@@ -630,7 +656,7 @@ export class RuntimeRegistry {
     // for a runtime that is not here would hand the fallback runtime a model id
     // from a namespace it cannot read (see {@link resolveSessionDefaults}).
     const declared = this.runtimes.get(runtime)?.getCapabilities();
-    return pickSettings(
+    const seed = pickSettings(
       resolveSessionDefaults({
         runtimeType: runtime,
         agent: opts.agent,
@@ -646,6 +672,25 @@ export class RuntimeRegistry {
         ...(opts.interactive ? { permissionModes: declared?.permissionModes.values } : {}),
       })
     );
+    // The unattended half of the same question, and it is deliberately BELOW
+    // the ladder rather than a fourth tier inside it: the caller already asked
+    // for the operator's level by name and resolved it against this runtime's
+    // own profile, so there is nothing left to resolve — only a column to fill.
+    //
+    // **The `undefined` check is belt, not braces, and no caller reaches it
+    // today**: nothing passes `interactive: true` and a resolved mode together,
+    // so the ladder's answer and this one are never both present. It stays
+    // because the two are independent options on a public method and the
+    // precedence between them should be written down where it would be needed,
+    // not discovered by whoever first passes both.
+    //
+    // What stops this overwriting a mode already ON the row is NOT here — it is
+    // the `coalesce` in `claimedPermissionMode`, one layer down, on the UPDATE
+    // branch. This only decides what a NEW row is born with.
+    if (seed.permissionMode === undefined && opts.permissionMode !== undefined) {
+      seed.permissionMode = opts.permissionMode;
+    }
+    return seed;
   }
 
   /**

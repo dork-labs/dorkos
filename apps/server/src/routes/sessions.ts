@@ -777,9 +777,14 @@ router.patch('/:id', async (req, res) => {
     // in as deliberately out of scope rather than as gaps nobody noticed:
     //
     // - **Relay bindings, task execution, room turns.** All create and drive
-    //   sessions in-process via `ensureSession` and never reach this route. They
-    //   keep their own, stricter gates — the bypass clamp on file-sourced
-    //   schedules among them.
+    //   sessions in-process via `ensureSession` and never reach this route, so
+    //   this door is not what bounds them. A binding carries a grant a person
+    //   set on it; a schedule carries its own mode and the bypass clamp on
+    //   file-sourced ones. A room turn carries NEITHER, and follows the
+    //   operator's configured stop instead — read at creation, clamped to
+    //   entries written on this machine (DOR-1917, ADR 260908-170643). What all
+    //   three share is that the value they start at was set through the
+    //   consent-gated config route, never through this one.
     // - **A runtime's own default.** A session is BORN at whatever mode its
     //   runtime declares as default, with no PATCH and therefore no door;
     //   `test-mode` is born at its autonomy stop, which is the entire point of

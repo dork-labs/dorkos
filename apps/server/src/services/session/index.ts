@@ -81,6 +81,7 @@ export type { TriggerTurnDeps, TriggerTurnOpts, TriggerTurnResult } from './trig
 export {
   resolveSessionDefaults,
   resolveUnattendedSessionDefaults,
+  resolveUnattendedPermissionMode,
   readAgentExecutionDefaults,
   describeExecutionDefaults,
   type AgentExecutionDefaults,
