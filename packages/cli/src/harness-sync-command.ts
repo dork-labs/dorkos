@@ -23,6 +23,7 @@ import {
   canonicalLayerIgnoredBy,
   CLAUDE_SKILLS_DIR,
   loadManifest,
+  manifestNotices,
   missingGitignoreLines,
   scaffoldManifest,
   CLAUDE_SETTINGS_LOCAL_TARGET,
@@ -32,6 +33,7 @@ import {
   HARNESS_LABELS,
   HARNESS_MANIFEST_PATH,
   type HarnessId,
+  type HarnessManifest,
   type ProjectionAction,
   type ProjectionPlan,
 } from '@dorkos/harness';
@@ -366,6 +368,27 @@ function formatNotEnabled(plan: ProjectionPlan): string[] {
 }
 
 /**
+ * One line per statement in the manifest that reaches nothing: a key the engine
+ * retired, or a hook policy naming a harness this manifest does not enable
+ * (DOR-1858).
+ *
+ * A NOTICE, like {@link formatNotEnabled}, and never an exit code. The manifest
+ * is hand-authored and per-repo, so nothing migrates it for the person — this
+ * line IS the migration notice, and it names exactly what to delete.
+ *
+ * **`--harness` does not narrow it**, and that is deliberate rather than an
+ * oversight: every other block is a report about a PROJECTION, so filtering it
+ * to one harness is filtering the answer to the question that was asked. These
+ * lines are about the file. A person who runs `--harness codex` has the same
+ * dead keys in the same manifest, and hiding them until they happen to run an
+ * unfiltered sync would be the silence this whole change is about.
+ */
+function formatManifestNotices(manifest: HarnessManifest): string[] {
+  const notices = manifestNotices(manifest);
+  return notices.length === 0 ? [] : ['', ...notices];
+}
+
+/**
  * The `.gitignore` lines this repo is missing for the files DorkOS writes, or
  * confirmation that they were just added (contract AP-09).
  *
@@ -458,14 +481,14 @@ function reportCheck(
   plan: ProjectionPlan,
   withheld: readonly WithheldHooks[],
   dorkHome: string,
-  harnessFilter?: HarnessId,
-  enabled?: readonly HarnessId[]
+  manifest: HarnessManifest,
+  harnessFilter?: HarnessId
 ): number {
   const drift = checkPlan(repoRoot, plan);
   const { orphans } = drift;
 
   console.log('Projection summary:');
-  console.log(summarizeActions(plan.actions, withheld, enabled));
+  console.log(summarizeActions(plan.actions, withheld, manifest.harnesses));
   console.log('');
   console.log(formatDropList(plan));
   const warningBlock = formatWarnings(plan);
@@ -476,6 +499,7 @@ function reportCheck(
   for (const line of formatLeftAlone(drift.leftAlone, harnessFilter)) console.log(line);
   reportWithheld(withheld, dorkHome);
   for (const line of formatNotEnabled(plan)) console.log(line);
+  for (const line of formatManifestNotices(manifest)) console.log(line);
   for (const line of formatGitignore(missingGitignoreLines(repoRoot, plan), false)) {
     console.log(line);
   }
@@ -538,8 +562,8 @@ function reportFix(
   claudeSkillsExistedBefore: boolean,
   dorkHome: string,
   writeGitignore: boolean,
-  harnessFilter?: HarnessId,
-  enabled?: readonly HarnessId[]
+  manifest: HarnessManifest,
+  harnessFilter?: HarnessId
 ): number {
   const { applied, conflicts, swept, leftAlone } = applyResult;
 
@@ -549,11 +573,11 @@ function reportFix(
   reportClaudeSkillsRestart(claudeSkillsExistedBefore, repoRoot);
   console.log('');
   console.log('Projection summary:');
-  // `enabled` reaches here too, and it did not have to. `--fix` printed no
+  // The enabled set reaches here too, and it did not have to. `--fix` printed no
   // summary at all when DOR-1847 annotated `--check`'s; it does now, and a
   // `codex:` line reads "Codex is on" to the same person on the same project
   // whichever mode they ran.
-  console.log(summarizeActions(plan.actions, withheld, enabled));
+  console.log(summarizeActions(plan.actions, withheld, manifest.harnesses));
   console.log('');
   console.log(formatDropList(plan));
   const warningBlock = formatWarnings(plan);
@@ -580,6 +604,7 @@ function reportFix(
   reportWithheld(withheld, dorkHome);
 
   for (const line of formatNotEnabled(plan)) console.log(line);
+  for (const line of formatManifestNotices(manifest)) console.log(line);
 
   // The one write in this block, and it is the one the person asked for by
   // passing the flag. Without it the lines are named and nothing is touched:
@@ -773,12 +798,13 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     const { planWithConsent, projectWithConsent, scanHookRequests } =
       await import('../server/services/harness/project-with-consent.js');
 
-    // Which harnesses the manifest enables, so a summary line for one it does
-    // not can say so (DOR-1847). Read AFTER the projection, which reads the same
-    // file: a malformed manifest should fail with the message the engine gives
-    // it, not this one — and both land in the catch below as one sentence either
-    // way.
-    const enabledHarnesses = (): readonly HarnessId[] => loadManifest(repoRoot).harnesses;
+    // The manifest itself, for the two things the report says ABOUT it rather
+    // than about a projection: which harnesses it enables, so a summary line for
+    // one it does not can say so (DOR-1847), and the statements in it that reach
+    // nothing (DOR-1858). Read AFTER the projection, which reads the same file: a
+    // malformed manifest should fail with the message the engine gives it, not
+    // this one — and both land in the catch below as one sentence either way.
+    const readManifest = (): HarnessManifest => loadManifest(repoRoot);
 
     // `--allow-hooks` is resolved and RECORDED before the plan is built, so the
     // projection that follows reads one store — there is no per-run override to
@@ -846,8 +872,8 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
         plan,
         withheld,
         dorkHome,
-        harnessFilter,
-        enabledHarnesses()
+        readManifest(),
+        harnessFilter
       );
       return { exitCode: strictExit(exitCode, withheld, args.strict) };
     }
@@ -867,8 +893,8 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
       claudeSkillsExistedBefore,
       dorkHome,
       args.writeGitignore,
-      harnessFilter,
-      enabledHarnesses()
+      readManifest(),
+      harnessFilter
     );
     return { exitCode: strictExit(exitCode, result.withheld, args.strict) };
   } catch (err) {

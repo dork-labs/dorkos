@@ -31,58 +31,13 @@ const ClaudeOnlySkillSchema = z
   .strict();
 
 /**
- * A renamed / tool-specific wrapper around a shared skill (e.g. a Codex wrapper
- * that re-names a Claude skill while preserving its guidance).
- */
-const SkillWrapperSchema = z
-  .object({
-    target: HarnessIdSchema,
-    name: z.string(),
-    sharedSource: z.string(),
-    targetPath: z.string(),
-    reason: z.string(),
-    status: z.string().optional(),
-  })
-  .strict();
-
-/**
- * A mapping from a Claude slash command to the portable skill (or AGENTS.md
- * workflow) that carries its behavior to other harnesses. The slash-command
- * trigger stays Claude-only; the behavior travels as the mapped skill.
- */
-const CommandMappingSchema = z
-  .object({
-    claudeCommand: z.string(),
-    target: z.string(),
-    strategy: z.string(),
-    status: z.string(),
-    notes: z.string().optional(),
-  })
-  .strict();
-
-/**
- * A projection rule for an instruction source (e.g. `AGENTS.md`). Instructions
- * are scaffolded, never generated (ADR-302); each entry records which harnesses
- * read the source and how.
- */
-const InstructionProjectionSchema = z
-  .object({
-    source: z.string(),
-    status: z.string(),
-    targets: z
-      .object({
-        tool: z.string(),
-        mode: z.string(),
-      })
-      .strict()
-      .array(),
-    notes: z.string().optional(),
-  })
-  .strict();
-
-/**
- * The per-harness hook projection policy: whether hooks are native to that
- * harness, generated from the canonical `.claude/settings.json`, or dropped.
+ * The per-harness hook projection policy: whether that harness reads the
+ * canonical hooks itself (`native`), gets a hooks file the engine writes
+ * (`generate`), or gets nothing (`none`).
+ *
+ * Read by the planner since DOR-1858 (`plan/hooks-projection.ts`). An entry for a
+ * harness the manifest does not enable, or for a `tool` that is not a harness at
+ * all, does nothing and is named by `manifestNotices` (`manifest/notices.ts`).
  */
 const HookPolicySchema = z
   .object({
@@ -94,31 +49,46 @@ const HookPolicySchema = z
   })
   .strict();
 
+/** One harness's hook projection policy, as the manifest states it. */
+export type HookPolicy = z.infer<typeof HookPolicySchema>;
+
+/** What a {@link HookPolicy} asks the engine to do with a harness's hooks. */
+export type HookProjection = HookPolicy['projection'];
+
 /**
- * A bundle of skills with a non-flat source root (e.g. a packaged plugin whose
- * skills live under `<bundle>/skills/`). The per-skill list is intentionally
- * NOT stored here — the scanner derives the individual skills from `sourceRoot`;
- * the manifest carries only the bundle-level projection policy.
+ * The manifest keys that are accepted, ignored, and on their way out (DOR-1858).
+ *
+ * Each described something the engine has its own source for: plugin command
+ * wrappers, `plan/command-formats.ts`, the scaffolded instruction pointers of
+ * ADR-302, and a bundle concept the scanner replaced. None was ever read, and a
+ * field that is validated but never read is a claim nobody checks.
+ *
+ * They stay in the schema so an existing manifest still parses — `.strict()`
+ * would otherwise reject every repo that carries one, and `--enable` validates
+ * with this schema before it writes a byte. `dorkos harness sync` names each one
+ * it finds instead (`manifest/notices.ts`); that line is the whole migration,
+ * because the manifest is a per-repo file nothing rewrites.
  */
-const SkillBundleSchema = z
-  .object({
-    name: z.string(),
-    manifest: z.string().optional(),
-    sourceRoot: z.string(),
-    claudeProjectionRoot: z.string().optional(),
-    notes: z.string().optional(),
-  })
-  .strict();
+export const RETIRED_MANIFEST_KEYS = [
+  'skillWrappers',
+  'commandMappings',
+  'instructionProjections',
+  'skillBundles',
+] as const;
 
 /**
  * The slimmed Harness Sync manifest (`.agents/harness.manifest.json`).
  *
- * It carries ONLY non-derivable policy + exceptions. The previously-stored
- * `sharedSkills` array and per-bundle `skills` lists are deliberately absent:
- * the scanner reconstructs them from `.agents/skills/*` and each bundle
- * `sourceRoot`. The schema is `.strict()`, so a stale manifest that still
- * carries a derivable `sharedSkills` array is REJECTED rather than silently
- * accepted (the drift guard).
+ * Three keys carry meaning: `harnesses` (the enabled projection targets),
+ * `claudeOnlySkills` (skills deliberately kept out of the canonical layer), and
+ * `hookPolicies` (per-harness hook projection). Everything else the manifest
+ * used to store is derived — the scanner reconstructs the skills from
+ * `.agents/skills/*`, so a stale `sharedSkills` array is REJECTED by `.strict()`
+ * rather than silently accepted (the drift guard).
+ *
+ * The four {@link RETIRED_MANIFEST_KEYS} are the deliberate exception: typed as
+ * `unknown` so whatever a repo still has there parses and is ignored, rather
+ * than failing a sync over a block nothing reads.
  */
 export const HarnessManifestSchema = z
   .object({
@@ -126,11 +96,15 @@ export const HarnessManifestSchema = z
     /** Enabled projection targets. Claude Code is on by default. */
     harnesses: HarnessIdSchema.array().default(['claude-code']),
     claudeOnlySkills: ClaudeOnlySkillSchema.array().default([]),
-    skillWrappers: SkillWrapperSchema.array().default([]),
-    commandMappings: CommandMappingSchema.array().default([]),
-    instructionProjections: InstructionProjectionSchema.array().default([]),
     hookPolicies: HookPolicySchema.array().default([]),
-    skillBundles: SkillBundleSchema.array().default([]),
+    /** @deprecated Accepted and ignored — see {@link RETIRED_MANIFEST_KEYS}. */
+    skillWrappers: z.unknown().optional(),
+    /** @deprecated Accepted and ignored — see {@link RETIRED_MANIFEST_KEYS}. */
+    commandMappings: z.unknown().optional(),
+    /** @deprecated Accepted and ignored — see {@link RETIRED_MANIFEST_KEYS}. */
+    instructionProjections: z.unknown().optional(),
+    /** @deprecated Accepted and ignored — see {@link RETIRED_MANIFEST_KEYS}. */
+    skillBundles: z.unknown().optional(),
   })
   .strict();
 

@@ -143,6 +143,35 @@ describe('enableHarnessInManifest', () => {
     expect(after.endsWith('}\n')).toBe(true);
   });
 
+  it('inserts byte-pure into a manifest still carrying all four retired keys', () => {
+    // The four keys DOR-1858 retired are ACCEPTED and ignored, which is exactly
+    // what this path needs: `--enable` validates with the strict schema before it
+    // writes, so a schema that rejected them would refuse to edit every manifest
+    // written before the retirement. Their contents are deliberately messy — one
+    // shape the old schema would have rejected outright.
+    const body = [
+      '{',
+      '  "version": 1,',
+      '  "harnesses": ["claude-code"],',
+      '  "skillWrappers": [{ "target": "codex", "name": "x", "anything": true }],',
+      '  "commandMappings": "not even an array",',
+      '  "instructionProjections": null,',
+      '  "skillBundles": [{ "name": "flow", "skills": [{ "name": "a" }] }],',
+      '  "hookPolicies": []',
+      '}',
+      '',
+    ].join('\n');
+    const abs = stageManifest(body);
+
+    expect(enableHarnessInManifest(repo, 'cursor').outcome).toBe('enabled');
+
+    const after = readFileSync(abs, 'utf8');
+    expect(singleInsertion(body, after)).toBe(', "cursor"');
+    expect(after).toContain('"commandMappings": "not even an array",');
+    expect(after).toContain('"instructionProjections": null,');
+    expect(parseHarnessManifest(JSON.parse(after)).harnesses).toEqual(['claude-code', 'cursor']);
+  });
+
   it('treats the schema default as enabled, since that is what the engine loads', () => {
     // No `harnesses` key means `["claude-code"]` to every reader of this file,
     // so saying "not enabled" about Claude Code here would be a claim about the

@@ -6,10 +6,12 @@
  * assets) to every enabled agent harness, with an honest per-harness drop list.
  */
 export * from './manifest/schema.js';
+export * from './manifest/notices.js';
 export * from './vendor/rulesync-maps.js';
 export * from './vendor/gemini-maps.js';
 export * from './plan/types.js';
 export * from './plan/projector.js';
+export * from './plan/hooks-projection.js';
 export * from './plan/instructions.js';
 export * from './plan/command-formats.js';
 export * from './plan/installed-projector.js';

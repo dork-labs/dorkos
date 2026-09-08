@@ -1744,3 +1744,119 @@ describe('runHarnessSync — a harness added later, and the .gitignore contract'
     });
   });
 });
+
+describe('runHarnessSync — the manifest lines that reach nothing (DOR-1858)', () => {
+  let tmpDir: string;
+  let originalCwd: string;
+  let homeDir: string;
+  let logSpy: MockInstance<typeof console.log>;
+
+  /** Everything the run printed, joined so a block can be asserted verbatim. */
+  const printed = (): string => logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+
+  /** Rewrite the fixture manifest, keeping its two harnesses. */
+  function writeManifest(extra: Record<string, unknown>): void {
+    fs.writeFileSync(
+      path.join(tmpDir, HARNESS_MANIFEST_PATH),
+      JSON.stringify({ version: 1, harnesses: ['claude-code', 'codex'], ...extra }, null, 2)
+    );
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tmpDir = createTempDir();
+    homeDir = createTempDir();
+    vi.stubEnv('DORK_HOME', homeDir);
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    writeFixtureRepo(tmpDir);
+    process.chdir(tmpDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  it('names every retired key still in the file, and still exits on the drift alone', async () => {
+    // The four keys nothing ever read. There is no config migration for a
+    // per-repo file, so this line IS the migration notice.
+    writeManifest({
+      skillWrappers: [{ target: 'codex', name: 'x' }],
+      commandMappings: [],
+      instructionProjections: [],
+      skillBundles: [],
+    });
+
+    const check = await runHarnessSync(syncArgs({ check: true }));
+
+    for (const key of [
+      'skillWrappers',
+      'commandMappings',
+      'instructionProjections',
+      'skillBundles',
+    ]) {
+      expect(printed()).toContain(
+        `${key} in .agents/harness.manifest.json is no longer read — remove it`
+      );
+    }
+    // Drift, from the unprojected fixture — never the notice.
+    expect(check.exitCode).toBe(1);
+  });
+
+  it('says nothing about a manifest that carries none of them', async () => {
+    await runHarnessSync(syncArgs({ check: true }));
+    expect(printed()).not.toContain('is no longer read');
+  });
+
+  it('names a hook policy for a harness this manifest does not enable', async () => {
+    writeManifest({ hookPolicies: [{ tool: 'cursor', projection: 'none' }] });
+
+    await runHarnessSync(syncArgs({ check: true }));
+
+    expect(printed()).toContain(
+      'hookPolicies in .agents/harness.manifest.json names cursor, which this manifest does not enable'
+    );
+  });
+
+  it('honours a hooks policy of none: no .codex/hooks.json is written, and the drop says why', async () => {
+    // The behaviour half, through the real CLI: a `--fix` writes every other
+    // projection and leaves the hooks file it was told not to write.
+    writeManifest({ hookPolicies: [{ tool: 'codex', projection: 'none' }] });
+
+    const fix = await runHarnessSync(syncArgs({ fix: true }));
+
+    expect(fix.exitCode).toBe(0);
+    expect(fs.existsSync(path.join(tmpDir, '.codex', 'hooks.json'))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'CLAUDE.md'))).toBe(true);
+    expect(printed()).toContain(
+      "hooks are not projected to Codex — your manifest's hookPolicies says none"
+    );
+  });
+
+  it('still names them under --harness, which narrows projections, not the file', async () => {
+    // Every other block answers "what happens for this harness?". These lines
+    // answer "what is wrong with your manifest?", which does not change.
+    writeManifest({ commandMappings: [], hookPolicies: [{ tool: 'cursor', projection: 'none' }] });
+
+    await runHarnessSync(syncArgs({ check: true, harness: 'codex' }));
+
+    expect(printed()).toContain(
+      'commandMappings in .agents/harness.manifest.json is no longer read — remove it'
+    );
+    expect(printed()).toContain('hookPolicies in .agents/harness.manifest.json names cursor');
+  });
+
+  it('prints the same notices on --fix as on --check', async () => {
+    writeManifest({ skillBundles: [] });
+
+    await runHarnessSync(syncArgs({ fix: true }));
+
+    expect(printed()).toContain(
+      'skillBundles in .agents/harness.manifest.json is no longer read — remove it'
+    );
+  });
+});

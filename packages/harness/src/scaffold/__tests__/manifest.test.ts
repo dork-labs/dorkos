@@ -79,7 +79,22 @@ describe('scaffoldManifest', () => {
     const parsed = readManifest(dir);
     expect(parsed.version).toBe(1);
     expect(parsed.claudeOnlySkills).toEqual([]);
-    expect(parsed.skillBundles).toEqual([]);
+    expect(parsed.hookPolicies).toEqual([]);
+  });
+
+  it('writes only the three keys the engine reads', () => {
+    // A scaffolded manifest used to start life with four blank blocks nothing
+    // ever read (DOR-1858). The file a person opens now says only what matters.
+    dir = freshDir();
+    scaffoldManifest(dir);
+    const raw: unknown = JSON.parse(readFileSync(join(dir, HARNESS_MANIFEST_PATH), 'utf8'));
+
+    expect(Object.keys(raw as Record<string, unknown>)).toEqual([
+      'version',
+      'harnesses',
+      'claudeOnlySkills',
+      'hookPolicies',
+    ]);
   });
 
   it('writes a human-editable file (2-space indent, trailing newline)', () => {
