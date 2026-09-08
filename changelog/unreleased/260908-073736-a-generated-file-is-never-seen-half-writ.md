@@ -2,6 +2,7 @@
 covers:
   - 'fix(harness): a generated file is never seen half-written (DOR-1854)'
   - 'feat(harness): two syncs into one repo take turns (DOR-1854)'
+  - 'fix(harness): the write guard strips comments the way the repo does (DOR-1854)'
 ---
 
 ### Fixed
