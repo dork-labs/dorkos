@@ -35,7 +35,7 @@ import {
 } from './hooks-projection.js';
 import { planInstruction } from './instructions.js';
 
-import type { InstalledPlugin } from '../sources/installed.js';
+import { isProjectScoped, type InstalledPlugin } from '../sources/installed.js';
 import {
   planInstalledSkills,
   planInstalledCommands,
@@ -445,13 +445,12 @@ export function buildPlan(input: {
 
   // Partition installed plugins: only project-scoped, projectable-type plugins
   // contribute assets; global installs and other types are reported as drops.
-  const projectable = installedPlugins.filter(
-    (p) => p.scope === 'project' && PROJECTABLE_PLUGIN_TYPES.has(p.type)
-  );
-  const unsupportedType = installedPlugins.filter(
-    (p) => p.scope === 'project' && !PROJECTABLE_PLUGIN_TYPES.has(p.type)
-  );
-  const globalInstalls = installedPlugins.filter((p) => p.scope === 'global');
+  // `isProjectScoped` is a type predicate, so everything downstream of this line
+  // carries a repo-relative install directory the compiler can see.
+  const projectScoped = installedPlugins.filter(isProjectScoped);
+  const projectable = projectScoped.filter((p) => PROJECTABLE_PLUGIN_TYPES.has(p.type));
+  const unsupportedType = projectScoped.filter((p) => !PROJECTABLE_PLUGIN_TYPES.has(p.type));
+  const globalInstalls = installedPlugins.filter((p) => p.location.scope === 'global');
 
   // Which packages may contribute shell commands. Applied HERE, before the hooks
   // are folded in, because a package's hooks reach every enabled harness — the
@@ -471,7 +470,7 @@ export function buildPlan(input: {
   const mergedHooks = mergeHookConfigs([
     claudeHooks,
     ...hookContributors.map((p) =>
-      p.relDir ? rewritePluginRootInHooks(p.hooks, join(repoRoot, p.relDir)) : p.hooks
+      rewritePluginRootInHooks(p.hooks, join(repoRoot, p.location.relDir))
     ),
   ]);
 

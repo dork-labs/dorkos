@@ -30,7 +30,7 @@ import {
   type DroppedHook,
 } from '../generate/hooks.js';
 import { hooksFactsFor } from '../vendor-facts/index.js';
-import type { InstalledPlugin } from '../sources/installed.js';
+import type { ProjectInstalledPlugin } from '../sources/installed.js';
 
 /** The one authored hooks file the engine reads — Claude Code's own project settings. */
 const CLAUDE_SETTINGS_SOURCE = '.claude/settings.json';
@@ -140,7 +140,7 @@ export interface HookSources {
  */
 export function collectHookSources(
   authoredHooks: ClaudeHooksConfig | undefined,
-  contributors: readonly InstalledPlugin[]
+  contributors: readonly ProjectInstalledPlugin[]
 ): HookSources {
   const files: string[] = [];
   const byEvent = new Map<string, string>();
@@ -151,8 +151,8 @@ export function collectHookSources(
   }
   for (const plugin of contributors) {
     const hooks = plugin.hooks;
-    if (!hooks || !hasHooks(hooks) || !plugin.relDir) continue;
-    const file = `${plugin.relDir}/hooks/hooks.json`;
+    if (!hooks || !hasHooks(hooks)) continue;
+    const file = `${plugin.location.relDir}/hooks/hooks.json`;
     files.push(file);
     for (const event of Object.keys(hooks)) if (!byEvent.has(event)) byEvent.set(event, file);
   }
@@ -370,18 +370,18 @@ export function pluginHookReach(manifest: HarnessManifest): {
  * declaration it is about (P6).
  */
 export function dropSuppressedPluginHookMerge(
-  contributors: readonly InstalledPlugin[]
+  contributors: readonly ProjectInstalledPlugin[]
 ): ProjectionAction[] {
   const reason = `hooks are not projected to ${HARNESS_LABELS['claude-code']} — your manifest's hookPolicies says none`;
   return contributors
-    .filter((plugin) => plugin.relDir !== undefined && hasHooks(plugin.hooks))
+    .filter((plugin) => hasHooks(plugin.hooks))
     .map((plugin) => ({
       kind: 'drop' as const,
       artifact: 'hook' as const,
       harness: 'claude-code' as const,
       provenance: 'installed' as const,
       name: 'plugin-hooks',
-      source: `${plugin.relDir as string}/hooks/hooks.json`,
+      source: `${plugin.location.relDir}/hooks/hooks.json`,
       reason,
     }));
 }
