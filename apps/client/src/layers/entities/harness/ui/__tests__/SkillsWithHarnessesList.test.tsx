@@ -200,6 +200,8 @@ describe('SkillsWithHarnessesList — the six page states', () => {
     expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(6);
     expect(container.querySelector('[data-slot="spinner"]')).toBeNull();
     expect(screen.queryByRole('group')).not.toBeInTheDocument();
+    // The blocks say nothing to a screen reader, so one sentence does.
+    expect(screen.getByRole('status')).toHaveTextContent('Loading skills…');
   });
 
   it('says it could not load and offers a Retry', async () => {
@@ -208,7 +210,14 @@ describe('SkillsWithHarnessesList — the six page states', () => {
     render(<SkillsWithHarnessesList projectPath="/repo" />, { wrapper: createWrapper(transport) });
 
     expect(await screen.findByText('Couldn’t load skills.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+
+    // Retry asks again rather than only looking like it does.
+    const user = userEvent.setup();
+    getHarnessStatus.mockResolvedValueOnce(HARNESS_STATUS_ALL_SHARED);
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(await screen.findByRole('group', { name: 'release' })).toBeInTheDocument();
+    expect(getHarnessStatus).toHaveBeenCalledTimes(2);
   });
 
   it('says nothing is set up yet, with the command and a docs link', async () => {

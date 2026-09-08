@@ -28,17 +28,30 @@ export interface SkillsWithHarnessesListProps {
   projectPath: string;
 }
 
-/** Three placeholder rows and no spinner: the page's own shape, arriving. */
+/**
+ * Three placeholder rows and no spinner: the page's own shape, arriving.
+ *
+ * The blocks are `aria-hidden` — there is nothing in them to read — and the one
+ * sentence that says what is happening is `sr-only`, so a screen reader is told
+ * and the design keeps its spinner-free surface. Silence would have been the
+ * alternative, and "nothing announced" is not the same fact as "three grey
+ * rectangles".
+ */
 function LoadingRows() {
   return (
-    <div aria-hidden className="flex flex-col gap-3 py-1">
-      {[0, 1, 2].map((n) => (
-        <div key={n} className="flex flex-col gap-1.5">
-          <Skeleton className="h-3 w-32" />
-          <Skeleton className="h-3 w-48" />
-        </div>
-      ))}
-    </div>
+    <>
+      <span role="status" className="sr-only">
+        Loading skills…
+      </span>
+      <div aria-hidden className="flex flex-col gap-3 py-1">
+        {[0, 1, 2].map((n) => (
+          <div key={n} className="flex flex-col gap-1.5">
+            <Skeleton className="h-3 w-32" />
+            <Skeleton className="h-3 w-48" />
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
