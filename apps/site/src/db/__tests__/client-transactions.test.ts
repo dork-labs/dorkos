@@ -7,6 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Keep the production constructor, Neon Pool and Drizzle transaction implementation
 // real. Only replace the socket acquisition: its SQL runs in real offline Postgres.
 // A PGlite Drizzle replacement here would hide neon-http's missing transaction API.
+
+// Booting PGlite per case costs seconds: measured at 5.2-5.9s end to end at a
+// load average of 280, where the boot sits in `beforeEach` and what is thin is
+// the 10s hook budget (DOR-1886). The database stays per-case: a case that makes
+// `commit` fail leaves its connection inside an open transaction, which is state
+// a shared PGlite would carry into the next one.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
 let postgres: PGlite;
 let statements: string[];
 let release: ReturnType<typeof vi.fn>;

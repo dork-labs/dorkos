@@ -11,7 +11,7 @@ import type { ComposioOperationClient } from '@dorkos/connector-providers/compos
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as siteSchema from '@/db/schema';
 import {
@@ -48,6 +48,12 @@ import {
   ManagedUsageCursorError,
   ManagedUsageNotFoundError,
 } from '../usage-service';
+
+// Booting PGlite and replaying the managed-connector migrations costs seconds,
+// and every case here pays it in `beforeEach`: measured at 6.1s of vitest's 10s
+// hook default at a load average of 296 (DOR-1886). Each case seeds its own
+// graph, so the fixture stays per-case and the budget moves instead.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../../../../drizzle/', import.meta.url));
 const MANAGED_MIGRATION_PREFIXES = ['0011_', '0012_', '0013_'];

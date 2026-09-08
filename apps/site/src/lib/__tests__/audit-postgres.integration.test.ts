@@ -104,110 +104,117 @@ async function createHarness(): Promise<{
   return { client, auth, handlers: toNextJsHandler(auth) };
 }
 
+// Booting PGlite, running every Drizzle migration and hashing a Better Auth
+// password takes ~3s on an idle machine, and vitest's 5s default false-failed
+// all three cases here on one already running other agents' suites (DOR-1886).
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
 describe('PostgreSQL security audit persistence', () => {
-  beforeAll(() => vi.stubEnv('BETTER_AUTH_SECRET', 'test-secret-test-secret-test-secret-123'));
+  // ONE database for the file. Every case below reads only rows keyed to its own
+  // user, so they share a Postgres without depending on each other's order — and
+  // the three boots that cost the most here become one.
+  let client: PGlite;
+  let auth: ReturnType<typeof createAuth>;
+  let handlers: Handlers;
+
+  beforeAll(async () => {
+    vi.stubEnv('BETTER_AUTH_SECRET', 'test-secret-test-secret-test-secret-123');
+    ({ client, auth, handlers } = await createHarness());
+  });
   beforeEach(() => vi.clearAllMocks());
-  afterAll(() => vi.unstubAllEnvs());
+  afterAll(async () => {
+    await client.close();
+    vi.unstubAllEnvs();
+  });
 
   it('persists a direct audit write with a PostgreSQL UUID', async () => {
-    const { client, auth } = await createHarness();
-    try {
-      await recordAudit(auth, {
-        actorUserId: 'admin-a',
-        action: 'admin.ban_user',
-        targetUserId: 'target-a',
-        reason: 'abuse',
-        metadata: { banExpiresIn: 3600 },
-      });
+    await recordAudit(auth, {
+      actorUserId: 'admin-a',
+      action: 'admin.ban_user',
+      targetUserId: 'target-a',
+      reason: 'abuse',
+      metadata: { banExpiresIn: 3600 },
+    });
 
-      const rows = await listAudit(auth, { targetUserId: 'target-a' });
-      expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({
-        actorUserId: 'admin-a',
-        action: 'admin.ban_user',
-        targetUserId: 'target-a',
-        reason: 'abuse',
-        metadata: { banExpiresIn: 3600 },
-      });
-      expect(rows[0].id).toMatch(UUID_PATTERN);
-      expect(
-        (await client.query<{ type: string }>('SELECT pg_typeof(id)::text AS type FROM audit_log'))
-          .rows
-      ).toEqual([{ type: 'uuid' }]);
-    } finally {
-      await client.close();
-    }
+    const rows = await listAudit(auth, { targetUserId: 'target-a' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      actorUserId: 'admin-a',
+      action: 'admin.ban_user',
+      targetUserId: 'target-a',
+      reason: 'abuse',
+      metadata: { banExpiresIn: 3600 },
+    });
+    expect(rows[0].id).toMatch(UUID_PATTERN);
+    // Scoped to this case's own target, because the table is shared with the two
+    // below. What is being read off the column is its TYPE, which one row proves
+    // exactly as well as every row would.
+    expect(
+      (
+        await client.query<{ type: string }>(
+          'SELECT pg_typeof(id)::text AS type FROM audit_log WHERE target_user_id = $1',
+          ['target-a']
+        )
+      ).rows
+    ).toEqual([{ type: 'uuid' }]);
   });
 
   it('keeps requested and completed audit rows after real email-confirmed account deletion', async () => {
-    const { client, auth, handlers } = await createHarness();
-    try {
-      const owner = await createSignedInUser(client, handlers, 'leaving@dork.test');
-      expect(
-        (
-          await handlers.POST(
-            post('/api/auth/delete-user', { callbackURL: '/signin' }, owner.cookie)
-          )
-        ).status
-      ).toBe(200);
-      const sent = vi.mocked(mailer.sendDeleteAccountVerification).mock.calls.at(-1);
-      if (!sent) throw new Error('Account deletion did not send its confirmation URL.');
+    const owner = await createSignedInUser(client, handlers, 'leaving@dork.test');
+    expect(
+      (await handlers.POST(post('/api/auth/delete-user', { callbackURL: '/signin' }, owner.cookie)))
+        .status
+    ).toBe(200);
+    const sent = vi.mocked(mailer.sendDeleteAccountVerification).mock.calls.at(-1);
+    if (!sent) throw new Error('Account deletion did not send its confirmation URL.');
 
-      const callback = await handlers.GET(
-        new Request(new URL(sent[0].url), {
-          headers: { origin: ORIGIN, cookie: owner.cookie },
-        })
-      );
-      expect(callback.status).toBe(302);
-      expect(
-        (await client.query('SELECT id FROM "user" WHERE id = $1', [owner.id])).rows
-      ).toHaveLength(0);
+    const callback = await handlers.GET(
+      new Request(new URL(sent[0].url), {
+        headers: { origin: ORIGIN, cookie: owner.cookie },
+      })
+    );
+    expect(callback.status).toBe(302);
+    expect(
+      (await client.query('SELECT id FROM "user" WHERE id = $1', [owner.id])).rows
+    ).toHaveLength(0);
 
-      const audit = await listAudit(auth, { targetUserId: owner.id });
-      expect(audit).toHaveLength(2);
-      expect(audit.map(({ action }) => action).sort()).toEqual([
-        'account.self_delete.completed',
-        'account.self_delete.requested',
-      ]);
-      for (const row of audit) {
-        expect(row.id).toMatch(UUID_PATTERN);
-        expect(row.actorUserId).toBe(owner.id);
-        expect(row.targetUserId).toBe(owner.id);
-      }
-    } finally {
-      await client.close();
+    const audit = await listAudit(auth, { targetUserId: owner.id });
+    expect(audit).toHaveLength(2);
+    expect(audit.map(({ action }) => action).sort()).toEqual([
+      'account.self_delete.completed',
+      'account.self_delete.requested',
+    ]);
+    for (const row of audit) {
+      expect(row.id).toMatch(UUID_PATTERN);
+      expect(row.actorUserId).toBe(owner.id);
+      expect(row.targetUserId).toBe(owner.id);
     }
   });
 
   it('attributes a real admin action to the acting account', async () => {
-    const { client, auth, handlers } = await createHarness();
-    try {
-      const admin = await createSignedInUser(client, handlers, 'admin@dork.test', 'admin');
-      const target = await createSignedInUser(client, handlers, 'target@dork.test');
+    const admin = await createSignedInUser(client, handlers, 'admin@dork.test', 'admin');
+    const target = await createSignedInUser(client, handlers, 'target@dork.test');
 
-      const response = await handlers.POST(
-        post('/api/auth/admin/ban-user', { userId: target.id, banReason: 'abuse' }, admin.cookie)
-      );
-      expect(response.status).toBe(200);
-      expect(
-        (
-          await client.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id = $1', [
-            target.id,
-          ])
-        ).rows
-      ).toEqual([{ banned: true }]);
+    const response = await handlers.POST(
+      post('/api/auth/admin/ban-user', { userId: target.id, banReason: 'abuse' }, admin.cookie)
+    );
+    expect(response.status).toBe(200);
+    expect(
+      (
+        await client.query<{ banned: boolean }>('SELECT banned FROM "user" WHERE id = $1', [
+          target.id,
+        ])
+      ).rows
+    ).toEqual([{ banned: true }]);
 
-      const audit = await listAudit(auth, { targetUserId: target.id });
-      expect(audit).toHaveLength(1);
-      expect(audit[0]).toMatchObject({
-        actorUserId: admin.id,
-        action: 'admin.ban_user',
-        targetUserId: target.id,
-        reason: 'abuse',
-      });
-      expect(audit[0].id).toMatch(UUID_PATTERN);
-    } finally {
-      await client.close();
-    }
+    const audit = await listAudit(auth, { targetUserId: target.id });
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({
+      actorUserId: admin.id,
+      action: 'admin.ban_user',
+      targetUserId: target.id,
+      reason: 'abuse',
+    });
+    expect(audit[0].id).toMatch(UUID_PATTERN);
   });
 });
