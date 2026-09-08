@@ -123,6 +123,7 @@ export function queryCodexModels(
     }
 
     child.stderr.resume();
+    child.stdout.setEncoding('utf8');
     const models: AppServerModel[] = [];
     let settled = false;
     let pendingModelRequestId = FIRST_MODEL_REQUEST_ID;
@@ -331,11 +332,15 @@ export class CodexModelCatalog {
       this.onError(error);
       const now = this.now();
       const sameIdentity = this.cache?.key === key ? this.cache : null;
-      const models = sameIdentity && sameIdentity.staleUntil > now ? sameIdentity.models : [];
+      const usesStaleAnswer = sameIdentity !== null && sameIdentity.staleUntil > now;
+      const models = usesStaleAnswer ? sameIdentity.models : [];
       this.cache = {
         key,
         models,
-        expiresAt: now + this.ttlMs,
+        expiresAt:
+          usesStaleAnswer && models.length > 0
+            ? Math.min(now + this.ttlMs, sameIdentity.staleUntil)
+            : now + this.ttlMs,
         staleUntil: sameIdentity?.staleUntil ?? now,
       };
       return models;

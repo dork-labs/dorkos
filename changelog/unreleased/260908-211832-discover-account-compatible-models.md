@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(codex): discover account-compatible models'
+  - 'fix(codex): bound model catalog reuse'
 ---
 
 ### Fixed

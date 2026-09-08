@@ -155,6 +155,39 @@ describe('queryCodexModels', () => {
     await expect(result).rejects.toThrow('EPIPE');
     expect(child.kill).toHaveBeenCalledTimes(1);
   });
+
+  it('preserves a multibyte model name split across stdout chunks', async () => {
+    const child = new FakeAppServer();
+    let buffered = '';
+    child.stdin.on('data', (chunk: Buffer) => {
+      buffered += chunk.toString();
+      for (const line of buffered.split('\n').filter(Boolean)) {
+        const message = JSON.parse(line) as { id?: number; method: string };
+        if (message.method === 'initialize') {
+          child.stdout.write(`${JSON.stringify({ id: message.id, result: {} })}\n`);
+          continue;
+        }
+        if (message.method !== 'model/list') continue;
+        const response = Buffer.from(
+          `${JSON.stringify({
+            id: message.id,
+            result: { data: [{ ...ASTRA, displayName: 'GPT-6 Astrá' }], nextCursor: null },
+          })}\n`
+        );
+        const multibyteStart = response.indexOf(Buffer.from('á'));
+        child.stdout.write(response.subarray(0, multibyteStart + 1));
+        child.stdout.write(response.subarray(multibyteStart + 1));
+      }
+      buffered = '';
+    });
+
+    const models = await queryCodexModels('/opt/codex', {
+      spawn: vi.fn(() => child as never),
+      timeoutMs: 1_000,
+    });
+
+    expect(models[0]?.displayName).toBe('GPT-6 Astrá');
+  });
 });
 
 describe('mapAppServerModel', () => {
@@ -246,6 +279,31 @@ describe('CodexModelCatalog', () => {
     await expect(catalog.getSupportedModels()).resolves.toEqual([]);
     expect(query).toHaveBeenCalledTimes(3);
     expect(onError).toHaveBeenCalledTimes(2);
+    await expect(catalog.getSupportedModels()).resolves.toEqual([]);
+    expect(query).toHaveBeenCalledTimes(3);
+  });
+
+  it('never lets a late failed refresh extend the stale deadline', async () => {
+    let now = 0;
+    const query = vi
+      .fn<() => Promise<ModelOption[]>>()
+      .mockResolvedValueOnce([option('gpt-6-astra')])
+      .mockRejectedValueOnce(new Error('app-server unavailable'))
+      .mockRejectedValueOnce(new Error('app-server still unavailable'));
+    const catalog = new CodexModelCatalog({
+      resolveBinary: vi.fn(async () => '/opt/codex'),
+      resolveAuthContext: vi.fn(async () => '/home/.codex\u0000123:456'),
+      query,
+      now: () => now,
+      ttlMs: 100,
+      onError: vi.fn(),
+    });
+
+    await expect(catalog.getSupportedModels()).resolves.toEqual([option('gpt-6-astra')]);
+    now = 299_999;
+    await expect(catalog.getSupportedModels()).resolves.toEqual([option('gpt-6-astra')]);
+
+    now = 300_001;
     await expect(catalog.getSupportedModels()).resolves.toEqual([]);
     expect(query).toHaveBeenCalledTimes(3);
   });
