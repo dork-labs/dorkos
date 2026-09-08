@@ -64,27 +64,39 @@ export interface RuntimeSigninBannerProps {
  *
  * ## When it goes away, stated precisely
  *
- * Not when you sign in — DorkOS cannot inspect a credential, only try it. The
- * server clears the condition on **the next turn that reaches the provider** on
- * that runtime (`services/observability/runtime-signin-watch.ts`), so the row
- * can outlive the fix by however long it takes for something to run: a message,
- * a room reply, a scheduled task. That is the honest bound, and the direction to
- * be wrong in — an all-clear DorkOS has not seen would silence a sign-in that is
- * still dead.
+ * There are three exits, and every one of them is the server's.
  *
- * The other exit is a restart. The episode store is in memory, so a server
- * killed mid-episode could never see its recovery edge; boot therefore closes
- * the row it can no longer answer (`emitters/runtime-signin.ts`), saying that a
- * restart is what cleared it rather than claiming an all-clear. Without that,
- * this banner would stand forever on the strength of a row nothing could
- * resolve.
+ * **Finishing the sign-in this button leads to** is the fast one, and the one an
+ * operator can reach on purpose (DOR-1910): the vendor CLI exits 0 having
+ * written a credential for the account DorkOS pinned it to, and the server
+ * stands the condition down for that account
+ * (`services/runtimes/connect/delegated-login.ts` →
+ * `runtime-signin-watch.ts`, `noteSigninRepaired`). Signing in to a DIFFERENT
+ * Claude account does not, and must not: the notice is about a credential, and
+ * that one is still dead.
+ *
+ * **The next turn that reaches the provider** on the failing account clears it
+ * too, which covers a sign-in fixed outside DorkOS — in a terminal, say. It used
+ * to be the only exit besides a restart, and that is exactly what made this row
+ * outlive the fix: on a machine running more than one Claude account, the turn
+ * that proves the dead one may never come.
+ *
+ * **A restart** is the last. The episode store is in memory, so a server killed
+ * mid-episode could never see its recovery edge; boot therefore closes the row it
+ * can no longer answer (`emitters/runtime-signin.ts`), saying that a restart is
+ * what cleared it rather than claiming an all-clear. Without that, this banner
+ * would stand forever on the strength of a row nothing could resolve.
+ *
+ * What none of them is: DorkOS deciding on its own that a credential looks fine.
+ * It cannot inspect one, only write it or try it — and an all-clear nobody has
+ * seen would silence a sign-in that is still dead.
  *
  * ## Why it cannot be dismissed
  *
  * The condition is standing, not an announcement: it is true until one of the
- * two exits above, and both are the server's to take. A dismiss button would let
- * the one signal a web-only operator has be hidden while their agents are still
- * stuck.
+ * three exits above, and all of them are the server's to take. A dismiss button
+ * would let the one signal a web-only operator has be hidden while their agents
+ * are still stuck.
  *
  * @param runtimes - Runtime types whose sign-in is dead.
  */
