@@ -1084,8 +1084,13 @@ So this joins the H tier (DOR-1856) as one more question the run answers: **stag
 both SDK-injected and user-tier linked, start a DorkOS-driven session, and ask Claude Code to list its
 skills.** One entry means the design stands. Two entries flip a single switch: the Claude Code user-tier
 link is skipped for any package `refreshActivatedPlugins` activates, and bare-`claude` coverage for those
-packages becomes its own follow-up rather than a duplicate nobody asked for. The switch is one condition in
-one planner, which is why this is a gate on a measurement and not a fork in the design.
+packages becomes its own follow-up rather than a duplicate nobody asked for. Activation is per package
+(`plugin-activation.ts:44-47`, `enabledPluginNames: string[]`) while `GlobalPlanRoots.claudeSkillsDir` is
+plan-wide, so the switch is one new per-package input on `GlobalPlanInput` — `sdkInjected: readonly
+string[]`, the package names the runtime already activates, filled in by `projectGlobal` from the same list
+`refreshActivatedPlugins` reads — and one condition in the Claude Code planner that skips those names. Small,
+but a new input rather than a flag, which is why this is a gate on a measurement and not a fork in the
+design.
 
 **What this changes downstream.** Slice A3 no longer deletes anything in
 `messaging/plugin-activation.ts` or `claude-code-runtime.ts`, and its bar gains the no-loss case
@@ -1481,15 +1486,16 @@ report intact.
 
 ### Slice A2 — unit + integration, `packages/harness/src/plan/__tests__` and `__tests__/global-integration.test.ts`
 
-| #   | Case                                                                                                                           | Seeded defect                                                                                        |
-| --- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| 1   | **SK-03: a global package's scheduled skill is planned into `<dorkHome>/skills/<pkg>__<name>`, carrying the schedule reason.** | Plan it only when a harness is enabled. An empty harness list produces no action.                    |
-| 2   | **SK-03: applying it makes the link, and the scheduler's own discovery parses the namespaced directory.**                      | Point the link at the package root rather than the skill directory. Discovery finds no `SKILL.md`.   |
-| 3   | **P8b: every action's target resolves inside `<dorkHome>`, and a plan built with no user roots produces none elsewhere.**      | Join the dork-home tier against the user root. The property counterexample prints the escaping path. |
-| 4   | **P8c: no action in the plan is `generate`, `scaffold` or `merge`.**                                                           | Call `planInstructionScaffold` from `buildGlobalPlan`. Six scaffold actions appear.                  |
-| 5   | **`checkGlobalPlan().orphans` equals the next `applyGlobalPlan().swept`, as set equality both ways.**                          | Return only the first sweep's finder. The count assertion reds before the contents.                  |
-| 6   | **A global plan is idempotent: applying twice leaves the tree byte-identical and the second check clean.**                     | Recreate the link unconditionally. The second apply reports one applied action.                      |
-| 7   | **The row key stays unique: the same skill name at both scopes derives two rows.**                                             | Drop `scope` from the key. Two rows collapse to one and a cell goes missing.                         |
+| #   | Case                                                                                                                                                                  | Seeded defect                                                                                                               |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **SK-03: a global package's scheduled skill is planned into `<dorkHome>/skills/<pkg>__<name>`, carrying the schedule reason.**                                        | Plan it only when a harness is enabled. An empty harness list produces no action.                                           |
+| 2   | **SK-03: applying it makes the link, and the scheduler's own discovery parses the namespaced directory.**                                                             | Point the link at the package root rather than the skill directory. Discovery finds no `SKILL.md`.                          |
+| 2b  | **P8: every action in a plan built by `project()` carries `scope` absent or `'project'`, with repo-relative targets inside `repoRoot` and no `dorkHome`-built path.** | Let `buildPlan` emit a global-scope action for a scheduled skill. The property counterexample prints the `<dorkHome>` path. |
+| 3   | **P8b: every action's target resolves inside `<dorkHome>`, and a plan built with no user roots produces none elsewhere.**                                             | Join the dork-home tier against the user root. The property counterexample prints the escaping path.                        |
+| 4   | **P8c: no action in the plan is `generate`, `scaffold` or `merge`.**                                                                                                  | Call `planInstructionScaffold` from `buildGlobalPlan`. Six scaffold actions appear.                                         |
+| 5   | **`checkGlobalPlan().orphans` equals the next `applyGlobalPlan().swept`, as set equality both ways.**                                                                 | Return only the first sweep's finder. The count assertion reds before the contents.                                         |
+| 6   | **A global plan is idempotent: applying twice leaves the tree byte-identical and the second check clean.**                                                            | Recreate the link unconditionally. The second apply reports one applied action.                                             |
+| 7   | **The row key stays unique: the same skill name at both scopes derives two rows.**                                                                                    | Drop `scope` from the key. Two rows collapse to one and a cell goes missing.                                                |
 
 ### Slice A3 — unit, integration, and the one journey
 
@@ -1652,8 +1658,8 @@ edit of §2.5);
 `plans/harness-sync-test-plan.md`; contract row SK-03.
 
 **Bar.** A scheduled skill in a globally installed package **runs**: the link exists at
-`<dorkHome>/skills/<pkg>__<name>`, the scheduler's own discovery parses it, and a row appears. P8's re-scoped
-statement, P8b and P8c all pass, and each reds on its seeded defect. `checkGlobalPlan().orphans` equals the
+`<dorkHome>/skills/<pkg>__<name>`, the scheduler's own discovery parses it, and a row appears. P8 (written for the
+first time in this slice), P8b and P8c all pass, and each reds on its seeded defect. `checkGlobalPlan().orphans` equals the
 next `swept` as set equality both ways. A second `--global` run applies nothing and reports clean. **No path
 outside `<dorkHome>` appears anywhere in the plan**, because no user root is passed in this slice.
 
