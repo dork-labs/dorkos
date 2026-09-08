@@ -1,6 +1,6 @@
 ---
 covers:
-  - 'fix(server): a scheduled skill in a new folder is picked up in seconds (DOR-1908)'
+  - 'fix(server): a schedule in a new folder is found in seconds (DOR-1908)'
 ---
 
 ### Fixed
