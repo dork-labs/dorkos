@@ -14,7 +14,7 @@
  * `task-file-watcher.integration.test.ts`.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { TaskFileWatcher, UNWATCHED_ROOT_SWEEP_SECONDS } from '../task-file-watcher.js';
@@ -68,9 +68,18 @@ const { fakeWatchers, mockChokidar } = vi.hoisted(() => {
     watchers.push(fake);
     return fake;
   };
-  return { fakeWatchers: watchers, mockChokidar: { watch } };
+  // A spy around the factory rather than the bare function, so a case can make
+  // ONE arm throw (`mockImplementationOnce`) without disturbing the rest.
+  // `vi.clearAllMocks()` clears usage data, never the implementation, so the
+  // fake survives `beforeEach`.
+  return { fakeWatchers: watchers, mockChokidar: { watch: vi.fn(watch) } };
 });
 vi.mock('chokidar', () => ({ default: mockChokidar }));
+
+/** A skill with no `schedule:` block at all — an ordinary skill. */
+function plainSkillFile(name: string): string {
+  return `---\nname: ${name}\ndescription: A skill named ${name}\n---\nJust a skill.`;
+}
 
 /** Frontmatter + body for a minimal, schema-valid scheduled SKILL.md. */
 function skillFile(name: string, cron = '0 9 * * *'): string {
@@ -324,6 +333,120 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
     for (const handler of fake.handlers.get('add') ?? []) handler(file);
     await new Promise((r) => setTimeout(r, 50));
     expect(store.getByFilePath(file)).toBeNull();
+  });
+
+  // The catch-up scan is the third door into `applyOutcome`, and until DOR-1908's
+  // review it was the only one with nothing around it. That matters more than it
+  // looks: this call IS `state.settled`, and nothing awaits it, so a throw does
+  // not fail a test or a request — it reaches the process-wide handler, which
+  // logs a line naming neither the watcher nor the root and files a crash
+  // report. And the loop is abandoned where it threw.
+  describe('a file that cannot be written to the database', () => {
+    it('costs only itself — the rest of the root still syncs, and nothing escapes', async () => {
+      const rejections: unknown[] = [];
+      const onRejection = (reason: unknown): void => {
+        rejections.push(reason);
+      };
+      process.on('unhandledRejection', onRejection);
+      try {
+        for (const name of ['a-first', 'b-second', 'c-third', 'd-fourth']) await writeSkill(name);
+
+        const real = store.upsertFromFile.bind(store);
+        let attempts = 0;
+        const upsert = vi.spyOn(store, 'upsertFromFile').mockImplementation((def, id, opts) => {
+          attempts++;
+          // The ordinary reason a write fails here: another writer holds the
+          // database. It says nothing about the file in hand, which is exactly
+          // why it must not cost the files behind it.
+          if (attempts === 1)
+            throw Object.assign(new Error('database is locked'), {
+              code: 'SQLITE_BUSY',
+            });
+          return real(def, id, opts);
+        });
+
+        const { watcher: w } = build();
+        w.watch(skillsRoot(skillsDir, 'global'));
+        onlyWatcher().emit('ready');
+        await w.ready();
+
+        // Every file was attempted, and the three that could be written were.
+        expect(attempts).toBe(4);
+        expect(store.getTasks()).toHaveLength(3);
+        expect(logger.error).toHaveBeenCalledWith(
+          expect.stringContaining('Failed to process'),
+          expect.anything()
+        );
+        upsert.mockRestore();
+
+        // The barrier has resolved and the loop has finished, so anything that
+        // escaped would already have been reported.
+        await new Promise((r) => setTimeout(r, 50));
+        expect(rejections).toEqual([]);
+      } finally {
+        process.off('unhandledRejection', onRejection);
+      }
+    });
+
+    // Arming runs from a bare `setInterval` callback, where a SYNCHRONOUS throw
+    // does not get logged — it reaches `uncaughtException`, which exits the
+    // process. A directory that cannot be watched must never do that.
+    it('does not take the process down when arming a watch throws', async () => {
+      const later = path.join(dorkHome, 'unarmable');
+      const { watcher: w } = build({ rearmMs: 20 });
+      w.watch(skillsRoot(later, 'project', dorkHome, 'agent-1'));
+
+      mockChokidar.watch.mockImplementationOnce(() => {
+        throw Object.assign(new Error('EMFILE: too many open files, watch'), { code: 'EMFILE' });
+      });
+      await mkdir(later, { recursive: true });
+      await waitUntil(
+        () =>
+          vi.mocked(logger.error).mock.calls.some((c) => String(c[0]).includes('Could not arm')),
+        'the failed arm to be reported'
+      );
+
+      // Still deaf, so the reconciler keeps covering it, and the next tick
+      // tries again rather than the server being gone.
+      expect(w.rootsWithoutLiveWatch()).toEqual([later]);
+    });
+  });
+
+  // An installed plugin's skill reaches a root as a `pkg__name` SYMLINK into
+  // `.dork/plugins/`, and the row is keyed on the file's REAL path. So the path
+  // the watcher walks in on and the path the row is filed under are two
+  // different strings, and pausing by the wrong one matches nothing — the
+  // schedule goes on firing from a file that no longer claims it. The same rule
+  // the reconciler's retirement already follows.
+  it('pauses a plugin schedule by its real path when the block is removed', async () => {
+    const realDir = path.join(dorkHome, 'plugins', 'pack', 'skills', 'sweeper');
+    await mkdir(realDir, { recursive: true });
+    const realFile = path.join(realDir, 'SKILL.md');
+    await writeFile(realFile, skillFile('sweeper'), 'utf-8');
+    // The shape an install leaves behind: a link in the root, not a directory.
+    const link = path.join(skillsDir, 'pack__sweeper');
+    await symlink(realDir, link);
+    const walkedInPath = path.join(link, 'SKILL.md');
+
+    const { watcher: w } = build();
+    w.watch(skillsRoot(skillsDir, 'global'));
+    onlyWatcher().emit('ready');
+    await w.ready();
+
+    // Filed under the real path, which is NOT the path the root reaches it by.
+    expect(store.getByFilePath(realFile)).not.toBeNull();
+    expect(store.getByFilePath(walkedInPath)).toBeNull();
+    expect(store.getByFilePath(realFile)?.status).not.toBe('paused');
+
+    // The person turns the scheduled skill back into an ordinary one.
+    await writeFile(realFile, plainSkillFile('sweeper'), 'utf-8');
+    for (const handler of onlyWatcher().handlers.get('change') ?? []) handler(walkedInPath);
+    await waitUntil(
+      () => store.getByFilePath(realFile)?.status === 'paused',
+      'the plugin schedule to be paused by its real path'
+    );
+
+    expect(store.getByFilePath(realFile)?.status).toBe('paused');
   });
 
   describe('the cadences', () => {

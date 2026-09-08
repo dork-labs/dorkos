@@ -45,6 +45,31 @@
  *   deaf or dead root is the case the five-minute pass was silently five minutes
  *   late for.
  *
+ * ## Why a DEAD root is never re-armed
+ *
+ * {@link rearm} deliberately only looks at roots that are `deaf`. A dead one
+ * stays dead for the life of the process, and that is a decision rather than an
+ * omission — retrying it on the ten-second tick was measured and is worse on
+ * three counts:
+ *
+ * - **Every successful re-arm runs a full catch-up scan** — ~295 ms on the root
+ *   measured. On a ten-second tick that is a scan of the same directory six
+ *   times a minute, for ever, for a watch that has no way of telling us it is
+ *   working again.
+ * - **The `seenCodes` latch lives in the per-arm closure**, so each re-arm gets
+ *   a fresh one. A root that flaps would therefore log its `EMFILE` line every
+ *   ten seconds — the exact log storm the latch exists to prevent.
+ * - **It adds pressure to the thing that failed.** `EMFILE` means the machine is
+ *   out of watch descriptors; asking for another one on a timer is not a
+ *   recovery strategy.
+ *
+ * The cost of leaving it dead is bounded and known: one `readdir` plus one
+ * `stat` per entry per tick, for that root only. If recovery is ever worth
+ * building, it needs all three of: ride the five-minute pass rather than the
+ * ten-second one, hoist the latch from the closure onto {@link WatchedRoot} so
+ * repeats stay suppressed across arms, and gate the post-arm scan on the
+ * recorded shape so a re-arm that finds nothing changed costs nothing.
+ *
  * @module services/tasks/task-file-watcher
  */
 import chokidar, { type FSWatcher } from 'chokidar';
@@ -449,7 +474,26 @@ export class TaskFileWatcher implements TaskWatchHealth {
       logger.warn(`[TaskFileWatcher] Could not scan ${root.dir} after arming its watch`, err);
       return;
     }
-    for (const outcome of outcomes) await this.applyOutcome(outcome, root);
+    // Per FILE, not per scan. `applyOutcome` writes to SQLite, which can throw
+    // for reasons that have nothing to do with the file in hand — SQLITE_BUSY
+    // under another writer is the ordinary one — and there is nowhere for a
+    // throw to go from here: this whole call IS `state.settled`, which nothing
+    // awaits, so an escaping rejection reaches the process-wide
+    // unhandled-rejection handler. That handler logs a line naming neither the
+    // watcher nor the root, files a crash report, and — because the loop is
+    // abandoned at the first throw — every remaining schedule in the root is
+    // silently never synced. Measured on a root of four: one throw cost the
+    // other three their rows.
+    //
+    // `handleFileChange` and `handleFileRemove` contain themselves for exactly
+    // this reason; this is the third door and it needs the same treatment.
+    for (const outcome of outcomes) {
+      try {
+        await this.applyOutcome(outcome, root);
+      } catch (err) {
+        logger.error(`[TaskFileWatcher] Failed to process ${outcome.filePath}`, err);
+      }
+    }
   }
 
   /** Open a watch on every root whose directory has appeared since the last look. */
@@ -457,7 +501,18 @@ export class TaskFileWatcher implements TaskWatchHealth {
     if (this.stopped) return;
     for (const state of this.watched.values()) {
       if (state.status !== 'deaf') continue;
-      this.armWatch(state);
+      try {
+        this.armWatch(state);
+      } catch (err) {
+        // This runs from a bare `setInterval` callback, where a SYNCHRONOUS
+        // throw does not merely get logged — it reaches `uncaughtException`,
+        // which shuts the server down (`index.ts`). Arming touches the
+        // filesystem and opens a watch, so a throw is not hypothetical, and
+        // taking the whole process down because one directory could not be
+        // watched is never the right trade. The root stays deaf, the reconciler
+        // keeps covering it, and the next tick tries again.
+        logger.error(`[TaskFileWatcher] Could not arm a watch on ${state.root.dir}`, err);
+      }
     }
   }
 

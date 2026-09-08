@@ -176,8 +176,11 @@ export class TaskReconciler {
    * roots qualify — a directory that did not exist when the watch was armed, or
    * one chokidar has reported an error on — and for each of those the shape
    * comparison decides whether the full scan is worth doing. A root that has not
-   * changed costs one `readdir` and one `stat` per schedule; a root that has
-   * changed costs the scan it would have cost five minutes later anyway.
+   * changed costs one `readdir` plus one `stat` per ENTRY — every skill in the
+   * root, not only the scheduled ones, because whether an entry is a schedule is
+   * the question the full scan answers and this runs in front of it (measured:
+   * 50 stats on a 50-skill root holding 25 schedules). A root that has changed
+   * costs the scan it would have cost five minutes later anyway.
    *
    * Never runs twice at once: on a busy machine — the same one whose descriptor
    * pressure killed the watch in the first place — a scan can outlast the tick
