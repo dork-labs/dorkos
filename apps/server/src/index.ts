@@ -157,6 +157,7 @@ import { CanonicalConnectorAgentRequestAuthority } from './services/connectors/a
 import { createConnectorRuntimeMcpServer } from './services/connectors/execution/runtime-mcp-server.js';
 import { isConnectorRuntimeCapabilityId } from './services/connectors/runtime-capability-scope.js';
 import {
+  createAgentRuntimeMcpServer,
   startConnectorRuntimeMcpListener,
   type ConnectorRuntimeMcpListener,
 } from './services/runtimes/connector-mcp/index.js';
@@ -282,6 +283,7 @@ import { composeDorkOsCapabilityRegistry } from './services/core/self-descriptio
 import {
   initAgentIdentityService,
   getAgentIdentityService,
+  ensureInSessionAgentIdentity,
   createCapabilityAttributionObserver,
   createCapabilityGateAuditObserver,
   createAgentIdentityUnregisterCascade,
@@ -4054,11 +4056,19 @@ async function start() {
     connectorRuntimeMcpListener = await startConnectorRuntimeMcpListener({
       principals: connectorRuntimePrincipals,
       serverFactory: (principal) => createConnectorRuntimeMcpServer(capabilityRegistry!, principal),
+      agentToolsEnabled: () => configManager.get('runtimes')?.dorkosTools === true,
+      agentServerFactory: async (principal) => {
+        if (principal.claims.kind !== 'runtime') return null;
+        const identity = await ensureInSessionAgentIdentity(principal.claims.agentPath);
+        if (!identity || identity.inactive) return null;
+        return createAgentRuntimeMcpServer(capabilityRegistry!, principal, identity);
+      },
     });
     for (const runtime of runtimeRegistry.listRuntimes()) {
       connectorRuntimeConsumer(runtime)?.setConnectorRuntimeTools({
         principals: connectorRuntimePrincipals,
         listenerUrl: connectorRuntimeMcpListener.url,
+        agentToolsUrl: connectorRuntimeMcpListener.agentUrl,
         isConnectorCapabilityId: isConnectorRuntimeCapabilityId,
       });
     }

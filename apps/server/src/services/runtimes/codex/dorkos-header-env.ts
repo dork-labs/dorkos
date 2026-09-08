@@ -7,9 +7,9 @@
  * The Codex SDK flattens `CodexOptions.config` into `--config key=value`
  * arguments on the `codex exec` command line, so anything written there is in
  * the spawned process's argv — readable by any process running as this user,
- * with a bare `ps`. Both of this server's headers carry credentials: the
- * instance's MCP bearer, and an agent identity that can post in rooms AS that
- * agent. Neither may go there.
+ * with a bare `ps`. The authorization header carries the turn secret, while
+ * the runtime and cwd headers are inseparable constraints on that credential.
+ * None may go there.
  *
  * So the header set is split in two, and the two halves travel by different
  * routes: {@link dorkosHeaderEnvNames} produces the NAMES for the config's
@@ -33,7 +33,7 @@ import {
  * Header name → env var NAME, for the `env_http_headers` config entry.
  *
  * Derived from the headers the injection actually produced rather than from a
- * fixed pair, so a header added there without a variable name to carry it fails
+ * fixed set, so a header added there without a variable name to carry it fails
  * loudly here instead of being dropped on the floor.
  *
  * @param injection - The resolved `dorkos` entry.

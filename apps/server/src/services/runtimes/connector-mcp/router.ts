@@ -6,7 +6,9 @@ import type { ServerPrincipalProof } from '../../connectors/principal/server-pri
 import type { ConnectorRuntimeAuthLocals } from './auth.js';
 
 /** Builds the exact connector-only capability projection for one principal. */
-export type ConnectorRuntimeMcpServerFactory = (principal: ServerPrincipalProof) => McpServer;
+export type ConnectorRuntimeMcpServerFactory = (
+  principal: ServerPrincipalProof
+) => McpServer | null | Promise<McpServer | null>;
 
 /**
  * Create the authenticated connector runtime MCP router.
@@ -32,7 +34,15 @@ export function createConnectorRuntimeMcpRouter(
       return;
     }
 
-    const server = serverFactory(principal);
+    const server = await serverFactory(principal);
+    if (!server) {
+      res.status(401).json({
+        jsonrpc: '2.0',
+        error: { code: -32001, message: 'Unauthorized' },
+        id: null,
+      });
+      return;
+    }
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.once('close', () => {
       void transport.close().catch(() => undefined);

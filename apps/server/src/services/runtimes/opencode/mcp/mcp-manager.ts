@@ -182,19 +182,19 @@ export class OpenCodeMcpManager {
    * The `dorkos` tool server for a directory, as a one-entry record to fold into
    * the desired set, or `{}` when it must not be injected.
    *
-   * This is OpenCode's ONLY per-agent identity channel, and structurally so: its
-   * sidecar is one shared process with a fixed environment, so there is no
-   * `DORKOS_AGENT_TOKEN` env seam to use the way codex and claude-code do, and
-   * there never will be. The token has to ride the server's own `headers`.
+   * OpenCode's sidecar is one shared process with a fixed environment. The
+   * runtime therefore passes its short-lived turn binding in this server's own
+   * headers; the loopback listener derives identity and session facts from the
+   * verified binding.
    *
    * @param cwd - The directory being reconciled.
    */
-  private async resolveDorkosServer(cwd: string): Promise<Record<string, OpenCodeMcpServerConfig>> {
+  private async resolveDorkosServer(
+    cwd: string,
+    runtimeTools?: ConnectorRuntimeMcpInjection
+  ): Promise<Record<string, OpenCodeMcpServerConfig>> {
     const agent = this.meshCore?.getByPath(cwd);
-    const injection = await resolveDorkosMcpInjection(
-      agent ? cwd : undefined,
-      agent?.displayName ?? agent?.name
-    );
+    const injection = await resolveDorkosMcpInjection(agent ? cwd : undefined, runtimeTools);
     if (!injection) return {};
     return {
       [DORKOS_MCP_SERVER_NAME]: {
@@ -313,7 +313,7 @@ export class OpenCodeMcpManager {
     // is written LAST so a managed server can never shadow the name DorkOS owns.
     const servers: Record<string, OpenCodeMcpServerConfig> = {
       ...managed.servers,
-      ...(await this.resolveDorkosServer(agentCwd)),
+      ...(await this.resolveDorkosServer(agentCwd, connectorTools)),
       ...(connectorTools
         ? {
             [CONNECTOR_RUNTIME_MCP_SERVER_NAME]: {

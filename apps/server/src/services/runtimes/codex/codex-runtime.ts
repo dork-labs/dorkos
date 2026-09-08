@@ -302,8 +302,10 @@ export class CodexRuntime implements AgentRuntime {
    * @param managed - Enabled managed servers in Codex config shape, with the
    *   header values that must ride the environment; empty maps when none.
    * @param dorkosTools - The resolved `dorkos` tool server, or null when it is
-   *   not injected this turn. It carries a freshly minted identity token, so a
-   *   client holding one can never be shared across turns.
+   *   not injected this turn. It carries the runtime's turn-bound principal,
+   *   so a client holding one can never be shared across turns.
+   * @param connectorTools - The same turn binding on the private connector
+   *   capability route, or null when this turn has none.
    */
   private async clientForTurn(
     tokenEnv: Record<string, string>,
@@ -586,6 +588,7 @@ export class CodexRuntime implements AgentRuntime {
         this.activeConnectorBindings.set(controller, connectorBinding.bindingId);
         connectorTools = {
           url: this.connectorRuntimeTools.listenerUrl,
+          agentToolsUrl: this.connectorRuntimeTools.agentToolsUrl,
           headers: connectorRuntimeHeaders({
             bearer: connectorBinding.bearer,
             runtime: this.type,
@@ -609,11 +612,9 @@ export class CodexRuntime implements AgentRuntime {
       );
 
       // The `dorkos` tool server, when the experiment is on and this cwd hosts a
-      // registered agent (spec `tool-only-room-replies` §D4). Resolved PER TURN,
-      // like the env token above and for the same reason: it carries a freshly
-      // minted identity token, so a per-session or per-boot resolve would let the
-      // 30-day fuse arm on a long-lived agent. `null` injects nothing, which is
-      // exactly today's behaviour.
+      // registered agent (spec `tool-only-room-replies` §D4). It reuses the
+      // already-open connector turn binding on a separate capability route, so
+      // it expires and revokes with this exact turn. `null` injects nothing.
       //
       // Scoped to every agent-bound session rather than to room turns: the runtime
       // cannot know why it was called, and these tools are worth having outside a
@@ -623,7 +624,7 @@ export class CodexRuntime implements AgentRuntime {
       // `dorkos` is reserved against them this turn — see below.
       const dorkosTools = await resolveDorkosMcpInjection(
         meshAgent ? cwd : undefined,
-        meshAgent?.displayName ?? meshAgent?.name
+        connectorTools
       );
 
       // The agent's ENABLED managed MCP servers for this cwd, injected inline via
@@ -1117,8 +1118,10 @@ export class CodexRuntime implements AgentRuntime {
    * @returns Whether the `dorkos` entry is configured for it.
    */
   async carriesRoomTools(session: { cwd: string }): Promise<boolean> {
-    return dorkosToolsPosture(this.meshCore?.getByPath(session.cwd) ? session.cwd : undefined)
-      .wired;
+    return dorkosToolsPosture(
+      this.meshCore?.getByPath(session.cwd) ? session.cwd : undefined,
+      this.connectorRuntimeTools !== undefined
+    ).wired;
   }
 
   /**

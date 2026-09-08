@@ -9,7 +9,25 @@ import {
   CONNECTOR_RUNTIME_CWD_HEADER,
   CONNECTOR_RUNTIME_KIND_HEADER,
 } from '../../connector-tools.js';
-import { startConnectorRuntimeMcpListener, type ConnectorRuntimeMcpListener } from '../listener.js';
+import {
+  startConnectorRuntimeMcpListener as startRawListener,
+  type ConnectorRuntimeMcpListener,
+  type ConnectorRuntimeMcpListenerOptions,
+} from '../listener.js';
+
+type TestListenerOptions = Omit<
+  ConnectorRuntimeMcpListenerOptions,
+  'agentServerFactory' | 'agentToolsEnabled'
+> &
+  Partial<Pick<ConnectorRuntimeMcpListenerOptions, 'agentServerFactory' | 'agentToolsEnabled'>>;
+
+function startConnectorRuntimeMcpListener(options: TestListenerOptions) {
+  return startRawListener({
+    agentServerFactory: () => new McpServer({ name: 'dorkos-agent-test', version: '1.0.0' }),
+    agentToolsEnabled: () => true,
+    ...options,
+  });
+}
 
 const principal = {
   claims: {
@@ -84,6 +102,80 @@ describe('connector runtime MCP listener', () => {
       expectedCanonicalCwd: '/repo',
     });
     expect(factory).toHaveBeenCalledWith(principal);
+  });
+
+  it('serves agent tools only from the verified turn principal', async () => {
+    const agentFactory = vi.fn(
+      () => new McpServer({ name: 'dorkos-agent-test', version: '1.0.0' })
+    );
+    const listener = await startConnectorRuntimeMcpListener({
+      principals: port({ status: 'resolved', principal }),
+      serverFactory: () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' }),
+      agentServerFactory: agentFactory,
+    });
+    listeners.push(listener);
+
+    const response = await request(listener.agentUrl, {
+      // Caller-controlled identity is ignored; the server factory receives the
+      // principal the binding store authenticated.
+      'x-dorkos-agent': 'forged-standing-token',
+    });
+
+    expect(response.status).toBe(200);
+    expect(agentFactory).toHaveBeenCalledWith(principal);
+  });
+
+  it('keeps the agent route dark while runtime tools are disabled', async () => {
+    const agentFactory = vi.fn(
+      () => new McpServer({ name: 'dorkos-agent-test', version: '1.0.0' })
+    );
+    const listener = await startConnectorRuntimeMcpListener({
+      principals: port({ status: 'resolved', principal }),
+      serverFactory: () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' }),
+      agentToolsEnabled: () => false,
+      agentServerFactory: agentFactory,
+    });
+    listeners.push(listener);
+
+    const response = await request(listener.agentUrl);
+
+    expect(response.status).toBe(404);
+    expect(agentFactory).not.toHaveBeenCalled();
+  });
+
+  it('rejects revoked bindings on the agent route before projection', async () => {
+    const agentFactory = vi.fn(
+      () => new McpServer({ name: 'dorkos-agent-test', version: '1.0.0' })
+    );
+    const listener = await startConnectorRuntimeMcpListener({
+      principals: port({ status: 'refused', reason: 'revoked' }),
+      serverFactory: () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' }),
+      agentServerFactory: agentFactory,
+    });
+    listeners.push(listener);
+
+    const response = await request(listener.agentUrl);
+
+    expect(response.status).toBe(401);
+    expect(agentFactory).not.toHaveBeenCalled();
+  });
+
+  it('returns the same unauthorized shape when an agent identity cannot be established', async () => {
+    const listener = await startConnectorRuntimeMcpListener({
+      principals: port({ status: 'resolved', principal }),
+      serverFactory: () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' }),
+      agentServerFactory: () => null,
+    });
+    listeners.push(listener);
+
+    const response = await request(listener.agentUrl);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      jsonrpc: '2.0',
+      error: { code: -32001, message: 'Unauthorized' },
+      id: null,
+    });
   });
 
   it.each<ConnectorTurnRefusalReason>([

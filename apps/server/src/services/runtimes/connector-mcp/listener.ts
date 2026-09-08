@@ -16,6 +16,10 @@ export interface ConnectorRuntimeMcpListenerOptions {
   readonly principals: ConnectorRuntimePrincipalPort;
   /** Broker-owned factory exposing only connector execution capabilities. */
   readonly serverFactory: ConnectorRuntimeMcpServerFactory;
+  /** Agent-safe DorkOS capability projection, when runtime tools are enabled. */
+  readonly agentServerFactory: ConnectorRuntimeMcpServerFactory;
+  /** Live experiment gate checked on every direct request to the agent route. */
+  readonly agentToolsEnabled: () => boolean;
   /** Loopback port; zero asks the OS for an unused port. */
   readonly port?: number;
   /** Test-only rate ceiling override. */
@@ -26,6 +30,8 @@ export interface ConnectorRuntimeMcpListenerOptions {
 export interface ConnectorRuntimeMcpListener {
   /** Absolute loopback MCP URL injected into runtimes. */
   readonly url: string;
+  /** Loopback MCP URL exposing only capabilities declared for agent sessions. */
+  readonly agentUrl: string;
   /** Stop accepting requests and close the listener. */
   close(): Promise<void>;
 }
@@ -64,6 +70,18 @@ export async function startConnectorRuntimeMcpListener(
   app.use(createConnectorRuntimeAuth(options.principals));
   app.use(express.json({ limit: '1mb' }));
   app.use('/mcp', createConnectorRuntimeMcpRouter(options.serverFactory));
+  app.use('/agent-mcp', (req, res, next) => {
+    if (options.agentToolsEnabled()) {
+      next();
+      return;
+    }
+    res.status(404).json({
+      jsonrpc: '2.0',
+      error: { code: -32004, message: 'Not found' },
+      id: null,
+    });
+  });
+  app.use('/agent-mcp', createConnectorRuntimeMcpRouter(options.agentServerFactory));
   app.use(
     (
       _error: unknown,
@@ -102,8 +120,10 @@ export async function startConnectorRuntimeMcpListener(
   }
 
   let closed = false;
+  const origin = `http://127.0.0.1:${address.port}`;
   return {
-    url: `http://127.0.0.1:${address.port}/mcp`,
+    url: `${origin}/mcp`,
+    agentUrl: `${origin}/agent-mcp`,
     close: async () => {
       if (closed) return;
       closed = true;

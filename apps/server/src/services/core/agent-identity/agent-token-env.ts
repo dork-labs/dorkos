@@ -15,10 +15,14 @@
  * @module services/core/agent-identity/agent-token-env
  */
 import { readManifest } from '@dorkos/shared/manifest';
-import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import { DEFAULT_AGENT_TIER_CEILING, type CapabilityTier } from '@dorkos/shared/capabilities';
 
 import { logger } from '../../../lib/logger.js';
-import { getAgentIdentityService, type AgentIdentityService } from './agent-identity-service.js';
+import {
+  getAgentIdentityService,
+  type AgentIdentity,
+  type AgentIdentityService,
+} from './agent-identity-service.js';
 import type { CapabilityInvocationContext } from '../capabilities/index.js';
 
 /** The env var a spawned agent reads its identity token from. */
@@ -70,6 +74,53 @@ export async function resolveAgentTokenEnv(
       err: String(err),
     });
     return {};
+  }
+}
+
+/**
+ * Resolve the structurally known identity for an agent session.
+ *
+ * A token-backed record wins because it carries revocation and the last
+ * recorded ceiling. A newly registered agent may not have launched a runtime
+ * with an identity-token environment seam yet (OpenCode has no such seam), so
+ * the manifest supplies its first in-session identity without minting a bearer
+ * nobody will use. The manifest is the source of truth for registration and the
+ * tier ceiling; the runtime boundary already proves which agent is calling.
+ *
+ * Once any token record exists, this never falls back around it. In particular,
+ * a revoked record stays revoked rather than being replaced by an active
+ * manifest-derived identity.
+ *
+ * @param agentPath - Absolute registered-agent directory.
+ * @returns The active or revoked identity, or undefined when it cannot be
+ *   established safely.
+ */
+export async function ensureInSessionAgentIdentity(
+  agentPath: string | undefined
+): Promise<AgentIdentity | undefined> {
+  if (!agentPath) return undefined;
+
+  const service = getAgentIdentityService();
+  if (!service) return undefined;
+
+  try {
+    const recorded = await service.describeAgent(agentPath);
+    if (recorded) return recorded;
+
+    const manifest = await readManifest(agentPath, logger);
+    if (!manifest) return undefined;
+    return {
+      agentPath,
+      displayName: manifest.displayName?.trim() || manifest.name,
+      tierCeiling: manifest.tierCeiling ?? DEFAULT_AGENT_TIER_CEILING,
+      createdAt: manifest.registeredAt,
+    };
+  } catch (err) {
+    logger.debug('[agent-identity] In-session identity lookup failed', {
+      agentPath,
+      err: String(err),
+    });
+    return undefined;
   }
 }
 

@@ -2,24 +2,18 @@
  * What `ensureManaged` registers into an OpenCode sidecar once
  * `runtimes.dorkosTools` is on (spec `tool-only-room-replies` §D4, DOR-1613).
  *
- * ## Why the headers are the whole story here
+ * ## Why the turn binding is the whole story here
  *
- * This is OpenCode's ONLY per-agent identity channel, and structurally so: the
- * sidecar is one shared process serving every directory, with a fixed
- * environment, so there is no `DORKOS_AGENT_TOKEN` env seam of the kind codex
- * and claude-code use — and there never will be. If the token does not ride the
- * server's own `headers`, it does not ride at all, and every room post lands in
- * the install owner's name.
+ * The sidecar is one shared process serving every directory, so the runtime's
+ * short-lived turn binding has to ride the server's own headers. The internal
+ * listener resolves that binding to the canonical agent, session, and cwd.
  *
- * ## The re-mint case, which used to be true by accident
+ * ## The per-turn refresh case
  *
  * `ensureManaged` skips its work when the desired set's signature is unchanged.
- * A freshly minted token changes `headers`, which changes the signature, which
- * defeats the skip and forces a re-add with the live credential. That fell out
- * of hashing the whole desired set rather than its names — correct, and nothing
- * said so. It is pinned here, because the failure it prevents is silent: a
- * long-lived agent whose token quietly expires and whose every room write then
- * 401s.
+ * A new turn bearer changes `headers`, which changes the signature and forces a
+ * re-add with the live credential. It is pinned here because a sidecar retaining
+ * a revoked previous-turn binding would fail silently.
  *
  * @vitest-environment node
  */
@@ -28,23 +22,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { OpencodeClient } from '@opencode-ai/sdk';
-import { createTestDb } from '@dorkos/test-utils/db';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
-import {
-  initAgentIdentityService,
-  resetAgentIdentityService,
-} from '../../../core/agent-identity/index.js';
-
-const envState = vi.hoisted(() => ({
-  DORKOS_HOST: 'localhost',
-  DORKOS_PORT: 4242,
-  MCP_API_KEY: undefined as string | undefined,
-}));
-
-vi.mock('../../../../env.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../../env.js')>();
-  return { ...actual, env: envState };
-});
 
 const configState = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 
@@ -57,11 +35,6 @@ vi.mock('../../../core/config-manager.js', async (importOriginal) => {
       getAll: () => configState.value,
     },
   };
-});
-
-vi.mock('../../../core/auth/mcp-local-token.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../core/auth/mcp-local-token.js')>();
-  return { ...actual, getMcpLocalToken: () => 'dork_mcp_local_abc123' };
 });
 
 const { OpenCodeMcpManager } = await import('../mcp/mcp-manager.js');
@@ -117,61 +90,66 @@ function makeManager(agentDir: string) {
   return manager;
 }
 
+/** The already-open binding shared by both internal runtime tool entries. */
+function runtimeTools(bearer = 'turn-secret') {
+  return {
+    url: 'http://127.0.0.1:4341/mcp',
+    agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
+    headers: {
+      Authorization: `Bearer ${bearer}`,
+      'X-DorkOS-Connector-Runtime': 'opencode',
+      'X-DorkOS-Connector-Cwd': encodeURIComponent('/canonical/agent'),
+    },
+  };
+}
+
 describe('the dorkos tool server on an OpenCode reconcile', () => {
   let agentDir: string;
-  let db: ReturnType<typeof createTestDb>;
 
   beforeEach(async () => {
     agentDir = await mkdtemp(path.join(tmpdir(), 'opencode-dorkos-tools-'));
-    envState.DORKOS_HOST = 'localhost';
-    envState.DORKOS_PORT = 4242;
-    envState.MCP_API_KEY = undefined;
     configState.value = { runtimes: { dorkosTools: true }, mcp: { enabled: true } };
-    db = createTestDb();
-    initAgentIdentityService(db);
   });
 
   afterEach(async () => {
-    resetAgentIdentityService();
     await rm(agentDir, { recursive: true, force: true });
   });
 
-  it('adds a remote dorkos server carrying both headers', async () => {
+  it('adds the agent route with the complete turn binding', async () => {
     const { client, adds } = fakeSidecar();
-    await makeManager(agentDir).ensureManaged(client, agentDir);
+    await makeManager(agentDir).ensureManaged(client, agentDir, runtimeTools());
 
-    expect(adds).toHaveLength(1);
-    expect(adds[0]?.name).toBe('dorkos');
-    const config = adds[0]?.config as Record<string, unknown>;
+    const config = adds.find((entry) => entry.name === 'dorkos')?.config as Record<string, unknown>;
     expect(config['type']).toBe('remote');
-    expect(config['url']).toBe('http://localhost:4242/mcp');
+    expect(config['url']).toBe('http://127.0.0.1:4341/agent-mcp');
     expect(config['enabled']).toBe(true);
-    const headers = config['headers'] as Record<string, string>;
-    expect(headers['Authorization']).toBe('Bearer dork_mcp_local_abc123');
-    expect(headers['x-dorkos-agent']).toEqual(expect.any(String));
-    expect(headers['x-dorkos-agent']).not.toBe('');
+    expect(config['headers']).toEqual(runtimeTools().headers);
   });
 
-  it('never dials 127.0.0.1 (DOR-723)', async () => {
+  it('uses the dedicated IPv4-loopback route returned by the listener', async () => {
     const { client, adds } = fakeSidecar();
-    await makeManager(agentDir).ensureManaged(client, agentDir);
-    expect(String((adds[0]?.config as Record<string, unknown>)['url'])).not.toContain('127.0.0.1');
+    await makeManager(agentDir).ensureManaged(client, agentDir, runtimeTools());
+    expect(adds.find((entry) => entry.name === 'dorkos')?.config['url']).toBe(
+      'http://127.0.0.1:4341/agent-mcp'
+    );
   });
 
-  it('re-adds with a FRESH token on the next reconcile, defeating the no-op skip', async () => {
+  it('re-adds with the next turn bearer, defeating the no-op skip', async () => {
     // The signature is over the whole desired set, headers included, so a new
     // token is a new signature and the early return does not fire. Same client
     // instance and same desired NAMES on both passes, which is exactly the
     // shape that would otherwise be skipped.
     const { client, adds } = fakeSidecar();
     const manager = makeManager(agentDir);
-    await manager.ensureManaged(client, agentDir);
-    await manager.ensureManaged(client, agentDir);
+    await manager.ensureManaged(client, agentDir, runtimeTools('turn-one'));
+    await manager.ensureManaged(client, agentDir, runtimeTools('turn-two'));
 
-    expect(adds).toHaveLength(2);
-    const first = (adds[0]?.config as { headers: Record<string, string> }).headers;
-    const second = (adds[1]?.config as { headers: Record<string, string> }).headers;
-    expect(second['x-dorkos-agent']).not.toBe(first['x-dorkos-agent']);
+    const dorkosAdds = adds.filter((entry) => entry.name === 'dorkos');
+    expect(dorkosAdds).toHaveLength(2);
+    const first = (dorkosAdds[0]?.config as { headers: Record<string, string> }).headers;
+    const second = (dorkosAdds[1]?.config as { headers: Record<string, string> }).headers;
+    expect(first['Authorization']).toBe('Bearer turn-one');
+    expect(second['Authorization']).toBe('Bearer turn-two');
   });
 
   it('surfaces a user server called dorkos as a failed conflict, and adds nothing', async () => {
@@ -180,9 +158,9 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
     // server is ours.
     const { client, adds } = fakeSidecar(['dorkos']);
     const manager = makeManager(agentDir);
-    const result = await manager.ensureManaged(client, agentDir);
+    const result = await manager.ensureManaged(client, agentDir, runtimeTools());
 
-    expect(adds).toHaveLength(0);
+    expect(adds.some((entry) => entry.name === 'dorkos')).toBe(false);
     const conflict = manager.getStatus(agentDir)?.find((entry) => entry.name === 'dorkos');
     expect(conflict?.status).toBe('failed');
     // The remedy has to be one the PERSON can carry out. DorkOS owns the name
@@ -202,8 +180,8 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
     // rooms would spend a turn discovering otherwise.
     const { client, adds } = fakeSidecar();
     vi.mocked(client.mcp.add).mockRejectedValueOnce(new Error('sidecar exploded'));
-    const result = await makeManager(agentDir).ensureManaged(client, agentDir);
-    expect(adds).toHaveLength(0);
+    const result = await makeManager(agentDir).ensureManaged(client, agentDir, runtimeTools());
+    expect(adds.some((entry) => entry.name === 'dorkos')).toBe(false);
     expect(result.dorkosApplied).toBe(false);
   });
 
@@ -211,18 +189,17 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
     // The positive half, without which every assertion above is satisfied by a
     // method that always returns false.
     //
-    // Both calls take the same route — a full re-add — and NOT the cheap
-    // early-return: the token is re-minted each reconcile, so the desired-set
-    // signature always differs and the skip never fires while `dorkos` is
-    // wanted. (That is deliberate; it is what keeps the credential live. The
-    // early return's true-branch is reachable only for a directory whose
-    // desired set is managed servers alone.) So what this pins is that a
-    // second, later turn still reports the tools as present.
+    // Both calls carry different turn bindings, so the desired-set signature
+    // differs and the sidecar is refreshed with the live credential.
     const { client, adds } = fakeSidecar();
     const manager = makeManager(agentDir);
-    expect((await manager.ensureManaged(client, agentDir)).dorkosApplied).toBe(true);
-    expect((await manager.ensureManaged(client, agentDir)).dorkosApplied).toBe(true);
-    expect(adds).toHaveLength(2);
+    expect(
+      (await manager.ensureManaged(client, agentDir, runtimeTools('turn-one'))).dorkosApplied
+    ).toBe(true);
+    expect(
+      (await manager.ensureManaged(client, agentDir, runtimeTools('turn-two'))).dorkosApplied
+    ).toBe(true);
+    expect(adds.filter((entry) => entry.name === 'dorkos')).toHaveLength(2);
   });
 
   describe('when it withholds', () => {
@@ -244,11 +221,18 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
       expect(adds).toHaveLength(0);
     });
 
-    it('adds nothing when the MCP endpoint is off', async () => {
-      configState.value = { runtimes: { dorkosTools: true }, mcp: { enabled: false } };
+    it('still adds agent tools when public MCP is off and login is on', async () => {
+      configState.value = {
+        runtimes: { dorkosTools: true },
+        mcp: { enabled: false },
+        auth: { enabled: true },
+      };
       const { client, adds } = fakeSidecar();
-      await makeManager(agentDir).ensureManaged(client, agentDir);
-      expect(adds).toHaveLength(0);
+      const result = await makeManager(agentDir).ensureManaged(client, agentDir, runtimeTools());
+      expect(result.dorkosApplied).toBe(true);
+      expect(adds.find((entry) => entry.name === 'dorkos')?.config['url']).toBe(
+        'http://127.0.0.1:4341/agent-mcp'
+      );
     });
   });
 
@@ -263,6 +247,7 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
         '/canonical/repo',
         {
           url: 'http://127.0.0.1:4341/mcp',
+          agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
           headers: {
             Authorization: 'Bearer connector-secret',
             'X-DorkOS-Connector-Runtime': 'opencode',
@@ -307,6 +292,7 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
       const manager = makeManager(agentDir);
       const result = await manager.ensureManaged(client, agentDir, {
         url: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
         headers: { Authorization: 'Bearer connector-secret' },
       });
 
@@ -332,6 +318,7 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
       const manager = makeManager(agentDir);
       const result = await manager.ensureManaged(client, agentDir, {
         url: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
         headers: { Authorization: 'Bearer connector-secret' },
       });
 
@@ -347,6 +334,7 @@ describe('the dorkos tool server on an OpenCode reconcile', () => {
       } as never);
       const retried = await manager.ensureManaged(client, agentDir, {
         url: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
         headers: { Authorization: 'Bearer connector-secret' },
       });
       expect(retried.connectorApplied).toBe(true);

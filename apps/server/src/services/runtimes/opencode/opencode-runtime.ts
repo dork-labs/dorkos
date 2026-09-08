@@ -462,6 +462,7 @@ export class OpenCodeRuntime implements AgentRuntime {
         controller.signal.throwIfAborted();
         connectorInjection = {
           url: this.connectorRuntimeTools.listenerUrl,
+          agentToolsUrl: this.connectorRuntimeTools.agentToolsUrl,
           headers: connectorRuntimeHeaders({
             bearer: turn.connectorBinding.bearer,
             runtime: this.type,
