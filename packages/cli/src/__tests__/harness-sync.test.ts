@@ -1191,6 +1191,61 @@ describe('runHarnessSync — withholding a package’s hooks', () => {
     expect(printed()).not.toContain('Created .claude/skills/');
   });
 
+  it('VC-02: a loss in the person’s own tree is headed "this project", not "plugin layers"', async () => {
+    // `plugin layers:` is a lie about a file the person wrote. Once read-time
+    // losses started declaring themselves harness-agnostic (DOR-1891), they fell
+    // into the package bucket — so a project with NO packages installed printed
+    // `plugin layers:` over its own `.mcp.json`, its own rule, and its own
+    // manifest entry. Both headings are pinned verbatim, on both commands.
+    fs.writeFileSync(path.join(tmpDir, '.mcp.json'), '{ this is not json');
+
+    await runHarnessSync(syncArgs({ check: true }));
+
+    const out = printed();
+    expect(out).toContain('this project:');
+    expect(out).toContain(
+      'mcp ".mcp.json": .mcp.json is not valid JSON (Expected property name or \'}\' in JSON at position 2 (line 1 column 3)), so nothing it declares was inventoried'
+    );
+    // The package bucket is not borrowed for it, and no harness is blamed.
+    expect(out).not.toContain('plugin layers:');
+    expect(out).not.toMatch(/claude-code:\n\s+- mcp/);
+  });
+
+  it('VC-02: --fix heads the same loss the same way', async () => {
+    // Two commands print the same block through the same formatter, and a person
+    // who ran `--fix` first should not meet a different word for one fact.
+    fs.writeFileSync(path.join(tmpDir, '.mcp.json'), '{ this is not json');
+
+    await runHarnessSync(syncArgs({ fix: true }));
+
+    expect(printed()).toContain('this project:');
+  });
+
+  it('VC-02: --harness codex hides neither the project bucket nor the package one', async () => {
+    // A narrowed report is still the whole truth about everything that is about
+    // no harness in particular — which is the half of VC-02 that filtering broke.
+    fs.writeFileSync(path.join(tmpDir, '.mcp.json'), '{ this is not json');
+    const manifestPath = path.join(
+      tmpDir,
+      '.dork',
+      'plugins',
+      'acme-tools',
+      '.dork',
+      'manifest.json'
+    );
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as { layers: string[] };
+    manifest.layers = [...manifest.layers, 'extensions'];
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+
+    await runHarnessSync(syncArgs({ check: true, harness: 'codex' }));
+
+    const out = printed();
+    expect(out).toContain('this project:');
+    expect(out).toContain('mcp ".mcp.json"');
+    expect(out).toContain('plugin layers:');
+    expect(out).toContain('plugin "acme-tools:extensions"');
+  });
+
   it('HK-10: says the Codex hooks file changed and is held for review, once', async () => {
     await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme-tools'] }));
 
