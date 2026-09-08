@@ -191,7 +191,16 @@ function planClaudeOnlySkills(input: {
   const warnings: ProjectionWarning[] = [];
 
   /**
-   * One warning about an entry, always attributed to the harness the list is for.
+   * One warning about an entry, attributed to the harness the list is named for.
+   *
+   * The subject is the MANIFEST, not a harness: an entry that is stale, redundant
+   * or contradicted is wrong whichever agents this project runs, and the person
+   * has to edit the same line either way. So `claude-code` here is a placeholder
+   * — `claudeOnlySkills` is a Claude Code concept and no other id would read
+   * better — and `harnessAgnostic` says so, which is what gives these their own
+   * heading and keeps them past every `--harness` filter. Without the flag a
+   * project running Cursor alone was told Claude Code had a problem, and
+   * `--harness cursor` hid the stale entry completely (contract VC-02).
    *
    * The `source` is the completeness check's handle on it (P6): for the one entry
    * whose ONLY line is a warning — a skill listed Claude-only that also occupies
@@ -199,7 +208,14 @@ function planClaudeOnlySkills(input: {
    * that named no path would read as silence about a skill that is right there.
    */
   const warn = (name: string, source: string, reason: string): void => {
-    warnings.push({ artifact: 'skill', harness: 'claude-code', name, source, reason });
+    warnings.push({
+      artifact: 'skill',
+      harness: 'claude-code',
+      harnessAgnostic: true,
+      name,
+      source,
+      reason,
+    });
   };
 
   for (const entry of manifest.claudeOnlySkills) {

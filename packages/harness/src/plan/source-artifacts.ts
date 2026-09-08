@@ -485,6 +485,12 @@ export function planInventoriedArtifacts(input: InventoriedArtifactInput): {
  * {@link ProjectionWarning} has to name a harness, and claude-code is the honest
  * answer available, since every source the inventory reads is a file Claude Code
  * is the canonical reader of.
+ *
+ * It is a PLACEHOLDER, so every warning below carries `harnessAgnostic` beside
+ * it. Without the flag the placeholder is read as an answer: a project running
+ * OpenCode alone was told its unreadable `.mcp.json` was a Claude Code problem,
+ * and `--harness opencode` hid the loss entirely — the second half of contract
+ * VC-02, arriving through a different emitter.
  */
 const UNREADABLE_ATTRIBUTION: HarnessId = 'claude-code';
 
@@ -503,6 +509,7 @@ export function planInventoryWarnings(inventory: SourceInventory): ProjectionWar
   return inventory.unreadable.map((entry) => ({
     artifact: entry.kind,
     harness: UNREADABLE_ATTRIBUTION,
+    harnessAgnostic: true,
     name: entry.source,
     source: entry.source,
     reason: entry.reason,

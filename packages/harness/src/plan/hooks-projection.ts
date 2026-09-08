@@ -463,6 +463,15 @@ function planStandaloneHooks(
       artifact: 'hook' as const,
       harness,
       name: w.event,
+      // The file that declared THIS event — the same resolution the dropped
+      // branch above uses, and for one more reason besides opening the right
+      // file. A warning is matched to the artifact it concerns by its source
+      // (the reason DOR-1845's review added one to the unreadable-hook
+      // warning): named after the EVENT while the generated action is named
+      // `hooks`, a sourceless warning matches nothing and is reported as a
+      // thing of its own — a second entry about one file, carrying one harness
+      // and silent about the rest.
+      source: sources.byEvent.get(w.event) ?? sources.files[0] ?? CLAUDE_SETTINGS_SOURCE,
       reason: w.reason,
     })),
   };
