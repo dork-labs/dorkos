@@ -406,9 +406,16 @@ export function planWithConsent(
  * home in any harness, and a hook declaration the reader could not use, are not
  * answers about one harness, and hiding them behind `--harness cursor` is how
  * they went unreported (contract VC-02).
+ *
+ * The narrowed plan is STAMPED with the harness it was narrowed to, so it can
+ * say so about itself: `checkPlan` reports no orphans for one, because every
+ * orphan finder reads the plan as its keep-set and a narrowed plan is missing
+ * every other harness's live projections (DOR-1889). This function is the only
+ * place in the repo that narrows a plan, which is what makes the stamp reliable.
  */
 function filterPlanToHarness(plan: ProjectionPlan, harness: HarnessId): ProjectionPlan {
   return {
+    narrowedTo: harness,
     actions: plan.actions.filter((a) => a.harness === harness),
     drops: plan.drops.filter((a) => a.harnessAgnostic === true || a.harness === harness),
     warnings: plan.warnings.filter((w) => w.harnessAgnostic === true || w.harness === harness),

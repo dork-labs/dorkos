@@ -63,6 +63,7 @@ import { blockingSymlinkOccupant, linkCheckFor, linkMatchesPlan } from './symlin
 import {
   applyGeneratedHookFile,
   findBlockedGenerateTargets,
+  findGeneratedOrphans,
   findLeftAloneGeneratedHookFiles,
   generatedHookOutcome,
   isGeneratedHookTarget,
@@ -76,7 +77,12 @@ import {
   GENERATED_COMMAND_MARKER,
   OPENCODE_COMMANDS_DIR,
 } from '../plan/installed-projector.js';
-import { mergeManagedHooks, sweepManagedHooks, managedHooksDrift } from './settings-hooks.js';
+import {
+  hasManagedHooks,
+  mergeManagedHooks,
+  sweepManagedHooks,
+  managedHooksDrift,
+} from './settings-hooks.js';
 
 /** Skill projection dirs an installed-orphan sweep must scan (Codex + Claude Code). */
 const INSTALLED_SKILL_DIRS = [AGENTS_SKILLS_DIR, CLAUDE_SKILLS_DIR] as const;
@@ -276,7 +282,7 @@ function applyMerge(repoRoot: string, action: ProjectionAction): boolean {
 }
 
 /**
- * Sweep orphaned installed-plugin skill projections from `.agents/skills` and
+ * Find the orphaned installed-plugin skill projections in `.agents/skills` and
  * `.claude/skills` (Codex and Claude Code both get namespaced symlinks now).
  *
  * A sweep candidate must be BOTH a real symlink AND carry the `__` infix. A
@@ -296,17 +302,18 @@ function applyMerge(repoRoot: string, action: ProjectionAction): boolean {
  *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the current projection plan (every symlink target is kept).
- * @returns the repo-relative paths swept.
+ * @returns the repo-relative paths a sweep would remove.
  */
-export function sweepInstalledOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+export function findInstalledOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
   const managed = new Set(
     plan.actions.filter((a) => a.kind === 'symlink' && a.target).map((a) => a.target as string)
   );
 
-  const swept: string[] = [];
+  const orphans: string[] = [];
   for (const dir of INSTALLED_SKILL_DIRS) {
     // `listDir`, not `existsSync` + `readdirSync`: a skills path that is a file
-    // or unreadable has nothing to sweep, and must not abort the whole apply.
+    // or unreadable has nothing to sweep, and must not abort the whole apply —
+    // nor throw out of the `--check` that reads the same scanner.
     const skillsDir = join(repoRoot, dir);
     for (const entry of listDir(skillsDir)) {
       if (!entry.includes(INSTALLED_PROJECTION_MARKER)) continue; // looks like a managed projection…
@@ -314,28 +321,52 @@ export function sweepInstalledOrphans(repoRoot: string, plan: ProjectionPlan): s
       if (!isSymlink(abs)) continue; // …but only ever sweep real symlinks, never a hand-authored dir/file
       const rel = `${dir}/${entry}`;
       if (managed.has(rel)) continue; // still projected — keep
-      rmSync(abs, { force: true }); // a symlink — remove the link, never recurse into a target
-      swept.push(rel);
+      orphans.push(rel);
     }
   }
-  return swept;
+  return orphans;
 }
 
 /**
- * Sweep orphaned engine-generated command wrappers from `.claude/commands/<pkg>/`.
+ * Remove the orphaned installed-plugin skill projections
+ * {@link findInstalledOrphans} names.
+ *
+ * Every path it hands back is a symlink, so the link is removed and nothing at
+ * the other end of it is ever touched.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (every symlink target is kept).
+ * @returns the repo-relative paths swept.
+ */
+export function sweepInstalledOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  const orphans = findInstalledOrphans(repoRoot, plan);
+  for (const rel of orphans) rmSync(join(repoRoot, rel), { force: true });
+  return orphans;
+}
+
+/**
+ * Find the orphaned engine-generated command wrappers under
+ * `.claude/commands/<pkg>/`.
  *
  * Wrappers (and the self-ignoring `.gitignore` beside them) each carry the
  * {@link GENERATED_COMMAND_MARKER}; that marker is the SOLE ownership predicate,
  * so a hand-authored command file (even one sharing a wrapper directory) is
  * never deleted. Any marked file the current plan no longer generates belongs to
- * an uninstalled plugin and is removed; a wrapper directory emptied by the sweep
- * is removed too.
+ * an uninstalled plugin.
+ *
+ * A wrapper directory the sweep empties is removed too, but it is not listed
+ * here: what a person is warned about — and what `swept` reports — is the files
+ * that go, and a directory that only existed to hold them is bookkeeping.
+ *
+ * This and `.opencode/commands/` are the only directories the engine enumerates
+ * by wildcard, which is why they are the only two where a stranded atomic-write
+ * temp is debris to be swept rather than an inert dotfile (`atomic-write.ts`).
  *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the current projection plan (its generate targets are kept).
- * @returns the repo-relative paths swept.
+ * @returns the repo-relative paths a sweep would remove.
  */
-export function sweepGeneratedCommandOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+export function findGeneratedCommandOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
   const kept = new Set(
     plan.actions
       .filter((a) => a.kind === 'generate' && a.target?.startsWith(`${CLAUDE_COMMANDS_DIR}/`))
@@ -344,7 +375,7 @@ export function sweepGeneratedCommandOrphans(repoRoot: string, plan: ProjectionP
   const commandsDir = join(repoRoot, CLAUDE_COMMANDS_DIR);
   if (!existsSync(commandsDir)) return [];
 
-  const swept: string[] = [];
+  const orphans: string[] = [];
   for (const sub of readdirSync(commandsDir, { withFileTypes: true })) {
     if (!sub.isDirectory()) continue;
     const subAbs = join(commandsDir, sub.name);
@@ -353,41 +384,62 @@ export function sweepGeneratedCommandOrphans(repoRoot: string, plan: ProjectionP
       const abs = join(subAbs, file);
       // A temp file is another writer's in-flight write, and it carries the
       // marker this sweep owns things by. Age is the only thing that can tell a
-      // stranded one from a live one, so age is what decides.
+      // stranded one from a live one, so age is what decides — and a stale one
+      // is named in the preview too, because a `--fix` really does take it.
       if (isAtomicTempName(file)) {
-        if (!sweepStaleTemp(abs)) continue;
-        swept.push(rel);
+        if (isStaleAtomicTemp(abs)) orphans.push(rel);
         continue;
       }
       if (kept.has(rel)) continue; // still projected: keep (apply rewrites it)
       if (!isEngineGeneratedCommand(abs)) continue; // authored file (or nested dir): never touch
-      rmSync(abs, { force: true });
-      swept.push(rel);
-    }
-    // A wrapper dir emptied by the sweep (all engine files gone) is removed too.
-    if (existsSync(subAbs) && readdirSync(subAbs).length === 0) {
-      rmSync(subAbs, { recursive: true, force: true });
+      orphans.push(rel);
     }
   }
-  return swept;
+  return orphans;
 }
 
 /**
- * Sweep orphaned engine-generated OpenCode command wrappers from the flat
+ * Remove the orphaned Claude command wrappers {@link findGeneratedCommandOrphans}
+ * names, then remove any wrapper directory left empty.
+ *
+ * The directory pass runs over every `.claude/commands/<pkg>/` rather than only
+ * the ones this sweep emptied, which is what the single-pass version did too: a
+ * wrapper dir with nothing in it holds no command for anybody, whoever emptied it.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (its generate targets are kept).
+ * @returns the repo-relative paths swept (files only — see the finder).
+ */
+export function sweepGeneratedCommandOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  const orphans = findGeneratedCommandOrphans(repoRoot, plan);
+  for (const rel of orphans) rmSync(join(repoRoot, rel), { force: true });
+
+  const commandsDir = join(repoRoot, CLAUDE_COMMANDS_DIR);
+  if (!existsSync(commandsDir)) return orphans;
+  for (const sub of readdirSync(commandsDir, { withFileTypes: true })) {
+    if (!sub.isDirectory()) continue;
+    const subAbs = join(commandsDir, sub.name);
+    if (readdirSync(subAbs).length === 0) rmSync(subAbs, { recursive: true, force: true });
+  }
+  return orphans;
+}
+
+/**
+ * Find the orphaned engine-generated OpenCode command wrappers in the flat
  * `.opencode/commands/` dir.
  *
  * The dir is SHARED: authored commands may live beside the engine wrappers, so
  * the {@link GENERATED_COMMAND_MARKER} is again the SOLE ownership predicate — a
  * marker-less authored file (including a hand-authored `.gitignore`) is never
  * touched. Any marked top-level file the current plan no longer generates (the
- * `.gitignore` itself included, once the last wrapper is gone) is removed. The
- * dir is never deleted, since it may still hold authored commands.
+ * `.gitignore` itself included, once the last wrapper is gone) is an orphan. The
+ * dir itself is never deleted, since it may still hold authored commands.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the current projection plan (its generate targets are kept).
- * @returns the repo-relative paths swept.
+ * @returns the repo-relative paths a sweep would remove.
  */
-export function sweepOpencodeCommandOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+export function findOpencodeCommandOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
   const kept = new Set(
     plan.actions
       .filter((a) => a.kind === 'generate' && a.target?.startsWith(`${OPENCODE_COMMANDS_DIR}/`))
@@ -396,7 +448,7 @@ export function sweepOpencodeCommandOrphans(repoRoot: string, plan: ProjectionPl
   const commandsDir = join(repoRoot, OPENCODE_COMMANDS_DIR);
   if (!existsSync(commandsDir)) return [];
 
-  const swept: string[] = [];
+  const orphans: string[] = [];
   for (const entry of readdirSync(commandsDir, { withFileTypes: true })) {
     if (!entry.isFile()) continue; // flat: only top-level engine wrapper files (and the .gitignore)
     const rel = `${OPENCODE_COMMANDS_DIR}/${entry.name}`;
@@ -404,34 +456,28 @@ export function sweepOpencodeCommandOrphans(repoRoot: string, plan: ProjectionPl
     // Same rule as the Claude wrapper dir: a live temp is untouchable, a
     // stranded one is debris.
     if (isAtomicTempName(entry.name)) {
-      if (sweepStaleTemp(abs)) swept.push(rel);
+      if (isStaleAtomicTemp(abs)) orphans.push(rel);
       continue;
     }
     if (kept.has(rel)) continue; // still projected: keep (apply rewrites it)
     if (!isEngineGeneratedCommand(abs)) continue; // authored file: never touch
-    rmSync(abs, { force: true });
-    swept.push(rel);
+    orphans.push(rel);
   }
-  return swept;
+  return orphans;
 }
 
 /**
- * Remove an atomic-write temp file if — and only if — it is old enough to be
- * debris a crash left behind rather than a write somebody is doing right now.
+ * Remove the orphaned OpenCode command wrappers
+ * {@link findOpencodeCommandOrphans} names.
  *
- * The two command sweeps are the only callers, because their directories are
- * the only ones anything enumerates by wildcard: a stranded temp there is
- * indistinguishable from content to every other predicate in this file, while
- * one beside `.codex/hooks.json` is a dotfile nothing ever looks at
- * (`atomic-write.ts` states that split and why).
- *
- * @param abs - absolute path of the temp file.
- * @returns `true` when it was removed.
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (its generate targets are kept).
+ * @returns the repo-relative paths swept.
  */
-function sweepStaleTemp(abs: string): boolean {
-  if (!isStaleAtomicTemp(abs)) return false;
-  rmSync(abs, { force: true });
-  return true;
+export function sweepOpencodeCommandOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  const orphans = findOpencodeCommandOrphans(repoRoot, plan);
+  for (const rel of orphans) rmSync(join(repoRoot, rel), { force: true });
+  return orphans;
 }
 
 /** True when a file carries the engine's generated-command marker (never a directory). */
@@ -527,22 +573,45 @@ function findBlockedOpencodeCommandFiles(repoRoot: string, plan: ProjectionPlan)
 }
 
 /**
- * Sweep managed installed-plugin hooks out of `.claude/settings.local.json` when
- * the plan no longer merges any (the last hook-bearing plugin was uninstalled).
+ * Whether a sweep would take managed installed-plugin hooks out of
+ * `.claude/settings.local.json` — because the plan no longer merges any (the
+ * last hook-bearing plugin was uninstalled) and some are still in the file.
+ *
  * When the plan DOES carry a merge action, that action's apply already
- * reconciles the managed entries, so this is a no-op to avoid a double write.
+ * reconciles the managed entries, so there is nothing to sweep and this is
+ * empty — which is also why a double write never happens.
+ *
+ * The one path this can name is the settings file itself, and only its managed
+ * hook groups are removed: the file survives with every user-owned key intact.
+ * It is listed alongside paths that really do disappear because it is a path a
+ * sync CHANGES without being asked, which is what a person needs told.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan.
+ * @returns the repo-relative path a sweep would rewrite (one entry) or empty.
+ */
+export function findSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan): string[] {
+  const hasMerge = plan.actions.some(
+    (a) => a.kind === 'merge' && a.target === CLAUDE_SETTINGS_LOCAL_TARGET
+  );
+  if (hasMerge) return [];
+  return hasManagedHooks(join(repoRoot, CLAUDE_SETTINGS_LOCAL_TARGET))
+    ? [CLAUDE_SETTINGS_LOCAL_TARGET]
+    : [];
+}
+
+/**
+ * Strip the managed installed-plugin hooks {@link findSettingsHooksOrphan}
+ * found, leaving every user-owned hook and key in place.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the current projection plan.
  * @returns the repo-relative path swept (one entry) or empty.
  */
 export function sweepSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan): string[] {
-  const hasMerge = plan.actions.some(
-    (a) => a.kind === 'merge' && a.target === CLAUDE_SETTINGS_LOCAL_TARGET
-  );
-  if (hasMerge) return [];
-  const absTarget = join(repoRoot, CLAUDE_SETTINGS_LOCAL_TARGET);
-  return sweepManagedHooks(absTarget) ? [CLAUDE_SETTINGS_LOCAL_TARGET] : [];
+  const orphans = findSettingsHooksOrphan(repoRoot, plan);
+  if (orphans.length > 0) sweepManagedHooks(join(repoRoot, CLAUDE_SETTINGS_LOCAL_TARGET));
+  return orphans;
 }
 
 /**
@@ -567,7 +636,12 @@ export function sweepSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan)
  * `.claude/commands/<pkg>/` and `.opencode/commands/`, and managed plugin hooks
  * left in `.claude/settings.local.json`. Pass it only for a full (unfiltered)
  * plan, or live projections for harnesses outside the filter would be mistaken
- * for orphans.
+ * for orphans — `projectWithConsent` refuses that combination outright.
+ *
+ * Every one of those six sweeps has a `find*` half, and `swept` holds exactly
+ * the paths {@link checkPlan} named in `orphans` a moment earlier — the same
+ * set, listed in the order the sweeps ran rather than sorted. So a `--check` is
+ * silent about nothing a `--fix` removes (DOR-1889).
  *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the projection plan to apply.
@@ -728,26 +802,66 @@ function findBlockedSymlinkTargets(repoRoot: string, plan: ProjectionPlan): Proj
 }
 
 /**
+ * Everything a sweep of this plan would remove, without removing any of it.
+ *
+ * The union of all six finders, sorted and de-duplicated — the read-only twin of
+ * the six sweeps {@link applyPlan} runs, and equal to the `swept` list the next
+ * `applyPlan(..., { sweepOrphans: true })` returns. Equality, not containment:
+ * "most of what will be deleted" is a warning with a hole in it, and the hole is
+ * where the surprise lives (DOR-1889).
+ *
+ * The six are disjoint by construction — the installed sweep owns `__` links,
+ * the authored one everything under `.claude/skills` without a `__`, each
+ * command sweep its own directory, the generated one the per-harness hooks
+ * paths, and the settings one a single file — so the de-duplication is a
+ * guarantee about the ANSWER rather than a patch over overlapping predicates.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan.
+ * @returns the repo-relative paths, sorted and unique.
+ */
+function findOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  return [
+    ...new Set([
+      ...findInstalledOrphans(repoRoot, plan),
+      ...findOrphanedAuthoredLinks(repoRoot, plan),
+      ...findGeneratedOrphans(repoRoot, plan),
+      ...findGeneratedCommandOrphans(repoRoot, plan),
+      ...findOpencodeCommandOrphans(repoRoot, plan),
+      ...findSettingsHooksOrphan(repoRoot, plan),
+    ]),
+  ].sort();
+}
+
+/**
  * Diff a projection plan against the current on-disk state without mutating it.
  *
  * Four answers, deliberately kept apart: what is stale and a re-run would fix
  * (`drifted`), what a re-run would report as a conflict because somebody's own
- * file occupies a target the plan writes or links (`blocked`), what a re-run would sweep
- * because the skill it pointed at is gone (`orphans`), and what the engine simply
- * stepped over (`leftAlone`). The first three make a tree unclean — each is
- * something a `--fix` would change on disk — and the last does not: a person who
- * keeps their own `.codex/hooks.json` in a repo DorkOS projects no hooks to is
- * not carrying a fault.
+ * file occupies a target the plan writes or links (`blocked`), what a re-run
+ * would sweep because whatever it came from is gone (`orphans`), and what the
+ * engine simply stepped over (`leftAlone`). The first three make a tree unclean
+ * — each is something a `--fix` would change on disk — and the last does not: a
+ * person who keeps their own `.codex/hooks.json` in a repo DorkOS projects no
+ * hooks to is not carrying a fault.
  *
  * It never throws for what it finds on disk. A dead link, a directory where a
  * file belongs, an unreadable `.claude/skills` — each is an answer (drift,
  * blocked, or nothing at all), never an exception: this is the command a person
  * runs to be TOLD what is wrong with their tree.
  *
+ * **A plan narrowed to one harness reports no orphans**, whoever asks. Every
+ * finder reads the plan as its keep-set, so a narrowed plan — which omits every
+ * other harness's live projections — would call them orphans and hand back a
+ * list a `--fix` refuses to act on: `projectWithConsent` will not sweep a
+ * filtered plan at all. An empty list is the honest answer to a question this
+ * plan cannot answer, and it lives here rather than in each caller so that every
+ * reader of `DriftResult` gets it (DOR-1889).
+ *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the projection plan to check.
- * @returns the drifted actions, the blocked ones, the orphaned links, the paths
- *   left alone, and whether the tree is clean.
+ * @returns the drifted actions, the blocked ones, the orphans a sweep would
+ *   take, the paths left alone, and whether the tree is clean.
  */
 export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
   const drifted = plan.actions.filter((action) => isDrifted(repoRoot, action));
@@ -755,7 +869,7 @@ export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
     ...findBlockedGenerateTargets(repoRoot, plan),
     ...findBlockedSymlinkTargets(repoRoot, plan),
   ];
-  const orphans = findOrphanedAuthoredLinks(repoRoot, plan);
+  const orphans = plan.narrowedTo === undefined ? findOrphans(repoRoot, plan) : [];
   return {
     drifted,
     blocked,

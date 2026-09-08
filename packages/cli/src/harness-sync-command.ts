@@ -380,19 +380,24 @@ function formatIgnoredCanonicalLayer(repoRoot: string): string[] {
 /**
  * Print the check-mode report and return its exit code.
  *
- * Non-zero for drift (a `--fix` would repair it), for an orphaned link (a `--fix`
- * would remove it), and for a blocked projection (a `--fix` cannot do anything,
- * until the person moves their file). Zero for paths merely left alone — those
- * are reported, never counted against the tree.
+ * Non-zero for drift (a `--fix` would repair it), for an orphan (a `--fix` would
+ * remove it), and for a blocked projection (a `--fix` cannot do anything, until
+ * the person moves their file). Zero for paths merely left alone — those are
+ * reported, never counted against the tree.
  *
- * **Orphans are withheld under `--harness`**, exactly mirroring the one condition
- * under which `reportFix` sweeps them. The engine answers for the whole tree; the
- * CLI decides what this invocation can act on, and naming a link that the `--fix`
- * this report recommends would NOT remove is a non-zero exit the person can never
- * clear — measured before the guard: `--check --harness codex` said "Orphaned
- * links … gamma" and exited 1, `--fix --harness codex` exited 0 and left the link,
- * forever. So `clean` is recomputed here rather than read off `DriftResult`, whose
- * own `clean` folds in the orphans this run is not reporting.
+ * The orphan list is `checkPlan`'s, in full and unedited: since DOR-1889 it is
+ * every path a `--fix` would delete, not just the dead skill links, so this
+ * report names the nine files an uninstalled plugin leaves behind instead of
+ * calling that tree clean.
+ *
+ * **Orphans are withheld under `--harness`, by the engine.** A narrowed plan
+ * omits every other harness's live projections, so its orphan finders would read
+ * those as orphans and this report would recommend a `--fix --harness` that
+ * refuses to sweep — measured before the guard: `--check --harness codex` said
+ * "Orphaned links … gamma" and exited 1, `--fix --harness codex` exited 0 and
+ * left the link, forever. The plan carries the harness it was narrowed to, so
+ * `checkPlan` answers with an empty list and `clean` is already right; nothing is
+ * recomputed here.
  */
 function reportCheck(
   repoRoot: string,
@@ -403,8 +408,7 @@ function reportCheck(
   enabled?: readonly HarnessId[]
 ): number {
   const drift = checkPlan(repoRoot, plan);
-  const orphans = harnessFilter === undefined ? drift.orphans : [];
-  const clean = drift.drifted.length === 0 && drift.blocked.length === 0 && orphans.length === 0;
+  const { orphans } = drift;
 
   console.log('Projection summary:');
   console.log(summarizeActions(plan.actions, withheld, enabled));
@@ -424,7 +428,7 @@ function reportCheck(
   for (const line of formatIgnoredCanonicalLayer(repoRoot)) console.log(line);
   console.log('');
 
-  if (clean) {
+  if (drift.clean) {
     console.log('No drift — every projection already matches the plan.');
     return 0;
   }
@@ -435,12 +439,19 @@ function reportCheck(
   }
   if (orphans.length > 0) {
     if (drift.drifted.length > 0) console.log('');
-    console.log(`Orphaned links — the skill they pointed at is gone (${orphans.length}):`);
+    console.log(`Orphaned projections — what they came from is gone (${orphans.length}):`);
     for (const path of orphans) console.log(`  ${path}`);
   }
   if (drift.drifted.length > 0 || orphans.length > 0) {
     console.log('');
-    console.log('Run `dorkos harness sync --fix` to apply.');
+    // The removal is said out loud whenever there is one. A person reading
+    // "to apply" over a list of nine files has not been told that running it
+    // deletes them, and that is the whole point of naming them first.
+    console.log(
+      orphans.length > 0
+        ? 'Run `dorkos harness sync --fix` to apply — the orphaned paths above are removed.'
+        : 'Run `dorkos harness sync --fix` to apply.'
+    );
   }
   if (drift.blocked.length > 0) {
     if (drift.drifted.length > 0 || orphans.length > 0) console.log('');

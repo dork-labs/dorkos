@@ -120,6 +120,43 @@ export function mergeManagedHooks(absTarget: string, managed: ClaudeHooksConfig)
 }
 
 /**
+ * What the settings file would hold once the managed hook groups are gone, or
+ * `undefined` when nothing would change — the file is absent, unparseable, has
+ * no `hooks`, or carries no managed entries.
+ *
+ * The one place that decision is made, so {@link hasManagedHooks} (which reports
+ * it) and {@link sweepManagedHooks} (which acts on it) cannot disagree about
+ * whether a sync would touch this file: `--check` names exactly what `--fix`
+ * removes only if both read the same predicate (DOR-1889).
+ *
+ * @param absTarget - absolute path to `.claude/settings.local.json`.
+ * @returns the settings to write, or `undefined` to leave the file alone.
+ */
+function withoutManagedHooks(absTarget: string): SettingsFile | undefined {
+  if (!existsSync(absTarget)) return undefined;
+  const settings = readSettingsFile(absTarget);
+  if (settings === undefined || !settings.hooks) return undefined;
+  const stripped = stripManagedHooks(settings.hooks);
+  if (JSON.stringify(stripped) === JSON.stringify(settings.hooks)) return undefined;
+  const next: SettingsFile = { ...settings };
+  if (Object.keys(stripped).length > 0) next.hooks = stripped;
+  else delete next.hooks;
+  return next;
+}
+
+/**
+ * Whether a sweep would remove managed plugin hooks from the settings file —
+ * the read-only half of {@link sweepManagedHooks}, so `--check` can say the file
+ * is about to change without changing it.
+ *
+ * @param absTarget - absolute path to `.claude/settings.local.json`.
+ * @returns `true` when sentinel-tagged managed entries are there to remove.
+ */
+export function hasManagedHooks(absTarget: string): boolean {
+  return withoutManagedHooks(absTarget) !== undefined;
+}
+
+/**
  * Sweep managed plugin hooks out of the settings file (uninstall path). Removes
  * only the sentinel-tagged matcher groups; a now-empty `hooks` key is dropped so
  * the file returns to its pre-projection shape. No-op (returns `false`) when the
@@ -129,14 +166,8 @@ export function mergeManagedHooks(absTarget: string, managed: ClaudeHooksConfig)
  * @returns `true` when the file was rewritten (managed entries were removed).
  */
 export function sweepManagedHooks(absTarget: string): boolean {
-  if (!existsSync(absTarget)) return false;
-  const settings = readSettingsFile(absTarget);
-  if (settings === undefined || !settings.hooks) return false;
-  const stripped = stripManagedHooks(settings.hooks);
-  if (JSON.stringify(stripped) === JSON.stringify(settings.hooks)) return false;
-  const next: SettingsFile = { ...settings };
-  if (Object.keys(stripped).length > 0) next.hooks = stripped;
-  else delete next.hooks;
+  const next = withoutManagedHooks(absTarget);
+  if (next === undefined) return false;
   writeSettingsFile(absTarget, next);
   return true;
 }
