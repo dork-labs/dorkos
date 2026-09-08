@@ -21,7 +21,8 @@
  * @module apply/generated-ownership
  */
 import { createHash } from 'node:crypto';
-import { lstatSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { lstatSync, readFileSync, rmSync } from 'node:fs';
+import { writeFileAtomic } from './atomic-write.js';
 
 /**
  * The suffix of the ownership sidecar written beside every generated hook file.
@@ -89,11 +90,20 @@ export function hasGeneratedSidecar(absTarget: string): boolean {
 /**
  * Record the engine's ownership of the bytes it just wrote.
  *
+ * Written AFTER the file it describes, and atomically, so the two are never
+ * observed disagreeing because of a write in progress: a reader sees either no
+ * sidecar (the file is not yet claimed, and is left alone) or a whole one. The
+ * pair is still two writes, so two PROCESSES applying DIFFERENT plans to one
+ * repo at the same instant can interleave them into a sidecar describing the
+ * other process's bytes — the case `services/harness/project-with-consent.ts`
+ * states is not locked, and which the ownership rule then reports as a conflict
+ * rather than resolving on a guess.
+ *
  * @param absTarget - absolute path of the generated file.
  * @param content - the exact bytes written to it.
  */
 export function writeGeneratedSidecar(absTarget: string, content: string): void {
-  writeFileSync(generatedSidecarPath(absTarget), `${digestOf(content)}\n`);
+  writeFileAtomic(generatedSidecarPath(absTarget), `${digestOf(content)}\n`);
 }
 
 /** Remove a generated target's sidecar, if it has one. */

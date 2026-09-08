@@ -22,8 +22,8 @@
  *
  * @module apply/settings-hooks
  */
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { writeFileAtomic } from './atomic-write.js';
 import { emptyHooksConfig } from '../generate/hooks.js';
 import type { ClaudeHooksConfig, HookMatcherGroup } from '../generate/hooks.js';
 import { MANAGED_HOOK_SENTINEL_KEY } from '../plan/installed-projector.js';
@@ -49,10 +49,15 @@ function readSettingsFile(absTarget: string): SettingsFile | undefined {
   }
 }
 
-/** Write the settings file as 2-space JSON (Claude Code itself rewrites this file). */
+/**
+ * Write the settings file as 2-space JSON (Claude Code itself rewrites this file).
+ *
+ * Atomically, because this is the one target of the whole projection that the
+ * person also owns and a running Claude Code re-reads on change: a reader that
+ * caught the truncate would see their settings gone rather than merged.
+ */
 function writeSettingsFile(absTarget: string, settings: SettingsFile): void {
-  mkdirSync(dirname(absTarget), { recursive: true });
-  writeFileSync(absTarget, JSON.stringify(settings, null, 2) + '\n');
+  writeFileAtomic(absTarget, JSON.stringify(settings, null, 2) + '\n');
 }
 
 /** True when a matcher group carries the engine's ownership sentinel. */

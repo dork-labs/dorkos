@@ -12,11 +12,12 @@
  *
  * @module apply/generated-targets
  */
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { rmSync } from 'node:fs';
+import { join } from 'node:path';
 import type { ProjectionAction, ProjectionPlan } from '../plan/types.js';
 import { requireActionContent } from '../plan/content-map.js';
 import { CODEX_HOOKS_TARGET, GENERATED_HOOK_TARGETS } from '../generate/hooks.js';
+import { writeFileAtomic } from './atomic-write.js';
 import {
   GENERATED_SIDECAR_SUFFIX,
   HAND_WRITTEN_HOOKS_REASON,
@@ -36,10 +37,18 @@ export function isGeneratedHookTarget(
   return (GENERATED_HOOK_TARGETS as readonly string[]).includes(target);
 }
 
-/** Write a generated hook file and record the engine's ownership of those bytes. */
+/**
+ * Write a generated hook file and record the engine's ownership of those bytes.
+ *
+ * The file first, its sidecar second, and both atomically. The order is the
+ * whole safety of it: a reader that arrives between the two finds bytes with no
+ * sidecar, which the ownership rule reads as "somebody else's file" and leaves
+ * alone — cautious and recoverable. The reverse order would publish a claim over
+ * bytes that are not there yet, and the next sync would rewrite whatever WAS
+ * there on the strength of it.
+ */
 function writeOwnedGenerated(absTarget: string, content: string): void {
-  mkdirSync(dirname(absTarget), { recursive: true });
-  writeFileSync(absTarget, content);
+  writeFileAtomic(absTarget, content);
   writeGeneratedSidecar(absTarget, content);
 }
 

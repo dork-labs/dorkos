@@ -20,6 +20,25 @@
  * finds there. Both read deterministic bytes for `scaffold`/`generate` actions
  * from the projector via {@link getActionContent}.
  *
+ * ## What a concurrent reader can see
+ *
+ * Every FILE this stage writes goes through `writeFileAtomic`, so a harness
+ * reading `.codex/hooks.json` while a sync rewrites it gets the whole old file
+ * or the whole new one — never an empty or half-written config (AP-10). That
+ * covers scaffolds, generated files, the generated hooks files, their ownership
+ * sidecars, and the managed-hook merge.
+ *
+ * A repaired SYMLINK is the one exception, and it is left as it is. Replacing a
+ * stale managed link is `rmSync` then `symlinkSync`, so for the microseconds
+ * between them the link is absent and a harness enumerating `.claude/skills`
+ * would list one skill fewer. It is not worth closing: the removal happens only
+ * when the link TEXT is already wrong (a source that moved), so the reader in
+ * that window would otherwise have followed a link to the wrong place, and the
+ * next scan — the same session's next skill lookup — sees the repaired link.
+ * Making it atomic means creating the link at a temp name and renaming it over
+ * the target, which on Windows means renaming a junction; that trade is not one
+ * this engine has evidence for yet.
+ *
  * @module apply/apply
  */
 import {
@@ -30,13 +49,13 @@ import {
   rmSync,
   statSync,
   symlinkSync,
-  writeFileSync,
 } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import type { DriftResult, ProjectionAction, ProjectionPlan } from '../plan/types.js';
 import { requireActionContent } from '../plan/content-map.js';
 import { AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
 import type { ClaudeHooksConfig } from '../generate/hooks.js';
+import { writeFileAtomic } from './atomic-write.js';
 import { HAND_WRITTEN_HOOKS_REASON, readFileIfPresent } from './generated-ownership.js';
 import { findOrphanedAuthoredLinks, sweepAuthoredOrphans } from './authored-orphans.js';
 import { isDanglingSymlink, isSymlink, listDir, occupantKind, pathExists } from './link-state.js';
@@ -146,11 +165,11 @@ function applyScaffold(repoRoot: string, action: ProjectionAction): void {
   if (!action.target) throw new Error(`scaffold action for "${action.name}" is missing target`);
   const absTarget = join(repoRoot, action.target);
   if (scaffoldPresent(absTarget)) return; // user owns it — never overwrite
-  // Nothing but a dead link can be here now. It has to go before the write, or
-  // `writeFileSync` follows it and creates the pointer wherever it points.
-  rmSync(absTarget, { force: true });
-  mkdirSync(dirname(absTarget), { recursive: true });
-  writeFileSync(absTarget, requireActionContent(action));
+  // Nothing but a dead link can be here now, and the atomic write replaces the
+  // directory entry rather than following it — so the pointer lands at THIS path
+  // instead of wherever the dead link pointed, with no removal step to leave a
+  // gap in (`atomic-write.ts`).
+  writeFileAtomic(absTarget, requireActionContent(action));
 }
 
 /**
@@ -179,18 +198,16 @@ function applyGenerate(repoRoot: string, action: ProjectionAction): string | und
   const shape = blockingGenerateOccupant(absTarget);
   if (shape !== undefined) return shape;
 
-  // A dead link is the opposite case — nothing is there to own. Remove it, so
-  // the file lands at this path instead of wherever the link pointed.
-  if (isDanglingSymlink(absTarget)) rmSync(absTarget, { force: true });
-
+  // A dead link is the opposite case — nothing is there to own, and the atomic
+  // write replaces the entry rather than following it, so the file lands at this
+  // path instead of wherever the link pointed.
   const content = requireActionContent(action);
   if (isGeneratedHookTarget(action.target)) {
     return applyGeneratedHookFile(absTarget, action.target, content)
       ? undefined
       : HAND_WRITTEN_HOOKS_REASON;
   }
-  mkdirSync(dirname(absTarget), { recursive: true });
-  writeFileSync(absTarget, content);
+  writeFileAtomic(absTarget, content);
   return undefined;
 }
 
