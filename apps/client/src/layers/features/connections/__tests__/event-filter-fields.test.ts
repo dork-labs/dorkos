@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildEventFilter, readEventFilterFields } from '../lib/event-filter-fields';
+import {
+  buildEventFilter,
+  readEventFilterFields,
+  initialEventFilterValues,
+} from '../lib/event-filter-fields';
+
+import { gmailFilterSchema } from './event-filter-fixtures';
 
 describe('event filter fields', () => {
   it('converts only supported schema controls to validated primitive values', () => {
@@ -61,5 +67,77 @@ describe('event filter fields', () => {
         required: ['missing'],
       })
     ).toBeNull();
+  });
+});
+
+describe('validated event annotations', () => {
+  it('initializes only defaults and preserves the exact empty-string scope', () => {
+    const fields = readEventFilterFields(gmailFilterSchema);
+    expect(fields).not.toBeNull();
+    const values = initialEventFilterValues(fields!);
+    expect(buildEventFilter(fields!, { ...values, interval: '' })).toBeNull();
+    expect(buildEventFilter(fields!, {})).toBeNull();
+    expect(values).toEqual({ interval: '1.5', labelIds: 'INBOX', query: '', userId: 'me' });
+    expect(buildEventFilter(fields!, values)).toEqual({
+      interval: 1.5,
+      labelIds: 'INBOX',
+      query: '',
+      userId: 'me',
+    });
+    expect(buildEventFilter(fields!, { ...values, labelIds: '', query: '  ' })).toEqual({
+      interval: 1.5,
+      labelIds: '',
+      query: '  ',
+      userId: 'me',
+    });
+  });
+
+  it.each([
+    { type: 'string', default: 1 },
+    { type: 'number', default: '1' },
+    { type: 'number', default: Infinity },
+    { type: 'number', examples: [NaN] },
+    { type: 'integer', default: 1.5 },
+    { type: 'integer', examples: [2, 3.5] },
+    { type: 'boolean', default: 'false' },
+    { type: 'boolean', examples: [false, 0] },
+    { type: 'string', default: null },
+    { type: 'string', default: undefined },
+    { type: 'string', examples: 'inbox' },
+    { type: 'string', examples: [null] },
+    { type: 'string', enum: ['inbox'], default: 'sent' },
+    { type: 'string', enum: ['inbox'], examples: ['inbox', 'sent'] },
+    { type: 'string', default: 'inbox', pattern: '^inbox$' },
+  ])('rejects invalid annotations without relaxing unsupported constraints: %j', (field) => {
+    expect(readEventFilterFields({ type: 'object', properties: { field } })).toBeNull();
+  });
+
+  it('keeps examples unselected, validates enum defaults, and retains false and zero', () => {
+    const fields = readEventFilterFields({
+      type: 'object',
+      properties: {
+        exampleOnly: { type: 'string', examples: ['never select me'] },
+        folder: { type: 'string', enum: ['', 'inbox'], default: '' },
+        enabled: { type: 'boolean', default: false, examples: [true] },
+        count: { type: 'integer', default: 0, examples: [1] },
+      },
+    });
+    expect(fields).not.toBeNull();
+    expect(initialEventFilterValues(fields!)).toEqual({ folder: '', enabled: false, count: '0' });
+    expect(buildEventFilter(fields!, initialEventFilterValues(fields!))).toEqual({
+      folder: '',
+      enabled: false,
+      count: 0,
+    });
+  });
+
+  it('requires presence rather than inventing a minimum string length', () => {
+    const fields = readEventFilterFields({
+      type: 'object',
+      properties: { query: { type: 'string' } },
+      required: ['query'],
+    })!;
+    expect(buildEventFilter(fields, {})).toBeNull();
+    expect(buildEventFilter(fields, { query: '' })).toEqual({ query: '' });
   });
 });

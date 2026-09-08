@@ -353,6 +353,98 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       expect(refusedExecution).toMatchObject({ isError: true });
       expect(readMcpResult(refusedExecution)).toMatchObject({ code: 'CONNECTOR_GRANT_REQUIRED' });
     });
+    // Delivery settings survive credential rotation. Keep this after the
+    // existing first-time setup case in this credential-sequential suite.
+    test('preserves validated Gmail defaults and owner edits through both consent forms', async ({
+      page,
+      request,
+    }, testInfo) => {
+      test.setTimeout(90_000);
+      const connectionId = await connectComposioGmail(request, harness.apiUrl, 'defaults proof');
+      const agent = await seedAgent(request, harness.apiUrl);
+      await configureSource(request, harness.apiUrl, connectionId);
+      await reconcileConnection(request, harness.apiUrl, connectionId);
+      await harness.gotoConnections(page);
+      const detail = await openAccount(page, 'Gmail (defaults proof)');
+      await choose(page, detail, 'Account activity', 'New Gmail message');
+      await expect(detail.getByRole('spinbutton', { name: 'Interval' })).toHaveValue('1.5');
+      await expect(detail.getByRole('textbox', { name: 'Labels' })).toHaveValue('INBOX');
+      await expect(detail.getByRole('textbox', { name: 'Query' })).toHaveValue('');
+      await expect(detail.getByRole('textbox', { name: 'User' })).toHaveValue('me');
+      await expect(detail.getByRole('textbox', { name: 'Query' })).toHaveAccessibleDescription(
+        /Examples \(not selected\)/
+      );
+      await expect(detail).toContainText('Check timing is unavailable');
+      await detail.getByRole('textbox', { name: 'User' }).fill('owner@example.test');
+      await choose(page, detail, 'Agent', 'E2E Test Agent');
+      await expect(detail.getByRole('textbox', { name: 'User' })).toHaveValue('owner@example.test');
+      await attachGmailFilterProof(page, detail, testInfo, 'connection-detail');
+      const submit = page.waitForRequest(
+        (candidate) =>
+          candidate.method() === 'POST' &&
+          candidate
+            .url()
+            .endsWith(`/api/connectors/connections/${connectionId}/events/subscriptions`)
+      );
+      await detail.getByRole('button', { name: 'Set up notification' }).click();
+      expect((await submit).postDataJSON()).toMatchObject({
+        agentId: agent.agentId,
+        filter: { interval: 1.5, labelIds: 'INBOX', query: '', userId: 'owner@example.test' },
+      });
+      const row = detail
+        .getByTestId('connection-notification-list')
+        .getByRole('listitem')
+        .filter({ hasText: 'New Gmail message' });
+      await expect(row.getByText('active', { exact: true })).toBeVisible();
+      const ownerReadback = await request.get(
+        `${harness.apiUrl}/api/connectors/connections/${connectionId}/events/subscriptions`
+      );
+      expect(ownerReadback.ok()).toBe(true);
+      expect((await ownerReadback.json()).subscriptions).toContainEqual(
+        expect.objectContaining({
+          state: 'active',
+          filter: { interval: 1.5, labelIds: 'INBOX', query: '', userId: 'owner@example.test' },
+        })
+      );
+      await page.keyboard.press('Escape');
+      await expect(detail).toBeHidden();
+
+      const held = startAgentRequest(request, harness.apiUrl, agent, {
+        sessionId: crypto.randomUUID(),
+        reason: 'Review the exact Gmail notification defaults.',
+        eventType: 'GMAIL_NEW_GMAIL_MESSAGE',
+      });
+      const pending = await waitForPendingAgentRequest(request, harness.apiUrl, agent.agentId);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.getByTestId(`agent-request-${pending.requestId}`).click();
+      const dialog = page.getByRole('dialog', { name: 'Review agent access' });
+      const scopes = dialog.getByTestId('agent-request-event-scopes');
+      await choose(page, scopes, 'Account activity', 'New Gmail message');
+      await expect(scopes.getByRole('textbox', { name: 'Query' })).toHaveValue('');
+      await expect(scopes.getByRole('spinbutton', { name: 'Interval' })).toHaveValue('1.5');
+      await scopes.getByRole('textbox', { name: 'Labels' }).fill('owner-label');
+      await attachGmailFilterProof(page, dialog, testInfo, 'agent-request-dialog');
+      const decision = page.waitForRequest(
+        (candidate) =>
+          candidate.method() === 'POST' &&
+          candidate.url().includes(`/agent-requests/${pending.requestId}/`)
+      );
+      await dialog.getByRole('button', { name: 'Grant access' }).click();
+      expect((await decision).postDataJSON()).toMatchObject({
+        eventScopes: [
+          {
+            connectionId,
+            filter: { interval: 1.5, labelIds: 'owner-label', query: '', userId: 'me' },
+          },
+        ],
+      });
+      const response = await held;
+      expect(response.ok(), await response.text()).toBe(true);
+      expect(readMcpResult(await response.json())).toMatchObject({
+        status: 'granted',
+        grantedEvents: ['GMAIL_NEW_GMAIL_MESSAGE'],
+      });
+    });
   });
 }
 
@@ -410,7 +502,7 @@ function startAgentRequest(
   request: APIRequestContext,
   apiUrl: string,
   agent: SeededAgent,
-  input: { sessionId: string; reason: string }
+  input: { sessionId: string; reason: string; eventType?: string }
 ): Promise<APIResponse> {
   return request.post(`${apiUrl}/api/test/connectors/request`, {
     timeout: 60_000,
@@ -422,7 +514,7 @@ function startAgentRequest(
         serviceSlug: 'gmail',
         reason: input.reason,
         requestedOperations: ['GMAIL_FETCH_EMAILS'],
-        requestedEvents: ['GMAIL_NEW_MESSAGE'],
+        requestedEvents: [input.eventType ?? 'GMAIL_NEW_MESSAGE'],
       },
     },
   });
@@ -608,6 +700,56 @@ async function cleanupComposio(request: APIRequestContext, apiUrl: string): Prom
     `${apiUrl}/api/connectors/providers/${PROVIDER}/credential`
   );
   expect(credential.ok(), await credential.text()).toBe(true);
+}
+
+async function attachGmailFilterProof(
+  page: Page,
+  surface: Locator,
+  testInfo: TestInfo,
+  testId: 'connection-detail' | 'agent-request-dialog'
+): Promise<void> {
+  const interval = surface.getByRole('spinbutton', { name: 'Interval' });
+  const labels = surface.getByRole('textbox', { name: 'Labels' });
+  const query = surface.getByRole('textbox', { name: 'Query' });
+  const user = surface.getByRole('textbox', { name: 'User' });
+  await interval.focus();
+  for (const next of [labels, query, user]) {
+    await page.keyboard.press('Tab');
+    await expect(next).toBeFocused();
+  }
+  for (const viewport of [
+    { name: 'desktop', width: 1280, height: 900 },
+    { name: 'phone', width: 390, height: 844 },
+  ] as const) {
+    await page.setViewportSize(viewport);
+    for (const colorScheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme });
+      await interval.evaluate((element) =>
+        element.parentElement!.scrollIntoView({ block: 'start', behavior: 'instant' })
+      );
+      await settleFiniteAnimations(surface);
+      await expectSurfaceWithinViewport(page, surface);
+      for (const field of [interval, labels, query, user])
+        await expect(field).toBeInViewport({ ratio: 1 });
+      const accessibility = await runAxe(page, `[data-testid="${testId}"]`);
+      expect(accessibility.violations.map(describeViolation)).toEqual([]);
+      const name = `gmail-defaults-${testId}-${viewport.name}-${colorScheme}`;
+      await testInfo.attach(`${name}-axe.json`, {
+        body: Buffer.from(JSON.stringify(accessibility, null, 2)),
+        contentType: 'application/json',
+      });
+      await testInfo.attach(`${name}-aria.txt`, {
+        body: Buffer.from(await surface.ariaSnapshot()),
+        contentType: 'text/plain',
+      });
+      await testInfo.attach(`${name}.png`, {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.emulateMedia({ colorScheme: 'light' });
 }
 
 async function attachNotificationProof(

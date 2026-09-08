@@ -134,7 +134,7 @@ describe('offline Composio browser upstream', () => {
       limit: 100,
       signal: signal(),
     });
-    expect(definitions.definitions).toHaveLength(3);
+    expect(definitions.definitions).toHaveLength(4);
     expect(definitions.definitions[1]).toMatchObject({
       deliveryMode: 'unknown',
       expectedCadenceSeconds: null,
@@ -159,6 +159,27 @@ describe('offline Composio browser upstream', () => {
       status: 'found',
       trigger: { externalAccountRef: first.externalAccountRef, enabled: true },
     });
+    const defaultsScope = {
+      ...scope,
+      definition: definitions.definitions.find(
+        (item) => item.eventType === 'GMAIL_NEW_GMAIL_MESSAGE'
+      )!,
+      filter: { interval: 1.5, labelIds: 'INBOX', query: '', userId: 'me' },
+    };
+    expect(defaultsScope.definition).toMatchObject({
+      deliveryMode: 'polling',
+      expectedCadenceSeconds: null,
+    });
+    expect(
+      await events.createTrigger({ ...defaultsScope, authorizeDispatch: async () => true })
+    ).toMatchObject({ status: 'ready' });
+    expect(await events.reconcileTrigger(defaultsScope)).toMatchObject({ status: 'found' });
+    expect(
+      await events.reconcileTrigger({
+        ...defaultsScope,
+        filter: { interval: 1.5, labelIds: 'INBOX', userId: 'me' },
+      })
+    ).toEqual({ status: 'absent' });
     const emit = {
       accountOrdinal: 1,
       eventType: 'GMAIL_NEW_MESSAGE',

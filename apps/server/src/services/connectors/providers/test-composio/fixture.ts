@@ -23,14 +23,23 @@ const accountInput = z
       .strict(),
   })
   .strict();
+const legacyTriggerConfig = z
+  .record(z.string().min(1).max(200), z.string().max(200))
+  .refine((filter) => Object.keys(filter).length <= 20);
+const gmailTriggerConfig = z
+  .object({
+    interval: z.number().finite(),
+    labelIds: z.string().max(200),
+    query: z.string().max(200),
+    userId: z.string().max(200),
+  })
+  .strict();
 const triggerInput = z
   .object({
     connected_account_id: z.string(),
     user_id: z.literal(COMPOSIO_FIXTURE_USER),
     toolkit_versions: z.object({ gmail: z.literal(COMPOSIO_FIXTURE_VERSION) }).strict(),
-    trigger_config: z
-      .record(z.string().min(1).max(200), z.string().max(200))
-      .refine((filter) => Object.keys(filter).length <= 20),
+    trigger_config: z.union([legacyTriggerConfig, gmailTriggerConfig]),
   })
   .strict();
 const emitInput = z
@@ -58,7 +67,7 @@ type Trigger = {
   user_id: string;
   trigger_name: string;
   version: string;
-  trigger_config: Record<string, string>;
+  trigger_config: Record<string, string | number>;
   disabled_at: string | null;
 };
 
@@ -244,8 +253,11 @@ export async function startTestComposioFixture(options: {
       !account ||
       account.status !== 'ACTIVE' ||
       !COMPOSIO_FIXTURE_EVENTS.some((item) => item === req.params.slug) ||
-      (req.params.slug !== 'GMAIL_UNSUPPORTED_FILTER' &&
-        Object.keys(input.data.trigger_config).some((key) => key !== 'label'))
+      (req.params.slug === 'GMAIL_NEW_GMAIL_MESSAGE'
+        ? !gmailTriggerConfig.safeParse(input.data.trigger_config).success
+        : !legacyTriggerConfig.safeParse(input.data.trigger_config).success ||
+          (req.params.slug !== 'GMAIL_UNSUPPORTED_FILTER' &&
+            Object.keys(input.data.trigger_config).some((key) => key !== 'label')))
     )
       return void res.sendStatus(400);
     if (mode === 'unavailable') return void res.sendStatus(503);

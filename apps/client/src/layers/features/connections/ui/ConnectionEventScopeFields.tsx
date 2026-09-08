@@ -19,7 +19,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/layers/shared/ui';
-import { buildEventFilter, readEventFilterFields } from '../lib/event-filter-fields';
+import {
+  buildEventFilter,
+  initialEventFilterValues,
+  readEventFilterFields,
+} from '../lib/event-filter-fields';
 
 type ConnectionEventDefinition = ConnectionEventDefinitionPage['definitions'][number];
 type DestinationKind = ConnectorEventDestination['kind'];
@@ -144,15 +148,12 @@ export function ConnectionEventScopeFields({
     });
   };
   const selectDefinition = (definitionId: string) => {
+    if (definitionId === draft.definitionId) return;
     const definition = definitions.find((item) => item.id === definitionId);
     const nextFields = definition ? readEventFilterFields(definition.filterSchema) : [];
     update({
       definitionId,
-      filterValues: Object.fromEntries(
-        (nextFields ?? [])
-          .filter((field) => field.type === 'boolean' && field.required)
-          .map((field) => [field.name, false])
-      ),
+      filterValues: initialEventFilterValues(nextFields ?? []),
     });
   };
   const eventId = `${idPrefix}-event`;
@@ -327,12 +328,14 @@ export function ConnectionEventScopeFields({
       )}
       {fields?.map((field) => {
         const filterId = `${idPrefix}-filter-${field.name}`;
+        const examplesId = field.examples?.length ? `${filterId}-examples` : undefined;
         return (
           <div key={field.name} className="space-y-1">
             {field.type === 'boolean' ? (
               <div className="flex min-h-11 items-center gap-2">
                 <Checkbox
                   id={filterId}
+                  aria-describedby={examplesId}
                   checked={draft.filterValues[field.name] === true}
                   onCheckedChange={(checked) =>
                     update({
@@ -351,20 +354,29 @@ export function ConnectionEventScopeFields({
                 <Select
                   value={
                     typeof draft.filterValues[field.name] === 'string'
-                      ? String(draft.filterValues[field.name])
+                      ? String(field.options.indexOf(String(draft.filterValues[field.name])))
                       : ''
                   }
                   onValueChange={(value) =>
-                    update({ filterValues: { ...draft.filterValues, [field.name]: value } })
+                    update({
+                      filterValues: {
+                        ...draft.filterValues,
+                        [field.name]: field.options![Number(value)]!,
+                      },
+                    })
                   }
                 >
-                  <SelectTrigger id={filterId} aria-label={field.label}>
+                  <SelectTrigger
+                    id={filterId}
+                    aria-label={field.label}
+                    aria-describedby={examplesId}
+                  >
                     <SelectValue placeholder={`Choose ${field.label.toLowerCase()}`} />
                   </SelectTrigger>
                   <SelectContent>
-                    {field.options.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
+                    {field.options.map((option, index) => (
+                      <SelectItem key={option} value={String(index)}>
+                        {option === '' ? 'Leave blank' : option}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -376,8 +388,11 @@ export function ConnectionEventScopeFields({
                 <Input
                   id={filterId}
                   type={field.type === 'string' ? 'text' : 'number'}
-                  required={field.required}
-                  step={field.type === 'integer' ? 1 : undefined}
+                  aria-describedby={examplesId}
+                  required={
+                    (field.required || field.defaultValue !== undefined) && field.type !== 'string'
+                  }
+                  step={field.type === 'integer' ? 1 : 'any'}
                   value={
                     typeof draft.filterValues[field.name] === 'string'
                       ? String(draft.filterValues[field.name])
@@ -393,6 +408,12 @@ export function ConnectionEventScopeFields({
                   }
                 />
               </>
+            )}
+            {examplesId && (
+              <p id={examplesId} className="text-muted-foreground text-xs break-words">
+                Examples (not selected):{' '}
+                {field.examples!.map((value) => JSON.stringify(value)).join(', ')}
+              </p>
             )}
           </div>
         );

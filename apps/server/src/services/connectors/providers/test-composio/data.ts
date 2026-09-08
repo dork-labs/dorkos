@@ -11,26 +11,58 @@ export const COMPOSIO_FIXTURE_EVENTS = [
   'GMAIL_NEW_MESSAGE',
   'GMAIL_UNKNOWN_TIMING',
   'GMAIL_UNSUPPORTED_FILTER',
+  'GMAIL_NEW_GMAIL_MESSAGE',
 ] as const;
+
+function fixtureFilterSchema(index: number) {
+  if (index === 3) {
+    // Observed Gmail shape only; values are synthetic, not captured defaults
+    // or a promise about actual polling cadence.
+    return {
+      type: 'object',
+      properties: {
+        interval: { type: 'number', title: 'Interval', default: 1.5 },
+        labelIds: {
+          type: 'string',
+          title: 'Labels',
+          default: 'INBOX',
+          examples: ['SENT', 'STARRED', 'DRAFT'],
+        },
+        query: {
+          type: 'string',
+          title: 'Query',
+          default: '',
+          examples: ['is:unread', 'has:attachment', 'from:sender@example.test'],
+        },
+        userId: {
+          type: 'string',
+          title: 'User',
+          default: 'me',
+          examples: ['reader@example.test'],
+        },
+      },
+    };
+  }
+  if (index === 2) return { type: 'object', patternProperties: { '.*': { type: 'string' } } };
+  return { type: 'object', properties: { label: { type: 'string' } }, additionalProperties: false };
+}
 
 /** Vendor DTOs consumed by the installed SDK, including intentionally unknown timing. */
 export function fixtureDefinitions() {
   return COMPOSIO_FIXTURE_EVENTS.map((slug, index) => ({
     slug,
-    name: ['New message', 'Message with unknown timing', 'Message with unsupported filter'][index],
+    name: [
+      'New message',
+      'Message with unknown timing',
+      'Message with unsupported filter',
+      'New Gmail message',
+    ][index],
     description: 'An offline test email',
     toolkit: { slug: 'gmail', name: 'Gmail', logo: '' },
     version: COMPOSIO_FIXTURE_VERSION,
-    config:
-      index === 2
-        ? { type: 'object', patternProperties: { '.*': { type: 'string' } } }
-        : {
-            type: 'object',
-            properties: { label: { type: 'string' } },
-            additionalProperties: false,
-          },
+    config: fixtureFilterSchema(index),
     payload: { type: 'object', properties: { subject: { type: 'string' } } },
-    ...(index !== 1 && { type: 'webhook' }),
+    ...(index !== 1 && { type: index === 3 ? 'poll' : 'webhook' }),
   }));
 }
 
