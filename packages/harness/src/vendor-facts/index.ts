@@ -76,6 +76,7 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
       walk: 'ascend-to-repo-root',
       identity: 'dir',
       nameMustMatchDir: false,
+      nameRequired: false,
       onInvalidName: 'unknown',
       dedupe: 'by-realpath',
       symlinks: 'followed',
@@ -104,6 +105,7 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
       walk: 'ascend-to-repo-root',
       identity: 'frontmatter',
       nameMustMatchDir: false,
+      nameRequired: 'unknown',
       onInvalidName: 'unknown',
       dedupe: 'none',
       symlinks: 'followed',
@@ -153,6 +155,7 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
       // (so no leading, trailing or doubled `-`), transcribed from the docs rule.
       nameRegex: /^(?=.{1,64}$)[a-z0-9]+(?:-[a-z0-9]+)*$/,
       nameMustMatchDir: true,
+      nameRequired: 'unknown',
       onInvalidName: 'unknown',
       dedupe: 'unknown',
       symlinks: 'unknown',
@@ -181,6 +184,7 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
       // "lowercase/digits/hyphens", transcribed from the docs rule.
       nameRegex: /^[a-z0-9-]+$/,
       nameMustMatchDir: true,
+      nameRequired: 'unknown',
       onInvalidName: 'unknown',
       dedupe: 'unknown',
       symlinks: 'unknown',
@@ -207,6 +211,7 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
       walk: 'fixed',
       identity: 'unknown',
       nameMustMatchDir: 'unknown',
+      nameRequired: 'unknown',
       onInvalidName: 'unknown',
       dedupe: 'unknown',
       symlinks: 'unknown',
@@ -237,6 +242,8 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
       // phrasing is prose rather than a pattern, and digits are assumed allowed.
       nameRegex: /^[a-z0-9-]+$/,
       nameMustMatchDir: 'unknown',
+      // "`name` required" is the vendor's own word for it, quoted in `source` below.
+      nameRequired: true,
       onInvalidName: 'unknown',
       dedupe: 'unknown',
       symlinks: 'unknown',

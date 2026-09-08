@@ -42,7 +42,7 @@ import type {
 import { CLAUDE_SKILLS_DIR } from './installed-projector.js';
 import { AGENTS_SKILLS_DIR } from '../scan/scanner.js';
 import { skillsFactsFor, VENDOR_FACTS_FETCHED_AT } from '../vendor-facts/index.js';
-import { evaluateSkillRules } from '../vendor-facts/skill-rules.js';
+import { evaluateSkillRules, summariseSkillRules } from '../vendor-facts/skill-rules.js';
 
 /**
  * The day every vendor page behind the tables in this module was read.
@@ -318,7 +318,7 @@ function planClaudeSkillsDirSkill(input: {
   if (outcome.droppedByRule) {
     return action(
       'drop',
-      `${label} reads ${CLAUDE_SKILLS_DIR}, but documents that it skips a skill whose name breaks its own rule ${cited} — rename it to travel`
+      `kept in ${CLAUDE_SKILLS_DIR}, which ${label} reads — but ${outcome.droppedReason ?? 'it refuses this one'} ${cited}; rename it to travel`
     );
   }
   return {
@@ -329,7 +329,7 @@ function planClaudeSkillsDirSkill(input: {
         harness,
         name: skill.name,
         source: skill.source,
-        reason: `kept in ${CLAUDE_SKILLS_DIR}, which ${label} reads — but whether it loads this one is undocumented: ${outcome.reasons.join('; ')}`,
+        reason: `kept in ${CLAUDE_SKILLS_DIR}, which ${label} reads — but whether it loads this one is undocumented: ${summariseSkillRules(outcome)}`,
       },
     ],
   };

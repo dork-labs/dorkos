@@ -141,9 +141,9 @@ describe('vendor-facts table', () => {
   });
 
   it('censuses every behaviour cell, so a value the coverage walk has no fixture for cannot appear unnoticed', () => {
-    // `harnessCoverage()` branches on seven cells. Six of them are enumerable
-    // and are censused here; the seventh, `nameRegex`, is a pattern rather than
-    // a value and is pinned by the name-rule test at the bottom of this file
+    // The rule ladder and the walk branch on eight cells. Seven of them are
+    // enumerable and are censused here; the eighth, `nameRegex`, is a pattern
+    // rather than a value and is pinned by the name-rule test at the bottom
     // (which harnesses state one, and that each stated one rejects `pkg__name`).
     // This census is the contract between the table and the walk's fixtures:
     // change a cell and this reds, which is the prompt to bring a fixture with
@@ -158,6 +158,7 @@ describe('vendor-facts table', () => {
         f.walk,
         f.identity,
         String(f.nameMustMatchDir),
+        String(f.nameRequired),
         f.onInvalidName,
         f.dedupe,
         f.symlinks,
@@ -165,14 +166,18 @@ describe('vendor-facts table', () => {
     });
 
     expect(census).toEqual([
-      'claude-code ascend-to-repo-root dir false unknown by-realpath followed',
-      'codex ascend-to-repo-root frontmatter false unknown none followed',
-      'cursor descend-recursive dir true unknown unknown unknown',
-      'gemini fixed unknown unknown unknown unknown unknown',
-      'copilot fixed unknown unknown unknown unknown unknown',
-      'opencode ascend-to-worktree frontmatter true unknown unknown unknown',
+      'claude-code ascend-to-repo-root dir false false unknown by-realpath followed',
+      'codex ascend-to-repo-root frontmatter false unknown unknown none followed',
+      'cursor descend-recursive dir true unknown unknown unknown unknown',
+      'gemini fixed unknown unknown unknown unknown unknown unknown',
+      'copilot fixed unknown unknown true unknown unknown unknown',
+      'opencode ascend-to-worktree frontmatter true unknown unknown unknown unknown',
     ]);
 
+    // Copilot is the only harness whose page states the key is required, and it
+    // is the reason the cell exists: a `SKILL.md` with no name was "loads" there,
+    // for both the plan and the walk, until the ladder learned to ask.
+    expect(HARNESS_IDS.filter((h) => skillsFactsFor(h).nameRequired === true)).toEqual(['copilot']);
     expect(HARNESS_IDS.map((h) => skillsFactsFor(h).dedupe)).not.toContain('by-name');
     expect(HARNESS_IDS.map((h) => skillsFactsFor(h).onInvalidName)).not.toContain('skip');
     expect(HARNESS_IDS.map((h) => skillsFactsFor(h).onInvalidName)).not.toContain('warn-and-load');

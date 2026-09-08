@@ -114,6 +114,16 @@ export interface CoverageResult {
   discovered: DiscoveredSkill[];
   /** Everything whose outcome depends on a cell the vendor never documented. */
   uncertain: Uncertain[];
+  /**
+   * Everything a DOCUMENTED rule says the harness refuses — today, a name that
+   * breaks a stated rule on a harness whose `onInvalidName` is `'skip'`.
+   *
+   * Neither discovered nor uncertain, and it needs its own list because "absent
+   * from both" is indistinguishable from "the walk never reached it". No vendor
+   * row is `'skip'` yet, so this is always empty; the day one is, the walk says
+   * why, and so does the plan, from the same reason string.
+   */
+  skipped: Uncertain[];
 }
 
 /** Options for {@link harnessCoverage}. */
@@ -316,6 +326,8 @@ interface Candidate {
   reasons: string[];
   /** Whether the documented rules are enough to say it loads. Never true when `reasons` is non-empty. */
   loads: boolean;
+  /** Set when a DOCUMENTED rule says the harness refuses it; becomes a `skipped` entry. */
+  droppedReason?: string;
 }
 
 /**
@@ -355,6 +367,10 @@ function evaluate(
     found: { key: outcome.key, dir, skillMd, via },
     reasons: outcome.reasons,
     loads: outcome.loads,
+    // Carried, not discarded: a documented refusal is an answer, and dropping it
+    // here would leave the walk silent about a skill it decided against while the
+    // plan named the rule (DOR-1845 review).
+    ...(outcome.droppedReason === undefined ? {} : { droppedReason: outcome.droppedReason }),
   };
 }
 
@@ -439,9 +455,10 @@ function applyDedupe(
  * Walks `root` the way {@link ./index.js#HARNESS_VENDOR_FACTS} says `harness`
  * walks it, treating every directory that directly contains a `SKILL.md` as a
  * skill, and applying that harness's symlink, identity, name and dedupe rules.
- * Every skill lands in exactly one of the two returned lists: `discovered` when
- * the harness's own documentation is enough to claim it loads, `uncertain` when
- * the answer depends on a cell the vendor never wrote down.
+ * Every skill lands in exactly one of the returned lists: `discovered` when the
+ * harness's own documentation is enough to claim it loads, `uncertain` when the
+ * answer depends on a cell the vendor never wrote down, and `skipped` when a
+ * documented rule says the harness refuses it outright.
  *
  * @param harness - the harness to model.
  * @param root - absolute path of the tree to walk (a repo checkout, an agent workspace).
@@ -458,6 +475,7 @@ export function harnessCoverage(
   const cwd = resolve(opts?.cwd ?? absRoot);
 
   const uncertain: Uncertain[] = [];
+  const skipped: Uncertain[] = [];
   const candidates: DiscoveredSkill[] = [];
 
   for (const { abs, via } of readDirs(facts, absRoot, cwd)) {
@@ -478,7 +496,7 @@ export function harnessCoverage(
       if (!statOrUndefined(skillMd)?.isFile()) continue;
       const reachedThroughSymlink = lstatOrUndefined(dir)?.isSymbolicLink() === true;
 
-      const { found, reasons, loads } = evaluate(
+      const { found, reasons, loads, droppedReason } = evaluate(
         harness,
         facts,
         dir,
@@ -487,6 +505,7 @@ export function harnessCoverage(
         reachedThroughSymlink
       );
       for (const reason of reasons) uncertain.push({ path: dir, reason });
+      if (droppedReason !== undefined) skipped.push({ path: dir, reason: droppedReason });
       if (loads) candidates.push(found);
     }
   }
@@ -494,5 +513,6 @@ export function harnessCoverage(
   return {
     discovered: applyDedupe(harness, facts, absRoot, candidates, uncertain),
     uncertain,
+    skipped,
   };
 }

@@ -103,6 +103,17 @@ export interface SkillsFacts {
   nameRegex?: RegExp;
   /** Whether the vendor requires the frontmatter `name` to equal the directory name. */
   nameMustMatchDir: boolean | 'unknown';
+  /**
+   * Whether the vendor states that a `SKILL.md` must declare a `name` at all.
+   *
+   * Separate from {@link SkillsFacts.nameMustMatchDir}, which is about the two
+   * names AGREEING, and from {@link SkillsFacts.identity}, which is about what
+   * the harness keys on. A harness can key by directory and still require the
+   * frontmatter key — Copilot's page does exactly that — and a skill with no
+   * name then breaks a stated rule that no other cell notices. `'unknown'` where
+   * the page does not say; `false` where it says the key is optional.
+   */
+  nameRequired: boolean | 'unknown';
   /** What the vendor says happens to a skill whose name breaks the rule. */
   onInvalidName: OnInvalidName;
   /** How the vendor says it handles one skill reachable through two read paths. */
