@@ -6,10 +6,16 @@
  * scaffold is left untouched, a symlink target occupied by a *real* file or
  * directory surfaces as a `conflict` rather than being removed, and a generated
  * hook file the engine cannot prove it wrote is likewise a conflict, never a
- * rewrite and never a sweep (ownership lives in `generated-ownership.ts`). A DEAD
- * symlink is the one thing that is none of those: nothing is at the end of it, so
- * it is replaced rather than protected (`link-state.ts`), and a link left over by
- * a skill that moved is swept (`authored-orphans.ts`).
+ * rewrite and never a sweep (ownership lives in `generated-ownership.ts`).
+ *
+ * Symlinks AT a target are the shapes that need saying out loud, because the two
+ * kinds mean opposite things. A **live** link at a generate target is a conflict:
+ * reading and writing it both succeed, somewhere that is not this path
+ * (`generate-occupants.ts`, which refuses a directory there for the same reason).
+ * A **dead** link is nothing at all — so it is removed and replaced rather than
+ * protected (`link-state.ts`), and one left behind by a skill that moved is swept
+ * (`authored-orphans.ts`).
+ *
  * `checkPlan` reports drift without touching disk, and never throws for what it
  * finds there. Both read deterministic bytes for `scaffold`/`generate` actions
  * from the projector via {@link getActionContent}.
@@ -34,15 +40,16 @@ import { AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.
 import type { ClaudeHooksConfig } from '../generate/hooks.js';
 import { HAND_WRITTEN_HOOKS_REASON, readFileIfPresent } from './generated-ownership.js';
 import { findOrphanedAuthoredLinks, sweepAuthoredOrphans } from './authored-orphans.js';
-import { isDanglingSymlink, isSymlink, pathExists } from './link-state.js';
+import { isDanglingSymlink, isSymlink, listDir, pathExists } from './link-state.js';
 import {
   applyGeneratedHookFile,
-  findBlockedGeneratedHookTargets,
+  findBlockedGenerateTargets,
   findLeftAloneGeneratedHookFiles,
   generatedHookOutcome,
   isGeneratedHookTarget,
   sweepGeneratedOrphans,
 } from './generated-targets.js';
+import { blockingGenerateOccupant } from './generate-occupants.js';
 import {
   CLAUDE_COMMANDS_DIR,
   CLAUDE_SKILLS_DIR,
@@ -135,31 +142,42 @@ function applyScaffold(repoRoot: string, action: ProjectionAction): void {
 /**
  * (Re)write a generated target deterministically.
  *
- * Command wrappers are wholly the engine's — their marker is the ownership
- * predicate, and the caller has already checked it — so they are simply
- * rewritten. The per-harness hooks files are not the engine's by path, so they
- * go through {@link applyGeneratedHookFile} and its sidecar rules instead.
+ * Two gates, in order. The target's SHAPE decides whether a write may happen at
+ * this path at all — a directory or a live symlink is refused whoever owns it,
+ * because the bytes would not land here. Only then does ownership decide: command
+ * wrappers are wholly the engine's (their marker is the predicate, and the caller
+ * has already checked it), so they are simply rewritten, while the per-harness
+ * hooks files are not the engine's by path and go through
+ * {@link applyGeneratedHookFile} and its sidecar rules instead.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param action - the `generate` action to realize.
- * @returns `true` when the target now matches the plan; `false` when a file the
- *   engine does not own occupies it — a conflict, left untouched.
+ * @returns `undefined` when the target now matches the plan; the reason to report
+ *   when something the engine may not write over occupies it — a conflict, left
+ *   untouched.
  */
-function applyGenerate(repoRoot: string, action: ProjectionAction): boolean {
+function applyGenerate(repoRoot: string, action: ProjectionAction): string | undefined {
   if (!action.target) throw new Error(`generate action for "${action.name}" is missing target`);
-  const content = requireActionContent(action);
   const absTarget = join(repoRoot, action.target);
 
-  // A dead link is not an occupant to protect — nothing is there to own. Remove
-  // it, so the file lands at this path instead of wherever the link pointed.
+  // Shape first: a directory or a live link would send the write somewhere other
+  // than this path, so neither is ever written over, whoever owns what is there.
+  const shape = blockingGenerateOccupant(absTarget);
+  if (shape !== undefined) return shape;
+
+  // A dead link is the opposite case — nothing is there to own. Remove it, so
+  // the file lands at this path instead of wherever the link pointed.
   if (isDanglingSymlink(absTarget)) rmSync(absTarget, { force: true });
 
+  const content = requireActionContent(action);
   if (isGeneratedHookTarget(action.target)) {
-    return applyGeneratedHookFile(absTarget, action.target, content);
+    return applyGeneratedHookFile(absTarget, action.target, content)
+      ? undefined
+      : HAND_WRITTEN_HOOKS_REASON;
   }
   mkdirSync(dirname(absTarget), { recursive: true });
   writeFileSync(absTarget, content);
-  return true;
+  return undefined;
 }
 
 /**
@@ -210,9 +228,10 @@ export function sweepInstalledOrphans(repoRoot: string, plan: ProjectionPlan): s
 
   const swept: string[] = [];
   for (const dir of INSTALLED_SKILL_DIRS) {
+    // `listDir`, not `existsSync` + `readdirSync`: a skills path that is a file
+    // or unreadable has nothing to sweep, and must not abort the whole apply.
     const skillsDir = join(repoRoot, dir);
-    if (!existsSync(skillsDir)) continue;
-    for (const entry of readdirSync(skillsDir)) {
+    for (const entry of listDir(skillsDir)) {
       if (!entry.includes(INSTALLED_PROJECTION_MARKER)) continue; // looks like a managed projection…
       const abs = join(skillsDir, entry);
       if (!isSymlink(abs)) continue; // …but only ever sweep real symlinks, never a hand-authored dir/file
@@ -446,7 +465,7 @@ export function applyPlan(
         applyScaffold(repoRoot, action);
         applied.push(action);
         break;
-      case 'generate':
+      case 'generate': {
         // Hand-authored content at a wrapper target blocks that projection: an
         // authored Claude wrapper DIR (whole plugin) or an authored OpenCode
         // command FILE (that one file). The engine never co-opts authored content.
@@ -458,10 +477,12 @@ export function applyPlan(
           conflicts.push(action);
           break;
         }
-        if (applyGenerate(repoRoot, action)) applied.push(action);
-        // A hooks file the engine does not own — left intact, with the way out.
-        else conflicts.push({ ...action, reason: HAND_WRITTEN_HOOKS_REASON });
+        // Something DorkOS may not write over — left intact, with the way out.
+        const blockedReason = applyGenerate(repoRoot, action);
+        if (blockedReason === undefined) applied.push(action);
+        else conflicts.push({ ...action, reason: blockedReason });
         break;
+      }
       case 'merge':
         if (applyMerge(repoRoot, action)) applied.push(action);
         else conflicts.push(action); // corrupt user-owned target: aborted, left intact
@@ -504,13 +525,18 @@ function isDrifted(repoRoot: string, action: ProjectionAction): boolean {
     case 'generate': {
       if (!action.target) return true;
       const absTarget = join(repoRoot, action.target);
-      const content = requireActionContent(action);
-      // Never a direct read: absent, a directory, an unreadable file and a DEAD
-      // LINK all answer `undefined` here rather than throwing, and every one of
-      // them is drift — there is nothing to read, so no ownership question
-      // arises, and `--fix` clears the path and writes (AP-05).
+      // A shape DorkOS may not write over is BLOCKED, not stale: re-running
+      // fixes nothing, and saying "run --fix" about it would be a lie the person
+      // then watches fail. `checkPlan` reports it in `blocked` instead.
+      if (blockingGenerateOccupant(absTarget) !== undefined) return false;
+      // Never a direct read: absent, an unreadable file and a DEAD LINK all
+      // answer `undefined` here rather than throwing, and every one of them is
+      // drift — nothing is there to read, so no ownership question arises, and
+      // `--fix` clears the path and writes (AP-05). Asked BEFORE the content is
+      // demanded, so an action carrying none reports drift rather than throwing.
       const onDisk = readFileIfPresent(absTarget);
       if (onDisk === undefined) return true;
+      const content = requireActionContent(action);
       if (!isGeneratedHookTarget(action.target)) return onDisk !== content;
       // Drift is what `--fix` would CHANGE on disk — `adopt` counts, because
       // writing the missing sidecar is a change even though the file itself is
@@ -542,8 +568,9 @@ function isDrifted(repoRoot: string, action: ProjectionAction): boolean {
  * keeps their own `.codex/hooks.json` in a repo DorkOS projects no hooks to is
  * not carrying a fault.
  *
- * It never throws for what it finds on disk. A dead link at a target is an
- * answer — drift, or an orphan — not an exception: this is the command a person
+ * It never throws for what it finds on disk. A dead link, a directory where a
+ * file belongs, an unreadable `.claude/skills` — each is an answer (drift,
+ * blocked, or nothing at all), never an exception: this is the command a person
  * runs to be TOLD what is wrong with their tree.
  *
  * @param repoRoot - absolute path to the repository root.
@@ -553,7 +580,7 @@ function isDrifted(repoRoot: string, action: ProjectionAction): boolean {
  */
 export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
   const drifted = plan.actions.filter((action) => isDrifted(repoRoot, action));
-  const blocked = findBlockedGeneratedHookTargets(repoRoot, plan);
+  const blocked = findBlockedGenerateTargets(repoRoot, plan);
   const orphans = findOrphanedAuthoredLinks(repoRoot, plan);
   return {
     drifted,

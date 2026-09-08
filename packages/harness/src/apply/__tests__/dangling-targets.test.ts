@@ -16,6 +16,13 @@
  * Before DOR-1843 the generate case made `checkPlan` throw ENOENT (it `lstat`ed
  * the path and then read it), and the scaffold case read as "already present" so
  * the pointer was never repaired.
+ *
+ * The two shapes that are NOT a dead link live here too, because they are the
+ * cases the dead-link rule must not swallow: a **directory** and a **live
+ * symlink** at a generate target are `blocked`, never drift. Both were measured
+ * doing real damage — a directory made `--check` promise a `--fix` that then died
+ * with EISDIR mid-loop, and a live link had the sidecar migration rewrite a file
+ * OUTSIDE the repository.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import {
@@ -33,7 +40,7 @@ import { project } from '../../engine.js';
 import { applyPlan, checkPlan } from '../apply.js';
 import { getActionContent } from '../../plan/content-map.js';
 import { writeFileAt, writeJsonAt } from '../../__tests__/journeys/stage.js';
-import type { ProjectionPlan } from '../../plan/types.js';
+import type { ProjectionAction, ProjectionPlan } from '../../plan/types.js';
 
 /** The Codex hooks file the plan generates once an authored Stop hook exists. */
 const GENERATE_TARGET = '.codex/hooks.json';
@@ -153,5 +160,81 @@ describe('a dead link at a scaffold target', () => {
 
     expect(readFileSync(join(repo, SCAFFOLD_TARGET), 'utf8')).toBe('# my own pointer\n');
     expect(checkPlan(repo, plan).drifted.map((a) => a.target)).not.toContain(SCAFFOLD_TARGET);
+  });
+});
+
+describe('what the engine refuses to write over at a generate target', () => {
+  it('a directory is blocked, not drift — so --check never promises a --fix that dies', () => {
+    // Measured before this rule: `--check` printed "Run --fix to apply", and the
+    // `--fix` it recommended threw EISDIR partway through the action loop.
+    stageRepo();
+    writeFileAt(join(repo, GENERATE_TARGET, 'notes.md'), '# mine\n');
+    const plan = project(repo, { dorkHome });
+
+    const drift = checkPlan(repo, plan);
+
+    expect(drift.drifted.map((a) => a.target)).not.toContain(GENERATE_TARGET);
+    expect(drift.blocked.map((a) => a.target)).toContain(GENERATE_TARGET);
+    expect(drift.blocked.find((a) => a.target === GENERATE_TARGET)?.reason).toContain('directory');
+    expect(drift.clean).toBe(false);
+
+    const { applied, conflicts } = applyPlan(repo, plan);
+
+    expect(conflicts.map((a) => a.target)).toContain(GENERATE_TARGET);
+    expect(applied.map((a) => a.target)).not.toContain(GENERATE_TARGET);
+    expect(readFileSync(join(repo, GENERATE_TARGET, 'notes.md'), 'utf8')).toBe('# mine\n');
+  });
+
+  it('a LIVE link is blocked, so nothing is written through it', () => {
+    // The link points OUTSIDE the repository at a file holding the engine's own
+    // legacy bare event map — the one shape migration rule 2 is allowed to
+    // rewrite. It rewrote that outside file, at a path no ownership rule in this
+    // package has ever been asked about.
+    stageRepo();
+    const outside = mkdtempSync(join(tmpdir(), 'harness-outside-'));
+    const elsewhere = join(outside, 'their-hooks.json');
+    const theirBytes = `${JSON.stringify({ Stop: [{ hooks: [{ type: 'command', command: 'echo THEIRS' }] }] }, null, 2)}\n`;
+    writeFileAt(elsewhere, theirBytes);
+    mkdirSync(join(repo, '.codex'), { recursive: true });
+    symlinkSync(elsewhere, join(repo, GENERATE_TARGET));
+
+    try {
+      const plan = project(repo, { dorkHome });
+
+      const drift = checkPlan(repo, plan);
+      expect(drift.blocked.map((a) => a.target)).toContain(GENERATE_TARGET);
+      expect(drift.blocked.find((a) => a.target === GENERATE_TARGET)?.reason).toContain('symlink');
+      expect(drift.drifted.map((a) => a.target)).not.toContain(GENERATE_TARGET);
+
+      const { conflicts } = applyPlan(repo, plan, { sweepOrphans: true });
+
+      expect(conflicts.map((a) => a.target)).toContain(GENERATE_TARGET);
+      // The link is still a link, and the file it points at still holds their bytes.
+      expect(lstatSync(join(repo, GENERATE_TARGET)).isSymbolicLink()).toBe(true);
+      expect(readFileSync(elsewhere, 'utf8')).toBe(theirBytes);
+      // And no sidecar was minted for a file the engine never wrote.
+      expect(existsSync(`${join(repo, GENERATE_TARGET)}.dorkos-generated`)).toBe(false);
+      expect(existsSync(`${elsewhere}.dorkos-generated`)).toBe(false);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('reports drift for a content-less action at an absent target rather than throwing', () => {
+    // A `generate` action the projector never attached bytes to is a projector
+    // bug, and `requireActionContent` says so loudly — but `--check` must reach
+    // its report to say anything at all, so absence is settled first.
+    stageRepo();
+    const action: ProjectionAction = {
+      kind: 'generate',
+      artifact: 'hook',
+      harness: 'codex',
+      provenance: 'authored',
+      name: 'contentless',
+      target: '.codex/never-written.json',
+    };
+    const plan: ProjectionPlan = { actions: [action], drops: [], warnings: [] };
+
+    expect(checkPlan(repo, plan).drifted).toEqual([action]);
   });
 });

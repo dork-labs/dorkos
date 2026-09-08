@@ -39,6 +39,7 @@ import {
   arbRepo,
   isAdoptableLegacy,
   occupantContent,
+  PERSON_LINK_PATH,
   RUNS,
   SIDECAR_SUFFIX,
   TARGET_HARNESS,
@@ -99,7 +100,7 @@ describe('P4 — the sweep removes only what an earlier apply wrote', () => {
   it('never sweeps a path it did not write, a disabled harness, or a file without its sidecar', () => {
     fc.assert(
       fc.property(arbRepo(), fc.boolean(), (spec, dropPlugins) => {
-        withRepo(spec, ({ repoRoot, dorkHome, dangling }) => {
+        withRepo(spec, ({ repoRoot, dorkHome }) => {
           const before = snapshotTree(repoRoot);
           const firstPlan = project(repoRoot, { dorkHome });
           applyPlan(repoRoot, firstPlan, { sweepOrphans: true });
@@ -116,11 +117,11 @@ describe('P4 — the sweep removes only what an earlier apply wrote', () => {
             ledger.add(`${spec.occupant.target}${SIDECAR_SUFFIX}`);
           }
           if (spec.widowedSidecar) ledger.add(`${COPILOT_HOOKS_TARGET}${SIDECAR_SUFFIX}`);
-          // A dead link under `.claude/skills` pointing into `.agents/skills` is
-          // the engine's by evidence, not by having written it in this run: it is
-          // the exact residue a removed authored skill leaves, nothing a person
-          // wrote is behind it, and pruning it is what SK-10 asks for.
-          if (dangling?.kind === 'skill') ledger.add(dangling.path);
+          // Deliberately NO exception for the generated dead `.claude/skills`
+          // link: the FIRST apply sweeps it, so it can never appear in the second
+          // apply's `swept` and an entry for it would be a licence nothing uses.
+          // The person's own dead link gets no exception either — that is the
+          // point of staging it.
 
           // Remove sources, so the second pass has orphans to sweep.
           if (dropPlugins) {
@@ -178,6 +179,15 @@ describe('P4 — the sweep removes only what an earlier apply wrote', () => {
               present: true,
             });
             expect(readText(abs)).toBe(occupantContent(spec.occupant.target, spec.occupant.shape));
+          }
+
+          // Their own dead link is dead, is a symlink, and sits in a projection
+          // dir — and points somewhere DorkOS has no claim over, so it stays.
+          if (spec.personLink) {
+            expect({
+              path: PERSON_LINK_PATH,
+              present: existsOnDisk(join(repoRoot, PERSON_LINK_PATH)),
+            }).toEqual({ path: PERSON_LINK_PATH, present: true });
           }
         });
       }),

@@ -9,7 +9,10 @@
  * that called the tree clean.
  *
  * One scanner answers both questions — `--check` names these, `--fix` removes
- * them — so the report and the sweep can never disagree about what an orphan is.
+ * them — so the report and the sweep can never disagree about what an orphan IS.
+ * WHEN each runs is the CLI's business and not the same: the sweep runs only for
+ * a full plan, so `dorkos harness sync --check --harness <id>` withholds this
+ * list rather than naming links the matching `--fix` would not remove.
  *
  * The predicate is narrow on purpose. An entry qualifies only when ALL of it
  * holds:
@@ -27,12 +30,12 @@
  *
  * @module apply/authored-orphans
  */
-import { existsSync, readdirSync, readlinkSync, rmSync } from 'node:fs';
+import { readlinkSync, rmSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { ProjectionPlan } from '../plan/types.js';
 import { AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
 import { CLAUDE_SKILLS_DIR } from '../plan/installed-projector.js';
-import { isDanglingSymlink, isSymlink } from './link-state.js';
+import { isDanglingSymlink, isSymlink, listDir } from './link-state.js';
 
 /**
  * Find the authored skill links that point at nothing.
@@ -46,11 +49,13 @@ export function findOrphanedAuthoredLinks(repoRoot: string, plan: ProjectionPlan
     plan.actions.filter((a) => a.kind === 'symlink' && a.target).map((a) => a.target as string)
   );
 
+  // Nothing to scan means no orphans, never a crash: `.claude/skills` may be
+  // absent, a FILE, or unreadable, and `checkPlan` reads it before it can say
+  // anything at all (see `listDir`).
   const skillsDir = join(repoRoot, CLAUDE_SKILLS_DIR);
-  if (!existsSync(skillsDir)) return [];
 
   const orphans: string[] = [];
-  for (const entry of readdirSync(skillsDir)) {
+  for (const entry of listDir(skillsDir)) {
     if (entry.includes(INSTALLED_PROJECTION_MARKER)) continue; // the installed sweep's
     const rel = `${CLAUDE_SKILLS_DIR}/${entry}`;
     if (planned.has(rel)) continue; // still projected — apply repairs it

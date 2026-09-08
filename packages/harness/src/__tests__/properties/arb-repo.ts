@@ -5,9 +5,11 @@
  * authored hooks, a random enabled-harness subset — and then stages **hostile
  * occupants** on top of it: a file somebody wrote by hand at a generated hook
  * target, a real directory at a skill link target, a widowed ownership sidecar,
- * and a **dead symlink** at one of the three kinds of target the engine writes
- * (a `generate` target, a `scaffold` target, a `symlink` target). Each generated
- * repo is materialised into a real temp dir; nothing here is mocked.
+ * a **dead symlink** at one of the three kinds of target the engine writes (a
+ * `generate` target, a `scaffold` target, a `symlink` target), and a **person's
+ * own dead link** under `.claude/skills` pointing at a vendored checkout that
+ * moved — the shape the orphan sweep must never take, however dead it is. Each
+ * generated repo is materialised into a real temp dir; nothing here is mocked.
  *
  * It lives in its own module because more than one property file reads it:
  * `apply-ownership.property.test.ts` (P3, P4) and
@@ -104,6 +106,13 @@ export interface RepoSpec {
   dirOccupant: boolean;
   /** A dead symlink staged at one kind of engine target, or none. */
   dangling: DanglingKind | null;
+  /**
+   * A dead link somebody made themselves under `.claude/skills`, pointing OUT of
+   * `.agents/skills` at a vendored checkout that has moved. It is dead, it is a
+   * symlink, and it sits in a projection dir — every clause of the orphan
+   * predicate but the one that matters. It must survive every sweep.
+   */
+  personLink: boolean;
 }
 
 /** What {@link materialise} actually staged for {@link RepoSpec.dangling}. */
@@ -113,6 +122,12 @@ export interface StagedDangling {
   /** Its repo-relative path. */
   path: string;
 }
+
+/** Where a person's own dead link is staged, and what it points at. */
+export const PERSON_LINK_PATH = '.claude/skills/vendored';
+
+/** Its link text: out of `.agents/skills` entirely, at a checkout that moved. */
+const PERSON_LINK_TEXT = '../../vendor/skills/vendored';
 
 /** A small name alphabet, so collisions between authored and plugin skills happen. */
 const SKILL_NAMES = ['a', 'b', 'c', 'd'] as const;
@@ -148,6 +163,7 @@ export function arbRepo(): fc.Arbitrary<RepoSpec> {
     dangling: fc.option(fc.constantFrom<DanglingKind>('generate', 'scaffold', 'skill'), {
       nil: null,
     }),
+    personLink: fc.boolean(),
   });
 }
 
@@ -274,6 +290,12 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
       join(repoRoot, '.claude', 'skills', spec.skills[0], 'precious.md'),
       '# do not delete\n'
     );
+  }
+
+  if (spec.personLink) {
+    const abs = join(repoRoot, PERSON_LINK_PATH);
+    mkdirSync(dirname(abs), { recursive: true });
+    symlinkSync(PERSON_LINK_TEXT, abs);
   }
 
   // The dead link goes on last, and only where nothing else is: two hostile
