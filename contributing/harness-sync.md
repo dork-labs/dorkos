@@ -16,6 +16,8 @@ Two pieces of static data make that possible:
 1. **Hook-event maps** — each tool names the same lifecycle event differently (`PreToolUse` vs `BeforeTool` vs `preToolUse`). We translate through a canonical camelCase vocabulary (`HookEvent`): `CANONICAL_TO_<TOOL>_EVENT_NAMES` projects out, the derived reverse map reads back in.
 2. **Path constants** — where each tool reads its skills / rules / hooks / commands (`claudecodePaths`, `codexcliPaths`, `copilotPaths`, `cursorPaths`, `geminiPaths`).
 
+The one hand-authored input is `.agents/harness.manifest.json` — see §11 for every key it has.
+
 ## 2. Where the data comes from
 
 | Tool           | Source              | File                      |
@@ -315,3 +317,29 @@ Claude Code watches its skill directories, so a skill linked into an existing `.
 ### Switching it off
 
 `harness.autoSync` gates the install trigger, the watcher, the sweep and the turn-end re-projection alike. Off means no watcher is opened at all and nothing projects unprompted; `dorkos harness sync` still works.
+
+## 11. The manifest, key by key
+
+`.agents/harness.manifest.json` is the engine's only hand-authored input. It is scaffolded when a repo has none and never rewritten afterwards (ADR-302, and see [ADR-0302's DOR-1851 amendment](../decisions/0302-instructions-scaffolded-not-generated.md) for the one exception, `--enable`). Three keys, and every one of them is read:
+
+| Key                | What it decides                                                                                                                               |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `harnesses`        | The enabled projection targets. Defaults to `["claude-code"]`. `dorkos harness sync --fix --enable <id>` is the only thing that ever adds one |
+| `claudeOnlySkills` | Skills deliberately kept out of `.agents/skills`, each with the path it really lives at and why. The manifest is the only evidence they exist |
+| `hookPolicies`     | One entry per harness: `{ tool, projection: 'native' \| 'generate' \| 'none', configPath?, status?, notes? }`                                 |
+
+Everything else the engine needs it derives — the scanner reconstructs the skills from `.agents/skills/*`, so the schema is `.strict()` and a stale, derivable `sharedSkills` array is rejected rather than silently accepted.
+
+**`hookPolicies`, and the rule it rests on.** A policy governs what the ENGINE writes, never what a vendor reads. Each harness has exactly one hooks mechanism: Claude Code reads `.claude/settings.json` itself (`native`), Codex, Cursor and Copilot get a file the engine writes (`generate`), OpenCode and Gemini have nowhere to write at all (`none`). So:
+
+- **No entry for a harness is the default**, and it is what every existing manifest gets: nothing changes.
+- **An entry naming that harness's own mechanism** changes nothing either.
+- **`none` or `native` on a `generate` harness** stops the file being written, and each contributing hook source becomes a drop naming the manifest. `native` additionally says what that harness really reads, cited from `vendor-facts` when there is a dated cell for it.
+- **`none` on Claude Code** stops the one thing the engine writes there — the installed-plugin merge into `.claude/settings.local.json` — and drops each package by name. The `native` line for `.claude/settings.json` stays, because Claude Code reads that file whatever a manifest says, and printing "hooks are not projected to Claude Code" over a file Claude Code is reading would be false.
+- **A policy asking for a mechanism the harness does not have** cannot be granted, so it earns a plan warning naming the key rather than a silent no-op.
+
+Honouring a `none` that used to be ignored turns a previously generated hooks file into an orphan: `--fix` sweeps it, and only it — the `.dorkos-generated` sidecar is the whole guard, so a file somebody hand-wrote at the same path is left alone (the ownership rules in `apply/generated-targets.ts`).
+
+**The four retired keys.** `skillWrappers`, `commandMappings`, `instructionProjections` and `skillBundles` are **accepted and ignored** (DOR-1858). Nothing ever read them, and the engine has its own source for everything they described: plugin command wrappers, `plan/command-formats.ts`, the scaffolded instruction pointers of ADR-302, and the scanner instead of a bundle list. They stay in the schema so an existing manifest still parses — `.strict()` would otherwise reject the file, and `--enable` validates with the same schema before it writes a byte.
+
+**There is no config migration**, and there is not meant to be: the manifest is a per-repo file the engine does not rewrite, not `~/.dork/config.json`. `dorkos harness sync` names each retired key it finds — one line, `--check` and `--fix` alike — and that line IS the migration notice. It sits beside the other thing the report says about the manifest rather than about a projection: a `hookPolicies` entry naming a harness the manifest does not enable, or a `tool` that is not a harness at all. Both are notices; neither ever changes an exit code (`manifest/notices.ts`).

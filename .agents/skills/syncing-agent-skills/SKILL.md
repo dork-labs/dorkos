@@ -62,7 +62,8 @@ When the skill content can be identical in both systems:
 When a harness needs a different name, description, or small behavior adjustments:
 
 - Keep the shared skill in `.agents/skills/<skill-name>/` when a shared version exists
-- Declare the wrapper in `harness.manifest.json` (`skillWrappers`) and let the engine scaffold it
+- Write the wrapper as a real directory where that harness reads; the engine does not scaffold one
+  for you, and the manifest no longer records the intent to (`skillWrappers` was retired in DOR-1858)
 - Keep the wrapper thin; it adapts discovery and wording, not the whole workflow
 
 ### Claude-only skills
@@ -119,13 +120,16 @@ Use that document when defining canonical locations, deciding what can be projec
 
 ## Current Named Exception
 
-`reading-session-transcripts` is a planned exception (recorded in the manifest's `skillWrappers`):
+`reading-session-transcripts` is a planned exception. It was recorded in the manifest's
+`skillWrappers` until DOR-1858 retired that key — nothing ever read it, and the wrapper was never
+built, so the entry claimed a target that did not exist. The intent is written down here instead:
 
 - Claude Code skill stays as `reading-session-transcripts`
 - Codex version should be renamed to `reading-claude-code-transcripts`
 - Keep the existing Claude transcript paths such as `~/.claude/projects/...`
 
-Because the Codex version changes identity, it uses a real wrapper directory instead of a symlink.
+Because the Codex version changes identity, it needs a real wrapper directory rather than a symlink,
+and somebody has to write it: the engine projects skills, it does not rename them.
 
 ## Validation Checklist
 

@@ -61,7 +61,7 @@ Built-in agents also available: `Explore` (comprehensive codebase answers), `cla
 
 Skills load their description into every session (the retrieval index) and their body on demand. Shared, cross-harness skills live canonically in `.agents/skills/` and are symlinked into `.claude/skills/`; Claude-only skills live directly in `.claude/skills/`. `dorkos harness sync --check|--fix` (packages/harness) projects shared skills to other harnesses.
 
-**Two-tier commands & portable skills.** Some workflows exist as both a slash command and a portable skill (recorded in `.agents/harness.manifest.json` `commandMappings`): the command carries project-specific orchestration, the skill carries the portable methodology — e.g. `/debug:test` defers to `debugging-test-failures`. This duplication is intentional; keep the pairs consistent when editing either half.
+**Two-tier commands & portable skills.** Some workflows exist as both a slash command and a portable skill: the command carries project-specific orchestration, the skill carries the portable methodology — e.g. `/debug:test` defers to `debugging-test-failures`. The pairing used to be recorded in `.agents/harness.manifest.json` `commandMappings`, a key nothing read and DOR-1858 retired; the pairing itself is still intentional, so keep the two halves consistent when editing either one.
 
 | Skill                            | Expertise / When Applied                                                  |
 | -------------------------------- | ------------------------------------------------------------------------- |
