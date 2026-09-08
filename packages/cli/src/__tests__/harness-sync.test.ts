@@ -664,13 +664,17 @@ describe('runHarnessSync', () => {
 
     expect(check.exitCode).toBe(1);
     const checkOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    // Verbatim, including the one line that is NOT a deletion: the settings file
+    // survives and loses only the hook entries DorkOS merged into it, and a
+    // report that said "removed" over it without saying so would be the same
+    // sort of untruth this whole change is about.
     expect(checkOutput).toContain(
       [
         'Orphaned projections — what they came from is gone (9):',
         '  .agents/skills/acme__greet',
         '  .claude/commands/acme/.gitignore',
         '  .claude/commands/acme/hello.md',
-        '  .claude/settings.local.json',
+        '  .claude/settings.local.json — only the hook entries DorkOS added; your own settings stay',
         '  .claude/skills/acme__greet',
         '  .codex/hooks.json',
         '  .codex/hooks.json.dorkos-generated',
@@ -689,24 +693,31 @@ describe('runHarnessSync', () => {
 
     expect(fix.exitCode).toBe(0);
     const fixOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    // The same nine, under the sweep's own heading: the report a person reads
-    // after the command says what the report before it promised.
+    // The same nine, in the same order, under the sweep's own heading: the
+    // receipt a person reads after the command lines up with the promise the
+    // one before it made. `swept` itself comes back in sweep order; the report
+    // sorts it for display so the two lists can be compared line for line.
     expect(fixOutput).toContain(
       [
         'Swept 9 orphaned projection(s) — what they came from is gone:',
         '  .agents/skills/acme__greet',
+        '  .claude/commands/acme/.gitignore',
+        '  .claude/commands/acme/hello.md',
+        '  .claude/settings.local.json — only the hook entries DorkOS added; your own settings stay',
         '  .claude/skills/acme__greet',
         '  .codex/hooks.json',
         '  .codex/hooks.json.dorkos-generated',
-        '  .claude/commands/acme/.gitignore',
-        '  .claude/commands/acme/hello.md',
         '  .opencode/commands/.gitignore',
         '  .opencode/commands/acme-hello.md',
-        '  .claude/settings.local.json',
       ].join('\n')
     );
     expect(fs.existsSync(path.join(tmpDir, '.codex', 'hooks.json'))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, '.claude', 'commands', 'acme'))).toBe(false);
+    // The one line that promised survival kept its promise: the file is still
+    // there, and the managed hook groups are what left it.
+    const settings = path.join(tmpDir, '.claude', 'settings.local.json');
+    expect(fs.existsSync(settings)).toBe(true);
+    expect(fs.readFileSync(settings, 'utf8')).not.toContain('echo acme');
     // And the tree is clean afterwards, so the report cannot come straight back.
     expect((await runHarnessSync(syncArgs({ check: true, fix: false }))).exitCode).toBe(0);
   });

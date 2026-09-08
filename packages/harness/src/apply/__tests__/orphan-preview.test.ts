@@ -16,7 +16,15 @@
  * @module apply/__tests__/orphan-preview
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { project } from '../../engine.js';
@@ -35,11 +43,37 @@ import { ATOMIC_TMP_SUFFIX, STALE_TEMP_AGE_MS } from '../atomic-write.js';
 
 let repo = '';
 let dorkHome = '';
+/** Directories a case made unreadable; restored before the tree is removed. */
+const chmodded: string[] = [];
 afterEach(() => {
+  // A mode-000 directory defeats `rmSync -r` as thoroughly as it defeats the
+  // scan under test, so the mode goes back before the cleanup runs.
+  for (const abs of chmodded.splice(0)) {
+    try {
+      chmodSync(abs, 0o755);
+    } catch {
+      /* already gone */
+    }
+  }
   for (const d of [repo, dorkHome]) if (d) rmSync(d, { recursive: true, force: true });
   repo = '';
   dorkHome = '';
 });
+
+/**
+ * Whether this platform can stage an unreadable directory.
+ *
+ * Not Windows, where POSIX modes do not mean this, and not root, who reads
+ * everything regardless — in both cases the shape under test is not there and
+ * asserting about it would be asserting about nothing.
+ */
+const CAN_STAGE_UNREADABLE = process.platform !== 'win32' && process.getuid?.() !== 0;
+
+/** Make a directory unreadable for the rest of the test. */
+function makeUnreadable(abs: string): void {
+  chmodSync(abs, 0o000);
+  chmodded.push(abs);
+}
 
 /**
  * A repo enabling Claude Code, Codex and OpenCode with one authored skill and
@@ -322,5 +356,113 @@ describe('a plan narrowed to one harness', () => {
     expect(checkPlan(repo, full).orphans).toHaveLength(9);
     expect(checkPlan(repo, narrowed).orphans).toEqual([]);
     expect(checkPlan(repo, narrowed).clean).toBe(true);
+  });
+});
+
+describe('a command directory that cannot be listed', () => {
+  // Every one of these threw out of `checkPlan` when the command sweeps first
+  // gained find halves: `existsSync` says yes to a FILE and to a directory
+  // nobody may read, and the bare `readdirSync` behind it then raised ENOTDIR or
+  // EACCES — out of the middle of the one command a person runs to be TOLD what
+  // is wrong with their tree (`apply.ts`'s own invariant, and AP-05).
+  it('is nothing to list rather than an exception, when it is a file', () => {
+    const built = stageRepo();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+    // No sync first: a stray file at each path, and nothing projected.
+    mkdirSync(join(repo, '.claude'), { recursive: true });
+    writeFileSync(join(repo, '.claude', 'commands'), 'a note somebody left here\n');
+    mkdirSync(join(repo, '.opencode'), { recursive: true });
+    writeFileSync(join(repo, '.opencode', 'commands'), 'and another\n');
+
+    const plan = project(repo, { dorkHome });
+
+    expect(() => checkPlan(repo, plan)).not.toThrow();
+    expect(checkPlan(repo, plan).orphans).toEqual([]);
+  });
+
+  it.runIf(CAN_STAGE_UNREADABLE)('is nothing to list when nobody may read it', () => {
+    const built = stageRepo();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+    sync(repo, dorkHome);
+    makeUnreadable(join(repo, '.claude', 'commands'));
+    makeUnreadable(join(repo, '.opencode', 'commands'));
+
+    expect(() => checkPlan(repo, project(repo, { dorkHome }))).not.toThrow();
+  });
+
+  it.runIf(CAN_STAGE_UNREADABLE)('is nothing to list when one wrapper dir is unreadable', () => {
+    const built = stageRepo();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+    sync(repo, dorkHome);
+    // The dir itself lists fine; the per-package walk inside it is the one that
+    // cannot read, which is a second bare `readdirSync` and a second throw.
+    makeUnreadable(join(repo, '.claude', 'commands', 'acme'));
+
+    const drift = checkPlan(repo, project(repo, { dorkHome }));
+
+    // Nothing was read there, so nothing is claimed about it: the wrapper files
+    // are neither named as orphans nor mistaken for gone.
+    expect(drift.orphans.filter((p) => p.startsWith('.claude/commands/'))).toEqual([]);
+  });
+});
+
+describe('applyPlan refuses to sweep a plan narrowed to one harness', () => {
+  it('throws rather than deleting the other harnesses’ live projections', () => {
+    const built = stageRepo();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+    sync(repo, dorkHome);
+
+    const full = project(repo, { dorkHome });
+    const narrowed: ProjectionPlan = {
+      ...full,
+      narrowedTo: 'codex',
+      actions: full.actions.filter((a) => a.harness === 'codex'),
+    };
+
+    // Measured before the guard: this swept five LIVE paths, `.claude/skills/
+    // acme__greet` and both command dirs among them, on a repo with no orphan
+    // in it at all.
+    expect(() => applyPlan(repo, narrowed, { sweepOrphans: true })).toThrow(
+      /narrowed to one harness/
+    );
+    expect(existsSync(join(repo, '.claude', 'skills', 'acme__greet'))).toBe(true);
+    expect(existsSync(join(repo, '.opencode', 'commands', 'acme-hello.md'))).toBe(true);
+
+    // Without the sweep it is an ordinary narrowed apply, and applies.
+    expect(() => applyPlan(repo, narrowed)).not.toThrow();
+  });
+});
+
+describe('the orphan list is sorted and unique as it leaves the engine', () => {
+  it('needs no sorting by its reader', () => {
+    const built = stageRepo();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+    sync(repo, dorkHome);
+    rmSync(join(repo, '.agents', 'skills', 'alpha'), { recursive: true, force: true });
+    rmSync(join(repo, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
+
+    const orphans = checkPlan(repo, project(repo, { dorkHome })).orphans;
+
+    // Compared WITHOUT re-sorting: the six finders run in their own order and
+    // the union is what fixes it, so a reader — the CLI, the status endpoint —
+    // can print the list as it comes.
+    expect(orphans).toEqual([
+      '.agents/skills/acme__greet',
+      '.claude/commands/acme/.gitignore',
+      '.claude/commands/acme/hello.md',
+      '.claude/settings.local.json',
+      '.claude/skills/acme__greet',
+      '.claude/skills/alpha',
+      '.codex/hooks.json',
+      '.codex/hooks.json.dorkos-generated',
+      '.opencode/commands/.gitignore',
+      '.opencode/commands/acme-hello.md',
+    ]);
+    expect(new Set(orphans).size).toBe(orphans.length);
   });
 });

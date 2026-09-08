@@ -16,6 +16,7 @@
  * @module apply/link-state
  */
 import { lstatSync, readdirSync, statSync } from 'node:fs';
+import type { Dirent } from 'node:fs';
 
 /**
  * What occupies a path.
@@ -104,6 +105,28 @@ export function isDanglingSymlink(absPath: string): boolean {
 export function listDir(absDir: string): string[] {
   try {
     return readdirSync(absDir);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The same listing as {@link listDir}, with each entry's kind attached — for the
+ * scans that have to tell a directory from a file without a second `stat` per
+ * entry.
+ *
+ * The command directories need this one. They are scanned by `--check` as well
+ * as `--fix` now that every sweep has a `find*` half (DOR-1889), and a person
+ * with a stray FILE at `.opencode/commands`, or a `.claude/commands` they cannot
+ * read, was getting `ENOTDIR`/`EACCES` thrown out of the report instead of being
+ * told what is wrong with their tree.
+ *
+ * @param absDir - the absolute directory to list.
+ * @returns the entries, or an empty array when it cannot be listed.
+ */
+export function listDirEntries(absDir: string): Dirent[] {
+  try {
+    return readdirSync(absDir, { withFileTypes: true });
   } catch {
     return [];
   }

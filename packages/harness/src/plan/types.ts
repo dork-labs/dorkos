@@ -262,6 +262,11 @@ export interface DriftResult {
    * True when the plan is fully realized on disk: nothing drifted, nothing
    * blocked, and nothing a sweep would remove. `leftAlone` entries do not make a
    * tree unclean.
+   *
+   * For a plan narrowed to one harness ({@link ProjectionPlan.narrowedTo}) this
+   * says nothing about orphans: `orphans` is empty by rule there, so a `true`
+   * means "nothing drifted or blocked for THIS harness" and the tree may still
+   * hold plenty a full sync would remove.
    */
   clean: boolean;
 }

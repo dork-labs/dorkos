@@ -23,6 +23,7 @@ import {
   loadManifest,
   missingGitignoreLines,
   scaffoldManifest,
+  CLAUDE_SETTINGS_LOCAL_TARGET,
   CODEX_HOOKS_TARGET,
   GENERATED_HOOK_TARGET_HARNESSES,
   HARNESS_IDS,
@@ -378,6 +379,25 @@ function formatIgnoredCanonicalLayer(repoRoot: string): string[] {
 }
 
 /**
+ * One line of an orphan list, in either mode.
+ *
+ * Every path in that list is one a sync takes away, except one:
+ * `.claude/settings.local.json` is a file the person owns, and only the hook
+ * entries DorkOS merged into it are removed. Saying "removed" over that path
+ * with nothing else said would be the same kind of untruth this whole report
+ * exists to stop, so the exception is carried on the line it applies to rather
+ * than as a footnote somebody has to connect back up.
+ *
+ * @param path - the repo-relative orphan path.
+ * @returns the indented line to print.
+ */
+function orphanLine(path: string): string {
+  return path === CLAUDE_SETTINGS_LOCAL_TARGET
+    ? `  ${path} — only the hook entries DorkOS added; your own settings stay`
+    : `  ${path}`;
+}
+
+/**
  * Print the check-mode report and return its exit code.
  *
  * Non-zero for drift (a `--fix` would repair it), for an orphan (a `--fix` would
@@ -388,7 +408,10 @@ function formatIgnoredCanonicalLayer(repoRoot: string): string[] {
  * The orphan list is `checkPlan`'s, in full and unedited: since DOR-1889 it is
  * every path a `--fix` would delete, not just the dead skill links, so this
  * report names the nine files an uninstalled plugin leaves behind instead of
- * calling that tree clean.
+ * calling that tree clean. One of those paths is not a deletion —
+ * `.claude/settings.local.json` loses only the hook entries DorkOS merged into
+ * it — and {@link orphanLine} says so on that line rather than letting the
+ * heading speak for it.
  *
  * **Orphans are withheld under `--harness`, by the engine.** A narrowed plan
  * omits every other harness's live projections, so its orphan finders would read
@@ -440,7 +463,7 @@ function reportCheck(
   if (orphans.length > 0) {
     if (drift.drifted.length > 0) console.log('');
     console.log(`Orphaned projections — what they came from is gone (${orphans.length}):`);
-    for (const path of orphans) console.log(`  ${path}`);
+    for (const path of orphans) console.log(orphanLine(path));
   }
   if (drift.drifted.length > 0 || orphans.length > 0) {
     console.log('');
@@ -509,7 +532,10 @@ function reportFix(
   if (swept.length > 0) {
     console.log('');
     console.log(`Swept ${swept.length} orphaned projection(s) — what they came from is gone:`);
-    for (const path of swept) console.log(`  ${path}`);
+    // Sorted for DISPLAY only, so the receipt lines up with the promise the
+    // `--check` before it printed. `swept` itself stays in sweep order — that is
+    // the order things happened in, and it is the engine's to decide.
+    for (const path of [...swept].sort()) console.log(orphanLine(path));
   }
 
   // Reported, never counted: a file DorkOS was not going to write anyway is not

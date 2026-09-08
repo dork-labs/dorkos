@@ -79,9 +79,10 @@
  *   duplicated: the link resolves to the package's own copy, and the orphan
  *   sweep already scans that directory — though this pass does not sweep at all,
  *   see below.
- * - **No orphan sweep.** `sweepOrphans` runs five sweeps, not one: it prunes
- *   installed-plugin symlinks, generated hook files, generated command wrappers,
- *   OpenCode commands, and the managed block in `.claude/settings.local.json`.
+ * - **No orphan sweep.** `sweepOrphans` runs six sweeps, not one: it prunes
+ *   installed-plugin symlinks, dead `.claude/skills` links an authored skill left
+ *   behind, generated hook files, generated command wrappers, OpenCode commands,
+ *   and the managed block in `.claude/settings.local.json`.
  *   Those all delete files, and this pass runs unattended in a directory a
  *   person may also be editing by hand, so it stays additive. The visible cost
  *   is that a projection this pass made is never withdrawn by it; `dorkos

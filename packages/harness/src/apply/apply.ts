@@ -58,7 +58,14 @@ import type { ClaudeHooksConfig } from '../generate/hooks.js';
 import { isAtomicTempName, isStaleAtomicTemp, writeFileAtomic } from './atomic-write.js';
 import { HAND_WRITTEN_HOOKS_REASON, readFileIfPresent } from './generated-ownership.js';
 import { findOrphanedAuthoredLinks, sweepAuthoredOrphans } from './authored-orphans.js';
-import { isDanglingSymlink, isSymlink, listDir, occupantKind, pathExists } from './link-state.js';
+import {
+  isDanglingSymlink,
+  isSymlink,
+  listDir,
+  listDirEntries,
+  occupantKind,
+  pathExists,
+} from './link-state.js';
 import { blockingSymlinkOccupant, linkCheckFor, linkMatchesPlan } from './symlink-occupants.js';
 import {
   applyGeneratedHookFile,
@@ -372,14 +379,17 @@ export function findGeneratedCommandOrphans(repoRoot: string, plan: ProjectionPl
       .filter((a) => a.kind === 'generate' && a.target?.startsWith(`${CLAUDE_COMMANDS_DIR}/`))
       .map((a) => a.target as string)
   );
+  // `listDirEntries`/`listDir`, never a bare `readdirSync`: this walk answers
+  // `--check` as well as `--fix` now, and a stray FILE at `.claude/commands`
+  // (ENOTDIR) or one nobody may read (EACCES) must be nothing to list rather
+  // than an exception thrown out of a report (see `link-state.ts`).
   const commandsDir = join(repoRoot, CLAUDE_COMMANDS_DIR);
-  if (!existsSync(commandsDir)) return [];
 
   const orphans: string[] = [];
-  for (const sub of readdirSync(commandsDir, { withFileTypes: true })) {
+  for (const sub of listDirEntries(commandsDir)) {
     if (!sub.isDirectory()) continue;
     const subAbs = join(commandsDir, sub.name);
-    for (const file of readdirSync(subAbs)) {
+    for (const file of listDir(subAbs)) {
       const rel = `${CLAUDE_COMMANDS_DIR}/${sub.name}/${file}`;
       const abs = join(subAbs, file);
       // A temp file is another writer's in-flight write, and it carries the
@@ -414,12 +424,14 @@ export function sweepGeneratedCommandOrphans(repoRoot: string, plan: ProjectionP
   const orphans = findGeneratedCommandOrphans(repoRoot, plan);
   for (const rel of orphans) rmSync(join(repoRoot, rel), { force: true });
 
+  // The same throw-safe listers as the finder, so the sweep can never walk a
+  // shape the preview declined to walk — and an empty answer here means "no
+  // wrapper dir to tidy", exactly as it means "nothing to remove" there.
   const commandsDir = join(repoRoot, CLAUDE_COMMANDS_DIR);
-  if (!existsSync(commandsDir)) return orphans;
-  for (const sub of readdirSync(commandsDir, { withFileTypes: true })) {
+  for (const sub of listDirEntries(commandsDir)) {
     if (!sub.isDirectory()) continue;
     const subAbs = join(commandsDir, sub.name);
-    if (readdirSync(subAbs).length === 0) rmSync(subAbs, { recursive: true, force: true });
+    if (listDir(subAbs).length === 0) rmSync(subAbs, { recursive: true, force: true });
   }
   return orphans;
 }
@@ -445,11 +457,13 @@ export function findOpencodeCommandOrphans(repoRoot: string, plan: ProjectionPla
       .filter((a) => a.kind === 'generate' && a.target?.startsWith(`${OPENCODE_COMMANDS_DIR}/`))
       .map((a) => a.target as string)
   );
+  // Throw-safe for the same reason the Claude walk is: a stray file at this
+  // path, or a directory nobody may read, is nothing to list and never an
+  // exception raised out of a `--check`.
   const commandsDir = join(repoRoot, OPENCODE_COMMANDS_DIR);
-  if (!existsSync(commandsDir)) return [];
 
   const orphans: string[] = [];
-  for (const entry of readdirSync(commandsDir, { withFileTypes: true })) {
+  for (const entry of listDirEntries(commandsDir)) {
     if (!entry.isFile()) continue; // flat: only top-level engine wrapper files (and the .gitignore)
     const rel = `${OPENCODE_COMMANDS_DIR}/${entry.name}`;
     const abs = join(commandsDir, entry.name);
@@ -648,6 +662,9 @@ export function sweepSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan)
  * @param opts - optional flags; `sweepOrphans` enables the installed-orphan sweep.
  * @returns the realized actions, the blocked projections left intact, any swept
  *   orphans, and the generated-hook paths the engine stepped over.
+ * @throws When `sweepOrphans` is asked for on a plan narrowed to one harness —
+ *   the combination deletes every other harness's LIVE projection, and the
+ *   engine refuses it here rather than trusting each caller to remember.
  */
 export function applyPlan(
   repoRoot: string,
@@ -659,6 +676,18 @@ export function applyPlan(
   swept: string[];
   leftAlone: string[];
 } {
+  // `checkPlan` withholds orphans for a narrowed plan; this is the same rule on
+  // the writing side, and it has to THROW rather than skip the sweep, because a
+  // caller that asked for a sweep and silently got none would leave the orphans
+  // it meant to remove. `projectWithConsent` refuses the same pair one layer up;
+  // this is the backstop for every other caller (DOR-1889).
+  if (opts?.sweepOrphans && plan.narrowedTo !== undefined) {
+    throw new Error(
+      'applyPlan: sweepOrphans cannot run on a plan narrowed to one harness — ' +
+        'the sweep would delete every other harness’s live projection.'
+    );
+  }
+
   const applied: ProjectionAction[] = [];
   const conflicts: ProjectionAction[] = [];
   const blockedWrapperDirs = findBlockedWrapperDirs(repoRoot, plan);

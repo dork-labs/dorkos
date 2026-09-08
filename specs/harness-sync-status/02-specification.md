@@ -563,9 +563,10 @@ APPLY   applyPlan → swept=[".claude/skills/beta"]     the file is gone
 
 Rendered from the response as first drafted, the person saw "Some agent files are out of date. **Sync now**",
 clicked, and got "Agent files updated." Nothing named the file that had just been deleted. The terminal has
-never behaved that way: `reportCheck` prints _"Orphaned links — the skill they pointed at is gone (N):"_ with
+never behaved that way: `reportCheck` prints _"Orphaned projections — what they came from is gone (N):"_ with
 every path **before** a `--fix`, and `reportFix` prints _"Swept N orphaned projection(s) — what they came from
-is gone:"_ with every path after. The page mirrors both:
+is gone:"_ with every path after (the heading said "Orphaned links — the skill they pointed at is gone" until
+Slice 2b widened the list past links; DOR-1889). The page mirrors both:
 
 - **Before the click** the response carries `sweepPreview: string[]` — **every** path a sync would remove —
   and the banner names them in a disclosure region (§User Experience). The field is in the response rather
@@ -974,9 +975,13 @@ One condition, one message, one action — and the action only when it does some
 
 **The removal warning is not optional.** When `sweepPreview` is non-empty the banner carries a `details`
 disclosure — the collapsible region the `Banner` component already supports — headed
-**"Syncing also removes 2 links whose skill is gone"** and listing every path. A person is told what a click
-deletes **before** the click, which is what the terminal has always done (`reportCheck`'s "Orphaned links —
-the skill they pointed at is gone (N):"). A banner with a destructive action and no manifest of it is the
+**"Syncing also removes 2 files DorkOS put here"** and listing every path. The heading counts FILES and not
+links: since Slice 2b (DOR-1889) `sweepPreview` is every one of the six sweeps, so the list holds command
+wrappers, generated hooks files and their sidecars as well as skill links. One path in it is not a deletion —
+`.claude/settings.local.json` keeps every key the person owns and loses only the hook entries DorkOS merged
+in — and the row for it says so, exactly as the terminal's does. A person is told what a click deletes
+**before** the click, which is what the terminal has always done (`reportCheck`'s "Orphaned projections —
+what they came from is gone (N):"). A banner with a destructive action and no manifest of it is the
 failure §2.2.1 reproduces.
 
 - **Not the app-wide `AppBannerSlot`.** That slot ranks one banner for the whole app; this condition is about
