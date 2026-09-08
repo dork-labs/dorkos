@@ -6,6 +6,7 @@ covers:
   - "fix(harness): a package's skills reach every agent that reads .agents/skills (DOR-1847)"
   - 'fix(harness): the no-artifact rule is universal, and a manifest entry is read where it points (DOR-1847)'
   - 'fix(rooms,cli): a room worktree hides the package links, and the summary stops implying Codex is on (DOR-1880, DOR-1847)'
+  - 'fix(harness): a redundant claudeOnlySkills entry says so on the first pass (DOR-1847)'
 ---
 
 ### Fixed
@@ -18,4 +19,5 @@ covers:
 - When a command cannot travel to an agent, the reason now names that agent's own command folder — `.cursor/commands`, `.gemini/commands`, `.github/prompts` — instead of saying it has none (DOR-1847)
 - A project with no slash commands and no hooks is no longer told, five times over, that its commands were left behind. If you never wrote one, `dorkos harness sync` says nothing about them (DOR-1847)
 - A skill you keep only for Claude Code is now looked for where your settings file says it is, instead of only in the usual folder — so a skill that is really there is no longer reported as a leftover entry (DOR-1847)
+- If you list a skill as Claude-Code-only when it is really in the shared folder, you are told the first time you check, on a fresh copy of the project — not only after a sync has already run (DOR-1847)
 - Room work folders stay clean when the room's project has a package installed. The links DorkOS makes for it no longer show up as your unsaved changes, which used to stop the folder being tidied up or merged (DOR-1880)
