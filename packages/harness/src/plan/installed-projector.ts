@@ -452,17 +452,28 @@ function toManagedHooks(
   return out;
 }
 
-/** The `${CLAUDE_PLUGIN_ROOT}`-in-a-projected-skill warning, or `undefined` when the skill is clean. */
+/**
+ * The `${CLAUDE_PLUGIN_ROOT}`-in-a-projected-skill warning, or `undefined` when
+ * the skill is clean.
+ *
+ * The `source` is the skill's own directory — the same path the action beside
+ * this warning carries. A warning is matched to the artifact it concerns by its
+ * source, so a sourceless one matches nothing and is reported as a thing of its
+ * own: measured, a project whose plugin skill mentions the token drew TWO rows
+ * for one skill and counted it twice.
+ */
 function pluginRootSkillWarning(
   harness: HarnessId,
   namespaced: string,
-  usesPluginRoot: boolean
+  usesPluginRoot: boolean,
+  source: string
 ): ProjectionWarning | undefined {
   if (!usesPluginRoot) return undefined;
   return {
     artifact: 'skill',
     harness,
     name: namespaced,
+    source,
     reason: `skill SKILL.md references ${CLAUDE_PLUGIN_ROOT_TOKEN}, which only resolves in plugin context; the projected copy will not expand it`,
   };
 }
@@ -515,7 +526,12 @@ export function planInstalledSkills(
             reason: `${HARNESS_LABELS[harness]} reads ${AGENTS_SKILLS_DIR} directly; this plugin's skills are linked at ${AGENTS_SKILLS_DIR}/${namespaced}`,
           }
     );
-    const warning = pluginRootSkillWarning(harness, namespaced, skill.usesPluginRoot);
+    const warning = pluginRootSkillWarning(
+      harness,
+      namespaced,
+      skill.usesPluginRoot,
+      skill.sourceDir
+    );
     if (warning) warnings.push(warning);
   }
 
@@ -595,7 +611,8 @@ export function planCanonicalSkillLinks(input: {
       const warning = pluginRootSkillWarning(
         SCHEDULE_LINK_ATTRIBUTION,
         namespaced,
-        skill.usesPluginRoot
+        skill.usesPluginRoot,
+        skill.sourceDir
       );
       if (warning) warnings.push(warning);
     }
