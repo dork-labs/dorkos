@@ -101,6 +101,7 @@ import {
   type ProjectionAction,
   type ProjectionPlan,
 } from '@dorkos/harness';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
@@ -156,6 +157,25 @@ export interface WithheldHooks {
  */
 const projectLocks = new Map<string, Promise<void>>();
 
+/** How many callers are queued or running for each repository right now. */
+const projectLockQueue = new Map<string, number>();
+
+/**
+ * The repositories the CURRENT async context already holds a turn for.
+ *
+ * A plain module-level `Set` cannot do this job, and getting that wrong is
+ * worse than not trying: while a turn is running, that key is "in flight" for
+ * everybody, so a set-based check would reject the second install into a repo —
+ * the exact caller this lock exists to make wait. `AsyncLocalStorage` is what
+ * distinguishes "called from inside the turn" from "called from somewhere else
+ * while the turn happens to be running".
+ *
+ * The store follows every `await` inside `fn`, and into anything `fn` starts.
+ * That is deliberate: work a turn spawns is logically still inside the turn, so
+ * asking for the same repository again is the same mistake wherever it is made.
+ */
+const heldByCaller = new AsyncLocalStorage<ReadonlySet<string>>();
+
 /**
  * The key two callers must agree on to be talking about the same repository.
  *
@@ -188,25 +208,56 @@ function projectLockKey(projectPath: string): string {
  * releases the lock exactly like a successful one, so one failure cannot wedge a
  * repository for the life of the process.
  *
+ * **Not re-entrant, and it says so rather than hanging.** Asking for a
+ * repository this async context already holds used to deadlock — the inner call
+ * waited on a turn that could only finish once the inner call returned — and
+ * left the map entry pinned for the life of the process. It now rejects
+ * immediately with the path in the message.
+ *
+ * **A turn can be long.** `runAutoProjection` holds one across an approval card,
+ * and `ApprovalService` gives a person up to two hours to answer it. Everything
+ * else projecting into that ONE repository waits that long; other repositories
+ * are unaffected. That is accepted for v1 because the alternative — releasing
+ * between the two passes — reopens the interleaving this exists to close, and
+ * because the queue is per repo rather than global. If it ever bites, the fix is
+ * to make the watcher coalesce rather than to shorten the turn.
+ *
  * This is the IN-PROCESS half only; the module docs above state what happens
  * between processes, and why nothing here takes a lock file.
  *
  * @param projectPath - The project root the work is about.
  * @param fn - The work to run under the lock.
  * @returns Whatever `fn` returns, once its turn has come and gone.
+ * @throws When this async context already holds a turn for the same repository.
  */
 export function withProjectLock<T>(projectPath: string, fn: () => T | Promise<T>): Promise<T> {
   const key = projectLockKey(projectPath);
+  const held = heldByCaller.getStore();
+  if (held?.has(key)) {
+    return Promise.reject(
+      new Error(
+        `withProjectLock: re-entrant lock on ${key} — this call is already inside a turn for ` +
+          `that repository, and waiting for itself would never return. Do the work inline, or ` +
+          `take the lock once at the outermost caller.`
+      )
+    );
+  }
+  const nested = new Set(held ?? []).add(key);
+
   // `prior` is always a settled-either-way promise (see `released`), so a
   // failing turn can never reject the turn queued behind it.
   const prior = projectLocks.get(key) ?? Promise.resolve();
-  const turn = prior.then(fn);
+  projectLockQueue.set(key, (projectLockQueue.get(key) ?? 0) + 1);
+  const turn = prior.then(() => heldByCaller.run(nested, fn));
   const released = turn.then(
     () => undefined,
     () => undefined
   );
   projectLocks.set(key, released);
   void released.then(() => {
+    const waiting = (projectLockQueue.get(key) ?? 1) - 1;
+    if (waiting > 0) projectLockQueue.set(key, waiting);
+    else projectLockQueue.delete(key);
     // Only the LAST holder clears the entry: if somebody chained on behind us,
     // the map already points at their release and must keep doing so.
     if (projectLocks.get(key) === released) projectLocks.delete(key);
@@ -222,6 +273,21 @@ export function withProjectLock<T>(projectPath: string, fn: () => T | Promise<T>
  */
 export function projectLockCount(): number {
   return projectLocks.size;
+}
+
+/**
+ * How many callers are waiting for, or currently holding, one repository's turn.
+ *
+ * The number that actually says the lock is doing something: map size only ever
+ * counts repositories, so it reads `1` whether one caller is projecting or forty
+ * are queued behind it.
+ *
+ * @param projectPath - The project root to ask about.
+ * @returns The queue depth, including the caller whose turn is running.
+ * @internal Exported for testing only.
+ */
+export function projectLockQueueDepth(projectPath: string): number {
+  return projectLockQueue.get(projectLockKey(projectPath)) ?? 0;
 }
 
 /** Options for {@link planWithConsent} and {@link projectWithConsent}. */

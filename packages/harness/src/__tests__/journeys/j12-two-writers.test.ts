@@ -118,7 +118,21 @@ function makeTempDir(prefix: string): string {
   return dir;
 }
 
-/** Write one plugin's manifest, hook and skill into a repo's `.dork/plugins`. */
+/**
+ * How many slash commands each staged plugin ships.
+ *
+ * Not decoration. A command projects as a generated wrapper into
+ * `.claude/commands/<pkg>/` and `.opencode/commands/`, which are the two
+ * directories the engine sweeps BY WILDCARD — so they are the only place a
+ * concurrent writer's temp file is visible to another process's sweep. Every
+ * concurrency fixture in this suite used to stage `layers: ['skills','hooks']`
+ * and nothing else, which is exactly why the race below was green while the
+ * engine was deleting its own in-flight writes (DOR-1854, review round 2).
+ * Forty widens the window enough that the failure is not a coin flip.
+ */
+const COMMANDS_PER_PLUGIN = 40;
+
+/** Write one plugin's manifest, hook, skill and commands into a repo's `.dork/plugins`. */
 function stagePlugin(repo: string, name: string): void {
   const plugin = join(repo, '.dork', 'plugins', name);
   writeJsonAt(join(plugin, '.dork', 'manifest.json'), {
@@ -127,7 +141,7 @@ function stagePlugin(repo: string, name: string): void {
     version: '1.0.0',
     type: 'plugin',
     description: `the ${name} plugin`,
-    layers: ['skills', 'hooks'],
+    layers: ['skills', 'hooks', 'commands'],
   });
   writeJsonAt(join(plugin, 'hooks', 'hooks.json'), {
     Stop: [{ hooks: [{ type: 'command', command: `echo ${name}` }] }],
@@ -136,6 +150,12 @@ function stagePlugin(repo: string, name: string): void {
     join(plugin, 'skills', `${name}-helper`, 'SKILL.md'),
     `---\nname: ${name}-helper\ndescription: helps with ${name}\n---\n\n# ${name}\n`
   );
+  for (let i = 0; i < COMMANDS_PER_PLUGIN; i++) {
+    writeFileAt(
+      join(plugin, 'commands', `task-${i}.md`),
+      `---\ndescription: ${name} task ${i}\n---\n\nDo ${name} task ${i}.\n`
+    );
+  }
 }
 
 /**

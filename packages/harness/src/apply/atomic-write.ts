@@ -37,6 +37,30 @@
  *   cannot do any more is leave a reader holding half a file. The end state is
  *   whichever writer renamed last, which is the same bytes either way when both
  *   apply the same plan (the engine's output is deterministic).
+ * - **No EPERM retry on Windows.** A rename onto a file another process has
+ *   open can fail there where POSIX would succeed, and the usual answer is a
+ *   short retry loop. Nothing here does that, because nothing here has ever run
+ *   on Windows: writing the loop now would mean guessing which error codes to
+ *   retry and how often, and shipping it untested is how a retry loop becomes a
+ *   silent data-loss path. The first real Windows run (AP-06, DOR-1855) decides
+ *   it, and this paragraph is the note to whoever does it.
+ *
+ * ## The cost of rename: a path-watcher stops seeing the file
+ *
+ * A rename swaps the directory entry, so the inode a watcher latched onto is no
+ * longer the file at that path. Measured here on macOS: `fs.watch(<file>)`
+ * reported **0 events across three atomic replaces**, while `fs.watch(<dir>)`
+ * saw every one of them (3–4 events each); the same file rewritten with a plain
+ * `writeFileSync` did fire the path-watcher. So the very readers this module
+ * exists to protect — an editor, a harness re-reading
+ * `.claude/settings.local.json` — get a whole file instead of half a file, and
+ * in exchange a naive path-watcher may not notice it changed at all.
+ *
+ * That trade is worth taking: a missed notification is recoverable on the next
+ * read, and half a config file is not. It is written down because it is
+ * load-bearing for anything DorkOS builds that WATCHES these paths — the
+ * `.agents/skills` watcher (DOR-1850) must watch DIRECTORIES, not files, or it
+ * will go deaf the first time the engine rewrites what it is watching.
  *
  * ## Two things rename changes, and both are on purpose
  *
@@ -60,13 +84,37 @@
  * The target's permission bits are carried onto the replacement, so a person who
  * has chmodded their own `.claude/settings.local.json` still has it afterwards.
  *
- * ## The temp file
+ * ## The temp file, and who is allowed to touch it
  *
  * `.<name>.<pid>.<random>.dorkos-tmp`, beside the target because rename cannot
- * cross a filesystem. It is removed on any failure. Only a hard kill between the
- * write and the rename can leave one behind, and a leftover is inert: the
- * command-wrapper sweeps recognise it as engine output by its marker and remove
- * it on the next sync, and nothing reads the hook directories by wildcard.
+ * cross a filesystem. It is removed on any failure.
+ *
+ * **A live temp file belongs to whoever is writing it, and nothing else may
+ * delete it.** That is not a nicety: two of the engine's own sweeps enumerate
+ * the command directories by wildcard and remove any file carrying the
+ * generated-command marker that the plan does not name — and a temp holds the
+ * whole wrapper, marker included. Left unguarded, one process's sweep unlinks
+ * another's in-flight write and that writer's `rename` dies with ENOENT in the
+ * middle of `applyPlan`. Every scan that walks a directory the engine writes
+ * into therefore asks {@link isAtomicTempName} first (`apply/apply.ts`), and
+ * `__tests__/atomic-temp-sweep.test.ts` holds that line.
+ *
+ * ## The leftover story, decided rather than assumed
+ *
+ * Only a hard kill between the write and the rename can strand a temp file. The
+ * rule is **age**, not ownership, because ownership cannot tell a stranded temp
+ * from one a live writer created a microsecond ago:
+ *
+ * - A temp younger than {@link STALE_TEMP_AGE_MS} is somebody's in-flight write.
+ *   Nothing removes it, ever.
+ * - An older one is debris, and the orphan sweep takes it — but only in the two
+ *   COMMAND directories, which are the only places anything enumerates by
+ *   wildcard and so the only places debris can be mistaken for content.
+ * - Everywhere else (`.codex/`, `.cursor/`, `.github/hooks/`, `.claude/`, the
+ *   repo root) a leftover is inert: those paths are read by name, never scanned,
+ *   so a stray dotfile beside them changes nothing. It is left alone rather than
+ *   swept, because a sweep there would have to walk directories the engine has
+ *   no other reason to walk.
  *
  * @module apply/atomic-write
  */
@@ -89,6 +137,48 @@ import { basename, dirname, join } from 'node:path';
  * so anything that ever sweeps a projection directory can recognise one.
  */
 export const ATOMIC_TMP_SUFFIX = '.dorkos-tmp';
+
+/**
+ * How old a temp file has to be before it counts as debris rather than as
+ * somebody's write in progress.
+ *
+ * A minute is enormous next to the microseconds a real write takes and small
+ * next to how long a stranded file would otherwise sit there. What it must not
+ * be is zero: the whole point is that a live writer's temp is untouchable, and
+ * any threshold short enough to race one is the bug this exists to prevent.
+ */
+export const STALE_TEMP_AGE_MS = 60_000;
+
+/**
+ * Whether a directory entry is one of this module's temp files.
+ *
+ * Every scan that walks a directory the engine writes into has to ask this
+ * before deciding anything about the entry — a temp carries the whole content
+ * of the file it is about to become, marker and all, so every ownership
+ * predicate in the engine says "mine" about somebody else's in-flight write.
+ *
+ * @param name - The entry's base name.
+ * @returns `true` when it is an atomic-write temp file.
+ */
+export function isAtomicTempName(name: string): boolean {
+  return name.endsWith(ATOMIC_TMP_SUFFIX);
+}
+
+/**
+ * Whether a temp file is old enough to be debris a crash left behind.
+ *
+ * @param absPath - Absolute path of the temp file.
+ * @param now - The current time, injectable so a test need not sleep.
+ * @returns `true` when it has sat there longer than {@link STALE_TEMP_AGE_MS};
+ *   `false` for a fresh one, and for one that has already gone.
+ */
+export function isStaleAtomicTemp(absPath: string, now = Date.now()): boolean {
+  try {
+    return now - statSync(absPath).mtimeMs > STALE_TEMP_AGE_MS;
+  } catch {
+    return false; // gone, or unreadable: not ours to delete either way
+  }
+}
 
 /**
  * Where the bytes actually belong: the target itself, or — when a LIVE symlink

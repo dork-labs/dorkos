@@ -27,7 +27,11 @@ vi.mock('../../core/config-manager.js', () => ({
   configManager: { get: vi.fn(), set: vi.fn() },
 }));
 
-import { projectLockCount, withProjectLock } from '../project-with-consent.js';
+import {
+  projectLockCount,
+  projectLockQueueDepth,
+  withProjectLock,
+} from '../project-with-consent.js';
 
 const temps: string[] = [];
 
@@ -108,7 +112,10 @@ describe('withProjectLock', () => {
     const real = makeTempDir('lock-real-');
     const linkHome = makeTempDir('lock-link-');
     const link = join(linkHome, 'repo');
-    symlinkSync(real, link);
+    // `'junction'` on Windows: a DIRECTORY symlink with no type asks for a file
+    // link and fails with EPERM without Developer Mode. POSIX ignores the
+    // argument (DOR-1855's Windows workflow).
+    symlinkSync(real, link, process.platform === 'win32' ? 'junction' : undefined);
     expect(realpathSync(link)).toBe(realpathSync(real));
 
     await Promise.all([
@@ -139,16 +146,92 @@ describe('withProjectLock', () => {
     expect(ran).toEqual(['failing', 'after']);
   });
 
-  it('holds no lock for a repository nothing is projecting into', async () => {
-    const repo = makeTempDir('lock-idle-');
+  it('counts every caller waiting on one repository, not just the repository', async () => {
+    const repo = makeTempDir('lock-depth-');
     const before = projectLockCount();
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
 
-    await withProjectLock(repo, () => undefined);
-    // The entry is dropped in a microtask after the turn settles, so let the
-    // queue drain before asking.
+    // One turn held open, five more asked for behind it. Map SIZE says `1`
+    // either way — it counts repositories — so the number that means anything
+    // is the queue.
+    const running = [withProjectLock(repo, () => held)];
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (let i = 0; i < 5; i++) running.push(withProjectLock(repo, () => undefined));
+
+    expect({ depth: projectLockQueueDepth(repo), locks: projectLockCount() }).toEqual({
+      depth: 6,
+      locks: before + 1,
+    });
+
+    release();
+    await Promise.all(running);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect({ locks: projectLockCount() }).toEqual({ locks: before });
+    // …and nothing is left behind once they have all had their turn.
+    expect({ depth: projectLockQueueDepth(repo), locks: projectLockCount() }).toEqual({
+      depth: 0,
+      locks: before,
+    });
+  });
+
+  it('refuses a re-entrant turn instead of waiting for itself for ever', async () => {
+    const repo = makeTempDir('lock-reentrant-');
+    let inner = 'never ran';
+
+    // Measured before this guard existed: the outer promise never settled, and
+    // the map entry stayed at 1 for the life of the process.
+    await expect(
+      withProjectLock(repo, async () => {
+        await withProjectLock(repo, () => {
+          inner = 'ran';
+        });
+      })
+    ).rejects.toThrow(/re-entrant lock on .*lock-reentrant/);
+
+    expect(inner).toBe('never ran');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect({ depth: projectLockQueueDepth(repo), locks: projectLockCount() }).toEqual({
+      depth: 0,
+      locks: 0,
+    });
+  });
+
+  it('still lets an unrelated caller queue while a turn is running', async () => {
+    // The half a module-level `Set` of in-flight keys would get wrong: while a
+    // turn runs, its key is "in flight" for everybody, so a set-based check
+    // would refuse the second install into one repo — the caller this lock is
+    // FOR. Only the async context can tell the two apart.
+    const repo = makeTempDir('lock-not-reentrant-');
+    const order: string[] = [];
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const first = withProjectLock(repo, async () => {
+      order.push('first');
+      await held;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const second = withProjectLock(repo, () => {
+      order.push('second');
+    });
+
+    release();
+    await expect(Promise.all([first, second])).resolves.toBeDefined();
+    expect(order).toEqual(['first', 'second']);
+  });
+
+  it('nests happily on a DIFFERENT repository', async () => {
+    const outer = makeTempDir('lock-outer-');
+    const inner = makeTempDir('lock-inner-');
+
+    await expect(
+      withProjectLock(outer, async () => withProjectLock(inner, () => 'both'))
+    ).resolves.toBe('both');
   });
 
   it('resolves to whatever the body returned', async () => {

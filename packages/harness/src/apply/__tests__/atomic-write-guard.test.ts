@@ -17,6 +17,22 @@
  * `writeFileSync` in prose, and a guard that reported them for saying so is a
  * guard somebody widens an allowlist to silence. `codeOnly` blanks non-code spans
  * without changing the file's length, so a hit still reports its real line.
+ *
+ * ## What it assumes, said out loud
+ *
+ * **The names are not aliased.** `import { writeFileSync as w }` and then `w(…)`
+ * walks straight past this, and so does any indirection through a variable. That
+ * is accepted rather than chased: catching it means resolving imports and
+ * following bindings — a type-aware pass, not a scan — and the shape it would
+ * catch is one nobody writes by accident. The guard is for the ordinary way a
+ * write gets added, which is to type the function's name.
+ *
+ * **The list is the writes that actually land bytes at a path.** It grew
+ * `copyFileSync` and `cpSync` in DOR-1854's review round because both are real
+ * things somebody reaches for when the content is already in a file — and both
+ * truncate the destination exactly like `writeFileSync`. It is deliberately NOT
+ * every `node:fs` export: a regex widened past what the module can honestly
+ * replace produces findings with no fix, which is how a guard gets disabled.
  */
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -36,7 +52,8 @@ const HELPER = ['apply', 'atomic-write.ts'].join('/');
  * `writeFileAtomic(...)` past: the name has to stand on its own, and a member
  * access on the `fs` namespace is exactly the shape a new site would take.
  */
-const FS_WRITE_CALL = /(?<![\w$])(writeFileSync|writeFile|appendFileSync|createWriteStream)\s*\(/g;
+const FS_WRITE_CALL =
+  /(?<![\w$])(writeFileSync|writeFile|appendFileSync|createWriteStream|copyFileSync|cpSync)\s*\(/g;
 
 /** Every `.ts` file under `packages/harness/src`, repo-relative with `/` separators. */
 function sourceFiles(): string[] {
@@ -101,6 +118,10 @@ describe('every generated file is written atomically', () => {
     expect(fsWriteCalls(`await writeFile(abs, content);`)).toEqual(['1: writeFile']);
     expect(fsWriteCalls(`appendFileSync(abs, line);`)).toEqual(['1: appendFileSync']);
     expect(fsWriteCalls(`createWriteStream(abs).end(content);`)).toEqual(['1: createWriteStream']);
+    // Both land bytes at a path by truncating whatever is there — the same
+    // window, reached by a different name.
+    expect(fsWriteCalls(`copyFileSync(from, abs);`)).toEqual(['1: copyFileSync']);
+    expect(fsWriteCalls(`cpSync(from, abs, { recursive: true });`)).toEqual(['1: cpSync']);
     // The line number is the real one, which is what `codeOnly` preserving
     // length buys: a stripper that deleted the comment would report line 1.
     expect(fsWriteCalls(`/* a\nlong\nnote */\nwriteFileSync(abs, x);`)).toEqual([
@@ -117,5 +138,14 @@ describe('every generated file is written atomically', () => {
     );
     // A string that merely names one is not a call either.
     expect(fsWriteCalls(`const hint = 'call writeFileSync(abs) instead';`)).toEqual([]);
+  });
+
+  it('is honest about the alias it cannot see', () => {
+    // Pinned so the limitation is a decision somebody can find, not a surprise
+    // the next person discovers by shipping past it. If this ever needs to
+    // close, the tool is a type-aware pass, not a wider regex.
+    expect(fsWriteCalls(`import { writeFileSync as w } from 'node:fs';\nw(abs, content);`)).toEqual(
+      []
+    );
   });
 });
