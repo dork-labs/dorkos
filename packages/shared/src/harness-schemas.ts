@@ -76,9 +76,18 @@ export type HarnessCellState = z.infer<typeof HarnessCellStateSchema>;
  * `ArtifactType`, restated here because `@dorkos/shared` cannot import the
  * engine — the edge runs the other way.
  *
- * The two lists are held together by a `satisfies Record<ArtifactType, …>`
- * mapping table in the server's status model, so adding a kind to the engine is
- * a compile error here rather than a silently missing row.
+ * The first eight are held together with the engine's list by a
+ * `satisfies Record<ArtifactType, …>` mapping table in the server's status
+ * model, so adding a kind to the engine is a compile error here rather than a
+ * silently missing row.
+ *
+ * `manifest` is the ninth and has no engine counterpart, deliberately. It exists
+ * for the project-level `notice` entries (DOR-1906), which are about
+ * `.agents/harness.manifest.json` ITSELF — a retired key, or a hook policy
+ * naming a tool the manifest does not enable. The engine plans no artifact for
+ * that file, and none of the other eight is it: filing a manifest notice under
+ * `instruction` or `plugin` would say it is about a file that is not the one
+ * with the problem.
  */
 export const HarnessArtifactKindSchema = z.enum([
   'skill',
@@ -89,6 +98,7 @@ export const HarnessArtifactKindSchema = z.enum([
   'agent',
   'rule',
   'mcp',
+  'manifest',
 ]);
 
 /** The kind of agent file one status row is about. */
@@ -159,24 +169,29 @@ export type HarnessRow = z.infer<typeof HarnessRowSchema>;
 /**
  * An entry that is about the project rather than about any one agent tool.
  *
- * Three shapes, and `kind` says which. A `drop` is something that has no home
+ * Four shapes, and `kind` says which. A `drop` is something that has no home
  * anywhere — a marketplace package that is not portable to anything. A `warning`
  * is a loss: a file the engine read and could not use, before any tool was
  * considered. A `write` is a file a sync WILL create that belongs to no single
  * tool — the canonical `.agents/skills` link, which exists for the directory
  * rather than for one reader — and it is here because it is otherwise invisible:
  * the plan has to name some harness for it, and if that one is not enabled the
- * file appears in no column while a sync creates it anyway.
+ * file appears in no column while a sync creates it anyway. A `notice` is about
+ * the manifest itself (DOR-1906): a key the engine retired, or a hook policy
+ * naming a tool this manifest does not enable — configuration that looks like
+ * configuration and reaches nothing. Its `artifact` is `manifest` and its
+ * `reason` is the engine's own sentence, the same one `dorkos harness sync`
+ * prints, so the terminal and the screen name one problem one way.
  *
- * None of the three is ever a cell or a row: filing one under a harness would
+ * None of the four is ever a cell or a row: filing one under a harness would
  * tell somebody who runs Codex alone that Claude Code has a problem.
  */
 export const HarnessProjectEntrySchema = z.object({
-  kind: z.enum(['drop', 'warning', 'write']),
+  kind: z.enum(['drop', 'warning', 'write', 'notice']),
   artifact: HarnessArtifactKindSchema,
   name: z.string(),
   source: z.string().optional(),
-  /** Where a `write` lands, repo-relative. Absent for a `drop` or a `warning`. */
+  /** Where a `write` lands, repo-relative. Absent for every other kind. */
   target: z.string().optional(),
   reason: z.string(),
 });
@@ -204,6 +219,28 @@ export const HarnessPendingApprovalSchema = z.object({
 
 /** One installed package whose hooks are held back until a person allows them. */
 export type HarnessPendingApproval = z.infer<typeof HarnessPendingApprovalSchema>;
+
+/**
+ * The one query a status read carries.
+ *
+ * It lives beside the response rather than in the route because the route is
+ * not its only reader: `openapi-registry.ts` documents the same shape, and a
+ * hand-written second copy there is a copy that goes stale — the same reasoning,
+ * and the same home, as `BrowseDirectoryQuerySchema` and `SearchQuerySchema`.
+ *
+ * `projectPath` is checked for blankness without being TRIMMED. A path is a byte
+ * string the filesystem owns, and quietly editing one a caller sent would answer
+ * about a directory they did not ask for.
+ */
+export const HarnessStatusQuerySchema = z.object({
+  projectPath: z
+    .string()
+    .min(1)
+    .refine((value) => value.trim().length > 0, 'projectPath must not be blank'),
+});
+
+/** The one query a status read carries. */
+export type HarnessStatusQuery = z.infer<typeof HarnessStatusQuerySchema>;
 
 /**
  * What one project's agent-file sharing looks like right now.

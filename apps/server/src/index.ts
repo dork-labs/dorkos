@@ -211,6 +211,7 @@ import {
 } from './services/session/attachments/index.js';
 import { createDiscoveryRouter } from './routes/discovery.js';
 import { createTemplateRouter } from './routes/templates.js';
+import { createHarnessRouter } from './routes/harness.js';
 import { createAdminRouter } from './routes/admin.js';
 import { ExtensionManager } from './services/extensions/extension-manager.js';
 import { ensureCoreExtensions } from './services/core-extensions/ensure-core-extensions.js';
@@ -3554,6 +3555,12 @@ async function start() {
 
   // Template catalog — always available, merges built-in + user templates.
   app.use('/api/templates', createTemplateRouter(dorkHome));
+
+  // Harness Sync status — "what does every agent tool do with every agent file
+  // in this project". Always mounted and read-only: it plans, diffs and
+  // inventories, and writes nothing (DOR-678's rule, stated in the route).
+  app.use('/api/harness', createHarnessRouter({ dorkHome }));
+  mountedRouters.push('harness');
 
   // Approvals — always available. The cockpit lists what is waiting on a person
   // and records their decision (spec `agent-trust` §3.3).
