@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildPlan } from '../projector.js';
-import { mergeHookConfigs, projectedHooks } from '../installed-projector.js';
+import { mergeHookConfigs, pluginRootText, projectedHooks } from '../installed-projector.js';
 import { getActionContent } from '../content-map.js';
 import { parseHarnessManifest } from '../../manifest/schema.js';
 import type { InstalledPlugin } from '../../sources/installed.js';
@@ -109,7 +109,13 @@ describe('installed-plugin projection via buildPlan', () => {
       expect(wrapper).toBeDefined();
       const content = getActionContent(wrapper!)!;
       // Token rewritten to the absolute install dir; no bare token remains.
-      expect(content).toContain(join(repo, '.dork/plugins/acme', 'skills/x/SKILL.md'));
+      // The install root is spelled with FORWARD SLASHES inside generated text on
+      // every platform (`pluginRootText`, whose own test covers both branches):
+      // `join()` would spell it with backslashes on Windows and leave the rest of
+      // the line, which the plugin wrote, with forward ones.
+      expect(content).toContain(
+        `${pluginRootText(join(repo, '.dork/plugins/acme'), process.platform)}/skills/x/SKILL.md`
+      );
       expect(content).not.toContain('${CLAUDE_PLUGIN_ROOT}');
       // Frontmatter preserved as the first bytes; marker inserted right after it.
       expect(content.startsWith('---\ndescription: cap\n---\n')).toBe(true);
@@ -849,5 +855,27 @@ describe('installed skills reach .agents/skills whatever harnesses are enabled (
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
+  });
+});
+
+describe('pluginRootText', () => {
+  it('spells the install root with forward slashes on Windows, and leaves POSIX alone', () => {
+    // A plugin writes `${CLAUDE_PLUGIN_ROOT}/hooks/x.mjs`, so the text AFTER the
+    // token always has forward slashes. Before this, a Windows install root went
+    // in with backslashes and the generated line read
+    // `C:\Users\me\.dork\plugins\flow/hooks/x.mjs` — half of each, inside a
+    // shell command and a JSON string (measured on a windows-latest runner,
+    // DOR-1855).
+    expect(pluginRootText('C:\\Users\\me\\.dork\\plugins\\flow', 'win32')).toBe(
+      'C:/Users/me/.dork/plugins/flow'
+    );
+    expect(pluginRootText('/home/me/.dork/plugins/flow', 'linux')).toBe(
+      '/home/me/.dork/plugins/flow'
+    );
+    // A backslash is a legal character in a POSIX filename, so POSIX is not
+    // "normalized" — it is left exactly as the filesystem spells it.
+    expect(pluginRootText('/home/me/od\\d/plugins/flow', 'darwin')).toBe(
+      '/home/me/od\\d/plugins/flow'
+    );
   });
 });

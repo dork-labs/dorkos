@@ -21,7 +21,11 @@ import { lstatSync, readdirSync, statSync } from 'node:fs';
  * What occupies a path.
  *
  * `file` means anything real that is not a directory — a regular file, and also
- * the rare socket or fifo, which the read that follows will answer for.
+ * the rare socket or FIFO. **A caller that goes on to READ the path must ask
+ * `statSync().isFile()` first**: `readFileSync` on a FIFO with no writer blocks
+ * in `open(2)` and nothing in the process can interrupt a synchronous block, so
+ * "the read that follows will answer for it" is true of a socket and false of a
+ * FIFO. `symlink-occupants.ts` carries that guard and says why.
  */
 export type OccupantKind = 'absent' | 'dead-link' | 'live-link' | 'directory' | 'file';
 

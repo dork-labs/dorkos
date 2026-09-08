@@ -1,57 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 
 import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
 
-import {
-  runHarnessSync,
-  parseHarnessSyncArgs,
-  type HarnessSyncArgs,
-} from '../harness-sync-command.js';
+import { runHarnessSync, parseHarnessSyncArgs } from '../harness-sync-command.js';
 import { runHarnessHooks, parseHarnessHooksArgs } from '../harness-hooks-command.js';
 import { hookApprovalEntry } from '../../server/services/harness/hook-consent.js';
 import { runHarnessDispatcher } from '../commands/harness-dispatcher.js';
-
-/**
- * Fill in the flags a case does not care about.
- *
- * Every call names the ones under test and nothing else, so adding a flag to
- * `HarnessSyncArgs` does not rewrite thirty unrelated cases into noise.
- */
-function syncArgs(partial: Partial<HarnessSyncArgs>): HarnessSyncArgs {
-  return { check: false, fix: false, strict: false, allowHooks: [], ...partial };
-}
-
-function createTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-harness-sync-test-'));
-}
-
-/** Build a minimal but realistic two-harness fixture repo at `root`. */
-function writeFixtureRepo(root: string): void {
-  fs.mkdirSync(path.join(root, '.agents', 'skills', 'demo'), { recursive: true });
-  fs.writeFileSync(
-    path.join(root, '.agents', 'harness.manifest.json'),
-    JSON.stringify({ version: 1, harnesses: ['claude-code', 'codex'] }, null, 2)
-  );
-  fs.writeFileSync(
-    path.join(root, '.agents', 'skills', 'demo', 'SKILL.md'),
-    '# Demo skill\n\nA demo skill.\n'
-  );
-
-  fs.mkdirSync(path.join(root, '.claude'), { recursive: true });
-  fs.writeFileSync(
-    path.join(root, '.claude', 'settings.json'),
-    JSON.stringify(
-      { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo done' }] }] } },
-      null,
-      2
-    )
-  );
-
-  fs.writeFileSync(path.join(root, 'AGENTS.md'), '# Agents\n\nCanonical instructions.\n');
-}
+import { createTempDir, syncArgs, writeFixtureRepo } from './harness-fixtures.js';
 
 /**
  * The sorted set of every path under `root`.

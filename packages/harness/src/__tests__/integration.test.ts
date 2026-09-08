@@ -12,7 +12,7 @@ import {
   existsSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { project } from '../engine.js';
 import { applyPlan, checkPlan } from '../apply/apply.js';
 
@@ -107,8 +107,8 @@ describe('harness engine integration', () => {
     // (`.agents/skills/notes -> ../../vault/notes`). Codex follows that link
     // natively, so DorkOS has to see it too (DOR-1844). The Claude Code
     // projection is then a link to a link, which realpath resolves to the one
-    // real directory — and the drift check compares LINK TEXT, so a resolvable
-    // chain is clean, not drifted.
+    // real directory — and the drift check compares LINK TEXT on POSIX, so a
+    // resolvable chain is clean, not drifted.
     dir = buildFixtureRepo();
     mkdirSync(join(dir, 'vault', 'notes'), { recursive: true });
     writeFileSync(join(dir, 'vault', 'notes', 'SKILL.md'), '# notes skill\n');
@@ -128,9 +128,20 @@ describe('harness engine integration', () => {
 
     const projected = join(dir, '.claude', 'skills', 'notes');
     expect(lstatSync(projected).isSymbolicLink()).toBe(true);
-    expect(readlinkSync(projected)).toBe(join('..', '..', '.agents', 'skills', 'notes'));
+    // WINDOWS SPELLS THIS LINK DIFFERENTLY, and it has no choice. A directory
+    // link there is a junction, and a junction's stored target is always
+    // absolute — Node resolves the relative text against the link's parent
+    // before Windows sees it. So the relative text is asserted where it exists,
+    // and the property that actually matters is asserted on both: the link
+    // resolves to the one real directory. Measured on a `windows-latest` runner
+    // (DOR-1855), where this line read `C:\Users\...\.agents\skills\notes`.
+    if (process.platform === 'win32') {
+      expect(isAbsolute(readlinkSync(projected))).toBe(true);
+    } else {
+      expect(readlinkSync(projected)).toBe(join('..', '..', '.agents', 'skills', 'notes'));
+    }
     // Through both links to the one real directory.
-    expect(realpathSync(projected)).toBe(realpathSync(join(dir, 'vault', 'notes')));
+    expect(realpathSync.native(projected)).toBe(realpathSync.native(join(dir, 'vault', 'notes')));
     expect(readFileSync(join(projected, 'SKILL.md'), 'utf8')).toBe('# notes skill\n');
 
     expect(checkPlan(dir, plan).clean).toBe(true);

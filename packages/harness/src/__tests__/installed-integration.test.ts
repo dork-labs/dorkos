@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { project } from '../engine.js';
 import { applyPlan, sweepInstalledOrphans } from '../apply/apply.js';
 import { sweepGeneratedOrphans } from '../apply/generated-targets.js';
+import { pluginRootText } from '../plan/installed-projector.js';
 import { getActionContent } from '../plan/content-map.js';
 import type { ProjectionPlan } from '../plan/types.js';
 
@@ -458,7 +459,9 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     // …with `${CLAUDE_PLUGIN_ROOT}` rewritten to the absolute install dir (item A):
     // the install root is known at plan time, so the folded plugin hook is portable
     // in Codex, not projected-but-broken.
-    expect(hooksFile).toContain(join(absInstall, 'hooks/flow-loop.mjs'));
+    expect(hooksFile).toContain(
+      `${pluginRootText(absInstall, process.platform)}/hooks/flow-loop.mjs`
+    );
     expect(hooksFile).not.toContain('${CLAUDE_PLUGIN_ROOT}');
 
     // …and there is NO Claude-only-token warning for the installed hook (only
@@ -621,7 +624,9 @@ describe('installed-plugin projection to the external Claude Code CLI', () => {
 
     // Command wrapper: token rewritten to the absolute install dir + engine marker.
     const wrapperContent = readFileSync(wrapper, 'utf8');
-    expect(wrapperContent).toContain(join(absInstall, 'skills/capturing/SKILL.md'));
+    expect(wrapperContent).toContain(
+      `${pluginRootText(absInstall, process.platform)}/skills/capturing/SKILL.md`
+    );
     expect(wrapperContent).not.toContain('${CLAUDE_PLUGIN_ROOT}');
     expect(wrapperContent).toContain('dorkos:generated-command');
     expect(readFileSync(wrapperGitignore, 'utf8')).toContain('*');
@@ -637,7 +642,9 @@ describe('installed-plugin projection to the external Claude Code CLI', () => {
       g.hooks.map((h) => h.command)
     );
     expect(stopCommands).toContain('echo user-owned');
-    expect(stopCommands).toContain(`node "${join(absInstall, 'hooks/loop.mjs')}"`);
+    expect(stopCommands).toContain(
+      `node "${pluginRootText(absInstall, process.platform)}/hooks/loop.mjs"`
+    );
 
     // Uninstall + re-sync with the sweep on.
     rmSync(join(repo, '.dork', 'plugins', 'flow'), { recursive: true, force: true });
@@ -724,7 +731,9 @@ describe('installed-plugin projection to the OpenCode harness', () => {
     // Wrapper: flat name `flow-capture.md`, invoked `/flow-capture`.
     const wrapperContent = readFileSync(wrapper, 'utf8');
     // Token rewritten to the absolute install dir.
-    expect(wrapperContent).toContain(join(absInstall, 'skills/capturing/SKILL.md'));
+    expect(wrapperContent).toContain(
+      `${pluginRootText(absInstall, process.platform)}/skills/capturing/SKILL.md`
+    );
     expect(wrapperContent).not.toContain('${CLAUDE_PLUGIN_ROOT}');
     // Frontmatter reduced to ONLY description; Claude-only keys stripped.
     expect(
