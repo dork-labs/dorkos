@@ -2998,7 +2998,17 @@ async function start() {
     // both respect it (`services/tasks/schedule-identity.ts`).
     const scheduleIdentities = new ScheduleIdentityRegistry();
     taskFileWatcher = new TaskFileWatcher(taskStore, taskRegistrar, scheduleIdentities);
-    taskReconciler = new TaskReconciler(taskStore, taskRegistrar, scheduleIdentities);
+    // The watcher is also the reconciler's health source: a root whose watch is
+    // deaf (its directory does not exist yet) or dead (chokidar errored on it,
+    // after which it reports nothing at all) is covered every ten seconds
+    // instead of every five minutes, because for that root the reconciler is not
+    // a backstop — it is the only thing looking (DOR-1908).
+    taskReconciler = new TaskReconciler(
+      taskStore,
+      taskRegistrar,
+      scheduleIdentities,
+      taskFileWatcher
+    );
     const discovery = { watcher: taskFileWatcher, reconciler: taskReconciler };
 
     // Schedules written in the old shape move to the new one, once, on the boot

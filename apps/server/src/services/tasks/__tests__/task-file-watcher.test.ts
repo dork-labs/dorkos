@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { TaskStore } from '../task-store.js';
 import { ScheduleIdentityRegistry } from '../schedule-identity.js';
 import { skillsRoot } from './task-root-fixtures.js';
@@ -26,10 +26,25 @@ const { mockWatcher, mockChokidar } = vi.hoisted(() => {
 });
 vi.mock('chokidar', () => ({ default: mockChokidar }));
 
+// `TaskFileWatcher` refuses to arm a watch on a directory that does not exist
+// (DOR-1908: chokidar silently watches an ancestor instead and never reports on
+// the directory at all). These cases drive the handlers over paths that are not
+// on disk, so the existence check is answered here — the same shape as mocking
+// chokidar itself. The absent-root behaviour has its own real-filesystem suite,
+// where the answer is not mocked.
+const { mockExistsSync } = vi.hoisted(() => ({ mockExistsSync: vi.fn(() => true) }));
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return { ...actual, existsSync: mockExistsSync };
+});
+
 import { TaskFileWatcher } from '../task-file-watcher.js';
 import { TaskRegistrar } from '../task-registrar.js';
 import { FakeScheduler } from './fake-scheduler.js';
 import { logger } from '../../../lib/logger.js';
+
+/** Every watcher this file made, so `afterEach` can stop its re-arm timer. */
+const started: TaskFileWatcher[] = [];
 
 /** A watcher wired to a registrar whose scheduler only records. */
 function makeWatcher(store: TaskStore = makeStore()): {
@@ -42,6 +57,7 @@ function makeWatcher(store: TaskStore = makeStore()): {
     new TaskRegistrar({ store, scheduler }),
     new ScheduleIdentityRegistry()
   );
+  started.push(watcher);
   return { watcher, scheduler };
 }
 
@@ -80,6 +96,11 @@ describe('TaskFileWatcher', () => {
     mockWatcher.on.mockReturnValue(mockWatcher);
     mockWatcher.close.mockResolvedValue(undefined);
     mockChokidar.watch.mockReturnValue(mockWatcher);
+    mockExistsSync.mockReturnValue(true);
+  });
+
+  afterEach(async () => {
+    while (started.length > 0) await started.pop()?.stopAll();
   });
 
   // A dead watcher (e.g. EMFILE when the process runs out of file descriptors)

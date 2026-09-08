@@ -375,6 +375,70 @@ export async function scanTaskRoot(root: TaskRoot): Promise<ReadOutcome[]> {
 }
 
 /**
+ * What a root's schedules look like right now — one string that changes whenever
+ * any of them does.
+ *
+ * The cheap gate in front of {@link scanTaskRoot}, for the roots the reconciler
+ * has to cover on a ten-second cadence because their watch is deaf or dead
+ * (`task-file-watcher.ts`). A full scan reads and parses every SKILL.md in the
+ * root; this reads the directory and stats one file per entry, so a root where
+ * nothing has changed costs `N + 1` syscalls instead of `N` file reads and `N`
+ * frontmatter parses, ten times a minute, for ever.
+ *
+ * ## Why it stats the SKILL.md and not the entry
+ *
+ * The harness's equivalent (`skillsShape` in `services/harness/skills-watcher.ts`)
+ * compares the ENTRIES' modification times, because a projection only cares
+ * whether the SET of skills changed — an edit inside a skill it has already
+ * linked needs no new link. A schedule is the opposite case: editing the `cron:`
+ * inside an existing SKILL.md is the whole change, and it moves neither the
+ * root's mtime nor its entry's. So this stats the file.
+ *
+ * `stat` rather than `lstat`, and that is the other half of the difference: an
+ * installed plugin's skill reaches a root as a `pkg__name` SYMLINK, and it is a
+ * real schedule here (`scanSymlinkedSkills`) where it is the harness's own
+ * output there. Following the link is how an edit to the package's file is seen
+ * at all.
+ *
+ * Size rides along with the modification time because mtime alone is only as
+ * fine-grained as the filesystem records it; two writes inside one tick that
+ * change the length are indistinguishable otherwise.
+ *
+ * A root that cannot be read — it does not exist yet, or `readdir` failed —
+ * answers `-`, which is a STABLE shape rather than a changed one. That is
+ * deliberate: a root whose directory has not been created is the ordinary state
+ * of a project with no schedules, and it must cost one failed `readdir` per
+ * tick and nothing else.
+ *
+ * @param root - The root to measure.
+ * @returns A comparable shape.
+ */
+export async function taskRootShape(root: TaskRoot): Promise<string> {
+  let entries;
+  try {
+    entries = await fs.readdir(root.dir, { withFileTypes: true });
+  } catch {
+    return '-';
+  }
+  const reserved = reservedDirsFor(root);
+  const parts: string[] = [];
+  for (const entry of entries) {
+    if (entry.name.startsWith('.') || reserved.includes(entry.name)) continue;
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+    try {
+      const stat = await fs.stat(path.join(root.dir, entry.name, SKILL_FILENAME));
+      parts.push(`${entry.name}:${stat.mtimeMs}:${stat.size}`);
+    } catch {
+      // An entry with no readable SKILL.md — a directory holding something
+      // else, or a link whose target has gone. It still belongs in the shape,
+      // because its arrival and departure are both changes.
+      parts.push(`${entry.name}:-`);
+    }
+  }
+  return parts.sort().join('|');
+}
+
+/**
  * The real directories that this root's symlinked entries point at, dangling
  * links included.
  *

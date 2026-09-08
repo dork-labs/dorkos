@@ -4,6 +4,22 @@
  * Runs every 5 minutes to catch changes missed by the file watcher
  * (e.g., during network filesystem hiccups or race conditions).
  *
+ * ## Two cadences, because a watch does not fail a little
+ *
+ * Five minutes is the right price for a root whose watch is working: it is a
+ * backstop against a dropped event, and a dropped event is rare. It is the
+ * wrong price for a root that has no watch at all — a directory that did not
+ * exist when the watch was armed, or one whose chokidar watch reported an error
+ * and has therefore stopped reporting anything. Those are total losses rather
+ * than loss rates (`task-file-watcher.ts` measures all three), so for that root
+ * the five-minute pass IS the discovery path, and a schedule dropped into it was
+ * silently up to five minutes late.
+ *
+ * So the watcher says which roots have no live watch, and those get
+ * {@link UNWATCHED_ROOT_SWEEP_MS} instead — behind a cheap per-root comparison
+ * ({@link taskRootShape}) so an unchanged root costs one `readdir` rather than a
+ * full scan. Every other root keeps the five minutes.
+ *
  * A safety net that only repaired the DB was half a net: the pass it exists to
  * be a backstop for is the one the watcher missed, so the running cron job was
  * exactly as stale as the row had been. Every write here now goes on through
@@ -16,13 +32,26 @@ import path from 'node:path';
 import type { TaskStore } from './task-store.js';
 import type { TaskRegistrar } from './task-registrar.js';
 import type { ScheduleIdentityRegistry } from './schedule-identity.js';
-import { linkedSkillDirs, scanTaskRoot } from './skills-root-discovery.js';
+import { linkedSkillDirs, scanTaskRoot, taskRootShape } from './skills-root-discovery.js';
 import type { TaskRoot } from './skills-roots.js';
+import { UNWATCHED_ROOT_SWEEP_SECONDS, type TaskWatchHealth } from './task-file-watcher.js';
 import { resolveParkedScheduleRemoved } from '../notifications/emitters/schedule-park.js';
 import { logger, logError } from '../../lib/logger.js';
 
 /** 5-minute reconciliation interval. */
 const RECONCILE_INTERVAL_MS = 300_000;
+
+/**
+ * How often a root with no live watch is compared against what it looked like
+ * last, and reconciled when that has changed.
+ *
+ * The same ten seconds the harness's skills watcher uses for the same two holes,
+ * and the number is the honest bound on "a schedule you add is picked up within
+ * seconds" when the fast path is not working. Derived from the watcher's own
+ * constant so the sentence it logs when a watch dies cannot promise a cadence
+ * this module does not keep.
+ */
+export const UNWATCHED_ROOT_SWEEP_MS = UNWATCHED_ROOT_SWEEP_SECONDS * 1000;
 
 /** 24-hour grace period before removing orphan DB entries. */
 const ORPHAN_GRACE_MS = 24 * 60 * 60 * 1000;
@@ -62,14 +91,34 @@ interface ReportedFailure {
  */
 export class TaskReconciler {
   private interval: ReturnType<typeof setInterval> | null = null;
+  /** The tightened pass over roots with no live watch. See {@link sweepUnwatchedRoots}. */
+  private sweepInterval: ReturnType<typeof setInterval> | null = null;
   private roots: TaskRoot[] = [];
   /** One entry per distinct fault currently being damped. See {@link report}. */
   private reportedFailures = new Map<string, ReportedFailure>();
+  /** What each unwatched root looked like when it was last reconciled. */
+  private shapes = new Map<string, string>();
+  /** True while a tightened pass is running, so ticks cannot stack on a slow disk. */
+  private sweeping = false;
 
+  /**
+   * Build a reconciler over a row cache, a scheduler and — optionally — a
+   * watcher whose health decides which roots get the tightened cadence.
+   *
+   * @param store - The row cache to reconcile onto.
+   * @param registrar - Carries every repair through to the running scheduler.
+   * @param identities - Shared with the watcher; one claim per real file.
+   * @param watchHealth - Which roots have no live watch, so those can be covered
+   *   on {@link UNWATCHED_ROOT_SWEEP_MS} instead of five minutes. Optional
+   *   because a caller with no watcher at all — every test that drives this
+   *   class directly — has no roots to tighten for, and the honest default is
+   *   that nothing is tightened rather than that everything is.
+   */
   constructor(
     private store: TaskStore,
     private registrar: TaskRegistrar,
-    private identities: ScheduleIdentityRegistry
+    private identities: ScheduleIdentityRegistry,
+    private watchHealth?: TaskWatchHealth
   ) {}
 
   /**
@@ -95,10 +144,11 @@ export class TaskReconciler {
    */
   removeDirectory(tasksDir: string): void {
     this.roots = this.roots.filter((r) => r.dir !== tasksDir);
+    this.shapes.delete(tasksDir);
     this.identities.releaseRoot(tasksDir);
   }
 
-  /** Start periodic reconciliation. */
+  /** Start periodic reconciliation, on both cadences. */
   start(): void {
     if (this.interval) return;
     this.interval = setInterval(() => {
@@ -106,7 +156,60 @@ export class TaskReconciler {
         this.report('error', '[TaskReconciler] Reconciliation failed', err);
       });
     }, RECONCILE_INTERVAL_MS);
-    logger.info('[TaskReconciler] Started (interval: 5m)');
+    this.interval.unref?.();
+    this.sweepInterval = setInterval(() => {
+      this.sweepUnwatchedRoots().catch((err) => {
+        this.report('error', '[TaskReconciler] Unwatched-root sweep failed', err);
+      });
+    }, UNWATCHED_ROOT_SWEEP_MS);
+    this.sweepInterval.unref?.();
+    logger.info(
+      `[TaskReconciler] Started (every 5m; every ${UNWATCHED_ROOT_SWEEP_SECONDS}s for a root with no live watch)`
+    );
+  }
+
+  /**
+   * Reconcile every root whose watch is deaf or dead, and only when something in
+   * it has actually moved.
+   *
+   * This is the tightened half of the safety net. The watcher decides which
+   * roots qualify — a directory that did not exist when the watch was armed, or
+   * one chokidar has reported an error on — and for each of those the shape
+   * comparison decides whether the full scan is worth doing. A root that has not
+   * changed costs one `readdir` and one `stat` per schedule; a root that has
+   * changed costs the scan it would have cost five minutes later anyway.
+   *
+   * Never runs twice at once: on a busy machine — the same one whose descriptor
+   * pressure killed the watch in the first place — a scan can outlast the tick
+   * that started it, and passes stacking on each other would turn one slow root
+   * into an unbounded queue.
+   */
+  async sweepUnwatchedRoots(): Promise<void> {
+    if (this.sweeping) return;
+    this.sweeping = true;
+    try {
+      const unwatched = new Set(this.watchHealth?.rootsWithoutLiveWatch() ?? []);
+      for (const root of this.roots) {
+        if (!unwatched.has(root.dir)) {
+          // Its watch is live again, or it never lacked one. Drop the record
+          // rather than keeping it: if the root goes dark later, "no record" is
+          // the honest starting point and reconciles once, where a stale record
+          // could match a shape that has since changed and back.
+          this.shapes.delete(root.dir);
+          continue;
+        }
+        // Read BEFORE the pass and committed only after it, for the reason the
+        // harness's equivalent gives: recorded at detection, a pass that fails
+        // has already written the change off; recorded afterwards, a file that
+        // lands DURING the pass is counted as seen by a scan that never saw it.
+        const shape = await taskRootShape(root);
+        if (this.shapes.get(root.dir) === shape) continue;
+        await this.reconcilePass([root]);
+        this.shapes.set(root.dir, shape);
+      }
+    } finally {
+      this.sweeping = false;
+    }
   }
 
   /**
@@ -247,8 +350,12 @@ export class TaskReconciler {
     return true;
   }
 
-  /** Stop periodic reconciliation. */
+  /** Stop periodic reconciliation on both cadences. */
   stop(): void {
+    if (this.sweepInterval) {
+      clearInterval(this.sweepInterval);
+      this.sweepInterval = null;
+    }
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
@@ -290,6 +397,23 @@ export class TaskReconciler {
    * which is exactly how this ran broken for weeks.
    */
   async reconcile(): Promise<{ upserted: number; orphaned: number }> {
+    return this.reconcilePass(this.roots);
+  }
+
+  /**
+   * One pass, over the roots given rather than over all of them.
+   *
+   * Scoping is safe because the retirement gate already turns on which
+   * directories THIS pass enumerated: a row whose file sits in a root the pass
+   * did not read is skipped, exactly as it is for a root nobody registered. So
+   * a single-root pass can repair that root and can never retire anything
+   * outside it.
+   *
+   * @param roots - The roots to read.
+   */
+  private async reconcilePass(
+    roots: readonly TaskRoot[]
+  ): Promise<{ upserted: number; orphaned: number }> {
     let upserted = 0;
     let orphaned = 0;
     const seenFilePaths = new Set<string>();
@@ -297,7 +421,7 @@ export class TaskReconciler {
     // file is gone — see the retirement loop below.
     const scannedDirs = new Set<string>();
 
-    for (const root of this.roots) {
+    for (const root of roots) {
       let results;
       try {
         results = await scanTaskRoot(root);
