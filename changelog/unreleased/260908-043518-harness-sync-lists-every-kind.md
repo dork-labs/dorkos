@@ -15,7 +15,9 @@ covers:
 ### Added
 
 - `dorkos harness sync` now lists everything else in your `.claude/` folder, not just the parts it already knew how to copy. Rules in subfolders, subagents in subfolders, and whole folders you have linked in from elsewhere are all counted, and a subagent is listed under the name you invoke it by rather than its file path. Your rules, your subagents, your MCP servers, the hooks you keep to yourself in `.claude/settings.local.json`, and any hooks a skill declares in its own front matter each get a line saying they stay in Claude Code — and, for every other agent you run, where that agent would keep the same thing. Before this, a project with 13 rules, 7 subagents and an `.mcp.json` was told about none of them, which reads exactly like a project that has none (DOR-1845)
-- Your subagents already work in Cursor, and your skills in `.claude/skills` already work in Cursor, OpenCode and Copilot — the report now says so instead of calling them dropped. All four read those folders themselves, so nothing is written for them
+- Your subagents already work in Cursor, and your skills in `.claude/skills` already work in Cursor, OpenCode and Copilot — the report now says so instead of calling them dropped. All four read those folders themselves, so nothing is written for them. That includes the skills you marked Claude-Code-only: marking one says what you meant, not what OpenCode reads, and OpenCode reads that folder
+
+- When a skill in `.claude/skills` has a name an agent would not accept — capitals, an underscore, or a name inside the file that does not match its folder — the report no longer says it works there. It says which rule the name breaks and that the agent's own docs do not say what happens next, so you can rename it or leave it knowingly (DOR-1845)
 
 ### Fixed
 
