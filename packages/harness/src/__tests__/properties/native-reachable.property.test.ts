@@ -112,8 +112,20 @@ describe('P9b — a `native` skill is somewhere its harness actually reads', () 
           // §5's shape for a projected tree: an authored skill may be uncertain
           // only because it was ALSO reached through the engine's own symlink,
           // and only while it is discovered by its real path too.
+          //
+          // Scoped to each harness's OWN natives. The union across harnesses made
+          // a claim the plan never makes: a skill a person links into
+          // `.claude/skills` is a confident `native` for Claude Code, which
+          // documents following links, and an honest DROP for OpenCode, which
+          // reads the directory and says nothing about links — and the union then
+          // demanded OpenCode discover a path OpenCode was never promised
+          // (DOR-1845 review). A harness answers for what the plan told it.
           for (const [harness, coverage] of byHarness) {
-            const authoredPaths = new Set(natives.map((a) => realpath(join(repoRoot, a.source))));
+            const authoredPaths = new Set(
+              natives
+                .filter((a) => a.harness === harness)
+                .map((a) => realpath(join(repoRoot, a.source)))
+            );
             for (const entry of coverage.uncertain) {
               if (!authoredPaths.has(realpath(entry.path))) continue;
               expect({ harness, path: entry.path, reason: entry.reason }).toEqual({

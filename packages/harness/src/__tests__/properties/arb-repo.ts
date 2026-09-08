@@ -153,6 +153,25 @@ export interface RepoSpec {
   localSettingsHooks: boolean;
   /** Whether the first authored skill declares hooks in its own frontmatter. */
   skillFrontmatterHooks: boolean;
+  /**
+   * Whether a whole directory of rules is linked in from outside `.claude/rules`
+   * — the shape a person uses to share one rule set across their repositories.
+   * `Dirent.isDirectory()` is false for it, so the walk saw neither a directory
+   * nor an `.md` file and said nothing.
+   */
+  linkedRulesDir: boolean;
+  /**
+   * Whether an `.md` entry under `.claude/agents` is a link to a file that moved.
+   * It looks exactly like a subagent to a scan that never opens it, which is how
+   * a `native` was claimed for a path that resolves to nothing.
+   */
+  deadAgentLink: boolean;
+  /**
+   * Whether a person's own skill is linked into `.claude/skills` from elsewhere
+   * in the repository. Not every link there is DorkOS's projection, and treating
+   * them all as one gave a real skill no line at all.
+   */
+  personSkillLink: boolean;
   /** The manifest's enabled harnesses (may be empty). */
   harnesses: HarnessId[];
   /** A hand-written file at one generated hook target, or none. */
@@ -189,8 +208,15 @@ const PERSON_LINK_TEXT = '../../vendor/skills/vendored';
 /** A small name alphabet, so collisions between authored and plugin skills happen. */
 const SKILL_NAMES = ['a', 'b', 'c', 'd'] as const;
 
-/** Rule file names — three is enough to make a per-harness drop list non-trivial. */
-const RULE_NAMES = ['api', 'ui', 'db'] as const;
+/**
+ * Rule file names, one of them NESTED.
+ *
+ * Claude Code discovers `.claude/rules` recursively, and this generator staged
+ * only flat names — so a walk that stopped at the top level kept P6 green while
+ * giving a nested rule zero lines under every harness (DOR-1845 review). Same
+ * reasoning as the nested subagent names below.
+ */
+const RULE_NAMES = ['api', 'ui', 'frontend/style'] as const;
 
 /**
  * Subagent names, two of them nested.
@@ -203,6 +229,19 @@ const AGENT_NAMES = ['reviewer', 'react/tanstack', 'deep/nested/helper'] as cons
 
 /** MCP server names for the generated `.mcp.json`. */
 const MCP_NAMES = ['linear', 'shadcn'] as const;
+
+/** Where a linked-in directory of rules is staged, and the link that reaches it. */
+const LINKED_RULES_SOURCE = 'vendor/rules';
+/** The link into `.claude/rules` that points at {@link LINKED_RULES_SOURCE}. */
+const LINKED_RULES_LINK = '.claude/rules/shared';
+
+/** A dead subagent link: an `.md` entry that opens as nothing. */
+const DEAD_AGENT_LINK = '.claude/agents/dead.md';
+
+/** A skill a person keeps outside the canonical layer and links where Claude Code reads. */
+const PERSON_SKILL_SOURCE = 'vendor/skills/mine';
+/** The link into `.claude/skills` that reaches {@link PERSON_SKILL_SOURCE}. */
+const PERSON_SKILL_LINK = '.claude/skills/mine';
 
 /**
  * The generator: a whole small repo, hostile occupants included.
@@ -233,6 +272,9 @@ export function arbRepo(): fc.Arbitrary<RepoSpec> {
     }),
     localSettingsHooks: fc.boolean(),
     skillFrontmatterHooks: fc.boolean(),
+    linkedRulesDir: fc.boolean(),
+    deadAgentLink: fc.boolean(),
+    personSkillLink: fc.boolean(),
     harnesses: fc.subarray([...HARNESS_IDS]),
     occupant: fc.option(
       fc.record({
@@ -301,6 +343,19 @@ export interface MaterialisedRepo {
   occupantAbs?: string;
   /** The dead link that was actually staged, when there is one. */
   dangling?: StagedDangling;
+}
+
+/**
+ * Make a symlink at a repo-relative path, creating its parent directory first.
+ *
+ * @param repoRoot - absolute path of the staged repository.
+ * @param relLink - repo-relative path the link sits at.
+ * @param linkText - the literal link text, never resolved here.
+ */
+function linkInto(repoRoot: string, relLink: string, linkText: string): void {
+  const abs = join(repoRoot, relLink);
+  mkdirSync(dirname(abs), { recursive: true });
+  symlinkSync(linkText, abs);
 }
 
 /**
@@ -373,6 +428,23 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
       ),
     });
   }
+  if (spec.linkedRulesDir) {
+    writeFileAt(
+      join(repoRoot, LINKED_RULES_SOURCE, 'security.md'),
+      "---\npaths: '**/*.ts'\n---\n\n# security\n"
+    );
+    linkInto(repoRoot, LINKED_RULES_LINK, `../../${LINKED_RULES_SOURCE}`);
+  }
+  if (spec.deadAgentLink) {
+    linkInto(repoRoot, DEAD_AGENT_LINK, '../../gone/missing.md');
+  }
+  if (spec.personSkillLink) {
+    writeFileAt(
+      join(repoRoot, PERSON_SKILL_SOURCE, 'SKILL.md'),
+      '---\nname: mine\ndescription: A skill kept outside the canonical layer\n---\n\n# mine\n'
+    );
+    linkInto(repoRoot, PERSON_SKILL_LINK, `../../${PERSON_SKILL_SOURCE}`);
+  }
   for (const plugin of spec.plugins) {
     const dir = join(repoRoot, '.dork', 'plugins', plugin.name);
     writeJsonAt(join(dir, '.dork', 'manifest.json'), {
@@ -427,9 +499,7 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
   }
 
   if (spec.personLink) {
-    const abs = join(repoRoot, PERSON_LINK_PATH);
-    mkdirSync(dirname(abs), { recursive: true });
-    symlinkSync(PERSON_LINK_TEXT, abs);
+    linkInto(repoRoot, PERSON_LINK_PATH, PERSON_LINK_TEXT);
   }
 
   // The dead link goes on last, and only where nothing else is: two hostile
