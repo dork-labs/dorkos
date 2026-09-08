@@ -16,7 +16,15 @@
  * @module __tests__/journeys/stage
  */
 import { createHash } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, readlinkSync, lstatSync, statSync } from 'node:fs';
+import {
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  lstatSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
 import { writeFileSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 
@@ -129,6 +137,35 @@ function sameEntry(a: SnapshotEntry, b: SnapshotEntry): boolean {
 /** The lowercase hex sha256 of a buffer. */
 function sha256Of(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+/**
+ * A snapshot of a tree with the root's own absolute path scrubbed out of every
+ * file, as a plain object so a failing comparison prints the differing path.
+ *
+ * {@link snapshotTree} hashes raw bytes, which is right for before/after inside
+ * ONE repo. Comparing two SEPARATELY staged repos needs this instead: a
+ * projected hook command can name the plugin's install directory, which is a
+ * different temp path in every staging and is never what such a test is asking
+ * about. Both spellings of the root are scrubbed, because macOS hands out
+ * `/var/folders/…` and resolves it to `/private/var/…`.
+ *
+ * @param root - absolute path to snapshot.
+ * @returns repo-relative path to `dir`, `link:<text>`, or `sha:<digest>`.
+ */
+export function scrubbedSnapshot(root: string): Record<string, string> {
+  const real = realpathSync(root);
+  const out: Record<string, string> = {};
+  for (const [path, entry] of snapshotTree(root)) {
+    if (entry.kind === 'dir') out[path] = 'dir';
+    else if (entry.kind === 'symlink') out[path] = `link:${entry.linkText}`;
+    else {
+      const text = readFileSync(join(root, path), 'utf8');
+      out[path] =
+        `sha:${sha256Of(Buffer.from(text.split(real).join('<ROOT>').split(root).join('<ROOT>')))}`;
+    }
+  }
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
 }
 
 /**

@@ -125,13 +125,48 @@ function symlinkType(repoRoot: string, source: string): 'junction' | 'file' | un
 }
 
 /**
+ * How many times {@link applySymlink} will look again after another writer beat
+ * it to the target.
+ *
+ * Three, not one: the loop only repeats when the path CHANGED under it, so each
+ * repeat is evidence of a real concurrent writer rather than of a wait. Two
+ * writers applying the same plan settle on the first repeat; the third is slack
+ * for a third writer, and the answer after that is whatever is actually there.
+ */
+const SYMLINK_ATTEMPTS = 3;
+
+/**
  * Create or repair a relative symlink for a `symlink` action.
+ *
+ * Every step here is a check followed by an act, and another process applying
+ * the same plan can land between the two: `symlinkSync` then throws EEXIST and
+ * takes the whole apply down with it — measured, in `__tests__/journeys/
+ * j12-two-writers.test.ts`, which reproduced it on the first run of two writers
+ * on one repo. There is no atomic create-or-adopt for a link, so the answer is
+ * to look again: an EEXIST means somebody put something here, and what they put
+ * decides the outcome exactly as it would have a moment earlier. Two writers
+ * applying the same plan therefore BOTH report the link applied, which is true —
+ * it is there, and it is theirs.
+ *
+ * Unlike the file writes, the replacement of a STALE link is still not atomic:
+ * the old link is removed before the new one is created, so a harness listing
+ * `.claude/skills` in that window sees one skill fewer. It happens only when the
+ * link text is already wrong (a source that moved), so the reader in that window
+ * would otherwise have followed a link to the wrong place, and the next lookup
+ * finds the repaired link. Closing it means creating the link at a temp name and
+ * renaming it over the target, which on Windows means renaming a junction — a
+ * trade with no evidence behind it yet.
  *
  * @returns `undefined` when the symlink now matches the plan; the one-line reason
  *   to report when a *real* (non-symlink) file or directory occupies the target —
  *   a conflict that is left untouched rather than destroyed, exactly like
  *   {@link applyScaffold}. The reason comes from the same predicate `checkPlan`
  *   reads, so the two modes can never disagree about a path neither may touch.
+ *   Exhausting {@link SYMLINK_ATTEMPTS} — three consecutive lost races against a
+ *   writer wanting DIFFERENT link text at one path — answers `undefined` too,
+ *   and deliberately invents no reason for it: nothing is blocking the path, a
+ *   re-run does fix it, and `isDrifted` reports exactly that. So the tree is
+ *   never called clean on the strength of it, which is the property that matters.
  */
 function applySymlink(repoRoot: string, action: ProjectionAction): string | undefined {
   if (!action.source || !action.target) {
@@ -140,18 +175,29 @@ function applySymlink(repoRoot: string, action: ProjectionAction): string | unde
   const absTarget = join(repoRoot, action.target);
   const linkText = relativeLink(repoRoot, action.source, action.target);
 
-  if (pathExists(absTarget)) {
-    // A real file/dir — never destroy hand-authored content, and say what it is.
-    const blocked = blockingSymlinkOccupant(absTarget, linkText);
-    if (blocked !== undefined) return blocked;
-    if (linkMatchesPlan(absTarget, join(repoRoot, action.source), linkText, LINK_CHECK)) {
-      return undefined; // already the correct managed link
+  const absSource = join(repoRoot, action.source);
+  for (let attempt = 0; attempt < SYMLINK_ATTEMPTS; attempt++) {
+    if (pathExists(absTarget)) {
+      // A real file/dir — never destroy hand-authored content, and say what it is.
+      const blocked = blockingSymlinkOccupant(absTarget, linkText);
+      if (blocked !== undefined) return blocked;
+      if (linkMatchesPlan(absTarget, absSource, linkText, LINK_CHECK)) {
+        return undefined; // already the correct managed link
+      }
+      rmSync(absTarget, { force: true }); // a stale *managed* symlink — safe to replace
     }
-    rmSync(absTarget, { force: true }); // a stale *managed* symlink — safe to replace
+    mkdirSync(dirname(absTarget), { recursive: true });
+    try {
+      symlinkSync(linkText, absTarget, symlinkType(repoRoot, action.source));
+      return undefined;
+    } catch (err) {
+      // Anything but "somebody got here first" is a real failure to report.
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+    }
   }
-  mkdirSync(dirname(absTarget), { recursive: true });
-  symlinkSync(linkText, absTarget, symlinkType(repoRoot, action.source));
-  return undefined;
+  // Out of attempts: answer for what is actually there, through the same two
+  // predicates, so this can still only ever report a real occupant.
+  return blockingSymlinkOccupant(absTarget, linkText);
 }
 
 /**
