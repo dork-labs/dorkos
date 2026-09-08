@@ -235,7 +235,7 @@ describe('J-12 — two installs into one repo, in one process', () => {
     for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
   });
 
-  it('takes turns: the second install projects after the first has finished, not inside it', async () => {
+  it('J-12, AP-10: takes turns: the second install projects after the first has finished, not inside it', async () => {
     const repo = stageRepo();
     const timeline: string[] = [];
     recordSeamCalls(timeline, homes);
@@ -262,7 +262,7 @@ describe('J-12 — two installs into one repo, in one process', () => {
     ]);
   });
 
-  it('leaves exactly the tree the same two installs leave one after the other', async () => {
+  it('J-12, AP-10: leaves exactly the tree the same two installs leave one after the other', async () => {
     const concurrentRepo = stageRepo();
     const approvals = grantingGateway([]);
     await Promise.all(

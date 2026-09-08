@@ -186,7 +186,7 @@ describe('harness projection consent seam', () => {
     for (const file of Object.keys(ALLOWED_PROJECT_CALLERS)) expect(files).toContain(file);
   });
 
-  it('routes every trigger through the seam — nothing else can reach project()', () => {
+  it('HK-07: routes every trigger through the seam — nothing else can reach project()', () => {
     const violations = files
       .filter((file) => isGuarded(file) && !isTest(file) && !(file in ALLOWED_PROJECT_CALLERS))
       .filter(

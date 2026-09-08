@@ -145,7 +145,7 @@ describe('projectWithConsent', () => {
     home = '';
   });
 
-  it('installs an approved package’s hooks and withholds nothing', () => {
+  it('HK-07: installs an approved package’s hooks and withholds nothing', () => {
     const result = projectWithConsent(repo, {
       dorkHome: home,
       sweepOrphans: true,
@@ -157,7 +157,7 @@ describe('projectWithConsent', () => {
     expect(codexHooksText()).toContain(PLUGIN_COMMAND);
   });
 
-  it('withholds a refused package’s hooks, says WHY, and still projects its skill', () => {
+  it('HK-07: withholds a refused package’s hooks, says WHY, and still projects its skill', () => {
     const result = projectWithConsent(repo, {
       dorkHome: home,
       sweepOrphans: true,
@@ -174,7 +174,7 @@ describe('projectWithConsent', () => {
     expect(existsSync(join(repo, '.claude', 'skills', 'acme__helper'))).toBe(true);
   });
 
-  it('withholds a package nobody has decided about, and reports it as unasked', () => {
+  it('HK-07: withholds a package nobody has decided about, and reports it as unasked', () => {
     const result = projectWithConsent(repo, {
       dorkHome: home,
       sweepOrphans: true,
@@ -276,7 +276,7 @@ describe('projectWithConsent', () => {
     expect(pathExists(projected)).toBe(false);
   });
 
-  it('refuses to sweep a plan narrowed to one harness', () => {
+  it('AP-07: refuses to sweep a plan narrowed to one harness', () => {
     // A filtered plan omits every other harness's live projections, and the
     // sweep would read them as orphans and delete them. The caller is not
     // trusted to remember.
@@ -290,7 +290,7 @@ describe('projectWithConsent', () => {
     ).toThrow(/narrowed to one harness/);
   });
 
-  it('keeps a harness-agnostic drop under every harness filter', () => {
+  it('VC-02: keeps a harness-agnostic drop under every harness filter', () => {
     // A non-portable plugin layer has no home in ANY harness, so hiding it
     // behind `--harness cursor` reports nothing where there is something to
     // report (contract VC-02).

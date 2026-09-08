@@ -157,7 +157,7 @@ describe('DOR-522 — a package that ships shell commands', () => {
     approvalInternal.forgetDecisions();
   });
 
-  it('does not write its command into the files an agent runs, and asks a person instead', async () => {
+  it('HK-07: does not write its command into the files an agent runs, and asks a person instead', async () => {
     const request = vi.fn().mockReturnValue(ticket());
     const consume = vi.fn().mockReturnValue({ outcome: 'expired', approvalId: 'a1' });
 
@@ -178,7 +178,7 @@ describe('DOR-522 — a package that ships shell commands', () => {
     expect(skillProjected()).toBe(true);
   });
 
-  it('installs the commands and remembers the answer once a person says yes', async () => {
+  it('HK-07: installs the commands and remembers the answer once a person says yes', async () => {
     const request = vi.fn().mockReturnValue(ticket());
     const consume = vi.fn().mockReturnValue({
       outcome: 'granted',
@@ -203,7 +203,7 @@ describe('DOR-522 — a package that ships shell commands', () => {
     });
   });
 
-  it('never asks twice for commands already allowed in this project', async () => {
+  it('HK-07: never asks twice for commands already allowed in this project', async () => {
     config.harness = {
       autoSync: true,
       refusedHooks: [],
@@ -222,7 +222,7 @@ describe('DOR-522 — a package that ships shell commands', () => {
     expect(settingsText()).toContain(HOSTILE_COMMAND);
   });
 
-  it('re-asks when an update changes what the package would run', async () => {
+  it('HK-07: re-asks when an update changes what the package would run', async () => {
     // The stored yes covers the commands a person actually read. A package that
     // rewrites its hooks.json must not inherit it.
     config.harness = {
@@ -248,7 +248,7 @@ describe('DOR-522 — a package that ships shell commands', () => {
     expect(settingsText()).not.toContain(HOSTILE_COMMAND);
   });
 
-  it('withholds the commands when there is nobody to ask', async () => {
+  it('HK-07: withholds the commands when there is nobody to ask', async () => {
     await runAutoProjection(
       { projectPath: repo, packageName: 'evil', action: 'install' },
       { dorkHome: home }
@@ -289,7 +289,7 @@ describe('DOR-522 — a package that ships shell commands', () => {
     expect(settingsText()).not.toContain('echo one');
   });
 
-  it('says WHEN each command would run, not only what it is', async () => {
+  it('VC-04: says WHEN each command would run, not only what it is', async () => {
     const request = vi.fn().mockReturnValue(ticket());
     const consume = vi.fn().mockReturnValue({ outcome: 'expired', approvalId: 'a1' });
 
@@ -419,7 +419,7 @@ describe('DOR-522 — a package that ships shell commands', () => {
     expect(request).toHaveBeenCalledTimes(2);
   });
 
-  it('writes the refusal down, so a later run obeys it instead of re-asking (DOR-1849)', async () => {
+  it('HK-07, VC-05: writes the refusal down, so a later run obeys it instead of re-asking (DOR-1849)', async () => {
     // A "no" used to live in this process's memory only, which is why
     // `dorkos harness sync` had nothing to consult and installed the commands
     // anyway. The record is keyed by the same `<pkg>@<digest>` an approval is,

@@ -145,7 +145,7 @@ afterEach(() => {
 });
 
 describe('projectAgentWorkspace', () => {
-  it('scaffolds a harness manifest and links each skill where Claude Code reads it', () => {
+  it('TR-03, IN-04: scaffolds a harness manifest and links each skill where Claude Code reads it', () => {
     const agentDir = buildAgentWorkspace('dorkbot', ['operating-dorkos', 'running-agents']);
 
     const result = projectAgentWorkspace(agentDir);
@@ -167,7 +167,7 @@ describe('projectAgentWorkspace', () => {
     }
   });
 
-  it('is idempotent — a second run changes nothing and reports no conflict', () => {
+  it('AP-01: is idempotent — a second run changes nothing and reports no conflict', () => {
     const agentDir = buildAgentWorkspace('dorkbot');
 
     const first = projectAgentWorkspace(agentDir);
@@ -186,7 +186,7 @@ describe('projectAgentWorkspace', () => {
     );
   });
 
-  it('projects an installed package skills but never its shell hooks', () => {
+  it('HK-08: projects an installed package skills but never its shell hooks', () => {
     // The regression guard for the gate. `project()` with no `allowPluginHooks`
     // lets EVERY installed package contribute hooks, and this pass runs
     // unattended (agent creation, server boot) with nobody to approve them —
@@ -225,7 +225,7 @@ describe('projectAgentWorkspace', () => {
     expect(settings).not.toContain('git rev-parse');
   });
 
-  it('scaffolds a Claude-Code-only manifest so no hooks file is ever generated', () => {
+  it('HK-08: scaffolds a Claude-Code-only manifest so no hooks file is ever generated', () => {
     // `allowPluginHooks` gates INSTALLED-package hooks only. The workspace's own
     // `.claude/settings.json` hooks come in through `loadClaudeHooks`, merged
     // unconditionally, and a codex-enabled manifest turns them into a generated
@@ -286,7 +286,7 @@ describe('projectAgentWorkspace', () => {
     expect(manifest.harnesses).toEqual(['claude-code', 'codex']);
   });
 
-  it('keeps failing diagnosably when .claude/settings.json cannot be parsed', () => {
+  it('AP-11: keeps failing diagnosably when .claude/settings.json cannot be parsed', () => {
     // A trailing comma in a hand-edited settings file makes the engine's parse
     // throw on every boot. That must not crash anything, and the warning has to
     // name the workspace and the reason — it is the only signal a person gets.
@@ -336,7 +336,7 @@ describe('projectAgentWorkspace', () => {
     );
   });
 
-  it('reports a conflict instead of destroying a real file at a projection target', () => {
+  it('AP-04: reports a conflict instead of destroying a real file at a projection target', () => {
     const agentDir = buildAgentWorkspace('hand-authored');
     mkdirSync(join(agentDir, '.claude', 'skills', 'operating-dorkos'), { recursive: true });
     const authored = join(agentDir, '.claude', 'skills', 'operating-dorkos', 'SKILL.md');
@@ -380,7 +380,7 @@ describe('backfillAgentWorkspaceSkills', () => {
     );
   });
 
-  it('seeds a workspace that has no .agents/skills at all, and links it on the SAME pass', async () => {
+  it('SRC-05, TR-04: seeds a workspace that has no .agents/skills at all, and links it on the SAME pass', async () => {
     // The ordering guard, and the case that motivated DOR-671: 12 of the 13
     // agents on the machine this was measured on had no `.agents/skills/` at
     // all. `projectAgentWorkspace` returns early when that directory is absent,
@@ -407,7 +407,7 @@ describe('backfillAgentWorkspaceSkills', () => {
     }
   });
 
-  it('upgrades an unmodified pack skill stamped with an older version', async () => {
+  it('SRC-05: upgrades an unmodified pack skill stamped with an older version', async () => {
     // The version ratchet. Pack bumps have carried safety corrections — v4
     // retracted "`dorkos uninstall` is the person's ungated path", v6 retracted
     // "`tasks_delete` carries no gate of its own" — and before this pass an
@@ -427,7 +427,7 @@ describe('backfillAgentWorkspaceSkills', () => {
     });
   });
 
-  it('leaves a registered workspace outside dork home completely untouched', async () => {
+  it('AP-13: leaves a registered workspace outside dork home completely untouched', async () => {
     // A registered agent can point at a person's own git repository. Booting the
     // server is not permission to write a harness manifest and a `.claude/` tree
     // into one, so the pass draws its boundary at `<dorkHome>/agents/`.
@@ -452,7 +452,7 @@ describe('backfillAgentWorkspaceSkills', () => {
     expect(existsSync(join(outside, '.agents', 'harness.manifest.json'))).toBe(false);
   });
 
-  it('never seeds a workspace outside dork home (DOR-662)', async () => {
+  it('AP-13: never seeds a workspace outside dork home (DOR-662)', async () => {
     // The boundary now guards a WRITE of skill content, not just symlinks. A dev
     // server must not be able to seed into the operator's real `~/.dork/agents`,
     // and a boot must not seed into somebody's repository at all — repairing
@@ -471,7 +471,7 @@ describe('backfillAgentWorkspaceSkills', () => {
     expect(listTree(outside)).toEqual(['README.md']);
   });
 
-  it('never clobbers a hand-authored skill that shares a pack name', async () => {
+  it('SRC-05, AP-13: never clobbers a hand-authored skill that shares a pack name', async () => {
     // Both sides at once, which nothing exercised before: until the pass seeded,
     // a workspace like this had nothing to project, so the projection never even
     // reached the conflicting target.
@@ -558,7 +558,7 @@ describe('backfillAgentWorkspaceSkills', () => {
     expect(summary.projected).toBe(1);
   });
 
-  it('does not follow a symlink inside the agents directory out to a real repo', async () => {
+  it('AP-13: does not follow a symlink inside the agents directory out to a real repo', async () => {
     // The bypass in the other direction: a link planted under `<dorkHome>/agents`
     // must not make somebody's repository writable by this pass.
     const outside = join(tmpRoot, 'someones-real-repo');
@@ -667,7 +667,7 @@ describe('backfillAgentWorkspaceSkills', () => {
     );
   });
 
-  it('does not mistake a sibling of the agents directory for one of its own', async () => {
+  it('AP-13: does not mistake a sibling of the agents directory for one of its own', async () => {
     // `<dorkHome>/agents-backup` shares a string prefix with `<dorkHome>/agents`
     // without being inside it.
     const sibling = join(tmpRoot, 'agents-backup', 'copied-agent');
@@ -744,7 +744,7 @@ describe('backfillAgentWorkspaceSkills', () => {
     );
   });
 
-  it('is idempotent across boots', async () => {
+  it('TR-04, AP-01: is idempotent across boots', async () => {
     const agentDir = buildAgentWorkspace('rebooting-agent');
 
     await backfillAgentWorkspaceSkills([agentDir], tmpRoot);

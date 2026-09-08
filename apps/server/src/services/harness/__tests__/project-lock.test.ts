@@ -74,7 +74,7 @@ function tracked(clock: { now: number }, log: Interval[], label: string): () => 
 }
 
 describe('withProjectLock', () => {
-  it('lets two different repositories run at the same time', async () => {
+  it('AP-10: lets two different repositories run at the same time', async () => {
     const clock = { now: 0 };
     const log: Interval[] = [];
     const a = makeTempDir('lock-a-');
@@ -90,7 +90,7 @@ describe('withProjectLock', () => {
     expect({ overlapped: overlaps(first!, second!) }).toEqual({ overlapped: true });
   });
 
-  it('makes two turns on ONE repository take turns', async () => {
+  it('AP-10: makes two turns on ONE repository take turns', async () => {
     const clock = { now: 0 };
     const log: Interval[] = [];
     const repo = makeTempDir('lock-same-');
