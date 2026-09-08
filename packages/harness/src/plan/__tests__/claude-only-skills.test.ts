@@ -142,27 +142,96 @@ describe('claudeOnlySkills — the entry points somewhere else entirely', () => 
   });
 });
 
-describe('claudeOnlySkills — the entry’s path is a symlink', () => {
-  it('warns that a link is not a skill kept in .claude/skills, whatever it points at', () => {
-    const plan = planIn(manifestFor([{ name: 'linked' }]), (repo) => {
-      writeSkill(repo, '.agents/skills/linked');
-      mkdirSync(join(repo, '.claude', 'skills'), { recursive: true });
-      symlinkSync(
-        join('..', '..', '.agents', 'skills', 'linked'),
-        join(repo, '.claude/skills/linked')
-      );
-    });
+describe('claudeOnlySkills — the skill is canonical, so the entry is redundant', () => {
+  /** Stage the skill in `.agents/skills` only — a fresh clone, before any apply. */
+  function freshClone(repo: string): void {
+    writeSkill(repo, '.agents/skills/linked');
+  }
+
+  /** The same tree one apply later: the projection symlink now exists. */
+  function afterApply(repo: string): void {
+    freshClone(repo);
+    mkdirSync(join(repo, '.claude', 'skills'), { recursive: true });
+    symlinkSync(
+      join('..', '..', '.agents', 'skills', 'linked'),
+      join(repo, '.claude/skills/linked')
+    );
+  }
+
+  it('warns on the FIRST pass, before anything has been projected', () => {
+    // The gap this closes: the warning used to need a real directory at the
+    // projection target, so on a fresh clone the entry was silent and only spoke
+    // up after the first sync — at which point the message it gave described
+    // DorkOS's own symlink rather than the manifest's mistake.
+    const plan = planIn(manifestFor([{ name: 'linked' }]), freshClone);
 
     const warnings = plan.warnings.filter((w) => w.name === 'linked');
     expect(warnings).toHaveLength(1);
-    expect(warnings[0].reason).toContain('is a symlink');
-    expect(warnings[0].reason).toContain('drop the entry');
+    expect(warnings[0].reason).toBe(
+      'claudeOnlySkills names a skill that also lives in .agents/skills; nothing is at .claude/skills/linked. The entry is redundant — drop it'
+    );
+
+    // Redundant is not a conflict: the projection is planned as usual.
+    expect(
+      plan.actions.some((a) => a.artifact === 'skill' && a.target === '.claude/skills/linked')
+    ).toBe(true);
+  });
+
+  it('still warns on the second pass, naming the link as the projection it is', () => {
+    const plan = planIn(manifestFor([{ name: 'linked' }]), afterApply);
+
+    const warnings = plan.warnings.filter((w) => w.name === 'linked');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].reason).toContain('also lives in .agents/skills');
+    expect(warnings[0].reason).toContain('is a symlink, which is the projection DorkOS makes');
+    expect(warnings[0].reason).toContain('drop it');
 
     // The projection itself is STILL planned. Withholding it would leave the
     // link unowned by the plan, and the orphan sweep would prune a working one.
     expect(
       plan.actions.some((a) => a.artifact === 'skill' && a.target === '.claude/skills/linked')
     ).toBe(true);
+  });
+
+  it('says the same thing on both passes, so the message is about the manifest', () => {
+    // Not a restatement of the two cases above: it pins that the FACT does not
+    // change with the state of the tree, which is the whole defect.
+    const first = planIn(manifestFor([{ name: 'linked' }]), freshClone).warnings.filter(
+      (w) => w.name === 'linked'
+    );
+    const second = planIn(manifestFor([{ name: 'linked' }]), afterApply).warnings.filter(
+      (w) => w.name === 'linked'
+    );
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
+    for (const [pass, warning] of [first[0], second[0]].entries()) {
+      expect({
+        pass,
+        redundant: warning.reason.includes('The entry is redundant — drop it'),
+      }).toEqual({ pass, redundant: true });
+    }
+  });
+});
+
+describe('claudeOnlySkills — the entry’s path is a symlink to something else', () => {
+  it('warns that a link is not a skill kept in .claude/skills, whatever it points at', () => {
+    // No canonical skill of this name, so this is the entry's own claim under
+    // test rather than a redundancy: `.claude/skills/vaulted` is a link into a
+    // directory kept outside the skills roots entirely.
+    const plan = planIn(manifestFor([{ name: 'vaulted' }]), (repo) => {
+      writeSkill(repo, 'vault/vaulted');
+      mkdirSync(join(repo, '.claude', 'skills'), { recursive: true });
+      symlinkSync(join('..', '..', 'vault', 'vaulted'), join(repo, '.claude/skills/vaulted'));
+    });
+
+    const warnings = plan.warnings.filter((w) => w.name === 'vaulted');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].reason).toContain('is a symlink');
+    expect(warnings[0].reason).toContain('drop the entry');
+    expect(warnings[0].reason).not.toContain('redundant');
+    // Nothing is claimed for it either way.
+    expect(plan.actions.filter((a) => a.name === 'vaulted')).toEqual([]);
+    expect(plan.drops.filter((a) => a.name === 'vaulted')).toEqual([]);
   });
 });
 

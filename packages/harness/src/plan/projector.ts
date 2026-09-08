@@ -123,6 +123,28 @@ const CLAUDE_ONLY_DROP_REASON =
   'claude-only skill, kept in .claude/skills by manifest.claudeOnlySkills';
 
 /**
+ * What is at a redundant entry's declared path, as a clause a warning can carry.
+ *
+ * The entry is already wrong — the skill is in `.agents/skills` — so this only
+ * says WHICH wrong it is, and it has to read the same on a fresh clone as after
+ * a sync. `missing` is the fresh-clone shape and `symlink` is the same tree one
+ * apply later, so both name the same fault rather than one of them describing
+ * the link DorkOS just made.
+ *
+ * @param location - the resolved entry, never `directory` at the projection target.
+ * @returns a lower-case clause, no trailing punctuation.
+ */
+function describeLocation(location: ClaudeOnlySkillLocation): string {
+  if (location.kind === 'symlink') {
+    return `${location.path} is a symlink, which is the projection DorkOS makes for it`;
+  }
+  if (location.kind === 'directory') {
+    return `${location.path} is a second copy no harness reads`;
+  }
+  return `nothing is at ${location.path}`;
+}
+
+/**
  * Account for every `manifest.claudeOnlySkills` entry against where the skill
  * actually is.
  *
@@ -181,23 +203,35 @@ function planClaudeOnlySkills(input: {
     };
     const inAgents = agentsSkillNames.has(entry.name);
 
+    // The skill is in the canonical layer, so the entry is wrong however its
+    // path resolves — and it must say so on the FIRST pass, before an apply has
+    // created anything. Keyed on `kind` because the reading changes with it, but
+    // never on whether a projection happens to exist yet: an entry that is
+    // silent on a fresh clone and speaks up after the first sync is describing
+    // DorkOS's own output rather than the manifest.
+    if (inAgents) {
+      if (location.kind === 'directory' && location.atProjectionTarget) {
+        // The one case with a consequence beyond the warning: a real directory
+        // at the projection target, so {@link planSkill} withholds the symlink
+        // rather than conflicting with it on every apply.
+        warn(
+          entry.name,
+          `claudeOnlySkills names a skill that also lives in ${AGENTS_SKILLS_DIR} — move it or drop the entry`
+        );
+      } else {
+        warn(
+          entry.name,
+          `claudeOnlySkills names a skill that also lives in ${AGENTS_SKILLS_DIR}; ${describeLocation(location)}. The entry is redundant — drop it`
+        );
+      }
+      continue;
+    }
+
     if (location.kind === 'symlink') {
       warn(
         entry.name,
         `claudeOnlySkills names "${entry.name}", but ${location.path} is a symlink — a projection of ${AGENTS_SKILLS_DIR}, or a link to a skill kept elsewhere. Either way it is not a skill kept in ${CLAUDE_SKILLS_DIR}: drop the entry`
       );
-      continue;
-    }
-
-    if (inAgents) {
-      if (location.kind === 'directory' && location.atProjectionTarget) {
-        warn(
-          entry.name,
-          `claudeOnlySkills names a skill that also lives in ${AGENTS_SKILLS_DIR} — move it or drop the entry`
-        );
-      }
-      // Otherwise the `.agents/skills` walk already covers it: it produces the
-      // claude-code symlink and the per-harness drops for this entry.
       continue;
     }
 
