@@ -127,16 +127,15 @@ function makeConnectionsQueryClient(seed: (qc: QueryClient) => void): QueryClien
 /**
  * `AccountsRegion` in its first-run state — no connectable services yet.
  *
- * The populated state (`ServiceGrid`, `AccountsList`, access review) needs
- * three more seeded data sources beyond this one; left for a future pass
- * rather than guessing at their shapes here. First-run is the state every new
- * install actually starts in, so it earns its place on its own.
+ * The first-run view still reads the pending access-request collection, so the
+ * showcase seeds every query the composed region needs before it mounts.
  */
 function AccountsRegionShowcase() {
   const client = useMemo(
     () =>
       makeConnectionsQueryClient((qc) => {
         qc.setQueryData(connectorKeys.connections(), { connections: [] });
+        qc.setQueryData(connectorKeys.agentRequestList('pending'), []);
         qc.setQueryData(connectorKeys.catalog(''), {
           pages: [{ services: [], warnings: [] }],
           pageParams: [undefined],
