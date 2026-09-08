@@ -20,8 +20,9 @@ export function useApiKeys() {
   return useQuery<ApiKeyRecord[]>({
     queryKey: apiKeysKey,
     queryFn: async () => {
-      const { data } = await client.apiKey.list();
-      return data ?? [];
+      const { data, error } = await client.apiKey.list();
+      if (error || !data) throw new Error('Couldn’t load API keys. Try again.');
+      return data.apiKeys;
     },
     staleTime: 30_000,
   });
