@@ -14,13 +14,13 @@ describe('resolveSourceRoots', () => {
 });
 
 describe('isEphemeralProvenance', () => {
-  it('classifies installed + adopted as ephemeral, authored as committed', () => {
+  it('SRC-10: classifies installed + adopted as ephemeral, authored as committed', () => {
     expect(isEphemeralProvenance('authored')).toBe(false);
     expect(isEphemeralProvenance('installed')).toBe(true);
     expect(isEphemeralProvenance('adopted')).toBe(true);
   });
 
-  it('declares the gitignore patterns installed + generated projections require', () => {
+  it('AP-09: declares the gitignore patterns installed + generated projections require', () => {
     expect(EPHEMERAL_GITIGNORE_PATTERNS).toContain('.dork/plugins/');
     expect(EPHEMERAL_GITIGNORE_PATTERNS).toContain('.agents/skills/*__*');
     // The generated hook files are gitignored too (FND-6)…

@@ -45,7 +45,7 @@ function buildFixtureRepo(): string {
 }
 
 describe('harness engine integration', () => {
-  it('projects, applies, stays idempotent, detects drift, and never destroys hand-authored content', () => {
+  it('AP-01, AP-04: projects, applies, stays idempotent, detects drift, and never destroys hand-authored content', () => {
     // Full project() -> applyPlan() -> checkPlan() lifecycle against a real temp repo.
     dir = buildFixtureRepo();
     const plan = project(dir);
@@ -102,7 +102,7 @@ describe('harness engine integration', () => {
     expect(readFileSync(join(link, 'precious.md'), 'utf8')).toBe('# do not delete\n');
   });
 
-  it('projects and applies an authored skill whose own source is a symlink', () => {
+  it('SK-13: projects and applies an authored skill whose own source is a symlink', () => {
     // A person keeps a skill in a shared folder and links it into the repo
     // (`.agents/skills/notes -> ../../vault/notes`). Codex follows that link
     // natively, so DorkOS has to see it too (DOR-1844). The Claude Code

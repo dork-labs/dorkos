@@ -36,7 +36,7 @@ function writeSkill(parent: string, name: string): void {
 }
 
 describe('scanInstalledPlugins', () => {
-  it('discovers project + global plugins and enumerates project portable assets', () => {
+  it('SRC-02: discovers project + global plugins and enumerates project portable assets', () => {
     projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
     dorkHome = mkdtempSync(join(tmpdir(), 'harness-home-'));
 
@@ -90,7 +90,7 @@ describe('scanInstalledPlugins', () => {
     expect(glob.relDir).toBeUndefined();
   });
 
-  it('enumerates top-level command files and flags skills that use the plugin-root token', () => {
+  it('SK-07: enumerates top-level command files and flags skills that use the plugin-root token', () => {
     projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
 
     const plugin = join(projectRoot, '.dork', 'plugins', 'flowy');
@@ -126,7 +126,7 @@ describe('scanInstalledPlugins', () => {
     expect(proj.skills.find((s) => s.name === 'plain')?.usesPluginRoot).toBe(false);
   });
 
-  it('reads the SKILL.md frontmatter `name` (the effective identity in frontmatter-keyed harnesses)', () => {
+  it('SK-06: reads the SKILL.md frontmatter `name` (the effective identity in frontmatter-keyed harnesses)', () => {
     projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
 
     const plugin = join(projectRoot, '.dork', 'plugins', 'flowy');
@@ -167,7 +167,7 @@ describe('scanInstalledPlugins', () => {
     ]);
   });
 
-  it('flags a skill that declares a schedule, readable or not', () => {
+  it('SK-03: flags a skill that declares a schedule, readable or not', () => {
     projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
 
     const plugin = join(projectRoot, '.dork', 'plugins', 'flow');
@@ -249,7 +249,7 @@ describe('scanInstalledPlugins', () => {
     expect(scanInstalledPlugins({ dorkHome, projectRoot })).toEqual([]);
   });
 
-  it('drops malformed (non-array) hook event values instead of crashing the merge', () => {
+  it('HK-09: drops malformed (non-array) hook event values instead of crashing the merge', () => {
     projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
     dorkHome = mkdtempSync(join(tmpdir(), 'harness-home-'));
 
@@ -291,7 +291,7 @@ describe('scanInstalledPlugins — malformed hook matcher groups (DOR-646)', () 
   // The four shapes the PR #552 differential sweep found reaching the projector
   // and crashing it. Each is dropped here instead, so nothing downstream ever
   // maps over a group that has no commands to map.
-  it('drops a matcher group whose command entry has no `command`', () => {
+  it('HK-09: drops a matcher group whose command entry has no `command`', () => {
     writeHookyPlugin(JSON.stringify({ Stop: [{ hooks: [{ type: 'command' }] }] }));
     expect(scanHooks()).toBeUndefined();
   });
@@ -306,7 +306,7 @@ describe('scanInstalledPlugins — malformed hook matcher groups (DOR-646)', () 
     expect(scanHooks()).toBeUndefined();
   });
 
-  it('keeps the readable group when one good and one bad group share an event', () => {
+  it('HK-09: keeps the readable group when one good and one bad group share an event', () => {
     writeHookyPlugin(
       JSON.stringify({ Stop: [{ hooks: [{ command: 'good.sh' }] }, { hooks: 'nope' }] })
     );
@@ -366,7 +366,7 @@ describe('scanInstalledPlugins — salvaged-hooks evidence (DOR-1724)', () => {
 
   const HOOKS_FILE = '.dork/plugins/hooky/hooks/hooks.json';
 
-  it('records the whole file when the JSON does not parse', () => {
+  it('HK-09: records the whole file when the JSON does not parse', () => {
     writeHookyPlugin('{ not json');
     expect(scanUnreadable()).toEqual([{ path: HOOKS_FILE, total: true }]);
   });
@@ -386,7 +386,7 @@ describe('scanInstalledPlugins — salvaged-hooks evidence (DOR-1724)', () => {
     expect(scanUnreadable()).toEqual([{ path: HOOKS_FILE, event: 'Bad', total: true }]);
   });
 
-  it('records a PARTIAL loss when a readable group survives beside a bad one', () => {
+  it('HK-09: records a PARTIAL loss when a readable group survives beside a bad one', () => {
     writeHookyPlugin(
       JSON.stringify({ Stop: [{ hooks: [{ command: 'good.sh' }] }, { hooks: 'nope' }] })
     );
@@ -405,7 +405,7 @@ describe('scanInstalledPlugins — salvaged-hooks evidence (DOR-1724)', () => {
     expect(scanUnreadable()).toEqual([]);
   });
 
-  it('records nothing for a fully readable file', () => {
+  it('HK-09: records nothing for a fully readable file', () => {
     writeHookyPlugin(JSON.stringify({ Stop: [{ hooks: [{ command: 'fine.sh' }] }] }));
     expect(scanUnreadable()).toEqual([]);
   });

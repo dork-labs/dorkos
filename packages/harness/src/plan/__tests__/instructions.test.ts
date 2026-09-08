@@ -30,7 +30,7 @@ describe('planInstruction', () => {
     }
   });
 
-  it('is native for the three harnesses that read AGENTS.md once it exists', () => {
+  it('IN-01: is native for the three harnesses that read AGENTS.md once it exists', () => {
     const actions = NATIVE_READERS.map((harness) => planInstruction(harness, true));
     expect(actions).toHaveLength(3);
     for (const action of actions) {
@@ -39,7 +39,7 @@ describe('planInstruction', () => {
     }
   });
 
-  it('scaffolds a pointer for the three harnesses that cannot read AGENTS.md, once it exists', () => {
+  it('IN-01: scaffolds a pointer for the three harnesses that cannot read AGENTS.md, once it exists', () => {
     const entries = Object.entries(SCAFFOLD_TARGETS) as [keyof typeof SCAFFOLD_TARGETS, string][];
     expect(entries).toHaveLength(3);
     for (const [harness, target] of entries) {

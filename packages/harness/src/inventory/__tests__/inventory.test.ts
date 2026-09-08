@@ -65,7 +65,7 @@ describe('inventorySourceTree', () => {
     });
   });
 
-  it('counts skills in both authored roots, follows a linked-in source, and skips DorkOS projections', () => {
+  it('SK-13: counts skills in both authored roots, follows a linked-in source, and skips DorkOS projections', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inv-skills-'));
     outside = mkdtempSync(join(tmpdir(), 'harness-inv-outside-'));
 
@@ -117,7 +117,7 @@ describe('inventorySourceTree', () => {
     ]);
   });
 
-  it('counts authored commands by their namespaced name and skips generated wrappers', () => {
+  it('CM-04: counts authored commands by their namespaced name and skips generated wrappers', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inv-commands-'));
     writeFileAt(join(repo, '.claude/commands/deploy.md'), '# /deploy\n');
     writeFileAt(join(repo, '.claude/commands/flow/capture.md'), '# /flow:capture\n');

@@ -59,7 +59,7 @@ describe('claudeCommandsExist', () => {
     expect(claudeCommandsExist(root)).toBe(true);
   });
 
-  it('is true for a NESTED .md, which is how Claude Code namespaces a command', () => {
+  it('CM-04: is true for a NESTED .md, which is how Claude Code namespaces a command', () => {
     // The recursive branch the TSDoc claims. `.claude/commands/adr/create.md` is
     // `/adr:create`, so a repo whose only commands are namespaced has commands —
     // a top-level-only check would call it command-less and say nothing about a
@@ -97,7 +97,7 @@ describe('scanClaudeOnlySkills', () => {
     });
   }
 
-  it('resolves the conventional path to a directory, and marks it the projection target', () => {
+  it('SK-04: resolves the conventional path to a directory, and marks it the projection target', () => {
     const root = repo();
     write(root, '.claude/skills/secret/SKILL.md');
     expect(scanClaudeOnlySkills(root, manifest('secret')).get('secret')).toEqual({
@@ -107,7 +107,7 @@ describe('scanClaudeOnlySkills', () => {
     });
   });
 
-  it('follows the entry’s OWN path when it names one elsewhere', () => {
+  it('SK-04: follows the entry’s OWN path when it names one elsewhere', () => {
     // Reading the entry's claim instead of assuming the convention is what stops
     // a real skill at `docs/skills/oddball` being reported as a stale entry.
     const root = repo();
@@ -151,7 +151,7 @@ describe('scanClaudeOnlySkills', () => {
     });
   });
 
-  it('returns one entry per manifest entry, so nothing is silently skipped', () => {
+  it('SK-04: returns one entry per manifest entry, so nothing is silently skipped', () => {
     const root = repo();
     const three = parseHarnessManifest({
       version: 1,

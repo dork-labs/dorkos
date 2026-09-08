@@ -373,7 +373,7 @@ describe('J-12 — two writers on one repo', () => {
     expect(existsSync(repo)).toBe(false);
   });
 
-  it('converges on the sequential tree when both writers read the same repo', async () => {
+  it('J-12, AP-10: converges on the sequential tree when both writers read the same repo', async () => {
     const { repo, dorkHome } = stageRepo('j12-race-', ['alpha', 'beta']);
     const control = makeTempDir('j12-control-');
 
@@ -419,7 +419,7 @@ describe('J-12 — two writers on one repo', () => {
     }
   }, 120_000);
 
-  it('never leaves a generated file holding a version nobody wrote', async () => {
+  it('J-12, AP-10: never leaves a generated file holding a version nobody wrote', async () => {
     // One plugin to start with, so a writer that plans NOW and a writer that
     // plans in a moment disagree about what belongs in the file.
     const { repo, dorkHome } = stageRepo('j12-diverge-', ['alpha']);

@@ -15,7 +15,7 @@ function freshDir(): string {
 }
 
 describe('scaffoldInstructions', () => {
-  it('scaffolds AGENTS.md + a CLAUDE.md whose body is exactly `@../AGENTS.md`', () => {
+  it('IN-01: scaffolds AGENTS.md + a CLAUDE.md whose body is exactly `@../AGENTS.md`', () => {
     dir = freshDir();
     const result = scaffoldInstructions(dir, { agentsBody: '# My Agent\n' });
 
@@ -25,7 +25,7 @@ describe('scaffoldInstructions', () => {
     expect(result.created).toContain('.claude/CLAUDE.md');
   });
 
-  it('scaffolds per-harness pointers and writes nothing for native harnesses', () => {
+  it('IN-01: scaffolds per-harness pointers and writes nothing for native harnesses', () => {
     dir = freshDir();
     scaffoldInstructions(dir, { agentsBody: '# A\n' });
 
@@ -39,7 +39,7 @@ describe('scaffoldInstructions', () => {
     expect(existsSync(join(dir, '.cursor'))).toBe(false);
   });
 
-  it('does not duplicate or rewrite an existing AGENTS.md body on re-run', () => {
+  it('IN-02: does not duplicate or rewrite an existing AGENTS.md body on re-run', () => {
     dir = freshDir();
     scaffoldInstructions(dir, { agentsBody: '# original\n' });
     const second = scaffoldInstructions(dir, { agentsBody: '# DIFFERENT BODY\n' });
@@ -50,7 +50,7 @@ describe('scaffoldInstructions', () => {
     expect(second.skipped).toContain('AGENTS.md');
   });
 
-  it('leaves a hand-edited AGENTS.md untouched (write-if-absent, never overwrite)', () => {
+  it('IN-02: leaves a hand-edited AGENTS.md untouched (write-if-absent, never overwrite)', () => {
     dir = freshDir();
     writeFileSync(join(dir, 'AGENTS.md'), '# hand authored, do not touch\n');
 
@@ -62,7 +62,7 @@ describe('scaffoldInstructions', () => {
     expect(result.created).toContain('.claude/CLAUDE.md');
   });
 
-  it('leaves an existing pointer untouched on re-run', () => {
+  it('IN-02: leaves an existing pointer untouched on re-run', () => {
     dir = freshDir();
     mkdirSync(join(dir, '.claude'), { recursive: true });
     writeFileSync(join(dir, '.claude', 'CLAUDE.md'), '@../custom-pointer.md\n');

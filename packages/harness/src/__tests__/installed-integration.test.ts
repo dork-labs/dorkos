@@ -108,7 +108,7 @@ function buildRepoWithPluginHook(): { repoRoot: string; home: string } {
 }
 
 describe('installed-plugin projection — real install/sync/uninstall scenario', () => {
-  it('projects an installed skill into the Codex dir, then sweeps it on uninstall', () => {
+  it('SK-02, AP-08: projects an installed skill into the Codex dir, then sweeps it on uninstall', () => {
     const built = buildRepoWithInstalledPlugin();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -133,7 +133,7 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     expect(existsSync(projected)).toBe(false);
   });
 
-  it('projects a CC-NATIVE plugin (only .claude-plugin/plugin.json, no .dork/manifest.json) — DOR-264', () => {
+  it('SRC-03: projects a CC-NATIVE plugin (only .claude-plugin/plugin.json, no .dork/manifest.json) — DOR-264', () => {
     // The marketplace installer copies Claude Code packages verbatim, so a
     // CC-native install never gains a `.dork/manifest.json`. Before the CC
     // fallback in `readPluginManifest`, the scanner skipped these entirely and
@@ -180,7 +180,7 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     );
   });
 
-  it('skips a CC-native plugin whose plugin.json name is not a valid slug (no crash, no projection)', () => {
+  it('SRC-03: skips a CC-native plugin whose plugin.json name is not a valid slug (no crash, no projection)', () => {
     // `dorkos harness sync` scans `.dork/plugins/` independently of install-time
     // validation, and the plugin name is interpolated into projector paths — an
     // arbitrary string (path traversal, spaces, uppercase) must never get through.
@@ -210,7 +210,7 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     expect(existsSync(join(repo, '.agents', 'skills'))).toBe(false);
   });
 
-  it('projects a project-scoped installed plugin with NO dorkHome (offline `dorkos harness sync`)', () => {
+  it('SRC-02: projects a project-scoped installed plugin with NO dorkHome (offline `dorkos harness sync`)', () => {
     // Regression for the wiring bug where `project()` gated ALL installed-plugin
     // scanning behind `opts.dorkHome`: an offline CLI run (no ~/.dork, so
     // DORK_HOME unset) projected zero installed assets. Project-scoped installs
@@ -240,7 +240,7 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     );
   });
 
-  it('links a plugin’s skills into `.agents/skills` on a claude-code-only project, and sweeps them on uninstall (DOR-1518, DOR-1847)', () => {
+  it('SK-03: links a plugin’s skills into `.agents/skills` on a claude-code-only project, and sweeps them on uninstall (DOR-1518, DOR-1847)', () => {
     // The shape that made the flow plugin's schedules undiscoverable: a stock
     // project enables `claude-code` alone, so the plugin's scheduled skill only
     // ever reached `.claude/skills`, which the scheduler does not watch. DOR-1847
@@ -308,7 +308,7 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     expect(existsSync(sibling)).toBe(false);
   });
 
-  it('warns, naming the file and the events, when a rotted hooks.json is salvaged (DOR-1724)', () => {
+  it('HK-09: warns, naming the file and the events, when a rotted hooks.json is salvaged (DOR-1724)', () => {
     // The post-install rot the pre-install preview cannot see: the package
     // installed fine, then its `hooks/hooks.json` was hand-edited into a shape the
     // reader can only partly use. `Stop` keeps one group and loses another;
@@ -385,7 +385,7 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     expect(project(repo, { dorkHome }).warnings.filter((w) => w.artifact === 'hook')).toEqual([]);
   });
 
-  it('keeps an AUTHORED skill link whose name contains `__`, in the same apply that made it', () => {
+  it('AP-07: keeps an AUTHORED skill link whose name contains `__`, in the same apply that made it', () => {
     // The sweep may only TOUCH a `__`-named symlink — but what it KEEPS used to
     // be the installed-plugin links alone. An authored skill whose own name
     // contains `__` projects as an authored symlink at exactly such a path, so
@@ -417,7 +417,7 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     expect(realpathSync(link)).toBe(realpathSync(source));
   });
 
-  it('never sweeps a hand-authored `__` directory — only managed symlinks', () => {
+  it('AP-07: never sweeps a hand-authored `__` directory — only managed symlinks', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inst-int-'));
     const skillsDir = join(repo, '.agents', 'skills');
 
@@ -446,7 +446,7 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     );
   });
 
-  it('generates `.codex/hooks.json` from a plugin hook with the token REWRITTEN to absolute (no warning), then prunes it on uninstall (GAP-8 + item A)', () => {
+  it('HK-05, AP-08: generates `.codex/hooks.json` from a plugin hook with the token REWRITTEN to absolute (no warning), then prunes it on uninstall (GAP-8 + item A)', () => {
     const built = buildRepoWithPluginHook();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -491,7 +491,7 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     expect(existsSync(`${hooksPath}.dorkos-generated`)).toBe(false);
   });
 
-  it('keeps a still-generated `.codex/hooks.json` and never prunes an unowned file', () => {
+  it('AP-07: keeps a still-generated `.codex/hooks.json` and never prunes an unowned file', () => {
     const built = buildRepoWithPluginHook();
     repo = built.repoRoot;
     dorkHome = built.home;
@@ -518,7 +518,7 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     expect(readFileSync(hooksPath, 'utf8')).toBe(mine);
   });
 
-  it('generates cursor + copilot hook files from an authored hook, then prunes each on uninstall (FND-6 + GAP-8)', () => {
+  it('HK-02, AP-08: generates cursor + copilot hook files from an authored hook, then prunes each on uninstall (FND-6 + GAP-8)', () => {
     // A repo enabling cursor + copilot with an authored `.claude/settings.json`
     // Stop hook: both standalone generated files are produced and applied…
     repo = mkdtempSync(join(tmpdir(), 'harness-multi-hook-'));
@@ -604,7 +604,7 @@ function buildRepoWithClaudePlugin(): { repoRoot: string } {
 }
 
 describe('installed-plugin projection to the external Claude Code CLI', () => {
-  it('projects command wrappers, skill symlinks, and merged settings hooks, then sweeps them on uninstall', () => {
+  it('AP-08: projects command wrappers, skill symlinks, and merged settings hooks, then sweeps them on uninstall', () => {
     repo = buildRepoWithClaudePlugin().repoRoot;
     const absInstall = join(repo, '.dork', 'plugins', 'flow');
     const wrapper = join(repo, '.claude', 'commands', 'flow', 'capture.md');
@@ -717,7 +717,7 @@ function buildRepoWithOpencodePlugin(): { repoRoot: string } {
 }
 
 describe('installed-plugin projection to the OpenCode harness', () => {
-  it('projects a flat wrapper with rewritten path + stripped frontmatter, aggregates the safe gitignore, leaves an authored command untouched, then sweeps on uninstall', () => {
+  it('CM-03: projects a flat wrapper with rewritten path + stripped frontmatter, aggregates the safe gitignore, leaves an authored command untouched, then sweeps on uninstall', () => {
     repo = buildRepoWithOpencodePlugin().repoRoot;
     const absInstall = join(repo, '.dork', 'plugins', 'flow');
     const wrapper = join(repo, '.opencode', 'commands', 'flow-capture.md');
@@ -774,7 +774,7 @@ describe('installed-plugin projection to the OpenCode harness', () => {
     expect(readFileSync(authored, 'utf8')).toBe('# my own command\n');
   });
 
-  it('surfaces a conflict (never overwrites) when an authored command file already occupies a wrapper target', () => {
+  it('CM-02: surfaces a conflict (never overwrites) when an authored command file already occupies a wrapper target', () => {
     repo = buildRepoWithOpencodePlugin().repoRoot;
     const wrapper = join(repo, '.opencode', 'commands', 'flow-capture.md');
 
@@ -957,7 +957,7 @@ describe('installed-plugin projection — a malformed hooks.json cannot take the
   });
 
   describe('adversarial documents the value sweep cannot generate', () => {
-    it('projects an event a package named `__proto__`, and pollutes nothing', () => {
+    it('HK-09: projects an event a package named `__proto__`, and pollutes nothing', () => {
       // Assigning a `__proto__` key to a `{}` accumulator hits the inherited
       // setter: the groups vanish with no error and the accumulator's prototype
       // is replaced. Every hop from the reader to the settings merge therefore

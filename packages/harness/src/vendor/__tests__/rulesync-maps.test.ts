@@ -66,7 +66,7 @@ const HOOK_EVENT_ARRAYS: Array<{ name: string; events: readonly string[] }> = [
 describe('rulesync-maps', () => {
   // Every forward translation must round-trip back through its reverse map.
   describe.each(TRANSLATION_MAPS)('$name translation map round-trips', ({ forward, reverse }) => {
-    it('reverse[forward[e]] === e for every canonical key', () => {
+    it('HK-13: reverse[forward[e]] === e for every canonical key', () => {
       for (const canonical of Object.keys(forward)) {
         expect(reverse[forward[canonical]]).toBe(canonical);
       }
@@ -88,7 +88,7 @@ describe('rulesync-maps', () => {
   });
 
   // The vendored file must carry its MIT attribution to rulesync's author + pinned commit.
-  it('carries the rulesync MIT attribution header', () => {
+  it('HK-13: carries the rulesync MIT attribution header', () => {
     const source = readFileSync(
       fileURLToPath(new URL('../rulesync-maps.ts', import.meta.url)),
       'utf8'

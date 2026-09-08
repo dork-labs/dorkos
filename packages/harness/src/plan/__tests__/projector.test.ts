@@ -42,7 +42,7 @@ function planWithCommands(manifest: ReturnType<typeof parseHarnessManifest>) {
 }
 
 describe('buildPlan', () => {
-  it('projects a skill as a symlink for claude-code and native for codex', () => {
+  it('SK-01: projects a skill as a symlink for claude-code and native for codex', () => {
     // claude-code symlinks .agents/skills into .claude/skills; codex reads it directly.
     dir = fixtureRepo();
     const manifest = parseHarnessManifest({ version: 1, harnesses: ['claude-code', 'codex'] });
@@ -60,7 +60,7 @@ describe('buildPlan', () => {
     });
   });
 
-  it('generates a codex hooks action with attached content and drops codex commands', () => {
+  it('HK-01, CM-04: generates a codex hooks action with attached content and drops codex commands', () => {
     // Codex hooks come from .claude/settings.json (generate); codex has no slash-command format.
     dir = fixtureRepo();
     const manifest = parseHarnessManifest({ version: 1, harnesses: ['claude-code', 'codex'] });
@@ -80,7 +80,7 @@ describe('buildPlan', () => {
     expect(commandDrop?.reason).toMatch(/slash-command/);
   });
 
-  it('writes the Codex hooks file in the shape Codex documents, not a bare event map', () => {
+  it('HK-01: writes the Codex hooks file in the shape Codex documents, not a bare event map', () => {
     // Codex reads `{ description?, hooks: { <Event>: [...] } }` (learn.chatgpt.com/docs/hooks).
     // The engine used to serialize the bare event map, which Codex does not
     // document and most likely never reads (HK-01). The `description` doubles as
@@ -101,7 +101,7 @@ describe('buildPlan', () => {
     expect(Object.keys(parsed.hooks)).toEqual(['Stop']);
   });
 
-  it('surfaces a plan warning when a projected codex hook carries a Claude-only token', () => {
+  it('HK-04: surfaces a plan warning when a projected codex hook carries a Claude-only token', () => {
     // A Stop hook using ${CLAUDE_PLUGIN_ROOT} still projects, but lands in
     // plan.warnings attributed to codex so the CLI can tell the operator.
     dir = fixtureRepo();
@@ -129,7 +129,7 @@ describe('buildPlan', () => {
     expect(warning?.reason).toContain('${CLAUDE_PLUGIN_ROOT}');
   });
 
-  it('generates a cursor hooks action at .cursor/hooks.json with a { version, hooks } file', () => {
+  it('HK-02: generates a cursor hooks action at .cursor/hooks.json with a { version, hooks } file', () => {
     // FND-6: hooks now project to Cursor as a standalone generated file.
     dir = fixtureRepo();
     const manifest = parseHarnessManifest({ version: 1, harnesses: ['claude-code', 'cursor'] });
@@ -144,7 +144,7 @@ describe('buildPlan', () => {
     expect(content).toContain('stop'); // Stop -> cursor camelCase `stop`
   });
 
-  it('generates a copilot hooks action at .github/hooks/copilot-hooks.json', () => {
+  it('HK-02: generates a copilot hooks action at .github/hooks/copilot-hooks.json', () => {
     // FND-6: hooks now project to Copilot as a standalone generated file.
     dir = fixtureRepo();
     const manifest = parseHarnessManifest({ version: 1, harnesses: ['claude-code', 'copilot'] });
@@ -159,7 +159,7 @@ describe('buildPlan', () => {
     expect(content).toContain('agentStop'); // Stop -> copilot `agentStop`
   });
 
-  it('drops a cursor hook event with no Cursor home and surfaces a Cursor-named warning', () => {
+  it('HK-02: drops a cursor hook event with no Cursor home and surfaces a Cursor-named warning', () => {
     // permissionRequest has no Cursor map entry -> honest drop; a Claude-only
     // token on a mappable event warns naming Cursor (FND-11).
     dir = fixtureRepo();
@@ -180,7 +180,7 @@ describe('buildPlan', () => {
     expect(warning?.reason).not.toMatch(/Codex/);
   });
 
-  it('drops gemini hooks honestly (shared settings.json merge is a follow-up), never generating', () => {
+  it('HK-03: drops gemini hooks honestly (shared settings.json merge is a follow-up), never generating', () => {
     // Gemini hooks live inside the SHARED .gemini/settings.json; the engine must
     // NOT generate/clobber it, so it is an honest drop with a precise reason.
     dir = fixtureRepo();
@@ -212,7 +212,7 @@ describe('buildPlan — `native` only when the source is really there', () => {
     expect(plan.actions.filter((a) => a.artifact === 'instruction')).toEqual([]);
   });
 
-  it('still projects instructions to every harness when AGENTS.md exists', () => {
+  it('IN-01: still projects instructions to every harness when AGENTS.md exists', () => {
     dir = fixtureRepo();
     const plan = buildPlan({ repoRoot: dir, manifest: ALL, claudeHooks, agentsMdExists: true });
     expect(plan.actions.filter((a) => a.artifact === 'instruction')).toHaveLength(
@@ -221,7 +221,7 @@ describe('buildPlan — `native` only when the source is really there', () => {
     expect(plan.drops.filter((a) => a.artifact === 'instruction')).toEqual([]);
   });
 
-  it('emits NO claude-code hook action when .claude/settings.json declares no hooks', () => {
+  it('HK-01: emits NO claude-code hook action when .claude/settings.json declares no hooks', () => {
     // There is no artifact, so there is nothing to call native and nothing to
     // drop either — a drop line implies something exists that could not travel.
     dir = fixtureRepo();
@@ -233,7 +233,7 @@ describe('buildPlan — `native` only when the source is really there', () => {
     expect(claudeHookActions).toEqual([]);
   });
 
-  it('calls claude-code hooks native only once .claude/settings.json really declares some', () => {
+  it('HK-01: calls claude-code hooks native only once .claude/settings.json really declares some', () => {
     dir = fixtureRepo();
     const plan = buildPlan({ repoRoot: dir, manifest: ALL, claudeHooks, agentsMdExists: true });
     const native = plan.actions.find(
@@ -266,7 +266,7 @@ describe('buildPlan — `native` only when the source is really there', () => {
     expect(plan.actions.length).toBeGreaterThan(0);
   });
 
-  it('drops hooks for OpenCode and Gemini once the repo really has some', () => {
+  it('HK-03: drops hooks for OpenCode and Gemini once the repo really has some', () => {
     // The other half of the same rule: the drops are honest when there IS an
     // artifact, and both of these harnesses genuinely cannot take one.
     dir = fixtureRepo();
@@ -276,7 +276,7 @@ describe('buildPlan — `native` only when the source is really there', () => {
     expect(new Set(hookDrops.map((a) => a.harness))).toEqual(new Set(['opencode', 'gemini']));
   });
 
-  it('emits NO claude-code command action when .claude/commands does not exist', () => {
+  it('CM-04: emits NO claude-code command action when .claude/commands does not exist', () => {
     // `projector.ts` asserted `native` with `source: .claude/commands` whether or
     // not the directory was there (reproduced 2026-09-07).
     dir = fixtureRepo();
@@ -293,7 +293,7 @@ describe('buildPlan — `native` only when the source is really there', () => {
     expect(claudeCommandActions).toEqual([]);
   });
 
-  it('calls claude-code commands native once the directory holds at least one .md', () => {
+  it('CM-04: calls claude-code commands native once the directory holds at least one .md', () => {
     dir = fixtureRepo();
     const plan = buildPlan({
       repoRoot: dir,

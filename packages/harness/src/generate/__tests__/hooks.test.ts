@@ -14,7 +14,7 @@ function group(command: string) {
 }
 
 describe('generateCodexHooks', () => {
-  it('maps the six most common Claude events to Codex event keys (6/6)', () => {
+  it('HK-01: maps the six most common Claude events to Codex event keys (6/6)', () => {
     // Five of these are wired in this repo's own .claude/settings.json today
     // (PreToolUse, PostToolUse, SessionStart, Stop, SubagentStop); every one of
     // the six resolves to a Codex event. The whole-map counts are asserted in the
@@ -45,7 +45,7 @@ describe('generateCodexHooks', () => {
     expect(dropped).toEqual([]);
   });
 
-  it('drops a Claude event Codex has no equivalent for, with a reason', () => {
+  it('HK-01: drops a Claude event Codex has no equivalent for, with a reason', () => {
     // Notification exists in Claude but not Codex → an honest drop, not silent loss.
     const { file, dropped } = generateCodexHooks({ Notification: group('x') });
     expect(file.hooks).toEqual({});
@@ -61,7 +61,7 @@ describe('generateCodexHooks', () => {
     expect(dropped[0].reason).toMatch(/canonical/);
   });
 
-  it('warns (but still projects) a hook command with a Claude-only ${CLAUDE_PLUGIN_ROOT} token', () => {
+  it('HK-04: warns (but still projects) a hook command with a Claude-only ${CLAUDE_PLUGIN_ROOT} token', () => {
     // The flow plugin's Stop hook uses ${CLAUDE_PLUGIN_ROOT}, which Codex never
     // resolves — warn-and-project, so the operator is told the hook may not work.
     const command =
@@ -79,7 +79,7 @@ describe('generateCodexHooks', () => {
     expect(warnings[0].reason).toMatch(/Codex/);
   });
 
-  it('catches other ${CLAUDE_*} substitution vars, not just CLAUDE_PLUGIN_ROOT', () => {
+  it('HK-04: catches other ${CLAUDE_*} substitution vars, not just CLAUDE_PLUGIN_ROOT', () => {
     const { warnings } = generateCodexHooks({
       PreToolUse: group('echo "${CLAUDE_PROJECT_DIR}/x"'),
     });
@@ -87,14 +87,14 @@ describe('generateCodexHooks', () => {
     expect(warnings[0].reason).toContain('${CLAUDE_PROJECT_DIR}');
   });
 
-  it('does not warn for a portable command with no Claude-only token', () => {
+  it('HK-04: does not warn for a portable command with no Claude-only token', () => {
     const { warnings } = generateCodexHooks({ Stop: group('echo bye') });
     expect(warnings).toEqual([]);
   });
 });
 
 describe('generateCursorHooks', () => {
-  it('maps mappable events into a { version, hooks } file with FLAT entries', () => {
+  it('HK-02: maps mappable events into a { version, hooks } file with FLAT entries', () => {
     // Cursor uses camelCase 1:1 event names and a flat entry (matcher on the
     // entry, no nested `hooks` group). PreToolUse -> preToolUse, Stop -> stop.
     const claude: ClaudeHooksConfig = {
@@ -112,7 +112,7 @@ describe('generateCursorHooks', () => {
     expect(dropped).toEqual([]);
   });
 
-  it('drops a Claude event Cursor has no equivalent for, with a Cursor-named reason', () => {
+  it('HK-02: drops a Claude event Cursor has no equivalent for, with a Cursor-named reason', () => {
     // Cursor's map has no `permissionRequest` target -> honest drop naming Cursor.
     const { file, dropped } = generateCursorHooks({ PermissionRequest: group('x') });
     expect(file.hooks).toEqual({});
@@ -121,7 +121,7 @@ describe('generateCursorHooks', () => {
     expect(dropped[0].reason).toMatch(/Cursor/);
   });
 
-  it('warns naming Cursor (not Codex) when a projected command carries a Claude-only token', () => {
+  it('HK-04: warns naming Cursor (not Codex) when a projected command carries a Claude-only token', () => {
     // FND-11: the warning must name the actual target harness.
     const { file, warnings } = generateCursorHooks({
       Stop: group('node "${CLAUDE_PLUGIN_ROOT}/h.mjs"'),
@@ -146,7 +146,7 @@ describe('generateCursorHooks', () => {
 });
 
 describe('generateCopilotHooks', () => {
-  it('maps events to Copilot event names in a { version, hooks } file', () => {
+  it('HK-02: maps events to Copilot event names in a { version, hooks } file', () => {
     // Copilot renames: UserPromptSubmit -> userPromptSubmitted, Stop -> agentStop.
     const claude: ClaudeHooksConfig = {
       PreToolUse: group('a'),
@@ -165,7 +165,7 @@ describe('generateCopilotHooks', () => {
     expect(dropped).toEqual([]);
   });
 
-  it('drops a Claude event Copilot has no equivalent for, with a Copilot-named reason', () => {
+  it('HK-02: drops a Claude event Copilot has no equivalent for, with a Copilot-named reason', () => {
     // Was `PreCompact`, which Copilot's own hooks reference does document and
     // which now maps (DOR-1847). `PostCompact` is in Claude's 30 and in none of
     // Copilot's 14, so it is the honest subject for this drop.
@@ -176,7 +176,7 @@ describe('generateCopilotHooks', () => {
     expect(dropped[0].reason).toMatch(/Copilot/);
   });
 
-  it('warns naming Copilot when a projected command carries a Claude-only token', () => {
+  it('HK-04: warns naming Copilot when a projected command carries a Claude-only token', () => {
     const { file, warnings } = generateCopilotHooks({
       Stop: group('node "${CLAUDE_PLUGIN_ROOT}/h.mjs"'),
     });
@@ -188,7 +188,7 @@ describe('generateCopilotHooks', () => {
 });
 
 describe('the vendored maps against each vendor’s documented hook set (HK-13)', () => {
-  it('maps Claude SessionEnd to Codex SessionEnd, which used to drop as nonexistent', () => {
+  it('HK-13: maps Claude SessionEnd to Codex SessionEnd, which used to drop as nonexistent', () => {
     // learn.chatgpt.com/docs/hooks (2026-09-07): "When the main thread ends:
     // `SessionEnd` (doesn't run for subagents)". The vendored Codex map carried
     // 10 of the 12 documented events and SessionEnd was not one of them.
@@ -197,7 +197,7 @@ describe('the vendored maps against each vendor’s documented hook set (HK-13)'
     expect(dropped).toEqual([]);
   });
 
-  it('maps the five Copilot events that were dropped as having no equivalent', () => {
+  it('HK-13: maps the five Copilot events that were dropped as having no equivalent', () => {
     // docs.github.com/en/copilot/reference/hooks-configuration (2026-09-07)
     // documents 14 events; the vendored map targeted 8, so these five Claude
     // events were reported as having no Copilot home when they do.
@@ -218,7 +218,7 @@ describe('the vendored maps against each vendor’s documented hook set (HK-13)'
     expect(dropped).toEqual([]);
   });
 
-  it('reaches 12 of Claude’s 30 events on Copilot and 11 on Codex', () => {
+  it('HK-13: reaches 12 of Claude’s 30 events on Copilot and 11 on Codex', () => {
     // The count is the claim `meta/harness-sync-capabilities.md` HK-02/HK-13
     // makes, so it is asserted rather than described.
     const everyClaudeEvent: ClaudeHooksConfig = Object.fromEntries(

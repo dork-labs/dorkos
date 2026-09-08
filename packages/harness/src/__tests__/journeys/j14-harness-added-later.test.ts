@@ -89,7 +89,7 @@ function addCursor(): void {
 }
 
 describe('J-14 — a harness added after the manifest was written', () => {
-  it('notices Cursor without calling it drift', () => {
+  it('J-14, TR-11: notices Cursor without calling it drift', () => {
     stageSyncedRepo();
     expect(plan().notEnabled).toEqual([]);
 
@@ -102,7 +102,7 @@ describe('J-14 — a harness added after the manifest was written', () => {
     expect(checkPlan(repo, after).clean).toBe(true);
   });
 
-  it('enables Cursor with one inserted element and projects it in the same run', () => {
+  it('J-14, TR-11: enables Cursor with one inserted element and projects it in the same run', () => {
     stageSyncedRepo();
     addCursor();
     const before = snapshotTree(repo);
@@ -139,7 +139,7 @@ describe('J-14 — a harness added after the manifest was written', () => {
     ]);
   });
 
-  it('says nothing about Cursor once it is enabled, and stays clean', () => {
+  it('J-14, TR-11: says nothing about Cursor once it is enabled, and stays clean', () => {
     stageSyncedRepo();
     addCursor();
     enableHarnessInManifest(repo, 'cursor');
@@ -152,7 +152,7 @@ describe('J-14 — a harness added after the manifest was written', () => {
     expect(existsSync(join(repo, '.cursor', 'hooks.json'))).toBe(true);
   });
 
-  it('leaves the manifest alone when the harness is already enabled', () => {
+  it('J-14, TR-11: leaves the manifest alone when the harness is already enabled', () => {
     stageSyncedRepo();
     const before = snapshotTree(repo);
 

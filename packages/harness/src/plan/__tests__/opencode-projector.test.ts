@@ -57,14 +57,14 @@ const plugin: InstalledPlugin = {
 };
 
 describe('opencodeWrapperFilename', () => {
-  it('joins pkg and command with a hyphen (flat, invoked /<pkg>-<name>)', () => {
+  it('CM-03: joins pkg and command with a hyphen (flat, invoked /<pkg>-<name>)', () => {
     // `/flow:capture` in Claude becomes `/flow-capture` in OpenCode (no namespacing).
     expect(opencodeWrapperFilename('flow', 'capture')).toBe('flow-capture.md');
   });
 });
 
 describe('planInstalledCommands — opencode', () => {
-  it('generates a flat `.opencode/commands/<pkg>-<name>.md` wrapper with the token rewritten, frontmatter reduced to description, and the engine marker', () => {
+  it('CM-03: generates a flat `.opencode/commands/<pkg>-<name>.md` wrapper with the token rewritten, frontmatter reduced to description, and the engine marker', () => {
     const repo = emptyRepo();
     try {
       const actions = planInstalledCommands('opencode', plugin, repo);
@@ -92,7 +92,7 @@ describe('planInstalledCommands — opencode', () => {
     }
   });
 
-  it('does NOT emit a per-plugin `.gitignore` for opencode (the shared dir gets one aggregated one)', () => {
+  it('CM-03: does NOT emit a per-plugin `.gitignore` for opencode (the shared dir gets one aggregated one)', () => {
     const repo = emptyRepo();
     try {
       const actions = planInstalledCommands('opencode', plugin, repo);
@@ -104,7 +104,7 @@ describe('planInstalledCommands — opencode', () => {
 });
 
 describe('planOpencodeCommandsGitignore', () => {
-  it('lists every generated wrapper filename plus itself, never a `*` wildcard, and carries the marker', () => {
+  it('CM-03, AP-09: lists every generated wrapper filename plus itself, never a `*` wildcard, and carries the marker', () => {
     const gitignore = planOpencodeCommandsGitignore([plugin]);
     expect(gitignore?.target).toBe('.opencode/commands/.gitignore');
     const content = getActionContent(gitignore!)!;
@@ -120,7 +120,7 @@ describe('planOpencodeCommandsGitignore', () => {
 });
 
 describe('planInstalledSkills — opencode', () => {
-  it('projects installed skills as `native` (no symlink of its own) since OpenCode reads .agents/skills directly', () => {
+  it('SK-05: projects installed skills as `native` (no symlink of its own) since OpenCode reads .agents/skills directly', () => {
     const { actions } = planInstalledSkills('opencode', plugin);
     expect(actions).toHaveLength(1);
     expect(actions[0].kind).toBe('native');
@@ -128,7 +128,7 @@ describe('planInstalledSkills — opencode', () => {
     expect(actions[0].target).toBeUndefined(); // native: no file written
   });
 
-  it('still warns when a projected skill references ${CLAUDE_PLUGIN_ROOT}', () => {
+  it('SK-07: still warns when a projected skill references ${CLAUDE_PLUGIN_ROOT}', () => {
     const { warnings } = planInstalledSkills('opencode', {
       ...plugin,
       skills: [
@@ -146,7 +146,7 @@ describe('planInstalledSkills — opencode', () => {
 });
 
 describe('rewritePluginRootInHooks — item A', () => {
-  it('rewrites every ${CLAUDE_PLUGIN_ROOT} to the absolute install dir', () => {
+  it('HK-05: rewrites every ${CLAUDE_PLUGIN_ROOT} to the absolute install dir', () => {
     const out = rewritePluginRootInHooks(
       { Stop: [{ hooks: [{ type: 'command', command: 'node "${CLAUDE_PLUGIN_ROOT}/h.mjs"' }] }] },
       '/abs/install'
@@ -165,7 +165,7 @@ describe('buildPlan — opencode harness', () => {
     harnesses: ['claude-code', 'codex', 'opencode'],
   });
 
-  it('projects opencode command wrappers + the aggregated gitignore, skills native, hooks dropped, AGENTS.md native', () => {
+  it('CM-03, HK-03: projects opencode command wrappers + the aggregated gitignore, skills native, hooks dropped, AGENTS.md native', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -217,7 +217,7 @@ describe('buildPlan — opencode harness', () => {
     }
   });
 
-  it('rewrites the installed hook token to absolute in the generated Codex hooks and emits NO token warning (item A)', () => {
+  it('HK-05: rewrites the installed hook token to absolute in the generated Codex hooks and emits NO token warning (item A)', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -240,7 +240,7 @@ describe('buildPlan — opencode harness', () => {
     }
   });
 
-  it('still warns for an AUTHORED hook token whose install root is unknown (item A)', () => {
+  it('HK-04: still warns for an AUTHORED hook token whose install root is unknown (item A)', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -284,7 +284,7 @@ describe('planSkillNameCollisions — item C', () => {
     layers: ['skills'],
   });
 
-  it('fires for two installed plugins sharing a frontmatter name, per frontmatter-keyed enabled harness', () => {
+  it('SK-06: fires for two installed plugins sharing a frontmatter name, per frontmatter-keyed enabled harness', () => {
     const warnings = planSkillNameCollisions({
       authoredSkillNames: [],
       plugins: [pluginWith('flow', 'capturing-work'), pluginWith('other', 'capturing-work')],
@@ -298,7 +298,7 @@ describe('planSkillNameCollisions — item C', () => {
     expect(warnings.some((w) => w.harness === 'claude-code')).toBe(false); // dir-keyed, protected
   });
 
-  it('fires when an installed frontmatter name collides with an authored skill name', () => {
+  it('SK-06: fires when an installed frontmatter name collides with an authored skill name', () => {
     const warnings = planSkillNameCollisions({
       authoredSkillNames: ['capturing-work'],
       plugins: [pluginWith('flow', 'capturing-work')],
@@ -309,7 +309,7 @@ describe('planSkillNameCollisions — item C', () => {
     expect(warnings[0].reason).toContain('authored skill "capturing-work"');
   });
 
-  it('does NOT false-positive when frontmatter names differ', () => {
+  it('SK-06: does NOT false-positive when frontmatter names differ', () => {
     const warnings = planSkillNameCollisions({
       authoredSkillNames: ['something-else'],
       plugins: [pluginWith('flow', 'capturing-work'), pluginWith('other', 'reviewing-work')],
@@ -318,7 +318,7 @@ describe('planSkillNameCollisions — item C', () => {
     expect(warnings).toEqual([]);
   });
 
-  it('emits nothing when no frontmatter-keyed harness is enabled, even on a real collision', () => {
+  it('SK-06: emits nothing when no frontmatter-keyed harness is enabled, even on a real collision', () => {
     const warnings = planSkillNameCollisions({
       authoredSkillNames: ['capturing-work'],
       plugins: [pluginWith('flow', 'capturing-work')],
@@ -327,7 +327,7 @@ describe('planSkillNameCollisions — item C', () => {
     expect(warnings).toEqual([]);
   });
 
-  it('falls back to the directory name when a skill declares no frontmatter name', () => {
+  it('SK-06: falls back to the directory name when a skill declares no frontmatter name', () => {
     // Two plugins each shipping a dir-named `s` with no frontmatter name collide on `s`.
     const warnings = planSkillNameCollisions({
       authoredSkillNames: [],
