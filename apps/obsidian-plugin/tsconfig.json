@@ -17,5 +17,21 @@
   // here is covered the day it lands instead of the day someone remembers
   // this file.
   "include": ["src/**/*", "build-plugins/**/*", "scripts/**/*", "../client/src/**/*", "*.ts"],
-  "exclude": ["node_modules", "dist", "../client/src/main.tsx", "../client/src/**/__tests__/**"]
+  // The last two mirror apps/client/tsconfig.json's own fixture-glob excludes
+  // (DOR-1821), rewritten with the ../client/ prefix this config's `include`
+  // and `paths` already use to reach that tree. Those fixtures are resident in
+  // src/layers/ for the whole client test run, and the include above already
+  // reaches all of ../client/src — so without these two, `tsc --noEmit` exits
+  // 2 on three errors nobody wrote whenever this typecheck overlaps that run:
+  // the pre-push gate and `pnpm verify` both do (DOR-1881). Pinned by
+  // scripts/__tests__/obsidian-tsconfig-fixture-exclude.test.ts, so the two
+  // files cannot drift apart again.
+  "exclude": [
+    "node_modules",
+    "dist",
+    "../client/src/main.tsx",
+    "../client/src/**/__tests__/**",
+    "../client/src/layers/entities/__dag-fixture-*__/**",
+    "../client/src/layers/*/__slice-fixture-*__/**"
+  ]
 }
