@@ -220,7 +220,7 @@ describe('runHarnessSync', () => {
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(HARNESS_MANIFEST_PATH));
     });
 
-    it('is read-only in the default (bare, no-flag) mode too', async () => {
+    it('AP-03: is read-only in the default (bare, no-flag) mode too', async () => {
       writeFixtureRepoWithoutManifest(tmpDir);
       process.chdir(tmpDir);
       const before = snapshotTree(tmpDir);
@@ -231,7 +231,7 @@ describe('runHarnessSync', () => {
       expect(result.exitCode).toBe(1);
     });
 
-    it('is read-only when narrowed with --harness', async () => {
+    it('AP-03: is read-only when narrowed with --harness', async () => {
       writeFixtureRepoWithoutManifest(tmpDir);
       process.chdir(tmpDir);
       const before = snapshotTree(tmpDir);
@@ -243,7 +243,7 @@ describe('runHarnessSync', () => {
       expect(result.exitCode).toBe(1);
     });
 
-    it('reports drift without writing when a manifest IS present', async () => {
+    it('AP-03: reports drift without writing when a manifest IS present', async () => {
       writeFixtureRepo(tmpDir);
       process.chdir(tmpDir);
       const before = snapshotTree(tmpDir);
@@ -256,7 +256,7 @@ describe('runHarnessSync', () => {
     });
   });
 
-  it('rejects an unknown --harness without writing anything', async () => {
+  it('AP-03: rejects an unknown --harness without writing anything', async () => {
     // A rejected argument must not leave a scaffolded manifest as its only lasting
     // effect: validation runs before disk is touched.
     writeFixtureRepoWithoutManifest(tmpDir);
@@ -270,7 +270,7 @@ describe('runHarnessSync', () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Unknown harness'));
   });
 
-  it('auto-scaffolds then realizes the projection on --fix', async () => {
+  it('TR-01: auto-scaffolds then realizes the projection on --fix', async () => {
     writeFixtureRepoWithoutManifest(tmpDir);
     process.chdir(tmpDir);
     const fix = await runHarnessSync(syncArgs({ check: false, fix: true }));
@@ -299,7 +299,7 @@ describe('runHarnessSync', () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('not both'));
   });
 
-  it('reports drift on an unprojected fixture (--check) then applies and is idempotent (--fix)', async () => {
+  it('TR-01, AP-01: reports drift on an unprojected fixture (--check) then applies and is idempotent (--fix)', async () => {
     writeFixtureRepo(tmpDir);
     process.chdir(tmpDir);
 
@@ -323,7 +323,7 @@ describe('runHarnessSync', () => {
     expect(secondCheck.exitCode).toBe(0);
   });
 
-  it('projects a project-scoped installed plugin when the dork home is empty (regression)', async () => {
+  it('SRC-02: projects a project-scoped installed plugin when the dork home is empty (regression)', async () => {
     // The `dorkos harness sync` CLI runs offline — there are no GLOBAL installs.
     // Project-scoped installs (`.dork/plugins/<name>`) are repo-relative and MUST
     // still project. Previously they were ignored entirely. The empty temp
@@ -346,7 +346,7 @@ describe('runHarnessSync', () => {
     );
   });
 
-  it('tells the operator WHY a scheduled plugin skill is linked where no enabled harness reads (DOR-1518)', async () => {
+  it('SK-03: tells the operator WHY a scheduled plugin skill is linked where no enabled harness reads (DOR-1518)', async () => {
     // A stock project: claude-code only. The scheduled skill is still linked
     // into `.agents/skills` for the DorkOS scheduler, and a bare
     // `[symlink] skill ... (codex)` line in a repo that does not run Codex is
@@ -410,7 +410,7 @@ describe('runHarnessSync', () => {
     expect(claudeLine).not.toContain('not enabled');
   });
 
-  it('prints what a rotted plugin hooks.json lost during salvage (DOR-1724)', async () => {
+  it('HK-09: prints what a rotted plugin hooks.json lost during salvage (DOR-1724)', async () => {
     // The salvage keeps what the file still says clearly and drops the rest
     // (DOR-646). This report is where a person is told a hook stopped being
     // installed — and since DOR-1849 it appears once the package's hooks are
@@ -556,7 +556,7 @@ describe('runHarnessSync', () => {
     expect(printed).toContain('.claude/settings.json');
   });
 
-  it('--check reports a dead link at a generated file as drift instead of crashing', async () => {
+  it('AP-05: --check reports a dead link at a generated file as drift instead of crashing', async () => {
     // The file was moved away and a broken link left behind. There is nothing to
     // read at that path, so there is no ownership question — it is stale, and
     // saying so is the whole job. This used to throw ENOENT out of `checkPlan`
@@ -577,7 +577,7 @@ describe('runHarnessSync', () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  it('--check names a link whose skill is gone, and --fix sweeps it', async () => {
+  it('SK-10: --check names a link whose skill is gone, and --fix sweeps it', async () => {
     writeFixtureRepo(tmpDir);
     process.chdir(tmpDir);
     await runHarnessSync(syncArgs({ check: false, fix: true })); // project `demo`
@@ -774,7 +774,7 @@ describe('runHarnessSync', () => {
     expect(loudErrors).not.toContain('Re-run with LOG_LEVEL=debug');
   });
 
-  it('turns an engine failure into one line, not a stack trace', async () => {
+  it('AP-11: turns an engine failure into one line, not a stack trace', async () => {
     // Defence in depth: whatever the projection engine throws — here a manifest
     // somebody typo'd into invalid JSON — a person gets a sentence and exit 1.
     writeFixtureRepo(tmpDir);
@@ -883,7 +883,7 @@ describe('runHarnessSync — withholding a package’s hooks', () => {
     fs.rmSync(homeDir, { recursive: true, force: true });
   });
 
-  it('holds the hooks back, names every command and the exact re-run, and exits 0', async () => {
+  it('HK-07: holds the hooks back, names every command and the exact re-run, and exits 0', async () => {
     const fix = await runHarnessSync(syncArgs({ fix: true }));
 
     // Exit 0 is the decision, not an oversight: a withheld hook is a recorded
@@ -936,7 +936,7 @@ describe('runHarnessSync — withholding a package’s hooks', () => {
     expect(printed()).not.toContain('withheld');
   });
 
-  it('--allow-hooks installs the commands AND records the same entry the card writes', async () => {
+  it('HK-07, VC-05: --allow-hooks installs the commands AND records the same entry the card writes', async () => {
     const fix = await runHarnessSync(syncArgs({ fix: true, allowHooks: ['acme-tools'] }));
 
     expect(fix.exitCode).toBe(0);
@@ -1272,7 +1272,7 @@ describe('runHarnessHooks', () => {
     expect(fs.existsSync(path.join(homeDir, 'config.json'))).toBe(false);
   });
 
-  it('--list names each package and whether the decision is about this project', async () => {
+  it('VC-05: --list names each package and whether the decision is about this project', async () => {
     writeStored({
       approvedHooks: [localEntry()],
       refusedHooks: ['other-pkg@0000000000000000000000000000000000000000000000000000000000000000'],
@@ -1300,7 +1300,7 @@ describe('runHarnessHooks', () => {
     expect(printed()).not.toContain('No hook decisions stored yet.');
   });
 
-  it('--revoke forgets a package and says the next sync will ask again', async () => {
+  it('VC-05: --revoke forgets a package and says the next sync will ask again', async () => {
     writeStored({ approvedHooks: [localEntry()], refusedHooks: [] });
 
     const result = await runHarnessHooks({ list: false, revoke: 'acme-tools' });
@@ -1508,7 +1508,7 @@ describe('runHarnessSync — a harness added later, and the .gitignore contract'
       expect(manifestText()).toBe(before);
     });
 
-    it('adds the harnesses key to a manifest that leaves it to the default', async () => {
+    it('TR-11: adds the harnesses key to a manifest that leaves it to the default', async () => {
       // A manifest of `{"version": 1}` is valid and means `["claude-code"]`, so
       // the notice fires for it — and the command it names has to work.
       fs.writeFileSync(path.join(tmpDir, HARNESS_MANIFEST_PATH), '{\n  "version": 1\n}\n');
@@ -1576,7 +1576,7 @@ describe('runHarnessSync — a harness added later, and the .gitignore contract'
       expect(printed()).not.toContain('is not enabled');
     });
 
-    it('enables Cursor, projects to it in the same run, and then goes quiet', async () => {
+    it('J-14, TR-11: enables Cursor, projects to it in the same run, and then goes quiet', async () => {
       await runHarnessSync(syncArgs({ fix: true }));
       addCursorDir();
       const before = manifestText();
@@ -1607,7 +1607,7 @@ describe('runHarnessSync — a harness added later, and the .gitignore contract'
       expect(printed()).not.toContain('gitignore:');
     });
 
-    it('names the lines a fresh repo is missing, in both modes, without writing them', async () => {
+    it('AP-09: names the lines a fresh repo is missing, in both modes, without writing them', async () => {
       // The seeded case: `--fix` in a git repo with an installed plugin left
       // `.claude/skills/acme-tools__greet` untracked and said nothing.
       makeGitRepo();
@@ -1628,7 +1628,7 @@ describe('runHarnessSync — a harness added later, and the .gitignore contract'
       expect(printed()).toContain('  .dork/plugins/');
     });
 
-    it('appends them behind the flag, preserves the file, and then goes quiet', async () => {
+    it('AP-09: appends them behind the flag, preserves the file, and then goes quiet', async () => {
       makeGitRepo('node_modules/\n');
       writeInstalledPlugin(tmpDir, 'acme-tools', 'greet');
 
@@ -1693,7 +1693,7 @@ describe('runHarnessSync — a harness added later, and the .gitignore contract'
   });
 
   describe('a gitignored .agents/ (AP-15)', () => {
-    it('explains what it means for anyone who clones the project', async () => {
+    it('AP-15: explains what it means for anyone who clones the project', async () => {
       makeGitRepo('node_modules/\n.agents/\n');
 
       const result = await runHarnessSync(syncArgs({ fix: true }));
@@ -1704,7 +1704,7 @@ describe('runHarnessSync — a harness added later, and the .gitignore contract'
       expect(printed()).toContain('Either stop ignoring .agents/ in .gitignore');
     });
 
-    it('names the .agents/.gitignore when that is the file doing it', async () => {
+    it('AP-15: names the .agents/.gitignore when that is the file doing it', async () => {
       // "Stop ignoring it" is advice nobody can act on until they know which
       // file to open, and this is the one people forget they wrote.
       makeGitRepo('node_modules/\n');
