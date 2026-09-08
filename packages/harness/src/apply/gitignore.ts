@@ -48,8 +48,9 @@
  *
  * @module apply/gitignore
  */
-import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { writeFileAtomic } from './atomic-write.js';
 import type { ProjectionPlan } from '../plan/types.js';
 import { getActionContent } from '../plan/content-map.js';
 import { EPHEMERAL_GITIGNORE_PATTERNS, isEphemeralProvenance } from '../sources/resolve-roots.js';
@@ -381,7 +382,10 @@ function order(declared: readonly string[], line: string): number {
 export function appendGitignoreLines(repoRoot: string, lines: readonly string[]): string {
   const abs = join(repoRoot, ROOT_GITIGNORE);
   const existing = existsSync(abs) ? readFileSync(abs, 'utf8') : '';
-  writeFileSync(abs, withGitignoreLines(existing, lines));
+  // Atomic: this is a read-modify-write of a file git and every editor in the
+  // repo also read, so a reader catching the truncate would see the person's
+  // own ignore rules vanish rather than grow (`atomic-write.ts`).
+  writeFileAtomic(abs, withGitignoreLines(existing, lines));
   return ROOT_GITIGNORE;
 }
 

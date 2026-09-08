@@ -22,8 +22,9 @@
  *
  * @module scaffold/enable-harness
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { writeFileAtomic } from '../apply/atomic-write.js';
 import { ZodError } from 'zod';
 import { parseHarnessManifest, type HarnessId } from '../manifest/schema.js';
 import { HARNESS_MANIFEST_PATH } from './manifest.js';
@@ -126,7 +127,10 @@ export function enableHarnessInManifest(repoRoot: string, harness: HarnessId): E
     };
   }
 
-  writeFileSync(abs, after);
+  // Atomic, for the same reason `scaffoldManifest` is: a second process
+  // projecting this repo reads the manifest by name, and `loadManifest` on a
+  // half-written one throws and fails its whole projection.
+  writeFileAtomic(abs, after);
   return { outcome: 'enabled', harness, path, inserted };
 }
 
