@@ -31,6 +31,7 @@
   },
   "dependencies": {
     "@dorkos/marketplace": "workspace:*",
+    "@dorkos/shared": "workspace:*",
     "@dorkos/skills": "workspace:*",
     "zod": "^4.5.4"
   },
