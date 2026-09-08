@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { StreamEventSchema, UI_COMMAND_REACH } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ThreadEvent } from '@openai/codex-sdk';
@@ -652,14 +652,13 @@ describe('mapCodexEvent', () => {
       ).toEqual([{ type: 'system_status', data: { message: expected } }]);
     });
 
-    it('maps turn.completed to usage session_status followed by terminal done', () => {
+    it('keeps SDK output and cache totals but omits its cumulative input from context', () => {
       const events = mapCodexEvent(codexTurnCompleted(DEFAULT_USAGE), makeContext());
       expect(events).toEqual([
         {
           type: 'session_status',
           data: {
             sessionId: SESSION_ID,
-            contextTokens: 120,
             // 45 output + 10 reasoning tokens folded in (DEFAULT_USAGE).
             outputTokens: 55,
             cacheReadTokens: 80,
@@ -668,6 +667,20 @@ describe('mapCodexEvent', () => {
         },
         { type: 'done', data: { sessionId: SESSION_ID } },
       ]);
+    });
+
+    it('maps verified native current-context usage onto a completed turn', () => {
+      const events = mapCodexEvent(codexTurnCompleted(DEFAULT_USAGE), makeContext(), {
+        contextTokens: 54_999,
+        contextMaxTokens: 258_400,
+      });
+
+      expect(events[0]?.data).toMatchObject({
+        contextTokens: 54_999,
+        contextMaxTokens: 258_400,
+        outputTokens: 55,
+        cacheReadTokens: 80,
+      });
     });
 
     it('folds reasoning_output_tokens into the reported outputTokens count', () => {
@@ -866,6 +879,49 @@ describe('mapCodexThread', () => {
       .map((e) => (e.data as { text: string }).text)
       .join('');
     expect(text).toBe('Hello world');
+  });
+
+  it('reads native current context after turn completion', async () => {
+    const readTurnContextUsage = vi.fn(async () => ({
+      contextTokens: 54_999,
+      contextMaxTokens: 258_400,
+    }));
+    const ctx = createCodexEventContext(SESSION_ID, {
+      readTurnContextUsage,
+      now: () => 1_788_908_279_000,
+    });
+    const turn = codexSimpleTurn('done');
+    turn[0] = codexThreadStarted('01a082ce-2b72-71d2-be38-aa8425f13650');
+
+    const events = await drain(turn, ctx);
+
+    expect(readTurnContextUsage).toHaveBeenCalledWith(
+      '01a082ce-2b72-71d2-be38-aa8425f13650',
+      1_788_908_279_000,
+      expect.any(AbortSignal)
+    );
+    expect(events.find((event) => event.type === 'session_status')?.data).toMatchObject({
+      contextTokens: 54_999,
+      contextMaxTokens: 258_400,
+    });
+  });
+
+  it('finishes with honest unknown context when the native reader never settles', async () => {
+    const ctx = createCodexEventContext(SESSION_ID, {
+      readTurnContextUsage: () => new Promise(() => {}),
+      turnContextUsageTimeoutMs: 5,
+      now: () => 1_788_908_279_000,
+    });
+    const turn = codexSimpleTurn('done');
+    turn[0] = codexThreadStarted('01a082ce-2b72-71d2-be38-aa8425f13650');
+
+    const events = await drain(turn, ctx);
+    const status = events.find((event) => event.type === 'session_status');
+
+    expect(status?.data).not.toHaveProperty('contextTokens');
+    expect(status?.data).not.toHaveProperty('contextMaxTokens');
+    expect(status?.data).toMatchObject({ outputTokens: 55, cacheReadTokens: 80 });
+    expect(events.at(-1)?.type).toBe('done');
   });
 
   it('recovers through transient stream errors into a completed turn', async () => {
