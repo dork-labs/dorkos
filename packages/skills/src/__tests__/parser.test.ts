@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSkillFile } from '../parser.js';
+import { parseSkillFile, readRawFrontmatter } from '../parser.js';
 import { hasSchedule } from '../schedule-schema.js';
 import { SkillFrontmatterSchema } from '../schema.js';
 
@@ -118,5 +118,28 @@ describe('parseSkillFile', () => {
     // gray-matter may or may not throw on this — if it parses but produces
     // invalid data, the schema validation will catch it. Either way, ok should be false.
     expect(result.ok).toBe(false);
+  });
+
+  it('gives the same answer about malformed frontmatter every time it is asked', () => {
+    // gray-matter caches the file object BEFORE it parses, so a throw leaves an
+    // unparsed placeholder cached under that exact content: the first call in a
+    // process said `null` and every later one returned `{ data: {} }` with the
+    // frontmatter delimiters still in the body. Two readers of one repository —
+    // the harness inventory and the installed-plugin scanner — then disagreed
+    // about whether a `SKILL.md` was broken, decided by which of them ran first.
+    const content = '---\nname: broken\ndescription: "unclosed\nhooks: [\n---\n\n# broken\n';
+
+    expect(readRawFrontmatter(content)).toBeNull();
+    expect(readRawFrontmatter(content)).toBeNull();
+    expect(readRawFrontmatter(content)).toBeNull();
+  });
+
+  it('still reads well-formed frontmatter the same way on every call', () => {
+    const content = '---\nname: fine\ndescription: A fine skill\n---\n\n# fine\n';
+
+    const first = readRawFrontmatter(content);
+    const second = readRawFrontmatter(content);
+    expect(first).toEqual({ data: { name: 'fine', description: 'A fine skill' }, body: '# fine' });
+    expect(second).toEqual(first);
   });
 });

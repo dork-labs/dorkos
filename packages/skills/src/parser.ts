@@ -61,6 +61,16 @@ export interface ParseSkillFileOptions {
  * complaint object, and writing that back would replace the author's cron with
  * `{invalid, problem}` and lose their schedule for good (DOR-1485 review, B1).
  *
+ * **The empty options object is load-bearing.** `gray-matter` writes its cache
+ * entry BEFORE it parses (`matter.cache[content] = file`, index.js:47), so a
+ * throw leaves the unparsed placeholder — `data: {}`, `content: the whole raw
+ * file` — cached under that content forever. The same malformed `SKILL.md` then
+ * answers `null` on the first call in a process and `{ data: {}, body: '---…' }`
+ * on every later one, which is a reader that changes its mind about a file
+ * nobody touched. Passing any options object takes the `if (!options)` branch
+ * and skips the cache in both directions, which is the only way to make the
+ * answer depend on the content alone.
+ *
  * @param content - Raw file content (UTF-8).
  * @returns The frontmatter mapping and the trimmed body, or `null` when the
  *   content's frontmatter is malformed enough that gray-matter refuses it.
@@ -69,7 +79,7 @@ export function readRawFrontmatter(
   content: string
 ): { data: Record<string, unknown>; body: string } | null {
   try {
-    const parsed = matter(content);
+    const parsed = matter(content, {});
     return { data: parsed.data, body: parsed.content.trim() };
   } catch {
     return null;
