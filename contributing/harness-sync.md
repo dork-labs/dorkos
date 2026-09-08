@@ -214,3 +214,42 @@ That same code path used to take a concurrent apply DOWN, which is worth knowing
 **What is NOT guaranteed: a lock across processes.** Nothing takes a lock file, and that is a decision rather than an omission — a lock file needs a stale-lock story (which pid, on which host, after which crash) and the CLI half runs offline with nobody to ask. The residual, stated plainly: two processes applying **different** plans to one repo in the same instant can interleave a generated hooks file's two writes — the file, then its sidecar — so the sidecar ends up describing the other process's bytes. The ownership rule then reads that pair as a file somebody edited by hand and reports a conflict naming the way out (DOR-1842), which is the safe answer and a wrong one. It needs both processes to write different bytes within microseconds of each other; the way out is the same as for a real hand edit — delete the file and re-run.
 
 A read-modify-write target behaves the way read-modify-write always does: `.claude/settings.local.json` keeps whichever writer merged last, complete and parseable either way.
+
+## 9. Journeys and the census
+
+Two test shapes exist only for this engine, and both are easy to weaken by accident.
+
+**A journey stages a whole repository, runs one real projection, and asserts the EXACT diff.** Not a superset — the whole `{ added, changed, removed }`, so a file that appears one step too early or a sweep that reaches one path too far is a red rather than a side effect nobody looked at. That exactness is the point: HK-11 was a sweep deleting a person's `.codex/hooks.json`, and every test in the suite was green because none of them looked at what ELSE the run touched.
+
+Stage with `stageRepo` from `@dorkos/harness/journeys` (`packages/harness/src/__tests__/journeys/stage-repo.ts`), one object per harness plus the canonical layer:
+
+```ts
+const repo = stageRepo({
+  claude: { skills: ['review'], commands: ['deploy'], settingsHooks: { Stop: [/* … */] } },
+  plugins: [{ name: 'flow', scope: 'project', skills: ['capture'], hooks: {/* … */} }],
+  manifest: { harnesses: ['claude-code', 'codex'] },
+  git: true, // only when the journey asks git a question — `.gitignore`, a clone
+});
+const before = snapshotTree(repo.root);
+// …run the journey's steps…
+expect(diffSnapshots(before, snapshotTree(repo.root))).toEqual({
+  added: [/* … */],
+  changed: [],
+  removed: [],
+});
+```
+
+Rules a journey keeps:
+
+- **One file per journey**, named `jNN-<slug>.test.ts`, with `describe('J-NN — <title>')` and every `it` titled with the contract rows it pins (`it('J-03, IN-03: …')`).
+- **Engine-only journeys** live in `packages/harness/src/__tests__/journeys/`; ones that need the seam — the consent card, the install trigger, the unattended boot pass — live in `apps/server/src/services/harness/__tests__/journeys/` and go through `runAutoProjection`, `projectWithConsent` or `projectAgentWorkspace`. Never `project()` from `@dorkos/harness`: that is the door with no consent gate, and `project-seam-guard.test.ts` is watching it.
+- **Assert what the tree holds before the run**, not just after. A diff against an empty fixture is a statement about nothing.
+- **Where the engine is wrong, pin what it does today** and say in the test why, naming the row. A suite that ships red records nothing; a pinned silence goes red the day somebody fixes it, which is exactly when its replacement should be written.
+
+**The census keeps `meta/harness-sync-capabilities.md` honest.** `packages/harness/src/__tests__/capabilities-census.test.ts` parses that document's tables and every test title under the four roots that test this engine, and fails when they disagree. When it goes red:
+
+- _"no test title carries its id"_ — put the row's ID at the front of the title of the test that really covers it, or correct the Coverage cell. The cell is a claim; the census is what makes it one.
+- _"names an ID the document does not define"_ — a row was renamed or removed, or the title has a typo.
+- _"is `built` with no coverage"_ — something shipped without a test.
+
+**Editing the document alone runs nothing.** `pnpm verify` is affected-only and `meta/` belongs to no package, so after a contract edit run `pnpm vitest run packages/harness/src/__tests__/capabilities-census.test.ts` by hand. What catches it otherwise is the merge queue's full monorepo sweep — and only because `turbo.json` carries a `"@dorkos/harness#test"` override whose `inputs` name the contract and the foreign test paths. Without it the task hash does not move when the document changes, and the queue replays a cached green. `turbo-census-inputs.test.ts` guards the override, including the `$TURBO_DEFAULT$` entry and the restated `dependsOn`/`cache` — a package-scoped override REPLACES the base task rather than merging with it.
