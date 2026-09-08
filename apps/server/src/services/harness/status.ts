@@ -536,26 +536,33 @@ function isAboutEnabledHarness(
  * harness the manifest does not enable, which reaches no column and so has
  * nowhere else honest to go (see {@link isAboutEnabledHarness}).
  *
- * Only drops and warnings are read, because only drops and warnings are ever
- * agnostic: the emitters are `dropWholePlugin`, `dropNonPortableLayers`,
- * `planUnreadableHookWarnings`, `planInventoryWarnings` and
- * `planClaudeOnlySkills`. An agnostic ACTION would be a projection that reaches
- * no harness, which is a contradiction the engine has never produced — and it
- * would need a third `kind` here rather than being folded into one of these two,
- * so it stays a decision to make rather than a default.
+ * Actions land here too, for one reason and one shape: an action naming a
+ * harness the manifest does not enable, whose kind WRITES. The unconditional
+ * `.agents/skills` link is the live case — it exists for the directory, not for
+ * one reader, so the plan attributes it to Codex whether or not Codex is on, and
+ * on a Claude-Code-only project it reached no column at all while `clean` was
+ * false and a sync created the file. A preview that omits a file the click
+ * creates is the same hole as one that omits a file the click deletes.
+ *
+ * A `native` action for a harness nobody runs is deliberately NOT here: nothing
+ * is written, so there is nothing for a person to act on or be surprised by.
+ * Drops are not either — every non-agnostic drop names an enabled harness, since
+ * the drop lists are built by walking `manifest.harnesses` — and if that ever
+ * stops being true this is where the case belongs.
  */
 function projectLevelEntries(
   plan: ProjectionPlan,
   enabled: ReadonlySet<HarnessId>
 ): HarnessProjectEntry[] {
   const entry = (
-    kind: 'drop' | 'warning',
-    e: { artifact: ArtifactType; name: string; source?: string; reason?: string }
+    kind: 'drop' | 'warning' | 'write',
+    e: { artifact: ArtifactType; name: string; source?: string; target?: string; reason?: string }
   ): HarnessProjectEntry => ({
     kind,
     artifact: ARTIFACT_KIND[e.artifact],
     name: e.name,
     ...(e.source === undefined ? {} : { source: e.source }),
+    ...(e.target === undefined ? {} : { target: e.target }),
     // A drop without a reason is an engine bug, not a blank line on somebody's
     // screen: the field is required for a `drop` and the page has a paragraph
     // shaped to hold it. Say what is missing rather than rendering nothing.
@@ -566,7 +573,25 @@ function projectLevelEntries(
     ...plan.warnings
       .filter((w) => !isAboutEnabledHarness(w, enabled))
       .map((w) => entry('warning', w)),
+    ...plan.actions.filter(isUnattributedWrite(enabled)).map((a) => entry('write', a)),
   ];
+}
+
+/**
+ * An action that writes a file for a harness this project does not enable.
+ *
+ * Curried so the filter reads as one line, and named so the reason it exists is
+ * the name: the harness on such an action is a placeholder the emitter documents
+ * as arbitrary, and the file it writes is real.
+ */
+function isUnattributedWrite(
+  enabled: ReadonlySet<HarnessId>
+): (action: ProjectionAction) => boolean {
+  return (action) =>
+    action.harnessAgnostic !== true &&
+    !enabled.has(action.harness) &&
+    action.kind !== 'native' &&
+    action.target !== undefined;
 }
 
 /**
@@ -646,14 +671,16 @@ function buildRows(input: {
   // package's row identity is not stable across a consent decision. Withheld, it
   // is one row keyed `(hook, —, "<package>")`, named after the package, because
   // the package is the only thing there is to name — the plan holds nothing about
-  // it. Approved, the same commands arrive as the plan's own entries and become
-  // `(hook, .claude/settings.local.json, "plugin-hooks")` plus a generated row per
-  // harness. So a client keying rows for animation or selection sees the row
-  // replaced, not updated, the moment somebody says yes. That is the honest
-  // reading rather than a defect to paper over: before the decision there is no
-  // projection to describe, and inventing the post-approval key for a projection
-  // that does not exist would put a row on the page claiming a file that is not
-  // there.
+  // it. Approved, the same commands arrive as the plan's own entries under keys
+  // that share none of that: measured, a Claude Code merge at
+  // `(hook, —, "plugin-hooks")` — the merge action carries no `source` — plus one
+  // generated row per other harness at
+  // `(hook, .dork/plugins/<pkg>/hooks/hooks.json, "hooks")`. So a client keying
+  // rows for animation or selection sees the row replaced, not updated, the
+  // moment somebody says yes. That is the honest reading rather than a defect to
+  // paper over: before the decision there is no projection to describe, and
+  // inventing a post-approval key for a projection that does not exist would put
+  // a row on the page claiming a file that is not there.
   for (const held of withheld) {
     const draft: DraftRow = {
       artifact: 'hook',

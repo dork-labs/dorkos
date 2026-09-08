@@ -157,19 +157,27 @@ export const HarnessRowSchema = z.object({
 export type HarnessRow = z.infer<typeof HarnessRowSchema>;
 
 /**
- * An entry that is about no harness at all — the plan marked it
- * `harnessAgnostic`, so it is a fact about the project.
+ * An entry that is about the project rather than about any one agent tool.
  *
- * A whole marketplace package that is not portable to anything, and a hook
- * declaration the reader could not use before any harness was considered, both
- * land here. They are never cells and never rows: filing them under a harness
- * would tell somebody who runs Codex alone that Claude Code has a problem.
+ * Three shapes, and `kind` says which. A `drop` is something that has no home
+ * anywhere — a marketplace package that is not portable to anything. A `warning`
+ * is a loss: a file the engine read and could not use, before any tool was
+ * considered. A `write` is a file a sync WILL create that belongs to no single
+ * tool — the canonical `.agents/skills` link, which exists for the directory
+ * rather than for one reader — and it is here because it is otherwise invisible:
+ * the plan has to name some harness for it, and if that one is not enabled the
+ * file appears in no column while a sync creates it anyway.
+ *
+ * None of the three is ever a cell or a row: filing one under a harness would
+ * tell somebody who runs Codex alone that Claude Code has a problem.
  */
 export const HarnessProjectEntrySchema = z.object({
-  kind: z.enum(['drop', 'warning']),
+  kind: z.enum(['drop', 'warning', 'write']),
   artifact: HarnessArtifactKindSchema,
   name: z.string(),
   source: z.string().optional(),
+  /** Where a `write` lands, repo-relative. Absent for a `drop` or a `warning`. */
+  target: z.string().optional(),
   reason: z.string(),
 });
 

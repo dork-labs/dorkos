@@ -467,6 +467,32 @@ describe('VC-01 — the status model derives eight states from five reads', () =
     expect(allCells(status).some((c) => c?.reason?.includes('mcp-servers'))).toBe(false);
   });
 
+  it('VC-01: a stale claudeOnlySkills entry is project-level even with Claude Code enabled', () => {
+    // Seeded defect: drop `harnessAgnostic` from `planClaudeOnlySkills`'s warn.
+    // The other stale-entry case enables only Codex, so the model's not-enabled
+    // filter masks the missing flag; here Claude Code IS on and only the flag
+    // decides. The subject is the MANIFEST — an entry that names nothing is wrong
+    // whichever tools this project runs, and the person edits the same line.
+    const { repo, home } = stageBare('staleon', ['claude-code', 'codex'], {
+      claudeOnlySkills: [
+        { name: 'ghost', path: '.claude/skills/ghost', reason: 'kept Claude-only' },
+      ],
+    });
+
+    const status = statusOf(repo, home);
+
+    expect(status.projectLevel).toContainEqual({
+      kind: 'warning',
+      artifact: 'skill',
+      name: 'ghost',
+      source: '.claude/skills/ghost',
+      reason:
+        'claudeOnlySkills entry is stale: no skill at .claude/skills/ghost, and none named "ghost" in .agents/skills',
+    });
+    expect(status.rows.filter((r) => r.name === 'ghost')).toEqual([]);
+    expect(allCells(status).some((c) => c?.state === 'warned')).toBe(false);
+  });
+
   it('VC-01: no cell is drawn for a harness the manifest does not enable', () => {
     // Seeded defect: drop the `enabled` check from pass 2 (`isAboutEnabledHarness`).
     // Three emitters hard-code a placeholder harness, and the last tree here is the
@@ -523,10 +549,15 @@ describe('VC-01 — the status model derives eight states from five reads', () =
       const status = statusOf(repo, home);
 
       expect(status.enabled).toEqual(harnesses);
+      // A floor first: an empty grid satisfies every subset check below.
+      expect(status.rows.length, `${tag}: rows`).toBeGreaterThan(0);
       for (const r of status.rows) {
-        expect(Object.keys(r.cells), `${tag}: cells of ${r.artifact}/${r.name}`).toEqual(
-          Object.keys(r.cells).filter((h) => harnesses.includes(h))
-        );
+        const drawn = Object.keys(r.cells);
+        expect(drawn.length, `${tag}: ${r.artifact}/${r.name} has no cell`).toBeGreaterThan(0);
+        expect(
+          drawn.filter((h) => !harnesses.includes(h)),
+          `${tag}: ${r.artifact}/${r.name}`
+        ).toEqual([]);
       }
       // And the loss is reported rather than dropped on the floor.
       const reasons = status.projectLevel.map((e) => e.reason);
@@ -534,6 +565,19 @@ describe('VC-01 — the status model derives eight states from five reads', () =
         reasons.some((r) => r.includes(expected)),
         `${tag}: ${reasons.join(' | ')}`
       ).toBe(true);
+
+      if (tag === 'pluginroot') {
+        // One skill is one row and one count. The warning used to carry no
+        // source, so it matched no row and became a second `acme__greet` — two
+        // rows and `counts.skills` of 2 for a single directory.
+        expect(status.rows.filter((r) => r.artifact === 'skill')).toHaveLength(1);
+        expect(status.counts.skills).toBe(1);
+        // And the link a sync WILL write for a harness this project does not
+        // enable is named rather than invisible.
+        expect(status.projectLevel).toContainEqual(
+          expect.objectContaining({ kind: 'write', target: '.agents/skills/acme__greet' })
+        );
+      }
     }
   });
 
@@ -570,13 +614,18 @@ describe('VC-01 — the status model derives eight states from five reads', () =
     const { repo, home } = stageBare('precedence', ['claude-code', 'codex']);
     writeSkill(join(repo, '.agents', 'skills', 'alpha'), 'alpha');
 
-    // Read first: the link is simply missing, so the cell is drifted.
+    // The target stays EMPTY, so `checkPlan` calls the cell drifted and nothing
+    // else — the read half of the positive control. Staging an occupant instead
+    // would make it `blocked`, `drifted` would be 0, and reordering the ladder
+    // would red nothing.
     const beforeWrite = statusOf(repo, home);
     const drifted = row(beforeWrite, 'skill', '.agents/skills/alpha', 'alpha');
     expect(drifted.cells['claude-code']?.state).toBe('drifted');
+    expect(beforeWrite.counts.drifted).toBe(1);
+    expect(beforeWrite.counts.conflicts).toBe(0);
 
-    // Now somebody's own directory occupies the target, and the write reports it.
-    writeSkill(join(repo, '.claude', 'skills', 'alpha'), 'alpha');
+    // The write then reports the same cell as a conflict. Both facts are true of
+    // it at once, and only one of them changes what the person does next.
     const conflictAction = {
       kind: 'symlink' as const,
       artifact: 'skill' as const,
