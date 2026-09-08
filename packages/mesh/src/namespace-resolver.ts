@@ -49,7 +49,8 @@ export function validateNamespace(ns: string): { valid: true } | { valid: false;
  *
  * Algorithm:
  * 1. If `manifestNamespace` is provided and non-empty, use it
- * 2. Otherwise, compute `path.relative(scanRoot, projectPath)` and take the first path segment
+ * 2. Otherwise, use the project directory's basename when it is the scan root,
+ *    or the first path segment below the scan root
  * 3. Normalize: lowercase, replace non-alphanumeric with hyphens, trim hyphens
  * 4. Validate: non-empty, max 64 chars
  *
@@ -57,7 +58,7 @@ export function validateNamespace(ns: string): { valid: true } | { valid: false;
  * @param scanRoot - The root directory that was scanned
  * @param manifestNamespace - Optional namespace override from the agent manifest
  * @returns The resolved namespace string
- * @throws If the derived namespace is invalid (empty after normalization)
+ * @throws If deriving from a project outside the scan root, or if the selected namespace is invalid
  */
 export function resolveNamespace(
   projectPath: string,
@@ -74,12 +75,14 @@ export function resolveNamespace(
   }
 
   const relative = path.relative(scanRoot, projectPath);
-  const firstSegment = relative.split(path.sep)[0];
-  if (!firstSegment) {
+  if (relative === '..' || relative.startsWith(`..${path.sep}`)) {
     throw new Error(
-      `Cannot derive namespace: projectPath '${projectPath}' is at or above scanRoot '${scanRoot}'`
+      `Cannot derive namespace: projectPath '${projectPath}' is outside scanRoot '${scanRoot}'`
     );
   }
+
+  const firstSegment =
+    relative === '' ? path.basename(path.resolve(projectPath)) : relative.split(path.sep)[0];
 
   const normalized = normalizeNamespace(firstSegment);
   const validation = validateNamespace(normalized);

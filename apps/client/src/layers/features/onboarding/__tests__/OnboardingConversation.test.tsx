@@ -119,6 +119,12 @@ vi.mock('../model/use-profile', () => ({
 
 const mockStartScan = vi.fn();
 vi.mock('@/layers/entities/discovery', () => ({
+  useCandidateRegistration: () => ({
+    failedPaths: new Set(),
+    pendingPaths: new Set(),
+    registerCandidate: vi.fn(),
+    resetFailures: vi.fn(),
+  }),
   useDiscoveryScan: () => ({ startScan: mockStartScan }),
   useDiscoveryStore: () => ({
     candidates: [],

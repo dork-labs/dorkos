@@ -18,6 +18,7 @@ import {
   useDiscoveryScan,
   useDiscoveryStore,
   useActedPaths,
+  useCandidateRegistration,
   buildRegistrationOverrides,
   sortCandidates,
   CandidateCard,
@@ -68,8 +69,25 @@ export function ConversationDiscoveryBeat({
 }: ConversationDiscoveryBeatProps) {
   const { startScan } = useDiscoveryScan();
   const { candidates, isScanning, lastScanAt, error } = useDiscoveryStore();
-  const registerAgent = useRegisterAgent();
+  const { mutateAsync: registerAgent } = useRegisterAgent();
   const { actedPaths, markActed } = useActedPaths();
+  const registerCandidate = useCallback(
+    (candidate: DiscoveryCandidate) =>
+      registerAgent({
+        path: candidate.path,
+        overrides: buildRegistrationOverrides(candidate),
+      }),
+    [registerAgent]
+  );
+  const handleRegistered = useCallback(
+    (candidate: DiscoveryCandidate) => markActed(candidate.path),
+    [markActed]
+  );
+  const {
+    failedPaths: failedRegistrations,
+    pendingPaths: pendingRegistrations,
+    registerCandidate: handleApprove,
+  } = useCandidateRegistration({ register: registerCandidate, onSuccess: handleRegistered });
 
   // Fire the outcome exactly once — whichever of the store resolution or the
   // timeout wins first latches this so the other becomes a no-op.
@@ -113,26 +131,11 @@ export function ConversationDiscoveryBeat({
   const displayCandidates = useMemo(() => sortCandidates(candidates), [candidates]);
   const pending = displayCandidates.filter((c) => !actedPaths.has(c.path));
 
-  const handleApprove = useCallback(
-    (candidate: DiscoveryCandidate) => {
-      markActed(candidate.path);
-      registerAgent.mutate({
-        path: candidate.path,
-        overrides: buildRegistrationOverrides(candidate),
-      });
-    },
-    [registerAgent, markActed]
-  );
-
   const handleAddAll = useCallback(() => {
     for (const candidate of pending) {
-      markActed(candidate.path);
-      registerAgent.mutate({
-        path: candidate.path,
-        overrides: buildRegistrationOverrides(candidate),
-      });
+      void handleApprove(candidate);
     }
-  }, [pending, registerAgent, markActed]);
+  }, [pending, handleApprove]);
 
   if (phase === 'unasked') {
     return (
@@ -168,13 +171,21 @@ export function ConversationDiscoveryBeat({
             <CandidateCard
               key={candidate.path}
               candidate={candidate}
-              onApprove={handleApprove}
+              registrationFailed={failedRegistrations.has(candidate.path)}
+              registrationPending={pendingRegistrations.has(candidate.path)}
+              onApprove={(candidate) => void handleApprove(candidate)}
               onSkip={(c) => markActed(c.path)}
             />
           ))}
         </AnimatePresence>
       </div>
-      {pending.length > 0 && <BulkAddBar count={pending.length} onAddAll={handleAddAll} />}
+      {pending.length > 0 && (
+        <BulkAddBar
+          count={pending.length}
+          onAddAll={handleAddAll}
+          disabled={pendingRegistrations.size > 0}
+        />
+      )}
       <div className="flex justify-start">
         <Button size="sm" onClick={onDone}>
           Done

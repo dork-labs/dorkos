@@ -131,10 +131,8 @@ describe('resolveNamespace — path derivation', () => {
     expect(resolveNamespace(`${home}/work/my-agent`, `${home}/work`)).toBe('my-agent');
   });
 
-  it('throws when projectPath equals scanRoot (empty relative path)', () => {
-    expect(() => resolveNamespace(`${home}/projects`, `${home}/projects`)).toThrow(
-      /Cannot derive namespace/
-    );
+  it('uses the directory basename when projectPath equals scanRoot', () => {
+    expect(resolveNamespace(`${home}/My Projects`, `${home}/My Projects`)).toBe('my-projects');
   });
 
   it('throws when projectPath is above scanRoot', () => {

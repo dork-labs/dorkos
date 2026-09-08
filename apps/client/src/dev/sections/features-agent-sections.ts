@@ -301,6 +301,13 @@ export const FEATURE_AGENT_SECTIONS: PlaygroundSection[] = [
     category: 'Mesh',
     keywords: ['mesh', 'switch', 'access', 'namespace', 'talk', 'topology', 'permission', 'relay'],
   },
+  {
+    id: 'candidatecard-import-failed',
+    title: 'CandidateCard — Import failed',
+    page: 'features',
+    category: 'Mesh',
+    keywords: ['mesh', 'discovery', 'project', 'import', 'failed', 'retry', 'candidate'],
+  },
   // TasksShowcases
   {
     id: 'tasktemplatecard',

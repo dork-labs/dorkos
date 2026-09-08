@@ -549,6 +549,30 @@ describe('namespace wiring', () => {
     mesh.close();
   });
 
+  it('registers a project that is its own scan root under the directory basename', async () => {
+    const base = await makeTempDir();
+    const projectDir = path.join(base, 'Exact Root Project');
+    await fs.mkdir(projectDir, { recursive: true });
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+    const manifest = await mesh.registerByPath(
+      projectDir,
+      { name: 'exact-root', runtime: 'codex' },
+      'test',
+      projectDir
+    );
+
+    expect(manifest.namespace).toBe('exact-root-project');
+    expect(new AgentRegistry(db).getByPath(projectDir)?.scanRoot).toBe(projectDir);
+
+    const onDisk = JSON.parse(
+      await fs.readFile(path.join(projectDir, '.dork', 'agent.json'), 'utf-8')
+    ) as AgentManifest;
+    expect(onDisk.namespace).toBe('exact-root-project');
+
+    mesh.close();
+  });
+
   it('list({ callerNamespace }) returns only agents in that namespace', async () => {
     const base = await makeTempDir();
     const scanRoot = path.join(base, 'scan');
@@ -1772,14 +1796,13 @@ describe('reconciler disk discovery (ADR-0043)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Auto-import namespace fallback (finding #6 — non-fatal namespace derivation)
+// Auto-import namespace at the scan root
 // ---------------------------------------------------------------------------
 
-describe('auto-import namespace fallback', () => {
-  it('falls back to the basename instead of aborting the scan when derivation fails', async () => {
+describe('auto-import namespace at the scan root', () => {
+  it('uses the scan root basename without aborting the scan', async () => {
     const base = await makeTempDir();
-    // Manifest AT the scan root: path.relative(base, base) === '' makes strict
-    // namespace derivation throw. The scan must survive and register the agent.
+    // A manifest at the scan root derives its namespace from that directory.
     await writeManifest(base, makeManifest({ id: '01ROOTAGENT', name: 'root-agent' }));
 
     const mesh = new MeshCore({ db, defaultScanRoot: base });

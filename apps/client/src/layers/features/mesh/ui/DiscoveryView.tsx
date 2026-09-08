@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { ChevronDown, Search, FolderSearch } from 'lucide-react';
 import {
@@ -11,6 +11,7 @@ import {
   useDiscoveryScan,
   useDiscoveryStore,
   useActedPaths,
+  useCandidateRegistration,
   buildRegistrationOverrides,
   sortCandidates,
   CandidateCard,
@@ -140,13 +141,35 @@ export function DiscoveryView({ fullBleed = false, onRegistered }: DiscoveryView
     error,
     lastScanAt,
   } = useDiscoveryStore();
-  const { mutate: registerAgent } = useRegisterAgent();
+  const { mutateAsync: registerAgent } = useRegisterAgent();
   const { mutate: denyAgent } = useDenyAgent();
   const { data: agentsResult } = useRegisteredAgents();
   const { actedPaths, markActed, resetActed } = useActedPaths();
 
   // Use local edits if user has modified, otherwise use persisted roots
   const displayRoots = localRoots ?? roots;
+  const registerCandidate = useCallback(
+    (candidate: DiscoveryCandidate) =>
+      registerAgent({
+        path: candidate.path,
+        overrides: buildRegistrationOverrides(candidate),
+        scanRoot: pickScanRoot(candidate.path, displayRoots),
+      }),
+    [displayRoots, registerAgent]
+  );
+  const handleRegistered = useCallback(
+    (candidate: DiscoveryCandidate) => {
+      markActed(candidate.path);
+      onRegistered?.();
+    },
+    [markActed, onRegistered]
+  );
+  const {
+    failedPaths: failedRegistrations,
+    pendingPaths: pendingRegistrations,
+    registerCandidate: handleApprove,
+    resetFailures: resetRegistrationFailures,
+  } = useCandidateRegistration({ register: registerCandidate, onSuccess: handleRegistered });
 
   function handleRootsChange(newRoots: string[]) {
     setLocalRoots(newRoots);
@@ -156,6 +179,7 @@ export function DiscoveryView({ fullBleed = false, onRegistered }: DiscoveryView
   function handleScan() {
     if (displayRoots.length > 0) {
       resetActed();
+      resetRegistrationFailures();
       startScan({ roots: displayRoots, maxDepth: depth });
     }
   }
@@ -176,20 +200,7 @@ export function DiscoveryView({ fullBleed = false, onRegistered }: DiscoveryView
 
   function handleAddAll() {
     for (const c of visibleCandidates) {
-      markActed(c.path);
-      registerAgent(
-        {
-          path: c.path,
-          overrides: buildRegistrationOverrides(c),
-          scanRoot: pickScanRoot(c.path, displayRoots),
-        },
-        {
-          onSuccess: () => {
-            markActed(c.path);
-            onRegistered?.();
-          },
-        }
-      );
+      void handleApprove(c);
     }
   }
 
@@ -350,28 +361,20 @@ export function DiscoveryView({ fullBleed = false, onRegistered }: DiscoveryView
             {/* New candidates first — bulk add bar + individual cards */}
             {scanComplete && visibleCandidates.length > 0 && (
               <>
-                <BulkAddBar count={visibleCandidates.length} onAddAll={handleAddAll} />
+                <BulkAddBar
+                  count={visibleCandidates.length}
+                  onAddAll={handleAddAll}
+                  disabled={pendingRegistrations.size > 0}
+                />
                 <AnimatePresence mode="popLayout">
                   {visibleCandidates.map((c: DiscoveryCandidate) => (
                     <CandidateCard
                       key={c.path}
                       candidate={c}
                       className="mb-2"
-                      onApprove={(cand) =>
-                        registerAgent(
-                          {
-                            path: cand.path,
-                            overrides: buildRegistrationOverrides(cand),
-                            scanRoot: pickScanRoot(cand.path, displayRoots),
-                          },
-                          {
-                            onSuccess: () => {
-                              markActed(cand.path);
-                              onRegistered?.();
-                            },
-                          }
-                        )
-                      }
+                      registrationFailed={failedRegistrations.has(c.path)}
+                      registrationPending={pendingRegistrations.has(c.path)}
+                      onApprove={(candidate) => void handleApprove(candidate)}
                       onSkip={(cand) => markActed(cand.path)}
                       onDeny={(cand) =>
                         denyAgent({ path: cand.path }, { onSuccess: () => markActed(cand.path) })

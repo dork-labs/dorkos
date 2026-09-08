@@ -48,6 +48,10 @@ interface CandidateCardProps {
   onApprove: (candidate: DiscoveryCandidate) => void;
   onDeny?: (candidate: DiscoveryCandidate) => void;
   onSkip?: (candidate: DiscoveryCandidate) => void;
+  /** Whether the most recent attempt to add this project failed. */
+  registrationFailed?: boolean;
+  /** Whether this project is currently being added. */
+  registrationPending?: boolean;
   className?: string;
   /**
    * Forwarded to the card's root element.
@@ -69,6 +73,8 @@ export function CandidateCard({
   onApprove,
   onDeny,
   onSkip,
+  registrationFailed = false,
+  registrationPending = false,
   className,
   ref,
 }: CandidateCardProps) {
@@ -78,6 +84,7 @@ export function CandidateCard({
     <motion.div
       ref={ref}
       data-slot="candidate-card"
+      aria-busy={registrationPending}
       layout
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
@@ -137,6 +144,12 @@ export function CandidateCard({
               </Tooltip>
             ))}
         </div>
+
+        {registrationFailed && (
+          <p role="alert" className="text-xs text-red-700 dark:text-red-400">
+            Couldn’t add this project. Try again.
+          </p>
+        )}
       </div>
 
       {/* Actions */}
@@ -144,15 +157,17 @@ export function CandidateCard({
         <button
           type="button"
           onClick={() => onApprove(candidate)}
-          className="focus-visible:ring-ring rounded-md bg-green-600/10 px-2.5 py-1 text-xs font-medium text-green-700 hover:bg-green-600/20 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none dark:text-green-400"
+          disabled={registrationPending}
+          className="focus-visible:ring-ring rounded-md bg-green-600/10 px-2.5 py-1 text-xs font-medium text-green-700 hover:bg-green-600/20 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:text-green-400"
         >
-          Add
+          {registrationPending ? 'Adding…' : registrationFailed ? 'Try again' : 'Add'}
         </button>
         {onSkip && (
           <button
             type="button"
             onClick={() => onSkip(candidate)}
-            className="text-muted-foreground hover:bg-muted focus-visible:ring-ring rounded-md px-2.5 py-1 text-xs font-medium focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+            disabled={registrationPending}
+            className="text-muted-foreground hover:bg-muted focus-visible:ring-ring rounded-md px-2.5 py-1 text-xs font-medium focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           >
             Skip
           </button>
@@ -161,7 +176,8 @@ export function CandidateCard({
           <button
             type="button"
             onClick={() => onDeny(candidate)}
-            className="focus-visible:ring-ring rounded-md bg-red-600/10 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-600/20 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none dark:text-red-400"
+            disabled={registrationPending}
+            className="focus-visible:ring-ring rounded-md bg-red-600/10 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-600/20 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-400"
           >
             Deny
           </button>
