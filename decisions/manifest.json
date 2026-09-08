@@ -5382,6 +5382,28 @@
         "packages/cli/src/harness-sync-command.ts",
         "apps/client/src/layers/entities/harness/"
       ]
+    },
+    {
+      "id": "260908-191538",
+      "slug": "global-scope-projection-is-skills-only-and-symlinked",
+      "title": "Global-scope projection is skills-only and symlinked, and it deletes only what it can prove it wrote",
+      "status": "proposed",
+      "created": "2026-09-08",
+      "extractedFrom": "spec",
+      "specSlug": "harness-sync-global",
+      "amends": ["0303"],
+      "supersedes": null,
+      "affects": [
+        "packages/harness/src/plan/global-projector.ts",
+        "packages/harness/src/apply/global-apply.ts",
+        "packages/harness/src/sources/installed.ts",
+        "packages/harness/src/plan/types.ts",
+        "apps/server/src/services/harness/agents-user-home.ts",
+        "apps/server/src/services/runtimes/claude-code/claude-config-dir.ts",
+        "apps/server/src/lib/boundary.ts",
+        "packages/shared/src/config-schema.ts",
+        "packages/cli/src/harness-sync-command.ts"
+      ]
     }
   ]
 }

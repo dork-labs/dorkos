@@ -6,7 +6,7 @@
       "slug": "harness-sync-global",
       "title": "Harness Sync at global scope, and Claude Code's own /plugin installs as a source",
       "created": "2026-09-08",
-      "status": "ideation",
+      "status": "specified",
       "project": "Harness Sync",
       "linearIssue": "DOR-1857"
     },

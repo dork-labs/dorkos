@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted (extracted from spec: harness-sync — installed-plugin projection and `provenance` shipped in `@dorkos/harness`; the explicit `dorkos harness adopt` verb is not yet implemented)
 
+**A proposed amendment narrows one clause at GLOBAL scope:** [260908-191538](260908-191538-global-scope-projection-is-skills-only-and-symlinked.md) (Global-scope projection is skills-only and symlinked) narrows "its **portable subset** (skills, hooks) projects **automatically on install** … scope-matched (project↔project, global↔global)" to skills only, asked for rather than automatic, at global scope alone. It is `proposed`, so **everything below still governs as written**; the full retirement note lands when that ADR is accepted (spec `harness-sync-global`, DOR-1857).
+
 ## Context
 
 Harness Sync as first specified projected only the repo's _authored_ canonical source (`.agents/`), but two other kinds of agent files exist on disk and a user wants them in every harness too. Marketplace plugins install to `<scope>/plugins/<name>` (`~/.dork/plugins` global or `<project>/.dork/plugins`) and today reach only the DorkOS-driven Claude runtime, via the SDK `plugins` array — there is **no** filesystem bridge to Codex/Cursor/OpenCode. Separately, users have assets installed natively by an agent (skills in `.claude/`, rules in `.cursor/`) that are stranded in that one harness. The vendored-maps decision (ADR-301) means we own the projector, so adding source roots is our choice, not a library constraint.
