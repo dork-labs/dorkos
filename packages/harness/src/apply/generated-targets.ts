@@ -27,6 +27,7 @@ import {
   removeGeneratedSidecar,
   writeGeneratedSidecar,
 } from './generated-ownership.js';
+import { blockingGenerateOccupant } from './generate-occupants.js';
 
 /** True when a target is one of the per-harness hooks files the sidecar rules guard. */
 export function isGeneratedHookTarget(
@@ -45,7 +46,7 @@ function writeOwnedGenerated(absTarget: string, content: string): void {
 /**
  * What applying a generated hooks file to its current on-disk state would do.
  * One predicate, read by {@link applyGeneratedHookFile} (which acts on it), by
- * {@link findBlockedGeneratedHookTargets}, and by `apply.ts`'s drift check
+ * {@link findBlockedGenerateTargets}, and by `apply.ts`'s drift check
  * (which both report it), so the three can never disagree about who owns a file.
  */
 export type GeneratedHookOutcome = 'write' | 'adopt' | 'unchanged' | 'blocked';
@@ -214,23 +215,39 @@ export function findLeftAloneGeneratedHookFiles(repoRoot: string, plan: Projecti
 }
 
 /**
- * Generate actions the engine cannot realize because a file it does not own
- * occupies the target — what `--fix` reports as a conflict, answered without
- * touching disk so `--check` can say the same thing first.
+ * Generate actions the engine cannot realize — what `--fix` reports as a
+ * conflict, answered without touching disk so `--check` says the same thing
+ * first. Two reasons, asked in that order because one is about the path and the
+ * other about its contents:
+ *
+ * 1. the target's SHAPE forbids a write at all — a directory, or a live symlink
+ *    that would carry the write somewhere else ({@link blockingGenerateOccupant});
+ * 2. for the per-harness hooks files only, a file the engine cannot prove it
+ *    wrote occupies the target ({@link generatedHookOutcome}).
+ *
+ * One loop and an early `continue` keep them exclusive, so a path is named once
+ * with one reason rather than twice with two.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the current projection plan.
- * @returns the blocked actions, each carrying {@link HAND_WRITTEN_HOOKS_REASON}.
+ * @returns the blocked actions, each carrying the reason that applies to it.
  */
-export function findBlockedGeneratedHookTargets(
+export function findBlockedGenerateTargets(
   repoRoot: string,
   plan: ProjectionPlan
 ): ProjectionAction[] {
   const blocked: ProjectionAction[] = [];
   for (const action of plan.actions) {
     if (action.kind !== 'generate' || !action.target) continue;
-    if (!isGeneratedHookTarget(action.target)) continue;
     const absTarget = join(repoRoot, action.target);
+
+    const shape = blockingGenerateOccupant(absTarget);
+    if (shape !== undefined) {
+      blocked.push({ ...action, reason: shape });
+      continue;
+    }
+
+    if (!isGeneratedHookTarget(action.target)) continue;
     const outcome = generatedHookOutcome(
       absTarget,
       action.target,

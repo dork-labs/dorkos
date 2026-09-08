@@ -475,6 +475,126 @@ describe('runHarnessSync', () => {
     expect(printed).toContain('.claude/settings.json');
   });
 
+  it('--check reports a dead link at a generated file as drift instead of crashing', async () => {
+    // The file was moved away and a broken link left behind. There is nothing to
+    // read at that path, so there is no ownership question — it is stale, and
+    // saying so is the whole job. This used to throw ENOENT out of `checkPlan`
+    // and print a stack trace over the report.
+    writeFixtureRepo(tmpDir);
+    process.chdir(tmpDir);
+    await runHarnessSync({ check: false, fix: true }); // project everything first
+    fs.rmSync(path.join(tmpDir, '.codex', 'hooks.json'), { force: true });
+    fs.symlinkSync('hooks.json.bak', path.join(tmpDir, '.codex', 'hooks.json'));
+    logSpy.mockClear();
+
+    const check = await runHarnessSync({ check: true, fix: false });
+
+    expect(check.exitCode).toBe(1);
+    const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(printed).toContain('Drift detected');
+    expect(printed).toContain('.codex/hooks.json');
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('--check names a link whose skill is gone, and --fix sweeps it', async () => {
+    writeFixtureRepo(tmpDir);
+    process.chdir(tmpDir);
+    await runHarnessSync({ check: false, fix: true }); // project `demo`
+    const projected = path.join(tmpDir, '.claude', 'skills', 'demo');
+    expect(fs.lstatSync(projected).isSymbolicLink()).toBe(true);
+
+    // The person deletes the skill. Its projection is now a link to nothing.
+    fs.rmSync(path.join(tmpDir, '.agents', 'skills', 'demo'), { recursive: true, force: true });
+    logSpy.mockClear();
+
+    const check = await runHarnessSync({ check: true, fix: false });
+
+    expect(check.exitCode).toBe(1);
+    const checkOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(checkOutput).toContain('Orphaned links — the skill they pointed at is gone');
+    expect(checkOutput).toContain('.claude/skills/demo');
+    // Read-only: the dead link is still there after a check.
+    expect(fs.lstatSync(projected).isSymbolicLink()).toBe(true);
+
+    logSpy.mockClear();
+    const fix = await runHarnessSync({ check: false, fix: true });
+
+    expect(fix.exitCode).toBe(0);
+    const fixOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(fixOutput).toMatch(/Swept 1 orphaned[\s\S]*\.claude\/skills\/demo/);
+    expect(fs.existsSync(projected)).toBe(false);
+    expect((await runHarnessSync({ check: true, fix: false })).exitCode).toBe(0);
+  });
+
+  it('--check --harness withholds orphans, because --fix --harness cannot sweep them', async () => {
+    // The sweep runs only on a full plan. Naming an orphan under a filter meant
+    // `--check --harness codex` exited 1 and told the person to run a `--fix`
+    // that exits 0 and leaves the link — forever, with no way out but a flag the
+    // report never mentioned.
+    writeFixtureRepo(tmpDir);
+    process.chdir(tmpDir);
+    await runHarnessSync({ check: false, fix: true });
+    fs.rmSync(path.join(tmpDir, '.agents', 'skills', 'demo'), { recursive: true, force: true });
+    const orphan = path.join(tmpDir, '.claude', 'skills', 'demo');
+    logSpy.mockClear();
+
+    const scoped = await runHarnessSync({ check: true, fix: false, harness: 'codex' });
+
+    expect(scoped.exitCode).toBe(0);
+    const scopedOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(scopedOutput).not.toContain('Orphaned links');
+    expect(scopedOutput).toContain('No drift');
+
+    // The filtered --fix it would have recommended really does leave the link,
+    // which is why the filtered --check must not report it.
+    const scopedFix = await runHarnessSync({ check: false, fix: true, harness: 'codex' });
+    expect(scopedFix.exitCode).toBe(0);
+    expect(fs.lstatSync(orphan).isSymbolicLink()).toBe(true);
+
+    // Unfiltered, it is named and it is swept.
+    logSpy.mockClear();
+    const full = await runHarnessSync({ check: true, fix: false });
+    expect(full.exitCode).toBe(1);
+    expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain('Orphaned links');
+    await runHarnessSync({ check: false, fix: true });
+    expect(fs.existsSync(orphan)).toBe(false);
+  });
+
+  it('points at LOG_LEVEL=debug for the stack, and prints it when asked', async () => {
+    writeFixtureRepo(tmpDir);
+    fs.writeFileSync(path.join(tmpDir, '.agents', 'harness.manifest.json'), '{ not json');
+    process.chdir(tmpDir);
+
+    const quiet = await runHarnessSync({ check: true, fix: false });
+    expect(quiet.exitCode).toBe(1);
+    const quietErrors = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(quietErrors).toContain('Re-run with LOG_LEVEL=debug to see the stack.');
+    expect(quietErrors).not.toContain('\n    at ');
+
+    errorSpy.mockClear();
+    vi.stubEnv('LOG_LEVEL', 'debug');
+    const loud = await runHarnessSync({ check: true, fix: false });
+    expect(loud.exitCode).toBe(1);
+    const loudErrors = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(loudErrors).toContain('\n    at ');
+    expect(loudErrors).not.toContain('Re-run with LOG_LEVEL=debug');
+  });
+
+  it('turns an engine failure into one line, not a stack trace', async () => {
+    // Defence in depth: whatever the projection engine throws — here a manifest
+    // somebody typo'd into invalid JSON — a person gets a sentence and exit 1.
+    writeFixtureRepo(tmpDir);
+    fs.writeFileSync(path.join(tmpDir, '.agents', 'harness.manifest.json'), '{ not json');
+    process.chdir(tmpDir);
+
+    const check = await runHarnessSync({ check: true, fix: false });
+
+    expect(check.exitCode).toBe(1);
+    const errors = errorSpy.mock.calls.map((c) => String(c[0]));
+    expect(errors.join('\n')).toContain('Harness sync failed');
+    expect(errors.join('\n')).not.toContain('\n    at ');
+  });
+
   it('--harness narrows the left-alone list to that harness', async () => {
     writeFixtureRepo(tmpDir);
     writeHandWrittenHooks(tmpDir, '.cursor/hooks.json', 'echo MINE cursor');

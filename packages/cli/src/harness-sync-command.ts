@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { LOG_LEVEL_MAP } from '@dorkos/shared/config-schema';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -49,6 +50,20 @@ export interface HarnessSyncArgs {
 function resolveDorkHome(): string {
   // eslint-disable-next-line no-restricted-syntax -- the harness branch in cli.ts runs before DORK_HOME is exported, so we mirror its `env || ~/.dork` resolution here
   return process.env.DORK_HOME || join(homedir(), '.dork');
+}
+
+/**
+ * Whether this invocation asked for debug-level detail, by either spelling: the
+ * `LOG_LEVEL` name a person exports, or the numeric `DORKOS_LOG_LEVEL` a parent
+ * process (`cli.ts`, the server) has already resolved.
+ */
+function wantsDebugDetail(): boolean {
+  /* eslint-disable no-restricted-syntax -- the harness branch in cli.ts runs before the log level is resolved and exported, so we mirror its `LOG_LEVEL || DORKOS_LOG_LEVEL` reading here */
+  const named = LOG_LEVEL_MAP[process.env.LOG_LEVEL ?? ''];
+  const numeric = Number(process.env.DORKOS_LOG_LEVEL);
+  /* eslint-enable no-restricted-syntax */
+  const level = named ?? (Number.isFinite(numeric) ? numeric : undefined);
+  return level !== undefined && level >= LOG_LEVEL_MAP.debug;
 }
 
 /** The four actionable projection kinds, in the order shown in the per-harness summary. */
@@ -172,12 +187,24 @@ function filterPlanToHarness(plan: ProjectionPlan, harness: HarnessId): Projecti
 /**
  * Print the check-mode report and return its exit code.
  *
- * Non-zero for drift (a `--fix` would repair it) and for a blocked projection (a
- * `--fix` cannot, until the person moves their file). Zero for paths merely left
- * alone — those are reported, never counted against the tree.
+ * Non-zero for drift (a `--fix` would repair it), for an orphaned link (a `--fix`
+ * would remove it), and for a blocked projection (a `--fix` cannot do anything,
+ * until the person moves their file). Zero for paths merely left alone — those
+ * are reported, never counted against the tree.
+ *
+ * **Orphans are withheld under `--harness`**, exactly mirroring the one condition
+ * under which `reportFix` sweeps them. The engine answers for the whole tree; the
+ * CLI decides what this invocation can act on, and naming a link that the `--fix`
+ * this report recommends would NOT remove is a non-zero exit the person can never
+ * clear — measured before the guard: `--check --harness codex` said "Orphaned
+ * links … gamma" and exited 1, `--fix --harness codex` exited 0 and left the link,
+ * forever. So `clean` is recomputed here rather than read off `DriftResult`, whose
+ * own `clean` folds in the orphans this run is not reporting.
  */
 function reportCheck(repoRoot: string, plan: ProjectionPlan, harnessFilter?: HarnessId): number {
   const drift = checkPlan(repoRoot, plan);
+  const orphans = harnessFilter === undefined ? drift.orphans : [];
+  const clean = drift.drifted.length === 0 && drift.blocked.length === 0 && orphans.length === 0;
 
   console.log('Projection summary:');
   console.log(summarizeActions(plan.actions));
@@ -191,7 +218,7 @@ function reportCheck(repoRoot: string, plan: ProjectionPlan, harnessFilter?: Har
   for (const line of formatLeftAlone(drift.leftAlone, harnessFilter)) console.log(line);
   console.log('');
 
-  if (drift.clean) {
+  if (clean) {
     console.log('No drift — every projection already matches the plan.');
     return 0;
   }
@@ -199,11 +226,18 @@ function reportCheck(repoRoot: string, plan: ProjectionPlan, harnessFilter?: Har
   if (drift.drifted.length > 0) {
     console.log(`Drift detected (${drift.drifted.length} out of sync):`);
     for (const action of drift.drifted) console.log(formatAction(action));
+  }
+  if (orphans.length > 0) {
+    if (drift.drifted.length > 0) console.log('');
+    console.log(`Orphaned links — the skill they pointed at is gone (${orphans.length}):`);
+    for (const path of orphans) console.log(`  ${path}`);
+  }
+  if (drift.drifted.length > 0 || orphans.length > 0) {
     console.log('');
     console.log('Run `dorkos harness sync --fix` to apply.');
   }
   if (drift.blocked.length > 0) {
-    if (drift.drifted.length > 0) console.log('');
+    if (drift.drifted.length > 0 || orphans.length > 0) console.log('');
     console.log(
       `${drift.blocked.length} projection(s) blocked — a --fix cannot write these until you clear the way:`
     );
@@ -215,9 +249,10 @@ function reportCheck(repoRoot: string, plan: ProjectionPlan, harnessFilter?: Har
 /**
  * Apply the plan, print the fix-mode report, and return its exit code (1 if conflicts).
  *
- * `sweepOrphans` removes installed-plugin projections whose plugin is gone; it is
- * passed only for an unfiltered plan (a `--harness` filter would mistake other
- * harnesses' live projections for orphans).
+ * `sweepOrphans` removes projections whose source is gone — an uninstalled
+ * plugin's, and a dead `.claude/skills` link left by an authored skill somebody
+ * removed or renamed. It is passed only for an unfiltered plan (a `--harness`
+ * filter would mistake other harnesses' live projections for orphans).
  */
 function reportFix(
   repoRoot: string,
@@ -239,7 +274,7 @@ function reportFix(
 
   if (swept.length > 0) {
     console.log('');
-    console.log(`Swept ${swept.length} orphaned installed projection(s):`);
+    console.log(`Swept ${swept.length} orphaned projection(s) — what they came from is gone:`);
     for (const path of swept) console.log(`  ${path}`);
   }
 
@@ -327,18 +362,37 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     console.log('');
   }
 
-  // Project marketplace-installed plugins too (DOR-173). Project-scoped installs
-  // (`<repoRoot>/.dork/plugins`) are repo-relative and always project; passing a
-  // resolved dork home additionally projects global-scope installs.
-  let plan = project(repoRoot, { dorkHome: resolveDorkHome() });
+  // Everything from here reads or writes the tree, and a person running this in
+  // their own terminal gets a sentence when it goes wrong, never a stack. The
+  // engine is not supposed to throw for anything it finds on disk — a dead link,
+  // a file it does not own, a directory where a link should be are all answers it
+  // returns — so this is the backstop for what is left: an unreadable manifest, a
+  // permission error, a bug.
+  try {
+    // Project marketplace-installed plugins too (DOR-173). Project-scoped installs
+    // (`<repoRoot>/.dork/plugins`) are repo-relative and always project; passing a
+    // resolved dork home additionally projects global-scope installs.
+    let plan = project(repoRoot, { dorkHome: resolveDorkHome() });
 
-  if (harnessFilter !== undefined) {
-    plan = filterPlanToHarness(plan, harnessFilter);
+    if (harnessFilter !== undefined) {
+      plan = filterPlanToHarness(plan, harnessFilter);
+    }
+
+    // Orphan sweep only runs on a full (unfiltered) plan — see reportFix.
+    const exitCode = args.fix
+      ? reportFix(repoRoot, plan, harnessFilter === undefined, harnessFilter)
+      : reportCheck(repoRoot, plan, harnessFilter);
+    return { exitCode };
+  } catch (err) {
+    console.error(`Harness sync failed: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`  in ${repoRoot}`);
+    // The stack is not thrown away, it is asked for: `LOG_LEVEL=debug` is the
+    // repo's own spelling (`cli.ts` maps it through `LOG_LEVEL_MAP` into
+    // `DORKOS_LOG_LEVEL` for everything downstream), and this namespace is
+    // intercepted before that plumbing runs, so it reads the same two variables
+    // itself — see `resolveDorkHome` for the same reason applied to DORK_HOME.
+    if (err instanceof Error && err.stack && wantsDebugDetail()) console.error(err.stack);
+    else console.error('  Re-run with LOG_LEVEL=debug to see the stack.');
+    return { exitCode: 1 };
   }
-
-  // Orphan sweep only runs on a full (unfiltered) plan — see reportFix.
-  const exitCode = args.fix
-    ? reportFix(repoRoot, plan, harnessFilter === undefined, harnessFilter)
-    : reportCheck(repoRoot, plan, harnessFilter);
-  return { exitCode };
 }

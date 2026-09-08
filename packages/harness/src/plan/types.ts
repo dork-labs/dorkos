@@ -112,6 +112,14 @@ export interface DriftResult {
    */
   blocked: ProjectionAction[];
   /**
+   * Repo-relative paths of managed skill links whose source is gone — somebody
+   * removed or renamed `.agents/skills/<x>`, and `.claude/skills/<x>` is left
+   * pointing at nothing. No plan action names one (there is no source left to
+   * project), so they are reported here rather than in `drifted`; a `--fix`
+   * sweeps them, which is why they count against `clean`.
+   */
+  orphans: string[];
+  /**
    * Repo-relative paths where somebody's own file sits at a target the engine
    * generates for *some* configuration but not this one — nothing is blocked,
    * nothing needs fixing, and the person is simply told the file is theirs. Never
@@ -119,8 +127,9 @@ export interface DriftResult {
    */
   leftAlone: string[];
   /**
-   * True when the plan is fully realized on disk: nothing drifted AND nothing
-   * blocked. `leftAlone` entries do not make a tree unclean.
+   * True when the plan is fully realized on disk: nothing drifted, nothing
+   * blocked, and no orphaned link. `leftAlone` entries do not make a tree
+   * unclean.
    */
   clean: boolean;
 }
