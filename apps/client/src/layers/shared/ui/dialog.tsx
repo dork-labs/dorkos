@@ -75,8 +75,8 @@ function DialogOverlay({
  * The dialog's panel: the box, its overlay, and the close button in the corner.
  *
  * It portals and dims on its own, so a caller supplies only the contents. Do not
- * add a close button — one is already drawn top-right, pinned there while the
- * body scrolls.
+ * add a close button — one is already drawn in the top-right corner, whatever
+ * layout the caller gives the panel.
  */
 function DialogContent({
   className,
@@ -114,18 +114,29 @@ function DialogContent({
         {...props}
       >
         {children}
-        {/* `row-span-full` + `sticky`, not `absolute`: the box above can now
-            scroll (see the height-cap comment above), and an
-            absolutely-positioned child of a scroll container scrolls away with
-            everything else. Spanning every row keeps this overlaying the
-            content instead of landing in its own row below it — the same
-            visual role `absolute` used to play — and `sticky` then pins it to
-            the same corner for as long as the dialog stays open, scrolled or
-            not. The negative margins pull it back from the grid's padded edge
-            to the original 16px inset (`top-4`/`right-4`) rather than the
-            content's 24px one — the offset is to the control's own edge, so it
-            lands in the same place now that the control is a sized `Button`
-            box rather than a bare icon.
+        {/* `absolute`, and nothing that reads the box's layout. This control
+            has to sit in the panel's top-right corner in EVERY dialog, and the
+            panel's layout is not this file's to know: a caller's `className`
+            wins the merge, and `ResponsiveDialogContent` — which every settings,
+            marketplace and schedule dialog goes through — makes the panel
+            `flex flex-col`.
+
+            An in-flow placement cannot survive that. `self-start justify-self-end`
+            means top-right in a grid and left in a flex column, where
+            `justify-self` does nothing at all and the control, as the last
+            child, lands under the content: the settings dialog drew its X at
+            the BOTTOM-LEFT. And the grid it was written for fared little
+            better — a grid item only overlays siblings when BOTH are placed
+            explicitly, which arbitrary children never are, so the control took
+            a row of its own and pushed the header 40px down.
+
+            Out-of-flow positioning is the only way to overlay a corner control
+            over children this file does not control. The trade is the one
+            `absolute` always had: in a dialog tall enough to scroll its own
+            panel, the control scrolls with the content (Escape and the overlay
+            still close it). `sticky` is the only anchor that resists that, and
+            `sticky` needs a flow position — which is exactly what cannot be had
+            here.
 
             `asChild` hands the close behaviour to a real `Button`, which is
             where the `focus-visible:` ring comes from: the hand-rolled recipe
@@ -137,7 +148,7 @@ function DialogContent({
             data-slot="dialog-content-close"
             variant="ghost"
             size="icon-sm"
-            className="sticky top-4 row-span-full -mt-2 -mr-2 self-start justify-self-end opacity-70 hover:opacity-100"
+            className="absolute top-4 right-4 opacity-70 hover:opacity-100"
           >
             <X className="size-(--size-icon-md)" />
             <span className="sr-only">Close</span>
