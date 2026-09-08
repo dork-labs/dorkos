@@ -159,7 +159,7 @@ On the vocabulary gates, honestly: neither reaches these strings. `scripts/check
 
 Acceptance bar: on the operator's own machine `dorkos harness sync` prints nine plugins with their repositories, the install command beside every one DorkOS can resolve, and the root it read. Every line is plain, active, under twenty words and carries no em dash, per `writing-for-humans`. "Agent tools" is used rather than "harnesses": a person did not install a harness.
 
-Verification: `pnpm vitest run packages/cli/src/__tests__/harness-sync.test.ts`; `pnpm --filter dorkos typecheck`; `pnpm --filter dorkos lint`; `pnpm --filter dorkos test`. The branch faces an independent adversarial review per `REVIEW.md` before a PR opens.
+Verification: `pnpm vitest run packages/cli/src/__tests__/harness-sync.test.ts`; `pnpm --filter dorkos typecheck`; `pnpm --filter dorkos lint`; `pnpm --filter dorkos test`; `pnpm --filter @dorkos/server test` (the read module lives in the server tree, and the slice's Bar names both). The branch faces an independent adversarial review per `REVIEW.md` before a PR opens.
 
 ### Task 1.4: Add the claudeOnly status payload, flip the B1 contract rows and ship the fragment
 
@@ -488,7 +488,7 @@ Files:
 - `apps/server/eslint.config.js` — BOTH halves of the `os.homedir()` ban.
 - `.claude/rules/dork-home.md` — the sixth row in the carve-out table, with its reason.
 - `scripts/test-homedir-guard.sh` — its own block, in the shape the `claude-config-dir`, `codex-home` and `opencode-data-dir` blocks already have (a declared carve-out stays silent, and the carve-out is per FILE, not per directory).
-- `AGENTS.md` — Hard Rule 3 says "Five carve-outs beyond tests" and enumerates them by name. A sixth carve-out makes that sentence wrong, so the count and the list are edited in the same PR. This file is NOT in the specification's own file list for this slice; it is added here because the rule text and the rule's enforcement must not disagree, and `scripts/check-banned-words.sh` scans `AGENTS.md`, so the edit is gated.
+- `AGENTS.md` — Hard Rule 3 (line ~165) says "Five carve-outs beyond tests" and enumerates them by name, and the Key conventions bullet (line ~118) says "outside the five carve-outs in Hard Rule 3". A sixth carve-out makes both sentences wrong, so the count and the list are edited in BOTH places in the same PR; `REVIEW.md` ("Five carve-outs are declared", line ~113) gets the same one-word edit, for the same reason. This file is NOT in the specification's own file list for this slice; it is added here because the rule text and the rule's enforcement must not disagree, and `scripts/check-banned-words.sh` scans `AGENTS.md`, so the edit is gated.
 - `packages/harness/src/vendor-facts/__tests__/vendor-facts.test.ts` — one case asserting the invariant that justifies exactly two user directories: every harness except `claude-code` lists `~/.agents/skills` in `skills.readPaths.user`, and `claude-code` lists `~/.claude/skills`.
 
 Why a carve-out and not a config field: a `harness.global.userSkillsDir` field would avoid the rule change and make the ordinary case require configuration, which is worse — nobody would set it, the feature would appear broken, and the field would become a second place a home directory is spelled.
