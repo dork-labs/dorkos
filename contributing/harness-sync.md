@@ -149,8 +149,18 @@ Three rules govern edits here:
 
 **The reason tables are a second dated facts table**, and they follow §5's discipline without sharing its constant: `SOURCE_ARTIFACT_FACTS_FETCHED_AT` dates the subagent / rules / MCP cells, `VENDOR_FACTS_FETCHED_AT` dates the skills rows, and a partial re-fetch of one kind must not silently re-date the other. Each table is `satisfies Record<HarnessId, Placement>`, so a new harness id fails the typecheck in three places. Changing a reason means re-opening the vendor page, and a cell nobody can verify says so rather than naming a plausible path.
 
+**Where §5 already has the answer, ask it — never restate it.** A skill kept in `.claude/skills` gets its placement from `skillsFactsFor(harness)`, not from a sentence here: Claude Code is not the only harness that reads that directory (OpenCode, Cursor and Copilot list it too), and a hand-written "only Claude Code reads it" would have been a fresh SK-05, contradicted by this repo's own table two directories away. The link case is the honest middle — a skill LINKED into `.claude/skills` is a confident `native` only for a harness that documents following symlinks, and for the rest a drop that names that silence, rather than a false yes or a false no.
+
 **Nothing here is written.** Every line is a `native` or a `drop`, and `applyPlan` treats both as no-ops. When a projection is built for one of these kinds, its cell moves from `drop` to a real mechanism and the drop reason goes with it.
 
 **The completeness check is what keeps this honest.** `__tests__/properties/plan-completeness.property.test.ts` (P6) asserts that for every inventoried artifact and every enabled harness, the plan says something about it. Note what it does NOT assert: that exactly one list names it. One source file can hold several artifacts with different fates — `.claude/settings.json` declaring both an event Codex maps and one it does not appears in `actions` and in `drops` for the same harness, and both lines are true. The real contradiction, a `native` and a `drop` for one source, is asserted directly instead. A drop that carries no `source` cannot be matched to the declaration it is about, so **every drop about an authored file names that file**, or it is silent to this check while looking reported.
 
 **Adding a kind** means three edits and a red test in between: grow `ArtifactType` (`plan/types.ts`), teach `inventory/` to find it, and add its `satisfies Record<HarnessId, Placement>` table. P6 reds until the third lands.
+
+**Three traps the first review of this code found, all of them one trap.** Each was a place where what a harness reads and what the walk looked at had quietly diverged, and each was invisible to P6 because the generator did not stage the shape:
+
+1. **Recursion.** `.claude/rules` is discovered recursively, like `.claude/agents` and `.claude/commands`. A nested rule got zero lines under every harness, and `arbRepo()` seeded only flat names.
+2. **Symlinked directories.** `Dirent.isDirectory()` is false for a link, so a linked-in folder of rules or subagents was neither a directory to descend into nor an `.md` file. The walk now `stat`s and descends, and keeps a visited-realpath set — before, a loop terminated only because nothing ever descended through one.
+3. **Identity.** A subagent is keyed by its frontmatter `name`, never its path. Reporting a nested definition as `react/tanstack` named it something nobody can invoke.
+
+The generator now stages a nested rule, a linked-in directory, a dead `.md` link and a person's own link into `.claude/skills`, so all four discriminate. When you add a kind, add its awkward shape to `arbRepo()` in the same commit — a property with no subject is a green that means nothing.
