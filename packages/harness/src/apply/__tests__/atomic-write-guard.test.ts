@@ -10,15 +10,20 @@
  * It reads SOURCE rather than types, because `writeFileSync` from `node:fs`
  * compiles perfectly and looks like every other write in the file it is added to.
  *
- * Comment lines are skipped so the modules that EXPLAIN why a plain write is
- * wrong (this one included, and `generate-occupants.ts`, which names the EISDIR a
- * plain write throws) are not reported for saying so.
+ * Comments are removed by the repo's shared stripper, `scripts/lib/code-only.mjs`
+ * — never by a regex of this file's own (`scripts/__tests__/code-only.test.ts`
+ * fails any guard that grows one back). It matters here: the modules that EXPLAIN
+ * why a plain write is wrong, this one and `generate-occupants.ts`, name
+ * `writeFileSync` in prose, and a guard that reported them for saying so is a
+ * guard somebody widens an allowlist to silence. `codeOnly` blanks non-code spans
+ * without changing the file's length, so a hit still reports its real line.
  */
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { codeOnly } from '../../../../../scripts/lib/code-only.mjs';
 
-/** `packages/harness/src`, three levels above this file. */
+/** `packages/harness/src`, two levels above this file's directory. */
 const SRC = join(import.meta.dirname, '..', '..');
 
 /** The one module allowed to write a file the plain way — it is the helper. */
@@ -31,7 +36,7 @@ const HELPER = ['apply', 'atomic-write.ts'].join('/');
  * `writeFileAtomic(...)` past: the name has to stand on its own, and a member
  * access on the `fs` namespace is exactly the shape a new site would take.
  */
-const FS_WRITE_CALL = /(?<![\w$])(writeFileSync|writeFile|appendFileSync|createWriteStream)\s*\(/;
+const FS_WRITE_CALL = /(?<![\w$])(writeFileSync|writeFile|appendFileSync|createWriteStream)\s*\(/g;
 
 /** Every `.ts` file under `packages/harness/src`, repo-relative with `/` separators. */
 function sourceFiles(): string[] {
@@ -55,13 +60,12 @@ function isTest(file: string): boolean {
   return file.includes('__tests__/') || file.endsWith('.test.ts');
 }
 
-/** The lines of a file that call an `fs` write, ignoring comment lines. */
-function fsWriteCalls(source: string): string[] {
-  return source
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => !line.startsWith('*') && !line.startsWith('//') && !line.startsWith('/*'))
-    .filter((line) => FS_WRITE_CALL.test(line));
+/** The `<line>: <name>` of every `fs` write CALL in a file, comments excluded. */
+function fsWriteCalls(source: string, fileName = 'scan.ts'): string[] {
+  const code = codeOnly(source, fileName);
+  return [...code.matchAll(FS_WRITE_CALL)].map(
+    (match) => `${code.slice(0, match.index).split('\n').length}: ${match[1]}`
+  );
 }
 
 describe('every generated file is written atomically', () => {
@@ -73,14 +77,14 @@ describe('every generated file is written atomically', () => {
     expect(files.length).toBeGreaterThan(30);
     expect(files).toContain(HELPER);
     // And the detector fires on the one file that legitimately does it.
-    expect(fsWriteCalls(readFileSync(join(SRC, HELPER), 'utf8'))).not.toEqual([]);
+    expect(fsWriteCalls(readFileSync(join(SRC, HELPER), 'utf8'), HELPER)).not.toEqual([]);
   });
 
   it('routes every write through writeFileAtomic — nothing else touches fs directly', () => {
     const violations = files
       .filter((file) => file !== HELPER && !isTest(file))
       .flatMap((file) =>
-        fsWriteCalls(readFileSync(join(SRC, file), 'utf8')).map((line) => `${file}: ${line}`)
+        fsWriteCalls(readFileSync(join(SRC, file), 'utf8'), file).map((hit) => `${file}:${hit}`)
       );
 
     expect(
@@ -92,16 +96,15 @@ describe('every generated file is written atomically', () => {
   });
 
   it('catches the shapes a new write site would actually take', () => {
-    expect(fsWriteCalls(`writeFileSync(abs, content);`)).toEqual(['writeFileSync(abs, content);']);
-    expect(fsWriteCalls(`  fs.writeFileSync(abs, content);`)).toEqual([
-      'fs.writeFileSync(abs, content);',
-    ]);
-    expect(fsWriteCalls(`await writeFile(abs, content);`)).toEqual([
-      'await writeFile(abs, content);',
-    ]);
-    expect(fsWriteCalls(`appendFileSync(abs, line);`)).toEqual(['appendFileSync(abs, line);']);
-    expect(fsWriteCalls(`createWriteStream(abs).end(content);`)).toEqual([
-      'createWriteStream(abs).end(content);',
+    expect(fsWriteCalls(`writeFileSync(abs, content);`)).toEqual(['1: writeFileSync']);
+    expect(fsWriteCalls(`  fs.writeFileSync(abs, content);`)).toEqual(['1: writeFileSync']);
+    expect(fsWriteCalls(`await writeFile(abs, content);`)).toEqual(['1: writeFile']);
+    expect(fsWriteCalls(`appendFileSync(abs, line);`)).toEqual(['1: appendFileSync']);
+    expect(fsWriteCalls(`createWriteStream(abs).end(content);`)).toEqual(['1: createWriteStream']);
+    // The line number is the real one, which is what `codeOnly` preserving
+    // length buys: a stripper that deleted the comment would report line 1.
+    expect(fsWriteCalls(`/* a\nlong\nnote */\nwriteFileSync(abs, x);`)).toEqual([
+      '4: writeFileSync',
     ]);
   });
 
@@ -109,5 +112,10 @@ describe('every generated file is written atomically', () => {
     expect(fsWriteCalls(`writeFileAtomic(abs, content);`)).toEqual([]);
     expect(fsWriteCalls(` * \`writeFileSync\` fails with EISDIR here.`)).toEqual([]);
     expect(fsWriteCalls(`// writeFileSync(abs, content) would truncate first`)).toEqual([]);
+    expect(fsWriteCalls(`/** writeFileSync(x) is what this replaced. */\nconst a = 1;`)).toEqual(
+      []
+    );
+    // A string that merely names one is not a call either.
+    expect(fsWriteCalls(`const hint = 'call writeFileSync(abs) instead';`)).toEqual([]);
   });
 });
