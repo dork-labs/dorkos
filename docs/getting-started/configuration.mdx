@@ -693,6 +693,10 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
 
 Harness Sync projects your `.agents/` definitions and installed marketplace plugins out to every agent harness. By default, installing or uninstalling a marketplace plugin re-runs this projection automatically.
 
+It also keeps up on its own while DorkOS is running. When an agent writes a new skill into `.agents/skills/` during a session, it shows up in your other coding tools within a few seconds — no command to run and no restart. Most tools read that folder directly, so they see it the moment the file lands; Claude Code reads `.claude/skills/` instead, so DorkOS puts a link there for you. One caveat, and DorkOS says it when it applies: Claude Code only notices new skills in a folder that already existed when the session started. If DorkOS had to create `.claude/skills/` for this project, restart any Claude Code session you have open.
+
+Deleting a skill is the one thing this does not follow. DorkOS adds links while you work and never removes them on its own, so a skill you delete leaves a dead link behind. `dorkos harness sync --check` lists them and `dorkos harness sync --fix` clears them out.
+
 Some packages ship hooks: commands your coding agent runs on its own, before or after it does things. Installing a package never puts those in place on its own. DorkOS shows you each command and when it would run, and waits for you to say yes. It remembers your answer per package and per project, and asks again if a later version of the package wants to run something different, or wants to run the same thing at a different moment.
 
 Running `dorkos harness sync --fix` yourself follows the same answers. It sets up everything else the package brought, holds its hooks back, and prints each command it did not install. If DorkOS cannot read your settings file at all, it says so and holds every package's hooks back rather than guessing. To install them, run `dorkos harness sync --fix --allow-hooks <package>`, which saves your answer in the same list. `dorkos harness hooks --list` shows every package you have decided about, and `dorkos harness hooks --revoke <package>` forgets one so DorkOS asks again.
@@ -705,7 +709,7 @@ If you wrote your own hooks file — `.codex/hooks.json` or `.cursor/hooks.json`
   type={{
     'harness.autoSync': {
       description:
-        'Automatically run Harness Sync projection when a marketplace plugin is installed or uninstalled. Set to false to manage projection manually via `dorkos harness sync`.',
+        'Keep your coding tools in sync automatically: after a marketplace plugin is installed or uninstalled, and whenever a skill is added or removed while DorkOS is running. Set to false to manage projection manually via `dorkos harness sync`.',
       type: 'boolean',
       default: 'true',
     },

@@ -665,7 +665,7 @@ export class SessionStateProjector {
       this.scheduleActivityFanOut();
     }
     if (event.type === 'turn_end' || event.type === 'interaction_resolved') {
-      notifyTurnBoundary(this._sessionId);
+      notifyTurnBoundary(this._sessionId, event.type);
     }
     return event;
   }
@@ -2466,8 +2466,26 @@ export function rekeyProjector(oldId: string, newId: string): void {
   for (const listener of rekeyListeners) listener(fromId, newId);
 }
 
-/** A subscriber notified when a session reaches a turn boundary. */
-type TurnBoundaryListener = (sessionId: string) => void;
+/**
+ * Which of the two boundaries fired.
+ *
+ * The distinction exists because the two are not interchangeable for every
+ * subscriber. For the dispatcher they are: both can free a session for the
+ * message waiting behind it, which is the only question it asks. For a
+ * subscriber that wants "the runtime has finished writing" — the Harness Sync
+ * turn-end re-projection (DOR-1850) — only `turn_end` is that, because
+ * `interaction_resolved` is a person answering a prompt in the MIDDLE of a turn
+ * that is still producing.
+ */
+export type TurnBoundaryKind = 'turn_end' | 'interaction_resolved';
+
+/**
+ * A subscriber notified when a session reaches a turn boundary.
+ *
+ * `kind` is second and optional to read: a listener that treats both boundaries
+ * alike declares one parameter and is unaffected.
+ */
+type TurnBoundaryListener = (sessionId: string, kind: TurnBoundaryKind) => void;
 
 /** Observers of `turn_end` / `interaction_resolved`; see {@link onProjectorTurnBoundary}. */
 const turnBoundaryListeners = new Set<TurnBoundaryListener>();
@@ -2487,7 +2505,11 @@ const turnBoundaryListeners = new Set<TurnBoundaryListener>();
  * turn still reopens only on raw model-speech StreamEvents (#909). This observes
  * a turn closing; it never reopens one.
  *
- * @param listener - Invoked with the session id at each boundary.
+ * A listener is told WHICH boundary it was ({@link TurnBoundaryKind}), so a
+ * subscriber that only wants a turn that actually ended does not have to treat
+ * a person answering a prompt as one.
+ *
+ * @param listener - Invoked with the session id and the boundary kind.
  * @returns An unsubscribe function.
  */
 export function onProjectorTurnBoundary(listener: TurnBoundaryListener): () => void {
@@ -2498,10 +2520,10 @@ export function onProjectorTurnBoundary(listener: TurnBoundaryListener): () => v
 }
 
 /** Tell every boundary observer, without letting one of them break an ingest. */
-function notifyTurnBoundary(sessionId: string): void {
+function notifyTurnBoundary(sessionId: string, kind: TurnBoundaryKind): void {
   for (const listener of turnBoundaryListeners) {
     try {
-      listener(sessionId);
+      listener(sessionId, kind);
     } catch (err) {
       logger.warn('[SessionStateProjector] a turn-boundary observer threw', {
         sessionId,

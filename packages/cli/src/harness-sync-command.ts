@@ -19,7 +19,9 @@ import {
   formatDropList,
   formatWarnings,
   hooksFactsFor,
+  skillsFactsFor,
   canonicalLayerIgnoredBy,
+  CLAUDE_SKILLS_DIR,
   loadManifest,
   missingGitignoreLines,
   scaffoldManifest,
@@ -303,6 +305,35 @@ function reportCodexTrust(before: string | undefined, after: string | undefined)
   console.log(`  (${facts.source.url}, read ${facts.source.fetchedAt})`);
 }
 
+/**
+ * Say out loud that a Claude Code session already open may not see the skills
+ * this run just linked (contract SK-11).
+ *
+ * Only when the run CREATED `.claude/skills/`. That is the case where the vendor
+ * documents a restart outright — Claude Code attaches its watcher to the
+ * directories that exist when the session starts — and saying it on every sync
+ * would be the noise that teaches people to skip the line on the one run where
+ * it matters. The same rule as the Codex trust notice above, for the same
+ * reason.
+ *
+ * The claim is read from the vendor-facts table, so it carries the page it came
+ * from and the day it was read.
+ *
+ * @param existedBefore - Whether `.claude/skills/` was there before the apply.
+ * @param repoRoot - The repository the sync ran in.
+ */
+function reportClaudeSkillsRestart(existedBefore: boolean, repoRoot: string): void {
+  if (existedBefore) return;
+  if (!existsSync(join(repoRoot, CLAUDE_SKILLS_DIR))) return;
+  const facts = skillsFactsFor('claude-code');
+  console.log('');
+  console.log(`Created ${CLAUDE_SKILLS_DIR}/, which is where Claude Code reads skills.`);
+  console.log('  Claude Code watches that folder for changes, but only if it was already');
+  console.log('  there when the session started — so restart any Claude Code session you');
+  console.log('  have open on this project before looking for these skills.');
+  console.log(`  (${facts.source.url}, read ${facts.source.fetchedAt})`);
+}
+
 /** The bytes at a repo-relative path, or `undefined` when nothing is there. */
 function readIfPresent(repoRoot: string, rel: string): string | undefined {
   try {
@@ -504,6 +535,7 @@ function reportFix(
   },
   withheld: readonly WithheldHooks[],
   codexHooksBefore: string | undefined,
+  claudeSkillsExistedBefore: boolean,
   dorkHome: string,
   writeGitignore: boolean,
   harnessFilter?: HarnessId,
@@ -514,6 +546,7 @@ function reportFix(
   console.log(`Applied ${applied.length} projection(s):`);
   for (const action of applied) console.log(formatAction(action));
   reportCodexTrust(codexHooksBefore, readIfPresent(repoRoot, CODEX_HOOKS_TARGET));
+  reportClaudeSkillsRestart(claudeSkillsExistedBefore, repoRoot);
   console.log('');
   console.log('Projection summary:');
   // `enabled` reaches here too, and it did not have to. `--fix` printed no
@@ -820,6 +853,7 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     }
 
     const codexHooksBefore = readIfPresent(repoRoot, CODEX_HOOKS_TARGET);
+    const claudeSkillsExistedBefore = existsSync(join(repoRoot, CLAUDE_SKILLS_DIR));
     const result = projectWithConsent(repoRoot, {
       ...consentOpts,
       sweepOrphans: harnessFilter === undefined,
@@ -830,6 +864,7 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
       result,
       result.withheld,
       codexHooksBefore,
+      claudeSkillsExistedBefore,
       dorkHome,
       args.writeGitignore,
       harnessFilter,

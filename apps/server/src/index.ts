@@ -258,6 +258,14 @@ import { MarketplaceInstaller } from './services/marketplace/marketplace-install
 import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
 import { backfillAgentWorkspaceSkills } from './services/harness/project-agent-workspace.js';
+import {
+  startSkillsWatcher,
+  startTurnEndReprojection,
+  type SkillsWatcherHandle,
+  type TurnEndReprojection,
+} from './services/harness/skills-watcher.js';
+import { onProjectorTurnBoundary } from './services/session/session-state-projector.js';
+import { DEFAULT_CWD } from './lib/resolve-root.js';
 import { describeHookProjectionCapability } from './services/harness/hook-approval.js';
 import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
 import {
@@ -511,6 +519,10 @@ function registeredAgentRoots(
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
 let taskRegistrar: TaskRegistrar | undefined;
+/** The `.agents/skills` projection watcher; absent when `harness.autoSync` is off. */
+let skillsWatcher: SkillsWatcherHandle | undefined;
+/** The turn-end half of the same trigger; absent whenever {@link skillsWatcher} is. */
+let turnEndReprojection: TurnEndReprojection | undefined;
 /**
  * Start watching a newly registered agent's schedule roots.
  *
@@ -3063,6 +3075,69 @@ async function start() {
     });
   }
 
+  // A skill an agent writes into `.agents/skills` reaches Claude Code within
+  // seconds instead of at the next manual sync or the next boot (DOR-1850).
+  //
+  // Deliberately outside the tasks block above: the two watch the same directory
+  // for unrelated reasons — one turns a `schedule:` block into a cron job, this
+  // one projects the skill to the harnesses that cannot read it where it sits —
+  // and switching schedules off must not switch projection off with it.
+  //
+  // The root list is re-read on every rescan rather than captured, so an agent
+  // registered after boot is picked up without a subscription of its own. The
+  // default project is in it because that is where a session with no better
+  // answer runs; `harness.autoSync` off means no watcher at all.
+  skillsWatcher = startSkillsWatcher({
+    dorkHome,
+    roots: () => [DEFAULT_CWD, ...(meshCore?.listWithPaths().map((a) => a.projectPath) ?? [])],
+  });
+  if (skillsWatcher) {
+    turnEndReprojection = startTurnEndReprojection({
+      watcher: skillsWatcher,
+      subscribe: onProjectorTurnBoundary,
+      // The runtime's own live binding is the only cheap, authoritative answer
+      // to "where did this turn run". Resolved through the session's OWN runtime
+      // (ADR-0255's per-session binding, the same `resolveForSession` +
+      // `getInternalSessionId` pair `lib/transcript-excerpt.ts` uses) rather
+      // than by asking every registered runtime in turn: that shortcut would
+      // hand one runtime a session id belonging to another, and the first
+      // non-empty answer would win whether or not it was about this session.
+      // `getSessionCwd` is optional on the contract and implemented by
+      // claude-code alone, so this answers for the default runtime and nothing
+      // for the others — which the watcher covers for the roots it watches.
+      //
+      // Whatever it answers is still judged against the boundary before a single
+      // file is written: a session's directory is not a checked input.
+      rootForSession: async (sessionId) => {
+        const runtime = await runtimeRegistry.resolveForSession(sessionId);
+        return runtime.getSessionCwd?.(runtime.getInternalSessionId(sessionId) ?? sessionId);
+      },
+    });
+    // Logged once the first root pass has actually finished. Read synchronously
+    // it was always `0`: taking a root on means asking the boundary about it,
+    // which resolves the path on disk, so nothing is watched yet in the tick
+    // `startSkillsWatcher` returns. Not awaited either — boot does not wait on a
+    // log line — so this rides the same promise the watcher already had.
+    //
+    // The count is WATCHES, not roots, and the difference is real: a project
+    // whose `.agents/skills` does not exist yet cannot be watched at all
+    // (chokidar silently watches an ancestor instead), so it is covered by the
+    // re-arm until the directory appears. Calling it a watched root would be a
+    // number that says nothing went wrong when the watch is not there.
+    const watcher = skillsWatcher;
+    void watcher
+      .ready()
+      .then(() => {
+        logger.info('[HarnessSync] Watching for skills agents write', {
+          watching: watcher.watchedRoots().length,
+        });
+      })
+      .catch(() => {
+        // `ready()` settles either way; a rejection here would be a defect in it
+        // rather than anything a person can act on.
+      });
+  }
+
   // Mount connector routes (connector-gateway spec, DOR-371). The registry
   // starts empty — provider backends (raw-MCP, Composio) register in later
   // phases — but the routing surface is already live: `recommend` reads the
@@ -4399,6 +4474,15 @@ async function shutdownServices() {
   }
   if (taskReconciler) {
     taskReconciler.stop();
+  }
+  // Both halves of the skills trigger, in the order they depend on each other:
+  // stop listening for turn boundaries first, so nothing can schedule work into
+  // a watcher that is closing its handles.
+  turnEndReprojection?.stop();
+  turnEndReprojection = undefined;
+  if (skillsWatcher) {
+    await skillsWatcher.stop();
+    skillsWatcher = undefined;
   }
   if (searchIndexer) {
     searchIndexer.stop();

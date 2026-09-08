@@ -83,14 +83,20 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
       liveReload:
         'yes for `.claude/skills/` and `~/.claude/skills/` — but a skills directory created after the session started needs a restart',
       source: {
-        url: 'https://code.claude.com/docs/en/skills',
-        fetchedAt: VENDOR_FACTS_FETCHED_AT,
+        url: 'https://code.claude.com/docs/en/skills#live-change-detection',
+        // Re-fetched on its own for DOR-1850, which prints this claim in a log
+        // line and in `dorkos harness sync --fix`. The rest of the table is
+        // still on VENDOR_FACTS_FETCHED_AT; a row on its own date is a row that
+        // was re-checked on its own, which is the signal a reader wants.
+        fetchedAt: '2026-09-08',
         quote:
-          '`.claude/skills/` in the start dir and every parent up to the repo root; … **directory name** is the `/command`; frontmatter `name` is display-only outside plugins; symlinks: yes; a target reachable twice is loaded once',
+          'When you add, edit, or remove a skill under `~/.claude/skills/`, the project `.claude/skills/`, or a `.claude/skills/` inside an `--add-dir` directory, Claude Code picks up the change within the current session, without a restart. If you create a top-level skills directory that didn’t exist when the session started, restart Claude Code so it can watch the new directory.',
       },
       verified: 'docs',
       notes: [
         'The one fact the whole engine is built on: Claude Code is the only harness that does not read `.agents/skills`. The symlink into `.claude/skills/` is the entire reason the skills half of the engine exists.',
+        'Two limits the `liveReload` cell cannot carry, both stated on the same page (2026-09-08): live detection covers `SKILL.md` text only — a skill folder that is also a plugin needs `/reload-plugins` for its `hooks/`, `.mcp.json`, `agents/` and `output-styles/` — and in bare mode Claude Code does not watch skill directories at all.',
+        'The page is silent on whether a NESTED `.claude/skills/` created mid-session behaves like a top-level one, and on whether `/reload-plugins` rescues a newly created plain-skill directory. Neither is claimed anywhere in DorkOS output.',
         '`nameMustMatchDir` is `false` because the page states the frontmatter name is display-only outside plugins — the directory is the identity, so no match is required. `onInvalidName` is `unknown` because no name rule is stated for it to break.',
         "Read paths the contract lists but this row omits, because they are not a directory a projection can walk: enabled plugins' `skills/`, `--add-dir` directories, the nested `<subdir>/.claude/skills/` tier Claude Code loads lazily when a file there is touched (SK-15; explicitly out of scope for `harnessCoverage()` per the test plan §2), and the enterprise/managed tier above `~/.claude/skills/` that wins every conflict.",
       ],
