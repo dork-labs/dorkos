@@ -318,3 +318,60 @@ export const HarnessSyncResponseSchema = z.object({
 
 /** What a sync did, and the status recomputed after it. */
 export type HarnessSyncResponse = z.infer<typeof HarnessSyncResponseSchema>;
+
+/**
+ * What Claude Code alone has: the plugins a person turned on in Claude Code's
+ * own settings, and the root they were read from.
+ *
+ * The root is always present, because `$CLAUDE_CONFIG_DIR` is inherited and the
+ * answer is only checkable if you can see which file it came from — a run
+ * started inside an agent session can read a different root than the person's
+ * own terminal.
+ *
+ * "Turned on", never "installed": a plugin with no entry at any scope is not
+ * off, because Claude Code's `defaultEnabled` falls back to `true`, and the
+ * public half of its state cannot enumerate installs at all. So the fourth state
+ * is not computable and nothing here claims it.
+ *
+ * Nothing in `plugins` may be described as "the same plugin" as a DorkOS
+ * package: neither side carries a version to compare, so the strongest true
+ * claim is a package of the same name from the same repository.
+ */
+export const HarnessClaudeOnlySchema = z.object({
+  /** The Claude root that was read: `$CLAUDE_CONFIG_DIR`, else `~/.claude`. */
+  root: z.string(),
+  /** When the read happened, ISO-8601. */
+  readAt: z.string(),
+  /** Why the read failed, in words. When set, `plugins` is empty and means nothing. */
+  unreadable: z.string().optional(),
+  /** True when a managed settings file may exist and could not be read. Always true today. */
+  mayBeOverridden: z.boolean(),
+  /** The plugins whose merged value across the readable settings files is `true`. */
+  plugins: z.array(
+    z.object({
+      /** The plugin's name, as Claude Code's settings spell it. */
+      name: z.string(),
+      /** The marketplace's local name inside Claude Code's settings. */
+      marketplace: z.string(),
+      /**
+       * `owner/name`, when Claude Code's own marketplace list resolved it.
+       * Absent means DorkOS cannot say where the plugin came from.
+       */
+      repo: z.string().optional(),
+      /** `project` means on for this repository only, with no entry at user scope. */
+      settingsScope: z.enum(['user', 'project']),
+      /** Which of the five rungs this plugin came to rest on. */
+      offer: z.enum(['install', 'add-source-then-install', 'unknown-source', 'no-package']),
+      /** The source URL to add, for `add-source-then-install` only. */
+      sourceUrl: z.string().optional(),
+    })
+  ),
+  /** How many hook commands the personal settings file declares. */
+  personalHookCommands: z.number().int().nonnegative(),
+});
+
+/** What Claude Code alone has. @see {@link HarnessClaudeOnlySchema} */
+export type HarnessClaudeOnly = z.infer<typeof HarnessClaudeOnlySchema>;
+
+/** One plugin Claude Code alone has. @see {@link HarnessClaudeOnlySchema} */
+export type HarnessClaudeOnlyPlugin = HarnessClaudeOnly['plugins'][number];
