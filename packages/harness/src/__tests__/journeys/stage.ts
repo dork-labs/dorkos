@@ -26,7 +26,7 @@ import {
   statSync,
 } from 'node:fs';
 import { writeFileSync } from 'node:fs';
-import { dirname, join, relative, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 
 /** One entry in a {@link snapshotTree} result: what the path is, and its exact content. */
 export interface SnapshotEntry {
@@ -140,15 +140,16 @@ function sha256Of(bytes: Buffer): string {
 }
 
 /**
- * A snapshot of a tree with the root's own absolute path scrubbed out of every
- * file, as a plain object so a failing comparison prints the differing path.
+ * A snapshot of a tree with the root's own absolute path scrubbed out of file
+ * content and fixture-local absolute link targets, as a plain object so a
+ * failing comparison prints the differing path.
  *
  * {@link snapshotTree} hashes raw bytes, which is right for before/after inside
  * ONE repo. Comparing two SEPARATELY staged repos needs this instead: a
- * projected hook command can name the plugin's install directory, which is a
- * different temp path in every staging and is never what such a test is asking
- * about. Both spellings of the root are scrubbed, because macOS hands out
- * `/var/folders/…` and resolves it to `/private/var/…`.
+ * projected hook command or Windows junction can name the plugin's install
+ * directory, which is a different temp path in every staging and is never what
+ * such a test is asking about. Both spellings of the root are scrubbed, because
+ * macOS hands out `/var/folders/…` and resolves it to `/private/var/…`.
  *
  * @param root - absolute path to snapshot.
  * @returns repo-relative path to `dir`, `link:<text>`, or `sha:<digest>`.
@@ -158,14 +159,26 @@ export function scrubbedSnapshot(root: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [path, entry] of snapshotTree(root)) {
     if (entry.kind === 'dir') out[path] = 'dir';
-    else if (entry.kind === 'symlink') out[path] = `link:${entry.linkText}`;
-    else {
+    else if (entry.kind === 'symlink') {
+      out[path] = `link:${scrubbedLinkText(root, real, entry.linkText ?? '')}`;
+    } else {
       const text = readFileSync(join(root, path), 'utf8');
       out[path] =
         `sha:${sha256Of(Buffer.from(text.split(real).join('<ROOT>').split(root).join('<ROOT>')))}`;
     }
   }
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+/** Replace a fixture-local absolute junction target with its stable root-relative identity. */
+function scrubbedLinkText(root: string, realRoot: string, linkText: string): string {
+  if (!isAbsolute(linkText)) return linkText;
+  for (const candidateRoot of [realRoot, root]) {
+    const rel = relative(candidateRoot, linkText);
+    const inside = rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+    if (inside) return rel === '' ? '<ROOT>' : `<ROOT>/${rel.split(sep).join('/')}`;
+  }
+  return linkText;
 }
 
 /**
