@@ -532,6 +532,7 @@ describe('F2: a user root that is not a folder at all', () => {
     const roots: GlobalPlanRoots = { dorkHome, agentsSkillsDir };
 
     const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+    const realPlatform = process.platform;
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
     try {
       const plan = projectGlobal({ roots, harnesses: ['codex'] });
@@ -541,8 +542,10 @@ describe('F2: a user root that is not a folder at all', () => {
     } finally {
       if (platform) Object.defineProperty(process, 'platform', platform);
     }
-    // Restored, so nothing after this case is measured on a fake platform.
-    expect(process.platform).not.toBe('win32');
+    // Restored, so nothing after this case is measured on a fake platform —
+    // asserted against what the platform really was, which on the Windows leg
+    // is `win32` itself.
+    expect(process.platform).toBe(realPlatform);
   });
 
   it('a file at an ANCESTOR is named, rather than the deeper path it makes unreadable', () => {
