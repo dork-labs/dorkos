@@ -34,7 +34,7 @@ import {
   planHooks,
 } from './hooks-projection.js';
 import { planInstruction } from './instructions.js';
-import { globalInstallDropReason, planBothScopesNotices } from './global-installs.js';
+import { planGlobalInstallDrops, planGlobalUnreadableHookWarnings } from './global-installs.js';
 
 import { isProjectScoped, type InstalledPlugin } from '../sources/installed.js';
 import {
@@ -451,7 +451,6 @@ export function buildPlan(input: {
   const projectScoped = installedPlugins.filter(isProjectScoped);
   const projectable = projectScoped.filter((p) => PROJECTABLE_PLUGIN_TYPES.has(p.type));
   const unsupportedType = projectScoped.filter((p) => !PROJECTABLE_PLUGIN_TYPES.has(p.type));
-  const globalInstalls = installedPlugins.filter((p) => p.location.scope === 'global');
 
   // Which packages may contribute shell commands. Applied HERE, before the hooks
   // are folded in, because a package's hooks reach every enabled harness — the
@@ -489,6 +488,12 @@ export function buildPlan(input: {
   // the reader could not parse, and heard about the omission only after saying
   // yes (DOR-1849).
   warnings.push(...planUnreadableHookWarnings(projectable));
+
+  // The same promise for the packages installed for every project: the scan
+  // reads their hooks file too, so a rotted one is said out loud rather than
+  // read and thrown away. Emitted here, beside its project-scope twin, because
+  // both losses happened at read time, ahead of every harness.
+  warnings.push(...planGlobalUnreadableHookWarnings(installedPlugins));
 
   // Which file each merged hook came from, so no line about hooks names a
   // `.claude/settings.json` the repository does not have.
@@ -600,15 +605,14 @@ export function buildPlan(input: {
       dropWholePlugin(plugin, `package type "${plugin.type}" is not a harness-portable plugin`)
     );
   }
-  for (const plugin of globalInstalls) {
-    all.push(dropWholePlugin(plugin, globalInstallDropReason(plugin)));
-  }
-
-  // The same package at both scopes: one notice for the package, never one per
-  // agent tool (SRC-12). It says what each tool does with the pair and resolves
+  // One drop per package installed for all projects, each followed by the
+  // SRC-12 notice when the same name is also installed here. The notice resolves
   // nothing, because a DorkOS-side precedence would be unenforceable — the
-  // projection is a symlink in a directory the tool reads on its own terms.
-  all.push(...planBothScopesNotices(installedPlugins));
+  // projection is a symlink in a directory the agent tool reads on its own
+  // terms. `repoRoot` reaches it because its uninstall command names this
+  // repository by absolute path; a `.` would be resolved by the SERVER, against
+  // a working directory that is not the reader's.
+  all.push(...planGlobalInstallDrops({ plugins: installedPlugins, repoRoot }));
 
   return {
     actions: all.filter((a) => a.kind !== 'drop'),

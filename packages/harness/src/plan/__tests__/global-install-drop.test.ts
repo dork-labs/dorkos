@@ -20,9 +20,9 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { buildPlan } from '../projector.js';
-import { formatDropList } from '../../report/drop-list.js';
+import { formatDropList, formatWarnings } from '../../report/drop-list.js';
 import { parseHarnessManifest } from '../../manifest/schema.js';
 import { scanInstalledPlugins } from '../../sources/installed.js';
 import type { ProjectionAction, ProjectionPlan } from '../types.js';
@@ -119,6 +119,19 @@ beforeAll(() => {
   writeManifest(solo, 'soloskill', '1.0.0', ['skills']);
   writeSkill(join(solo, 'skills'), 'nightly');
 
+  // `bigpack`: twelve skills, two more than the first form will name.
+  const big = join(dorkHome, 'plugins', 'bigpack');
+  writeManifest(big, 'bigpack', '1.0.0', ['skills']);
+  for (let i = 1; i <= 12; i += 1) {
+    writeSkill(join(big, 'skills'), `skill-${String(i).padStart(2, '0')}`);
+  }
+
+  // `rottedhooks`: a global package whose hooks file nobody can read.
+  const rotted = join(dorkHome, 'plugins', 'rottedhooks');
+  writeManifest(rotted, 'rottedhooks', '1.0.0', ['hooks']);
+  mkdirSync(join(rotted, 'hooks'), { recursive: true });
+  writeFileSync(join(rotted, 'hooks', 'hooks.json'), '{ not json');
+
   // `ccnative`: a Claude-Code-native package, installed verbatim, so nothing on
   // disk states its version or its layers (see the SRC-12 case below).
   const cc = join(dorkHome, 'plugins', 'ccnative');
@@ -183,6 +196,23 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
     expect(dropsFor(plan, 'globex')[0]?.reason).toContain('Its 2 skills are not shared');
   });
 
+  it('SRC-04: a long skill list stops at ten names and counts the rest', () => {
+    // Seeded defect: join every name. A drop reason is one line in a terminal,
+    // so a pack with sixty skills pushes every other line off the screen to say
+    // what the count already said.
+    const plan = planFor(repoWith());
+
+    const reason = dropsFor(plan, 'bigpack')[0]?.reason ?? '';
+    expect(reason).toContain('Its 12 skills are not shared with this project: ');
+    expect(reason).toContain(
+      'skill-01, skill-02, skill-03, skill-04, skill-05, skill-06, skill-07, skill-08, ' +
+        'skill-09, skill-10, and 2 more'
+    );
+    expect(reason).not.toContain('skill-11');
+    // Exactly ten named, so the cap is the rule and not an accident of this list.
+    expect(reason.match(/skill-\d\d/g)).toHaveLength(10);
+  });
+
   it('SRC-04: a global package with no skills gets the second form', () => {
     // Seeded defect: emit the first form with an empty list. The sentence then
     // reads "Its 0 skills are not shared with this project: ".
@@ -197,14 +227,40 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
   });
 });
 
+describe("HK-09 — a global package's hooks file that could not be read", () => {
+  it('HK-09: a rotted global hooks file earns a line instead of being read and thrown away', () => {
+    // Seeded defect: leave `planGlobalUnreadableHookWarnings` out of `buildPlan`.
+    // The scan reads the file, records the loss and nothing ever says it —
+    // exactly the silence DOR-1724 closed for project-scoped packages.
+    const plan = planFor(repoWith());
+
+    const [warning, ...extra] = plan.warnings.filter((w) => w.name === 'rottedhooks');
+    expect(extra).toEqual([]);
+    expect(warning).toMatchObject({ artifact: 'plugin', harnessAgnostic: true });
+    expect(warning?.reason).toBe(
+      `has a hooks file DorkOS could not read: ${join(dorkHome, 'plugins', 'rottedhooks')}/hooks/hooks.json. ` +
+        `DorkOS cannot say what is in it, and does not project a global package's hooks anywhere.`
+    );
+    // It says what DorkOS knows, and no more: a global package is handed to the
+    // Claude Agent SDK whole, so what Claude Code makes of a half-broken file is
+    // not ours to claim.
+    expect(warning?.reason).not.toMatch(/runs anywhere|never runs|does not run/);
+    // Under the package heading, never the person's own tree.
+    expect(formatWarnings(plan)).toContain('plugin layers:');
+    // And a readable file still earns nothing.
+    expect(plan.warnings.some((w) => w.name === 'globex')).toBe(false);
+  });
+});
+
 describe('SRC-12 — the same package installed at both scopes', () => {
-  /** The frozen notice, with the package name interpolated where the copy says `{pkg}`. */
-  function notice(pkg: string): string {
+  /** The frozen notice, with the package name and this repository's absolute path in it. */
+  function notice(pkg: string, repoRoot: string): string {
     return (
       `is installed twice: once for all your projects, and once in this project. ` +
-      `Claude Code uses the all-projects copy, even here. Codex shows both. ` +
+      `In a session DorkOS runs, Claude Code sees both copies, under different names. ` +
+      `On its own, Claude Code sees only this project's copy. Codex shows both. ` +
       `Uninstall one if you only meant to have one. ` +
-      `Run dorkos uninstall ${pkg} --project .  to remove this project's copy. ` +
+      `Run dorkos uninstall ${pkg} --project ${repoRoot}  to remove this project's copy. ` +
       `Run dorkos uninstall ${pkg}  to remove the all-projects copy. ` +
       `Both need DorkOS running, and both ask you first.`
     );
@@ -213,7 +269,8 @@ describe('SRC-12 — the same package installed at both scopes', () => {
   it('SRC-12: the same name at both scopes produces exactly one project-level notice carrying both scopes', () => {
     // Seeded defect: emit it per harness. This project runs three agent tools, so
     // the notice appears three times — about a package, under a tool's heading.
-    const plan = planFor(repoWith({ name: 'globex', version: '2.0.0' }));
+    const repo = repoWith({ name: 'globex', version: '2.0.0' });
+    const plan = planFor(repo);
 
     const notices = plan.drops.filter((d) => d.reason?.startsWith('is installed twice'));
     expect(notices).toHaveLength(1);
@@ -222,7 +279,7 @@ describe('SRC-12 — the same package installed at both scopes', () => {
       artifact: 'plugin',
       name: 'globex',
       harnessAgnostic: true,
-      reason: notice('globex'),
+      reason: notice('globex', repo),
     });
     // Both scopes are carried: the global copy still earns its own drop beside
     // the notice, and the project copy still projects.
@@ -234,6 +291,43 @@ describe('SRC-12 — the same package installed at both scopes', () => {
     expect(report).toContain('plugin layers:');
   });
 
+  it('SRC-12: the uninstall command names this repository by absolute path, never `.`', () => {
+    // Seeded defect: interpolate a literal `.` for the project copy. The CLI
+    // forwards `--project` verbatim and the SERVER resolves it against its own
+    // working directory (`lib/boundary.ts`), so `.` is the server's cwd, not the
+    // reader's. `installRootCandidates` then finds nothing there and falls
+    // through to the dork home, so the command the sentence offers for "this
+    // project's copy" removes the ALL-PROJECTS copy instead. DOR-1921 hit the
+    // identical defect on its install offer.
+    const repo = repoWith({ name: 'globex', version: '2.0.0' });
+
+    const [notice] = planFor(repo).drops.filter((d) => d.reason?.startsWith('is installed twice'));
+
+    expect(notice?.reason).toContain(`dorkos uninstall globex --project ${repo}  to remove`);
+    expect(notice?.reason).not.toContain('--project .');
+    expect(isAbsolute(repo)).toBe(true);
+    // The all-projects command still takes no `--project` at all, which is what
+    // makes the two copies separately addressable.
+    expect(notice?.reason).toContain(
+      'Run dorkos uninstall globex  to remove the all-projects copy'
+    );
+  });
+
+  it('SRC-12: the notice prints beside its own package, not at the end of the list', () => {
+    // Seeded defect: collect the notices and append them after every drop. On a
+    // home with two global packages the notice about `globex` then sits below
+    // the drop about `soloskill`, and the report reads as if it were about that.
+    const repo = repoWith({ name: 'globex', version: '2.0.0' });
+
+    const kind = (reason = ''): string =>
+      reason.startsWith('is installed twice') ? 'notice' : 'drop';
+    const lines = planFor(repo)
+      .drops.filter((d) => d.name === 'globex' || d.name === 'soloskill')
+      .map((d) => `${d.name}:${kind(d.reason)}`);
+
+    expect(lines[lines.indexOf('globex:drop') + 1]).toBe('globex:notice');
+  });
+
   it('SRC-12: the notice is still produced when one copy has no readable DorkOS manifest, and carries no version numbers', () => {
     // Seeded defect: gate the notice on the global copy's own manifest being
     // readable — anything that would let it quote a version. The notice then goes
@@ -243,11 +337,12 @@ describe('SRC-12 — the same package installed at both scopes', () => {
     // scan entirely (`readPluginManifest` answers `undefined`), so the shape that
     // reaches a plan with nothing to quote is the Claude-Code-native package:
     // installed verbatim, no DorkOS manifest, no version and no layers on disk.
-    const plan = planFor(repoWith({ name: 'ccnative', version: '3.1.4' }));
+    const repo = repoWith({ name: 'ccnative', version: '3.1.4' });
+    const plan = planFor(repo);
 
     const notices = plan.drops.filter((d) => d.reason?.startsWith('is installed twice'));
     expect(notices).toHaveLength(1);
-    expect(notices[0]?.reason).toBe(notice('ccnative'));
+    expect(notices[0]?.reason).toBe(notice('ccnative', repo));
     // No version number anywhere in it, from either copy.
     expect(notices[0]?.reason).not.toMatch(/\d+\.\d+\.\d+/);
     expect(notices[0]?.reason).not.toContain('3.1.4');

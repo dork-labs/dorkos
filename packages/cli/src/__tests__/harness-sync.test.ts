@@ -395,9 +395,22 @@ describe('runHarnessSync', () => {
     );
     expect(printed).not.toMatch(/global sync/);
     expect(printed.split('is installed twice')).toHaveLength(2);
+    // The uninstall command names THIS repository by absolute path. A `.` would
+    // be forwarded verbatim and resolved by the server against its own working
+    // directory, so it would remove the all-projects copy — the opposite of what
+    // the sentence offers. `fs.realpath` because macOS temp dirs are symlinked
+    // and the engine reports the root the CLI resolved.
+    const repoRoot = fs.realpathSync(tmpDir);
     expect(printed).toContain(
-      "Run dorkos uninstall acme --project .  to remove this project's copy."
+      `Run dorkos uninstall acme --project ${repoRoot}  to remove this project's copy.`
     );
+    expect(printed).not.toContain('--project .');
+    // And what it says about Claude Code is what is true before slice A3 writes
+    // anything into the user tier.
+    expect(printed).toContain(
+      'In a session DorkOS runs, Claude Code sees both copies, under different names.'
+    );
+    expect(printed).not.toContain('uses the all-projects copy, even here');
   });
 
   it('SK-03: tells the operator WHY a scheduled plugin skill is linked where no enabled harness reads (DOR-1518)', async () => {
