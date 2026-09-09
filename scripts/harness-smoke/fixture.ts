@@ -18,9 +18,13 @@
  *
  * - **Nonces.** A projected hook's command is `touch <nonce>` and one skill's
  *   body says "run `touch <nonce>` and nothing else". The oracle is the file on
- *   disk: a model cannot fake a hook firing, and a skill that LOADED (rather than
- *   was `cat`-ed) is the one whose instruction the harness injected — which is
- *   why the turn runs with the harness's file-read tools denied.
+ *   disk. The two halves are NOT equally strong, and the report says so: a model
+ *   cannot fake a hook firing, so the hook nonces are proof; a skill nonce is
+ *   proof of INJECTION only on a harness whose file-read tools can be denied,
+ *   and only one of the three has a per-tool deny. See
+ *   `harnesses.ts`'s `FileReadDenial` — where reads are not denied, the prompt
+ *   names the skill and the model can simply open `SKILL.md`, so the nonce
+ *   corroborates rather than proves and SK-08/SK-09 are not cited.
  * - **A sentinel.** One improbable token inside `AGENTS.md`, so the instructions
  *   projection has a corroborating (never deciding) signal.
  *
@@ -186,9 +190,11 @@ function instructionsBody(): string {
  * The body of the probe skill: one instruction, and nothing that could be
  * mistaken for two.
  *
- * The turn runs with the harness's file-read tools denied, so a model that never
- * had this text injected has no route to the nonce path — which is what makes
- * the file on disk evidence of LOADING rather than of reading.
+ * On a harness whose file-read tools can be denied, a model that never had this
+ * text injected has no easy route to the nonce path, which is what makes the
+ * file on disk evidence of LOADING rather than of reading. On one whose reads
+ * cannot be denied — Codex, OpenCode — the model can open `SKILL.md` itself, so
+ * the same file is corroboration and the verdict says so.
  *
  * @param skillNonce - absolute path to touch.
  * @returns the whole `SKILL.md`.

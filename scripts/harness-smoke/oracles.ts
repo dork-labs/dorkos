@@ -26,17 +26,45 @@
  * @module harness-smoke/oracles
  */
 import { existsSync, realpathSync } from 'node:fs';
-import { relative, isAbsolute } from 'node:path';
-import { harnessCoverage } from '../../packages/harness/dist/vendor-facts/coverage.js';
 import { AUTHORED_SKILL, INSTALLED_PACKAGE, PROBE_SKILL } from './fixture.js';
 import type { ListingObservation, SmokeHarness, TurnObservation } from './harnesses.js';
+
+/**
+ * What the two spend-gate verdicts cite instead of a contract row.
+ *
+ * They are properties of THIS RUNNER, not capabilities of the projection engine,
+ * and `meta/harness-sync-capabilities.md` is a list of the latter. Adding a
+ * `MONEY-01` row there would put a non-capability into the one document whose
+ * value is that every row is one — and the census that parses it would have to
+ * learn about the exception. So they name their sources directly instead.
+ */
+const MONEY_RULE_CITE = 'AGENTS.md’s four-money-paths table; `plans/harness-sync-test-plan.md` §8';
 
 /** What one oracle concluded. */
 export interface Verdict {
   /** Short stable id, so a report reads the same way twice. */
   id: string;
-  /** Contract rows this verdict is evidence about. */
+  /**
+   * Contract rows this verdict is evidence about.
+   *
+   * Empty is a real answer, not an oversight: two verdicts here are about the
+   * RUNNER rather than about the projection engine, and one is a positive
+   * control. Those carry {@link Verdict.cites} instead.
+   */
   capabilities: string[];
+  /**
+   * What a verdict with no contract row is evidence about, in words.
+   *
+   * `meta/harness-sync-capabilities.md`'s rows are capabilities of the
+   * projection engine. The credential and ceiling verdicts are properties of
+   * THIS RUNNER's spend gate, and the authored-hook verdict is a positive
+   * control on the probe itself — inventing rows for them would put three
+   * non-capabilities into a document whose whole value is that every row is one,
+   * and the census that parses it would then have to know about them. So they
+   * cite AGENTS.md's money table and `plans/harness-sync-test-plan.md` §8
+   * directly.
+   */
+  cites?: string;
   /** What was asked, in a person's words. */
   question: string;
   /** The answer. */
@@ -51,6 +79,26 @@ export interface ExpectedEntry {
   name: string;
   /** When the harness reports paths, the repo-relative `SKILL.md` this entry must come from. */
   fromPath?: string;
+  /**
+   * How many times the name must appear, when the count is the point.
+   *
+   * SK-12 is a question about a NUMBER: an installed skill linked into both
+   * `.claude/skills` and `.agents/skills` is reachable twice by every harness
+   * that reads both roots, and the row asks whether it is loaded once. "Is it
+   * listed?" cannot answer that — the answer is `1`, and `2` is the finding.
+   * Omitted where presence is all the row asks for.
+   */
+  occurrences?: number;
+  /**
+   * When set, this row cannot be answered from THIS harness's listing at all,
+   * and this says why.
+   *
+   * The verdict becomes `unknown` and nothing is matched. It exists so a row §8
+   * promises evidence for is still NAMED in the report when the evidence turns
+   * out to be unreachable — the alternative is a silently shorter expectation
+   * list, which reads as coverage.
+   */
+  unanswerable?: string;
   /** Which contract rows this entry is evidence about. */
   capabilities: string[];
   /** What it proves, in a person's words. */
@@ -114,8 +162,9 @@ export function expectedListing(harness: SmokeHarness): ExpectedEntry[] {
         fromPath: `.agents/skills/${INSTALLED_PACKAGE}__${AUTHORED_SKILL}/SKILL.md`,
         capabilities: ['SK-06', 'SK-09'],
         because:
-          'the `pkg__x` directory loads on Codex under its frontmatter name, and a duplicate ' +
-          'frontmatter name appears twice rather than collapsing',
+          'the `pkg__x` directory loads on Codex under its frontmatter name — and together with ' +
+          'the entry above it, two skills whose frontmatter agrees both appear rather than one ' +
+          'collapsing into the other (SK-06)',
       },
       {
         name: PROBE_SKILL,
@@ -126,8 +175,11 @@ export function expectedListing(harness: SmokeHarness): ExpectedEntry[] {
     ];
   }
 
-  // OpenCode reads BOTH `.claude/skills` and `.agents/skills`, so the installed
-  // skill is reachable twice — SK-12 asked as "does it appear once?".
+  // OpenCode reads BOTH `.claude/skills` and `.agents/skills`, so a projected
+  // skill is reachable twice — SK-12 asked as "does it appear once?". The
+  // SUBJECT matters: `probe` is the only skill in the fixture whose frontmatter
+  // name is unique, so it is the one whose count isolates dedupe-by-target from
+  // the name collision SK-06 is about.
   return [
     {
       name: AUTHORED_SKILL,
@@ -136,8 +188,24 @@ export function expectedListing(harness: SmokeHarness): ExpectedEntry[] {
     },
     {
       name: PROBE_SKILL,
-      capabilities: ['SK-01'],
-      because: 'the probe skill is loadable at all',
+      occurrences: 1,
+      capabilities: ['SK-01', 'SK-12'],
+      because:
+        'one target — `.agents/skills/probe` — is reachable through two of OpenCode’s own read ' +
+        'paths, directly and through the `.claude/skills/probe` link the engine wrote, and SK-12 ' +
+        'asks for exactly one entry. Two is the finding',
+    },
+    {
+      name: `${INSTALLED_PACKAGE}__${AUTHORED_SKILL}`,
+      capabilities: ['SK-09'],
+      because: 'the `pkg__x` directory shape is loadable by a harness that reads the directory',
+      unanswerable:
+        'OpenCode keys a skill by its frontmatter `name`, and the installed skill’s frontmatter ' +
+        'says `x` — so the `pkg__x` DIRECTORY answers to the same key as the authored skill and ' +
+        'is indistinguishable from it in a name-only listing. SK-09 needs a listing that carries ' +
+        'FILE PATHS (Codex has one; OpenCode has no listing surface here at all yet), or a fixture ' +
+        'whose package skill declares a different frontmatter name — which would then stop asking ' +
+        'SK-09’s actual question, since the shape under test is the directory.',
     },
   ];
 }
@@ -157,7 +225,8 @@ export function expectedListing(harness: SmokeHarness): ExpectedEntry[] {
 export function listingVerdicts(
   harness: SmokeHarness,
   observed: ListingObservation | undefined,
-  repoRoot: string
+  repoRoot: string,
+  absence: ListingAbsence = 'no-surface'
 ): Verdict[] {
   if (!observed) {
     return [
@@ -166,37 +235,76 @@ export function listingVerdicts(
         capabilities: ['SK-09', 'SK-12'],
         question: `Does ${harness.label} enumerate what it loaded?`,
         status: 'unknown',
-        detail: harness.listing.note,
+        detail:
+          absence === 'no-surface'
+            ? harness.listing.note
+            : 'The probe produced no startup record at all, so the listing oracle DID NOT RUN. ' +
+              'That is a broken probe, not a documented gap — read the turn’s stderr before ' +
+              `reading anything else in this report. ${harness.listing.note}`,
       },
     ];
   }
 
   const available = [...observed.skills, ...observed.commands];
-  return expectedListing(harness).map((entry, index) => {
-    const matched = matchEntry(entry, observed, repoRoot);
+  return expectedListing(harness).map((entry, index): Verdict => {
+    const id = `listing-${index + 1}`;
+    const question = `Does ${harness.label} list \`${entry.name}\`${
+      entry.fromPath ? ` from \`${entry.fromPath}\`` : ''
+    }${entry.occurrences === undefined ? '' : ` exactly ${entry.occurrences}×`}?`;
+    if (entry.unanswerable !== undefined) {
+      return {
+        id,
+        capabilities: entry.capabilities,
+        question,
+        status: 'unknown',
+        detail: `NOT ANSWERABLE from this listing. ${entry.unanswerable}`,
+      };
+    }
+    const count = countEntry(entry, observed, repoRoot);
+    const wanted = entry.occurrences;
+    const ok = wanted === undefined ? count > 0 : count === wanted;
     return {
-      id: `listing-${index + 1}`,
+      id,
       capabilities: entry.capabilities,
-      question: `Does ${harness.label} list \`${entry.name}\`${entry.fromPath ? ` from \`${entry.fromPath}\`` : ''}?`,
-      status: matched ? 'pass' : 'fail',
-      detail: matched
-        ? `Listed — ${entry.because}.`
-        : `NOT listed. ${entry.because}. The listing carried: ${available.join(', ') || '(nothing)'}.`,
+      question,
+      status: ok ? 'pass' : 'fail',
+      detail: ok
+        ? `Listed ${count}× — ${entry.because}.`
+        : `Listed ${count}× where ${wanted === undefined ? '1 or more' : String(wanted)} was ` +
+          `expected. ${entry.because}. The listing carried: ${available.join(', ') || '(nothing)'}.`,
     };
   });
 }
 
-/** Whether one expected entry is in the observation, honouring its path when it has one. */
-function matchEntry(entry: ExpectedEntry, observed: ListingObservation, repoRoot: string): boolean {
+/** Why a listing is missing — a documented gap, or a probe that never answered. */
+export type ListingAbsence = 'no-surface' | 'no-startup-record';
+
+/**
+ * How many times an expected entry appears, honouring its path when it has one.
+ *
+ * A COUNT rather than a boolean because SK-12 is a question about a NUMBER: one
+ * target reachable through two read paths must produce one entry, and "is it
+ * listed?" answers `true` for the right answer and the wrong one alike.
+ */
+function countEntry(entry: ExpectedEntry, observed: ListingObservation, repoRoot: string): number {
   if (entry.fromPath === undefined) {
-    return observed.skills.includes(entry.name) || observed.commands.includes(entry.name);
+    // Counted WITHIN one list, never across both. Claude Code's session-init
+    // message carries a skill's name in `skills` AND again in `slash_commands`
+    // (its commands and skills share one namespace), so a sum would report every
+    // skill as "listed 2×" — an artifact of the message's shape, not a harness
+    // loading anything twice, and it would hide a real duplicate behind a number
+    // that is always two.
+    const inSkills = observed.skills.filter((name) => name === entry.name).length;
+    if (inSkills > 0) return inSkills;
+    return observed.commands.filter((name) => name === entry.name).length;
   }
+  let found = 0;
   for (const [index, name] of observed.skills.entries()) {
     if (name !== entry.name) continue;
     const path = observed.skillPaths[index];
-    if (path !== undefined && sameFixturePath(path, repoRoot, entry.fromPath)) return true;
+    if (path !== undefined && sameFixturePath(path, repoRoot, entry.fromPath)) found += 1;
   }
-  return false;
+  return found;
 }
 
 /**
@@ -222,8 +330,10 @@ function sameFixturePath(reported: string, repoRoot: string, expectedRelative: s
 interface HookExpectation {
   /** The nonce path the hook's command writes. */
   nonce: string;
-  /** Contract rows this hook is evidence about. */
+  /** Contract rows this hook is evidence about. Empty for a positive control. */
   capabilities: string[];
+  /** What a control cites instead of a contract row. */
+  cites?: string;
   /** How the hook reaches this harness, in a person's words. */
   route: string;
   /** When set, this harness is not expected to run the hook at all, and why. */
@@ -255,7 +365,15 @@ export function hookExpectations(
     return [
       {
         nonce: authoredHookNonce,
-        capabilities: ['HK-14'],
+        // No contract row: `.claude/settings.json` is the person's own file and
+        // the engine writes nothing there, so this is a POSITIVE CONTROL on the
+        // probe — if it does not fire, hooks are off for reasons that have
+        // nothing to do with a projection, and every other hook verdict below is
+        // meaningless. HK-14 is about DorkOS READING `settings.local.json` and
+        // `~/.claude/settings.json` as sources, which this does not test.
+        capabilities: [],
+        cites:
+          'positive control on the probe — no contract row; see `plans/harness-sync-test-plan.md` §8',
         route: 'read natively from `.claude/settings.json`, which the engine never writes',
       },
       {
@@ -313,21 +431,41 @@ export function hookExpectations(
  * @param authoredHookNonce - the nonce the `.claude/settings.json` hook writes.
  * @param pluginHookNonce - the nonce the installed package's hook writes.
  * @param skillNonce - absolute path the probe skill's body instructs a `touch` of.
+ * @param opts - whether a session started at all, and whether a model turn did.
  * @returns one verdict per hook, plus the skill-injection verdict.
  */
 export function activationVerdicts(
   harness: SmokeHarness,
   authoredHookNonce: string,
   pluginHookNonce: string,
-  skillNonce: string
+  skillNonce: string,
+  opts: { turnRan?: boolean; skillProbeRan: boolean } = { skillProbeRan: true }
 ): Verdict[] {
+  const turnRan = opts.turnRan ?? true;
   const hooks = hookExpectations(harness, authoredHookNonce, pluginHookNonce).map(
     (expectation, index): Verdict => {
       const fired = existsSync(expectation.nonce);
+      // No turn, no session, no hooks. Reporting an unfired hook as a FAILURE
+      // when nothing ever started a session is a red about the run's mode
+      // dressed as a red about the projection.
+      if (!turnRan) {
+        return {
+          id: `activation-hook-${index + 1}`,
+          capabilities: [],
+          cites: 'needs a session; this run started none',
+          question: `Does the hook ${harness.label} gets — ${expectation.route} — actually fire?`,
+          status: 'unknown',
+          detail:
+            'NOT RUN. A hook fires when a session starts, and this run started none — ' +
+            `${harness.label} has no free turn (${harness.free.note}). Run it with an ` +
+            `instrument to answer it.`,
+        };
+      }
       if (expectation.notApplicable !== undefined) {
         return {
           id: `activation-hook-${index + 1}`,
           capabilities: expectation.capabilities,
+          ...(expectation.cites === undefined ? {} : { cites: expectation.cites }),
           question: `Does a hook ${harness.label} ${expectation.route}s run anyway?`,
           status: fired ? 'fail' : 'unknown',
           detail: fired
@@ -339,6 +477,7 @@ export function activationVerdicts(
       return {
         id: `activation-hook-${index + 1}`,
         capabilities: expectation.capabilities,
+        ...(expectation.cites === undefined ? {} : { cites: expectation.cites }),
         question: `Does the hook ${harness.label} gets — ${expectation.route} — actually fire?`,
         status: fired ? 'pass' : 'fail',
         detail: fired
@@ -349,20 +488,84 @@ export function activationVerdicts(
     }
   );
 
-  const skillLoaded = existsSync(skillNonce);
-  return [
-    ...hooks,
-    {
+  return [...hooks, skillActivationVerdict(harness, skillNonce, opts.skillProbeRan)];
+}
+
+/**
+ * The skill half of the activation oracle — and the one place the runner has to
+ * be careful not to claim more than it measured.
+ *
+ * The oracle's strong form is "a skill that LOADED is the one whose instruction
+ * the harness INJECTED, proved by denying the harness's file-read tools". That
+ * form is only available where the binary HAS a per-tool deny, and only one of
+ * the three does. Where it does not, the prompt names the skill and the model
+ * can simply open `SKILL.md` — so the nonce proves the instruction was reached,
+ * which is corroboration, not proof, and SK-08/SK-09 are dropped from the
+ * citations rather than stamped off an oracle that cannot discriminate.
+ *
+ * @param harness - the harness being asked.
+ * @param skillNonce - the path the probe skill's body instructs a `touch` of.
+ * @param probeRan - false in `--free` mode, where no model turn happens at all.
+ * @returns the skill-activation verdict.
+ */
+function skillActivationVerdict(
+  harness: SmokeHarness,
+  skillNonce: string,
+  probeRan: boolean
+): Verdict {
+  const denial = harness.deniesFileReads;
+  const proves = denial.kind === 'partial';
+  const question = proves
+    ? `Did ${harness.label} INJECT the probe skill rather than let the model read it?`
+    : `Did the probe skill's instruction reach the model under ${harness.label}?`;
+  // The citations follow what the oracle can DISCRIMINATE, not what the fixture
+  // stages: SK-08 (the frontmatter dialect a harness must load) and SK-09 (the
+  // `pkg__x` shape being loadable) are claims about the HARNESS loading a skill,
+  // and a nonce a model could have produced by `cat`-ing the file is not evidence
+  // for either.
+  const capabilities = proves ? ['SK-08', 'SK-09'] : [];
+
+  if (!probeRan) {
+    return {
       id: 'activation-skill',
-      capabilities: ['SK-08', 'SK-09'],
-      question: `Did ${harness.label} INJECT the probe skill rather than let the model read it?`,
-      status: skillLoaded ? 'pass' : 'fail',
-      detail: skillLoaded
-        ? `\`${skillNonce}\` exists, and file-read tools were denied for this turn, so the ` +
-          `instruction can only have arrived through the harness's own skill injection.`
-        : `\`${skillNonce}\` was never written, so nothing proves the skill was loaded.`,
-    },
-  ];
+      capabilities: [],
+      cites: 'needs a model turn; `--free` reaches no model',
+      question,
+      status: 'unknown',
+      detail:
+        'NOT RUN. This is the one oracle that needs a model to answer, and a `--free` run reaches ' +
+        `none. Run it with an instrument to answer it: DORKOS_HARNESS_SMOKE=1 ${harness.keyVar}=<key>.`,
+    };
+  }
+
+  const loaded = existsSync(skillNonce);
+  if (!loaded) {
+    return {
+      id: 'activation-skill',
+      capabilities,
+      ...(proves ? {} : { cites: 'corroboration only — see the detail' }),
+      question,
+      status: 'fail',
+      detail: `\`${skillNonce}\` was never written, so nothing suggests the skill was loaded.`,
+    };
+  }
+
+  return {
+    id: 'activation-skill',
+    capabilities,
+    ...(proves ? {} : { cites: 'corroboration only — see the detail' }),
+    question,
+    status: 'pass',
+    detail: proves
+      ? `\`${skillNonce}\` exists, and the file-read routes worth naming were PARTIALLY denied ` +
+        `(${denial.flags}), so the instruction most likely arrived through the harness's own skill ` +
+        `injection. Partially, not wholly: ${denial.remaining.join('; ')} are still open. ` +
+        `${denial.note}`
+      : `\`${skillNonce}\` exists, so the instruction REACHED the model — but reads were NOT ` +
+        `denied on this harness, so this corroborates rather than proves. ${denial.note} The ` +
+        `prompt names the skill, so a model could have opened \`SKILL.md\` itself and produced ` +
+        `the same file. SK-08 and SK-09 are deliberately NOT cited here.`,
+  };
 }
 
 /**
@@ -376,9 +579,28 @@ export function activationVerdicts(
  * @param harness - the harness being asked.
  * @param text - everything the turn said.
  * @param sentinel - the token the instructions carry.
+ * @param turnRan - false when no turn happened at all, which is not an absence.
  * @returns one corroborating verdict.
  */
-export function sentinelVerdict(harness: SmokeHarness, text: string, sentinel: string): Verdict {
+export function sentinelVerdict(
+  harness: SmokeHarness,
+  text: string,
+  sentinel: string,
+  turnRan = true
+): Verdict {
+  if (!turnRan) {
+    return {
+      id: 'sentinel',
+      capabilities: [],
+      cites: 'needs a model to answer; none did',
+      question: `Did ${harness.label}'s answer reproduce the instructions sentinel?`,
+      status: 'unknown',
+      detail:
+        'NOT RUN. There was no answer to look in. A free Claude Code run starts a session and ' +
+        'prints its listing, and then never reaches a model — so the corroborating half has ' +
+        'nothing to corroborate with.',
+    };
+  }
   const present = text.includes(sentinel);
   return {
     id: 'sentinel',
@@ -405,14 +627,22 @@ export function sentinelVerdict(harness: SmokeHarness, text: string, sentinel: s
  *
  * @param harness - the harness being asked.
  * @param turn - what the turn reported.
+ * @param free - true for a `--free` run, where the variable holds a placeholder.
  * @returns the credential verdict, or `unknown` for a harness that reports none.
  */
-export function credentialVerdict(harness: SmokeHarness, turn: TurnObservation): Verdict {
-  const question = `Was the turn served by ${harness.keyVar}, and not by a sign-in on this machine?`;
+export function credentialVerdict(
+  harness: SmokeHarness,
+  turn: TurnObservation,
+  free = false
+): Verdict {
+  const question = free
+    ? `Did ${harness.label} read ${harness.keyVar} rather than falling back to a stored sign-in?`
+    : `Was the turn served by ${harness.keyVar}, and not by a sign-in on this machine?`;
   if (turn.credentialSource === undefined) {
     return {
       id: 'credential',
       capabilities: [],
+      cites: MONEY_RULE_CITE,
       question,
       status: 'unknown',
       detail:
@@ -425,10 +655,16 @@ export function credentialVerdict(harness: SmokeHarness, turn: TurnObservation):
   return {
     id: 'credential',
     capabilities: [],
+    cites: MONEY_RULE_CITE,
     question,
     status: ok ? 'pass' : 'fail',
     detail: ok
-      ? `${harness.label} reported \`${turn.credentialSource}\`, which is the instrument this run named.`
+      ? free
+        ? `${harness.label} reported \`${turn.credentialSource}\`. In a free run that variable holds ` +
+          `a placeholder, not a key — so what this proves is the thing worth proving: with \`HOME\` ` +
+          `and the config home pointed at an empty sandbox, the binary read the environment ` +
+          `variable and did NOT fall back to a stored sign-in.`
+        : `${harness.label} reported \`${turn.credentialSource}\`, which is the instrument this run named.`
       : `${harness.label} reported \`${turn.credentialSource}\`, NOT \`${harness.keyVar}\`. The turn ` +
         `was billed to a credential nobody armed; that is the exact failure the money rule exists ` +
         `to prevent, so this run fails.`,
@@ -458,6 +694,7 @@ export function ceilingVerdict(
     return {
       id: 'ceiling',
       capabilities: [],
+      cites: MONEY_RULE_CITE,
       question,
       status: 'unknown',
       detail: harness.enforcesCeiling
@@ -472,110 +709,13 @@ export function ceilingVerdict(
   return {
     id: 'ceiling',
     capabilities: [],
+    cites: MONEY_RULE_CITE,
     question,
     status: ok ? 'pass' : 'fail',
     detail: `${turn.costUsd.toFixed(4)} USD against a ${maxUsd} USD ceiling.${
       ok ? '' : ' Over. Something looped; read the transcript before running it again.'
     }`,
   };
-}
-
-/** One disagreement between the engine's coverage walk and the binary's own listing. */
-export interface CalibrationFinding {
-  /** Which side claimed it. */
-  side: 'coverage-only' | 'listing-only';
-  /** The skill key in dispute. */
-  key: string;
-  /** Where it was seen. */
-  where: string;
-}
-
-/**
- * The calibration diff — `harnessCoverage()` against the binary's own listing,
- * on the same tree.
- *
- * This is the half of the H tier that pays off every time it runs, whatever the
- * listing says: the vendor-facts table is compiled from documentation, and this
- * is the only thing that ever compares it to a binary.
- *
- * The direction is per harness, and honestly so. Codex reports an absolute path
- * beside every entry, so the listing can be scoped to the fixture and BOTH
- * directions checked. Claude Code reports names only and mixes its own built-in
- * skills into the same array, so only "everything the walk discovered is listed"
- * is checkable — the other direction would report every built-in as a finding.
- *
- * @param harness - the harness being asked.
- * @param repoRoot - the fixture root.
- * @param observed - the listing, or `undefined` when the harness has no surface.
- * @returns the verdict and every disagreement behind it.
- */
-export function calibrationVerdict(
-  harness: SmokeHarness,
-  repoRoot: string,
-  observed: ListingObservation | undefined
-): { verdict: Verdict; findings: CalibrationFinding[] } {
-  const question = `Does \`harnessCoverage('${harness.harnessId}')\` agree with what ${harness.label} listed?`;
-  if (!observed) {
-    return {
-      verdict: {
-        id: 'calibration',
-        capabilities: ['SK-13', 'SK-14'],
-        question,
-        status: 'unknown',
-        detail: `No listing surface to compare against. ${harness.listing.note}`,
-      },
-      findings: [],
-    };
-  }
-
-  const walk = harnessCoverage(harness.harnessId, repoRoot);
-  const listedNames = new Set(observed.skills);
-  const findings: CalibrationFinding[] = [];
-
-  for (const found of walk.discovered) {
-    if (!listedNames.has(found.key)) {
-      findings.push({
-        side: 'coverage-only',
-        key: found.key,
-        where: relative(repoRoot, found.skillMd),
-      });
-    }
-  }
-
-  if (harness.calibration === 'both') {
-    const walkKeys = new Set(walk.discovered.map((found) => found.key));
-    for (const [index, name] of observed.skills.entries()) {
-      const path = observed.skillPaths[index];
-      // Only entries the fixture owns can disagree with a walk of the fixture.
-      if (path === undefined || !insideFixture(path, repoRoot)) continue;
-      if (!walkKeys.has(name)) {
-        findings.push({ side: 'listing-only', key: name, where: relative(repoRoot, path) });
-      }
-    }
-  }
-
-  return {
-    verdict: {
-      id: 'calibration',
-      capabilities: ['SK-13', 'SK-14'],
-      question,
-      status: findings.length === 0 ? 'pass' : 'finding',
-      detail:
-        findings.length === 0
-          ? `${walk.discovered.length} skills discovered by the walk, all of them listed` +
-            `${harness.calibration === 'both' ? ', and every fixture entry the listing carried was discovered' : ''}.` +
-            `${walk.uncertain.length > 0 ? ` The walk also reported ${walk.uncertain.length} undecidable, which is data for the facts table, not a failure.` : ''}`
-          : `${findings.length} disagreement(s) between the compiled vendor facts and the binary. ` +
-            `That is the finding this tier exists to produce; it does not fail the run.`,
-    },
-    findings,
-  };
-}
-
-/** Whether a path a harness reported lives inside the fixture. */
-function insideFixture(path: string, repoRoot: string): boolean {
-  const rel = relative(repoRoot, path);
-  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
 }
 
 /**

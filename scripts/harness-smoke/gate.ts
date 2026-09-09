@@ -120,10 +120,86 @@ export function resolveSmokeGate(
   const key = readVar(env, harness.keyVar);
   if (!key) return { ok: false, reason: 'no-key', message: noKeyMessage(harness) };
 
-  const binaryPath = deps.binaryOverride ?? (deps.findBinary ?? findOnPath)(harness.binary);
-  if (!binaryPath) return { ok: false, reason: 'no-binary', message: noBinaryMessage(harness) };
+  const binaryPath = resolveBinary(harness, deps);
+  if (!binaryPath) {
+    return {
+      ok: false,
+      reason: 'no-binary',
+      message: noBinaryMessage(harness, deps.binaryOverride),
+    };
+  }
 
   return { ok: true, key, binaryPath };
+}
+
+/**
+ * Resolve the binary, checking an EXPLICIT `--binary` for existence too.
+ *
+ * Taking the override on trust was a hole with a bad failure mode rather than an
+ * obvious one: `spawnSync` on a path that is not there answers with
+ * `status: null` and an `ENOENT` in `error`, which the runner then reported as
+ * "the turn never exited on its own; it was killed after 300s" — a typo in a
+ * path dressed up as a hung harness.
+ *
+ * @param harness - the harness being asked for.
+ * @param deps - the injectable seams.
+ * @returns an executable absolute path, or `undefined`.
+ */
+function resolveBinary(harness: SmokeHarness, deps: ResolveSmokeGateDeps): string | undefined {
+  const find = deps.findBinary ?? findOnPath;
+  if (deps.binaryOverride === undefined) return find(harness.binary);
+  return isExecutable(deps.binaryOverride) ? deps.binaryOverride : undefined;
+}
+
+/** Whether a path names something this process may execute. */
+function isExecutable(path: string): boolean {
+  try {
+    accessSync(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Decide whether this run may drive the harness for FREE.
+ *
+ * `--free` reaches no model, so it needs neither the flag nor a key — there is
+ * nothing to arm and nothing to spend. What it does still need is every other
+ * property of the paid path: the binary, and the isolation. A free run gets the
+ * same empty `HOME` and empty config home as a paid one, so it can no more read
+ * a stored sign-in than a paid one can. That is not a nicety: a probe that
+ * inherited the operator's home would answer with the operator's skills and
+ * report the fixture's tree as containing them.
+ *
+ * @param harness - the harness to probe.
+ * @param deps - injectable binary-lookup seams.
+ * @returns the binary to run, or the refusal and why.
+ */
+export function resolveFreeGate(
+  harness: SmokeHarness,
+  deps: ResolveSmokeGateDeps = {}
+):
+  | { ok: true; binaryPath: string }
+  | { ok: false; reason: 'no-free-probe' | 'no-binary'; message: string } {
+  if (harness.free.kind === 'none') {
+    return {
+      ok: false,
+      reason: 'no-free-probe',
+      message:
+        `There is no free probe for ${harness.label}. ${harness.free.note}\n` +
+        `Run it with an instrument instead: ${HARNESS_SMOKE_OPT_IN_VAR}=1 ${harness.keyVar}=<key>.`,
+    };
+  }
+  const binaryPath = resolveBinary(harness, deps);
+  if (!binaryPath) {
+    return {
+      ok: false,
+      reason: 'no-binary',
+      message: noBinaryMessage(harness, deps.binaryOverride),
+    };
+  }
+  return { ok: true, binaryPath };
 }
 
 /**
@@ -193,7 +269,14 @@ export function noKeyMessage(harness: SmokeHarness): string {
  * @param harness - the harness that was asked for.
  * @returns the skip message.
  */
-export function noBinaryMessage(harness: SmokeHarness): string {
+export function noBinaryMessage(harness: SmokeHarness, override?: string): string {
+  if (override !== undefined) {
+    return (
+      `\`--binary ${override}\` is not an executable file, so there is no ${harness.label} to ask.\n` +
+      `Checked before anything was launched on purpose: a bad path handed to \`spawn\` comes back ` +
+      `as a killed process with no exit code, which reads as a hung harness rather than a typo.`
+    );
+  }
   return (
     `\`${harness.binary}\` is not on PATH, so there is no ${harness.label} to ask. ${harness.installHint}\n` +
     `Pass \`--binary <path>\` when it is installed somewhere PATH does not name.`

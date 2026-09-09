@@ -34,8 +34,8 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { resolveSmokeGate } from './gate.js';
-import { INSTRUCTIONS_SENTINEL, stageSmokeFixture } from './fixture.js';
+import { resolveFreeGate, resolveSmokeGate } from './gate.js';
+import { INSTRUCTIONS_SENTINEL, stageSmokeFixture, type SmokeFixture } from './fixture.js';
 import {
   SMOKE_HARNESS_IDS,
   smokeHarnessFor,
@@ -44,14 +44,15 @@ import {
   type SmokeHarness,
   type TurnObservation,
 } from './harnesses.js';
+import { calibrationVerdict } from './calibration.js';
 import {
   activationVerdicts,
-  calibrationVerdict,
   ceilingVerdict,
   credentialVerdict,
   listingVerdicts,
   overallStatus,
   sentinelVerdict,
+  type ListingAbsence,
   type Verdict,
 } from './oracles.js';
 import { armLine, renderRunReport, renderSkipReport, reportFileName } from './report.js';
@@ -65,8 +66,31 @@ import { armLine, renderRunReport, renderSkipReport, reportFileName } from './re
  */
 export const DEFAULT_MAX_USD = 0.5;
 
+/**
+ * What a `--free` run puts in the instrument's slot.
+ *
+ * A free run has no instrument by construction, and the harness still wants the
+ * variable set — Claude Code reports `apiKeySource` off it, which is how the
+ * free run answers the credential oracle at all. It is never a credential: the
+ * base URL beside it points at a port nothing is listening on, so the value
+ * cannot reach anything. Spelled so it is unmistakable in a process listing.
+ */
+export const FREE_PLACEHOLDER_KEY = 'dorkos-harness-smoke-free-mode-not-a-key';
+
 /** How long a single probe may take before the run gives up on it. */
 const PROBE_TIMEOUT_MS = 300_000;
+
+/**
+ * How long a FREE probe may take.
+ *
+ * Much shorter, because a free Claude Code turn is never going to finish: it is
+ * pointed at a base URL nothing is listening on, and everything the run needs —
+ * both `SessionStart` hooks and the `system`/`init` message — is printed within
+ * a couple of seconds, before the first API request. The rest is the CLI
+ * retrying a dead endpoint, and waiting five minutes for that is five minutes of
+ * nothing.
+ */
+const FREE_PROBE_TIMEOUT_MS = 45_000;
 
 /** What the command line asked for. */
 export interface SmokeOptions {
@@ -78,6 +102,10 @@ export interface SmokeOptions {
   reportDir: string;
   /** An explicit binary path, for a harness `PATH` does not name. */
   binary?: string;
+  /** An explicit model id, overriding the harness's pinned cheap one. */
+  model?: string;
+  /** Run only the oracles that reach no model, and spend nothing. */
+  free: boolean;
 }
 
 /**
@@ -113,6 +141,8 @@ export function parseArgs(
   let maxUsd = DEFAULT_MAX_USD;
   let reportDir = defaultReportDir;
   let binary: string | undefined;
+  let model: string | undefined;
+  let free = false;
 
   for (let index = 0; index < rest.length; index += 1) {
     const flag = rest[index];
@@ -132,12 +162,30 @@ export function parseArgs(
       if (value === undefined) return { ok: false, error: '--binary needs a path.' };
       binary = resolve(value);
       index += 1;
+    } else if (flag === '--model') {
+      if (value === undefined || value.trim() === '') {
+        return { ok: false, error: '--model needs a model id.' };
+      }
+      model = value;
+      index += 1;
+    } else if (flag === '--free') {
+      free = true;
     } else {
       return { ok: false, error: `Unknown flag \`${flag ?? ''}\`.` };
     }
   }
 
-  return { ok: true, options: { harness, maxUsd, reportDir, ...(binary ? { binary } : {}) } };
+  return {
+    ok: true,
+    options: {
+      harness,
+      maxUsd,
+      reportDir,
+      free,
+      ...(binary ? { binary } : {}),
+      ...(model ? { model } : {}),
+    },
+  };
 }
 
 /**
@@ -152,8 +200,13 @@ export function parseArgs(
  * reach a model is passed through, so a run cannot fall back to a sign-in it was
  * not given.
  *
+ * A FREE run gets the SAME isolation. It reaches no model, so it needs no real
+ * key — but a probe that inherited the operator's home would answer with the
+ * operator's `~/.agents/skills` and `~/.claude/skills` and report the fixture's
+ * tree as containing them, which is a wrong answer rather than a cheap one.
+ *
  * @param harness - the harness being launched.
- * @param key - the instrument the gate resolved.
+ * @param key - the instrument the gate resolved, or the free run's placeholder.
  * @param configHome - the run's empty sandbox.
  * @param extra - the probe's own additions.
  * @returns the whole child environment.
@@ -177,23 +230,83 @@ export function probeEnv(
   };
 }
 
+/** What one probe did. */
+interface ProbeResult {
+  /** Everything it printed on stdout. */
+  stdout: string;
+  /** Everything it printed on stderr. */
+  stderr: string;
+  /** Its exit code, or `null` when it was killed or never started. */
+  status: number | null;
+  /**
+   * What went wrong at the process level, when something did.
+   *
+   * `spawnSync` reports a missing binary and a timeout kill the same way through
+   * `status: null`, so without this the runner said "the turn never exited on
+   * its own; it was killed after 300s" about a path with a typo in it. The
+   * `code` is what separates them, and the difference is load-bearing rather
+   * than cosmetic: `ETIMEDOUT` means the process RAN and was stopped — which is
+   * the design of a `--free` turn, whose hooks and session-init message arrive
+   * long before the kill — while `ENOENT` means nothing ever started and every
+   * oracle downstream is meaningless.
+   */
+  error?: { message: string; code?: string };
+}
+
 /** Run one probe in the fixture and hand back what it printed. */
 function runProbe(
   probe: ProbeCommand,
   cwd: string,
-  env: Record<string, string>
-): { stdout: string; stderr: string; status: number | null } {
+  env: Record<string, string>,
+  timeoutMs: number
+): ProbeResult {
   const result = spawnSync(probe.command, probe.args, {
     cwd,
     env,
     encoding: 'utf8',
-    timeout: PROBE_TIMEOUT_MS,
+    timeout: timeoutMs,
+    // Close stdin immediately. `claude --print` waits three seconds for piped
+    // input before giving up on it, and an open pipe nobody writes to is three
+    // seconds of nothing on every run.
+    input: '',
     // Nothing here goes through a shell: every argument is passed as an
     // argument, so a fixture path with a space in it cannot become two words and
     // a prompt cannot become a command.
     shell: false,
   });
-  return { stdout: result.stdout ?? '', stderr: result.stderr ?? '', status: result.status };
+  return {
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+    status: result.status,
+    ...(result.error
+      ? {
+          error: {
+            message: result.error.message,
+            ...((result.error as NodeJS.ErrnoException).code === undefined
+              ? {}
+              : { code: (result.error as NodeJS.ErrnoException).code as string }),
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * Whether a probe's process actually started.
+ *
+ * A timeout kill is a process that RAN and was stopped; a spawn failure is one
+ * that never started. Only the second invalidates the oracles behind it, and the
+ * difference is load-bearing rather than pedantic: a `--free` Claude Code turn
+ * is ALWAYS killed by the timeout — that is its design — and its hooks and its
+ * session-init message arrive long before the kill. Treating that kill as "never
+ * ran" reported every free run's hook verdicts as NOT RUN when the hooks had
+ * demonstrably fired.
+ *
+ * @param result - what the probe did.
+ * @returns true when a process existed to observe.
+ */
+export function processStarted(result: { error?: { message: string; code?: string } }): boolean {
+  return result.error === undefined || result.error.code === 'ETIMEDOUT';
 }
 
 /** The prompt the one turn is given. */
@@ -217,10 +330,13 @@ export function runSmoke(options: SmokeOptions): { exitCode: number; reportPath:
   const startedAt = new Date().toISOString();
   mkdirSync(options.reportDir, { recursive: true });
   const reportPath = join(options.reportDir, reportFileName(startedAt, harness.id));
+  const binaryOverride = options.binary === undefined ? {} : { binaryOverride: options.binary };
 
-  const gate = resolveSmokeGate(harness, {
-    ...(options.binary === undefined ? {} : { binaryOverride: options.binary }),
-  });
+  // A free run needs no flag and no key — it reaches no model — but it needs the
+  // binary and it gets the SAME isolation. See `resolveFreeGate`.
+  const gate = options.free
+    ? resolveFreeGate(harness, binaryOverride)
+    : resolveSmokeGate(harness, binaryOverride);
   if (!gate.ok) {
     writeFileSync(reportPath, renderSkipReport(harness, startedAt, gate.reason, gate.message));
     process.stdout.write(`SKIPPED (${gate.reason})\n\n${gate.message}\n\n`);
@@ -232,39 +348,28 @@ export function runSmoke(options: SmokeOptions): { exitCode: number; reportPath:
 
   const fixture = stageSmokeFixture(harness);
   try {
-    const env = probeEnv(harness, gate.key, fixture.configHome, {});
-    const context = {
-      repoRoot: fixture.repoRoot,
-      binaryPath: gate.binaryPath,
-      prompt: turnPrompt(),
-      noncesDir: fixture.noncesDir,
-      maxUsd: options.maxUsd,
-    };
-
-    let listing: ListingObservation | undefined;
-    if (harness.listingProbe && harness.parseListing) {
-      const probe = harness.listingProbe(context);
-      const result = runProbe(probe, fixture.repoRoot, { ...env, ...probe.env });
-      listing = harness.parseListing(result.stdout);
-    }
-
-    const turnProbe = harness.turnProbe(context);
-    const turnResult = runProbe(turnProbe, fixture.repoRoot, { ...env, ...turnProbe.env });
-    const turn: TurnObservation = harness.parseTurn(turnResult.stdout);
-    listing ??= turn.listing;
-
-    const calibration = calibrationVerdict(harness, fixture.repoRoot, listing);
+    const observed = probeHarness(harness, fixture, gate, options);
+    const calibration = calibrationVerdict(harness, fixture.repoRoot, observed.listing);
     const verdicts: Verdict[] = [
-      ...listingVerdicts(harness, listing, fixture.repoRoot),
+      ...listingVerdicts(harness, observed.listing, fixture.repoRoot, observed.absence),
       ...activationVerdicts(
         harness,
         fixture.authoredHookNonce,
         fixture.pluginHookNonce,
-        fixture.skillNonce
+        fixture.skillNonce,
+        { turnRan: observed.turnRan, skillProbeRan: observed.skillProbeRan }
       ),
-      sentinelVerdict(harness, turn.text, INSTRUCTIONS_SENTINEL),
-      credentialVerdict(harness, turn),
-      ceilingVerdict(harness, turn, options.maxUsd),
+      // The sentinel keys on whether a MODEL answered, not on whether a session
+      // started: a free Claude Code run starts a session, prints its listing and
+      // fires its hooks, and never produces an answer to look in.
+      sentinelVerdict(
+        harness,
+        observed.turn.text,
+        INSTRUCTIONS_SENTINEL,
+        observed.turnRan && observed.skillProbeRan
+      ),
+      credentialVerdict(harness, observed.turn, options.free),
+      ...(options.free ? [] : [ceilingVerdict(harness, observed.turn, options.maxUsd)]),
       calibration.verdict,
     ];
 
@@ -272,41 +377,165 @@ export function runSmoke(options: SmokeOptions): { exitCode: number; reportPath:
       harness,
       startedAt,
       maxUsd: options.maxUsd,
+      free: options.free,
+      pinnedModel: modelFor(harness, options),
       verdicts,
       calibration: calibration.findings,
       applied: fixture.applied,
-      ...(turn.costUsd === undefined ? {} : { costUsd: turn.costUsd }),
-      turnCommand: [turnProbe.command, ...turnProbe.args].join(' '),
+      notRun: observed.notRun,
+      ...(observed.turn.model === undefined ? {} : { reportedModel: observed.turn.model }),
+      ...(observed.turn.costUsd === undefined ? {} : { costUsd: observed.turn.costUsd }),
+      ...(observed.turnCommand === undefined ? {} : { turnCommand: observed.turnCommand }),
     });
     writeFileSync(reportPath, report);
 
-    const status = overallStatus(verdicts);
     for (const verdict of verdicts) {
       process.stdout.write(`${verdict.status.toUpperCase().padEnd(8)}${verdict.id}\n`);
     }
     process.stdout.write(
       `\nCost: ${
-        turn.costUsd === undefined
-          ? `not reported by ${harness.label}`
-          : `${turn.costUsd.toFixed(4)} USD`
-      } (ceiling ${options.maxUsd} USD)\n`
+        options.free
+          ? 'nothing — --free reaches no model'
+          : observed.turn.costUsd === undefined
+            ? `not reported by ${harness.label}`
+            : `${observed.turn.costUsd.toFixed(4)} USD (ceiling ${options.maxUsd} USD)`
+      }\n`
     );
     process.stdout.write(`Report: ${reportPath}\n`);
-    if (turnResult.status !== 0) {
-      // A null status means the child was killed — almost always the probe
-      // timeout — and "exited null" would send somebody hunting for an exit code
-      // that never existed.
-      process.stdout.write(
-        turnResult.status === null
-          ? `Note: the turn never exited on its own; it was killed after ${PROBE_TIMEOUT_MS / 1000}s. ` +
-              `stderr:\n${turnResult.stderr}\n`
-          : `Note: the turn exited ${String(turnResult.status)}. stderr:\n${turnResult.stderr}\n`
-      );
-    }
-    return { exitCode: status === 'failed' ? 1 : 0, reportPath };
+    for (const note of observed.notes) process.stdout.write(`${note}\n`);
+    return { exitCode: overallStatus(verdicts) === 'failed' ? 1 : 0, reportPath };
   } finally {
     fixture.cleanup();
   }
+}
+
+/** The model this run pins: the harness's cheap one, or an explicit override. */
+function modelFor(harness: SmokeHarness, options: SmokeOptions): string {
+  return options.model ?? harness.model.id;
+}
+
+/** Everything the probes observed, and what they could not reach. */
+interface ProbeOutcome {
+  /** What the harness listed, if anything did. */
+  listing?: ListingObservation;
+  /** Why a listing is missing, when one is. */
+  absence: ListingAbsence;
+  /** What the turn said. */
+  turn: TurnObservation;
+  /** Whether ANY session was started — false when a free harness has no free turn. */
+  turnRan: boolean;
+  /** Whether a MODEL turn happened — false for every `--free` run. */
+  skillProbeRan: boolean;
+  /** The turn's command line, for reproduction. Absent when no turn ran. */
+  turnCommand?: string;
+  /** Oracles this run deliberately did not reach, in the report's words. */
+  notRun: string[];
+  /** Lines to print after the report path. */
+  notes: string[];
+}
+
+/**
+ * Run whichever probes this mode can afford.
+ *
+ * The paid path runs the non-model listing probe where one exists and then one
+ * model turn. The free path runs whatever reaches no model: the listing probe
+ * for a `listing-only` harness, and for `turn-init` a real turn pointed at a
+ * base URL nothing is listening on, which prints its hooks and its session-init
+ * message and then never completes.
+ */
+function probeHarness(
+  harness: SmokeHarness,
+  fixture: SmokeFixture,
+  gate: { binaryPath: string; key?: string },
+  options: SmokeOptions
+): ProbeOutcome {
+  const free = options.free;
+  // The free path has no instrument by construction, so it carries a value that
+  // says so. It is never a credential: nothing it is handed to can reach a model,
+  // because the base URL beside it is dead.
+  const key = gate.key ?? FREE_PLACEHOLDER_KEY;
+  const freeEnv = free && harness.free.kind === 'turn-init' ? harness.free.env : {};
+  const env = probeEnv(harness, key, fixture.configHome, freeEnv);
+  const context = {
+    repoRoot: fixture.repoRoot,
+    binaryPath: gate.binaryPath,
+    prompt: turnPrompt(),
+    noncesDir: fixture.noncesDir,
+    model: modelFor(harness, options),
+    maxUsd: options.maxUsd,
+  };
+  const timeout = free ? FREE_PROBE_TIMEOUT_MS : PROBE_TIMEOUT_MS;
+  const notRun: string[] = [];
+  const notes: string[] = [];
+
+  let listing: ListingObservation | undefined;
+  if (harness.listingProbe && harness.parseListing) {
+    const probe = harness.listingProbe(context);
+    const result = runProbe(probe, fixture.repoRoot, { ...env, ...probe.env }, timeout);
+    if (!processStarted(result)) {
+      notes.push(`Note: the listing probe never started — ${result.error?.message ?? ''}`);
+    }
+    listing = harness.parseListing(result.stdout);
+  }
+
+  // A free run only takes a turn where the turn itself is free.
+  const runsTurn = !free || harness.free.kind === 'turn-init';
+  if (!runsTurn) {
+    notRun.push(
+      'the two hook-activation oracles, the skill-activation oracle and the sentinel — every one ' +
+        `of them needs a session, and this harness has no free turn (${harness.free.note})`
+    );
+    return {
+      ...(listing ? { listing } : {}),
+      absence: 'no-surface',
+      turn: { startupSeen: false, text: '' },
+      turnRan: false,
+      skillProbeRan: false,
+      notRun,
+      notes,
+    };
+  }
+
+  const probe = harness.turnProbe(context);
+  const result = runProbe(probe, fixture.repoRoot, { ...env, ...probe.env }, timeout);
+  const turn = harness.parseTurn(result.stdout);
+  listing ??= turn.listing;
+
+  if (!processStarted(result)) {
+    notes.push(`Note: the turn never started — ${result.error?.message ?? ''}`);
+  } else if (free) {
+    notRun.push(
+      'the skill-activation oracle, the sentinel and the ceiling — all three need a model to ' +
+        'ANSWER, and `--free` reaches none. The hooks and the listing do not: they happen before ' +
+        'the first API request, which is what makes a free run worth taking.'
+    );
+    notes.push(
+      'Note: the free turn was pointed at a base URL nothing is listening on and was stopped ' +
+        `after ${FREE_PROBE_TIMEOUT_MS / 1000}s. That is the design: the hooks and the ` +
+        'session-init message arrive first, and nothing was billed.'
+    );
+  } else if (result.status === null) {
+    notes.push(
+      `Note: the turn never exited on its own; it was killed after ${PROBE_TIMEOUT_MS / 1000}s. ` +
+        `stderr:\n${result.stderr}`
+    );
+  } else if (result.status !== 0) {
+    notes.push(`Note: the turn exited ${String(result.status)}. stderr:\n${result.stderr}`);
+  }
+
+  return {
+    ...(listing ? { listing } : {}),
+    // A harness with an in-turn listing that printed no startup record had an
+    // oracle that DID NOT RUN, which is a different thing from never having one.
+    absence:
+      harness.listing.kind === 'in-turn' && !turn.startupSeen ? 'no-startup-record' : 'no-surface',
+    turn,
+    turnRan: processStarted(result),
+    skillProbeRan: !free,
+    turnCommand: [probe.command, ...probe.args].join(' '),
+    notRun,
+    notes,
+  };
 }
 
 /**

@@ -24,10 +24,11 @@
  * every test drives the injected `optIn` seam instead.
  */
 import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { check as prettierCheck } from 'prettier';
-import { noBinaryMessage, resolveSmokeGate } from '../harness-smoke/gate.js';
+import { noBinaryMessage, resolveFreeGate, resolveSmokeGate } from '../harness-smoke/gate.js';
 import {
   HARNESS_SMOKE_OPT_IN_VAR,
   SMOKE_HARNESSES,
@@ -37,7 +38,7 @@ import {
 } from '../harness-smoke/harnesses.js';
 import { ceilingVerdict, listingVerdicts } from '../harness-smoke/oracles.js';
 import { renderRunReport, renderSkipReport, reportFileName } from '../harness-smoke/report.js';
-import { DEFAULT_MAX_USD, parseArgs, probeEnv } from '../harness-smoke/run.js';
+import { DEFAULT_MAX_USD, parseArgs, probeEnv, processStarted } from '../harness-smoke/run.js';
 import {
   INSTRUCTIONS_SENTINEL,
   fixtureSpecFor,
@@ -180,11 +181,99 @@ describe('the money gate', () => {
     expect(noBinaryMessage(CLAUDE)).toContain('`claude`');
     expect(noBinaryMessage(CODEX)).toContain('`codex`');
   });
+
+  it('checks an explicit --binary for executability instead of taking it on trust', () => {
+    // `spawnSync` reports a missing binary the same way it reports a timeout
+    // kill — `status: null` — so an unchecked override turned a typo in a path
+    // into "the turn never exited; it was killed after 300s".
+    const gate = resolveSmokeGate(CLAUDE, {
+      optIn: true,
+      env: { ANTHROPIC_API_KEY: FAKE_KEY },
+      binaryOverride: join(tmpdir(), 'definitely-not-a-binary-8f21'),
+    });
+    expect(gate.ok).toBe(false);
+    expect(gate.ok === false && gate.reason).toBe('no-binary');
+    expect(gate.ok === false && gate.message).toContain('definitely-not-a-binary-8f21');
+  });
+
+  it('accepts an executable --binary, and never consults PATH when one is given', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'smoke-bin-'));
+    const path = join(dir, 'stand-in');
+    writeFileSync(path, '#!/bin/sh\nexit 0\n');
+    chmodSync(path, 0o755);
+    let pathWasConsulted = false;
+    const gate = resolveSmokeGate(CLAUDE, {
+      optIn: true,
+      env: { ANTHROPIC_API_KEY: FAKE_KEY },
+      binaryOverride: path,
+      findBinary: () => {
+        pathWasConsulted = true;
+        return '/usr/local/bin/claude';
+      },
+    });
+    expect(gate.ok === true && gate.binaryPath).toBe(path);
+    expect(pathWasConsulted).toBe(false);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('the free gate', () => {
+  it('needs neither the flag nor a key, because it reaches no model', () => {
+    const gate = resolveFreeGate(CLAUDE, { env: {}, findBinary: () => '/usr/local/bin/claude' });
+    expect(gate.ok).toBe(true);
+  });
+
+  it('still needs the binary, and says which one', () => {
+    const gate = resolveFreeGate(CLAUDE, { findBinary: () => undefined });
+    expect(gate.ok).toBe(false);
+    expect(gate.ok === false && gate.reason).toBe('no-binary');
+  });
+
+  it('refuses a harness with no free probe rather than inventing one', () => {
+    const gate = resolveFreeGate(OPENCODE, { findBinary: () => '/usr/local/bin/opencode' });
+    expect(gate.ok).toBe(false);
+    expect(gate.ok === false && gate.reason).toBe('no-free-probe');
+    expect(gate.ok === false && gate.message).toContain('OPENROUTER_API_KEY');
+  });
+
+  it('describes a free probe only where one was measured', () => {
+    // Guard against the cheerful direction: a `turn-init` cell claims a binary
+    // prints its listing before its first API request, which is a measurement,
+    // not a guess.
+    expect(CLAUDE.free.kind).toBe('turn-init');
+    expect(CODEX.free.kind).toBe('listing-only');
+    expect(OPENCODE.free.kind).toBe('none');
+    expect(CLAUDE.free.kind === 'turn-init' && CLAUDE.free.env.ANTHROPIC_BASE_URL).toBe(
+      'http://127.0.0.1:1'
+    );
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The ceiling
 // ─────────────────────────────────────────────────────────────────────────────
+
+describe('a probe that did not finish', () => {
+  it('separates a timeout kill from a process that never started', () => {
+    // A `--free` Claude Code turn is ALWAYS killed by the timeout — that is its
+    // design, and its hooks and session-init message arrive long before the
+    // kill. Treating that as "never ran" reported every free run's hook verdicts
+    // as NOT RUN while the hooks had demonstrably fired. `spawnSync` reports a
+    // missing binary and a timeout kill both through `status: null`, so the
+    // error code is the only discriminator there is.
+    expect(processStarted({})).toBe(true);
+    expect(
+      processStarted({ error: { message: 'spawnSync claude ETIMEDOUT', code: 'ETIMEDOUT' } })
+    ).toBe(true);
+    expect(processStarted({ error: { message: 'spawnSync claude ENOENT', code: 'ENOENT' } })).toBe(
+      false
+    );
+    // A spawn error with no code is the conservative case: assume nothing ran.
+    // An oracle reported off a process that did not exist is worse than one
+    // reported as NOT RUN.
+    expect(processStarted({ error: { message: 'something went wrong' } })).toBe(false);
+  });
+});
 
 describe('the ceiling', () => {
   it('defaults to 0.50 USD — a tripwire, not an allowance', () => {
@@ -196,6 +285,35 @@ describe('the ceiling', () => {
   it('takes --max-usd', () => {
     const parsed = parseArgs(['claude', '--max-usd', '0.10'], '/reports');
     expect(parsed.ok && parsed.options.maxUsd).toBe(0.1);
+  });
+
+  it('pins each harness to a cheap model, with a stated reason, and takes an override', () => {
+    // A run that costs "fractions of a cent" is a claim about a MODEL, and the
+    // reason has to be citable — the Codex catalog carries no prices, so its
+    // cell is a reading of the vendor's own descriptions and says so.
+    for (const harness of Object.values(SMOKE_HARNESSES)) {
+      expect(harness.model.id, `${harness.id} needs a pinned model`).not.toBe('');
+      expect(harness.model.why.length, `${harness.id} needs a reason`).toBeGreaterThan(40);
+    }
+    expect(CLAUDE.model.id).toBe('claude-haiku-4-5-20251001');
+    const parsed = parseArgs(['codex', '--model', 'gpt-5.4-mini'], '/reports');
+    expect(parsed.ok && parsed.options.model).toBe('gpt-5.4-mini');
+    expect(parseArgs(['codex', '--model'], '/reports').ok).toBe(false);
+  });
+
+  it('reaches the pinned model on the command line of every harness', () => {
+    for (const harness of Object.values(SMOKE_HARNESSES)) {
+      const args = harness.turnProbe({
+        repoRoot: '/repo',
+        binaryPath: `/usr/local/bin/${harness.binary}`,
+        prompt: 'hi',
+        noncesDir: '/sandbox/nonces',
+        model: 'chosen-model',
+        maxUsd: 0.25,
+      }).args;
+      expect(args, `${harness.id} must pass its model`).toContain(harness.model.flag);
+      expect(args[args.indexOf(harness.model.flag) + 1]).toBe('chosen-model');
+    }
   });
 
   it('refuses a ceiling that is not a positive number, rather than coercing it', () => {
@@ -215,6 +333,7 @@ describe('the ceiling', () => {
       binaryPath: '/usr/local/bin/claude',
       prompt: 'hi',
       noncesDir: '/sandbox/nonces',
+      model: 'a-model',
       maxUsd: 0.25,
     }).args;
     expect(args).toContain('--max-budget-usd');
@@ -233,6 +352,7 @@ describe('the ceiling', () => {
         binaryPath: `/usr/local/bin/${harness.binary}`,
         prompt: 'hi',
         noncesDir: '/sandbox/nonces',
+        model: 'a-model',
         maxUsd: 0.25,
       }).args;
       expect(args, `${harness.id} must allow writes to the nonce directory`).toContain('--add-dir');
@@ -249,6 +369,7 @@ describe('the ceiling', () => {
       binaryPath: '/usr/local/bin/claude',
       prompt: 'hi',
       noncesDir: '/sandbox/nonces',
+      model: 'a-model',
       maxUsd: 0.25,
     }).args;
     expect(args[args.indexOf('--tools') + 1]).toBe('Bash,Skill');
@@ -258,20 +379,20 @@ describe('the ceiling', () => {
   });
 
   it('fails a run whose reported cost breached it', () => {
-    const verdict = ceilingVerdict(CLAUDE, { text: '', costUsd: 0.9 }, 0.5);
+    const verdict = ceilingVerdict(CLAUDE, { startupSeen: true, text: '', costUsd: 0.9 }, 0.5);
     expect(verdict.status).toBe('fail');
     expect(verdict.detail).toContain('0.9000');
   });
 
   it('passes a run under it, and says the exact number', () => {
-    const verdict = ceilingVerdict(CLAUDE, { text: '', costUsd: 0.003 }, 0.5);
+    const verdict = ceilingVerdict(CLAUDE, { startupSeen: true, text: '', costUsd: 0.003 }, 0.5);
     expect(verdict.status).toBe('pass');
     expect(verdict.detail).toContain('0.0030');
   });
 
   it('says plainly that a harness with no cost report enforced ONE TURN, not a dollar figure', () => {
     // The honest half. Reporting `pass` here would claim a ceiling nobody held.
-    const verdict = ceilingVerdict(CODEX, { text: '' }, 0.5);
+    const verdict = ceilingVerdict(CODEX, { startupSeen: false, text: '' }, 0.5);
     expect(verdict.status).toBe('unknown');
     expect(verdict.detail).toContain('ONE turn');
   });
@@ -440,7 +561,17 @@ describe('the report', () => {
   });
 
   it('names its file after the run and the harness, so a directory sorts by time', () => {
-    expect(reportFileName('2026-09-09T05:42:12.000Z', 'codex')).toBe('20260909-054212-codex.md');
+    expect(reportFileName('2026-09-09T05:42:12.000Z', 'codex')).toBe(
+      '20260909-054212.000-codex.md'
+    );
+  });
+
+  it('keeps milliseconds, so two runs a second apart cannot overwrite each other', () => {
+    // The documented workflow is `--free` and then a paid run of the SAME
+    // harness. At second granularity the second one silently replaced the first.
+    const first = reportFileName('2026-09-09T05:42:12.000Z', 'claude');
+    const second = reportFileName('2026-09-09T05:42:12.400Z', 'claude');
+    expect(first).not.toBe(second);
   });
 
   it('cites a capability id on every verdict that is evidence about one', () => {
@@ -448,6 +579,9 @@ describe('the report', () => {
       harness: CODEX,
       startedAt: '2026-09-09T05:42:12.000Z',
       maxUsd: 0.5,
+      free: false,
+      pinnedModel: CODEX.model.id,
+      notRun: [],
       verdicts: listingVerdicts(CODEX, { skills: [], commands: [], skillPaths: [] }, '/repo'),
       calibration: [{ side: 'coverage-only', key: 'x', where: '.agents/skills/x/SKILL.md' }],
       applied: ['codex generate hook .codex/hooks.json'],

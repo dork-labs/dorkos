@@ -65,6 +65,70 @@ export type SmokeHarnessId = 'claude' | 'codex' | 'opencode';
 /** Every harness word the runner accepts, in the order the README lists them. */
 export const SMOKE_HARNESS_IDS: readonly SmokeHarnessId[] = ['claude', 'codex', 'opencode'];
 
+/**
+ * How completely a harness's file-READ routes can be shut off for the skill probe.
+ *
+ * This is the honest half of the activation oracle. The oracle's whole claim is
+ * "a skill that LOADED is the one whose instruction the harness injected, proved
+ * by running the probe with the harness's file-read tools denied" — and that
+ * claim is only available where the binary has a per-tool deny. It does not
+ * generalise:
+ *
+ * - **Claude Code — `partial`.** `--tools Bash,Skill` removes `Read`, `Grep` and
+ *   `Glob` from the built-in set, and `--disallowedTools` names the shell read
+ *   commands. It is a best effort, not a proof: a shell can read a file a dozen
+ *   other ways, and the remaining routes are enumerated below so nobody reads
+ *   the verdict as stronger than it is.
+ * - **Codex — `none`.** `--sandbox` is a WRITE policy: all three of its modes
+ *   (`read-only`, `workspace-write`, `danger-full-access`) permit reads, and
+ *   Codex has no per-tool deny. Nothing stops the model opening `SKILL.md`.
+ * - **OpenCode — `none`.** Nothing is denied at all.
+ *
+ * Where it is `none`, the nonce proves the model reached the instruction, not
+ * that the HARNESS injected it — so the verdict says "corroborates rather than
+ * proves" and drops SK-08/SK-09 from its citations. Stamping a contract row off
+ * an oracle that cannot discriminate is exactly the failure
+ * `.claude/rules/testing.md` calls "an assertion satisfied by the wrong subject".
+ */
+export type FileReadDenial =
+  | {
+      kind: 'partial';
+      /** The flags that do the denying, for the report. */
+      flags: string;
+      /** Read routes the deny list does NOT close, named so the limit is legible. */
+      remaining: readonly string[];
+      /** One sentence on how far the denial goes. */
+      note: string;
+    }
+  | {
+      kind: 'none';
+      /** Why nothing can be denied on this harness. */
+      note: string;
+    };
+
+/**
+ * Whether a harness can be asked ANYTHING without reaching a model, and what.
+ *
+ * `--free` runs only these. It is not the gate relaxed — no flag and no real key
+ * are needed because no model is reached — but the isolation is identical: the
+ * binary still gets an empty `HOME` and an empty config home, and no stored
+ * sign-in is ever read.
+ */
+export type FreeMode =
+  /**
+   * Start a real turn against a base URL nothing is listening on. Measured on
+   * claude 2.1.266: the `SessionStart` hooks fire and the `system`/`init`
+   * message — listing, `apiKeySource`, `model`, `tools` — is emitted BEFORE the
+   * first API request, so the listing, credential and hook-activation oracles
+   * all answer and nothing is billed. The turn then never completes, which is
+   * the point and not a failure.
+   */
+  | { kind: 'turn-init'; env: Record<string, string>; note: string }
+  /** Run the non-model listing probe and nothing else. */
+  | { kind: 'listing-only'; note: string }
+  /** Nothing free is known for this harness. */
+  | { kind: 'none'; note: string };
+
 /** Whether a harness can be asked what it found without spending a turn. */
 export type ListingSurface =
   /** A non-model command enumerates what the harness loaded. The best oracle there is. */
@@ -92,8 +156,20 @@ export interface ListingObservation {
 
 /** What the one model turn said, beyond whatever listing it carried. */
 export interface TurnObservation {
+  /**
+   * Whether the harness's own startup message was seen at all.
+   *
+   * Separate from `listing` being present, because the two absences mean
+   * opposite things: a harness with no startup message never had a listing
+   * oracle, and one whose turn died before printing it had an oracle that did
+   * not run. Reporting both as "UNKNOWN: no listing surface" would hide a broken
+   * probe behind a documented gap.
+   */
+  startupSeen: boolean;
   /** The listing the turn's own startup message carried, for an `in-turn` harness. */
   listing?: ListingObservation;
+  /** The model the harness says it used, where it says — recorded in every report. */
+  model?: string;
   /** Every assistant text the turn produced, joined — where the sentinel is looked for. */
   text: string;
   /** What the harness said the turn cost, in USD, when it says. */
@@ -132,6 +208,8 @@ export interface ProbeContext {
    * the activation oracle reports a defect the projection does not have.
    */
   noncesDir: string;
+  /** The model id the run pins — the harness's cheap one, or a `--model` override. */
+  model: string;
   /** The per-run ceiling in USD, for a harness whose CLI takes one. */
   maxUsd: number;
 }
@@ -168,6 +246,12 @@ export interface SmokeHarness {
   installHint: string;
   /** Whether the harness can be asked what it found without spending a turn. */
   listing: ListingSurface;
+  /** How completely its file-read routes can be shut off for the skill probe. */
+  deniesFileReads: FileReadDenial;
+  /** What, if anything, it can be asked for free. */
+  free: FreeMode;
+  /** The cheap model the runner pins, and where that choice comes from. */
+  model: { flag: string; id: string; why: string };
   /** How far the calibration diff can honestly go, and why. */
   calibration: CalibrationDirection;
   /**
@@ -198,6 +282,7 @@ interface ClaudeStreamLine {
   subtype?: string;
   slash_commands?: unknown;
   skills?: unknown;
+  model?: unknown;
   apiKeySource?: unknown;
   total_cost_usd?: unknown;
   result?: unknown;
@@ -228,6 +313,8 @@ export function parseClaudeStream(stdout: string): TurnObservation {
   let listing: ListingObservation | undefined;
   let costUsd: number | undefined;
   let credentialSource: string | undefined;
+  let model: string | undefined;
+  let startupSeen = false;
 
   for (const raw of stdout.split('\n')) {
     const line = raw.trim();
@@ -239,6 +326,8 @@ export function parseClaudeStream(stdout: string): TurnObservation {
       continue;
     }
     if (parsed.type === 'system' && parsed.subtype === 'init') {
+      startupSeen = true;
+      model = typeof parsed.model === 'string' ? parsed.model : undefined;
       listing = {
         skills: stringsIn(parsed.skills),
         commands: stringsIn(parsed.slash_commands),
@@ -261,7 +350,9 @@ export function parseClaudeStream(stdout: string): TurnObservation {
   }
 
   return {
+    startupSeen,
     ...(listing ? { listing } : {}),
+    ...(model === undefined ? {} : { model }),
     text: texts.join('\n'),
     ...(costUsd === undefined ? {} : { costUsd }),
     ...(credentialSource === undefined ? {} : { credentialSource }),
@@ -286,6 +377,42 @@ const CLAUDE: SmokeHarness = {
       '`system`/`init` message of the one `--print --output-format stream-json` turn — the same ' +
       'message the claude-code runtime already reads.',
   },
+  deniesFileReads: {
+    kind: 'partial',
+    flags: '--tools Bash,Skill --disallowedTools Bash(cat:*) …',
+    remaining: [
+      'python3 -c / python -c',
+      'node -e',
+      'perl -pe / ruby -e',
+      'od / xxd / strings / base64',
+      'cp / dd (copy it somewhere, then run it)',
+      'while read … done < SKILL.md',
+      'any interpreter or shell builtin the deny list does not name',
+    ],
+    note:
+      'A best effort, not a proof. `--tools Bash,Skill` removes Read, Grep and Glob from the ' +
+      'built-in set and `--disallowedTools` names the shell read commands worth naming, but a ' +
+      'shell can read a file in more ways than a deny list can enumerate. Whether ' +
+      '`--permission-mode bypassPermissions` OVERRIDES `--disallowedTools` is itself unverified ' +
+      'and needs a real turn to settle; if it does, the denial is worth nothing and this cell is ' +
+      'wrong.',
+  },
+  free: {
+    kind: 'turn-init',
+    // Measured on claude 2.1.266: both SessionStart hooks fire and the
+    // `system`/`init` message is emitted before the first API request, so a base
+    // URL nothing is listening on costs nothing and still answers three oracles.
+    env: { ANTHROPIC_BASE_URL: 'http://127.0.0.1:1' },
+    note:
+      'it starts a real turn against `http://127.0.0.1:1`, which nothing listens on — the hooks ' +
+      'fire and the session-init message prints before the first API request, so the listing, ' +
+      'credential and hook oracles all answer and nothing is billed',
+  },
+  model: {
+    flag: '--model',
+    id: 'claude-haiku-4-5-20251001',
+    why: "Anthropic's cheapest current model, and the one the DorkOS eval harness's recorded SDK fixture used.",
+  },
   // `skills` on the init message mixes the fixture's skills with whatever the
   // binary ships and whatever a plugin adds, and carries no paths to scope by.
   calibration: 'coverage-subset',
@@ -305,6 +432,8 @@ const CLAUDE: SmokeHarness = {
       '--verbose',
       '--max-budget-usd',
       String(ctx.maxUsd),
+      '--model',
+      ctx.model,
       '--no-session-persistence',
       // The nonce directory sits outside the repository; see ProbeContext.
       '--add-dir',
@@ -316,6 +445,8 @@ const CLAUDE: SmokeHarness = {
       // it), and dropping it would make a healthy harness look like a broken one.
       '--tools',
       'Bash,Skill',
+      // Best effort, and labelled as such everywhere it is reported: these are
+      // the read routes worth naming, not all of them (see `deniesFileReads`).
       '--disallowedTools',
       'Bash(cat:*)',
       'Bash(head:*)',
@@ -325,6 +456,17 @@ const CLAUDE: SmokeHarness = {
       'Bash(grep:*)',
       'Bash(less:*)',
       'Bash(more:*)',
+      'Bash(python3:*)',
+      'Bash(python:*)',
+      'Bash(node:*)',
+      'Bash(perl:*)',
+      'Bash(ruby:*)',
+      'Bash(od:*)',
+      'Bash(xxd:*)',
+      'Bash(strings:*)',
+      'Bash(base64:*)',
+      'Bash(cp:*)',
+      'Bash(dd:*)',
       // Nobody is at a terminal to answer a prompt, and a prompt that is
       // silently denied would read as "the skill did not fire".
       '--permission-mode',
@@ -408,7 +550,10 @@ export function parseCodexPromptInput(stdout: string): ListingObservation {
  * @returns the text the turn produced.
  */
 export function parseCodexExec(stdout: string): TurnObservation {
-  return { text: stdout };
+  // Codex prints no startup record this parser can key on, so `startupSeen` is
+  // false and its listing comes from the separate, free `debug prompt-input`
+  // probe rather than from the turn.
+  return { startupSeen: false, text: stdout };
 }
 
 /** Codex — the one harness with a free, non-model listing surface. */
@@ -431,6 +576,29 @@ const CODEX: SmokeHarness = {
       'verified on codex-cli 0.145.0 against a fixture with CODEX_HOME pointed at an empty temp ' +
       'directory. Its `<skills_instructions>` block is a complete skills listing, keyed the way ' +
       'Codex keys a skill (frontmatter `name`), with the absolute SKILL.md path beside each entry.',
+  },
+  deniesFileReads: {
+    kind: 'none',
+    note:
+      '`--sandbox` is a WRITE policy, not a read gate: all three of its modes — `read-only`, ' +
+      '`workspace-write`, `danger-full-access` — permit reads, and Codex documents no per-tool ' +
+      'deny. Nothing stops the model opening `SKILL.md` itself, and the prompt names the skill, ' +
+      'so a nonce here proves the instruction was REACHED, never that Codex injected it.',
+  },
+  free: {
+    kind: 'listing-only',
+    note: 'its listing probe is already non-model, and nothing else about Codex is free',
+  },
+  model: {
+    flag: '-m',
+    id: 'gpt-5.6-luna',
+    why:
+      'The cheapest LISTED model in `codex debug models` on codex-cli 0.145.0 — its own catalog ' +
+      'describes it as "Fast and affordable agentic coding model", against "Latest frontier" ' +
+      '(sol) and "Balanced … everyday work" (terra). The catalog carries no prices, so this is a ' +
+      "reading of the vendor's own descriptions rather than a measurement; `gpt-5.4-mini` calls " +
+      'itself "cost-efficient" and is cheaper still, but its visibility is `hide`, which is the ' +
+      'catalog saying not to pick it. Override with `--model <slug>`.',
   },
   // The paths beside each entry scope the listing to the fixture, so a skill the
   // walk missed is as visible as a skill the harness missed.
@@ -469,6 +637,8 @@ const CODEX: SmokeHarness = {
       // construction, so without this the activation oracle would report "the
       // hook did not fire" for a file Codex read perfectly.
       '--dangerously-bypass-hook-trust',
+      '-m',
+      ctx.model,
       ctx.prompt,
     ],
     env: {},
@@ -492,7 +662,7 @@ const CODEX: SmokeHarness = {
  * @returns the text the turn produced.
  */
 export function parseOpenCodeRun(stdout: string): TurnObservation {
-  return { text: stdout };
+  return { startupSeen: false, text: stdout };
 }
 
 /** OpenCode — the one whose listing surface is still an open question. */
@@ -517,6 +687,27 @@ const OPENCODE: SmokeHarness = {
       'that surface is exactly what the first run with the binary answers ' +
       '(`plans/harness-sync-test-plan.md` §13.3). Until then the activation oracle is primary.',
   },
+  deniesFileReads: {
+    kind: 'none',
+    note:
+      'Nothing is denied: no per-tool deny for `opencode run` has been identified here, and the ' +
+      'binary was not installed on the machine that built this runner. A nonce proves the ' +
+      'instruction was REACHED, never that OpenCode injected it.',
+  },
+  free: {
+    kind: 'none',
+    note:
+      'no free probe is known, for the same reason the listing cell is unknown: the binary was ' +
+      'not installed on the machine that built this runner',
+  },
+  model: {
+    flag: '--model',
+    id: 'openrouter/qwen/qwen3.7-flash',
+    why:
+      'Not measured. It mirrors the cheap OpenRouter id `packages/evals` pins for its own paid ' +
+      'tier, so the two paid paths spend on the same cheap model; the first run with the binary ' +
+      'should confirm or replace it. Override with `--model <slug>`.',
+  },
   calibration: 'coverage-subset',
   enforcesCeiling: false,
   isolation: (sandbox) => ({
@@ -525,7 +716,7 @@ const OPENCODE: SmokeHarness = {
   }),
   turnProbe: (ctx) => ({
     command: ctx.binaryPath,
-    args: ['run', ctx.prompt],
+    args: ['run', '--model', ctx.model, ctx.prompt],
     env: {},
   }),
   parseTurn: parseOpenCodeRun,

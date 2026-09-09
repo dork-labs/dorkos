@@ -20,7 +20,8 @@
  * @module harness-smoke/report
  */
 import type { SmokeHarness } from './harnesses.js';
-import type { CalibrationFinding, Verdict } from './oracles.js';
+import type { CalibrationFinding } from './calibration.js';
+import type { Verdict } from './oracles.js';
 
 /** Everything the run knows when it writes a report. */
 export interface ReportInput {
@@ -30,6 +31,14 @@ export interface ReportInput {
   startedAt: string;
   /** The ceiling the run was given. */
   maxUsd: number;
+  /** Whether this was a `--free` run — no model, no spend, fewer oracles. */
+  free: boolean;
+  /** The model id the run pinned. */
+  pinnedModel: string;
+  /** The model the harness said it used, where it says. */
+  reportedModel?: string;
+  /** Oracles this run deliberately did not reach, in words. */
+  notRun: string[];
   /** The verdicts, in oracle order. */
   verdicts: Verdict[];
   /** Every calibration disagreement, for the section that names them. */
@@ -53,17 +62,19 @@ const MARK: Record<Verdict['status'], string> = {
 /**
  * The file name a report is written under.
  *
- * `<YYYYMMDD-HHMMSS>-<harness>.md`, which sorts chronologically in a directory
- * listing and still says which binary it was about — the chat self-test reports
- * next door use the same timestamp format with no suffix, because they only ever
- * had one subject.
+ * `<YYYYMMDD-HHMMSS.mmm>-<harness>.md`, which sorts chronologically in a
+ * directory listing and still says which binary it was about. The chat
+ * self-test reports next door stop at seconds; these do not, because two runs of
+ * the SAME harness a second apart — a free one and then a paid one, which is the
+ * documented workflow — would otherwise write to one path and the first would
+ * vanish.
  *
  * @param startedAt - the run's start, ISO-8601.
  * @param harnessId - the harness word.
  * @returns the bare file name.
  */
 export function reportFileName(startedAt: string, harnessId: string): string {
-  const stamp = startedAt.replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+  const stamp = startedAt.replace(/[-:]/g, '').replace('T', '-').slice(0, 19);
   return `${stamp}-${harnessId}.md`;
 }
 
@@ -113,6 +124,15 @@ export function renderSkipReport(
     `  bash scripts/harness-smoke/run.sh ${harness.id} --max-usd 0.50`,
     '```',
     '',
+    ...(harness.free.kind === 'none'
+      ? []
+      : [
+          '## Or run the free half now',
+          '',
+          `\`bash scripts/harness-smoke/run.sh ${harness.id} --free\` needs no flag and no key: ` +
+            `${harness.free.note}`,
+          '',
+        ]),
   ].join('\n');
 }
 
@@ -125,27 +145,64 @@ export function renderSkipReport(
 export function renderRunReport(input: ReportInput): string {
   const { harness } = input;
   const counts = tally(input.verdicts);
+  const status = input.free ? 'FREE' : counts.fail > 0 ? 'FAILED' : 'PASSED';
   const lines = [
     `# Harness Smoke — ${harness.label} — ${humanTime(input.startedAt)}`,
     '',
     '## Run',
     '',
     `- **Harness:** ${harness.label} (\`${harness.binary}\`, engine id \`${harness.harnessId}\`)`,
-    `- **Status:** ${counts.fail > 0 ? 'FAILED' : 'PASSED'}`,
+    `- **Status:** ${status}${
+      input.free
+        ? counts.fail > 0
+          ? ' — and one or more of the oracles it DID run failed'
+          : ' — no model was reached, so this is a partial answer by design'
+        : ''
+    }`,
     `- **Started:** ${input.startedAt}`,
-    `- **Instrument:** \`${harness.keyVar}\` (read from the environment; no stored sign-in was read)`,
-    `- **Ceiling:** ${input.maxUsd} USD${
-      harness.enforcesCeiling ? ' — enforced by the binary itself' : ' — see the ceiling verdict'
+    `- **Instrument:** ${
+      input.free
+        ? 'none — `--free` reaches no model, so nothing was armed and nothing was billed'
+        : `\`${harness.keyVar}\` (read from the environment; no stored sign-in was read)`
+    }`,
+    `- **Isolation:** \`HOME\` and the harness's own config home both point at an empty sandbox, ` +
+      'so no stored sign-in and no user-scope skill can reach this answer',
+    `- **Model pinned:** \`${input.pinnedModel}\` — ${harness.model.why}`,
+    ...(input.reportedModel === undefined
+      ? []
+      : [`- **Model the harness reported:** \`${input.reportedModel}\``]),
+    `- **Ceiling:** ${
+      input.free
+        ? `${input.maxUsd} USD, inert — the flag is on the command line below because the argv is ` +
+          'the same one a paid run uses, and no API request is made for it to bound'
+        : `${input.maxUsd} USD${
+            harness.enforcesCeiling
+              ? ' — enforced by the binary itself'
+              : ' — see the ceiling verdict'
+          }`
     }`,
     `- **Cost:** ${
-      input.costUsd === undefined
-        ? `not reported by ${harness.label}`
-        : `${input.costUsd.toFixed(4)} USD`
+      input.free
+        ? 'nothing. No API request was made.'
+        : input.costUsd === undefined
+          ? `not reported by ${harness.label}`
+          : `${input.costUsd.toFixed(4)} USD`
     }`,
     `- **Listing oracle:** ${listingLine(harness)}`,
+    `- **Skill-injection proof:** ${denialLine(harness)}`,
     `- **Verdicts:** ${counts.pass} pass, ${counts.fail} fail, ${counts.finding} finding, ${counts.unknown} unknown`,
     '',
   ];
+
+  if (input.notRun.length > 0) {
+    lines.push('## What this run did NOT answer', '');
+    for (const item of input.notRun) lines.push(`- ${item}`);
+    lines.push(
+      '',
+      'Reported rather than omitted: a shorter list of verdicts reads as a clean run.',
+      ''
+    );
+  }
 
   if (input.turnCommand !== undefined) {
     lines.push('## The turn', '', '```', input.turnCommand, '```', '');
@@ -153,7 +210,12 @@ export function renderRunReport(input: ReportInput): string {
 
   lines.push('## Verdicts', '');
   for (const verdict of input.verdicts) {
-    const rows = verdict.capabilities.length > 0 ? ` — ${verdict.capabilities.join(', ')}` : '';
+    const rows =
+      verdict.capabilities.length > 0
+        ? ` — ${verdict.capabilities.join(', ')}`
+        : verdict.cites === undefined
+          ? ''
+          : ` — ${verdict.cites}`;
     lines.push(`- **${MARK[verdict.status]}** \`${verdict.id}\`${rows}`);
     lines.push(`  - ${verdict.question}`);
     lines.push(`  - ${verdict.detail}`);
@@ -194,6 +256,19 @@ function tally(verdicts: readonly Verdict[]): Record<Verdict['status'], number> 
   const counts: Record<Verdict['status'], number> = { pass: 0, fail: 0, unknown: 0, finding: 0 };
   for (const verdict of verdicts) counts[verdict.status] += 1;
   return counts;
+}
+
+/**
+ * One sentence on how far the skill-activation oracle's claim goes here.
+ *
+ * On the front page, because it is the difference between "this harness loaded
+ * the skill" and "the model got to the instruction somehow" — and the second is
+ * not evidence for SK-08 or SK-09.
+ */
+function denialLine(harness: SmokeHarness): string {
+  return harness.deniesFileReads.kind === 'partial'
+    ? `file reads PARTIALLY denied (${harness.deniesFileReads.flags}) — best effort, not proof`
+    : 'file reads NOT denied — the skill verdict corroborates, it does not prove';
 }
 
 /** One sentence naming this harness's listing surface and what it costs. */
