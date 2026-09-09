@@ -58,6 +58,7 @@ import {
   seedRoomRepoDefaults,
   seedDorkosToolsDefault,
   seedDisplayNameSourceDefault,
+  seedHarnessGlobal,
   seedHarnessRefusedHooks,
   seedToolOnlyReplyDefaults,
 } from '../config-manager.js';
@@ -448,6 +449,10 @@ describe('ConfigManager', () => {
       autoSync: true,
       approvedHooks: [],
       refusedHooks: [],
+      // Nothing installed for all your projects is shared into a home directory
+      // until somebody says which agent tools may see it, and `askedAt: null`
+      // says the question has never been put (DOR-1924).
+      global: { harnesses: [], askedAt: null },
     });
     expect(configManager.getDot('harness.autoSync')).toBe(true);
   });
@@ -3667,7 +3672,12 @@ describe('backfillHarnessApprovedHooks migration (DOR-522)', () => {
     const store = createMockStore({ harness: { autoSync: true } });
     backfillHarnessApprovedHooks(store);
     const parsed = UserConfigSchema.parse({ version: 1, ...store.data });
-    expect(parsed.harness).toEqual({ autoSync: true, approvedHooks: [], refusedHooks: [] });
+    expect(parsed.harness).toEqual({
+      autoSync: true,
+      approvedHooks: [],
+      refusedHooks: [],
+      global: { harnesses: [], askedAt: null },
+    });
   });
 });
 
@@ -3764,6 +3774,122 @@ describe('seedHarnessRefusedHooks migration (DOR-1849)', () => {
         harness: Record<string, unknown>;
       };
       expect(onDisk.harness.refusedHooks).toEqual([]);
+      // The upgrade adds a leaf; it changes nothing the person had set.
+      expect(onDisk.harness.autoSync).toBe(false);
+      expect(onDisk.harness.approvedHooks).toEqual(['flow@abc']);
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('seedHarnessGlobal migration (DOR-1924, case 9)', () => {
+  it('adds harness.global to a stored section that has the three older leaves and nothing else', () => {
+    // The upgrade path this key exists for: somebody who already has a `harness`
+    // section gains ONE member and keeps every answer they gave. conf's
+    // pre-write merge is shallow, so a stored `harness` object wins wholesale
+    // and never gains a nested leaf on its own.
+    const store = createMockStore({
+      harness: { autoSync: false, approvedHooks: ['flow@abc'], refusedHooks: ['evil@def'] },
+    });
+    seedHarnessGlobal(store);
+    expect(store.data.harness).toEqual({
+      autoSync: false,
+      approvedHooks: ['flow@abc'],
+      refusedHooks: ['evil@def'],
+      global: { harnesses: [], askedAt: null },
+    });
+  });
+
+  it('seeds the door CLOSED and the question UNASKED', () => {
+    // Both halves matter and they are different claims. An empty `harnesses`
+    // list means an upgrade shares nothing into a home directory that was not
+    // shared before; `askedAt: null` means the upgrade did not answer the
+    // question either, so the CLI still asks once.
+    const store = createMockStore({ harness: { autoSync: true } });
+    seedHarnessGlobal(store);
+    expect(store.data.harness).toEqual({
+      autoSync: true,
+      global: { harnesses: [], askedAt: null },
+    });
+  });
+
+  it('never overwrites an answer already on file (idempotent)', () => {
+    // What this catches: a re-run — corrupt-recovery instantiates conf twice —
+    // forgetting which agent tools somebody shared with, which would strand
+    // every link DorkOS put in their home directory (the sweep only looks in
+    // directories the CURRENT plan targets).
+    const store = createMockStore({
+      harness: {
+        autoSync: true,
+        global: { harnesses: ['codex'], askedAt: '2026-09-09T00:00:00.000Z' },
+      },
+    });
+    seedHarnessGlobal(store);
+    seedHarnessGlobal(store);
+    expect(store.data.harness).toEqual({
+      autoSync: true,
+      global: { harnesses: ['codex'], askedAt: '2026-09-09T00:00:00.000Z' },
+    });
+  });
+
+  it('repairs a non-object global rather than trusting it', () => {
+    const store = createMockStore({ harness: { autoSync: true, global: 'oops' } });
+    seedHarnessGlobal(store);
+    expect(store.data.harness).toEqual({
+      autoSync: true,
+      global: { harnesses: [], askedAt: null },
+    });
+  });
+
+  it('does nothing when there is no `harness` block to extend', () => {
+    // The schema default supplies the whole section on read in that case, and
+    // writing a partial `harness` here would drop every other default in it.
+    const store = createMockStore({ server: { port: 4242 } });
+    expect(() => seedHarnessGlobal(store)).not.toThrow();
+    expect(store.data.harness).toBeUndefined();
+  });
+
+  it('a real pre-0.76.0 config file gains harness.global on disk (full conf path)', () => {
+    // The half neither the mock store nor a `getDot` assertion can reach (see
+    // `seedRoomRepoDefaults` above for the DOR-1496 measurement this shape comes
+    // from). `harness.global` is a nested-leaf case, so this body is the ONLY
+    // thing that puts the leaf on the file: suppress it and this goes red while
+    // `store.get('harness').global` still answers the default from Ajv's
+    // discarded copy.
+    //
+    // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
+    // `0.0.0` in a dev tree, which runs no migration at all.
+    const dir = path.join(os.tmpdir(), 'test-dork-harness-global-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          harness: { autoSync: false, approvedHooks: ['flow@abc'], refusedHooks: [] },
+          __internal__: { migrations: { version: '0.75.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.76.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        harness: Record<string, unknown>;
+      };
+      expect(onDisk.harness.global).toEqual({ harnesses: [], askedAt: null });
       // The upgrade adds a leaf; it changes nothing the person had set.
       expect(onDisk.harness.autoSync).toBe(false);
       expect(onDisk.harness.approvedHooks).toEqual(['flow@abc']);

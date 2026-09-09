@@ -655,6 +655,16 @@ export const CONFIG_WRITE_POLICY = {
   // record of somebody turning its package down, and the next sync would ask
   // again instead of obeying the answer already given.
   'harness.refusedHooks': 'operator-only',
+  // Which agent tools DorkOS shares your globally installed packages with
+  // (DOR-1924). Adding an entry here is what lets DorkOS put links in somebody's
+  // home directory, which is the "how far DorkOS reaches on disk" line this
+  // module draws; removing one makes the next run sweep those links.
+  'harness.global.harnesses': 'operator-only',
+  // The stamp that says the question was asked. Operator-only for the reverse
+  // reason: an agent that could clear it would make DorkOS ask again, and an
+  // agent that could set it would silence the one question this feature is
+  // gated on.
+  'harness.global.askedAt': 'operator-only',
 
   'workbench.defaultViewers': 'agent-writable',
   'workbench.terminalGraceTtlMinutes': 'agent-writable',
@@ -906,6 +916,13 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       // its own. The second clause of this stake — how far it reaches on this
       // machine — read as a write rather than as a scope.
       'harness.autoSync',
+      // Whether DorkOS writes links into two folders in the person's HOME
+      // directory, which is the furthest this server ever reaches on disk. An
+      // empty list is off, so this one leaf is the whole switch (DOR-1924).
+      'harness.global.harnesses',
+      // The stamp beside it. Same stake, because clearing it makes DorkOS ask
+      // again about that reach and setting it silences the question.
+      'harness.global.askedAt',
       // Whether a room may have a git repo of its own — a checkout under the
       // DorkOS data directory that member agents run tools in. Same clause as
       // `harness.autoSync`, one step further: this decides whether the writable

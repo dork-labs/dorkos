@@ -334,6 +334,12 @@ export const CONFIG_DISCLOSURE = {
   // The other half of the same record: which packages a person turned down.
   // Same contents, same reasoning — package names and digests, no secrets.
   'harness.refusedHooks': 'expose',
+  // Which agent tools DorkOS shares your globally installed packages with, and
+  // when it last asked. Neither is a credential nor names one, and an agent that
+  // can say "your all-projects packages are not shared with Codex" is more
+  // useful than one that cannot.
+  'harness.global.harnesses': 'expose',
+  'harness.global.askedAt': 'expose',
 
   // An open record (see EXPOSED_RECORD_PATHS): file extension -> viewer id.
   'workbench.defaultViewers': 'expose',
