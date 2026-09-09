@@ -325,6 +325,10 @@ Six things call the engine, and the differences between them are the whole desig
 
 **Two of them also consult `harness.autoAdopt`** (DOR-1853), and only those two: the boot pass, per workspace that passed `isAgentHome`, and `RoomWorktreeManager`'s seed-and-project pairing, per worktree under `<dorkHome>/rooms/<roomId>/worktrees/` — both after the seed and the projection, through `services/harness/adopt-owned-workspace.ts`. Every other trigger runs in a directory a person owns and reads the flag not at all, which is what makes a `true` there inert by construction rather than by a check somebody could forget.
 
+Both sites report as well as act: with the flag off — the default — they still read the candidates and log which skills only some of the project's enabled tools can see, with the absolute command that moves each. They say nothing at all about a skill every enabled tool already reads, because there is no honest sentence to print and nothing to gain by moving it.
+
+**Creating an agent does not run that report.** `POST /api/agents` scaffolds and projects the workspace it just made (`agent-creator`), and the adopt read rides the boot pass and the room-worktree pairing only — so a new agent's Claude-only skills are first named at the **next server start**. That is a gap rather than a rule; giving the creation path the same read is a follow-up.
+
 Every one of them goes through `projectWithConsent` (§8 and `project-with-consent.ts`), which is the only module allowed to hold the engine's `project()` — with one exemption, and it is granted because it is STRICTER than consent rather than looser: the boot pass denies every installed package's hooks outright (`project-agent-workspace.ts`, contract HK-08), which the seam cannot express because its whole job is to honour an approval. `__tests__/project-seam-guard.test.ts` reads the source of both trees, fails on any other module that imports `project()` under any of six spellings, and pins that exemption to the reason it was given.
 
 ### What agent creation does, and does not, do

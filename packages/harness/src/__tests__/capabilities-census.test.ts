@@ -371,18 +371,20 @@ describe('the harness capabilities census', () => {
     // `files` by the three suites adopt's apply, its sentence builder and its
     // command brought, `titles` by their cases, `built` and `claiming` by
     // SRC-07, SRC-10 and AP-17, `idsInTitles` by SRC-07, AP-17 and J-06, and
-    // `closed` by §14's third gap. DOR-1945 raised two more — `files` by the
-    // suite `harness.autoAdopt` brought and `titles` by its fourteen cases —
-    // and left the other four alone, because slice 3 adds no capability row and
-    // claims no id that slice 2 had not already claimed. All of them are
-    // `toBeGreaterThanOrEqual`, so (DOR-1946 added nine `titles` of its own, folded in here), so
+    // `closed` by §14's third gap. DOR-1945 raised two more — `files` by the one
+    // suite `harness.autoAdopt` brought and `titles` by the eighteen cases it
+    // added under these roots (sixteen in that suite, two more in the CLI's
+    // adopt suite for the room-worktree ownership) — and left the other four
+    // alone, because slice 3 adds no capability row and claims no id that slice
+    // 2 had not already claimed. All of them are
+    // `toBeGreaterThanOrEqual`, so
     // none of them BREAKS when it is left alone — which is exactly why raising
     // them is part of the work. A floor nobody raises is a floor that stops
     // meaning anything.
     expect(rows.length).toBeGreaterThanOrEqual(88);
     expect(journeys.length).toBeGreaterThanOrEqual(14);
     expect(files.length).toBeGreaterThanOrEqual(67);
-    expect(titles.length).toBeGreaterThanOrEqual(683);
+    expect(titles.length).toBeGreaterThanOrEqual(687);
     // And every root really contributed, so a moved directory is a red rather
     // than a quietly smaller census.
     for (const root of TEST_ROOTS) {
