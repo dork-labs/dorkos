@@ -105,4 +105,12 @@ export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
   '0.73.0': 'a8975be23d86d5d2',
   '0.75.0': 'a890d6cad524a714',
   '0.76.0': 'c1ab29334a1d4a5b',
+  // Repinned once, on the branch that introduced this key and before it merged
+  // to `main` — so the population that could have run the earlier body is empty
+  // by construction: no build carrying `0.77.0` has ever existed outside this
+  // worktree. What changed is the KEY, not the behaviour: it was written as
+  // `'0.76.0'` and DOR-1903 landed that key on `main` while this branch was
+  // open, so a merge would have put two bodies under one name. Once this
+  // merges, the key is frozen and a further change of mind opens `'0.78.0'`.
+  '0.77.0': '49742f4b2d0c4a24',
 };
