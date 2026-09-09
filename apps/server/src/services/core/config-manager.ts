@@ -3112,6 +3112,42 @@ export function seedHarnessGlobal(store: {
 }
 
 /**
+ * Migration body: reserve `harness.autoAdopt: false` on a `harness` block that
+ * predates automatic adoption (DOR-1853).
+ *
+ * Same mechanism as {@link seedHarnessGlobal} and load-bearing for the same
+ * reason: `harness` is a section most stored configs already carry (the
+ * `'0.44.0'` key seeds it), and conf's pre-write merge is SHALLOW, so a stored
+ * `harness` object wins wholesale and never gains a member. Ajv's `useDefaults`
+ * does fill the leaf — but only into the copy conf's `store` getter just built
+ * and is about to discard, so nothing reaches the file without this. See "Which
+ * of these bodies is a real no-op" above {@link CONFIG_MIGRATIONS}.
+ *
+ * Seeds it OFF, which is the whole posture: an upgrade must never start moving
+ * a person's own skill folders because they upgraded. Turning it on is a
+ * decision somebody makes with `dorkos config set harness.autoAdopt true`, and
+ * even then DorkOS acts on it only inside the agent folders and room folders it
+ * owns.
+ *
+ * Additive and idempotent — it writes only when `autoAdopt` is not already a
+ * boolean, so a corrupt-recovery re-run cannot switch off something somebody
+ * turned on.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedHarnessAutoAdopt(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const harness = store.get('harness');
+  if (harness == null || typeof harness !== 'object') return;
+  const current = harness as Record<string, unknown>;
+  if (typeof current.autoAdopt === 'boolean') return;
+  store.set('harness', { ...current, autoAdopt: false });
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -3861,6 +3897,25 @@ export const CONFIG_MIGRATIONS = {
     // packages with, and when it last asked (DOR-1924). A nested leaf, so this
     // body is the only thing that writes it; see `seedHarnessGlobal`.
     seedHarnessGlobal(store);
+  },
+  // 0.77.0 has merged (DOR-1924, a `harness` leaf) and 0.74.0 is the newest
+  // tag, so 0.78.0 is the next key. Frozen from merge, not from the release
+  // bump, for the reason `'0.60.0'` above states; anything further opens
+  // `'0.79.0'`.
+  //
+  // Disjoint from every other key here: it writes one nested leaf under
+  // `harness`. `'0.44.0'`, `'0.57.0'`, `'0.75.0'` and `'0.77.0'` also touch that
+  // section — seeding the whole section, `approvedHooks`, `refusedHooks` and
+  // `global` — and this body writes none of those members, so sequencing them
+  // any way round lands the same config.
+  '0.78.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `harness.autoAdopt` — whether DorkOS may move a skill into `.agents/skills`
+    // on its own inside the folders it owns (DOR-1853). A nested leaf, so this
+    // body is the only thing that writes it; see `seedHarnessAutoAdopt`.
+    seedHarnessAutoAdopt(store);
   },
 } as const;
 
