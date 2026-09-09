@@ -132,6 +132,34 @@ describe('an approval remembers who asked, so a late answer can reach them', () 
       ).toBe(null);
       expect(service.claimVerdictDelivery(approvalId)).toBe(true);
     });
+
+    it('is swept back at boot when only a dead process could still hold it', () => {
+      // The hole this closes: a hold claims, the server restarts, and its
+      // `finally` never runs. The person answers at minute twenty and the
+      // deliverer is locked out by a hold that died an hour ago — the very bug
+      // this feature exists to fix, one layer down.
+      const { approvalId } = requestFromSession();
+      expect(service.claimVerdictDelivery(approvalId)).toBe(true);
+
+      // The restart analog: a second service over the same database, exactly as
+      // boot builds one.
+      const afterRestart = new ApprovalService(db);
+      expect(afterRestart.releaseStaleVerdictClaims()).toBe(1);
+      expect(afterRestart.claimVerdictDelivery(approvalId)).toBe(true);
+    });
+
+    it('leaves a DECIDED approval’s claim alone at boot', () => {
+      // The counterpart that makes the sweep safe. A claim on a decided row means
+      // the answer was delivered (or the session was gone for good); a restart
+      // does not undo either, and re-offering it would be a second turn telling
+      // an agent something it already acted on.
+      const { approvalId } = requestFromSession();
+      service.grant(approvalId);
+      expect(service.claimVerdictDelivery(approvalId)).toBe(true);
+
+      expect(new ApprovalService(db).releaseStaleVerdictClaims()).toBe(0);
+      expect(service.claimVerdictDelivery(approvalId)).toBe(false);
+    });
   });
 
   describe('the verdict a claimed delivery carries', () => {

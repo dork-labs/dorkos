@@ -42,6 +42,32 @@
  * construction. The hold takes the claim when it STARTS waiting and hands it back
  * only if it gives up without a decision.
  *
+ * A claim can also be stranded rather than released — a restart kills the process
+ * a hold lived in, and its `finally` with it. `ApprovalService.releaseStaleVerdictClaims`
+ * sweeps those at boot; without it a restart mid-decision reproduced this exact
+ * bug one layer down.
+ *
+ * ## Which surfaces a verdict can actually reach, and why that is not every one
+ *
+ * Delivery needs an ADDRESS, and only the in-session claude-code server records
+ * one (`runtimes/claude-code/mcp-tools/index.ts`, both the hand-registered tools
+ * and the registry projection). The external `/mcp` server — which is how Codex
+ * and OpenCode agents reach DorkOS capabilities — records none, so their
+ * approvals keep the token/poll flow exactly as they always have. That is not an
+ * oversight: it is spec `approval-verdict-delivery` §Acceptance item 6, which
+ * requires that surface to stay byte-identical, and it mirrors the in-session
+ * HOLD, which is claude-code-only for the same structural reason.
+ *
+ * It is also why an address must never be caller-asserted. A session id arriving
+ * in a header is a session id an agent chose, and a delivery address an agent
+ * chooses is a way to make DorkOS start a turn in somebody else's session.
+ * Giving the other runtimes a verdict means binding a session at INJECTION time,
+ * server-side — real work, and not this seam's.
+ *
+ * The RENDERING is cross-runtime regardless, and deliberately so: the shared
+ * writer is what stops a verdict reading as a formatted block on one runtime and
+ * a JSON dump on the others the moment an address does exist.
+ *
  * ## Why the fan-out listener does nothing but hand off
  *
  * `eventFanOut` listeners run synchronously on the broadcast write path, ahead of
@@ -58,7 +84,13 @@ import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { logger } from '../../../lib/logger.js';
 import { eventFanOut } from '../event-fan-out.js';
 import { runtimeRegistry } from '../runtime-registry.js';
-import { dispatchMessage, getOrCreateProjector, persistenceModeFor } from '../../session/index.js';
+import {
+  dispatchMessage,
+  getOrCreateProjector,
+  peekProjector,
+  persistenceModeFor,
+} from '../../session/index.js';
+import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import type { ApprovalService } from './approval-service.js';
 
 /** The approval primitive this module needs — no more of it than that. */
@@ -125,10 +157,18 @@ export async function deliverApprovalVerdict(
 
     const { sessionId, cwd, verdict } = delivery;
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
-    // The directory comes from the ROW, not from a live projector: the projector
-    // registry empties on restart and an approval outlives one easily inside two
-    // hours. That is the DOR-981 lesson, and it is why the column exists.
-    const workingDir = cwd ?? '';
+    // WHERE the turn runs, resolved once and threaded through every hop that
+    // takes one. The ROW's directory wins: the projector registry empties on
+    // restart and an approval outlives one easily inside two hours, which is the
+    // DOR-981 lesson and the reason the column exists.
+    //
+    // The two fallbacks behind it are not decoration. A session can reach the
+    // gate with no directory of its own (`UiToolSession.cwd` is optional), and an
+    // earlier version of this line read `cwd ?? ''` — which then STAMPED `''`
+    // onto the live session's own projector two calls down, moving a running
+    // session to nowhere. `mcp-signin-resume.ts:154` has carried this exact
+    // three-step ladder since DOR-981; this is the same ladder, not a new one.
+    const workingDir = cwd ?? peekProjector(sessionId)?.cwd ?? DEFAULT_CWD;
     // The live session map empties on restart and on eviction, while an approval
     // outlives both. A stored session cold-starts through the dispatcher; one
     // that exists nowhere is gone for good and there is nothing to tell.

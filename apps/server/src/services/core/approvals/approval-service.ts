@@ -821,7 +821,11 @@ export class ApprovalService {
       ...(row.requestingCwd ? { cwd: row.requestingCwd } : {}),
       verdict: {
         approvalId: row.id,
-        capabilityTitle: row.capabilityTitle,
+        // The column is `notNull` and `request` always writes the registry title
+        // or the capability id, so this can only be blank on a hand-edited row.
+        // Falling back beats rendering `Request: ` at a person's security
+        // decision — the id is always meaningful, an empty line never is.
+        capabilityTitle: row.capabilityTitle.trim() || row.capabilityId,
         outcome: row.state,
         // `decidedAt` is written in the same statement that sets `state`, so a
         // decided row always has one; the fallback keeps a hand-edited row from
@@ -830,6 +834,36 @@ export class ApprovalService {
         ...(row.state === 'denied' && row.denyReason ? { denyReason: row.denyReason } : {}),
       },
     };
+  }
+
+  /**
+   * Hand back every delivery claim that only a dead process could still hold.
+   *
+   * Run once at boot. A claim on a PENDING approval can only belong to an
+   * in-session hold that is waiting right now — the out-of-band deliverer claims
+   * and delivers within one decided row, and never leaves a pending one claimed.
+   * A hold lives in process memory and holds a turn open, so no hold survives a
+   * restart: every claim on a pending row is therefore stranded by definition,
+   * and its release path (`awaitCapabilityApproval`'s `finally`) will never run.
+   *
+   * Without this, a restart while somebody was deciding reproduced the exact bug
+   * this feature exists to fix, one layer down: the person answers at minute
+   * twenty, the deliverer's claim is refused by a hold that died an hour ago, and
+   * the agent is never told — with the column meant to guarantee delivery being
+   * the thing that prevented it.
+   *
+   * Decided rows are deliberately untouched: their claim means the answer was
+   * delivered (or the session was gone for good), which a restart does not undo.
+   *
+   * @returns How many stranded claims were released.
+   */
+  releaseStaleVerdictClaims(): number {
+    const result = this.db
+      .update(approvals)
+      .set({ notifiedAt: null })
+      .where(and(eq(approvals.state, 'pending'), isNotNull(approvals.notifiedAt)))
+      .run();
+    return result.changes;
   }
 
   /**

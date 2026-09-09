@@ -50,10 +50,39 @@
 import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { sanitizeContextScalar } from '@dorkos/shared/ui-widget';
-import { fenceUntrustedBlock } from './untrusted-fence.js';
+import { defuseUntrustedText, fenceUntrustedBlock } from './untrusted-fence.js';
 
 /** The tag this block is wrapped in, and the one every scalar is neutralized against. */
 const TAG = CONTEXT_TAG.approval_verdict;
+
+/**
+ * Make one scalar safe to interpolate into this block.
+ *
+ * TWO steps, because neither is sufficient alone and the gap between them is a
+ * real hole that a probe found. {@link sanitizeContextScalar} flattens control
+ * characters and neutralizes this block's OWN closing tag — so a value cannot end
+ * the block early. It does nothing about any OTHER runtime tag, so a value
+ * carrying `<git_status>…</git_status>` sailed through verbatim and landed in the
+ * prompt as a forged DorkOS block — which `stripInjectedTagBlocks` would then
+ * remove from the rendered transcript along with the real ones, leaving the
+ * person reading back a conversation with no trace it happened. That is the
+ * identical hole `seed-context-block.ts` documents.
+ *
+ * {@link defuseUntrustedText} closes it by escaping the `<` of every system tag.
+ * It runs second: the sanitizer has already rewritten this block's own closing
+ * tag into a form the defuser will not match, and the value stays neutralized
+ * either way.
+ *
+ * Applied to every field, including the ones no caller can choose today. "Cannot
+ * be forged right now" and "is safe to interpolate into a tagged block" are
+ * different claims, and only the second one is this module's business.
+ *
+ * @param value - The scalar to render.
+ * @returns The value, safe to place inside the block.
+ */
+function safeScalar(value: string): string {
+  return defuseUntrustedText(sanitizeContextScalar(value, TAG));
+}
 
 /**
  * The standing framing above every verdict. Fixed prose rather than a template:
@@ -90,9 +119,8 @@ const OUTCOME_WORD: Record<ApprovalVerdictData['outcome'], string> = {
  * Render the body of an `<approval_verdict>` block: the standing framing, the
  * decision itself, the fenced reason when there is one, and what to do next.
  *
- * Every interpolated scalar is neutralized against this block's own closing tag,
- * so nothing rendered here can end the block early and leave the rest of it loose
- * in the prompt.
+ * Every interpolated scalar goes through {@link safeScalar}, so nothing rendered
+ * here can end the block early or forge another runtime block inside it.
  *
  * @param data - The verdict, as the deliverer composed it from the approval row.
  * @returns The block body the adapter wraps in `CONTEXT_TAG.approval_verdict`.
@@ -101,10 +129,10 @@ export function formatApprovalVerdict(data: ApprovalVerdictData): string {
   const lines = [
     VERDICT_PREAMBLE,
     '',
-    `Request: ${sanitizeContextScalar(data.capabilityTitle, TAG)}`,
+    `Request: ${safeScalar(data.capabilityTitle)}`,
     `Decision: ${OUTCOME_WORD[data.outcome]}`,
-    `Answered: ${sanitizeContextScalar(data.decidedAt, TAG)}`,
-    `Approval id: ${sanitizeContextScalar(data.approvalId, TAG)}`,
+    `Answered: ${safeScalar(data.decidedAt)}`,
+    `Approval id: ${safeScalar(data.approvalId)}`,
   ];
 
   if (data.denyReason !== undefined && data.denyReason.trim() !== '') {

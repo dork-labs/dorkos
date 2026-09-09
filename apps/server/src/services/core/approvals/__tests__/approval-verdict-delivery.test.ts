@@ -28,6 +28,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { hashApprovalInput } from '../approval-input-hash.js';
+import { DEFAULT_CWD } from '../../../../lib/resolve-root.js';
 
 const SESSION_ID = 'sess-abc';
 const SESSION_CWD = '/projects/somewhere-else';
@@ -43,6 +44,8 @@ async function loadWithMocks(
     accepted?: boolean;
     hasSession?: boolean;
     storedSession?: boolean;
+    /** What a LIVE projector for this session reports, when one exists. */
+    livePeekCwd?: string;
   } = {}
 ) {
   vi.resetModules();
@@ -63,11 +66,15 @@ async function loadWithMocks(
   vi.doMock('../../runtime-registry.js', () => ({
     runtimeRegistry: { resolveForSession: async () => runtime },
   }));
-  const getOrCreateProjector = vi.fn((_id: string, _cwd?: string) => ({ cwd: SESSION_CWD }));
+  // The live projector the delivery may stamp a directory onto — started at a
+  // DIFFERENT value from the row's, so a hop that drops one cannot pass by
+  // coincidence.
+  const liveProjector = { cwd: options.livePeekCwd ?? '/the/live/checkout' };
+  const getOrCreateProjector = vi.fn((_id: string, _cwd?: string) => liveProjector);
   vi.doMock('../../../session/index.js', () => ({
     dispatchMessage,
     getOrCreateProjector,
-    peekProjector: () => undefined,
+    peekProjector: () => (options.livePeekCwd === undefined ? undefined : liveProjector),
     persistenceModeFor: () => 'record',
   }));
 
@@ -82,6 +89,7 @@ async function loadWithMocks(
     startApprovalVerdictDelivery,
     dispatchMessage,
     getOrCreateProjector,
+    liveProjector,
     runtime,
     warn,
     info,
@@ -171,6 +179,37 @@ describe('deliverApprovalVerdict', () => {
     expect(runtime.getSession).toHaveBeenCalledWith(SESSION_CWD, SESSION_ID);
     expect(getOrCreateProjector.mock.calls[0][1]).toBe(SESSION_CWD);
     expect(dispatchMessage.mock.calls[0][0].cwd).toBe(SESSION_CWD);
+  });
+
+  it('never moves a live session to nowhere when the row recorded no directory', async () => {
+    // `UiToolSession.cwd` is optional, so an approval can legitimately be minted
+    // with a session and no directory. The first version of this delivery read
+    // `cwd ?? ''` and then STAMPED that empty string onto the running session's
+    // own projector — moving a live session to nowhere over an answer to a
+    // question it asked. `mcp-signin-resume` has carried the three-step ladder
+    // since DOR-981; this asserts the same one.
+    const { approvals, deliverApprovalVerdict, dispatchMessage, liveProjector } =
+      await loadWithMocks({ livePeekCwd: '/the/live/checkout' });
+    const approvalId = askAndAnswer(approvals, { sessionId: SESSION_ID });
+
+    await deliverApprovalVerdict(approvals, approvalId);
+
+    expect(dispatchMessage.mock.calls[0][0].cwd).toBe('/the/live/checkout');
+    expect(liveProjector.cwd, 'the delivery moved a running session to nowhere').toBe(
+      '/the/live/checkout'
+    );
+  });
+
+  it('falls back to the default root when there is no row directory and no live projector', async () => {
+    // The last rung. A restart empties the projector registry, which is exactly
+    // when this runs — so the ladder must not end in an empty string.
+    const { approvals, deliverApprovalVerdict, dispatchMessage } = await loadWithMocks();
+    const approvalId = askAndAnswer(approvals, { sessionId: SESSION_ID });
+
+    await deliverApprovalVerdict(approvals, approvalId);
+
+    expect(dispatchMessage.mock.calls[0][0].cwd).not.toBe('');
+    expect(dispatchMessage.mock.calls[0][0].cwd).toBe(DEFAULT_CWD);
   });
 
   it('delivers EXACTLY ONCE, however many times the answer is broadcast', async () => {
@@ -311,25 +350,52 @@ describe('startApprovalVerdictDelivery', () => {
       // Nothing yet: the listener handed the work off.
       expect(dispatchMessage).not.toHaveBeenCalled();
       await vi.waitFor(() => expect(dispatchMessage).toHaveBeenCalledTimes(1));
-      expect(eventFanOut.listenerCount).toBeDefined();
     } finally {
       stop();
     }
   });
 
+  it('attaches exactly one listener and detaches it, counted rather than assumed', async () => {
+    // A baseline compare, not a `toBeDefined()` on the counter — that asserts the
+    // property exists and would pass with the subscription deleted.
+    const { approvals, startApprovalVerdictDelivery } = await loadWithMocks();
+    const { eventFanOut } = await import('../../event-fan-out.js');
+    const before = eventFanOut.listenerCount;
+
+    const stop = startApprovalVerdictDelivery(approvals);
+    expect(eventFanOut.listenerCount).toBe(before + 1);
+    stop();
+    expect(eventFanOut.listenerCount).toBe(before);
+  });
+
   it('ignores every outcome that is not a decision', async () => {
     // `settle` fires for `consumed` and `expired` too, and neither is an answer a
     // person gave. Expiry is DOR-1932's subject, not this seam's.
+    //
+    // Driven on a REAL, deliverable approval that has already been delivered
+    // once. An earlier version broadcast `consumed` for an id that did not exist,
+    // which made the test pass with the outcome filter DELETED — `verdictDelivery`
+    // returned undefined either way. Proven: removing the filter now fails here.
     const { approvals, startApprovalVerdictDelivery, dispatchMessage } = await loadWithMocks();
     const { eventFanOut } = await import('../../event-fan-out.js');
     const stop = startApprovalVerdictDelivery(approvals);
     try {
-      eventFanOut.broadcast('approval_resolved', {
-        approvalId: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
-        outcome: 'consumed',
+      const { approvalId } = approvals.request({
+        ...BINDING,
+        summary: 'Unregister "scout"',
+        requestingSession: { sessionId: SESSION_ID, cwd: SESSION_CWD },
       });
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      expect(dispatchMessage).not.toHaveBeenCalled();
+      approvals.grant(approvalId);
+      await vi.waitFor(() => expect(dispatchMessage).toHaveBeenCalledTimes(1));
+
+      // Now hand the listener the SAME approval back with a non-decision outcome,
+      // and free the claim first so the filter is the ONLY thing that can stop a
+      // second turn. Without the filter this delivers again.
+      approvals.releaseVerdictDelivery(approvalId);
+      eventFanOut.broadcast('approval_resolved', { approvalId, outcome: 'consumed' });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(dispatchMessage).toHaveBeenCalledTimes(1);
     } finally {
       stop();
     }

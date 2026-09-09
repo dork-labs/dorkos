@@ -6,9 +6,10 @@
  * REAL `ApprovalService` writes a REAL row, a REAL `grant` broadcasts on the REAL
  * `eventFanOut`, the REAL subscription hands off, the REAL dispatcher opens a
  * REAL turn through `triggerTurn`, and the REAL context assembler builds the bag
- * the runtime receives. The only stand-in is the runtime itself, and it is there
- * to be READ rather than to be believed — the assertion is on the
- * `additionalContext` a runtime actually got.
+ * the runtime receives. Two stand-ins remain, and both are named rather than
+ * glossed: the runtime is a `FakeAgentRuntime`, and `resolveForSession` is spied
+ * to return it. Both exist so the prompt can be READ rather than believed — the
+ * assertion is on the `additionalContext` a runtime actually got.
  *
  * That matters because the defect this feature exists to fix was not a wrong
  * value anywhere. It was a chain with a link missing, and every link had a
@@ -40,6 +41,7 @@ import { runtimeRegistry } from '../../runtime-registry.js';
 import { renderContextEntry } from '../../../runtimes/claude-code/messaging/context-builder.js';
 import { buildCodexPrompt } from '../../../runtimes/codex/turn-input.js';
 import { buildOpenCodeParts } from '../../../runtimes/opencode/messaging/turn-input.js';
+import { awaitCapabilityApproval } from '../../capabilities/capability-approval-hold.js';
 import { ApprovalService } from '../approval-service.js';
 import { startApprovalVerdictDelivery } from '../approval-verdict-delivery.js';
 import { hashApprovalInput } from '../approval-input-hash.js';
@@ -157,22 +159,70 @@ describe('an operator answers late, and the agent is told', () => {
     expect(rendered.toLowerCase()).toContain('refused');
   });
 
-  it('opens exactly one turn, however the answer is settled', async () => {
-    // The grant flow settles twice for one subject — once on the decision, once
-    // when the token is spent — and the second settle must open nothing.
-    const { approvalId } = approvals.request({
+  it('opens exactly one turn across the REAL second settle', async () => {
+    // The grant flow settles twice for one subject: once on the decision, and
+    // again when the agent spends its token (`consume` → `settle(…, 'consumed')`).
+    // An earlier version of this test called `grant` twice to stand in for that,
+    // which proves nothing — the second `grant` returns `not_pending` BEFORE
+    // `settle`, so no second broadcast is emitted at all and the assertion holds
+    // whatever the code does. This drives the real one.
+    const binding = {
+      capabilityId: 'mesh.unregister',
+      inputHash: hashApprovalInput({ agentId: '01KXQ3P7ADJY9DSXMZW1XGWCV4' }),
+    };
+    const ticket = approvals.request({
+      ...binding,
+      summary: 'Unregister "scout"',
+      requestingSession: { sessionId, cwd: CWD },
+    });
+
+    approvals.grant(ticket.approvalId);
+    await capturedContext();
+
+    // The agent retries with its token. This DOES broadcast a second time.
+    const spent = approvals.consume(ticket.token, binding);
+    expect(spent.outcome, 'the token did not actually spend — no second settle happened').toBe(
+      'granted'
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('a real hold, waiting when the answer lands, is the only one that speaks', async () => {
+    // Acceptance item 3 asks for a test that RACES the hold against the
+    // out-of-band path. The claim tests drive the primitive by hand; this drives
+    // an actual `awaitCapabilityApproval` waiting on the same approval while the
+    // live subscription is armed, which is the shape the bug would take.
+    const ticket = approvals.request({
       capabilityId: 'mesh.unregister',
       inputHash: hashApprovalInput({ agentId: '01KXQ3P7ADJY9DSXMZW1XGWCV4' }),
       summary: 'Unregister "scout"',
       requestingSession: { sessionId, cwd: CWD },
     });
 
-    approvals.grant(approvalId);
-    await capturedContext();
-    // A second broadcast of the same decision, exactly as `settle` produces one.
-    approvals.grant(approvalId);
+    const held = awaitCapabilityApproval(
+      { approvals, session: { eventQueue: [] }, capMs: 5_000 },
+      {
+        status: 'approval_required',
+        capabilityId: 'mesh.unregister',
+        capabilityTitle: 'Unregister an agent',
+        tier: 'destructive',
+        approvalId: ticket.approvalId,
+        approvalToken: ticket.token,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        reason: 'no_approval',
+        message: 'needs approval',
+        retry: { channel: 'mcp-argument', field: 'approvalToken', instructions: 'retry' },
+      }
+    );
 
+    approvals.grant(ticket.approvalId);
+    expect(await held).toBe('granted');
+
+    // The hold reported the answer as its own return value. A turn here would be
+    // a second telling of something the agent already has.
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(runtime.sendMessage).not.toHaveBeenCalled();
   });
 });
