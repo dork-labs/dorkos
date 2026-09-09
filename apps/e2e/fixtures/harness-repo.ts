@@ -28,8 +28,13 @@ import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { RoomsApi } from './rooms-api';
 
-/** The names the staged tree uses, so a spec can name a skill rather than a path. */
-export const HARNESS_REPO_SKILLS = {
+/**
+ * The names the staged tree uses.
+ *
+ * Module-private: a spec reads them back off {@link StagedHarnessRepo} rather than
+ * importing them, so the tree and the names can never be two lists.
+ */
+const HARNESS_REPO_SKILLS = {
   /** The skill in `.agents/skills` — Codex reads it there, Claude Code gets a link. */
   canonical: 'deploy-checklist',
   /** The skill kept in `.claude/skills` as a real directory — Codex cannot see it. */
