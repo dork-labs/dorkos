@@ -20,18 +20,18 @@
  *
  * @module services/harness/directory-ownership
  */
-import { relative, resolve, sep } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import type { DirectoryOwnership } from '@dorkos/harness';
-import { isAgentHome } from './project-agent-workspace.js';
+import { canonicalize, isAgentHome } from './project-agent-workspace.js';
 
 /**
  * What DorkOS owns `dir` as.
  *
- * Purely lexical for the rooms half, deliberately: this answers a question about
- * a path DorkOS itself laid out, and it is asked on paths that may not exist
- * yet. The agent-home half resolves symlinks on both sides, because a dork home
- * reached by a different route still contains the workspaces it contains — see
- * {@link isAgentHome}.
+ * Both halves resolve symlinks on both sides before comparing, because a dork
+ * home reached by a different route still contains what it contains — a macOS
+ * temp directory under a symlinked `/var` is the everyday case, and comparing
+ * one spelling against the other is the silent no-op {@link canonicalize}
+ * exists to prevent.
  *
  * @param dir - Absolute path to the directory a run is happening in.
  * @param dorkHome - Resolved DorkOS data directory (see `lib/dork-home.ts`).
@@ -56,7 +56,7 @@ export function resolveDirectoryOwnership(dir: string, dorkHome: string): Direct
  * @returns True when the path has that exact shape.
  */
 function isRoomWorktree(dir: string, dorkHome: string): boolean {
-  const rel = relative(resolve(dorkHome, 'rooms'), resolve(dir));
+  const rel = relative(canonicalize(join(dorkHome, 'rooms')), canonicalize(dir));
   if (rel === '' || rel.startsWith('..')) return false;
   const parts = rel.split(sep);
   return parts.length === 3 && parts[1] === 'worktrees';

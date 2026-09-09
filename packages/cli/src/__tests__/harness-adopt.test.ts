@@ -18,6 +18,8 @@ import { createHash } from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 
+import { ROOM_SEEDED_SKILL_NAMES } from '@dorkos/harness';
+
 import { runHarnessAdopt, parseHarnessAdoptArgs } from '../harness-adopt-command.js';
 import { runHarnessSync, parseHarnessSyncArgs } from '../harness-sync-command.js';
 import { runHarnessDispatcher } from '../commands/harness-dispatcher.js';
@@ -162,6 +164,43 @@ describe('runHarnessAdopt', () => {
 
   /** Everything printed to stderr so far, as one string. */
   const printedErrors = (): string => errorSpy.mock.calls.map((call) => String(call[0])).join('\n');
+
+  it('SRC-11: refuses a reserved pack name when the folder IS a room worktree', async () => {
+    // The terminal resolves ownership from the path, by the same function the
+    // server uses (DOR-1945) — so standing in a room's working copy gets R3's
+    // refusal rather than a move the reap would delete. Seeded defect: hard-code
+    // `ownership: 'plain'` back into the command and this skill moves.
+    const reserved = [...ROOM_SEEDED_SKILL_NAMES].sort()[0]!;
+    const worktree = path.join(homeDir, 'rooms', 'room-1', 'worktrees', 'agent-abc');
+    fs.mkdirSync(worktree, { recursive: true });
+    writeRepo(worktree, { names: [reserved] });
+    process.chdir(worktree);
+    const before = snapshotTree(worktree);
+
+    const result = await runHarnessAdopt(adoptArgs({ name: reserved }));
+
+    expect(result).toEqual({ exitCode: 1 });
+    expect(printed()).toContain(
+      `"${reserved}" is one of the skills DorkOS puts in every room folder, so ` +
+        `.agents/skills/${reserved} is hidden from git here and would be deleted when the room ` +
+        `folder is cleaned up. Rename your skill and adopt it under the new name.`
+    );
+    expect(snapshotTree(worktree)).toEqual(before);
+  });
+
+  it('SRC-11: moves the same reserved name in a folder DorkOS does not own', async () => {
+    // The other half of the pair, so the case above is about the PLACE rather
+    // than about the name: the identical skill in somebody's own project is a
+    // skill they may move.
+    const reserved = [...ROOM_SEEDED_SKILL_NAMES].sort()[0]!;
+    writeRepo(repo, { names: [reserved] });
+    process.chdir(repo);
+
+    const result = await runHarnessAdopt(adoptArgs({ name: reserved }));
+
+    expect(result).toEqual({ exitCode: 0 });
+    expect(fs.existsSync(path.join(repo, '.agents', 'skills', reserved))).toBe(true);
+  });
 
   it('SRC-07: --check says what would happen, exits 0, and writes nothing', async () => {
     writeRepo(repo);

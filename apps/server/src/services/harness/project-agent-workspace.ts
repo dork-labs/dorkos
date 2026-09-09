@@ -134,10 +134,15 @@ const DENY_ALL_PLUGIN_HOOKS = (): boolean => false;
  * (`resolveDorkHome` returns the env var verbatim), otherwise compares unequal
  * to the very workspace it contains — and the repair silently does nothing.
  *
+ * Exported because the containment questions asked about the dork home are
+ * asked in more than one file: `directory-ownership.ts` asks the same question
+ * about a room's working copy, and answering it on a differently-spelled path
+ * is the silent-no-op this function exists to prevent.
+ *
  * @param p - Path to canonicalize.
  * @returns The real path, or the lexically resolved one when it does not exist.
  */
-function canonicalize(p: string): string {
+export function canonicalize(p: string): string {
   const absolute = resolve(p);
   try {
     return realpathSync(absolute);
