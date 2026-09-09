@@ -473,10 +473,20 @@ describe('inventorySourceTree', () => {
       join(repo, '.cursor', 'mcp.json'),
       `\ufeff${JSON.stringify({ mcpServers: { shadcn: { command: 'npx' } } })}\n`
     );
+    // Both parsers refuse a BOM, so the strip is pinned on the TOML path too:
+    // with it gone from that one call site, a Windows-saved Codex config full
+    // of servers is reported as "not valid TOML", and no other case notices.
+    writeFileAt(
+      join(repo, '.codex', 'config.toml'),
+      `\ufeff[mcp_servers.linear]\ncommand = "npx"\n`
+    );
 
     const { foreignMcpConfigs, unreadable } = inventorySourceTree(repo);
     expect({ foreignMcpConfigs, unreadable }).toEqual({
-      foreignMcpConfigs: [{ source: '.cursor/mcp.json', serverCount: 1 }],
+      foreignMcpConfigs: [
+        { source: '.codex/config.toml', serverCount: 1 },
+        { source: '.cursor/mcp.json', serverCount: 1 },
+      ],
       unreadable: [],
     });
   });
