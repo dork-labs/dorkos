@@ -235,6 +235,11 @@ export interface RepoSpec {
    * {@link CLAUDE_SKILL_DIRS} for why the alphabet is awkward on purpose.
    */
   claudeSkills: (typeof CLAUDE_SKILL_DIRS)[number][];
+  /**
+   * Whether this repo keeps a skill in ANOTHER tool's own folder and declares
+   * its MCP servers in that tool's own config — see {@link HARNESS_NATIVE_SKILL}.
+   */
+  opencodeOwnFiles: boolean;
   /** The manifest's enabled harnesses (may be empty). */
   harnesses: HarnessId[];
   /** A hand-written file at one generated hook target, or none. */
@@ -363,6 +368,24 @@ const CLAUDE_SKILL_FRONTMATTER: Record<(typeof CLAUDE_SKILL_DIRS)[number], strin
 };
 
 /**
+ * The skill directory an OpenCode-first team keeps in OpenCode's own folder, and
+ * the config file they declare their MCP servers in (DOR-1902).
+ *
+ * Staged together because they are one shape a person has: a repository whose
+ * agent files are somewhere other than `.claude/`. Both used to reach no list at
+ * all, so neither was a subject of any property here — and a property with no
+ * subject is a green that means nothing.
+ *
+ * The name matches the directory on purpose. The awkward alphabet lives in
+ * {@link CLAUDE_SKILL_DIRS} and is exercised there against every harness's name
+ * rules; what this one adds is a root, not another rule violation.
+ */
+export const HARNESS_NATIVE_SKILL = '.opencode/skills/shipping';
+
+/** The MCP config file staged beside it, which the engine carries nothing out of. */
+const FOREIGN_MCP_CONFIG = 'opencode.json';
+
+/**
  * The folders a generated repo may find a plain FILE at, one per generated case.
  *
  * Every one of them is a directory some action's write must pass through, and
@@ -461,6 +484,7 @@ export function arbRepo(): fc.Arbitrary<RepoSpec> {
     deadAgentLink: fc.boolean(),
     personSkillLink: fc.boolean(),
     claudeSkills: fc.uniqueArray(fc.constantFrom(...CLAUDE_SKILL_DIRS), { maxLength: 3 }),
+    opencodeOwnFiles: fc.boolean(),
     harnesses: fc.subarray([...HARNESS_IDS]),
     occupant: fc.option(
       fc.record({
@@ -680,6 +704,15 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
       join(repoRoot, '.claude', 'skills', dir, 'SKILL.md'),
       `---\n${name}description: The ${dir} skill\n---\n\n# ${dir}\n`
     );
+  }
+  if (spec.opencodeOwnFiles) {
+    writeFileAt(
+      join(repoRoot, HARNESS_NATIVE_SKILL, 'SKILL.md'),
+      '---\nname: shipping\ndescription: The shipping skill\n---\n\n# shipping\n'
+    );
+    writeJsonAt(join(repoRoot, FOREIGN_MCP_CONFIG), {
+      mcp: { linear: { type: 'local', command: ['npx', 'linear-mcp'] } },
+    });
   }
   if (spec.personSkillLink) {
     writeFileAt(
