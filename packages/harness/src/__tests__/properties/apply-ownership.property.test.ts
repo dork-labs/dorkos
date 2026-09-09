@@ -12,6 +12,13 @@
  *   the same bytes after apply, and every one of them is named: as a `conflict`
  *   when the plan wanted to write that path and could not, and as `leftAlone`
  *   when the plan never wanted it.
+ * - **P3b — a hostile write PATH is answered, not thrown over.** A plain file
+ *   where a folder belongs — at any depth of any target — used to raise ENOTDIR,
+ *   EEXIST or EACCES out of the middle of the action loop, leaving a half-applied
+ *   tree and the six sweeps unreached (AP-11, DOR-1882). Every projection through
+ *   it is now a `conflict` whose reason names the folder, and nothing else in the
+ *   plan is disturbed. This is the property the generator's narrowing used to
+ *   stand in the way of.
  * - **P4 — the sweep touches only what the engine wrote.** After an apply, some
  *   sources are deleted and the repo is re-projected and applied with the sweep
  *   on: every path the sweep removed was written by an earlier apply in this
@@ -22,7 +29,9 @@
  *   `apply/__tests__/generated-ownership.test.ts`.
  *
  * P2 (no orphan survives) and P2b (`checkPlan` never throws) run off the same
- * generator in `orphaned-links.property.test.ts`.
+ * generator in `orphaned-links.property.test.ts`. P4 is the other half of
+ * DOR-1882's claim — "never deletes anything it did not write" — and it runs
+ * over the hostile write paths too, since the generator is shared.
  *
  * The seed is fixed so a failure is reproducible; fast-check prints it (and the
  * shrunk counterexample) in the failure message.
@@ -46,6 +55,7 @@ import {
 } from '../journeys/stage.js';
 import {
   arbRepo,
+  HOSTILE_FILE_BYTES,
   isAdoptableLegacy,
   occupantContent,
   PERSON_LINK_PATH,
@@ -107,6 +117,66 @@ describe('P3 — a conflict never destroys what somebody else wrote', () => {
         }),
         RUNS
       );
+    },
+    PROPERTY_TIMEOUT_MS
+  );
+});
+
+describe('P3b — applyPlan answers for a hostile write path, and never throws over one', () => {
+  it(
+    'AP-11: names every projection a file-where-a-folder-belongs blocks, and writes none of them',
+    () => {
+      let staged = 0;
+      let blockedTargets = 0;
+      fc.assert(
+        fc.property(arbRepo(), (spec) => {
+          withRepo(spec, ({ repoRoot, dorkHome, hostile }) => {
+            const plan = project(repoRoot, { dorkHome });
+            // The claim, in full: whatever is in the way, this returns.
+            const { conflicts, applied } = applyPlan(repoRoot, plan, { sweepOrphans: true });
+            if (hostile === undefined) return;
+            staged += 1;
+
+            // Every action whose write goes THROUGH the staged file is a named
+            // conflict rather than an exception, and none of them was applied.
+            const through = plan.actions.filter(
+              (a) =>
+                a.kind !== 'native' &&
+                a.kind !== 'drop' &&
+                a.target !== undefined &&
+                a.target.startsWith(`${hostile}/`)
+            );
+            const conflicted = new Map(conflicts.map((a) => [a.target, a.reason]));
+            const appliedTargets = new Set(applied.map((a) => a.target));
+            for (const action of through) {
+              blockedTargets += 1;
+              const target = action.target as string;
+              expect({ target, named: conflicted.has(target) }).toEqual({ target, named: true });
+              expect({
+                target,
+                reason: conflicted.get(target)?.includes(`\`${hostile}\``),
+              }).toEqual({ target, reason: true });
+              expect({ target, applied: appliedTargets.has(target) }).toEqual({
+                target,
+                applied: false,
+              });
+            }
+
+            // And the file is still a file: nothing wrote through it, and
+            // nothing replaced it with the folder it was standing in for.
+            expect({ hostile, bytes: readText(join(repoRoot, hostile)) }).toEqual({
+              hostile,
+              bytes: HOSTILE_FILE_BYTES,
+            });
+          });
+        }),
+        RUNS
+      );
+      // Both floors matter: the first says the generator really staged the
+      // shape, the second that a plan really wrote through it. Either at zero
+      // and the property above is a green over nothing.
+      expect(staged).toBeGreaterThan(0);
+      expect(blockedTargets).toBeGreaterThan(0);
     },
     PROPERTY_TIMEOUT_MS
   );

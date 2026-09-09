@@ -91,9 +91,17 @@ describe('P7 — every ephemeral projection has a way to stay out of git', () =>
         fc.property(arbRepo(), (spec) => {
           withRepo(spec, ({ repoRoot, dorkHome }) => {
             const plan = project(repoRoot, { dorkHome });
-            applyPlan(repoRoot, plan, { sweepOrphans: true });
+            const { conflicts } = applyPlan(repoRoot, plan, { sweepOrphans: true });
+
+            // A projection the engine REFUSED to make wrote nothing, so there is
+            // no file for git to see and no self-ignoring `.gitignore` beside
+            // one — the generator stages a file where a folder belongs, and the
+            // engine's answer to that is a blocked conflict (DOR-1882). The
+            // claim is about the paths a sync really put on disk.
+            const blocked = new Set(conflicts.map((action) => action.target));
 
             for (const target of ephemeralTargets(plan)) {
+              if (blocked.has(target)) continue;
               examined += 1;
               const declared = EPHEMERAL_GITIGNORE_PATTERNS.some((pattern) =>
                 gitignorePatternMatches(pattern, target)

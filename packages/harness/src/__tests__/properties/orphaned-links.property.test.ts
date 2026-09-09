@@ -27,7 +27,15 @@
  */
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { existsSync, lstatSync, readdirSync, readlinkSync, renameSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readlinkSync,
+  renameSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { project } from '../../engine.js';
 import { applyPlan, checkPlan } from '../../apply/apply.js';
@@ -74,7 +82,11 @@ function expectNoOrphans(repoRoot: string, plan: ProjectionPlan): number {
   let examined = 0;
   for (const dir of SKILL_DIRS) {
     const dirAbs = join(repoRoot, dir);
-    if (!existsSync(dirAbs)) continue;
+    // Not `existsSync`: the generator may have staged a FILE at a skills root,
+    // and a path that is not a directory holds no links to examine. The engine's
+    // answer to that shape is a blocked projection, which the properties in
+    // `apply-ownership.property.test.ts` are the ones that assert.
+    if (!statSync(dirAbs, { throwIfNoEntry: false })?.isDirectory()) continue;
     for (const entry of readdirSync(dirAbs)) {
       if (!isManagedLink(repoRoot, dir, entry)) continue;
       examined += 1;
