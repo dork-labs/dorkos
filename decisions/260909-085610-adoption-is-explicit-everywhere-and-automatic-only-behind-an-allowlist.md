@@ -1,7 +1,7 @@
 ---
 id: 260909-085610
 title: Adoption is reported everywhere, explicit by one command, and automatic only behind an allowlist where DorkOS owns the directory
-status: proposed
+status: accepted
 created: 2026-09-09
 spec: harness-sync-adopt
 superseded-by: null
@@ -12,11 +12,11 @@ amends: 0303
 
 ## Status
 
-Proposed (extracted from spec: `harness-sync-adopt`, DOR-1853). It stays `proposed` until the
-implementation lands. The Decision below covers slices 1 to 3 of that spec — the report, the explicit
-verb, and `harness.autoAdopt` behind its allowlist — so the pull request that ships **slice 3** is
-the one that flips it to `accepted`. Slice 4 (the route and the page button) is a surface for the
-same decision and changes nothing here.
+Accepted (extracted from spec: `harness-sync-adopt`, DOR-1853). The Decision below covers slices 1
+to 3 of that spec — the report (DOR-1943), the explicit verb (DOR-1944), and `harness.autoAdopt`
+behind its allowlist (DOR-1945) — and all three have shipped, so this is accepted on the pull request
+that landed the last of them. Slice 4 (the route and the page button) is a surface for the same
+decision and changes nothing here.
 
 **This ADR amends [ADR-0303](0303-harness-sync-multi-source-projection.md)** and does not replace it.
 ADR-0303 stays `accepted`: its three source classes, its one engine and one drop list, its

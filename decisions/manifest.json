@@ -5465,7 +5465,7 @@
       "id": "260909-085610",
       "slug": "adoption-is-explicit-everywhere-and-automatic-only-behind-an-allowlist",
       "title": "Adoption is reported everywhere, explicit by one command, and automatic only behind an allowlist where DorkOS owns the directory",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-09-09",
       "extractedFrom": "spec",
       "specSlug": "harness-sync-adopt",
@@ -5483,6 +5483,10 @@
         "apps/server/src/routes/harness.ts",
         "apps/server/src/services/harness/status.ts",
         "apps/server/src/services/harness/project-agent-workspace.ts",
+        "apps/server/src/services/harness/adopt-owned-workspace.ts",
+        "apps/server/src/services/harness/directory-ownership.ts",
+        "apps/server/src/services/rooms/repo/room-worktree-manager.ts",
+        "apps/server/src/services/core/config-manager.ts",
         "apps/client/src/layers/entities/harness/ui/SkillHarnessRow.tsx"
       ]
     },
