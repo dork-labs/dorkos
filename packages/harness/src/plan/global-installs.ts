@@ -81,6 +81,24 @@ function globalInstallSkillsReason(count: number, names: string): string {
 const GLOBAL_INSTALL_NO_SKILLS = `${GLOBAL_INSTALL_LEAD} It has no skills to share.`;
 
 /**
+ * The sentence slice A2 appends when the package holds a skill that runs on a
+ * timer.
+ *
+ * `dorkos harness sync --global` links every global package's skills into
+ * `<dorkHome>/skills`, the one folder the DorkOS scheduler watches for timed
+ * skills — so a schedule inside a package installed for all projects now runs,
+ * even though no agent tool can read the skill here. That is a different fact
+ * from the one the lead states, and it is only true of packages that have such a
+ * skill, so it is appended rather than folded in.
+ *
+ * **Appended, never a rewrite.** The defect this whole block replaces was a
+ * sentence that told the truth about a command that was going to exist and never
+ * did; a form that grows by addition can never be false at the moment it is
+ * printed. Slice A3 appends the next one the same way.
+ */
+const GLOBAL_INSTALL_TIMERS_WORK = 'Its skills that run on a timer now work.';
+
+/**
  * The notice a package installed at BOTH scopes earns (SRC-12).
  *
  * DorkOS resolves nothing here and says so. The two projections land in
@@ -139,9 +157,13 @@ function bothScopesNoticeReason(pkg: string, repoRoot: string): string {
  * Say what a globally installed package holds, and who can see it.
  *
  * Two forms, because a package with nothing portable in it is a different
- * sentence from one whose skills nobody else can reach. Neither names a command:
- * in this slice there is none to name, and naming one that does not exist is the
- * defect this replaces.
+ * sentence from one whose skills nobody else can reach. Neither names a command
+ * a person has to run to be told this, which is the defect the block replaced.
+ *
+ * The first form gains one appended sentence when the package holds a skill that
+ * declares a schedule ({@link GLOBAL_INSTALL_TIMERS_WORK}): those skills now
+ * really do run, because `dorkos harness sync --global` links them where the
+ * scheduler looks.
  *
  * @param plugin - the globally installed package being dropped.
  * @returns the drop reason, continuing the line `formatDropList` already opened
@@ -149,10 +171,17 @@ function bothScopesNoticeReason(pkg: string, repoRoot: string): string {
  */
 export function globalInstallDropReason(plugin: InstalledPlugin): string {
   if (plugin.skills.length === 0) return GLOBAL_INSTALL_NO_SKILLS;
-  return globalInstallSkillsReason(
+  const lead = globalInstallSkillsReason(
     plugin.skills.length,
     namedSkills(plugin.skills.map((skill) => skill.name))
   );
+  // Only when there is a timer to speak about. Appended unconditionally, this
+  // would tell a person with no scheduled skill that their timers work.
+  if (!plugin.skills.some((skill) => skill.hasSchedule)) return lead;
+  // The full stop belongs to the JOIN, not to either sentence: the frozen lead
+  // ends on a comma-separated list with no terminator, and two sentences run
+  // together without one.
+  return `${lead}. ${GLOBAL_INSTALL_TIMERS_WORK}`;
 }
 
 /**

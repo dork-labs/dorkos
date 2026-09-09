@@ -59,12 +59,13 @@ function writeManifest(pluginDir: string, name: string, version: string, layers:
   );
 }
 
-/** Write a `<parent>/<name>/SKILL.md`. */
-function writeSkill(parent: string, name: string): void {
+/** Write a `<parent>/<name>/SKILL.md`, optionally one that runs on a timer. */
+function writeSkill(parent: string, name: string, scheduled = false): void {
   mkdirSync(join(parent, name), { recursive: true });
+  const schedule = scheduled ? "schedule:\n  cron: '0 9 * * *'\n" : '';
   writeFileSync(
     join(parent, name, 'SKILL.md'),
-    `---\nname: ${name}\ndescription: The ${name} skill\n---\n\n# ${name}\n`
+    `---\nname: ${name}\ndescription: The ${name} skill\n${schedule}---\n\n# ${name}\n`
   );
 }
 
@@ -125,6 +126,13 @@ beforeAll(() => {
   for (let i = 1; i <= 12; i += 1) {
     writeSkill(join(big, 'skills'), `skill-${String(i).padStart(2, '0')}`);
   }
+
+  // `timerpack`: one skill that runs on a timer, beside one that does not — the
+  // shape slice A2's appended sentence is about.
+  const timer = join(dorkHome, 'plugins', 'timerpack');
+  writeManifest(timer, 'timerpack', '1.0.0', ['skills']);
+  writeSkill(join(timer, 'skills'), 'daily-sweep', true);
+  writeSkill(join(timer, 'skills'), 'helper');
 
   // `rottedhooks`: a global package whose hooks file nobody can read.
   const rotted = join(dorkHome, 'plugins', 'rottedhooks');
@@ -211,6 +219,31 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
     expect(reason).not.toContain('skill-11');
     // Exactly ten named, so the cap is the rule and not an accident of this list.
     expect(reason.match(/skill-\d\d/g)).toHaveLength(10);
+  });
+
+  it('SK-03: a package whose skill runs on a timer is told its timers now work', () => {
+    // Seeded defect: append the sentence unconditionally. Every other package
+    // here then claims its timers work, including the ones with no schedule and
+    // the one with no skills at all.
+    const plan = planFor(repoWith());
+
+    const [drop] = dropsFor(plan, 'timerpack');
+    expect(drop?.reason).toBe(
+      'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. ' +
+        'Its 2 skills are not shared with this project: daily-sweep, helper. ' +
+        'Its skills that run on a timer now work.'
+    );
+  });
+
+  it('SK-03: a package with no scheduled skill never claims its timers work', () => {
+    const plan = planFor(repoWith());
+
+    for (const name of ['globex', 'soloskill', 'bigpack', 'barepkg']) {
+      expect({ name, reason: dropsFor(plan, name)[0]?.reason ?? '' }).toEqual({
+        name,
+        reason: expect.not.stringContaining('timer') as string,
+      });
+    }
   });
 
   it('SRC-04: a global package with no skills gets the second form', () => {
