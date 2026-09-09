@@ -181,6 +181,10 @@
       "types": "./src/workspace.ts",
       "default": "./dist/workspace.js"
     },
+    "./harness-ids": {
+      "types": "./src/harness-ids.ts",
+      "default": "./dist/harness-ids.js"
+    },
     "./additional-context": {
       "types": "./src/additional-context.ts",
       "default": "./dist/additional-context.js"

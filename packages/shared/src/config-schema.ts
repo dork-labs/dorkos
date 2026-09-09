@@ -19,7 +19,15 @@
  */
 import { z } from 'zod';
 import { EFFORT_LEVELS } from './constants.js';
-import { HarnessIdSchema } from './harness-schemas.js';
+// `HARNESS_IDS`, never `HarnessIdSchema`. This module is one of the five
+// `@dorkos/shared/*` subpaths `apps/server/vitest.config.ts` aliases to SRC for
+// every vitest project, so a test process holds both the src and the dist copy
+// of it — safe only while what it imports is schemas, constants and pure
+// functions with no compared identity. A Zod schema imported here would drag a
+// SECOND `harness-schemas` into the src copy, built on the zod instance vite
+// inlines, and the `.openapi()` prototype patch would land on one instance while
+// the registry asked the other. See `harness-ids.ts` for the measurement.
+import { HARNESS_IDS } from './harness-ids.js';
 import { BUILTIN_MEMORY_PROVIDER_ID } from './memory-provider.js';
 import { ROOM_REPO_CAP_DEFAULTS } from './room-repo.js';
 import { RuntimeEnvironmentSchema } from './runtime-environment-schema.js';
@@ -2406,7 +2414,7 @@ export const UserConfigSchema = z.object({
            * There is no separate on/off flag: an empty list IS off, so the two
            * can never disagree.
            */
-          harnesses: z.array(HarnessIdSchema).default(() => []),
+          harnesses: z.array(z.enum(HARNESS_IDS)).default(() => []),
           /**
            * When the question was answered, ISO-8601. `null` means it has never
            * been asked, which is a different state from asked-and-declined:
