@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server,shared,db): an agent hears the answer it stopped waiting for (DOR-1931)'
+  - "fix(server,shared): close the review's holes in verdict delivery (DOR-1931)"
 ---
 
 ### Fixed
