@@ -14,6 +14,8 @@ covers:
   # And the correction to that correction, which is what makes the first two
   # bullets true in a real agent folder — all before anybody could have run one.
   - 'fix(server,shared): the owned-workspace report asks what DorkOS can run (DOR-1945)'
+  # Same fold: the route takes this slice's resolver at landing (slice 4 shipped with the literal).
+  - "feat(server): the adopt route resolves the folder's ownership from its shape (DOR-1945)"
 ---
 
 ### Added

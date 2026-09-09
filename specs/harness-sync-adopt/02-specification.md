@@ -1625,13 +1625,13 @@ None. Every question this stage raised is resolved above with its reason.
    and unread, the shape DOR-1858 retired four manifest keys for. Either surface it beside the fixed
    sentence or make it optional; both are manifest-compatibility decisions and neither belongs in
    this work.
-9. **Creating an agent does not run the adopt read, and the boot pass is the first thing that does.**
-   `POST /api/agents` projects the workspace it just built; the two `harness.autoAdopt` call sites are
-   the boot backfill and the room-worktree pairing. So a skill an agent writes into `.claude/skills`
-   during its first session is first named at the NEXT server start. Recorded rather than fixed in
-   slice 3: the creation path carries its own rollback ledger and its own harness set, and giving it a
-   fourth job needs its own argument.
-10. **The adopt read walks the source tree a second time.** `projectAgentWorkspace` runs `project()`,
+10. **Creating an agent does not run the adopt read, and the boot pass is the first thing that does.**
+    `POST /api/agents` projects the workspace it just built; the two `harness.autoAdopt` call sites are
+    the boot backfill and the room-worktree pairing. So a skill an agent writes into `.claude/skills`
+    during its first session is first named at the NEXT server start. Recorded rather than fixed in
+    slice 3: the creation path carries its own rollback ledger and its own harness set, and giving it a
+    fourth job needs its own argument.
+11. **The adopt read walks the source tree a second time.** `projectAgentWorkspace` runs `project()`,
     which builds an inventory and keeps it — neither the plan it returns nor the status that comes
     back out carries one — so `adoptInOwnedWorkspace` walks again. Threading it through means widening
     `project()`'s return for three callers, two of which never adopt. One walk per owned workspace per
