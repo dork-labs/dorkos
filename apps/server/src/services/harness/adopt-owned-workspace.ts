@@ -52,12 +52,12 @@ import {
   readAdoptCandidates,
   type AdoptCandidate,
   type DirectoryOwnership,
-  type HarnessId,
   type SkillRoot,
 } from '@dorkos/harness';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
+import { RUNNABLE_HARNESSES } from '@dorkos/shared/harness-schemas';
 import { logger } from '../../lib/logger.js';
 import { configManager } from '../core/config-manager.js';
 
@@ -65,12 +65,12 @@ import { configManager } from '../core/config-manager.js';
 export interface OwnedWorkspaceAdoptOutcome {
   /**
    * SKILLS that live only in one agent tool's own folder in this workspace AND
-   * that at least one tool this workspace enables cannot see — found, whatever
+   * that at least one harness DorkOS can RUN here cannot see — found, whatever
    * was done about them.
    *
-   * The second half of that is not a detail: a skill every enabled tool already
-   * reads is not a problem anybody can act on, and counting it produced a log
-   * line with no command under it.
+   * "Can run here", never "the manifest enables": a workspace DorkOS scaffolds
+   * enables `claude-code` alone, and an agent in it is runtime-agnostic. See the
+   * module docs.
    */
   adoptable: number;
   /** How many of those this pass actually moved. Zero unless the flag is on. */
@@ -157,14 +157,37 @@ export function autoAdoptFromDisk(dorkHome: string): boolean {
  * agent tool cannot see, and move the allowlisted ones when `harness.autoAdopt`
  * says so.
  *
- * **The "cannot see it" filter is the same rule {@link adoptableSentence}
- * applies to the headline, applied to the count and to the ACTION as well, and
- * keeping the three together is the point.** A skill in `.claude/skills` in a
- * workspace whose manifest enables only Claude Code is read by every tool that
- * workspace runs: there is no headline to print about it (a claim about tools
- * has to be true), no problem to count, and nothing to gain by moving a
- * person's folder unattended. Counting it anyway produced a log line with an
- * empty command list and a summary hint pointing at a sentence nobody printed.
+ * **The "cannot see it" question is asked against every harness DorkOS can RUN
+ * here, not against the manifest** ({@link RUNNABLE_HARNESSES}), and the same
+ * answer drives the count, the sentence and the ACTION — keeping the three
+ * together is the point.
+ *
+ * The manifest is the wrong oracle in exactly these two directories. A workspace
+ * DorkOS scaffolds enables `claude-code` alone (`AGENT_WORKSPACE_HARNESSES`),
+ * because that is the only harness anything has to project files for; ask it who
+ * cannot see a `.claude/skills` skill and it answers "nobody". That is true
+ * about projection and false about the agent: `runtimeRegistry` binds a SESSION,
+ * not an agent, so the same agent's next Codex or OpenCode session runs in that
+ * folder and reads none of `.claude/skills` — which is D3's own argument,
+ * applied in the direction that makes the report true rather than the direction
+ * that silences it. Keying the filter off the manifest instead made every real
+ * agent home a silent no-op: nothing counted, nothing reported, and nothing
+ * moved with the flag on.
+ *
+ * The filter itself removes nothing today, and it is kept anyway: every
+ * harness-owned root is unreadable by at least one runnable harness (measured —
+ * `.claude/skills` by Codex, every other one by two or three of them), so the
+ * question always answers yes. It exists so the count and the sentence are the
+ * SAME set by construction rather than by coincidence, which is what stops a
+ * line being logged with an empty command list under it if the runtime table or
+ * a vendor's read paths ever move. `auto-adopt.test.ts` asserts the property
+ * over the engine's roots rather than assuming it.
+ *
+ * The manifest keeps every other job it had. It decides whether a move leaves
+ * Claude Code's link behind, because that link is a PROJECTION and projection is
+ * what the manifest governs; and `dorkos harness adopt` in a project a PERSON
+ * owns keeps the manifest as its oracle, because there the enabled set is their
+ * own statement of which tools they run.
  *
  * @param workspaceDir - Absolute path to the owned workspace.
  * @param ownership - What DorkOS owns it as, decided by the caller.
@@ -178,12 +201,11 @@ export function adoptInOwnedWorkspace(
     const manifest = loadManifest(workspaceDir);
     const read = readAdoptCandidates(workspaceDir, inventorySourceTree(workspaceDir), manifest);
     // Sorted once, here, so every count, every name and every sentence below is
-    // in the same order — and narrowed to the skills some enabled tool cannot
-    // see, which is the rule the headline already applies (see the docs above).
+    // in the same order — and narrowed to the skills some harness DorkOS can RUN
+    // here cannot see, which is the question the manifest cannot answer in a
+    // folder DorkOS owns (see the docs above).
     const found = read.candidates
-      .filter(
-        (candidate) => harnessesThatCannotSee(candidate.root, read.enabledHarnesses).length > 0
-      )
+      .filter((candidate) => harnessesThatCannotSee(candidate.root, RUNNABLE_HARNESSES).length > 0)
       .sort((a, b) => (a.name < b.name ? -1 : 1));
     if (found.length === 0) return NOTHING;
 
@@ -193,7 +215,7 @@ export function adoptInOwnedWorkspace(
         adoptable: found.length,
         adopted: 0,
         skills,
-        lines: sentencesFor(found, read.enabledHarnesses, workspaceDir),
+        lines: sentencesFor(found, workspaceDir),
         refusals: [],
       };
     }
@@ -218,7 +240,6 @@ export function adoptInOwnedWorkspace(
       // tool's folder rather than what was there when the pass started.
       lines: sentencesFor(
         found.filter((candidate) => !moved.has(candidate.name)),
-        read.enabledHarnesses,
         workspaceDir
       ),
       refusals: result.refusals.map((refusal) => ({
@@ -247,16 +268,14 @@ export function adoptInOwnedWorkspace(
  * SERVER, and the reader is not standing in that directory, so a bare command
  * would mean whatever folder they happen to be in — DOR-1921's measurement.
  *
+ * The tools it names are {@link RUNNABLE_HARNESSES}, the same set the filter
+ * above uses, so the sentence can never name a tool the count did not consider.
+ *
  * @param candidates - the skills still only in one agent tool's folder.
- * @param enabled - the harnesses the workspace's manifest enables, in its order.
  * @param workspaceDir - the absolute workspace root, for the `--project`.
  * @returns the lines, empty when there is nothing honest to say.
  */
-function sentencesFor(
-  candidates: readonly AdoptCandidate[],
-  enabled: readonly HarnessId[],
-  workspaceDir: string
-): string[] {
+function sentencesFor(candidates: readonly AdoptCandidate[], workspaceDir: string): string[] {
   const byRoot = new Map<SkillRoot, string[]>();
   for (const candidate of candidates) {
     byRoot.set(candidate.root, [...(byRoot.get(candidate.root) ?? []), candidate.name]);
@@ -271,7 +290,7 @@ function sentencesFor(
     const headline = adoptableSentence({
       root,
       names: sorted,
-      cannotSee: harnessesThatCannotSee(root, enabled),
+      cannotSee: harnessesThatCannotSee(root, RUNNABLE_HARNESSES),
       projectPath: workspaceDir,
     });
     if (headline === '') continue;

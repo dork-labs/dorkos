@@ -27,12 +27,21 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
+import {
+  HARNESS_NATIVE_SKILL_ROOTS,
+  harnessesThatCannotSee,
+  type SkillRoot,
+} from '@dorkos/harness';
+import { RUNNABLE_HARNESSES } from '@dorkos/shared/harness-schemas';
 
 vi.mock('../../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-import { backfillAgentWorkspaceSkills } from '../project-agent-workspace.js';
+import {
+  AGENT_WORKSPACE_HARNESSES,
+  backfillAgentWorkspaceSkills,
+} from '../project-agent-workspace.js';
 import { adoptInOwnedWorkspace } from '../adopt-owned-workspace.js';
 import { resolveDirectoryOwnership } from '../directory-ownership.js';
 import { initConfigManager, configManager } from '../../core/config-manager.js';
@@ -51,6 +60,8 @@ let dorkHome: string;
  * Claude Code dialect. Two reasons rather than two of one, so a guard that
  * happened to catch only one of them cannot pass this file.
  */
+const CLAUDE_SKILLS_ROOT: SkillRoot = '.claude/skills';
+
 const CANDIDATES: readonly { name: string; frontmatter: string }[] = [
   { name: 'safe', frontmatter: 'name: safe\ndescription: A portable skill\n' },
   {
@@ -68,19 +79,23 @@ function writeSkill(root: string, name: string, frontmatter: string): void {
 
 /**
  * A workspace with the three candidates in Claude Code's own folder, an empty
- * canonical layer so the projection runs, and a manifest enabling Codex beside
- * Claude Code.
+ * canonical layer so the projection runs, and **the manifest DorkOS actually
+ * scaffolds into a workspace it owns**.
  *
- * Codex is enabled deliberately: `adoptableSentence` names the tools that cannot
- * see a skill and prints NOTHING when the list is empty, so a claude-code-only
- * manifest would make the headline assertions vacuous.
+ * `AGENT_WORKSPACE_HARNESSES` rather than a hand-written list, and that is the
+ * whole point of this helper: every case here used to write
+ * `['claude-code', 'codex']`, which no real agent home has. A filter keyed off
+ * the manifest therefore looked live in the suite and was dead on disk.
  */
-function buildWorkspace(dir: string): string {
+function buildWorkspace(
+  dir: string,
+  harnesses: readonly string[] = AGENT_WORKSPACE_HARNESSES
+): string {
   mkdirSync(join(dir, '.agents', 'skills'), { recursive: true });
   mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
   writeFileSync(
     join(dir, '.agents', 'harness.manifest.json'),
-    JSON.stringify({ version: 1, harnesses: ['claude-code', 'codex'] }, null, 2)
+    JSON.stringify({ version: 1, harnesses }, null, 2)
   );
   for (const candidate of CANDIDATES) {
     writeSkill(join(dir, '.claude', 'skills'), candidate.name, candidate.frontmatter);
@@ -416,41 +431,86 @@ describe('SRC-07: the summary counts only folders that still have something to s
   });
 });
 
-describe('SRC-07: nothing is reported where every enabled tool can already see it', () => {
-  it('SRC-07: a claude-code-only workspace prints no line and adds no hint', async () => {
-    // `adoptableSentence` withholds a headline when the tool list is empty — a
-    // claim about tools has to be true — so a workspace where every enabled tool
-    // reads `.claude/skills` had a line with an EMPTY command list and a hint
-    // pointing at it. The counters follow the same rule as the sentence, and
-    // this is the assertion that keeps the two together. Seeded defect: count
-    // every candidate again and both the count and the hint come back.
-    const agentDir = buildAgentHomeWith('solo', ['claude-code'], [...CANDIDATES]);
+describe('SRC-07: the manifest is not the oracle in a folder DorkOS owns', () => {
+  it('SRC-07: the scaffolded claude-code-only workspace still counts, reports and moves', async () => {
+    // THE regression this describe exists for. A workspace DorkOS scaffolds
+    // enables `claude-code` alone, so asking the MANIFEST who cannot see a
+    // `.claude/skills` skill answers "nobody" — true about projection, false
+    // about the agent, since `runtimeRegistry` binds a session and the same
+    // agent's next Codex session reads none of it. Keying the question off the
+    // manifest made every real agent home a silent no-op: nothing counted,
+    // nothing reported, nothing moved. Seeded defect: ask
+    // `read.enabledHarnesses` instead of `RUNNABLE_HARNESSES` and all four
+    // assertions below go to zero.
+    configManager.set('harness', { ...configManager.get('harness'), autoAdopt: true });
+    const agentDir = buildAgentHomeWith('solo', AGENT_WORKSPACE_HARNESSES, [...CANDIDATES]);
+    expect(
+      JSON.parse(readFileSync(join(agentDir, '.agents', 'harness.manifest.json'), 'utf8'))
+    ).toMatchObject({ harnesses: ['claude-code'] });
 
     const summary = await backfillAgentWorkspaceSkills([agentDir], dorkHome);
 
-    expect(summary.adoptableSkills).toBe(0);
-    expect(summary.adoptedSkills).toBe(0);
-    const complete = vi
-      .mocked(logger.info)
-      .mock.calls.find(
-        (call) => call[0] === '[HarnessSync] Agent workspace skill backfill complete'
-      );
-    expect((complete?.[1] as { hint?: string }).hint).toBeUndefined();
-    expect(infoPayloads().filter((payload) => typeof payload.adoptable === 'number')).toEqual([]);
+    expect(summary.adoptableSkills).toBe(3);
+    expect(summary.adoptedSkills).toBe(1);
+    expect(canonicalSkills(agentDir)).toEqual(['safe']);
+    const line = infoPayloads().find((payload) => payload.adoptable === 3);
+    expect(line?.adoptable_lines).toContain(
+      `2 skills live only in .claude/skills and Codex cannot see them — dorkos harness adopt <name> --project ${agentDir} moves one`
+    );
   });
 
-  it('SRC-07: and with the flag ON it still moves nothing there', async () => {
-    // The move buys nothing — every enabled tool already reads the folder it is
-    // in — and moving a person's files unattended for no gain is the thing this
-    // whole design refuses. Same rule as the sentence, applied to the action.
-    configManager.set('harness', { ...configManager.get('harness'), autoAdopt: true });
-    const agentDir = buildAgentHomeWith('solo', ['claude-code'], [CANDIDATES[0]!]);
+  it('SRC-07: with the flag off the same workspace reports every one and moves none', async () => {
+    const agentDir = buildAgentHomeWith('solo', AGENT_WORKSPACE_HARNESSES, [...CANDIDATES]);
 
     const summary = await backfillAgentWorkspaceSkills([agentDir], dorkHome);
 
+    expect(summary.adoptableSkills).toBe(3);
     expect(summary.adoptedSkills).toBe(0);
     expect(canonicalSkills(agentDir)).toEqual([]);
-    expect(claudeSkills(agentDir)).toEqual(['safe']);
+    const line = infoPayloads().find((payload) => payload.adoptable === 3);
+    expect(line?.adoptable_lines).toContain(
+      `3 skills live only in .claude/skills and Codex cannot see them — dorkos harness adopt <name> --project ${agentDir} moves one`
+    );
+  });
+
+  it('SRC-07: the scaffold the pass itself writes is the one this suite is measured against', async () => {
+    // No hand-written manifest anywhere in this case: the workspace arrives with
+    // skills and nothing else, and `projectAgentWorkspace` scaffolds the harness
+    // set DorkOS really uses. Every other agent-home fixture here used to write
+    // `['claude-code', 'codex']`, which no agent home has ever had — which is
+    // exactly how a filter that was dead on disk stayed green in the suite.
+    configManager.set('harness', { ...configManager.get('harness'), autoAdopt: true });
+    const agentDir = join(dorkHome, 'agents', 'scaffolded');
+    mkdirSync(join(agentDir, '.agents', 'skills'), { recursive: true });
+    mkdirSync(join(agentDir, '.claude', 'skills'), { recursive: true });
+    for (const candidate of CANDIDATES) {
+      writeSkill(join(agentDir, '.claude', 'skills'), candidate.name, candidate.frontmatter);
+    }
+    expect(existsSync(join(agentDir, '.agents', 'harness.manifest.json'))).toBe(false);
+
+    const summary = await backfillAgentWorkspaceSkills([agentDir], dorkHome);
+
+    // What DorkOS actually scaffolded, read back rather than assumed.
+    expect(
+      JSON.parse(readFileSync(join(agentDir, '.agents', 'harness.manifest.json'), 'utf8'))
+    ).toMatchObject({ harnesses: [...AGENT_WORKSPACE_HARNESSES] });
+    expect(summary.adoptableSkills).toBe(3);
+    expect(summary.adoptedSkills).toBe(1);
+    expect(canonicalSkills(agentDir)).toEqual(['safe']);
+  });
+
+  it('SRC-07: what it counts and what it names are one set, per root', () => {
+    // The count and the sentence are computed from one filter, so they cannot
+    // disagree about which skills are on offer. Asserted as a property over the
+    // roots the engine knows rather than as a fixture, because which harness
+    // reads which folder is a vendor fact that moves.
+    for (const root of [CLAUDE_SKILLS_ROOT, ...HARNESS_NATIVE_SKILL_ROOTS]) {
+      const cannotSee = harnessesThatCannotSee(root, RUNNABLE_HARNESSES);
+      expect(
+        { root, someRunnableHarnessIsBlind: cannotSee.length > 0 },
+        `${root}: a root every runnable harness reads would be counted and never named`
+      ).toEqual({ root, someRunnableHarnessIsBlind: true });
+    }
   });
 });
 

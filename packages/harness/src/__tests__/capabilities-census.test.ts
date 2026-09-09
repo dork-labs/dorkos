@@ -372,8 +372,8 @@ describe('the harness capabilities census', () => {
     // command brought, `titles` by their cases, `built` and `claiming` by
     // SRC-07, SRC-10 and AP-17, `idsInTitles` by SRC-07, AP-17 and J-06, and
     // `closed` by §14's third gap. DOR-1945 raised two more — `files` by the one
-    // suite `harness.autoAdopt` brought and `titles` by the eighteen cases it
-    // added under these roots (sixteen in that suite, two more in the CLI's
+    // suite `harness.autoAdopt` brought and `titles` by the twenty cases it
+    // added under these roots (eighteen in that suite, two more in the CLI's
     // adopt suite for the room-worktree ownership) — and left the other four
     // alone, because slice 3 adds no capability row and claims no id that slice
     // 2 had not already claimed. All of them are
@@ -384,7 +384,7 @@ describe('the harness capabilities census', () => {
     expect(rows.length).toBeGreaterThanOrEqual(88);
     expect(journeys.length).toBeGreaterThanOrEqual(14);
     expect(files.length).toBeGreaterThanOrEqual(67);
-    expect(titles.length).toBeGreaterThanOrEqual(687);
+    expect(titles.length).toBeGreaterThanOrEqual(689);
     // And every root really contributed, so a moved directory is a red rather
     // than a quietly smaller census.
     for (const root of TEST_ROOTS) {

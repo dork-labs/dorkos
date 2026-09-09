@@ -71,6 +71,33 @@ export const RUNTIME_HARNESSES: Readonly<Record<string, HarnessId | null>> = {
 };
 
 /**
+ * Every harness a runtime DorkOS can run reads its files through, in the table's
+ * own order — `claude-code`, `codex`, `opencode` today.
+ *
+ * **Derived from {@link RUNTIME_HARNESSES}, never listed**, so a runtime added
+ * with a harness beside it joins this set on the same edit and cannot be
+ * forgotten here.
+ *
+ * It answers a question the MANIFEST cannot, in the two directories DorkOS owns.
+ * A workspace DorkOS scaffolds enables `claude-code` alone
+ * (`AGENT_WORKSPACE_HARNESSES`), because that is the only harness anything has
+ * to project files for — every other one reads `.agents/skills` natively. But an
+ * agent is runtime-agnostic: `runtimeRegistry` binds a SESSION, not an agent, so
+ * the same agent's next Codex or OpenCode session runs in that same folder and
+ * reads none of `.claude/skills`. Asking the manifest "who cannot see this
+ * skill?" there answers "nobody", which is true about projection and false about
+ * the agent — so a DorkOS-owned workspace asks this set instead (ADR
+ * 260909-085610; contract §16 D3's own sentence about runtime-agnosticism).
+ *
+ * A project a PERSON owns keeps the manifest as its oracle. There, the enabled
+ * set is the person's own statement of which tools they run, and DorkOS starting
+ * a session in it is their decision rather than its own.
+ */
+export const RUNNABLE_HARNESSES: readonly HarnessId[] = Object.values(RUNTIME_HARNESSES).filter(
+  (harness): harness is HarnessId => harness !== null
+);
+
+/**
  * The harness a runtime reads its files through, or `undefined` when it reads
  * none — either because the runtime has no harness (`test-mode`) or because
  * DorkOS has never heard of it.
