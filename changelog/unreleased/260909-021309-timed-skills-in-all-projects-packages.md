@@ -15,6 +15,7 @@ covers:
   # Folds in here too: it gives the same unreleased removal list the reasons
   # DOR-1906 gave the project one, in the same words.
   - 'fix(harness,cli): the global sweep says why each link goes (DOR-1923)'
+  - 'fix(harness): the global skill-gone reason names the skill (DOR-1923)'
 ---
 
 ### Added
