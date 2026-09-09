@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "260909-232320",
+      "slug": "feedback-attachments",
+      "title": "Feedback Attachments — screenshot capture and point-at-element delivered into Linear",
+      "created": "2026-09-09",
+      "status": "specified",
+      "project": "Feedback Attachments",
+      "linearIssue": "DOR-910"
+    },
+    {
       "id": "260909-090525",
       "slug": "harness-sync-adopt",
       "title": "Harness Sync — adopt: report first, move one skill on purpose",
