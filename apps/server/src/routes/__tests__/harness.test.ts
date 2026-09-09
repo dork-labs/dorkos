@@ -469,6 +469,9 @@ describe('GET /api/harness/status', () => {
     // there — two rows, and the skill is the adoptable one.
     expect(res.body.counts).toEqual({
       skills: 1,
+      // No package installed for all projects on this fixture, so the global
+      // half of the fold contributes nothing.
+      globalSkills: 0,
       drifted: 0,
       conflicts: 0,
       orphans: 0,
