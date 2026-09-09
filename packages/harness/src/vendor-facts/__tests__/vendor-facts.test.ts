@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { HARNESS_IDS, type HarnessId } from '../../manifest/schema.js';
 import {
   HARNESS_VENDOR_FACTS,
@@ -9,6 +11,9 @@ import {
 
 /** The canonical directory the whole skills half of the engine is organised around. */
 const CANONICAL_SKILLS_DIR = '.agents/skills';
+
+/** The repository root, five levels above this file. */
+const REPO_ROOT = resolve(import.meta.dirname, '../../../../..');
 
 describe('vendor-facts table', () => {
   it('has a skills row for every harness the engine targets, and no row for anything else', () => {
@@ -105,6 +110,15 @@ describe('vendor-facts table', () => {
       expect(observed.binary).toMatch(/\d/);
       expect(observed.observedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(observed.report).toMatch(/^meta\/harness-smoke\/.+\.md$/);
+      // The citation has to point at a file that is still there. A report is
+      // regenerated under a new timestamped name every time it is re-run, so a
+      // stale path here is the ordinary outcome of doing the right thing, and
+      // a `verified: 'binary'` row whose evidence has been deleted is worse
+      // than one that never claimed it.
+      expect(
+        existsSync(resolve(REPO_ROOT, observed.report)),
+        `${harness}'s observed.report points at a file that does not exist: ${observed.report}`
+      ).toBe(true);
       expect(observed.cells.length).toBeGreaterThan(0);
       // Every named cell has to BE a cell, or the claim points at nothing.
       for (const cell of observed.cells) expect(facts).toHaveProperty(cell);

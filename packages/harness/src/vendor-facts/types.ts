@@ -75,12 +75,12 @@ export interface FactSource {
  *
  * **It is a row-level field and the observations are per CELL, which is why
  * {@link FactObservation} exists.** The H tier answers cells, not rows: DOR-1856
- * watched a real `codex` resolve skills and settled five of its skills cells,
- * and left `nameRegex`, `nameRequired`, `onInvalidName` and `liveReload`
- * exactly as unverified as they were. Flipping the whole row to `'binary'` on
- * that evidence would promote four cells nobody looked at — so a row goes
- * `'binary'` only when a run touched it at all, and `observed` says which cells,
- * against which binary, in which report.
+ * watched a real `codex` resolve skills and settled FIVE of that row's ten
+ * behaviour cells, leaving `walk`, `nameRegex`, `nameRequired`, `onInvalidName`
+ * and `liveReload` exactly as unverified as they were. Flipping the whole row to
+ * `'binary'` on that evidence would promote five cells nobody looked at — so a
+ * row goes `'binary'` only when a run touched it at all, and `observed` says
+ * which cells, against which binary, in which report.
  */
 export type FactVerification = 'docs' | 'binary';
 

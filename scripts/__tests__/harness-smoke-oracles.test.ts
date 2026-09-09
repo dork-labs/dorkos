@@ -30,7 +30,11 @@ import {
   overallStatus,
   sentinelVerdict,
 } from '../harness-smoke/oracles.js';
-import { INSTRUCTIONS_SENTINEL, stageSmokeFixture } from '../harness-smoke/fixture.js';
+import {
+  INSTRUCTIONS_SENTINEL,
+  probeSkillBody,
+  stageSmokeFixture,
+} from '../harness-smoke/fixture.js';
 
 const CLAUDE = SMOKE_HARNESSES.claude;
 const CODEX = SMOKE_HARNESSES.codex;
@@ -130,6 +134,24 @@ describe('the listing oracle', () => {
     const sk09 = verdicts.find((v) => v.capabilities.includes('SK-09'));
     expect(sk09?.status).toBe('unknown');
     expect(sk09?.detail).toMatch(/NOT ANSWERABLE/);
+  });
+
+  it('never cites SK-08 from a listing, because a listing cannot see the fields it is about', () => {
+    // SK-08 is about Claude Code's seven frontmatter EXTENSION fields surviving
+    // the trip to another harness. A listing prints a name and a description; it
+    // has no view of the other fields at all, and the fixture's `SKILL.md` files
+    // do not carry them — so a listing verdict stamped SK-08 was a zero-subject
+    // claim twice over. The contract's SK-08 cell says this runner cannot decide
+    // the row, and this is the code agreeing with it.
+    for (const harness of Object.values(SMOKE_HARNESSES)) {
+      const cited = expectedListing(harness).flatMap((entry) => entry.capabilities);
+      expect(cited, `${harness.id}'s listing must not claim SK-08`).not.toContain('SK-08');
+    }
+    // The zero-subject half, made checkable: the staged skill really does carry
+    // nothing SK-08 is about.
+    const frontmatter = probeSkillBody('/tmp/n').split('---')[1] ?? '';
+    const keys = [...frontmatter.matchAll(/^(\w+):/gm)].map((match) => match[1]);
+    expect(keys).toEqual(['name', 'description']);
   });
 
   it('asks Codex for the SAME name twice, from two different files — SK-06', () => {
@@ -247,15 +269,49 @@ describe('what the skill-activation oracle is allowed to claim', () => {
     }
   });
 
+  it('never names a route the deny list actually blocks as still open', () => {
+    // THE DRIFT THIS CLOSES. `remaining` started as the list of routes the deny
+    // list did NOT name, the deny list then grew to cover five of them, and the
+    // caveat went on claiming they were open — a caveat that reads as bigger
+    // than it is, which is its own kind of dishonesty. Every entry must be a
+    // shape a `Bash(<name>:*)` rule structurally cannot catch.
+    const args = CLAUDE.turnProbe({
+      repoRoot: '/repo',
+      binaryPath: '/usr/local/bin/claude',
+      prompt: 'hi',
+      noncesDir: '/sandbox/nonces',
+      model: 'm',
+      maxUsd: 0.25,
+    }).args;
+    const denied = args
+      .map((arg) => /^Bash\(([^:]+):\*\)$/.exec(arg)?.[1])
+      .filter((name): name is string => name !== undefined);
+    // The rule is only meaningful if the deny list is real.
+    expect(denied.length).toBeGreaterThan(8);
+    const denial = CLAUDE.deniesFileReads;
+    expect(denial.kind).toBe('partial');
+    if (denial.kind !== 'partial') return;
+    for (const route of denial.remaining) {
+      // The COMMAND is the first word; `env python3 …` is open because the
+      // command is `env`, while a bare `python3 …` would not be.
+      const command = /[`\s]*([\w./-]+)/.exec(route)?.[1] ?? '';
+      expect(denied, `\`${route}\` claims to be open, but its command is denied`).not.toContain(
+        command
+      );
+    }
+  });
+
   it('calls Claude Code’s denial PARTIAL and names what is still open', () => {
     // A deny list cannot enumerate every way a shell reads a file, and a report
     // that said "denied" would read as proof.
     const verdict = activationVerdicts(CLAUDE, skill, skill, skill).at(-1);
     expect(verdict?.detail).toMatch(/PARTIALLY denied/);
-    expect(verdict?.detail).toContain('python3');
+    expect(verdict?.detail).toMatch(/redirection/);
+    // At least one open route, and each one named: an empty `remaining` would
+    // let "PARTIALLY denied" read as "denied".
     expect(
       CLAUDE.deniesFileReads.kind === 'partial' && CLAUDE.deniesFileReads.remaining.length
-    ).toBeGreaterThan(3);
+    ).toBeGreaterThan(0);
   });
 
   it('says the precedence question is unverified rather than assuming an answer', () => {

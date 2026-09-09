@@ -130,8 +130,14 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
       observed: {
         binary: 'codex-cli 0.145.0',
         observedAt: '2026-09-09',
-        report: 'meta/harness-smoke/20260909-071805.598-codex.md',
-        cells: ['readPaths', 'walk', 'identity', 'nameMustMatchDir', 'dedupe', 'symlinks'],
+        report: 'meta/harness-smoke/20260909-073603.110-codex.md',
+        // FIVE cells, and `walk` is deliberately not among them. The probe ran
+        // with its cwd AT the repository root, where an `ascend-to-repo-root`
+        // walk and a `fixed` one look exactly alike — the reading that says
+        // "Codex ascends" is still the vendor page's, not this run's. Settling
+        // it needs a probe from a SUBDIRECTORY, which is a fixture the runner
+        // does not stage yet.
+        cells: ['readPaths', 'identity', 'nameMustMatchDir', 'dedupe', 'symlinks'],
         summary:
           'A `codex debug prompt-input` run over a staged, projected fixture listed each skill ' +
           'under its FRONTMATTER name with the absolute SKILL.md path beside it: `pkg__x` ' +
@@ -142,7 +148,7 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
           'whose CODEX_HOME was an empty temp directory, so the user-scope read path is real.',
       },
       notes: [
-        'Four cells on this row are still `docs` and nothing has looked at them: `nameRegex`, ' +
+        'Five cells on this row are still `docs` and nothing has looked at them: `walk`, `nameRegex`, ' +
           '`nameRequired`, `onInvalidName` and `liveReload`. `verified: binary` is a claim about ' +
           'the row having been observed at all — `observed.cells` is the claim about WHICH cells.',
         'Codex documents no charset rule and no directory-match rule for a skill name, which is why the engine\'s `<pkg>__<name>` projection into `.agents/skills` is expected to load here and nowhere else with confidence: the contract\'s SK-09 calls Codex "the one harness DorkOS source-verified" and names OpenCode, Cursor and Copilot as the ones whose stated name rules `pkg__name` violates.',

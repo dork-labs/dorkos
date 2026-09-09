@@ -154,7 +154,13 @@ export function expectedListing(harness: SmokeHarness): ExpectedEntry[] {
       {
         name: AUTHORED_SKILL,
         fromPath: `.agents/skills/${AUTHORED_SKILL}/SKILL.md`,
-        capabilities: ['SK-01', 'SK-08'],
+        // SK-01 only. It used to claim SK-08 as well, which was a zero-subject
+        // stamp twice over: SK-08 is about Claude Code's seven frontmatter
+        // EXTENSION fields surviving the trip, the fixture's `SKILL.md` files
+        // carry none of them (just `name` and `description`), and a listing
+        // cannot see a field it does not print. The contract's SK-08 cell says
+        // this runner cannot decide the row; this is the code agreeing with it.
+        capabilities: ['SK-01'],
         because: 'the authored skill is native to Codex where it sits',
       },
       {
@@ -596,9 +602,10 @@ export function sentinelVerdict(
       question: `Did ${harness.label}'s answer reproduce the instructions sentinel?`,
       status: 'unknown',
       detail:
-        'NOT RUN. There was no answer to look in. A free Claude Code run starts a session and ' +
-        'prints its listing, and then never reaches a model — so the corroborating half has ' +
-        'nothing to corroborate with.',
+        `NOT RUN. There was no answer to look in: this run never reached a model. A free ` +
+        `${harness.label} run gets as far as the harness's own bookkeeping — a listing, and on ` +
+        `Claude Code a started session and its hooks — and stops there, so the corroborating half ` +
+        `has nothing to corroborate with.`,
     };
   }
   const present = text.includes(sentinel);

@@ -380,14 +380,18 @@ const CLAUDE: SmokeHarness = {
   deniesFileReads: {
     kind: 'partial',
     flags: '--tools Bash,Skill --disallowedTools Bash(cat:*) …',
+    // What the deny list ACTUALLY leaves open, not what it used to. Five of the
+    // routes listed here before are now denied by name, and leaving them in made
+    // the caveat read as bigger than it is — which is its own kind of dishonesty.
+    // Each entry below is a shape a `Bash(<name>:*)` rule structurally cannot
+    // catch, plus the open-ended one.
     remaining: [
-      'python3 -c / python -c',
-      'node -e',
-      'perl -pe / ruby -e',
-      'od / xxd / strings / base64',
-      'cp / dd (copy it somewhere, then run it)',
-      'while read … done < SKILL.md',
-      'any interpreter or shell builtin the deny list does not name',
+      'shell redirection, which names no command for a rule to match — ' +
+        '`while read line; do …; done < SKILL.md`, `printf %s "$(<SKILL.md)"`',
+      'a wrapper or an absolute path, where the denied name is an ARGUMENT rather than the ' +
+        'command — `env python3 …`, `/usr/bin/python3 …`, `sh -c "cat SKILL.md"`',
+      'any reader the list does not name: `xargs`, `tr`, `nl`, `rev`, `cut`, `mapfile`, and ' +
+        'whichever one somebody thinks of next',
     ],
     note:
       'A best effort, not a proof. `--tools Bash,Skill` removes Read, Grep and Glob from the ' +
@@ -697,8 +701,8 @@ const OPENCODE: SmokeHarness = {
   free: {
     kind: 'none',
     note:
-      'no free probe is known, for the same reason the listing cell is unknown: the binary was ' +
-      'not installed on the machine that built this runner',
+      'nobody has found one, for the same reason the listing cell is unknown: the binary was not ' +
+      'installed on the machine that built this runner',
   },
   model: {
     flag: '--model',

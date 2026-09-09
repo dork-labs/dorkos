@@ -128,7 +128,9 @@ export function parseArgs(
   if (harness === undefined || harness.startsWith('-')) {
     return {
       ok: false,
-      error: `Usage: run.sh <${SMOKE_HARNESS_IDS.join('|')}> [--max-usd N] [--report DIR] [--binary PATH]`,
+      error:
+        `Usage: run.sh <${SMOKE_HARNESS_IDS.join('|')}> ` +
+        `[--free] [--max-usd N] [--report DIR] [--binary PATH] [--model ID]`,
     };
   }
   if (!smokeHarnessFor(harness)) {

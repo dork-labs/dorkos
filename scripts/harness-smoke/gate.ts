@@ -187,7 +187,7 @@ export function resolveFreeGate(
       ok: false,
       reason: 'no-free-probe',
       message:
-        `There is no free probe for ${harness.label}. ${harness.free.note}\n` +
+        `There is no free probe for ${harness.label} — ${harness.free.note}.\n` +
         `Run it with an instrument instead: ${HARNESS_SMOKE_OPT_IN_VAR}=1 ${harness.keyVar}=<key>.`,
     };
   }
