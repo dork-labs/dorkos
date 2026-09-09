@@ -66,6 +66,7 @@ import {
 } from './source-artifacts.js';
 import { commandDropReason } from './command-formats.js';
 import { inventorySourceTree, type SourceInventory } from '../inventory/index.js';
+import { blockedWritePath, type WritePathCause } from '../apply/write-path-occupants.js';
 
 /** The authored slash-command directory Claude Code reads (namespaced by subdirectory). */
 const CLAUDE_COMMANDS_SOURCE = CLAUDE_COMMANDS_DIR;
@@ -743,13 +744,91 @@ export function buildPlan(input: {
     })
   );
 
+  // A `native` claim that rides a link this tree will not take is a claim about
+  // a file that is never going to be there — the last shape of the false native
+  // DOR-1847 closed everywhere else (DOR-1942).
+  const settled = degradeUnreachableNatives(repoRoot, all);
+
   return {
-    actions: all.filter((a) => a.kind !== 'drop'),
-    drops: all.filter((a) => a.kind === 'drop'),
+    actions: settled.filter((a) => a.kind !== 'drop'),
+    drops: settled.filter((a) => a.kind === 'drop'),
     warnings,
     notEnabled: notEnabledHarnesses(manifest.harnesses, detectedHarnesses, dorkosHarness),
     ...(unreadableSkillRoots.length > 0 ? { unreadableSkillRoots } : {}),
   };
+}
+
+/**
+ * Turn every `native` claim whose enabling link cannot be written into a drop
+ * that names the folder in the way (DOR-1942).
+ *
+ * An installed package's skill is `native` for OpenCode — and for Cursor, Gemini
+ * CLI and Copilot — because ANOTHER action writes the
+ * `.agents/skills/<pkg>__<name>` link all four of them read
+ * ({@link planCanonicalSkillLinks}, or Codex's own target). The claim is true
+ * exactly as long as that link is. After DOR-1882 the write can be a blocked
+ * conflict — a plain file where `.agents/skills` belongs, or a folder DorkOS may
+ * not write in — and the plan still said "OpenCode reads it" about a link
+ * nothing ever wrote. Measured by property P9b: the coverage walk discovers
+ * nothing at all for such a tree.
+ *
+ * **The same predicate `applyPlan` and `checkPlan` act on**, called here so the
+ * degrade is in the PLAN: the terminal, the Skills page cell and `--check` all
+ * read the plan, and computing it in three places is three chances for them to
+ * disagree about one link.
+ *
+ * Scoped to the claims that really ride a link. An AUTHORED skill's `native` is
+ * about a file the person wrote and DorkOS never touches, so nothing about a
+ * write path can make it false.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param all - every action and drop the plan has built, before the split.
+ * @returns the same list, with each unreachable `native` replaced by a drop.
+ */
+function degradeUnreachableNatives(
+  repoRoot: string,
+  all: readonly ProjectionAction[]
+): ProjectionAction[] {
+  const rides = all.some((a) => a.kind === 'native' && isCanonicalLinkNative(a));
+  if (!rides) return [...all];
+
+  // Shared with nothing else on purpose: this pass and the apply's own pre-pass
+  // ask the same function, and each memoises within its own run. A repository
+  // with forty installed skills asks about `.agents/skills` once here.
+  const probed = new Map<string, WritePathCause | undefined>();
+  return all.map((action) => {
+    if (action.kind !== 'native' || !isCanonicalLinkNative(action)) return action;
+    const link = `${AGENTS_SKILLS_DIR}/${action.name}`;
+    const blocked = blockedWritePath(repoRoot, link, probed);
+    if (blocked === undefined) return action;
+    return { ...action, kind: 'drop', reason: unreachableNativeReason(action.harness, blocked) };
+  });
+}
+
+/**
+ * The sentence a degraded `native` carries.
+ *
+ * Exported so `__tests__/reason-vocabulary.test.ts` can enumerate it: it is drawn
+ * verbatim in the drop list, in the Skills page cell and in `--check`, and
+ * whether a tree produces it depends on what somebody left at `.agents/skills`.
+ *
+ * The blocked half is DOR-1882's own words, unchanged, so a person reads one
+ * description of the folder rather than two.
+ *
+ * @param harness - the harness that would have read the link.
+ * @param blockedReason - `blockedWritePath`'s sentence about the folder in the way.
+ * @returns the drop's reason.
+ */
+export function unreachableNativeReason(harness: HarnessId, blockedReason: string): string {
+  return (
+    `${HARNESS_LABELS[harness]} reads ${AGENTS_SKILLS_DIR}, and the link this skill needs ` +
+    `there is ${blockedReason}.`
+  );
+}
+
+/** Whether a `native` action is one an `.agents/skills` link is what makes true. */
+function isCanonicalLinkNative(action: ProjectionAction): boolean {
+  return action.artifact === 'skill' && action.provenance === 'installed';
 }
 
 /**

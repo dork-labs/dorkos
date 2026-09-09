@@ -96,6 +96,8 @@ import {
   type BannedTerm,
 } from '../../../../scripts/check-vocab-gate.js';
 import { loadManifest, project } from '../engine.js';
+import { unreachableNativeReason } from '../plan/projector.js';
+import { WRITE_PATH_REASONS, writePathReason } from '../apply/write-path-occupants.js';
 import { checkPlan } from '../apply/apply.js';
 import { manifestNotices } from '../manifest/notices.js';
 import { SWEEP_REASONS } from '../apply/sweep-reasons.js';
@@ -374,6 +376,14 @@ function collectReasons(repoRoot: string, dorkHome: string): Reason[] {
   for (const warning of drift.warnings) add('warning', warning);
   add('warning', sweepBlindWarning('.opencode/commands'));
   add('warning', blockedRemovalWarning('.claude/skills/gone', '.claude/skills'));
+  // The write-path table in full, and the drop that quotes it: an installed
+  // skill's `native` degrades to a drop naming the folder that stopped the link
+  // it rides (DOR-1942), and which of the five causes a tree trips is an
+  // accident of what somebody left at `.agents/skills`.
+  for (const cause of Object.keys(WRITE_PATH_REASONS) as (keyof typeof WRITE_PATH_REASONS)[]) {
+    add('blocked', writePathReason('.agents/skills', cause));
+    add('drop', unreachableNativeReason('opencode', writePathReason('.agents/skills', cause)));
+  }
 
   // `plan.notEnabled` is deliberately NOT collected. Its entries carry a
   // `signal` — `.gemini/`, `.github/copilot-instructions.md` — which is a PATH,
