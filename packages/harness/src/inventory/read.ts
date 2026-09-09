@@ -32,8 +32,48 @@ export function relPath(...parts: string[]): string {
   return parts.join('/').split(sep).join('/');
 }
 
-/** The message a failed read carries, from whatever the filesystem threw. */
-function causeOf(err: unknown): string {
+/**
+ * Why a read failed, in words rather than in an errno (DOR-1938).
+ *
+ * Every sentence in this engine is shown to a person — under a chip on the
+ * Skills page, in the `--check` block in a terminal — and what a person got
+ * here was `ENOTDIR: not a directory, scandir '/Users/…/.agents/skills'`: the
+ * error code twice over, and an absolute path belonging to whoever happened to
+ * run the command rather than to the repository. The path is already in the
+ * sentence, repo-relative, where every other finding in this package puts it.
+ *
+ * The three phrases are the three things that really go wrong, and each says
+ * what a person would say about their own tree. Anything else keeps a phrase
+ * rather than a code, because a sentence that trails off into `EMFILE` is the
+ * shape this exists to end.
+ *
+ * The ONE call site that does not use this is the JSON parse below: there the
+ * parser's own message says WHERE the file goes wrong, which is the whole of
+ * the finding, and no phrase can stand in for it.
+ */
+const READ_FAILURE_PHRASES: Record<string, string> = {
+  ENOTDIR: 'it is a file, not a folder',
+  EACCES: 'nobody may read it',
+  EPERM: 'nobody may read it',
+  ENOENT: 'the link points at nothing',
+  ELOOP: 'the link points at nothing',
+};
+
+/**
+ * The plain phrase for whatever the filesystem threw.
+ *
+ * @param err - the error a read failed with.
+ * @returns one clause, naming no path and no errno.
+ */
+function plainCause(err: unknown): string {
+  const code = (err as NodeJS.ErrnoException | undefined)?.code;
+  return (
+    (code === undefined ? undefined : READ_FAILURE_PHRASES[code]) ?? 'DorkOS could not open it'
+  );
+}
+
+/** The parser's own message, for the one finding that IS a message. */
+function parserMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
@@ -92,7 +132,7 @@ export function readDirEntries(absDir: string, relDir: string, kind: ArtifactTyp
       unreadable: {
         kind,
         source: relDir,
-        reason: `${relDir} could not be listed as a directory (${causeOf(err)}), so nothing in it was inventoried`,
+        reason: `${relDir} could not be listed — ${plainCause(err)}, so nothing in it was inventoried`,
       },
     };
   }
@@ -127,7 +167,7 @@ export function readTextFile(absPath: string, relFile: string, kind: ArtifactTyp
       unreadable: {
         kind,
         source: relFile,
-        reason: `${relFile} could not be read (${causeOf(err)}) — a link whose target moved, or a file this process may not open`,
+        reason: `${relFile} could not be read — ${plainCause(err)}, so nothing was inventoried from it`,
       },
     };
   }
@@ -166,7 +206,7 @@ export function readJsonFile(absPath: string, relFile: string, kind: ArtifactTyp
       unreadable: {
         kind,
         source: relFile,
-        reason: `${relFile} is not valid JSON (${causeOf(err)}), so nothing it declares was inventoried`,
+        reason: `${relFile} is not valid JSON (${parserMessage(err)}), so nothing it declares was inventoried`,
       },
     };
   }
