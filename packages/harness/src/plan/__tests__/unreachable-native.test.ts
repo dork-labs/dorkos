@@ -69,7 +69,9 @@ describe('AP-11, SK-05, SK-09 — a native the tree cannot make true', () => {
 
     expect(plan.actions.filter((a) => a.kind === 'native')).toEqual([]);
     expect(
-      plan.drops.filter((d) => d.harness === 'opencode' && d.name === 'acme__a').map((d) => d.reason)
+      plan.drops
+        .filter((d) => d.harness === 'opencode' && d.name === 'acme__a')
+        .map((d) => d.reason)
     ).toEqual([
       'OpenCode reads .agents/skills, and the link this skill needs there is blocked by ' +
         '`.agents/skills`, which is a file — DorkOS needs a folder there to write this. ' +

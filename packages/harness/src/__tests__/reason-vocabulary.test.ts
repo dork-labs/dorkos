@@ -97,6 +97,7 @@ import {
 } from '../../../../scripts/check-vocab-gate.js';
 import { loadManifest, project } from '../engine.js';
 import { unreachableNativeReason } from '../plan/projector.js';
+import { UNREADABLE_GLOBAL_ROOT_REASONS } from '../plan/global-projector.js';
 import { WRITE_PATH_REASONS, writePathReason } from '../apply/write-path-occupants.js';
 import { checkPlan } from '../apply/apply.js';
 import { manifestNotices } from '../manifest/notices.js';
@@ -380,6 +381,13 @@ function collectReasons(repoRoot: string, dorkHome: string): Reason[] {
   // skill's `native` degrades to a drop naming the folder that stopped the link
   // it rides (DOR-1942), and which of the five causes a tree trips is an
   // accident of what somebody left at `.agents/skills`.
+  // Both halves of the global plan's own "could not read" answer (DOR-1937).
+  // Neither is produced by any tree here — both need somebody to have broken
+  // their own dork home — and both are printed verbatim by `dorkos harness
+  // global` and `dorkos harness sync --global`.
+  for (const sentence of Object.values(UNREADABLE_GLOBAL_ROOT_REASONS)) {
+    add('warning', sentence('<dorkHome>/skills'));
+  }
   for (const cause of Object.keys(WRITE_PATH_REASONS) as (keyof typeof WRITE_PATH_REASONS)[]) {
     add('blocked', writePathReason('.agents/skills', cause));
     add('drop', unreachableNativeReason('opencode', writePathReason('.agents/skills', cause)));

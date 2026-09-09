@@ -38,6 +38,7 @@ import { planUnreadableManifestWarnings } from './unreadable-manifests.js';
 import { planUnreadableSkillWarnings } from './unreadable-skills.js';
 import { PLUGIN_ROOT_SKILL_WARNING_REASON } from './installed-projector.js';
 import type { ProjectionAction, ProjectionPlan, ProjectionWarning } from './types.js';
+import { directoryWriteBlock } from '../apply/write-path-occupants.js';
 
 /**
  * Where a global plan may write. An absent root is a root the plan does not
@@ -571,14 +572,14 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
  * @returns the plan for what is installed for every project right now.
  */
 export function projectGlobal(input: Omit<GlobalPlanInput, 'packages'>): GlobalProjectionPlan {
-  const pluginsRoot = globalPluginsDir(input.roots.dorkHome);
   let scan: {
     plugins: readonly InstalledPlugin[];
     unreadableManifests: readonly UnreadablePackageManifest[];
   };
   try {
     scan = scanInstalledSources({ dorkHome: input.roots.dorkHome });
-  } catch (err) {
+  } catch {
+    const blamed = rootInTheWay(input.roots.dorkHome);
     return {
       actions: [],
       drops: [],
@@ -587,15 +588,12 @@ export function projectGlobal(input: Omit<GlobalPlanInput, 'packages'>): GlobalP
           artifact: 'plugin',
           harness: GLOBAL_LINK_ATTRIBUTION,
           harnessAgnostic: true,
-          name: pluginsRoot,
-          reason:
-            `DorkOS could not read the folder your all-projects packages live in: ` +
-            `${pluginsRoot} (${err instanceof Error ? err.message : String(err)}). ` +
-            `Nothing was linked, and nothing was removed.`,
+          name: blamed.root,
+          reason: `${blamed.sentence} Nothing was linked, and nothing was removed.`,
         },
       ],
       notEnabled: [],
-      unreadableRoot: pluginsRoot,
+      unreadableRoot: blamed.root,
       enumeratedPackages: [],
     };
   }
@@ -604,4 +602,66 @@ export function projectGlobal(input: Omit<GlobalPlanInput, 'packages'>): GlobalP
     packages: scan.plugins,
     unreadableManifests: scan.unreadableManifests,
   });
+}
+
+/**
+ * Which of the two folders the scan reads stopped it, and what to say about it.
+ *
+ * There is ONE catch around `scanInstalledSources` and there are TWO folders
+ * inside it: `<dorkHome>/plugins`, which it enumerates, and `<dorkHome>/skills`,
+ * which it `lstat`s once per skill to answer whether a global sync has already
+ * linked that one. A FILE at the second throws ENOTDIR out of the same call, and
+ * the message named the first — sending a person to look at a folder that was
+ * perfectly readable while quoting an errno about a different one in
+ * parentheses (DOR-1937, measured 2026-09-09).
+ *
+ * Asked in the order the scan reads them, so a machine where both are broken is
+ * described by the one that stopped it first. Probed through
+ * `directoryWriteBlock`, the same helper the write paths use, which answers
+ * `undefined` for a folder that is simply absent — the ordinary state of
+ * `<dorkHome>/skills` before a global sync has ever run.
+ *
+ * The errno is gone from both sentences. It named an absolute path a second
+ * time and said nothing the sentence did not (DOR-1938's rule, applied at the
+ * one place in this package that reaches a home directory).
+ *
+ * @param dorkHome - the DorkOS data directory, absolute.
+ * @returns the folder to name, and the sentence naming it.
+ */
+/**
+ * The two sentences a global plan writes when it could not read a folder,
+ * written down once.
+ *
+ * A table rather than two inline templates for the reason `sweep-reasons.ts`
+ * gives about its own: the terminal prints them verbatim, and
+ * `__tests__/reason-vocabulary.test.ts` enumerates the table whole — no ordinary
+ * tree produces either, since both need somebody to have broken their own dork
+ * home.
+ */
+export const UNREADABLE_GLOBAL_ROOT_REASONS = {
+  packages: (root: string): string =>
+    `DorkOS could not read the folder your all-projects packages live in: ${root}.`,
+  skills: (root: string): string =>
+    `DorkOS could not read the folder your all-projects skills are linked into: ${root}.`,
+} as const;
+
+function rootInTheWay(dorkHome: string): { root: string; sentence: string } {
+  const pluginsRoot = globalPluginsDir(dorkHome);
+  const skillsRoot = globalSkillsDir(dorkHome);
+  if (
+    directoryWriteBlock(pluginsRoot) === undefined &&
+    directoryWriteBlock(skillsRoot) !== undefined
+  ) {
+    return {
+      root: skillsRoot,
+      sentence: UNREADABLE_GLOBAL_ROOT_REASONS.skills(skillsRoot),
+    };
+  }
+  // The packages root, and the fallback for a failure neither probe explains —
+  // enumerating that folder is what this scan is FOR, so naming it is the
+  // honest answer when nothing more specific is known.
+  return {
+    root: pluginsRoot,
+    sentence: UNREADABLE_GLOBAL_ROOT_REASONS.packages(pluginsRoot),
+  };
 }
