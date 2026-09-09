@@ -5404,6 +5404,31 @@
         "packages/shared/src/config-schema.ts",
         "packages/cli/src/harness-sync-command.ts"
       ]
+    },
+    {
+      "id": "260909-085610",
+      "slug": "adoption-is-explicit-everywhere-and-automatic-only-behind-an-allowlist",
+      "title": "Adoption is reported everywhere, explicit by one command, and automatic only behind an allowlist where DorkOS owns the directory",
+      "status": "proposed",
+      "created": "2026-09-09",
+      "extractedFrom": "spec",
+      "specSlug": "harness-sync-adopt",
+      "amends": ["0303"],
+      "supersedes": null,
+      "affects": [
+        "packages/harness/src/adopt/",
+        "packages/harness/src/report/adoptable.ts",
+        "packages/harness/src/plan/types.ts",
+        "packages/harness/src/sources/resolve-roots.ts",
+        "packages/cli/src/harness-adopt-command.ts",
+        "packages/cli/src/harness-sync-command.ts",
+        "packages/shared/src/config-schema.ts",
+        "packages/shared/src/harness-schemas.ts",
+        "apps/server/src/routes/harness.ts",
+        "apps/server/src/services/harness/status.ts",
+        "apps/server/src/services/harness/project-agent-workspace.ts",
+        "apps/client/src/layers/entities/harness/ui/SkillHarnessRow.tsx"
+      ]
     }
   ]
 }
