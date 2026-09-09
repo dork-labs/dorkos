@@ -101,6 +101,7 @@ import { manifestNotices } from '../manifest/notices.js';
 import { SWEEP_REASONS } from '../apply/sweep-reasons.js';
 import { GENERATE_DIRECTORY_REASON, GENERATE_SYMLINK_REASON } from '../apply/generate-occupants.js';
 import { HAND_WRITTEN_HOOKS_REASON } from '../apply/generated-ownership.js';
+import { sweepBlindWarning } from '../apply/sweep-warnings.js';
 import {
   SYMLINKS_OFF_REASON,
   SYMLINK_DIRECTORY_REASON,
@@ -364,6 +365,14 @@ function collectReasons(repoRoot: string, dorkHome: string): Reason[] {
   // marketplace's own public pages.
   for (const label of Object.values(CATEGORY_LABELS)) add('marketplace-category', label);
   for (const text of Object.values(CATEGORY_DESCRIPTIONS)) add('marketplace-category', text);
+  // The run's own warnings, from both halves. What this tree PRODUCES is
+  // whatever it happens to be blind inside — nothing, most runs — so the
+  // sentence is enumerated as well, for the reason the two tables above are: it
+  // is drawn verbatim in the terminal's Warnings block and in the app's
+  // project-level notices, and which tree trips it is an accident of somebody's
+  // permissions (DOR-1939).
+  for (const warning of drift.warnings) add('warning', warning);
+  add('warning', sweepBlindWarning('.opencode/commands'));
 
   // `plan.notEnabled` is deliberately NOT collected. Its entries carry a
   // `signal` — `.gemini/`, `.github/copilot-instructions.md` — which is a PATH,

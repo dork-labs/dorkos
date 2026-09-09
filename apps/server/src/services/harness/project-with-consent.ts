@@ -361,13 +361,15 @@ export interface ProjectWithConsentResult extends ConsentedPlan {
   leftAlone: string[];
   /**
    * What is true about the RUN rather than about any one path — one sentence,
-   * or none (DOR-1883).
+   * or none.
    *
-   * Today there is exactly one: the links this sync made are Windows junctions
-   * inside a git checkout, so committing them commits the files inside them
-   * instead of the links. Never a fault and never an exit code; a caller that
-   * reports to a person prints it, and `checkPlan` answers the same list, so
-   * `--check` and `--fix` say one thing.
+   * Three producers: the links this sync made are Windows junctions inside a
+   * git checkout, so committing them commits the files inside them instead of
+   * the links (DOR-1883); a folder a sweep would have walked could not be
+   * listed, so nothing was removed from it (DOR-1939); and a path a sweep would
+   * have taken may not be removed, because the folder holding it refuses the
+   * write (DOR-1941). A caller that reports to a person prints them, and
+   * `checkPlan` answers the same list, so `--check` and `--fix` say one thing.
    */
   warnings: string[];
 }

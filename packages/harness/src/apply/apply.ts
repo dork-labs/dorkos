@@ -78,6 +78,7 @@ import {
 } from './generated-targets.js';
 import { blockingGenerateOccupant } from './generate-occupants.js';
 import { findBlockedWritePaths, findUnwritableTargets } from './write-path-occupants.js';
+import { sweepScanWarnings } from './sweep-warnings.js';
 import {
   CLAUDE_COMMANDS_DIR,
   CLAUDE_SKILLS_DIR,
@@ -867,10 +868,12 @@ export function applyPlan(
     swept: removals.map(({ path }) => path),
     removals,
     leftAlone,
-    // Asked LAST, so it answers about the links this run just made rather than
-    // about the tree it found. `checkPlan` asks the same function off the same
-    // plan, which is what keeps the two modes saying one thing.
-    warnings: junctionCommitWarnings(repoRoot, plan),
+    // Two subjects, one list. The junction sentence is asked LAST, so it
+    // answers about the links this run just made rather than about the tree it
+    // found; the sweep sentence is about a folder it could not look inside.
+    // `checkPlan` asks the same two functions off the same plan, which is what
+    // keeps the two modes saying one thing.
+    warnings: [...junctionCommitWarnings(repoRoot, plan), ...sweepScanWarnings(repoRoot, plan)],
   };
 }
 
@@ -1060,10 +1063,11 @@ export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
     orphans: removals.map(({ path }) => path),
     removals,
     leftAlone: findLeftAloneGeneratedHookFiles(repoRoot, plan),
-    // Not drift, and never an exit code: a junction resolves where the plan
-    // says. It is what COMMITTING one would do that a person has to be told,
-    // and told before they commit, which is why `--check` answers it too.
-    warnings: junctionCommitWarnings(repoRoot, plan),
+    // Not drift, and the first of the two is never an exit code either: a
+    // junction resolves where the plan says. It is what COMMITTING one would do
+    // that a person has to be told, and told before they commit, which is why
+    // `--check` answers it too.
+    warnings: [...junctionCommitWarnings(repoRoot, plan), ...sweepScanWarnings(repoRoot, plan)],
     // A skill folder nobody could read is the fourth way this answer is not
     // "everything is as the plan says": the sweeps stood down over it, so the
     // tree may hold links a readable folder would have settled either way, and

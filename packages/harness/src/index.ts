@@ -47,6 +47,7 @@ export {
   junctionCommitWarnings,
   symlinkTypeFor,
 } from './apply/windows-links.js';
+export * from './apply/sweep-warnings.js';
 // The generated-hooks half of apply, kept in its own module: only the orphan
 // sweep is part of the package's surface, the rest is apply's business.
 export { sweepGeneratedOrphans } from './apply/generated-targets.js';

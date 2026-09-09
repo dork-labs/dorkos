@@ -568,6 +568,7 @@ export function applyGlobalPlan(
   swept: string[];
   removals: SweptPath[];
   leftAlone: string[];
+  warnings: string[];
 } {
   const applied: ProjectionAction[] = [];
   const conflicts: ProjectionAction[] = [];
@@ -605,6 +606,10 @@ export function applyGlobalPlan(
     swept: removals.map(({ path }) => path),
     removals,
     leftAlone: [],
+    // A global run has no folder to be blind inside: `findGlobalOrphans` walks
+    // only the roots the plan itself declares, and one it cannot list is
+    // already the `unreadableRoot` that stops the whole sweep.
+    warnings: [],
   };
 }
 
@@ -657,10 +662,13 @@ export function checkGlobalPlan(plan: GlobalProjectionPlan, roots: GlobalPlanRoo
     orphans: removals.map(({ path }) => path),
     removals,
     leftAlone: [],
-    // Always empty, and by nature rather than by omission: the one warning a
-    // run can carry is about committing a Windows junction, and a global plan's
-    // targets are in somebody's home directory, which no git checkout tracks
-    // (`apply/windows-links.ts`).
+    // Always empty, and by nature rather than by omission. Neither producer can
+    // reach a global plan: the junction warning is about committing a link, and
+    // these targets are in somebody's home directory, which no git checkout
+    // tracks (`apply/windows-links.ts`); and there is no folder to be blind
+    // inside, since `findGlobalOrphans` walks only the roots the plan itself
+    // declares and one it cannot list is already the `unreadableRoot` that
+    // stops the whole sweep.
     warnings: [],
     clean: drifted.length === 0 && blocked.length === 0 && removals.length === 0,
   };

@@ -45,6 +45,7 @@
  * @module services/harness/status
  */
 import {
+  JUNCTION_COMMIT_WARNING,
   checkPlan,
   globalInstallDropReason,
   HARNESS_MANIFEST_PATH,
@@ -843,11 +844,13 @@ function isAboutEnabledHarness(
  * the drop lists are built by walking `manifest.harnesses` — and if that ever
  * stops being true this is where the case belongs.
  *
- * The RUN's own warnings land here last, and they are the one population that
- * is about the machine rather than about a file: today, that the links here are
- * Windows junctions and git would commit the files inside them instead of the
- * links (DOR-1883). There is no cell for a computer, and the terminal files the
- * same sentence under its own `this machine:` heading.
+ * The RUN's own warnings land here last, and they are the one population that is
+ * not about a file a tool reads. Two subjects today: the machine — the links
+ * here are Windows junctions and git would commit the files inside them instead
+ * of the links (DOR-1883) — and this repository, where a folder a sweep would
+ * have walked could not be listed (DOR-1939). There is no cell for a computer
+ * and none for a folder nobody looked in, and the terminal files the same
+ * sentences under its own `this machine:` and `this run:` headings.
  */
 function projectLevelEntries(
   plan: ProjectionPlan,
@@ -876,24 +879,34 @@ function projectLevelEntries(
       .filter((w) => !isAboutEnabledHarness(w, enabled))
       .map((w) => entry('warning', w)),
     ...plan.actions.filter(isUnattributedWrite(enabled)).map((a) => entry('write', a)),
-    ...runWarnings.map(machineWarningEntry),
+    ...runWarnings.map(runWarningEntry),
   ];
 }
 
 /**
- * One thing that is true about this machine, as a project-level entry.
+ * One thing that is true about this run, as a project-level entry.
  *
- * The `name` is the shape rather than a path, and deliberately: the sentence is
- * one per RUN and not one per link, so naming any single `.claude/skills/<x>`
- * would say the problem is that file's. `skill` is the artifact because skill
- * links are the only thing the engine projects as a directory link, which is
- * the only shape a junction can be.
+ * The `name` is a label rather than a path, and which label depends on what the
+ * sentence is about. The junction one is decided by IDENTITY — it is a frozen
+ * constant, so comparing against it cannot drift when somebody rewords it — and
+ * it is one sentence per RUN rather than one per link, so naming any single
+ * `.claude/skills/<x>` would say the problem is that file's.
+ *
+ * `skill` is the artifact for both: skill links are the only thing the engine
+ * projects as a directory link, which is the only shape a junction can be, and
+ * every folder the other sentence can be about holds a skill link or a command
+ * wrapper. The page has no icon for a computer or for a folder.
  *
  * @param reason - the engine's own sentence, unchanged.
  * @returns the entry the page draws.
  */
-function machineWarningEntry(reason: string): HarnessProjectEntry {
-  return { kind: 'warning', artifact: 'skill', name: 'Windows junctions', reason };
+function runWarningEntry(reason: string): HarnessProjectEntry {
+  return {
+    kind: 'warning',
+    artifact: 'skill',
+    name: reason === JUNCTION_COMMIT_WARNING ? 'Windows junctions' : 'Could not look',
+    reason,
+  };
 }
 
 /**

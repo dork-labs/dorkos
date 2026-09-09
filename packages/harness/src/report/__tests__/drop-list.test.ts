@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { formatDropList, formatWarnings } from '../drop-list.js';
 import type { ProjectionPlan } from '../../plan/types.js';
+import { JUNCTION_COMMIT_WARNING } from '../../apply/windows-links.js';
+import { sweepBlindWarning } from '../../apply/sweep-warnings.js';
 
 describe('formatDropList', () => {
   it('VC-01, VC-02: groups drops by harness with their reasons', () => {
@@ -218,15 +220,83 @@ describe('formatWarnings', () => {
     });
 
     it('VC-01: names the machine alone when that is all there is', () => {
-      expect(heading(formatWarnings({ ...withPlanWarning, warnings: [] }, ['a sentence']))).toBe(
-        'Warnings (may not commit as a link):'
-      );
+      // The REAL sentence, not a placeholder. A run warning is one of three
+      // families now, and which one a sentence belongs to is what decides the
+      // words in the heading — so a test that handed the block "a sentence"
+      // would be asserting whatever the fallback happens to be (DOR-1939,
+      // DOR-1941 added the other two).
+      expect(
+        heading(formatWarnings({ ...withPlanWarning, warnings: [] }, [JUNCTION_COMMIT_WARNING]))
+      ).toBe('Warnings (may not commit as a link):');
     });
 
     it('VC-01: names both when a run carries both', () => {
-      expect(heading(formatWarnings(withPlanWarning, ['a sentence']))).toBe(
+      expect(heading(formatWarnings(withPlanWarning, [JUNCTION_COMMIT_WARNING]))).toBe(
         'Warnings (may not work in the target harness, could not be read, or may not commit as a link):'
       );
     });
+
+    it('VC-01: names each run family a run really carries, and no other', () => {
+      // The families keep their declared order however the sentences arrive, so
+      // one tree reads the same way twice.
+      expect(
+        heading(
+          formatWarnings({ ...withPlanWarning, warnings: [] }, [
+            sweepBlindWarning('.opencode/commands'),
+            JUNCTION_COMMIT_WARNING,
+          ])
+        )
+      ).toBe('Warnings (may not commit as a link, or could not be looked inside):');
+    });
+
+    it('VC-01: files the machine and the repository under different headings', () => {
+      // Two subjects, two sections: a person cannot act on a junction from
+      // inside this repository, and cannot act on a folder's mode from outside
+      // it.
+      const out = formatWarnings({ ...withPlanWarning, warnings: [] }, [
+        sweepBlindWarning('.opencode/commands'),
+        JUNCTION_COMMIT_WARNING,
+      ]);
+
+      expect(out).toContain('this machine:');
+      expect(out).toContain('this run:');
+      expect(out.indexOf('this machine:')).toBeLessThan(out.indexOf('this run:'));
+      expect(out.indexOf(JUNCTION_COMMIT_WARNING)).toBeLessThan(out.indexOf('.opencode/commands'));
+    });
+  });
+});
+
+describe('formatWarnings — the run’s own', () => {
+  /** A plan with nothing to say about any harness. */
+  const emptyPlan: ProjectionPlan = { actions: [], drops: [], warnings: [], notEnabled: [] };
+
+  it('VC-02: files a run warning under its own heading, after the harness ones', () => {
+    // Seeded defect: drop the second argument. The block then says nothing at
+    // all about a folder the sync could not look inside (DOR-1939), which is
+    // the silence that ticket is about, reproduced one layer up.
+    const out = formatWarnings(
+      {
+        ...emptyPlan,
+        warnings: [
+          { artifact: 'hook', harness: 'codex', name: 'Stop', reason: 'a Claude-only token' },
+        ],
+      },
+      ['DorkOS could not look inside `.opencode/commands`.']
+    );
+
+    expect(out).toContain('codex:');
+    expect(out).toContain('this run:');
+    expect(out).toContain('DorkOS could not look inside `.opencode/commands`.');
+    expect(out.indexOf('codex:')).toBeLessThan(out.indexOf('this run:'));
+  });
+
+  it('VC-02: prints the block for a run warning alone', () => {
+    expect(
+      formatWarnings(emptyPlan, ['DorkOS could not look inside `.opencode/commands`.'])
+    ).toContain('this run:');
+  });
+
+  it('VC-02: stays empty when neither half has anything to say', () => {
+    expect(formatWarnings(emptyPlan, [])).toBe('');
   });
 });

@@ -30,7 +30,7 @@
  * @module services/harness/__tests__/status-model
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { diffSnapshots, snapshotTree } from '@dorkos/harness/journeys';
@@ -1333,5 +1333,44 @@ describe('VC-01 — what is true about the machine rather than about a tool', ()
     const status = statusOf(repo, home);
 
     expect(status.projectLevel.map((entry) => entry.reason)).not.toContain(JUNCTION_COMMIT_WARNING);
+  });
+});
+
+describe('VC-01, AP-07 — a folder the sweep could not look inside', () => {
+  /** Whether this machine can stage a folder nobody may read. */
+  const CAN_MAKE_UNREADABLE = process.platform !== 'win32' && process.getuid?.() !== 0;
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)('is a project-level warning, and not a fault', () => {
+    // Seeded defect: leave `checkPlan().warnings` out of `projectLevelEntries`.
+    // The page then shows a tree that looks perfectly synced while a sync
+    // silently declined to walk a folder that may hold projections it would
+    // otherwise remove (DOR-1939).
+    const { repo, home } = stageBare('blind-sweep', ['claude-code']);
+    const blind = join(repo, '.opencode', 'commands');
+    mkdirSync(blind, { recursive: true });
+    chmodSync(blind, 0o000);
+
+    try {
+      const status = statusOf(repo, home);
+
+      expect(
+        status.projectLevel.filter((entry) => entry.reason.includes('.opencode/commands'))
+      ).toEqual([
+        {
+          kind: 'warning',
+          artifact: 'skill',
+          name: 'Could not look',
+          reason:
+            'DorkOS could not look inside `.opencode/commands`, so it does not know whether ' +
+            'anything a sync would remove is in there. Nothing was taken out of it. If it ' +
+            'should be a folder DorkOS can read, fix it and re-run.',
+        },
+      ]);
+      // It is about what could not be seen, not about anything being wrong:
+      // nothing is drifted and nothing is in conflict.
+      expect(status.counts.conflicts).toBe(0);
+    } finally {
+      chmodSync(blind, 0o755);
+    }
   });
 });
