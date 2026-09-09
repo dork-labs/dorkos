@@ -36,6 +36,22 @@ function silentAgentManager(): SchedulerAgentManager {
   } as unknown as SchedulerAgentManager;
 }
 
+/**
+ * Whether this machine can make a directory unreadable at all.
+ *
+ * `chmod 000` is the only way to stage that case, and two platforms ignore it.
+ * Windows has no POSIX mode bits, so the `chmod` is a no-op, the scan succeeds
+ * and `unreadableRoot` is never set — measured on the advisory `harness-windows`
+ * job. Root ignores permission bits by definition, which is every root CI
+ * container.
+ *
+ * **A green run on either is NOT evidence this path is covered.** It is
+ * exercised on POSIX as a non-root user, where the assertion is exactly as
+ * strong as it was; nothing is weakened to make the skip possible. Same shape as
+ * `task-reconciler.test.ts`'s permission-dependent cases.
+ */
+const CAN_MAKE_UNREADABLE = process.platform !== 'win32' && process.getuid?.() !== 0;
+
 describe('a scheduled skill installed for all projects', () => {
   let dorkHome: string;
   let db: Db;
@@ -160,32 +176,35 @@ describe('a scheduled skill installed for all projects', () => {
     expect(fresh.getTasks()).toEqual([]);
   });
 
-  it('keeps the schedule when the packages folder is momentarily unreadable', async () => {
-    // The whole reason `unreadableRoot` exists. Before it, a `chmod 000` on
-    // `<dorkHome>/plugins` produced an empty plan, the sweep read that plan as
-    // "nothing is installed", every global link went, and this row went with
-    // them — a person's daily job silently stopped because a folder was briefly
-    // unreadable. Seeded red: drop the guard in `findGlobalOrphans`.
-    await installGlobalPackage('globex', 'daily-sweep');
-    const roots = { dorkHome };
-    applyGlobalPlan(projectGlobal({ roots, harnesses: [] }), roots, { sweepOrphans: true });
-    await reconciler.reconcile();
-    const before = store.getTasks();
-    expect(before).toHaveLength(1);
+  it.skipIf(!CAN_MAKE_UNREADABLE)(
+    'keeps the schedule when the packages folder is momentarily unreadable',
+    async () => {
+      // The whole reason `unreadableRoot` exists. Before it, a `chmod 000` on
+      // `<dorkHome>/plugins` produced an empty plan, the sweep read that plan as
+      // "nothing is installed", every global link went, and this row went with
+      // them — a person's daily job silently stopped because a folder was briefly
+      // unreadable. Seeded red: drop the guard in `findGlobalOrphans`.
+      await installGlobalPackage('globex', 'daily-sweep');
+      const roots = { dorkHome };
+      applyGlobalPlan(projectGlobal({ roots, harnesses: [] }), roots, { sweepOrphans: true });
+      await reconciler.reconcile();
+      const before = store.getTasks();
+      expect(before).toHaveLength(1);
 
-    await chmod(path.join(dorkHome, 'plugins'), 0o000);
-    try {
-      const plan = projectGlobal({ roots, harnesses: [] });
-      const { swept } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
-      expect(swept).toEqual([]);
-    } finally {
-      await chmod(path.join(dorkHome, 'plugins'), 0o755);
+      await chmod(path.join(dorkHome, 'plugins'), 0o000);
+      try {
+        const plan = projectGlobal({ roots, harnesses: [] });
+        const { swept } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+        expect(swept).toEqual([]);
+      } finally {
+        await chmod(path.join(dorkHome, 'plugins'), 0o755);
+      }
+
+      await reconciler.reconcile();
+      const after = store.getTasks();
+      expect(after.map((t) => ({ id: t.id, name: t.name, status: t.status }))).toEqual(
+        before.map((t) => ({ id: t.id, name: t.name, status: t.status }))
+      );
     }
-
-    await reconciler.reconcile();
-    const after = store.getTasks();
-    expect(after.map((t) => ({ id: t.id, name: t.name, status: t.status }))).toEqual(
-      before.map((t) => ({ id: t.id, name: t.name, status: t.status }))
-    );
-  });
+  );
 });

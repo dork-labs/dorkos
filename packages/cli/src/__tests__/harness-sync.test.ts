@@ -2543,6 +2543,21 @@ describe('runHarnessSync — what Claude Code alone has', () => {
   });
 });
 
+/**
+ * Whether this machine can make a directory unreadable at all.
+ *
+ * `chmod 000` is the only way to stage that case, and two platforms ignore it.
+ * Windows has no POSIX mode bits, so the `chmod` is a no-op, the scan succeeds
+ * and `unreadableRoot` is never set — measured on the advisory `harness-windows`
+ * job. Root ignores permission bits by definition, which is every root CI
+ * container.
+ *
+ * **A green run on either is NOT evidence this path is covered.** It is
+ * exercised on POSIX as a non-root user, where the assertion is exactly as
+ * strong as it was; nothing is weakened to make the skip possible.
+ */
+const CAN_MAKE_UNREADABLE = process.platform !== 'win32' && process.getuid?.() !== 0;
+
 describe('runHarnessSync --global — the packages installed for all your projects', () => {
   let tmpDir: string;
   let originalCwd: string;
@@ -2718,25 +2733,28 @@ describe('runHarnessSync --global — the packages installed for all your projec
     expect(snapshotTree(homeDir).some((p) => p.startsWith('skills'))).toBe(false);
   });
 
-  it('SK-03: a packages folder it cannot read stops the run and removes nothing', async () => {
-    // Seeded defect: drop the `unreadableRoot` guard. The plan is empty because
-    // nobody could read the folder, the sweep reads a plan as its evidence of
-    // what is installed, and every global link goes.
-    installGlobal('globex', [{ name: 'greet', timed: true }]);
-    await runHarnessSync(syncArgs({ fix: true, global: true }));
-    const linked = path.join(homeDir, 'skills', 'globex__greet');
-    expect(fs.lstatSync(linked, { throwIfNoEntry: false })).toBeDefined();
-    logSpy.mockClear();
-
-    fs.chmodSync(path.join(homeDir, 'plugins'), 0o000);
-    try {
-      const result = await runHarnessSync(syncArgs({ fix: true, global: true }));
-
-      expect(result.exitCode).toBe(1);
-      expect(printed()).toContain('so nothing was linked and nothing was removed');
+  it.skipIf(!CAN_MAKE_UNREADABLE)(
+    'SK-03: a packages folder it cannot read stops the run and removes nothing',
+    async () => {
+      // Seeded defect: drop the `unreadableRoot` guard. The plan is empty because
+      // nobody could read the folder, the sweep reads a plan as its evidence of
+      // what is installed, and every global link goes.
+      installGlobal('globex', [{ name: 'greet', timed: true }]);
+      await runHarnessSync(syncArgs({ fix: true, global: true }));
+      const linked = path.join(homeDir, 'skills', 'globex__greet');
       expect(fs.lstatSync(linked, { throwIfNoEntry: false })).toBeDefined();
-    } finally {
-      fs.chmodSync(path.join(homeDir, 'plugins'), 0o755);
+      logSpy.mockClear();
+
+      fs.chmodSync(path.join(homeDir, 'plugins'), 0o000);
+      try {
+        const result = await runHarnessSync(syncArgs({ fix: true, global: true }));
+
+        expect(result.exitCode).toBe(1);
+        expect(printed()).toContain('so nothing was linked and nothing was removed');
+        expect(fs.lstatSync(linked, { throwIfNoEntry: false })).toBeDefined();
+      } finally {
+        fs.chmodSync(path.join(homeDir, 'plugins'), 0o755);
+      }
     }
-  });
+  );
 });

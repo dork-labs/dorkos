@@ -286,34 +286,54 @@ describe('AP-04 global: a second run applies nothing', () => {
   });
 });
 
+/**
+ * Whether this machine can make a directory unreadable at all.
+ *
+ * `chmod 000` is the only way to stage that case, and two platforms ignore it.
+ * Windows has no POSIX mode bits, so the `chmod` is a no-op, the scan succeeds
+ * and `unreadableRoot` is never set — measured on the advisory `harness-windows`
+ * job, where the case failed with `expected undefined to be 'C:\\Users\\…'`.
+ * Root ignores permission bits by definition, which is every root CI container.
+ *
+ * **A green run on either is NOT evidence this path is covered.** It is
+ * exercised on POSIX as a non-root user, where the assertion below is exactly as
+ * strong as it was; nothing is weakened to make the skip possible. Same shape as
+ * the suite's other permission-dependent cases (`task-reconciler.test.ts`) and
+ * its platform-dependent ones (`npm-dependencies.test.ts`).
+ */
+const CAN_MAKE_UNREADABLE = process.platform !== 'win32' && process.getuid?.() !== 0;
+
 describe('AP-07 global: a plan that could not be built removes nothing', () => {
-  it('AP-07: an unreadable packages folder sweeps nothing, and says so', () => {
-    // Seeded defect: drop the `unreadableRoot` guard from `findGlobalOrphans`.
-    // The plan is empty because nobody could read the folder, the sweep reads a
-    // plan as its evidence of what is installed, and every global link on the
-    // machine goes — pausing every schedule that ran from one. Measured.
-    const dorkHome = stageDorkHome([
-      { name: 'globex', skills: [{ name: 'greet', scheduled: true }] },
-    ]);
-    const roots = rootsFor(dorkHome);
-    applyGlobalPlan(projectGlobal({ roots, harnesses: [] }), roots, { sweepOrphans: true });
-    const linked = join(globalSkillsDir(dorkHome), 'globex__greet');
-    expect(existsOnDisk(linked)).toBe(true);
-
-    chmodSync(join(dorkHome, 'plugins'), 0o000);
-    try {
-      const plan = projectGlobal({ roots, harnesses: [] });
-      expect(plan.unreadableRoot).toBe(join(dorkHome, 'plugins'));
-      expect(plan.warnings[0]?.reason).toContain('Nothing was linked, and nothing was removed.');
-
-      expect(checkGlobalPlan(plan, roots).orphans).toEqual([]);
-      const { swept, applied } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
-      expect({ swept, applied }).toEqual({ swept: [], applied: [] });
+  it.skipIf(!CAN_MAKE_UNREADABLE)(
+    'AP-07: an unreadable packages folder sweeps nothing, and says so',
+    () => {
+      // Seeded defect: drop the `unreadableRoot` guard from `findGlobalOrphans`.
+      // The plan is empty because nobody could read the folder, the sweep reads a
+      // plan as its evidence of what is installed, and every global link on the
+      // machine goes — pausing every schedule that ran from one. Measured.
+      const dorkHome = stageDorkHome([
+        { name: 'globex', skills: [{ name: 'greet', scheduled: true }] },
+      ]);
+      const roots = rootsFor(dorkHome);
+      applyGlobalPlan(projectGlobal({ roots, harnesses: [] }), roots, { sweepOrphans: true });
+      const linked = join(globalSkillsDir(dorkHome), 'globex__greet');
       expect(existsOnDisk(linked)).toBe(true);
-    } finally {
-      chmodSync(join(dorkHome, 'plugins'), 0o755);
+
+      chmodSync(join(dorkHome, 'plugins'), 0o000);
+      try {
+        const plan = projectGlobal({ roots, harnesses: [] });
+        expect(plan.unreadableRoot).toBe(join(dorkHome, 'plugins'));
+        expect(plan.warnings[0]?.reason).toContain('Nothing was linked, and nothing was removed.');
+
+        expect(checkGlobalPlan(plan, roots).orphans).toEqual([]);
+        const { swept, applied } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+        expect({ swept, applied }).toEqual({ swept: [], applied: [] });
+        expect(existsOnDisk(linked)).toBe(true);
+      } finally {
+        chmodSync(join(dorkHome, 'plugins'), 0o755);
+      }
     }
-  });
+  );
 
   it('AP-07: a package whose manifest will not parse keeps its links', () => {
     // Seeded defect: make the keep-set the planned targets alone. A manifest
