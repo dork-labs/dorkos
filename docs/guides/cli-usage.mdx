@@ -222,6 +222,8 @@ dorkos harness hooks --revoke acme-tools             # Forget one, so you get as
 
 `--allow-hooks` saves your answer, so you only give it once. If DorkOS cannot read your settings file, it tells you what is wrong with it and holds every package's hooks back, and it will not write over a file it cannot read. It is the same answer you would give on the approval card in DorkOS itself, kept in the same place. Held-back hooks are not a failure, so `sync` still finishes with a success code. Add `--strict` if you want a script to stop instead.
 
+If you turned plugins on in Claude Code itself, every run tells you about them. Claude Code keeps those to itself, so your other agents cannot see them. DorkOS lists them by name, says which repository each one came from, and prints the command that installs it here so every agent on this project gets it. Nothing is installed for you: you run the command, and DorkOS asks you to approve it first. The report also says which settings file it read, because that can differ between your own terminal and a session an agent started. If your company sets plugins for you in a file DorkOS cannot read, the report says so rather than pretending the list is the whole story.
+
 #### Feedback
 
 **`dorkos feedback`**: report a bug or request a feature. It opens a prefilled GitHub issue in your browser with your DorkOS version, operating system, runtimes, and on/off settings already filled in. You review and edit everything before submitting; DorkOS sends nothing on its own.

@@ -29,6 +29,24 @@
  * service at all, which is the Obsidian transport's answer rather than an HTTP
  * one, and `status.ts` says the same thing from the other side.
  *
+ * ## The one field the model does not compute
+ *
+ * `claudeOnly` — the plugins a person turned on in Claude Code's own settings —
+ * is added HERE, after {@link buildHarnessStatus} has answered, and that split is
+ * deliberate. The status model is a pure function of the inputs it is handed and
+ * resolves nothing for itself; reading a HOME directory is not an input a caller
+ * can hand it, and putting the read inside would give the model a fact it could
+ * not be tested against without a home directory. The server is where that root
+ * is resolved, so the route asks for it and merges the answer in. `claudeOnly`
+ * is therefore optional on the wire: the surfaces that cannot read a machine —
+ * the Obsidian transport, which answers `state: 'unavailable'` — simply omit it.
+ *
+ * The read is TOTAL: an absent, unreadable or malformed settings file comes back
+ * as the field's own `unreadable` record and never as a `500`. Losing a whole
+ * project's status answer over a file in somebody's home directory would be the
+ * wrong trade by a wide margin, and the record says so in words the caller can
+ * render.
+ *
  * **`not-set-up` is a `200`, not a `404`.** A `404` says the route is not there.
  * A project with no manifest is a project in a state the page is built to
  * render, and turning it into an error class makes every caller re-derive the
@@ -101,6 +119,7 @@ import { HarnessStatusQuerySchema } from '@dorkos/shared/harness-schemas';
 import { BoundaryError, validateBoundaryOrDorkHome } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { storedHookDecisions, type HookDecisions } from '../services/harness/hook-consent.js';
+import { collectClaudeOnlyPlugins } from '../services/harness/claude-enabled-plugins.js';
 import { buildHarnessStatus } from '../services/harness/status.js';
 
 /**
@@ -193,15 +212,20 @@ export function createHarnessRouter(deps: HarnessRouterDeps): Router {
     }
 
     try {
-      // Sent as-is: the response IS the status model, and a route that reshaped
-      // it would be a second voice describing one tree.
-      return res.json(
-        buildHarnessStatus({
-          projectPath: resolved,
-          dorkHome: deps.dorkHome,
-          decisions: readHookDecisions(),
-        })
-      );
+      // Sent as-is apart from `claudeOnly`: the response IS the status model,
+      // and a route that reshaped it would be a second voice describing one
+      // tree. The one addition is the field the model cannot compute, for the
+      // reason the module doc gives.
+      const status = buildHarnessStatus({
+        projectPath: resolved,
+        dorkHome: deps.dorkHome,
+        decisions: readHookDecisions(),
+      });
+      const claudeOnly = await collectClaudeOnlyPlugins({
+        projectPath: resolved,
+        dorkHome: deps.dorkHome,
+      });
+      return res.json({ ...status, claudeOnly });
     } catch (err: unknown) {
       // Logged, not echoed: the engine's message can name a path the caller did
       // not send, and every state a person can act on is already a 200.

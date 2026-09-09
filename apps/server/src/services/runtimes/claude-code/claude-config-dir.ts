@@ -53,8 +53,20 @@ type ConfigReader = { get<K extends keyof UserConfig>(key: K): UserConfig[K] };
  * Reads the variable through {@link ambientClaudeConfigDir} rather than directly,
  * so a rename or fork holding the D8 env lock cannot make this answer its
  * transient value and send a brand-new session to another client's account.
+ *
+ * Exported for `services/harness/claude-enabled-plugins.ts`, which reports the
+ * plugins a person turned on in Claude Code. That report asks which Claude Code
+ * the person typed `/plugin install` into, which is the one their own shell
+ * launches — so it must NOT use {@link resolveActiveClaudeRoot}, whose first
+ * rung answers the different question of which account DorkOS runs and bills on.
+ * An operator who pins a default account to bill one client makes those two
+ * answers differ on purpose. It is exported rather than re-derived because this
+ * file is the Hard Rule 3 carve-out and the carve-out is BY FILENAME, so no
+ * sibling module may call `os.homedir()` for this.
+ *
+ * @returns The absolute Claude config directory a bare `claude` would use.
  */
-function inheritedClaudeRoot(): string {
+export function inheritedClaudeRoot(): string {
   return ambientClaudeConfigDir() ?? path.join(os.homedir(), '.claude');
 }
 

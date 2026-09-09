@@ -13,6 +13,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { vi } from 'vitest';
 
 import type { HarnessSyncArgs } from '../harness-sync-command.js';
 
@@ -75,4 +76,26 @@ export function writeFixtureRepo(root: string): void {
   );
 
   fs.writeFileSync(path.join(root, 'AGENTS.md'), '# Agents\n\nCanonical instructions.\n');
+}
+
+/**
+ * Point `$CLAUDE_CONFIG_DIR` at a Claude root that does not exist, for the whole
+ * of one test.
+ *
+ * `dorkos harness sync` reports the plugins a person turned on in Claude Code,
+ * and it finds that root the way a bare `claude` does — `$CLAUDE_CONFIG_DIR`,
+ * else `~/.claude`. Without this every case in these suites would read the
+ * developer's own settings file and print a block whose contents depend on whose
+ * machine the tests ran on, which is the difference between a suite and a
+ * coin toss.
+ *
+ * An absent directory rather than an empty one on purpose: absent is the case
+ * the reader is required to answer silently, so pinning it here also keeps that
+ * promise under test on every run. Undone by the `vi.unstubAllEnvs()` these
+ * suites already call.
+ *
+ * @param under - a temp directory this test already owns and will remove.
+ */
+export function pinEmptyClaudeRoot(under: string): void {
+  vi.stubEnv('CLAUDE_CONFIG_DIR', path.join(under, 'claude-root'));
 }
