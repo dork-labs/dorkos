@@ -37,6 +37,30 @@ function causeOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * Whether a path holds nothing at all — the one filesystem answer the readers
+ * below stay silent about.
+ *
+ * `lstatSync(…, { throwIfNoEntry: false })` used to answer this, and it got the
+ * exact shape this module exists for wrong: the option suppresses **ENOENT
+ * only**, so a plain FILE at `.claude` made `lstat('.claude/skills')` throw
+ * ENOTDIR out of `inventorySkills` and took `project()` — and with it every
+ * `dorkos harness sync`, `--check` included — down before a single line of the
+ * report was written (DOR-1882). Anything that is not "nothing is there" belongs
+ * in a finding a person can read and fix.
+ *
+ * @param absPath - the absolute path to probe.
+ * @returns `true` only when nothing occupies it.
+ */
+function nothingIsThere(absPath: string): boolean {
+  try {
+    lstatSync(absPath);
+    return false;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'ENOENT';
+  }
+}
+
 /** What {@link readDirEntries} found: the entries, or the reason there are none. */
 export interface DirReadResult {
   /** The directory's immediate entries, empty when it is absent or unreadable. */
@@ -59,7 +83,7 @@ export interface DirReadResult {
  * @returns the entries and, when the listing failed, why.
  */
 export function readDirEntries(absDir: string, relDir: string, kind: ArtifactType): DirReadResult {
-  if (lstatSync(absDir, { throwIfNoEntry: false }) === undefined) return { entries: [] };
+  if (nothingIsThere(absDir)) return { entries: [] };
   try {
     return { entries: readdirSync(absDir, { withFileTypes: true }) };
   } catch (err) {
@@ -131,7 +155,7 @@ export interface JsonReadResult {
  * @returns the parsed object, or why there is none.
  */
 export function readJsonFile(absPath: string, relFile: string, kind: ArtifactType): JsonReadResult {
-  if (lstatSync(absPath, { throwIfNoEntry: false }) === undefined) return {};
+  if (nothingIsThere(absPath)) return {};
   const { text, unreadable } = readTextFile(absPath, relFile, kind);
   if (text === undefined) return { unreadable };
   let parsed: unknown;

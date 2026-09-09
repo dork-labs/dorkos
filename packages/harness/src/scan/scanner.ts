@@ -110,6 +110,32 @@ function resolvesToDirectory(absPath: string, entry: Dirent): boolean {
 }
 
 /**
+ * The entries in a directory, or none when there is no directory to read.
+ *
+ * `existsSync` + `readdirSync` was here, and it answers only the commonest of
+ * the three ways there is nothing to scan: a FILE at `.agents/skills` (ENOTDIR)
+ * and one nobody may read (EACCES) both pass the guard and throw on the read —
+ * out of `buildPlan`, so `dorkos harness sync` died before it could report
+ * anything at all, `--check` included (DOR-1882; the same swap `apply/
+ * link-state.ts` made for the sweeps in DOR-1843). A skills root that cannot be
+ * listed holds no skills, which is the safe answer for a scan.
+ *
+ * Written out here rather than imported from `apply/link-state.ts`: the apply
+ * stage already reads this module, and pointing it back would make the two
+ * directories depend on each other.
+ *
+ * @param absDir - the absolute directory to list.
+ * @returns its entries, or an empty array when it cannot be listed.
+ */
+function listEntries(absDir: string): Dirent[] {
+  try {
+    return readdirSync(absDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Enumerate skill directories directly under `absRoot`, each returned as a
  * {@link SkillEntry} whose `sourceDir` is `<relPrefix>/<name>`.
  *
@@ -139,10 +165,8 @@ export function scanSkillDirs(
   relPrefix: string,
   options: ScanSkillDirsOptions = {}
 ): SkillEntry[] {
-  if (!existsSync(absRoot)) return [];
-
   const skills: SkillEntry[] = [];
-  for (const entry of readdirSync(absRoot, { withFileTypes: true })) {
+  for (const entry of listEntries(absRoot)) {
     const isLink = entry.isSymbolicLink();
     if (isLink && options.followSymlinks === false) continue;
     const isManagedProjection = isLink && entry.name.includes(INSTALLED_PROJECTION_MARKER);
