@@ -461,3 +461,39 @@ Which makes those strings **product copy that happens to live in a package**, an
 - **The apply and the status it answers with are ONE `withProjectLock` turn**, so the response describes the tree this apply left rather than one the watcher (DOR-1850) or a marketplace install rewrote in between. The asking runs OUTSIDE that turn: the lock is not re-entrant, and holding a repository across an approval window would let one unanswered card block every other projection into it.
 
 **The mutation does not invalidate.** `use-harness-sync.ts` writes the returned status into the query key with `setQueryData`, because that answer is the only one that knows what the write ran into — a file somebody else owns at a target is discovered by attempting the write, and a fresh read cannot see it. Invalidating instead makes a post-write `conflict` cell revert to `drifted`, which the client suite pins.
+
+## 13. Running the real-harness smoke (the H tier)
+
+Everything above this line is checked by tests that read FILES. That is a claim about shape, and it is how the Codex hooks file stayed the wrong shape (HK-01) through four test files that all asserted the engine's own bytes. `scripts/harness-smoke/run.sh` is the other half: it stages a fixture through the journey DSL, applies the real projection, and then asks an actual `claude`, `codex` or `opencode` binary what it found.
+
+**One command per harness.** Each spends real money, so each needs the flag AND its own key — a key alone arms nothing, and a sign-in already stored on your machine is never used:
+
+```bash
+pnpm exec turbo build --filter=@dorkos/harness   # the runner drives the BUILT engine
+
+DORKOS_HARNESS_SMOKE=1 ANTHROPIC_API_KEY=<key>   bash scripts/harness-smoke/run.sh claude   --max-usd 0.50
+DORKOS_HARNESS_SMOKE=1 OPENAI_API_KEY=<key>      bash scripts/harness-smoke/run.sh codex    --max-usd 0.50
+DORKOS_HARNESS_SMOKE=1 OPENROUTER_API_KEY=<key>  bash scripts/harness-smoke/run.sh opencode --max-usd 0.50
+```
+
+The build is a prerequisite, not a nicety: the runner projects the fixture with `packages/harness/dist`, so it asks the binary about the tree a person's own `dorkos harness sync` would write. It refuses with that command in the message when the build is missing.
+
+`--max-usd` defaults to `0.50` and `--report <dir>` defaults to `test-results/harness-smoke/`. `--binary <path>` points at a harness installed somewhere `PATH` does not name — DorkOS provisions OpenCode under its own data directory, so that one usually needs it.
+
+**What each variable is, in the vendor's own terms.** `ANTHROPIC_API_KEY` is what Claude Code reads from its environment, and it reports back on the session-init message which credential actually served the turn (`apiKeySource`). `OPENAI_API_KEY` is Codex's; `codex login --api-key` stores the same value in `$CODEX_HOME/auth.json`, which this runner never reads because it points `CODEX_HOME` at an empty sandbox. `OPENROUTER_API_KEY` is the provider key OpenCode reads for OpenRouter — the same variable the evals runner's paid tier uses.
+
+**What it costs.** One turn against a two-skill fixture: fractions of a cent. The ceiling is a tripwire for a runaway loop, not an allowance. Claude Code enforces it itself (`--max-budget-usd`); Codex and OpenCode report no dollar figure and take no ceiling flag, so for those two the real ceiling is **one turn and a wall clock**, and the report says exactly that rather than implying a limit nobody held.
+
+**What the report contains.** `test-results/harness-smoke/<YYYYMMDD-HHMMSS>-<harness>.md`, in the shape `/chat:self-test` reports use: the run (harness, instrument, ceiling, cost, which listing oracle it had), one verdict per oracle with the capability ids it is evidence about, the calibration diff against `harnessCoverage()`, and the list of actions the projection applied. `test-results/` is gitignored, so a report is a local artifact — the durable copy of the commands is this section.
+
+**The oracle hierarchy, and why the order matters.** A uuid in a skill body proves a MODEL read a file, not that a HARNESS loaded a skill: every one of these agents can `cat` the path a prompt names. So the verdicts are, in order:
+
+1. **Listing.** Codex has a free, non-model one: `codex debug prompt-input` renders the model-visible prompt as JSON, with a `<skills_instructions>` block naming every skill it resolved, its frontmatter key and its absolute `SKILL.md` path — no model call, no credential read (measured on codex-cli 0.145.0). Claude Code has none, so its listing rides the `system`/`init` message of the one `--print --output-format stream-json` turn. OpenCode's is still an open question; until somebody with the binary answers it, its activation oracle is primary and the report says `UNKNOWN` rather than claiming a pass.
+2. **Activation.** The fixture's two hooks each `touch` a nonce, and a probe skill's body says "run `touch <nonce>` and nothing else". The turn runs with the harness's file-READ tools denied, so the only route from `SKILL.md` to a `touch` is the harness's own injection.
+3. **Sentinel.** A token in `AGENTS.md`, reported and never decisive.
+
+**Reading a verdict.** `PASS`/`FAIL` mean the oracle ran and answered. `UNKNOWN` means it could not run — no listing surface, or the harness genuinely has nowhere for the artifact to go (OpenCode has no hook file at all, so a hook that did not fire is the correct outcome). `FINDING` means the calibration diff disagreed, which is the point of the tier rather than a failure: a line there is a cell of `packages/harness/src/vendor-facts/` that a binary contradicts, so fix the facts table, not the report.
+
+**Where the runner itself is tested.** `scripts/__tests__/harness-smoke{,-oracles,-e2e}.test.ts` — the gate and the parsers, the oracle verdicts, and the whole `run.sh` path — against `scripts/harness-smoke/fake-harness.ts` — a stand-in that discovers the fixture through each harness's own read paths rather than being told the answers, so a projection in the wrong shape makes it fail exactly as a real binary would. That suite runs in `pnpm verify` and costs nothing.
+
+**Never let any of its variable names reach a turbo task.** `packages/evals/src/runner/__tests__/paid-provider.test.ts` walks the whole parsed `turbo.json` for all eight money names, `DORKOS_HARNESS_SMOKE` and `OPENAI_API_KEY` included.
