@@ -127,6 +127,11 @@ priority:
   output waits for it, exactly as in Pattern 2.
 - **File moves and renames last.** A move collides with every branch that has
   the file open, and it is the one change that cannot be rebased cheaply.
+- **Same-surface tickets land as one PR or a strict sequence.** When two or
+  more tickets touch one component family or surface, batch them into a single
+  PR, or cut the second branch from the first's final merged SHA rather than
+  its in-flight tip — a same-surface stack rebased later always costs more
+  than sequencing up front.
 - **Cap concurrency.** The 2026-09 programme held at four live worktrees; past
   that, rebasing cost more than the parallelism bought. Pick a ceiling from your
   own machine and orchestrator, and hold it.
@@ -203,7 +208,12 @@ Each batch runs the same chain, and no step is optional:
   sets up), because semantic conflicts carry no markers and nothing else will
   tell you that your renamed string broke another branch's assertion. A
   conflicting PR runs no CI at all, so after resolving, re-push **and**
-  re-request the review that never ran.
+  re-request the review that never ran. When the fallen-behind branch is a
+  stacked PR rebasing onto its own now-merged predecessor, take the
+  predecessor's merged state as the base and re-apply the stacked change on
+  top rather than resolving hunk-by-hunk — treat each component and its test
+  as one indivisible unit, because a mixed-side resolution produces a green
+  suite asserting a contract the code no longer implements.
 - **Test-merge before trusting two in-flight branches together.** Once your
   branch is in the merge queue this is structurally handled — the queue builds
   and tests your PR on top of `main` plus everything ahead of it. Before that,
