@@ -236,7 +236,7 @@ function formatAdoptable(repoRoot: string, manifest: HarnessManifest): string[] 
   // A second inventory walk, and worth it: the plan does not carry one, and this
   // report is the only place the answer is needed.
   const { candidates } = readAdoptCandidates(repoRoot, inventorySourceTree(repoRoot), manifest);
-  const byRoot = new Map<string, string[]>();
+  const byRoot = new Map<SkillRoot, string[]>();
   for (const candidate of candidates) {
     byRoot.set(candidate.root, [...(byRoot.get(candidate.root) ?? []), candidate.name]);
   }
@@ -245,9 +245,9 @@ function formatAdoptable(repoRoot: string, manifest: HarnessManifest): string[] 
   for (const [root, names] of byRoot) {
     const sorted = [...names].sort();
     const headline = adoptableSentence({
-      root: root as SkillRoot,
+      root,
       names: sorted,
-      cannotSee: harnessesThatCannotSee(root as SkillRoot, manifest.harnesses),
+      cannotSee: harnessesThatCannotSee(root, manifest.harnesses),
     });
     if (headline === '') continue;
     lines.push(`  ${headline}`);
