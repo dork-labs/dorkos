@@ -10,22 +10,26 @@
  * paraphrase, and that the button which deletes files names them first and then
  * actually deletes them.
  *
- * **On the default `chromium` leg, and that is safe.** The seven `testIgnore`
- * entries on that project each exist for one reason: a spec that would
- * otherwise start a real, billable agent turn belongs on a test-mode leg.
- * Nothing here starts one — it stages files, registers an agent, reads chips
- * and clicks Sync — exactly like `tests/profile/profile-pushin.spec.ts`, which
- * says the same thing in its own header. Putting it on a test-mode leg would
- * mean a new `playwright.config.ts` project, a new `testIgnore` entry and a
- * second Vite/Express pair booted for nothing; the default project's
- * `**` + `/*.spec.ts` match reaches `tests/harness/` already, so this file
- * needed no config change at all.
+ * **On the default `chromium` leg, and that is safe.** Every entry on that
+ * project's `testIgnore` list is there because the spec needs a different leg,
+ * and nine of the fourteen are there for one reason in particular: they would
+ * otherwise start a real, billable agent turn. Nothing here starts one — it
+ * stages files, registers an agent, reads chips and clicks Sync — exactly like
+ * `tests/profile/profile-pushin.spec.ts`, which says the same thing in its own
+ * header. Putting it on a test-mode leg would mean a new
+ * `playwright.config.ts` project, a new `testIgnore` entry and a second
+ * Vite/Express pair booted for nothing; the default project's `*.spec.ts` glob
+ * reaches `tests/harness/` already, so this file needed no config change at
+ * all.
  *
- * **Floors, never totals.** Registering an agent is allowed to bring skills of
- * its own — `projectAgentWorkspace` seeds the Operating DorkOS pack into a
- * workspace DorkOS owns (TR-03) — so every count here is a lower bound and
- * every skill is named. A spec pinning an exact row count would red the day
- * that trigger widens.
+ * **Floors, never totals.** Today `POST /api/mesh/agents` registers a directory
+ * and projects nothing into it — `projectAgentWorkspace` (TR-03) runs for
+ * workspaces DorkOS OWNS, under `{dorkHome}/agents`, and a staged fixture is
+ * not one — so the tree here holds exactly what the fixture put in it. That is
+ * the sort of fact that changes: DOR-1901 widens the agent-creation trigger,
+ * and seeding the Operating DorkOS pack into this tree would add skills nobody
+ * here asked for. So every count is a lower bound and every skill is named by
+ * the fixture, and a widened trigger costs this spec nothing.
  *
  * @module tests/harness/skills-page
  */
