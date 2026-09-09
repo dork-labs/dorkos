@@ -59,6 +59,11 @@ function removalPreview(orphans: readonly string[], about: 'will' | 'did'): stri
  * `<dorkHome>/skills`. It writes NOTHING outside that folder, because no other
  * root is passed to the plan.
  *
+ * **A packages folder it could not read stops the run before anything is
+ * removed**, and says so. An unreadable folder produces an empty plan, an empty
+ * plan looks exactly like a machine with nothing installed, and a sweep run on
+ * that evidence deletes every global link there is.
+ *
  * **Every path it will remove is printed before it is removed**, and the receipt
  * of what went is printed after — in that order, so a person watching the
  * terminal sees the promise before the deletion rather than only the deletion.
@@ -78,6 +83,21 @@ export function runGlobalSync(args: { fix: boolean }, dorkHome: string): number 
   console.log('Packages installed for all your projects:');
   console.log(`  read from: ${globalPluginsDir(dorkHome)}`);
   console.log(`  linked into: ${globalSkillsDir(dorkHome)}`);
+
+  // A folder nobody could read is not a folder with nothing in it, and the
+  // difference decides whether a sweep may run at all. Said first, and said as
+  // the reason nothing was removed, because a person watching a command that
+  // usually removes things needs to know it deliberately did not.
+  if (plan.unreadableRoot !== undefined) {
+    console.log('');
+    console.log(
+      `DorkOS could not read ${plan.unreadableRoot}, so nothing was linked and nothing was removed.`
+    );
+    console.log('  Check the folder’s permissions, then run this again.');
+    console.log('');
+    console.log(GLOBAL_REACH_NOTE);
+    return 1;
+  }
 
   const warningBlock = formatWarnings(plan);
   if (warningBlock) {

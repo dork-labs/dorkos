@@ -2590,6 +2590,13 @@ describe('runHarnessSync --global — the packages installed for all your projec
     vi.unstubAllEnvs();
     logSpy.mockRestore();
     errorSpy.mockRestore();
+    // Mode first: `rmSync -r` has to read a directory to empty it, so the
+    // mode-000 one the unreadable-root case stages would leak the temp tree.
+    try {
+      fs.chmodSync(path.join(homeDir, 'plugins'), 0o755);
+    } catch {
+      /* no plugins folder, or already readable */
+    }
     fs.rmSync(tmpDir, { recursive: true, force: true });
     fs.rmSync(homeDir, { recursive: true, force: true });
   });
@@ -2691,5 +2698,40 @@ describe('runHarnessSync --global — the packages installed for all your projec
     expect(errors()).toContain('--global shares the packages installed for all your projects');
     expect(errors()).toContain('--harness or --write-gitignore');
     expect(snapshotTree(homeDir)).toEqual([]);
+  });
+
+  it('VC-02: refuses --strict, which a global run could never act on', async () => {
+    // Seeded defect: leave `--strict` off `PROJECT_ONLY_FLAGS`. It is then
+    // accepted and inert — and a CI script passes it precisely to be stopped, so
+    // an inert one is the worst of the five to swallow quietly.
+    installGlobal('globex', [{ name: 'greet' }]);
+
+    const result = await runHarnessSync(syncArgs({ fix: true, global: true, strict: true }));
+
+    expect(result.exitCode).toBe(1);
+    expect(errors()).toContain('--strict');
+    expect(snapshotTree(homeDir).some((p) => p.startsWith('skills'))).toBe(false);
+  });
+
+  it('SK-03: a packages folder it cannot read stops the run and removes nothing', async () => {
+    // Seeded defect: drop the `unreadableRoot` guard. The plan is empty because
+    // nobody could read the folder, the sweep reads a plan as its evidence of
+    // what is installed, and every global link goes.
+    installGlobal('globex', [{ name: 'greet', timed: true }]);
+    await runHarnessSync(syncArgs({ fix: true, global: true }));
+    const linked = path.join(homeDir, 'skills', 'globex__greet');
+    expect(fs.lstatSync(linked, { throwIfNoEntry: false })).toBeDefined();
+    logSpy.mockClear();
+
+    fs.chmodSync(path.join(homeDir, 'plugins'), 0o000);
+    try {
+      const result = await runHarnessSync(syncArgs({ fix: true, global: true }));
+
+      expect(result.exitCode).toBe(1);
+      expect(printed()).toContain('so nothing was linked and nothing was removed');
+      expect(fs.lstatSync(linked, { throwIfNoEntry: false })).toBeDefined();
+    } finally {
+      fs.chmodSync(path.join(homeDir, 'plugins'), 0o755);
+    }
   });
 });

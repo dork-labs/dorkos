@@ -860,11 +860,20 @@ function reportFix(
  * Each is refused by name rather than ignored. `--harness` narrows a plan to one
  * agent tool and a global plan is never narrowed; `--enable` and
  * `--write-gitignore` write files inside a repository; `--allow-hooks` records a
- * decision about hooks, which a global plan does not project at all. Silently
- * accepting any of them would make the command look like it had done something
- * it never does.
+ * decision about hooks, which a global plan does not project at all; `--strict`
+ * exits non-zero when a package's hooks were withheld, and a global plan
+ * projects no hooks, so it can never do anything. Silently accepting any of them
+ * would make the command look like it had done something it never does — and an
+ * inert `--strict` is the worst of the five, because a CI script passes it
+ * precisely to be stopped.
  */
-const PROJECT_ONLY_FLAGS = ['--harness', '--enable', '--allow-hooks', '--write-gitignore'] as const;
+const PROJECT_ONLY_FLAGS = [
+  '--harness',
+  '--enable',
+  '--allow-hooks',
+  '--strict',
+  '--write-gitignore',
+] as const;
 
 /** Which project-only flags this invocation passed, in the order they are listed. */
 function projectOnlyFlagsIn(args: HarnessSyncArgs): string[] {
@@ -872,6 +881,7 @@ function projectOnlyFlagsIn(args: HarnessSyncArgs): string[] {
     ...(args.harness === undefined ? [] : ['--harness']),
     ...(args.enable.length > 0 ? ['--enable'] : []),
     ...(args.allowHooks.length > 0 ? ['--allow-hooks'] : []),
+    ...(args.strict ? ['--strict'] : []),
     ...(args.writeGitignore ? ['--write-gitignore'] : []),
   ];
 }
