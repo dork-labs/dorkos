@@ -81,15 +81,19 @@ function globalInstallSkillsReason(count: number, names: string): string {
 const GLOBAL_INSTALL_NO_SKILLS = `${GLOBAL_INSTALL_LEAD} It has no skills to share.`;
 
 /**
- * The sentence slice A2 appends when the package holds a skill that runs on a
- * timer.
+ * The sentence for a package whose timed skills are already linked.
  *
  * `dorkos harness sync --global` links every global package's skills into
  * `<dorkHome>/skills`, the one folder the DorkOS scheduler watches for timed
- * skills — so a schedule inside a package installed for all projects now runs,
- * even though no agent tool can read the skill here. That is a different fact
- * from the one the lead states, and it is only true of packages that have such a
- * skill, so it is appended rather than folded in.
+ * skills — so a schedule inside a package installed for all projects runs, even
+ * though no agent tool can read the skill here.
+ *
+ * **It is gated on the LINK existing, not on the schedule existing.** Gated on
+ * `hasSchedule` alone it printed the moment a package with a `schedule:` block
+ * was installed, which is before any global sync has run and therefore before
+ * the claim is true — on a machine that has never run one it was never true at
+ * all. A sentence that says something works has to be checkable at the moment it
+ * is printed, and the scan checks it ({@link InstalledSkill.linkedInDorkHome}).
  *
  * **Appended, never a rewrite.** The defect this whole block replaces was a
  * sentence that told the truth about a command that was going to exist and never
@@ -97,6 +101,17 @@ const GLOBAL_INSTALL_NO_SKILLS = `${GLOBAL_INSTALL_LEAD} It has no skills to sha
  * printed. Slice A3 appends the next one the same way.
  */
 const GLOBAL_INSTALL_TIMERS_WORK = 'Its skills that run on a timer now work.';
+
+/**
+ * The sentence for a package whose timed skills are NOT linked yet — the same
+ * subject, and the command that makes the other sentence true.
+ *
+ * It names a command that exists, which is the whole rule this block is written
+ * under. `--fix --global` is spelled in full because a person reading a drop
+ * list has no other context to complete it from.
+ */
+const GLOBAL_INSTALL_TIMERS_PENDING =
+  'Run dorkos harness sync --fix --global so its skills that run on a timer work.';
 
 /**
  * The notice a package installed at BOTH scopes earns (SRC-12).
@@ -161,9 +176,10 @@ function bothScopesNoticeReason(pkg: string, repoRoot: string): string {
  * a person has to run to be told this, which is the defect the block replaced.
  *
  * The first form gains one appended sentence when the package holds a skill that
- * declares a schedule ({@link GLOBAL_INSTALL_TIMERS_WORK}): those skills now
- * really do run, because `dorkos harness sync --global` links them where the
- * scheduler looks.
+ * declares a schedule, and WHICH sentence depends on the disk: those skills
+ * really do run once `dorkos harness sync --fix --global` has linked them where
+ * the scheduler looks ({@link GLOBAL_INSTALL_TIMERS_WORK}), and until then the
+ * line names that command instead ({@link GLOBAL_INSTALL_TIMERS_PENDING}).
  *
  * @param plugin - the globally installed package being dropped.
  * @returns the drop reason, continuing the line `formatDropList` already opened
@@ -177,11 +193,16 @@ export function globalInstallDropReason(plugin: InstalledPlugin): string {
   );
   // Only when there is a timer to speak about. Appended unconditionally, this
   // would tell a person with no scheduled skill that their timers work.
-  if (!plugin.skills.some((skill) => skill.hasSchedule)) return lead;
+  const timed = plugin.skills.filter((skill) => skill.hasSchedule);
+  if (timed.length === 0) return lead;
+  // EVERY one of them, not any: the sentence is about "its skills that run on a
+  // timer", so one unlinked skill makes the plural claim false and the person is
+  // told to run the sync instead.
+  const allLinked = timed.every((skill) => skill.linkedInDorkHome === true);
   // The full stop belongs to the JOIN, not to either sentence: the frozen lead
   // ends on a comma-separated list with no terminator, and two sentences run
   // together without one.
-  return `${lead}. ${GLOBAL_INSTALL_TIMERS_WORK}`;
+  return `${lead}. ${allLinked ? GLOBAL_INSTALL_TIMERS_WORK : GLOBAL_INSTALL_TIMERS_PENDING}`;
 }
 
 /**
