@@ -106,6 +106,8 @@ beforeAll(async () => {
         res.setHeader('Set-Cookie', [
           'better-auth.session_token=planted; Path=/',
           '__Secure-better-auth-session_token=planted-legacy; Path=/',
+          '__Secure-better-auth-0123456789abcdef0123456789abcdef.session_token=planted-instance; Path=/',
+          'better-auth-0123456789abcdef0123456789abcdef.session_data.0=planted-instance-chunk; Path=/',
           `dorkos_preview_${Number(req.headers.host?.split(':')[1] ?? 0)}=hijack; Path=/`,
           'dorkos_preview_1=hijack-any; Path=/',
           'my_app_session=keep-me; Path=/',
@@ -394,6 +396,8 @@ describe('PreviewListenerManager — proxying', () => {
           'better-auth.session_token=secret-session',
           'better-auth.session_data.0=secret-chunk',
           '__Secure-better-auth.session_token=secret-secure',
+          '__Secure-better-auth-0123456789abcdef0123456789abcdef.session_token=secret-instance',
+          'better-auth-0123456789abcdef0123456789abcdef.session_data.0=secret-instance-chunk',
           'better-auth.state=secret-state',
           // The library still reads this hyphen spelling as a compat fallback,
           // so a cookie an older install left behind is a live credential.
@@ -414,9 +418,9 @@ describe('PreviewListenerManager — proxying', () => {
   });
 
   it('never lets a dev server set a DorkOS cookie in the browser', async () => {
-    // A preview origin is a different PORT on the same host as the cockpit, and
+    // A preview origin is a different PORT on the same host as the app, and
     // cookies are not scoped by port — so an upstream `Set-Cookie` for a DorkOS
-    // name would reach the cockpit. That is session fixation delivered by
+    // name would reach the app. That is session fixation delivered by
     // proxied content, and it does not need the dev server to be malicious.
     const { listenPort, cookie } = await bootstrapped();
 

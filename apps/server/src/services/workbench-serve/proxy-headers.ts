@@ -82,13 +82,11 @@ export function isUtf8OrUnspecified(contentType: string): boolean {
 /**
  * The prefix every Better Auth cookie carries.
  *
- * `better-auth` is the library's default and DorkOS sets no `cookiePrefix`
- * override (`services/core/auth/index.ts` configures only `advanced.
- * useSecureCookies` and `defaultCookieAttributes`), so every cookie it issues is
- * `better-auth.<name>`: `session_token`, `session_data`, `account_data`,
- * `dont_remember`, and the OAuth `state` / `nonce` / `pkce_code_verifier`. In
- * production each also gains the `__Secure-` prefix, and an oversized
- * `session_data` is split into `.0`, `.1` … chunks.
+ * Port 4242 retains `better-auth`; other instances use `better-auth-<home
+ * digest>` (`services/core/auth/index.ts`). Every cookie adds a dotted name:
+ * `session_token`, `session_data`, `account_data`, `dont_remember`, or the OAuth
+ * `state` / `nonce` / `pkce_code_verifier`. Production also adds `__Secure-`,
+ * and an oversized `session_data` is split into `.0`, `.1` … chunks.
  *
  * The hyphen spellings are here because the library still READS them as a
  * compatibility fallback (`getCookie(`${prefix}.${name}`) || getCookie(
@@ -115,10 +113,10 @@ const AUTH_COOKIE_PREFIXES = [
  *
  * The single source of truth for both directions of the pipe, because the reason
  * is the same either way: a preview origin is a different PORT on the same host
- * as the cockpit, and cookies are not scoped by port. Going out, forwarding
+ * as the DorkOS app, and cookies are not scoped by port. Going out, forwarding
  * these would hand a dev server the operator's session. Coming back, relaying
  * them would let a dev server SET them — planting a session cookie the browser
- * then sends to the cockpit, or overwriting a preview's own authorization.
+ * then sends to the DorkOS app, or overwriting a preview's own authorization.
  *
  * @param name - The cookie name, exactly as it appeared.
  * @returns True when the cookie is DorkOS's own and must not cross.
@@ -135,7 +133,7 @@ export function isDorkosCookieName(name: string): boolean {
  *
  * Without this a dev server can answer
  * `Set-Cookie: better-auth.session_token=…; Path=/` and the browser will attach
- * it to the cockpit — session fixation delivered by proxied content — or
+ * it to the DorkOS app — session fixation delivered by proxied content — or
  * overwrite `dorkos_preview_<listenPort>` and knock its own preview to 401.
  * Neither needs the dev server to be malicious; one careless framework default
  * is enough.
@@ -157,7 +155,7 @@ export function filterInboundSetCookies(setCookie: string | string[] | undefined
  * The cookies a preview may forward to the dev server: everything the dev app
  * set for itself, and nothing DorkOS set for itself.
  *
- * A preview origin is a different PORT on the same host as the cockpit, and
+ * A preview origin is a different PORT on the same host as the DorkOS app, and
  * cookies are not scoped by port — so the browser attaches DorkOS's own cookies
  * to every preview request. Forwarding them would hand a local dev server the
  * operator's signed-in session and the preview's own bearer token, which is a
