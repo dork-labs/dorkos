@@ -131,6 +131,14 @@ const CODEX_MCP_TABLE = /^[ \t]*\[[ \t]*mcp_servers[ \t]*\.[ \t]*(.+?)[ \t]*\][ 
  * special-cased: taking the name up to its first dot is what makes both spellings
  * one server.
  *
+ * Two ways the number can be off by one, both stated rather than papered over,
+ * because the cost of each is a wrong count in one sentence and never a leaked
+ * value: a line inside a multi-line string that reads exactly like a table
+ * header counts as a server, and two servers whose names are QUOTED and both
+ * start with the same dotted prefix (`["a.b"]`, `["a.c"]`) count as one. A real
+ * TOML parser would fix both and would hand back every value in the file, which
+ * is the trade this module exists to refuse.
+ *
  * @param text - the file's contents.
  * @returns the number of distinct servers, or nothing when it declares none.
  */
