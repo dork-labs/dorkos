@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
+import type { HarnessRow, HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
@@ -35,6 +35,17 @@ function createWrapper(transport: Transport) {
       <TransportProvider transport={transport}>{children}</TransportProvider>
     </QueryClientProvider>
   );
+}
+
+/**
+ * Render one row on its own, inside the providers its mutation hook needs.
+ *
+ * The row owns the adopt action (DOR-1946), so it reaches `useTransport` and the
+ * query client even on a row that offers no button — a bare `render` of it
+ * throws where it used to pass.
+ */
+function renderRow(element: ReactNode) {
+  return render(element, { wrapper: createWrapper(createMockTransport()) });
 }
 
 /** Render the list against one status and wait for the read to settle. */
@@ -178,6 +189,77 @@ describe('SkillsWithHarnessesList — the list', () => {
     expect(screen.getAllByText(/dorkos harness adopt/)).toHaveLength(1);
   });
 
+  it('SRC-10: the chips flip from the answer the move returned, with no second read', async () => {
+    // Case 31's other half, and the seeded defect the spec calls the single most
+    // likely thing to get wrong here: invalidate instead of `setQueryData` and
+    // the page throws away the authoritative answer, asks again, and re-renders
+    // whatever the second read happens to find. Asserted on the READ COUNT as
+    // well as on the chips, because a page that refetched would land on the same
+    // chips here — the mock answers the same status twice — while doing exactly
+    // the thing this rule forbids.
+    const adoptable = HARNESS_STATUS_READY.rows.find((row) => row.adoptable) as HarnessRow;
+    const afterTheMove: HarnessStatusResponse = {
+      ...HARNESS_STATUS_READY,
+      counts: { ...HARNESS_STATUS_READY.counts, adoptable: 0 },
+      rows: HARNESS_STATUS_READY.rows.map((row) =>
+        row.adoptable
+          ? {
+              ...row,
+              provenance: 'authored' as const,
+              source: `.agents/skills/${row.name}`,
+              adoptable: false,
+              cells: {
+                'claude-code': {
+                  state: 'projected' as const,
+                  target: `.claude/skills/${row.name}`,
+                },
+                codex: { state: 'native' as const, target: `.agents/skills/${row.name}` },
+                cursor: { state: 'native' as const, target: `.agents/skills/${row.name}` },
+              },
+            }
+          : row
+      ),
+    };
+    const getHarnessStatus = vi.fn().mockResolvedValue(HARNESS_STATUS_READY);
+    const adoptHarness = vi.fn().mockResolvedValue({
+      moved: [
+        {
+          name: adoptable.name,
+          from: adoptable.source,
+          to: `.agents/skills/${adoptable.name}`,
+          link: { target: `.claude/skills/${adoptable.name}` },
+        },
+      ],
+      declared: [],
+      refusals: [],
+      status: afterTheMove,
+    });
+    const transport = createMockTransport({ getHarnessStatus, adoptHarness });
+    render(<SkillsWithHarnessesList projectPath="/repo" />, { wrapper: createWrapper(transport) });
+    await waitFor(() => expect(getHarnessStatus).toHaveBeenCalledTimes(1));
+
+    const row = await screen.findByRole('group', { name: adoptable.name });
+    // Expanded first: once the skill is canonical every tool has it, and a row
+    // every tool is current on collapses to one chip — which would hide the very
+    // chip this case is about.
+    await userEvent.click(screen.getByRole('switch', { name: 'Show every agent tool' }));
+    expect(within(row).getByRole('listitem', { name: 'Codex can’t see it' })).toBeInTheDocument();
+
+    await userEvent.click(within(row).getByRole('button', { name: 'Share with every agent' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Move it' }));
+
+    const moved = await screen.findByRole('group', { name: adoptable.name });
+    await waitFor(() =>
+      expect(within(moved).getByRole('listitem', { name: 'Codex reads it' })).toBeInTheDocument()
+    );
+    expect(within(moved).getByRole('listitem', { name: 'Claude Code shared' })).toBeInTheDocument();
+    // The advice, the command and the button all go with the row's adoptability.
+    expect(within(moved).queryByRole('button', { name: 'Share with every agent' })).toBeNull();
+    expect(screen.queryByText(/dorkos harness adopt/)).toBeNull();
+    // And nothing asked the server again.
+    expect(getHarnessStatus).toHaveBeenCalledTimes(1);
+  });
+
   it('XA-06: names the folder the row is actually in, not always .claude/skills', () => {
     // Seeded defect: keep the sentence a constant. An OpenCode-first team is then
     // told to look in `.claude/skills`, a directory they do not have — advice
@@ -190,7 +272,7 @@ describe('SkillsWithHarnessesList — the list', () => {
       adoptable: true,
     } as const;
 
-    render(
+    renderRow(
       <SkillHarnessRow
         row={row}
         enabled={['claude-code']}
@@ -297,7 +379,7 @@ describe('SkillsWithHarnessesList — the collapse', () => {
     // the whole mechanism, and the `<bdi dir="ltr">` inside it is required
     // rather than decorative — without it the bidi algorithm claims any neutral
     // character at either end of the path and paints it at the opposite one.
-    render(
+    renderRow(
       <SkillHarnessRow
         row={SHARED_SKILL_ROW}
         enabled={['claude-code']}

@@ -9,7 +9,11 @@
  *
  * @module shared/lib/transport/harness-methods
  */
-import type { HarnessStatusResponse, HarnessSyncResponse } from '@dorkos/shared/harness-schemas';
+import type {
+  HarnessAdoptResponse,
+  HarnessStatusResponse,
+  HarnessSyncResponse,
+} from '@dorkos/shared/harness-schemas';
 import { fetchJSON, buildQueryString } from './http-client';
 
 /** Create the Harness Sync methods bound to a base URL. */
@@ -26,6 +30,24 @@ export function createHarnessMethods(baseUrl: string) {
       return fetchJSON<HarnessSyncResponse>(baseUrl, '/harness/sync', {
         method: 'POST',
         body: JSON.stringify({ projectPath }),
+      });
+    },
+
+    adoptHarness(
+      projectPath: string,
+      name: string,
+      claudeOnly?: boolean
+    ): Promise<HarnessAdoptResponse> {
+      // A body for the same reason the sync uses one, plus a second: the skill's
+      // name is a folder name, and a folder name in a URL is a folder name in an
+      // access log.
+      return fetchJSON<HarnessAdoptResponse>(baseUrl, '/harness/adopt', {
+        method: 'POST',
+        body: JSON.stringify({
+          projectPath,
+          name,
+          ...(claudeOnly === undefined ? {} : { claudeOnly }),
+        }),
       });
     },
   };

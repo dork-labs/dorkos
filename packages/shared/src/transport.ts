@@ -145,7 +145,11 @@ import type {
   ApplyShapeResult,
   ForkShapeResult,
 } from './marketplace-schemas.js';
-import type { HarnessStatusResponse, HarnessSyncResponse } from './harness-schemas.js';
+import type {
+  HarnessAdoptResponse,
+  HarnessStatusResponse,
+  HarnessSyncResponse,
+} from './harness-schemas.js';
 import type { RoomTransport } from './transport-rooms.js';
 import type { ReadCursor, ReadCursorThreadKind } from './read-cursor-schemas.js';
 import type {
@@ -2105,6 +2109,29 @@ export interface Transport extends RoomTransport {
    * @param projectPath - The project root, absolute.
    */
   syncHarness(projectPath: string): Promise<HarnessSyncResponse>;
+
+  /**
+   * Move one skill into `.agents/skills`, where every agent reads it, and
+   * answer with the status recomputed after the move.
+   *
+   * A skill it will not move is not a failure: the answer carries a `refusals`
+   * entry with one plain sentence saying what to do instead — the name is not
+   * there, the settings only Claude Code understands, something already
+   * occupies the target. Callers render that sentence rather than an error.
+   *
+   * With `claudeOnly` nothing moves: the skill is recorded in the project's
+   * manifest as belonging to Claude Code, which is the way out of the refusal a
+   * Claude-shaped skill gets.
+   *
+   * @param projectPath - The project root, absolute.
+   * @param name - The skill's folder name.
+   * @param claudeOnly - Record it as Claude Code's instead of moving it.
+   */
+  adoptHarness(
+    projectPath: string,
+    name: string,
+    claudeOnly?: boolean
+  ): Promise<HarnessAdoptResponse>;
 
   // --- Approvals (spec `agent-trust` §3.3) ---
 
