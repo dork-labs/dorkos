@@ -127,6 +127,12 @@ export function ChatPanel({
   const [, setSessionId] = useSessionId();
   const queryClient = useQueryClient();
   const chatInputRef = useRef<ComposerInputHandle>(null);
+  const chatPanelRef = useRef<HTMLDivElement>(null);
+  const handleChooseModel = useCallback(() => {
+    chatPanelRef.current
+      ?.querySelector<HTMLButtonElement>('[data-testid="model-config-trigger"]')
+      ?.click();
+  }, []);
   const taskState = useTaskState(sessionId);
   // What this session is doing right now, from the same fleet-wide status
   // stream the sidebar reads — one derivation, so the strip and the roster can
@@ -663,7 +669,7 @@ export function ChatPanel({
     // mounts — the route, the Obsidian embed and the dev simulator alike. Every
     // row, and from P2 the live lane, reads what it can do from here.
     <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES} target={sessionTarget}>
-      <div data-testid="chat-panel" className="flex h-full w-full flex-col">
+      <div ref={chatPanelRef} data-testid="chat-panel" className="flex h-full w-full flex-col">
         <BirthCertificate sessionId={sessionId} />
 
         <SessionTranscript
@@ -678,6 +684,7 @@ export function ChatPanel({
           onToolDecided={markToolCallResponded}
           onRetry={handleRetry}
           onSigninComplete={handleSigninComplete}
+          onChooseModel={handleChooseModel}
           inputZoneToolCallId={activeInteraction?.toolCallId ?? null}
           runtimeLabel={runtimeAuthLabel}
           allowsDenyReason={allowsDenyReason}
@@ -728,6 +735,7 @@ export function ChatPanel({
             sessionId={sessionId!}
             onRetry={hasUserMessage ? handleRetry : undefined}
             onSigninComplete={handleSigninComplete}
+            onChooseModel={handleChooseModel}
           />
         )}
 

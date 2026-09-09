@@ -4,4 +4,6 @@ export {
   type ConnectorRuntimeMcpListener,
   type ConnectorRuntimeMcpListenerOptions,
 } from './listener.js';
+export { createAgentRuntimeMcpServer } from './agent-runtime-server.js';
+export { AgentIdentitySnapshotPrincipalPort } from './agent-identity-snapshots.js';
 export type { ConnectorRuntimeMcpServerFactory } from './router.js';

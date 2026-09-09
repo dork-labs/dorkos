@@ -2,7 +2,7 @@
  * Turning an image an MCP tool handed Codex into a DorkOS image.
  *
  * **Codex cannot stream a picture it generated, and no amount of adapter code
- * changes that.** `@openai/codex-sdk@0.147.0`'s `ThreadItem` union is
+ * changes that.** `@openai/codex-sdk@0.153.4`'s `ThreadItem` union is
  * `AgentMessageItem | ReasoningItem | CommandExecutionItem | FileChangeItem |
  * McpToolCallItem | WebSearchItem | TodoListItem | ErrorItem` — there is no
  * image output item of any kind. `type: "local_image"` exists in that SDK, but

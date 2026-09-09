@@ -49,6 +49,10 @@ import type {
   MessagePart,
 } from '@dorkos/shared/types';
 import { SDK_TOOL_NAMES } from '@dorkos/shared/constants';
+import {
+  describeCodexDiagnostic,
+  describeKnownModelError,
+} from '@dorkos/shared/runtime-error-classification';
 
 /** The `error` session-event member, the per-turn error accumulator entry. */
 type ErrorSessionEvent = Extract<SessionEvent, { type: 'error' }>;
@@ -220,16 +224,26 @@ function applyLateReceipts(messages: HistoryMessage[], late: Map<string, Approva
  * `[code]`) rather than dropped.
  */
 function toErrorPart(error: ErrorSessionEvent): ErrorPart {
+  const modelError = describeKnownModelError(error.message);
+  const rawDetails = modelError?.details
+    ? error.details?.includes(modelError.details)
+      ? error.details
+      : [error.details, modelError.details].filter(Boolean).join('\n')
+    : error.details;
   const details =
     error.code !== undefined
-      ? error.details !== undefined
-        ? `[${error.code}] ${error.details}`
+      ? rawDetails !== undefined
+        ? `[${error.code}] ${rawDetails}`
         : `[${error.code}]`
-      : error.details;
+      : rawDetails;
   return {
     type: 'error',
-    message: error.message,
-    ...(error.category !== undefined ? { category: error.category } : {}),
+    message: modelError?.message ?? error.message,
+    ...(modelError?.category !== undefined
+      ? { category: modelError.category }
+      : error.category !== undefined
+        ? { category: error.category }
+        : {}),
     ...(details !== undefined ? { details } : {}),
   };
 }
@@ -443,7 +457,16 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
         break;
       }
       case 'error':
-        if (turn) turn.errors.push(event);
+        // Compatibility for sessions recorded before Codex 0.147 diagnostics
+        // were separated from failures. `item_error` is Codex's item channel;
+        // only the three exact known warning shapes are omitted. Unknown and
+        // terminal errors continue to reconstruct normally.
+        if (
+          turn &&
+          !(event.code === 'item_error' && describeCodexDiagnostic(event.message) !== null)
+        ) {
+          turn.errors.push(event);
+        }
         break;
       case 'image_attachment':
         // A reference, exactly as it rode the stream — the bytes are behind the

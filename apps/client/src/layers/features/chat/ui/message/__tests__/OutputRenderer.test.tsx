@@ -2,19 +2,11 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { OutputRenderer } from '../OutputRenderer';
 
 vi.mock('react-json-view-lite/dist/index.css', () => ({}));
-
-vi.mock('react-json-view-lite', () => ({
-  JsonView: ({ data }: { data: unknown }) => (
-    <pre data-testid="json-view">{JSON.stringify(data)}</pre>
-  ),
-  darkStyles: {},
-  collapseAllNested: () => false,
-}));
 
 vi.mock('ansi-to-react', () => ({
   default: ({ children }: { children: string }) => (
@@ -40,7 +32,7 @@ describe('OutputRenderer', () => {
     render(<OutputRenderer content="hello world" toolName="Bash" />);
 
     expect(screen.getByText('hello world')).toBeInTheDocument();
-    expect(screen.queryByTestId('json-view')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tree')).not.toBeInTheDocument();
     expect(screen.queryByTestId('ansi-output')).not.toBeInTheDocument();
   });
 
@@ -48,7 +40,7 @@ describe('OutputRenderer', () => {
     const json = JSON.stringify({ key: 'value', count: 42 });
     render(<OutputRenderer content={json} toolName="Bash" />);
 
-    expect(screen.getByTestId('json-view')).toBeInTheDocument();
+    expect(screen.getByRole('tree')).toBeInTheDocument();
   });
 
   it('renders ANSI output for content with escape codes', () => {
@@ -102,7 +94,7 @@ describe('OutputRenderer', () => {
     render(<OutputRenderer content={json} toolName="Bash" />);
 
     expect(screen.getByRole('button', { name: /raw/i })).toBeInTheDocument();
-    expect(screen.getByTestId('json-view')).toBeInTheDocument();
+    expect(screen.getByRole('tree')).toBeInTheDocument();
   });
 
   it('switches to raw view when "Raw" is clicked', () => {
@@ -111,7 +103,7 @@ describe('OutputRenderer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /raw/i }));
 
-    expect(screen.queryByTestId('json-view')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tree')).not.toBeInTheDocument();
     // Raw button label flips to "Formatted"
     expect(screen.getByRole('button', { name: /formatted/i })).toBeInTheDocument();
     // Raw content is now rendered in a pre
@@ -123,5 +115,46 @@ describe('OutputRenderer', () => {
 
     expect(screen.queryByRole('button', { name: /raw/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /formatted/i })).not.toBeInTheDocument();
+  });
+
+  it('marks collapsed nonempty collections without marking truly empty ones', () => {
+    render(
+      <OutputRenderer
+        content={JSON.stringify({ rooms: [{ name: '#team' }], warnings: [], meta: {} })}
+        toolName="mcp__dorkos__list_rooms"
+      />
+    );
+
+    const roomsLabel = screen.getByText('rooms:');
+    const rooms = roomsLabel.closest('[role="treeitem"]');
+    expect(rooms).toHaveAttribute('aria-expanded', 'false');
+    expect(within(rooms as HTMLElement).getByRole('button', { name: 'expand JSON' })).toHaveClass(
+      'after:content-["▸"]'
+    );
+    expect(roomsLabel.nextElementSibling).toHaveTextContent('[');
+    expect(roomsLabel.nextElementSibling?.nextElementSibling).toHaveClass('after:content-["…"]');
+
+    for (const label of ['warnings:', 'meta:']) {
+      const empty = screen.getByText(label).closest('[role="treeitem"]');
+      expect(empty).not.toHaveAttribute('aria-expanded');
+      expect(within(empty as HTMLElement).queryByRole('button')).not.toBeInTheDocument();
+    }
+  });
+
+  it('expands a marked collection to reveal its contents', () => {
+    render(
+      <OutputRenderer
+        content={JSON.stringify({ rooms: [{ name: '#team' }] })}
+        toolName="mcp__dorkos__list_rooms"
+      />
+    );
+
+    const rooms = screen.getByText('rooms:').closest('[role="treeitem"]') as HTMLElement;
+    fireEvent.click(within(rooms).getByRole('button', { name: 'expand JSON' }));
+
+    expect(rooms).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(within(rooms).getByRole('button', { name: 'expand JSON' }));
+    expect(screen.getByText('name:')).toBeInTheDocument();
+    expect(screen.getByText('"#team"')).toBeInTheDocument();
   });
 });

@@ -112,6 +112,12 @@ export interface UseAutoKickoffParams {
    */
   hydrated: boolean;
   /**
+   * Whether first-turn ownership checks have finished successfully. A newborn
+   * greeting stays unfired while this is false so it can start once the check
+   * finishes instead of being silently spent by the guarded send path.
+   */
+  canStart?: boolean;
+  /**
    * Trigger the agent's first turn (from `useSessionSubmit`). Rejects when the
    * trigger POST fails. The second argument pins the turn to the agent's own
    * directory (the birth record's `path`).
@@ -139,6 +145,7 @@ export function useAutoKickoff({
   status,
   messages,
   hydrated,
+  canStart = true,
   submitKickoff,
   submitContent,
 }: UseAutoKickoffParams): void {
@@ -159,6 +166,7 @@ export function useAutoKickoff({
       return;
     }
     if (record.fired || firedKickoffs.has(sessionId)) return;
+    if (!canStart) return;
     // Only open a truly fresh session. A session that already has content or a
     // turn in flight is never one we may inject an opening into.
     if (messageCount > 0 || status !== 'idle') return;
@@ -199,7 +207,7 @@ export function useAutoKickoff({
         useAgentBirthStore.getState().markGreetingFailed(sessionId);
       }
     });
-  }, [sessionId, cwd, record, status, messageCount, submitKickoff, submitContent]);
+  }, [sessionId, cwd, record, status, messageCount, canStart, submitKickoff, submitContent]);
 
   // Honest mid-stream failure: a kickoff whose trigger was ACCEPTED (202) can
   // still die — the turn starts, then ends or errors before any assistant text.

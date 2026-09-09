@@ -233,6 +233,56 @@ describe('reconstructHistoryFromEvents', () => {
     ]);
   });
 
+  it('drops a legacy persisted Codex diagnostic from completed history', () => {
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'continue' },
+        {
+          seq: 2,
+          type: 'error',
+          code: 'item_error',
+          message:
+            'Model metadata for `gpt-6-astra` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.',
+        },
+        { seq: 3, type: 'text_delta', text: 'Finished.' },
+        { seq: 4, type: 'turn_end', terminalReason: 'completed' }
+      )
+    );
+
+    expect(messages).toEqual([
+      { id: 'user-1', role: 'user', content: 'continue' },
+      { id: 'assistant-1', role: 'assistant', content: 'Finished.' },
+    ]);
+  });
+
+  it('upgrades a legacy persisted nested model error without changing its raw details', () => {
+    const raw =
+      '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-5.4\' model is not supported when using Codex with a ChatGPT account."}}';
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'continue' },
+        {
+          seq: 2,
+          type: 'error',
+          code: 'turn_failed',
+          message: raw,
+          details: 'Original diagnostic context',
+        },
+        { seq: 3, type: 'turn_end', terminalReason: 'error' }
+      )
+    );
+
+    expect(messages[1]?.parts).toEqual([
+      {
+        type: 'error',
+        message:
+          'gpt-5.4 isn\u2019t available with a ChatGPT account. Choose another model from the model menu.',
+        category: 'model_unavailable',
+        details: `[turn_failed] Original diagnostic context\n${raw}`,
+      },
+    ]);
+  });
+
   it('keeps clean turns parts-less (byte-identical to the pre-error fold)', () => {
     const messages = reconstructHistoryFromEvents(
       events(

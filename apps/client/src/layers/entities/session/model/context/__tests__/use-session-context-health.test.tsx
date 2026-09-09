@@ -94,6 +94,33 @@ describe('useSessionContextHealth (list-vs-live merge, live wins)', () => {
     expect(result.current.asOf).toBe('2026-07-17T02:00:00.000Z');
   });
 
+  it('derives Codex health from the effective window supplied by its model catalog', async () => {
+    const session = createMockSession({
+      id: 'codex-list-1',
+      runtime: 'codex',
+      model: 'gpt-6-astra',
+      contextTokens: 129_200,
+      updatedAt: '2026-09-08T22:04:00.000Z',
+    });
+    const getModels = vi.fn().mockResolvedValue([
+      {
+        value: 'gpt-6-astra',
+        displayName: 'GPT-6-Astra',
+        description: 'Capable model',
+        contextWindow: 258_400,
+      },
+    ] satisfies ModelOption[]);
+
+    const { result } = renderHook(() => useSessionContextHealth(session), {
+      wrapper: makeWrapper(getModels),
+    });
+
+    await waitFor(() => expect(result.current.status).toBe('known'));
+    expect(getModels).toHaveBeenCalledWith({ runtime: 'codex', sessionId: undefined });
+    expect(result.current.percent).toBe(50);
+    expect(result.current.severity).toBe('ok');
+  });
+
   it('is unknown with neither a live reading nor list contextTokens', async () => {
     // Purpose: a codex/opencode-style closed row (no reading, no tokens) reads
     // honestly as unknown — never a fabricated 0%.

@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
   AgentIdentityService,
@@ -7,6 +10,7 @@ import {
 } from '../agent-identity-service.js';
 import {
   resolveAgentTokenEnv,
+  ensureInSessionAgentIdentity,
   createInSessionContextResolver,
   AGENT_TOKEN_ENV_VAR,
 } from '../agent-token-env.js';
@@ -17,6 +21,27 @@ vi.mock('../../../../lib/logger.js', () => ({
 }));
 
 const AGENT_PATH = '/projects/researcher';
+
+async function writeAgentManifest(
+  agentDir: string,
+  tierCeiling: 'observe' | 'destructive'
+): Promise<void> {
+  await writeFile(
+    path.join(agentDir, '.dork', 'agent.json'),
+    JSON.stringify({
+      id: 'agent-new',
+      name: 'new-agent',
+      displayName: 'New Agent',
+      description: '',
+      runtime: 'opencode',
+      capabilities: [],
+      behavior: { responseMode: 'always' },
+      tierCeiling,
+      registeredAt: '2026-09-08T00:00:00.000Z',
+      registeredBy: 'test',
+    })
+  );
+}
 
 /** Every argument the logger mock has seen, flattened for substring scanning. */
 function allLoggedText(): string {
@@ -142,6 +167,75 @@ describe('createInSessionContextResolver', () => {
       displayName: 'Researcher',
       tierCeiling: 'destructive',
     });
+  });
+
+  it('describes a brand-new registered agent without minting an unused bearer', async () => {
+    const agentDir = await mkdtemp(path.join(tmpdir(), 'in-session-identity-'));
+    try {
+      await mkdir(path.join(agentDir, '.dork'));
+      await writeAgentManifest(agentDir, 'observe');
+      const service = initAgentIdentityService(createTestDb());
+      expect(await service.describeAgent(agentDir)).toBeUndefined();
+
+      const resolved = await ensureInSessionAgentIdentity(agentDir);
+
+      expect(resolved).toEqual({
+        agentPath: agentDir,
+        displayName: 'New Agent',
+        tierCeiling: 'observe',
+        createdAt: '2026-09-08T00:00:00.000Z',
+      });
+      expect(await service.describeAgent(agentDir)).toBeUndefined();
+    } finally {
+      await rm(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it('takes a later turn ceiling from the manifest instead of an older token record', async () => {
+    const agentDir = await mkdtemp(path.join(tmpdir(), 'in-session-identity-'));
+    try {
+      await mkdir(path.join(agentDir, '.dork'));
+      await writeAgentManifest(agentDir, 'observe');
+      const service = initAgentIdentityService(createTestDb());
+      await service.mint({
+        agentPath: agentDir,
+        displayName: 'New Agent',
+        tierCeiling: 'observe',
+      });
+
+      await writeAgentManifest(agentDir, 'destructive');
+
+      await expect(ensureInSessionAgentIdentity(agentDir)).resolves.toMatchObject({
+        tierCeiling: 'destructive',
+      });
+      await expect(service.describeAgent(agentDir)).resolves.toMatchObject({
+        tierCeiling: 'observe',
+      });
+    } finally {
+      await rm(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it('never replaces a recorded revocation with an active manifest identity', async () => {
+    const agentDir = await mkdtemp(path.join(tmpdir(), 'in-session-identity-'));
+    try {
+      await mkdir(path.join(agentDir, '.dork'));
+      await writeAgentManifest(agentDir, 'destructive');
+      const service = initAgentIdentityService(createTestDb());
+      await service.mint({
+        agentPath: agentDir,
+        displayName: 'New Agent',
+        tierCeiling: 'observe',
+      });
+      await service.revoke(agentDir);
+
+      await expect(ensureInSessionAgentIdentity(agentDir)).resolves.toMatchObject({
+        tierCeiling: 'observe',
+        inactive: 'revoked',
+      });
+    } finally {
+      await rm(agentDir, { recursive: true, force: true });
+    }
   });
 
   it('memoizes so many tool calls in one session cost one lookup', async () => {

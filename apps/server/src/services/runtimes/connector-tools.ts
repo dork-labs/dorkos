@@ -35,6 +35,8 @@ export interface ConnectorRuntimeTools {
   readonly principals: ConnectorRuntimePrincipalPort;
   /** URL of the independently authenticated loopback MCP listener. */
   readonly listenerUrl: string;
+  /** Loopback URL exposing the DorkOS capabilities declared for agent sessions. */
+  readonly agentToolsUrl: string;
   /** Broker-owned exact predicate for the five private runtime connector capabilities. */
   readonly isConnectorCapabilityId: (id: string) => boolean;
   /** Testable process-local supervisor constructor; production uses the default. */
@@ -45,6 +47,8 @@ export interface ConnectorRuntimeTools {
 export interface ConnectorRuntimeMcpInjection {
   /** Internal loopback MCP URL. */
   readonly url: string;
+  /** Same turn-bound listener's agent-safe DorkOS capability route. */
+  readonly agentToolsUrl: string;
   /** Authenticated runtime headers fixed for this turn. */
   readonly headers: Record<string, string>;
 }

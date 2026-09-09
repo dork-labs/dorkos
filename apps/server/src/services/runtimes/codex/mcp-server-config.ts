@@ -30,7 +30,7 @@
  * `env_http_headers`, and hands the values back in
  * {@link CodexMcpConversion.env} for {@link buildCodexOptions} to put in the
  * subprocess environment — the same split `dorkos-header-env.ts` already makes
- * for the `dorkos` server's own two headers.
+ * for the `dorkos` server's own turn-binding headers.
  *
  * @module services/runtimes/codex/mcp-server-config
  */
@@ -59,9 +59,9 @@ export type CodexMcpServerRecord = Record<string, CodexConfigObject>;
  *
  * DorkOS-owned and explicit rather than short, because these are spread into an
  * inherited environment: a collision would silently replace a credential with
- * somebody else's value. Deliberately distinct from the `dorkos` server's own
- * `DORKOS_MCP_HEADER_*` names (`dorkos-mcp-injection.ts`) so the two mints can
- * never land on the same variable.
+ * somebody else's value. Deliberately distinct from the internal runtime
+ * listener's fixed turn-binding names so the two sources cannot share a
+ * variable accidentally.
  */
 const MANAGED_HEADER_ENV_PREFIX = 'DORKOS_MCP_HDR_';
 

@@ -40,6 +40,7 @@ import type {
 import type { StreamEvent, TaskItem } from '@dorkos/shared/types';
 import { UiCommandSchema } from '@dorkos/shared/schemas';
 import {
+  describeCodexDiagnostic,
   describeRuntimeError,
   type RuntimeErrorCopy,
 } from '@dorkos/shared/runtime-error-classification';
@@ -50,6 +51,7 @@ import {
   uiActionRefusalMessage,
 } from './ui-command-consent.js';
 import { recordCodexMedia, type CodexMediaState } from './media-capture.js';
+import { readCodexTurnContextUsage, type CodexTurnContextUsage } from './turn-context-usage.js';
 
 /**
  * This adapter's runtime type — the identity {@link describeRuntimeError} turns
@@ -57,6 +59,23 @@ import { recordCodexMedia, type CodexMediaState } from './media-capture.js';
  * never another runtime's name (DOR-1656).
  */
 const CODEX_RUNTIME_TYPE = 'codex';
+const TURN_CONTEXT_USAGE_TIMEOUT_MS = 100;
+
+type ReadTurnContextUsage = (
+  threadId: string,
+  turnStartedAtMs: number,
+  signal: AbortSignal
+) => Promise<CodexTurnContextUsage | null>;
+
+/** Optional dependencies for one Codex event-mapping context. */
+export interface CodexEventContextOptions {
+  /** Native rollout reader used after a completed turn. */
+  readTurnContextUsage?: ReadTurnContextUsage;
+  /** Maximum wait for optional native context metadata. */
+  turnContextUsageTimeoutMs?: number;
+  /** Clock seam for deterministic turn-boundary tests. */
+  now?: () => number;
+}
 
 /**
  * What to show for one Codex failure: DorkOS's sentence when the CLI's words
@@ -105,6 +124,14 @@ export interface CodexEventContext extends CodexMediaState {
   readonly sessionId: string;
   /** Codex thread id; set when `thread.started` arrives (persisted by the thread map). */
   threadId?: string;
+  /** Local observation time for the current `turn.started` event. */
+  turnStartedAtMs?: number;
+  /** Native context reader; optional metadata failures never fail the turn. */
+  readonly readTurnContextUsage: ReadTurnContextUsage;
+  /** Maximum wait for the native context reader. */
+  readonly turnContextUsageTimeoutMs: number;
+  /** Clock used to mark a turn's lower timestamp boundary. */
+  readonly now: () => number;
   /** Last-seen cumulative text per agent_message/reasoning item id. */
   readonly lastTextById: Map<string, string>;
   /** Last-seen cumulative aggregated_output per command_execution item id. */
@@ -130,11 +157,21 @@ export interface CodexEventContext extends CodexMediaState {
 /**
  * Create a fresh mapping context for one turn.
  *
- * @param sessionId - DorkOS session identifier stamped onto emitted events
+ * @param sessionId - DorkOS session identifier stamped onto emitted events.
+ * @param options - Optional native-usage and clock seams.
  */
-export function createCodexEventContext(sessionId: string): CodexEventContext {
+export function createCodexEventContext(
+  sessionId: string,
+  options: CodexEventContextOptions = {}
+): CodexEventContext {
   return {
     sessionId,
+    readTurnContextUsage:
+      options.readTurnContextUsage ??
+      ((threadId, turnStartedAtMs, signal) =>
+        readCodexTurnContextUsage({ threadId, turnStartedAtMs, signal })),
+    turnContextUsageTimeoutMs: options.turnContextUsageTimeoutMs ?? TURN_CONTEXT_USAGE_TIMEOUT_MS,
+    now: options.now ?? Date.now,
     lastTextById: new Map(),
     lastOutputById: new Map(),
     startedToolIds: new Set(),
@@ -153,8 +190,13 @@ export function createCodexEventContext(sessionId: string): CodexEventContext {
  *
  * @param event - The Codex SDK thread event to translate
  * @param ctx - Per-turn mapping context (mutated)
+ * @param turnContextUsage - Native current-context measurement for a completed turn.
  */
-export function mapCodexEvent(event: ThreadEvent, ctx: CodexEventContext): StreamEvent[] {
+export function mapCodexEvent(
+  event: ThreadEvent,
+  ctx: CodexEventContext,
+  turnContextUsage: CodexTurnContextUsage | null = null
+): StreamEvent[] {
   switch (event.type) {
     case 'thread.started':
       // No StreamEvent — the thread id feeds the sessionId↔threadId map
@@ -162,15 +204,17 @@ export function mapCodexEvent(event: ThreadEvent, ctx: CodexEventContext): Strea
       ctx.threadId = event.thread_id;
       return [];
     case 'turn.started':
+      ctx.turnStartedAtMs = ctx.now();
       return [];
     case 'turn.completed':
-      // Usage passthrough. Codex reports prompt tokens as input_tokens with
-      // cached_input_tokens as the cache-read subset. reasoning_output_tokens
-      // (the SDK's separate reasoning-model tally) has no StreamEvent home of
-      // its own, so it is FOLDED into outputTokens — otherwise the displayed
-      // output-token count materially undercounts reasoning-model turns. It is
-      // typed as a required `number`, but defaults to 0 defensively in case a
-      // future/older payload omits it.
+      // Live Codex streams expose accumulated SDK input usage here, not the
+      // active context size. Only the verified native rollout measurement may
+      // populate contextTokens/contextMaxTokens; when it is unavailable those
+      // keys stay absent so the projector retains a prior valid reading.
+      // Output/cache remain the SDK's existing cumulative accounting.
+      // reasoning_output_tokens has no StreamEvent home of its own, so it is
+      // folded into outputTokens. It is typed as required, but defaults to 0
+      // defensively for older/future payloads.
       //
       // `terminalReason: 'completed'` marks the normal-completion outcome so
       // feedProjector latches it onto the synthesized turn_end (the failure
@@ -180,7 +224,7 @@ export function mapCodexEvent(event: ThreadEvent, ctx: CodexEventContext): Strea
           type: 'session_status',
           data: {
             sessionId: ctx.sessionId,
-            contextTokens: event.usage.input_tokens,
+            ...(turnContextUsage ?? {}),
             outputTokens: event.usage.output_tokens + (event.usage.reasoning_output_tokens ?? 0),
             cacheReadTokens: event.usage.cached_input_tokens,
             terminalReason: 'completed',
@@ -242,6 +286,35 @@ export function mapCodexEvent(event: ThreadEvent, ctx: CodexEventContext): Strea
   }
 }
 
+async function readCompletedTurnContext(
+  ctx: CodexEventContext
+): Promise<CodexTurnContextUsage | null> {
+  const threadId = ctx.threadId;
+  const turnStartedAtMs = ctx.turnStartedAtMs;
+  if (threadId === undefined || turnStartedAtMs === undefined) return null;
+
+  const controller = new AbortController();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (usage: CodexTurnContextUsage | null): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(usage);
+    };
+    const timer = setTimeout(
+      () => {
+        controller.abort();
+        finish(null);
+      },
+      Math.max(0, ctx.turnContextUsageTimeoutMs)
+    );
+    void Promise.resolve()
+      .then(() => ctx.readTurnContextUsage(threadId, turnStartedAtMs, controller.signal))
+      .then(finish, () => finish(null));
+  });
+}
+
 /**
  * Map a whole `runStreamed().events` stream, guaranteeing the conformance
  * invariant that exactly one terminal `done` ends the StreamEvent stream:
@@ -263,7 +336,9 @@ export async function* mapCodexThread(
 ): AsyncGenerator<StreamEvent> {
   try {
     for await (const event of events) {
-      for (const mapped of mapCodexEvent(event, ctx)) {
+      const turnContextUsage =
+        event.type === 'turn.completed' ? await readCompletedTurnContext(ctx) : null;
+      for (const mapped of mapCodexEvent(event, ctx, turnContextUsage)) {
         yield mapped;
         if (mapped.type === 'done') return;
       }
@@ -317,9 +392,16 @@ function mapThreadItem(item: ThreadItem, phase: ItemPhase, ctx: CodexEventContex
     case 'todo_list':
       return mapTodoList(item, ctx);
     case 'error': {
-      // Non-fatal error item — surfaced as a typed, NON-terminal error event.
-      // Remember the RAW message: turn.failed dedupes against it (see
-      // mapCodexEvent) and compares the CLI's text, not what a person is shown.
+      // Codex 0.147 reports these known warnings as error items even when the
+      // turn continues. Keep them in the transient status strip, not the red
+      // error treatment or durable failure history. Do not feed them into the
+      // terminal dedupe state: if turn.failed repeats the same words, that
+      // terminal verdict must still remain visible.
+      const diagnostic = describeCodexDiagnostic(item.message);
+      if (diagnostic) return [{ type: 'system_status', data: { message: diagnostic } }];
+
+      // Unknown item errors remain visible. Remember the RAW message so a
+      // following turn.failed with the same failure does not render it twice.
       ctx.lastErrorMessage = item.message;
       // The item is where a dead sign-in actually lands: live traffic reports it
       // here first and repeats it on `turn.failed`, which then dedupes itself
@@ -333,15 +415,17 @@ function mapThreadItem(item: ThreadItem, phase: ItemPhase, ctx: CodexEventContex
       // while the Codex sign-in is fine. Narrowing costs us the vaguer wordings
       // here; `turn.failed` still catches those when the turn really dies.
       //
-      // ONLY the auth case gains a `category`, and that asymmetry is deliberate:
-      // an item error has always shipped without one, and the client renders a
-      // category-less error by showing its `message` (ErrorMessageBlock falls
-      // back to it) while a categorised one shows that category's fixed copy
-      // instead. Categorising an ordinary item failure would therefore HIDE the
-      // only account of what went wrong. An auth failure has somewhere better to
-      // send them, and its raw text survives in `details`.
+      // Only failures with an actionable recovery gain a `category`, and that
+      // asymmetry is deliberate. A category-less item error renders its exact
+      // message; categorising an ordinary item failure would hide its only
+      // useful account. Auth and known model failures have a better next step,
+      // and their raw text survives in `details`.
       const copy = codexErrorCopy(item.message, { diagnostic: true });
-      if (copy.category !== 'auth_error') {
+      if (
+        copy.category !== 'auth_error' &&
+        copy.category !== 'model_unavailable' &&
+        copy.category !== 'runtime_update_required'
+      ) {
         return [{ type: 'error', data: { message: item.message, code: 'item_error' } }];
       }
       return [{ type: 'error', data: { ...copy, code: 'item_error' } }];

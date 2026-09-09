@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { StreamEventSchema, UI_COMMAND_REACH } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ThreadEvent } from '@openai/codex-sdk';
@@ -39,6 +39,14 @@ import {
 } from './codex-scenarios.js';
 
 const SESSION_ID = 'session-1';
+const METADATA_WARNING =
+  'Model metadata for `gpt-6-astra` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.';
+const MODEL_SWITCH_WARNING =
+  'This session was recorded with model `gpt-6-astra` but is resuming with `gpt-5.4`. Consider switching back to `gpt-6-astra` as it may affect Codex performance.';
+const CODEX_UPDATE_ERROR =
+  '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-6-astra\' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again."}}';
+const CHATGPT_MODEL_ERROR =
+  '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-5.4\' model is not supported when using Codex with a ChatGPT account."}}';
 
 function makeContext(): CodexEventContext {
   return createCodexEventContext(SESSION_ID);
@@ -631,14 +639,26 @@ describe('mapCodexEvent', () => {
       ]);
     });
 
-    it('maps turn.completed to usage session_status followed by terminal done', () => {
+    it.each([
+      [METADATA_WARNING, 'Using fallback settings for gpt-6-astra.'],
+      [MODEL_SWITCH_WARNING, 'Resumed with gpt-5.4 instead of gpt-6-astra.'],
+      [
+        'Falling back from WebSockets to HTTPS. stream disconnected before completion',
+        'Codex switched to a standard connection.',
+      ],
+    ])('maps a known nonfatal item diagnostic to a calm status notice', (message, expected) => {
+      expect(
+        mapCodexEvent(codexItemCompleted(errorThreadItem('diagnostic', message)), makeContext())
+      ).toEqual([{ type: 'system_status', data: { message: expected } }]);
+    });
+
+    it('keeps SDK output and cache totals but omits its cumulative input from context', () => {
       const events = mapCodexEvent(codexTurnCompleted(DEFAULT_USAGE), makeContext());
       expect(events).toEqual([
         {
           type: 'session_status',
           data: {
             sessionId: SESSION_ID,
-            contextTokens: 120,
             // 45 output + 10 reasoning tokens folded in (DEFAULT_USAGE).
             outputTokens: 55,
             cacheReadTokens: 80,
@@ -647,6 +667,20 @@ describe('mapCodexEvent', () => {
         },
         { type: 'done', data: { sessionId: SESSION_ID } },
       ]);
+    });
+
+    it('maps verified native current-context usage onto a completed turn', () => {
+      const events = mapCodexEvent(codexTurnCompleted(DEFAULT_USAGE), makeContext(), {
+        contextTokens: 54_999,
+        contextMaxTokens: 258_400,
+      });
+
+      expect(events[0]?.data).toMatchObject({
+        contextTokens: 54_999,
+        contextMaxTokens: 258_400,
+        outputTokens: 55,
+        cacheReadTokens: 80,
+      });
     });
 
     it('folds reasoning_output_tokens into the reported outputTokens count', () => {
@@ -733,6 +767,63 @@ describe('mapCodexEvent', () => {
       expect(events[1]!.data).toMatchObject({ message: 'connection lost', code: 'turn_failed' });
     });
 
+    it('does not let a preceding diagnostic dedupe away a terminal failure with the same text', () => {
+      const ctx = makeContext();
+      mapCodexEvent(codexItemCompleted(errorThreadItem('diagnostic', METADATA_WARNING)), ctx);
+
+      const events = mapCodexEvent(codexTurnFailed(METADATA_WARNING), ctx);
+      expect(events.map((event) => event.type)).toEqual(['session_status', 'error', 'done']);
+      expect(events[1]!.data).toMatchObject({
+        message: METADATA_WARNING,
+        code: 'turn_failed',
+        category: 'execution_error',
+      });
+    });
+
+    it('maps a nested model/version rejection to actionable copy with raw details', () => {
+      const events = mapCodexEvent(codexTurnFailed(CODEX_UPDATE_ERROR), makeContext());
+      expect(events[1]).toEqual({
+        type: 'error',
+        data: {
+          message:
+            'The Codex version DorkOS is using is too old for gpt-6-astra. Update DorkOS (or your custom Codex installation), then try again. You can also choose another model.',
+          code: 'turn_failed',
+          category: 'runtime_update_required',
+          details: CODEX_UPDATE_ERROR,
+        },
+      });
+    });
+
+    it('classifies a nested model rejection even when Codex reports it as an item error', () => {
+      const events = mapCodexEvent(
+        codexItemCompleted(errorThreadItem('model-error', CHATGPT_MODEL_ERROR)),
+        makeContext()
+      );
+      expect(events).toEqual([
+        {
+          type: 'error',
+          data: {
+            message:
+              'gpt-5.4 isn’t available with a ChatGPT account. Choose another model from the model menu.',
+            category: 'model_unavailable',
+            details: CHATGPT_MODEL_ERROR,
+            code: 'item_error',
+          },
+        },
+      ]);
+    });
+
+    it('does not misclassify a ChatGPT model rejection as a sign-in failure', () => {
+      const events = mapCodexEvent(codexTurnFailed(CHATGPT_MODEL_ERROR), makeContext());
+      expect(events[1]?.data).toEqual({
+        message:
+          'gpt-5.4 isn’t available with a ChatGPT account. Choose another model from the model menu.',
+        code: 'turn_failed',
+        category: 'model_unavailable',
+        details: CHATGPT_MODEL_ERROR,
+      });
+    });
+
     it('maps a stream-level error to a NON-terminal system_status diagnostic', () => {
       // Live-verified: stream errors are transient reconnect attempts, not
       // fatal (NOTES.md §Additional live-verified facts) — no error, no done.
@@ -788,6 +879,49 @@ describe('mapCodexThread', () => {
       .map((e) => (e.data as { text: string }).text)
       .join('');
     expect(text).toBe('Hello world');
+  });
+
+  it('reads native current context after turn completion', async () => {
+    const readTurnContextUsage = vi.fn(async () => ({
+      contextTokens: 54_999,
+      contextMaxTokens: 258_400,
+    }));
+    const ctx = createCodexEventContext(SESSION_ID, {
+      readTurnContextUsage,
+      now: () => 1_788_908_279_000,
+    });
+    const turn = codexSimpleTurn('done');
+    turn[0] = codexThreadStarted('01a082ce-2b72-71d2-be38-aa8425f13650');
+
+    const events = await drain(turn, ctx);
+
+    expect(readTurnContextUsage).toHaveBeenCalledWith(
+      '01a082ce-2b72-71d2-be38-aa8425f13650',
+      1_788_908_279_000,
+      expect.any(AbortSignal)
+    );
+    expect(events.find((event) => event.type === 'session_status')?.data).toMatchObject({
+      contextTokens: 54_999,
+      contextMaxTokens: 258_400,
+    });
+  });
+
+  it('finishes with honest unknown context when the native reader never settles', async () => {
+    const ctx = createCodexEventContext(SESSION_ID, {
+      readTurnContextUsage: () => new Promise(() => {}),
+      turnContextUsageTimeoutMs: 5,
+      now: () => 1_788_908_279_000,
+    });
+    const turn = codexSimpleTurn('done');
+    turn[0] = codexThreadStarted('01a082ce-2b72-71d2-be38-aa8425f13650');
+
+    const events = await drain(turn, ctx);
+    const status = events.find((event) => event.type === 'session_status');
+
+    expect(status?.data).not.toHaveProperty('contextTokens');
+    expect(status?.data).not.toHaveProperty('contextMaxTokens');
+    expect(status?.data).toMatchObject({ outputTokens: 55, cacheReadTokens: 80 });
+    expect(events.at(-1)?.type).toBe('done');
   });
 
   it('recovers through transient stream errors into a completed turn', async () => {

@@ -1732,7 +1732,9 @@
           "execution_error",
           "budget_exceeded",
           "output_format_error",
-          "auth_error"
+          "auth_error",
+          "model_unavailable",
+          "runtime_update_required"
         ]
       },
       "ElicitationPart": {

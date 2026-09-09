@@ -87,6 +87,22 @@ const SATISFIED_CHECKS: DependencyCheck[] = [
   },
 ];
 
+const ACCOUNT_MODELS: ModelOption[] = [
+  {
+    value: 'gpt-6-astra',
+    displayName: 'GPT-6-Astra',
+    description: 'Our most capable model for complex, demanding work.',
+    isDefault: true,
+    provider: 'openai',
+  },
+  {
+    value: 'gpt-5.6-sol',
+    displayName: 'GPT-5.6-Sol',
+    description: 'Reliable agentic workhorse for everyday tasks.',
+    provider: 'openai',
+  },
+];
+
 /** Deterministic default-root floor for the turn cwd resolution chain. */
 const DEFAULT_ROOT = '/projects/default-root';
 
@@ -103,6 +119,7 @@ function makeRuntime(opts: { binaryPath?: string | null; db?: Db } = {}) {
     // passes the shared ladder). `/bin/codex` is the ordinary "Codex is
     // installed" host; a test that needs the missing-binary case says so.
     resolveBinary: async () => ('binaryPath' in opts ? opts.binaryPath : '/bin/codex'),
+    modelCatalog: { getSupportedModels: async () => ACCOUNT_MODELS },
     defaultCwd: DEFAULT_ROOT,
   });
   return { runtime, threadMap, db };
@@ -392,14 +409,14 @@ describe('CodexRuntime', () => {
       ]);
     });
 
-    it('exposes the pinned CLI model catalog with gpt-5.5 as default', async () => {
+    it('exposes the current account catalog and its CLI-reported default', async () => {
       const { runtime } = makeRuntime();
       const models = await runtime.getSupportedModels();
 
       const defaults = models.filter((m) => m.isDefault);
       expect(defaults).toHaveLength(1);
-      expect(defaults[0]!.value).toBe('gpt-5.5');
-      expect(models.map((m) => m.value)).toContain('gpt-5.3-codex');
+      expect(defaults[0]!.value).toBe('gpt-6-astra');
+      expect(models.map((m) => m.value)).toContain('gpt-5.6-sol');
       for (const model of models) expect(model.provider).toBe('openai');
     });
   });

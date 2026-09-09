@@ -2891,6 +2891,15 @@
       "created": "2026-08-28",
       "status": "specified",
       "linearIssue": "DOR-1611"
+    },
+    {
+      "id": "260908-154500",
+      "slug": "codex-session-reliability",
+      "title": "Reliable Codex sessions",
+      "created": "2026-09-08",
+      "status": "implemented",
+      "project": "Sessions & Runtimes",
+      "linearIssue": "DOR-1925"
     }
   ]
 }

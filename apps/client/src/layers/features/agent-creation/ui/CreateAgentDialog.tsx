@@ -208,7 +208,7 @@ export function CreateAgentDialog() {
           }
           navigate({
             to: '/session',
-            search: { dir: data._path, session: newSessionId },
+            search: { dir: data._path, session: newSessionId, runtime: data.runtime },
           });
         },
         // No local onError: `useCreateAgent`'s `meta.errorLabel` routes the
