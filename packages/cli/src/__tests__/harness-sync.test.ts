@@ -2876,6 +2876,41 @@ describe('runHarnessSync --global — the packages installed for all your projec
   });
 
   it.skipIf(!CAN_MAKE_UNREADABLE)(
+    'SK-03: a skill folder it cannot look inside keeps its link, and says which folder',
+    async () => {
+      // DOR-1935. Seeded defect: let the scan decide "is this a skill?" with
+      // `existsSync(<dir>/SKILL.md)`, which needs `x` on `<dir>`. The folder then
+      // is not a skill, the plan stops naming its link, and clause 4 of the sweep
+      // — the package is on disk AND the plan enumerated it — removes the link
+      // with nothing printed.
+      installGlobal('globex', [{ name: 'greet', timed: true }, { name: 'wave' }]);
+      await runHarnessSync(syncArgs({ fix: true, global: true }));
+      const linked = path.join(homeDir, 'skills', 'globex__greet');
+      expect(fs.lstatSync(linked, { throwIfNoEntry: false })).toBeDefined();
+      logSpy.mockClear();
+
+      const skillDir = path.join(homeDir, 'plugins', 'globex', 'skills', 'greet');
+      fs.chmodSync(skillDir, 0o000);
+      try {
+        const result = await runHarnessSync(syncArgs({ fix: true, global: true }));
+
+        expect(result.exitCode).toBe(0);
+        expect(printed()).toContain(skillDir);
+        expect(printed()).toContain('could not look inside');
+        expect(printed()).not.toContain('Removed 1 link(s)');
+        expect(fs.lstatSync(linked, { throwIfNoEntry: false })).toBeDefined();
+        // The sibling is untouched, so this is containment rather than a sweep
+        // switched off.
+        expect(
+          fs.lstatSync(path.join(homeDir, 'skills', 'globex__wave'), { throwIfNoEntry: false })
+        ).toBeDefined();
+      } finally {
+        fs.chmodSync(skillDir, 0o755);
+      }
+    }
+  );
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)(
     'SK-03: a packages folder it cannot read stops the run and removes nothing',
     async () => {
       // Seeded defect: drop the `unreadableRoot` guard. The plan is empty because

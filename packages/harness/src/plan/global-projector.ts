@@ -35,6 +35,7 @@ import {
   type UnreadablePackageManifest,
 } from '../sources/installed.js';
 import { planUnreadableManifestWarnings } from './unreadable-manifests.js';
+import { planUnreadableSkillWarnings } from './unreadable-skills.js';
 import { PLUGIN_ROOT_SKILL_WARNING_REASON } from './installed-projector.js';
 import type { ProjectionAction, ProjectionPlan, ProjectionWarning } from './types.js';
 
@@ -475,6 +476,16 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
   // linked.
   const warnings: ProjectionWarning[] = planUnreadableManifestWarnings(
     input.unreadableManifests ?? []
+  );
+  // A skill folder inside a package that nobody could look into. It is planned
+  // and kept like any other — an unreadable skill is present, not absent — and
+  // this is the line saying so (DOR-1935).
+  warnings.push(
+    ...planUnreadableSkillWarnings(
+      input.packages
+        .filter((plugin) => plugin.location.scope === 'global')
+        .flatMap((plugin) => plugin.unreadableSkills ?? [])
+    )
   );
   // One action per TARGET PATH. Two packages cannot collide (the namespace is
   // the package name) but a package's own `skills/` and `.dork/tasks/` are

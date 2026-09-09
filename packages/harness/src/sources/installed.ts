@@ -184,6 +184,19 @@ export interface InstalledPlugin {
    * like an orphan and the next sync deleted all of them (DOR-1882).
    */
   unreadableSkillRoots?: string[];
+  /**
+   * This package's individual skill DIRECTORIES that could not be looked into,
+   * spelled the way {@link skills} spells its paths.
+   *
+   * Present only when there is one, and every entry here is also in
+   * {@link skills} carrying `unreadable` — the list exists so a report can name
+   * the folder, never so a reader can subtract it. One level below
+   * {@link unreadableSkillRoots} and for the same reason: the plan is the
+   * sweep's only evidence of what this package installs, and a skill folder
+   * nobody could look into used to answer "not a skill" and take its live
+   * `<pkg>__<name>` links with it, silently (DOR-1935).
+   */
+  unreadableSkills?: string[];
   /** Declared content layers from the manifest (informational). */
   layers: string[];
 }
@@ -553,7 +566,7 @@ function collectPortableSkills(
   pluginDir: string,
   sourcePrefix: string,
   dorkHomeLink?: (skillName: string) => boolean
-): { skills: InstalledSkill[]; unreadableRoots: string[] } {
+): { skills: InstalledSkill[]; unreadableRoots: string[]; unreadableSkills: string[] } {
   const skillsRoot = join(pluginDir, 'skills');
   const tasksRoot = join(pluginDir, '.dork', 'tasks');
   const contained = { followSymlinks: false } as const;
@@ -578,6 +591,13 @@ function collectPortableSkills(
       ...(skillsListing.unreadable ? [skillsRel] : []),
       ...(tasksListing.unreadable ? [tasksRel] : []),
     ],
+    // Only the entries that survived de-duplication: a `.dork/tasks/<name>` a
+    // same-named `skills/<name>` won over is not in the plan, so naming it would
+    // point somebody at a folder nothing was decided from.
+    unreadableSkills: [...byName.values()]
+      .filter((entry) => entry.unreadable === true)
+      .map((entry) => entry.sourceDir)
+      .sort(),
   };
 }
 
@@ -684,6 +704,9 @@ function scanPluginsRoot(
       ...(unreadable ? { unreadableHooks: unreadable } : {}),
       ...(portable.unreadableRoots.length > 0
         ? { unreadableSkillRoots: portable.unreadableRoots }
+        : {}),
+      ...(portable.unreadableSkills.length > 0
+        ? { unreadableSkills: portable.unreadableSkills }
         : {}),
       layers: manifest.layers,
     });

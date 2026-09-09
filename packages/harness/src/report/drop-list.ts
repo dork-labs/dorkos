@@ -7,6 +7,7 @@
  *
  * @module report/drop-list
  */
+import { isAbsolute } from 'node:path';
 import type { ProjectionAction, ProjectionPlan } from '../plan/types.js';
 
 /**
@@ -53,7 +54,9 @@ const PLUGIN_DIR_PREFIX = '.dork/plugins/';
  * "this project" in a run that has no project at all (DOR-1933). The repo-
  * relative prefix cannot be widened to cover an absolute install directory
  * without knowing the dork home, which this formatter is not given and should
- * not be.
+ * not be — so the absolute-ness itself is the answer for every other kind
+ * (DOR-1935), because a project plan spells every path it carries relative to
+ * the repository and only the global planner spells one out in full.
  *
  * For every other kind this still leans on an agnostic emitter carrying a
  * `source` when it has one, which is the same property that lets a warning be
@@ -63,7 +66,14 @@ const PLUGIN_DIR_PREFIX = '.dork/plugins/';
  */
 function isAboutAPackage(entry: { artifact: string; source?: string }): boolean {
   if (entry.artifact === 'plugin') return true;
-  return entry.source !== undefined && entry.source.startsWith(PLUGIN_DIR_PREFIX);
+  if (entry.source === undefined) return false;
+  // An ABSOLUTE source cannot be about the person's repository: every path a
+  // project plan carries is repo-relative, and the one planner that spells paths
+  // out in full is the global one, which reads `<dorkHome>/plugins` and nothing
+  // else. So this is the same "not this project" answer the prefix gives, for
+  // the scope where the prefix cannot exist (DOR-1935: a global package's
+  // unreadable skill folder read `this project:` in a run with no project).
+  return isAbsolute(entry.source) || entry.source.startsWith(PLUGIN_DIR_PREFIX);
 }
 
 /** The heading each entry is filed under: its harness, or one of the two agnostic ones. */

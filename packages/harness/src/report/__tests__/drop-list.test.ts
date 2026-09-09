@@ -164,6 +164,31 @@ describe('formatWarnings', () => {
     expect(out).not.toContain('claude-code:');
   });
 
+  it('files a global package’s unreadable skill folder under "plugin layers"', () => {
+    // DOR-1935. The same heading question one artifact down: this is a `skill`,
+    // so the kind does not answer it, and the path is absolute because a global
+    // package has no repository to be relative to. Seeded defect: decide it by
+    // the repo-relative prefix alone and a run with no project prints
+    // `this project:` over a folder in the person's data directory.
+    const out = formatWarnings({
+      actions: [],
+      drops: [],
+      warnings: [
+        {
+          artifact: 'skill',
+          harness: 'claude-code',
+          harnessAgnostic: true,
+          name: '/home/someone/.dork/plugins/globex/skills/greet',
+          source: '/home/someone/.dork/plugins/globex/skills/greet',
+          reason: 'DorkOS could not look inside …',
+        },
+      ],
+      notEnabled: [],
+    });
+    expect(out).toContain('plugin layers:');
+    expect(out).not.toContain('this project:');
+  });
+
   it('returns an empty string when there are no warnings', () => {
     // Callers omit the block entirely when empty.
     expect(formatWarnings({ actions: [], drops: [], warnings: [], notEnabled: [] })).toBe('');

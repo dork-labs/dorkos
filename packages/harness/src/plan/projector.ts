@@ -58,6 +58,7 @@ import {
 } from './installed-projector.js';
 import { planUnreadableHookWarnings } from './unreadable-hooks.js';
 import { planUnreadableManifestWarnings } from './unreadable-manifests.js';
+import { planUnreadableSkillWarnings } from './unreadable-skills.js';
 import {
   planForeignMcpDrops,
   planInventoriedArtifacts,
@@ -532,6 +533,17 @@ export function buildPlan(input: {
   // A package whose manifest will not parse: read at the same moment, reported
   // for the same reason, and just as invisible before it was (DOR-1933).
   warnings.push(...planUnreadableManifestWarnings(input.unreadableManifests ?? []));
+
+  // One level below the roots above: a single skill FOLDER nobody could look
+  // inside. It is still projected and its links are still kept — what it earns
+  // here is the line saying so (DOR-1935). No sweep stands down for one: the
+  // root read fine, and every other skill in it is ordinary evidence.
+  warnings.push(
+    ...planUnreadableSkillWarnings([
+      ...authored.unreadableSkills,
+      ...installedPlugins.flatMap((plugin) => plugin.unreadableSkills ?? []),
+    ])
+  );
 
   // Say what the tree holds and could not be read — a `.mcp.json` that will not
   // parse, a file where `.claude/agents` should be a directory. Once per source,
