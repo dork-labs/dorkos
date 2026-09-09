@@ -366,10 +366,16 @@ describe('the harness capabilities census', () => {
     // ids claimed). They exist because every other assertion in this file
     // quantifies over these lists: a parser that silently matched nothing would
     // report a perfectly consistent document.
-    expect(rows.length).toBeGreaterThanOrEqual(86);
+    //
+    // Every floor a row touches moves with it, by that row's own delta: SK-16
+    // (DOR-1943) raised `rows`, `titles` by its 29 cases, `claiming`, `built`
+    // and `idsInTitles`. All five are `toBeGreaterThanOrEqual`, so none of them
+    // BREAKS when it is left alone — which is exactly why raising them is part
+    // of the work. A floor nobody raises is a floor that stops meaning anything.
+    expect(rows.length).toBeGreaterThanOrEqual(87);
     expect(journeys.length).toBeGreaterThanOrEqual(14);
     expect(files.length).toBeGreaterThanOrEqual(63);
-    expect(titles.length).toBeGreaterThanOrEqual(590);
+    expect(titles.length).toBeGreaterThanOrEqual(619);
     // And every root really contributed, so a moved directory is a red rather
     // than a quietly smaller census.
     for (const root of TEST_ROOTS) {
@@ -386,7 +392,7 @@ describe('the harness capabilities census', () => {
 
   it('has a test title carrying the ID of every row that claims U, C or E coverage', () => {
     const claiming = rows.filter((row) => claimsCoverage(row.coverage));
-    expect(claiming.length).toBeGreaterThanOrEqual(50);
+    expect(claiming.length).toBeGreaterThanOrEqual(51);
 
     const uncovered = claiming.filter((row) => !idsInTitles.has(row.id)).map((row) => row.id);
 
@@ -404,7 +410,7 @@ describe('the harness capabilities census', () => {
     const built = rows.filter((row) =>
       row.state.replace(/\*/g, '').trimStart().startsWith('built')
     );
-    expect(built.length).toBeGreaterThanOrEqual(45);
+    expect(built.length).toBeGreaterThanOrEqual(46);
 
     const uncovered = built.filter((row) => claimsNoCoverage(row.coverage));
 
@@ -437,7 +443,7 @@ describe('the harness capabilities census', () => {
   });
 
   it('names no ID the document does not define', () => {
-    expect(idsInTitles.size).toBeGreaterThanOrEqual(73);
+    expect(idsInTitles.size).toBeGreaterThanOrEqual(74);
 
     const unknown = [...idsInTitles]
       .filter((id) => !documentedIds.has(id))
