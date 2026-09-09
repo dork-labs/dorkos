@@ -33,7 +33,18 @@ export * from './adopt/index.js';
 export * from './apply/apply.js';
 export * from './apply/global-apply.js';
 export * from './apply/gitignore.js';
-export * from './apply/windows-links.js';
+// The Windows link decision. Named exports rather than `export *`, so that
+// `setDirSymlinkProbe` — which decides what kind of link every sync makes — is
+// NOT on the package's surface: it exists for tests, which reach it by importing
+// the module directly, and a consumer able to set it could poison the answer for
+// a whole process.
+export {
+  JUNCTION_COMMIT_WARNING,
+  canSymlinkDirs,
+  isJunctionAt,
+  junctionCommitWarnings,
+  symlinkTypeFor,
+} from './apply/windows-links.js';
 // The generated-hooks half of apply, kept in its own module: only the orphan
 // sweep is part of the package's surface, the rest is apply's business.
 export { sweepGeneratedOrphans } from './apply/generated-targets.js';

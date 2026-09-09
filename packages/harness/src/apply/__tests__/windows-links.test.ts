@@ -89,6 +89,16 @@ function stageGitDir(repo: string): void {
 }
 
 describe('the Windows directory-link capability', () => {
+  it('AP-06: the probe setter is not on the package surface', async () => {
+    // It decides what kind of link every sync in the process makes. Tests reach
+    // it by importing the module; a consumer reaching it through the barrel
+    // could set it once and poison every projection after that.
+    const barrel = await import('../../index.js');
+
+    expect(Object.keys(barrel)).toContain('JUNCTION_COMMIT_WARNING');
+    expect(Object.keys(barrel)).not.toContain('setDirSymlinkProbe');
+  });
+
   it('AP-06: the probe answers yes or no and never throws', () => {
     // The real probe, on the real filesystem this suite is running on. It is the
     // only assertion here that does not substitute one, and the Windows leg runs

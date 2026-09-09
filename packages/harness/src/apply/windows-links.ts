@@ -87,11 +87,16 @@ let probeAnswer: boolean | undefined;
 /**
  * Substitute the capability probe, and forget whatever it last answered.
  *
- * **For tests only.** It is what lets both branches of a Windows-only decision
- * run on a POSIX machine: with `process.platform` redefined to `win32`, a probe
- * answering `true` drives the real-symlink branch and one answering `false`
- * drives the junction fallback. Pass `undefined` to restore the real probe,
- * which every suite that touches this must do when it ends.
+ * **For tests only, and deliberately not on the package barrel** (`index.ts`
+ * exports this module by name and leaves this one out): it decides what kind of
+ * link every sync makes, and a consumer able to set it could poison that for a
+ * whole process. A test reaches it by importing this module directly.
+ *
+ * It is what lets both branches of a Windows-only decision run on a POSIX
+ * machine: with `process.platform` redefined to `win32`, a probe answering
+ * `true` drives the real-symlink branch and one answering `false` drives the
+ * junction fallback. Pass `undefined` to restore the real probe, which every
+ * suite that touches this must do when it ends.
  *
  * @param probe - what to ask instead, or `undefined` to ask the filesystem again.
  */
@@ -112,7 +117,12 @@ export function setDirSymlinkProbe(probe: (() => boolean) | undefined): void {
  * probe that cannot answer must not be the reason a sync fails.
  *
  * The probe link is removed with the directory that holds it, so nothing is left
- * behind either way.
+ * behind either way — and the removal cannot change the answer. Windows refuses
+ * to remove a directory another process has open (an indexer, a scanner, a file
+ * watcher), and an `EPERM` raised while tidying up used to replace the answer
+ * this had already worked out, out of a function whose whole promise is that it
+ * never throws. A temporary directory left in `%TEMP%` is a smaller problem than
+ * a sync that will not run.
  *
  * @returns `true` when a directory symlink could really be created.
  */
@@ -128,8 +138,13 @@ function probeDirSymlink(): boolean {
     return false;
   } finally {
     // `rmSync` unlinks a symlink rather than following it, so this removes the
-    // probe and never what it pointed at.
-    if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
+    // probe and never what it pointed at — and whether it worked is nobody's
+    // business but this function's.
+    try {
+      if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* left in the temp directory, which the operating system clears */
+    }
   }
 }
 

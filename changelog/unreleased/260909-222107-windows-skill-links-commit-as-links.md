@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(harness,server,cli): a real link where Windows allows one, and a warning where it does not (DOR-1883)'
+  - 'fix(harness,cli): the Warnings heading names this run, and the link probe survives its own cleanup (DOR-1883)'
 ---
 
 ### Fixed

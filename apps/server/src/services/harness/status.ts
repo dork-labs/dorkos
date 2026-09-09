@@ -18,7 +18,7 @@
  * loadManifest(projectPath)                    → the enabled set + the declared Claude-only names
  * manifestNotices(manifest)                    → what is wrong with the manifest itself
  * planWithConsent(projectPath, …)              → { plan, withheld }
- * checkPlan(projectPath, plan)                 → { drifted, blocked, orphans, leftAlone, clean }
+ * checkPlan(projectPath, plan)                 → { drifted, blocked, orphans, removals, leftAlone, warnings, clean }
  * inventorySourceTree(projectPath)             → what is authored in the tree
  * ```
  *

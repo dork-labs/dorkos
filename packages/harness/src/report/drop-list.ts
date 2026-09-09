@@ -104,6 +104,45 @@ export function formatDropList(plan: ProjectionPlan): string {
 }
 
 /**
+ * The families of warning, in the words the heading uses, in the order they are
+ * listed.
+ *
+ * A PLAN warning is two of them, and the block cannot tell which of the two any
+ * one entry is — a projection that landed but may not work, and a declaration
+ * nobody could read, are one `reason` string apiece. So both are named whenever
+ * plan warnings are present, which is what the heading has always said.
+ */
+const PLAN_WARNING_FAMILIES = ['may not work in the target harness', 'could not be read'] as const;
+
+/** The one family a RUN warning is: something here may not commit as a link. */
+const RUN_WARNING_FAMILY = 'may not commit as a link';
+
+/**
+ * The block's first line, naming only the families this run actually carries.
+ *
+ * It matters that it is built rather than fixed: the heading is read by
+ * everybody on every platform, and a run with no run-level warning in it has no
+ * link that might fail to commit. A fixed heading naming all three told a person
+ * on macOS about a Windows problem their tree does not have, every time any
+ * warning at all was printed.
+ *
+ * @param hasPlanWarnings - whether the plan contributed any.
+ * @param hasRunWarnings - whether the run contributed any.
+ * @returns the heading line, ending in a colon.
+ */
+function warningHeading(hasPlanWarnings: boolean, hasRunWarnings: boolean): string {
+  const families = [
+    ...(hasPlanWarnings ? PLAN_WARNING_FAMILIES : []),
+    ...(hasRunWarnings ? [RUN_WARNING_FAMILY] : []),
+  ];
+  const listed =
+    families.length === 1
+      ? families[0]
+      : `${families.slice(0, -1).join(', ')}, or ${families[families.length - 1]}`;
+  return `Warnings (${listed}):`;
+}
+
+/**
  * The heading run warnings are filed under.
  *
  * Its own heading beside the harness ones because it is a different subject: a
@@ -123,7 +162,8 @@ const MACHINE_HEADING = 'this machine:';
  * and `checkPlan` answer in `warnings` — today, that the links here are Windows
  * junctions and git would commit the files inside them instead of the links
  * (DOR-1883). All three are things a person needs told and none of them is a
- * fault to fix, which is what makes them one block rather than two.
+ * fault to fix, which is what makes them one block rather than two. The heading
+ * names only the ones this run really carries ({@link warningHeading}).
  *
  * Returns an empty string when there is nothing to say, so callers can omit the
  * block cleanly.
@@ -143,9 +183,7 @@ export function formatWarnings(plan: ProjectionPlan, runWarnings: readonly strin
     byHarness.set(heading, list);
   }
 
-  const lines: string[] = [
-    'Warnings (may not work in the target harness, may not commit as a link, or could not be read):',
-  ];
+  const lines: string[] = [warningHeading(plan.warnings.length > 0, runWarnings.length > 0)];
   for (const [harness, warnings] of [...byHarness.entries()].sort(([a], [b]) =>
     a.localeCompare(b)
   )) {

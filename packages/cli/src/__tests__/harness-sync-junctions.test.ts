@@ -65,6 +65,16 @@ describe('a Windows checkout whose links are junctions', () => {
   const JUNCTION_LINE = `  - ${JUNCTION_COMMIT_WARNING}`;
 
   /**
+   * The heading above it, pinned whole.
+   *
+   * It names the families this run carries and no others: this fixture's only
+   * warning is the machine's, so a heading mentioning the target harness or an
+   * unreadable declaration would be telling somebody about something that is
+   * not in their tree.
+   */
+  const JUNCTION_HEADING = 'Warnings (may not commit as a link):';
+
+  /**
    * Stage a fully projected git checkout whose skill link is a junction.
    *
    * Projected first, so the only thing left to say about the tree is the
@@ -97,8 +107,7 @@ describe('a Windows checkout whose links are junctions', () => {
       const check = await runHarnessSync(syncArgs({ check: true }));
 
       const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-      expect(printed).toContain('this machine:');
-      expect(printed).toContain(JUNCTION_LINE);
+      expect(printed).toContain(`${JUNCTION_HEADING}\n\nthis machine:\n${JUNCTION_LINE}`);
       // Not drift, and not a conflict: the link works. Only committing it is
       // the problem, so the command that reports it still exits 0.
       expect(check.exitCode).toBe(0);
@@ -115,7 +124,7 @@ describe('a Windows checkout whose links are junctions', () => {
       const fix = await runHarnessSync(syncArgs({ fix: true }));
 
       const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-      expect(printed).toContain(JUNCTION_LINE);
+      expect(printed).toContain(`${JUNCTION_HEADING}\n\nthis machine:\n${JUNCTION_LINE}`);
       expect(fix.exitCode).toBe(0);
     },
     SLOW_UNDER_LOAD_MS
@@ -132,6 +141,8 @@ describe('a Windows checkout whose links are junctions', () => {
       const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
       expect(printed).not.toContain('this machine:');
       expect(printed).not.toContain(JUNCTION_COMMIT_WARNING);
+      // And the heading never advertises a family this run does not carry.
+      expect(printed).not.toContain('may not commit as a link');
     },
     SLOW_UNDER_LOAD_MS
   );
