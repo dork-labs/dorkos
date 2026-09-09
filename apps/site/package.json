@@ -15,6 +15,7 @@
     "site:indexnow": "node scripts/indexnow-ping.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:verify-event-capacity": "tsx scripts/verify-managed-event-capacity-cutover.ts",
     "db:studio": "drizzle-kit studio",
     "clean": "rm -rf .next node_modules/.cache"
   },

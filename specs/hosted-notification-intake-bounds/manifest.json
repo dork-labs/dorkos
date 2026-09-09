@@ -1,0 +1,14 @@
+{
+  "id": "260908-163711",
+  "slug": "hosted-notification-intake-bounds",
+  "title": "Bound hosted notification intake and backlog",
+  "created": "2026-09-08",
+  "status": "implemented",
+  "linearIssue": "DOR-1909",
+  "artifacts": {
+    "ideation": "01-ideation.md",
+    "specification": "02-specification.md",
+    "tasks": "03-tasks.json",
+    "tasksReadable": "03-tasks.md"
+  }
+}
