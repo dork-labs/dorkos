@@ -1,6 +1,9 @@
 ---
 covers:
   - 'feat(server): the requesting session hears back when you answer (DOR-1930)'
+  # Folds in here: it refines this same unreleased behaviour and nothing a
+  # person could have seen before it.
+  - 'fix(server): address adversarial review of the approval hold'
 ---
 
 ### Fixed
