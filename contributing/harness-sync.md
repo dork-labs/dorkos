@@ -306,6 +306,8 @@ It fires once per created or registered agent, from the one seam every arrival g
 - **It refuses an agent HOME.** `<dorkHome>/agents/*` is projected by `agent-creator` at creation and by the boot backfill after, with a Claude-Code-only manifest on purpose. Projecting it again here would write a different harness set into the same folder. `isAgentHome` is the one answer both sides read.
 - **And nothing outside the boundary**, judged here as well as at the route, because one of the four callers is a discovery scan that never went near a route.
 
+One thing this trigger cannot yet tell apart, stated rather than hidden: that fourth caller, `MeshCore.onAgentAdopted`, is fired both by a person's discovery scan and by the **five-minute mesh reconciler** rebuilding the registry from files (ADR-0043). The reconciler half is DorkOS catching up on its own records, which is exactly the case the boot backfill refuses to write for. `origin` cannot separate them — the mesh register route and the scan both say `'registered'`, and the register route is the journey this trigger exists for — so the reconciler is allowed through, bounded by: once per agent ever (it fires only on the pass that first registers an id), inside the boundary, outside `<dorkHome>/agents`, additive only, and off with `harness.autoSync`. Separating the two scans is the follow-up.
+
 ### Why the watcher does not sweep, ask or scaffold
 
 - **No sweep.** `sweepOrphans` runs five sweeps that delete files, on a tree an agent may be halfway through writing. At file-event frequency that inherits HK-11's blast radius. The visible cost: deleting a skill leaves a dead link in `.claude/skills/`. `dorkos harness sync --check` names it as an orphan and the next `--fix` prunes it.

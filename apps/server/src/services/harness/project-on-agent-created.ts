@@ -56,6 +56,31 @@
  * All three are settled BEFORE the lock is taken, so a no-op never queues behind
  * somebody else's projection.
  *
+ * ## The one arrival that is not a person's action
+ *
+ * Four call sites notify this seam and three of them are unambiguously somebody
+ * asking: the create pipeline, `POST /api/agents`, and `POST /api/mesh/agents`.
+ * The fourth is `MeshCore.onAgentAdopted` — a discovery scan walking past a
+ * `.dork/agent.json` this machine had never registered — and that scan is run
+ * BOTH by a person (`POST /api/discovery/scan`, the `mesh_discover` tool) and,
+ * every five minutes, by the mesh reconciler rebuilding the registry from files
+ * (ADR-0043, `reconciler.ts`'s step 5). The reconciler half is DorkOS catching
+ * up on its own records, which is precisely the case
+ * `backfillAgentWorkspaceSkills` refuses to write for: booting asks for nothing.
+ *
+ * It is not refused here, and that is a decision rather than an oversight.
+ * `CreatedAgentInfo.origin` cannot tell the two apart — the mesh REGISTER route
+ * and the scan both declare `'registered'`, and the register route is the very
+ * journey this trigger exists for (contract J-03) — so refusing the reconciler
+ * would mean either a third `origin` value, a contract change to a hook two
+ * other reactions read, or moving this call out to three call sites, which is
+ * the exact drift the seam exists to prevent. What the reconciler can reach is
+ * bounded and stated: it fires only on the pass that FIRST registers an id, so
+ * at most once per agent ever; it is refused outside the boundary and inside
+ * `<dorkHome>/agents`; it only ever ADDS files (no sweep, no hooks); and
+ * `harness.autoSync` turns the whole thing off. Telling the two scans apart is
+ * the follow-up.
+ *
  * Best-effort throughout: every failure is caught and logged. A created agent
  * must never fail because a projection did, and the seam that calls this
  * swallows what it throws anyway — catching here is what lets the log line name
