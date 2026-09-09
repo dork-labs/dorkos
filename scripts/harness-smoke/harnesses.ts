@@ -520,14 +520,26 @@ const CLAUDE: SmokeHarness = {
  * The line shape inside Codex's `<skills_instructions>` block.
  *
  * The name is matched as a run of NON-SPACE characters rather than as "anything
- * but a colon", and the difference is not cosmetic: Codex namespaces a skill
- * whose resolved directory sits inside a package carrying a
- * `.claude-plugin/plugin.json`, printing `- agentspkg:agentsskill: The … (file: …)`.
- * The old pattern read that name as `agentspkg` and folded the rest into the
- * description, which would have put a name Codex never used into a report whose
- * whole job is to say what the binary printed. `\S+` cannot cross a space, so it
- * still cannot swallow a description that contains a colon of its own, and on
- * every name without one it matches exactly what the old pattern matched.
+ * but a colon", and what the old `[^:]+` did is worse than mis-naming: it
+ * matched **nothing at all**. Codex namespaces a skill whose resolved directory
+ * sits inside a package carrying a `.claude-plugin/plugin.json`, printing
+ * `- agentspkg:agentsskill: The … (file: …)`. Against that line `[^:]+` stops at
+ * the inner colon, the following `: ` cannot match, and no amount of
+ * backtracking helps because every shorter prefix ends in a non-colon too — so
+ * the regex returns `null`, {@link parseCodexPromptInput} `continue`s past the
+ * line, and the entry is DROPPED. The verdict that reads it would then have said
+ * the skill was not listed: `agents-user-root` would have been a FAIL against a
+ * binary that had listed it perfectly, which is the worst failure this tier has
+ * — a red about the runner dressed as a red about a vendor.
+ *
+ * `\S+` is stricter than `[^:]+` in exactly one direction: a name containing
+ * WHITESPACE is dropped where the old pattern would have kept it. That is
+ * accepted rather than overlooked. Codex documents no charset rule for a skill
+ * name — the `codex` row in `packages/harness/src/vendor-facts/index.ts` carries
+ * no `nameRegex` and `onInvalidName: 'unknown'` for that reason — so a
+ * whitespace name is neither known to be legal nor known to be refused. If a
+ * vendor-facts refresh ever finds a rule that permits one, this pattern is where
+ * it lands.
  */
 const CODEX_SKILL_LINE = /^- (\S+): (.*) \(file: (.+)\)$/;
 
@@ -635,10 +647,13 @@ const CODEX: SmokeHarness = {
     kind: 'listing-only',
     note: 'its listing probe is already non-model, and nothing else about Codex is free',
   },
-  // One round. `~/.agents/skills` IS Codex's user-scope read path, so the shared
-  // directory is its whole user tier; there is no second root and no injection
-  // route to ask about.
-  userTierRounds: ['agents-user-root'],
+  // Two rounds, and the second is the one the first run should have asked.
+  // `~/.agents/skills` is Codex's DOCUMENTED user-scope read path; the first
+  // free run then printed five bundled skills out of
+  // `<CODEX_HOME>/skills/.system/`, which is a writable directory nobody had
+  // asked about and the facts row calls unreachable. There is no injection route
+  // to ask about either way.
+  userTierRounds: ['agents-user-root', 'codex-home-root'],
   model: {
     flag: '-m',
     id: 'gpt-5.6-luna',

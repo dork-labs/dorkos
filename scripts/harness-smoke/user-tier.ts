@@ -23,7 +23,7 @@
  *
  * @module harness-smoke/user-tier
  */
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { HARNESS_VENDOR_FACTS } from '../../packages/harness/dist/vendor-facts/index.js';
 import type { UserTierSubject } from './fixture.js';
@@ -31,16 +31,30 @@ import type { ListingObservation, SmokeHarness } from './harnesses.js';
 import type { ListingAbsence, Verdict } from './oracles.js';
 
 /**
- * The directory five agent tools share, spelled the way the vendor-facts table
- * spells it.
+ * What each read-path subject means for the design, once its answer is known.
  *
- * The verdict for the `agents-user-root` round is decided against that table
- * rather than against a constant in this file, which is what makes it a
- * calibration and not an assertion: if a re-vendor adds or removes the path on a
- * row, the verdict's EXPECTATION moves with the documentation and a binary that
- * disagrees is reported as the disagreement it is.
+ * Kept beside the verdict rather than inside the detail strings because the two
+ * rounds that ask a read-path question mean different things by the same answer:
+ * one decides whether slice A3 writes two directories or one, and the other
+ * found a directory nobody had asked about.
+ *
+ * @param subject - the subject the verdict is about.
+ * @returns one sentence a person can act on.
  */
-const AGENTS_USER_READ_PATH = '~/.agents/skills';
+function consequenceOf(subject: UserTierSubject): string {
+  if (subject.id === 'agents-user-root') {
+    return (
+      'The consequence is decision 3 in `specs/harness-sync-global/02-specification.md`: a harness ' +
+      'that reads this directory needs no second link of its own, and one that does not is why ' +
+      'slice A3 writes two directories rather than one.'
+    );
+  }
+  return (
+    'The consequence is a `skills.readPaths.user` entry the row is missing — which may NOT be ' +
+    'added without a vendor page to cite, per that module’s own rule. See the `codex` row’s notes ' +
+    'for what a refresh has to find.'
+  );
+}
 
 /** One listing entry the runner attributed to a user-tier subject. */
 export interface UserTierMatch {
@@ -128,6 +142,62 @@ export function renderMatches(matches: readonly UserTierMatch[]): string {
 }
 
 /**
+ * Whether a subject's staged link is actually live, and what is wrong when it is
+ * not.
+ *
+ * The liveness control on every NOT-LISTED verdict, and the reason it exists is
+ * that its absence was a silent pass. "Not listed" is only evidence about a
+ * harness's read paths if the thing it was meant to find was really there: a
+ * link pointing one directory too high resolves to nothing, the harness
+ * correctly lists nothing, and the verdict would have read `PASS — the table and
+ * the binary agree` off a fixture that never staged anything. A verdict that
+ * cannot fail is not a verdict.
+ *
+ * Three conditions, because a link can be wrong in three ways: it can dangle
+ * (resolving throws), it can resolve somewhere real that is not the package, and
+ * it can resolve to a directory holding no `SKILL.md` — which is a link a
+ * harness is RIGHT to ignore, so a not-listed verdict off one of those would be
+ * blaming a vendor for the fixture's mistake.
+ *
+ * @param subject - the subject whose link was staged.
+ * @returns the fault, in a sentence, or `undefined` when the link is live.
+ */
+export function userTierLinkFault(subject: UserTierSubject): string | undefined {
+  if (!subject.link) return undefined;
+  const target = subject.link.target;
+  let resolved: string;
+  try {
+    resolved = realpathSync(target);
+  } catch {
+    return `\`${target}\` does not resolve — the link dangles, or nothing was written there at all`;
+  }
+  let wanted: string;
+  try {
+    wanted = realpathSync(subject.sourceDir);
+  } catch {
+    return `\`${subject.sourceDir}\` is not there, so the package the link points at was never staged`;
+  }
+  if (resolved !== wanted) {
+    return `\`${target}\` resolves to \`${resolved}\`, not to \`${wanted}\``;
+  }
+  if (!existsSync(join(target, 'SKILL.md'))) {
+    return `\`${target}\` resolves, but holds no \`SKILL.md\` for a harness to find`;
+  }
+  return undefined;
+}
+
+/** Injectable seams, so every verdict branch is reachable without staging a tree. */
+export interface UserTierVerdictDeps {
+  /**
+   * Whether a subject's link is live. Defaults to {@link userTierLinkFault},
+   * which is the real filesystem check; the unit cases that drive verdict
+   * BRANCHES against hand-built paths inject a no-fault stub, and the case that
+   * drives the CHECK stages a real fixture and breaks its link.
+   */
+  linkFault?: (subject: UserTierSubject) => string | undefined;
+}
+
+/**
  * The user-tier verdicts — does this harness read a directory in a person's
  * home, and does a package reachable two ways appear once or twice?
  *
@@ -142,13 +212,15 @@ export function renderMatches(matches: readonly UserTierMatch[]): string {
  * @param subjects - what the round staged, from {@link ./fixture.js#userTierSubjects}.
  * @param observed - what its listing said, or `undefined` when it produced none.
  * @param absence - why a listing is missing, when one is.
+ * @param deps - injectable liveness seam; defaults to the real filesystem check.
  * @returns one verdict per subject, in staging order.
  */
 export function userTierVerdicts(
   harness: SmokeHarness,
   subjects: readonly UserTierSubject[],
   observed: ListingObservation | undefined,
-  absence: ListingAbsence = 'no-surface'
+  absence: ListingAbsence = 'no-surface',
+  deps: UserTierVerdictDeps = {}
 ): Verdict[] {
   if (!observed) {
     return subjects.map((subject): Verdict => ({
@@ -178,6 +250,8 @@ export function userTierVerdicts(
   const controlCount = matches.get('injection-control')?.length ?? 0;
   const linkRouteCount = matches.get('user-tier-listed')?.length ?? 0;
 
+  const linkFault = deps.linkFault ?? userTierLinkFault;
+
   return subjects.map((subject): Verdict => {
     const found = matches.get(subject.id) ?? [];
     const raw = renderMatches(found);
@@ -187,6 +261,25 @@ export function userTierVerdicts(
       ...(subject.cites === undefined ? {} : { cites: subject.cites }),
       question: userTierQuestion(harness, subject),
     };
+
+    // THE LIVENESS CONTROL. Only a NOT-LISTED answer needs it, and it needs it
+    // absolutely: an entry that WAS listed proves the link worked by existing,
+    // while "nothing was listed" is evidence about the harness only if the
+    // fixture really put something there for it to miss. Checked before the
+    // branches so no verdict can reach a not-listed conclusion without it.
+    if (found.length === 0) {
+      const fault = linkFault(subject);
+      if (fault !== undefined) {
+        return {
+          ...base,
+          status: 'unknown',
+          detail:
+            `NOT ANSWERABLE. ${harness.label} listed nothing for this subject, but the link this ` +
+            `round staged is not live, so the absence is the FIXTURE's and says nothing about ` +
+            `what the harness reads: ${fault}. Fix the staging and run it again.`,
+        };
+      }
+    }
 
     if (subject.id === 'user-tier-listed') {
       return {
@@ -205,22 +298,21 @@ export function userTierVerdicts(
       };
     }
 
-    if (subject.id === 'agents-user-root') {
+    if (subject.documentedAs !== undefined) {
+      const path = subject.documentedAs;
       const documented =
-        HARNESS_VENDOR_FACTS[harness.harnessId].skills.readPaths.user.includes(
-          AGENTS_USER_READ_PATH
-        );
+        HARNESS_VENDOR_FACTS[harness.harnessId].skills.readPaths.user.includes(path);
       const listed = found.length > 0;
       if (documented) {
         return {
           ...base,
           status: listed ? 'pass' : 'fail',
           detail: listed
-            ? `Listed ${found.length}×: ${raw}. \`${AGENTS_USER_READ_PATH}\` is on this row's ` +
+            ? `Listed ${found.length}×: ${raw}. \`${path}\` is on this row's ` +
               `\`skills.readPaths.user\` in \`packages/harness/src/vendor-facts/index.ts\`, and the ` +
               `binary agrees — measured from a sandbox HOME, not the operator's, so nothing but ` +
               `the staged link could have produced it.`
-            : `NOT listed, though \`${AGENTS_USER_READ_PATH}\` is on this row's ` +
+            : `NOT listed, though \`${path}\` is on this row's ` +
               `\`skills.readPaths.user\`. The listing carried: ${renderListing(observed)}. That is ` +
               `the compiled vendor facts contradicted by the binary they describe, and it would ` +
               `remove this tool from the five slice A3 plans the shared link for.`,
@@ -230,15 +322,15 @@ export function userTierVerdicts(
         ...base,
         status: listed ? 'finding' : 'pass',
         detail: listed
-          ? `Listed ${found.length}×: ${raw} — and \`${AGENTS_USER_READ_PATH}\` is NOT on this ` +
-            `row's \`skills.readPaths.user\`. Two consequences, both stated by the ticket: slice ` +
-            `A3 drops the \`<claudeRoot>/skills\` link as redundant and gets smaller, and the ` +
-            `facts table gains a read path it does not carry.`
-          : `NOT listed, and \`${AGENTS_USER_READ_PATH}\` is not on this row's ` +
-            `\`skills.readPaths.user\` either — the table and the binary agree. The link at ` +
-            `\`${subject.link?.target ?? ''}\` was staged and reached nothing, so the second ` +
-            `directory decision 3 asks for is earned: slice A3's \`<claudeRoot>/skills\` link is ` +
-            `NOT redundant. The listing carried: ${renderListing(observed)}.`,
+          ? `Listed ${found.length}×: ${raw} — and \`${path}\` is NOT on this row's ` +
+            `\`skills.readPaths.user\` in \`packages/harness/src/vendor-facts/index.ts\`. A ` +
+            `writable directory a harness reads and the compiled facts do not carry is exactly ` +
+            `the disagreement this tier exists to produce: it is a finding, not a failure, and ` +
+            `the fix is the facts table rather than this report. ${consequenceOf(subject)}`
+          : `NOT listed, and \`${path}\` is not on this row's \`skills.readPaths.user\` either — ` +
+            `the table and the binary agree. The link at \`${subject.link?.target ?? ''}\` was ` +
+            `staged, resolves to the package, and still reached nothing. ${consequenceOf(subject)} ` +
+            `The listing carried: ${renderListing(observed)}.`,
       };
     }
 
@@ -303,11 +395,12 @@ export function userTierVerdicts(
 /** The question one user-tier subject puts to a binary, in a person's words. */
 function userTierQuestion(harness: SmokeHarness, subject: UserTierSubject): string {
   const link = subject.link?.target ?? '';
+  if (subject.documentedAs !== undefined) {
+    return `Does ${harness.label} read \`${subject.documentedAs}\`, where the link at \`${link}\` sits?`;
+  }
   switch (subject.id) {
     case 'user-tier-listed':
       return `Does ${harness.label} list a globally installed skill it can only reach through \`${link}\`?`;
-    case 'agents-user-root':
-      return `Does ${harness.label} read \`${AGENTS_USER_READ_PATH}\`, where the link at \`${link}\` sits?`;
     case 'injection-control':
       return `Does \`--plugin-dir\` load \`${subject.pkg}\` at all, with no link anywhere?`;
     default:

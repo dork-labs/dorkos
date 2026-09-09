@@ -534,7 +534,7 @@ A uuid in a skill body proves a MODEL read a file, not that a HARNESS loaded a s
 
 **One thing the free Codex probe does write.** `codex debug prompt-input` makes no model call and reads no credential, but it is not read-only on disk: it creates an installation id, shell snapshots and its bundled `.system` skills inside `CODEX_HOME`. Harmless here — `CODEX_HOME` is the run's own temp sandbox and is deleted with it — but worth knowing before pointing it at a real one.
 
-**Where the runner itself is tested.** `scripts/__tests__/harness-smoke{,-oracles,-e2e}.test.ts` — the gate and the parsers, the oracle verdicts, and the whole `run.sh` path — against `scripts/harness-smoke/fake-harness.ts`, a stand-in that discovers the fixture through each harness's own read paths instead of being told the answers, so a projection in the wrong shape makes it fail exactly as a real binary would. That suite runs in `pnpm verify` and costs nothing.
+**Where the runner itself is tested.** `scripts/__tests__/harness-smoke{,-oracles,-user-tier,-user-tier-oracle,-e2e}.test.ts` — the gate and the parsers, the oracle verdicts, the user-tier fixture and its own oracle, and the whole `run.sh` path — against `scripts/harness-smoke/fake-harness.ts`, a stand-in that discovers the fixture through each harness's own read paths instead of being told the answers, so a projection in the wrong shape makes it fail exactly as a real binary would. That suite runs in `pnpm verify` and costs nothing.
 
 **Never let any of its variable names reach a turbo task.** `packages/evals/src/runner/__tests__/paid-provider.test.ts` walks the whole parsed `turbo.json` for all eight money names, `DORKOS_HARNESS_SMOKE` and `OPENAI_API_KEY` included.
 

@@ -113,7 +113,7 @@ export const SMOKE_SCENARIOS: readonly SmokeScenario[] = ['project', 'user-tier'
  * reading it once `<claudeRoot>/skills` exists". A second 45-second free turn is
  * a cheap price for an answer that cannot be argued with.
  */
-export type UserTierRound = 'claude-user-root' | 'agents-user-root';
+export type UserTierRound = 'claude-user-root' | 'agents-user-root' | 'codex-home-root';
 
 /**
  * One package staged for the user tier, and what its listing entry is evidence
@@ -141,6 +141,17 @@ export interface UserTierSubject {
   link?: { root: string; target: string; text: string };
   /** Whether the probe also injects the package on the command line. */
   injected: boolean;
+  /**
+   * How the vendor-facts row would spell this subject's directory, when the
+   * question is "is this directory read at all?".
+   *
+   * Present turns the verdict into a two-directional calibration against
+   * `skills.readPaths.user`: listed where the table says so is agreement,
+   * missing where it says so is the table contradicted, and listed where it says
+   * NOTHING is the finding this tier exists to produce. Absent means the subject
+   * asks something else — an injection route, or a control.
+   */
+  documentedAs?: string;
 }
 
 /** The four questions a user-tier round can put to a binary. */
@@ -149,6 +160,8 @@ export type UserTierSubjectId =
   | 'user-tier-listed'
   /** Does it read `~/.agents/skills`, the directory five other agent tools share? */
   | 'agents-user-root'
+  /** Does Codex read `$CODEX_HOME/skills`, a writable directory its own row omits? */
+  | 'codex-home-root'
   /** With the same package reachable BOTH ways, is it listed once or twice? */
   | 'injection-duplicate'
   /** The positive control: does the injection route load anything at all? */
@@ -316,10 +329,19 @@ function quote(path: string): string {
  */
 export function userTierRoots(configHome: string): {
   claudeSkillsDir: string;
+  codexHomeSkillsDir: string;
   agentsSkillsDir: string;
 } {
   return {
     claudeSkillsDir: join(configHome, 'skills'),
+    // The SAME string as the one above, and deliberately a second name for it.
+    // Claude Code's personal skills live under `$CLAUDE_CONFIG_DIR` and Codex's
+    // under `$CODEX_HOME`, and this runner points BOTH variables at the one
+    // sandbox — so the two collapse here as a property of the isolation, never
+    // of the vendors. It is safe only because no round stages both, and reading
+    // one name where the other was meant would be a verdict about the wrong
+    // program.
+    codexHomeSkillsDir: join(configHome, 'skills'),
     agentsSkillsDir: join(configHome, '.agents', 'skills'),
   };
 }
@@ -359,7 +381,7 @@ export function userTierLinkText(target: string, source: string): string {
 export function userTierSubjects(
   round: UserTierRound,
   dorkHome: string,
-  roots: { claudeSkillsDir: string; agentsSkillsDir: string }
+  roots: { claudeSkillsDir: string; codexHomeSkillsDir: string; agentsSkillsDir: string }
 ): UserTierSubject[] {
   const sourceDir = (pkg: string, skill: string): string =>
     join(dorkHome, 'plugins', pkg, 'skills', skill);
@@ -407,10 +429,30 @@ export function userTierSubjects(
     ];
   }
 
+  if (round === 'codex-home-root') {
+    return [
+      {
+        id: 'codex-home-root',
+        capabilities: ['SRC-04'],
+        // `$CODEX_HOME/skills` is spelled the way the vendor-facts row WOULD
+        // spell it if it carried the path — it does not, which is the whole
+        // point of asking. A binary that lists it is the compiled table found
+        // incomplete, and that is a finding rather than a failure.
+        documentedAs: '$CODEX_HOME/skills',
+        pkg: 'homepkg',
+        skill: 'homeskill',
+        sourceDir: sourceDir('homepkg', 'homeskill'),
+        link: linked(roots.codexHomeSkillsDir, 'homepkg', 'homeskill'),
+        injected: false,
+      },
+    ];
+  }
+
   return [
     {
       id: 'agents-user-root',
       capabilities: ['SRC-04'],
+      documentedAs: '~/.agents/skills',
       pkg: 'agentspkg',
       skill: 'agentsskill',
       sourceDir: sourceDir('agentspkg', 'agentsskill'),
@@ -421,15 +463,21 @@ export function userTierSubjects(
 }
 
 /**
- * The Claude Code plugin manifest a marketplace-installed package carries.
+ * The Claude Code plugin manifest every package under `<dorkHome>/plugins/`
+ * carries.
+ *
+ * Scoped deliberately: `requiresClaudePlugin`
+ * (`packages/marketplace/src/package-types.ts`) is false for exactly one type,
+ * `agent`, and an agent installs under `<dorkHome>/agents/` — a root the global
+ * projector never scans. So every package the user tier can ever link has this
+ * file, and the fixture is not assuming a shape some installs lack.
  *
  * The journey DSL does not write one, because no journey needs it: `stagePlugin`
  * writes the DorkOS manifest and the layers, which is everything the projection
  * engine reads. The user tier needs the OTHER manifest for two reasons, and both
  * are properties of a real install rather than of this runner —
- * `packages/marketplace/src/scaffolder.ts` writes both files for the `plugin`,
- * `skill-pack` and `adapter` types, and `packages/harness/src/sources/installed.ts`
- * falls back to reading it. First, `--plugin-dir` is a plugin loader and a
+ * `packages/marketplace/src/scaffolder.ts` writes both files, and
+ * `packages/harness/src/sources/installed.ts` falls back to reading it. First, `--plugin-dir` is a plugin loader and a
  * directory with no plugin manifest is not a plugin. Second, it turned out to
  * change what Codex prints: a skill whose resolved directory sits inside a
  * package carrying this file is listed as `<pkg>:<name>` rather than under its

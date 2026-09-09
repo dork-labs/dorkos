@@ -56,8 +56,8 @@ export type FakeScenario =
   /** The turn cost more than the ceiling. */
   | 'over-budget'
   /**
-   * The harness never opens its user-scope skills directory — the failure that
-   * would make slice A3's whole user tier buy a person nothing.
+   * The harness never opens ANY of its user-scope skills directories — the
+   * failure that would make slice A3's whole user tier buy a person nothing.
    */
   | 'user-tier-missing'
   /**
@@ -259,10 +259,26 @@ function claudeSkills(cwd: string, args: readonly string[], scenario: FakeScenar
 }
 
 /**
+ * Codex's own home — `$CODEX_HOME`, else `~/.codex`.
+ *
+ * The same resolution `apps/server/src/services/runtimes/codex/codex-home.ts`
+ * mirrors for the real binary. The runner points it at a per-run sandbox, so
+ * this can only ever reach a directory the run created itself.
+ */
+function fakeCodexHome(): string {
+  // eslint-disable-next-line no-restricted-syntax -- CODEX_HOME is Codex's own variable, read here because this module impersonates Codex.
+  return process.env.CODEX_HOME ?? join(fakeHome(), '.codex');
+}
+
+/**
  * Everything a Codex-shaped invocation would find.
  *
- * Two tiers: the project's `.agents/skills` and the person's `~/.agents/skills`,
- * which is what the `codex` row's `skills.readPaths.user` lists.
+ * Three tiers, and the third is the one the compiled facts do not carry: the
+ * project's `.agents/skills`, the person's `~/.agents/skills` — which is what
+ * the `codex` row's `skills.readPaths.user` lists — and `$CODEX_HOME/skills`,
+ * which codex-cli 0.145.0 was measured reading (DOR-1924) and which its own
+ * bundled `skill-installer` writes into. A fake that read only the documented
+ * two would make that finding unreproducible here.
  *
  * @param cwd - the directory the fake was launched in.
  * @param scenario - the behaviour to bend.
@@ -270,12 +286,16 @@ function claudeSkills(cwd: string, args: readonly string[], scenario: FakeScenar
  */
 function codexSkills(cwd: string, scenario: FakeScenario): FoundSkill[] {
   if (scenario === 'no-listing') return [];
-  return [
-    ...skillsIn(join(cwd, '.agents', 'skills'), 'frontmatter'),
-    ...(scenario === 'user-tier-missing'
+  const userTier =
+    scenario === 'user-tier-missing'
       ? []
-      : skillsIn(join(fakeHome(), '.agents', 'skills'), 'frontmatter')),
-  ].map(namespaceByPluginManifest);
+      : [
+          ...skillsIn(join(fakeHome(), '.agents', 'skills'), 'frontmatter'),
+          ...skillsIn(join(fakeCodexHome(), 'skills'), 'frontmatter'),
+        ];
+  return [...skillsIn(join(cwd, '.agents', 'skills'), 'frontmatter'), ...userTier].map(
+    namespaceByPluginManifest
+  );
 }
 
 /**
@@ -284,8 +304,9 @@ function codexSkills(cwd: string, scenario: FakeScenario): FoundSkill[] {
  * On codex-cli 0.145.0 a skill whose resolved `SKILL.md` sits at
  * `<pkg>/skills/<name>/SKILL.md`, where `<pkg>` carries a
  * `.claude-plugin/plugin.json`, is listed as `<pkg-name>:<frontmatter-name>`
- * rather than under its bare frontmatter name — a marketplace-installed package
- * linked into `~/.agents/skills` is exactly that shape. A skill under a package
+ * rather than under its bare frontmatter name — every package under
+ * `<dorkHome>/plugins/`, which is the only root the global projector links from,
+ * is exactly that shape. A skill under a package
  * with no such manifest keeps its bare name, which is why the project fixture's
  * `.agents/skills/pkg__x` is unaffected: the journey DSL writes the DorkOS
  * manifest and not this one.

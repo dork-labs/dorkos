@@ -306,6 +306,10 @@ const ROUND_QUESTION: Record<UserTierRound, string> = {
   'agents-user-root':
     'a globally installed package linked into `~/.agents/skills`, the one directory Codex, ' +
     'OpenCode, Cursor, Gemini CLI and Copilot all read, and nothing anywhere else',
+  'codex-home-root':
+    'a globally installed package linked into `$CODEX_HOME/skills` — a writable directory the ' +
+    'compiled vendor facts do not list, noticed because the first free run printed five of ' +
+    'Codex’s own bundled skills out of it',
 };
 
 /**
@@ -347,10 +351,11 @@ export function renderUserTierReport(input: UserTierReportInput): string {
         ? 'none — `--free` reaches no model, so nothing was armed and nothing was billed'
         : `\`${harness.keyVar}\` (read from the environment; no stored sign-in was read)`
     }`,
-    '- **Isolation:** `HOME` and the harness’s own config home both point at ONE empty sandbox per ' +
-      'round, which is why the two user directories below are inside it. Nothing on the ' +
-      'operator’s machine can reach this answer, and nothing this run wrote can reach their home ' +
-      'folder.',
+    `- **Isolation:** \`HOME\` and the harness’s own config home both point at ONE empty sandbox per ` +
+      `round, which is why ${rootsLine(input)} below ${
+        countRoots(input) === 1 ? 'is' : 'are'
+      } inside it. Nothing on the operator’s machine can reach this answer, and nothing this run ` +
+      `wrote can reach their home folder.`,
     `- **Model pinned:** \`${input.pinnedModel}\``,
     `- **Cost:** ${costLine(input)}`,
     `- **Listing oracle:** ${listingLine(harness)}`,
@@ -401,6 +406,27 @@ export function renderUserTierReport(input: UserTierReportInput): string {
 
   lines.push('## Run-level verdict', '', ...verdictLines(input.credential), '');
   return lines.join('\n');
+}
+
+/** How many distinct user directories this run wrote into, across every round. */
+function countRoots(input: UserTierReportInput): number {
+  return new Set(input.rounds.flatMap((round) => round.roots)).size;
+}
+
+/**
+ * How the header names the directories this run wrote into.
+ *
+ * Derived rather than written, because the count is per HARNESS: Claude Code
+ * gets two rounds and two directories, Codex gets two rounds and — since
+ * `$CODEX_HOME/skills` and `~/.agents/skills` are two — also two, and a harness
+ * with one round writes one. The bullet used to say "the two user directories"
+ * unconditionally, which was already false for the Codex report it was printed
+ * in.
+ */
+function rootsLine(input: UserTierReportInput): string {
+  const count = countRoots(input);
+  if (count === 0) return 'nothing outside it was written, and every root named';
+  return count === 1 ? 'the one user directory' : `the ${count} user directories`;
 }
 
 /**

@@ -138,6 +138,11 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
         // it needs a probe from a SUBDIRECTORY, which is a fixture the runner
         // does not stage yet.
         cells: ['readPaths', 'identity', 'nameMustMatchDir', 'dedupe', 'symlinks'],
+        // `readPaths` is listed as observed for what the row CARRIES, never as
+        // a claim that the row is complete: the same run found a sixth read
+        // path (`$CODEX_HOME/skills`) that is deliberately still absent from it,
+        // for the reason the second note below gives.
+
         summary:
           'A `codex debug prompt-input` run over a staged, projected fixture listed each skill ' +
           'under its FRONTMATTER name with the absolute SKILL.md path beside it: `pkg__x` ' +
@@ -145,27 +150,46 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
           'two skills whose frontmatter agreed both appeared, so duplicates are not merged; the ' +
           '`.agents/skills/pkg__x` entry is a symlink into `.dork/plugins`, so symlinks are ' +
           'followed; and a package linked into `~/.agents/skills` inside a THROWAWAY home appeared ' +
-          'too (DOR-1924, `meta/harness-smoke/20260909-095328.829-codex-user-tier.md`), so the ' +
+          'too (DOR-1924, `meta/harness-smoke/20260909-103636.210-codex-user-tier.md`), so the ' +
           'user-scope read path is real and measured rather than borrowed from the operator’s own ' +
-          'machine.',
+          'machine. The SAME run also found a read path this row does not carry: a package linked ' +
+          'into `$CODEX_HOME/skills/<pkg>__<name>` was listed beside it, so Codex reads its own ' +
+          'home directory’s `skills/` folder as well — reported as a finding rather than added ' +
+          'here, because no vendor page documents it (see the notes below).',
       },
       notes: [
         'Five cells on this row are still `docs` and nothing has looked at them: `walk`, `nameRegex`, ' +
           '`nameRequired`, `onInvalidName` and `liveReload`. `verified: binary` is a claim about ' +
           'the row having been observed at all — `observed.cells` is the claim about WHICH cells.',
         '`identity: frontmatter` is right about the KEY and incomplete about the printed name, and ' +
-          'the difference is measured (DOR-1924, `meta/harness-smoke/20260909-095328.829-codex-user-tier.md`). ' +
+          'the difference is measured (DOR-1924, `meta/harness-smoke/20260909-103636.210-codex-user-tier.md`). ' +
           'When a skill’s resolved directory sits inside a package carrying a Claude Code plugin ' +
           'manifest (`.claude-plugin/plugin.json`), codex-cli 0.145.0 lists it as ' +
           '`<plugin-name>:<frontmatter-name>` rather than under the bare frontmatter name — so a ' +
-          'marketplace-installed package linked into `~/.agents/skills` as `<pkg>__<name>` appears ' +
+          'package under `<dorkHome>/plugins/` linked into `~/.agents/skills` as `<pkg>__<name>` appears ' +
           'as `<pkg>:<name>`, which is neither the link’s directory name nor the name the ' +
           'projection engine spells. A package with no such manifest keeps its bare name, which is ' +
           'why the project-scope fixture is unaffected. Nothing in the engine reads this name, and ' +
           'nothing should: it is a display key, not a path.',
         'Codex documents no charset rule and no directory-match rule for a skill name, which is why the engine\'s `<pkg>__<name>` projection into `.agents/skills` is expected to load here and nowhere else with confidence: the contract\'s SK-09 calls Codex "the one harness DorkOS source-verified" and names OpenCode, Cursor and Copilot as the ones whose stated name rules `pkg__name` violates.',
         '`dedupe: none` is the vendor\'s own statement that duplicates are not merged — a different claim from "we do not know", and the reason two skills sharing a frontmatter name are a collision warning (SK-06) rather than a silent merge.',
-        'The user scope also includes skills bundled with the binary; those are not a filesystem path a projection can reach, so they are not listed.',
+        'The user scope also includes skills Codex ships with the binary — and the claim that used ' +
+          'to sit here, that they are "not a filesystem path a projection can reach", is WRONG and ' +
+          'was corrected by measurement (DOR-1924). They live in ' +
+          '`$CODEX_HOME/skills/.system/`, an ordinary writable directory, and a package linked ' +
+          'into `$CODEX_HOME/skills/<pkg>__<name>` beside them is listed exactly as one in ' +
+          '`~/.agents/skills` is. So `$CODEX_HOME/skills` is a real user-scope read path a ' +
+          'projection COULD write into.',
+        'It is nonetheless absent from `readPaths.user` above, on purpose. A row here has to carry ' +
+          'a citation it can honour, and there is no vendor page for this one: the only written ' +
+          'source anybody has found is the description of Codex’s own bundled `skill-installer` ' +
+          'skill — "Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub ' +
+          'repo path" — which is a string inside the product, not documentation of a read path. ' +
+          'That is a hint, and adding a read path on a hint is the single most damaging edit that ' +
+          'can be made to this module. What a refresh has to find is a page on ' +
+          'learn.chatgpt.com stating the directory; until it does, the H tier reports the ' +
+          'disagreement (the `codex-home-root` round, `scripts/harness-smoke/user-tier.ts`) and ' +
+          'this note carries the reason.',
       ],
     },
     hooks: {

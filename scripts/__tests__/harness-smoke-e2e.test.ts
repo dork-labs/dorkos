@@ -416,7 +416,7 @@ describe('end to end, against the fake harness', () => {
     const run = runSmokeE2e('claude', 'agents-root-read', ['--free', '--scenario', 'user-tier']);
     expect(run.code).toBe(0);
     expect(run.report).toContain('**FINDING** `agents-user-root`');
-    expect(run.report).toContain('redundant');
+    expect(run.report).toContain('needs no second link of its own');
   }, 90_000);
 
   it('fails the injection control, and refuses to answer the duplicate, when nothing loaded', () => {
@@ -425,6 +425,37 @@ describe('end to end, against the fake harness', () => {
     expect(run.report).toContain('**FAIL** `injection-control`');
     expect(run.report).toContain('**UNKNOWN** `injection-duplicate`');
   }, 90_000);
+
+  it('reports `$CODEX_HOME/skills` as a FINDING, and still exits 0', () => {
+    // THE ONE THE FIRST RUN MISSED. Its raw listing carried five bundled skills
+    // out of `<CODEX_HOME>/skills/.system/` and it reported "0 finding", because
+    // nothing had asked. A writable directory a harness reads and the compiled
+    // facts do not carry is the disagreement this tier exists to produce — and a
+    // finding never fails the run.
+    const run = runSmokeE2e('codex', 'ok', ['--free', '--scenario', 'user-tier']);
+    expect(run.code).toBe(0);
+    expect(run.report).toContain('## Round `codex-home-root`');
+    expect(run.report).toContain('**FINDING** `codex-home-root`');
+    expect(run.report).toContain('`homepkg:homeskill`');
+    // It says what may NOT be done about it, which is the point of recording it
+    // here rather than editing the facts table on the spot.
+    expect(run.report).toContain('may NOT be added without a vendor page');
+  }, 90_000);
+
+  it('passes that round when the binary does not read the directory', () => {
+    const run = runSmokeE2e('codex', 'user-tier-missing', ['--free', '--scenario', 'user-tier']);
+    expect(run.report).toContain('**PASS** `codex-home-root`');
+  }, 90_000);
+
+  it('counts the user directories it wrote instead of asserting there were two', () => {
+    // The header used to say "the two user directories below" whatever the
+    // harness was. Claude Code's rounds write two; a run whose rounds wrote one
+    // has to say one.
+    const both = runSmokeE2e('claude', 'ok', ['--free', '--scenario', 'user-tier']);
+    expect(both.report).toContain('the 2 user directories below are inside it');
+    const one = runSmokeE2e('opencode', 'ok', ['--scenario', 'user-tier', '--max-usd', '0.10']);
+    expect(one.report).toContain('the one user directory below is inside it');
+  }, 120_000);
 
   it('asks Codex the shared-directory question, and says the duplicate one does not apply', () => {
     // Not an UNKNOWN that reads like a gap: Codex has no injection route for
