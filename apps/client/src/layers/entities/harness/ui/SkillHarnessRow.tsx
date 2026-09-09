@@ -14,12 +14,28 @@ import { HarnessStateChip } from './HarnessStateChip';
 /**
  * The one sentence an adoptable skill gets, and the only advice on the row.
  *
+ * The folder is the row's own rather than a constant. A skill is adoptable
+ * whenever it sits where only some agent tools look, and that is `.claude/skills`
+ * for a Claude-first repo and `.opencode/skills` or `.cursor/skills` for the
+ * repos this stopped being silent about (DOR-1902) — naming `.claude/skills` at
+ * somebody whose skills are in `.opencode/skills` is advice about a directory
+ * they do not have. The folder is the source path's parent, which is what the
+ * status model derives `harness-native` from too.
+ *
  * Module-private: the row is the only thing that says it, and the tests that
  * check the wording assert the literal — a test comparing a string against the
- * constant that produced it cannot fail on a copy change.
+ * function that produced it cannot fail on a copy change.
+ *
+ * @param source - the row's repo-relative source path.
+ * @returns the sentence, naming the folder when the path has one.
  */
-const ADOPTABLE_ADVICE =
-  'Lives in .claude/skills. Move it to .agents/skills so every agent can read it.';
+function adoptableAdvice(source: string | undefined): string {
+  const slash = source === undefined ? -1 : source.lastIndexOf('/');
+  const folder = slash > 0 ? source?.slice(0, slash) : undefined;
+  return folder === undefined
+    ? 'Lives where only some of your agents look. Move it to .agents/skills so every agent can read it.'
+    : `Lives in ${folder}. Move it to .agents/skills so every agent can read it.`;
+}
 
 /**
  * The tag on a row that came from a package installed for every project.
@@ -130,7 +146,9 @@ export function SkillHarnessRow({ row, enabled, showEveryHarness }: SkillHarness
           ))}
       </ul>
 
-      {row.adoptable && <p className="text-muted-foreground text-3xs">{ADOPTABLE_ADVICE}</p>}
+      {row.adoptable && (
+        <p className="text-muted-foreground text-3xs">{adoptableAdvice(row.source)}</p>
+      )}
     </div>
   );
 }

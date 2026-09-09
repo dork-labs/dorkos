@@ -331,6 +331,54 @@ describe('runHarnessSync', () => {
     );
   });
 
+  it('XA-06, XA-07: --check names a skill in another tool’s folder and the MCP list it does not carry', async () => {
+    // An OpenCode-first repo, reported without writing anything. Both lines were
+    // absent from every list this command printed until DOR-1902 — the same
+    // report a repo with no skills and no MCP servers gets.
+    fs.mkdirSync(path.join(tmpDir, '.agents'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, '.agents', 'harness.manifest.json'),
+      JSON.stringify({ version: 1, harnesses: ['claude-code', 'opencode'] }, null, 2)
+    );
+    fs.writeFileSync(path.join(tmpDir, 'AGENTS.md'), '# House rules\n');
+    fs.mkdirSync(path.join(tmpDir, '.opencode', 'skills', 'review-pr'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, '.opencode', 'skills', 'review-pr', 'SKILL.md'),
+      '---\nname: review-pr\ndescription: The review-pr skill\n---\n\n# review-pr\n'
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'opencode.json'),
+      JSON.stringify({
+        mcp: {
+          linear: { type: 'local', command: ['npx', 'linear-mcp'] },
+          resend: { type: 'local', environment: { RESEND_API_KEY: 're_TOPSECRET' } },
+        },
+      })
+    );
+    process.chdir(tmpDir);
+    const before = snapshotTree(tmpDir);
+
+    await runHarnessSync(syncArgs({ check: true, fix: false }));
+
+    const printed = logSpy.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(printed).toContain(
+      '  - skill "review-pr": kept in .opencode/skills, where OpenCode looks and Claude Code does not (vendor docs, 2026-09-07) — move it to .agents/skills to share it'
+    );
+    // Under `this project:`, not under a tool's name — the answer is the same for
+    // every tool, so it is a fact about their repository.
+    expect(printed).toContain('this project:');
+    expect(printed).toContain(
+      '  - mcp "opencode.json": opencode.json declares 2 MCP servers. DorkOS carries MCP servers from .mcp.json only, so the other tools do not get these.'
+    );
+    // Not a server name and not a value anywhere in the output: the count is the
+    // whole read, because an `env` block in that file holds live API keys.
+    for (const secret of ['TOPSECRET', 'RESEND_API_KEY', 'linear', 'resend']) {
+      expect(printed).not.toContain(secret);
+    }
+    // And saying all of it wrote nothing.
+    expect(snapshotTree(tmpDir)).toEqual(before);
+  });
+
   it('TR-01: says nothing about DorkOS when the folder already shows that tool', async () => {
     // The control: this fixture HAS a `.claude/`, so Claude Code is detected and
     // nothing was added on DorkOS's account.
