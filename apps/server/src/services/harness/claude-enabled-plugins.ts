@@ -43,40 +43,48 @@ import { marketplaceRepoKey } from '../marketplace/lib/marketplace-repo-key.js';
  */
 const ClaudeSettingsSliceSchema = z
   .object({
-    /** `"<plugin-name>@<marketplace-name>"` to whether the person turned it on. */
-    enabledPlugins: z.record(z.string(), z.boolean()).optional(),
-    /** Marketplace local name to where it came from. The public half of the registry. */
-    extraKnownMarketplaces: z
-      .record(
-        z.string(),
-        z
-          .object({
-            source: z.object({ source: z.string(), repo: z.string().optional() }).passthrough(),
-            // Documented beside `source`; unread here, and present so the schema
-            // still says something when the vendor adds a sibling field.
-            autoUpdate: z.boolean().optional(),
-          })
-          .passthrough()
-      )
-      .optional(),
     /**
-     * Hooks, for the personal-hooks count — COUNTED, never read.
+     * `"<plugin-name>@<marketplace-name>"` to whether the person turned it on.
      *
-     * The schema deliberately never names `command`, so no shell text a person
-     * wrote is ever bound to a value. Counting matcher groups and the entries
-     * inside them needs array lengths and nothing more.
+     * The ONE key this feature is about, and the only one whose shape is checked
+     * here: a `enabledPlugins` that is not an object at all is a settings file
+     * DorkOS cannot answer from, so it becomes the unreadable record. The
+     * ENTRIES inside it are checked separately and one at a time
+     * ({@link readEnabledPlugins}) — a single non-boolean value costs its own
+     * line and nothing else.
      */
-    hooks: z
-      .record(
-        z.string(),
-        z.array(z.object({ hooks: z.array(z.unknown()).default([]) }).passthrough())
-      )
-      .optional(),
+    enabledPlugins: z.record(z.string(), z.unknown()).optional(),
+    /**
+     * Marketplace local name to where it came from, and the hooks block, both
+     * read with NO shape declared.
+     *
+     * Strictness here is a liability rather than a safeguard. Both are somebody
+     * else's keys in somebody else's file, neither is what the person came for,
+     * and a schema that rejected one would take the whole plugin list down with
+     * it: a bare-string `extraKnownMarketplaces.x.source` or one bad byte under
+     * `hooks.Stop` used to answer "DorkOS could not read your settings" for a
+     * file whose `enabledPlugins` was perfectly readable. Each is now walked
+     * defensively for exactly what it is worth — a repository slug and a count —
+     * and a shape neither walk recognises costs that one key's answer and says
+     * so.
+     */
+    extraKnownMarketplaces: z.unknown().optional(),
+    /**
+     * Hooks — COUNTED, never read.
+     *
+     * `z.unknown()` for the reason above, and the walk that counts it
+     * ({@link countHookCommands}) never touches a `command`, so no shell text a
+     * person wrote is ever bound to a value. Array lengths are the whole of it.
+     */
+    hooks: z.unknown().optional(),
   })
   .passthrough();
 
 /** One settings file's parsed slice. @see {@link ClaudeSettingsSliceSchema} */
 type ClaudeSettingsSlice = z.infer<typeof ClaudeSettingsSliceSchema>;
+
+/** A key whose own shape defeated its walk, while the rest of the file read fine. */
+export type ClaudeSettingsPart = 'extraKnownMarketplaces' | 'hooks';
 
 /** What one settings file read produced: its slice, or the reason there is none. */
 interface SettingsRead {
@@ -86,9 +94,14 @@ interface SettingsRead {
   unreadable?: string;
 }
 
-/** The message a failed read carries, from whatever the filesystem or parser threw. */
+/** The message a failed read carries, from whatever the filesystem threw. */
 function causeOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** True for a plain JSON object — the shape every walk below expects. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -112,13 +125,25 @@ function describeShape(error: z.ZodError): string {
 }
 
 /**
+ * What a person is told when the file is not JSON at all.
+ *
+ * A FIXED sentence, and the reason is not tidiness. V8's `SyntaxError` quotes
+ * about ten bytes of the input back at you — measured, a settings file whose
+ * first bytes were an API key produced `Unexpected token 's', "sk-ant-api"... is
+ * not valid JSON`, and this string is printed to a terminal and sent on the
+ * wire in `claudeOnly.unreadable`. The position is the useful half and it names
+ * nothing, so that is the half that survives.
+ */
+const NOT_JSON = 'the file is not valid JSON';
+
+/**
  * Read and parse one Claude Code settings file.
  *
  * Absent is silent and empty — a machine where Claude Code has never written
  * settings has nothing to report. Anything else that stops the read (a
- * permission error, a directory in the file's place, invalid JSON, a shape the
- * slice cannot accept) becomes a reason, and the caller decides what to do with
- * it. Never throws.
+ * permission error, a directory in the file's place, invalid JSON, an
+ * `enabledPlugins` that is not an object) becomes a reason, and the caller
+ * decides what to do with it. Never throws.
  *
  * @param file - absolute path of the settings file.
  * @returns the slice, or the reason there is none.
@@ -129,23 +154,82 @@ async function readSettingsSlice(file: string): Promise<SettingsRead> {
     raw = await readFile(file, 'utf-8');
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { slice: {} };
+    // A filesystem error names a path and a code, never a byte of the file.
     return { unreadable: causeOf(err) };
   }
 
   let json: unknown;
   try {
     json = JSON.parse(raw);
-  } catch (err) {
-    return { unreadable: causeOf(err) };
+  } catch {
+    // The error itself is deliberately dropped — see {@link NOT_JSON}.
+    return { unreadable: NOT_JSON };
   }
 
   const parsed = ClaudeSettingsSliceSchema.safeParse(json);
   // Zod, not `JSON.parse` with a cast. The counter-example in this tree is
   // `loadClaudeHooks`, which casts and throws; a cast here would let a settings
-  // file whose `enabledPlugins` holds strings walk into the classifier as if it
-  // held booleans.
+  // file whose `enabledPlugins` is a string walk into the classifier as if it
+  // were a map.
   if (!parsed.success) return { unreadable: describeShape(parsed.error) };
   return { slice: parsed.data };
+}
+
+/**
+ * The boolean entries of one file's `enabledPlugins`, and how many were not.
+ *
+ * A value that is not a boolean is skipped rather than fatal. Claude Code writes
+ * this map, a person edits it, and one hand-typed `"true"` in a file with twenty
+ * good entries must not turn nineteen answers into none — but it must not be
+ * silent either, so the count is carried up and the report says how many.
+ *
+ * @param raw - the file's `enabledPlugins`, already known to be an object.
+ * @returns the boolean entries, and the number of entries that were not.
+ */
+function readEnabledPlugins(raw: Record<string, unknown> | undefined): {
+  entries: Record<string, boolean>;
+  skipped: number;
+} {
+  const entries: Record<string, boolean> = {};
+  let skipped = 0;
+  for (const [key, value] of Object.entries(raw ?? {})) {
+    if (typeof value === 'boolean') entries[key] = value;
+    else skipped += 1;
+  }
+  return { entries, skipped };
+}
+
+/**
+ * The `owner/name` slug each declared marketplace resolves to, walked
+ * defensively.
+ *
+ * Every step is checked because the vendor owns this shape and a person can
+ * hand-edit it: an entry that is not an object, a `source` that is a bare string
+ * rather than the documented object, a `repo` that is a number. None of those is
+ * a reason to stop resolving the OTHER marketplaces, so each one simply
+ * contributes no key.
+ *
+ * @param raw - the file's `extraKnownMarketplaces`.
+ * @returns each marketplace name mapped to `owner/name`, or `null` when the key
+ *   itself is not an object DorkOS can walk at all.
+ */
+function readMarketplaces(raw: unknown): Record<string, string | null> | null {
+  if (raw === undefined) return {};
+  if (!isRecord(raw)) return null;
+  const resolved: Record<string, string | null> = {};
+  for (const [name, entry] of Object.entries(raw)) {
+    const source = isRecord(entry) ? entry.source : undefined;
+    if (!isRecord(source) || typeof source.source !== 'string') {
+      resolved[name] = null;
+      continue;
+    }
+    resolved[name] = marketplaceRepoKey({
+      kind: 'claude-source',
+      source: source.source,
+      repo: typeof source.repo === 'string' ? source.repo : undefined,
+    });
+  }
+  return resolved;
 }
 
 /** The three settings scopes DorkOS can read, lowest precedence first. */
@@ -154,8 +238,12 @@ interface MergedSettings {
   user: Record<string, boolean>;
   /** `enabledPlugins` merged per key: local over project over user. */
   enabled: Record<string, boolean>;
-  /** `extraKnownMarketplaces` merged per key, same precedence. */
-  marketplaces: Record<string, { source: { source: string; repo?: string | undefined } }>;
+  /** Marketplace name to `owner/name`, merged per key, same precedence. */
+  marketplaces: Record<string, string | null>;
+  /** How many `enabledPlugins` entries were skipped for not being booleans. */
+  skipped: number;
+  /** Keys whose own shape defeated their walk, while the rest of the file read fine. */
+  unreadableParts: ClaudeSettingsPart[];
 }
 
 /**
@@ -167,16 +255,29 @@ interface MergedSettings {
  * something they are missing, with an install command beside it.
  *
  * @param scopes - the user, project and local slices, in that order.
- * @returns the user file's own entries and the merged view of all three.
+ * @returns the user file's own entries, the merged view of all three, and what
+ *   could not be walked along the way.
  */
 function mergeSettings(scopes: readonly ClaudeSettingsSlice[]): MergedSettings {
   const enabled: Record<string, boolean> = {};
-  const marketplaces: MergedSettings['marketplaces'] = {};
+  const marketplaces: Record<string, string | null> = {};
+  let skipped = 0;
+  let marketplacesUnreadable = false;
   for (const slice of scopes) {
-    Object.assign(enabled, slice.enabledPlugins ?? {});
-    Object.assign(marketplaces, slice.extraKnownMarketplaces ?? {});
+    const own = readEnabledPlugins(slice.enabledPlugins);
+    Object.assign(enabled, own.entries);
+    skipped += own.skipped;
+    const known = readMarketplaces(slice.extraKnownMarketplaces);
+    if (known === null) marketplacesUnreadable = true;
+    else Object.assign(marketplaces, known);
   }
-  return { user: { ...(scopes[0]?.enabledPlugins ?? {}) }, enabled, marketplaces };
+  return {
+    user: readEnabledPlugins(scopes[0]?.enabledPlugins).entries,
+    enabled,
+    marketplaces,
+    skipped,
+    unreadableParts: marketplacesUnreadable ? ['extraKnownMarketplaces'] : [],
+  };
 }
 
 /**
@@ -186,14 +287,26 @@ function mergeSettings(scopes: readonly ClaudeSettingsSlice[]): MergedSettings {
  * commands runs three commands, and saying "1" there would understate exactly
  * the thing the line exists to disclose.
  *
- * @param slice - the parsed user settings slice.
- * @returns the total number of hook entries across every matcher group.
+ * Walked defensively rather than schema-checked, and it never reads a value:
+ * only `Array.isArray` and `.length` are asked of anything. A group that is not
+ * an array, or an entry whose `hooks` is not one, contributes zero rather than
+ * failing the file — but a `hooks` key that is not an object at all is reported,
+ * because "0 commands" and "DorkOS could not look" are different answers.
+ *
+ * @param raw - the user settings slice's `hooks`.
+ * @returns the total across every matcher group, or `null` when it cannot be walked.
  */
-function countHookCommands(slice: ClaudeSettingsSlice): number {
-  return Object.values(slice.hooks ?? {}).reduce(
-    (total, group) => total + group.reduce((sum, entry) => sum + entry.hooks.length, 0),
-    0
-  );
+function countHookCommands(raw: unknown): number | null {
+  if (raw === undefined) return 0;
+  if (!isRecord(raw)) return null;
+  let total = 0;
+  for (const group of Object.values(raw)) {
+    if (!Array.isArray(group)) continue;
+    for (const entry of group) {
+      if (isRecord(entry) && Array.isArray(entry.hooks)) total += entry.hooks.length;
+    }
+  }
+  return total;
 }
 
 /**
@@ -235,23 +348,30 @@ interface DorkosSources {
  *
  * **`list()` seeds the shipped defaults when that file does not exist yet**, so
  * on a machine DorkOS has never run this read creates it. Stated rather than
- * hidden, and it is the right answer anyway: the alternative is telling somebody
- * to add a source DorkOS already ships, which the very next command would refuse
- * as a duplicate. The write is inside `<dorkHome>`, DorkOS's own directory, and
+ * hidden, and it is the right answer anyway: without it every plugin would be
+ * told to add a source DorkOS already ships. (`dorkos marketplace add` would
+ * take that duplicate URL, under a second name — it refuses a duplicate NAME,
+ * not a duplicate address — so the cost is a confusing second source rather than
+ * an error.) The write is inside `<dorkHome>`, DorkOS's own directory, and
  * `dorkos harness sync --check` still touches nothing in the person's project.
  *
  * @param dorkHome - the resolved DorkOS data directory.
- * @returns the sources by repository key, or `null` when they cannot be read.
+ * @returns the sources by repository key, or the path DorkOS could not read.
  */
-async function readDorkosSources(dorkHome: string): Promise<DorkosSources | null> {
+async function readDorkosSources(
+  dorkHome: string
+): Promise<DorkosSources | { unreadable: string }> {
   let sources: { name: string; source: string }[];
+  const sourcesPath = path.join(dorkHome, 'marketplaces.json');
   try {
     sources = await new MarketplaceSourceManager(dorkHome).list();
   } catch {
-    // `marketplaces.json` is unreadable, so DorkOS genuinely cannot say which
-    // sources it has. The caller degrades every plugin to "cannot tell where
-    // this came from" rather than claiming a source is missing.
-    return null;
+    // DorkOS's OWN list is unreadable, which is a different answer from "Claude
+    // Code did not say where this came from" and has to read differently. The
+    // caller keeps every repository it resolved and says, once, that it cannot
+    // offer installs until this file is fixed. The reason is dropped and only
+    // the path kept: the parse error can quote a line of the file.
+    return { unreadable: sourcesPath };
   }
 
   const cache = new MarketplaceCache(dorkHome);
@@ -279,18 +399,26 @@ async function readDorkosSources(dorkHome: string): Promise<DorkosSources | null
  * DorkOS can compare, so rungs 1 and 2 may only ever claim a package of the same
  * name from the same repository.
  *
+ * `sources-unreadable` is the fifth value and it is NOT a rung: it says nothing
+ * about the plugin and everything about DorkOS. It exists because the honest
+ * alternative was worse — every plugin used to fall to `unknown-source` here,
+ * so the report said "DorkOS cannot tell where these came from" on the line
+ * above the repository it had just named, and the actual cause was never
+ * mentioned at all.
+ *
  * @param repo - the repository key, or `null` when Claude Code's settings did
  *   not name one this can compare.
  * @param name - the plugin's name.
- * @param dorkos - DorkOS's own sources, or `null` when they could not be read.
+ * @param dorkos - DorkOS's own sources, or the path it could not read.
  * @returns the offer, and the source URL to add when there is one.
  */
 function classifyOffer(
   repo: string | null,
   name: string,
-  dorkos: DorkosSources | null
+  dorkos: DorkosSources | { unreadable: string }
 ): Pick<HarnessClaudeOnlyPlugin, 'offer' | 'sourceUrl'> {
-  if (repo === null || dorkos === null) return { offer: 'unknown-source' };
+  if ('unreadable' in dorkos) return { offer: 'sources-unreadable' };
+  if (repo === null) return { offer: 'unknown-source' };
   const sourceName = dorkos.byRepo.get(repo);
   if (sourceName === undefined) {
     return { offer: 'add-source-then-install', sourceUrl: `https://github.com/${repo}` };
@@ -340,6 +468,7 @@ export async function readClaudeOnlyPlugins(
     return {
       ...base,
       unreadable: user.unreadable ?? 'unknown',
+      unreadableParts: [],
       plugins: [],
       personalHookCommands: 0,
     };
@@ -353,18 +482,22 @@ export async function readClaudeOnlyPlugins(
   const local = await readSettingsSlice(path.join(projectPath, '.claude', 'settings.local.json'));
   const merged = mergeSettings([user.slice, project.slice ?? {}, local.slice ?? {}]);
 
+  const hooks = countHookCommands(user.slice.hooks);
+  const partial = {
+    ...(merged.skipped > 0 ? { skippedEntries: merged.skipped } : {}),
+    unreadableParts: [...merged.unreadableParts, ...(hooks === null ? (['hooks'] as const) : [])],
+    personalHookCommands: hooks ?? 0,
+  };
+
   const turnedOn = Object.entries(merged.enabled).filter(([, on]) => on === true);
-  if (turnedOn.length === 0) {
-    return { ...base, plugins: [], personalHookCommands: countHookCommands(user.slice) };
-  }
+  if (turnedOn.length === 0) return { ...base, ...partial, plugins: [] };
 
   const dorkos = await readDorkosSources(dorkHome);
   const plugins: HarnessClaudeOnlyPlugin[] = [];
   for (const [key] of turnedOn) {
     const split = splitPluginKey(key);
     if (split === null) continue;
-    const known = merged.marketplaces[split.marketplace];
-    const repo = known ? marketplaceRepoKey({ kind: 'claude-source', ...known.source }) : null;
+    const repo = merged.marketplaces[split.marketplace] ?? null;
     plugins.push({
       name: split.name,
       marketplace: split.marketplace,
@@ -378,7 +511,12 @@ export async function readClaudeOnlyPlugins(
     });
   }
 
-  return { ...base, plugins, personalHookCommands: countHookCommands(user.slice) };
+  return {
+    ...base,
+    ...partial,
+    ...('unreadable' in dorkos ? { sourcesUnreadable: dorkos.unreadable } : {}),
+    plugins,
+  };
 }
 
 /**
@@ -414,6 +552,7 @@ export async function collectClaudeOnlyPlugins(
       readAt: new Date().toISOString(),
       unreadable: causeOf(err),
       mayBeOverridden: true,
+      unreadableParts: [],
       plugins: [],
       personalHookCommands: 0,
     };

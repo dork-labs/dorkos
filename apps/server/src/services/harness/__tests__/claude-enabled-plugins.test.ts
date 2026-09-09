@@ -167,16 +167,148 @@ describe('what Claude Code alone has', () => {
     expect(result.root).toBe(claudeRoot);
   });
 
-  it('SRC-08: records a settings file whose shape the slice cannot accept, and still does not throw', async () => {
-    writeClaudeSettings(claudeRoot, { enabledPlugins: { 'a@b': 'not-a-boolean' } });
+  it('SRC-08: records a settings file whose enabledPlugins is not a map at all', async () => {
+    // The ONE key this answer is about. A shape DorkOS cannot walk here is the
+    // whole record; the two side keys below get a line each instead.
+    writeClaudeSettings(claudeRoot, { enabledPlugins: 'all of them, obviously' });
 
     const result = await read();
 
-    expect(result.unreadable).toBe('enabledPlugins.a@b is not a shape DorkOS can read');
+    expect(result.unreadable).toBe('enabledPlugins is not a shape DorkOS can read');
     expect(result.plugins).toEqual([]);
     // The reason says WHERE and never WHAT. Zod's own message quotes the value
     // it rejected, and this is somebody's private settings file.
-    expect(result.unreadable).not.toContain('not-a-boolean');
+    expect(result.unreadable).not.toContain('obviously');
+  });
+
+  // Nit 2. Seeded defect: hand `causeOf(err)` back from the `JSON.parse` catch,
+  // as this did. V8 quotes about ten bytes of the input into its SyntaxError, so
+  // a settings file that starts with a credential printed it — to a terminal,
+  // and on the wire in `claudeOnly.unreadable`.
+  it('SRC-08: never quotes the file back when it is not JSON, whatever the first bytes are', async () => {
+    const secret = 'sk-ant-api03-NOT-A-REAL-KEY-0000';
+    fs.writeFileSync(path.join(claudeRoot, 'settings.json'), `${secret} = everything\n`);
+
+    const result = await read();
+
+    expect(result.unreadable).toBe('the file is not valid JSON');
+    expect(JSON.stringify(result)).not.toContain('sk-ant');
+    expect(JSON.stringify(result)).not.toContain(secret.slice(0, 10));
+  });
+
+  // Nit 4, shape one. Seeded defect: declare `hooks` in the Zod slice again, and
+  // one bad byte under `Stop` fails the parse and takes every plugin with it.
+  it('SRC-08, HK-14: a malformed hooks block costs the count and nothing else', async () => {
+    writeClaudeSettings(claudeRoot, {
+      enabledPlugins: { 'context7@claude-plugins-official': true },
+      extraKnownMarketplaces: KNOWN_MARKETPLACES,
+      hooks: 'Stop, obviously',
+    });
+
+    const result = await read();
+
+    expect(result.unreadable).toBeUndefined();
+    expect(result.plugins.map((plugin) => plugin.name)).toEqual(['context7']);
+    expect(result.plugins[0]?.offer).toBe('install');
+    expect(result.personalHookCommands).toBe(0);
+    expect(result.unreadableParts).toEqual(['hooks']);
+  });
+
+  it('HK-14: a hook group that is not an array contributes zero rather than failing the file', async () => {
+    writeClaudeSettings(claudeRoot, {
+      enabledPlugins: { 'context7@claude-plugins-official': true },
+      extraKnownMarketplaces: KNOWN_MARKETPLACES,
+      hooks: { Stop: 'nope', PreToolUse: [{ hooks: [{ type: 'command', command: 'one' }] }] },
+    });
+
+    const result = await read();
+
+    expect(result.personalHookCommands).toBe(1);
+    // The key itself WAS an object, so nothing is claimed unreadable.
+    expect(result.unreadableParts).toEqual([]);
+    expect(result.plugins).toHaveLength(1);
+  });
+
+  // Nit 4, shape two. Seeded defect: declare `extraKnownMarketplaces` in the Zod
+  // slice again, and a hand-edited `source` string fails the whole parse.
+  it('SRC-08: a bare-string marketplace source costs that one resolution, not the list', async () => {
+    writeClaudeSettings(claudeRoot, {
+      enabledPlugins: {
+        'context7@claude-plugins-official': true,
+        'code-reviewer@dorkos': true,
+      },
+      extraKnownMarketplaces: {
+        ...KNOWN_MARKETPLACES,
+        dorkos: { source: 'github:dork-labs/marketplace' },
+      },
+    });
+
+    const result = await read();
+
+    expect(result.unreadable).toBeUndefined();
+    expect(result.unreadableParts).toEqual([]);
+    expect(result.plugins).toHaveLength(2);
+    expect(result.plugins.find((plugin) => plugin.name === 'context7')?.repo).toBe(
+      'anthropics/claude-plugins-official'
+    );
+    // The one DorkOS cannot parse resolves to nothing and says so, on its own.
+    const unresolved = result.plugins.find((plugin) => plugin.name === 'code-reviewer');
+    expect(unresolved?.repo).toBeUndefined();
+    expect(unresolved?.offer).toBe('unknown-source');
+  });
+
+  it('SRC-08: an extraKnownMarketplaces that is not a map costs the resolutions and says so', async () => {
+    writeClaudeSettings(claudeRoot, {
+      enabledPlugins: { 'context7@claude-plugins-official': true },
+      extraKnownMarketplaces: 'the usual ones',
+    });
+
+    const result = await read();
+
+    expect(result.unreadable).toBeUndefined();
+    expect(result.unreadableParts).toEqual(['extraKnownMarketplaces']);
+    expect(result.plugins).toHaveLength(1);
+    expect(result.plugins[0]?.repo).toBeUndefined();
+  });
+
+  // Nit 4, shape three. Seeded defect: require booleans in the Zod slice, and
+  // one hand-typed `"true"` costs the person every other answer in the file.
+  it('SRC-08: a non-boolean entry is skipped and counted, never fatal', async () => {
+    writeClaudeSettings(claudeRoot, {
+      enabledPlugins: {
+        'context7@claude-plugins-official': true,
+        'playwright@claude-plugins-official': 'true',
+        'skill-creator@claude-plugins-official': null,
+      },
+      extraKnownMarketplaces: KNOWN_MARKETPLACES,
+    });
+
+    const result = await read();
+
+    expect(result.unreadable).toBeUndefined();
+    expect(result.plugins.map((plugin) => plugin.name)).toEqual(['context7']);
+    expect(result.skippedEntries).toBe(2);
+  });
+
+  // Nit 3. Seeded defect: fall back to `unknown-source` for every plugin, as
+  // this did. The report then said "DorkOS cannot tell where these came from"
+  // on the line above the repository it had just named, and the real cause —
+  // DorkOS's OWN file — was never mentioned at all.
+  it('SRC-08: an unreadable marketplaces.json is said once, and the repositories survive', async () => {
+    fs.writeFileSync(path.join(dorkHome, 'marketplaces.json'), '{ "version": 1, "sources": ');
+    writeClaudeSettings(claudeRoot, {
+      enabledPlugins: { 'code-reviewer@dorkos': true },
+      extraKnownMarketplaces: KNOWN_MARKETPLACES,
+    });
+
+    const result = await read();
+
+    expect(result.sourcesUnreadable).toBe(path.join(dorkHome, 'marketplaces.json'));
+    expect(result.unreadable).toBeUndefined();
+    expect(result.plugins).toHaveLength(1);
+    // The repository came from Claude Code's file, so it is still known.
+    expect(result.plugins[0]?.repo).toBe('dork-labs/marketplace');
+    expect(result.plugins[0]?.offer).toBe('sources-unreadable');
   });
 
   // Case 3. Seeded defect: call `resolveActiveClaudeRoot()` instead, and the

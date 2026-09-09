@@ -527,7 +527,8 @@
                         "install",
                         "add-source-then-install",
                         "unknown-source",
-                        "no-package"
+                        "no-package",
+                        "sources-unreadable"
                       ]
                     },
                     "sourceUrl": {
@@ -545,6 +546,23 @@
               "personalHookCommands": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "unreadableParts": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "extraKnownMarketplaces",
+                    "hooks"
+                  ]
+                }
+              },
+              "skippedEntries": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "sourcesUnreadable": {
+                "type": "string"
               }
             },
             "required": [
@@ -552,7 +570,8 @@
               "readAt",
               "mayBeOverridden",
               "plugins",
-              "personalHookCommands"
+              "personalHookCommands",
+              "unreadableParts"
             ]
           }
         },

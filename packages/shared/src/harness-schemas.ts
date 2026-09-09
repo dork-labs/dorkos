@@ -267,7 +267,18 @@ export const HarnessClaudeOnlySchema = z.object({
   readAt: z.string(),
   /** Why the read failed, in words. When set, `plugins` is empty and means nothing. */
   unreadable: z.string().optional(),
-  /** True when a managed settings file may exist and could not be read. Always true today. */
+  /**
+   * That the answer may be overridden by a managed settings file.
+   *
+   * A CONSTANT `true` today, and it is a field rather than a sentence because
+   * the surfaces have to render the caveat and the caveat has to be able to stop
+   * being universal. Claude Code's managed settings outrank every file DorkOS
+   * reads and live where DorkOS is not entitled to look — on macOS under
+   * `/Library/Application Support/ClaudeCode/`, root-owned — so there is no
+   * machine on which DorkOS can currently say this list is complete. Nothing
+   * computes it, nothing may branch on it being `false`, and a reader that finds
+   * it `false` one day is reading a build where DorkOS learned to check.
+   */
   mayBeOverridden: z.boolean(),
   /** The plugins whose merged value across the readable settings files is `true`. */
   plugins: z.array(
@@ -283,14 +294,54 @@ export const HarnessClaudeOnlySchema = z.object({
       repo: z.string().optional(),
       /** `project` means on for this repository only, with no entry at user scope. */
       settingsScope: z.enum(['user', 'project']),
-      /** Which of the five rungs this plugin came to rest on. */
-      offer: z.enum(['install', 'add-source-then-install', 'unknown-source', 'no-package']),
+      /**
+       * Which of the five rungs this plugin came to rest on, or
+       * `sources-unreadable`.
+       *
+       * That last value is not a rung: it says nothing about the plugin and
+       * everything about DorkOS, whose own `marketplaces.json` could not be
+       * read, so no offer can be made about anything. `sourcesUnreadable` on the
+       * envelope carries the path and the surface says it once.
+       */
+      offer: z.enum([
+        'install',
+        'add-source-then-install',
+        'unknown-source',
+        'no-package',
+        'sources-unreadable',
+      ]),
       /** The source URL to add, for `add-source-then-install` only. */
       sourceUrl: z.string().optional(),
     })
   ),
   /** How many hook commands the personal settings file declares. */
   personalHookCommands: z.number().int().nonnegative(),
+  /**
+   * Keys of the settings file whose own shape defeated DorkOS's walk, while the
+   * rest of the file read fine.
+   *
+   * `enabledPlugins` is never in here: it is the key this whole answer is about,
+   * so a shape DorkOS cannot walk there is the envelope's `unreadable` record
+   * instead. These two are side facts, and one bad byte in either must not cost
+   * a person the plugin list they came for.
+   */
+  unreadableParts: z.array(z.enum(['extraKnownMarketplaces', 'hooks'])),
+  /**
+   * How many `enabledPlugins` entries were skipped for not holding a boolean.
+   *
+   * Absent means none were. Present means the list below is short by that many,
+   * which is a thing a person has to be told rather than left to notice.
+   */
+  skippedEntries: z.number().int().nonnegative().optional(),
+  /**
+   * The path to DorkOS's OWN source list, when that is what could not be read.
+   *
+   * Different from `unreadable`, which is about Claude Code's file: here the
+   * plugins are known and their repositories are known, and the only thing
+   * missing is DorkOS's ability to offer anything about them. Every plugin's
+   * `offer` is `sources-unreadable` when this is set.
+   */
+  sourcesUnreadable: z.string().optional(),
 });
 
 /** What Claude Code alone has. @see {@link HarnessClaudeOnlySchema} */
