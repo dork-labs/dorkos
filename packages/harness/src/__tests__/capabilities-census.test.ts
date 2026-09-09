@@ -82,6 +82,14 @@ const CONTRACT = 'meta/harness-sync-capabilities.md';
  * §15 counts them as part of this surface, and leaving them out would have meant
  * calling SK-08 uncovered while its tests sat six directories away.
  *
+ * The fifth is `routes/__tests__/harness.test.ts`, added when TR-08 shipped
+ * (DOR-1895). That row is "a person asks from the app", and the only place it is
+ * asserted is over HTTP — the person bar, the `409`, the sweep as an exact tree
+ * diff, the card the route does not wait for. Without this root the row would
+ * have had to claim no coverage to keep the census green, which is the exact
+ * false cell it exists to catch. One FILE rather than the directory, because
+ * nothing else in `routes/__tests__` is about this engine.
+ *
  * Three of the four are in other packages or other services, which is the whole
  * reason the turbo `inputs` override exists: without it a renamed title in any
  * of them would replay a cached green here.
@@ -98,6 +106,7 @@ const TEST_ROOTS = [
     match: /^(?:scan-skill-commands|skill-parity)\.test\.ts$/,
     least: 2,
   },
+  { dir: 'apps/server/src/routes/__tests__', match: /^harness\.test\.ts$/, least: 1 },
 ] as const;
 
 /**
@@ -366,8 +375,8 @@ describe('the harness capabilities census', () => {
     // report a perfectly consistent document.
     expect(rows.length).toBeGreaterThanOrEqual(86);
     expect(journeys.length).toBeGreaterThanOrEqual(14);
-    expect(files.length).toBeGreaterThanOrEqual(62);
-    expect(titles.length).toBeGreaterThanOrEqual(580);
+    expect(files.length).toBeGreaterThanOrEqual(63);
+    expect(titles.length).toBeGreaterThanOrEqual(590);
     // And every root really contributed, so a moved directory is a red rather
     // than a quietly smaller census.
     for (const root of TEST_ROOTS) {

@@ -51,11 +51,14 @@
  * removed it. `echo` appends exactly one line, so dropping the last one puts
  * the file back.
  *
- * Measured 2026-09-08 with each of the SIX foreign inputs touched one at a
+ * Measured 2026-09-08 with each of the six foreign inputs touched one at a
  * time — seven runs counting the baseline: **without the override all seven
  * produce one identical hash** — the contract changed, the stripper changed, a
  * foreign test title changed, and turbo could not tell — **and with it all
- * seven differ.** That, not a digest, is the property.
+ * seven differ.** That, not a digest, is the property. A seventh input joined
+ * them with TR-08 (DOR-1895) and was not re-measured: it is the same shape as
+ * the entry above it, and the property being demonstrated is about the override
+ * existing rather than about any one path in it.
  *
  * @module __tests__/turbo-census-inputs
  */
