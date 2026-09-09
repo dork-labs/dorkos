@@ -36,10 +36,9 @@
  *
  * @module inventory/foreign-mcp
  */
-import { lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseToml } from 'smol-toml';
-import { readTextFile } from './read.js';
+import { nothingIsThere, readTextFile } from './read.js';
 import type { ForeignMcpConfig, UnreadableSource } from './types.js';
 
 /**
@@ -250,7 +249,11 @@ export function inventoryForeignMcpConfigs(repoRoot: string): {
 
   for (const shape of FOREIGN_MCP_SHAPES) {
     const abs = join(repoRoot, shape.source);
-    if (lstatSync(abs, { throwIfNoEntry: false }) === undefined) continue;
+    // Not `lstatSync(…, { throwIfNoEntry: false })`: that suppresses ENOENT only,
+    // so a plain FILE at `.codex` threw ENOTDIR out of here and took `project()`
+    // down — the shape DOR-1882 closed for every other reader. Something in the
+    // way becomes the finding `readTextFile` writes, never a throw.
+    if (nothingIsThere(abs)) continue;
     const read = readTextFile(abs, shape.source, 'mcp');
     if (read.text === undefined) {
       if (read.unreadable) unreadable.push(read.unreadable);

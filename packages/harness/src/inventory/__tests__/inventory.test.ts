@@ -464,6 +464,19 @@ describe('inventorySourceTree', () => {
     expect(JSON.stringify(unreadable)).not.toContain('TOMLSECRET');
   });
 
+  it('XA-07, AP-11: a file where `.codex` belongs is a finding, never a throw', () => {
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-codex-file-'));
+    // DOR-1882 closed this shape for every other reader: the ENOTDIR that
+    // `lstatSync(…, { throwIfNoEntry: false })` does NOT suppress took
+    // `project()` down before a line of the report was written. A file in the
+    // way of `.codex/config.toml` is something a person can see and move.
+    writeFileAt(join(repo, '.codex'), 'not a folder\n');
+
+    const { foreignMcpConfigs, unreadable } = inventorySourceTree(repo);
+    expect(foreignMcpConfigs).toEqual([]);
+    expect(unreadable.map((u) => u.source)).toContain('.codex/config.toml');
+  });
+
   it('XA-07: reads a config file that starts with a byte-order mark', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inv-bom-'));
     // A BOM is what a Windows editor leaves on a JSON file, and `JSON.parse`
