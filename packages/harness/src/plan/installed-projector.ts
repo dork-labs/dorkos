@@ -142,7 +142,7 @@ export const FRONTMATTER_KEYED_HARNESSES: readonly HarnessId[] = ['codex', 'open
 /** Manifest layers with no harness home — each dropped with the given reason. */
 const NON_PORTABLE_LAYER_REASONS: Record<string, string> = {
   extensions: 'UI extensions run inside DorkOS, not in a harness',
-  adapters: 'messaging adapters run inside DorkOS, not in a harness',
+  adapters: 'Messaging runs inside DorkOS, not in a harness',
   'mcp-servers': 'MCP servers are configured per-harness, not projected as files',
   'lsp-servers': 'LSP servers are configured per-harness, not projected as files',
   agents: 'agent definitions are installed as workspaces, not harness assets',

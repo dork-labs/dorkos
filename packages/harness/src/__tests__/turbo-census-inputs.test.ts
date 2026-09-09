@@ -5,9 +5,14 @@
  * `@dorkos/harness`: the contract in `meta/`, the repo's shared comment
  * stripper, the server's harness tests, the harness ROUTE test (where TR-08
  * lives), the two Codex skill readers, and the CLI's `harness-sync*` tests.
+ * `reason-vocabulary.test.ts` (DOR-1896) reads two more — the retired-word list
+ * and the gate script it shares the loader and the term matcher with — and they
+ * are here for the same reason: a wave added to that list must reach this
+ * package rather than replay a cached green.
  *
- * Two assertions, split by what knows the answer. The contract and the stripper
- * are named here one by one, because nothing else knows they are read at all.
+ * Two assertions, split by what knows the answer. The contract, the stripper and
+ * the two vocabulary files are named here one by one, because nothing else knows
+ * they are read at all.
  * The TEST ROOTS are checked against the census's own `TEST_ROOTS` — the same
  * list it walks — so a root added there requires its input here without
  * anybody remembering to edit two files. Turbo's `test`
@@ -96,6 +101,10 @@ const REQUIRED_INPUTS: Readonly<Record<string, string>> = {
   '$TURBO_ROOT$/meta/harness-sync-capabilities.md': 'the contract the census parses',
   '$TURBO_ROOT$/scripts/lib/code-only.mjs':
     'the shared stripper the census blanks comments with, so a title in a docstring is not coverage',
+  '$TURBO_ROOT$/scripts/vocab-gate/banned-terms.json':
+    'the retired-word list `reason-vocabulary.test.ts` reads, so a wave added there reaches this package instead of replaying a cached green (DOR-1896)',
+  '$TURBO_ROOT$/scripts/check-vocab-gate.ts':
+    'the loader and the term matcher that guard shares with the app’s gate, so a change to how a term is matched is re-run here',
 };
 
 /**

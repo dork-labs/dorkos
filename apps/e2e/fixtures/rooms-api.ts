@@ -163,8 +163,15 @@ export class RoomsApi {
    * One root per instance means {@link RoomsApi.cleanup} removes the whole tree
    * in a single call and cannot miss a subdirectory the server added, and it
    * makes this run's namespace (`run-<runId>`) distinct from every other run's.
+   *
+   * Public, because a sibling fixture stages files INTO it before registration
+   * and has to be able to build a path there — `harness-repo.ts` writes a whole
+   * repository under this root and hands it to
+   * {@link RoomsApi.registerAgent}'s `path`. Readonly, because a root this
+   * instance did not choose is a root {@link RoomsApi.cleanup} would not
+   * remove.
    */
-  private readonly agentRoot = join(FIXTURE_AGENT_ROOT, `run-${this.runId}`);
+  readonly agentRoot = join(FIXTURE_AGENT_ROOT, `run-${this.runId}`);
 
   constructor(request: APIRequestContext) {
     this.request = request;
@@ -184,18 +191,28 @@ export class RoomsApi {
    * @param options - `runtime` seeds an agent on a runtime other than Claude
    *   Code. Grouping is offered by data volume — eight agents, or two distinct
    *   runtimes (BC-32) — so a spec about groups needs a way to reach the bar
-   *   without registering eight of them.
+   *   without registering eight of them. `path` names a directory the caller has
+   *   ALREADY staged, for a spec whose subject is what is in the folder: this
+   *   helper otherwise invents a path and creates it, so files could only ever
+   *   be written after registration. It must sit under
+   *   {@link RoomsApi.agentRoot} — `scanRoot` below is
+   *   {@link FIXTURE_AGENT_ROOT}, so the namespace the server derives is
+   *   `run-<runId>` only for a path inside this run's own root, and a path
+   *   outside it registers into somebody else's namespace without any error to
+   *   say so. The spec that uses this asserts the containment for exactly that
+   *   reason.
    */
   async registerAgent(
     name: string,
     emoji: string,
     color: string,
-    options: { runtime?: string } = {}
+    options: { runtime?: string; path?: string } = {}
   ): Promise<SeededAgent> {
-    const path = join(this.agentRoot, `room-agent-${randomUUID()}`);
+    const path = options.path ?? join(this.agentRoot, `room-agent-${randomUUID()}`);
     // Make the tree ours before the server writes into it, so both paths below
     // resolve through the same real directory rather than one of them being
-    // resolved speculatively while it still does not exist.
+    // resolved speculatively while it still does not exist. Recursive, so a
+    // directory the caller staged already is left exactly as it is.
     await mkdir(path, { recursive: true });
     const res = await this.request.post('/api/mesh/agents', {
       data: {

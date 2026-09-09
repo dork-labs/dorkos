@@ -11,6 +11,7 @@ import { RoomsPage } from '../pages/RoomsPage';
 import { HomeSurfacePage } from '../pages/HomeSurfacePage';
 import { ControlCenterPage } from '../pages/ControlCenterPage';
 import { RoomsApi } from './rooms-api';
+import { HarnessRepoApi } from './harness-repo';
 import { TeamRoomApi } from './team-room-api';
 import { TasksApi } from './tasks-api';
 import { soleAccess } from './sole-access';
@@ -36,6 +37,7 @@ type DorkOSFixtures = {
   homeSurface: HomeSurfacePage;
   controlCenter: ControlCenterPage;
   roomsApi: RoomsApi;
+  harnessRepo: HarnessRepoApi;
   teamRoomApi: TeamRoomApi;
   tasksApi: TasksApi;
 };
@@ -92,6 +94,16 @@ export const test = base.extend<DorkOSFixtures>({
   // shares one server, so nothing may outlive the test that made it.
   roomsApi: async ({ request }, use) => {
     const api = new RoomsApi(request);
+    await use(api);
+    await api.cleanup();
+  },
+  // Stages a repository under this test's own agent root and removes it again.
+  // It takes `roomsApi` rather than `request` because the tree has to land
+  // inside that instance's `agentRoot` — see the fixture's header for what goes
+  // wrong when it does not — and because depending on it is what makes
+  // Playwright tear this down FIRST, before the root it wrote into goes.
+  harnessRepo: async ({ roomsApi }, use) => {
+    const api = new HarnessRepoApi(roomsApi);
     await use(api);
     await api.cleanup();
   },

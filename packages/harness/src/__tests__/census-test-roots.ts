@@ -49,6 +49,15 @@ export interface CensusTestRoot {
  * false cell it exists to catch. One FILE rather than the directory, because
  * nothing else in `routes/__tests__` is about this engine.
  *
+ * The sixth is the T7 browser spec (DOR-1896). Three rows now cite it — VC-01,
+ * VC-02 and TR-08 — because a browser is the only place their claim is really
+ * settled: that the page a person opens reads their own folder, and that the
+ * sentence it draws is the engine's rather than a paraphrase. Without this root
+ * those three would be citing a file nothing checks, which is the same false
+ * cell as citing one that does not exist. The DIRECTORY rather than the file,
+ * because it is a directory that exists for this subject and a second harness
+ * spec belongs in it.
+ *
  * All but the first are in other packages or other services, which is the whole
  * reason the turbo `inputs` override exists.
  */
@@ -62,4 +71,5 @@ export const TEST_ROOTS: readonly CensusTestRoot[] = [
     least: 2,
   },
   { dir: 'apps/server/src/routes/__tests__', match: /^harness\.test\.ts$/, least: 1 },
+  { dir: 'apps/e2e/tests/harness', match: /\.spec\.ts$/, least: 1 },
 ] as const;
