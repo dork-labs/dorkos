@@ -100,9 +100,11 @@ reported and never moved.
 - **The move is still one-way in the thing that matters.** Adopting shares a skill with five tools,
   and nothing un-shares it — `manifest.claudeOnlySkills` only governs a skill that stayed put. The
   mitigation is that every path to the move is a person's decision or an allowlist, never a default.
-- **The allowlist is narrow enough to be annoying.** A perfectly portable skill carrying
-  `display-name:` is refused by `autoAdopt` and has to be adopted by hand. That is deliberate, and it
-  will read as fussy to somebody who knows their own file is fine.
+- **The allowlist is narrow enough to be annoying, and it is hard in BOTH modes.** A perfectly
+  portable skill carrying `display-name:` is refused by the explicit command too, not merely skipped
+  by the automatic one — so the person has to take the field out or declare the skill Claude-only
+  before it will move. That is deliberate (there is no `--force`, because the exposure it would
+  create cannot be undone), and it will read as fussy to somebody who knows their own file is fine.
 - **An allowlist ages in the other direction too.** When a vendor adopts one of Claude Code's fields,
   the field stays off the list until somebody notices, and skills that could travel are reported
   instead of moved. Failing closed has a cost and this is it.
