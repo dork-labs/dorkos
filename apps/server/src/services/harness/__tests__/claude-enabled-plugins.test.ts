@@ -214,18 +214,43 @@ describe('what Claude Code alone has', () => {
     expect(result.unreadableParts).toEqual(['hooks']);
   });
 
-  it('HK-14: a hook group that is not an array contributes zero rather than failing the file', async () => {
+  // Seeded defect: `continue` past a group the walk does not recognise, as this
+  // did. The count then reads 1 for a file with one readable group and one
+  // unreadable one, HK-14's line prints that number as if it were the whole
+  // truth, and nothing anywhere says a group was skipped.
+  it('HK-14: a hook group that is not an array abandons the count and says so', async () => {
     writeClaudeSettings(claudeRoot, {
       enabledPlugins: { 'context7@claude-plugins-official': true },
       extraKnownMarketplaces: KNOWN_MARKETPLACES,
-      hooks: { Stop: 'nope', PreToolUse: [{ hooks: [{ type: 'command', command: 'one' }] }] },
+      hooks: {
+        Stop: { hooks: [{ type: 'command', command: 'one' }] },
+        PreToolUse: [{ hooks: [{ type: 'command', command: 'two' }] }],
+      },
     });
 
     const result = await read();
 
-    expect(result.personalHookCommands).toBe(1);
-    // The key itself WAS an object, so nothing is claimed unreadable.
-    expect(result.unreadableParts).toEqual([]);
+    // Zero, and NOT because the file has no hooks — the line naming the key is
+    // what separates those two, and HK-14's own line stays away rather than
+    // understating what runs on this machine.
+    expect(result.personalHookCommands).toBe(0);
+    expect(result.unreadableParts).toEqual(['hooks']);
+    // The list the person came for is untouched.
+    expect(result.unreadable).toBeUndefined();
+    expect(result.plugins.map((plugin) => plugin.name)).toEqual(['context7']);
+  });
+
+  it('HK-14: an entry whose hooks is not an array abandons the count the same way', async () => {
+    writeClaudeSettings(claudeRoot, {
+      enabledPlugins: { 'context7@claude-plugins-official': true },
+      extraKnownMarketplaces: KNOWN_MARKETPLACES,
+      hooks: { Stop: [{ hooks: 'say done' }] },
+    });
+
+    const result = await read();
+
+    expect(result.personalHookCommands).toBe(0);
+    expect(result.unreadableParts).toEqual(['hooks']);
     expect(result.plugins).toHaveLength(1);
   });
 
@@ -297,7 +322,11 @@ describe('what Claude Code alone has', () => {
   it('SRC-08: an unreadable marketplaces.json is said once, and the repositories survive', async () => {
     fs.writeFileSync(path.join(dorkHome, 'marketplaces.json'), '{ "version": 1, "sources": ');
     writeClaudeSettings(claudeRoot, {
-      enabledPlugins: { 'code-reviewer@dorkos': true },
+      enabledPlugins: {
+        'code-reviewer@dorkos': true,
+        'context7@claude-plugins-official': true,
+        'persona-toolkit@dork-labs': true,
+      },
       extraKnownMarketplaces: KNOWN_MARKETPLACES,
     });
 
@@ -305,10 +334,30 @@ describe('what Claude Code alone has', () => {
 
     expect(result.sourcesUnreadable).toBe(path.join(dorkHome, 'marketplaces.json'));
     expect(result.unreadable).toBeUndefined();
-    expect(result.plugins).toHaveLength(1);
-    // The repository came from Claude Code's file, so it is still known.
-    expect(result.plugins[0]?.repo).toBe('dork-labs/marketplace');
-    expect(result.plugins[0]?.offer).toBe('sources-unreadable');
+    expect(result.plugins).toHaveLength(3);
+
+    // The invariant the envelope field and the enum value hold together: when
+    // DorkOS cannot read its own sources it can offer nothing about ANY plugin,
+    // so no row may carry a rung. Over three rows rather than one, because one
+    // row cannot tell an invariant from a coincidence — and deliberately over
+    // rows that would otherwise land on three DIFFERENT rungs: two repositories
+    // DorkOS configures by default, and one marketplace Claude Code never
+    // declared. Seeded defect: leave any row at its rung.
+    expect(result.plugins.map((plugin) => plugin.offer)).toEqual([
+      'sources-unreadable',
+      'sources-unreadable',
+      'sources-unreadable',
+    ]);
+    expect(result.plugins.every((plugin) => plugin.offer === 'sources-unreadable')).toBe(true);
+    expect(result.plugins.some((plugin) => plugin.sourceUrl !== undefined)).toBe(false);
+
+    // The repositories came from Claude Code's file, so they are still known —
+    // which is the whole reason this is not rung 3.
+    expect(result.plugins.map((plugin) => plugin.repo)).toEqual([
+      'dork-labs/marketplace',
+      'anthropics/claude-plugins-official',
+      undefined,
+    ]);
   });
 
   // Case 3. Seeded defect: call `resolveActiveClaudeRoot()` instead, and the

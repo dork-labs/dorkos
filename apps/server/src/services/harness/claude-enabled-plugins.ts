@@ -288,10 +288,18 @@ function mergeSettings(scopes: readonly ClaudeSettingsSlice[]): MergedSettings {
  * the thing the line exists to disclose.
  *
  * Walked defensively rather than schema-checked, and it never reads a value:
- * only `Array.isArray` and `.length` are asked of anything. A group that is not
- * an array, or an entry whose `hooks` is not one, contributes zero rather than
- * failing the file — but a `hooks` key that is not an object at all is reported,
- * because "0 commands" and "DorkOS could not look" are different answers.
+ * only `Array.isArray` and `.length` are asked of anything.
+ *
+ * **Any shape the walk does not recognise abandons the count**, at the top
+ * level, at a matcher group, or at an entry inside one. That is deliberately
+ * stricter than the marketplace walk beside it, and the difference is what the
+ * two answers are for: a marketplace DorkOS cannot parse costs one plugin its
+ * offer and the others keep theirs, but a hooks block half of which is
+ * unreadable has no honest number in it. "0 commands" and "DorkOS could not
+ * look" are different answers, and only one of them is safe to print as a
+ * disclosure — a count that quietly skipped a group would tell somebody fewer
+ * commands run on their machine than actually do. The caller turns `null` into
+ * one line naming the key, and the plugin list is untouched either way.
  *
  * @param raw - the user settings slice's `hooks`.
  * @returns the total across every matcher group, or `null` when it cannot be walked.
@@ -301,9 +309,10 @@ function countHookCommands(raw: unknown): number | null {
   if (!isRecord(raw)) return null;
   let total = 0;
   for (const group of Object.values(raw)) {
-    if (!Array.isArray(group)) continue;
+    if (!Array.isArray(group)) return null;
     for (const entry of group) {
-      if (isRecord(entry) && Array.isArray(entry.hooks)) total += entry.hooks.length;
+      if (!isRecord(entry) || !Array.isArray(entry.hooks)) return null;
+      total += entry.hooks.length;
     }
   }
   return total;
