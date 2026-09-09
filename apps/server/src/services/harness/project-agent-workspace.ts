@@ -97,6 +97,7 @@ import { existsSync, realpathSync } from 'node:fs';
 import { join, relative, resolve, isAbsolute } from 'node:path';
 import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
 import { logger } from '../../lib/logger.js';
+import { adoptInOwnedWorkspace } from './adopt-owned-workspace.js';
 
 /** Workspace-relative directory holding an agent's canonical skills. */
 const AGENT_SKILLS_DIR = join('.agents', 'skills');
@@ -226,6 +227,18 @@ export interface AgentWorkspaceBackfillSummary {
   failed: number;
   /** Workspaces left alone because they are not DorkOS's to write into. */
   outsideDorkHome: number;
+  /**
+   * SKILLS — not workspaces — that live only in one agent tool's own folder,
+   * across every workspace this pass considered. Found, whatever was done about
+   * them.
+   *
+   * The name carries the unit because every other field on this interface counts
+   * WORKSPACES, and a summary that mixed the two silently is the "1 of 0"
+   * phrasing the `partly failed` branch below already exists to prevent.
+   */
+  adoptableSkills: number;
+  /** How many of those this pass actually moved. Zero unless `harness.autoAdopt` is on. */
+  adoptedSkills: number;
 }
 
 /** What seeding did to one workspace, collapsed to what the summary counts. */
@@ -414,7 +427,15 @@ export async function backfillAgentWorkspaceSkills(
     skipped: 0,
     failed: 0,
     outsideDorkHome: 0,
+    adoptableSkills: 0,
+    adoptedSkills: 0,
   };
+
+  // How many agent folders held at least one such skill — the `M` of the hint
+  // below. Not a summary field: the summary counts workspaces in five ways
+  // already, and a sixth that means "workspaces, but about skills" is exactly
+  // the mixed unit the two new counters are named to avoid.
+  let foldersWithAdoptable = 0;
 
   for (const agentDir of workspaces) {
     await yieldToEventLoop();
@@ -435,6 +456,38 @@ export async function backfillAgentWorkspaceSkills(
     if (status === 'projected') summary.projected += 1;
     else if (status === 'skipped') summary.skipped += 1;
     else summary.failed += 1;
+
+    // The ONE place this pass consults `harness.autoAdopt`, after the seed and
+    // the projection, and only for a directory that has already passed
+    // `isAgentHome` above. With the flag off the candidates are still read and
+    // still counted, and nothing moves — that is the report-only claim.
+    const adopt = adoptInOwnedWorkspace(agentDir, 'agent-home');
+    summary.adoptableSkills += adopt.adoptable;
+    summary.adoptedSkills += adopt.adopted;
+    // Per workspace, because a command needs one absolute path and an aggregate
+    // has none. This loop is the only place with both `agentDir` and the adopt
+    // result in hand; `projectAgentWorkspace` is called from three places with
+    // different jobs and knows nothing about adoption.
+    if (adopt.adoptable > 0) {
+      foldersWithAdoptable += 1;
+      logger.info('[HarnessSync] Skills in this agent workspace live in one agent tool only', {
+        agentDir,
+        adoptable: adopt.adoptable,
+        adopted: adopt.adopted,
+        skills: adopt.skills,
+        // The absolute `--project` form, because the reader of a server log is
+        // not standing in that directory (S1d/S1e). Empty when every agent tool
+        // this workspace enables can already see every one of them.
+        adoptable_lines: adopt.lines,
+      });
+    }
+    for (const refusal of adopt.refusals) {
+      logger.info('[HarnessSync] A skill in this agent workspace was not moved', {
+        agentDir,
+        skill: refusal.name,
+        reason: refusal.reason,
+      });
+    }
   }
 
   const repairedSomething = summary.seeded > 0 || summary.projected > 0;
@@ -443,7 +496,7 @@ export async function backfillAgentWorkspaceSkills(
   if (summary.total > 0 && !repairedSomething) {
     logger.warn('[HarnessSync] Agent workspace skill backfill repaired nothing', {
       ...summary,
-      hint: 'Registered agents were found but none had their skills seeded or linked. Run `dorkos harness sync --fix` in the agent workspace to see why.',
+      hint: `Registered agents were found but none had their skills seeded or linked. Run \`dorkos harness sync --fix\` in the agent workspace to see why.${adoptableClause(summary, foldersWithAdoptable)}`,
     });
   } else if (failures > 0) {
     logger.warn('[HarnessSync] Agent workspace skill backfill partly failed', {
@@ -454,10 +507,48 @@ export async function backfillAgentWorkspaceSkills(
       // link, which produces `seeded: 1, projected: 0` — and a phrasing like
       // "N linked, M of them newly seeded" then claims 1 of 0. This branch
       // exists so a log line does not send its reader after the wrong problem.
-      hint: `Seeded ${summary.seeded} agent workspace(s), linked ${summary.projected}; ${summary.seedFailed} failed to seed and ${summary.failed} failed to link. Each failure was logged above with its workspace path — run \`dorkos harness sync --fix\` in those to see why.`,
+      hint: `Seeded ${summary.seeded} agent workspace(s), linked ${summary.projected}; ${summary.seedFailed} failed to seed and ${summary.failed} failed to link. Each failure was logged above with its workspace path — run \`dorkos harness sync --fix\` in those to see why.${adoptableClause(summary, foldersWithAdoptable)}`,
     });
   } else {
-    logger.info('[HarnessSync] Agent workspace skill backfill complete', summary);
+    const hint = adoptableHint(summary, foldersWithAdoptable);
+    logger.info(
+      '[HarnessSync] Agent workspace skill backfill complete',
+      hint === '' ? summary : { ...summary, hint }
+    );
   }
   return summary;
+}
+
+/**
+ * The sentence that says how many skills only one agent tool can see, and where
+ * each of them is named.
+ *
+ * Empty when this pass moved everything it found, which is also the whole of
+ * what "nothing to say" means here: a pass that adopted every candidate has
+ * nothing left to point at.
+ *
+ * @param summary - The finished summary.
+ * @param folders - How many agent folders held at least one such skill.
+ * @returns The sentence, or `''`.
+ */
+function adoptableHint(summary: AgentWorkspaceBackfillSummary, folders: number): string {
+  const left = summary.adoptableSkills - summary.adoptedSkills;
+  if (left <= 0) return '';
+  return `${left} skills in ${folders} agent folders live only in one agent tool's folder. Each is named above with its folder.`;
+}
+
+/**
+ * The same sentence as a CLAUSE, for the two `logger.warn` branches that already
+ * carry a `hint` of their own.
+ *
+ * They gain a clause rather than a second `hint` key, because an object cannot
+ * hold two and the second would silently win.
+ *
+ * @param summary - The finished summary.
+ * @param folders - How many agent folders held at least one such skill.
+ * @returns The clause with its leading space, or `''`.
+ */
+function adoptableClause(summary: AgentWorkspaceBackfillSummary, folders: number): string {
+  const hint = adoptableHint(summary, folders);
+  return hint === '' ? '' : ` ${hint}`;
 }

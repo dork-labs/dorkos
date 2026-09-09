@@ -211,6 +211,7 @@ import {
   AGENT_WORKSPACE_HARNESSES,
   type AgentWorkspaceProjection,
 } from '../../harness/project-agent-workspace.js';
+import { adoptInOwnedWorkspace } from '../../harness/adopt-owned-workspace.js';
 import type { RoomRepoStore } from './room-repo-store.js';
 import {
   addWorktree,
@@ -821,6 +822,7 @@ export class RoomWorktreeManager {
       projection: projection.status,
       projected: projection.applied,
     });
+    this.reportAdoptable(roomId, dir, slug);
     return projection;
   }
 
@@ -1230,7 +1232,54 @@ export class RoomWorktreeManager {
       projection: projection.status,
       projected: projection.applied,
     });
+    this.reportAdoptable(roomId, dir, slug);
     return { slug, path: dir, branch, created: true, projection };
+  }
+
+  /**
+   * The second of the two sites that consult `harness.autoAdopt`, beside
+   * `backfillAgentWorkspaceSkills` — and, like it, one that has already
+   * established DorkOS owns the directory: every path here is a worktree under
+   * `<dorkHome>/rooms/<roomId>/worktrees/` that this manager made.
+   *
+   * It runs after the seed-and-project pairing in both of its callers, for the
+   * reason the flag's own docs give: a skill DorkOS seeded is not a candidate,
+   * and asking before the projection would offer to move a folder the next line
+   * is about to link.
+   *
+   * With the flag off — the default — it reads the candidates and moves nothing,
+   * which is what puts the report in the room log. With it on, only allowlisted
+   * skills move, and every refusal is logged with the sentence that says why:
+   * one of the reserved pack names gets S4, whose way out is a rename.
+   *
+   * Best-effort, like everything else on this path: a turn must not be refused
+   * its working directory over a skill folder.
+   *
+   * @param roomId - The room, for the log line.
+   * @param dir - The worktree.
+   * @param slug - Its directory name, for the log line.
+   */
+  private reportAdoptable(roomId: string, dir: string, slug: string): void {
+    const adopt = adoptInOwnedWorkspace(dir, 'room-worktree');
+    if (adopt.adoptable === 0) return;
+    logger.info('[rooms] skills in this room worktree live in one agent tool only', {
+      roomId,
+      worktree: slug,
+      adoptable: adopt.adoptable,
+      adopted: adopt.adopted,
+      skills: adopt.skills,
+      // The absolute `--project` form, because the reader of a server log is not
+      // standing in that directory (S1d/S1e).
+      adoptable_lines: adopt.lines,
+    });
+    for (const refusal of adopt.refusals) {
+      logger.info('[rooms] a skill in this room worktree was not moved', {
+        roomId,
+        worktree: slug,
+        skill: refusal.name,
+        reason: refusal.reason,
+      });
+    }
   }
 
   /**
