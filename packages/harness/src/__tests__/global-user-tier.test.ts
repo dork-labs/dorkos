@@ -29,7 +29,11 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import {
   AGENTS_SKILLS_DIR_READERS,
+  GLOBAL_CLAUDE_ONLY_NOTE,
+  GLOBAL_REACH_NOTE,
+  USER_TIER_MEASUREMENT_NOTE,
   globalBoundarySkipLine,
+  globalClosingNote,
   globalPluginsDir,
   globalSkillsDir,
   projectGlobal,
@@ -370,6 +374,127 @@ describe('AP-07 global: the user tier removes only what DorkOS wrote', () => {
   });
 });
 
+describe('the sentence a run ends on', () => {
+  it('F1: sharing with Claude Code ALONE does not end on "does not share them with Claude Code"', () => {
+    // The defect: the closing note branched on the SHARED folder alone, so a
+    // person who enabled Claude Code and nothing else got
+    // `GLOBAL_REACH_NOTE` — "It does not share them with Claude Code, Codex or
+    // any other agent tool yet" — printed directly under the list of links the
+    // run had just made in Claude Code's own skills folder.
+    const roots: GlobalPlanRoots = { dorkHome: '/d', claudeSkillsDir: '/h/.claude/skills' };
+    const note = globalClosingNote(roots);
+
+    expect(note).toBe(GLOBAL_CLAUDE_ONLY_NOTE);
+    expect(note).not.toBe(GLOBAL_REACH_NOTE);
+    expect(note).not.toContain('does not share them with Claude Code');
+    // It says what IS shared, which is the whole point of the branch.
+    expect(note).toContain('Claude Code');
+    // And it does not claim five tools this run never touched.
+    expect(note).not.toContain('Codex');
+  });
+
+  it('F1: the other three branches are unchanged', () => {
+    // Nothing shared: the reach note is still true, and still the answer.
+    expect(globalClosingNote({ dorkHome: '/d' })).toBe(GLOBAL_REACH_NOTE);
+    // The shared folder, with or without Claude Code beside it: the measured
+    // sentence, because that folder is the one with four unmeasured readers.
+    expect(globalClosingNote({ dorkHome: '/d', agentsSkillsDir: '/h/.agents/skills' })).toBe(
+      USER_TIER_MEASUREMENT_NOTE
+    );
+    expect(
+      globalClosingNote({
+        dorkHome: '/d',
+        agentsSkillsDir: '/h/.agents/skills',
+        claudeSkillsDir: '/h/.claude/skills',
+      })
+    ).toBe(USER_TIER_MEASUREMENT_NOTE);
+    // A boundary outranks all three: it names the root and says nothing was
+    // written in a home folder, because nothing was.
+    expect(globalClosingNote({ dorkHome: '/d' }, '/workspace')).toBe(
+      globalBoundarySkipLine('/workspace')
+    );
+  });
+});
+
+describe('F2: a user root that is not a folder at all', () => {
+  it('a plain FILE at the shared folder is a conflict, not an EEXIST out of mkdirSync', () => {
+    // Measured: `unwritableGlobalDir` asked only about the target's immediate
+    // parent and answered `undefined` for anything that was not a directory —
+    // "a shape question, answered elsewhere". At global scope there is no
+    // elsewhere, so the run reached `mkdirSync` and threw EEXIST.
+    const dorkHome = stageDorkHome([{ name: 'globex', skills: ['greet'] }]);
+    const { home } = stageHome();
+    const agentsSkillsDir = join(home, '.agents', 'skills');
+    mkdirSync(join(home, '.agents'), { recursive: true });
+    writeFileSync(agentsSkillsDir, 'not a folder\n');
+    const roots: GlobalPlanRoots = { dorkHome, agentsSkillsDir };
+
+    const plan = projectGlobal({ roots, harnesses: ['codex'] });
+    // ONE apply, and its not-throwing is the first half of the claim: the defect
+    // was an EEXIST out of `mkdirSync`, so a second call here would report zero
+    // applied and hide the other half.
+    let result: ReturnType<typeof applyGlobalPlan> | undefined;
+    expect(() => {
+      result = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+    }).not.toThrow();
+    expect(result).toBeDefined();
+    const { applied, conflicts } = result as ReturnType<typeof applyGlobalPlan>;
+    expect(conflicts.map((a) => a.target)).toEqual([join(agentsSkillsDir, 'globex__greet')]);
+    // DOR-1882's sentence shape, from DOR-1882's own table: the obstacle and the
+    // way out, naming the path that is really in the way.
+    expect(conflicts[0]?.reason).toBe(
+      `blocked by \`${agentsSkillsDir}\`, which is a file — DorkOS needs a folder there to ` +
+        `write this. Move the file aside, then re-run`
+    );
+    // The dork-home tier is unaffected: one hostile path costs exactly the links
+    // that go through it.
+    expect(applied.map((a) => a.target)).toEqual([
+      join(globalSkillsDir(dorkHome), 'globex__greet'),
+    ]);
+    // Their file, byte for byte.
+    expect(readFileSync(agentsSkillsDir, 'utf8')).toBe('not a folder\n');
+    // And `--check` says the same thing, so nobody is promised a fix that then
+    // refuses.
+    expect(checkGlobalPlan(plan, roots).blocked.map((a) => a.target)).toEqual([
+      join(agentsSkillsDir, 'globex__greet'),
+    ]);
+  });
+
+  it('a file at an ANCESTOR is named, rather than the deeper path it makes unreadable', () => {
+    // Shallowest first. A file at `~/.agents` makes `~/.agents/skills`
+    // unreadable too, and naming the deeper one sends somebody to look at a
+    // path that is only wrong because of the one above it.
+    const dorkHome = stageDorkHome([{ name: 'globex', skills: ['greet'] }]);
+    const { home } = stageHome();
+    writeFileSync(join(home, '.agents'), 'not a folder\n');
+    const roots: GlobalPlanRoots = { dorkHome, agentsSkillsDir: join(home, '.agents', 'skills') };
+
+    const plan = projectGlobal({ roots, harnesses: ['codex'] });
+    const { conflicts } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]?.reason).toContain(`blocked by \`${join(home, '.agents')}\``);
+    expect(conflicts[0]?.reason).not.toContain(join(home, '.agents', 'skills'));
+  });
+
+  it('a SYMLINK to a file says so in its own words', () => {
+    // "`~/.agents/skills` is a file" about a path that is plainly a link sends
+    // somebody to look for a file that is not there.
+    const dorkHome = stageDorkHome([{ name: 'globex', skills: ['greet'] }]);
+    const { home } = stageHome();
+    mkdirSync(join(home, '.agents'), { recursive: true });
+    writeFileSync(join(home, 'somefile'), 'x\n');
+    const agentsSkillsDir = join(home, '.agents', 'skills');
+    symlinkSync(join(home, 'somefile'), agentsSkillsDir);
+    const roots: GlobalPlanRoots = { dorkHome, agentsSkillsDir };
+
+    const { conflicts } = applyGlobalPlan(projectGlobal({ roots, harnesses: ['codex'] }), roots, {
+      sweepOrphans: true,
+    });
+    expect(conflicts[0]?.reason).toContain('is a link to a file');
+  });
+});
+
 describe('a user folder DorkOS may not write in', () => {
   // `chmod` means nothing when the process is root, and Windows reports the
   // read-only attribute rather than the permission — so the case says which
@@ -398,8 +523,7 @@ describe('a user folder DorkOS may not write in', () => {
         expect(drift.blocked.map((a) => a.target)).toContain(
           join(agentsSkillsDir, 'globex__greet')
         );
-        expect(drift.blocked[0]?.reason).toContain('may not write in (permission denied)');
-        expect(drift.blocked[0]?.reason).toContain('Nothing in it was changed or removed.');
+        expect(drift.blocked[0]?.reason).toContain('cannot read (permission denied)');
 
         // And `--fix` says the same thing instead of raising EACCES out of
         // `symlinkSync`, which is what it did before this probe existed.

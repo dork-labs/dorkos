@@ -126,11 +126,16 @@ export function writePathReason(relDir: string, cause: WritePathCause): string {
  * `statSync` FOLLOWS a link on purpose: a link to a real folder is a folder for
  * every purpose this asks about, and `mkdirSync` treats it as one too.
  *
+ * Exported for `apply/global-apply.ts`, which asks the identical question about
+ * the two absolute roots a global plan writes into. One implementation, so a
+ * file at `.claude/skills` in a repository and a file at `~/.agents/skills` in a
+ * home directory are described to a person in the same words.
+ *
  * @param absDir - absolute path of the directory to probe.
  * @returns the cause, or `undefined` when the directory is absent (it will be
  *   created) or usable.
  */
-function directoryBlock(absDir: string): WritePathCause | undefined {
+export function directoryWriteBlock(absDir: string): WritePathCause | undefined {
   let stats;
   try {
     stats = statSync(absDir);
@@ -159,10 +164,14 @@ function directoryBlock(absDir: string): WritePathCause | undefined {
  * the deeper one would send a person to a path that only looks wrong because of
  * the one above it.
  *
- * @param target - the action's repo-relative target path.
+ * Exported for `apply/global-apply.ts`. Handed an ABSOLUTE target it answers
+ * absolute ancestors, which is what a global plan needs: its roots are absolute
+ * and there is no repository root to be relative to.
+ *
+ * @param target - the action's target path, repo-relative or absolute.
  * @returns its ancestor directories, outermost first, excluding the repo root.
  */
-function writePathDirs(target: string): string[] {
+export function writePathDirs(target: string): string[] {
   const dirs: string[] = [];
   // `dirname(dir) === dir` is the root of whatever kind of path this is, which
   // terminates on a POSIX `/` and on a Windows drive letter alike.

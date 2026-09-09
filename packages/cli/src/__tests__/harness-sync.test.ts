@@ -2729,7 +2729,7 @@ describe('runHarnessSync --global — the packages installed for all your projec
       true
     );
     const output = printed();
-    expect(output).toContain('Linked 1 skill(s):');
+    expect(output).toContain('Linked 1 link(s):');
     expect(output).toContain('skill runs on a timer');
     expect(output).toContain(
       'It does not share them with Claude Code, Codex or any other agent tool yet.'
@@ -2789,13 +2789,13 @@ describe('runHarnessSync --global — the packages installed for all your projec
     const second = await runHarnessSync(syncArgs({ fix: true, global: true }));
 
     expect(second.exitCode).toBe(0);
-    expect(printed()).toContain('Nothing to link. 1 skill(s) already linked.');
+    expect(printed()).toContain('Nothing to link. 1 link(s) already in place.');
     expect(snapshotTree(homeDir)).toEqual(afterFirst);
 
     logSpy.mockClear();
     const check = await runHarnessSync(syncArgs({ check: true, global: true }));
     expect(check.exitCode).toBe(0);
-    expect(printed()).toContain('Nothing to change. 1 skill(s) already linked.');
+    expect(printed()).toContain('Nothing to change. 1 link(s) already in place.');
   });
 
   it('SK-03: --check --global writes nothing at all', async () => {

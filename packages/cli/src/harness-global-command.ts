@@ -31,6 +31,7 @@
  * @module harness-global-command
  */
 import { existsSync } from 'node:fs';
+import { sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import { rethrowUnknownOption } from './lib/parse-args-error.js';
 import { configPathFor, resolveDorkHome } from './harness-consent.js';
@@ -212,14 +213,12 @@ async function listSharing(dorkHome: string): Promise<number> {
   if (inputs.roots.claudeSkillsDir !== undefined) {
     console.log(`  ${inputs.roots.claudeSkillsDir}   read by Claude Code`);
   }
-  if (inputs.boundaryRoot !== undefined) {
-    console.log('');
-    const { globalBoundarySkipLine } = await import('@dorkos/harness');
-    console.log(globalBoundarySkipLine(inputs.boundaryRoot));
-  } else if (inputs.roots.agentsSkillsDir !== undefined) {
-    console.log('');
-    console.log(USER_TIER_MEASUREMENT_NOTE);
-  }
+  // One decision, made in the engine beside the frozen strings, so `--list`,
+  // `--enable` and `dorkos harness sync --global` cannot end on three different
+  // sentences about one machine.
+  const { globalClosingNote } = await import('@dorkos/harness');
+  console.log('');
+  console.log(globalClosingNote(inputs.roots, inputs.boundaryRoot));
   console.log('');
   console.log('Stop sharing with one: dorkos harness global --disable <tool>');
   return 0;
@@ -239,11 +238,19 @@ function removalLines(removals: readonly SweptPath[], about: 'will' | 'did'): st
  * Start sharing with one agent tool: record it, then put the links where that
  * tool looks.
  *
- * The config write comes FIRST here, and that is the opposite of `--disable` for
- * a reason rather than an inconsistency. Enabling adds a directory to the plan,
- * so the write has to land before the apply can target it; nothing is stranded
- * if the apply then fails, because the links that were not written simply are
- * not there and the next run writes them.
+ * **The config is written AFTER the apply**, and the rule is narrower than
+ * "on success": it is written when the run either wrote a link or found nothing
+ * in its way. The two failures it is written between are both real. Writing
+ * first recorded "shares with Codex" over a run that linked nothing, which is a
+ * setting that describes a machine it is not true of. Writing only on a
+ * completely clean run would strand any link a PARTIAL run did make: the roots
+ * are derived from the stored list, so a tool that is not recorded has no
+ * directory, nothing ever scans it, and DorkOS can never take its own links
+ * back.
+ *
+ * The apply does not need the write to have happened. `globalRootsFor` takes the
+ * list as an argument, so the plan is built from `next` directly and the store
+ * is consulted for nothing.
  *
  * @param dorkHome - the resolved DorkOS data directory.
  * @param tool - the agent tool to share with.
@@ -259,8 +266,13 @@ async function enableTool(dorkHome: string, tool: HarnessId): Promise<number> {
   } = await import('../server/services/harness/global-scope.js');
   const { boundaryWasConfigured } = await import('../server/lib/boundary.js');
   const { initConfigManager } = await import('../server/services/core/config-manager.js');
-  const { applyGlobalPlan, projectGlobal, globalBoundarySkipLine } =
-    await import('@dorkos/harness');
+  const {
+    applyGlobalPlan,
+    projectGlobal,
+    findGlobalOrphans,
+    globalBoundarySkipLine,
+    globalClosingNote,
+  } = await import('@dorkos/harness');
 
   const before = readGlobalSharingFromDisk(dorkHome);
   if (before.unreadable !== undefined) {
@@ -272,16 +284,25 @@ async function enableTool(dorkHome: string, tool: HarnessId): Promise<number> {
   // ONE array element, in `HARNESS_IDS` order so the stored list reads the same
   // way whatever order somebody enabled things in.
   const next = HARNESS_IDS.filter((id: HarnessId) => id === tool || before.harnesses.includes(id));
-  if (!before.harnesses.includes(tool)) {
+  const already = before.harnesses.includes(tool);
+  /** Record the choice. Idempotent: an answer already on file is not re-stamped. */
+  const record = (): void => {
+    if (already) return;
     initConfigManager(dorkHome);
     writeGlobalSharing(next, 'dorkos harness global --enable');
-    console.log(`Sharing with ${HARNESS_LABELS[tool]}.`);
-  } else {
-    console.log(`Already sharing with ${HARNESS_LABELS[tool]}.`);
-  }
+  };
 
   const boundaryConfig = boundaryConfigFromDisk(dorkHome);
   if (boundaryWasConfigured(process.env, boundaryConfig)) {
+    // The choice is still recorded — somebody confined the deployment, they did
+    // not un-choose the tool — but nothing is linked, so the line may not say
+    // "Sharing with X" over a home directory DorkOS never touched.
+    record();
+    console.log(
+      already
+        ? `Already sharing with ${HARNESS_LABELS[tool]}.`
+        : `Recorded: sharing with ${HARNESS_LABELS[tool]}, once DorkOS may reach your home folder.`
+    );
     console.log('');
     console.log(globalBoundarySkipLine(configuredBoundaryRoot(process.env, boundaryConfig)));
     return 0;
@@ -305,16 +326,45 @@ async function enableTool(dorkHome: string, tool: HarnessId): Promise<number> {
     return 1;
   }
 
+  // THE PROMISE, BEFORE THE DELETION. `--enable` swept first and printed the
+  // receipt after, which is the one order this whole surface exists not to use:
+  // a person watching the terminal has to see what is about to go while it is
+  // still there. `findGlobalOrphans` is the read-only twin of the sweep and
+  // returns the identical list, so the promise cannot describe a different set
+  // from the one the apply removes.
+  for (const line of removalLines(findGlobalOrphans(plan, roots), 'will')) console.log(line);
+
   const { applied, conflicts, removals } = applyGlobalPlan(plan, roots, {
     sweepOrphans: true,
   });
-  console.log('');
-  console.log(
-    applied.length === 0
-      ? `Nothing to link. ${plan.actions.length} link(s) already in place.`
-      : `Added ${applied.length} link(s):`
+
+  // Recorded now, and the test is about the USER tier only. `<dorkHome>/skills`
+  // is DorkOS's own folder and is written whatever anybody shares with, so
+  // counting a link there as "the tool got its links" would record "shares with
+  // Codex" over a run that put nothing where Codex looks — the state writing the
+  // config first produced, reached by a longer road.
+  //
+  // Nothing is stranded by the refusal: a link this run did NOT write cannot be
+  // orphaned, and one it did write is exactly what makes `recorded` true.
+  const wroteWhereTheToolLooks = applied.some(
+    (action) => !(action.target ?? '').startsWith(globalSkillsDir(dorkHome) + sep)
   );
-  for (const action of applied) console.log(`  ${action.target} — ${action.reason ?? ''}`);
+  const recorded = wroteWhereTheToolLooks || conflicts.length === 0;
+  if (recorded) record();
+
+  console.log('');
+  if (applied.length > 0) {
+    console.log(`Added ${applied.length} link(s):`);
+    for (const action of applied) console.log(`  ${action.target} — ${action.reason ?? ''}`);
+  } else if (conflicts.length > 0) {
+    console.log(
+      `Nothing new was linked. ${conflicts.length} link(s) are blocked, and the rest are already in place.`
+    );
+  } else {
+    console.log(`Nothing to link. ${plan.actions.length} link(s) already in place.`);
+  }
+
+  // The receipt, after.
   for (const line of removalLines(removals, 'did')) console.log(line);
 
   if (conflicts.length > 0) {
@@ -325,18 +375,22 @@ async function enableTool(dorkHome: string, tool: HarnessId): Promise<number> {
     for (const action of conflicts) console.log(`  ${action.target} — ${action.reason ?? ''}`);
   }
 
+  console.log('');
+  console.log(
+    recorded
+      ? already
+        ? `Already sharing with ${HARNESS_LABELS[tool]}.`
+        : `Sharing with ${HARNESS_LABELS[tool]}.`
+      : `Not sharing with ${HARNESS_LABELS[tool]} yet: DorkOS could not add any of its links. Clear what is in the way, then run this again.`
+  );
+
   if (newFolders.length > 0 && applied.length > 0) {
     console.log('');
     console.log(GLOBAL_SKILLS_RESTART_NOTE);
   }
 
-  // Only when the SHARED folder is in play. Said after enabling Claude Code
-  // alone, it would be a sentence about five tools none of which this run
-  // touched.
-  if (roots.agentsSkillsDir !== undefined) {
-    console.log('');
-    console.log(USER_TIER_MEASUREMENT_NOTE);
-  }
+  console.log('');
+  console.log(globalClosingNote(roots));
   return conflicts.length === 0 ? 0 : 1;
 }
 
@@ -399,6 +453,9 @@ async function disableTool(dorkHome: string, tool: HarnessId): Promise<number> {
   const going = findGlobalOrphans(planAfter, rootsNow);
   for (const line of removalLines(going, 'will')) console.log(line);
   const removed = sweepGlobalOrphans(planAfter, rootsNow);
+  // The receipt, after — the same pair `dorkos harness sync --global` prints, so
+  // one surface never shows a promise the other shows a receipt for.
+  for (const line of removalLines(removed, 'did')) console.log(line);
 
   // Step 3, and only now: forget the tool. A failure above leaves the config
   // untouched, so the command is re-runnable and never half-done.

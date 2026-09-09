@@ -75,6 +75,16 @@ export interface GlobalPlanRoots {
    * and is not used; `resolveClaudeRootSet()` would put files in accounts nobody
    * is running and is not used either.
    *
+   * **A package reachable both here and through SDK injection is listed ONCE**,
+   * which is what makes writing this directory safe for a package a DorkOS
+   * session already has. Measured, not reasoned from the vendor's sentence: a
+   * real `claude` 2.1.266 was given one package through both routes and a second
+   * through injection alone as a control, and it named the shared skill a single
+   * time
+   * (`meta/harness-smoke/20260909-103643.543-claude-user-tier.md`, 2026-09-09).
+   * Two entries would have made this root conditional on the package not being
+   * injected; one entry is why it is not.
+   *
    * Same two-part rule as {@link agentsSkillsDir}: the root plus `claude-code`
    * in the harness list.
    */
@@ -217,6 +227,29 @@ export const USER_TIER_MEASUREMENT_NOTE =
   'DorkOS tested Codex on 2026-09-09 and it reads this folder. OpenCode, Cursor, Gemini CLI and Copilot say they read it too, and DorkOS has not tested them.';
 
 /**
+ * The sentence a run ends on when nothing is shared with any other agent tool.
+ *
+ * It can never be read as more than it is: the links are in DorkOS's own folder,
+ * which is where skills that run on a timer are found and is not a folder any
+ * agent tool reads.
+ */
+export const GLOBAL_REACH_NOTE =
+  'This puts your all-projects skills where DorkOS looks for skills that run on a timer. It does not share them with Claude Code, Codex or any other agent tool yet.';
+
+/**
+ * The sentence a run ends on when Claude Code is the ONLY tool shared with.
+ *
+ * Its own branch because the two beside it are both wrong here, in opposite
+ * directions. {@link GLOBAL_REACH_NOTE} ends "it does not share them with Claude
+ * Code, Codex or any other agent tool yet" — printed directly under a list of
+ * links this run just made in Claude Code's own skills folder, which is the
+ * defect this constant exists to end. {@link USER_TIER_MEASUREMENT_NOTE} is
+ * about the SHARED folder and five tools none of which this run touched.
+ */
+export const GLOBAL_CLAUDE_ONLY_NOTE =
+  'Your all-projects skills are in Claude Code\u2019s own skills folder now. No other agent tool can see them yet.';
+
+/**
  * The restart caveat, printed once per run and only when the run created a
  * skills folder that was not there before. Frozen copy (spec §4b).
  *
@@ -227,6 +260,35 @@ export const USER_TIER_MEASUREMENT_NOTE =
  */
 export const GLOBAL_SKILLS_RESTART_NOTE =
   'Claude Code needs a restart before it sees the new skills folder. In Gemini CLI, run /skills reload.';
+
+/**
+ * The one sentence a global run ends on, chosen by how far it actually reaches.
+ *
+ * FOUR answers and never one hedged one, because every pair of them contradicts
+ * the other on some machine:
+ *
+ * - a confined deployment says so and names the root it was given;
+ * - a machine sharing with nothing says the links are DorkOS's own;
+ * - a machine sharing with Claude Code alone says what Claude Code can see;
+ * - a machine sharing the folder five tools read says which of the five DorkOS
+ *   has actually tested.
+ *
+ * It lives here rather than in the CLI because it is frozen copy about what the
+ * PLAN did, and because two surfaces print it: `dorkos harness sync --global`
+ * and `dorkos harness global --enable`. Deciding it twice is how they end up
+ * disagreeing about one machine.
+ *
+ * @param roots - the roots the plan was built from; an absent root is a tier
+ *   this run does not reach.
+ * @param boundaryRoot - the configured boundary root, when one confined this
+ *   deployment.
+ * @returns the closing sentence.
+ */
+export function globalClosingNote(roots: GlobalPlanRoots, boundaryRoot?: string): string {
+  if (boundaryRoot !== undefined) return globalBoundarySkipLine(boundaryRoot);
+  if (roots.agentsSkillsDir !== undefined) return USER_TIER_MEASUREMENT_NOTE;
+  return roots.claudeSkillsDir === undefined ? GLOBAL_REACH_NOTE : GLOBAL_CLAUDE_ONLY_NOTE;
+}
 
 /**
  * The line a boundary-confined deployment prints instead of writing links.

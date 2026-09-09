@@ -45,29 +45,17 @@ import {
   applyGlobalPlan,
   checkGlobalPlan,
   formatWarnings,
-  globalBoundarySkipLine,
+  globalClosingNote,
   HARNESS_IDS,
   globalPluginsDir,
   globalSkillsDir,
   projectGlobal,
-  USER_TIER_MEASUREMENT_NOTE,
   type GlobalPlanRoots,
   type GlobalProjectionPlan,
   type ProjectionAction,
   type SweptPath,
 } from '@dorkos/harness';
 import { globalSharingAsk } from './harness-global-command.js';
-
-/**
- * The one sentence a run ends on when nothing is shared with any other agent
- * tool.
- *
- * It can never be read as more than it is: the links are in DorkOS's own folder,
- * which is where skills that run on a timer are found and is not a folder any
- * agent tool reads.
- */
-const GLOBAL_REACH_NOTE =
-  'This puts your all-projects skills where DorkOS looks for skills that run on a timer. It does not share them with Claude Code, Codex or any other agent tool yet.';
 
 /** One planned link, as a person reads it. */
 function globalActionLine(action: ProjectionAction): string {
@@ -165,7 +153,7 @@ export async function runGlobalSync(args: { fix: boolean }, dorkHome: string): P
     );
     console.log('  Check the folder’s permissions, then run this again.');
     console.log('');
-    console.log(closingNote(inputs));
+    console.log(globalClosingNote(inputs.roots, inputs.boundaryRoot));
     return 1;
   }
 
@@ -229,10 +217,10 @@ export async function runGlobalSync(args: { fix: boolean }, dorkHome: string): P
     console.log('');
     console.log(
       drift.clean
-        ? `Nothing to change. ${plan.actions.length} skill(s) already linked.`
+        ? `Nothing to change. ${plan.actions.length} link(s) already in place.`
         : 'Run `dorkos harness sync --fix --global` to apply.'
     );
-    console.log(closingNote(inputs));
+    console.log(globalClosingNote(inputs.roots, inputs.boundaryRoot));
     printAsk();
     // A run that asked exits 0, whatever the drift under it says. The question
     // is what that run is FOR, and a non-zero exit beside a question reads as a
@@ -254,13 +242,23 @@ export async function runGlobalSync(args: { fix: boolean }, dorkHome: string): P
 
   const { applied, conflicts, removals } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
 
+  // The three lines have to AGREE with the conflicts block under them. Saying
+  // "Nothing to link. 6 link(s) already in place." above "2 link(s) left
+  // untouched" told a person both that everything was fine and that two things
+  // were not. And the count is over ACTIONS across every tier, not skills: two
+  // skills shared with two tools is six links, and calling that "6 skills" is
+  // wrong about the only number on the line.
   console.log('');
-  console.log(
-    applied.length === 0
-      ? `Nothing to link. ${plan.actions.length} skill(s) already linked.`
-      : `Linked ${applied.length} skill(s):`
-  );
-  for (const action of applied) console.log(globalActionLine(action));
+  if (applied.length > 0) {
+    console.log(`Linked ${applied.length} link(s):`);
+    for (const action of applied) console.log(globalActionLine(action));
+  } else if (conflicts.length > 0) {
+    console.log(
+      `Nothing new was linked. ${conflicts.length} link(s) are blocked, and the rest are already in place.`
+    );
+  } else {
+    console.log(`Nothing to link. ${plan.actions.length} link(s) already in place.`);
+  }
 
   // The receipt, after.
   for (const line of removalPreview(removals, 'did')) console.log(line);
@@ -280,27 +278,9 @@ export async function runGlobalSync(args: { fix: boolean }, dorkHome: string): P
   }
 
   console.log('');
-  console.log(closingNote(inputs));
+  console.log(globalClosingNote(inputs.roots, inputs.boundaryRoot));
   printAsk();
   return conflicts.length === 0 ? 0 : 1;
-}
-
-/**
- * The sentence a run ends on, which depends on how far it reaches.
- *
- * Three answers, never one hedged one: a confined deployment says so and names
- * its root, a machine sharing with nothing says the links are DorkOS's own, and
- * a machine that shares says which of the five tools DorkOS has actually tested.
- */
-function closingNote(inputs: { roots: GlobalPlanRoots; boundaryRoot?: string }): string {
-  if (inputs.boundaryRoot !== undefined) return globalBoundarySkipLine(inputs.boundaryRoot);
-  // The measurement note is about the SHARED folder, so it is said only when
-  // that folder is in play. Somebody sharing with Claude Code alone is told
-  // nothing about five tools this run never touched, and somebody sharing with
-  // nothing gets the reach note, which is still true of them.
-  return inputs.roots.agentsSkillsDir === undefined
-    ? GLOBAL_REACH_NOTE
-    : USER_TIER_MEASUREMENT_NOTE;
 }
 
 /** The user folders that do not exist yet, checked before the apply creates them. */

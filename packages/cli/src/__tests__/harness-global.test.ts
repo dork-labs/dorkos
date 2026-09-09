@@ -8,7 +8,16 @@
  * folder, which matters more in this suite than in any other: the sweep it
  * drives is the only code in the repository that removes files from `~`.
  */
-import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  beforeEach,
+  afterEach,
+  vi,
+  type MockInstance,
+} from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -70,6 +79,17 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
       JSON.stringify({ version: 1, harness: { global: { harnesses, askedAt } } })
     );
   }
+
+  // The commands reach the server through dynamic imports, and loading those
+  // modules the first time costs seconds. Charged to whichever case happens to
+  // run first, that is a per-case timeout somebody eventually raises for the
+  // wrong reason; paid here, every case is measured on its own work.
+  beforeAll(async () => {
+    await import('../../server/services/harness/global-scope.js');
+    await import('../../server/services/core/config-manager.js');
+    await import('../../server/lib/boundary.js');
+    await import('@dorkos/harness');
+  });
 
   beforeEach(() => {
     originalCwd = process.cwd();
@@ -467,6 +487,181 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
 
       await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'codex']));
       expect(printed()).toContain('DorkOS tested Codex on 2026-09-09');
+    });
+  });
+
+  describe('F1: the sentence the run ends on', () => {
+    it('--enable claude-code does NOT end on "it does not share them with Claude Code"', async () => {
+      // The defect, on the surface a person meets it: the closing note branched
+      // on the shared folder alone, so enabling Claude Code and nothing else
+      // printed "It does not share them with Claude Code, Codex or any other
+      // agent tool yet" directly under the two links this run had just made in
+      // Claude Code's own skills folder.
+      installGlobal('globex', ['greet']);
+
+      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'claude-code']));
+
+      const out = printed();
+      expect(fs.lstatSync(path.join(claudeSkillsDir(), 'globex__greet')).isSymbolicLink()).toBe(
+        true
+      );
+      expect(out).not.toContain('does not share them with Claude Code');
+      expect(out).toContain(
+        'Your all-projects skills are in Claude Code’s own skills folder now. No other agent tool can see them yet.'
+      );
+    });
+
+    it('sync --global ends on the same sentence, for the same machine', async () => {
+      // Two surfaces, one decision. They used to reach it separately.
+      installGlobal('globex', ['greet']);
+      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'claude-code']));
+      logSpy.mockClear();
+
+      await runHarnessSync(syncArgs({ global: true }));
+
+      const out = printed();
+      expect(out).not.toContain('does not share them with Claude Code');
+      expect(out).toContain('Your all-projects skills are in Claude Code’s own skills folder now.');
+    });
+
+    it('--list ends on it too', async () => {
+      installGlobal('globex', ['greet']);
+      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'claude-code']));
+      logSpy.mockClear();
+
+      await runHarnessGlobal(parseHarnessGlobalArgs(['--list']));
+
+      expect(printed()).toContain(
+        'Your all-projects skills are in Claude Code’s own skills folder now.'
+      );
+    });
+  });
+
+  describe('F2: a user folder that is not a folder', () => {
+    it('a plain FILE at the shared folder blocks the links and leaves the choice unrecorded', async () => {
+      // Two halves. The run must not throw EEXIST out of `mkdirSync`, and it
+      // must not record "shares with Codex" over a run that linked nothing —
+      // which is what writing the config first did.
+      installGlobal('globex', ['greet']);
+      fs.mkdirSync(path.join(userHome, '.agents'), { recursive: true });
+      fs.writeFileSync(agentsSkillsDir(), 'not a folder\n');
+
+      const result = await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'codex']));
+
+      expect(result.exitCode).toBe(1);
+      const out = printed();
+      expect(out).toContain(`blocked by \`${agentsSkillsDir()}\``);
+      expect(out).toContain('is a file');
+      expect(out).toContain('Move the file aside, then re-run');
+      expect(out).toContain(
+        'Not sharing with Codex yet: DorkOS could not add any of its links. Clear what is in the way, then run this again.'
+      );
+      // Nothing recorded, because nothing happened.
+      expect(storedGlobal()?.harnesses ?? []).toEqual([]);
+      // And their file is untouched.
+      expect(fs.readFileSync(agentsSkillsDir(), 'utf8')).toBe('not a folder\n');
+    });
+
+    it('a PARTIAL run records the choice, so the links it did write are not stranded', async () => {
+      // The other failure the rule is written between, and the reason it is not
+      // simply "record on a clean run". Two skills, one of whose targets the
+      // person already occupies: one link is written into the folder Codex
+      // reads and one is refused. Refusing to record then would leave the
+      // written link with no tool in the list, no root derived for it, and
+      // nothing that ever scans that folder to take it back.
+      installGlobal('globex', ['greet', 'wave']);
+      const occupied = path.join(agentsSkillsDir(), 'globex__wave');
+      fs.mkdirSync(occupied, { recursive: true });
+      fs.writeFileSync(path.join(occupied, 'SKILL.md'), '---\nname: mine\n---\nHands off.\n');
+      logSpy.mockClear();
+
+      const result = await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'codex']));
+
+      expect(result.exitCode).toBe(1);
+      expect(fs.lstatSync(path.join(agentsSkillsDir(), 'globex__greet')).isSymbolicLink()).toBe(
+        true
+      );
+      // Recorded, so a later `--disable codex` still reaches that link.
+      expect(storedGlobal()?.harnesses).toEqual(['codex']);
+      // And the person's own directory is untouched.
+      expect(fs.readFileSync(path.join(occupied, 'SKILL.md'), 'utf8')).toContain('Hands off.');
+    });
+
+    const canMakeUnreadable = process.platform !== 'win32' && process.getuid?.() !== 0;
+
+    it.skipIf(!canMakeUnreadable)(
+      'a mode-000 shared folder is reported, and the run does not throw',
+      async () => {
+        installGlobal('globex', ['greet']);
+        await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'codex']));
+        fs.chmodSync(agentsSkillsDir(), 0o000);
+        logSpy.mockClear();
+        try {
+          const result = await runHarnessSync(syncArgs({ fix: true, global: true }));
+          expect(result.exitCode).toBe(1);
+          const out = printed();
+          expect(out).toContain('cannot read (permission denied)');
+          // The two lines agree: nothing new was linked, and it says why.
+          expect(out).toContain('Nothing new was linked.');
+          expect(out).not.toContain('Nothing to link.');
+        } finally {
+          fs.chmodSync(agentsSkillsDir(), 0o755);
+        }
+      }
+    );
+  });
+
+  describe('F3: every path is printed BEFORE it is removed', () => {
+    it('--enable prints the promise while the link is still on disk', async () => {
+      // `--enable` swept first and printed the receipt after, which is the one
+      // order this surface exists not to use. Console ORDER alone cannot catch
+      // it — a receipt printed after a deletion still sits below a promise
+      // printed after the same deletion — so each line is recorded with what was
+      // on disk AT THE MOMENT it was printed.
+      installGlobal('globex', ['greet']);
+      installGlobal('acme', ['build']);
+      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'codex']));
+      // An uninstall: the package goes, and its links are now orphans.
+      fs.rmSync(path.join(dorkHome, 'plugins', 'acme'), { recursive: true, force: true });
+      const orphan = path.join(agentsSkillsDir(), 'acme__build');
+      expect(fs.lstatSync(orphan, { throwIfNoEntry: false })?.isSymbolicLink()).toBe(true);
+      logSpy.mockClear();
+
+      const trace: { text: string; linkStillThere: boolean }[] = [];
+      logSpy.mockImplementation((...args: unknown[]) => {
+        trace.push({
+          text: String(args[0]),
+          linkStillThere: fs.lstatSync(orphan, { throwIfNoEntry: false }) !== undefined,
+        });
+      });
+
+      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'cursor']));
+
+      const promise = trace.find(
+        (line) => line.text.includes(orphan) && line.text.startsWith('  ')
+      );
+      expect(promise, 'the path was never printed').toBeDefined();
+      expect(promise?.linkStillThere, 'the path was printed after it was removed').toBe(true);
+      // And the receipt is printed after, so the run says both what it would do
+      // and what it did.
+      const receipt = trace.filter((line) => line.text.includes(orphan));
+      expect(receipt.length).toBeGreaterThanOrEqual(2);
+      expect(receipt[receipt.length - 1]?.linkStillThere).toBe(false);
+      expect(trace.some((l) => l.text.startsWith('Removing '))).toBe(true);
+      expect(trace.some((l) => l.text.startsWith('Removed '))).toBe(true);
+    });
+
+    it('--disable prints a receipt as well as a promise', async () => {
+      installGlobal('globex', ['greet']);
+      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'codex']));
+      logSpy.mockClear();
+
+      await runHarnessGlobal(parseHarnessGlobalArgs(['--disable', 'codex']));
+
+      const out = printed();
+      expect(out).toContain('Removing 1 link(s):');
+      expect(out).toContain('Removed 1 link(s):');
+      expect(out.indexOf('Removing 1 link(s):')).toBeLessThan(out.indexOf('Removed 1 link(s):'));
     });
   });
 
