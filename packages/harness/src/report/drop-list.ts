@@ -104,18 +104,36 @@ export function formatDropList(plan: ProjectionPlan): string {
 }
 
 /**
- * Render `plan.warnings` as a readable block grouped by harness. Two things land
- * here: a projection that DID happen but may not work in the target harness (e.g.
- * a hook command carrying a Claude-only substitution token Codex cannot resolve),
- * and a source declaration the engine could not read, so it reached no harness at
- * all (e.g. a matcher group the `hooks/hooks.json` salvage discarded). Returns an
- * empty string when there are no warnings, so callers can omit the block cleanly.
+ * The heading run warnings are filed under.
+ *
+ * Its own heading beside the harness ones because it is a different subject: a
+ * plan warning is about an artifact and a tool, and a run warning is about the
+ * computer the sync just ran on.
+ */
+const MACHINE_HEADING = 'this machine:';
+
+/**
+ * Render the warnings a run carries as a readable block grouped by heading.
+ *
+ * Three things land here. From the PLAN: a projection that DID happen but may
+ * not work in the target harness (e.g. a hook command carrying a Claude-only
+ * substitution token Codex cannot resolve), and a source declaration the engine
+ * could not read, so it reached no harness at all (e.g. a matcher group the
+ * `hooks/hooks.json` salvage discarded). From the RUN itself: what `applyPlan`
+ * and `checkPlan` answer in `warnings` — today, that the links here are Windows
+ * junctions and git would commit the files inside them instead of the links
+ * (DOR-1883). All three are things a person needs told and none of them is a
+ * fault to fix, which is what makes them one block rather than two.
+ *
+ * Returns an empty string when there is nothing to say, so callers can omit the
+ * block cleanly.
  *
  * @param plan - the projection plan whose warnings to format.
+ * @param runWarnings - what the apply or check answered about the run itself.
  * @returns a multi-line warning report, or `''` when there are no warnings.
  */
-export function formatWarnings(plan: ProjectionPlan): string {
-  if (plan.warnings.length === 0) return '';
+export function formatWarnings(plan: ProjectionPlan, runWarnings: readonly string[] = []): string {
+  if (plan.warnings.length === 0 && runWarnings.length === 0) return '';
 
   const byHarness = new Map<string, ProjectionPlan['warnings']>();
   for (const warning of plan.warnings) {
@@ -125,7 +143,9 @@ export function formatWarnings(plan: ProjectionPlan): string {
     byHarness.set(heading, list);
   }
 
-  const lines: string[] = ['Warnings (may not work in the target harness, or could not be read):'];
+  const lines: string[] = [
+    'Warnings (may not work in the target harness, may not commit as a link, or could not be read):',
+  ];
   for (const [harness, warnings] of [...byHarness.entries()].sort(([a], [b]) =>
     a.localeCompare(b)
   )) {
@@ -133,6 +153,13 @@ export function formatWarnings(plan: ProjectionPlan): string {
     for (const warning of warnings) {
       lines.push(`  - ${warning.artifact} "${warning.name}": ${warning.reason}`);
     }
+  }
+  // LAST, whatever the harness headings sorted to: it is about the machine
+  // rather than about any tool, and the tool sections read as a list of one
+  // kind of thing.
+  if (runWarnings.length > 0) {
+    lines.push('', MACHINE_HEADING);
+    for (const warning of runWarnings) lines.push(`  - ${warning}`);
   }
   return lines.join('\n');
 }

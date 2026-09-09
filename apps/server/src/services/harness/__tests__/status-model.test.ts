@@ -30,10 +30,11 @@
  * @module services/harness/__tests__/status-model
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { diffSnapshots, snapshotTree } from '@dorkos/harness/journeys';
+import { JUNCTION_COMMIT_WARNING } from '@dorkos/harness';
 import { HarnessStatusResponseSchema } from '@dorkos/shared/harness-schemas';
 import type { HarnessCell, HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
 import { hookApprovalEntry, type HookDecisions } from '../hook-consent.js';
@@ -1222,5 +1223,62 @@ describe('VC-01 — packages installed for all projects are rows in every projec
       bytes: true,
       measured: bytes,
     });
+  });
+});
+
+describe('VC-01 — what is true about the machine rather than about a tool', () => {
+  const realPlatform = process.platform;
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+  });
+
+  /**
+   * A Windows checkout whose skill links are junctions.
+   *
+   * Staged as what a junction IS on disk — a link whose stored target is
+   * absolute — with `process.platform` redefined, which is how the engine's own
+   * suite drives this shape from a POSIX machine
+   * (`apply/__tests__/windows-links.test.ts`).
+   */
+  function stageJunctionCheckout(): { repo: string; home: string } {
+    const { repo, home } = stageBare('junction', ['claude-code']);
+    const source = join(repo, '.agents', 'skills', 'demo');
+    mkdirSync(source, { recursive: true });
+    writeSkill(source, 'demo');
+    mkdirSync(join(repo, '.claude', 'skills'), { recursive: true });
+    symlinkSync(source, join(repo, '.claude', 'skills', 'demo'));
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    return { repo, home };
+  }
+
+  it('VC-01, AP-06: a junction a person must not commit is a project-level warning, once', () => {
+    // Seeded defect: leave `checkPlan().warnings` out of `projectLevelEntries`.
+    // The page then shows a tree that looks perfectly synced while `git add`
+    // would commit the skill's files instead of the link (DOR-1883).
+    const { repo, home } = stageJunctionCheckout();
+
+    const status = statusOf(repo, home);
+
+    expect(status.projectLevel).toContainEqual({
+      kind: 'warning',
+      artifact: 'skill',
+      name: 'Windows junctions',
+      reason: JUNCTION_COMMIT_WARNING,
+    });
+    // It is about the machine, so it belongs to no tool's column — and it is
+    // not a fault: nothing is drifted, nothing is blocked, the tree is clean.
+    expect(status.clean).toBe(true);
+    expect(status.counts.conflicts).toBe(0);
+  });
+
+  it('VC-01, AP-06: says nothing on a checkout whose links are real', () => {
+    const { repo, home } = stageJunctionCheckout();
+    Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+
+    const status = statusOf(repo, home);
+
+    expect(status.projectLevel.map((entry) => entry.reason)).not.toContain(JUNCTION_COMMIT_WARNING);
   });
 });

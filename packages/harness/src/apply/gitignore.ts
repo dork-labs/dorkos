@@ -221,8 +221,17 @@ function readGitignore(absPath: string): string[] {
   return readLines(readFileSync(absPath, 'utf8'));
 }
 
-/** Whether the repo root is a git checkout at all (a worktree's `.git` is a file). */
-function isGitRepo(repoRoot: string): boolean {
+/**
+ * Whether the repo root is a git checkout at all (a worktree's `.git` is a file).
+ *
+ * Exported because it is not only this module's question: whether a person is
+ * about to COMMIT a Windows junction is asked of the same fact, and one notion
+ * of "is this git" is better than two (`apply/windows-links.ts`).
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @returns `true` when a `.git` entry of either shape is there.
+ */
+export function isGitRepo(repoRoot: string): boolean {
   return existsSync(join(repoRoot, '.git'));
 }
 

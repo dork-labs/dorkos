@@ -187,6 +187,9 @@ describe('IN-05 global: the sweep and the check agree', () => {
       orphans: [],
       removals: [],
       leftAlone: [],
+      // A global plan writes into somebody's home directory, which no git
+      // checkout tracks, so the one warning a run can carry cannot arise here.
+      warnings: [],
       clean: true,
     });
   });

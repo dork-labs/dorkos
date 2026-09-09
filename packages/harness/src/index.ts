@@ -33,6 +33,7 @@ export * from './adopt/index.js';
 export * from './apply/apply.js';
 export * from './apply/global-apply.js';
 export * from './apply/gitignore.js';
+export * from './apply/windows-links.js';
 // The generated-hooks half of apply, kept in its own module: only the orphan
 // sweep is part of the package's surface, the rest is apply's business.
 export { sweepGeneratedOrphans } from './apply/generated-targets.js';
