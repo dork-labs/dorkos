@@ -315,6 +315,15 @@ function byCell(entries: readonly ProjectionAction[]): Map<string, ProjectionAct
  * `manifest.claudeOnlySkills` is a person saying the placement is deliberate, and
  * offering to undo it would argue with a decision that was written down.
  *
+ * That second exclusion is by NAME and reaches every root, deliberately. The
+ * manifest key is spelled for `.claude/skills`, but what it declares is that the
+ * SKILL is not to be shared — so a copy of it that turns up in another tool's
+ * folder gets no "move it to `.agents/skills`" either, because that move is the
+ * exposure the entry exists to refuse. The plan's WORDING stays scoped to
+ * `.claude/skills` (`planAuthoredRootSkill`'s `listed`), since a sentence about
+ * `manifest.claudeOnlySkills` naming `.opencode/skills` would be a sentence about
+ * the wrong directory. Different questions, so different scopes.
+ *
  * @param inventory - the source-tree inventory.
  * @param claudeOnlyNames - the names `manifest.claudeOnlySkills` declares.
  * @returns the repo-relative source paths of the adoptable skills.
