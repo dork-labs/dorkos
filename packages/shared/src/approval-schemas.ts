@@ -38,6 +38,78 @@ export const APPROVAL_SUMMARY_MAX_LENGTH = 500;
 export const APPROVAL_DETAIL_MAX_LENGTH = 4000;
 
 /**
+ * Longest a resolved subject label may be.
+ *
+ * Matched to the requester label's cap, because the two are the same kind of
+ * thing: a name a registry holds, which an agent can usually edit. Capping it
+ * stops a self-chosen name from crowding the card.
+ */
+export const APPROVAL_SUBJECT_LABEL_MAX_LENGTH = 60;
+
+/**
+ * The kinds of thing an approval can act ON.
+ *
+ * Deliberately a closed set, and deliberately only as long as the set of
+ * registries a resolver is actually wired to (`apps/server/src/index.ts`). A
+ * kind listed here with nothing behind it would be declared, validated, and
+ * unreachable — it would type-check, pass a schema, and render a heading over
+ * an id, which is the exact defect this field exists to fix.
+ *
+ * So adding one is two edits, not one: the name here AND its resolver at boot.
+ * Rooms and connections are the obvious next two — `connectors.execute_destructive`
+ * shows a person two opaque ids today — and neither is listed until it is wired.
+ */
+export const APPROVAL_SUBJECT_KINDS = ['agent', 'task'] as const;
+
+/** What kind of thing an approval acts on. */
+export type ApprovalSubjectKind = (typeof APPROVAL_SUBJECT_KINDS)[number];
+
+/**
+ * The thing an approval would act on, named.
+ *
+ * ## Why the id is here beside the label, and is not optional
+ *
+ * A label alone would be a worse card than a bare id, not a better one. Every
+ * name this can carry comes from a registry an AGENT can write to — an agent's
+ * `displayName` lives in its own `agent.json`, a schedule's name is whatever
+ * created it — so an agent that wanted to disguise which agent it was deleting
+ * could name itself after another one. The id is the part nothing can forge, so
+ * the card shows both: the name to recognize, the id to check.
+ *
+ * The label is never taken from the caller's own arguments. It is read from the
+ * registry that owns the id, using the id the caller supplied — so the worst a
+ * caller can do is point at a different real thing, which the id then reveals.
+ */
+export const ApprovalSubjectSchema = z
+  .object({
+    /** Which registry the label came out of. */
+    kind: z.enum(APPROVAL_SUBJECT_KINDS),
+    /** The registry's own name for it. Never caller-supplied. */
+    label: z.string().max(APPROVAL_SUBJECT_LABEL_MAX_LENGTH),
+    /** The raw id the caller passed, shown so the name can be checked against it. */
+    id: z.string().max(APPROVAL_SUBJECT_LABEL_MAX_LENGTH),
+  })
+  .openapi('ApprovalSubject');
+
+/** The thing an approval would act on, named. */
+export type ApprovalSubject = z.infer<typeof ApprovalSubjectSchema>;
+
+/**
+ * Where a request arrived from, when DorkOS could not tell WHO sent it.
+ *
+ * The honest half of an unattributed request. In-session identity is structural
+ * — it resolves only when the session's working directory is a registered
+ * agent's home — so an ordinary session in an ordinary project folder produces
+ * no identity at all. That is correct behavior, but "an unidentified caller"
+ * describes it as if the request came from nowhere, when the surface it came
+ * over is known exactly.
+ */
+export const APPROVAL_ORIGINS = ['session', 'external-mcp'] as const;
+
+/** Which surface a request arrived over. */
+export type ApprovalOrigin = (typeof APPROVAL_ORIGINS)[number];
+
+/**
  * An approval waiting on a person: what would run, why, and who asked. This is
  * exactly what the cockpit's approval card renders.
  */
@@ -93,6 +165,46 @@ export const PendingApprovalSchema = z
      * at render time.
      */
     detail: z.string().max(APPROVAL_DETAIL_MAX_LENGTH).optional(),
+    /**
+     * The thing this would act on, named — when the server could name it.
+     *
+     * Absent is the honest answer, not a bug: an action with no opaque id has
+     * nothing to resolve, and an id whose registry no longer holds it cannot be
+     * named without inventing something. Either way the id itself is still in
+     * {@link summary}, so a card without a subject says exactly what it always
+     * said. A surface renders this ABOVE the summary and never INSTEAD of it.
+     */
+    subject: ApprovalSubjectSchema.optional(),
+    /**
+     * Which surface the request arrived over, when no agent identity resolved.
+     *
+     * Only ever set alongside an ABSENT {@link requestedBy}: once DorkOS knows
+     * who asked, saying where it came from is noise. It exists so an
+     * unattributed card can say the true thing it knows instead of the vague
+     * one it used to.
+     */
+    origin: z.enum(APPROVAL_ORIGINS).optional(),
+    /**
+     * The arguments OTHER than the subject, rendered — present only alongside a
+     * {@link subject}, and only when there are any.
+     *
+     * ## Why this exists rather than the card re-reading `summary`
+     *
+     * `summary` is one self-contained sentence, because a notification and an
+     * Activity row have no card around them to supply the missing half. A CARD
+     * does: it already draws the title as its heading, the requester on its own
+     * line, and — once one resolves — the subject in bold. Rendering the whole
+     * sentence underneath then says the title twice and the name twice, which is
+     * a wall of text in the one place a person is trying to make a decision.
+     *
+     * So the card renders this instead, and it carries exactly what the card is
+     * not already showing. Absent means there is nothing left to say, and the
+     * card shows nothing rather than repeating itself.
+     *
+     * Bounded and swept identically to `summary`: it is built by the same
+     * renderer, from the same allowlist, with the same per-value caps.
+     */
+    otherArguments: z.string().max(APPROVAL_SUMMARY_MAX_LENGTH).optional(),
   })
   .openapi('PendingApproval');
 

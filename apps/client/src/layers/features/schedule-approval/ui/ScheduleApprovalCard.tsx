@@ -267,6 +267,9 @@ export function ScheduleApprovalCard({
           <RequestingAgent
             requestedBy={task.proposedByAgentPath ?? undefined}
             hasAgentPath={task.proposedByAgentPath !== null}
+            // This branch is only reached once DorkOS itself and a file on disk
+            // are ruled out, so an agent asked even when no path was stamped.
+            attributedToAgent
             className="shrink-0"
           />
         )}

@@ -154,6 +154,14 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/**
+ * The line `RequestingAgent` renders for an agent-proposed schedule nothing
+ * named. Held here so the two cases that assert this branch does NOT fall back
+ * to it keep pinning something real when the copy moves — the previous string
+ * survived a rename and quietly became unconditionally true.
+ */
+const AGENT_UNNAMED_COPY = 'An agent asked — DorkOS can’t say which';
+
 describe('ScheduleApprovalCard — what it says', () => {
   it('names the schedule, its proposer, and how long it has waited', async () => {
     renderCard();
@@ -255,7 +263,11 @@ describe('ScheduleApprovalCard — what it says', () => {
     // name invented from nothing would put a request under a mark it never earned.
     renderCard(proposal({ proposedByAgentPath: null, proposedByName: null }));
 
-    expect(await screen.findByText('Requested without an agent identity')).toBeInTheDocument();
+    // The shared fallback's wording moved (DOR-1929) and this card now says the
+    // narrower true thing: an agent DID propose it — that is the only branch
+    // reaching here — and nothing recorded which one. What the case pins is
+    // unchanged: no name and no agent mark are invented.
+    expect(await screen.findByText(AGENT_UNNAMED_COPY)).toBeInTheDocument();
     expect(slot('ask-detail')).toHaveTextContent('Proposed by an agent');
   });
 
@@ -281,7 +293,7 @@ describe('ScheduleApprovalCard — what it says', () => {
     );
     expect(slot('ask-detail')).toHaveTextContent('Found in a file on this computer');
     expect(slot('ask-detail')).not.toHaveTextContent('Proposed by');
-    expect(screen.queryByText('Requested without an agent identity')).toBeNull();
+    expect(screen.queryByText(AGENT_UNNAMED_COPY)).toBeNull();
   });
 
   // The drift case on a person's OWN schedule: origin is not `file`, but the
@@ -303,7 +315,7 @@ describe('ScheduleApprovalCard — what it says', () => {
     expect(reason?.textContent).toBe('This schedule’s file changed since it was last approved.');
     expect(reason).not.toHaveClass('italic');
     expect(slot('ask-detail')).not.toHaveTextContent('Proposed by');
-    expect(screen.queryByText('Requested without an agent identity')).toBeNull();
+    expect(screen.queryByText(AGENT_UNNAMED_COPY)).toBeNull();
   });
 
   it('shows why a discovered schedule is parked, unquoted — they are our words', async () => {

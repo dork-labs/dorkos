@@ -165,6 +165,54 @@ export function ApprovalCardShowcase() {
         />
       </ShowcaseDemo>
 
+      <ShowcaseLabel>What it would act on (DOR-1929)</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <ApprovalList
+          approvals={[
+            // The reported defect and its fix, side by side. The first is what a
+            // person was actually shown for four irreversible deletions.
+            sample({
+              approvalId: '01JZ0000000000000000000031',
+              capabilityId: 'mesh_unregister',
+              capabilityTitle:
+                'Remove an agent and its setup file, and turn off its scheduled tasks',
+              requestedBy: undefined,
+              hasAgentPath: false,
+              summary:
+                'An unidentified caller wants to run "Remove an agent and its setup file, and turn off its scheduled tasks" with agentId: "01KXQ3P7ADJY9DSXMZW1XGWCV4"',
+            }),
+            sample({
+              approvalId: '01JZ0000000000000000000032',
+              capabilityId: 'mesh_unregister',
+              capabilityTitle:
+                'Remove an agent and its setup file, and turn off its scheduled tasks',
+              requestedBy: undefined,
+              hasAgentPath: false,
+              origin: 'session',
+              subject: { kind: 'agent', label: 'Lab Scout', id: '01KXQ3P7ADJY9DSXMZW1XGWCV4' },
+              // No `otherArguments`: the agent IS the only argument, so the card
+              // has nothing left to say and says nothing.
+              summary:
+                'An unidentified caller wants to run "Remove an agent and its setup file, and turn off its scheduled tasks" with agent: "Lab Scout"',
+            }),
+            // A schedule, to show the block is not agent-shaped, and a name long
+            // enough to prove it truncates instead of pushing the buttons off.
+            sample({
+              approvalId: '01JZ0000000000000000000033',
+              capabilityId: 'tasks_delete',
+              capabilityTitle: 'Delete a scheduled task',
+              subject: {
+                kind: 'task',
+                label: 'Nightly dependency audit across every checked-out worktree',
+                id: '01KXQ3P7ADJY9DSXMZW1XGWCV5',
+              },
+              summary:
+                'DorkBot wants to run "Delete a scheduled task" with task: "Nightly dependency audit across every checked-out worktree"',
+            }),
+          ]}
+        />
+      </ShowcaseDemo>
+
       <ShowcaseLabel>Who asked, and how long is left</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <ApprovalList
@@ -178,6 +226,9 @@ export function ApprovalCardShowcase() {
               // anonymous request, and a showcase that split them would teach the
               // wrong thing to whoever draws the third button off it.
               hasAgentPath: false,
+              // The surface is known even when the caller is not, so the card
+              // says the true thing rather than the vague one (DOR-1929).
+              origin: 'external-mcp',
               summary: 'An unidentified caller wants to run "Uninstall a marketplace package"',
             }),
             // Inside the last minute, where the countdown reads "expiring".

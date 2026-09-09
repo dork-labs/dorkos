@@ -221,3 +221,53 @@ export function summaryFields(
       value: renderSummaryValue(value),
     }));
 }
+
+/**
+ * Join rendered pairs into the `field: value, field: value` clause a card and a
+ * sentence both end in.
+ *
+ * One renderer for both, so the clause a person reads on the card can never
+ * drift from the clause the notification carries. The final secret sweep runs
+ * here rather than at each caller for the same reason: a producer that forgot it
+ * would publish a token to every connected client.
+ *
+ * @param pairs - The rendered field/value pairs, in display order.
+ * @returns The joined clause, or `undefined` when there are no pairs.
+ */
+export function joinSummaryFields(
+  pairs: readonly { field: string; value: string }[]
+): string | undefined {
+  if (pairs.length === 0) return undefined;
+  return redactSecretsInText(pairs.map(({ field, value }) => `${field}: ${value}`).join(', '));
+}
+
+/**
+ * The display pairs with the SUBJECT's pair replaced by the resolved name.
+ *
+ * Substituted by FIELD PATH, never by matching the value: two arguments can
+ * carry the same string, and swapping every match would rewrite an argument the
+ * resolver never looked at. `summaryFields` renders a declared allowlist in its
+ * declared order, so position `i` here is `displayFields[i]`.
+ *
+ * With no allowlist declared there is no path to match on and nothing is
+ * substituted — which costs nothing real, because `destructive` is the only tier
+ * that builds a card and every destructive action must declare one.
+ *
+ * @param input - The parsed input the approval binds to.
+ * @param displayFields - The action's declared display fields, in order.
+ * @param subject - The resolved subject, when there is one.
+ * @param subjectField - The dotted path the subject was read from.
+ * @returns The pairs, ready to join.
+ */
+export function summaryFieldsNamingSubject(
+  input: unknown,
+  displayFields: readonly string[] | undefined,
+  subject: { kind: string; label: string } | undefined,
+  subjectField: string | undefined
+): { field: string; value: string }[] {
+  return summaryFields(input, displayFields).map((pair, i) =>
+    subject && displayFields?.[i] === subjectField
+      ? { field: subject.kind, value: JSON.stringify(subject.label) }
+      : pair
+  );
+}

@@ -477,6 +477,88 @@ describe('enforceCapabilityTier', () => {
 });
 
 describe('describeGatedAttempt', () => {
+  describe('the subject field renders by NAME (DOR-1929)', () => {
+    // The reported defect, in miniature: `agentId: "01KX…"` names nothing a
+    // person can act on. A resolved subject replaces that ONE argument with the
+    // registry's name for it, and the id moves to `PendingApproval.subject.id`.
+    const targeted = {
+      id: 'mesh_unregister',
+      title: 'Remove an agent',
+      tier: 'destructive' as const,
+      approvalDisplayFields: ['agentId'] as const,
+      approvalSubject: { field: 'agentId', kind: 'agent' as const },
+    };
+
+    it('replaces the id with the resolved name', () => {
+      const summary = describeGatedAttempt(
+        targeted,
+        { agentId: '01KXQ3P7ADJY9DSXMZW1XGWCV4' },
+        undefined,
+        {
+          kind: 'agent',
+          label: 'Lab Scout',
+          id: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
+        }
+      );
+
+      expect(summary).toBe(
+        'An unidentified caller wants to run "Remove an agent" with agent: "Lab Scout"'
+      );
+    });
+
+    it('shows the raw id when nothing resolved, which is the fail-closed case', () => {
+      expect(describeGatedAttempt(targeted, { agentId: '01KXQ3P7ADJY9DSXMZW1XGWCV4' })).toBe(
+        'An unidentified caller wants to run "Remove an agent" with agentId: "01KXQ3P7ADJY9DSXMZW1XGWCV4"'
+      );
+    });
+
+    it('substitutes by field path, never by matching the value', () => {
+      const twoFields = {
+        ...targeted,
+        approvalDisplayFields: ['agentId', 'note'] as const,
+      };
+
+      const summary = describeGatedAttempt(
+        twoFields,
+        // `note` carries the SAME string as the id. A value-matching
+        // substitution would rewrite it too, silently editing an argument the
+        // registry never looked at.
+        { agentId: '01KX', note: '01KX' },
+        undefined,
+        { kind: 'agent', label: 'Lab Scout', id: '01KX' }
+      );
+
+      expect(summary).toBe(
+        'An unidentified caller wants to run "Remove an agent" with agent: "Lab Scout", note: "01KX"'
+      );
+    });
+
+    it('leaves every other argument alone', () => {
+      const summary = describeGatedAttempt(
+        { ...targeted, approvalDisplayFields: ['agentId', 'purge'] as const },
+        { agentId: '01KX', purge: true },
+        undefined,
+        { kind: 'agent', label: 'Lab Scout', id: '01KX' }
+      );
+
+      expect(summary).toContain('purge: yes');
+    });
+
+    it('renders the resolved name as a quoted value, so it cannot forge a second field', () => {
+      const summary = describeGatedAttempt(targeted, { agentId: '01KX' }, undefined, {
+        kind: 'agent',
+        label: 'Lab Scout", purge: no',
+        id: '01KX',
+      });
+
+      // The injected separator lands visibly INSIDE the quotes, exactly as a
+      // caller-supplied argument value does.
+      expect(summary).toBe(
+        'An unidentified caller wants to run "Remove an agent" with agent: "Lab Scout\\", purge: no"'
+      );
+    });
+  });
+
   it('names an unidentified caller plainly', () => {
     expect(describeGatedAttempt(capabilityAt('destructive'), { name: 'x' })).toBe(
       'An unidentified caller wants to run "Demo destructive" with name: "x"'

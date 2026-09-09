@@ -1742,6 +1742,20 @@
           "detail": {
             "type": "string",
             "maxLength": 4000
+          },
+          "subject": {
+            "$ref": "#/components/schemas/ApprovalSubject"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "session",
+              "external-mcp"
+            ]
+          },
+          "otherArguments": {
+            "type": "string",
+            "maxLength": 500
           }
         },
         "required": [
@@ -1753,6 +1767,31 @@
           "hasAgentPath",
           "requestedAt",
           "expiresAt"
+        ]
+      },
+      "ApprovalSubject": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "task"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 60
+          }
+        },
+        "required": [
+          "kind",
+          "label",
+          "id"
         ]
       },
       "McpSigninPart": {

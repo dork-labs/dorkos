@@ -89,6 +89,56 @@ export const approvals = sqliteTable(
      */
     detail: text('detail'),
 
+    /**
+     * Which registry {@link subjectLabel} was read out of, or null when the
+     * action names nothing.
+     */
+    subjectKind: text('subject_kind', {
+      enum: ['agent', 'task'],
+    }),
+
+    /**
+     * The raw id the caller passed for the thing being acted on, or null.
+     *
+     * Kept beside the label rather than only inside `summary` because it is the
+     * unforgeable half of the pair: every name a registry holds is one an agent
+     * can usually edit, so the card shows the id too and a person can check one
+     * against the other.
+     */
+    subjectId: text('subject_id'),
+
+    /**
+     * The registry's own name for {@link subjectId} at the moment the person was
+     * asked, or null when nothing resolved.
+     *
+     * Stored rather than resolved at read time, which is the opposite of what
+     * `tasks/task-provenance.ts` does with a proposer's name — and deliberately.
+     * That module resolves fresh because a task list should credit an agent by
+     * its CURRENT name. An approval is a record of a decision, and ADR
+     * `260725-133221` binds it to the exact action SHOWN: if the agent renames
+     * itself between the ask and the answer, the row must keep saying what the
+     * person actually read.
+     */
+    subjectLabel: text('subject_label'),
+
+    /**
+     * Which surface an UNATTRIBUTED request arrived over, or null.
+     *
+     * Only meaningful while `requestedBy` is null — see the wire schema's
+     * `origin`. Null on every row written before this column existed, which
+     * renders exactly as those cards always did.
+     */
+    origin: text('origin', { enum: ['session', 'external-mcp'] }),
+
+    /**
+     * The arguments other than the subject, rendered, or null.
+     *
+     * Only ever written beside a subject — see the wire schema's
+     * `otherArguments` for why a card needs this instead of re-reading
+     * `summary`.
+     */
+    otherArguments: text('other_arguments'),
+
     /** Opaque label for who asked — an agent path, a display name, or null. */
     requestedBy: text('requested_by'),
 

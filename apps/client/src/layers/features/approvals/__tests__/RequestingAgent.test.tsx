@@ -93,9 +93,54 @@ describe('RequestingAgent', () => {
   });
 
   it('says an unattributed request is unattributed rather than inventing an agent', () => {
+    // The copy moved (DOR-1929) — it now names the surface where one is known —
+    // but the property this case exists for did not: a request nothing named
+    // must never be dressed up as an agent.
     const { container } = render(<RequestingAgent hasAgentPath={false} />);
 
-    expect(screen.getByText(/Requested without an agent identity/i)).toBeInTheDocument();
+    expect(screen.getByText(/doesn’t know who asked/i)).toBeInTheDocument();
+    expect(avatarIn(container)).toBeNull();
+  });
+});
+
+describe('an unattributed request says what IS known (DOR-1929)', () => {
+  // In-session identity is structural — it resolves only when the session's cwd
+  // is a registered agent's home. An ordinary session in an ordinary folder is
+  // therefore unattributed AND perfectly well understood, and the old copy
+  // reported the second half as if it were the first.
+  it.each([
+    ['session' as const, 'Asked from a session on this computer'],
+    ['external-mcp' as const, 'Asked by an app connected to DorkOS'],
+  ])('names the %s surface', (origin, expected) => {
+    render(<RequestingAgent hasAgentPath={false} origin={origin} />);
+
+    expect(screen.getByText(expected)).toBeInTheDocument();
+  });
+
+  it('falls back to a plain sentence when even the surface is unknown', () => {
+    render(<RequestingAgent hasAgentPath={false} />);
+
+    expect(screen.getByText('DorkOS doesn’t know who asked')).toBeInTheDocument();
+  });
+
+  it('says an agent asked when the caller knows that much', () => {
+    // The schedule-approval card's case. "DorkOS doesn't know who asked" would
+    // be false there, and would sit directly above that card's own "Proposed by
+    // an agent".
+    render(<RequestingAgent hasAgentPath={false} attributedToAgent />);
+
+    expect(screen.getByText('An agent asked — DorkOS can’t say which')).toBeInTheDocument();
+  });
+
+  it('prefers "an agent asked" over the surface it came over', () => {
+    render(<RequestingAgent hasAgentPath={false} attributedToAgent origin="session" />);
+
+    expect(screen.getByText('An agent asked — DorkOS can’t say which')).toBeInTheDocument();
+  });
+
+  it('never draws an agent mark for a request nothing named', () => {
+    const { container } = render(<RequestingAgent hasAgentPath={false} origin="session" />);
+
     expect(avatarIn(container)).toBeNull();
   });
 });

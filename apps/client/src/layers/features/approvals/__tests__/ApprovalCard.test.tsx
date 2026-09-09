@@ -229,3 +229,84 @@ describe('ApprovalCard', () => {
     });
   });
 });
+
+describe('naming what would be destroyed (DOR-1929)', () => {
+  const SUBJECT = {
+    kind: 'agent' as const,
+    label: 'Lab Scout',
+    id: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
+  };
+
+  it('shows the name of the thing the action would act on', () => {
+    renderCard(
+      buildApproval({
+        capabilityTitle: 'Remove an agent and its setup file, and turn off its scheduled tasks',
+        subject: SUBJECT,
+      })
+    );
+
+    expect(screen.getByText('Lab Scout')).toBeInTheDocument();
+    expect(screen.getByText('Agent')).toBeInTheDocument();
+  });
+
+  it('keeps the raw id on the card, because the name is the forgeable half', () => {
+    // An agent chooses its own `displayName`, so a card showing ONLY the name
+    // would let one agent wear another's. The id is what makes that checkable,
+    // which is why progressive disclosure demotes it and never drops it.
+    const { container } = renderCard(buildApproval({ subject: SUBJECT }));
+
+    const block = container.querySelector('[data-slot="approval-subject"]');
+    expect(block).toHaveTextContent('01KXQ3P7ADJY9DSXMZW1XGWCV4');
+  });
+
+  it('does not repeat the title and the name it already drew', () => {
+    // The card's heading is the title and the subject block is the name, so
+    // rendering the full sentence underneath says both twice — the wall of text
+    // this whole change exists to remove. With nothing else to report, the card
+    // stays quiet.
+    renderCard(
+      buildApproval({
+        capabilityTitle: 'Remove an agent',
+        subject: SUBJECT,
+        summary: 'An unidentified caller wants to run "Remove an agent" with agent: "Lab Scout"',
+      })
+    );
+
+    expect(screen.queryByText(/wants to run/)).toBeNull();
+    // The heading and the name are each still on the card exactly once.
+    expect(screen.getAllByText('Remove an agent')).toHaveLength(1);
+    expect(screen.getAllByText('Lab Scout')).toHaveLength(1);
+  });
+
+  it('still shows the arguments that are NOT the subject', () => {
+    renderCard(
+      buildApproval({
+        subject: SUBJECT,
+        otherArguments: 'purge: yes',
+        summary: 'DorkBot wants to run "Remove an agent" with agent: "Lab Scout", purge: yes',
+      })
+    );
+
+    expect(screen.getByText('purge: yes')).toBeInTheDocument();
+  });
+
+  it('renders exactly as before when the server could not name the target', () => {
+    // The fail-closed case, seen from the card: no subject block at all, and the
+    // summary — which still carries the raw id — is untouched.
+    const { container } = renderCard(
+      buildApproval({
+        summary: 'An unidentified caller wants to run "Remove an agent" with agentId: "01KXQ3"',
+      })
+    );
+
+    expect(container.querySelector('[data-slot="approval-subject"]')).toBeNull();
+    expect(screen.getByText(/agentId: "01KXQ3"/)).toBeInTheDocument();
+  });
+
+  it('says which surface an unattributed request came over', () => {
+    renderCard(buildApproval({ requestedBy: undefined, hasAgentPath: false, origin: 'session' }));
+
+    expect(screen.getByText('Asked from a session on this computer')).toBeInTheDocument();
+    expect(screen.queryByText(/doesn’t know who asked/)).toBeNull();
+  });
+});

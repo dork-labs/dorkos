@@ -347,6 +347,40 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       }
     });
 
+    it('lets every destructive tool NAME what it would destroy (DOR-1929)', () => {
+      for (const name of DESTRUCTIVE) {
+        const subject = MCP_TOOL_TIERS[name].approvalSubject;
+        expect(
+          subject,
+          `${name} would ask a person to approve destroying a bare id. Declare ` +
+            `approvalSubject so the card can say WHICH thing.`
+        ).toBeTruthy();
+        // The subject argument must be one the card already shows, or the id
+        // whose name replaces it would never have been on the card to replace.
+        expect(MCP_TOOL_TIERS[name].approvalDisplayFields).toContain(subject!.field);
+        // …and an argument the tool really takes, on every server it appears on.
+        for (const server of ['in-session', 'external'] as const) {
+          const tool = (server === 'in-session' ? inSessionTools() : externalTools()).get(name);
+          if (!tool) continue;
+          expect(Object.keys(tool.inputSchema), `${name} on ${server}`).toContain(subject!.field);
+        }
+      }
+    });
+
+    it('carries the subject declaration onto the action the gate decides on', () => {
+      // The table is only half the guarantee: a declaration the projection drops
+      // is a field that reads correct here and resolves nothing in production.
+      expect(gatedActionForMcpTool('mesh_unregister').approvalSubject).toEqual({
+        field: 'agentId',
+        kind: 'agent',
+      });
+      expect(gatedActionForMcpTool('tasks_delete').approvalSubject).toEqual({
+        field: 'id',
+        kind: 'task',
+      });
+      expect(gatedActionForMcpTool('mesh_list').approvalSubject).toBeUndefined();
+    });
+
     it('declares card fields only where a card can appear', () => {
       const strays = declaredNames.filter(
         (name) =>

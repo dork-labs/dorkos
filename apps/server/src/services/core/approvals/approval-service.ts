@@ -46,7 +46,9 @@ import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import {
   APPROVAL_DETAIL_MAX_LENGTH,
   APPROVAL_SUMMARY_MAX_LENGTH,
+  type ApprovalOrigin,
   type ApprovalOutcome,
+  type ApprovalSubject,
   type PendingApproval,
 } from '@dorkos/shared/approval-schemas';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
@@ -153,6 +155,27 @@ export interface ApprovalRequestInput {
    * the agent path, so the card has to carry the real one. Never rendered.
    */
   requestedByPath?: string;
+  /**
+   * The thing this would act on, already named by its own registry (DOR-1929).
+   *
+   * Resolved before the request rather than here, because naming an id needs the
+   * registry that owns it and this store owns none. Absent means it could not be
+   * named, and the id is still in `summary` either way.
+   */
+  subject?: ApprovalSubject;
+  /**
+   * The arguments other than the subject, rendered — supplied only alongside a
+   * `subject`, and only when any remain. See the wire schema's `otherArguments`.
+   */
+  otherArguments?: string;
+  /**
+   * Which surface an UNATTRIBUTED request arrived over.
+   *
+   * Recorded only when `requestedBy` is absent: once the caller is named, where
+   * it came from adds nothing a person needs. It is a display fact and never an
+   * authorization one — nothing here or downstream reads it to decide anything.
+   */
+  origin?: ApprovalOrigin;
   /** Authenticated connector scope; absent for every ordinary capability. */
   connectorAuthority?: ApprovalConnectorAuthority;
 }
@@ -364,6 +387,16 @@ function toPendingApproval(row: ApprovalRow): PendingApproval {
     summary: row.summary,
     ...(row.detail === null ? {} : { detail: row.detail }),
     ...(row.requestedBy ? { requestedBy: row.requestedBy } : {}),
+    // Both halves or neither: a label with no id behind it is the shape this
+    // field exists to avoid, since the id is what makes the name checkable.
+    ...(row.subjectKind && row.subjectLabel && row.subjectId
+      ? { subject: { kind: row.subjectKind, label: row.subjectLabel, id: row.subjectId } }
+      : {}),
+    ...(row.origin && !row.requestedBy ? { origin: row.origin } : {}),
+    // Gated on the SUBJECT, not on itself: the card only swaps the summary out
+    // for this when it has a subject block to swap it for, so a remainder
+    // without one would be a clause nothing renders.
+    ...(row.otherArguments && row.subjectLabel ? { otherArguments: row.otherArguments } : {}),
     // The raw path stays off the wire (see `requestedByPath`'s own comment); what
     // goes out is the one bit a surface needs, which is whether there is one.
     hasAgentPath: row.requestedByPath !== null,
@@ -432,6 +465,18 @@ export class ApprovalService {
       // Stored raw and never rendered: this is the key a standing permission is
       // built on, so sweeping or shortening it would break the match.
       requestedByPath: input.requestedByPath ?? null,
+      // Capped HERE as well as in the resolver, for the reason `storableSummary`
+      // gives two lines up: `ApprovalRequestInput` is public API, not private to
+      // `resolveApprovalSubject`, and the wire schema caps these at 60 — so a
+      // caller passing a longer label would store a row the cockpit's own parse
+      // rejects, and a dropped card is worse than a shortened one.
+      subjectKind: input.subject?.kind ?? null,
+      subjectId: input.subject ? renderRequesterLabel(input.subject.id) : null,
+      subjectLabel: input.subject ? renderRequesterLabel(input.subject.label) : null,
+      otherArguments: input.otherArguments ? storableSummary(input.otherArguments) : null,
+      // Withheld the moment a caller IS named, so the two can never contradict
+      // each other on a card.
+      origin: input.requestedBy ? null : (input.origin ?? null),
       state: 'pending' as const,
       denyReason: null,
       createdAt: new Date(now).toISOString(),
@@ -539,6 +584,12 @@ export class ApprovalService {
       approvalId: row.id,
       capabilityId: row.capabilityId,
       ...(row.requestedBy ? { requestedBy: row.requestedBy } : {}),
+      // Both halves or neither: a label with no id behind it is the shape this
+      // field exists to avoid, since the id is what makes the name checkable.
+      ...(row.subjectKind && row.subjectLabel && row.subjectId
+        ? { subject: { kind: row.subjectKind, label: row.subjectLabel, id: row.subjectId } }
+        : {}),
+      ...(row.origin && !row.requestedBy ? { origin: row.origin } : {}),
       ...(row.authorityBindingDigest ? { authorityBindingDigest: row.authorityBindingDigest } : {}),
     };
   }

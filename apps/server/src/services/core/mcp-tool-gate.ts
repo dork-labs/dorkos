@@ -90,7 +90,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { z } from 'zod';
 
+import type { ApprovalOrigin } from '@dorkos/shared/approval-schemas';
+
 import type { AgentIdentity } from './agent-identity/agent-identity-service.js';
+import { resolveApprovalSubject } from './approvals/index.js';
 import { approvalTokenArgument } from './capabilities/mcp-projection.js';
 import {
   enforceCapabilityTier,
@@ -129,14 +132,18 @@ type GateOutcome =
  * @param action - The tool's tier declaration, from the shared table.
  * @param args - The arguments the SDK parsed for this call.
  * @param identity - The calling agent, when the surface resolved one.
+ * @param interactive - Whether the caller can be told to open the approval panel.
+ * @param origin - Which surface the call arrived over, recorded so an
+ *   unattributed card can say the true thing DorkOS knows about it.
  * @returns Whether to proceed, and with what.
  */
-function runGate(
+async function runGate(
   action: GatedAction,
   args: unknown,
   identity: AgentIdentity | undefined,
-  interactive: boolean
-): GateOutcome {
+  interactive: boolean,
+  origin: ApprovalOrigin
+): Promise<GateOutcome> {
   // Only a destructive tool advertises `approvalToken`, so only a destructive call
   // has one to lift off. Anything else passes its arguments through untouched
   // rather than silently losing a field that happens to share the name.
@@ -145,11 +152,18 @@ function runGate(
       ? splitApprovalToken(args)
       : { approvalToken: undefined, input: args };
 
+  // Named HERE rather than inside the gate because every registry that can name
+  // an id is async and `enforceCapabilityTier` is not (DOR-1929). This is the
+  // same reason, and the same shape, as awaiting the identity above.
+  const subject = await resolveApprovalSubject(action.approvalSubject, input);
+
   const decision = enforceCapabilityTier({
     action,
     input,
     ...(identity ? { identity } : {}),
     ...(approvalToken ? { approvalToken } : {}),
+    ...(subject ? { subject } : {}),
+    origin,
     // An MCP client cannot set an HTTP header on a tool call, so the retry
     // instructions must name the tool ARGUMENT this module advertises.
     retryChannel: 'mcp-argument',
@@ -238,7 +252,13 @@ export function gateHandRegisteredMcpTools<T extends SdkMcpTool>(
         // `interactive: true` — this entry point wraps the IN-SESSION server,
         // where `control_ui` exists, so a gated call may be told to put the
         // approval in front of the operator (DOR-1570).
-        const outcome = runGate(action, args, (await resolveContext?.())?.identity, true);
+        const outcome = await runGate(
+          action,
+          args,
+          (await resolveContext?.())?.identity,
+          true,
+          'session'
+        );
         if (!outcome.allowed) return outcome.result;
         return handler(outcome.input as never, extra);
       },
@@ -325,7 +345,7 @@ export function gatedToolRegistrar(server: McpServer, identity?: AgentIdentity):
       (async (args: never, extra: unknown): Promise<CallToolResult> => {
         // `interactive: false` — the external `/mcp` server is sessionless, so
         // the UI tools are not registered and must not be suggested.
-        const outcome = runGate(action, args, identity, false);
+        const outcome = await runGate(action, args, identity, false, 'external-mcp');
         if (!outcome.allowed) return outcome.result;
         return cb(outcome.input as never, extra);
         // The SDK's `registerTool` is generic over the input and output shapes it
