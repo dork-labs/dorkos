@@ -217,6 +217,20 @@ export interface ProjectionPlan {
   narrowedTo?: HarnessId;
 }
 
+/**
+ * One path a sweep removes, and the one sentence saying why (DOR-1906).
+ *
+ * The reasons themselves live in `apply/sweep-reasons.ts` — one per finder,
+ * written down once so the terminal, the app and the server's log say the same
+ * words about the same file.
+ */
+export interface SweptPath {
+  /** The repo-relative path. */
+  path: string;
+  /** Why it goes, in one plain sentence. */
+  reason: string;
+}
+
 /** The result of diffing a {@link ProjectionPlan} against the current on-disk state (`--check`). */
 export interface DriftResult {
   /** Actions whose target does not yet match the plan (missing, stale, or wrong). */
@@ -251,6 +265,16 @@ export interface DriftResult {
    * reports none — see {@link ProjectionPlan.narrowedTo}.
    */
   orphans: string[];
+  /**
+   * The same paths as {@link DriftResult.orphans}, in the same order, each with
+   * the one sentence saying why it would go (DOR-1906).
+   *
+   * Two fields rather than one because they have different readers and both are
+   * load-bearing: `orphans` is the set the equality contract with `swept` is
+   * written against and the shape every existing caller reads, and this is what
+   * a person is shown. `sweep-reasons.ts` holds the sentences.
+   */
+  removals: SweptPath[];
   /**
    * Repo-relative paths where somebody's own file sits at a target the engine
    * generates for *some* configuration but not this one — nothing is blocked,

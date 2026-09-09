@@ -40,6 +40,7 @@ import {
 import { findOrphanedAuthoredLinks } from '../authored-orphans.js';
 import { findGeneratedOrphans } from '../generated-targets.js';
 import { ATOMIC_TMP_SUFFIX, STALE_TEMP_AGE_MS } from '../atomic-write.js';
+import { SWEEP_REASONS } from '../sweep-reasons.js';
 
 let repo = '';
 let dorkHome = '';
@@ -199,6 +200,101 @@ describe('checkPlan().orphans is the next applyPlan().swept', () => {
     const swept = applyPlan(repo, plan, { sweepOrphans: true }).swept;
     expect(swept).toHaveLength(drift.orphans.length);
     expect([...swept].sort()).toEqual([...drift.orphans].sort());
+  });
+});
+
+describe('every swept path says why it goes', () => {
+  it('AP-07, VC-01: gives each of the ten a reason from the sweep that found it (DOR-1906)', () => {
+    // Purpose: a list of ten paths under one heading says nothing about why any
+    // of them goes, and the ten go for five different reasons. Seeded defect:
+    // give every sweep the same generic sentence — "an orphaned projection",
+    // say — and this reds on the first path, because the map below is exact
+    // rather than a "has a reason" check.
+    const built = stageRepo();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+    sync(repo, dorkHome);
+
+    rmSync(join(repo, '.agents', 'skills', 'alpha'), { recursive: true, force: true });
+    rmSync(join(repo, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
+
+    const plan = project(repo, { dorkHome });
+    const preview = checkPlan(repo, plan).removals;
+
+    expect(preview).toHaveLength(10);
+    expect(Object.fromEntries(preview.map(({ path, reason }) => [path, reason]))).toEqual({
+      '.agents/skills/acme__greet': SWEEP_REASONS['installed-skill'],
+      '.claude/skills/acme__greet': SWEEP_REASONS['installed-skill'],
+      '.claude/skills/alpha': SWEEP_REASONS['authored-link'],
+      '.codex/hooks.json': SWEEP_REASONS['generated-hooks'],
+      '.codex/hooks.json.dorkos-generated': SWEEP_REASONS['generated-hooks'],
+      '.claude/commands/acme/.gitignore': SWEEP_REASONS['command-wrapper'],
+      '.claude/commands/acme/hello.md': SWEEP_REASONS['command-wrapper'],
+      '.opencode/commands/.gitignore': SWEEP_REASONS['command-wrapper'],
+      '.opencode/commands/acme-hello.md': SWEEP_REASONS['command-wrapper'],
+      '.claude/settings.local.json': SWEEP_REASONS['settings-hooks'],
+    });
+    // Five distinct sentences over ten paths, asserted as a number as well as a
+    // map: the map above is written in terms of `SWEEP_REASONS`, so a table
+    // collapsed to one generic sentence satisfies every line of it and only the
+    // count catches it.
+    expect(new Set(preview.map(({ reason }) => reason)).size).toBe(5);
+    // And one sentence quoted literally, because the map and the count are both
+    // about the SHAPE of the table. This is the path that has always had to say
+    // more than "removed": the file itself survives.
+    expect(preview.find(({ path }) => path === '.claude/settings.local.json')?.reason).toBe(
+      'Only the hook entries DorkOS added go; your own settings stay.'
+    );
+
+    // And the sweep that follows says the same ten things, path for path — the
+    // promise before the click and the receipt after it are one list.
+    const applied = applyPlan(repo, plan, { sweepOrphans: true });
+    expect([...applied.removals].sort((a, b) => a.path.localeCompare(b.path))).toEqual(
+      [...preview].sort((a, b) => a.path.localeCompare(b.path))
+    );
+  });
+
+  it('AP-07, VC-01: keeps the reasoned list and the bare one the same list (DOR-1906)', () => {
+    // Purpose: `swept` and `orphans` stay `string[]` for the equality contract
+    // and every existing caller, so the two shapes are two views of one answer
+    // and never two walks. Seeded defect: build `removals` from a second call to
+    // the finders and this reds the moment a sweep is not idempotent — the
+    // second walk sees the tree the first one already emptied.
+    const built = stageRepo();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+    sync(repo, dorkHome);
+    rmSync(join(repo, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
+
+    const plan = project(repo, { dorkHome });
+    const drift = checkPlan(repo, plan);
+
+    expect(drift.orphans).toHaveLength(9);
+    expect(drift.removals.map(({ path }) => path)).toEqual(drift.orphans);
+    expect(drift.removals.every(({ reason }) => reason.length > 0)).toBe(true);
+
+    const applied = applyPlan(repo, plan, { sweepOrphans: true });
+    expect(applied.removals.map(({ path }) => path)).toEqual(applied.swept);
+  });
+
+  it('AP-07, AP-10: calls a stranded temp debris, not an uninstalled package (DOR-1906)', () => {
+    // Purpose: the command sweeps yield two different facts, and the wrong one
+    // is a sentence about a package that is still perfectly well installed.
+    // Seeded defect: drop the temp refinement in `sweepReason` and this reds
+    // with the wrapper reason over a half-written file.
+    const built = stageRepo();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+    sync(repo, dorkHome);
+
+    const stale = `.opencode/commands/.acme-hello.md.90001.beefed${ATOMIC_TMP_SUFFIX}`;
+    writeFileSync(join(repo, stale), '# a crash left this behind\n');
+    const when = (Date.now() - STALE_TEMP_AGE_MS * 2) / 1000;
+    utimesSync(join(repo, stale), when, when);
+
+    expect(checkPlan(repo, project(repo, { dorkHome })).removals).toEqual([
+      { path: stale, reason: SWEEP_REASONS['stale-temp'] },
+    ]);
   });
 });
 
