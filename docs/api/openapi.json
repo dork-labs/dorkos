@@ -51491,6 +51491,95 @@
                               "reason"
                             ]
                           }
+                        },
+                        "claudeOnly": {
+                          "type": "object",
+                          "properties": {
+                            "root": {
+                              "type": "string"
+                            },
+                            "readAt": {
+                              "type": "string"
+                            },
+                            "unreadable": {
+                              "type": "string"
+                            },
+                            "mayBeOverridden": {
+                              "type": "boolean"
+                            },
+                            "plugins": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "marketplace": {
+                                    "type": "string"
+                                  },
+                                  "repo": {
+                                    "type": "string"
+                                  },
+                                  "settingsScope": {
+                                    "type": "string",
+                                    "enum": [
+                                      "user",
+                                      "project"
+                                    ]
+                                  },
+                                  "offer": {
+                                    "type": "string",
+                                    "enum": [
+                                      "install",
+                                      "add-source-then-install",
+                                      "unknown-source",
+                                      "no-package",
+                                      "sources-unreadable"
+                                    ]
+                                  },
+                                  "sourceUrl": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "marketplace",
+                                  "settingsScope",
+                                  "offer"
+                                ]
+                              }
+                            },
+                            "personalHookCommands": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "unreadableParts": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "extraKnownMarketplaces",
+                                  "hooks"
+                                ]
+                              }
+                            },
+                            "skippedEntries": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "sourcesUnreadable": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "root",
+                            "readAt",
+                            "mayBeOverridden",
+                            "plugins",
+                            "personalHookCommands",
+                            "unreadableParts"
+                          ]
                         }
                       },
                       "required": [

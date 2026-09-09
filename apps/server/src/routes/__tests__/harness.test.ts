@@ -209,7 +209,16 @@ beforeAll(async () => {
   vi.stubEnv('DORK_HOME', dorkHome);
   emptyClaudeRoot = join(outside, 'claude-root-that-is-not-there');
   pinEmptyClaudeRoot();
-  app.use('/api/harness', createHarnessRouter({ dorkHome, readHookDecisions: () => NO_DECISIONS }));
+  // ONE mount, and it has to stay one: Express serves the FIRST router matching
+  // a path, so a second `app.use('/api/harness', …)` beside this one is dead
+  // code that silently takes over every request. A merge left two here — one
+  // with the fixed `NO_DECISIONS` reader and no gateway, one with both — and the
+  // first won: the sync suite's package hooks were withheld on every run (six
+  // swept paths instead of nine), `HK-11` found no conflict because nothing
+  // wanted to write the hooks file, and `askedAbout` was empty because the route
+  // had no gateway to ask through. `hookDecisions` starts as `NO_DECISIONS` and
+  // `afterEach` puts it back, so the cases that want nobody to have decided
+  // anything get exactly that from this one mount.
   app.use(
     '/api/harness',
     createHarnessRouter({

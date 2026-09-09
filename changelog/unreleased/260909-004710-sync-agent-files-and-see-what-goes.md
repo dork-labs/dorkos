@@ -5,6 +5,7 @@ covers:
   - 'feat(server): POST /api/harness/sync, for a person, never waiting on a card (DOR-1895)'
   - 'feat(client): the Sync button, and the banner that names what it removes (DOR-1895)'
   - 'fix(client): one failed sync, one toast (DOR-1895)'
+  - 'fix(server): one harness router in the route suite, not two (DOR-1895)'
 ---
 
 ### Added
