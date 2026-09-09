@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { HARNESS_IDS, type HarnessId } from '../../manifest/schema.js';
 import {
   HARNESS_VENDOR_FACTS,
@@ -9,6 +11,9 @@ import {
 
 /** The canonical directory the whole skills half of the engine is organised around. */
 const CANONICAL_SKILLS_DIR = '.agents/skills';
+
+/** The repository root, five levels above this file. */
+const REPO_ROOT = resolve(import.meta.dirname, '../../../../..');
 
 describe('vendor-facts table', () => {
   it('has a skills row for every harness the engine targets, and no row for anything else', () => {
@@ -74,15 +79,55 @@ describe('vendor-facts table', () => {
     expect(onTheSharedDate.length).toBeGreaterThan(0);
   });
 
-  it('is documentation-derived from end to end today — the first H-tier run against a real binary has to change this assertion', () => {
-    // `verified: 'binary'` is a claim no cell can make yet: nothing in this repo
-    // has ever started a `claude`, `codex`, `opencode`, `cursor-agent`, `gemini`
-    // or `copilot` process and watched what it loaded. When the H tier lands,
-    // the row it verifies flips to 'binary' and this assertion narrows to the
-    // rows that are still on paper. Loosening it without a binary run is the
-    // failure mode it exists to catch.
-    const verified = HARNESS_IDS.map((h) => skillsFactsFor(h).verified);
-    expect(verified).toEqual(HARNESS_IDS.map(() => 'docs'));
+  it('is documentation-derived on every row the H tier has not run against', () => {
+    // This assertion has now narrowed exactly as its previous version said it
+    // would: `codex.skills` was observed against a real `codex-cli 0.145.0` on
+    // 2026-09-09 (DOR-1856, the free listing probe). Every other row is still on
+    // paper, and loosening this without a binary run is the failure mode it
+    // exists to catch.
+    const onPaper = HARNESS_IDS.filter((h) => h !== 'codex');
+    expect(onPaper.map((h) => skillsFactsFor(h).verified)).toEqual(onPaper.map(() => 'docs'));
+    expect(skillsFactsFor('codex').verified).toBe('binary');
+  });
+
+  it('makes a `binary` row say WHICH cells were observed, and against what', () => {
+    // The dangerous shape this closes: `verified` is row-level and an H-tier run
+    // answers CELLS. Flipping a row on evidence about six of its ten fields
+    // would silently promote the four nobody looked at — and a reader has no way
+    // to tell which is which from `verified` alone.
+    for (const harness of HARNESS_IDS) {
+      const facts = skillsFactsFor(harness);
+      if (facts.verified === 'docs') {
+        expect(
+          facts.observed,
+          `${harness} is on paper and must claim no observation`
+        ).toBeUndefined();
+        continue;
+      }
+      const observed = facts.observed;
+      expect(observed, `${harness} claims 'binary' and must say what was watched`).toBeDefined();
+      if (!observed) continue;
+      expect(observed.binary).toMatch(/\d/);
+      expect(observed.observedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(observed.report).toMatch(/^meta\/harness-smoke\/.+\.md$/);
+      // The citation has to point at a file that is still there. A report is
+      // regenerated under a new timestamped name every time it is re-run, so a
+      // stale path here is the ordinary outcome of doing the right thing, and
+      // a `verified: 'binary'` row whose evidence has been deleted is worse
+      // than one that never claimed it.
+      expect(
+        existsSync(resolve(REPO_ROOT, observed.report)),
+        `${harness}'s observed.report points at a file that does not exist: ${observed.report}`
+      ).toBe(true);
+      expect(observed.cells.length).toBeGreaterThan(0);
+      // Every named cell has to BE a cell, or the claim points at nothing.
+      for (const cell of observed.cells) expect(facts).toHaveProperty(cell);
+      // …and the row must not claim every cell was measured when it was not.
+      const behaviourCells = Object.keys(facts).filter(
+        (key) => !['source', 'verified', 'observed', 'notes'].includes(key)
+      );
+      expect(observed.cells.length).toBeLessThanOrEqual(behaviourCells.length);
+    }
   });
 
   it('records that Claude Code is the only harness that does not read .agents/skills — the one fact the whole engine is built on', () => {

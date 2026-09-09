@@ -461,3 +461,66 @@ Which makes those strings **product copy that happens to live in a package**, an
 - **The apply and the status it answers with are ONE `withProjectLock` turn**, so the response describes the tree this apply left rather than one the watcher (DOR-1850) or a marketplace install rewrote in between. The asking runs OUTSIDE that turn: the lock is not re-entrant, and holding a repository across an approval window would let one unanswered card block every other projection into it.
 
 **The mutation does not invalidate.** `use-harness-sync.ts` writes the returned status into the query key with `setQueryData`, because that answer is the only one that knows what the write ran into — a file somebody else owns at a target is discovered by attempting the write, and a fresh read cannot see it. Invalidating instead makes a post-write `conflict` cell revert to `drifted`, which the client suite pins.
+
+## 13. Running the real-harness smoke (the H tier)
+
+Everything above this line is checked by tests that read FILES. That is a claim about shape, and it is how the Codex hooks file stayed the wrong shape (HK-01) through four test files that all asserted the engine's own bytes. `scripts/harness-smoke/run.sh` is the other half: it stages a fixture through the journey DSL, applies the real projection, and then asks an actual `claude`, `codex` or `opencode` binary what it found.
+
+It comes in two halves, and the free one is the one to run first.
+
+### The free half — no key, no flag, no spend
+
+```bash
+pnpm exec turbo build --filter=@dorkos/harness   # the runner drives the BUILT engine
+
+bash scripts/harness-smoke/run.sh claude --free
+bash scripts/harness-smoke/run.sh codex  --free
+```
+
+Neither reaches a model, so neither needs the money gate at all. What makes them work:
+
+- **Claude Code** starts a real turn against `ANTHROPIC_BASE_URL=http://127.0.0.1:1`, which nothing is listening on. Measured on 2.1.266: both `SessionStart` hooks fire and the whole `system`/`init` message — the skills and slash-command listing, `apiKeySource`, `model`, `tools` — is printed **before the first API request**. The turn then never completes and is stopped after 45 seconds. That is the design, not a failure.
+- **Codex** runs `codex debug prompt-input`, which renders the model-visible prompt as JSON with no model call and no credential read.
+- **OpenCode** has no free probe, and `--free` refuses rather than inventing one.
+
+A free run gets exactly the same isolation as a paid one: `HOME` and the harness's own config home both point at an empty sandbox, so no stored sign-in and none of the operator's own `~/.agents/skills` or `~/.claude/skills` can reach the answer. `scripts/__tests__/harness-smoke-e2e.test.ts` proves that through the real `spawn` boundary rather than by inspecting the function that builds the environment.
+
+The two reports these produced are committed at [`meta/harness-smoke/`](../meta/harness-smoke/) — not under `test-results/`, which is gitignored — and the contract's H cells cite them.
+
+### The paid half — one command per harness
+
+```bash
+DORKOS_HARNESS_SMOKE=1 ANTHROPIC_API_KEY=<key>   bash scripts/harness-smoke/run.sh claude   --max-usd 0.50
+DORKOS_HARNESS_SMOKE=1 OPENAI_API_KEY=<key>      bash scripts/harness-smoke/run.sh codex    --max-usd 0.50
+DORKOS_HARNESS_SMOKE=1 OPENROUTER_API_KEY=<key>  bash scripts/harness-smoke/run.sh opencode --max-usd 0.50
+```
+
+Each spends real money, so each needs the flag AND its own key — a key alone arms nothing, and a sign-in already stored on your machine is never used.
+
+**What each variable is, in the vendor's own terms.** `ANTHROPIC_API_KEY` is what Claude Code reads from its environment, and it reports back on the session-init message which credential actually served the turn (`apiKeySource`), which the runner asserts against. `OPENAI_API_KEY` is Codex's; `codex login --api-key` stores the same value in `$CODEX_HOME/auth.json`, which this runner never reads because it points `CODEX_HOME` at an empty sandbox. `OPENROUTER_API_KEY` is the provider key OpenCode reads for OpenRouter — the same variable the evals runner's paid tier uses.
+
+**Flags.** `--max-usd` defaults to `0.50`, `--report <dir>` defaults to `test-results/harness-smoke/`, `--binary <path>` points at a harness installed somewhere `PATH` does not name (DorkOS provisions OpenCode under its own data directory, so that one usually needs it), and `--model <id>` overrides the pinned model below. The build is a prerequisite, not a nicety: the runner projects the fixture with `packages/harness/dist`, so it asks the binary about the tree a person's own `dorkos harness sync` would write, and it refuses with that command in the message when the build is missing.
+
+**What it costs, per model.** One turn against a two-skill fixture is a few hundred input tokens and a `touch`. Each harness is pinned to the cheapest model its own catalog offers: `claude-haiku-4-5-20251001` for Claude Code, `gpt-5.6-luna` for Codex, and `openrouter/qwen/qwen3.7-flash` for OpenCode — the last of those unmeasured, mirroring the cheap OpenRouter id `packages/evals` already pins for its own paid tier so the two paid paths spend on the same model. Codex's is the cheapest model `codex debug models` lists on 0.145.0, described there as "Fast and affordable" against sol's "Latest frontier"; that catalog carries no prices, so it is a reading of the vendor's own words rather than a measurement. `--model` overrides any of them. At those models a run is a fraction of a cent; the ceiling is a tripwire for a runaway loop, not an allowance. Claude Code enforces it itself (`--max-budget-usd`); Codex and OpenCode report no dollar figure and take no ceiling flag, so for those two the real ceiling is **one turn and a wall clock**, and the report says exactly that rather than implying a limit nobody held.
+
+### The oracle hierarchy, and how far each claim goes
+
+A uuid in a skill body proves a MODEL read a file, not that a HARNESS loaded a skill: every one of these agents can `cat` the path a prompt names. So the verdicts are, in order:
+
+1. **Listing.** Codex's is free and non-model (`codex debug prompt-input`) and carries the absolute `SKILL.md` path beside each entry, which is what lets its calibration diff run in both directions. Claude Code's rides the `system`/`init` message and carries names only. OpenCode's is an open question; until somebody with the binary answers it, its listing verdicts read `UNKNOWN`, never `PASS`.
+2. **Activation.** The fixture's two hooks each `touch` a nonce, and a probe skill's body says "run `touch <nonce>` and nothing else". **A hook nonce is proof — a model cannot fake a hook firing. A skill nonce is not, on two of the three harnesses**, and the report says so on its front page:
+   - **Claude Code — partial.** `--tools Bash,Skill` removes Read, Grep and Glob, and `--disallowedTools` names the shell read commands worth naming. It is a best effort: a shell reads a file more ways than a deny list enumerates (`python3 -c`, `node -e`, `od`, `cp`, `while read`…), and **whether `--permission-mode bypassPermissions` overrides `--disallowedTools` at all is itself unverified** and needs a real turn to settle. If it does, the denial buys nothing.
+   - **Codex — none.** `--sandbox` is a WRITE policy; all three of its modes permit reads and there is no per-tool deny.
+   - **OpenCode — none.**
+     Where reads are not denied, the verdict says "corroborates rather than proves" and **does not cite SK-08 or SK-09**. Stamping a contract row off an oracle that cannot discriminate is the failure `.claude/rules/testing.md` calls "an assertion satisfied by the wrong subject".
+3. **Sentinel.** A token in `AGENTS.md`, reported and never decisive.
+
+**Reading a verdict.** `PASS`/`FAIL` mean the oracle ran and answered. `UNKNOWN` means it could not: no listing surface, the harness genuinely has nowhere for the artifact to go (OpenCode has no hook file, so a hook that did not fire is the correct outcome), the row is not answerable from this harness's listing at all, or the run was `--free` and the oracle needs a model. `FINDING` means the calibration diff disagreed — the point of the tier rather than a failure: a line there is a cell of `packages/harness/src/vendor-facts/` that a binary contradicts, so fix the facts table, not the report.
+
+**What the report contains.** `<YYYYMMDD-HHMMSS.mmm>-<harness>.md`, in the shape `/chat:self-test` reports use: the run (harness, instrument, isolation, model pinned and model reported, ceiling, cost, which listing oracle it had, how far the skill-injection claim goes), what the run did NOT answer, one verdict per oracle with the capability ids it is evidence about, the calibration diff against `harnessCoverage()`, and the list of actions the projection applied. Milliseconds are in the file name because the documented workflow is a free run and then a paid run of the same harness, which at second granularity overwrote each other.
+
+**One thing the free Codex probe does write.** `codex debug prompt-input` makes no model call and reads no credential, but it is not read-only on disk: it creates an installation id, shell snapshots and its bundled `.system` skills inside `CODEX_HOME`. Harmless here — `CODEX_HOME` is the run's own temp sandbox and is deleted with it — but worth knowing before pointing it at a real one.
+
+**Where the runner itself is tested.** `scripts/__tests__/harness-smoke{,-oracles,-e2e}.test.ts` — the gate and the parsers, the oracle verdicts, and the whole `run.sh` path — against `scripts/harness-smoke/fake-harness.ts`, a stand-in that discovers the fixture through each harness's own read paths instead of being told the answers, so a projection in the wrong shape makes it fail exactly as a real binary would. That suite runs in `pnpm verify` and costs nothing.
+
+**Never let any of its variable names reach a turbo task.** `packages/evals/src/runner/__tests__/paid-provider.test.ts` walks the whole parsed `turbo.json` for all eight money names, `DORKOS_HARNESS_SMOKE` and `OPENAI_API_KEY` included.

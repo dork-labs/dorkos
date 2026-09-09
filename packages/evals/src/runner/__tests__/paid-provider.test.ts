@@ -242,6 +242,12 @@ describe('resolveHostOpenCodeBinary', () => {
 /**
  * The turbo env firewall, which until now was only a COMMENT.
  *
+ * It lives in this package rather than in `scripts/__tests__/` because
+ * `scripts/` belongs to no workspace package, so `turbo test` never reaches it —
+ * the same reason `packages/harness/src/__tests__/turbo-census-inputs.test.ts`
+ * gives for having moved. That is why DOR-1856's two new names were added HERE
+ * rather than beside the runner they gate.
+ *
  * Turbo runs strict: a task sees only the variables it is told to pass through.
  * That is the single reason `pnpm test`, `pnpm verify`, the pre-push hook and CI
  * have never been able to reach a paid path — every spend flag and every model
@@ -278,8 +284,15 @@ describe('turbo never hands a spend flag or a model key to any task', () => {
 
   /**
    * Every name that arms or pays for a real-money path, from AGENTS.md's table.
-   * All six, not just the keys: a flag reaching a task is half of an armed gate,
-   * and the table in AGENTS.md claims none of them is here.
+   * All eight, not just the keys: a flag reaching a task is half of an armed
+   * gate, and the table in AGENTS.md claims none of them is here.
+   *
+   * The last two joined on DOR-1856, when `scripts/harness-smoke/run.sh` became
+   * the fourth path — it drives a real `claude`, `codex` or `opencode` binary
+   * against a projected tree, armed by `DORKOS_HARNESS_SMOKE` and paid for by
+   * whichever of the three keys the harness names. `OPENAI_API_KEY` is Codex's,
+   * and it had never appeared in this list because nothing in the repo spent on
+   * it before.
    */
   const NEVER_IN_TURBO = [
     OPENROUTER_API_KEY_VAR,
@@ -288,6 +301,8 @@ describe('turbo never hands a spend flag or a model key to any task', () => {
     'CLAUDE_CODE_OAUTH_TOKEN',
     'DORKOS_EVALS_CREDENTIALED',
     'DORKOS_OPENCODE_LIVE_PAID',
+    'DORKOS_HARNESS_SMOKE',
+    'OPENAI_API_KEY',
   ];
 
   /**
@@ -345,6 +360,8 @@ describe('turbo never hands a spend flag or a model key to any task', () => {
     // than against the real file: an `ANTHROPIC_*` entry must be an offender.
     expect(exposes('ANTHROPIC_*', 'ANTHROPIC_API_KEY')).toBe(true);
     expect(exposes('DORKOS_*', 'DORKOS_EVALS_PAID_PROVIDER')).toBe(true);
+    expect(exposes('DORKOS_HARNESS_*', 'DORKOS_HARNESS_SMOKE')).toBe(true);
+    expect(exposes('OPENAI_*', 'OPENAI_API_KEY')).toBe(true);
     expect(exposes('*', 'OPENROUTER_API_KEY')).toBe(true);
     // …and the globs turbo.json actually ships must stay innocent.
     expect(exposes('OTEL_*', 'OPENROUTER_API_KEY')).toBe(false);

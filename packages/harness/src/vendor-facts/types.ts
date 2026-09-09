@@ -71,11 +71,39 @@ export interface FactSource {
  * How confident this row is.
  *
  * `'docs'` means "the vendor's documentation says so"; `'binary'` means a real
- * harness binary was observed doing it. Every row is `'docs'` today — no cell in
- * this table has been checked against a running harness (the H tier of
- * `plans/harness-sync-test-plan.md` is where that changes).
+ * harness binary was observed doing it.
+ *
+ * **It is a row-level field and the observations are per CELL, which is why
+ * {@link FactObservation} exists.** The H tier answers cells, not rows: DOR-1856
+ * watched a real `codex` resolve skills and settled FIVE of that row's ten
+ * behaviour cells, leaving `walk`, `nameRegex`, `nameRequired`, `onInvalidName`
+ * and `liveReload` exactly as unverified as they were. Flipping the whole row to
+ * `'binary'` on that evidence would promote five cells nobody looked at — so a
+ * row goes `'binary'` only when a run touched it at all, and `observed` says
+ * which cells, against which binary, in which report.
  */
 export type FactVerification = 'docs' | 'binary';
+
+/**
+ * What a real binary was watched doing, and where the evidence is.
+ *
+ * Present only on a row some H-tier run actually observed. The cell names are
+ * the field names of {@link SkillsFacts} / {@link HooksFacts}, so a reader can
+ * tell at a glance which half of a `'binary'` row is measured and which half is
+ * still the vendor's page.
+ */
+export interface FactObservation {
+  /** The binary and version that was watched, e.g. `codex-cli 0.145.0`. */
+  binary: string;
+  /** ISO date (`YYYY-MM-DD`) of the run. */
+  observedAt: string;
+  /** Repo-relative path of the report the run wrote. */
+  report: string;
+  /** The field names this run settled. Everything else on the row is still `docs`. */
+  cells: readonly string[];
+  /** What was seen, in one sentence, so the claim is legible without opening the report. */
+  summary: string;
+}
 
 /** The directories a harness reads a kind of artifact from, at each scope. */
 export interface ReadPaths {
@@ -126,6 +154,8 @@ export interface SkillsFacts {
   source: FactSource;
   /** Whether the row is documentation-derived or observed against a binary. */
   verified: FactVerification;
+  /** What a real binary was watched doing, on the cells a run actually settled. */
+  observed?: FactObservation;
   /**
    * Caveats a single cell cannot carry — a derivation, a contract row that still
    * calls the outcome unverified, or a conservative reading of silence.

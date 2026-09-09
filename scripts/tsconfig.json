@@ -21,6 +21,7 @@
   },
   "include": [
     "q3-contention/**/*.ts",
+    "harness-smoke/**/*.ts",
     "__tests__/**/*.ts",
     "vitest.config.ts",
     "check-vocab-gate.ts",

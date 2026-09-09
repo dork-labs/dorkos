@@ -160,6 +160,11 @@ on:
       - 'lefthook.yml'
       - 'apps/*/package.json'
       - 'packages/*/package.json'
+      # The H-tier smoke (scripts/harness-smoke/) typechecks against the built
+      # harness engine, so a change to it or its one dependency can break this
+      # job without touching scripts/ (DOR-1856).
+      - 'packages/harness/src/**'
+      - 'packages/shared/src/**'
       - 'vitest.config.ts'
       - 'pnpm-workspace.yaml'
       - '.claude/hooks/**'
@@ -182,6 +187,11 @@ on:
       - 'lefthook.yml'
       - 'apps/*/package.json'
       - 'packages/*/package.json'
+      # The H-tier smoke (scripts/harness-smoke/) typechecks against the built
+      # harness engine, so a change to it or its one dependency can break this
+      # job without touching scripts/ (DOR-1856).
+      - 'packages/harness/src/**'
+      - 'packages/shared/src/**'
       - 'vitest.config.ts'
       - 'pnpm-workspace.yaml'
       - '.claude/hooks/**'
@@ -437,8 +447,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # No build step: scripts/ imports nothing from the workspace packages, by
-      # design — the harness must be runnable without a built tree.
+      # The Q3 harness imports nothing from the workspace packages, by design —
+      # it must be runnable without a built tree. The H-tier smoke under
+      # `scripts/harness-smoke/` is the one deliberate exception: it applies the
+      # BUILT engine (`packages/harness/dist`), because a claim about what a real
+      # `claude` or `codex` reads is only worth making against the artifact that
+      # ships. So this job builds that one package (and `@dorkos/shared` under
+      # it) before the typecheck can resolve those imports (DOR-1856).
+      - name: Build the harness engine the H-tier smoke applies
+        run: pnpm exec turbo build --filter=@dorkos/harness
+
       - name: Typecheck
         run: pnpm typecheck:scripts
 

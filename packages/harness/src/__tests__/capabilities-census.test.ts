@@ -63,7 +63,7 @@
  * @module __tests__/capabilities-census
  */
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { lexWithoutComments } from '../../../../scripts/lib/code-only.mjs';
 import { TEST_ROOTS } from './census-test-roots.js';
@@ -331,7 +331,35 @@ function statesBroken(state: string): boolean {
   return /^(?:not built|silent)\b/.test(state.replace(/\*/g, '').trimStart().toLowerCase());
 }
 
+/**
+ * Every `meta/harness-smoke/<file>` a Coverage or State cell cites.
+ *
+ * The H tier's reports are the only evidence in this document that lives in
+ * another file, and they are REGENERATED under a new timestamped name every time
+ * somebody re-runs the probe — so a stale citation is the ordinary outcome of
+ * doing the right thing, and a cell claiming `H (…, meta/harness-smoke/X)` where
+ * X was deleted an hour ago is a coverage claim pointing at nothing.
+ */
+const citedReports = rows.flatMap((row) =>
+  [...`${row.state} ${row.coverage}`.matchAll(/meta\/harness-smoke\/[\w.-]+\.md/g)].map(
+    (match) => ({ id: row.id, path: match[0] })
+  )
+);
+
 describe('the harness capabilities census', () => {
+  it('cites only H-tier reports that are still on disk', () => {
+    // A floor first, so a regex that stopped matching cannot pass on nothing.
+    // DOR-1856 landed six cells citing two reports.
+    expect(citedReports.length).toBeGreaterThanOrEqual(6);
+    const missing = citedReports.filter(({ path }) => !existsSync(join(ROOT, path)));
+    expect(
+      missing,
+      'A capability row cites an H-tier report that is not there. Re-run the probe ' +
+        '(`bash scripts/harness-smoke/run.sh <harness> --free --report meta/harness-smoke`) and ' +
+        'update the citations, or drop the claim.'
+    ).toEqual([]);
+  });
+
   it('parsed the document and the suites, so nothing below can pass on nothing', () => {
     // Floors at roughly 90% of what was parsed on 2026-09-08, after DOR-1889
     // landed (96 rows, 15 journeys, 69 files, 645 runnable titles, 81 distinct
