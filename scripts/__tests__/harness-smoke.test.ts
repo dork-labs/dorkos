@@ -310,6 +310,7 @@ describe('the ceiling', () => {
         noncesDir: '/sandbox/nonces',
         model: 'chosen-model',
         maxUsd: 0.25,
+        injectDirs: [],
       }).args;
       expect(args, `${harness.id} must pass its model`).toContain(harness.model.flag);
       expect(args[args.indexOf(harness.model.flag) + 1]).toBe('chosen-model');
@@ -335,6 +336,7 @@ describe('the ceiling', () => {
       noncesDir: '/sandbox/nonces',
       model: 'a-model',
       maxUsd: 0.25,
+      injectDirs: [],
     }).args;
     expect(args).toContain('--max-budget-usd');
     expect(args[args.indexOf('--max-budget-usd') + 1]).toBe('0.25');
@@ -354,6 +356,7 @@ describe('the ceiling', () => {
         noncesDir: '/sandbox/nonces',
         model: 'a-model',
         maxUsd: 0.25,
+        injectDirs: [],
       }).args;
       expect(args, `${harness.id} must allow writes to the nonce directory`).toContain('--add-dir');
       expect(args[args.indexOf('--add-dir') + 1]).toBe('/sandbox/nonces');
@@ -371,6 +374,7 @@ describe('the ceiling', () => {
       noncesDir: '/sandbox/nonces',
       model: 'a-model',
       maxUsd: 0.25,
+      injectDirs: [],
     }).args;
     expect(args[args.indexOf('--tools') + 1]).toBe('Bash,Skill');
     for (const denied of ['Bash(cat:*)', 'Bash(sed:*)', 'Bash(grep:*)']) {

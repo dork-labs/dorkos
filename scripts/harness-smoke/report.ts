@@ -19,7 +19,8 @@
  *
  * @module harness-smoke/report
  */
-import type { SmokeHarness } from './harnesses.js';
+import type { UserTierRound } from './fixture.js';
+import type { ListingObservation, SmokeHarness } from './harnesses.js';
 import type { CalibrationFinding } from './calibration.js';
 import type { Verdict } from './oracles.js';
 
@@ -73,9 +74,14 @@ const MARK: Record<Verdict['status'], string> = {
  * @param harnessId - the harness word.
  * @returns the bare file name.
  */
-export function reportFileName(startedAt: string, harnessId: string): string {
+export function reportFileName(startedAt: string, harnessId: string, scenario = 'project'): string {
   const stamp = startedAt.replace(/[-:]/g, '').replace('T', '-').slice(0, 19);
-  return `${stamp}-${harnessId}.md`;
+  // The default scenario adds nothing, so every name a run wrote before there
+  // was more than one scenario is still the name it writes today. A second
+  // scenario of the same harness is a second question with a second answer, and
+  // two answers may not overwrite each other.
+  const suffix = scenario === 'project' ? '' : `-${scenario}`;
+  return `${stamp}-${harnessId}${suffix}.md`;
 }
 
 /**
@@ -249,6 +255,212 @@ export function renderRunReport(input: ReportInput): string {
   lines.push('');
 
   return lines.join('\n');
+}
+
+/** One round of the user-tier scenario, as the report needs it. */
+export interface UserTierRoundReport {
+  /** Which question this round staged. */
+  round: UserTierRound;
+  /** The user-tier directories it wrote into. */
+  roots: string[];
+  /** The packages it injected on the command line. */
+  injectDirs: string[];
+  /** Every link and injection it staged, in words. */
+  staged: string[];
+  /** What the harness listed, when it listed anything. */
+  listing?: ListingObservation;
+  /** The command line the probe ran, for reproduction. */
+  command?: string;
+  /** What the round's turn cost, when the harness said. */
+  costUsd?: number;
+  /** The verdicts this round produced. */
+  verdicts: Verdict[];
+  /** Lines the runner printed after the report path. */
+  notes: string[];
+}
+
+/** Everything the user-tier run knows when it writes its report. */
+export interface UserTierReportInput {
+  /** The harness that was asked. */
+  harness: SmokeHarness;
+  /** When the run started, ISO-8601. */
+  startedAt: string;
+  /** Whether this was a `--free` run. */
+  free: boolean;
+  /** The model id the run pinned. */
+  pinnedModel: string;
+  /** Every round, in the order they ran. */
+  rounds: UserTierRoundReport[];
+  /** The money-rule verdict, which is a property of the run rather than of a round. */
+  credential: Verdict;
+  /** Oracles this scenario deliberately does not reach, in words. */
+  notRun: string[];
+}
+
+/** What each round is asking, on the report's own front page. */
+const ROUND_QUESTION: Record<UserTierRound, string> = {
+  'claude-user-root':
+    'a globally installed package linked into the harness’s OWN user skills folder, and a second ' +
+    'one reachable both that way and through SDK injection, with a third injected and never ' +
+    'linked as the control',
+  'agents-user-root':
+    'a globally installed package linked into `~/.agents/skills`, the one directory Codex, ' +
+    'OpenCode, Cursor, Gemini CLI and Copilot all read, and nothing anywhere else',
+  'codex-home-root':
+    'a globally installed package linked into `$CODEX_HOME/skills` — a writable directory the ' +
+    'compiled vendor facts do not list, noticed because the first free run printed five of ' +
+    'Codex’s own bundled skills out of it',
+};
+
+/**
+ * The report a user-tier run writes.
+ *
+ * A different question from the project scenario's, so a different report rather
+ * than a widened one: this one has to say, per round, which directories it wrote
+ * into, what it linked and injected, and — the whole deliverable — the RAW
+ * entries the binary printed. A verdict that said "listed 1×" without them would
+ * be this runner asking to be believed, which is the thing the H tier exists not
+ * to do.
+ *
+ * @param input - everything the run learned.
+ * @returns the whole markdown file.
+ */
+export function renderUserTierReport(input: UserTierReportInput): string {
+  const { harness } = input;
+  const all = [...input.rounds.flatMap((round) => round.verdicts), input.credential];
+  const counts = tally(all);
+  const lines = [
+    `# Harness Smoke — user tier — ${harness.label} — ${humanTime(input.startedAt)}`,
+    '',
+    '## Run',
+    '',
+    `- **Harness:** ${harness.label} (\`${harness.binary}\`, engine id \`${harness.harnessId}\`)`,
+    `- **Scenario:** \`user-tier\` — an EMPTY project, and a globally installed package reachable ` +
+      'only through a link in the run’s own home directory. The project scenario’s report is the ' +
+      'other file beside this one.',
+    `- **Status:** ${input.free ? 'FREE' : counts.fail > 0 ? 'FAILED' : 'PASSED'}${
+      input.free
+        ? counts.fail > 0
+          ? ' — and one or more of the oracles it DID run failed'
+          : ' — no model was reached, so this is a partial answer by design'
+        : ''
+    }`,
+    `- **Started:** ${input.startedAt}`,
+    `- **Instrument:** ${
+      input.free
+        ? 'none — `--free` reaches no model, so nothing was armed and nothing was billed'
+        : `\`${harness.keyVar}\` (read from the environment; no stored sign-in was read)`
+    }`,
+    `- **Isolation:** \`HOME\` and the harness’s own config home both point at ONE empty sandbox per ` +
+      `round, which is why ${rootsLine(input)} below ${
+        countRoots(input) === 1 ? 'is' : 'are'
+      } inside it. Nothing on the operator’s machine can reach this answer, and nothing this run ` +
+      `wrote can reach their home folder.`,
+    `- **Model pinned:** \`${input.pinnedModel}\``,
+    `- **Cost:** ${costLine(input)}`,
+    `- **Listing oracle:** ${listingLine(harness)}`,
+    `- **Rounds:** ${input.rounds.map((round) => `\`${round.round}\``).join(', ') || '(none)'}`,
+    `- **Verdicts:** ${counts.pass} pass, ${counts.fail} fail, ${counts.finding} finding, ${counts.unknown} unknown`,
+    '',
+    '## What this run did NOT answer',
+    '',
+    ...input.notRun.map((item) => `- ${item}`),
+    '',
+    'Reported rather than omitted: a shorter list of verdicts reads as a clean run.',
+    '',
+  ];
+
+  for (const round of input.rounds) {
+    lines.push(`## Round \`${round.round}\``, '', `Staged: ${ROUND_QUESTION[round.round]}.`, '');
+    lines.push('### The roots it wrote', '');
+    if (round.roots.length === 0) lines.push('- (none — this round staged no link)');
+    for (const root of round.roots) lines.push(`- \`${root}\``);
+    lines.push('');
+    lines.push('### What it staged', '');
+    for (const action of round.staged) lines.push(`- \`${action}\``);
+    lines.push('');
+    if (round.command !== undefined) {
+      lines.push('### The probe', '', '```', round.command, '```', '');
+    }
+    lines.push('### The raw listing', '');
+    if (!round.listing) {
+      lines.push(`${harness.label} enumerated nothing. ${harness.listing.note}`, '');
+    } else {
+      lines.push(
+        `- **skills** (${round.listing.skills.length})${round.listing.skills.length === 0 ? ': none' : ':'}`
+      );
+      for (const [index, name] of round.listing.skills.entries()) {
+        const path = round.listing.skillPaths[index];
+        lines.push(`  - \`${name}\`${path === undefined ? '' : ` — \`${path}\``}`);
+      }
+      if (round.listing.commands.length > 0) {
+        lines.push(`- **commands** (${round.listing.commands.length}):`);
+        for (const name of round.listing.commands) lines.push(`  - \`${name}\``);
+      }
+      lines.push('');
+    }
+    lines.push('### Verdicts', '');
+    for (const verdict of round.verdicts) lines.push(...verdictLines(verdict));
+    lines.push('');
+  }
+
+  lines.push('## Run-level verdict', '', ...verdictLines(input.credential), '');
+  return lines.join('\n');
+}
+
+/** How many distinct user directories this run wrote into, across every round. */
+function countRoots(input: UserTierReportInput): number {
+  return new Set(input.rounds.flatMap((round) => round.roots)).size;
+}
+
+/**
+ * How the header names the directories this run wrote into.
+ *
+ * Derived rather than written, because the count is per HARNESS: Claude Code
+ * gets two rounds and two directories, Codex gets two rounds and — since
+ * `$CODEX_HOME/skills` and `~/.agents/skills` are two — also two, and a harness
+ * with one round writes one. The bullet used to say "the two user directories"
+ * unconditionally, which was already false for the Codex report it was printed
+ * in.
+ */
+function rootsLine(input: UserTierReportInput): string {
+  const count = countRoots(input);
+  // Every round links at least one subject, so zero cannot happen; the small
+  // counts are spelled the way the rest of the page spells its numbers.
+  const spelled = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+  const word = spelled[count] ?? String(count);
+  return count === 1 ? 'the one user directory' : `the ${word} user directories`;
+}
+
+/**
+ * What the run cost, said plainly rather than deferred to a section that may
+ * carry no number.
+ *
+ * A `--free` user-tier run spends nothing on any harness. A paid one runs one
+ * turn per ROUND, so the honest figure is the sum and the count of turns it
+ * covers, never a single number that looks like one turn's price.
+ */
+function costLine(input: UserTierReportInput): string {
+  if (input.free) return 'nothing. No API request was made.';
+  const reported = input.rounds.filter((round) => round.costUsd !== undefined);
+  if (reported.length === 0) return `not reported by ${input.harness.label}`;
+  const spent = reported.reduce((total, round) => total + (round.costUsd ?? 0), 0);
+  return `${spent.toFixed(4)} USD across ${input.rounds.length} round(s), one turn each`;
+}
+
+/** One verdict, in the three-line shape both reports use. */
+function verdictLines(verdict: Verdict): string[] {
+  const rows =
+    verdict.capabilities.length > 0
+      ? ` — ${verdict.capabilities.join(', ')}`
+      : verdict.cites === undefined
+        ? ''
+        : ` — ${verdict.cites}`;
+  return [
+    `- **${MARK[verdict.status]}** \`${verdict.id}\`${rows}`,
+    `  - ${verdict.question}`,
+    `  - ${verdict.detail}`,
+  ];
 }
 
 /** How many verdicts landed in each status. */
