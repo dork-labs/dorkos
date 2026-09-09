@@ -32,7 +32,10 @@ import { createInSessionContextResolver } from '../../../core/agent-identity/ind
 import type { AgentIdentity } from '../../../core/agent-identity/index.js';
 import { gateHandRegisteredMcpTools, type SdkMcpTool } from '../../../core/mcp-tool-gate.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
-import type { CapabilityRegistry } from '../../../core/capabilities/index.js';
+import type {
+  CapabilityApprovalHold,
+  CapabilityRegistry,
+} from '../../../core/capabilities/index.js';
 import { composeDorkOsCapabilityRegistry } from '../../../core/self-description/dorkos-registry.js';
 import { registerDorkOsResources } from '../../../core/mcp-resources/index.js';
 import { logger } from '../../../../lib/logger.js';
@@ -140,9 +143,18 @@ export function handRegisteredInSessionTools(
     sessionId?: string;
     /** Resolves the calling agent for this session; see `mcp-tool-gate.ts`. */
     resolveContext?: () => Promise<{ identity?: AgentIdentity } | undefined>;
+    /**
+     * The in-session hold seam (DOR-1930).
+     *
+     * With it, a fresh destructive ask from one of these tools waits for the
+     * operator and resumes in the same turn instead of ending the turn and
+     * leaving the agent to be told by hand. Absent on the introspection and
+     * unit-test paths, which keep the poll flow.
+     */
+    hold?: CapabilityApprovalHold;
   } = {}
 ): SdkMcpTool[] {
-  const { session, sessionId, resolveContext } = options;
+  const { session, sessionId, resolveContext, hold } = options;
   // Resolve the caller's trusted Relay identity from the session's working
   // directory (its agent manifest), not from tool arguments — this is what
   // relay `from`/namespace access rules key on.
@@ -207,7 +219,8 @@ export function handRegisteredInSessionTools(
         ...getDevtoolsTools(deps, resolveDevtoolsSessionId, undefined, session),
         ...getExtensionTools(deps),
       ],
-      resolveContext
+      resolveContext,
+      hold
     ),
     alwaysLoaded
   );
@@ -338,6 +351,11 @@ export function createDorkOsToolServer(
         ...(session ? { session } : {}),
         ...(sessionId ? { sessionId } : {}),
         resolveContext,
+        // The same seam the registry tools get, three lines below. Both halves of
+        // the tool surface can now wait for one person's decision — before this,
+        // `mesh_unregister` and `tasks_delete` were the only gated tools that
+        // ended the turn and left the agent uninformed (DOR-1930).
+        ...(hold ? { hold } : {}),
       }),
       ...capabilityMcpTools(capabilityRegistry, 'in-session', resolveCapabilityContext, hold),
     ],
