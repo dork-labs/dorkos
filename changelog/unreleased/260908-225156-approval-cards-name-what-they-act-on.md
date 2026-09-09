@@ -1,6 +1,10 @@
 ---
 covers:
   - 'fix(server,client,shared,db): approval cards name what they act on (DOR-1929)'
+  # Both fold in here rather than earning bullets of their own: they change this
+  # same unreleased card and nothing a person could have seen before it.
+  - 'refactor(shared,db,client): list only the subject kinds a resolver is wired to'
+  - 'fix(server,client): address adversarial review of the approval subject'
 ---
 
 ### Fixed
