@@ -234,6 +234,15 @@ interface GlobalHomeSpec {
   personLink: boolean;
   neighbourLink: boolean;
   nestedLink: boolean;
+  /**
+   * A person's own shortcut INTO an installed package, named without `__`.
+   *
+   * The one hostile shape clause 2 alone protects: the package it points at is
+   * installed and enumerated, so clause 4 would call the link an orphan, and
+   * only the missing `__` keeps it. Without it in the generator, deleting clause
+   * 2 left the whole property green.
+   */
+  plainLink: boolean;
   uninstall: string[];
 }
 
@@ -261,6 +270,7 @@ function arbGlobalHome(): fc.Arbitrary<GlobalHomeSpec> {
       personLink: fc.boolean(),
       neighbourLink: fc.boolean(),
       nestedLink: fc.boolean(),
+      plainLink: fc.boolean(),
       uninstallCount: fc.integer({ min: 0, max: 3 }),
     })
     .map(({ packages, uninstallCount, ...rest }) => ({
@@ -300,6 +310,13 @@ function stageGlobalHome(spec: GlobalHomeSpec): StagedHome {
     writeFileAt(join(dorkHome, 'plugins-elsewhere', 'other', 'SKILL.md'), '# neighbour\n');
     symlinkSync('../plugins-elsewhere/other', join(skillsRoot, 'other__thing'));
   }
+  if (spec.plainLink && spec.packages[0]) {
+    const pkg = spec.packages[0];
+    symlinkSync(
+      `../plugins/${pkg.name}/skills/${pkg.skills[0] as string}`,
+      join(skillsRoot, 'my-shortcut')
+    );
+  }
   if (spec.nestedLink && spec.packages[0]) {
     const pkg = spec.packages[0];
     mkdirSync(join(skillsRoot, 'nested'), { recursive: true });
@@ -318,6 +335,7 @@ function personOwned(spec: GlobalHomeSpec): string[] {
     ...(spec.personLink ? ['skills/hand__made'] : []),
     ...(spec.neighbourLink ? ['skills/other__thing'] : []),
     ...(spec.nestedLink && spec.packages[0] ? ['skills/nested/deep__link'] : []),
+    ...(spec.plainLink && spec.packages[0] ? ['skills/my-shortcut'] : []),
   ];
 }
 

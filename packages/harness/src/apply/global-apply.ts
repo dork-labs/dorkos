@@ -26,9 +26,21 @@
  *   2. its basename contains `__`; and
  *   3. the link's own text, resolved LEXICALLY against the directory the link
  *      sits in, is inside `<dorkHome>/plugins`; and
- *   4. the current global plan does not name that target path.
+ *   4. EITHER the package directory that text points into is gone from disk,
+ *      OR the plan enumerated that package and does not name this target.
  * Clauses 1-3 decide ownership. Clause 4 decides orphanhood.
  * ```
+ *
+ * **Clause 4 is not "the plan does not name it", and the difference is a
+ * measured data-loss bug.** The plan is evidence only about packages the scan
+ * could read: a package whose `.dork/manifest.json` a person broke half an hour
+ * ago is skipped by the scan, so a keep-set of planned targets alone called all
+ * of its links orphans and removed them — and the live reconciler then paused
+ * every schedule that ran from one. A broken manifest costs a package its
+ * projection; it must never cost it its links. So a package still ON DISK keeps
+ * its links whatever its manifest says, and the plan gets the last word only
+ * about the packages it actually enumerated — which is what still lets a skill
+ * renamed inside a readable package have its stale link swept.
  *
  * Three details decide whether that is correct rather than merely careful:
  *
@@ -60,14 +72,23 @@
  *
  * @module apply/global-apply
  */
-import { lstatSync, mkdirSync, readlinkSync, rmSync, statSync, symlinkSync } from 'node:fs';
-import { basename, dirname, relative, resolve, sep } from 'node:path';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readlinkSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+} from 'node:fs';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import {
   globalPluginsDir,
   globalSkillsDir,
   type GlobalPlanRoots,
+  type GlobalProjectionPlan,
 } from '../plan/global-projector.js';
-import type { DriftResult, ProjectionAction, ProjectionPlan } from '../plan/types.js';
+import type { DriftResult, ProjectionAction } from '../plan/types.js';
 import { INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
 import { listDir, occupantKind, pathExists } from './link-state.js';
 import { blockingSymlinkOccupant, linkCheckFor, linkMatchesPlan } from './symlink-occupants.js';
@@ -95,8 +116,16 @@ const SYMLINK_ATTEMPTS = 3;
  * whole of why an uninstall works: when the last global package is removed the
  * plan has no actions at all, so a sweep scoped to "directories this plan
  * targets" would scan nothing and strand every link the package left behind.
- * The roots are the standing answer to where DorkOS writes; the plan is only the
- * keep-set.
+ * The roots are the standing answer to where DorkOS writes.
+ *
+ * **The converse is the dangerous half, and it is answered in the predicate
+ * below rather than here.** Scanning a directory the plan knows nothing about
+ * only works because the plan is NOT the keep-set: an empty plan means "nothing
+ * is installed" exactly when the scan succeeded and found nothing, and means
+ * nothing at all when it could not read the folder or could not parse a
+ * package. Both of those are handled — `unreadableRoot` skips the sweep
+ * outright, and clause 4 keeps the links of any package still on disk that this
+ * plan did not enumerate.
  *
  * One directory today. Slice A3 adds `agentsSkillsDir` and `claudeSkillsDir`
  * here, which is the whole of what "widening the reach" means — the predicate
@@ -126,36 +155,46 @@ function isInside(child: string, root: string): boolean {
 }
 
 /**
- * Whether a path is a link DorkOS put there — clauses 1 to 3 of the predicate.
+ * The package a candidate link belongs to — clauses 1 to 3 of the predicate,
+ * answered with the package's NAME rather than with a yes.
  *
  * Never follows the link and never resolves it against the filesystem: a
  * dangling link left by a package that has been uninstalled is exactly the case
  * this has to recognise, and `realpath` throws on it.
  *
+ * A link pointing AT the plugins root itself passes clauses 1 to 3 and names no
+ * package. It answers `undefined` — which the caller reads as "not ours to
+ * remove", because a candidate DorkOS cannot attribute to a package is a
+ * candidate it cannot say has been uninstalled.
+ *
  * @param abs - the absolute candidate path, directly inside a swept directory.
  * @param pluginsRoot - the resolved `<dorkHome>/plugins`.
- * @returns `true` when all three ownership clauses hold.
+ * @returns the package directory name, or `undefined` when this is not one of
+ *   ours or names no package.
  */
-function isDorkosGlobalLink(abs: string, pluginsRoot: string): boolean {
-  if (!basename(abs).includes(INSTALLED_PROJECTION_MARKER)) return false;
+function globalLinkPackage(abs: string, pluginsRoot: string): string | undefined {
+  if (!basename(abs).includes(INSTALLED_PROJECTION_MARKER)) return undefined;
   let stats;
   try {
     stats = lstatSync(abs);
   } catch {
-    return false;
+    return undefined;
   }
-  if (!stats.isSymbolicLink()) return false;
+  if (!stats.isSymbolicLink()) return undefined;
   let text: string;
   try {
     text = readlinkSync(abs);
   } catch {
-    return false;
+    return undefined;
   }
-  return isInside(resolve(dirname(abs), text), pluginsRoot);
+  const resolved = resolve(dirname(abs), text);
+  if (!isInside(resolved, pluginsRoot)) return undefined;
+  const [first] = relative(pluginsRoot, resolved).split(sep);
+  return first === undefined || first === '' || first === '..' ? undefined : first;
 }
 
-/** Every absolute `symlink` target the plan names — the sweep's keep-set. */
-function plannedTargets(plan: ProjectionPlan): Set<string> {
+/** Every absolute `symlink` target the plan names. */
+function plannedTargets(plan: GlobalProjectionPlan): Set<string> {
   return new Set(
     plan.actions
       .filter((a) => a.kind === 'symlink' && a.target !== undefined)
@@ -175,9 +214,15 @@ function plannedTargets(plan: ProjectionPlan): Set<string> {
  * @param roots - the roots the plan was built from.
  * @returns the absolute paths a sweep would remove, sorted and unique.
  */
-export function findGlobalOrphans(plan: ProjectionPlan, roots: GlobalPlanRoots): string[] {
+export function findGlobalOrphans(plan: GlobalProjectionPlan, roots: GlobalPlanRoots): string[] {
+  // A plan built from a folder nobody could read is evidence of nothing, and a
+  // sweep run on it removes everything. Answered here rather than at each
+  // caller so `--check`, the apply and every future reader get the rule.
+  if (plan.unreadableRoot !== undefined) return [];
+
   const pluginsRoot = resolve(globalPluginsDir(roots.dorkHome));
-  const kept = plannedTargets(plan);
+  const planned = plannedTargets(plan);
+  const enumerated = new Set(plan.enumeratedPackages);
   const orphans = new Set<string>();
   for (const dir of globalSweepDirs(roots)) {
     // `listDir`, never `existsSync` + `readdirSync`: a skills path that is a
@@ -185,9 +230,18 @@ export function findGlobalOrphans(plan: ProjectionPlan, roots: GlobalPlanRoots):
     // throw out of the `--check` that reads the same scanner.
     for (const entry of listDir(dir)) {
       const abs = resolve(dir, entry);
-      if (!isDorkosGlobalLink(abs, pluginsRoot)) continue;
-      if (kept.has(abs)) continue;
-      orphans.add(abs);
+      const pkg = globalLinkPackage(abs, pluginsRoot);
+      if (pkg === undefined) continue; // not ours, or unattributable
+      if (planned.has(abs)) continue; // still projected — keep
+      // The package is gone from disk: this link came from an uninstall.
+      if (!existsSync(join(pluginsRoot, pkg))) {
+        orphans.add(abs);
+        continue;
+      }
+      // The package is still installed. The plan may only overrule that for a
+      // package it actually read — otherwise a broken manifest would look
+      // exactly like an uninstall.
+      if (enumerated.has(pkg)) orphans.add(abs);
     }
   }
   return [...orphans].sort();
@@ -203,7 +257,7 @@ export function findGlobalOrphans(plan: ProjectionPlan, roots: GlobalPlanRoots):
  * @param roots - the roots the plan was built from.
  * @returns the absolute paths removed, sorted and unique.
  */
-export function sweepGlobalOrphans(plan: ProjectionPlan, roots: GlobalPlanRoots): string[] {
+export function sweepGlobalOrphans(plan: GlobalProjectionPlan, roots: GlobalPlanRoots): string[] {
   const orphans = findGlobalOrphans(plan, roots);
   for (const abs of orphans) rmSync(abs, { force: true });
   return orphans;
@@ -306,12 +360,16 @@ function applyGlobalSymlink(action: ProjectionAction): SymlinkOutcome {
  * @param plan - the global plan to apply.
  * @param roots - the same roots the plan was built from, passed again so the
  *   sweep's containment check has an independent second opinion.
+ * A plan carrying {@link GlobalProjectionPlan.unreadableRoot} sweeps nothing
+ * whatever `sweepOrphans` says — the rule lives in {@link findGlobalOrphans}, so
+ * `--check` and the apply cannot disagree about it.
+ *
  * @param opts - optional flags; `sweepOrphans` enables the orphan sweep.
  * @returns the actions this run wrote, the blocked ones left intact, the
  *   absolute paths swept, and (always empty) the paths stepped over.
  */
 export function applyGlobalPlan(
-  plan: ProjectionPlan,
+  plan: GlobalProjectionPlan,
   roots: GlobalPlanRoots,
   opts?: { sweepOrphans?: boolean }
 ): {
@@ -374,7 +432,7 @@ function isGlobalDrifted(action: ProjectionAction): boolean {
  * @param roots - the same roots the plan was built from.
  * @returns the drift result, with absolute paths throughout.
  */
-export function checkGlobalPlan(plan: ProjectionPlan, roots: GlobalPlanRoots): DriftResult {
+export function checkGlobalPlan(plan: GlobalProjectionPlan, roots: GlobalPlanRoots): DriftResult {
   const drifted = plan.actions.filter(isGlobalDrifted);
   const blocked: ProjectionAction[] = [];
   for (const action of plan.actions) {

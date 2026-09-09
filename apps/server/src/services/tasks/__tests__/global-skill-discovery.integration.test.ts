@@ -13,7 +13,8 @@
  * assertions read the row, not its output.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { lstatSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { applyGlobalPlan, projectGlobal } from '@dorkos/harness';
@@ -63,6 +64,9 @@ describe('a scheduled skill installed for all projects', () => {
 
   afterEach(async () => {
     await scheduler.stop();
+    // Modes first: `rm -r` has to read a directory to empty it, so a mode-000
+    // one left by the unreadable-root case would leak the whole temp tree.
+    await chmod(path.join(dorkHome, 'plugins'), 0o755).catch(() => undefined);
     await rm(dorkHome, { recursive: true, force: true });
   });
 
@@ -125,8 +129,63 @@ describe('a scheduled skill installed for all projects', () => {
       sweepOrphans: true,
     });
     expect(swept).toHaveLength(1);
+    // The link is GONE, not merely listed. `swept` is what the finder named, so
+    // a sweep that names a path and removes nothing would satisfy the line
+    // above and leave a dead link in the folder the scheduler walks.
+    expect(
+      lstatSync(path.join(dorkHome, 'skills', 'globex__daily-sweep'), { throwIfNoEntry: false })
+    ).toBeUndefined();
+
+    // The skill is no longer DISCOVERABLE: a store that has never seen it finds
+    // nothing in the same root. Asserting `status === 'active'` is empty was
+    // vacuous — a discovered schedule parks as `pending_approval` — and so is
+    // asserting on the existing row, for a reason worth writing down.
+    //
+    // **The existing row is not retired, and that is a pre-existing gap rather
+    // than this sweep's.** `TaskReconciler` only retires a row whose file sits
+    // in a directory THIS pass enumerated, and a packaged skill's row is keyed
+    // on its RESOLVED path — `<dorkHome>/plugins/<pkg>/skills/<name>/SKILL.md`,
+    // which is not under any watched root. The same is true of every
+    // project-scoped plugin skill (`.agents/skills/<pkg>__<name>` resolving into
+    // `.dork/plugins`), so it predates global scope and is filed rather than
+    // fixed here.
+    const fresh = new TaskStore(createTestDb());
+    const freshReconciler = new TaskReconciler(
+      fresh,
+      new TaskRegistrar({ store: fresh, scheduler }),
+      new ScheduleIdentityRegistry()
+    );
+    for (const root of globalTaskRoots(dorkHome)) freshReconciler.addRoot(root);
+    await freshReconciler.reconcile();
+    expect(fresh.getTasks()).toEqual([]);
+  });
+
+  it('keeps the schedule when the packages folder is momentarily unreadable', async () => {
+    // The whole reason `unreadableRoot` exists. Before it, a `chmod 000` on
+    // `<dorkHome>/plugins` produced an empty plan, the sweep read that plan as
+    // "nothing is installed", every global link went, and this row went with
+    // them — a person's daily job silently stopped because a folder was briefly
+    // unreadable. Seeded red: drop the guard in `findGlobalOrphans`.
+    await installGlobalPackage('globex', 'daily-sweep');
+    const roots = { dorkHome };
+    applyGlobalPlan(projectGlobal({ roots, harnesses: [] }), roots, { sweepOrphans: true });
+    await reconciler.reconcile();
+    const before = store.getTasks();
+    expect(before).toHaveLength(1);
+
+    await chmod(path.join(dorkHome, 'plugins'), 0o000);
+    try {
+      const plan = projectGlobal({ roots, harnesses: [] });
+      const { swept } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+      expect(swept).toEqual([]);
+    } finally {
+      await chmod(path.join(dorkHome, 'plugins'), 0o755);
+    }
 
     await reconciler.reconcile();
-    expect(store.getTasks().filter((t) => t.status === 'active')).toEqual([]);
+    const after = store.getTasks();
+    expect(after.map((t) => ({ id: t.id, name: t.name, status: t.status }))).toEqual(
+      before.map((t) => ({ id: t.id, name: t.name, status: t.status }))
+    );
   });
 });

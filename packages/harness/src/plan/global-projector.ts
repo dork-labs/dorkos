@@ -66,6 +66,41 @@ export interface GlobalPlanRoots {
   claudeSkillsDir?: string;
 }
 
+/**
+ * A global plan, plus the two things only a global plan has to say.
+ *
+ * It IS a {@link ProjectionPlan} — `formatDropList`, `formatWarnings` and the
+ * status model read one shape — with two fields the project planner has no need
+ * for, both of which exist to keep a sweep from removing something on the
+ * strength of a plan that could not be built properly.
+ */
+export interface GlobalProjectionPlan extends ProjectionPlan {
+  /**
+   * The packages root this plan could not read, when it could not read it.
+   *
+   * Present ONLY when the read itself failed — a permission error on
+   * `<dorkHome>/plugins`, say. An empty but readable folder is not this: it is a
+   * machine with no global packages, and its plan is legitimately empty.
+   *
+   * **A sweep is skipped outright while this is set**, because the plan is the
+   * only evidence a sweep has about what is still installed, and a plan built
+   * from a folder nobody could read is evidence of nothing. Without the skip,
+   * one unreadable directory deletes every global link on the machine and pauses
+   * every schedule that ran from one.
+   */
+  unreadableRoot?: string;
+  /**
+   * The packages this plan actually enumerated, by name.
+   *
+   * The plan is authoritative about these and about nothing else. A package on
+   * disk whose `.dork/manifest.json` will not parse is skipped by the scan and
+   * so is absent here — and its links must survive, because a manifest a person
+   * broke half an hour ago is not a package they uninstalled. See
+   * `apply/global-apply.ts` for the sweep rule the pair drives.
+   */
+  enumeratedPackages: readonly string[];
+}
+
 /** Everything a global plan needs. The engine reads no config and resolves no home. */
 export interface GlobalPlanInput {
   /** Where the plan may write. */
@@ -166,10 +201,10 @@ export function globalSkillsDir(dorkHome: string): string {
  *
  * @param input - the roots, the already-scanned packages, and the enabled agent
  *   tools.
- * @returns the same {@link ProjectionPlan} shape `project()` returns, so
- *   `formatDropList`, `formatWarnings` and the status model read one type.
+ * @returns a {@link GlobalProjectionPlan}: the same shape `project()` returns,
+ *   plus the two fields a sweep needs to know what this plan is evidence of.
  */
-export function buildGlobalPlan(input: GlobalPlanInput): ProjectionPlan {
+export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
   const skillsRoot = globalSkillsDir(input.roots.dorkHome);
   const actions: ProjectionAction[] = [];
   const warnings: ProjectionWarning[] = [];
@@ -211,7 +246,15 @@ export function buildGlobalPlan(input: GlobalPlanInput): ProjectionPlan {
     }
   }
 
-  return { actions, drops: [], warnings, notEnabled: [] };
+  return {
+    actions,
+    drops: [],
+    warnings,
+    notEnabled: [],
+    enumeratedPackages: input.packages
+      .filter((plugin) => plugin.location.scope === 'global')
+      .map((plugin) => plugin.name),
+  };
 }
 
 /**
@@ -222,14 +265,23 @@ export function buildGlobalPlan(input: GlobalPlanInput): ProjectionPlan {
  * sense of (an unparseable manifest leaves the package out, following
  * `inventory/read.ts`), and the one failure it does not own is the plugins root
  * itself being unreadable — a permission error on `<dorkHome>/plugins`. That
- * becomes a warning and an empty plan rather than an exception, because the
- * command a person runs to be told what DorkOS will do must not die telling them.
+ * becomes a warning, an empty plan and {@link GlobalProjectionPlan.unreadableRoot}
+ * rather than an exception, because the command a person runs to be told what
+ * DorkOS will do must not die telling them.
+ *
+ * **The flag is what makes the empty plan safe.** An empty plan and an empty
+ * folder look identical from the outside, and the sweep reads the plan as its
+ * evidence of what is installed — so without a way to tell them apart, one
+ * `chmod 000` on `<dorkHome>/plugins` would delete every global link on the
+ * machine and pause every schedule that ran from one. Measured, before the flag
+ * existed.
  *
  * @param input - the same {@link GlobalPlanInput} without `packages`, which this
  *   function fills in.
  * @returns the plan for what is installed for every project right now.
  */
-export function projectGlobal(input: Omit<GlobalPlanInput, 'packages'>): ProjectionPlan {
+export function projectGlobal(input: Omit<GlobalPlanInput, 'packages'>): GlobalProjectionPlan {
+  const pluginsRoot = globalPluginsDir(input.roots.dorkHome);
   let packages: readonly InstalledPlugin[];
   try {
     packages = scanInstalledPlugins({ dorkHome: input.roots.dorkHome });
@@ -242,14 +294,16 @@ export function projectGlobal(input: Omit<GlobalPlanInput, 'packages'>): Project
           artifact: 'plugin',
           harness: GLOBAL_LINK_ATTRIBUTION,
           harnessAgnostic: true,
-          name: globalPluginsDir(input.roots.dorkHome),
+          name: pluginsRoot,
           reason:
             `DorkOS could not read the folder your all-projects packages live in: ` +
-            `${globalPluginsDir(input.roots.dorkHome)} (${err instanceof Error ? err.message : String(err)}). ` +
+            `${pluginsRoot} (${err instanceof Error ? err.message : String(err)}). ` +
             `Nothing was linked, and nothing was removed.`,
         },
       ],
       notEnabled: [],
+      unreadableRoot: pluginsRoot,
+      enumeratedPackages: [],
     };
   }
   return buildGlobalPlan({ ...input, packages });

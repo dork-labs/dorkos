@@ -93,6 +93,7 @@ describe('scanInstalledPlugins', () => {
         sourceDir: `${globalPlugin}/skills/gamma`,
         usesPluginRoot: false,
         hasSchedule: false,
+        linkedInDorkHome: false,
       },
     ]);
     expect(glob.commands).toEqual([]);

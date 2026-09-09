@@ -17,7 +17,15 @@
  * fails that read, which is exactly the seeded defect for case 2.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -33,7 +41,17 @@ import { diffSnapshots, existsOnDisk, snapshotTree } from './journeys/stage.js';
 const staged: string[] = [];
 
 afterEach(() => {
-  for (const dir of staged.splice(0)) rmSync(dir, { recursive: true, force: true });
+  for (const dir of staged.splice(0)) {
+    // Modes first: `rmSync -r` has to read a directory to empty it, so a
+    // mode-000 one staged by the unreadable-root case would survive the cleanup
+    // and leak the whole temp tree.
+    try {
+      chmodSync(join(dir, 'plugins'), 0o755);
+    } catch {
+      /* no plugins folder, or already readable */
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 /** A `SKILL.md` with a `schedule:` block — what makes a skill a scheduled task. */
@@ -256,6 +274,101 @@ describe('AP-04 global: a second run applies nothing', () => {
       removed: [],
     });
     expect(checkGlobalPlan(secondPlan, roots).clean).toBe(true);
+  });
+});
+
+describe('AP-07 global: a plan that could not be built removes nothing', () => {
+  it('AP-07: an unreadable packages folder sweeps nothing, and says so', () => {
+    // Seeded defect: drop the `unreadableRoot` guard from `findGlobalOrphans`.
+    // The plan is empty because nobody could read the folder, the sweep reads a
+    // plan as its evidence of what is installed, and every global link on the
+    // machine goes — pausing every schedule that ran from one. Measured.
+    const dorkHome = stageDorkHome([
+      { name: 'globex', skills: [{ name: 'greet', scheduled: true }] },
+    ]);
+    const roots = rootsFor(dorkHome);
+    applyGlobalPlan(projectGlobal({ roots, harnesses: [] }), roots, { sweepOrphans: true });
+    const linked = join(globalSkillsDir(dorkHome), 'globex__greet');
+    expect(existsOnDisk(linked)).toBe(true);
+
+    chmodSync(join(dorkHome, 'plugins'), 0o000);
+    try {
+      const plan = projectGlobal({ roots, harnesses: [] });
+      expect(plan.unreadableRoot).toBe(join(dorkHome, 'plugins'));
+      expect(plan.warnings[0]?.reason).toContain('Nothing was linked, and nothing was removed.');
+
+      expect(checkGlobalPlan(plan, roots).orphans).toEqual([]);
+      const { swept, applied } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+      expect({ swept, applied }).toEqual({ swept: [], applied: [] });
+      expect(existsOnDisk(linked)).toBe(true);
+    } finally {
+      chmodSync(join(dorkHome, 'plugins'), 0o755);
+    }
+  });
+
+  it('AP-07: a package whose manifest will not parse keeps its links', () => {
+    // Seeded defect: make the keep-set the planned targets alone. A manifest
+    // somebody broke half an hour ago then looks exactly like an uninstall, and
+    // the package loses the links its schedules run from. A broken manifest
+    // costs a package its projection, never its links.
+    const dorkHome = stageDorkHome([
+      { name: 'globex', skills: [{ name: 'greet', scheduled: true }] },
+      { name: 'acme', skills: [{ name: 'build' }] },
+    ]);
+    const roots = rootsFor(dorkHome);
+    applyGlobalPlan(projectGlobal({ roots, harnesses: [] }), roots, { sweepOrphans: true });
+
+    writeFileSync(join(dorkHome, 'plugins', 'globex', '.dork', 'manifest.json'), '{ not json');
+
+    const plan = projectGlobal({ roots, harnesses: [] });
+    // The package is gone from the plan — that is the projection it lost.
+    expect(plan.enumeratedPackages).toEqual(['acme']);
+    expect(checkGlobalPlan(plan, roots).orphans).toEqual([]);
+    const { swept } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+    expect(swept).toEqual([]);
+    expect(existsOnDisk(join(globalSkillsDir(dorkHome), 'globex__greet'))).toBe(true);
+  });
+
+  it('AP-07: a skill renamed inside a readable package still loses its stale link', () => {
+    // The other side of the same rule: the plan gets the last word about the
+    // packages it DID enumerate, so keeping a broken package's links does not
+    // turn into keeping everything forever.
+    const dorkHome = stageDorkHome([{ name: 'globex', skills: [{ name: 'greet' }] }]);
+    const roots = rootsFor(dorkHome);
+    applyGlobalPlan(projectGlobal({ roots, harnesses: [] }), roots, { sweepOrphans: true });
+
+    rmSync(join(dorkHome, 'plugins', 'globex', 'skills', 'greet'), {
+      recursive: true,
+      force: true,
+    });
+    mkdirSync(join(dorkHome, 'plugins', 'globex', 'skills', 'hello'), { recursive: true });
+    writeFileSync(
+      join(dorkHome, 'plugins', 'globex', 'skills', 'hello', 'SKILL.md'),
+      plainSkillMd('hello')
+    );
+
+    const plan = projectGlobal({ roots, harnesses: [] });
+    const { swept } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+    expect(swept).toEqual([join(globalSkillsDir(dorkHome), 'globex__greet')]);
+    expect(existsOnDisk(join(globalSkillsDir(dorkHome), 'globex__hello'))).toBe(true);
+  });
+
+  it('AP-07: a link into the packages folder without the __ marker is never touched', () => {
+    // Clause 2, on its own. The package is installed AND enumerated, so clause 4
+    // would call this link an orphan; the only thing standing between it and the
+    // sweep is that a person's own convenience link is not named like a
+    // projection. Deleting clause 2 reds here.
+    const dorkHome = stageDorkHome([{ name: 'globex', skills: [{ name: 'greet' }] }]);
+    const roots = rootsFor(dorkHome);
+    const skillsRoot = globalSkillsDir(dorkHome);
+    mkdirSync(skillsRoot, { recursive: true });
+    symlinkSync('../plugins/globex/skills/greet', join(skillsRoot, 'my-shortcut'));
+
+    const plan = projectGlobal({ roots, harnesses: [] });
+    const { swept } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+
+    expect(swept).toEqual([]);
+    expect(existsOnDisk(join(skillsRoot, 'my-shortcut'))).toBe(true);
   });
 });
 
