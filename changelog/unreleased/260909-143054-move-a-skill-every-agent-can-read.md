@@ -3,6 +3,9 @@ covers:
   - 'feat(harness): adopt moves one skill and leaves the link (DOR-1944)'
   - 'feat(cli,harness): dorkos harness adopt, and sync says who cannot see (DOR-1944)'
   - 'feat(client,server): the Skills row prints the command that moves a skill (DOR-1944)'
+  # Folds in here: it corrects the manifest line the first bullet writes, before
+  # anybody could have seen one, so there is nothing to report as a fix.
+  - 'fix(harness): a manifest entry is written the way the file is written (DOR-1944)'
 ---
 
 ### Added
