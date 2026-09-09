@@ -31,7 +31,7 @@ describe('createDirectFeedbackMethods', () => {
       sessionId: 'sess_123',
       includeServerLogs: true,
       transcriptExcerpt: 'a transcript excerpt',
-      screenshotUploadId: 'upload_abc',
+      screenshot: { dataUrl: 'data:image/webp;base64,U0NSRUVOU0hPVEJZVEVT' },
       diagnostics: {
         clientReport: { version: '0.47.0', platform: 'darwin-arm64', runtimes: [], flags: {} },
         breadcrumbs: [{ at: new Date().toISOString(), kind: 'console_error', message: 'boom' }],
@@ -57,7 +57,7 @@ describe('createDirectFeedbackMethods', () => {
       'sessionId',
       'includeServerLogs',
       'transcriptExcerpt',
-      'screenshotUploadId',
+      'screenshot',
       'clientReport',
       'breadcrumbs',
       'reporterEmail',
@@ -65,7 +65,8 @@ describe('createDirectFeedbackMethods', () => {
     ]) {
       expect(properties).not.toHaveProperty(forbidden);
     }
-    expect(JSON.stringify(body)).not.toContain('upload_abc');
+    // The screenshot bytes in particular must never reach the metrics ingest.
+    expect(JSON.stringify(body)).not.toContain('U0NSRUVOU0hPVEJZVEVT');
     expect(JSON.stringify(body)).not.toContain('sess_123');
   });
 

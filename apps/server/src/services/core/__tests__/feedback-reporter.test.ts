@@ -323,27 +323,92 @@ describe('sendFeedback — durable payload shape', () => {
     expect(body).not.toHaveProperty('hasTranscript');
   });
 
-  it('sets hasScreenshot:true when a screenshotUploadId is present', async () => {
+  it('forwards the screenshot data URL verbatim and sets hasScreenshot:true', async () => {
     const fetchImpl = makeFetch('ok');
+    const dataUrl = `data:image/webp;base64,${'QUJD'.repeat(40)}`;
     await sendFeedback(
       baseOptions({
-        submission: { kind: 'bug', message: 'crash on save', screenshotUploadId: 'upload_1' },
+        submission: { kind: 'bug', message: 'crash on save', screenshot: { dataUrl } },
         fetchImpl,
       })
     );
 
     const body = durableBody(fetchImpl);
     expect(body.hasScreenshot).toBe(true);
-    // The raw upload id itself is never forwarded — only the boolean hint.
-    expect(body).not.toHaveProperty('screenshotUploadId');
+    // The bytes themselves ride along — the site is what hands them to Linear.
+    // Verbatim matters: a truncated base64 payload is a corrupt image.
+    expect(body.screenshot).toEqual({ dataUrl });
   });
 
-  it('omits hasScreenshot when no screenshot was attached', async () => {
+  describe('413 retry (a screenshot must never sink the report)', () => {
+    /**
+     * Durable endpoint answers 413 once, then 200. Every per-field cap counts
+     * characters while the site's body cap counts bytes, so a multibyte report
+     * plus a maximum screenshot can be schema-legal and still too large.
+     */
+    function make413ThenOk(): FetchMock {
+      let durableCalls = 0;
+      return vi.fn(async (url: string | URL | Request, _init?: RequestInit) => {
+        if (String(url) !== DURABLE_ENDPOINT) return new Response(null, { status: 200 });
+        durableCalls += 1;
+        return new Response(null, { status: durableCalls === 1 ? 413 : 200 });
+      }) as unknown as FetchMock;
+    }
+
+    /** Every durable-endpoint body, in call order. */
+    function durableBodies(fetchImpl: FetchMock): Array<Record<string, unknown>> {
+      const calls = fetchImpl.mock.calls as unknown as Array<[string | URL | Request, RequestInit]>;
+      return calls
+        .filter(([url]) => String(url) === DURABLE_ENDPOINT)
+        .map(([, init]) => JSON.parse(init.body as string) as Record<string, unknown>);
+    }
+
+    const withScreenshot = {
+      kind: 'bug' as const,
+      message: 'crash on save',
+      screenshot: { dataUrl: `data:image/webp;base64,${'QUJD'.repeat(40)}` },
+    };
+
+    it('retries once without the screenshot and reports ok', async () => {
+      const fetchImpl = make413ThenOk();
+      const result = await sendFeedback(baseOptions({ submission: withScreenshot, fetchImpl }));
+
+      const bodies = durableBodies(fetchImpl);
+      expect(bodies).toHaveLength(2);
+      expect(bodies[0]).toHaveProperty('screenshot');
+      // The picture is dropped; the report — message and all — is not.
+      expect(bodies[1]).not.toHaveProperty('screenshot');
+      expect(bodies[1]).not.toHaveProperty('hasScreenshot');
+      expect(bodies[1]).toMatchObject({ kind: 'bug', message: 'crash on save' });
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('does not retry a 413 when there was no screenshot to drop', async () => {
+      const fetchImpl = make413ThenOk();
+      const result = await sendFeedback(baseOptions({ fetchImpl }));
+
+      // Nothing to shed, so a second attempt would just repeat the failure.
+      expect(durableBodies(fetchImpl)).toHaveLength(1);
+      expect(result).toEqual({ ok: false });
+    });
+
+    it('does not retry a non-413 failure', async () => {
+      const fetchImpl = makeSplitFetch({ durable: 'not-ok', metrics: 'ok' });
+      const result = await sendFeedback(baseOptions({ submission: withScreenshot, fetchImpl }));
+
+      // A 500 is not a size problem; dropping the screenshot would not help.
+      expect(durableBodies(fetchImpl)).toHaveLength(1);
+      expect(result).toEqual({ ok: false });
+    });
+  });
+
+  it('omits both screenshot and hasScreenshot when none was attached', async () => {
     const fetchImpl = makeFetch('ok');
     await sendFeedback(baseOptions({ fetchImpl }));
 
     const body = durableBody(fetchImpl);
     expect(body).not.toHaveProperty('hasScreenshot');
+    expect(body).not.toHaveProperty('screenshot');
   });
 
   it('maps kind:"idea" straight through (the durable route has no PostHog-style event remapping)', async () => {

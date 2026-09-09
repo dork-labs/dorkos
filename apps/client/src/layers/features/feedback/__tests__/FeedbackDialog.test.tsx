@@ -156,7 +156,7 @@ describe('FeedbackDialog', () => {
     expect(submitted.includeServerLogs).toBe(true);
     // The client never sends the transcript or a screenshot itself.
     expect(submitted.transcriptExcerpt).toBeUndefined();
-    expect(submitted.screenshotUploadId).toBeUndefined();
+    expect(submitted.screenshot).toBeUndefined();
     // No session in context → no conversation attachment.
     expect(submitted.includeTranscript).toBeUndefined();
     expect(submitted.sessionId).toBeUndefined();

@@ -17,7 +17,7 @@ import roomRoutes from './routes/rooms.js';
 import readCursorRoutes from './routes/read-cursors.js';
 import tunnelRoutes from './routes/tunnel.js';
 import cloudRoutes from './routes/cloud.js';
-import feedbackRoutes from './routes/feedback.js';
+import feedbackRoutes, { feedbackJsonParser } from './routes/feedback.js';
 import modelRoutes from './routes/models.js';
 import subagentRoutes from './routes/subagents.js';
 import capabilitiesRoutes from './routes/capabilities.js';
@@ -266,6 +266,14 @@ export function createApp(options: { connectorEventIngress?: ConnectorSignedIngr
     app.all('/api/auth/*splat', toNodeHandler(auth));
   }
 
+  // Feedback submissions carry an opt-in screenshot inline as a `data:` URL, so
+  // this one path parses with a larger ceiling than the app-wide limit below.
+  // Mounted BEFORE that parser deliberately: body-parser skips a request whose
+  // body another parser already read, so the same middleware placed on the
+  // feedback router (mounted further down) would never bind and the app-wide
+  // 1 MB limit would 413 the submission first. Path-scoped, so nothing else
+  // gains the larger ceiling.
+  app.use('/api/feedback', feedbackJsonParser);
   app.use(express.json({ limit: '1mb' }));
   app.use(requestLogger);
 

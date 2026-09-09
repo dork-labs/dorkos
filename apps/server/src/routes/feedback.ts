@@ -22,7 +22,7 @@
  *
  * @module routes/feedback
  */
-import { Router } from 'express';
+import express, { Router, type RequestHandler } from 'express';
 import { FeedbackSubmissionSchema, type FeedbackSubmission } from '@dorkos/shared/telemetry-events';
 import {
   sendFeedback,
@@ -37,6 +37,31 @@ import { SERVER_VERSION } from '../lib/version.js';
 import type { RequestUser } from '../services/core/auth/index.js';
 
 const router = Router();
+
+/**
+ * JSON body parser for this route alone, with a ceiling above the app-wide
+ * `express.json({ limit: '1mb' })`.
+ *
+ * A feedback submission may carry an opt-in screenshot inline as a `data:` URL
+ * (`MAX_FEEDBACK_SCREENSHOT_DATA_URL_LEN`, 850,000 chars) on top of the
+ * message, diagnostics and transcript excerpt. Those caps count CHARACTERS
+ * while every body limit counts BYTES, and the two only coincide for ASCII: a
+ * report written in a multibyte script costs up to 3 bytes per character, so
+ * the ~890,000-character worst case is ~890 KB of ASCII but can exceed 1 MB in
+ * practice. The screenshot itself is base64 and therefore always 1:1, which is
+ * why the prose fields are the ones that move. Hence the headroom here — and,
+ * for the site's own byte cap further along, the drop-the-screenshot retry in
+ * `feedback-reporter.ts`.
+ *
+ * **It must be mounted BEFORE the app-wide parser to have any effect** — see
+ * `app.ts`, which is where the ordering lives. body-parser skips a request
+ * whose body another parser already read, so the same middleware mounted on
+ * this router (which `app.ts` mounts after the app-wide parser) is inert: the
+ * app-wide 1 MB limit rejects the request first and this never runs. Measured,
+ * not assumed — a router-local parser behind the global one returned
+ * `413 entity.too.large` on a 1.4 MB body.
+ */
+export const feedbackJsonParser: RequestHandler = express.json({ limit: '2mb' });
 
 /**
  * Fold a scrubbed server-log excerpt into a validated bug submission, when the

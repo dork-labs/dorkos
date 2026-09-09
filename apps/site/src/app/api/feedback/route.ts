@@ -69,11 +69,22 @@ const MAX_DIAGNOSTICS_LEN = 8000;
 const MAX_TRANSCRIPT_LEN = 8000;
 const MAX_ATTACHMENT_URLS = 5;
 const MAX_URL_LEN = 2048;
-// Whole-body size cap. The screenshot itself rides a separate upload path
-// (Part 3 references `screenshotUploadId`/pre-uploaded attachment URLs), so
-// this route's body stays small — bounding it defends against a caller that
-// somehow inlines large content instead of uploading it first.
-const MAX_BODY_BYTES = 64_000;
+/**
+ * Cap on an inlined screenshot's `data:` URL. Mirrors
+ * `MAX_FEEDBACK_SCREENSHOT_DATA_URL_LEN` in `@dorkos/shared`'s
+ * `telemetry-events` (850,000) exactly — the two are the by-hand lockstep pair
+ * this module's doc describes, and a drift here is a silent 400 for a
+ * submission the cockpit considered valid.
+ */
+const MAX_SCREENSHOT_DATA_URL_LEN = 850_000;
+
+// Whole-body size cap. An opt-in screenshot now travels INLINE with the
+// submission as a `data:` URL rather than through a separate upload path
+// (feedback-attachments decision 2), so this has to clear the screenshot cap
+// above plus the rest of the fields — message, diagnostics, transcript — with
+// room to spare. It still exists to bound the body: a caller cannot post
+// unbounded content, it just has a bigger, honestly-sized envelope.
+const MAX_BODY_BYTES = 900_000;
 
 /**
  * Route-local mirror of the submission shape (see module doc). `.strict()`
@@ -96,6 +107,18 @@ const FeedbackIntakeSchema = z
     diagnostics: z.string().max(MAX_DIAGNOSTICS_LEN).optional(),
     transcriptExcerpt: z.string().max(MAX_TRANSCRIPT_LEN).optional(),
     attachmentUrls: z.array(z.string().url().max(MAX_URL_LEN)).max(MAX_ATTACHMENT_URLS).optional(),
+    // The opt-in screenshot, inline as a `data:` URL. Uploaded to Linear's own
+    // asset store during issue creation below and embedded in the description;
+    // never persisted to Neon (the row keeps only the `hasScreenshot` hint).
+    screenshot: z
+      .object({
+        dataUrl: z
+          .string()
+          .regex(/^data:image\/(webp|png|jpeg);base64,/)
+          .max(MAX_SCREENSHOT_DATA_URL_LEN),
+      })
+      .strict()
+      .optional(),
     hasScreenshot: z.boolean().optional(),
     hasTranscript: z.boolean().optional(),
     // Honeypot: a hidden field no human fills in, checked (and short-circuited
@@ -237,6 +260,7 @@ export async function POST(request: Request): Promise<Response> {
       diagnostics: submission.diagnostics,
       transcriptExcerpt: submission.transcriptExcerpt,
       attachmentUrls: submission.attachmentUrls,
+      screenshot: submission.screenshot,
     });
     if (issue) {
       await markTriaged(insertedId, issue);
@@ -265,7 +289,10 @@ async function insertFeedbackRow(submission: FeedbackIntake): Promise<string> {
       reporterName: submission.reporterName ?? null,
       route: submission.route ?? null,
       surface: submission.surface,
-      hasScreenshot: submission.hasScreenshot ?? false,
+      // An attached screenshot IS a screenshot, whatever the caller claimed:
+      // the flag is a client-set hint and the field is the evidence. Only the
+      // hint is persisted — the image itself lives in Linear, never in Neon.
+      hasScreenshot: submission.hasScreenshot ?? !!submission.screenshot,
       hasTranscript: submission.hasTranscript ?? false,
     })
     .returning({ id: feedbackSubmission.id });
