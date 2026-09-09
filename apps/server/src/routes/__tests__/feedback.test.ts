@@ -11,6 +11,7 @@
  * log-excerpt.test.ts — this file proves the ROUTE wires them correctly.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFile } from 'node:fs/promises';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -41,7 +42,7 @@ import {
 } from '../../services/core/feedback-reporter.js';
 import { getRecentLogExcerpt } from '../../lib/log-excerpt.js';
 import { getSessionTranscriptExcerpt } from '../../lib/transcript-excerpt.js';
-import feedbackRouter from '../feedback.js';
+import feedbackRouter, { feedbackJsonParser } from '../feedback.js';
 
 const fixtureTarget = swappableServer();
 
@@ -443,6 +444,127 @@ describe('feedback route', () => {
 
       expect(res.status).toBe(502);
       expect(res.body).toEqual({ error: 'Could not reach the feedback service' });
+    });
+  });
+
+  describe('screenshot passthrough', () => {
+    it('forwards an attached screenshot to the forwarder untouched', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      const dataUrl = 'data:image/webp;base64,QUJD';
+
+      const res = await request(fixtureTarget.mount(buildApp()))
+        .post('/api/feedback')
+        .send({ kind: 'bug', message: 'it broke', screenshot: { dataUrl } });
+
+      expect(res.status).toBe(200);
+      expect(mockSend.mock.calls[0][0].submission.screenshot).toEqual({ dataUrl });
+    });
+
+    it('rejects a screenshot whose data URL is not a supported inline image', async () => {
+      const res = await request(fixtureTarget.mount(buildApp()))
+        .post('/api/feedback')
+        .send({ kind: 'bug', message: 'it broke', screenshot: { dataUrl: 'https://e.com/x.png' } });
+
+      expect(res.status).toBe(400);
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The body-size ceiling, which is a WIRING claim rather than a route claim:
+   * `feedbackJsonParser` only raises the limit if `app.ts` mounts it BEFORE the
+   * app-wide `express.json`. body-parser skips a request whose body another
+   * parser already read, so the same middleware mounted behind the app-wide one
+   * is inert. Both orderings are exercised here, because the passing case alone
+   * would stay green if someone moved the mount and broke it.
+   */
+  describe('JSON body limit', () => {
+    /** A submission bigger than the app-wide 1 MB limit, as a screenshot-bearing one is. */
+    function oversizedSubmission() {
+      return {
+        kind: 'bug' as const,
+        message: 'it broke',
+        screenshot: { dataUrl: `data:image/webp;base64,${'QUJD'.repeat(300_000)}` },
+      };
+    }
+
+    /** Production's ordering: the scoped parser first, then the app-wide one. */
+    function appWithScopedParserFirst() {
+      const app = express();
+      app.use('/api/feedback', feedbackJsonParser);
+      app.use(express.json({ limit: '1mb' }));
+      app.use('/api/feedback', feedbackRouter);
+      return app;
+    }
+
+    /** The regression: scoped parser mounted behind the app-wide one. */
+    function appWithScopedParserLast() {
+      const app = express();
+      app.use(express.json({ limit: '1mb' }));
+      app.use('/api/feedback', feedbackJsonParser);
+      app.use('/api/feedback', feedbackRouter);
+      return app;
+    }
+
+    it('READS a body over 1 MB when the scoped parser is mounted first', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      const body = oversizedSubmission();
+      expect(Buffer.byteLength(JSON.stringify(body))).toBeGreaterThan(1_048_576);
+
+      const res = await request(fixtureTarget.mount(appWithScopedParserFirst()))
+        .post('/api/feedback')
+        .send(body);
+
+      // 400, not 200: this body is deliberately over the schema's own screenshot
+      // cap, so Zod refuses it. That is exactly the point — a 400 proves the
+      // parser READ the body, where a 413 would mean it never got that far.
+      expect(res.status).toBe(400);
+    });
+
+    it('413s the same body when the scoped parser is mounted after the app-wide one', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+
+      const res = await request(fixtureTarget.mount(appWithScopedParserLast()))
+        .post('/api/feedback')
+        .send(oversizedSubmission());
+
+      // Never read: the app-wide 1 MB parser rejected it, and the scoped parser
+      // behind it never ran. This is the regression the ordering guards against.
+      expect(res.status).toBe(413);
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('app.ts mounts the scoped parser BEFORE the app-wide one', async () => {
+      // Structural rather than behavioural on purpose: the two tests above prove
+      // the ORDERING RULE against real Express apps, but neither can see the one
+      // line in `app.ts` that has to obey it, and standing the whole production
+      // app up for one assertion costs a page of singleton mocks. This reds if
+      // someone moves the mount below `express.json`, which is the regression.
+      const source = await readFile(new URL('../../app.ts', import.meta.url), 'utf8');
+      const scoped = source.indexOf("app.use('/api/feedback', feedbackJsonParser)");
+      const appWide = source.indexOf("app.use(express.json({ limit: '1mb' }))");
+
+      expect(scoped).toBeGreaterThan(-1);
+      expect(appWide).toBeGreaterThan(-1);
+      expect(scoped).toBeLessThan(appWide);
+    });
+
+    it('accepts the largest schema-legal screenshot submission end to end', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      const prefix = 'data:image/webp;base64,';
+      // Exactly at the shared schema's 850,000-char cap.
+      const dataUrl = prefix + 'A'.repeat(850_000 - prefix.length);
+      const body = { kind: 'bug' as const, message: 'it broke', screenshot: { dataUrl } };
+      // Under the app-wide 1 MB limit, but by under 200 KB — thin enough that
+      // the scoped parser's headroom is worth having rather than decorative.
+      expect(Buffer.byteLength(JSON.stringify(body))).toBeLessThan(1_048_576);
+
+      const res = await request(fixtureTarget.mount(appWithScopedParserFirst()))
+        .post('/api/feedback')
+        .send(body);
+
+      expect(res.status).toBe(200);
+      expect(mockSend.mock.calls[0][0].submission.screenshot).toEqual({ dataUrl });
     });
   });
 });

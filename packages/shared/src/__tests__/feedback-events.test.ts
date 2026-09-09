@@ -19,6 +19,7 @@ import {
   buildFeedbackEvent,
   FEEDBACK_EVENT_NAMES,
   MAX_FEEDBACK_MESSAGE_LEN,
+  MAX_FEEDBACK_SCREENSHOT_DATA_URL_LEN,
   MAX_BREADCRUMBS,
   MAX_TRANSCRIPT_LEN,
   MAX_LOG_EXCERPT_LEN,
@@ -196,12 +197,113 @@ describe('feedback event registry', () => {
           breadcrumbs: [{ at: VALID_TIMESTAMP, kind: 'console_error', message: 'TypeError: boom' }],
         },
         transcriptExcerpt: 'last few turns...',
-        screenshotUploadId: 'upload_abc',
+        screenshot: { dataUrl: 'data:image/webp;base64,UklGRhoAAABXRUJQ' },
         includeServerLogs: true,
         includeTranscript: true,
         anonymous: true,
       });
       expect(res.success).toBe(true);
+    });
+
+    describe('screenshot', () => {
+      /** A valid, tiny WebP data URL — the shape the client's compression step emits. */
+      const validDataUrl = 'data:image/webp;base64,UklGRhoAAABXRUJQVlA4';
+
+      it('round-trips a submission carrying a screenshot', () => {
+        const res = FeedbackSubmissionSchema.safeParse({
+          kind: 'bug',
+          message: 'crash on save',
+          screenshot: { dataUrl: validDataUrl },
+        });
+        expect(res.success).toBe(true);
+        // Parsed back out intact — a stripped field would still report success.
+        expect(res.success && res.data.screenshot?.dataUrl).toBe(validDataUrl);
+      });
+
+      it('round-trips a submission with no screenshot at all', () => {
+        const res = FeedbackSubmissionSchema.safeParse({
+          kind: 'bug',
+          message: 'crash on save',
+        });
+        expect(res.success).toBe(true);
+        expect(res.success && res.data.screenshot).toBeUndefined();
+      });
+
+      it.each(['image/webp', 'image/png', 'image/jpeg'])('accepts %s', (mime) => {
+        const res = FeedbackSubmissionSchema.safeParse({
+          kind: 'bug',
+          message: 'crash on save',
+          screenshot: { dataUrl: `data:${mime};base64,QUJD` },
+        });
+        expect(res.success).toBe(true);
+      });
+
+      it('rejects a data URL whose media type is not one of the three images', () => {
+        // `image/svg+xml` is the pointed case: an image type that is also an
+        // executable document, so it must not ride into a Linear description.
+        for (const bad of [
+          'data:image/svg+xml;base64,QUJD',
+          'data:text/html;base64,QUJD',
+          'data:image/gif;base64,QUJD',
+        ]) {
+          const res = FeedbackSubmissionSchema.safeParse({
+            kind: 'bug',
+            message: 'crash on save',
+            screenshot: { dataUrl: bad },
+          });
+          expect(res.success).toBe(false);
+        }
+      });
+
+      it('rejects a non-base64 image URL (a remote http src is not an inline image)', () => {
+        const res = FeedbackSubmissionSchema.safeParse({
+          kind: 'bug',
+          message: 'crash on save',
+          screenshot: { dataUrl: 'https://example.com/shot.png' },
+        });
+        expect(res.success).toBe(false);
+      });
+
+      it('rejects a data URL one character over the cap, and accepts one exactly at it', () => {
+        const prefix = 'data:image/webp;base64,';
+        const atCap = prefix + 'A'.repeat(MAX_FEEDBACK_SCREENSHOT_DATA_URL_LEN - prefix.length);
+        expect(atCap.length).toBe(MAX_FEEDBACK_SCREENSHOT_DATA_URL_LEN);
+
+        const ok = FeedbackSubmissionSchema.safeParse({
+          kind: 'bug',
+          message: 'crash on save',
+          screenshot: { dataUrl: atCap },
+        });
+        expect(ok.success).toBe(true);
+
+        const tooBig = FeedbackSubmissionSchema.safeParse({
+          kind: 'bug',
+          message: 'crash on save',
+          screenshot: { dataUrl: `${atCap}A` },
+        });
+        expect(tooBig.success).toBe(false);
+      });
+
+      it('rejects unknown keys inside screenshot', () => {
+        const res = FeedbackSubmissionSchema.safeParse({
+          kind: 'bug',
+          message: 'crash on save',
+          screenshot: { dataUrl: validDataUrl, mime: 'image/webp' },
+        });
+        expect(res.success).toBe(false);
+      });
+
+      it('no longer accepts the retired screenshotUploadId field', () => {
+        // The upload-reference design was replaced by the inline data URL
+        // above; `.strict()` is what makes the removal enforceable at runtime
+        // rather than a silently-ignored leftover.
+        const res = FeedbackSubmissionSchema.safeParse({
+          kind: 'bug',
+          message: 'crash on save',
+          screenshotUploadId: 'upload_abc',
+        });
+        expect(res.success).toBe(false);
+      });
     });
 
     it('accepts the opt-in transcript + anonymous flags on their own', () => {

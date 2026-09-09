@@ -177,8 +177,16 @@ export const MAX_FEEDBACK_ROUTE_LEN = 256;
 /** Maximum length of an optional session id attached to a bug/idea submission. */
 export const MAX_FEEDBACK_SESSION_ID_LEN = 128;
 
-/** Maximum length of an optional upload reference id (e.g. a screenshot). */
-export const MAX_FEEDBACK_UPLOAD_ID_LEN = 128;
+/**
+ * Maximum length of an attached screenshot's `data:` URL (see
+ * {@link FeedbackScreenshotSchema}). The image travels inline with the
+ * submission rather than through a separate upload endpoint, so this is the
+ * single bound on how large that inlined payload may be. 850,000 characters of
+ * base64 is ~637 KB of image bytes — comfortably above the client's own 600 KB
+ * post-compression ceiling, and chosen to sit under the site intake route's
+ * 900,000-byte whole-body cap with room for the rest of the submission.
+ */
+export const MAX_FEEDBACK_SCREENSHOT_DATA_URL_LEN = 850_000;
 
 /** Maximum length of the optional `reporterName` resolved from an authenticated session. */
 export const MAX_REPORTER_NAME_LEN = 128;
@@ -376,7 +384,7 @@ export type FeedbackEvent = z.infer<typeof FeedbackEventSchema>;
  * `kind`/`message`/`contact`/`route` are new plumbing (feedback-pipeline spec
  * Part 1): `sessionId` names the session a transcript excerpt would come from;
  * `diagnostics` is the bounded client/server diagnostics bundle; `transcriptExcerpt`
- * and `screenshotUploadId` are opt-in attachments the dialog lets the user
+ * and `screenshot` are opt-in attachments the dialog lets the user
  * preview and remove before sending; `includeServerLogs` is how the client asks
  * the server to gather and attach a scrubbed log excerpt (see
  * {@link FeedbackDiagnosticsSchema.serverLogExcerpt}) — the client never reads
@@ -388,6 +396,32 @@ export type FeedbackEvent = z.infer<typeof FeedbackEventSchema>;
  * identity lookup even for a verified session, so no `reporterEmail`/
  * `reporterName` is attached (the pseudonymous `instanceId` still rides along).
  */
+/**
+ * An opt-in screenshot attached to a submission, carried inline as a `data:`
+ * URL (feedback-attachments decision 2). The image rides WITH the submission —
+ * client → local server → site intake — rather than being uploaded separately
+ * first; the site is what hands the bytes to Linear's own asset store, so
+ * nothing here ever becomes a second blob store of our own.
+ *
+ * The `data:` prefix is matched, not merely assumed: the three encodings are
+ * the ones the client's compression step can produce (WebP preferred, PNG/JPEG
+ * fallbacks), and pinning them keeps an arbitrary `data:text/html` or an
+ * unbounded `data:` of any other type out of a field that ends up embedded in a
+ * Linear issue.
+ */
+export const FeedbackScreenshotSchema = z
+  .object({
+    /** `data:image/(webp|png|jpeg);base64,<payload>` — bounded, opt-in, never auto-attached. */
+    dataUrl: z
+      .string()
+      .regex(/^data:image\/(webp|png|jpeg);base64,/)
+      .max(MAX_FEEDBACK_SCREENSHOT_DATA_URL_LEN),
+  })
+  .strict();
+
+/** An attached screenshot, per {@link FeedbackScreenshotSchema}. */
+export type FeedbackScreenshot = z.infer<typeof FeedbackScreenshotSchema>;
+
 export const FeedbackSubmissionSchema = z
   .object({
     kind: z.enum(['feedback', 'bug', 'idea']),
@@ -397,7 +431,7 @@ export const FeedbackSubmissionSchema = z
     sessionId: z.string().min(1).max(MAX_FEEDBACK_SESSION_ID_LEN).optional(),
     diagnostics: FeedbackDiagnosticsSchema.optional(),
     transcriptExcerpt: z.string().max(MAX_TRANSCRIPT_LEN).optional(),
-    screenshotUploadId: z.string().min(1).max(MAX_FEEDBACK_UPLOAD_ID_LEN).optional(),
+    screenshot: FeedbackScreenshotSchema.optional(),
     includeServerLogs: z.boolean().optional(),
     includeTranscript: z.boolean().optional(),
     anonymous: z.boolean().optional(),
@@ -494,7 +528,7 @@ export interface FeedbackEventContext {
  *
  * Only `message`/`contact`/`route`/`dorkosVersion`/`reporterEmail`/`reporterName`
  * ride the built event — `sessionId`, `diagnostics`, `transcriptExcerpt`,
- * `screenshotUploadId`, `includeServerLogs`, `includeTranscript`, and `anonymous`
+ * `screenshot`, `includeServerLogs`, `includeTranscript`, and `anonymous`
  * are NOT part of the PostHog wire shape (they have no property slot on
  * {@link FeedbackSubmittedProperties} /
  * {@link FeatureRequestedProperties}); this stays the narrow metrics event, not

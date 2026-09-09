@@ -104,8 +104,78 @@ describe('POST /api/feedback — input validation', () => {
   });
 
   it('returns 413 when the body exceeds the size cap', async () => {
-    const res = await POST(post({ ...VALID_SUBMISSION, message: 'x'.repeat(100_000) }));
+    // Over the 900,000-byte whole-body cap. The cap had to grow when the
+    // screenshot moved inline; a body this size is still refused.
+    const res = await POST(post({ ...VALID_SUBMISSION, message: 'x'.repeat(950_000) }));
     expect(res.status).toBe(413);
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('no longer 413s a body that only the OLD 64 KB cap would have refused', async () => {
+    // A screenshot-bearing submission is ~100× the old cap. This is the whole
+    // reason the cap moved: under 64,000 bytes it could never have been sent.
+    const dataUrl = `data:image/webp;base64,${'QUJD'.repeat(30_000)}`;
+    expect(new TextEncoder().encode(dataUrl).byteLength).toBeGreaterThan(64_000);
+
+    const res = await POST(post({ ...VALID_SUBMISSION, screenshot: { dataUrl } }));
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('POST /api/feedback — screenshot field', () => {
+  beforeEach(() => {
+    vi.mocked(createFeedbackIssue).mockResolvedValue(null);
+  });
+
+  it('accepts a screenshot and hands the data URL to the Linear issue builder', async () => {
+    const dataUrl = 'data:image/webp;base64,QUJD';
+    const res = await POST(post({ ...VALID_SUBMISSION, screenshot: { dataUrl } }));
+
+    expect(res.status).toBe(200);
+    expect(createFeedbackIssue).toHaveBeenCalledWith(
+      expect.objectContaining({ screenshot: { dataUrl } })
+    );
+  });
+
+  it('accepts a submission with no screenshot at all', async () => {
+    const res = await POST(post(VALID_SUBMISSION));
+
+    expect(res.status).toBe(200);
+    expect(createFeedbackIssue).toHaveBeenCalledWith(
+      expect.objectContaining({ screenshot: undefined })
+    );
+  });
+
+  it('returns 400 for a data URL over the per-field cap', async () => {
+    const prefix = 'data:image/webp;base64,';
+    // One character past 850,000, but still comfortably inside the 900,000-byte
+    // whole-body cap — so this is the FIELD cap answering, not the body cap.
+    const dataUrl = prefix + 'A'.repeat(850_001 - prefix.length);
+    expect(new TextEncoder().encode(JSON.stringify({ dataUrl })).byteLength).toBeLessThan(900_000);
+
+    const res = await POST(post({ ...VALID_SUBMISSION, screenshot: { dataUrl } }));
+    expect(res.status).toBe(400);
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'data:image/svg+xml;base64,QUJD',
+    'data:text/html;base64,QUJD',
+    'https://example.com/shot.png',
+  ])('returns 400 for a non-image or non-inline data URL: %s', async (dataUrl) => {
+    const res = await POST(post({ ...VALID_SUBMISSION, screenshot: { dataUrl } }));
+    expect(res.status).toBe(400);
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 on an unknown key inside screenshot (.strict() is preserved)', async () => {
+    const res = await POST(
+      post({
+        ...VALID_SUBMISSION,
+        screenshot: { dataUrl: 'data:image/png;base64,QUJD', mime: 'image/png' },
+      })
+    );
+    expect(res.status).toBe(400);
     expect(mockInsert).not.toHaveBeenCalled();
   });
 });

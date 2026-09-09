@@ -323,27 +323,30 @@ describe('sendFeedback — durable payload shape', () => {
     expect(body).not.toHaveProperty('hasTranscript');
   });
 
-  it('sets hasScreenshot:true when a screenshotUploadId is present', async () => {
+  it('forwards the screenshot data URL verbatim and sets hasScreenshot:true', async () => {
     const fetchImpl = makeFetch('ok');
+    const dataUrl = `data:image/webp;base64,${'QUJD'.repeat(40)}`;
     await sendFeedback(
       baseOptions({
-        submission: { kind: 'bug', message: 'crash on save', screenshotUploadId: 'upload_1' },
+        submission: { kind: 'bug', message: 'crash on save', screenshot: { dataUrl } },
         fetchImpl,
       })
     );
 
     const body = durableBody(fetchImpl);
     expect(body.hasScreenshot).toBe(true);
-    // The raw upload id itself is never forwarded — only the boolean hint.
-    expect(body).not.toHaveProperty('screenshotUploadId');
+    // The bytes themselves ride along — the site is what hands them to Linear.
+    // Verbatim matters: a truncated base64 payload is a corrupt image.
+    expect(body.screenshot).toEqual({ dataUrl });
   });
 
-  it('omits hasScreenshot when no screenshot was attached', async () => {
+  it('omits both screenshot and hasScreenshot when none was attached', async () => {
     const fetchImpl = makeFetch('ok');
     await sendFeedback(baseOptions({ fetchImpl }));
 
     const body = durableBody(fetchImpl);
     expect(body).not.toHaveProperty('hasScreenshot');
+    expect(body).not.toHaveProperty('screenshot');
   });
 
   it('maps kind:"idea" straight through (the durable route has no PostHog-style event remapping)', async () => {

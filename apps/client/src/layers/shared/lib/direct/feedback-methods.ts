@@ -10,7 +10,7 @@
  * **Degrades on purpose.** Only `kind`/`message`/`contact`/`route` are ever
  * read from the submission — explicitly destructured below, not spread — so
  * this never forwards `diagnostics`/`sessionId`/`transcriptExcerpt`/
- * `screenshotUploadId`/`includeServerLogs` even if a caller sets them:
+ * `screenshot`/`includeServerLogs` even if a caller sets them:
  * Obsidian has no local server to gather a scrubbed log excerpt from and no
  * session gate to resolve an account identity against (no DorkOS account
  * concept in the embedded surface), and the owned ingest's wire event has no
@@ -43,7 +43,7 @@ export function createDirectFeedbackMethods() {
     async sendFeedback(submission: FeedbackSubmission): Promise<{ ok: boolean }> {
       try {
         // Only the fields Obsidian can actually honor — see the module doc for
-        // why diagnostics/sessionId/transcriptExcerpt/screenshotUploadId/
+        // why diagnostics/sessionId/transcriptExcerpt/screenshot/
         // includeServerLogs are deliberately left behind.
         const { kind, message, contact, route } = submission;
         const event = buildFeedbackEvent(

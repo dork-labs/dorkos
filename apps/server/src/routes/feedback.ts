@@ -22,7 +22,7 @@
  *
  * @module routes/feedback
  */
-import { Router } from 'express';
+import express, { Router, type RequestHandler } from 'express';
 import { FeedbackSubmissionSchema, type FeedbackSubmission } from '@dorkos/shared/telemetry-events';
 import {
   sendFeedback,
@@ -37,6 +37,28 @@ import { SERVER_VERSION } from '../lib/version.js';
 import type { RequestUser } from '../services/core/auth/index.js';
 
 const router = Router();
+
+/**
+ * JSON body parser for this route alone, with a ceiling above the app-wide
+ * `express.json({ limit: '1mb' })`.
+ *
+ * A feedback submission may carry an opt-in screenshot inline as a `data:` URL
+ * (`MAX_FEEDBACK_SCREENSHOT_DATA_URL_LEN`, 850,000 chars) on top of the
+ * message, diagnostics and transcript excerpt. Summed against each field's own
+ * cap, the largest schema-legal submission is roughly 890 KB — under the 1 MB
+ * app-wide limit, but by well under 200 KB. This exists so that margin is
+ * comfortable rather than incidental: raising any one of those field caps
+ * should not silently start 413ing real submissions.
+ *
+ * **It must be mounted BEFORE the app-wide parser to have any effect** — see
+ * `app.ts`, which is where the ordering lives. body-parser skips a request
+ * whose body another parser already read, so the same middleware mounted on
+ * this router (which `app.ts` mounts after the app-wide parser) is inert: the
+ * app-wide 1 MB limit rejects the request first and this never runs. Measured,
+ * not assumed — a router-local parser behind the global one returned
+ * `413 entity.too.large` on a 1.4 MB body.
+ */
+export const feedbackJsonParser: RequestHandler = express.json({ limit: '2mb' });
 
 /**
  * Fold a scrubbed server-log excerpt into a validated bug submission, when the

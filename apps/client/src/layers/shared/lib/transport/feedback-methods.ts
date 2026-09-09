@@ -5,7 +5,7 @@
  * POSTs a user-volunteered feedback submission to the local `/api/feedback`
  * route, which fills the identity/version context and forwards it to the owned
  * ingest. The full `submission` object is sent as-is — including the newer
- * `diagnostics`/`sessionId`/`transcriptExcerpt`/`screenshotUploadId`/
+ * `diagnostics`/`sessionId`/`transcriptExcerpt`/`screenshot`/
  * `includeServerLogs` fields when the caller set them — so the server can
  * resolve identity from the verified session (never from this body) and, for a
  * bug report that asked for one, attach a scrubbed server-log excerpt. The

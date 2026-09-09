@@ -98,6 +98,19 @@ const DURABLE_TRANSCRIPT_MAX_LEN = 8000;
 const DURABLE_REPORTER_NAME_MAX_LEN = 128;
 const DURABLE_REPORTER_EMAIL_MAX_LEN = 254;
 
+// There is deliberately NO cap constant for the attached screenshot's `data:`
+// URL: it is forwarded verbatim, unlike `diagnostics` and `transcriptExcerpt`
+// above. Those two truncate because `@dorkos/shared`'s caps (20,000) exceed the
+// site route's (8,000), so a legal submission could still 400 the durable write.
+// The screenshot's two caps are the SAME number on both sides
+// (`MAX_FEEDBACK_SCREENSHOT_DATA_URL_LEN` = the site's
+// `MAX_SCREENSHOT_DATA_URL_LEN` = 850,000), and only a submission that already
+// passed the shared schema reaches here, so an over-cap value cannot arrive.
+// Truncating would be worse than useless anyway: a sliced base64 payload is a
+// corrupt image, not a smaller one. If the caps ever diverge, DROP the
+// screenshot rather than slicing it — the same reasoning that drops an over-cap
+// reporter email instead of truncating it.
+
 /** The server-resolved identity of an authenticated feedback submitter. */
 export type FeedbackIdentity = NonNullable<FeedbackEventContext['identity']>;
 
@@ -211,6 +224,7 @@ interface DurableFeedbackPayload {
   surface: 'cockpit';
   diagnostics?: string;
   transcriptExcerpt?: string;
+  screenshot?: { dataUrl: string };
   hasScreenshot?: boolean;
   hasTranscript?: boolean;
 }
@@ -278,7 +292,9 @@ function buildDurablePayload(
     ...(submission.route ? { route: submission.route } : {}),
     ...(diagnostics ? { diagnostics } : {}),
     ...(transcriptExcerpt ? { transcriptExcerpt, hasTranscript: true } : {}),
-    ...(submission.screenshotUploadId ? { hasScreenshot: true } : {}),
+    ...(submission.screenshot
+      ? { screenshot: { dataUrl: submission.screenshot.dataUrl }, hasScreenshot: true }
+      : {}),
   };
 }
 
