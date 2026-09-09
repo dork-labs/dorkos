@@ -213,7 +213,11 @@ describe('the Skills page', () => {
         'Gemini CLI files are in this folder, but DorkOS isn’t sharing to it.'
       )
     ).toBeInTheDocument();
-    expect(within(page).getByText('dorkos harness sync --fix --enable gemini')).toBeInTheDocument();
+    // Each token is its own non-breaking span (so a wrap never splits a flag),
+    // which is why this reads the code element rather than matching its text.
+    expect(page.querySelector('[data-slot="inline-code"]')?.textContent).toBe(
+      'dorkos harness sync --fix --enable gemini'
+    );
     const buttons = within(page)
       .getAllByRole('button')
       .map((button) => button.textContent ?? '');
