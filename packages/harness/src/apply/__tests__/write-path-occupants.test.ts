@@ -34,6 +34,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -511,6 +512,99 @@ describe('a folder DorkOS may not write in', () => {
 
       const { conflicts } = applyPlan(repo, plan(), { sweepOrphans: true });
       expect(conflicts).toEqual([]);
+    }
+  );
+});
+
+describe('a folder DorkOS may not write in, and the merge that shares it', () => {
+  /**
+   * The plan with the plugin's hooks allowed, so `.claude/settings.local.json`
+   * is a `merge` action rather than a withheld one.
+   *
+   * The merge is the fourth write kind and the last to get the rule the other
+   * three have: it read, reconciled and wrote UNCONDITIONALLY, so `isDrifted`
+   * said "nothing to do" while the write happened anyway.
+   */
+  function mergePlan(): ProjectionPlan {
+    return project(repo, { dorkHome, allowPluginHooks: () => true });
+  }
+
+  /** The settings file's modification time, or `undefined` when it is not there. */
+  function settingsMtime(): number | undefined {
+    try {
+      return statSync(join(repo, '.claude', 'settings.local.json')).mtimeMs;
+    } catch {
+      return undefined;
+    }
+  }
+
+  it('AP-01: a second sync does not rewrite the settings file it already merged', () => {
+    // Measured before the gate: the mtime moved on every sync. This is the one
+    // file the projection shares with Claude Code, which re-reads it when it
+    // changes, so a no-op rewrite was a change event for every watcher on it.
+    stageRepo();
+    applyPlan(repo, mergePlan(), { sweepOrphans: true });
+    const first = settingsMtime();
+    expect(first).toBeDefined();
+
+    applyPlan(repo, mergePlan(), { sweepOrphans: true });
+
+    expect(settingsMtime()).toBe(first);
+  });
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)(
+    'AP-01, AP-11: a synced tree with a read-only `.claude` is clean, and the merge writes nothing',
+    () => {
+      // The `generate` defect, in the last kind that still had it: `--check`
+      // reported no drift and exited 0 while `--fix` died with EACCES out of
+      // `writeSettingsFile` — before the sweeps, on a file already holding
+      // exactly the merge.
+      stageRepo();
+      applyPlan(repo, mergePlan(), { sweepOrphans: true });
+      const synced = snapshotTree(repo);
+      const mtime = settingsMtime();
+      makeReadOnly('.claude');
+
+      const drift = checkPlan(repo, mergePlan());
+      expect(drift.drifted).toEqual([]);
+      expect(drift.blocked).toEqual([]);
+      expect(drift.clean).toBe(true);
+
+      const { conflicts, applied } = applyPlan(repo, mergePlan(), { sweepOrphans: true });
+
+      expect(conflicts).toEqual([]);
+      expect(applied.map((a) => a.target)).toContain('.claude/settings.local.json');
+      // Nothing written — content AND mtime, because the bug wrote the same bytes.
+      expect(diffSnapshots(synced, snapshotTree(repo))).toEqual({
+        added: [],
+        changed: [],
+        removed: [],
+      });
+      expect(settingsMtime()).toBe(mtime);
+    }
+  );
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)(
+    'AP-11: a merge that really drifts under a read-only `.claude` is blocked, in both modes',
+    () => {
+      // The other half: with the managed groups taken out of the file the merge
+      // IS about to write, so the probe runs and both modes name it.
+      stageRepo();
+      applyPlan(repo, mergePlan(), { sweepOrphans: true });
+      const settings = join(repo, '.claude', 'settings.local.json');
+      const parsed = JSON.parse(readFileSync(settings, 'utf8')) as Record<string, unknown>;
+      delete parsed.hooks;
+      writeFileAt(settings, `${JSON.stringify(parsed, null, 2)}\n`);
+      makeReadOnly('.claude');
+
+      const built = mergePlan();
+      const blockedTargets = checkPlan(repo, built).blocked.map((a) => a.target);
+      expect(blockedTargets).toContain('.claude/settings.local.json');
+
+      const { conflicts } = applyPlan(repo, built, { sweepOrphans: true });
+
+      expect(conflicts.map((a) => a.target)).toEqual(blockedTargets);
+      expect(reasonFor(conflicts, '.claude/settings.local.json')).toContain('may not write in');
     }
   );
 });
