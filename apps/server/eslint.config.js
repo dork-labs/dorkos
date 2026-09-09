@@ -247,6 +247,13 @@ export default defineConfig([
       'src/services/runtimes/codex/codex-home.ts',
       // Mirrors the OpenCode CLI's own ~/.local/share/opencode resolution 1:1.
       'src/services/runtimes/opencode/opencode-data-dir.ts',
+      // Mirrors the $HOME/.agents/skills resolution FIVE vendors document as a
+      // user-scope skills read path (Codex, OpenCode, Cursor, Gemini CLI,
+      // Copilot — see packages/harness/src/vendor-facts/index.ts). Same shape as
+      // the three rows above: it resolves another program's directory, never
+      // DorkOS's own. Unlike them it is carved out of BOTH halves of the ban —
+      // see the dedicated no-restricted-imports block further down for why.
+      'src/services/harness/agents-user-home.ts',
       // Tests assert the fallback behavior and stage fixtures under a fake HOME.
       // Both patterns, matching the process.env carve-out block above: every
       // server test lives under __tests__/ today, and a lone `*.test.ts` beside
@@ -255,6 +262,28 @@ export default defineConfig([
       'src/**/*.test.ts',
     ],
     rules: { 'no-restricted-properties': ['error', HOMEDIR_MEMBER_BAN] },
+  },
+
+  // The IMPORT half of the same carve-out, for the same one file.
+  //
+  // The other three file-level carve-outs are exempt from the CALL ban only:
+  // the import ban still reaches them, so each has to keep spelling its import
+  // `import os from 'os'` for ever, and `.claude/rules/dork-home.md` records
+  // that constraint three times over. That is a wart, not a policy — the file is
+  // a declared carve-out whose whole job is to call `homedir`, and which
+  // spelling it uses to get there decides nothing. So this one is carved out of
+  // both halves, and `scripts/test-homedir-guard.sh` pins both spellings silent
+  // here and both spellings refused in a sibling.
+  //
+  // A block of its own rather than an `ignores` entry on the server-wide block
+  // above, because rule options REPLACE rather than merge: ignoring the file
+  // there would drop every SDK confinement (Hard Rule 2) for it as well, which
+  // is exactly the shape that let `@openai/codex-sdk` into claude-code/__tests__
+  // during DOR-668. Handing `ALL_CONFINED` straight back keeps those bans and
+  // drops only the homedir `paths`.
+  {
+    files: ['src/services/harness/agents-user-home.ts'],
+    rules: { 'no-restricted-imports': ['error', { patterns: ALL_CONFINED }] },
   },
 
   // Every directory that owns one dependency: everything else in

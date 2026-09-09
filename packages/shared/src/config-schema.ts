@@ -19,6 +19,15 @@
  */
 import { z } from 'zod';
 import { EFFORT_LEVELS } from './constants.js';
+// `HARNESS_IDS`, never `HarnessIdSchema`. This module is one of the five
+// `@dorkos/shared/*` subpaths `apps/server/vitest.config.ts` aliases to SRC for
+// every vitest project, so a test process holds both the src and the dist copy
+// of it — safe only while what it imports is schemas, constants and pure
+// functions with no compared identity. A Zod schema imported here would drag a
+// SECOND `harness-schemas` into the src copy, built on the zod instance vite
+// inlines, and the `.openapi()` prototype patch would land on one instance while
+// the registry asked the other. See `harness-ids.ts` for the measurement.
+import { HARNESS_IDS } from './harness-ids.js';
 import { BUILTIN_MEMORY_PROVIDER_ID } from './memory-provider.js';
 import { ROOM_REPO_CAP_DEFAULTS } from './room-repo.js';
 import { RuntimeEnvironmentSchema } from './runtime-environment-schema.js';
@@ -2381,8 +2390,46 @@ export const UserConfigSchema = z.object({
        * wants to run stops matching and is asked about again.
        */
       refusedHooks: z.array(z.string()).default(() => []),
+      /**
+       * The two decisions global scope records: which agent tools DorkOS shares
+       * your globally installed packages with, and when it last asked.
+       *
+       * A project's enabled agent tools come from `.agents/harness.manifest.json`.
+       * Global scope has no repository, so its answer lives here — the same store,
+       * the same reader and the same migration chain as the hook decisions beside
+       * it, which are the same kind of decision. A second manifest file at
+       * `<dorkHome>/harness.manifest.json` would need its own scaffold policy, its
+       * own answer to a file that will not parse, and its own version of ADR-0302's
+       * "the engine never rewrites a hand-authored file" rule; `.agents/harness.manifest.json`
+       * earns all of that by being committed and shared, and nothing at global
+       * scope is either.
+       */
+      global: z
+        .object({
+          /**
+           * The agent tools DorkOS shares your globally installed packages with.
+           *
+           * Empty means none, which is where a fresh install sits until somebody
+           * answers the one-time question `dorkos harness sync --global` asks.
+           * There is no separate on/off flag: an empty list IS off, so the two
+           * can never disagree.
+           */
+          harnesses: z.array(z.enum(HARNESS_IDS)).default(() => []),
+          /**
+           * When the question was answered, ISO-8601. `null` means it has never
+           * been asked, which is a different state from asked-and-declined:
+           * declined is a timestamp with an empty list, and it is remembered.
+           */
+          askedAt: z.string().nullable().default(null),
+        })
+        .default(() => ({ harnesses: [], askedAt: null })),
     })
-    .default(() => ({ autoSync: true, approvedHooks: [], refusedHooks: [] })),
+    .default(() => ({
+      autoSync: true,
+      approvedHooks: [],
+      refusedHooks: [],
+      global: { harnesses: [], askedAt: null },
+    })),
   workbench: z
     .object({
       /**

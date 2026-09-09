@@ -1,7 +1,7 @@
 ---
 id: 260908-191538
 title: Global-scope projection is skills-only and symlinked, and it deletes only what it can prove it wrote
-status: proposed
+status: accepted
 created: 2026-09-08
 spec: harness-sync-global
 superseded-by: null
@@ -12,7 +12,8 @@ amends: 0303
 
 ## Status
 
-Proposed (extracted from spec: `harness-sync-global`, DOR-1857).
+Accepted (extracted from spec: `harness-sync-global`, DOR-1857; shipped in slices A1, A2 and A3 —
+DOR-1922, DOR-1923 and DOR-1924).
 
 **This ADR amends [ADR-0303](0303-harness-sync-multi-source-projection.md)** and does not replace it.
 ADR-0303 stays `accepted`: its three source classes, its one drop list, its `provenance` tag and its

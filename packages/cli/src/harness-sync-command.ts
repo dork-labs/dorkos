@@ -946,7 +946,7 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
       return { exitCode: 1 };
     }
     try {
-      return { exitCode: runGlobalSync(args, resolveDorkHome()) };
+      return { exitCode: await runGlobalSync(args, resolveDorkHome()) };
     } catch (err) {
       console.error(`Harness sync failed: ${err instanceof Error ? err.message : String(err)}`);
       if (err instanceof Error && err.stack && wantsDebugDetail()) console.error(err.stack);

@@ -11,6 +11,7 @@ import { runHarnessDispatcher } from '../commands/harness-dispatcher.js';
 import {
   createTempDir,
   pinEmptyClaudeRoot,
+  pinHome,
   syncArgs,
   writeFixtureRepo,
 } from './harness-fixtures.js';
@@ -2656,6 +2657,7 @@ describe('runHarnessSync --global — the packages installed for all your projec
   let tmpDir: string;
   let originalCwd: string;
   let homeDir: string;
+  let userHome: string;
   let logSpy: MockInstance<typeof console.log>;
   let errorSpy: MockInstance<typeof console.error>;
 
@@ -2687,8 +2689,12 @@ describe('runHarnessSync --global — the packages installed for all your projec
     originalCwd = process.cwd();
     tmpDir = createTempDir();
     homeDir = createTempDir();
+    userHome = createTempDir();
     vi.stubEnv('DORK_HOME', homeDir);
     pinEmptyClaudeRoot(homeDir);
+    // The user tier resolves `~/.agents/skills` through `os.homedir()`, so a
+    // global case would otherwise read the developer's own home directory.
+    pinHome(userHome);
     process.chdir(tmpDir);
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -2699,6 +2705,7 @@ describe('runHarnessSync --global — the packages installed for all your projec
     vi.unstubAllEnvs();
     logSpy.mockRestore();
     errorSpy.mockRestore();
+    fs.rmSync(userHome, { recursive: true, force: true });
     // Mode first: `rmSync -r` has to read a directory to empty it, so the
     // mode-000 one the unreadable-root case stages would leak the temp tree.
     try {
@@ -2722,7 +2729,7 @@ describe('runHarnessSync --global — the packages installed for all your projec
       true
     );
     const output = printed();
-    expect(output).toContain('Linked 1 skill(s):');
+    expect(output).toContain('Linked 1 link(s):');
     expect(output).toContain('skill runs on a timer');
     expect(output).toContain(
       'It does not share them with Claude Code, Codex or any other agent tool yet.'
@@ -2782,13 +2789,13 @@ describe('runHarnessSync --global — the packages installed for all your projec
     const second = await runHarnessSync(syncArgs({ fix: true, global: true }));
 
     expect(second.exitCode).toBe(0);
-    expect(printed()).toContain('Nothing to link. 1 skill(s) already linked.');
+    expect(printed()).toContain('Nothing to link. 1 link(s) already in place.');
     expect(snapshotTree(homeDir)).toEqual(afterFirst);
 
     logSpy.mockClear();
     const check = await runHarnessSync(syncArgs({ check: true, global: true }));
     expect(check.exitCode).toBe(0);
-    expect(printed()).toContain('Nothing to change. 1 skill(s) already linked.');
+    expect(printed()).toContain('Nothing to change. 1 link(s) already in place.');
   });
 
   it('SK-03: --check --global writes nothing at all', async () => {
@@ -2797,7 +2804,14 @@ describe('runHarnessSync --global — the packages installed for all your projec
 
     const result = await runHarnessSync(syncArgs({ check: true, global: true }));
 
-    expect(result.exitCode).toBe(1); // there is work to do, and it says so
+    // ZERO while the one-time sharing question is outstanding: this run's job
+    // was to ask it, and a failure code beside a question reads as a failure
+    // (DOR-1924, spec §2.7). The report still names every link there is to
+    // make, and once somebody answers the exit code reports the work again.
+    expect(result.exitCode).toBe(0);
+    expect(printed()).toContain(
+      'Share the packages you installed for all your projects with your other agent tools?'
+    );
     expect(printed()).toContain('Run `dorkos harness sync --fix --global` to apply.');
     expect(snapshotTree(homeDir)).toEqual(before);
     expect(snapshotTree(tmpDir)).toEqual([]);

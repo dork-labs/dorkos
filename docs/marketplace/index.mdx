@@ -168,6 +168,44 @@ To add the package to another scope (for example, you have it globally and want 
   caveat applies.
 </Callout>
 
+## Sharing an all-projects package with your other agent tools
+
+A package you install for all your projects starts out visible to one thing: the Claude Code sessions DorkOS runs. Codex, Cursor, Gemini CLI, Copilot, OpenCode and the `claude` you type into a terminal yourself cannot see it.
+
+You can change that. Run this in a terminal:
+
+```bash
+dorkos harness sync --global
+```
+
+The first time, DorkOS asks. It shows the two folders in your home directory it would put links in, names every link it would create, and stops. Nothing is written until you answer.
+
+To say yes, run this once per tool you want:
+
+```bash
+dorkos harness global --enable codex
+dorkos harness global --enable claude-code
+```
+
+DorkOS then puts a link to each skill where that tool looks. Five tools share one folder, `~/.agents/skills`: Codex, OpenCode, Cursor, Gemini CLI and Copilot. Claude Code reads its own, `~/.claude/skills`. Restart Claude Code after the first time, and in Gemini CLI run `/skills reload`.
+
+Two commands manage it afterwards:
+
+```bash
+dorkos harness global --list              # what you chose, and where the links go
+dorkos harness global --disable codex     # stop sharing with one tool
+```
+
+`--disable` removes the links that tool's folder no longer needs before it forgets the tool. If another tool still reads the same folder, nothing is removed, because the same links serve it.
+
+<Callout type="info">
+  DorkOS only ever creates **links** in those two folders, never files, and it only ever removes a
+  link it made itself. Your own skills and your own shortcuts in the same folders are left alone. If
+  you uninstall a package later, DorkOS removes its links too. DorkOS has tested Codex and Claude
+  Code against these folders. OpenCode, Cursor, Gemini CLI and Copilot say they read the shared
+  folder, and DorkOS has not tested them.
+</Callout>
+
 ## Marketplace sources
 
 The default registry is [`dorkos-community`](https://github.com/dorkos-community/marketplace), but you can add your own. Personal marketplaces are useful for sharing internal packages across a team without publishing them to the public registry.

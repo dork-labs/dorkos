@@ -17,10 +17,13 @@
  * `__tests__/properties/plan-root-scope.property.test.ts` are checkable on a
  * hand-built input because no filesystem is involved.
  *
- * **This module plans one tier: `<dorkHome>/skills`.** Not the user-level skill
- * directories other agent tools read — those need roots this slice never passes
- * — and not commands, hooks or instructions at any scope. Only skills, only
- * symlinks, and only inside DorkOS's own directory.
+ * **This module plans three tiers, all of them skills and all of them
+ * symlinks:** `<dorkHome>/skills`, which DorkOS's own scheduler watches;
+ * `~/.agents/skills`, which five agent tools read; and one `<claudeRoot>/skills`,
+ * which Claude Code reads. Not commands, not hooks, not instructions, at any
+ * scope: each is refused at user scope with its own reason (spec §2.10). Nothing
+ * here generates a file, and the two user roots are INJECTED — the engine
+ * resolves no home directory of its own.
  *
  * @module plan/global-projector
  */
@@ -51,17 +54,39 @@ export interface GlobalPlanRoots {
    * The cross-tool user-level skills directory, absolute — `~/.agents/skills` on
    * an ordinary machine.
    *
-   * **Always absent in this slice**, and reading it is slice A3's. It is
-   * declared here so the roots type is the one both slices share rather than one
-   * that changes shape under a later reader.
+   * Resolved by the server (`services/harness/agents-user-home.ts`, the sixth
+   * `os.homedir()` carve-out) and handed in. Absent means the plan does not
+   * target it, which is what a `DORKOS_BOUNDARY` deployment passes.
+   *
+   * Passing the root is NOT the same as planning links in it: {@link
+   * buildGlobalPlan} also needs at least one enabled harness that reads the
+   * directory. The root says where DorkOS MAY write; the harness list says
+   * whether anybody asked it to.
    */
   agentsSkillsDir?: string;
   /**
    * Claude Code's user-level skills directory, absolute — the `skills` folder
    * under the root a bare `claude` opens.
    *
-   * **Always absent in this slice**, for the same reason as
-   * {@link agentsSkillsDir}.
+   * ONE directory, never a set. That is the root a bare `claude` opens, and a
+   * bare `claude` is the only Claude Code the user tier has to serve: a
+   * DorkOS-driven session, on any account, is served whole by SDK injection
+   * (spec §2.9). `resolveActiveClaudeRoot()` answers which account DorkOS bills
+   * and is not used; `resolveClaudeRootSet()` would put files in accounts nobody
+   * is running and is not used either.
+   *
+   * **A package reachable both here and through SDK injection is listed ONCE**,
+   * which is what makes writing this directory safe for a package a DorkOS
+   * session already has. Measured, not reasoned from the vendor's sentence: a
+   * real `claude` 2.1.266 was given one package through both routes and a second
+   * through injection alone as a control, and it named the shared skill a single
+   * time
+   * (`meta/harness-smoke/20260909-103643.543-claude-user-tier.md`, 2026-09-09).
+   * Two entries would have made this root conditional on the package not being
+   * injected; one entry is why it is not.
+   *
+   * Same two-part rule as {@link agentsSkillsDir}: the root plus `claude-code`
+   * in the harness list.
    */
   claudeSkillsDir?: string;
 }
@@ -112,8 +137,13 @@ export interface GlobalPlanInput {
    *
    * Empty is legal and plans the dork-home tier only, which needs no harness to
    * be useful: the DorkOS scheduler is not an agent tool, and a skill that runs
-   * on a timer runs whether or not anything else can read it. Unused in this
-   * slice beyond that — the tiers a harness list turns on are A3's.
+   * on a timer runs whether or not anything else can read it.
+   *
+   * Otherwise this is what turns each user tier on. `~/.agents/skills` is
+   * planned when at least one of {@link AGENTS_SKILLS_DIR_READERS} is here, and
+   * `<claudeRoot>/skills` when `claude-code` is. There is no per-tool link: one
+   * directory serves five tools, so the list decides whether the directory is
+   * written at all, never how many times.
    */
   harnesses: readonly HarnessId[];
 }
@@ -143,6 +173,136 @@ export const GLOBAL_SCHEDULE_LINK_REASON =
 /** The note carried on every other dork-home link. Frozen copy (spec §4 row 6). */
 export const GLOBAL_CANONICAL_LINK_REASON =
   'linked into the DorkOS skills folder, so a package you installed for all your projects is reachable there';
+
+/**
+ * The agent tools that read `~/.agents/skills`, in `HARNESS_IDS` order.
+ *
+ * Every harness but `claude-code`, and that is an invariant of the vendor facts
+ * rather than a list somebody typed here: `packages/harness/src/vendor-facts/index.ts`
+ * carries `~/.agents/skills` under `skills.readPaths.user` for each of these
+ * five and `~/.claude/skills` for Claude Code, and the case in
+ * `vendor-facts/__tests__/vendor-facts.test.ts` reds if a refresh moves one.
+ * That invariant is the whole reason the user tier is at most TWO directories.
+ *
+ * **One of the five is measured and four are documented.** DOR-1856's free
+ * listing probe ran a real `codex` 0.145.0 over a staged link in a sandbox HOME
+ * and it listed the skill (`meta/harness-smoke/20260909-103636.210-codex-user-tier.md`);
+ * OpenCode, Cursor, Gemini CLI and Copilot were not probed, and their cells are
+ * vendor-page claims. The link is planned for all five all the same, because the
+ * SAME single link serves them: dropping it for the four unmeasured tools would
+ * remove Codex's skills too. What the four earn instead is a dated sentence on
+ * the surfaces a person reads ({@link USER_TIER_MEASUREMENT_NOTE}).
+ */
+export const AGENTS_SKILLS_DIR_READERS: readonly HarnessId[] = [
+  'codex',
+  'cursor',
+  'gemini',
+  'copilot',
+  'opencode',
+];
+
+/**
+ * The note carried on every `~/.agents/skills` link. Frozen copy (spec §4c).
+ *
+ * It names the outcome and the folder, never the mechanism, and it is one
+ * sentence because a drop-list line is one line.
+ */
+export const AGENTS_USER_LINK_REASON =
+  'linked into your shared skills folder, the one place Codex, OpenCode, Cursor, Gemini CLI and Copilot all look for skills';
+
+/** The note carried on every `<claudeRoot>/skills` link. Frozen copy (spec §4c). */
+export const CLAUDE_USER_LINK_REASON =
+  'linked into Claude Code\u2019s own skills folder, the only place it looks';
+
+/**
+ * What DorkOS has actually tested about the shared folder, and what it has only
+ * read on a vendor page.
+ *
+ * Printed by the surfaces that name the folder, never carried on an action: the
+ * two link reasons above are frozen copy about WHERE a link went, and a
+ * measurement date is a different claim from a different source. Dated on
+ * purpose, so a reader can tell how old the answer is.
+ */
+export const USER_TIER_MEASUREMENT_NOTE =
+  'DorkOS tested Codex on 2026-09-09 and it reads this folder. OpenCode, Cursor, Gemini CLI and Copilot say they read it too, and DorkOS has not tested them.';
+
+/**
+ * The sentence a run ends on when nothing is shared with any other agent tool.
+ *
+ * It can never be read as more than it is: the links are in DorkOS's own folder,
+ * which is where skills that run on a timer are found and is not a folder any
+ * agent tool reads.
+ */
+export const GLOBAL_REACH_NOTE =
+  'This puts your all-projects skills where DorkOS looks for skills that run on a timer. It does not share them with Claude Code, Codex or any other agent tool yet.';
+
+/**
+ * The sentence a run ends on when Claude Code is the ONLY tool shared with.
+ *
+ * Its own branch because the two beside it are both wrong here, in opposite
+ * directions. {@link GLOBAL_REACH_NOTE} ends "it does not share them with Claude
+ * Code, Codex or any other agent tool yet" — printed directly under a list of
+ * links this run just made in Claude Code's own skills folder, which is the
+ * defect this constant exists to end. {@link USER_TIER_MEASUREMENT_NOTE} is
+ * about the SHARED folder and five tools none of which this run touched.
+ */
+export const GLOBAL_CLAUDE_ONLY_NOTE =
+  'Your all-projects skills are in Claude Code\u2019s own skills folder now. No other agent tool can see them yet.';
+
+/**
+ * The restart caveat, printed once per run and only when the run created a
+ * skills folder that was not there before. Frozen copy (spec §4b).
+ *
+ * The global sibling of `reportClaudeSkillsRestart`. Gated on the folder being
+ * NEW because a tool that was already reading the folder picks up a new link in
+ * it on its own; what it cannot pick up is a folder that did not exist when it
+ * started.
+ */
+export const GLOBAL_SKILLS_RESTART_NOTE =
+  'Claude Code needs a restart before it sees the new skills folder. In Gemini CLI, run /skills reload.';
+
+/**
+ * The one sentence a global run ends on, chosen by how far it actually reaches.
+ *
+ * FOUR answers and never one hedged one, because every pair of them contradicts
+ * the other on some machine:
+ *
+ * - a confined deployment says so and names the root it was given;
+ * - a machine sharing with nothing says the links are DorkOS's own;
+ * - a machine sharing with Claude Code alone says what Claude Code can see;
+ * - a machine sharing the folder five tools read says which of the five DorkOS
+ *   has actually tested.
+ *
+ * It lives here rather than in the CLI because it is frozen copy about what the
+ * PLAN did, and because two surfaces print it: `dorkos harness sync --global`
+ * and `dorkos harness global --enable`. Deciding it twice is how they end up
+ * disagreeing about one machine.
+ *
+ * @param roots - the roots the plan was built from; an absent root is a tier
+ *   this run does not reach.
+ * @param boundaryRoot - the configured boundary root, when one confined this
+ *   deployment.
+ * @returns the closing sentence.
+ */
+export function globalClosingNote(roots: GlobalPlanRoots, boundaryRoot?: string): string {
+  if (boundaryRoot !== undefined) return globalBoundarySkipLine(boundaryRoot);
+  if (roots.agentsSkillsDir !== undefined) return USER_TIER_MEASUREMENT_NOTE;
+  return roots.claudeSkillsDir === undefined ? GLOBAL_REACH_NOTE : GLOBAL_CLAUDE_ONLY_NOTE;
+}
+
+/**
+ * The line a boundary-confined deployment prints instead of writing links.
+ * Frozen copy (spec §4 row 8).
+ *
+ * @param root - the boundary root, absolute, as the person configured it.
+ * @returns the sentence, with the root interpolated.
+ */
+export function globalBoundarySkipLine(root: string): string {
+  return (
+    'Packages you installed for all your projects stay inside DorkOS on this machine. ' +
+    `DorkOS is limited to ${root}, so it will not add links in your home folder.`
+  );
+}
 
 /**
  * Where global packages are installed: `<dorkHome>/plugins`.
@@ -176,6 +336,81 @@ export function globalSkillsDir(dorkHome: string): string {
 }
 
 /**
+ * One directory a global plan writes into, and how its links are labelled.
+ *
+ * Derived once per plan rather than re-decided per skill: which directories are
+ * targeted is a property of the roots and the harness list, and asking that
+ * question inside the skill loop is how a per-skill inconsistency gets in.
+ */
+interface GlobalPlanTier {
+  /** The absolute directory this tier writes into. */
+  dir: string;
+  /** The `HarnessId` every action from this tier carries. */
+  harness: HarnessId;
+  /** Whether that id is a placeholder rather than a claim about one tool. */
+  harnessAgnostic: boolean;
+  /** The frozen note an action carries, given whether the skill runs on a timer. */
+  reason: (hasSchedule: boolean) => string;
+}
+
+/**
+ * Which directories this plan writes into.
+ *
+ * The rule is one sentence with two clauses, and BOTH are required for a user
+ * tier: the root has to be passed, and an agent tool that reads it has to be
+ * enabled. The root answers "may DorkOS write here" — a `DORKOS_BOUNDARY`
+ * deployment passes neither — and the harness list answers "did anybody ask it
+ * to". Collapsing them would make each mean the other: gating on the root alone
+ * plans a Claude Code link for somebody who never enabled Claude Code, and
+ * gating on the list alone plans a link with no directory to put it in.
+ *
+ * The dork-home tier has neither clause. It writes only inside DorkOS's own data
+ * directory, into a root DorkOS already creates and watches on boot, so there is
+ * nothing to ask about and nothing to confine.
+ *
+ * @param input - the roots and the enabled agent tools.
+ * @returns the tiers to plan, dork-home first.
+ */
+function globalPlanTiers(input: Omit<GlobalPlanInput, 'packages'>): GlobalPlanTier[] {
+  const tiers: GlobalPlanTier[] = [
+    {
+      dir: globalSkillsDir(input.roots.dorkHome),
+      harness: GLOBAL_LINK_ATTRIBUTION,
+      harnessAgnostic: true,
+      reason: (hasSchedule) =>
+        hasSchedule ? GLOBAL_SCHEDULE_LINK_REASON : GLOBAL_CANONICAL_LINK_REASON,
+    },
+  ];
+  const enabled = new Set(input.harnesses);
+  if (
+    input.roots.agentsSkillsDir !== undefined &&
+    AGENTS_SKILLS_DIR_READERS.some((harness) => enabled.has(harness))
+  ) {
+    tiers.push({
+      dir: input.roots.agentsSkillsDir,
+      // Honest rather than a placeholder: Codex is the one reader of this
+      // directory DorkOS has measured. `harnessAgnostic` still says the label
+      // means nothing on its own, because the same link serves five tools and
+      // no per-tool cell may claim it.
+      harness: 'codex',
+      harnessAgnostic: true,
+      reason: () => AGENTS_USER_LINK_REASON,
+    });
+  }
+  if (input.roots.claudeSkillsDir !== undefined && enabled.has('claude-code')) {
+    tiers.push({
+      dir: input.roots.claudeSkillsDir,
+      // Not agnostic: this directory has exactly one reader, so the label is a
+      // claim and it is true.
+      harness: 'claude-code',
+      harnessAgnostic: false,
+      reason: () => CLAUDE_USER_LINK_REASON,
+    });
+  }
+  return tiers;
+}
+
+/**
  * Plan the projection of every globally installed package's skills, from
  * packages a caller has already scanned.
  *
@@ -183,12 +418,26 @@ export function globalSkillsDir(dorkHome: string): string {
  * on a hand-built input. It mirrors the split `buildPlan` and `project()`
  * already have, where `project()` does the reads and `buildPlan` decides.
  *
- * One tier, one action per skill: `<dorkHome>/skills/<pkg>__<name>` links to
- * `<dorkHome>/plugins/<pkg>/skills/<name>`, planned whatever agent tools are
- * enabled and carrying `harnessAgnostic: true`. There is **no per-harness
- * fan-out**: the planner emits one action per target path, de-duplicated, which
- * is why a global plan can never produce two actions racing for one path — a
- * shape the project-scope planner has to stand a stage down to avoid.
+ * Up to three tiers, one action per (tier, skill):
+ *
+ * - `<dorkHome>/skills/<pkg>__<name>`, always, whatever agent tools are enabled
+ *   and carrying `harnessAgnostic: true`. DorkOS's own folder.
+ * - `<agentsSkillsDir>/<pkg>__<name>`, when the root is passed AND at least one
+ *   of {@link AGENTS_SKILLS_DIR_READERS} is enabled. One link for five tools,
+ *   also `harnessAgnostic: true`, because it really is about all of them.
+ * - `<claudeSkillsDir>/<pkg>__<name>`, when the root is passed AND `claude-code`
+ *   is enabled. Attributed to `claude-code` and NOT agnostic, because that
+ *   directory has exactly one reader.
+ *
+ * Every action's `source` is the skill directory inside `<dorkHome>/plugins`, so
+ * all three tiers point at one copy on disk and nothing is duplicated anywhere.
+ *
+ * There is **no per-harness fan-out**: the planner emits one action per target
+ * path, de-duplicated, which is why a global plan can never produce two actions
+ * racing for one path — a shape the project-scope planner has to stand a stage
+ * down to avoid. Five tools sharing `~/.agents/skills` is the clearest case: the
+ * harness list decides whether that directory is written at all, never how many
+ * times.
  *
  * Only skills are planned. Not commands, not hooks, not instructions: each is
  * refused at user scope with its own reason (spec §2.10), and none of them has a
@@ -205,7 +454,6 @@ export function globalSkillsDir(dorkHome: string): string {
  *   plus the two fields a sweep needs to know what this plan is evidence of.
  */
 export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
-  const skillsRoot = globalSkillsDir(input.roots.dorkHome);
   const actions: ProjectionAction[] = [];
   const warnings: ProjectionWarning[] = [];
   // One action per TARGET PATH. Two packages cannot collide (the namespace is
@@ -213,26 +461,36 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
   // already de-duplicated by the scan, and a keep-set the apply and the sweep
   // both read must hold each path once whatever a future source adds.
   const planned = new Set<string>();
+  const tiers = globalPlanTiers(input);
 
   for (const plugin of input.packages) {
     if (plugin.location.scope !== 'global') continue;
     for (const skill of plugin.skills) {
       const namespaced = `${plugin.name}__${skill.name}`;
-      const target = `${skillsRoot}/${namespaced}`;
-      if (planned.has(target)) continue;
-      planned.add(target);
-      actions.push({
-        kind: 'symlink',
-        artifact: 'skill',
-        harness: GLOBAL_LINK_ATTRIBUTION,
-        harnessAgnostic: true,
-        provenance: 'installed',
-        scope: 'global',
-        name: namespaced,
-        source: skill.sourceDir,
-        target,
-        reason: skill.hasSchedule ? GLOBAL_SCHEDULE_LINK_REASON : GLOBAL_CANONICAL_LINK_REASON,
-      });
+      for (const tier of tiers) {
+        // `join`, never `${dir}/${name}`: a target is a real path on this
+        // machine, and the plan is the thing every other reader compares against
+        // — the apply's `pathExists`, the sweep's `resolve`, the CLI's report,
+        // the status payload. A plan that shipped a forward slash on Windows
+        // would be the one value in the system spelled unlike every path beside
+        // it, and the tests that hard-code the slash would be pinning the POSIX
+        // representation rather than the behaviour.
+        const target = join(tier.dir, namespaced);
+        if (planned.has(target)) continue;
+        planned.add(target);
+        actions.push({
+          kind: 'symlink',
+          artifact: 'skill',
+          harness: tier.harness,
+          ...(tier.harnessAgnostic ? { harnessAgnostic: true } : {}),
+          provenance: 'installed',
+          scope: 'global',
+          name: namespaced,
+          source: skill.sourceDir,
+          target,
+          reason: tier.reason(skill.hasSchedule),
+        });
+      }
       if (skill.usesPluginRoot) {
         warnings.push({
           artifact: 'skill',

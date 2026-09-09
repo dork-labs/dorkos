@@ -775,6 +775,18 @@ If you wrote your own hooks file — `.codex/hooks.json` or `.cursor/hooks.json`
       type: 'string[]',
       default: '[]',
     },
+    'harness.global.harnesses': {
+      description:
+        'The agent tools that can see the packages you installed for all your projects. Empty means none of them can. Add one with `dorkos harness global --enable <tool>`, and DorkOS links those packages\u2019 skills into the folder that tool reads. Only a person can change this list.',
+      type: 'string[]',
+      default: '[]',
+    },
+    'harness.global.askedAt': {
+      description:
+        'When you last answered the question above. Empty means DorkOS has never asked. A date with an empty list means you said no, and DorkOS does not ask again.',
+      type: 'string | null',
+      default: 'null',
+    },
   }}
 />
 

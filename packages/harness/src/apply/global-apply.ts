@@ -73,6 +73,8 @@
  * @module apply/global-apply
  */
 import {
+  accessSync,
+  constants,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -91,6 +93,7 @@ import {
 import type { DriftResult, ProjectionAction, SweptPath } from '../plan/types.js';
 import { INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
 import { listDir, occupantKind, pathExists } from './link-state.js';
+import { directoryWriteBlock, writePathDirs, writePathReason } from './write-path-occupants.js';
 import { SWEEP_REASONS } from './sweep-reasons.js';
 import { blockingSymlinkOccupant, linkCheckFor, linkMatchesPlan } from './symlink-occupants.js';
 
@@ -128,15 +131,37 @@ const SYMLINK_ATTEMPTS = 3;
  * outright, and clause 4 keeps the links of any package still on disk that this
  * plan did not enumerate.
  *
- * One directory today. Slice A3 adds `agentsSkillsDir` and `claudeSkillsDir`
- * here, which is the whole of what "widening the reach" means — the predicate
- * below does not change.
+ * **The two user roots are here, and only the REACH widened** — the predicate
+ * below is unchanged from the slice that wrote it for one directory. That is
+ * what the third clause bought: a directory in somebody's home folder holds
+ * their own files, their own hand-built symlinks and another installer's
+ * directories, and the predicate already answers "is this ours" from the link's
+ * own text rather than from where it sits.
+ *
+ * A root that was not passed is not scanned. That is one rule with three
+ * callers: a boundary-confined deployment, an unanswered sharing question and a
+ * machine with no enabled harness all pass the same absent root, and nothing
+ * beneath it is read or removed.
+ *
+ * **A root IS scanned when the plan targets no links in it**, and that is the
+ * difference `--disable` is built on rather than a bug: the sweep's job is to
+ * remove what the current plan no longer names, so a directory whose last reader
+ * was just turned off must still be read once to empty it.
  *
  * @param roots - the roots the plan was built from.
- * @returns the absolute directories to scan, one level each.
+ * @returns the absolute directories to scan, one level each, without duplicates.
  */
 function globalSweepDirs(roots: GlobalPlanRoots): string[] {
-  return [globalSkillsDir(roots.dorkHome)];
+  // A `Set`, because nothing stops a caller pointing two roots at one directory
+  // — `CLAUDE_CONFIG_DIR=~/.agents` is legal — and scanning it twice would offer
+  // the same path for removal twice.
+  return [
+    ...new Set(
+      [globalSkillsDir(roots.dorkHome), roots.agentsSkillsDir, roots.claudeSkillsDir].filter(
+        (dir): dir is string => dir !== undefined
+      )
+    ),
+  ];
 }
 
 /**
@@ -232,6 +257,13 @@ export function findGlobalOrphans(plan: GlobalProjectionPlan, roots: GlobalPlanR
   const planned = plannedTargets(plan);
   const enumerated = new Set(plan.enumeratedPackages);
   const orphans = new Map<string, string>();
+  // Which directories the plan still writes into. A candidate in a directory the
+  // plan names nothing in is a THIRD cause, and it needs its own sentence: the
+  // package is installed, the skill exists, and what changed is that nobody
+  // reads this folder for it any more. Told as "no longer has a skill of this
+  // name", a `--disable` would say something false about the package to a person
+  // watching two links go.
+  const plannedDirs = new Set([...planned].map((target) => dirname(target)));
   for (const dir of globalSweepDirs(roots)) {
     // `listDir`, never `existsSync` + `readdirSync`: a skills path that is a
     // file or unreadable has nothing to sweep and must not abort the run, nor
@@ -249,7 +281,13 @@ export function findGlobalOrphans(plan: GlobalProjectionPlan, roots: GlobalPlanR
       // The package is still installed. The plan may only overrule that for a
       // package it actually read — otherwise a broken manifest would look
       // exactly like an uninstall.
-      if (enumerated.has(pkg)) orphans.set(abs, SWEEP_REASONS['global-skill-gone']);
+      if (!enumerated.has(pkg)) continue;
+      orphans.set(
+        abs,
+        plannedDirs.has(resolve(dir))
+          ? SWEEP_REASONS['global-skill-gone']
+          : SWEEP_REASONS['global-folder-unshared']
+      );
     }
   }
   return [...orphans.entries()]
@@ -308,6 +346,144 @@ type SymlinkOutcome =
   { kind: 'written' } | { kind: 'unchanged' } | { kind: 'blocked'; reason: string };
 
 /**
+ * Whether this platform can be asked about write PERMISSION at all.
+ *
+ * Not Windows, for the reason `write-path-occupants.ts` states about its own
+ * probe: `accessSync(dir, W_OK)` there reports the read-only ATTRIBUTE, which
+ * directories do not meaningfully carry, and answers "writable" for a folder an
+ * ACL denies. A probe that is wrong in both directions is worse than the write
+ * reporting the failure itself.
+ *
+ * A FUNCTION rather than a module constant, and read at each call, so a test can
+ * ask what a Windows run would answer. The distinction it draws is the one that
+ * broke on Windows: the permission half is platform-bound and the SHAPE half is
+ * not, and a single module-scope gate in front of both took the working half
+ * down with the one that cannot work.
+ *
+ * @returns `true` where `accessSync` means what it says about a directory.
+ */
+function canAskAboutWriting(): boolean {
+  return process.platform !== 'win32';
+}
+
+/**
+ * Why a global link cannot be written, when the folder that would hold it says
+ * no — asked BEFORE the write, so a person is told rather than shown a stack.
+ *
+ * The project engine answers this for every write path between the repository
+ * root and the target (`unwritableWritePath`). A global plan needs one directory
+ * probed and not a path: the roots are absolute and given, and everything under
+ * them this engine makes itself. `chmod 000` on `~/.agents/skills` is the case
+ * that made this necessary — the sweep already skips an unreadable directory
+ * (`listDir` answers nothing and removes nothing), and the APPLY threw a raw
+ * EACCES over it, so the run that removed nothing said so with a stack trace.
+ *
+ * A folder that is not there yet is not probed: the engine creates it, inside a
+ * parent it will fail on visibly if it may not.
+ *
+ * @param target - the absolute link target.
+ * @returns the sentence, or `undefined` when the write may go ahead.
+ */
+function unwritableGlobalDir(target: string, memo: WritePathMemo): string | undefined {
+  // SHAPE, on every platform, over every ancestor, OUTERMOST first — the exact
+  // walk `findBlockedWritePaths` does for a repository, through the exact
+  // helpers, so the two cannot answer differently about the same shape. Naming
+  // the outermost obstacle is what makes the answer actionable: a file at
+  // `~/.agents` makes `~/.agents/skills` unreadable too, and naming the deeper
+  // one sends somebody to look at a path that is only wrong because of the one
+  // above it. `directoryWriteBlock` answers `undefined` for a level that is
+  // simply absent, which is every level this engine is about to create.
+  //
+  // TWO bugs lived in the version this replaces, and Windows found both.
+  //
+  // It asked only about the target's immediate parent and answered `undefined`
+  // for anything that was not a directory — "a shape question, answered
+  // elsewhere" — and at global scope there IS no elsewhere: no global path ever
+  // reaches `findBlockedWritePaths`. And it returned early on the whole probe
+  // when the platform could not answer about PERMISSION, which took the shape
+  // half down with it on Windows, where the shape half is the one that works.
+  // A plain file at `~/.agents/skills` therefore sailed past on both counts and
+  // raised EEXIST out of `mkdirSync`, after the config had recorded the answer.
+  //
+  // The platforms disagree about which error a bad ancestor produces — Windows
+  // answers ENOENT for a stat under a file and EEXIST for the `mkdir`, POSIX
+  // answers ENOTDIR for both — and that is exactly why this asks `statSync`
+  // through DOR-1882's helper rather than reading an `errno` of its own.
+  for (const dir of writePathDirs(target)) {
+    const reason = memoisedShapeBlock(dir, memo);
+    if (reason !== undefined) return reason;
+  }
+
+  // PERMISSION second, only where the platform can answer it, and only of the
+  // one folder that will really take the new entry: the deepest ancestor that
+  // already exists. Everything below it this engine creates itself, inside a
+  // parent it has just proved it may write in.
+  if (!canAskAboutWriting()) return undefined;
+  const parent = deepestExistingDir(target);
+  if (parent === undefined) return undefined;
+  try {
+    accessSync(parent, constants.W_OK | constants.X_OK);
+    return undefined;
+  } catch {
+    return writePathReason(parent, 'read-only');
+  }
+}
+
+/**
+ * The deepest ancestor of `target` that already exists on disk.
+ *
+ * The one folder a write really touches: `mkdirSync(..., { recursive: true })`
+ * creates every level below it, and the level it starts from is the one whose
+ * mode decides whether it may.
+ *
+ * `pathExists` is lstat-based on purpose: a DANGLING symlink is an entry
+ * `mkdirSync` refuses, and an `existsSync` here would step over it.
+ *
+ * @param target - the absolute link target.
+ * @returns the deepest existing ancestor directory, or `undefined` when none of
+ *   them exists.
+ */
+function deepestExistingDir(target: string): string | undefined {
+  const dirs = writePathDirs(target);
+  for (let i = dirs.length - 1; i >= 0; i -= 1) {
+    const dir = dirs[i];
+    if (dir !== undefined && pathExists(dir)) return dir;
+  }
+  return undefined;
+}
+
+/**
+ * Cached answers about the directories a run writes into.
+ *
+ * Every action in a global plan lands in one of at most three directories, so
+ * the probe is asked once per directory rather than once per link. It reads a
+ * directory to decide (`directoryWriteBlock` lists it), and a plan of forty
+ * skills across two roots would otherwise do that eighty times.
+ */
+type WritePathMemo = Map<string, string | undefined>;
+
+/**
+ * Whether this directory's SHAPE stops a write through it, asked at most once
+ * per run.
+ *
+ * Shape only. Permission is a different question with a different scope (one
+ * folder, not every ancestor) and a different platform answer, and it is asked
+ * separately in {@link unwritableGlobalDir}.
+ *
+ * @param dir - an absolute ancestor of the link target.
+ * @param memo - the run's cache.
+ * @returns the sentence, or `undefined` when a write may pass through here.
+ */
+function memoisedShapeBlock(dir: string, memo: WritePathMemo): string | undefined {
+  const cached = memo.get(dir);
+  if (cached !== undefined || memo.has(dir)) return cached;
+  const cause = directoryWriteBlock(dir);
+  const reason = cause === undefined ? undefined : writePathReason(dir, cause);
+  memo.set(dir, reason);
+  return reason;
+}
+
+/**
  * Create or repair one global symlink.
  *
  * The same shape as the project apply's: look, act, and look again when another
@@ -316,16 +492,26 @@ type SymlinkOutcome =
  * every macOS temp directory is one.
  *
  * @param action - the `symlink` action, with absolute `source` and `target`.
+ * @param memo - the run's cache of per-directory write answers.
  * @returns what happened at the target: written, already right, or blocked by
  *   something real that is left exactly where it is.
  */
-function applyGlobalSymlink(action: ProjectionAction): SymlinkOutcome {
+function applyGlobalSymlink(action: ProjectionAction, memo: WritePathMemo): SymlinkOutcome {
   if (!action.source || !action.target) {
     throw new Error(`global symlink action for "${action.name}" is missing source/target`);
   }
   const absTarget = action.target;
   const absSource = action.source;
   const linkText = globalLinkText(action);
+
+  // Asked before the write, so a folder that says no is a reported conflict
+  // rather than a stack trace. Only when something is really about to be
+  // written: a link that is already right is left alone above, and calling its
+  // folder blocked would turn a clean tree into a wall of faults.
+  const unwritable = unwritableGlobalDir(absTarget, memo);
+  if (unwritable !== undefined && !linkMatchesPlan(absTarget, absSource, linkText, LINK_CHECK)) {
+    return { kind: 'blocked', reason: unwritable };
+  }
 
   for (let attempt = 0; attempt < SYMLINK_ATTEMPTS; attempt++) {
     if (pathExists(absTarget)) {
@@ -394,11 +580,13 @@ export function applyGlobalPlan(
 } {
   const applied: ProjectionAction[] = [];
   const conflicts: ProjectionAction[] = [];
+  // One cache per run: every action lands in one of at most three directories.
+  const writeMemo: WritePathMemo = new Map();
 
   for (const action of plan.actions) {
     switch (action.kind) {
       case 'symlink': {
-        const outcome = applyGlobalSymlink(action);
+        const outcome = applyGlobalSymlink(action, writeMemo);
         if (outcome.kind === 'written') applied.push(action);
         else if (outcome.kind === 'blocked') conflicts.push({ ...action, reason: outcome.reason });
         break;
@@ -458,9 +646,16 @@ function isGlobalDrifted(action: ProjectionAction): boolean {
 export function checkGlobalPlan(plan: GlobalProjectionPlan, roots: GlobalPlanRoots): DriftResult {
   const drifted = plan.actions.filter(isGlobalDrifted);
   const blocked: ProjectionAction[] = [];
+  const writeMemo: WritePathMemo = new Map();
   for (const action of plan.actions) {
     if (action.kind !== 'symlink' || !action.source || !action.target) continue;
-    const reason = blockingSymlinkOccupant(action.target, globalLinkText(action));
+    // Both questions, in the order the apply asks them, so `--check` and `--fix`
+    // name the same paths for the same reasons. The permission probe is scoped
+    // to the DRIFTED actions for the same reason the apply scopes it: a link
+    // already correct is one nothing is about to write.
+    const reason =
+      blockingSymlinkOccupant(action.target, globalLinkText(action)) ??
+      (isGlobalDrifted(action) ? unwritableGlobalDir(action.target, writeMemo) : undefined);
     if (reason !== undefined) blocked.push({ ...action, reason });
   }
   const removals = findGlobalOrphans(plan, roots);

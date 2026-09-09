@@ -76,6 +76,7 @@ import type {
 } from '@dorkos/shared/harness-schemas';
 import { z } from 'zod';
 import type { HookDecisions } from './hook-consent.js';
+import { readGlobalSharingFromDisk } from './global-scope.js';
 import {
   planWithConsent,
   type WithheldHooks,
@@ -468,9 +469,12 @@ interface GlobalSkill {
  * about skills that run on a timer.
  *
  * @param dorkHome - the resolved data directory.
+ * @param sharedWithTools - whether `harness.global.harnesses` names at least one
+ *   agent tool. The sentence's first clause depends on it: "only the Claude Code
+ *   sessions DorkOS runs can see it" stops being true once somebody has shared.
  * @returns one entry per skill, or none when the folder cannot be read.
  */
-function globalSkills(dorkHome: string): GlobalSkill[] {
+function globalSkills(dorkHome: string, sharedWithTools: boolean): GlobalSkill[] {
   let packages;
   try {
     packages = scanInstalledPlugins({ dorkHome });
@@ -483,7 +487,7 @@ function globalSkills(dorkHome: string): GlobalSkill[] {
   const skills: GlobalSkill[] = [];
   for (const plugin of packages) {
     if (plugin.location.scope !== 'global') continue;
-    const reason = globalInstallDropReason(plugin);
+    const reason = globalInstallDropReason(plugin, { sharedWithTools });
     for (const skill of plugin.skills) {
       skills.push({
         name: `${plugin.name}__${skill.name}`,
@@ -548,10 +552,12 @@ function globalSkillEntries(input: {
  * put a sentence in, so the row IS the answer.
  *
  * @param dorkHome - the resolved data directory.
+ * @param sharedWithTools - whether at least one agent tool is named in
+ *   `harness.global.harnesses`; it decides the sentence's first clause.
  * @returns one cell-less row per global skill.
  */
-function globalRowsWithoutHarnesses(dorkHome: string): HarnessRow[] {
-  return globalSkills(dorkHome).map((skill) => ({
+function globalRowsWithoutHarnesses(dorkHome: string, sharedWithTools: boolean): HarnessRow[] {
+  return globalSkills(dorkHome, sharedWithTools).map((skill) => ({
     artifact: 'skill',
     provenance: 'installed',
     scope: 'global',
@@ -560,6 +566,23 @@ function globalRowsWithoutHarnesses(dorkHome: string): HarnessRow[] {
     adoptable: false,
     cells: {},
   }));
+}
+
+/**
+ * Whether this machine shares its all-projects packages with at least one agent
+ * tool.
+ *
+ * Read off `config.json` rather than through the config manager, exactly as
+ * `hook-consent.ts`'s disk reader is, so the status service answers the same way
+ * in the server and in a process that must not open the store. Nothing decided
+ * yet is the honest default and the state of every machine that has not
+ * answered.
+ *
+ * @param dorkHome - the resolved data directory.
+ * @returns `true` when `harness.global.harnesses` names at least one tool.
+ */
+function sharesGlobalPackages(dorkHome: string): boolean {
+  return readGlobalSharingFromDisk(dorkHome).harnesses.length > 0;
 }
 
 /** One withheld package, reduced to what a person may be told about it. */
@@ -587,7 +610,7 @@ function emptyStatus(
   state: HarnessStatusResponse['state'],
   detail?: string
 ): HarnessStatusResponse {
-  const rows = globalRowsWithoutHarnesses(dorkHome);
+  const rows = globalRowsWithoutHarnesses(dorkHome, sharesGlobalPackages(dorkHome));
   return {
     projectPath,
     state,
@@ -707,7 +730,10 @@ export function buildHarnessStatus(options: BuildHarnessStatusOptions): HarnessS
     // and here always includes what is installed for every project. A second
     // call would make the page merge two answers and decide precedence between
     // them, which is the one thing DorkOS has no opinion about.
-    globalEntries: globalSkillEntries({ skills: globalSkills(dorkHome), enabled }),
+    globalEntries: globalSkillEntries({
+      skills: globalSkills(dorkHome, sharesGlobalPackages(dorkHome)),
+      enabled,
+    }),
   });
 
   const cells = rows.flatMap((row) =>

@@ -190,6 +190,11 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'workspace.portBlockSize',
   'workspace.defaultProvider',
   'workspace.retentionCap',
+  // When the one-time global-sharing question was last answered. `null` means
+  // never asked, which is the state that CAUSES the question rather than
+  // silencing it, so nothing about it is a safety axis — the closed door is the
+  // empty `harness.global.harnesses` list beside it, which is `safe`.
+  'harness.global.askedAt',
   'workbench.defaultViewers',
   'workbench.terminalGraceTtlMinutes',
   'workbench.autoOpenDiff',
@@ -344,6 +349,10 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Wiped to empty as well, and that is the safe direction here too: clearing a
   // refusal re-arms nothing, it only means the next sync asks again (DOR-1849).
   'harness.refusedHooks': [],
+  // Nothing DorkOS installed for all your projects is shared into your home
+  // directory until you say which agent tools may see it (DOR-1924). An empty
+  // list IS off, so the empty default is the closed door.
+  'harness.global.harnesses': [],
   // No static shared secret; the per-instance local token gates /mcp instead.
   'mcp.apiKey': null,
   'mcp.rateLimit.enabled': true,

@@ -461,3 +461,65 @@ export async function isWithinBoundary(userPath: string, boundary?: string): Pro
     return false;
   }
 }
+
+/**
+ * The minimal config read surface {@link boundaryWasConfigured} needs.
+ *
+ * Injected rather than imported so the function is pure and callable from any
+ * process at any point — including the CLI, which resolves its own config store
+ * long before `initBoundary` ever runs.
+ */
+export interface BoundaryConfigReader {
+  /** Read one dotted config path. `server.boundary` is the only one read here. */
+  getDot(path: string): unknown;
+}
+
+/**
+ * Whether somebody CONFIGURED a boundary, as opposed to DorkOS defaulting to
+ * the home directory.
+ *
+ * Harness Sync at global scope asks this before it plans a link in a person's
+ * home directory: `initBoundary`'s default root is that home
+ * ({@link initBoundary}), so an ordinary install is already inside its own
+ * boundary — but a deployment somebody confined on purpose must not have DorkOS
+ * writing into `~` anyway, which would defeat the point of confining it. The
+ * `<dorkHome>` tier is unaffected, because that is DorkOS's own directory and
+ * every deployment already writes to it on every boot.
+ *
+ * **Deliberately NOT derived from `initBoundary`'s argument**, and the reasons
+ * are measured rather than guessed. That function has exactly two callers —
+ * `index.ts` and `harness-boot.ts` — and the CLI is neither, so a CLI process
+ * would always read "not configured" and write into a confined machine's home
+ * directory: fail-open, in the one place this rule exists to close. And
+ * `harness-boot.ts` passes `path.dirname(dorkHome)`, a non-null argument, where
+ * nothing was configured at all, so the eval harness would read "configured"
+ * and stop projecting: fail-closed, in the other direction, for a deployment
+ * nobody confined. Both failures are silent and they point opposite ways.
+ *
+ * So this reads the two places a boundary can actually be set and nothing else:
+ * the `DORKOS_BOUNDARY` environment variable (`env.ts`, and what
+ * `packages/cli/src/cli.ts` writes from `--boundary`) and the `server.boundary`
+ * config field (`null` by default). BOTH are needed, not just the variable:
+ * `cli.ts` populates the variable from config only AFTER the `harness`
+ * subcommand has been intercepted, so a config-only deployment would read
+ * "not configured" in exactly the command this gate is for.
+ *
+ * An empty or whitespace-only value is not a configuration. `DORKOS_BOUNDARY=`
+ * is how a shell unsets a variable it has to keep exporting, and reading that
+ * as "confined" would silently disable the user tier for anybody who does it.
+ *
+ * Pure: no filesystem access of its own, and no dependence on startup order.
+ *
+ * @param env - the process environment to read `DORKOS_BOUNDARY` from.
+ * @param config - the config store to read `server.boundary` from.
+ * @returns `true` when either place carries a non-empty value.
+ */
+export function boundaryWasConfigured(
+  env: NodeJS.ProcessEnv,
+  config: BoundaryConfigReader
+): boolean {
+  const fromEnv = env.DORKOS_BOUNDARY;
+  if (typeof fromEnv === 'string' && fromEnv.trim() !== '') return true;
+  const fromConfig = config.getDot('server.boundary');
+  return typeof fromConfig === 'string' && fromConfig.trim() !== '';
+}

@@ -562,3 +562,49 @@ A projection can be stopped by whatever is already on disk, and the engine has o
 **A skills folder DorkOS cannot read is the one case where the sweeps stand down.** The six sweeps read the plan as their keep-set — a `.claude/skills` link the plan does not name came from something that is gone, so it goes — and that inference is only as good as the plan. A folder nobody can list yields the same empty result an empty folder does, so the moment the scan started answering `[]` for ENOTDIR and EACCES instead of throwing them, one `chmod 000` on `.agents/skills` made every authored projection look orphaned and a sync deleted `.claude/skills/*`; an unreadable package `skills/` took all four of that package's links, with nothing printed at all. The crash that behaviour replaced was worse to read and better to have: it removed nothing.
 
 So `scan/scanner.ts` tells ABSENT from UNLISTABLE — ENOENT **with nothing at the path** is the only silent answer, because a root that is a link pointing at nothing reads as ENOENT too and is somebody's entry with live links into it — and an unlistable root goes on `plan.unreadableSkillRoots`. That marker does three things: both skill-link sweeps stand down (`findInstalledOrphans`, `findOrphanedAuthoredLinks`), a warning names the folder and says every link into it was left alone, and `checkPlan` is not clean. It is one flag for both sweeps rather than a per-folder rule, because they share one keep-set and the cost of over-suppressing is a dead link left lying about, while the cost of under-suppressing is somebody's projections deleted. The other four sweeps are untouched: none of them reads a skill source. This is the same shape `plan/global-projector.ts` already carried as `unreadableRoot`, for the same reason — an empty plan and an empty folder look identical from the outside, and the sweep cannot tell them apart on its own.
+
+## 15. Global scope — the two tiers, the third clause, and the boundary
+
+A package installed for all your projects lives in `<dorkHome>/plugins/<pkg>`. It has no repository, so it goes through a **second entry point** rather than a flag on the first: `buildGlobalPlan(input)` beside `project()`, with `projectGlobal` doing the reads exactly as `project()` does for `buildPlan` ([`plan/global-projector.ts`](../packages/harness/src/plan/global-projector.ts)). `buildPlan` runs fourteen stages unconditionally and a root discriminator would run every one of them against a home directory and rely on each to opt out — so "never generate at user scope" would be enforced by fourteen independent omissions, and the ordinary way a rule like that is lost is a fifteenth stage added later by somebody who never read the design. A separate entry point inverts it: a stage reaches the global plan only if somebody puts it there, and the property `plan-root-scope.property.test.ts` P8c is the executable half of that promise.
+
+**Only skills, only symlinks.** Hooks, commands, instructions and MCP servers are refused at user scope, each with its own reason recorded in [`meta/harness-sync-capabilities.md`](../meta/harness-sync-capabilities.md) (IN-08, HK-14) and in ADR [`260908-191538`](../decisions/260908-191538-global-scope-projection-is-skills-only-and-symlinked.md). Nothing here generates a file into a person's home directory, ever.
+
+**Three tiers, and each writes one directory:**
+
+| Tier                   | Directory             | Who reads it                                         | Switchable                                      |
+| ---------------------- | --------------------- | ---------------------------------------------------- | ----------------------------------------------- |
+| dork home              | `<dorkHome>/skills`   | the DorkOS scheduler, for skills that run on a timer | no                                              |
+| the shared user folder | `~/.agents/skills`    | Codex, OpenCode, Cursor, Gemini CLI, Copilot         | yes — any one of those five in `harness.global` |
+| Claude Code's own      | `<claudeRoot>/skills` | a bare `claude`                                      | yes — `claude-code` in `harness.global`         |
+
+The dork-home tier is deliberately not switchable: it writes only inside DorkOS's own data directory, into a root DorkOS already creates and watches on boot. Asking permission for that teaches people to click yes without reading, which every later question in this design depends on them not having done.
+
+A user tier needs **two clauses**, and both: the root has to be passed AND an agent tool that reads it has to be enabled. The root answers "may DorkOS write here" and the harness list answers "did anybody ask it to". The server resolves the roots ([`services/harness/global-scope.ts`](../apps/server/src/services/harness/global-scope.ts)) and the pure planner asks both questions again over what it is handed — duplication on purpose, because a planner that trusted its caller to have filtered would be one caller away from writing a Claude Code link for somebody who never enabled Claude Code.
+
+**A root that is not resolved is not scanned, and that is what keeps DorkOS out of a home directory nobody shared with.** The roots are what the SWEEP reads, not only what the plan writes into, so `global-scope.ts` returns a user root only for a tool that is enabled. The consequence is an ordering rule for `dorkos harness global --disable`: it builds the plan as it stands, computes the plan the list would have without the tool, sweeps the DIFFERENCE against the OLD roots, and only then writes the config. Forgetting the tool first would take its directory out of the answer and strand every link DorkOS put there.
+
+### The third clause
+
+At project scope a candidate under `.agents/skills` or `.claude/skills` is swept when its basename carries `__` and it is a real symlink. Two clauses, and sufficient in a repository, where every symlink in those directories was put there by the engine.
+
+It is not sufficient in a home directory. People hand-build the exact projection this feature automates: on the operator's own machine `~/.claude/skills/composio-cli` and `~/.claude/skills/find-skills` are relative symlinks into `~/.agents/skills`, whose targets are directories a person wrote. Under two clauses the only thing standing between those and a sweep is the absence of `__` in their names. So a global sweep asks a third question — **is this link OURS?** — and answers it from the link's own text ([`apply/global-apply.ts`](../packages/harness/src/apply/global-apply.ts)):
+
+```
+A candidate directly inside a directory the global roots declare is swept when:
+  1. `lstat` says it is a symlink; and
+  2. its basename contains `__`; and
+  3. the link's own text, resolved LEXICALLY against the directory the link sits in,
+     is inside `<dorkHome>/plugins`; and
+  4. EITHER the package directory that text points into is gone from disk,
+     OR the plan enumerated that package and does not name this target.
+```
+
+Three details decide whether that is correct rather than merely careful. Clause 3 reads the link text and never `realpath`, because a global uninstall removes the package directory first and `realpath` throws on exactly the orphans the sweep exists to remove. Containment is a path-segment test, not a bare `startsWith`. And the sweep reads one level of each directory and never descends, so a person's own subdirectory tree is not walked and nothing inside it can be a candidate.
+
+Clause 4 is not "the plan does not name it", and the difference is a measured data-loss bug: a package whose `.dork/manifest.json` somebody broke half an hour ago is skipped by the scan, so a keep-set of planned targets alone called all of its links orphans and removed them. A broken manifest costs a package its projection; it must never cost it its links.
+
+### Under `DORKOS_BOUNDARY`
+
+**A deployment somebody confined writes nothing in a home directory and says so, and its dork-home tier is unaffected.** The boundary limits how far DorkOS reaches into a person's disk, and `<dorkHome>` is DorkOS's own directory, which every deployment already writes to on every boot — so scheduled global skills keep running.
+
+The predicate is `boundaryWasConfigured(env, config)` ([`lib/boundary.ts`](../apps/server/src/lib/boundary.ts)), and it is deliberately **not** derived from `initBoundary`'s argument. That function has exactly two callers and the CLI is neither, so a CLI process would always read "not configured" and write into a confined machine's home directory; and `harness-boot.ts` passes `path.dirname(dorkHome)`, a non-null argument, where nothing was configured at all, so the eval harness would read "configured" and stop projecting. Both failures are silent and they point opposite ways. So the predicate reads the two places a boundary can actually be set — the `DORKOS_BOUNDARY` environment variable and the `server.boundary` config field — and nothing else. `validateBoundaryOrDorkHome` is never called here: it narrows to `<dorkHome>/agents/*` on purpose, so reaching for it would either refuse the write or invite somebody to widen a security narrowing to make a feature work.

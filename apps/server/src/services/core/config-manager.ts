@@ -3074,6 +3074,44 @@ export function seedHarnessRefusedHooks(store: {
 }
 
 /**
+ * Migration body: reserve `harness.global` on a `harness` block that predates
+ * global scope (DOR-1924).
+ *
+ * Same mechanism as {@link seedHarnessRefusedHooks} and load-bearing for the
+ * same reason: `harness` is a section most stored configs already carry (the
+ * `'0.44.0'` key seeds it), and conf's pre-write merge is SHALLOW, so a stored
+ * `harness` object wins wholesale and never gains a member. Ajv's `useDefaults`
+ * does fill the leaf — but only into the copy conf's `store` getter just built
+ * and is about to discard, so nothing reaches the file without this. See "Which
+ * of these bodies is a real no-op" above {@link CONFIG_MIGRATIONS}.
+ *
+ * The schema's own `.default(...)` factory covers fresh installs and every
+ * in-memory parse; this covers the file of somebody who already had a `harness`
+ * section. Neither covers the other.
+ *
+ * Seeds it CLOSED: an empty `harnesses` list means DorkOS shares nothing, and
+ * `askedAt: null` means the question has never been asked. An upgrade must not
+ * answer a question about writing into somebody's home directory on their
+ * behalf, in either direction.
+ *
+ * Additive and idempotent — it writes only when `global` is not already an
+ * object, so a corrupt-recovery re-run cannot forget an answer somebody gave.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedHarnessGlobal(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const harness = store.get('harness');
+  if (harness == null || typeof harness !== 'object') return;
+  const current = harness as Record<string, unknown>;
+  if (current.global != null && typeof current.global === 'object') return;
+  store.set('harness', { ...current, global: { harnesses: [], askedAt: null } });
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -3799,6 +3837,30 @@ export const CONFIG_MIGRATIONS = {
       ...current,
       environment: current?.environment ?? { inherit: { claudeCode: [], codex: [], opencode: [] } },
     });
+  },
+  // 0.76.0 has merged (DOR-1903, a `runtimes` leaf) and 0.74.0 is the newest
+  // tag, so 0.77.0 is the next key. Frozen from merge, not from the release
+  // bump, for the reason `'0.60.0'` above states; anything further opens
+  // `'0.78.0'`.
+  //
+  // It was written as `'0.76.0'` and moved, because that key landed on `main`
+  // while this branch was open — the ordinary way two slices in flight collide,
+  // and the reason the rule is "strictly above the newest tag AND above every
+  // key already here" rather than a fixed number.
+  //
+  // Disjoint from every other key here: it writes one nested leaf under
+  // `harness`. `'0.44.0'`, `'0.57.0'` and `'0.75.0'` also touch that section —
+  // seeding the whole section, `approvedHooks`, and `refusedHooks` — and this
+  // body writes none of those members, so sequencing them any way round lands
+  // the same config. `'0.76.0'` touches `runtimes` and never `harness`.
+  '0.77.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `harness.global` — which agent tools DorkOS shares your globally installed
+    // packages with, and when it last asked (DOR-1924). A nested leaf, so this
+    // body is the only thing that writes it; see `seedHarnessGlobal`.
+    seedHarnessGlobal(store);
   },
 } as const;
 

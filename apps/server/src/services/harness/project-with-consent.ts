@@ -112,6 +112,7 @@ import {
   type HookDecisions,
   type HookProjectionRequest,
 } from './hook-consent.js';
+import { readGlobalSharingFromDisk } from './global-scope.js';
 
 /**
  * Seam for the Harness Sync engine calls, injectable so route/service tests can
@@ -426,10 +427,20 @@ export function planWithConsent(
     }
   }
 
+  // Whether this machine shares its all-projects packages with any agent tool.
+  // Read straight off `config.json`, never through the config store, for the
+  // same reason `decisions` is: `dorkos harness sync --check` must not write,
+  // and `conf`'s constructor creates the file when it is missing (DOR-678). It
+  // decides one sentence — the drop each globally installed package earns says
+  // who can see it, and "only the Claude Code sessions DorkOS runs" stops being
+  // true the moment somebody answers the sharing question.
+  const sharedWithTools = readGlobalSharingFromDisk(opts.dorkHome).harnesses.length > 0;
+
   const full = _internal.project(projectPath, {
     dorkHome: opts.dorkHome,
     allowPluginHooks: (name) => allowed.has(name),
     ...(opts.dorkosHarness === undefined ? {} : { dorkosHarness: opts.dorkosHarness }),
+    ...(sharedWithTools ? { sharedWithTools: true } : {}),
   });
   const plan = opts.harness === undefined ? full : filterPlanToHarness(full, opts.harness);
   return { plan, withheld };

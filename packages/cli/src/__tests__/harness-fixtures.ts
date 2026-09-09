@@ -100,3 +100,29 @@ export function writeFixtureRepo(root: string): void {
 export function pinEmptyClaudeRoot(under: string): void {
   vi.stubEnv('CLAUDE_CONFIG_DIR', path.join(under, 'claude-root'));
 }
+
+/**
+ * Point `$HOME` at a directory this test owns, for the whole of one test.
+ *
+ * Slice A3 made `dorkos harness sync --global` resolve `~/.agents/skills` — the
+ * one folder five agent tools read — through `os.homedir()`, which on POSIX
+ * answers `$HOME` before it asks the password database. Without this pin, a
+ * global case would resolve the DEVELOPER's own home directory, scan it, and
+ * offer whatever it found there for removal. Nothing would be removed (the
+ * predicate only owns links whose text resolves inside the temp
+ * `<dorkHome>/plugins`), but a suite that reads somebody's home folder at all is
+ * a suite one bad predicate away from deleting from it.
+ *
+ * Pair it with {@link pinEmptyClaudeRoot}: the two roots are resolved by
+ * different rules, and pinning one is not pinning the other.
+ *
+ * Undone by the `vi.unstubAllEnvs()` these suites already call.
+ *
+ * @param dir - a temp directory this test already owns and will remove.
+ */
+export function pinHome(dir: string): void {
+  vi.stubEnv('HOME', dir);
+  // Windows resolves the home directory from `USERPROFILE`, and `os.homedir()`
+  // reads it first there. Pinned too, so the guarantee is not platform-shaped.
+  vi.stubEnv('USERPROFILE', dir);
+}

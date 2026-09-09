@@ -47,6 +47,30 @@ const GLOBAL_INSTALL_LEAD =
   'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it.';
 
 /**
+ * The lead sentence once somebody has shared their all-projects packages with at
+ * least one agent tool.
+ *
+ * The sentence above says only DorkOS-driven Claude Code sessions can see the
+ * package, and the moment `dorkos harness global --enable <tool>` has run that
+ * is FALSE — measured on the status payload, which is where a person reads it.
+ * So the lead has two forms rather than one form with an appended correction: a
+ * sentence that is wrong cannot be fixed by adding another sentence under it.
+ */
+const GLOBAL_INSTALL_LEAD_SHARED =
+  'installed for all your projects, and shared with the agent tools you chose.';
+
+/**
+ * The sentence appended while nothing is shared, naming the command that shares
+ * it. Frozen copy (spec §4a, the A3 append).
+ *
+ * Appended, never a rewrite, for the reason the whole block is written this way:
+ * the defect it replaced was a sentence that told the truth about a command that
+ * was going to exist and never did. This one names a command that exists.
+ */
+const GLOBAL_INSTALL_SHARE_OFFER =
+  'Run dorkos harness global --enable <tool> to share it with your other agent tools.';
+
+/**
  * How many skill names the first form lists before it stops counting them out.
  *
  * A drop reason is one line in a terminal. A pack with sixty skills would push
@@ -72,13 +96,17 @@ function namedSkills(names: readonly string[]): string {
  * the commonest global package there is — a pack with one skill in it — and a
  * sentence a person reads has to be a sentence.
  */
-function globalInstallSkillsReason(count: number, names: string): string {
+function globalInstallSkillsReason(count: number, names: string, shared: boolean): string {
   const held = count === 1 ? '1 skill is' : `${count} skills are`;
-  return `${GLOBAL_INSTALL_LEAD} Its ${held} not shared with this project: ${names}`;
+  const lead = shared ? GLOBAL_INSTALL_LEAD_SHARED : GLOBAL_INSTALL_LEAD;
+  return `${lead} Its ${held} not shared with this project: ${names}`;
 }
 
 /** The form for a package with nothing portable in it — a different sentence, not a blank list. */
 const GLOBAL_INSTALL_NO_SKILLS = `${GLOBAL_INSTALL_LEAD} It has no skills to share.`;
+
+/** The same form once sharing is on. It still has no skills, so nothing reaches anything. */
+const GLOBAL_INSTALL_NO_SKILLS_SHARED = `${GLOBAL_INSTALL_LEAD_SHARED} It has no skills to share.`;
 
 /**
  * The sentence for a package whose timed skills are already linked.
@@ -185,16 +213,31 @@ function bothScopesNoticeReason(pkg: string, repoRoot: string): string {
  * @returns the drop reason, continuing the line `formatDropList` already opened
  *   with the package's name.
  */
-export function globalInstallDropReason(plugin: InstalledPlugin): string {
-  if (plugin.skills.length === 0) return GLOBAL_INSTALL_NO_SKILLS;
+export function globalInstallDropReason(
+  plugin: InstalledPlugin,
+  opts?: { sharedWithTools?: boolean }
+): string {
+  const shared = opts?.sharedWithTools === true;
+  if (plugin.skills.length === 0) {
+    return shared ? GLOBAL_INSTALL_NO_SKILLS_SHARED : GLOBAL_INSTALL_NO_SKILLS;
+  }
   const lead = globalInstallSkillsReason(
     plugin.skills.length,
-    namedSkills(plugin.skills.map((skill) => skill.name))
+    namedSkills(plugin.skills.map((skill) => skill.name)),
+    shared
   );
+  // The offer, only while the package is not shared yet. Said to somebody who
+  // already shared, it would tell them to do again what they have done.
+  //
+  // The full stop belongs to each JOIN, never to a sentence: the frozen lead
+  // ends on a comma-separated list with no terminator, so every clause below
+  // supplies the stop before the sentence it adds.
+  const join = (into: string): string =>
+    shared ? into : `${into}${into.endsWith('.') ? '' : '.'} ${GLOBAL_INSTALL_SHARE_OFFER}`;
   // Only when there is a timer to speak about. Appended unconditionally, this
   // would tell a person with no scheduled skill that their timers work.
   const timed = plugin.skills.filter((skill) => skill.hasSchedule);
-  if (timed.length === 0) return lead;
+  if (timed.length === 0) return join(lead);
   // EVERY one of them, not any: the sentence is about "its skills that run on a
   // timer", so one unlinked skill makes the plural claim false and the person is
   // told to run the sync instead.
@@ -202,7 +245,7 @@ export function globalInstallDropReason(plugin: InstalledPlugin): string {
   // The full stop belongs to the JOIN, not to either sentence: the frozen lead
   // ends on a comma-separated list with no terminator, and two sentences run
   // together without one.
-  return `${lead}. ${allLinked ? GLOBAL_INSTALL_TIMERS_WORK : GLOBAL_INSTALL_TIMERS_PENDING}`;
+  return join(`${lead}. ${allLinked ? GLOBAL_INSTALL_TIMERS_WORK : GLOBAL_INSTALL_TIMERS_PENDING}`);
 }
 
 /**
@@ -229,6 +272,17 @@ export function globalInstallDropReason(plugin: InstalledPlugin): string {
 export function planGlobalInstallDrops(input: {
   plugins: readonly InstalledPlugin[];
   repoRoot: string;
+  /**
+   * Whether this machine shares its all-projects packages with at least one
+   * agent tool — `harness.global.harnesses` being non-empty.
+   *
+   * Injected, like every other answer this engine is handed: that list is a
+   * `~/.dork/config.json` key and nothing here reads config. Omitted, the drop
+   * reads as not-shared, which is the state of every machine that has not
+   * answered the question and the honest answer for a caller that has not
+   * looked.
+   */
+  sharedWithTools?: boolean;
 }): ProjectionAction[] {
   const projectNames = new Set(
     input.plugins.filter((p) => p.location.scope === 'project').map((p) => p.name)
@@ -237,7 +291,12 @@ export function planGlobalInstallDrops(input: {
   const drops: ProjectionAction[] = [];
   for (const plugin of input.plugins) {
     if (plugin.location.scope !== 'global') continue;
-    drops.push(dropWholePlugin(plugin, globalInstallDropReason(plugin)));
+    drops.push(
+      dropWholePlugin(
+        plugin,
+        globalInstallDropReason(plugin, { sharedWithTools: input.sharedWithTools === true })
+      )
+    );
     if (!projectNames.has(plugin.name) || noticed.has(plugin.name)) continue;
     noticed.add(plugin.name);
     drops.push(dropWholePlugin(plugin, bothScopesNoticeReason(plugin.name, input.repoRoot)));

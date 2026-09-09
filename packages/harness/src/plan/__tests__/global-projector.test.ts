@@ -8,7 +8,7 @@
  * reached for the filesystem would come back empty or throw.
  */
 import { describe, it, expect } from 'vitest';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import {
   buildGlobalPlan,
   globalSkillsDir,
@@ -66,7 +66,7 @@ describe('buildGlobalPlan', () => {
         scope: 'global',
         name: 'globex__greet',
         source: `${DORK_HOME}/plugins/globex/skills/greet`,
-        target: `${globalSkillsDir(DORK_HOME)}/globex__greet`,
+        target: join(globalSkillsDir(DORK_HOME), 'globex__greet'),
         reason: GLOBAL_SCHEDULE_LINK_REASON,
       },
     ]);
@@ -127,7 +127,11 @@ describe('buildGlobalPlan', () => {
 
     expect(plan.actions.every((a) => a.kind === 'symlink')).toBe(true);
     expect(
-      plan.actions.every((a) => a.target?.startsWith(`${globalSkillsDir(DORK_HOME)}/`) === true)
+      // `+ sep`, not a hard-coded `/`: a target is a real path and the planner
+      // builds it with `join`, so the separator is the platform's. Spelling it
+      // `/` here pinned the POSIX representation and red on Windows for a plan
+      // that was right (DOR-1924).
+      plan.actions.every((a) => a.target?.startsWith(globalSkillsDir(DORK_HOME) + sep) === true)
     ).toBe(true);
     expect({ notEnabled: plan.notEnabled, narrowedTo: plan.narrowedTo, drops: plan.drops }).toEqual(
       {

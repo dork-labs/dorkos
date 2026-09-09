@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { HARNESS_IDS } from './harness-ids.js';
 
 /**
  * The harness vocabulary — the ids and display names of every agent harness
@@ -9,20 +10,14 @@ import { z } from 'zod';
  * cannot import `@dorkos/harness`, which is a Node filesystem engine.
  * `@dorkos/harness` re-exports all four names from here (`src/manifest/schema.ts`)
  * so every existing import keeps working and there is exactly one definition.
+ *
+ * The IDS themselves live one module further down, in `harness-ids.ts`, and are
+ * re-exported here so every existing importer keeps working. That module's own
+ * docs say why: `config-schema.ts` needs the ids and may not import a Zod schema
+ * to get them.
  */
 
-/**
- * The agent harnesses Harness Sync can project to. Claude Code is the canonical
- * authoring harness; the rest are projection targets.
- */
-export const HARNESS_IDS = [
-  'claude-code',
-  'codex',
-  'cursor',
-  'gemini',
-  'copilot',
-  'opencode',
-] as const;
+export { HARNESS_IDS };
 
 /** Zod schema for a single harness identifier (one of {@link HARNESS_IDS}). */
 export const HarnessIdSchema = z.enum(HARNESS_IDS);
