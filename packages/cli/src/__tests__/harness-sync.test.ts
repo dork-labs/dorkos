@@ -915,6 +915,52 @@ describe('runHarnessSync', () => {
     expect(errors.join('\n')).not.toContain('\n    at ');
   });
 
+  it('AP-11, AP-03: names the folder in the way instead of dying on it', async () => {
+    // The last shape that could still take a `--fix` down (DOR-1882): a plain
+    // file where `.claude/commands` belongs, so the wrapper directory under it
+    // cannot be made. It used to be ENOTDIR out of the middle of the apply —
+    // "Harness sync failed", exit 1, and a tree with some projections written
+    // and the sweeps never reached. Both modes now say the same sentence, and
+    // `--fix` writes every other projection around it.
+    fs.mkdirSync(path.join(tmpDir, '.agents'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, '.agents', 'harness.manifest.json'),
+      JSON.stringify({ version: 1, harnesses: ['claude-code', 'codex', 'opencode'] }, null, 2)
+    );
+    writeFullInstalledPlugin(tmpDir, 'acme');
+    fs.mkdirSync(path.join(tmpDir, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, '.claude', 'commands'), 'not a folder\n');
+    process.chdir(tmpDir);
+
+    const before = snapshotTree(tmpDir);
+    const check = await runHarnessSync(syncArgs({ check: true, fix: false }));
+
+    expect(check.exitCode).toBe(1);
+    const checkOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(checkOutput).toContain('projection(s) blocked');
+    expect(checkOutput).toContain('blocked by `.claude/commands`');
+    expect(errorSpy.mock.calls.map((c) => String(c[0])).join('\n')).not.toContain(
+      'Harness sync failed'
+    );
+    // AP-03: the report that reads the most of the tree still writes none of it.
+    expect(snapshotTree(tmpDir)).toEqual(before);
+
+    logSpy.mockClear();
+    const fix = await runHarnessSync(syncArgs({ check: false, fix: true, allowHooks: ['acme'] }));
+
+    expect(fix.exitCode).toBe(1);
+    const fixOutput = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(fixOutput).toContain('conflict(s) left untouched');
+    expect(fixOutput).toContain('blocked by `.claude/commands`');
+    // Every projection that does NOT go through the file landed anyway…
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'skills', 'acme__greet'))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, '.opencode', 'commands', 'acme-hello.md'))).toBe(true);
+    // …and the file is exactly as the person left it.
+    expect(fs.readFileSync(path.join(tmpDir, '.claude', 'commands'), 'utf8')).toBe(
+      'not a folder\n'
+    );
+  });
+
   it('--harness narrows the left-alone list to that harness', async () => {
     writeFixtureRepo(tmpDir);
     writeHandWrittenHooks(tmpDir, '.cursor/hooks.json', 'echo MINE cursor');
