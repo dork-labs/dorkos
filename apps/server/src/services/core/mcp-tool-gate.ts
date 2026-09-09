@@ -64,19 +64,33 @@
  * it is checked against. {@link splitApprovalToken} takes it back off before the
  * hash is computed, and the handler never sees it.
  *
- * ## These tools still POLL — they do not hold in-session
+ * ## These tools HOLD in-session too, when there is a session (DOR-1930)
  *
- * The registry path can HOLD a destructive call inline while a person decides and
- * resume it in the same turn (DOR-939, `capabilities/capability-approval-hold.ts`).
- * This path cannot: a gated call here returns the `approval_required` payload and
- * the turn ends, so the person approves on the dashboard and then tells the agent
- * to retry. That applies to both hand-registered destructive tools — `tasks_delete`
- * and `mesh_unregister`.
+ * The registry path has been able to HOLD a destructive call inline while a
+ * person decides, and resume it in the same turn, since DOR-939
+ * (`capabilities/capability-approval-hold.ts`). This path could not, and the gap
+ * was scoped out rather than missed: wiring the hold here means threading the
+ * live session's event queue into this choke point, which the external `/mcp`
+ * server — the other caller — has no session for.
  *
- * The inconsistency is deliberate and scoped out of DOR-939 rather than missed:
- * wiring the hold here means threading the live session's event queue into this
- * choke point, which the external `/mcp` server (the other caller) has no session
- * for. It is named here so the next person meets a decision instead of a mystery.
+ * That scope-out WAS the bug. An operator approved four `mesh_unregister` cards
+ * and the requesting agent was never told, because these two tools were the ones
+ * still on the poll flow: the call returned `approval_required`, the turn ended,
+ * and nothing ever said a person had answered. The human became the message bus.
+ *
+ * The seam is now optional rather than absent. {@link gateHandRegisteredMcpTools}
+ * takes a hold; with one, a FRESH destructive ask waits for the decision and
+ * resumes in the same turn. Without one — the external `/mcp` server, the
+ * introspection stub, a hermetic test — the poll payload is returned exactly as
+ * before, which is what makes this additive rather than a behavior change for
+ * every caller.
+ *
+ * Why holding rather than delivering the verdict afterwards: the answer arrives
+ * as the tool call's own RETURN VALUE. A tool result is not user text, so a
+ * crafted approval can never be read as the operator's words — the prompt-
+ * injection surface a steer or an injected message would open does not exist on
+ * this path. `message-dispatcher.ts` refuses a steer into a turn parked on an
+ * interaction for exactly that reason.
  *
  * ## What a tier does not do
  *
@@ -94,10 +108,13 @@ import type { ApprovalOrigin } from '@dorkos/shared/approval-schemas';
 
 import type { AgentIdentity } from './agent-identity/agent-identity-service.js';
 import { resolveApprovalSubject } from './approvals/index.js';
+import { awaitCapabilityApproval, type CapabilityApprovalHold } from './capabilities/index.js';
 import { approvalTokenArgument } from './capabilities/mcp-projection.js';
 import {
   enforceCapabilityTier,
+  isFreshApprovalAsk,
   splitApprovalToken,
+  type ApprovalRequiredPayload,
   type GatedAction,
 } from './capabilities/tier-enforcement.js';
 import { gatedActionForMcpTool } from './mcp-tool-tiers.js';
@@ -113,12 +130,56 @@ function textResult(payload: unknown): CallToolResult {
   return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
 }
 
+/** One gated call, as {@link runGate} is asked to decide it. */
+interface GateRun {
+  /** The tool's tier declaration, from the shared table. */
+  action: GatedAction;
+  /** The arguments the SDK parsed for this call. */
+  args: unknown;
+  /** The calling agent, when the surface resolved one. */
+  identity?: AgentIdentity;
+  /** Whether the caller can be told to open the approval panel (DOR-1570). */
+  interactive: boolean;
+  /** Which surface the call arrived over, recorded for an unattributed card. */
+  origin: ApprovalOrigin;
+  /**
+   * A token to present INSTEAD of one carried in `args`.
+   *
+   * The resume path only (DOR-1930). It rides beside the input rather than
+   * inside it, so the arguments hashed on the resume are the same bytes the
+   * person approved.
+   */
+  approvalToken?: string;
+}
+
 /**
  * What the gate concluded about one hand-registered tool call: either run the
  * handler with these arguments, or return this result instead.
  */
 type GateOutcome =
-  { allowed: true; input: Record<string, unknown> } | { allowed: false; result: CallToolResult };
+  | { allowed: true; input: Record<string, unknown> }
+  | {
+      allowed: false;
+      result: CallToolResult;
+      /**
+       * The approval this call just minted, when it minted one.
+       *
+       * Present only for a FRESH ask ({@link isFreshApprovalAsk}) — the one kind
+       * of refusal a caller may wait on, because it is the one that created the
+       * thing being waited for. An `awaiting_decision` echo of a card already on
+       * screen, a ceiling denial, and a deny all leave this undefined and return
+       * their payload unchanged.
+       */
+      fresh?: ApprovalRequiredPayload;
+      /**
+       * The arguments this pass hashed, already split from any token.
+       *
+       * Handed back so a resume re-presents the SAME input rather than
+       * reconstructing it — the approval binds to a hash of these, so rebuilding
+       * them is the one way the person could approve one thing and another run.
+       */
+      input: unknown;
+    };
 
 /**
  * Run the tier gate for one hand-registered tool call.
@@ -129,28 +190,24 @@ type GateOutcome =
  * the registry path has to assert schema parse-idempotence to get the same
  * property, because it parses once more on the way in.
  *
- * @param action - The tool's tier declaration, from the shared table.
- * @param args - The arguments the SDK parsed for this call.
- * @param identity - The calling agent, when the surface resolved one.
- * @param interactive - Whether the caller can be told to open the approval panel.
- * @param origin - Which surface the call arrived over, recorded so an
- *   unattributed card can say the true thing DorkOS knows about it.
+ * @param run - The action, its arguments, and the surface it arrived on.
  * @returns Whether to proceed, and with what.
  */
-async function runGate(
-  action: GatedAction,
-  args: unknown,
-  identity: AgentIdentity | undefined,
-  interactive: boolean,
-  origin: ApprovalOrigin
-): Promise<GateOutcome> {
+async function runGate(run: GateRun): Promise<GateOutcome> {
+  const { action, args, identity, interactive, origin } = run;
   // Only a destructive tool advertises `approvalToken`, so only a destructive call
   // has one to lift off. Anything else passes its arguments through untouched
   // rather than silently losing a field that happens to share the name.
-  const { approvalToken, input } =
+  const split =
     action.tier === 'destructive'
       ? splitApprovalToken(args)
       : { approvalToken: undefined, input: args };
+  const input = split.input;
+  // A token supplied out-of-band wins over one carried in the arguments. That is
+  // the resume path (below), and carrying it beside the input rather than
+  // spreading it back INTO the input is what keeps the hashed arguments byte
+  // identical across the two passes — the person approves exactly what runs.
+  const approvalToken = run.approvalToken ?? split.approvalToken;
 
   // Named HERE rather than inside the gate because every registry that can name
   // an id is async and `enforceCapabilityTier` is not (DOR-1929). This is the
@@ -174,9 +231,102 @@ async function runGate(
     interactive,
   });
 
-  if (decision.outcome !== 'allowed')
-    return { allowed: false, result: textResult(decision.payload) };
+  if (decision.outcome !== 'allowed') {
+    const fresh =
+      decision.outcome === 'approval_required' && isFreshApprovalAsk(decision.payload)
+        ? decision.payload
+        : undefined;
+    return {
+      allowed: false,
+      result: textResult(decision.payload),
+      input,
+      ...(fresh ? { fresh } : {}),
+    };
+  }
   return { allowed: true, input: (input ?? {}) as Record<string, unknown> };
+}
+
+/**
+ * The abort signal of the tool call, when the SDK handed one over.
+ *
+ * Read defensively because `extra` is typed `unknown` here on purpose — this
+ * module is deliberately outside the runtime-SDK confinement rule, so it cannot
+ * import the SDK's own shape. A missing signal costs only that a mid-turn
+ * interrupt no longer ends a hold early; it still ends at the cap.
+ *
+ * @param extra - The second argument the SDK passes a tool handler.
+ * @returns The signal, or `undefined`.
+ */
+function abortSignalOf(extra: unknown): AbortSignal | undefined {
+  if (!extra || typeof extra !== 'object' || !('signal' in extra)) return undefined;
+  const signal = (extra as { signal?: unknown }).signal;
+  return signal instanceof AbortSignal ? signal : undefined;
+}
+
+/** How {@link runGatedInSession} reaches the real handler, and what it may wait on. */
+interface HandlerRun {
+  /** Invokes the real handler with the gate-approved input. */
+  invoke: (input: Record<string, unknown>) => Promise<CallToolResult>;
+  /** The live session's hold seam, when this surface has one. */
+  hold?: CapabilityApprovalHold;
+  /** The SDK's second handler argument, read for an abort signal. */
+  extra: unknown;
+}
+
+/**
+ * Run one gated call, waiting for a person when there is a session to wait in.
+ *
+ * Three endings, and only the first is new:
+ *
+ * 1. **The person decides in time.** The gate is re-run with the granted token
+ *    beside the input, so the SAME binding is checked and consumed that the
+ *    person approved — never a second, unchecked path to the handler. A grant
+ *    runs the tool and returns its real result; a denial returns the gate's
+ *    refusal.
+ * 2. **No decision before the cap** (`timeout`, `expired`). The original
+ *    `approval_required` payload is returned verbatim — the exact poll flow this
+ *    replaces, so a hold is never worse than not holding.
+ * 3. **No hold at all**, or a refusal that minted nothing fresh. Unchanged.
+ *
+ * The retry carries the token as an ARGUMENT because that is the channel this
+ * module advertises (`approvalTokenArgument`); `splitApprovalToken` lifts it
+ * back off before the input is hashed, so the token cannot change the hash it is
+ * checked against.
+ *
+ * @param call - The action, its arguments, and the surface it arrived on.
+ * @param run - The handler to invoke, plus the hold seam and the SDK's `extra`.
+ * @returns The tool result to hand back to the model.
+ */
+async function runGatedInSession(call: GateRun, run: HandlerRun): Promise<CallToolResult> {
+  const outcome = await runGate(call);
+  if (outcome.allowed) return run.invoke(outcome.input);
+  if (!run.hold || !outcome.fresh) return outcome.result;
+
+  const signal = abortSignalOf(run.extra);
+  const decided = await awaitCapabilityApproval(
+    { ...run.hold, ...(signal ? { signal } : {}) },
+    outcome.fresh
+  );
+  // `timeout` and `expired` are not failures — they are the poll flow, which
+  // still works: the card is on the dashboard and the agent still holds a token.
+  if (decided !== 'granted' && decided !== 'denied') return outcome.result;
+
+  // A full gate pass, not a shortcut around it. The token rides beside the SAME
+  // input the first pass hashed, so the binding the person approved is the one
+  // checked here — and a denial comes back as an ordinary refusal payload.
+  //
+  // "Goes through the gate" rather than "always spends the token": if the person
+  // answered with "allow, and stop asking", the grant created a standing
+  // permission, and the resume is allowed by THAT before the token is consulted.
+  // The token then goes unspent, which is harmless — the permission already
+  // licenses the action, and on this path the model never receives the token at
+  // all. Shared with the registry path, not introduced here.
+  const retried = await runGate({
+    ...call,
+    args: outcome.input,
+    approvalToken: outcome.fresh.approvalToken,
+  });
+  return retried.allowed ? run.invoke(retried.input) : retried.result;
 }
 
 /**
@@ -235,12 +385,16 @@ export interface SdkMcpTool {
  *   so reading anything else off it would forward a fact from one call into
  *   another. Omitted in tests and introspection paths, which gate as an
  *   unidentified caller — which is still gated, because the tier decides that.
+ * @param hold - The live session's hold seam, when this server has one. With it,
+ *   a fresh destructive ask waits for the operator and resumes in the same turn
+ *   (DOR-1930); without it the poll payload is returned exactly as before.
  * @returns The same tools, gated, with `approvalToken` advertised where required.
  * @throws If any tool declares no tier in `MCP_TOOL_TIERS`.
  */
 export function gateHandRegisteredMcpTools<T extends SdkMcpTool>(
   tools: readonly T[],
-  resolveContext?: () => Promise<{ identity?: AgentIdentity } | undefined>
+  resolveContext?: () => Promise<{ identity?: AgentIdentity } | undefined>,
+  hold?: CapabilityApprovalHold
 ): T[] {
   return tools.map((definition) => {
     const action = gatedActionForMcpTool(definition.name);
@@ -249,18 +403,26 @@ export function gateHandRegisteredMcpTools<T extends SdkMcpTool>(
       ...definition,
       inputSchema: gatedInputSchema(action, definition.inputSchema),
       handler: async (args: never, extra: unknown): Promise<CallToolResult> => {
-        // `interactive: true` — this entry point wraps the IN-SESSION server,
-        // where `control_ui` exists, so a gated call may be told to put the
-        // approval in front of the operator (DOR-1570).
-        const outcome = await runGate(
-          action,
-          args,
-          (await resolveContext?.())?.identity,
-          true,
-          'session'
+        // Resolved ONCE per call: the resolver memoizes per session, but reading
+        // it twice here would still be two awaits for one fact.
+        const identity = (await resolveContext?.())?.identity;
+        return runGatedInSession(
+          {
+            action,
+            args,
+            ...(identity ? { identity } : {}),
+            // `interactive: true` — this entry point wraps the IN-SESSION server,
+            // where `control_ui` exists, so a gated call may be told to put the
+            // approval in front of the operator (DOR-1570).
+            interactive: true,
+            origin: 'session',
+          },
+          {
+            invoke: (input: Record<string, unknown>) => handler(input as never, extra),
+            ...(hold ? { hold } : {}),
+            extra,
+          }
         );
-        if (!outcome.allowed) return outcome.result;
-        return handler(outcome.input as never, extra);
       },
       // The wrapper reproduces the SDK's tool shape field for field; the cast
       // restores the caller's concrete type, which a spread of a generic widens.
@@ -345,7 +507,15 @@ export function gatedToolRegistrar(server: McpServer, identity?: AgentIdentity):
       (async (args: never, extra: unknown): Promise<CallToolResult> => {
         // `interactive: false` — the external `/mcp` server is sessionless, so
         // the UI tools are not registered and must not be suggested.
-        const outcome = await runGate(action, args, identity, false, 'external-mcp');
+        const outcome = await runGate({
+          action,
+          args,
+          ...(identity ? { identity } : {}),
+          // `interactive: false` — the external `/mcp` server is sessionless, so
+          // the UI tools are not registered and must not be suggested.
+          interactive: false,
+          origin: 'external-mcp',
+        });
         if (!outcome.allowed) return outcome.result;
         return cb(outcome.input as never, extra);
         // The SDK's `registerTool` is generic over the input and output shapes it

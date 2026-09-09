@@ -10,12 +10,7 @@ import {
 import { SERVER_VERSION } from '../../../lib/version.js';
 import type { ServerPrincipalProof } from '../principal/server-principal.js';
 import { CONNECTOR_RUNTIME_CAPABILITY_IDS } from '../runtime-capability-scope.js';
-
-function abortSignalOf(extra: unknown): AbortSignal | undefined {
-  if (!extra || typeof extra !== 'object' || !('signal' in extra)) return undefined;
-  const signal = (extra as { signal?: unknown }).signal;
-  return signal instanceof AbortSignal ? signal : undefined;
-}
+import { abortSignalOf } from '../../core/capabilities/index.js';
 
 function strictRuntimeInputSchema(registry: CapabilityRegistry, capabilityId: string) {
   const capability = registry.get(capabilityId);
