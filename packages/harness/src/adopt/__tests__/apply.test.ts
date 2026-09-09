@@ -31,6 +31,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { linkCheckFor, linkMatchesPlan } from '../../apply/symlink-occupants.js';
 
 /**
  * Whether `applyPlan` should throw instead of writing the link, and whether
@@ -88,6 +89,21 @@ const { ADOPT_SENTENCES } = await import('../refusals.js');
 
 /** The skill every case is about. */
 const NAME = 'deploy-checklist';
+
+/**
+ * The link back points at the canonical copy — asked the way the engine asks it,
+ * because the link TEXT differs by platform: POSIX stores the relative text
+ * verbatim; Windows has no relative junction, so `readlink` answers an absolute
+ * path for the same, correct link (measured on the `harness-windows` leg).
+ */
+function expectLinkBack(repo: string): void {
+  const link = join(repo, '.claude', 'skills', NAME);
+  const target = join(repo, '.agents', 'skills', NAME);
+  expect(
+    linkMatchesPlan(link, target, `../../.agents/skills/${NAME}`, linkCheckFor(process.platform)),
+    `${link} does not point at the canonical copy`
+  ).toBe(true);
+}
 
 /** The temp repositories one case made, removed at the end of it. */
 let repos: string[] = [];
@@ -195,9 +211,7 @@ describe('AP-17 — applyAdopt moves one skill and leaves the projection behind'
       refusals: [],
     });
     expect(hashTree(join(repo, '.agents', 'skills', NAME))).toEqual(before);
-    expect(readlinkSync(join(repo, '.claude', 'skills', NAME))).toBe(
-      `../../.agents/skills/${NAME}`
-    );
+    expectLinkBack(repo);
   });
 
   it('AP-17: leaves a tree the next sync already agrees with, action for action', () => {
@@ -338,9 +352,7 @@ describe('AP-17 — applyAdopt moves one skill and leaves the projection behind'
     expect(plan.moves[0]?.link).toEqual(planAdoptedSkillLink(NAME));
     applyAdopt(repo, plan);
 
-    expect(readlinkSync(join(repo, '.claude', 'skills', NAME))).toBe(
-      `../../.agents/skills/${NAME}`
-    );
+    expectLinkBack(repo);
     const drift = checkPlan(repo, project(repo));
     expect({ clean: drift.clean, orphans: drift.orphans.length }).toEqual({
       clean: true,
