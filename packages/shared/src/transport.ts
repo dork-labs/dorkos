@@ -145,7 +145,7 @@ import type {
   ApplyShapeResult,
   ForkShapeResult,
 } from './marketplace-schemas.js';
-import type { HarnessStatusResponse } from './harness-schemas.js';
+import type { HarnessStatusResponse, HarnessSyncResponse } from './harness-schemas.js';
 import type { RoomTransport } from './transport-rooms.js';
 import type { ReadCursor, ReadCursorThreadKind } from './read-cursor-schemas.js';
 import type {
@@ -2091,6 +2091,20 @@ export interface Transport extends RoomTransport {
    * @param projectPath - The project root, absolute.
    */
   getHarnessStatus(projectPath: string): Promise<HarnessStatusResponse>;
+
+  /**
+   * Share this project's agent files with every agent tool it has turned on,
+   * and answer with the status recomputed after the write.
+   *
+   * It also REMOVES files — links whose skill is gone, the projections of a
+   * package that is no longer installed — and every path it takes comes back in
+   * `swept`, with the reason it went in `removals`. The same list is readable
+   * before the call, as `sweepPreview` on {@link Transport.getHarnessStatus},
+   * and the two are equal rather than one being a sample of the other.
+   *
+   * @param projectPath - The project root, absolute.
+   */
+  syncHarness(projectPath: string): Promise<HarnessSyncResponse>;
 
   // --- Approvals (spec `agent-trust` §3.3) ---
 

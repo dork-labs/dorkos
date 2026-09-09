@@ -89,6 +89,8 @@ import { WorktreeScanResultSchema } from '@dorkos/shared/workspace';
 import {
   HarnessStatusQuerySchema,
   HarnessStatusResponseSchema,
+  HarnessSyncBodySchema,
+  HarnessSyncResponseSchema,
 } from '@dorkos/shared/harness-schemas';
 import {
   AgentManifestSchema,
@@ -5262,6 +5264,70 @@ registry.registerPath({
     },
     500: {
       description: 'The read failed unexpectedly. The reason is logged, never echoed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/harness/sync',
+  tags: ['Harness'],
+  summary: 'Share this project’s agent files with every agent tool it has turned on',
+  description:
+    'Writes what is missing and rewrites what is out of date, then answers with the status ' +
+    'recomputed after the write — so the caller renders the tree this call left, not the one it ' +
+    'found. ' +
+    '**It also removes files.** Links whose skill is gone, a generated hooks file nothing ' +
+    'projects hooks to any more, the command wrappers of a package that is no longer installed: ' +
+    'each is removed only when DorkOS can prove it wrote it, and every path it takes comes back ' +
+    'in `swept` — with the sentence saying why it went in `removals`. The exact same list is ' +
+    'readable BEFORE the call, as `sweepPreview` and `removals` on ' +
+    '`GET /api/harness/status`, and the two are equal rather than one being a sample of the ' +
+    'other. One path in the list is not a deletion: `.claude/settings.local.json` keeps every ' +
+    'key you own and loses only the hook entries DorkOS added, and its reason says so. ' +
+    '**A person, not an agent.** A caller naming itself an agent, or holding an approval token, ' +
+    'is refused: this writes into somebody’s project, so it is a decision a person makes. ' +
+    '**A package whose hooks nobody has allowed does not hold up the answer.** Its commands are ' +
+    'left out, an approval card goes up, and the package is named in `askedAbout`; the status ' +
+    'carries the same packages under `pendingApproval`. When somebody allows one, the projection ' +
+    'runs again on its own. ' +
+    '`projectPath` must be absolute, and inside the configured directory boundary or under ' +
+    '`{dorkHome}/agents`.',
+  request: {
+    body: {
+      content: { 'application/json': { schema: HarnessSyncBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'What the sync did, and the status recomputed after it',
+      content: { 'application/json': { schema: HarnessSyncResponseSchema } },
+    },
+    400: {
+      description:
+        '`projectPath` was missing, blank or relative, or it named something that is not a ' +
+        'directory',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description:
+        'The caller named itself an agent or held an approval token, or `projectPath` resolves ' +
+        'outside the directory boundary and outside `{dorkHome}/agents`',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No directory there',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        '`code: "harness_not_set_up"` — this project has no `.agents/harness.manifest.json`, so ' +
+        'there is nothing to share yet. `dorkos harness sync --fix` in the folder sets it up',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    500: {
+      description: 'The sync failed unexpectedly. The reason is logged, never echoed',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

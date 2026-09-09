@@ -708,12 +708,39 @@ describe('runHarnessSync', () => {
     expect(fs.existsSync(orphan)).toBe(false);
   });
 
+  /**
+   * The nine paths an uninstalled `acme` leaves behind, each with the sentence
+   * the engine gives for it — the one list `--check` promises and `--fix`
+   * receipts, verbatim in both.
+   *
+   * Every line carries a REASON, and they are not all the same one (DOR-1906):
+   * two links go because the package is gone, two hooks paths because nothing
+   * projects hooks there any more, four wrappers because the command's package
+   * is gone, and the settings file is not removed at all. A heading cannot say
+   * five things at once, which is why the count on its own was never enough.
+   */
+  const ORPHAN_LINES = [
+    '  .agents/skills/acme__greet — The package this skill came from is no longer installed here.',
+    '  .claude/commands/acme/.gitignore — The package this command came from is no longer installed here.',
+    '  .claude/commands/acme/hello.md — The package this command came from is no longer installed here.',
+    '  .claude/settings.local.json — Only the hook entries DorkOS added go; your own settings stay.',
+    '  .claude/skills/acme__greet — The package this skill came from is no longer installed here.',
+    '  .codex/hooks.json — DorkOS wrote this, and no hooks project here any more.',
+    '  .codex/hooks.json.dorkos-generated — DorkOS wrote this, and no hooks project here any more.',
+    '  .opencode/commands/.gitignore — The package this command came from is no longer installed here.',
+    '  .opencode/commands/acme-hello.md — The package this command came from is no longer installed here.',
+  ];
+
   it('--check names every path an uninstalled plugin left, and --fix removes exactly those', async () => {
     // Before DOR-1889 this exited 0 and said nothing: `checkPlan` answered for
     // one sweep of six, so a tree a `--fix` was about to take nine files out of
     // read clean. `--allow-hooks` is here because the plugin ships hooks and
     // nobody has said yes to them yet — without it the hook projections never
     // land, and the case would prove less than the whole sweep.
+    //
+    // Seeded defect for the reasons half (DOR-1906): print the count and the
+    // bare paths — the shape this report had before — and both blocks red, in
+    // the check and in the fix, because `ORPHAN_LINES` is the whole line.
     fs.mkdirSync(path.join(tmpDir, '.agents'), { recursive: true });
     fs.writeFileSync(
       path.join(tmpDir, '.agents', 'harness.manifest.json'),
@@ -736,18 +763,7 @@ describe('runHarnessSync', () => {
     // report that said "removed" over it without saying so would be the same
     // sort of untruth this whole change is about.
     expect(checkOutput).toContain(
-      [
-        'Orphaned projections — what they came from is gone (9):',
-        '  .agents/skills/acme__greet',
-        '  .claude/commands/acme/.gitignore',
-        '  .claude/commands/acme/hello.md',
-        '  .claude/settings.local.json — only the hook entries DorkOS added; your own settings stay',
-        '  .claude/skills/acme__greet',
-        '  .codex/hooks.json',
-        '  .codex/hooks.json.dorkos-generated',
-        '  .opencode/commands/.gitignore',
-        '  .opencode/commands/acme-hello.md',
-      ].join('\n')
+      ['Orphaned projections — what they came from is gone (9):', ...ORPHAN_LINES].join('\n')
     );
     expect(checkOutput).toContain(
       'Run `dorkos harness sync --fix` to apply — the orphaned paths above are removed.'
@@ -765,18 +781,7 @@ describe('runHarnessSync', () => {
     // one before it made. `swept` itself comes back in sweep order; the report
     // sorts it for display so the two lists can be compared line for line.
     expect(fixOutput).toContain(
-      [
-        'Swept 9 orphaned projection(s) — what they came from is gone:',
-        '  .agents/skills/acme__greet',
-        '  .claude/commands/acme/.gitignore',
-        '  .claude/commands/acme/hello.md',
-        '  .claude/settings.local.json — only the hook entries DorkOS added; your own settings stay',
-        '  .claude/skills/acme__greet',
-        '  .codex/hooks.json',
-        '  .codex/hooks.json.dorkos-generated',
-        '  .opencode/commands/.gitignore',
-        '  .opencode/commands/acme-hello.md',
-      ].join('\n')
+      ['Swept 9 orphaned projection(s) — what they came from is gone:', ...ORPHAN_LINES].join('\n')
     );
     expect(fs.existsSync(path.join(tmpDir, '.codex', 'hooks.json'))).toBe(false);
     expect(fs.existsSync(path.join(tmpDir, '.claude', 'commands', 'acme'))).toBe(false);

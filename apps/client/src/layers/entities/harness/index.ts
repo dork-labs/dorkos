@@ -7,9 +7,8 @@
  * owns it instead, so a second drawing of the same fact cannot drift. The
  * profile feature composes it, which is the allowed direction.
  *
- * Nothing in this slice writes. The sync — the banner, the mutation and the
- * "what changed" summary — is a separate change; this half is what a person
- * reads.
+ * It writes in exactly one place: the sync — the drift banner, its mutation and
+ * the "what changed" summary that replaces it. Everything else here reads.
  *
  * **This barrel is the slice's whole public surface, and nothing more.** The
  * key factory, the pure display helpers in `lib/harness-status.ts` and every
@@ -28,6 +27,11 @@ export { useHarnessStatus } from './model/use-harness-status';
 export { useHarnessStatusCached } from './model/use-harness-status-cached';
 
 // --- UI ---
+// One name for the whole top-of-page area: the banner, and the summary that
+// takes its place after a sync. The page mounts it with a project path and
+// nothing else.
+export { HarnessDriftBanner } from './ui/HarnessDriftBanner';
+export { HarnessSyncSummary } from './ui/HarnessSyncSummary';
 export { SkillsWithHarnessesList } from './ui/SkillsWithHarnessesList';
 export { SkillHarnessRow } from './ui/SkillHarnessRow';
 export { HarnessStateChip } from './ui/HarnessStateChip';

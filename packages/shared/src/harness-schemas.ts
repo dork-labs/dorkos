@@ -221,6 +221,32 @@ export const HarnessPendingApprovalSchema = z.object({
 export type HarnessPendingApproval = z.infer<typeof HarnessPendingApprovalSchema>;
 
 /**
+ * One path a sync removes, and the one sentence saying why (DOR-1906).
+ *
+ * The six sweeps take files for five different reasons — the skill a link
+ * pointed at is gone, the package that brought a skill or a command is
+ * uninstalled, nothing projects hooks at a generated path any more, a
+ * half-written file an interrupted sync left behind — and a heading over the
+ * list can only say one of them. So the reason rides each path.
+ *
+ * `reason` is the ENGINE's own sentence (`apply/sweep-reasons.ts`), never a
+ * paraphrase, exactly like every cell reason: `dorkos harness sync` prints the
+ * same words, and two surfaces describing one deletion in two voices is how a
+ * person stops trusting either.
+ *
+ * One entry is not a deletion at all — `.claude/settings.local.json` keeps every
+ * key the person owns and loses only the hook entries DorkOS merged in — and
+ * its reason is what says so.
+ */
+export const HarnessRemovalSchema = z.object({
+  path: z.string(),
+  reason: z.string(),
+});
+
+/** One path a sync removes, and why. */
+export type HarnessRemoval = z.infer<typeof HarnessRemovalSchema>;
+
+/**
  * The one query a status read carries.
  *
  * It lives beside the response rather than in the route because the route is
@@ -351,6 +377,24 @@ export type HarnessClaudeOnly = z.infer<typeof HarnessClaudeOnlySchema>;
 export type HarnessClaudeOnlyPlugin = HarnessClaudeOnly['plugins'][number];
 
 /**
+ * The one field a sync carries — the same rule, and the same non-trimming, as
+ * the status query beside it.
+ *
+ * It lives here rather than in the route for the reason the query does: the
+ * route is not its only reader, `openapi-registry.ts` documents the same shape,
+ * and a hand-written second copy there is a copy that goes stale.
+ */
+export const HarnessSyncBodySchema = z.object({
+  projectPath: z
+    .string()
+    .min(1)
+    .refine((value) => value.trim().length > 0, 'projectPath must not be blank'),
+});
+
+/** The one field a sync carries. */
+export type HarnessSyncBody = z.infer<typeof HarnessSyncBodySchema>;
+
+/**
  * What one project's agent-file sharing looks like right now.
  *
  * Three fields carry contracts rather than shapes, and each is stated where it
@@ -393,6 +437,16 @@ export const HarnessStatusResponseSchema = z.object({
    * which is what the engine was widened to be able to answer.
    */
   sweepPreview: z.array(z.string()),
+  /**
+   * The same paths as {@link HarnessStatusResponseSchema}'s `sweepPreview`, in
+   * the same order, each with the reason it would go.
+   *
+   * Both are here because they have different readers and both are load-bearing:
+   * `sweepPreview` is the set the equality contract with the next `swept` is
+   * written against, and this is what a person is shown before they click. The
+   * page renders these; nothing renders a bare path with no reason beside it.
+   */
+  removals: z.array(HarnessRemovalSchema),
   rows: z.array(HarnessRowSchema),
   projectLevel: z.array(HarnessProjectEntrySchema),
   pendingApproval: z.array(HarnessPendingApprovalSchema),
@@ -425,13 +479,16 @@ export type HarnessStatusResponse = z.infer<typeof HarnessStatusResponseSchema>;
  * What a sync did, and the status recomputed after it.
  *
  * `swept` is what was actually deleted and equals the `sweepPreview` the page
- * showed before the click. `askedAbout` names the packages a person was shown an
- * approval card for, so the page can say a decision is still outstanding.
+ * showed before the click; `removals` is that same list with the reason each
+ * path went, which is what the "what changed" summary draws. `askedAbout` names
+ * the packages a person was shown an approval card for, so the page can say a
+ * decision is still outstanding.
  */
 export const HarnessSyncResponseSchema = z.object({
   status: HarnessStatusResponseSchema,
   applied: z.number().int().nonnegative(),
   swept: z.array(z.string()),
+  removals: z.array(HarnessRemovalSchema),
   conflicts: z.number().int().nonnegative(),
   askedAbout: z.array(z.string()),
 });

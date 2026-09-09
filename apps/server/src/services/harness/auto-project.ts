@@ -59,12 +59,8 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { configManager } from '../core/config-manager.js';
 import { logger } from '../../lib/logger.js';
-import {
-  askForHookProjection,
-  mayAskAboutHooks,
-  type HookApprovalGateway,
-} from './hook-approval.js';
-import { recordHookApproval } from './hook-consent.js';
+import { askAboutWithheldHooks } from './ask-withheld-hooks.js';
+import { type HookApprovalGateway } from './hook-approval.js';
 import {
   projectWithConsent as defaultProjectWithConsent,
   withProjectLock,
@@ -138,7 +134,7 @@ function projectAndLog(
   // uninstall path. Install adds; uninstall prunes. Why it is safe beside the
   // consent filter is stated in `project-with-consent.ts`.
   const result = _internal.projectWithConsent(projectPath, { dorkHome, sweepOrphans: true });
-  const { plan, applied, conflicts, swept, leftAlone, withheld } = result;
+  const { plan, applied, conflicts, swept, removals, leftAlone, withheld } = result;
 
   // An install whose package contributes NOTHING to the plan means the
   // plugin's files never reach any harness — the exact silent failure of
@@ -168,6 +164,18 @@ function projectAndLog(
       action,
       projectPath,
       conflicts: conflicts.length,
+    });
+  }
+
+  // A sweep is the one thing an unattended projection does that a person cannot
+  // undo, so this pass says which files went and WHY each one went (DOR-1906) —
+  // the same sentences the terminal prints and the app shows. A count in the
+  // summary line below is a number nobody can act on afterwards.
+  if (removals.length > 0) {
+    logger.info('[HarnessSync] Removed projections whose source is gone', {
+      packageName,
+      projectPath,
+      removed: removals.map(({ path, reason }) => `${path} — ${reason}`),
     });
   }
 
@@ -252,32 +260,15 @@ async function projectAndAsk(
     return;
   }
 
-  // A package a person has already turned down is not asked again, and one
-  // with a card already open does not get a second. Both stay withheld either
-  // way; what is dropped is the repetition, which would otherwise fire on
-  // every later install AND on uninstalls (see `mayAskAboutHooks`).
-  const askable = withheld.map(({ request }) => request).filter(mayAskAboutHooks);
-  if (askable.length === 0) return;
-
-  // One card per package, all raised before any is awaited, so a person sees
-  // everything that is waiting instead of one card at a time.
-  const gateway = opts.approvals;
-  const decisions = await Promise.all(
-    askable.map(async (request) => ({
-      request,
-      granted: await askForHookProjection(gateway, request),
-    }))
-  );
-  const granted = decisions.filter((d) => d.granted).map((d) => d.request);
-  if (granted.length === 0) return;
-
-  // Record first, then re-project: the record is what stops the next
-  // projection asking again, and it must survive a failure in the apply. The
-  // re-projection re-reads the packages, so a package that rewrote its
-  // `hooks.json` while its card was open no longer matches what was approved
-  // and stays withheld.
-  for (const request of granted) recordHookApproval(request);
-  projectAndLog(ctx, opts.dorkHome);
+  // The asking itself is `ask-withheld-hooks.ts`, shared with the sync route.
+  // What stays here is the second pass, which is where this trigger's package
+  // name and install/uninstall action live — so nothing about these log lines
+  // changes when the same question is asked from a button.
+  await askAboutWithheldHooks(withheld, {
+    projectPath,
+    approvals: opts.approvals,
+    reproject: () => projectAndLog(ctx, opts.dorkHome),
+  });
 }
 
 /**

@@ -28,7 +28,6 @@ import {
   missingGitignoreLines,
   pluginHookReach,
   scaffoldManifest,
-  CLAUDE_SETTINGS_LOCAL_TARGET,
   CODEX_HOOKS_TARGET,
   GENERATED_HOOK_TARGET_HARNESSES,
   HARNESS_IDS,
@@ -38,6 +37,7 @@ import {
   type HarnessManifest,
   type ProjectionAction,
   type ProjectionPlan,
+  type SweptPath,
 } from '@dorkos/harness';
 
 /**
@@ -625,22 +625,22 @@ function formatIgnoredCanonicalLayer(repoRoot: string): string[] {
 }
 
 /**
- * One line of an orphan list, in either mode.
+ * One line of an orphan list, in either mode: the path, then why it goes.
  *
- * Every path in that list is one a sync takes away, except one:
- * `.claude/settings.local.json` is a file the person owns, and only the hook
- * entries DorkOS merged into it are removed. Saying "removed" over that path
- * with nothing else said would be the same kind of untruth this whole report
- * exists to stop, so the exception is carried on the line it applies to rather
- * than as a footnote somebody has to connect back up.
+ * The reason is the ENGINE's (`apply/sweep-reasons.ts`, DOR-1906), never one
+ * built here — the app's removal disclosure prints the same sentence, and two
+ * surfaces describing one deletion in two voices is how a person stops trusting
+ * either. The heading above these lines cannot do this job: six sweeps take
+ * files for five different reasons, and one of the paths is not a deletion at
+ * all — `.claude/settings.local.json` keeps every key the person owns and loses
+ * only the entries DorkOS merged in, which the line for it says, exactly as it
+ * always has.
  *
- * @param path - the repo-relative orphan path.
+ * @param removal - the repo-relative orphan path and its reason.
  * @returns the indented line to print.
  */
-function orphanLine(path: string): string {
-  return path === CLAUDE_SETTINGS_LOCAL_TARGET
-    ? `  ${path} — only the hook entries DorkOS added; your own settings stay`
-    : `  ${path}`;
+function orphanLine({ path, reason }: SweptPath): string {
+  return `  ${path} — ${reason}`;
 }
 
 /**
@@ -678,7 +678,7 @@ function reportCheck(
   harnessFilter?: HarnessId
 ): number {
   const drift = checkPlan(repoRoot, plan);
-  const { orphans } = drift;
+  const { orphans, removals } = drift;
 
   console.log('Projection summary:');
   console.log(summarizeActions(plan.actions, withheld, manifest.harnesses));
@@ -709,10 +709,10 @@ function reportCheck(
     console.log(`Drift detected (${drift.drifted.length} out of sync):`);
     for (const action of drift.drifted) console.log(formatAction(action));
   }
-  if (orphans.length > 0) {
+  if (removals.length > 0) {
     if (drift.drifted.length > 0) console.log('');
-    console.log(`Orphaned projections — what they came from is gone (${orphans.length}):`);
-    for (const path of orphans) console.log(orphanLine(path));
+    console.log(`Orphaned projections — what they came from is gone (${removals.length}):`);
+    for (const removal of removals) console.log(orphanLine(removal));
   }
   if (drift.drifted.length > 0 || orphans.length > 0) {
     console.log('');
@@ -749,6 +749,7 @@ function reportFix(
     applied: ProjectionAction[];
     conflicts: ProjectionAction[];
     swept: string[];
+    removals: SweptPath[];
     leftAlone: string[];
   },
   withheld: readonly WithheldHooks[],
@@ -760,7 +761,7 @@ function reportFix(
   claudeOnly: HarnessClaudeOnly,
   harnessFilter?: HarnessId
 ): number {
-  const { applied, conflicts, swept, leftAlone } = applyResult;
+  const { applied, conflicts, removals, leftAlone } = applyResult;
 
   console.log(`Applied ${applied.length} projection(s):`);
   for (const action of applied) console.log(formatAction(action));
@@ -781,13 +782,15 @@ function reportFix(
     console.log(warningBlock);
   }
 
-  if (swept.length > 0) {
+  if (removals.length > 0) {
     console.log('');
-    console.log(`Swept ${swept.length} orphaned projection(s) — what they came from is gone:`);
+    console.log(`Swept ${removals.length} orphaned projection(s) — what they came from is gone:`);
     // Sorted for DISPLAY only, so the receipt lines up with the promise the
-    // `--check` before it printed. `swept` itself stays in sweep order — that is
-    // the order things happened in, and it is the engine's to decide.
-    for (const path of [...swept].sort()) console.log(orphanLine(path));
+    // `--check` before it printed. The engine's list stays in sweep order — that
+    // is the order things happened in, and it is the engine's to decide.
+    for (const removal of [...removals].sort((a, b) => (a.path < b.path ? -1 : 1))) {
+      console.log(orphanLine(removal));
+    }
   }
 
   // Reported, never counted: a file DorkOS was not going to write anyway is not

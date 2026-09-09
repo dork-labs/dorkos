@@ -51,7 +51,8 @@ import {
   symlinkSync,
 } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
-import type { DriftResult, ProjectionAction, ProjectionPlan } from '../plan/types.js';
+import type { DriftResult, ProjectionAction, ProjectionPlan, SweptPath } from '../plan/types.js';
+import { explainSweep } from './sweep-reasons.js';
 import { requireActionContent } from '../plan/content-map.js';
 import { AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
 import type { ClaudeHooksConfig } from '../generate/hooks.js';
@@ -666,11 +667,19 @@ export function sweepSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan)
  * set, listed in the order the sweeps ran rather than sorted. So a `--check` is
  * silent about nothing a `--fix` removes (DOR-1889).
  *
+ * `removals` is that same list with the reason each path goes beside it
+ * (DOR-1906) — six sweeps, six different facts, and a bare list of paths says
+ * none of them. `swept` stays a `string[]` because that is what the equality
+ * contract with `sweepPreview` is written against and what every existing caller
+ * reads; the two are the same paths in the same order, which
+ * `__tests__/orphan-preview.test.ts` asserts.
+ *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the projection plan to apply.
  * @param opts - optional flags; `sweepOrphans` enables the installed-orphan sweep.
  * @returns the realized actions, the blocked projections left intact, any swept
- *   orphans, and the generated-hook paths the engine stepped over.
+ *   orphans (bare and with their reasons), and the generated-hook paths the
+ *   engine stepped over.
  * @throws When `sweepOrphans` is asked for on a plan narrowed to one harness —
  *   the combination deletes every other harness's LIVE projection, and the
  *   engine refuses it here rather than trusting each caller to remember.
@@ -683,6 +692,7 @@ export function applyPlan(
   applied: ProjectionAction[];
   conflicts: ProjectionAction[];
   swept: string[];
+  removals: SweptPath[];
   leftAlone: string[];
 } {
   // `checkPlan` withholds orphans for a narrowed plan; this is the same rule on
@@ -748,17 +758,20 @@ export function applyPlan(
   // but kept out of `conflicts`, because nothing here was blocked.
   const leftAlone = findLeftAloneGeneratedHookFiles(repoRoot, plan);
 
-  const swept = opts?.sweepOrphans
+  // Each sweep is tagged with its own cause as it runs, which is the only place
+  // the cause is known: by the time the six lists are concatenated, a path is
+  // just a path (see `sweep-reasons.ts`).
+  const removals = opts?.sweepOrphans
     ? [
-        ...sweepInstalledOrphans(repoRoot, plan),
-        ...sweepAuthoredOrphans(repoRoot, plan),
-        ...sweepGeneratedOrphans(repoRoot, plan),
-        ...sweepGeneratedCommandOrphans(repoRoot, plan),
-        ...sweepOpencodeCommandOrphans(repoRoot, plan),
-        ...sweepSettingsHooksOrphan(repoRoot, plan),
+        ...explainSweep(sweepInstalledOrphans(repoRoot, plan), 'installed-skill'),
+        ...explainSweep(sweepAuthoredOrphans(repoRoot, plan), 'authored-link'),
+        ...explainSweep(sweepGeneratedOrphans(repoRoot, plan), 'generated-hooks'),
+        ...explainSweep(sweepGeneratedCommandOrphans(repoRoot, plan), 'command-wrapper'),
+        ...explainSweep(sweepOpencodeCommandOrphans(repoRoot, plan), 'command-wrapper'),
+        ...explainSweep(sweepSettingsHooksOrphan(repoRoot, plan), 'settings-hooks'),
       ]
     : [];
-  return { applied, conflicts, swept, leftAlone };
+  return { applied, conflicts, swept: removals.map(({ path }) => path), removals, leftAlone };
 }
 
 /** Whether a single action's on-disk target diverges from the plan. */
@@ -853,22 +866,29 @@ function findBlockedSymlinkTargets(repoRoot: string, plan: ProjectionPlan): Proj
  * command sweep its own directory, the generated one the per-harness hooks
  * paths, and the settings one a single file — so the de-duplication is a
  * guarantee about the ANSWER rather than a patch over overlapping predicates.
+ * It is also what lets each path keep exactly one reason: a path two finders
+ * both claimed would otherwise arrive with two.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the current projection plan.
- * @returns the repo-relative paths, sorted and unique.
+ * @returns the repo-relative paths with their reasons, sorted by path and unique.
  */
-function findOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
-  return [
-    ...new Set([
-      ...findInstalledOrphans(repoRoot, plan),
-      ...findOrphanedAuthoredLinks(repoRoot, plan),
-      ...findGeneratedOrphans(repoRoot, plan),
-      ...findGeneratedCommandOrphans(repoRoot, plan),
-      ...findOpencodeCommandOrphans(repoRoot, plan),
-      ...findSettingsHooksOrphan(repoRoot, plan),
-    ]),
-  ].sort();
+function findOrphans(repoRoot: string, plan: ProjectionPlan): SweptPath[] {
+  const found = [
+    ...explainSweep(findInstalledOrphans(repoRoot, plan), 'installed-skill'),
+    ...explainSweep(findOrphanedAuthoredLinks(repoRoot, plan), 'authored-link'),
+    ...explainSweep(findGeneratedOrphans(repoRoot, plan), 'generated-hooks'),
+    ...explainSweep(findGeneratedCommandOrphans(repoRoot, plan), 'command-wrapper'),
+    ...explainSweep(findOpencodeCommandOrphans(repoRoot, plan), 'command-wrapper'),
+    ...explainSweep(findSettingsHooksOrphan(repoRoot, plan), 'settings-hooks'),
+  ];
+  const byPath = new Map<string, SweptPath>();
+  // First finder wins, which is what the `Set` this replaced did. The six are
+  // disjoint, so this never actually decides anything — it is here so that a
+  // seventh sweep overlapping an existing one is a duplicate dropped rather than
+  // a reason quietly overwritten.
+  for (const removal of found) if (!byPath.has(removal.path)) byPath.set(removal.path, removal);
+  return [...byPath.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
 /**
@@ -899,7 +919,8 @@ function findOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the projection plan to check.
  * @returns the drifted actions, the blocked ones, the orphans a sweep would
- *   take, the paths left alone, and whether the tree is clean.
+ *   take (bare and with the reason each one goes), the paths left alone, and
+ *   whether the tree is clean.
  */
 export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
   const drifted = plan.actions.filter((action) => isDrifted(repoRoot, action));
@@ -907,12 +928,13 @@ export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
     ...findBlockedGenerateTargets(repoRoot, plan),
     ...findBlockedSymlinkTargets(repoRoot, plan),
   ];
-  const orphans = plan.narrowedTo === undefined ? findOrphans(repoRoot, plan) : [];
+  const removals = plan.narrowedTo === undefined ? findOrphans(repoRoot, plan) : [];
   return {
     drifted,
     blocked,
-    orphans,
+    orphans: removals.map(({ path }) => path),
+    removals,
     leftAlone: findLeftAloneGeneratedHookFiles(repoRoot, plan),
-    clean: drifted.length === 0 && blocked.length === 0 && orphans.length === 0,
+    clean: drifted.length === 0 && blocked.length === 0 && removals.length === 0,
   };
 }

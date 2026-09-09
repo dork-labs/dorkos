@@ -12,6 +12,7 @@ import { PersonalityPickerShowcases } from '../showcases/PersonalityPickerShowca
 import { PulsePanelShowcase } from '../showcases/PulsePanelShowcases';
 import {
   HarnessPanelShowcases,
+  HarnessSyncShowcases,
   SkillRowShowcases,
   SkillsPageStateShowcases,
 } from '../showcases/HarnessStatusShowcases';
@@ -63,6 +64,7 @@ export function FeaturesPage() {
       <PulsePanelShowcase />
       <SkillRowShowcases />
       <HarnessPanelShowcases />
+      <HarnessSyncShowcases />
       <SkillsPageStateShowcases />
     </PlaygroundPageLayout>
   );

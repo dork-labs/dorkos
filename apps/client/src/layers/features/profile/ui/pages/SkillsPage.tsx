@@ -14,6 +14,7 @@ import { Package } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
 import { useSafeNavigate } from '@/layers/shared/model';
 import {
+  HarnessDriftBanner,
   NotEnabledNotice,
   NotSharedPanel,
   ProjectLevelNoticesPanel,
@@ -50,8 +51,11 @@ function SkillsPageBody({ projectPath }: { projectPath: string }) {
 
   return (
     <div className="flex flex-col gap-2" data-slot="profile-skills">
-      {/* Slice 7's slot: the "What changed" summary after a sync, then the drift
-          banner, land here — above everything a person reads about the tree. */}
+      {/* Above everything a person reads about the tree: at most one line about
+          what is out of date, and — after a sync — what changed, in its place.
+          It reads the same query key this page already holds, so mounting it
+          costs no extra request. */}
+      <HarnessDriftBanner projectPath={projectPath} />
       {ready && <NotEnabledNotice notEnabled={ready.notEnabled} />}
       <SkillsWithHarnessesList projectPath={projectPath} showBrowseLink={false} />
       {ready && <NotSharedPanel rows={ready.rows} enabled={ready.enabled} />}

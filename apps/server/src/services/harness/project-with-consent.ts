@@ -100,6 +100,7 @@ import {
   type HarnessId,
   type ProjectionAction,
   type ProjectionPlan,
+  type SweptPath,
 } from '@dorkos/harness';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { realpathSync } from 'node:fs';
@@ -320,6 +321,15 @@ export interface ProjectWithConsentResult extends ConsentedPlan {
   conflicts: ProjectionAction[];
   /** Repo-relative paths pruned because what they came from is gone. */
   swept: string[];
+  /**
+   * The same paths as {@link ProjectWithConsentResult.swept}, in the same order,
+   * each with the one sentence saying why it went (DOR-1906).
+   *
+   * Every trigger that reports to a person renders these rather than the bare
+   * list: six sweeps mean six different facts, and a heading cannot say all of
+   * them at once.
+   */
+  removals: SweptPath[];
   /** Repo-relative hooks files DorkOS did not write and stepped over. */
   leftAlone: string[];
 }
@@ -448,8 +458,10 @@ export function projectWithConsent(
     );
   }
   const { plan, withheld } = planWithConsent(projectPath, opts);
-  const { applied, conflicts, swept, leftAlone } = _internal.applyPlan(projectPath, plan, {
-    sweepOrphans: opts.sweepOrphans,
-  });
-  return { plan, withheld, applied, conflicts, swept, leftAlone };
+  const { applied, conflicts, swept, removals, leftAlone } = _internal.applyPlan(
+    projectPath,
+    plan,
+    { sweepOrphans: opts.sweepOrphans }
+  );
+  return { plan, withheld, applied, conflicts, swept, removals, leftAlone };
 }

@@ -66,39 +66,13 @@ import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { lexWithoutComments } from '../../../../scripts/lib/code-only.mjs';
+import { TEST_ROOTS } from './census-test-roots.js';
 
 /** The repository root, four levels above this file. */
 const ROOT = resolve(import.meta.dirname, '../../../..');
 
 /** The contract this census pins the suite against. */
 const CONTRACT = 'meta/harness-sync-capabilities.md';
-
-/**
- * The roots that test this engine.
- *
- * The test plan's T8 named three; the fourth is the pair of Codex skill readers
- * (`scan-skill-commands`, `skill-parity`), which is where SK-08's frontmatter
- * dialect and J-15's parity promise are actually asserted — the contract's own
- * §15 counts them as part of this surface, and leaving them out would have meant
- * calling SK-08 uncovered while its tests sat six directories away.
- *
- * Three of the four are in other packages or other services, which is the whole
- * reason the turbo `inputs` override exists: without it a renamed title in any
- * of them would replay a cached green here.
- *
- * `least` is a floor per root, so a directory that moves or a file that is
- * renamed out of a pattern is a red rather than a quietly smaller census.
- */
-const TEST_ROOTS = [
-  { dir: 'packages/harness/src', match: /\.test\.ts$/, least: 45 },
-  { dir: 'apps/server/src/services/harness/__tests__', match: /\.test\.ts$/, least: 9 },
-  { dir: 'packages/cli/src/__tests__', match: /^harness-sync.*\.test\.ts$/, least: 2 },
-  {
-    dir: 'apps/server/src/services/runtimes/codex/__tests__',
-    match: /^(?:scan-skill-commands|skill-parity)\.test\.ts$/,
-    least: 2,
-  },
-] as const;
 
 /**
  * A capability ID as the document's tables spell it: two or three letters, a
@@ -366,8 +340,8 @@ describe('the harness capabilities census', () => {
     // report a perfectly consistent document.
     expect(rows.length).toBeGreaterThanOrEqual(86);
     expect(journeys.length).toBeGreaterThanOrEqual(14);
-    expect(files.length).toBeGreaterThanOrEqual(62);
-    expect(titles.length).toBeGreaterThanOrEqual(580);
+    expect(files.length).toBeGreaterThanOrEqual(63);
+    expect(titles.length).toBeGreaterThanOrEqual(590);
     // And every root really contributed, so a moved directory is a red rather
     // than a quietly smaller census.
     for (const root of TEST_ROOTS) {

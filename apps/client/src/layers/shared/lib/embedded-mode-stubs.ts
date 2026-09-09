@@ -891,10 +891,19 @@ export const harnessStubs = {
       clean: true,
       counts: { skills: 0, drifted: 0, conflicts: 0, orphans: 0, adoptable: 0, pendingApproval: 0 },
       sweepPreview: [],
+      removals: [],
       rows: [],
       projectLevel: [],
       pendingApproval: [],
     };
+  },
+
+  // The write half, and the file's stated convention for one: a descriptive
+  // error rather than a quiet no-op. Nothing in a vault ever calls it — the page
+  // draws `unavailable` and offers no button — so reaching this means somebody
+  // wired a new surface to it, and an error is what tells them.
+  async syncHarness(): Promise<never> {
+    throw new Error('Agent file sharing is not supported in embedded mode');
   },
 };
 

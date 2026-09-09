@@ -9,7 +9,7 @@
  *
  * @module shared/lib/transport/harness-methods
  */
-import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
+import type { HarnessStatusResponse, HarnessSyncResponse } from '@dorkos/shared/harness-schemas';
 import { fetchJSON, buildQueryString } from './http-client';
 
 /** Create the Harness Sync methods bound to a base URL. */
@@ -18,6 +18,15 @@ export function createHarnessMethods(baseUrl: string) {
     getHarnessStatus(projectPath: string): Promise<HarnessStatusResponse> {
       const qs = buildQueryString({ projectPath });
       return fetchJSON<HarnessStatusResponse>(baseUrl, `/harness/status${qs}`);
+    },
+
+    syncHarness(projectPath: string): Promise<HarnessSyncResponse> {
+      // A body rather than a query string, unlike the read beside it: this is a
+      // write, and a path in a URL is a path in an access log.
+      return fetchJSON<HarnessSyncResponse>(baseUrl, '/harness/sync', {
+        method: 'POST',
+        body: JSON.stringify({ projectPath }),
+      });
     },
   };
 }

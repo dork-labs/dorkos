@@ -3567,10 +3567,12 @@ async function start() {
   // Template catalog — always available, merges built-in + user templates.
   app.use('/api/templates', createTemplateRouter(dorkHome));
 
-  // Harness Sync status — "what does every agent tool do with every agent file
-  // in this project". Always mounted and read-only: it plans, diffs and
-  // inventories, and writes nothing (DOR-678's rule, stated in the route).
-  app.use('/api/harness', createHarnessRouter({ dorkHome }));
+  // Harness Sync — "what does every agent tool do with every agent file in this
+  // project", and the Sync now button that acts on it. The GET writes nothing
+  // (DOR-678's rule, stated in the route); the POST is person-only and takes
+  // the project lock. The approval service is what lets the sync ask about a
+  // package's hooks, exactly as the install path does.
+  app.use('/api/harness', createHarnessRouter({ dorkHome, approvals: approvalService }));
   mountedRouters.push('harness');
 
   // Approvals — always available. The cockpit lists what is waiting on a person

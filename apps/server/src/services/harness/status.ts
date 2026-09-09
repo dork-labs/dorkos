@@ -391,6 +391,7 @@ function emptyStatus(
     clean: true,
     counts: { skills: 0, drifted: 0, conflicts: 0, orphans: 0, adoptable: 0, pendingApproval: 0 },
     sweepPreview: [],
+    removals: [],
     rows: [],
     projectLevel: [],
     pendingApproval: [],
@@ -508,6 +509,11 @@ export function buildHarnessStatus(options: BuildHarnessStatusOptions): HarnessS
       pendingApproval: withheld.length,
     },
     sweepPreview: [...drift.orphans],
+    // The same paths with the reason each one goes (DOR-1906). Both are sent:
+    // the bare list is what the equality contract with the next `swept` is
+    // written against, and this is what the page shows a person before a click
+    // deletes anything.
+    removals: [...drift.removals],
     rows,
     projectLevel: projectLevelEntries(plan, enabledSet, notices),
     pendingApproval: withheld.map(pendingApprovalEntry),
