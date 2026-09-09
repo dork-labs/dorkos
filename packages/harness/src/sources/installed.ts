@@ -572,17 +572,27 @@ function scanPluginsRoot(pluginsRoot: string, scope: InstalledScope): InstalledP
  * Nothing here reads a home directory of its own: `dorkHome` is injected, and a
  * caller that does not pass one gets the project scope alone.
  *
- * @param opts - the project root to scan and, optionally, a resolved dork home.
+ * **Both roots are optional, and each absent one simply contributes nothing.**
+ * `projectGlobal` (`plan/global-projector.ts`) is the caller with no repository
+ * at all — it asks for the global scope by itself — and a caller that passes
+ * neither gets an empty list rather than a thrown error, which is the same
+ * "an absent root is a root nothing is read from" rule the global plan's own
+ * roots follow.
+ *
+ * @param opts - optionally the project root to scan, and optionally a resolved
+ *   dork home.
  * @returns global plugins first (only when `dorkHome` is given), then project
- *   plugins; each group sorted by name.
+ *   plugins (only when `projectRoot` is given); each group sorted by name.
  */
 export function scanInstalledPlugins(opts: {
   dorkHome?: string;
-  projectRoot: string;
+  projectRoot?: string;
 }): InstalledPlugin[] {
   const globalPlugins = opts.dorkHome
     ? scanPluginsRoot(join(opts.dorkHome, 'plugins'), 'global')
     : [];
-  const projectPlugins = scanPluginsRoot(join(opts.projectRoot, PROJECT_PLUGINS_DIR), 'project');
+  const projectPlugins = opts.projectRoot
+    ? scanPluginsRoot(join(opts.projectRoot, PROJECT_PLUGINS_DIR), 'project')
+    : [];
   return [...globalPlugins, ...projectPlugins];
 }

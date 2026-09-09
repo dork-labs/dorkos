@@ -455,6 +455,17 @@ function toManagedHooks(
 }
 
 /**
+ * What a person is told when a projected skill still needs plugin context.
+ *
+ * One sentence, defined once, because two planners say it: the per-harness
+ * projection here, and the dork-home tier in `plan/global-projector.ts`. The
+ * loss is a property of the FILE — a `SKILL.md` read off disk instead of through
+ * the SDK's plugin loader — so it reads the same whichever directory the link
+ * went into, and a second spelling of it would be a second voice about one fact.
+ */
+export const PLUGIN_ROOT_SKILL_WARNING_REASON = `skill SKILL.md references ${CLAUDE_PLUGIN_ROOT_TOKEN}, which only resolves in plugin context; the projected copy will not expand it`;
+
+/**
  * The `${CLAUDE_PLUGIN_ROOT}`-in-a-projected-skill warning, or `undefined` when
  * the skill is clean.
  *
@@ -476,7 +487,7 @@ function pluginRootSkillWarning(
     harness,
     name: namespaced,
     source,
-    reason: `skill SKILL.md references ${CLAUDE_PLUGIN_ROOT_TOKEN}, which only resolves in plugin context; the projected copy will not expand it`,
+    reason: PLUGIN_ROOT_SKILL_WARNING_REASON,
   };
 }
 

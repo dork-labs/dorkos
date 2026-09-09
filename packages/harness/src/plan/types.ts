@@ -53,12 +53,29 @@ export interface ProjectionAction {
   provenance: Provenance;
   /** The artifact's name — a skill name, a hook event, an instruction file, or a command. */
   name: string;
-  /** Source path, repo-relative. Absent for pure drops. */
+  /** Source path, repo-relative for a project action and absolute for a global one. Absent for pure drops. */
   source?: string;
-  /** Target path, repo-relative. Absent for drops. */
+  /** Target path, repo-relative for a project action and absolute for a global one. Absent for drops. */
   target?: string;
   /** Human-readable reason — required for `drop`, optional note otherwise. */
   reason?: string;
+  /**
+   * Which plan this action belongs to.
+   *
+   * A project action's {@link source} and {@link target} are repo-relative
+   * POSIX strings that resolve inside `repoRoot`; a global action's are
+   * absolute paths that resolve inside one of the plan's declared roots (see
+   * `plan/global-projector.ts`). Absent means `'project'`, so every existing
+   * emitter is unchanged and the field cannot be forgotten into a false global.
+   *
+   * A discriminator rather than a `root` field, deliberately. A `root` would let
+   * a target stay relative and be joined against something other than
+   * `repoRoot`, which is a second silent way for a target to escape, and every
+   * reader of `target` would then have to remember to join it first. An
+   * absolute target is self-describing, so P8 and P8b are checkable on the
+   * target alone.
+   */
+  scope?: 'project' | 'global';
   /**
    * True when this entry is not about {@link harness} in particular.
    *
@@ -205,6 +222,9 @@ export interface ProjectionPlan {
   /**
    * Harnesses whose files are in the repo that the manifest does not enable.
    *
+   * **Always empty in a global plan**: this is a per-repository detection
+   * result and a global plan has no repository to detect anything in.
+   *
    * A NOTICE, never drift: nothing is missing from disk, nothing is stale, and
    * a person who runs one of these agents somewhere else on purpose is not
    * wrong. So it never changes an exit code — it exists because detection used
@@ -219,6 +239,10 @@ export interface ProjectionPlan {
   /**
    * The harness this plan was narrowed to, when it was narrowed at all
    * (`dorkos harness sync --harness <id>`).
+   *
+   * **Never set in a global plan**: `buildGlobalPlan` takes no narrowing
+   * parameter at all, which is the stronger form of the guard `applyPlan` needs
+   * a thrown error for.
    *
    * Present so a narrowed plan can say so about ITSELF, rather than every
    * caller having to remember. Such a plan omits every other harness's live
@@ -264,9 +288,14 @@ export interface DriftResult {
    */
   blocked: ProjectionAction[];
   /**
-   * Repo-relative paths of everything a sweep would remove — sorted, unique,
-   * and **equal to the `swept` list the next `applyPlan(..., { sweepOrphans:
-   * true })` returns** (DOR-1889).
+   * The paths of everything a sweep would remove — sorted, unique, and **equal
+   * to the `swept` list the next `applyPlan(..., { sweepOrphans: true })`
+   * returns** (DOR-1889).
+   *
+   * **Repo-relative for a project plan; absolute for a global one**
+   * (`checkGlobalPlan`, whose targets are absolute by construction). The
+   * equality contract holds PER PLAN and never across the two: a project sync
+   * removes nothing a global sync would, and the reverse.
    *
    * All six sweeps answer here, not one: installed skill links whose plugin is
    * gone, dead `.claude/skills` links left by an authored skill somebody removed
@@ -290,13 +319,21 @@ export interface DriftResult {
    * load-bearing: `orphans` is the set the equality contract with `swept` is
    * written against and the shape every existing caller reads, and this is what
    * a person is shown. `sweep-reasons.ts` holds the sentences.
+   *
+   * Its paths follow {@link orphans}: repo-relative for a project plan,
+   * absolute for a global one.
    */
   removals: SweptPath[];
   /**
-   * Repo-relative paths where somebody's own file sits at a target the engine
-   * generates for *some* configuration but not this one — nothing is blocked,
-   * nothing needs fixing, and the person is simply told the file is theirs. Never
-   * a reason to exit non-zero.
+   * Paths where somebody's own file sits at a target the engine generates for
+   * *some* configuration but not this one — nothing is blocked, nothing needs
+   * fixing, and the person is simply told the file is theirs. Never a reason to
+   * exit non-zero.
+   *
+   * **Repo-relative for a project plan; absolute for a global one**, the same
+   * rule {@link orphans} states. Always empty for a global plan today: the only
+   * targets a global plan writes are symlinks, and this list is about generated
+   * files (`checkGlobalPlan`).
    */
   leftAlone: string[];
   /**
