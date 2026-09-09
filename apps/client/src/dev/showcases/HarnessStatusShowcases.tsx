@@ -15,7 +15,9 @@ import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
 import {
+  HarnessDriftBanner,
   HarnessStateChip,
+  HarnessSyncSummary,
   NotEnabledNotice,
   NotSharedPanel,
   ProjectLevelNoticesPanel,
@@ -89,6 +91,37 @@ function ListFixture({ answer }: { answer: Answer }) {
       </TransportProvider>
     </QueryClientProvider>
   );
+}
+
+/**
+ * One banner, drawn against one status, with a cache and a transport of its own.
+ *
+ * The same isolation as {@link ListFixture} and for the same reason: every demo
+ * here names one project path, so a shared cache would let the last one to mount
+ * decide what the rest showed.
+ */
+function BannerFixture({ status }: { status: HarnessStatusResponse }) {
+  const transport = useMemo(() => stubTransport(status), [status]);
+  const queryClient = useMemo(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+    []
+  );
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>
+        <HarnessDriftBanner projectPath={FIXTURE_PATH} />
+      </TransportProvider>
+    </QueryClientProvider>
+  );
+}
+
+/** A ready tree with one thing wrong with it, and no sweep pending. */
+function troubleWith(counts: Partial<HarnessStatusResponse['counts']>): HarnessStatusResponse {
+  return {
+    ...HARNESS_STATUS_ALL_SHARED,
+    clean: false,
+    counts: { ...HARNESS_STATUS_ALL_SHARED.counts, ...counts },
+  };
 }
 
 /**
@@ -215,6 +248,73 @@ export function HarnessPanelShowcases() {
             <NotSharedPanel rows={HARNESS_STATUS_READY.rows} enabled={THREE_TOOLS} />
             <ProjectLevelNoticesPanel entries={HARNESS_STATUS_READY.projectLevel} />
           </div>
+        </AtPanelWidth>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+/**
+ * The banner's four branches, the disclosure, and the receipt.
+ *
+ * Worth all six side by side because the tones are the point: a page that
+ * coloured "some files are out of date" the same red as "something is in the
+ * way" would be a page where neither means anything. Drift and adoptable are
+ * `info`, a conflict and a pending deletion are `warning`, and nothing here is
+ * ever `critical` — a file that has not been written yet is not an error.
+ */
+export function HarnessSyncShowcases() {
+  return (
+    <PlaygroundSection
+      title="Agent files banner"
+      description="At most one line at the top of the Skills page, and only when a sync would change something. The one branch with a button is the one a click can fix. When a sync would also DELETE something, the paths are named before the click — each with the engine's own sentence about why it goes — because a button that removes files without a manifest of them is the failure this whole surface exists to prevent."
+    >
+      <ShowcaseLabel>Out of date — the only branch with a button</ShowcaseLabel>
+      <ShowcaseDemo>
+        <BannerFixture status={troubleWith({ drifted: 2 })} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Out of date, and a click also removes two files</ShowcaseLabel>
+      <ShowcaseDemo>
+        <BannerFixture status={{ ...HARNESS_STATUS_READY, clean: false }} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Something else is in the way — no button, because a re-run cannot help
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <BannerFixture status={troubleWith({ conflicts: 1 })} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>A skill only some tools can see</ShowcaseLabel>
+      <ShowcaseDemo>
+        <BannerFixture status={troubleWith({ adoptable: 3 })} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Nothing to say — a clean tree draws no banner at all</ShowcaseLabel>
+      <ShowcaseDemo>
+        <BannerFixture status={HARNESS_STATUS_ALL_SHARED} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>What changed, after a sync</ShowcaseLabel>
+      <ShowcaseDemo>
+        <HarnessSyncSummary
+          onDismiss={() => undefined}
+          result={{
+            status: HARNESS_STATUS_ALL_SHARED,
+            applied: 4,
+            swept: HARNESS_STATUS_READY.sweepPreview,
+            removals: HARNESS_STATUS_READY.removals,
+            conflicts: 0,
+            askedAbout: ['acme-tools'],
+          }}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>The disclosure at the docked panel’s narrowest</ShowcaseLabel>
+      <ShowcaseDemo>
+        <AtPanelWidth>
+          <BannerFixture status={{ ...HARNESS_STATUS_READY, clean: false }} />
         </AtPanelWidth>
       </ShowcaseDemo>
     </PlaygroundSection>

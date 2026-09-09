@@ -173,6 +173,35 @@ export function isRowFullyShared(row: HarnessRow, enabled: readonly HarnessId[])
 }
 
 /**
+ * "1 file" or "4 files" — the noun phrase every count in the banner and the
+ * summary is built from.
+ *
+ * A shared helper rather than a `s` appended in three places, because the two
+ * surfaces have to agree: the disclosure promises a number before a click and
+ * the summary reports one after it, and "removes 1 files" in either of them is
+ * the sort of thing that makes a person doubt the number as well as the grammar.
+ *
+ * @param count - How many files.
+ */
+export function countedFiles(count: number): string {
+  return `${count} ${count === 1 ? 'file' : 'files'}`;
+}
+
+/**
+ * The one line a sync adds when a package's hooks are waiting on somebody.
+ *
+ * Written out rather than counted for the singular, because that is the case
+ * that actually happens and "1 package is waiting" reads like a machine talking.
+ *
+ * @param count - How many packages have a card open.
+ */
+export function countedPackagesWaiting(count: number): string {
+  return count === 1
+    ? 'One package is waiting for your approval.'
+    : `${count} packages are waiting for your approval.`;
+}
+
+/**
  * The one chip a healthy row draws instead of a wall of identical ones.
  *
  * @param count - How many tools share it.

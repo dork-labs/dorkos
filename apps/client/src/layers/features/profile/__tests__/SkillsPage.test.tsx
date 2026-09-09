@@ -29,6 +29,16 @@ import { buildProfileDeepLinkHarness } from '@/test-helpers/profile-deep-link';
 import { ProfileView } from '../ui/ProfileView';
 import { profileStack, type ProfileStackState } from '../model/profile-stack';
 
+// The drift banner subscribes to `approval_resolved`, which needs the app-level
+// `EventStreamProvider` — a whole SSE stack for a stream nothing here fires.
+// Stubbed rather than mounted, which is what every other suite in this repo does
+// with it; the subscription's own behaviour belongs to the banner's own file.
+vi.mock('@/layers/shared/model', async () => {
+  const actual =
+    await vi.importActual<typeof import('@/layers/shared/model')>('@/layers/shared/model');
+  return { ...actual, useEventSubscription: () => undefined };
+});
+
 const byId = (id: string): TeamMember => MOCK_TEAM_ROSTER.find((member) => member.id === id)!;
 
 const MANAGED = byId('agent-warden');
@@ -113,15 +123,20 @@ async function goBack() {
  * (the list draws its placeholder rows), while everything else on the page is
  * drawn from the answer. Returning on the frame alone would leave every
  * assertion below racing the read, which is a test that reds on a busy machine
- * rather than on a bug. The list's `role="status"` — its "Loading skills…" — is
- * the marker for the second wait.
+ * rather than on a bug. The list's own "Loading skills…" is the marker for the
+ * second wait.
+ *
+ * It is matched by its TEXT and not by `role="status"`, which is what it used to
+ * be: the drift banner is a `role="status"` region too (that is how a banner
+ * announces politely), so a role-only marker would read a page that had finished
+ * loading and drawn a banner as one that was still loading, for ever.
  */
 async function openSkillsPage(): Promise<HTMLElement> {
   await openRow('skills');
   return await waitFor(() => {
     const page = document.querySelector<HTMLElement>('[data-slot="profile-skills"]');
     expect(page, 'the Skills page never mounted').not.toBeNull();
-    expect(within(page!).queryByRole('status'), 'the read had not landed').toBeNull();
+    expect(within(page!).queryByText('Loading skills…'), 'the read had not landed').toBeNull();
     return page!;
   });
 }

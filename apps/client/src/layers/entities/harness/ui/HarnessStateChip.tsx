@@ -51,15 +51,17 @@ export interface HarnessStateChipProps {
  * DESCRIPTION once the label has named it — the same split `ProvenanceChip`
  * makes for its warning.
  *
- * **Which reasons have a second home, exactly.** A `dropped` reason does: the
- * "Not shared with `<harness>`" panel repeats it in full and verbatim, so for
- * those the tooltip really is a convenience. A `drifted`, `conflict` or
- * `pending-approval` reason does NOT — today this description is its only copy,
- * and a `title` on a non-focusable `<li>` is out of reach for a sighted keyboard
- * user. The banner and the "what changed" summary are where those three get
- * said out loud, and they arrive with the sync (DOR-1895). Until then this is a
- * known gap rather than a covered one, and it is stated here so nobody reads
- * the panel's promise as covering all seven states.
+ * **Which reasons have a second home, exactly.** All of them do now. A `dropped`
+ * reason is repeated in full and verbatim by the "Not shared with `<harness>`"
+ * panel. A `drifted` or `conflict` cell is what the drift banner is about, and
+ * it says so in words a person can read without hovering anything — "some agent
+ * files are out of date", "DorkOS can't update some files" — with every path a
+ * sync would remove, and the reason each one goes, in its disclosure and again
+ * in the "what changed" summary afterwards. A `pending-approval` cell is named
+ * by the approval card itself, which is the surface built to show the commands,
+ * and the summary says a package is waiting. So this description is a
+ * convenience everywhere, which is what a `title` on a non-focusable `<li>` has
+ * to be (DOR-1895 closed the gap DOR-1893 recorded here).
  *
  * A cell that landed but may not work keeps its state chip and gains a marker
  * beside the words, whose own description is the warning text. Two facts, two

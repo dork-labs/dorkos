@@ -861,6 +861,17 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // has to know what a harness is to run. A test that cares passes its own
     // status through `overrides`.
     getHarnessStatus: vi.fn().mockResolvedValue(mockHarnessStatus()),
+    // A sync that did nothing, because nothing was out of date — the same clean
+    // tree the read above answers with. A test that cares about a sync passes
+    // its own through `overrides`.
+    syncHarness: vi.fn().mockResolvedValue({
+      status: mockHarnessStatus(),
+      applied: 0,
+      swept: [],
+      removals: [],
+      conflicts: 0,
+      askedAbout: [],
+    }),
     // The Inbox (spec `notification-system`)
     listNotifications: vi
       .fn()

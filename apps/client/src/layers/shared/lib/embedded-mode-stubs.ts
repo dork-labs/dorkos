@@ -897,6 +897,14 @@ export const harnessStubs = {
       pendingApproval: [],
     };
   },
+
+  // The write half, and the file's stated convention for one: a descriptive
+  // error rather than a quiet no-op. Nothing in a vault ever calls it — the page
+  // draws `unavailable` and offers no button — so reaching this means somebody
+  // wired a new surface to it, and an error is what tells them.
+  async syncHarness(): Promise<never> {
+    throw new Error('Agent file sharing is not supported in embedded mode');
+  },
 };
 
 /** Shapes (DOR-355) are a server-only marketplace concept — inert in embedded mode. */
