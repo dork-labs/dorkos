@@ -8,6 +8,9 @@ covers:
   # a fix of its own.
   - 'fix(server): the boot hint counts in singulars when there is one (DOR-1945)'
   - 'feat(cli): adopt knows a room worktree when you are standing in one (DOR-1945)'
+  # Folds in here too: it corrects which skills the second bullet's line counts
+  # and names, before anybody could have read one.
+  - 'fix(server): the boot report counts what it can still say something about (DOR-1945)'
 ---
 
 ### Added
