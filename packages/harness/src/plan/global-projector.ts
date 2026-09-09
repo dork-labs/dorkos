@@ -468,7 +468,7 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
     for (const skill of plugin.skills) {
       const namespaced = `${plugin.name}__${skill.name}`;
       for (const tier of tiers) {
-        const target = `${tier.dir}/${namespaced}`;
+        const target = join(tier.dir, namespaced);
         if (planned.has(target)) continue;
         planned.add(target);
         actions.push({
