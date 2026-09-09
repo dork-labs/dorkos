@@ -17,7 +17,9 @@ import {
   HARNESS_STATUS_READY,
   HARNESS_STATUS_UNAVAILABLE,
   HARNESS_STATUS_UNREADABLE,
+  HARNESS_STATUS_WITH_GLOBAL,
 } from '../../__fixtures__/harness-status';
+import { harnessRowKey } from '../../lib/harness-status';
 import { SkillHarnessRow } from '../SkillHarnessRow';
 import { SkillsWithHarnessesList } from '../SkillsWithHarnessesList';
 
@@ -48,6 +50,40 @@ describe('SkillsWithHarnessesList — the list', () => {
   beforeEach(() => {
     cleanup();
     vi.clearAllMocks();
+  });
+
+  it('lists a package installed for all projects beside this project’s own, tagged', async () => {
+    // Seeded defect: drop the tag from the row. The list then draws two rows
+    // called "release" with the same chips and nothing to tell them apart, above
+    // a count that agrees with neither on its own.
+    await renderWithStatus(HARNESS_STATUS_WITH_GLOBAL);
+
+    const rows = await screen.findAllByRole('group');
+    expect(rows).toHaveLength(
+      HARNESS_STATUS_WITH_GLOBAL.counts.skills + HARNESS_STATUS_WITH_GLOBAL.counts.globalSkills
+    );
+    // Two rows share the name; exactly one of them says where it came from.
+    const named = rows.filter((row) => row.getAttribute('aria-label') === 'release');
+    expect(named).toHaveLength(2);
+    expect(screen.getAllByText('for all your projects')).toHaveLength(1);
+  });
+
+  it('keys two rows apart when only their scope differs', () => {
+    // Seeded defect: drop `scope` from the client key. React then reconciles two
+    // different rows as one, and the server keys them apart while the client
+    // does not — the one disagreement a list key must never have.
+    //
+    // Constructed rather than taken from the fixture, for the reason the server's
+    // twin gives: on real payloads the two sources already differ — one
+    // repo-relative, one absolute — so no realistic pair collides on the other
+    // three, and a key that quietly dropped the fourth would pass every
+    // end-to-end assertion until the day two sources agreed.
+    const entry = { artifact: 'skill', source: '/x/skills/release', name: 'release' } as const;
+    expect(harnessRowKey({ ...entry, scope: 'project' })).not.toEqual(
+      harnessRowKey({ ...entry, scope: 'global' })
+    );
+    // Absent means project, matching the schema default and the server.
+    expect(harnessRowKey(entry)).toEqual(harnessRowKey({ ...entry, scope: 'project' }));
   });
 
   it('draws one row per skill and, expanded, one chip per enabled agent tool', async () => {

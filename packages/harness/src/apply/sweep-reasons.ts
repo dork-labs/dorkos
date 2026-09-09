@@ -46,6 +46,13 @@ import { isAtomicTempName } from './atomic-write.js';
  * `.claude/settings.local.json` is not removed at all — it keeps every key the
  * person owns and loses only the entries DorkOS merged in, which is the one line
  * in the list that has always had to say so.
+ *
+ * The last two are the global sweep's (`apply/global-apply.ts`), and they are
+ * two rather than one because a global link goes for two genuinely different
+ * reasons: the package was uninstalled, or the package is still installed and no
+ * longer has a skill of that name. "No longer installed here" would be wrong
+ * about both — there is no `here` at global scope — which is why they do not
+ * reuse `installed-skill`.
  */
 export const SWEEP_REASONS = {
   'installed-skill': 'The package this skill came from is no longer installed here.',
@@ -54,6 +61,9 @@ export const SWEEP_REASONS = {
   'command-wrapper': 'The package this command came from is no longer installed here.',
   'settings-hooks': 'Only the hook entries DorkOS added go; your own settings stay.',
   'stale-temp': 'A half-written file an interrupted sync left behind.',
+  'global-package-gone':
+    'The package this skill came from is no longer installed for all your projects.',
+  'global-skill-gone': 'The package this skill came from no longer has a skill of this name.',
 } as const satisfies Record<string, string>;
 
 /** Which sweep found a path — the whole of what decides its reason. */

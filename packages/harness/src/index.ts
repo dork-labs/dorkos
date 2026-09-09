@@ -15,6 +15,7 @@ export * from './plan/hooks-projection.js';
 export * from './plan/instructions.js';
 export * from './plan/command-formats.js';
 export * from './plan/installed-projector.js';
+export * from './plan/global-projector.js';
 export * from './plan/global-installs.js';
 export * from './plan/unreadable-hooks.js';
 export * from './plan/source-artifacts.js';
@@ -27,6 +28,7 @@ export * from './sources/resolve-roots.js';
 export * from './sources/installed.js';
 export * from './generate/hooks.js';
 export * from './apply/apply.js';
+export * from './apply/global-apply.js';
 export * from './apply/gitignore.js';
 // The generated-hooks half of apply, kept in its own module: only the orphan
 // sweep is part of the package's surface, the rest is apply's business.

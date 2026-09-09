@@ -63,6 +63,7 @@ export function readyRow(name: string): HarnessRow {
 export const LONG_PATH_ROW: HarnessRow = {
   artifact: 'skill',
   provenance: 'installed',
+  scope: 'project',
   name: 'reviewing-pull-requests',
   source:
     '.dork/plugins/@dork-labs/engineering-toolkit/plugins/review/skills/reviewing-pull-requests',
@@ -108,6 +109,7 @@ export const SIX_TOOLS: HarnessId[] = [
 export const SIX_TOOL_ROW: HarnessRow = {
   artifact: 'skill',
   provenance: 'authored',
+  scope: 'project',
   name: 'writing-for-humans',
   source: '.agents/skills/writing-for-humans',
   adoptable: false,

@@ -18,7 +18,7 @@
  * @module plan/__tests__/global-install-drop
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { buildPlan } from '../projector.js';
@@ -59,12 +59,13 @@ function writeManifest(pluginDir: string, name: string, version: string, layers:
   );
 }
 
-/** Write a `<parent>/<name>/SKILL.md`. */
-function writeSkill(parent: string, name: string): void {
+/** Write a `<parent>/<name>/SKILL.md`, optionally one that runs on a timer. */
+function writeSkill(parent: string, name: string, scheduled = false): void {
   mkdirSync(join(parent, name), { recursive: true });
+  const schedule = scheduled ? "schedule:\n  cron: '0 9 * * *'\n" : '';
   writeFileSync(
     join(parent, name, 'SKILL.md'),
-    `---\nname: ${name}\ndescription: The ${name} skill\n---\n\n# ${name}\n`
+    `---\nname: ${name}\ndescription: The ${name} skill\n${schedule}---\n\n# ${name}\n`
   );
 }
 
@@ -93,6 +94,30 @@ function planFor(repo: string): ProjectionPlan {
     agentsMdExists: false,
     installedPlugins: scanInstalledPlugins({ dorkHome, projectRoot: repo }),
   });
+}
+
+/**
+ * Link one global skill into `<dorkHome>/skills`, the way a global sync would.
+ *
+ * Written by hand rather than by running the apply, because these cases are
+ * about what the SCAN sees on disk and nothing else; the apply has its own
+ * integration suite.
+ */
+function linkGlobalSkill(pkg: string, skill: string): void {
+  const skillsRoot = join(dorkHome, 'skills');
+  mkdirSync(skillsRoot, { recursive: true });
+  symlinkSync(`../plugins/${pkg}/skills/${skill}`, join(skillsRoot, `${pkg}__${skill}`));
+}
+
+/**
+ * Undo every {@link linkGlobalSkill}, folder and all.
+ *
+ * The whole directory goes, not just the links: this file's `afterAll` asserts
+ * that the dork home is byte-identical to how it was found, and a leftover empty
+ * `skills/` is a path that was not there before.
+ */
+function clearGlobalLinks(): void {
+  rmSync(join(dorkHome, 'skills'), { recursive: true, force: true });
 }
 
 /** Every drop about the named package. */
@@ -125,6 +150,19 @@ beforeAll(() => {
   for (let i = 1; i <= 12; i += 1) {
     writeSkill(join(big, 'skills'), `skill-${String(i).padStart(2, '0')}`);
   }
+
+  // `timerpack`: one skill that runs on a timer, beside one that does not — the
+  // shape slice A2's appended sentence is about.
+  const timer = join(dorkHome, 'plugins', 'timerpack');
+  writeManifest(timer, 'timerpack', '1.0.0', ['skills']);
+  writeSkill(join(timer, 'skills'), 'daily-sweep', true);
+  writeSkill(join(timer, 'skills'), 'helper');
+
+  // `twotimers`: two skills, both on a timer — the plural the sentence claims.
+  const two = join(dorkHome, 'plugins', 'twotimers');
+  writeManifest(two, 'twotimers', '1.0.0', ['skills']);
+  writeSkill(join(two, 'skills'), 'first', true);
+  writeSkill(join(two, 'skills'), 'second', true);
 
   // `rottedhooks`: a global package whose hooks file nobody can read.
   const rotted = join(dorkHome, 'plugins', 'rottedhooks');
@@ -211,6 +249,68 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
     expect(reason).not.toContain('skill-11');
     // Exactly ten named, so the cap is the rule and not an accident of this list.
     expect(reason.match(/skill-\d\d/g)).toHaveLength(10);
+  });
+
+  it('SK-03: a package whose timers are NOT linked yet is told which command links them', () => {
+    // Seeded defect: gate the "now work" sentence on `hasSchedule` alone. It
+    // then prints on a machine where no global sync has ever run — the claim was
+    // false at the moment it was printed, which is the one thing this whole
+    // block exists not to do.
+    const plan = planFor(repoWith());
+
+    const [drop] = dropsFor(plan, 'timerpack');
+    expect(drop?.reason).toBe(
+      'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. ' +
+        'Its 2 skills are not shared with this project: daily-sweep, helper. ' +
+        'Run dorkos harness sync --fix --global so its skills that run on a timer work.'
+    );
+  });
+
+  it('SK-03: a package whose timers ARE linked is told they now work', () => {
+    // Seeded defect: gate on `hasSchedule` alone (the two cases are the same
+    // seed, from opposite sides) — or drop the flag from the scan, which makes
+    // every package read as unlinked and reds this one.
+    linkGlobalSkill('timerpack', 'daily-sweep');
+    try {
+      const plan = planFor(repoWith());
+      const [drop] = dropsFor(plan, 'timerpack');
+      expect(drop?.reason).toBe(
+        'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. ' +
+          'Its 2 skills are not shared with this project: daily-sweep, helper. ' +
+          'Its skills that run on a timer now work.'
+      );
+    } finally {
+      clearGlobalLinks();
+    }
+  });
+
+  it('SK-03: one unlinked timed skill is enough to keep the claim off', () => {
+    // The sentence is plural — "its skills that run on a timer" — so it may only
+    // be printed when every one of them is linked.
+    linkGlobalSkill('twotimers', 'first');
+    try {
+      const plan = planFor(repoWith());
+      expect(dropsFor(plan, 'twotimers')[0]?.reason).toContain(
+        'Run dorkos harness sync --fix --global'
+      );
+      linkGlobalSkill('twotimers', 'second');
+      expect(dropsFor(planFor(repoWith()), 'twotimers')[0]?.reason).toContain(
+        'Its skills that run on a timer now work.'
+      );
+    } finally {
+      clearGlobalLinks();
+    }
+  });
+
+  it('SK-03: a package with no scheduled skill never mentions timers at all', () => {
+    const plan = planFor(repoWith());
+
+    for (const name of ['globex', 'soloskill', 'bigpack', 'barepkg']) {
+      expect({ name, reason: dropsFor(plan, name)[0]?.reason ?? '' }).toEqual({
+        name,
+        reason: expect.not.stringContaining('timer') as string,
+      });
+    }
   });
 
   it('SRC-04: a global package with no skills gets the second form', () => {

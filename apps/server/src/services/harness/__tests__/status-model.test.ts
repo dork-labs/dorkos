@@ -38,7 +38,7 @@ import { HarnessStatusResponseSchema } from '@dorkos/shared/harness-schemas';
 import type { HarnessCell, HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
 import { hookApprovalEntry, type HookDecisions } from '../hook-consent.js';
 import { projectWithConsent, scanHookRequests } from '../project-with-consent.js';
-import { buildHarnessStatus } from '../status.js';
+import { buildHarnessStatus, harnessRowKey } from '../status.js';
 
 /** Nobody has decided anything — the shape every case here runs under. */
 const NO_DECISIONS: HookDecisions = { approved: [], refused: [] };
@@ -253,8 +253,17 @@ function stagePlugin(
   if (parts.hooksJson !== undefined) writeAt(join(plugin, 'hooks', 'hooks.json'), parts.hooksJson);
 }
 
-/** Install a package of this name for every project, under the staged dork home. */
-function stageGlobalPlugin(home: string, name: string): void {
+/**
+ * Install a package of this name for every project, under the staged dork home.
+ *
+ * One `greet` skill unless the caller names others — the shape most cases want,
+ * and the budget case wants five per package across twenty of them.
+ */
+function stageGlobalPlugin(
+  home: string,
+  name: string,
+  skills: readonly string[] = ['greet']
+): void {
   const plugin = join(home, 'plugins', name);
   writeJsonAt(join(plugin, '.dork', 'manifest.json'), {
     schemaVersion: 1,
@@ -264,7 +273,7 @@ function stageGlobalPlugin(home: string, name: string): void {
     description: `The ${name} package`,
     layers: ['skills'],
   });
-  writeSkill(join(plugin, 'skills', 'greet'), 'greet');
+  for (const skill of skills) writeSkill(join(plugin, 'skills', skill), skill);
 }
 
 /**
@@ -316,6 +325,10 @@ describe('VC-01 — the status model derives eight states from five reads', () =
     expect(dropsByHarness(status)).toEqual({ 'claude-code': 1, codex: 16, cursor: 9 });
     expect(status.counts).toEqual({
       skills: 6,
+      // No package is installed for all projects on this fixture, so the global
+      // half of the answer is empty and the project half is exactly what it was
+      // before global rows existed.
+      globalSkills: 0,
       drifted: 2,
       conflicts: 0,
       orphans: 0,
@@ -923,6 +936,7 @@ describe('VC-01 — the envelope', () => {
     expect(missing.rows).toEqual([]);
     expect(missing.counts).toEqual({
       skills: 0,
+      globalSkills: 0,
       drifted: 0,
       conflicts: 0,
       orphans: 0,
@@ -1054,5 +1068,107 @@ describe('VC-01 — the envelope', () => {
     expect(treeDiffWhile(merged.repo, () => statusOf(merged.repo, merged.home))).toEqual(
       NO_CHANGES
     );
+  });
+});
+
+describe('VC-01 — packages installed for all projects are rows in every project’s answer', () => {
+  it('VC-01: the same skill name at both scopes derives two rows, one per scope', () => {
+    // Seeded defect: drop `scope` from the row. The two rows are then
+    // indistinguishable to a reader, `counts.skills` counts both and
+    // `counts.globalSkills` counts neither.
+    const { repo, home } = stageBare('bothscopes', ['claude-code', 'codex']);
+    stagePlugin(repo, 'globex', { layers: ['skills'] });
+    stageGlobalPlugin(home, 'globex', ['greet']);
+
+    const status = statusOf(repo, home);
+
+    const named = status.rows.filter((r) => r.name === 'globex__greet');
+    expect(named.map((r) => r.scope).sort()).toEqual(['global', 'project']);
+    // Each keeps its own cells: the project copy is projected, the global copy
+    // is dropped with the engine's own sentence about the package.
+    const project = named.find((r) => r.scope === 'project');
+    const global = named.find((r) => r.scope === 'global');
+    expect(Object.keys(project?.cells ?? {}).sort()).toEqual(['claude-code', 'codex']);
+    expect(Object.keys(global?.cells ?? {}).sort()).toEqual(['claude-code', 'codex']);
+    expect(global?.cells['codex']?.state).toBe('dropped');
+    expect(global?.cells['codex']?.reason).toContain('installed for all your projects');
+    // And the source says which is which: repo-relative here, absolute there.
+    expect(project?.source).toBe('.dork/plugins/globex/skills/greet');
+    expect(global?.source).toBe(join(home, 'plugins', 'globex', 'skills', 'greet'));
+  });
+
+  it('VC-01: the row key tells two scopes apart when nothing else can', () => {
+    // Seeded defect: drop `scope` from `harnessRowKey`. On real trees the two
+    // sources differ — one repo-relative, one absolute — so no fixture can make
+    // the collapse happen end to end; this is where the fourth component is
+    // actually load-bearing, and where removing it reds.
+    const entry = { artifact: 'skill', source: '/x/skills/greet', name: 'globex__greet' } as const;
+    expect(harnessRowKey({ ...entry, scope: 'project' })).not.toEqual(
+      harnessRowKey({ ...entry, scope: 'global' })
+    );
+    // Absent means project, matching the schema default, so nothing that
+    // predates global scope changes key.
+    expect(harnessRowKey(entry)).toEqual(harnessRowKey({ ...entry, scope: 'project' }));
+  });
+
+  it('VC-01: counts.skills counts project rows only, and globalSkills counts the rest', () => {
+    const { repo, home } = stageBare('counts', ['claude-code', 'codex']);
+    writeSkill(join(repo, '.agents', 'skills', 'alpha'), 'alpha');
+    stageGlobalPlugin(home, 'globex', ['greet', 'wave']);
+
+    const status = statusOf(repo, home);
+
+    expect(status.counts.globalSkills).toBe(2);
+    expect(status.counts.skills).toBe(
+      status.rows.filter((r) => r.artifact === 'skill' && r.scope === 'project').length
+    );
+    // Disjoint by definition: their sum is every skill row the page draws.
+    expect(status.counts.skills + status.counts.globalSkills).toBe(
+      status.rows.filter((r) => r.artifact === 'skill').length
+    );
+  });
+
+  it('VC-01: a project with no manifest still answers with what is installed for all projects', () => {
+    // The point of the fold: this folder not being set up says nothing about
+    // whether somebody installed a package for every project.
+    const { repo, home } = tempPair('notsetup-global');
+    stageGlobalPlugin(home, 'globex', ['greet']);
+
+    const status = statusOf(repo, home);
+
+    expect(status.state).toBe('not-set-up');
+    expect(status.counts.globalSkills).toBe(1);
+    expect(status.rows.map((r) => ({ name: r.name, scope: r.scope, cells: r.cells }))).toEqual([
+      // No enabled tool, so no cell to put a sentence in: the row is the answer.
+      { name: 'globex__greet', scope: 'global', cells: {} },
+    ]);
+  });
+
+  it('VC-01: the whole answer stays inside its byte budget with the global fold', () => {
+    // DOR-1852 set the budget at 250 KB and measured 32,415 bytes for this
+    // repository. The budget now INCLUDES global rows, so it is re-measured here
+    // against the planning ceiling that spec named: 20 packages of 5 skills.
+    const { repo, home } = stageBare('budget', ['claude-code', 'codex', 'cursor']);
+    for (let i = 0; i < 20; i++) {
+      stageGlobalPlugin(home, `package-${String(i).padStart(2, '0')}`, [
+        'alpha',
+        'beta',
+        'gamma',
+        'delta',
+        'epsilon',
+      ]);
+    }
+
+    const status = statusOf(repo, home);
+    const bytes = Buffer.byteLength(JSON.stringify(status), 'utf8');
+
+    expect(status.counts.globalSkills).toBe(100);
+    // Measured on this fixture: 92,254 bytes — 100 global rows over three
+    // enabled tools, beside a project half with one authored skill. The
+    // counterexample carries the number, so a regression says how far past it went.
+    expect({ bytes: bytes <= 250 * 1024, measured: bytes }).toEqual({
+      bytes: true,
+      measured: bytes,
+    });
   });
 });

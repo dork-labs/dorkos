@@ -46,13 +46,16 @@
  */
 import {
   checkPlan,
+  globalInstallDropReason,
   HARNESS_MANIFEST_PATH,
   inventorySourceTree,
   loadManifest,
   manifestNotices,
+  scanInstalledPlugins,
   type ArtifactType,
   type DriftResult,
   type HarnessManifest,
+  type InstalledLocation,
   type ProjectionAction,
   type ProjectionPlan,
   type ProjectionWarning,
@@ -67,6 +70,7 @@ import type {
   HarnessProjectEntry,
   HarnessProvenance,
   HarnessRow,
+  HarnessScope,
   HarnessStatusResponse,
 } from '@dorkos/shared/harness-schemas';
 import { z } from 'zod';
@@ -110,6 +114,20 @@ const PROVENANCE = {
   installed: 'installed',
   adopted: 'adopted',
 } satisfies Record<Provenance, HarnessProvenance>;
+
+/**
+ * The engine's install scopes, mapped onto the response's.
+ *
+ * The second `satisfies` table in this file, and it earns its place the same way
+ * the first does: a third scope added to `InstalledLocation` — a machine tier, a
+ * workspace tier — is a scope the page has to say something about, and the
+ * compiler names this file the moment one appears rather than letting a row
+ * quietly claim to be a project row.
+ */
+const INSTALL_SCOPE = {
+  project: 'project',
+  global: 'global',
+} satisfies Record<InstalledLocation['scope'], HarnessScope>;
 
 /** The canonical skills root: a skill here is shared with every harness. */
 const CANONICAL_SKILLS_ROOT = '.agents/skills';
@@ -185,6 +203,8 @@ export interface BuildHarnessStatusOptions {
 interface DraftRow {
   artifact: HarnessArtifactKind;
   provenance: HarnessProvenance;
+  /** Which scope the file lives in — part of the row key, and drawn on the row. */
+  scope: HarnessScope;
   name: string;
   source?: string;
   cells: Map<HarnessId, HarnessCell>;
@@ -193,7 +213,16 @@ interface DraftRow {
 /**
  * The key that decides whether two entries are the same file.
  *
- * Two of the three have a measured counter-example on the J-01 fixture: two
+ * `scope` is the fourth component and global scope is what it is for: the same
+ * package installed both in this project and for every project projects a skill
+ * of the same name, of the same artifact kind, from sources that differ only in
+ * whether the path happens to be absolute. Two rows differing in nothing a
+ * reader can name is exactly the shape a key must not collapse, and relying on
+ * the absolute-versus-relative spelling would be relying on an accident of how
+ * each scan writes a path. Absent means `'project'`, matching the schema's
+ * default, so every producer that predates global scope keys as it always did.
+ *
+ * Two of the other three have a measured counter-example on the J-01 fixture: two
  * settings files both contribute a hook group named `hooks` (so `source` is
  * needed), and two MCP servers share one `.mcp.json` (so `name` is).
  *
@@ -208,9 +237,23 @@ interface DraftRow {
  * concatenation. (The spec's claim is corrected in slice 8.)
  *
  * The separator is a NUL because no path or artifact name can contain one.
+ *
+ * Exported so the four-part contract can be tested as a contract. On real trees
+ * the two scopes' `source` strings already differ — one is repo-relative and one
+ * absolute — so a fixture cannot make two entries collide on everything but
+ * `scope`, and a key that quietly dropped it would pass every end-to-end
+ * assertion right up until the day two sources agreed.
+ *
+ * @param entry - anything with the four components a row is keyed on.
+ * @returns the key, NUL-separated.
  */
-function rowKey(entry: { artifact: string; source?: string; name: string }): string {
-  return [entry.artifact, entry.source ?? '', entry.name].join(SEP);
+export function harnessRowKey(entry: {
+  artifact: string;
+  source?: string;
+  name: string;
+  scope?: HarnessScope;
+}): string {
+  return [entry.scope ?? 'project', entry.artifact, entry.source ?? '', entry.name].join(SEP);
 }
 
 /** The `(artifact, source)` half of a row key — what a warning attaches by. */
@@ -219,8 +262,11 @@ function artifactSourceKey(entry: { artifact: string; source?: string }): string
 }
 
 /** The key that decides whether two entries are about the same file AND harness. */
-function cellKey(entry: { artifact: string; source?: string; name: string }, h: HarnessId): string {
-  return `${rowKey(entry)}${SEP}${h}`;
+function cellKey(
+  entry: { artifact: string; source?: string; name: string; scope?: HarnessScope },
+  h: HarnessId
+): string {
+  return `${harnessRowKey(entry)}${SEP}${h}`;
 }
 
 /**
@@ -342,7 +388,7 @@ function cell(state: HarnessCell['state'], action: ProjectionAction): HarnessCel
  * row only when it matches none.
  *
  * @param warning - the warning to place.
- * @param rows - every row built so far, keyed by {@link rowKey}.
+ * @param rows - every row built so far, keyed by {@link harnessRowKey}.
  * @param byArtifactSource - row keys indexed by `(artifact, source)`.
  * @returns the row it landed on, creating one if it had to.
  */
@@ -359,12 +405,14 @@ function placeWarning(
   const existing = chosen === undefined ? undefined : rows.get(chosen);
   if (existing) return existing;
 
-  const key = rowKey(warning);
+  const key = harnessRowKey(warning);
   const created: DraftRow = {
     artifact: ARTIFACT_KIND[warning.artifact],
     // A warning carries no provenance, and every non-agnostic warning the engine
-    // emits is about a file in the person's own tree.
+    // emits is about a file in the person's own tree — which is also why its own
+    // row is a project row.
     provenance: 'authored',
+    scope: 'project',
     name: warning.name,
     ...(warning.source === undefined ? {} : { source: warning.source }),
     cells: new Map(),
@@ -372,6 +420,119 @@ function placeWarning(
   rows.set(key, created);
   byArtifactSource.set(artifactSourceKey(warning), [key]);
   return created;
+}
+
+/** One skill in a package installed for all projects, with the sentence about it. */
+interface GlobalSkill {
+  /** The namespaced name a projection of it carries: `<pkg>__<skill>`. */
+  name: string;
+  /** The skill directory, absolute — a global package has no repo to be relative to. */
+  source: string;
+  /** The engine's own sentence about the package this skill is in. */
+  reason: string;
+}
+
+/**
+ * Every skill in every package installed for all projects, in scan order.
+ *
+ * The sentence is the engine's — `globalInstallDropReason`, the same string
+ * `dorkos harness sync` prints under `plugin layers:` — so the terminal and the
+ * screen say one thing about one package, including the clause slice A2 appends
+ * about skills that run on a timer.
+ *
+ * @param dorkHome - the resolved data directory.
+ * @returns one entry per skill, or none when the folder cannot be read.
+ */
+function globalSkills(dorkHome: string): GlobalSkill[] {
+  let packages;
+  try {
+    packages = scanInstalledPlugins({ dorkHome });
+  } catch {
+    // A data directory that cannot be read is not this answer's to complain
+    // about: the status page is a read, and `dorkos harness sync --global` is
+    // the surface that reports on the folder itself.
+    return [];
+  }
+  const skills: GlobalSkill[] = [];
+  for (const plugin of packages) {
+    if (plugin.location.scope !== 'global') continue;
+    const reason = globalInstallDropReason(plugin);
+    for (const skill of plugin.skills) {
+      skills.push({
+        name: `${plugin.name}__${skill.name}`,
+        source: skill.sourceDir,
+        reason,
+      });
+    }
+  }
+  return skills;
+}
+
+/**
+ * What every enabled agent tool does with a global package's skills: nothing,
+ * said out loud, one entry per skill per tool.
+ *
+ * **Dropped is the honest answer, and it stays honest now that slice A2 has
+ * built the dork-home tier.** That tier links a global package's skills into
+ * `<dorkHome>/skills`, which is DorkOS's own folder and which no agent tool
+ * reads: it is what makes a global scheduled skill RUN, and it is not a way for
+ * Codex or Claude Code to see the skill here.
+ *
+ * These are shaped as {@link ProjectionAction} drops rather than as finished
+ * rows so that they go through the one row-and-cell derivation everything else
+ * does: the row key decides collisions, the cell ladder decides states, and a
+ * global row cannot drift into a second model of what a row is. They are
+ * deliberately NOT `harnessAgnostic` — each really is about the tool it names,
+ * and an agnostic entry would be filtered out of every cell.
+ *
+ * @param input - the global skills and the enabled agent tools.
+ * @returns one drop per (global skill x enabled harness).
+ */
+function globalSkillEntries(input: {
+  skills: readonly GlobalSkill[];
+  enabled: readonly HarnessId[];
+}): ProjectionAction[] {
+  const entries: ProjectionAction[] = [];
+  for (const skill of input.skills) {
+    for (const harness of input.enabled) {
+      entries.push({
+        kind: 'drop',
+        artifact: 'skill',
+        harness,
+        provenance: 'installed',
+        scope: INSTALL_SCOPE.global,
+        name: skill.name,
+        source: skill.source,
+        reason: skill.reason,
+      });
+    }
+  }
+  return entries;
+}
+
+/**
+ * The global rows for an answer with no enabled harnesses to fill cells with — a
+ * project with no manifest, or one whose manifest will not parse.
+ *
+ * The rows still appear, with no cells, because the alternative is silence: a
+ * folder that is not set up can still belong to somebody who installed a package
+ * for every project, and answering nothing about it would reproduce the defect
+ * the honest drop list exists to end. With no enabled tool there is no cell to
+ * put a sentence in, so the row IS the answer.
+ *
+ * @param dorkHome - the resolved data directory.
+ * @returns one cell-less row per global skill.
+ */
+function globalRowsWithoutHarnesses(dorkHome: string): HarnessRow[] {
+  return globalSkills(dorkHome).map((skill) => ({
+    artifact: 'skill',
+    provenance: 'installed',
+    scope: 'global',
+    name: skill.name,
+    source: skill.source,
+    adoptable: false,
+    cells: {},
+  }));
 }
 
 /** One withheld package, reduced to what a person may be told about it. */
@@ -385,12 +546,21 @@ function pendingApprovalEntry(withheld: WithheldHooks): HarnessPendingApproval {
   };
 }
 
-/** An envelope with nothing in it — the honest shape for every state but `ready`. */
+/**
+ * An envelope with nothing of this PROJECT's in it — the honest shape for every
+ * state but `ready`.
+ *
+ * The global half is not empty, and that is deliberate: a project with no
+ * manifest can still hold a person who installed a package for every project,
+ * and this folder not being set up says nothing about that.
+ */
 function emptyStatus(
   projectPath: string,
+  dorkHome: string,
   state: HarnessStatusResponse['state'],
   detail?: string
 ): HarnessStatusResponse {
+  const rows = globalRowsWithoutHarnesses(dorkHome);
   return {
     projectPath,
     state,
@@ -401,10 +571,18 @@ function emptyStatus(
     // Nothing is out of date, because nothing is set up to be out of date. The
     // page draws the state, not the banner, so this never offers a sync.
     clean: true,
-    counts: { skills: 0, drifted: 0, conflicts: 0, orphans: 0, adoptable: 0, pendingApproval: 0 },
+    counts: {
+      skills: 0,
+      globalSkills: rows.length,
+      drifted: 0,
+      conflicts: 0,
+      orphans: 0,
+      adoptable: 0,
+      pendingApproval: 0,
+    },
     sweepPreview: [],
     removals: [],
-    rows: [],
+    rows,
     projectLevel: [],
     pendingApproval: [],
   };
@@ -465,9 +643,9 @@ export function buildHarnessStatus(options: BuildHarnessStatusOptions): HarnessS
     manifest = loadManifest(projectPath);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return emptyStatus(projectPath, 'not-set-up');
+      return emptyStatus(projectPath, dorkHome, 'not-set-up');
     }
-    return emptyStatus(projectPath, 'unreadable', manifestFailureDetail(err));
+    return emptyStatus(projectPath, dorkHome, 'unreadable', manifestFailureDetail(err));
   }
 
   // Read the moment the manifest parses, and from the engine's own function, so
@@ -497,6 +675,12 @@ export function buildHarnessStatus(options: BuildHarnessStatusOptions): HarnessS
     enabledSet,
     claudeOnlyNames: new Set(manifest.claudeOnlySkills.map((entry) => entry.name)),
     conflicts: afterWrite?.conflicts ?? [],
+    // Folded into every project's answer, never behind a `?scope=global`
+    // variant: the question a person asks is what an agent tool can see HERE,
+    // and here always includes what is installed for every project. A second
+    // call would make the page merge two answers and decide precedence between
+    // them, which is the one thing DorkOS has no opinion about.
+    globalEntries: globalSkillEntries({ skills: globalSkills(dorkHome), enabled }),
   });
 
   const cells = rows.flatMap((row) =>
@@ -518,7 +702,11 @@ export function buildHarnessStatus(options: BuildHarnessStatusOptions): HarnessS
     // case that reads clean the moment orphans are left out of the sentence.
     clean: drift.drifted.length === 0 && drift.blocked.length === 0 && drift.orphans.length === 0,
     counts: {
-      skills: rows.filter((row) => row.artifact === 'skill').length,
+      // Project rows only, which is exactly what this counted before global rows
+      // existed — so the number under the profile row does not move when they
+      // ship. `globalSkills` counts the other half, and the two are disjoint.
+      skills: rows.filter((row) => row.artifact === 'skill' && row.scope === 'project').length,
+      globalSkills: rows.filter((row) => row.artifact === 'skill' && row.scope === 'global').length,
       drifted: cells.filter((c) => c.state === 'drifted').length,
       conflicts: cells.filter((c) => c.state === 'conflict').length,
       orphans: drift.orphans.length,
@@ -679,26 +867,44 @@ function buildRows(input: {
   enabledSet: ReadonlySet<HarnessId>;
   claudeOnlyNames: ReadonlySet<string>;
   conflicts: readonly ProjectionAction[];
+  /**
+   * The global drops folded into this project's answer — see
+   * {@link globalSkillEntries}. They travel with the plan's own drops through
+   * every pass below, so a global row is derived by the same rules a project row
+   * is; the row key is what keeps the two apart.
+   */
+  globalEntries: readonly ProjectionAction[];
 }): HarnessRow[] {
-  const { plan, drift, inventory, withheld, enabled, enabledSet, claudeOnlyNames, conflicts } =
-    input;
+  const {
+    plan,
+    drift,
+    inventory,
+    withheld,
+    enabled,
+    enabledSet,
+    claudeOnlyNames,
+    conflicts,
+    globalEntries,
+  } = input;
+  const allDrops = [...plan.drops, ...globalEntries];
   const index = {
     conflicts: byCell(conflicts),
     blocked: byCell(drift.blocked),
     drifted: byCell(drift.drifted),
-    drops: byCell(plan.drops),
+    drops: byCell(allDrops),
     actions: byCell(plan.actions),
   };
 
   const rows = new Map<string, DraftRow>();
   const byArtifactSource = new Map<string, string[]>();
-  for (const entry of [...plan.actions, ...plan.drops]) {
+  for (const entry of [...plan.actions, ...allDrops]) {
     if (entry.harnessAgnostic === true) continue;
-    const key = rowKey(entry);
+    const key = harnessRowKey(entry);
     if (!rows.has(key)) {
       rows.set(key, {
         artifact: ARTIFACT_KIND[entry.artifact],
         provenance: PROVENANCE[entry.provenance],
+        scope: entry.scope ?? 'project',
         name: entry.name,
         ...(entry.source === undefined ? {} : { source: entry.source }),
         cells: new Map(),
@@ -753,10 +959,11 @@ function buildRows(input: {
     const draft: DraftRow = {
       artifact: 'hook',
       provenance: 'installed',
+      scope: 'project',
       name: held.request.packageName,
       cells: new Map(),
     };
-    const key = rowKey(draft);
+    const key = harnessRowKey(draft);
     // UNREACHABLE TODAY, and deliberately kept. The seam filters a withheld
     // package's hooks out before the plan is built, so nothing else can have
     // claimed this key and `rows.get` always misses — which also means the
@@ -784,6 +991,7 @@ function buildRows(input: {
   );
   return [...rows.values()].map((row) => ({
     artifact: row.artifact,
+    scope: row.scope,
     // The one override on top of the plan's own provenance, and the only producer
     // of `harness-native`: a skill authored where a harness looks rather than in
     // the canonical layer is what the adoptable advice is about.

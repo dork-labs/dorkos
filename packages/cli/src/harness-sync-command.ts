@@ -11,6 +11,7 @@ import {
   withheldSummaryLine,
 } from './harness-consent.js';
 import { resolveAllowHooks } from './harness-sync-allow-hooks.js';
+import { runGlobalSync } from './harness-sync-global.js';
 import type { WithheldHooks } from '../server/services/harness/project-with-consent.js';
 import type { HarnessClaudeOnly } from '@dorkos/shared/harness-schemas';
 
@@ -85,6 +86,17 @@ export interface HarnessSyncArgs {
    */
   enable: string[];
   /**
+   * Share the packages installed for all your projects instead of this folder's
+   * files.
+   *
+   * A different subject, not a modifier: it reads `<dorkHome>/plugins` and links
+   * every skill it finds into `<dorkHome>/skills`, the one folder DorkOS looks
+   * in for skills that run on a timer. It needs no repository and reads no
+   * manifest, so it works from any directory — which is why it is checked and
+   * answered before this command looks for a manifest at all.
+   */
+  global: boolean;
+  /**
    * Add the missing ephemeral-projection lines to the repo's `.gitignore`.
    * Requires `--fix`.
    *
@@ -122,7 +134,7 @@ const SUMMARY_KINDS = ['native', 'symlink', 'scaffold', 'generate', 'merge'] as 
 
 /** One-line usage string surfaced in error messages. */
 const USAGE_LINE =
-  'Usage: dorkos harness sync [--check] [--fix] [--harness <id>] [--strict] [--allow-hooks <package>] [--enable <harness>] [--write-gitignore]';
+  'Usage: dorkos harness sync [--check] [--fix] [--global] [--harness <id>] [--strict] [--allow-hooks <package>] [--enable <harness>] [--write-gitignore]';
 
 /**
  * Parse raw CLI arguments for `dorkos harness sync` into a typed
@@ -147,6 +159,7 @@ export function parseHarnessSyncArgs(rawArgs: string[]): HarnessSyncArgs {
         strict: { type: 'boolean', default: false },
         'allow-hooks': { type: 'string', multiple: true },
         enable: { type: 'string', multiple: true },
+        global: { type: 'boolean', default: false },
         'write-gitignore': { type: 'boolean', default: false },
       },
       allowPositionals: false,
@@ -168,6 +181,7 @@ export function parseHarnessSyncArgs(rawArgs: string[]): HarnessSyncArgs {
     enable: Array.isArray(values.enable)
       ? values.enable.filter((id): id is string => typeof id === 'string')
       : [],
+    global: Boolean(values.global),
     writeGitignore: Boolean(values['write-gitignore']),
   };
 }
@@ -840,6 +854,39 @@ function reportFix(
 }
 
 /**
+ * The flags that are about THIS folder, and so cannot be combined with
+ * `--global`.
+ *
+ * Each is refused by name rather than ignored. `--harness` narrows a plan to one
+ * agent tool and a global plan is never narrowed; `--enable` and
+ * `--write-gitignore` write files inside a repository; `--allow-hooks` records a
+ * decision about hooks, which a global plan does not project at all; `--strict`
+ * exits non-zero when a package's hooks were withheld, and a global plan
+ * projects no hooks, so it can never do anything. Silently accepting any of them
+ * would make the command look like it had done something it never does — and an
+ * inert `--strict` is the worst of the five, because a CI script passes it
+ * precisely to be stopped.
+ */
+const PROJECT_ONLY_FLAGS = [
+  '--harness',
+  '--enable',
+  '--allow-hooks',
+  '--strict',
+  '--write-gitignore',
+] as const;
+
+/** Which project-only flags this invocation passed, in the order they are listed. */
+function projectOnlyFlagsIn(args: HarnessSyncArgs): string[] {
+  return [
+    ...(args.harness === undefined ? [] : ['--harness']),
+    ...(args.enable.length > 0 ? ['--enable'] : []),
+    ...(args.allowHooks.length > 0 ? ['--allow-hooks'] : []),
+    ...(args.strict ? ['--strict'] : []),
+    ...(args.writeGitignore ? ['--write-gitignore'] : []),
+  ];
+}
+
+/**
  * Fold `--strict` into an exit code.
  *
  * Withheld hooks exit 0 by default, and that is a decision rather than an
@@ -881,6 +928,31 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     console.error('Pass either --check or --fix, not both.');
     console.error(USAGE_LINE);
     return { exitCode: 1 };
+  }
+
+  // `--global` is a different subject, not a modifier, so its refusals are
+  // answered here — before anything reads a manifest, and before the flags below
+  // that only make sense inside a repository.
+  if (args.global) {
+    const clashes = projectOnlyFlagsIn(args);
+    if (clashes.length > 0) {
+      console.error(
+        `--global shares the packages installed for all your projects, so it does not take ${clashes.join(' or ')}.`
+      );
+      console.error(
+        `Run: dorkos harness sync ${args.fix ? '--fix' : '--check'} --global, or drop --global to sync this folder.`
+      );
+      console.error(`  ${PROJECT_ONLY_FLAGS.join(', ')} are about this folder's files.`);
+      return { exitCode: 1 };
+    }
+    try {
+      return { exitCode: runGlobalSync(args, resolveDorkHome()) };
+    } catch (err) {
+      console.error(`Harness sync failed: ${err instanceof Error ? err.message : String(err)}`);
+      if (err instanceof Error && err.stack && wantsDebugDetail()) console.error(err.stack);
+      else console.error('  Re-run with LOG_LEVEL=debug to see the stack.');
+      return { exitCode: 1 };
+    }
   }
 
   // `--allow-hooks` installs commands AND records the decision, so it belongs to

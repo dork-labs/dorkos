@@ -677,6 +677,12 @@ export function sweepSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan)
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the projection plan to apply.
  * @param opts - optional flags; `sweepOrphans` enables the installed-orphan sweep.
+ * `applied` here means REALIZED, not changed: a link already pointing where the
+ * plan says is reported alongside one this run created, because a project sync's
+ * receipt is a summary of the projection. `applyGlobalPlan` deliberately means
+ * the other thing — see its own TSDoc for why a run against somebody's home
+ * directory reports what it changed instead.
+ *
  * @returns the realized actions, the blocked projections left intact, any swept
  *   orphans (bare and with their reasons), and the generated-hook paths the
  *   engine stepped over.

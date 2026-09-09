@@ -125,6 +125,10 @@
                 "type": "integer",
                 "minimum": 0
               },
+              "globalSkills": {
+                "type": "integer",
+                "minimum": 0
+              },
               "drifted": {
                 "type": "integer",
                 "minimum": 0
@@ -148,6 +152,7 @@
             },
             "required": [
               "skills",
+              "globalSkills",
               "drifted",
               "conflicts",
               "orphans",
@@ -206,6 +211,14 @@
                     "adopted",
                     "harness-native"
                   ]
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "project",
+                    "global"
+                  ],
+                  "default": "project"
                 },
                 "name": {
                   "type": "string"
@@ -51121,6 +51134,10 @@
                               "type": "integer",
                               "minimum": 0
                             },
+                            "globalSkills": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
                             "drifted": {
                               "type": "integer",
                               "minimum": 0
@@ -51144,6 +51161,7 @@
                           },
                           "required": [
                             "skills",
+                            "globalSkills",
                             "drifted",
                             "conflicts",
                             "orphans",
@@ -51202,6 +51220,14 @@
                                   "adopted",
                                   "harness-native"
                                 ]
+                              },
+                              "scope": {
+                                "type": "string",
+                                "enum": [
+                                  "project",
+                                  "global"
+                                ],
+                                "default": "project"
                               },
                               "name": {
                                 "type": "string"

@@ -134,6 +134,7 @@ describe('SRC-04 — a globally installed package is enumerated, not just named'
         sourceDir: `${globex}/skills/greet`,
         usesPluginRoot: false,
         hasSchedule: false,
+        linkedInDorkHome: false,
         frontmatterName: 'greet',
       },
       {
@@ -141,6 +142,7 @@ describe('SRC-04 — a globally installed package is enumerated, not just named'
         sourceDir: `${globex}/skills/nightly`,
         usesPluginRoot: false,
         hasSchedule: true,
+        linkedInDorkHome: false,
         frontmatterName: 'nightly',
       },
     ]);

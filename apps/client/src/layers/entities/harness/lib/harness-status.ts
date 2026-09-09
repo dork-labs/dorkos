@@ -81,17 +81,25 @@ const KEY_SEP = '\u0000';
 const SHARED_STATES = new Set<HarnessCellState>(['native', 'projected']);
 
 /**
- * What makes two entries the same file: its kind, where it came from, and its
- * name — the response's own row key, restated for a React list.
+ * What makes two entries the same file: its scope, its kind, where it came from,
+ * and its name — the response's own row key, restated for a React list.
  *
- * All three matter. Two settings files both contribute a hook group named
+ * All four matter. Two settings files both contribute a hook group named
  * `hooks`, and two MCP servers share one `.mcp.json`, so neither `name` nor
- * `source` identifies a row on its own.
+ * `source` identifies a row on its own; and the same package installed both here
+ * and for every project projects a skill of the same name and kind, from sources
+ * that differ only in whether the path happens to be absolute. This must key the
+ * way the server keys (`services/harness/status.ts`), or React reconciles two
+ * different rows as one.
+ *
+ * Absent `scope` means `'project'`, matching the schema's own default.
  *
  * @param row - The file.
  */
-export function harnessRowKey(row: Pick<HarnessRow, 'artifact' | 'source' | 'name'>): string {
-  return `${row.artifact}${KEY_SEP}${row.source ?? ''}${KEY_SEP}${row.name}`;
+export function harnessRowKey(
+  row: Pick<HarnessRow, 'artifact' | 'source' | 'name'> & { scope?: HarnessRow['scope'] }
+): string {
+  return `${row.scope ?? 'project'}${KEY_SEP}${row.artifact}${KEY_SEP}${row.source ?? ''}${KEY_SEP}${row.name}`;
 }
 
 /**

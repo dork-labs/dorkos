@@ -33,6 +33,7 @@ export function syncArgs(partial: Partial<HarnessSyncArgs>): HarnessSyncArgs {
     strict: false,
     allowHooks: [],
     enable: [],
+    global: false,
     writeGitignore: false,
     ...partial,
   };

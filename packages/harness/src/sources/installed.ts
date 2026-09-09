@@ -19,7 +19,7 @@
  *
  * @module sources/installed
  */
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MarketplacePackageManifestSchema, PackageNameSchema } from '@dorkos/marketplace';
 import { hasSchedule, isInvalidSchedule, readScheduleField } from '@dorkos/skills/schedule-schema';
@@ -70,6 +70,22 @@ export interface InstalledSkill extends SkillEntry {
    * directory namespacing. The projector reads this to warn on such collisions.
    */
   frontmatterName?: string;
+  /**
+   * True when a global sync has already linked this skill into
+   * `<dorkHome>/skills/<pkg>__<name>`.
+   *
+   * Read at SCAN time, because it is a fact about the disk and the planner is
+   * pure. It exists so a sentence about what works can only be printed when it
+   * is true: the global-install drop says "Its skills that run on a timer now
+   * work" only for a package whose scheduled skills are actually linked, and
+   * tells a person which command to run otherwise. Saying the first thing on the
+   * strength of a `schedule:` block alone told people their timers worked before
+   * any global sync had ever run.
+   *
+   * Absent for a project-scoped package: that scope has its own link, in
+   * `.agents/skills`, and its own sentence.
+   */
+  linkedInDorkHome?: boolean;
   /**
    * True when the skill's `SKILL.md` declares a `schedule:` block — readable or
    * not.
@@ -418,7 +434,11 @@ function declaresSchedule(frontmatter: Record<string, unknown>): boolean {
  * field exists only to compare against other skills' names, and a non-string
  * there is not one.
  */
-function toInstalledSkill(entry: SkillEntry, absSkillsRoot: string): InstalledSkill {
+function toInstalledSkill(
+  entry: SkillEntry,
+  absSkillsRoot: string,
+  dorkHomeLink?: (skillName: string) => boolean
+): InstalledSkill {
   let skillMd = '';
   try {
     skillMd = readFileSync(join(absSkillsRoot, entry.name, 'SKILL.md'), 'utf8');
@@ -430,6 +450,7 @@ function toInstalledSkill(entry: SkillEntry, absSkillsRoot: string): InstalledSk
     ...entry,
     usesPluginRoot: skillMd.includes(CLAUDE_PLUGIN_ROOT_TOKEN),
     ...(typeof frontmatter.name === 'string' ? { frontmatterName: frontmatter.name } : {}),
+    ...(dorkHomeLink ? { linkedInDorkHome: dorkHomeLink(entry.name) } : {}),
     hasSchedule: declaresSchedule(frontmatter),
   };
 }
@@ -462,15 +483,19 @@ function toInstalledSkill(entry: SkillEntry, absSkillsRoot: string): InstalledSk
  * is content it authored, never a directory the engine writes into, so a
  * `<pkg>__<name>` entry there is not a projection to re-derive.
  */
-function collectPortableSkills(pluginDir: string, sourcePrefix: string): InstalledSkill[] {
+function collectPortableSkills(
+  pluginDir: string,
+  sourcePrefix: string,
+  dorkHomeLink?: (skillName: string) => boolean
+): InstalledSkill[] {
   const skillsRoot = join(pluginDir, 'skills');
   const tasksRoot = join(pluginDir, '.dork', 'tasks');
   const contained = { followSymlinks: false } as const;
   const skillEntries = scanSkillDirs(skillsRoot, `${sourcePrefix}/skills`, contained).map((e) =>
-    toInstalledSkill(e, skillsRoot)
+    toInstalledSkill(e, skillsRoot, dorkHomeLink)
   );
   const taskEntries = scanSkillDirs(tasksRoot, `${sourcePrefix}/.dork/tasks`, contained).map((e) =>
-    toInstalledSkill(e, tasksRoot)
+    toInstalledSkill(e, tasksRoot, dorkHomeLink)
   );
   const byName = new Map<string, InstalledSkill>();
   for (const entry of [...skillEntries, ...taskEntries]) {
@@ -527,7 +552,11 @@ function collectCommands(pluginDir: string, sourcePrefix: string): InstalledComm
  * a scheduled one included (the DOR-1518 gap). The difference this scan makes is
  * that the drop can now say what is in the package instead of only its name.
  */
-function scanPluginsRoot(pluginsRoot: string, scope: InstalledScope): InstalledPlugin[] {
+function scanPluginsRoot(
+  pluginsRoot: string,
+  scope: InstalledScope,
+  dorkHome?: string
+): InstalledPlugin[] {
   if (!existsSync(pluginsRoot)) return [];
   const plugins: InstalledPlugin[] = [];
   for (const entry of readdirSync(pluginsRoot, { withFileTypes: true })) {
@@ -546,11 +575,21 @@ function scanPluginsRoot(pluginsRoot: string, scope: InstalledScope): InstalledP
     // path rather than two spellings of it.
     const sourcePrefix = location.scope === 'global' ? location.absDir : location.relDir;
     const { hooks, unreadable } = readPluginHooks(pluginDir, sourcePrefix);
+    // Whether a global sync has already linked each of this package's skills.
+    // `lstat`, not `existsSync`: a link whose package was mid-reinstall is still
+    // a link the scheduler is watching, and the sentence is about the link.
+    const dorkHomeLink =
+      scope === 'global' && dorkHome !== undefined
+        ? (skillName: string): boolean =>
+            lstatSync(join(dorkHome, 'skills', `${manifest.name}__${skillName}`), {
+              throwIfNoEntry: false,
+            }) !== undefined
+        : undefined;
     plugins.push({
       name: manifest.name,
       type: manifest.type,
       location,
-      skills: collectPortableSkills(pluginDir, sourcePrefix),
+      skills: collectPortableSkills(pluginDir, sourcePrefix, dorkHomeLink),
       commands: collectCommands(pluginDir, sourcePrefix),
       ...(hooks ? { hooks } : {}),
       ...(unreadable ? { unreadableHooks: unreadable } : {}),
@@ -572,17 +611,27 @@ function scanPluginsRoot(pluginsRoot: string, scope: InstalledScope): InstalledP
  * Nothing here reads a home directory of its own: `dorkHome` is injected, and a
  * caller that does not pass one gets the project scope alone.
  *
- * @param opts - the project root to scan and, optionally, a resolved dork home.
+ * **Both roots are optional, and each absent one simply contributes nothing.**
+ * `projectGlobal` (`plan/global-projector.ts`) is the caller with no repository
+ * at all — it asks for the global scope by itself — and a caller that passes
+ * neither gets an empty list rather than a thrown error, which is the same
+ * "an absent root is a root nothing is read from" rule the global plan's own
+ * roots follow.
+ *
+ * @param opts - a project root, a dork home, or both. A union rather than two
+ *   optional fields, so `{}` — a call that would scan nothing and answer `[]`
+ *   as if the machine were empty — is a compile error rather than a silent one.
  * @returns global plugins first (only when `dorkHome` is given), then project
- *   plugins; each group sorted by name.
+ *   plugins (only when `projectRoot` is given); each group sorted by name.
  */
-export function scanInstalledPlugins(opts: {
-  dorkHome?: string;
-  projectRoot: string;
-}): InstalledPlugin[] {
+export function scanInstalledPlugins(
+  opts: { projectRoot: string; dorkHome?: string } | { projectRoot?: string; dorkHome: string }
+): InstalledPlugin[] {
   const globalPlugins = opts.dorkHome
-    ? scanPluginsRoot(join(opts.dorkHome, 'plugins'), 'global')
+    ? scanPluginsRoot(join(opts.dorkHome, 'plugins'), 'global', opts.dorkHome)
     : [];
-  const projectPlugins = scanPluginsRoot(join(opts.projectRoot, PROJECT_PLUGINS_DIR), 'project');
+  const projectPlugins = opts.projectRoot
+    ? scanPluginsRoot(join(opts.projectRoot, PROJECT_PLUGINS_DIR), 'project')
+    : [];
   return [...globalPlugins, ...projectPlugins];
 }
