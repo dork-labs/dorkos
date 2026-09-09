@@ -372,6 +372,8 @@ describe('backfillAgentWorkspaceSkills', () => {
       skipped: 0,
       failed: 0,
       outsideDorkHome: 0,
+      adoptableSkills: 0,
+      adoptedSkills: 0,
     });
     const link = join(agentDir, '.claude', 'skills', 'operating-dorkos');
     expect(lstatSync(link).isSymbolicLink()).toBe(true);
@@ -446,6 +448,8 @@ describe('backfillAgentWorkspaceSkills', () => {
       skipped: 0,
       failed: 0,
       outsideDorkHome: 1,
+      adoptableSkills: 0,
+      adoptedSkills: 0,
     });
     expect(listTree(outside)).toEqual(before);
     expect(existsSync(join(outside, '.claude'))).toBe(false);
@@ -659,6 +663,8 @@ describe('backfillAgentWorkspaceSkills', () => {
       skipped: 1,
       failed: 0,
       outsideDorkHome: 0,
+      adoptableSkills: 0,
+      adoptedSkills: 0,
     });
     expect(existsSync(join(unwritable, '.agents', 'skills'))).toBe(false);
     expect(logger.warn).toHaveBeenCalledWith(
@@ -703,6 +709,8 @@ describe('backfillAgentWorkspaceSkills', () => {
       skipped: 0,
       failed: 1,
       outsideDorkHome: 1,
+      adoptableSkills: 0,
+      adoptedSkills: 0,
     });
     // The healthy workspace was repaired despite the broken one coming first.
     expect(lstatSync(join(healthy, '.claude', 'skills', 'operating-dorkos')).isSymbolicLink()).toBe(
@@ -761,6 +769,8 @@ describe('backfillAgentWorkspaceSkills', () => {
       skipped: 0,
       failed: 0,
       outsideDorkHome: 0,
+      adoptableSkills: 0,
+      adoptedSkills: 0,
     });
     expect(
       lstatSync(join(agentDir, '.claude', 'skills', 'operating-dorkos')).isSymbolicLink()

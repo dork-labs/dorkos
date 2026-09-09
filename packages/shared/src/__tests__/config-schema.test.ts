@@ -187,6 +187,7 @@ describe('UserConfigSchema', () => {
       },
       harness: {
         autoSync: true,
+        autoAdopt: false,
         approvedHooks: [],
         refusedHooks: [],
         // Nothing shared into a home directory, and the question never asked
@@ -579,6 +580,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       },
       harness: {
         autoSync: true,
+        autoAdopt: false,
         approvedHooks: [],
         refusedHooks: [],
         // Nothing shared into a home directory, and the question never asked

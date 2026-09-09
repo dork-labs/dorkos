@@ -646,6 +646,13 @@ export const CONFIG_WRITE_POLICY = {
   // operator-only. `dorkos harness sync` is still how a person does it by hand,
   // and that door is unaffected.
   'harness.autoSync': 'operator-only',
+  // Whether DorkOS may move a skill out of an agent tool's own folder and into
+  // `.agents/skills` unattended, inside the folders it owns (DOR-1853). The same
+  // verdict `harness.autoSync` carries, for a stronger reason: turning this on
+  // makes DorkOS move a PERSON's own files with nobody watching, which is "how
+  // far DorkOS reaches on disk" — the line this module draws for `operator-only`.
+  // An agent must not be able to grant DorkOS that with one `config_patch`.
+  'harness.autoAdopt': 'operator-only',
   // The record of a person allowing an installed package to write shell commands
   // into the files a coding agent runs on their behalf (DOR-522). An agent that
   // could append to this list could approve its own package's hooks.
@@ -916,6 +923,11 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       // its own. The second clause of this stake — how far it reaches on this
       // machine — read as a write rather than as a scope.
       'harness.autoSync',
+      // Whether DorkOS moves a person's own skill folders, unattended, inside
+      // the agent folders and room folders DorkOS owns (DOR-1853). The same
+      // clause read one notch harder: `autoSync` writes links DorkOS made, this
+      // one moves a file the person wrote.
+      'harness.autoAdopt',
       // Whether DorkOS writes links into two folders in the person's HOME
       // directory, which is the furthest this server ever reaches on disk. An
       // empty list is off, so this one leaf is the whole switch (DOR-1924).

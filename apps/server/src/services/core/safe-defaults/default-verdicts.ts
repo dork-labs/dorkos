@@ -343,6 +343,12 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'extensions.enabled': [],
   'extensions.disabled': [],
   'extensions.approvedToRun': [],
+  // DorkOS never moves a skill out of an agent tool's own folder on its own
+  // until a person turns this on, and even then only inside the agent folders
+  // and room folders DorkOS owns (DOR-1853). A gate that starts closed on a real
+  // safety axis: the move shares a skill with five agent tools and nothing can
+  // un-share it.
+  'harness.autoAdopt': false,
   // No installed package writes a shell command into a coding agent's hook files
   // until a person approves those exact commands (DOR-522).
   'harness.approvedHooks': [],

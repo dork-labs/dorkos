@@ -2366,6 +2366,24 @@ export const UserConfigSchema = z.object({
        */
       autoSync: z.boolean().default(true),
       /**
+       * Whether DorkOS may move a skill out of an agent tool's own folder and
+       * into `.agents/skills`, where every agent tool reads it, on its own.
+       *
+       * Off everywhere by default, and acted on ONLY inside the folders DorkOS
+       * owns — an agent's own workspace under `<dorkHome>/agents`, and a room
+       * worktree. Everywhere else a move is a person's decision, made with
+       * `dorkos harness adopt <name>`, because it is one-way: five agent tools
+       * read `.agents/skills` the moment the folder lands there and nothing can
+       * un-share it.
+       *
+       * When it is on, the guard is an ALLOWLIST, not a denylist: only a skill
+       * whose settings hold nothing outside the agentskills.io base fields and
+       * whose text carries no `${CLAUDE_…}` token is moved. Everything else is
+       * reported and left alone, so a field a vendor adds tomorrow fails closed
+       * (contract §16 D3).
+       */
+      autoAdopt: z.boolean().default(false),
+      /**
        * The hook projections a person has allowed: installed packages that may
        * write shell commands into the files a coding agent runs on their behalf
        * (`.claude/settings.local.json`, `.codex/hooks.json`, and the rest).
@@ -2426,6 +2444,7 @@ export const UserConfigSchema = z.object({
     })
     .default(() => ({
       autoSync: true,
+      autoAdopt: false,
       approvedHooks: [],
       refusedHooks: [],
       global: { harnesses: [], askedAt: null },

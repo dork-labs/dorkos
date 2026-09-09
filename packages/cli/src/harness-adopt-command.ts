@@ -138,6 +138,14 @@ export async function runHarnessAdopt(args: HarnessAdoptArgs): Promise<{ exitCod
     return { exitCode: 1 };
   }
 
+  // The one thing this offline command asks the dork home for. Resolved before
+  // anything is read, so a home that cannot be resolved is one `plain` answer
+  // rather than a half-planned run.
+  const { resolveDorkHome } = await import('./lib/dork-home.js');
+  const { resolveDirectoryOwnership } =
+    await import('../server/services/harness/directory-ownership.js');
+  const ownership = resolveDirectoryOwnership(repoRoot, resolveDorkHome());
+
   try {
     const manifest = loadManifest(repoRoot);
     const read = readAdoptCandidates(repoRoot, inventorySourceTree(repoRoot), manifest);
@@ -148,10 +156,12 @@ export async function runHarnessAdopt(args: HarnessAdoptArgs): Promise<{ exitCod
         name: args.name,
         ...(args.claudeOnly ? { claudeOnly: true } : {}),
       },
-      // A person at a terminal in a folder they chose. The two other ownerships
-      // are the server's to establish — it is the one that knows which folders
-      // are agent homes and room worktrees — and they arrive with the boot path.
-      ownership: 'plain',
+      // Resolved from the path, by the same function the server uses (DOR-1945).
+      // Standing in a folder DorkOS owns is a fact about where you are, not
+      // about which program is asking — so `dorkos harness adopt` in a room
+      // worktree gets R3's refusal for a reserved pack name exactly as the boot
+      // pass does, instead of silently moving a folder the reap would delete.
+      ownership,
     });
 
     if (plan.blocked !== undefined) {

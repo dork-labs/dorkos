@@ -4,6 +4,7 @@ import { parseArgs } from 'node:util';
 import { rethrowUnknownOption } from './lib/parse-args-error.js';
 import { wantsDebugDetail } from './lib/debug-detail.js';
 import {
+  autoAdoptIsInertHere,
   formatWithheldBlock,
   readDorkosHarness,
   readStoredDecisions,
@@ -16,6 +17,7 @@ import type { WithheldHooks } from '../server/services/harness/project-with-cons
 import type { HarnessClaudeOnly } from '@dorkos/shared/harness-schemas';
 
 import {
+  ADOPT_SENTENCES,
   ADOPTABLE_BLOCK_HEADING,
   adoptCommandFor,
   adoptableSentence,
@@ -246,6 +248,26 @@ function formatAdoptable(repoRoot: string, manifest: HarnessManifest): string[] 
     if (sorted.length > 1) for (const name of sorted) lines.push(`    ${adoptCommandFor(name)}`);
   }
   return lines.length === 0 ? [] : ['', ADOPTABLE_BLOCK_HEADING, ...lines];
+}
+
+/**
+ * B1's sentence (S8) — the one place somebody who turned `harness.autoAdopt` on
+ * learns why nothing happened here.
+ *
+ * The flag is one global boolean and a config write has no project in hand, so
+ * refusing the write would refuse it for the agent folders it exists for.
+ * Instead it is read at exactly two call sites in the server, both inside a
+ * folder DorkOS owns — and the terminal is where a person standing in their own
+ * repository is told so, once.
+ *
+ * Never changes an exit code: a setting that does nothing here is not a problem
+ * with this project.
+ *
+ * @param inert - Whether the flag is on and this directory is not DorkOS's.
+ * @returns the lines to print, empty when there is nothing to say.
+ */
+function formatAutoAdoptInert(inert: boolean): string[] {
+  return inert ? ['', ADOPT_SENTENCES.S8()] : [];
 }
 
 /**
@@ -748,6 +770,7 @@ function reportCheck(
   dorkHome: string,
   manifest: HarnessManifest,
   claudeOnly: HarnessClaudeOnly,
+  autoAdoptInert: boolean,
   harnessFilter?: HarnessId
 ): number {
   const drift = checkPlan(repoRoot, plan);
@@ -765,6 +788,7 @@ function reportCheck(
   for (const line of formatLeftAlone(drift.leftAlone, manifest, harnessFilter)) console.log(line);
   reportWithheld(withheld, dorkHome);
   for (const line of formatAdoptable(repoRoot, manifest)) console.log(line);
+  for (const line of formatAutoAdoptInert(autoAdoptInert)) console.log(line);
   for (const line of formatClaudeOnly(claudeOnly, repoRoot)) console.log(line);
   for (const line of formatNotEnabled(plan)) console.log(line);
   for (const line of formatManifestNotices(manifest)) console.log(line);
@@ -833,6 +857,7 @@ function reportFix(
   writeGitignore: boolean,
   manifest: HarnessManifest,
   claudeOnly: HarnessClaudeOnly,
+  autoAdoptInert: boolean,
   harnessFilter?: HarnessId
 ): number {
   const { applied, conflicts, removals, leftAlone } = applyResult;
@@ -876,6 +901,7 @@ function reportFix(
   reportWithheld(withheld, dorkHome);
 
   for (const line of formatAdoptable(repoRoot, manifest)) console.log(line);
+  for (const line of formatAutoAdoptInert(autoAdoptInert)) console.log(line);
   for (const line of formatClaudeOnly(claudeOnly, repoRoot)) console.log(line);
   for (const line of formatNotEnabled(plan)) console.log(line);
   for (const line of formatManifestNotices(manifest)) console.log(line);
@@ -1208,6 +1234,10 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
       await import('../server/services/harness/claude-enabled-plugins.js');
     const claudeOnly = await collectClaudeOnlyPlugins({ projectPath: repoRoot, dorkHome });
 
+    // Asked once per run and passed into whichever report prints, so the answer
+    // reaches both modes from one read rather than two.
+    const autoAdoptInert = await autoAdoptIsInertHere(dorkHome, repoRoot);
+
     if (!args.fix) {
       const { plan, withheld } = planWithConsent(repoRoot, consentOpts);
       const exitCode = reportCheck(
@@ -1217,6 +1247,7 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
         dorkHome,
         readManifest(),
         claudeOnly,
+        autoAdoptInert,
         harnessFilter
       );
       return { exitCode: strictExit(exitCode, withheld, args.strict) };
@@ -1239,6 +1270,7 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
       args.writeGitignore,
       readManifest(),
       claudeOnly,
+      autoAdoptInert,
       harnessFilter
     );
     return { exitCode: strictExit(exitCode, result.withheld, args.strict) };

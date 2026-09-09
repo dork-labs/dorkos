@@ -323,6 +323,14 @@ Six things call the engine, and the differences between them are the whole desig
 
 \* The CLI cannot raise a card, so it **withholds** an unapproved package's hooks and prints each command it did not install; `--allow-hooks <pkg>` records the same decision a card would.
 
+**Two of them also consult `harness.autoAdopt`** (DOR-1853), and only those two: the boot pass, per workspace that passed `isAgentHome`, and `RoomWorktreeManager`'s seed-and-project pairing, per worktree under `<dorkHome>/rooms/<roomId>/worktrees/` — both after the seed and the projection, through `services/harness/adopt-owned-workspace.ts`. Every other trigger runs in a directory a person owns and reads the flag not at all, which is what makes a `true` there inert by construction rather than by a check somebody could forget.
+
+Both sites report as well as act: with the flag off — the default — they still read the candidates and log which skills only some agent tools can see, with the absolute command that moves each.
+
+**In those two folders the question is asked against every harness DorkOS can RUN there, not against the manifest** (`RUNNABLE_HARNESSES`, derived from `RUNTIME_HARNESSES`: `claude-code`, `codex`, `opencode`). A workspace DorkOS scaffolds enables `claude-code` alone, because that is the only harness anything has to project files for — so the manifest answers "nobody is blind to this" about every `.claude/skills` skill, which is true about projection and false about the agent: `runtimeRegistry` binds a session rather than an agent, so the same agent's next Codex session runs in that folder and reads none of it. A project a PERSON owns keeps the manifest as its oracle, because there the enabled set is their own statement of which tools they run — so `dorkos harness sync` and `dorkos harness adopt` are unchanged.
+
+**Creating an agent does not run that report.** `POST /api/agents` scaffolds and projects the workspace it just made (`agent-creator`), and the adopt read rides the boot pass and the room-worktree pairing only — so a new agent's Claude-only skills are first named at the **next server start**. That is a gap rather than a rule; giving the creation path the same read is a follow-up.
+
 Every one of them goes through `projectWithConsent` (§8 and `project-with-consent.ts`), which is the only module allowed to hold the engine's `project()` — with one exemption, and it is granted because it is STRICTER than consent rather than looser: the boot pass denies every installed package's hooks outright (`project-agent-workspace.ts`, contract HK-08), which the seam cannot express because its whole job is to honour an approval. `__tests__/project-seam-guard.test.ts` reads the source of both trees, fails on any other module that imports `project()` under any of six spellings, and pins that exemption to the reason it was given.
 
 ### What agent creation does, and does not, do

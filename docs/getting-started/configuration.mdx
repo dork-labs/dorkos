@@ -763,6 +763,12 @@ If you wrote your own hooks file — `.codex/hooks.json` or `.cursor/hooks.json`
       type: 'boolean',
       default: 'true',
     },
+    'harness.autoAdopt': {
+      description:
+        'Let DorkOS move a skill that only one of your coding tools can see into the shared folder every tool reads — but only inside the agent folders and room folders DorkOS owns, and only for skills whose settings hold nothing one tool alone understands. Off everywhere until you turn it on with `dorkos config set harness.autoAdopt true`. Everything else is reported and left where it is. Only a person can change this.',
+      type: 'boolean',
+      default: 'false',
+    },
     'harness.approvedHooks': {
       description:
         'The packages you have allowed to install hook commands, one entry per package and project. DorkOS adds an entry when you approve a card, or when you run `dorkos harness sync --fix --allow-hooks <package>`. Only a person can change this list.',

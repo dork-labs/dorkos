@@ -2874,3 +2874,103 @@ describe('runHarnessSync --global — the packages installed for all your projec
     }
   );
 });
+
+/**
+ * S8 — the one place somebody who turned `harness.autoAdopt` on learns why
+ * nothing happened in their own repository (DOR-1853, contract §16 D3).
+ *
+ * The flag is one global boolean and a config write has no project in hand, so
+ * it is accepted at write time and read at exactly two call sites in the server,
+ * both inside a folder DorkOS owns. Everywhere else it is inert by construction
+ * — and the terminal is what says so.
+ */
+describe('runHarnessSync: harness.autoAdopt in a folder DorkOS does not own', () => {
+  let tmpDir: string;
+  let homeDir: string;
+  let originalCwd: string;
+  let logSpy: MockInstance<typeof console.log>;
+
+  /** Everything `console.log` was handed, joined — the terminal as a person reads it. */
+  const printed = (): string => logSpy.mock.calls.map((call) => String(call[0])).join('\n');
+
+  /** B1's frozen sentence, spelled out rather than imported from what produced it. */
+  const S8 =
+    'harness.autoAdopt is on, and it does nothing here: DorkOS only moves skills on its own inside the agent folders and room folders it owns. Run dorkos harness adopt <name> to move one yourself.';
+
+  /** Write `config.json` into the staged dork home with the flag at `value`. */
+  function writeAutoAdopt(value: boolean): void {
+    fs.writeFileSync(
+      path.join(homeDir, 'config.json'),
+      JSON.stringify({ version: 1, harness: { autoAdopt: value } }, null, 2)
+    );
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tmpDir = createTempDir();
+    homeDir = createTempDir();
+    vi.stubEnv('DORK_HOME', homeDir);
+    pinEmptyClaudeRoot(homeDir);
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    writeFixtureRepo(tmpDir);
+    // A real skill in Claude Code's own folder, so the run has something to
+    // report as adoptable beside the sentence about the flag.
+    fs.mkdirSync(path.join(tmpDir, '.claude', 'skills', 'local'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, '.claude', 'skills', 'local', 'SKILL.md'),
+      '---\nname: local\ndescription: Portable\n---\n\nDo the thing.\n'
+    );
+    process.chdir(tmpDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  it('D3: --check prints S8 exactly once and moves nothing', async () => {
+    // Seeded defect: read the flag in `runAutoProjection`. The skill moves, and
+    // the whole-tree snapshot reds beside this sentence.
+    writeAutoAdopt(true);
+    const before = snapshotTree(tmpDir);
+
+    await runHarnessSync(syncArgs({ check: true, fix: false }));
+
+    const occurrences = printed().split(S8).length - 1;
+    expect(occurrences).toBe(1);
+    expect(snapshotTree(tmpDir)).toEqual(before);
+  });
+
+  it('D3: --fix prints it too, and still moves nothing', async () => {
+    writeAutoAdopt(true);
+
+    await runHarnessSync(syncArgs({ check: false, fix: true }));
+
+    expect(printed().split(S8).length - 1).toBe(1);
+    // The projection wrote its own links; the skill a person authored did not
+    // move out of Claude Code's folder.
+    expect(fs.lstatSync(path.join(tmpDir, '.claude', 'skills', 'local')).isDirectory()).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, '.agents', 'skills', 'local'))).toBe(false);
+  });
+
+  it('D3: says nothing at all when the flag is off, which is every default install', async () => {
+    writeAutoAdopt(false);
+
+    await runHarnessSync(syncArgs({ check: true, fix: false }));
+
+    expect(printed()).not.toContain('harness.autoAdopt');
+  });
+
+  it('D3: says nothing when there is no config.json to read', async () => {
+    // A fresh install has no file yet, and a sentence about a setting nobody has
+    // touched is noise. The reader parses the same Zod schema the server does,
+    // so an absent file resolves to the schema default, which is off.
+    await runHarnessSync(syncArgs({ check: true, fix: false }));
+
+    expect(printed()).not.toContain('harness.autoAdopt');
+  });
+});

@@ -52,6 +52,7 @@ export const FEEDBACK_FLAG_ALLOWLIST: Readonly<Record<string, FlagType>> = {
   'auth.enabled': 'boolean',
   'workspace.enabled': 'boolean',
   'harness.autoSync': 'boolean',
+  'harness.autoAdopt': 'boolean',
   'runtimes.codex.enabled': 'boolean',
   'runtimes.opencode.enabled': 'boolean',
   'runtimes.default': 'enum',
