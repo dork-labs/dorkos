@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { Dir } from 'node:fs';
+import { mkdir, mkdtemp, open, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readCodexTurnContextUsage } from '../turn-context-usage.js';
 
 const THREAD_ID = '01a082ce-2b72-71d2-be38-aa8425f13650';
@@ -51,19 +52,21 @@ async function writeRollout(
   home: string,
   records: readonly unknown[],
   location: 'live' | 'archive' = 'live',
-  prefix = ''
+  prefix = '',
+  fileThreadId = THREAD_ID
 ): Promise<string> {
   const directory =
     location === 'archive'
       ? path.join(home, 'archived_sessions')
       : path.join(home, 'sessions', ...localDateParts(THREAD_CREATED_AT));
   await mkdir(directory, { recursive: true });
-  const file = path.join(directory, `rollout-2026-09-08T15-55-44-${THREAD_ID}.jsonl`);
+  const file = path.join(directory, `rollout-2026-09-08T15-55-44-${fileThreadId}.jsonl`);
   await writeFile(file, `${prefix}${records.map((record) => JSON.stringify(record)).join('\n')}\n`);
   return file;
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true })));
 });
 
@@ -102,6 +105,26 @@ describe('readCodexTurnContextUsage', () => {
         now: NOW,
       })
     ).resolves.toEqual({ contextTokens: 54_999, contextMaxTokens: 258_400 });
+  });
+
+  it('does not read another thread from the same candidate date', async () => {
+    const codexHome = await createHome();
+    await writeRollout(
+      codexHome,
+      [tokenCount()],
+      'live',
+      '',
+      '01a082ce-2b72-71d2-be38-aa8425f13651'
+    );
+
+    await expect(
+      readCodexTurnContextUsage({
+        threadId: THREAD_ID,
+        turnStartedAtMs: TURN_STARTED_AT,
+        codexHome,
+        now: NOW,
+      })
+    ).resolves.toBeNull();
   });
 
   it('reads only a bounded tail and discards its first partial line', async () => {
@@ -197,6 +220,7 @@ describe('readCodexTurnContextUsage', () => {
   it('stops after the configured directory-entry bound', async () => {
     const codexHome = await createHome();
     await writeRollout(codexHome, [tokenCount()]);
+    const directoryReads = vi.spyOn(Dir.prototype, 'read');
 
     await expect(
       readCodexTurnContextUsage({
@@ -207,5 +231,69 @@ describe('readCodexTurnContextUsage', () => {
         maxDirectoryEntries: 0,
       })
     ).resolves.toBeNull();
+    expect(directoryReads).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes a directory handle when its pending read reaches the deadline', async () => {
+    const codexHome = await createHome();
+    await writeRollout(codexHome, [tokenCount()]);
+    let markReadStarted!: () => void;
+    const readStarted = new Promise<void>((resolve) => {
+      markReadStarted = resolve;
+    });
+    vi.spyOn(Dir.prototype, 'read').mockImplementationOnce(() => {
+      markReadStarted();
+      return new Promise(() => {});
+    });
+    const directoryCloses = vi.spyOn(Dir.prototype, 'close');
+
+    const reading = readCodexTurnContextUsage({
+      threadId: THREAD_ID,
+      turnStartedAtMs: TURN_STARTED_AT,
+      codexHome,
+      now: NOW,
+      timeoutMs: 50,
+    });
+    await readStarted;
+
+    await expect(reading).resolves.toBeNull();
+    expect(directoryCloses).toHaveBeenCalled();
+  });
+
+  it('closes a file handle when its pending read reaches the deadline', async () => {
+    const codexHome = await createHome();
+    const rollout = await writeRollout(codexHome, [tokenCount()]);
+    const probe = await open(rollout, 'r');
+    const fileHandlePrototype = Object.getPrototypeOf(probe) as {
+      read: typeof probe.read;
+      close: typeof probe.close;
+    };
+    await probe.close();
+    let markReadStarted!: () => void;
+    const readStarted = new Promise<void>((resolve) => {
+      markReadStarted = resolve;
+    });
+    let fileWasClosed = false;
+    vi.spyOn(fileHandlePrototype, 'read').mockImplementationOnce(function (this: typeof probe) {
+      const close = this.close.bind(this);
+      this.close = async () => {
+        fileWasClosed = true;
+        await close();
+      };
+      markReadStarted();
+      return new Promise(() => {});
+    });
+
+    const reading = readCodexTurnContextUsage({
+      threadId: THREAD_ID,
+      turnStartedAtMs: TURN_STARTED_AT,
+      codexHome,
+      now: NOW,
+      timeoutMs: 50,
+    });
+    await readStarted;
+
+    await expect(reading).resolves.toBeNull();
+    expect(fileWasClosed).toBe(true);
   });
 });
