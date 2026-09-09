@@ -11,6 +11,9 @@ covers:
   # Folds in here too: it corrects which skills the second bullet's line counts
   # and names, before anybody could have read one.
   - 'fix(server): the boot report counts what it can still say something about (DOR-1945)'
+  # And the correction to that correction, which is what makes the first two
+  # bullets true in a real agent folder — all before anybody could have run one.
+  - 'fix(server,shared): the owned-workspace report asks what DorkOS can run (DOR-1945)'
 ---
 
 ### Added
