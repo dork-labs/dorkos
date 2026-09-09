@@ -73,6 +73,7 @@ describe('parseHarnessSyncArgs', () => {
       strict: false,
       allowHooks: [],
       enable: [],
+      global: false,
       writeGitignore: false,
     });
   });
@@ -85,6 +86,7 @@ describe('parseHarnessSyncArgs', () => {
       strict: false,
       allowHooks: [],
       enable: [],
+      global: false,
       writeGitignore: false,
     });
     expect(parseHarnessSyncArgs(['--fix'])).toEqual({
@@ -94,6 +96,7 @@ describe('parseHarnessSyncArgs', () => {
       strict: false,
       allowHooks: [],
       enable: [],
+      global: false,
       writeGitignore: false,
     });
   });
@@ -2537,5 +2540,156 @@ describe('runHarnessSync — what Claude Code alone has', () => {
     expect(output).toContain(
       '  You turned on 1 plugin in Claude Code. Your other agent tools cannot see them.'
     );
+  });
+});
+
+describe('runHarnessSync --global — the packages installed for all your projects', () => {
+  let tmpDir: string;
+  let originalCwd: string;
+  let homeDir: string;
+  let logSpy: MockInstance<typeof console.log>;
+  let errorSpy: MockInstance<typeof console.error>;
+
+  /** Everything the run printed, in order, so a promise can be located before a deletion. */
+  const printed = (): string => logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+
+  /** Everything the run printed to stderr. */
+  const errors = (): string => errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+
+  /** Install a package for all projects, holding the skills named. */
+  function installGlobal(name: string, skills: readonly { name: string; timed?: boolean }[]): void {
+    const dir = path.join(homeDir, 'plugins', name);
+    fs.mkdirSync(path.join(dir, '.dork'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, '.dork', 'manifest.json'),
+      JSON.stringify({ name, version: '1.0.0', type: 'plugin', description: name })
+    );
+    for (const skill of skills) {
+      fs.mkdirSync(path.join(dir, 'skills', skill.name), { recursive: true });
+      const schedule = skill.timed === true ? "schedule:\n  cron: '0 9 * * *'\n" : '';
+      fs.writeFileSync(
+        path.join(dir, 'skills', skill.name, 'SKILL.md'),
+        `---\nname: ${skill.name}\ndescription: The ${skill.name} skill\n${schedule}---\n\n# ${skill.name}\n`
+      );
+    }
+  }
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tmpDir = createTempDir();
+    homeDir = createTempDir();
+    vi.stubEnv('DORK_HOME', homeDir);
+    pinEmptyClaudeRoot(homeDir);
+    process.chdir(tmpDir);
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    vi.unstubAllEnvs();
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  it('SK-03: links a scheduled skill from a package installed for all projects, from a folder with no manifest', async () => {
+    // No manifest anywhere in this directory: `--global` is a different subject
+    // and must not go looking for one.
+    installGlobal('globex', [{ name: 'daily-sweep', timed: true }]);
+
+    const result = await runHarnessSync(syncArgs({ fix: true, global: true }));
+
+    expect(result.exitCode).toBe(0);
+    expect(fs.lstatSync(path.join(homeDir, 'skills', 'globex__daily-sweep')).isSymbolicLink()).toBe(
+      true
+    );
+    const output = printed();
+    expect(output).toContain('Linked 1 skill(s):');
+    expect(output).toContain('skill runs on a timer');
+    expect(output).toContain(
+      'It does not share them with Claude Code, Codex or any other agent tool yet.'
+    );
+  });
+
+  it('SK-03: names every link it will remove BEFORE removing it, and again after', async () => {
+    // Seeded defect: apply before printing the removals. The promise then lands
+    // after the deletion, and the index comparison below reds.
+    installGlobal('globex', [{ name: 'greet' }]);
+    installGlobal('acme', [{ name: 'build' }]);
+    await runHarnessSync(syncArgs({ fix: true, global: true }));
+    logSpy.mockClear();
+
+    // An uninstall: the package directory goes, and its link is now an orphan.
+    fs.rmSync(path.join(homeDir, 'plugins', 'acme'), { recursive: true, force: true });
+    // `lstat`, not `existsSync`: the package went first, so the link it left is
+    // now DANGLING — which is the whole point, and is exactly the shape
+    // `existsSync` answers `false` for.
+    const removed = path.join(homeDir, 'skills', 'acme__build');
+    expect(fs.lstatSync(removed, { throwIfNoEntry: false })?.isSymbolicLink()).toBe(true);
+
+    // Console ORDER cannot answer this on its own: printing the promise after
+    // the deletion still puts it above the receipt. So each line is recorded
+    // with what was on disk AT THE MOMENT it was printed.
+    const trace: { text: string; linkStillThere: boolean }[] = [];
+    logSpy.mockImplementation((...printedArgs: unknown[]) => {
+      trace.push({
+        text: String(printedArgs[0]),
+        linkStillThere: fs.lstatSync(removed, { throwIfNoEntry: false }) !== undefined,
+      });
+    });
+
+    await runHarnessSync(syncArgs({ fix: true, global: true }));
+
+    const naming = trace.filter((entry) => entry.text.includes(removed));
+    expect(naming).toHaveLength(2);
+    // Named first while it was still there, and again once it was gone.
+    expect(naming.map((entry) => entry.linkStillThere)).toEqual([true, false]);
+    const headings = trace.map((entry) => entry.text);
+    expect(headings.some((t) => t.includes('Removing 1 link(s)'))).toBe(true);
+    expect(headings.some((t) => t.includes('Removed 1 link(s)'))).toBe(true);
+    expect(fs.lstatSync(removed, { throwIfNoEntry: false })).toBeUndefined();
+  });
+
+  it('SK-03: a second run links nothing and reports clean', async () => {
+    installGlobal('globex', [{ name: 'greet' }]);
+    await runHarnessSync(syncArgs({ fix: true, global: true }));
+    const afterFirst = snapshotTree(homeDir);
+    logSpy.mockClear();
+
+    const second = await runHarnessSync(syncArgs({ fix: true, global: true }));
+
+    expect(second.exitCode).toBe(0);
+    expect(printed()).toContain('Nothing to link. 1 skill(s) already linked.');
+    expect(snapshotTree(homeDir)).toEqual(afterFirst);
+
+    logSpy.mockClear();
+    const check = await runHarnessSync(syncArgs({ check: true, global: true }));
+    expect(check.exitCode).toBe(0);
+    expect(printed()).toContain('Nothing to change. 1 skill(s) already linked.');
+  });
+
+  it('SK-03: --check --global writes nothing at all', async () => {
+    installGlobal('globex', [{ name: 'greet' }]);
+    const before = snapshotTree(homeDir);
+
+    const result = await runHarnessSync(syncArgs({ check: true, global: true }));
+
+    expect(result.exitCode).toBe(1); // there is work to do, and it says so
+    expect(printed()).toContain('Run `dorkos harness sync --fix --global` to apply.');
+    expect(snapshotTree(homeDir)).toEqual(before);
+    expect(snapshotTree(tmpDir)).toEqual([]);
+  });
+
+  it('VC-02: refuses the flags that are about this folder, naming each one', async () => {
+    const result = await runHarnessSync(
+      syncArgs({ fix: true, global: true, harness: 'codex', writeGitignore: true })
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(errors()).toContain('--global shares the packages installed for all your projects');
+    expect(errors()).toContain('--harness or --write-gitignore');
+    expect(snapshotTree(homeDir)).toEqual([]);
   });
 });
