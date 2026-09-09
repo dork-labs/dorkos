@@ -347,9 +347,13 @@ function readMatcherGroup(group: unknown): HookMatcherGroup | undefined {
 function readPluginHooks(
   pluginDir: string,
   sourcePrefix: string
-): { hooks?: ClaudeHooksConfig; unreadable: UnreadableHookDeclaration[] } {
+): { hooks?: ClaudeHooksConfig; unreadable?: UnreadableHookDeclaration[] } {
   const hooksPath = join(pluginDir, 'hooks', 'hooks.json');
-  if (!existsSync(hooksPath)) return { unreadable: [] };
+  // No file, no reading: `unreadable` stays ABSENT so the two states
+  // {@link InstalledPlugin.unreadableHooks} documents stay apart — absent is
+  // "there is no such file", `[]` is "it was read and nothing was lost".
+  // Returning `[]` here collapsed them and made that doc wrong.
+  if (!existsSync(hooksPath)) return {};
   const relPath = `${sourcePrefix}/hooks/hooks.json`;
   let raw: unknown;
   try {
@@ -431,8 +435,8 @@ function toInstalledSkill(entry: SkillEntry, absSkillsRoot: string): InstalledSk
 }
 
 /**
- * Collect a project plugin's portable skill dirs (skills/ + .dork/tasks/),
- * de-duped by name.
+ * Collect a plugin's portable skill dirs (skills/ + .dork/tasks/), de-duped by
+ * name — at either scope, against the prefix that spells this package's paths.
  *
  * **Both scans pass `followSymlinks: false`, and that is a containment rule, not
  * a tidiness one.** A package's install directory is a tree the ENGINE walks on
@@ -476,7 +480,8 @@ function collectPortableSkills(pluginDir: string, sourcePrefix: string): Install
 }
 
 /**
- * Collect a project plugin's top-level slash commands (`commands/*.md`).
+ * Collect a plugin's top-level slash commands (`commands/*.md`), at either
+ * scope, against the prefix that spells this package's paths.
  *
  * Only the top level is enumerated: Claude Code derives a command's namespace
  * from its immediate parent directory, and a plugin's commands live flat under
@@ -548,7 +553,7 @@ function scanPluginsRoot(pluginsRoot: string, scope: InstalledScope): InstalledP
       skills: collectPortableSkills(pluginDir, sourcePrefix),
       commands: collectCommands(pluginDir, sourcePrefix),
       ...(hooks ? { hooks } : {}),
-      unreadableHooks: unreadable,
+      ...(unreadable ? { unreadableHooks: unreadable } : {}),
       layers: manifest.layers,
     });
   }

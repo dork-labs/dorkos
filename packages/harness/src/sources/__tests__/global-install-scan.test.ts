@@ -88,6 +88,10 @@ beforeAll(() => {
   mkdirSync(join(broken, 'hooks'), { recursive: true });
   writeFileSync(join(broken, 'hooks', 'hooks.json'), '{ not json');
 
+  // `nohooks`: no `hooks/` at all, which is the state `unreadableHooks` has to
+  // tell apart from "read, and nothing was lost".
+  writeManifest(join(dorkHome, 'plugins', 'nohooks'), 'nohooks', ['skills']);
+
   homeBefore = snapshotTree(dorkHome);
 });
 
@@ -159,8 +163,15 @@ describe('SRC-04 — a globally installed package is enumerated, not just named'
 
     expect(pkg.unreadableHooks).toEqual([{ path: `${broken}/hooks/hooks.json`, total: true }]);
     expect(pkg.hooks).toBeUndefined();
-    // And the plain meaning is back: the package with a readable file has an
-    // empty array, so absent now says only "there is no such file".
+  });
+
+  it('SRC-04: absent unreadableHooks means there is no hooks file, and an empty array means one was read', () => {
+    // Seeded defect: return `{ unreadable: [] }` when the file does not exist.
+    // The two states the field documents collapse into one, so "read and nothing
+    // was lost" is indistinguishable from "there was nothing to read" — the same
+    // ambiguity this slice deleted from the doc when a global install stopped
+    // meaning "never read".
+    expect(scanned('nohooks').unreadableHooks).toBeUndefined();
     expect(scanned('globex').unreadableHooks).toEqual([]);
   });
 });

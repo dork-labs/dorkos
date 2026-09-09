@@ -988,8 +988,11 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     if (args.enable.length > 0) console.log('');
 
     // Project marketplace-installed plugins too (DOR-173). Project-scoped installs
-    // (`<repoRoot>/.dork/plugins`) are repo-relative and always project; passing a
-    // resolved dork home additionally projects global-scope installs.
+    // (`<repoRoot>/.dork/plugins`) are repo-relative and are the ones that
+    // project. Passing a resolved dork home does NOT project the global ones —
+    // nothing targets `<dorkHome>/skills` or the user tier yet (DOR-174) — it
+    // makes them visible, so the report can say what each holds, who can see it,
+    // and when one of them is also installed in this project (DOR-1922).
     const dorkHome = resolveDorkHome();
     const { planWithConsent, projectWithConsent, scanHookRequests } =
       await import('../server/services/harness/project-with-consent.js');
