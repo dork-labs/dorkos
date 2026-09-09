@@ -356,6 +356,11 @@ describe('POST /api/agents/create', () => {
         // The creation pipeline scaffolded this workspace, so it is announced
         // as a moment — unlike a mesh registration or a scan adoption.
         origin: 'created',
+        // …and it projects that workspace itself, a few lines later, Claude
+        // Code alone with package hooks denied. Only this pipeline ever sets
+        // this, and asserting the WHOLE argument is what keeps that true: a
+        // second caller adding it would red here (DOR-1901).
+        workspaceProjectedByPipeline: true,
       });
     });
 

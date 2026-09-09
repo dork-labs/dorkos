@@ -1,5 +1,5 @@
 /**
- * The tools whose files are in this folder that DorkOS is not sharing to.
+ * The tools this folder is not sharing to, and why each one is on the list.
  *
  * @module entities/harness/ui/NotEnabledNotice
  */
@@ -10,7 +10,10 @@ import { InlineCode } from '@/layers/shared/ui';
 
 /** What a {@link NotEnabledNotice} draws. */
 export interface NotEnabledNoticeProps {
-  /** The tools DorkOS found signs of and is not sharing to. */
+  /**
+   * The tools DorkOS is not sharing to: the ones whose files are in this folder,
+   * and the one DorkOS runs its own sessions on. Each says which it is.
+   */
   notEnabled: HarnessStatusResponse['notEnabled'];
 }
 
@@ -44,8 +47,7 @@ function WrappableCommand({ command }: { command: string }) {
 }
 
 /**
- * One line per tool DorkOS found in the folder but is not sharing to, and the
- * command that turns it on.
+ * One line per tool DorkOS is not sharing to, and the command that turns it on.
  *
  * **Copy, not a button** (D24). `--enable` writes
  * `.agents/harness.manifest.json`, a file that is committed and shared with
@@ -54,17 +56,27 @@ function WrappableCommand({ command }: { command: string }) {
  * command puts the person in the folder, where `git diff` is one keystroke away.
  *
  * The signal that gave the tool away rides the line's `title`, so "how do you
- * know?" has an answer without spending a line on it.
+ * know?" has an answer without spending a line on it. A `dorkos-runtime` entry
+ * has no signal and gets no tooltip: its sentence already IS the answer.
+ *
+ * **Two reasons, two sentences.** A tool is on this list because its own files
+ * are in the folder, or because DorkOS's own sessions run on it — and the second
+ * one has no files to point at, which is exactly why it needed saying: a project
+ * that has never run Claude Code leaves nothing for DorkOS to find, so the tool
+ * most likely to be reading the wrong instructions was the one nothing mentioned
+ * (DOR-1901). Saying "its files are in this folder" about it would be false.
  */
 export function NotEnabledNotice({ notEnabled }: NotEnabledNoticeProps) {
   if (notEnabled.length === 0) return null;
 
   return (
     <div className="flex flex-col gap-1.5 py-1">
-      {notEnabled.map(({ harness, signal }) => (
+      {notEnabled.map(({ harness, why, signal }) => (
         <div key={harness} title={signal} className="flex flex-col gap-0.5">
           <p className="text-xs font-medium">
-            {HARNESS_LABELS[harness]} files are in this folder, but DorkOS isn’t sharing to it.
+            {why === 'dorkos-runtime'
+              ? `DorkOS runs ${HARNESS_LABELS[harness]} here, but this folder isn’t sharing to it.`
+              : `${HARNESS_LABELS[harness]} files are in this folder, but DorkOS isn’t sharing to it.`}
           </p>
           <p className="text-muted-foreground text-3xs">
             Run <WrappableCommand command={`dorkos harness sync --fix --enable ${harness}`} /> in

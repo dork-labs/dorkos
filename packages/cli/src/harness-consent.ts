@@ -24,6 +24,7 @@
  * @module harness-consent
  */
 import { join } from 'node:path';
+import type { HarnessId } from '@dorkos/shared/harness-schemas';
 import type { WithheldHooks } from '../server/services/harness/project-with-consent.js';
 
 // The `harness` namespace is intercepted in `cli.ts` before DORK_HOME is
@@ -51,6 +52,23 @@ export async function readStoredDecisions(dorkHome: string): Promise<{
 }> {
   const { readHookDecisionsFromDisk } = await import('../server/services/harness/hook-consent.js');
   return readHookDecisionsFromDisk(dorkHome);
+}
+
+/**
+ * The agent tool DorkOS's own sessions run on, read without opening (or
+ * creating) the config store.
+ *
+ * Same reason as {@link readStoredDecisions}: `dorkos harness sync --check`
+ * never writes, and `conf`'s constructor writes `config.json` when it is
+ * missing. The server answers the same question through the config manager;
+ * both parse the same Zod schema, so they cannot drift.
+ *
+ * @param dorkHome - The resolved DorkOS data directory.
+ * @returns The harness DorkOS runs here, or `undefined` when its runtime reads none.
+ */
+export async function readDorkosHarness(dorkHome: string): Promise<HarnessId | undefined> {
+  const { dorkosHarnessFromDisk } = await import('../server/services/harness/dorkos-harness.js');
+  return dorkosHarnessFromDisk(dorkHome);
 }
 
 /**

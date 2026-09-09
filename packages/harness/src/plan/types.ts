@@ -153,22 +153,39 @@ export interface ProjectionWarning {
 }
 
 /**
- * A harness whose own files are in the repo, named with the path that gave it
- * away.
+ * A harness something says this repo should enable, and what said so.
  *
  * The manifest's `harnesses` set is decided once, when the manifest is
  * scaffolded, and nothing looked again — so a repo that grew a `.cursor/` a
  * month later never enabled Cursor and nobody was told (contract TR-11). Every
  * plan now carries the ones it found that the manifest does not enable.
+ *
+ * There are TWO ways to be on that list and they are different claims, which is
+ * why {@link why} is not optional. A `footprint` is evidence on disk: that
+ * harness's own files are here. A `dorkos-runtime` entry is evidence about THIS
+ * DorkOS: its default runtime reads that harness, so every session DorkOS starts
+ * in this repo reads whatever that harness reads — and a repo that never ran
+ * Claude Code has left no `.claude/` for a footprint to find, which is exactly
+ * how an OpenCode project ended up with managed Claude Code sessions that had
+ * never seen its `AGENTS.md` (DOR-1901).
  */
 export interface DetectedHarness {
-  /** The harness whose footprint is on disk. */
+  /** The harness that is not enabled. */
   harness: HarnessId;
+  /**
+   * What put it on the list: its own files are here (`footprint`), or DorkOS's
+   * own default runtime reads it (`dorkos-runtime`).
+   */
+  why: 'footprint' | 'dorkos-runtime';
   /**
    * The repo-relative path that was found. A directory carries a trailing `/`,
    * so the line a person reads says `.cursor/` rather than `.cursor`.
+   *
+   * Absent for a `dorkos-runtime` entry, which is a fact about this DorkOS
+   * rather than about a file: there is no path to name, and inventing one would
+   * put a path in a sentence that is not about a path.
    */
-  signal: string;
+  signal?: string;
 }
 
 /**

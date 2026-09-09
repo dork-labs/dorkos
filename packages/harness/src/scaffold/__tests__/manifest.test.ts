@@ -14,6 +14,7 @@ import {
   scaffoldManifest,
   detectHarnesses,
   detectHarnessFootprints,
+  dorkosHarnessScaffoldNotice,
   DEFAULT_HARNESSES,
   HARNESS_MANIFEST_PATH,
 } from '../manifest.js';
@@ -138,16 +139,77 @@ describe('scaffoldManifest', () => {
     expect(readManifest(dir).harnesses).toEqual(['gemini']);
   });
 
+  it('J-03, TR-11: adds the harness DorkOS runs to the set the folder shows', () => {
+    // The whole of DOR-1901. This repo has only ever run OpenCode, so detection
+    // sees `AGENTS.md` (Codex) and `.opencode/` and nothing of Claude Code's —
+    // yet Claude Code is what a DorkOS session here runs on, and the one thing
+    // the engine writes for it is the pointer that makes their own AGENTS.md
+    // the instructions that session reads.
+    dir = freshDir();
+    writeFileSync(join(dir, 'AGENTS.md'), '# House rules\n');
+    mkdirSync(join(dir, '.opencode'), { recursive: true });
+
+    const result = scaffoldManifest(dir, { dorkosHarness: 'claude-code' });
+
+    // Detection's answer in detection's order, then the one it could not know.
+    expect(result.harnesses).toEqual(['codex', 'opencode', 'claude-code']);
+    expect(result.detected).toBe(true);
+    expect(result.addedForDorkos).toBe('claude-code');
+    expect(readManifest(dir).harnesses).toEqual(['codex', 'opencode', 'claude-code']);
+  });
+
+  it('TR-11: adds nothing when the folder already shows the harness DorkOS runs', () => {
+    dir = freshDir();
+    mkdirSync(join(dir, '.claude'), { recursive: true });
+
+    const result = scaffoldManifest(dir, { dorkosHarness: 'claude-code' });
+
+    expect(result.harnesses).toEqual(['claude-code']);
+    expect(result.addedForDorkos).toBeNull();
+  });
+
+  it('TR-11: unions into the documented fallback too, when nothing is detected', () => {
+    // The fallback already carries Claude Code, so the interesting case is a
+    // DorkOS running something else: the set is still the fallback PLUS that.
+    dir = freshDir();
+
+    const claude = scaffoldManifest(dir, { dorkosHarness: 'claude-code' });
+    expect(claude.harnesses).toEqual(DEFAULT_HARNESSES);
+    expect(claude.addedForDorkos).toBeNull();
+
+    rmSync(join(dir, HARNESS_MANIFEST_PATH));
+    const opencode = scaffoldManifest(dir, { dorkosHarness: 'opencode' });
+    expect(opencode.detected).toBe(false);
+    expect(opencode.harnesses).toEqual([...DEFAULT_HARNESSES, 'opencode']);
+    expect(opencode.addedForDorkos).toBe('opencode');
+  });
+
+  it('TR-11: an explicit harness set is exactly that set', () => {
+    // `projectAgentWorkspace` names `['claude-code']` for an agent home on
+    // purpose (contract HK-08). A caller that has decided has decided.
+    dir = freshDir();
+    mkdirSync(join(dir, '.opencode'), { recursive: true });
+
+    const result = scaffoldManifest(dir, { harnesses: ['gemini'], dorkosHarness: 'claude-code' });
+
+    expect(result.harnesses).toEqual(['gemini']);
+    expect(result.addedForDorkos).toBeNull();
+  });
+
   it('no-ops when a manifest already exists and never overwrites it', () => {
     dir = freshDir();
     mkdirSync(join(dir, '.agents'), { recursive: true });
     const existing = JSON.stringify({ version: 1, harnesses: ['codex'] }, null, 2);
     writeFileSync(join(dir, HARNESS_MANIFEST_PATH), existing);
 
-    const result = scaffoldManifest(dir);
+    const result = scaffoldManifest(dir, { dorkosHarness: 'claude-code' });
 
     expect(result.created).toBe(false);
     expect(result.harnesses).toEqual(['codex']);
+    // Not even for DorkOS's own harness: an existing manifest is the person's
+    // file (ADR-302). What that project gets instead is a `dorkos-runtime` entry
+    // in every plan's `notEnabled`, with the `--enable` command.
+    expect(result.addedForDorkos).toBeNull();
     // The pre-existing file is left byte-for-byte intact.
     expect(readFileSync(join(dir, HARNESS_MANIFEST_PATH), 'utf8')).toBe(existing);
   });
@@ -193,10 +255,10 @@ describe('detectHarnessFootprints', () => {
     writeFileSync(join(dir, 'GEMINI.md'), '# gemini\n');
 
     expect(detectHarnessFootprints(dir)).toEqual([
-      { harness: 'codex', signal: '.codex/' },
-      { harness: 'cursor', signal: '.cursor/' },
+      { harness: 'codex', why: 'footprint', signal: '.codex/' },
+      { harness: 'cursor', why: 'footprint', signal: '.cursor/' },
       // A file signal carries no trailing slash; a directory one does.
-      { harness: 'gemini', signal: 'GEMINI.md' },
+      { harness: 'gemini', why: 'footprint', signal: 'GEMINI.md' },
     ]);
   });
 
@@ -210,5 +272,43 @@ describe('detectHarnessFootprints', () => {
 
     expect(() => detectHarnessFootprints(dir)).not.toThrow();
     expect(detectHarnessFootprints(dir)).toEqual([]);
+  });
+});
+
+/**
+ * The one line every scaffold notice prints for the harness DorkOS turned on.
+ *
+ * One sentence in one place, because the CLI's `--fix` output, the install
+ * trigger's log and the agent-created trigger's log all print it — and a
+ * decision explained three ways is a decision nobody trusts.
+ */
+describe('dorkosHarnessScaffoldNotice', () => {
+  it('J-03, IN-01: names the pointer file, for a harness that needs one', () => {
+    expect(dorkosHarnessScaffoldNotice('claude-code', true)).toBe(
+      'Claude Code is turned on because DorkOS runs it here; ' +
+        '.claude/CLAUDE.md will point at your AGENTS.md.'
+    );
+  });
+
+  it('IN-01: says a native reader just reads it, rather than naming a file it never writes', () => {
+    // OpenCode and Codex read `AGENTS.md` where it already sits (ADR-0302), so a
+    // line promising a pointer file would promise a write that never happens.
+    expect(dorkosHarnessScaffoldNotice('opencode', true)).toBe(
+      'OpenCode is turned on because DorkOS runs it here; it reads your AGENTS.md directly.'
+    );
+  });
+
+  it('IN-03: does not promise a pointer to an AGENTS.md that is not there', () => {
+    // With no canonical `AGENTS.md` the engine plans no pointer at all — every
+    // harness's instruction projection is one honest drop (IN-03) — so the
+    // unconditional line named a file this sync was never going to write.
+    expect(dorkosHarnessScaffoldNotice('claude-code', false)).toBe(
+      'Claude Code is turned on because DorkOS runs it here; ' +
+        '.claude/CLAUDE.md will point at your AGENTS.md, once you add one.'
+    );
+    expect(dorkosHarnessScaffoldNotice('opencode', false)).toBe(
+      'OpenCode is turned on because DorkOS runs it here; ' +
+        'it reads an AGENTS.md at your project root, once you add one.'
+    );
   });
 });

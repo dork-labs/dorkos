@@ -147,7 +147,15 @@ function canonicalize(p: string): string {
 
 /**
  * Whether `dir` lives inside the agents directory this dork home owns
- * (`<dorkHome>/agents/`).
+ * (`<dorkHome>/agents/`) — i.e. whether it is an agent HOME DorkOS created
+ * rather than a repository somebody pointed an agent at.
+ *
+ * Exported because the distinction decides more than this pass. The
+ * agent-created trigger (`project-on-agent-created.ts`) projects the REPO an
+ * agent is pointed at and must not touch the homes, which `agent-creator` and
+ * this module's own boot backfill already own — and the two answering that
+ * question differently is how a workspace ends up projected twice with two
+ * different harness sets.
  *
  * Both sides are resolved through symlinks first, so a home reached by a
  * different route still matches — and, in the other direction, a symlink planted
@@ -165,7 +173,7 @@ function canonicalize(p: string): string {
  * @param dorkHome - Resolved DorkOS data directory.
  * @returns True when `dir` is a descendant of `<dorkHome>/agents`.
  */
-function isInsideDorkHome(dir: string, dorkHome: string): boolean {
+export function isAgentHome(dir: string, dorkHome: string): boolean {
   const rel = relative(canonicalize(join(dorkHome, 'agents')), canonicalize(dir));
   return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
 }
@@ -410,7 +418,7 @@ export async function backfillAgentWorkspaceSkills(
 
   for (const agentDir of workspaces) {
     await yieldToEventLoop();
-    if (!isInsideDorkHome(agentDir, dorkHome)) {
+    if (!isAgentHome(agentDir, dorkHome)) {
       summary.outsideDorkHome += 1;
       continue;
     }

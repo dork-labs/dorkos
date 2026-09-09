@@ -184,6 +184,8 @@ import { storedHookDecisions, type HookDecisions } from '../services/harness/hoo
 import { collectClaudeOnlyPlugins } from '../services/harness/claude-enabled-plugins.js';
 import { projectWithConsent, withProjectLock } from '../services/harness/project-with-consent.js';
 import { buildHarnessStatus } from '../services/harness/status.js';
+import { dorkosHarness } from '../services/harness/dorkos-harness.js';
+import type { HarnessId } from '@dorkos/shared/harness-schemas';
 
 /**
  * The shared query shape, plus the one rule that cannot live beside it.
@@ -253,6 +255,16 @@ export interface HarnessRouterDeps {
    * `askedAbout` is empty, and the status still reports them as pending.
    */
   approvals?: HookApprovalGateway;
+  /**
+   * Which agent tool DorkOS's own sessions run on. Defaults to
+   * {@link dorkosHarness}, which reads the running server's already-open store.
+   *
+   * Injectable for the same reason `readHookDecisions` is, and it is not
+   * optional politeness: this is the second config read on the path, so a suite
+   * that proves the never-writes rule by running with no store at all has to be
+   * able to answer it too.
+   */
+  dorkosHarness?: () => HarnessId | undefined;
 }
 
 /**
@@ -265,6 +277,7 @@ export interface HarnessRouterDeps {
 export function createHarnessRouter(deps: HarnessRouterDeps): Router {
   const router = Router();
   const readHookDecisions = deps.readHookDecisions ?? storedHookDecisions;
+  const readDorkosHarness = deps.dorkosHarness ?? dorkosHarness;
 
   /**
    * Resolve a caller-supplied project path to one this router may answer about,
@@ -350,6 +363,12 @@ export function createHarnessRouter(deps: HarnessRouterDeps): Router {
         projectPath: resolved,
         dorkHome: deps.dorkHome,
         decisions: readHookDecisions(),
+        // The one fact about this DorkOS the tree cannot show: the agent tool
+        // its own sessions run on. A project that has never run it has left no
+        // files for detection to find, so without this the panel is silent
+        // about the tool most likely to be reading the wrong instructions
+        // (DOR-1901).
+        dorkosHarness: readDorkosHarness(),
       });
       const claudeOnly = await collectClaudeOnlyPlugins({
         projectPath: resolved,
@@ -404,6 +423,12 @@ export function createHarnessRouter(deps: HarnessRouterDeps): Router {
       // about. `sweepOrphans: true` is safe here because this plan takes no
       // harness filter — the seam throws if the two are ever combined.
       const { result, status } = await withProjectLock(resolved, () => {
+        // No `dorkosHarness` here, and the seam's own doc is why: that option
+        // changes nothing a projection WRITES — its only effect is one entry in
+        // `plan.notEnabled` — and this plan is applied, never reported. The
+        // response carries `applied`, `swept`, `conflicts` and `askedAbout` off
+        // it and nothing else. It goes to the STATUS below instead, which is
+        // the half a person reads, and which builds a plan of its own.
         const applied = projectWithConsent(resolved, {
           dorkHome: deps.dorkHome,
           sweepOrphans: true,
@@ -415,6 +440,11 @@ export function createHarnessRouter(deps: HarnessRouterDeps): Router {
             projectPath: resolved,
             dorkHome: deps.dorkHome,
             decisions: readHookDecisions(),
+            // The one fact about this DorkOS the tree cannot show, asked the
+            // same way `GET /status` asks it: a sync that answered differently
+            // from the read before the click would make the panel flicker
+            // between two truths (DOR-1901).
+            dorkosHarness: readDorkosHarness(),
             // The only place a blocked target is discovered is the write that
             // hit it, so the recomputed status is told what this one ran into.
             afterWrite: { conflicts: applied.conflicts },

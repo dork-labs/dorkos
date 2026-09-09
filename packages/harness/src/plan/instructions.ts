@@ -41,6 +41,46 @@ export function instructionPointer(relativePath: string): string {
 const NO_AGENTS_MD_REASON = 'no AGENTS.md — nothing to read or point at';
 
 /**
+ * The pointer file each harness that cannot read `AGENTS.md` itself needs, and
+ * the deterministic body written into it.
+ *
+ * A table rather than three `case` bodies because the TARGET is asked for on its
+ * own: the scaffold notice for a harness DorkOS turned on has to name the file
+ * that will point at the person's `AGENTS.md` (`dorkosHarnessScaffoldNotice`),
+ * and building a throwaway projection action to read it back would leave an
+ * entry in the content side-table for a plan nobody is applying.
+ *
+ * `null` is a harness that reads `AGENTS.md` where it already sits, and it is
+ * spelled out rather than left absent: a TOTAL `Record` is what makes a seventh
+ * harness id a compile error here. The `switch` this replaced had that property
+ * for free, and a `Partial` would have quietly let the new one fall through to
+ * `native` — which is the IN-03 lie, a plan claiming a harness reads a file
+ * nobody pointed it at.
+ */
+const INSTRUCTION_POINTERS: Record<HarnessId, { target: string; content: string } | null> = {
+  'claude-code': { target: '.claude/CLAUDE.md', content: CLAUDE_INSTRUCTION_CONTENT },
+  gemini: { target: 'GEMINI.md', content: instructionPointer('./AGENTS.md') },
+  copilot: {
+    target: '.github/copilot-instructions.md',
+    content: instructionPointer('../AGENTS.md'),
+  },
+  codex: null,
+  cursor: null,
+  opencode: null,
+};
+
+/**
+ * The pointer file a harness needs to be sent to `AGENTS.md`, or `undefined`
+ * when it reads `AGENTS.md` where it already sits.
+ *
+ * @param harness - the target harness.
+ * @returns the repo-relative pointer path, or `undefined` for a native reader.
+ */
+export function instructionPointerTarget(harness: HarnessId): string | undefined {
+  return INSTRUCTION_POINTERS[harness]?.target;
+}
+
+/**
  * Project the canonical AGENTS.md instruction to one harness.
  *
  * @param harness - the target harness.
@@ -58,26 +98,13 @@ export function planInstruction(harness: HarnessId, agentsMdExists: boolean): Pr
 
   if (!agentsMdExists) return { ...base, kind: 'drop', reason: NO_AGENTS_MD_REASON };
 
-  switch (harness) {
-    case 'claude-code':
-      return scaffoldInstruction(base, '.claude/CLAUDE.md', CLAUDE_INSTRUCTION_CONTENT);
-    case 'codex':
-    case 'cursor':
-    case 'opencode':
-      return {
-        ...base,
-        kind: 'native',
-        reason: `${HARNESS_LABELS[harness]} reads AGENTS.md directly`,
-      };
-    case 'gemini':
-      return scaffoldInstruction(base, 'GEMINI.md', instructionPointer('./AGENTS.md'));
-    case 'copilot':
-      return scaffoldInstruction(
-        base,
-        '.github/copilot-instructions.md',
-        instructionPointer('../AGENTS.md')
-      );
-  }
+  const pointer = INSTRUCTION_POINTERS[harness];
+  if (pointer) return scaffoldInstruction(base, pointer.target, pointer.content);
+  return {
+    ...base,
+    kind: 'native',
+    reason: `${HARNESS_LABELS[harness]} reads AGENTS.md directly`,
+  };
 }
 
 /**

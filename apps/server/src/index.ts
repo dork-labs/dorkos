@@ -259,6 +259,7 @@ import { MarketplaceInstaller } from './services/marketplace/marketplace-install
 import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
 import { backfillAgentWorkspaceSkills } from './services/harness/project-agent-workspace.js';
+import { runAgentCreatedProjection } from './services/harness/project-on-agent-created.js';
 import {
   startSkillsWatcher,
   startTurnEndReprojection,
@@ -3431,6 +3432,15 @@ async function start() {
     // Awaited so the roots are live before the Shape re-bind below writes into
     // them.
     await attachAgentTaskRoots?.(agent.path, agent.id);
+    // Set the PROJECT up for the agent tool DorkOS runs there. Pointing an agent
+    // at a repository used to trigger nothing at all, so a project that had only
+    // ever run another tool got a managed session that had never read its own
+    // `AGENTS.md` (DOR-1901). Awaited, so the registration response reflects a
+    // tree that is already set up; it swallows its own failures, and stands down
+    // for a workspace the create pipeline built (it projects that one itself,
+    // and would lose the write-if-absent race to this), for agent homes, and
+    // for anything outside the boundary.
+    await runAgentCreatedProjection(agent, { dorkHome });
     const rebound = await rebindShapeSchedulesForAgent(agent, {
       listShapes: () => listInstalledShapeManifests(dorkHome),
       scheduleService: shapeScheduleService,

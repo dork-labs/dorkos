@@ -228,6 +228,10 @@ beforeAll(async () => {
       dorkHome,
       readHookDecisions: () => hookDecisions,
       approvals: gateway,
+      // The second config read on this path, injected for the same reason as
+      // the first: this suite opens no config store at all, and the shipped
+      // default reaches the running server's (DOR-1901).
+      dorkosHarness: () => 'claude-code',
     })
   );
   failingApp.use(
@@ -237,6 +241,7 @@ beforeAll(async () => {
       readHookDecisions: () => {
         throw READ_FAILURE;
       },
+      dorkosHarness: () => 'claude-code',
     })
   );
 });
@@ -354,6 +359,25 @@ describe('GET /api/harness/status', () => {
     expect(res.status).toBe(200);
     expect(res.body.state).toBe('ready');
     expect(res.body.enabled).toEqual(['claude-code']);
+  });
+
+  it('TR-11: reports the agent tool DorkOS runs here when the project does not enable it', async () => {
+    // Seeded defect: stop passing `dorkosHarness` into `buildHarnessStatus` and
+    // `notEnabled` comes back empty — which is what shipped, and why the panel
+    // was silent about the one tool that leaves no files behind to detect
+    // (DOR-1901). There is no `.claude/` in this tree, on purpose: a footprint
+    // would make the assertion pass for the other reason.
+    const repo = stageProject('opencode-only');
+    writeManifest(repo, ['codex', 'opencode']);
+    writeAt(join(repo, 'AGENTS.md'), '# House rules\n');
+    const before = snapshotTree(repo);
+
+    const res = await readStatus(repo);
+
+    expect(res.status).toBe(200);
+    expect(res.body.notEnabled).toEqual([{ harness: 'claude-code', why: 'dorkos-runtime' }]);
+    // A report, not a repair: the panel says it, the person runs `--enable`.
+    expect(diffSnapshots(before, snapshotTree(repo))).toEqual(NO_CHANGES);
   });
 
   it('answers 403 for a path outside the boundary', async () => {
@@ -792,6 +816,38 @@ describe('POST /api/harness/sync', () => {
     expect(res.body.status.counts.drifted).toBe(0);
     expect(res.body.applied).toBeGreaterThan(0);
     expect(existsSync(link)).toBe(true);
+  });
+
+  it('TR-11: the RETURNED status names the tool DorkOS runs, and the manifest is untouched', async () => {
+    // The sync's own half of DOR-1901's wiring. `GET /status` is covered above;
+    // this route builds a SECOND status, inside the lock, after its apply — and
+    // the two have to answer the same question about the same repo or the page
+    // draws one thing before the click and another after it.
+    //
+    // Seeded defect: drop `dorkosHarness: ours` from the recomputed
+    // `buildHarnessStatus`, or from the `projectWithConsent` call that shares
+    // the turn with it, and `notEnabled` comes back empty. Measured: dropping
+    // either left 143 files / 2529 tests green before this case existed.
+    //
+    // The manifest deliberately omits `claude-code` and the tree has no
+    // `.claude/` of its own until the sync writes one, so a footprint cannot
+    // account for the entry.
+    const repo = stageProject('sync-dorkos-runtime');
+    writeManifest(repo, ['codex', 'opencode']);
+    writeAt(join(repo, 'AGENTS.md'), '# House rules\n');
+    const manifestPath = join(repo, '.agents', 'harness.manifest.json');
+    const manifestBefore = readFileSync(manifestPath, 'utf8');
+
+    const res = await syncProject(repo);
+
+    expect(res.status).toBe(200);
+    expect(res.body.status.notEnabled).toEqual([{ harness: 'claude-code', why: 'dorkos-runtime' }]);
+    // A notice, never a repair: `--enable` is the only thing that writes this
+    // file, and it is committed and shared with everybody on the project
+    // (ADR-302). Byte equality rather than "it still parses the same", because
+    // a re-serialized manifest with somebody's spacing rewritten is exactly the
+    // harm that rule names.
+    expect(readFileSync(manifestPath, 'utf8')).toBe(manifestBefore);
   });
 
   it('AP-07: sweeps an uninstalled package’s projections and nothing else, and names every path', async () => {

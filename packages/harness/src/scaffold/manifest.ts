@@ -19,7 +19,13 @@
 import { existsSync, readFileSync, statSync, type Stats } from 'node:fs';
 import { join, sep } from 'node:path';
 import { writeFileAtomic } from '../apply/atomic-write.js';
-import { HARNESS_IDS, type HarnessId, type HarnessManifest } from '../manifest/schema.js';
+import {
+  HARNESS_IDS,
+  HARNESS_LABELS,
+  type HarnessId,
+  type HarnessManifest,
+} from '../manifest/schema.js';
+import { instructionPointerTarget } from '../plan/instructions.js';
 import type { DetectedHarness } from '../plan/types.js';
 
 /**
@@ -84,8 +90,32 @@ export interface ScaffoldManifestOptions {
    * Force a specific harness set instead of detecting from the repo. When omitted,
    * the scaffolder detects harnesses present on disk and falls back to
    * {@link DEFAULT_HARNESSES} when none are detected.
+   *
+   * An explicit set is exactly the set: {@link dorkosHarness} is not added to
+   * it. A caller that names the harnesses has already decided, and the one that
+   * does — `projectAgentWorkspace`, with `['claude-code']` — would get the same
+   * answer anyway.
    */
   harnesses?: readonly HarnessId[];
+  /**
+   * The harness DorkOS's OWN default runtime reads, added to the detected set
+   * so a project DorkOS manages enables the tool DorkOS actually runs there.
+   *
+   * INJECTED, never read: this engine reads no config, and `runtimes.default`
+   * is a `~/.dork/config.json` key. The server passes
+   * `harnessForRuntime(configManager.get('runtimes').default)`; the CLI reads
+   * the same key off disk (`--check` must not open a config store, DOR-678).
+   *
+   * Why it exists: detection enables the harnesses whose files are already
+   * here, which is right for every OTHER tool and wrong for this one. A repo
+   * that has only ever run OpenCode has left no `.claude/`, so detection could
+   * not enable Claude Code — and the one thing the engine would write for it is
+   * the `.claude/CLAUDE.md` pointer that makes the project's own `AGENTS.md` the
+   * instructions a DorkOS session reads. Without it a person who points a DorkOS
+   * agent at their project gets a managed session that has never seen their
+   * house rules (DOR-1901).
+   */
+  dorkosHarness?: HarnessId;
 }
 
 /** What {@link scaffoldManifest} did. */
@@ -98,6 +128,17 @@ export interface ScaffoldManifestResult {
   harnesses: readonly HarnessId[];
   /** Whether the harness set came from on-disk detection (false = the documented fallback). */
   detected: boolean;
+  /**
+   * The harness added to the set because DorkOS runs it here, or `null` when
+   * nothing was added — it was already detected, no `dorkosHarness` was passed,
+   * an explicit set was, or a manifest already existed.
+   *
+   * The reason it is a field rather than something a caller re-derives: it is
+   * the one thing about a scaffolded manifest a person has to be TOLD, because
+   * it is the one entry that is not a consequence of what is in their folder.
+   * Every scaffold notice prints {@link dorkosHarnessScaffoldNotice} for it.
+   */
+  addedForDorkos: HarnessId | null;
 }
 
 /**
@@ -142,7 +183,7 @@ export function detectHarnessFootprints(repoRoot: string): DetectedHarness[] {
       // printed, and `.github\copilot-instructions.md` is not a path anybody
       // wants to read (the table builds that one with `join`).
       const shown = rel.split(sep).join('/');
-      found.push({ harness, signal: stats.isDirectory() ? `${shown}/` : shown });
+      found.push({ harness, why: 'footprint', signal: stats.isDirectory() ? `${shown}/` : shown });
       break;
     }
   }
@@ -193,15 +234,21 @@ function defaultManifest(harnesses: readonly HarnessId[]): HarnessManifest {
  * Scaffold a default `.agents/harness.manifest.json` into a repo when none exists.
  *
  * Write-if-absent (ADR-302): an existing manifest is never overwritten. When no
- * manifest is present, the scaffolder picks a harness set (detected from the
- * repo's on-disk footprint, or {@link DEFAULT_HARNESSES} when nothing is detected,
- * or overridden by `opts.harnesses`) and writes a valid, human-editable manifest
- * with empty policy arrays for the user to extend.
+ * manifest is present, the scaffolder picks a harness set and writes a valid,
+ * human-editable manifest with empty policy arrays for the user to extend.
+ *
+ * The set is `opts.harnesses` when the caller named one; otherwise it is what
+ * detection found on disk (or {@link DEFAULT_HARNESSES} when it found nothing),
+ * PLUS `opts.dorkosHarness` when that harness is not already in it — the one
+ * entry a person's own folder cannot explain, which is why the result names it
+ * separately.
  *
  * @param repoRoot - absolute path to the repository root to scaffold into.
- * @param opts - optional explicit harness set; defaults to detection + fallback.
- * @returns whether a manifest was written, its path, the harness set, and whether
- *   that set was detected (vs the documented fallback).
+ * @param opts - an explicit harness set, and/or the harness DorkOS's own default
+ *   runtime reads; both optional, and detection + fallback decide without them.
+ * @returns whether a manifest was written, its path, the harness set, whether
+ *   that set was detected (vs the documented fallback), and which harness — if
+ *   any — was added because DorkOS runs it here (`addedForDorkos`).
  */
 export function scaffoldManifest(
   repoRoot: string,
@@ -215,18 +262,29 @@ export function scaffoldManifest(
       path: HARNESS_MANIFEST_PATH,
       harnesses: readExistingHarnesses(abs),
       detected: false,
+      // Nothing was added, because nothing was written: an existing manifest is
+      // the person's file (ADR-302). A manifest that predates this and lacks the
+      // harness DorkOS runs is reported instead, as a `dorkos-runtime` entry in
+      // every plan's `notEnabled` with the `--enable` command that adds it.
+      addedForDorkos: null,
     };
   }
 
   let harnesses: readonly HarnessId[];
   let detected: boolean;
+  let addedForDorkos: HarnessId | null = null;
   if (opts?.harnesses) {
     harnesses = opts.harnesses;
     detected = false;
   } else {
     const found = detectHarnesses(repoRoot);
     detected = found.length > 0;
-    harnesses = detected ? found : DEFAULT_HARNESSES;
+    const base = detected ? found : DEFAULT_HARNESSES;
+    const ours = opts?.dorkosHarness;
+    addedForDorkos = ours !== undefined && !base.includes(ours) ? ours : null;
+    // Appended rather than sorted into canonical order, so the file reads as
+    // what it is: the harnesses this folder shows, and then the one DorkOS runs.
+    harnesses = addedForDorkos === null ? base : [...base, addedForDorkos];
   }
 
   // Two-space indent + trailing newline so the file reads (and diffs) like the
@@ -235,7 +293,40 @@ export function scaffoldManifest(
   // half-written and fail its whole projection on an unparseable manifest.
   writeFileAtomic(abs, `${JSON.stringify(defaultManifest(harnesses), null, 2)}\n`);
 
-  return { created: true, path: HARNESS_MANIFEST_PATH, harnesses, detected };
+  return { created: true, path: HARNESS_MANIFEST_PATH, harnesses, detected, addedForDorkos };
+}
+
+/**
+ * The one line every scaffold notice prints when a harness was turned on
+ * because DorkOS runs it here.
+ *
+ * One sentence, in one place, so the CLI's `--fix` output and the two server
+ * triggers say the same thing about the same decision. It names the consequence
+ * rather than the mechanism, because the consequence is the part a person can
+ * act on: the file that will point at the `AGENTS.md` they already have — or,
+ * for a harness that reads `AGENTS.md` itself, that it just does.
+ *
+ * `agentsMdExists` is not decoration. With no canonical `AGENTS.md` the engine
+ * plans no pointer at all — every harness's instruction projection is one honest
+ * drop instead (IN-03) — so promising `.claude/CLAUDE.md will point at your
+ * AGENTS.md` would be a line about a file that is not going to be written, in
+ * the one repo where the person most needs to know what is missing.
+ *
+ * @param harness - The harness {@link ScaffoldManifestResult.addedForDorkos} named.
+ * @param agentsMdExists - Whether the repo has a canonical `AGENTS.md` to point at.
+ * @returns The line to print.
+ */
+export function dorkosHarnessScaffoldNotice(harness: HarnessId, agentsMdExists: boolean): string {
+  const pointer = instructionPointerTarget(harness);
+  const consequence =
+    pointer === undefined
+      ? agentsMdExists
+        ? 'it reads your AGENTS.md directly'
+        : 'it reads an AGENTS.md at your project root, once you add one'
+      : agentsMdExists
+        ? `${pointer} will point at your AGENTS.md`
+        : `${pointer} will point at your AGENTS.md, once you add one`;
+  return `${HARNESS_LABELS[harness]} is turned on because DorkOS runs it here; ${consequence}.`;
 }
 
 /**

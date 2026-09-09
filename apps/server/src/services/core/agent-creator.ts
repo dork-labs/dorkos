@@ -512,6 +512,11 @@ export async function createAgentWorkspace(
       // This function IS the creation pipeline — it scaffolded the workspace a
       // few lines up, so the agent did not exist a moment ago.
       origin: 'created',
+      // …and it projects that workspace itself, below, Claude-Code-only with
+      // package hooks denied. Said out loud so a reaction does not project it
+      // first from a manifest derived from the pointers scaffolded above
+      // (DOR-1901); this is the only place it is ever set.
+      workspaceProjectedByPipeline: true,
     });
 
     result = { manifest, path: resolvedPath, meta };

@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildPlan } from '../projector.js';
 import { getActionContent } from '../content-map.js';
-import { parseHarnessManifest, HARNESS_IDS } from '../../manifest/schema.js';
+import { parseHarnessManifest, HARNESS_IDS, type HarnessId } from '../../manifest/schema.js';
+import type { DetectedHarness, ProjectionPlan } from '../types.js';
 import { GENERATED_HOOKS_DESCRIPTION, type ClaudeHooksConfig } from '../../generate/hooks.js';
 
 let dir = '';
@@ -359,5 +360,82 @@ describe('buildPlan — authored command drops name each harness’s own format'
       if (harness === 'codex') continue;
       expect(reason).not.toMatch(/no repo-local slash-command format/);
     }
+  });
+});
+
+/**
+ * `plan.notEnabled` — the harnesses this manifest does not enable that
+ * something says it should (contract TR-11).
+ *
+ * Two sources, and the rules between them are the whole of it: a footprint is
+ * evidence on disk, a `dorkos-runtime` entry is evidence about this DorkOS, and
+ * the same harness must never be reported twice.
+ */
+describe('buildPlan — notEnabled', () => {
+  /** A plan over the fixture repo, with whatever detection and DorkOS answered. */
+  function planWith(
+    harnesses: HarnessId[],
+    found: { detectedHarnesses?: DetectedHarness[]; dorkosHarness?: HarnessId }
+  ): ProjectionPlan {
+    return buildPlan({
+      repoRoot: dir,
+      manifest: parseHarnessManifest({ version: 1, harnesses }),
+      claudeHooks,
+      agentsMdExists: true,
+      ...found,
+    });
+  }
+
+  it('TR-11: reports the harness DorkOS runs when the manifest does not enable it', () => {
+    // The shape DOR-1901 found: an OpenCode project set up before DorkOS knew to
+    // add its own harness. Detection finds nothing of Claude Code's — there is
+    // nothing to find — so this entry is the only thing that can say so.
+    dir = fixtureRepo();
+
+    expect(planWith(['codex', 'opencode'], { dorkosHarness: 'claude-code' }).notEnabled).toEqual([
+      { harness: 'claude-code', why: 'dorkos-runtime' },
+    ]);
+  });
+
+  it('TR-11: says nothing when the manifest already enables it', () => {
+    dir = fixtureRepo();
+
+    expect(planWith(['claude-code'], { dorkosHarness: 'claude-code' }).notEnabled).toEqual([]);
+  });
+
+  it('TR-11: reports a harness once, keeping the answer that names a path', () => {
+    // A repo that has BOTH a `.cursor/` and a DorkOS running Cursor is one
+    // problem, and the more useful of the two sentences is the one with a path
+    // in it — "we found this file" beats "we run this tool".
+    dir = fixtureRepo();
+
+    expect(
+      planWith(['claude-code'], {
+        detectedHarnesses: [{ harness: 'cursor', why: 'footprint', signal: '.cursor/' }],
+        dorkosHarness: 'cursor',
+      }).notEnabled
+    ).toEqual([{ harness: 'cursor', why: 'footprint', signal: '.cursor/' }]);
+  });
+
+  it('TR-11: reports both when they are different harnesses, footprints first', () => {
+    dir = fixtureRepo();
+
+    expect(
+      planWith(['codex'], {
+        detectedHarnesses: [{ harness: 'cursor', why: 'footprint', signal: '.cursor/' }],
+        dorkosHarness: 'claude-code',
+      }).notEnabled
+    ).toEqual([
+      { harness: 'cursor', why: 'footprint', signal: '.cursor/' },
+      { harness: 'claude-code', why: 'dorkos-runtime' },
+    ]);
+  });
+
+  it('TR-11: says nothing about DorkOS when the caller did not answer', () => {
+    // `buildPlan` reads no config, so a caller that has not looked gets the
+    // honest answer rather than a guess at what DorkOS runs.
+    dir = fixtureRepo();
+
+    expect(planWith(['codex'], {}).notEnabled).toEqual([]);
   });
 });

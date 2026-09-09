@@ -2339,10 +2339,15 @@ export const UserConfigSchema = z.object({
   harness: z
     .object({
       /**
-       * Whether installing or uninstalling a marketplace plugin automatically
-       * runs Harness Sync projection (re-projecting `.agents/` + installed
-       * plugins to every harness). Defaults to `true`; set `false` to manage
-       * projection manually via `dorkos harness sync`.
+       * Whether DorkOS runs Harness Sync projection on its own (re-projecting
+       * `.agents/` + installed plugins to every harness a project enables).
+       *
+       * It gates every UNPROMPTED trigger, and there are five: a marketplace
+       * plugin installed or uninstalled at project scope, an agent registered
+       * against a directory (DOR-1901), the `.agents/skills` watcher, its
+       * 10-second comparison sweep, and the turn-end re-projection. Defaults to
+       * `true`; set `false` to manage projection manually via
+       * `dorkos harness sync`, which keeps working either way.
        */
       autoSync: z.boolean().default(true),
       /**

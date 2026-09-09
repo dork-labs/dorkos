@@ -196,7 +196,11 @@ Run it from your project root: it works on the folder you are in, and reads `.ag
 
 That manifest holds three things, and nothing else: `harnesses`, the agents you want files shared with; `claudeOnlySkills`, the skills you are deliberately keeping in Claude Code's own folder; and `hookPolicies`, one line per agent saying what to do with your hooks. A policy is `generate` (DorkOS writes that agent's hooks file), `native` (the agent reads your hooks itself) or `none` (DorkOS writes nothing for that agent, and clears away a hooks file it wrote there before). Say nothing about an agent and DorkOS does what it has always done for it. Four older keys — `skillWrappers`, `commandMappings`, `instructionProjections` and `skillBundles` — are no longer read by anything. Your file still works if it has them; DorkOS just names each one so you can delete it.
 
-Every run looks at which agents your project actually uses. If it finds one you have not turned on — a `.cursor/` folder appeared last week, say — it tells you, and tells you how to turn it on:
+When DorkOS sets up a folder for the first time, it turns on the agents it can see you already use — and one more: the agent DorkOS itself runs your sessions on. If your project has only ever used OpenCode, there is nothing of Claude Code's for DorkOS to find, and yet Claude Code is what a DorkOS session in that folder starts. So DorkOS turns it on and says so in one line, and the only file it writes for it is a `.claude/CLAUDE.md` that points at the `AGENTS.md` you already keep. Your instructions stay in one file you own; the session reads them.
+
+The same happens on its own the moment you point a DorkOS agent at a folder: DorkOS sets that folder up once, right then, instead of waiting for you to run anything. It never removes files on that pass, and it never asks you to approve anything — it only adds.
+
+Every run looks at which agents your project actually uses. If it finds one you have not turned on — a `.cursor/` folder appeared last week, say, or your manifest was written before DorkOS started adding its own agent — it tells you, and tells you how to turn it on:
 
 ```bash
 dorkos harness sync --fix --enable cursor   # Turn Cursor on and set it up, in one go

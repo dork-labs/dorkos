@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util';
 import { rethrowUnknownOption } from './lib/parse-args-error.js';
 import {
   formatWithheldBlock,
+  readDorkosHarness,
   readStoredDecisions,
   resolveDorkHome,
   withheldSummaryLine,
@@ -14,6 +15,7 @@ import type { WithheldHooks } from '../server/services/harness/project-with-cons
 import type { HarnessClaudeOnly } from '@dorkos/shared/harness-schemas';
 
 import {
+  agentsMdExists,
   appendGitignoreLines,
   checkPlan,
   enableHarnessInManifest,
@@ -22,6 +24,7 @@ import {
   hooksFactsFor,
   skillsFactsFor,
   canonicalLayerIgnoredBy,
+  dorkosHarnessScaffoldNotice,
   CLAUDE_SKILLS_DIR,
   loadManifest,
   manifestNotices,
@@ -538,23 +541,35 @@ function formatClaudeOnly(claudeOnly: HarnessClaudeOnly, repoRoot: string): stri
 }
 
 /**
- * One line per harness whose own files are here that the manifest does not
- * enable (contract TR-11).
+ * One line per harness this manifest does not enable that something says it
+ * should (contract TR-11).
  *
  * A NOTICE, and never anything else: it changes no exit code, because a person
  * who runs Cursor on a different project is not wrong and a failing command
  * nobody can clear is how people learn to stop reading the output. Detection
  * used to happen once, when the manifest was scaffolded, so a harness added a
  * month later was never enabled and never mentioned.
+ *
+ * Two claims, two sentences. A `footprint` names the path that gave the harness
+ * away. A `dorkos-runtime` entry has no path to name — it is a fact about this
+ * DorkOS, not about the folder — and it is the one that had no line at all: a
+ * project that has never run Claude Code leaves no `.claude/` for detection to
+ * find, so a manifest written before DOR-1901 stays silently short of the very
+ * tool DorkOS starts its sessions on. Both end in the same command, because the
+ * fix is the same.
  */
 function formatNotEnabled(plan: ProjectionPlan): string[] {
   if (plan.notEnabled.length === 0) return [];
+  const enableWith = (harness: HarnessId): string =>
+    `add it to ${HARNESS_MANIFEST_PATH} or run dorkos harness sync --fix --enable ${harness}`;
   return [
     '',
-    ...plan.notEnabled.map(
-      (found) =>
-        `${found.signal} found; ${HARNESS_LABELS[found.harness]} is not enabled — add it to ` +
-        `${HARNESS_MANIFEST_PATH} or run dorkos harness sync --fix --enable ${found.harness}`
+    ...plan.notEnabled.map((found) =>
+      found.why === 'dorkos-runtime'
+        ? `DorkOS runs ${HARNESS_LABELS[found.harness]} here and this project does not enable it — ` +
+          enableWith(found.harness)
+        : `${found.signal} found; ${HARNESS_LABELS[found.harness]} is not enabled — ` +
+          enableWith(found.harness)
     ),
   ];
 }
@@ -936,6 +951,11 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
   }
 
   const repoRoot = process.cwd();
+  // The agent tool DorkOS's own sessions run on, read STRAIGHT OFF disk: opening
+  // the config store creates it, and `--check` is documented as never writing
+  // anything (DOR-678). It decides one entry in a scaffolded manifest and one
+  // notice line; it changes nothing a sync writes on its own.
+  const ourHarness = await readDorkosHarness(resolveDorkHome());
   if (!existsSync(join(repoRoot, HARNESS_MANIFEST_PATH))) {
     // No manifest here. `--fix` is the write mode, so it bootstraps a default,
     // visible, editable one (detecting the harnesses already in use) and carries
@@ -956,12 +976,28 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
       return { exitCode: 1 };
     }
 
-    const scaffold = scaffoldManifest(repoRoot);
-    const setSource = scaffold.detected ? 'detected harnesses' : 'default harness set';
+    const scaffold = scaffoldManifest(repoRoot, {
+      ...(ourHarness === undefined ? {} : { dorkosHarness: ourHarness }),
+    });
+    // What the set came from, and it is now three answers rather than two: a
+    // detected set can carry one harness detection did NOT find, and calling
+    // that whole list "detected harnesses" — or, worse, calling
+    // `claude-code, codex, opencode` the "default harness set" when the default
+    // is two of those — states something the person can check and find false.
+    const dorkos = scaffold.addedForDorkos;
+    const base = scaffold.detected ? 'detected harnesses' : 'default set';
+    const setSource =
+      dorkos === null
+        ? base
+        : `${base} plus ${HARNESS_LABELS[dorkos]}, because DorkOS runs it here`;
     console.log(
       `No manifest found; wrote a default at ${scaffold.path} ` +
         `(${setSource}: ${scaffold.harnesses.join(', ')}) - edit to customize.`
     );
+    // …and what that one entry means for the files in their folder.
+    if (dorkos) {
+      console.log(dorkosHarnessScaffoldNotice(dorkos, agentsMdExists(repoRoot)));
+    }
     console.log('');
   }
 
@@ -1038,6 +1074,7 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
       dorkHome,
       decisions,
       ...(harnessFilter === undefined ? {} : { harness: harnessFilter }),
+      ...(ourHarness === undefined ? {} : { dorkosHarness: ourHarness }),
     };
 
     // What Claude Code alone has (SRC-08, J-07, HK-14's user half). The FOURTH

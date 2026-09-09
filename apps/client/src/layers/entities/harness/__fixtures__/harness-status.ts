@@ -133,7 +133,10 @@ export const HARNESS_STATUS_READY: HarnessStatusResponse = {
   state: 'ready',
   computedAt: '2026-09-08T09:00:00.000Z',
   enabled: ['claude-code', 'codex', 'cursor'],
-  notEnabled: [{ harness: 'gemini', signal: '.gemini/ exists in this folder' }],
+  notEnabled: [
+    { harness: 'gemini', why: 'footprint', signal: '.gemini/ exists in this folder' },
+    { harness: 'claude-code', why: 'dorkos-runtime' },
+  ],
   clean: false,
   counts: {
     skills: 6,
