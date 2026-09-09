@@ -6,7 +6,7 @@
 #   DORKOS_HARNESS_SMOKE=1 ANTHROPIC_API_KEY=<key> \
 #     bash scripts/harness-smoke/run.sh claude --max-usd 0.50
 #
-# Flags: --free --max-usd N --report DIR --binary PATH --model ID
+# Flags: --free --scenario <project|user-tier> --max-usd N --report DIR --binary PATH --model ID
 #
 # `--free` reaches no model, so it needs neither the flag nor a key; it answers
 # everything that happens before the first API request and reports NOT RUN for
