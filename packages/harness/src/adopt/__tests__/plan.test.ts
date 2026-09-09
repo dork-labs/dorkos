@@ -370,10 +370,13 @@ describe('the adopt allowlist', () => {
     const plan = planFor(
       '---\nname: deploy-checklist\ndescription: d\nkind: skill\n---\n\nBody.\n'
     );
-    expect(onlyRefusal(plan).reason).toContain(
-      '"deploy-checklist" uses kind in its settings, which are DorkOS\'s own'
+    // The full literal: `kind` has no runtime consequence, so the timer
+    // sentence a `schedule:` earns must NOT appear here.
+    expect(onlyRefusal(plan).reason).toBe(
+      '"deploy-checklist" uses kind in its settings, which are DorkOS\'s own and mean nothing ' +
+        'to your other agents. Take kind out and adopt it, or run dorkos harness adopt ' +
+        'deploy-checklist --claude-only to keep it where it is.'
     );
-    expect(onlyRefusal(plan).reason).not.toContain('only Claude Code understands');
   });
 
   it('SK-16: a mixed list claims nothing about whose fields they are, and names them all', () => {

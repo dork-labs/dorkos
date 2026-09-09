@@ -108,9 +108,15 @@ export const ADOPT_SENTENCES = {
   /** R7, and every offending key is one of DorkOS's own. */
   S7d: (name: string, fields: string): string =>
     `"${name}" uses ${fields} in its settings, which are DorkOS's own and mean nothing to your ` +
-    `other agents. Moving it also changes what DorkOS does with it: a skill with a schedule ` +
-    `starts running on a timer once it is in .agents/skills. Take ${fields} out and adopt it, ` +
-    `or run dorkos harness adopt ${name} --claude-only to keep it where it is.`,
+    `other agents.` +
+    // Only a `schedule` changes what DorkOS itself does after the move; `kind` is
+    // a marketplace marker with no runtime consequence, so it earns no warning.
+    (/\bschedule\b/.test(fields)
+      ? ` Moving it also changes what DorkOS does with it: a skill with a schedule starts ` +
+        `running on a timer once it is in .agents/skills.`
+      : '') +
+    ` Take ${fields} out and adopt it, or run dorkos harness adopt ${name} --claude-only to ` +
+    `keep it where it is.`,
 
   /** R7, and the offending keys are a mix, or one belongs to nobody DorkOS knows. */
   S7c: (name: string, fields: string): string =>
