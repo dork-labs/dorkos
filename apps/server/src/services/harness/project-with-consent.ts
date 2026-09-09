@@ -303,6 +303,23 @@ export interface ProjectWithConsentOptions {
   decisions?: HookDecisions;
   /** Narrow every projection, drop and warning to one harness before applying. */
   harness?: HarnessId;
+  /**
+   * The harness DorkOS's own default runtime reads
+   * (`services/harness/dorkos-harness.ts`).
+   *
+   * It changes nothing a projection WRITES. Its only effect is one more entry in
+   * `plan.notEnabled` when the manifest does not enable it, so a surface can say
+   * "DorkOS runs Claude Code here and this project is not sharing to it"
+   * (DOR-1901). A trigger whose plan nobody reports — the `.agents/skills`
+   * watcher — may therefore leave it out; every trigger that PRINTS or RENDERS a
+   * plan passes it, or its report is missing a line that is true.
+   *
+   * Not defaulted from config here, unlike `decisions`: `dorkos harness sync
+   * --check` must not open the config store (DOR-678), and a default that
+   * quietly opened one whenever a caller resolved `undefined` would be a hole
+   * that only shows up on somebody else's machine.
+   */
+  dorkosHarness?: HarnessId;
 }
 
 /** What {@link planWithConsent} answers. */
@@ -403,6 +420,7 @@ export function planWithConsent(
   const full = _internal.project(projectPath, {
     dorkHome: opts.dorkHome,
     allowPluginHooks: (name) => allowed.has(name),
+    ...(opts.dorkosHarness === undefined ? {} : { dorkosHarness: opts.dorkosHarness }),
   });
   const plan = opts.harness === undefined ? full : filterPlanToHarness(full, opts.harness);
   return { plan, withheld };

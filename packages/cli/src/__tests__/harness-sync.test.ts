@@ -295,6 +295,46 @@ describe('runHarnessSync', () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Unknown harness'));
   });
 
+  it('J-03, TR-01, IN-01: scaffolds the tool DorkOS runs into a project that shows no sign of it', async () => {
+    // A repo that has only ever run OpenCode: an `AGENTS.md` they wrote and a
+    // `.opencode/`, no `.claude/` anywhere. Detection alone gives `codex,
+    // opencode` and the pointer that makes their own AGENTS.md the instructions
+    // a DorkOS session reads is never written (DOR-1901).
+    fs.writeFileSync(path.join(tmpDir, 'AGENTS.md'), '# House rules\n');
+    fs.mkdirSync(path.join(tmpDir, '.opencode', 'skills'), { recursive: true });
+    process.chdir(tmpDir);
+
+    const result = await runHarnessSync(syncArgs({ check: false, fix: true }));
+
+    expect(result.exitCode).toBe(0);
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(tmpDir, HARNESS_MANIFEST_PATH), 'utf8')
+    ) as { harnesses: string[] };
+    expect(manifest.harnesses).toEqual(['codex', 'opencode', 'claude-code']);
+    // One plain line for the one entry their folder does not explain…
+    expect(logSpy).toHaveBeenCalledWith(
+      'Claude Code is turned on because DorkOS runs it here; ' +
+        '.claude/CLAUDE.md will point at your AGENTS.md.'
+    );
+    // …and the file it promises.
+    expect(fs.readFileSync(path.join(tmpDir, '.claude', 'CLAUDE.md'), 'utf8')).toBe(
+      '@../AGENTS.md\n'
+    );
+  });
+
+  it('TR-01: says nothing about DorkOS when the folder already shows that tool', async () => {
+    // The control: this fixture HAS a `.claude/`, so Claude Code is detected and
+    // nothing was added on DorkOS's account.
+    writeFixtureRepoWithoutManifest(tmpDir);
+    process.chdir(tmpDir);
+
+    await runHarnessSync(syncArgs({ check: false, fix: true }));
+
+    expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).not.toContain(
+      'because DorkOS runs it here'
+    );
+  });
+
   it('TR-01: auto-scaffolds then realizes the projection on --fix', async () => {
     writeFixtureRepoWithoutManifest(tmpDir);
     process.chdir(tmpDir);
@@ -1724,6 +1764,45 @@ describe('runHarnessSync — a harness added later, and the .gitignore contract'
       await runHarnessSync(syncArgs({ check: true, harness: 'codex' }));
 
       expect(printed()).not.toContain('is not enabled');
+    });
+
+    it('J-03, TR-11: says so about the tool DorkOS runs, which leaves no files to find', async () => {
+      // The fixture's manifest enables Claude Code, so drop it to the shape a
+      // project that has only ever run another tool has. Nothing on disk is
+      // Claude Code's — that is the point — so the footprint notice cannot fire
+      // and this line is the only thing that can say the tool DorkOS starts its
+      // own sessions on is not being shared to (DOR-1901).
+      fs.writeFileSync(
+        path.join(tmpDir, HARNESS_MANIFEST_PATH),
+        JSON.stringify({ version: 1, harnesses: ['codex'] }, null, 2)
+      );
+      fs.rmSync(path.join(tmpDir, '.claude'), { recursive: true, force: true });
+      const before = snapshotTree(tmpDir);
+
+      const result = await runHarnessSync(syncArgs({ check: true }));
+
+      expect(printed()).toContain(
+        'DorkOS runs Claude Code here and this project does not enable it — ' +
+          `add it to ${HARNESS_MANIFEST_PATH} or run dorkos harness sync --fix --enable claude-code`
+      );
+      // A notice and nothing else: nothing written, and no config store opened
+      // to answer the question (DOR-678).
+      expect(snapshotTree(tmpDir)).toEqual(before);
+      expect(fs.existsSync(path.join(homeDir, 'config.json'))).toBe(false);
+      expect(result.exitCode).toBe(0);
+    });
+
+    it('TR-11: goes quiet once the tool DorkOS runs is enabled', async () => {
+      // The control for the case above: the same repo, the same command, the one
+      // difference being the harness in the manifest.
+      fs.writeFileSync(
+        path.join(tmpDir, HARNESS_MANIFEST_PATH),
+        JSON.stringify({ version: 1, harnesses: ['codex', 'claude-code'] }, null, 2)
+      );
+
+      await runHarnessSync(syncArgs({ check: true }));
+
+      expect(printed()).not.toContain('DorkOS runs Claude Code here');
     });
 
     it('J-14, TR-11: enables Cursor, projects to it in the same run, and then goes quiet', async () => {

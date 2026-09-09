@@ -167,6 +167,18 @@ export interface BuildHarnessStatusOptions {
    * this model wrote would be the second voice §1.2 exists to prevent.
    */
   afterWrite?: { conflicts: readonly ProjectionAction[] };
+  /**
+   * The harness DorkOS's own default runtime reads
+   * (`services/harness/dorkos-harness.ts`).
+   *
+   * Passed in rather than read here, because this function is a plain read-only
+   * derivation over an options bag and reaching for the config store inside it
+   * would make it one of the things DOR-678 forbids. When the manifest does not
+   * enable it, it becomes a `dorkos-runtime` entry in {@link
+   * HarnessStatusResponse.notEnabled} — the panel that says a tool is not being
+   * shared to, for the one tool that leaves no footprint to find (DOR-1901).
+   */
+  dorkosHarness?: HarnessId;
 }
 
 /** A row while it is being built, before its cells are sealed into the response. */
@@ -446,7 +458,7 @@ function manifestFailureDetail(err: unknown): string {
  * @returns the full status response, ready to be sent as-is.
  */
 export function buildHarnessStatus(options: BuildHarnessStatusOptions): HarnessStatusResponse {
-  const { projectPath, dorkHome, decisions, afterWrite } = options;
+  const { projectPath, dorkHome, decisions, afterWrite, dorkosHarness } = options;
 
   let manifest: HarnessManifest;
   try {
@@ -466,6 +478,7 @@ export function buildHarnessStatus(options: BuildHarnessStatusOptions): HarnessS
   const { plan, withheld } = planWithConsent(projectPath, {
     dorkHome,
     ...(decisions === undefined ? {} : { decisions }),
+    ...(dorkosHarness === undefined ? {} : { dorkosHarness }),
   });
   const drift = checkPlan(projectPath, plan);
   const inventory = inventorySourceTree(projectPath);
@@ -494,7 +507,11 @@ export function buildHarnessStatus(options: BuildHarnessStatusOptions): HarnessS
     state: 'ready',
     computedAt: new Date().toISOString(),
     enabled,
-    notEnabled: plan.notEnabled.map((d) => ({ harness: d.harness, signal: d.signal })),
+    notEnabled: plan.notEnabled.map((d) => ({
+      harness: d.harness,
+      why: d.why,
+      ...(d.signal === undefined ? {} : { signal: d.signal }),
+    })),
     // Stated in full rather than read off `DriftResult.clean`, because the field
     // this page cares about is "would a sync change anything" and an orphan-only
     // tree — nothing drifted, nothing blocked, nine files a sync deletes — is the

@@ -282,19 +282,29 @@ Three things do NOT count as coverage, so none of them can silence a row: an id 
 
 ## 10. Triggers — what starts a projection
 
-Five things call the engine, and the differences between them are the whole design. Each one answers three questions differently: does it **sweep**, does it **ask** about a package's hooks, and does it **scaffold** a harness manifest for a project that has none.
+Six things call the engine, and the differences between them are the whole design. Each one answers three questions differently: does it **sweep**, does it **ask** about a package's hooks, and does it **scaffold** a harness manifest for a project that has none.
 
-| Trigger                              | When                                                                         | Sweeps? | Asks? | Scaffolds? | Where                                         |
-| ------------------------------------ | ---------------------------------------------------------------------------- | ------- | ----- | ---------- | --------------------------------------------- |
-| **Marketplace install/uninstall**    | a package is installed or removed at project scope                           | yes     | yes   | yes        | `services/harness/auto-project.ts`            |
-| **Boot**                             | server start, for every agent workspace DorkOS owns                          | no      | no    | yes        | `services/harness/project-agent-workspace.ts` |
-| **`.agents/skills` watcher + sweep** | a skill appears, changes or goes away; re-armed every 1s; compared every 10s | no      | no    | **no**     | `services/harness/skills-watcher.ts`          |
-| **Turn end**                         | a turn finishes and the project's skills look different                      | no      | no    | **no**     | `services/harness/skills-watcher.ts`          |
-| **`dorkos harness sync --fix`**      | a person runs it                                                             | yes     | no\*  | yes        | `packages/cli/src/harness-sync-command.ts`    |
+| Trigger                               | When                                                                         | Sweeps? | Asks? | Scaffolds? | Where                                          |
+| ------------------------------------- | ---------------------------------------------------------------------------- | ------- | ----- | ---------- | ---------------------------------------------- |
+| **Marketplace install/uninstall**     | a package is installed or removed at project scope                           | yes     | yes   | yes        | `services/harness/auto-project.ts`             |
+| **An agent is created or registered** | a person points a DorkOS agent at a directory                                | **no**  | no    | yes        | `services/harness/project-on-agent-created.ts` |
+| **Boot**                              | server start, for every agent workspace DorkOS owns                          | no      | no    | yes        | `services/harness/project-agent-workspace.ts`  |
+| **`.agents/skills` watcher + sweep**  | a skill appears, changes or goes away; re-armed every 1s; compared every 10s | no      | no    | **no**     | `services/harness/skills-watcher.ts`           |
+| **Turn end**                          | a turn finishes and the project's skills look different                      | no      | no    | **no**     | `services/harness/skills-watcher.ts`           |
+| **`dorkos harness sync --fix`**       | a person runs it                                                             | yes     | no\*  | yes        | `packages/cli/src/harness-sync-command.ts`     |
 
 \* The CLI cannot raise a card, so it **withholds** an unapproved package's hooks and prints each command it did not install; `--allow-hooks <pkg>` records the same decision a card would.
 
 Every one of them goes through `projectWithConsent` (§8 and `project-with-consent.ts`), which is the only module allowed to hold the engine's `project()` — with one exemption, and it is granted because it is STRICTER than consent rather than looser: the boot pass denies every installed package's hooks outright (`project-agent-workspace.ts`, contract HK-08), which the seam cannot express because its whole job is to honour an approval. `__tests__/project-seam-guard.test.ts` reads the source of both trees, fails on any other module that imports `project()` under any of six spellings, and pins that exemption to the reason it was given.
+
+### What agent creation does, and does not, do
+
+It fires once per created or registered agent, from the one seam every arrival goes through (`services/core/agent-created-hook.ts`), which covers all four ways an agent reaches this machine — the create pipeline, both register routes, and a mesh discovery scan. Before DOR-1901 pointing an agent at a project started nothing at all: the install trigger needs a package, the boot pass covers agent homes, and the watcher refuses a project that has never synced. So a repository somebody pointed a DorkOS agent at got no manifest, no `.claude/CLAUDE.md`, and a managed session that had never read the person's own `AGENTS.md`.
+
+- **It scaffolds, and that is deliberate.** It is one of only two paths that write a manifest into a project unprompted; the other is `dorkos harness sync --fix`. Both are allowed for the same reason: a person just asked DorkOS to work here. DOR-678's rule is about `--check`, which reports and must never write, and this is not that.
+- **It never sweeps and never asks.** A trigger firing off somebody's action runs on a tree they may be mid-edit in, and an approval card raised by "I made an agent" is a card at the wrong moment. A package's hooks stay withheld and are counted in the log line.
+- **It refuses an agent HOME.** `<dorkHome>/agents/*` is projected by `agent-creator` at creation and by the boot backfill after, with a Claude-Code-only manifest on purpose. Projecting it again here would write a different harness set into the same folder. `isAgentHome` is the one answer both sides read.
+- **And nothing outside the boundary**, judged here as well as at the route, because one of the four callers is a discovery scan that never went near a route.
 
 ### Why the watcher does not sweep, ask or scaffold
 
@@ -343,13 +353,17 @@ Claude Code watches its skill directories, so a skill linked into an existing `.
 
 `.agents/harness.manifest.json` is the engine's only hand-authored input. It is scaffolded when a repo has none and never rewritten afterwards (ADR-302, and see [ADR-0302's DOR-1851 amendment](../decisions/0302-instructions-scaffolded-not-generated.md) for the one exception, `--enable`). Three keys, and every one of them is read:
 
-| Key                | What it decides                                                                                                                               |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `harnesses`        | The enabled projection targets. Defaults to `["claude-code"]`. `dorkos harness sync --fix --enable <id>` is the only thing that ever adds one |
-| `claudeOnlySkills` | Skills deliberately kept out of `.agents/skills`, each with the path it really lives at and why. The manifest is the only evidence they exist |
-| `hookPolicies`     | One entry per harness: `{ tool, projection: 'native' \| 'generate' \| 'none', configPath?, status?, notes? }`                                 |
+| Key                | What it decides                                                                                                                                                       |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `harnesses`        | The enabled projection targets. Defaults to `["claude-code"]`. `dorkos harness sync --fix --enable <id>` is the only thing that ever adds one to an EXISTING manifest |
+| `claudeOnlySkills` | Skills deliberately kept out of `.agents/skills`, each with the path it really lives at and why. The manifest is the only evidence they exist                         |
+| `hookPolicies`     | One entry per harness: `{ tool, projection: 'native' \| 'generate' \| 'none', configPath?, status?, notes? }`                                                         |
 
 Everything else the engine needs it derives — the scanner reconstructs the skills from `.agents/skills/*`, so the schema is `.strict()` and a stale, derivable `sharedSkills` array is rejected rather than silently accepted.
+
+**The scaffold rule: detected, plus the one DorkOS runs.** A NEW manifest's `harnesses` set is what detection found on disk, plus the harness DorkOS's own default runtime reads — `scaffoldManifest(root, { dorkosHarness })`, appended rather than sorted in, so the file reads as what it is. The engine reads no config, so that harness is injected: the server resolves it with `harnessForRuntime(configManager.get('runtimes').default)` (`services/harness/dorkos-harness.ts`) and the CLI parses the same key straight off `config.json`, because `--check` must not open a config store. The reason it is not left to detection: detection enables the harnesses whose files are already here, which is right for every other tool and wrong for this one. A repo that has only ever run OpenCode has left no `.claude/`, so Claude Code could not be detected — and the one thing the engine writes for it is the `.claude/CLAUDE.md` pointer that makes the person's own `AGENTS.md` the instructions a DorkOS session reads. Every scaffold notice prints one plain line naming that harness (`dorkosHarnessScaffoldNotice`), because it is the one entry a person could not have predicted from their own folder.
+
+An EXISTING manifest is still never rewritten. What a project set up before that rule gets instead is a notice: every plan carries a second kind of `notEnabled` entry, `why: 'dorkos-runtime'`, with no path to name — a fact about this DorkOS rather than about the folder — and both the CLI and the app say so with the `--enable` command that fixes it.
 
 **`hookPolicies`, and the rule it rests on.** A policy governs what the ENGINE writes, never what a vendor reads. Each harness has exactly one hooks mechanism: Claude Code reads `.claude/settings.json` itself (`native`), Codex, Cursor and Copilot get a file the engine writes (`generate`), OpenCode and Gemini have nowhere to write at all (`none`). So:
 

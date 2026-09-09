@@ -228,6 +228,10 @@ beforeAll(async () => {
       dorkHome,
       readHookDecisions: () => hookDecisions,
       approvals: gateway,
+      // The second config read on this path, injected for the same reason as
+      // the first: this suite opens no config store at all, and the shipped
+      // default reaches the running server's (DOR-1901).
+      dorkosHarness: () => 'claude-code',
     })
   );
   failingApp.use(
@@ -237,6 +241,7 @@ beforeAll(async () => {
       readHookDecisions: () => {
         throw READ_FAILURE;
       },
+      dorkosHarness: () => 'claude-code',
     })
   );
 });
@@ -354,6 +359,25 @@ describe('GET /api/harness/status', () => {
     expect(res.status).toBe(200);
     expect(res.body.state).toBe('ready');
     expect(res.body.enabled).toEqual(['claude-code']);
+  });
+
+  it('TR-11: reports the agent tool DorkOS runs here when the project does not enable it', async () => {
+    // Seeded defect: stop passing `dorkosHarness` into `buildHarnessStatus` and
+    // `notEnabled` comes back empty — which is what shipped, and why the panel
+    // was silent about the one tool that leaves no files behind to detect
+    // (DOR-1901). There is no `.claude/` in this tree, on purpose: a footprint
+    // would make the assertion pass for the other reason.
+    const repo = stageProject('opencode-only');
+    writeManifest(repo, ['codex', 'opencode']);
+    writeAt(join(repo, 'AGENTS.md'), '# House rules\n');
+    const before = snapshotTree(repo);
+
+    const res = await readStatus(repo);
+
+    expect(res.status).toBe(200);
+    expect(res.body.notEnabled).toEqual([{ harness: 'claude-code', why: 'dorkos-runtime' }]);
+    // A report, not a repair: the panel says it, the person runs `--enable`.
+    expect(diffSnapshots(before, snapshotTree(repo))).toEqual(NO_CHANGES);
   });
 
   it('answers 403 for a path outside the boundary', async () => {

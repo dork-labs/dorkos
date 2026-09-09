@@ -30,6 +30,21 @@ describe('NotEnabledNotice', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
+  it('TR-11: says why for the tool that left no files to find', () => {
+    // The DorkOS-runtime entry has no footprint by definition — a project that
+    // has never run Claude Code has no `.claude/` — so the folder sentence would
+    // be false about the one tool a person most needs to hear about (DOR-1901).
+    render(<NotEnabledNotice notEnabled={HARNESS_STATUS_READY.notEnabled} />);
+
+    expect(
+      screen.getByText('DorkOS runs Claude Code here, but this folder isn’t sharing to it.')
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('Claude Code files are in this folder, but DorkOS isn’t sharing to it.')
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('dorkos harness sync --fix --enable claude-code')).toBeInTheDocument();
+  });
+
   it('draws nothing when every tool in the folder is already enabled', () => {
     const { container } = render(<NotEnabledNotice notEnabled={[]} />);
 

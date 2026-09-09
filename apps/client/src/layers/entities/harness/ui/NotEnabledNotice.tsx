@@ -55,16 +55,25 @@ function WrappableCommand({ command }: { command: string }) {
  *
  * The signal that gave the tool away rides the line's `title`, so "how do you
  * know?" has an answer without spending a line on it.
+ *
+ * **Two reasons, two sentences.** A tool is on this list because its own files
+ * are in the folder, or because DorkOS's own sessions run on it — and the second
+ * one has no files to point at, which is exactly why it needed saying: a project
+ * that has never run Claude Code leaves nothing for DorkOS to find, so the tool
+ * most likely to be reading the wrong instructions was the one nothing mentioned
+ * (DOR-1901). Saying "its files are in this folder" about it would be false.
  */
 export function NotEnabledNotice({ notEnabled }: NotEnabledNoticeProps) {
   if (notEnabled.length === 0) return null;
 
   return (
     <div className="flex flex-col gap-1.5 py-1">
-      {notEnabled.map(({ harness, signal }) => (
+      {notEnabled.map(({ harness, why, signal }) => (
         <div key={harness} title={signal} className="flex flex-col gap-0.5">
           <p className="text-xs font-medium">
-            {HARNESS_LABELS[harness]} files are in this folder, but DorkOS isn’t sharing to it.
+            {why === 'dorkos-runtime'
+              ? `DorkOS runs ${HARNESS_LABELS[harness]} here, but this folder isn’t sharing to it.`
+              : `${HARNESS_LABELS[harness]} files are in this folder, but DorkOS isn’t sharing to it.`}
           </p>
           <p className="text-muted-foreground text-3xs">
             Run <WrappableCommand command={`dorkos harness sync --fix --enable ${harness}`} /> in

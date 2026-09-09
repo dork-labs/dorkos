@@ -52,12 +52,14 @@
  * @module services/harness/auto-project
  */
 import {
+  dorkosHarnessScaffoldNotice,
   scaffoldManifest as defaultScaffoldManifest,
   HARNESS_MANIFEST_PATH,
 } from '@dorkos/harness';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { configManager } from '../core/config-manager.js';
+import { dorkosHarness } from './dorkos-harness.js';
 import { logger } from '../../lib/logger.js';
 import { askAboutWithheldHooks } from './ask-withheld-hooks.js';
 import { type HookApprovalGateway } from './hook-approval.js';
@@ -133,7 +135,12 @@ function projectAndLog(
   // `sweepOrphans` prunes projections for plugins no longer in the plan — the
   // uninstall path. Install adds; uninstall prunes. Why it is safe beside the
   // consent filter is stated in `project-with-consent.ts`.
-  const result = _internal.projectWithConsent(projectPath, { dorkHome, sweepOrphans: true });
+  const ours = dorkosHarness();
+  const result = _internal.projectWithConsent(projectPath, {
+    dorkHome,
+    sweepOrphans: true,
+    ...(ours === undefined ? {} : { dorkosHarness: ours }),
+  });
   const { plan, applied, conflicts, swept, removals, leftAlone, withheld } = result;
 
   // An install whose package contributes NOTHING to the plan means the
@@ -225,12 +232,23 @@ async function projectAndAsk(
   // engine has something to project instead of no-opping. Write-if-absent, so
   // a hand-authored manifest is left untouched.
   if (!existsSync(join(projectPath, HARNESS_MANIFEST_PATH))) {
-    const scaffold = _internal.scaffoldManifest(projectPath);
+    const ours = dorkosHarness();
+    const scaffold = _internal.scaffoldManifest(projectPath, {
+      ...(ours === undefined ? {} : { dorkosHarness: ours }),
+    });
     if (scaffold.created) {
       logger.info('[HarnessSync] Scaffolded harness manifest for project', {
         projectPath,
         harnesses: scaffold.harnesses,
       });
+      // The one entry in that set a person could not have predicted from their
+      // own folder, said as one plain line — the same sentence `dorkos harness
+      // sync --fix` prints, from the same function (DOR-1901).
+      if (scaffold.addedForDorkos) {
+        logger.info(`[HarnessSync] ${dorkosHarnessScaffoldNotice(scaffold.addedForDorkos)}`, {
+          projectPath,
+        });
+      }
     }
     // If a manifest still does not exist (scaffold failed, or a race removed
     // it), `project()` -> `loadManifest()` would throw ENOENT and surface as a

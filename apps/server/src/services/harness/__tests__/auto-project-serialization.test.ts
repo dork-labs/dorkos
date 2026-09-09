@@ -53,7 +53,14 @@ vi.mock('../../../lib/logger.js', () => ({
 /** A stateful config store: an approval recorded in one pass must be visible to the next. */
 const config: {
   harness: { autoSync: boolean; approvedHooks: string[]; refusedHooks: string[] };
-} = { harness: { autoSync: true, approvedHooks: [], refusedHooks: [] } };
+  // The agent tool DorkOS's own sessions run on, which every trigger asks for
+  // since DOR-1901. A running server always has it; a stub that leaves it out is
+  // answering `undefined` to a question the code is entitled to an answer to.
+  runtimes: { default: string };
+} = {
+  harness: { autoSync: true, approvedHooks: [], refusedHooks: [] },
+  runtimes: { default: 'claude-code' },
+};
 vi.mock('../../core/config-manager.js', () => ({
   configManager: {
     get: (key: string) => (config as Record<string, unknown>)[key],
