@@ -1018,36 +1018,6 @@ describe('POST /api/harness/sync', () => {
     }
   );
 
-  it('SK-16: a gitignored .agents/ blocks the whole run, and the answer is one refusal', async () => {
-    // A blocked plan is a fact about the DIRECTORY (AP-15), not about this
-    // skill, and it stops every candidate at once — so it rides back as the
-    // refusal for the name the caller asked about rather than as a second shape
-    // the page would have to learn. Seeded defect: send the blocked plan into
-    // `applyAdopt` and the run moves a skill into a folder git has been told to
-    // ignore, taking it out of the repository for everybody who clones it.
-    const repo = stageAdoptProject('adopt-blocked');
-    // The matcher answers only inside a git checkout, which is the whole reason
-    // this directory is here.
-    mkdirSync(join(repo, '.git'), { recursive: true });
-    writeAt(join(repo, '.gitignore'), '.agents/\n');
-    const before = snapshotTree(repo);
-
-    const res = await adoptSkill(repo, 'release-notes');
-
-    expect(res.status).toBe(200);
-    expect(res.body.moved).toEqual([]);
-    expect(res.body.declared).toEqual([]);
-    expect(res.body.refusals).toHaveLength(1);
-    expect(res.body.refusals[0].rule).toBe('canonical-layer-ignored');
-    expect(res.body.refusals[0].name).toBe('release-notes');
-    expect(res.body.refusals[0].reason).toContain('.gitignore');
-    expect(res.body.refusals[0].reason).not.toBe('');
-    // The wire shape is a closed enum, so a rule the schema does not know is a
-    // parse failure here rather than a string the page cannot branch on.
-    expect(HarnessAdoptResponseSchema.safeParse(res.body).success).toBe(true);
-    expect(diffSnapshots(before, snapshotTree(repo))).toEqual(NO_CHANGES);
-  });
-
   it('AP-10: queues behind a projection already running on that repository, then answers 200', async () => {
     // Seeded defect: drop `withProjectLock` and the POST applies into a tree
     // another writer is half-way through, then reads a status describing
@@ -1114,6 +1084,35 @@ function adoptSkill(projectPath: string, name: string, claudeOnly?: boolean) {
 }
 
 describe('POST /api/harness/adopt', () => {
+  it('SK-16: a gitignored .agents/ blocks the whole run, and the answer is one refusal', async () => {
+    // A blocked plan is a fact about the DIRECTORY (AP-15), not about this
+    // skill, and it stops every candidate at once — so it rides back as the
+    // refusal for the name the caller asked about rather than as a second shape
+    // the page would have to learn. Seeded defect: send the blocked plan into
+    // `applyAdopt` and the run moves a skill into a folder git has been told to
+    // ignore, taking it out of the repository for everybody who clones it.
+    const repo = stageAdoptProject('adopt-blocked');
+    // The matcher answers only inside a git checkout, which is the whole reason
+    // this directory is here.
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeAt(join(repo, '.gitignore'), '.agents/\n');
+    const before = snapshotTree(repo);
+
+    const res = await adoptSkill(repo, 'release-notes');
+
+    expect(res.status).toBe(200);
+    expect(res.body.moved).toEqual([]);
+    expect(res.body.declared).toEqual([]);
+    expect(res.body.refusals).toHaveLength(1);
+    expect(res.body.refusals[0].rule).toBe('canonical-layer-ignored');
+    expect(res.body.refusals[0].name).toBe('release-notes');
+    expect(res.body.refusals[0].reason).toContain('.gitignore');
+    expect(res.body.refusals[0].reason).not.toBe('');
+    // The wire shape is a closed enum, so a rule the schema does not know is a
+    // parse failure here rather than a string the page cannot branch on.
+    expect(HarnessAdoptResponseSchema.safeParse(res.body).success).toBe(true);
+    expect(diffSnapshots(before, snapshotTree(repo))).toEqual(NO_CHANGES);
+  });
   it('SRC-07, SRC-10, AP-17: moves the skill, leaves Claude Code its link, and the RETURNED status says so', async () => {
     // Seeded defect: recompute the status BEFORE the apply — or answer with the
     // status the GET before the click produced — and the row still reads
