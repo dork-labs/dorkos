@@ -111,6 +111,10 @@ reported and never moved.
   and a manual command in a bare terminal.
 - **The engine grows a module, a CLI subcommand, a route and a config leaf**, and the config leaf
   needs a verdict in three separate total registries before the build is green.
+- **Retiring `adopted` narrows a PUBLISHED enum.** The value has never been produced, but it is
+  served in the generated wire contract, so an outside client built against that document loses a
+  union member it could never have received. The only in-repo consumer is this repository's own
+  client, which the compiler holds.
 - **Two documents were wrong and are corrected in the same work**: the capability contract's J-06 row
   still described the pre-review draft of this position, and the test plan's seeded defect for this
   line has been green since the status surface shipped.
