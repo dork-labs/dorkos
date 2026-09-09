@@ -41,15 +41,7 @@
  *
  * @module apply/apply
  */
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  symlinkSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import type { DriftResult, ProjectionAction, ProjectionPlan, SweptPath } from '../plan/types.js';
 import { explainSweep } from './sweep-reasons.js';
@@ -79,6 +71,7 @@ import {
   sweepGeneratedOrphans,
 } from './generated-targets.js';
 import { blockingGenerateOccupant } from './generate-occupants.js';
+import { findBlockedWritePaths } from './write-path-occupants.js';
 import {
   CLAUDE_COMMANDS_DIR,
   CLAUDE_SKILLS_DIR,
@@ -534,9 +527,14 @@ function findBlockedWrapperDirs(repoRoot: string, plan: ProjectionPlan): Set<str
 
   const blocked = new Set<string>();
   for (const relDir of wrapperDirs) {
+    // `listDir`, never `existsSync` + `readdirSync`: a wrapper path that is a
+    // FILE or one nobody may read said "yes, something is here" to the guard and
+    // then threw ENOTDIR/EACCES out of the middle of the apply — before a single
+    // action had run, so not one projection landed (DOR-1882). Nothing listable
+    // holds no foreign content; the write path pre-pass has already blocked that
+    // package's wrappers with a reason naming the folder.
     const abs = join(repoRoot, relDir);
-    if (!existsSync(abs)) continue; // fresh dir: the engine will own it
-    const hasForeignContent = readdirSync(abs).some((entry) => isForeign(join(abs, entry), entry));
+    const hasForeignContent = listDir(abs).some((entry) => isForeign(join(abs, entry), entry));
     if (hasForeignContent) blocked.add(relDir);
   }
   return blocked;
@@ -715,10 +713,25 @@ export function applyPlan(
 
   const applied: ProjectionAction[] = [];
   const conflicts: ProjectionAction[] = [];
+  // FIRST, and pure: which actions cannot reach their target because a folder on
+  // the way is a file, an unfollowable link, or unreadable. Computed over the
+  // whole plan before anything is written, so a hostile folder costs exactly the
+  // projections that go through it rather than everything after it in the loop —
+  // the difference between a blocked projection and a half-applied tree with the
+  // six sweeps never reached (`write-path-occupants.ts`, DOR-1882).
+  const blockedWritePaths = findBlockedWritePaths(repoRoot, plan);
   const blockedWrapperDirs = findBlockedWrapperDirs(repoRoot, plan);
   const blockedOpencodeCommandFiles = findBlockedOpencodeCommandFiles(repoRoot, plan);
 
   for (const action of plan.actions) {
+    // Whatever the kind, a write that cannot reach its path is a conflict with
+    // the way out beside it, never an exception out of the middle of the loop.
+    const writePathReason =
+      action.target === undefined ? undefined : blockedWritePaths.get(action.target);
+    if (writePathReason !== undefined) {
+      conflicts.push({ ...action, reason: writePathReason });
+      continue;
+    }
     switch (action.kind) {
       case 'symlink': {
         const blockedReason = applySymlink(repoRoot, action);
@@ -929,10 +942,24 @@ function findOrphans(repoRoot: string, plan: ProjectionPlan): SweptPath[] {
  *   whether the tree is clean.
  */
 export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
-  const drifted = plan.actions.filter((action) => isDrifted(repoRoot, action));
+  // The same pure pass `applyPlan` acts on, so `--check` names a hostile folder
+  // BEFORE anyone runs the write that used to die on it (DOR-1882). It wins over
+  // the target's own shape: `.claude/commands` being a file is why nothing is at
+  // `.claude/commands/acme/hello.md`, and naming the consequence instead of the
+  // cause would send a person to look at a path that is not the problem.
+  const blockedWritePaths = findBlockedWritePaths(repoRoot, plan);
+  const onBlockedPath = (action: ProjectionAction): boolean =>
+    action.target !== undefined && blockedWritePaths.has(action.target);
+
+  const drifted = plan.actions.filter(
+    (action) => !onBlockedPath(action) && isDrifted(repoRoot, action)
+  );
   const blocked = [
-    ...findBlockedGenerateTargets(repoRoot, plan),
-    ...findBlockedSymlinkTargets(repoRoot, plan),
+    ...plan.actions
+      .filter(onBlockedPath)
+      .map((action) => ({ ...action, reason: blockedWritePaths.get(action.target as string) })),
+    ...findBlockedGenerateTargets(repoRoot, plan).filter((a) => !onBlockedPath(a)),
+    ...findBlockedSymlinkTargets(repoRoot, plan).filter((a) => !onBlockedPath(a)),
   ];
   const removals = plan.narrowedTo === undefined ? findOrphans(repoRoot, plan) : [];
   return {
