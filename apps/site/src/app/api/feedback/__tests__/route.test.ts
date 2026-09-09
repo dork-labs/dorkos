@@ -135,6 +135,30 @@ describe('POST /api/feedback — screenshot field', () => {
     expect(createFeedbackIssue).toHaveBeenCalledWith(
       expect.objectContaining({ screenshot: { dataUrl } })
     );
+    // The image goes to Linear and NOWHERE else. Neon is the system of record
+    // for the report, deliberately not a blob store — the row keeps only the
+    // boolean hint, never the bytes.
+    const inserted = mockValues.mock.calls[0][0] as Record<string, unknown>;
+    expect(inserted).not.toHaveProperty('screenshot');
+    expect(inserted.hasScreenshot).toBe(true);
+  });
+
+  it('records hasScreenshot from the attachment itself when the caller omits the hint', async () => {
+    // Built field by field rather than spread-minus-key, so the absence of
+    // `hasScreenshot` is visible at the call site.
+    const res = await POST(
+      post({
+        instanceId: VALID_SUBMISSION.instanceId,
+        kind: VALID_SUBMISSION.kind,
+        message: VALID_SUBMISSION.message,
+        surface: VALID_SUBMISSION.surface,
+        screenshot: { dataUrl: 'data:image/webp;base64,QUJD' },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    // The flag is a client-set hint; the attachment is the evidence.
+    expect((mockValues.mock.calls[0][0] as Record<string, unknown>).hasScreenshot).toBe(true);
   });
 
   it('accepts a submission with no screenshot at all', async () => {

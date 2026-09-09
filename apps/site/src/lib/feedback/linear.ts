@@ -39,6 +39,18 @@ import { env } from '@/env';
 
 const LINEAR_API = 'https://api.linear.app/graphql';
 
+/**
+ * Per-request timeouts. The whole upload-then-create sequence runs inside the
+ * cockpit server's own 10s abort on `POST /api/feedback`, so an unbounded leg
+ * here does not merely hang — it lets that abort fire while this route keeps
+ * going, and the reporter is told the send failed while the Neon row and the
+ * Linear issue both exist. They then refile, and triage gets a duplicate. Two
+ * GraphQL calls plus one upload have to fit inside that budget with room for
+ * the Neon insert and the receipt email, hence the 4/6/4 split.
+ */
+const GRAPHQL_TIMEOUT_MS = 4_000;
+const SCREENSHOT_PUT_TIMEOUT_MS = 6_000;
+
 /** Submission kind, mirrors `FeedbackKind` in `db/feedback-schema.ts`. */
 export type FeedbackIssueKind = 'feedback' | 'bug' | 'idea';
 
@@ -138,6 +150,7 @@ async function gql<TData>(
     // unprefixed in the Authorization header.
     headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(GRAPHQL_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`Linear API error: ${res.status}`);
@@ -176,8 +189,49 @@ const SCREENSHOT_EXTENSIONS: Record<string, string> = {
   'image/jpeg': 'jpg',
 };
 
-/** The accepted `data:` URL shape — kept in lockstep with the intake route's Zod regex. */
+/**
+ * The accepted `data:` URL shape. Deliberately STRICTER than the intake
+ * route's Zod regex rather than a mirror of it: that one anchors only the
+ * prefix, while this also requires a non-empty, single-line payload (`.` does
+ * not match a newline), because this is the value actually about to be decoded
+ * and uploaded. Anything it rejects flows into the same degradation path as a
+ * failed upload, so the extra strictness costs a screenshot, never a report.
+ */
 const SCREENSHOT_DATA_URL_RE = /^data:(image\/(?:webp|png|jpeg));base64,(.+)$/;
+
+/**
+ * Leading bytes each accepted type must actually begin with. The declared
+ * media type comes from the submitter, and it is what we hand Linear as
+ * `contentType`; checking it against the bytes keeps a mislabeled (or
+ * deliberately disguised) payload from being stored under a type it is not.
+ * WebP is the two-part case — `RIFF` then a 4-byte length then `WEBP` — so it
+ * carries an offset per signature rather than a single prefix.
+ */
+const SCREENSHOT_MAGIC_BYTES: Record<string, Array<{ offset: number; bytes: number[] }>> = {
+  // "RIFF" .... "WEBP"
+  'image/webp': [
+    { offset: 0, bytes: [0x52, 0x49, 0x46, 0x46] },
+    { offset: 8, bytes: [0x57, 0x45, 0x42, 0x50] },
+  ],
+  // \x89 P N G
+  'image/png': [{ offset: 0, bytes: [0x89, 0x50, 0x4e, 0x47] }],
+  // JPEG SOI + first marker
+  'image/jpeg': [{ offset: 0, bytes: [0xff, 0xd8, 0xff] }],
+};
+
+/**
+ * Whether `bytes` actually begins with the signature for `contentType`.
+ *
+ * @param bytes - The decoded image bytes.
+ * @param contentType - The media type the submitter declared.
+ */
+function magicBytesMatch(bytes: Buffer, contentType: string): boolean {
+  const signatures = SCREENSHOT_MAGIC_BYTES[contentType];
+  if (!signatures) return false;
+  return signatures.every(({ offset, bytes: expected }) =>
+    expected.every((byte, index) => bytes[offset + index] === byte)
+  );
+}
 
 /**
  * Upload a screenshot to Linear's own asset store and resolve its `assetUrl`.
@@ -185,9 +239,12 @@ const SCREENSHOT_DATA_URL_RE = /^data:(image\/(?:webp|png|jpeg));base64,(.+)$/;
  * Two steps, both required by Linear: the `fileUpload` mutation reserves a slot
  * and hands back a short-lived signed `uploadUrl` plus the exact headers that
  * signature covers, then the raw bytes go up with a `PUT` carrying those
- * headers verbatim. Every returned header is copied — the signature is computed
- * over them, so dropping one produces a 403 from the storage backend rather
- * than a Linear error.
+ * headers. Every returned header is applied, because the signature is computed
+ * over them and dropping one is a 403 from the storage backend rather than a
+ * Linear error. They go into a `Headers`, not a plain object, specifically so
+ * that a returned `content-type` REPLACES the seeded one instead of joining it:
+ * `Headers` appends on duplicate names, and two content-type values is the same
+ * silent 403 by a different route.
  *
  * **This needs an API key with the `write` scope.** Linear's own docs say the
  * `issues:create` scope "allows creating new issues and their attachments",
@@ -215,6 +272,9 @@ export async function uploadScreenshot(apiKey: string, dataUrl: string): Promise
   if (bytes.byteLength === 0) {
     throw new Error('screenshot decoded to zero bytes');
   }
+  if (!magicBytesMatch(bytes, contentType)) {
+    throw new Error('screenshot bytes do not match declared type');
+  }
 
   const json = await gql<FileUploadData>(apiKey, FILE_UPLOAD_MUTATION, {
     contentType,
@@ -229,12 +289,20 @@ export async function uploadScreenshot(apiKey: string, dataUrl: string): Promise
     throw new Error('Linear fileUpload did not report success');
   }
 
-  const headers: Record<string, string> = { 'Content-Type': contentType };
+  // `Headers.set` replaces case-insensitively, so a returned `content-type` in
+  // any casing overwrites the seeded one. A plain object would keep both keys
+  // and `fetch` would send them joined.
+  const headers = new Headers({ 'content-type': contentType });
   for (const header of uploadFile.headers ?? []) {
-    headers[header.key] = header.value;
+    headers.set(header.key, header.value);
   }
 
-  const putRes = await fetch(uploadFile.uploadUrl, { method: 'PUT', headers, body: bytes });
+  const putRes = await fetch(uploadFile.uploadUrl, {
+    method: 'PUT',
+    headers,
+    body: bytes,
+    signal: AbortSignal.timeout(SCREENSHOT_PUT_TIMEOUT_MS),
+  });
   if (!putRes.ok) {
     throw new Error(`screenshot upload failed: ${putRes.status}`);
   }

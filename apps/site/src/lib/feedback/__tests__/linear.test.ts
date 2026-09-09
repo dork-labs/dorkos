@@ -325,8 +325,12 @@ describe('createFeedbackIssue — error propagation (never swallowed here)', () 
 
 // `QUJD` is base64 for the three ASCII bytes `ABC` — small enough to assert on
 // exactly, which is what makes the decoded-size and uploaded-bytes claims below
-// real rather than approximate.
-const THREE_BYTE_WEBP = 'data:image/webp;base64,QUJD';
+// real rather than approximate. Each carries the REAL magic bytes for its type
+// ("RIFF"…"WEBP", \x89PNG, \xFF\xD8\xFF) because `uploadScreenshot` checks the
+// decoded bytes against the declared type — arbitrary base64 no longer passes.
+const TINY_WEBP = 'data:image/webp;base64,UklGRhoAAABXRUJQVlA4IA=='; // 16 bytes
+const TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAAN'; // 12 bytes
+const TINY_JPEG = 'data:image/jpeg;base64,/9j/4AAQSkY='; // 8 bytes
 const ASSET_URL = 'https://uploads.linear.app/assets/shot-1.webp';
 const UPLOAD_URL = 'https://storage.linear.app/signed/put/shot-1?sig=xyz';
 
@@ -365,29 +369,29 @@ describe('uploadScreenshot', () => {
   }
 
   it('sends a fileUpload mutation with the content type, filename and DECODED byte size', async () => {
-    await uploadScreenshot('lin_api_key_raw', THREE_BYTE_WEBP);
+    await uploadScreenshot('lin_api_key_raw', TINY_WEBP);
 
     const { query, variables } = graphqlBody(0);
     expect(query).toContain('fileUpload');
     expect(variables).toEqual({
       contentType: 'image/webp',
       filename: 'feedback-screenshot.webp',
-      // Three decoded bytes, NOT the 4 characters of base64 that encode them.
+      // 16 decoded bytes, NOT the 24 characters of base64 that encode them.
       // Linear validates this against what actually arrives on the PUT.
-      size: 3,
+      size: 16,
     });
   });
 
   it.each([
-    ['data:image/png;base64,QUJD', 'image/png', 'feedback-screenshot.png'],
-    ['data:image/jpeg;base64,QUJD', 'image/jpeg', 'feedback-screenshot.jpg'],
+    [TINY_PNG, 'image/png', 'feedback-screenshot.png'],
+    [TINY_JPEG, 'image/jpeg', 'feedback-screenshot.jpg'],
   ])('derives contentType and extension from %s', async (dataUrl, contentType, filename) => {
     await uploadScreenshot('lin_api_key_raw', dataUrl);
     expect(graphqlBody(0).variables).toMatchObject({ contentType, filename });
   });
 
   it('PUTs the decoded bytes to the signed uploadUrl', async () => {
-    await uploadScreenshot('lin_api_key_raw', THREE_BYTE_WEBP);
+    await uploadScreenshot('lin_api_key_raw', TINY_WEBP);
 
     const [url, init] = fetchSpy.mock.calls[1];
     expect(url).toBe(UPLOAD_URL);
@@ -395,10 +399,11 @@ describe('uploadScreenshot', () => {
     const body = (init as RequestInit).body as Buffer;
     // The raw image bytes, not the base64 text and not the whole data URL.
     expect(Buffer.isBuffer(body)).toBe(true);
-    expect(body.toString('utf8')).toBe('ABC');
+    expect(body).toEqual(Buffer.from(TINY_WEBP.split(',')[1], 'base64'));
+    expect(body.subarray(0, 4).toString('latin1')).toBe('RIFF');
   });
 
-  it('copies EVERY header the mutation returned onto the PUT, plus the content type', async () => {
+  it('applies EVERY header the mutation returned to the PUT, plus the content type', async () => {
     fetchSpy.mockReset();
     fetchSpy
       .mockResolvedValueOnce(
@@ -409,20 +414,47 @@ describe('uploadScreenshot', () => {
       )
       .mockResolvedValueOnce(new Response(null, { status: 200 }));
 
-    await uploadScreenshot('lin_api_key_raw', THREE_BYTE_WEBP);
+    await uploadScreenshot('lin_api_key_raw', TINY_WEBP);
 
     const [, init] = fetchSpy.mock.calls[1];
     // The signature is computed over these headers, so dropping any one of them
     // is a 403 from the storage backend rather than a Linear-side error.
-    expect((init as RequestInit).headers).toEqual({
-      'Content-Type': 'image/webp',
+    const headers = (init as RequestInit).headers as Headers;
+    expect(Object.fromEntries(headers)).toEqual({
+      'content-type': 'image/webp',
       'x-amz-signature': 'sig-value',
       'x-amz-date': '20260909T000000Z',
     });
   });
 
-  it('resolves the assetUrl to embed', async () => {
-    await expect(uploadScreenshot('lin_api_key_raw', THREE_BYTE_WEBP)).resolves.toBe(ASSET_URL);
+  it('sends ONE content-type when Linear returns its own, in any casing', async () => {
+    fetchSpy.mockReset();
+    fetchSpy
+      .mockResolvedValueOnce(
+        // Linear returns the header lowercase; the seeded one is what we set.
+        // A plain object would keep both keys and `fetch` would join them into
+        // `image/webp, image/webp`, which breaks the presigned signature and
+        // 403s every upload silently and permanently.
+        okFileUpload([{ key: 'content-type', value: 'image/webp' }])
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+
+    await uploadScreenshot('lin_api_key_raw', TINY_WEBP);
+
+    const headers = (fetchSpy.mock.calls[1][1] as RequestInit).headers as Headers;
+    expect(headers.get('content-type')).toBe('image/webp');
+    expect([...headers].filter(([name]) => name === 'content-type')).toHaveLength(1);
+  });
+
+  it('bounds both legs with a timeout so a slow upload cannot outlive the caller', async () => {
+    await uploadScreenshot('lin_api_key_raw', TINY_WEBP);
+
+    // Asserting the signal is present, not that it fires: `AbortSignal.timeout`
+    // runs on a real platform timer that vitest's fake clock does not
+    // intercept, so advancing time would prove nothing (.claude/rules/testing.md).
+    for (const call of fetchSpy.mock.calls) {
+      expect((call[1] as RequestInit).signal).toBeInstanceOf(AbortSignal);
+    }
   });
 
   it('throws when the data URL is not a supported base64 image', async () => {
@@ -431,13 +463,56 @@ describe('uploadScreenshot', () => {
     );
   });
 
+  it('throws before uploading when the bytes do not match the declared type', async () => {
+    fetchSpy.mockReset();
+    // Real PNG bytes, declared as WebP. Nothing is uploaded under a type the
+    // payload is not.
+    const mislabeled = `data:image/webp;base64,${TINY_PNG.split(',')[1]}`;
+
+    await expect(uploadScreenshot('k', mislabeled)).rejects.toThrow(
+      /bytes do not match declared type/
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['webp', TINY_WEBP],
+    ['png', TINY_PNG],
+    ['jpeg', TINY_JPEG],
+  ])('accepts genuine %s magic bytes', async (_label, dataUrl) => {
+    await expect(uploadScreenshot('k', dataUrl)).resolves.toBe(ASSET_URL);
+  });
+
+  it('rejects a RIFF container that is not actually WebP', async () => {
+    fetchSpy.mockReset();
+    // A WAV header: `RIFF`, a length, then `WAVE` where WebP puts `WEBP`.
+    // Checking the RIFF prefix alone would wave this through, which is why
+    // the webp signature is two parts.
+    const riffButNotWebp = 'data:image/webp;base64,UklGRhoAAABXQVZFZm10IA==';
+
+    await expect(uploadScreenshot('k', riffButNotWebp)).rejects.toThrow(
+      /bytes do not match declared type/
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('throws before uploading when the payload decodes to zero bytes', async () => {
+    fetchSpy.mockReset();
+    // `!!!!` satisfies both regexes but is not valid base64, so Buffer decodes
+    // it to nothing. Uploading a zero-byte asset would produce a broken embed.
+    await expect(uploadScreenshot('k', 'data:image/png;base64,!!!!')).rejects.toThrow(
+      /decoded to zero bytes/
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('throws when the PUT is rejected', async () => {
     fetchSpy.mockReset();
     fetchSpy
       .mockResolvedValueOnce(okFileUpload())
       .mockResolvedValueOnce(new Response('denied', { status: 403 }));
 
-    await expect(uploadScreenshot('k', THREE_BYTE_WEBP)).rejects.toThrow(/upload failed: 403/);
+    await expect(uploadScreenshot('k', TINY_WEBP)).rejects.toThrow(/upload failed: 403/);
   });
 
   it('throws when fileUpload does not report success', async () => {
@@ -449,7 +524,7 @@ describe('uploadScreenshot', () => {
       })
     );
 
-    await expect(uploadScreenshot('k', THREE_BYTE_WEBP)).rejects.toThrow(/did not report success/);
+    await expect(uploadScreenshot('k', TINY_WEBP)).rejects.toThrow(/did not report success/);
   });
 });
 
@@ -496,7 +571,7 @@ describe('createFeedbackIssue — screenshot embedding', () => {
     const description = await descriptionWithUpload({
       kind: 'bug',
       message: 'It broke.',
-      screenshot: { dataUrl: THREE_BYTE_WEBP },
+      screenshot: { dataUrl: TINY_WEBP },
     });
 
     expect(description).toContain('**Attachments**');
@@ -511,7 +586,7 @@ describe('createFeedbackIssue — screenshot embedding', () => {
     const description = await descriptionWithUpload({
       kind: 'bug',
       message: 'It broke.',
-      screenshot: { dataUrl: THREE_BYTE_WEBP },
+      screenshot: { dataUrl: TINY_WEBP },
     });
 
     expect(description).toContain('**Attachments**');
@@ -522,7 +597,7 @@ describe('createFeedbackIssue — screenshot embedding', () => {
     const description = await descriptionWithUpload({
       kind: 'bug',
       message: 'It broke.',
-      screenshot: { dataUrl: THREE_BYTE_WEBP },
+      screenshot: { dataUrl: TINY_WEBP },
       attachmentUrls: ['https://example.com/log.txt'],
     });
 
@@ -575,7 +650,7 @@ describe('createFeedbackIssue — screenshot embedding', () => {
       const result = await createFeedbackIssue({
         kind: 'bug',
         message: 'It broke.',
-        screenshot: { dataUrl: THREE_BYTE_WEBP },
+        screenshot: { dataUrl: TINY_WEBP },
       });
 
       // The submission survives — this is the whole point of the degradation.
@@ -597,7 +672,7 @@ describe('createFeedbackIssue — screenshot embedding', () => {
       await createFeedbackIssue({
         kind: 'bug',
         message: 'It broke.',
-        screenshot: { dataUrl: THREE_BYTE_WEBP },
+        screenshot: { dataUrl: TINY_WEBP },
       });
 
       const section = descriptionOfLastCreate().split('**Attachments**')[1].trim();
@@ -617,6 +692,30 @@ describe('createFeedbackIssue — screenshot embedding', () => {
       // Nothing was uploaded: the only call was the issue create itself.
       expect(fetchSpy).toHaveBeenCalledTimes(1);
       expect(descriptionOfLastCreate()).toContain('Screenshot: upload failed');
+    });
+
+    it.each([
+      ['a payload that decodes to zero bytes', 'data:image/png;base64,!!!!', /zero bytes/],
+      [
+        'bytes that do not match the declared type',
+        `data:image/webp;base64,${TINY_PNG.split(',')[1]}`,
+        /do not match declared type/,
+      ],
+    ])('degrades on %s, without uploading anything', async (_label, dataUrl, reason) => {
+      fetchSpy.mockResolvedValueOnce(okIssueCreate());
+
+      const result = await createFeedbackIssue({
+        kind: 'bug',
+        message: 'It broke.',
+        screenshot: { dataUrl },
+      });
+
+      // The report survives, the picture does not, and the reason is on record.
+      expect(result).not.toBeNull();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const section = descriptionOfLastCreate().split('**Attachments**')[1].trim();
+      expect(section).toMatch(reason);
+      expect(section).not.toContain('![Screenshot]');
     });
   });
 });

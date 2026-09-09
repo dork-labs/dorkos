@@ -301,6 +301,14 @@ function buildDurablePayload(
 /**
  * POST the durable payload to the site's `POST /api/feedback`. NEVER throws:
  * a network failure or non-OK response resolves to `false`.
+ *
+ * On a `413` it retries ONCE with the screenshot dropped. Every per-field cap
+ * on both sides counts CHARACTERS, while the site's whole-body cap counts
+ * BYTES — so a report written in a multibyte script, carrying a
+ * maximum-sized screenshot, can satisfy every field rule and still exceed
+ * 900,000 bytes. Without the retry that is a 413 and the entire report is
+ * lost, which is exactly the outcome the screenshot degradation elsewhere in
+ * this pipeline exists to prevent. Losing the picture is the acceptable half.
  */
 async function postDurableFeedback(args: {
   submission: FeedbackSubmission;
@@ -309,15 +317,30 @@ async function postDurableFeedback(args: {
   endpoint: string;
   fetchImpl: typeof fetch;
 }): Promise<boolean> {
-  try {
-    const payload = buildDurablePayload(args.submission, args.instanceId, args.identity);
-    const res = await args.fetchImpl(args.endpoint, {
+  const send = (payload: DurableFeedbackPayload): Promise<Response> =>
+    args.fetchImpl(args.endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(FEEDBACK_TIMEOUT_MS),
     });
-    return res.ok;
+
+  try {
+    const payload = buildDurablePayload(args.submission, args.instanceId, args.identity);
+    const res = await send(payload);
+    if (res.ok) return true;
+    if (res.status !== 413 || !payload.screenshot) return false;
+
+    logger.warn(
+      '[Feedback] Submission too large with its screenshot; retrying without it so the report survives'
+    );
+    // `hasScreenshot` goes with it: after the drop this submission genuinely
+    // does not carry one, and the flag is what the tracking view shows the
+    // reporter. Claiming a screenshot that was never delivered is the one
+    // dishonest option here.
+    const { screenshot: _dropped, hasScreenshot: _hint, ...withoutScreenshot } = payload;
+    const retry = await send(withoutScreenshot);
+    return retry.ok;
   } catch (err) {
     logger.warn('[Feedback] Failed to forward feedback to the durable site route', logError(err));
     return false;

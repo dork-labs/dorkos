@@ -44,11 +44,14 @@ const router = Router();
  *
  * A feedback submission may carry an opt-in screenshot inline as a `data:` URL
  * (`MAX_FEEDBACK_SCREENSHOT_DATA_URL_LEN`, 850,000 chars) on top of the
- * message, diagnostics and transcript excerpt. Summed against each field's own
- * cap, the largest schema-legal submission is roughly 890 KB — under the 1 MB
- * app-wide limit, but by well under 200 KB. This exists so that margin is
- * comfortable rather than incidental: raising any one of those field caps
- * should not silently start 413ing real submissions.
+ * message, diagnostics and transcript excerpt. Those caps count CHARACTERS
+ * while every body limit counts BYTES, and the two only coincide for ASCII: a
+ * report written in a multibyte script costs up to 3 bytes per character, so
+ * the ~890,000-character worst case is ~890 KB of ASCII but can exceed 1 MB in
+ * practice. The screenshot itself is base64 and therefore always 1:1, which is
+ * why the prose fields are the ones that move. Hence the headroom here — and,
+ * for the site's own byte cap further along, the drop-the-screenshot retry in
+ * `feedback-reporter.ts`.
  *
  * **It must be mounted BEFORE the app-wide parser to have any effect** — see
  * `app.ts`, which is where the ordering lives. body-parser skips a request

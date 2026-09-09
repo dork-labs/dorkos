@@ -127,6 +127,13 @@ const webEnvSchema = z.object({
   // "Neon insert succeeded, Linear best-effort skipped" — the same
   // graceful-degrade posture as every other optional external integration in
   // this pipeline (PostHog, the Resend segment mirror).
+  //
+  // It MUST carry the `write` scope. `uploadScreenshot` calls the `fileUpload`
+  // mutation, which Linear gates on `write`; an `issues:create` key is refused
+  // with "Invalid scope: `write` required" even though the docs describe that
+  // scope as covering issues "and their attachments" (verified 2026-09-09).
+  // The deployed key is scoped to the feedback team alone, so `write` buys
+  // access to that team rather than to the whole workspace.
   LINEAR_API_KEY: z.string().optional(),
   // The Linear team the feedback issue is filed under — a team **id** (uuid),
   // not the short key (`DOR`) the read-only extension above uses; the

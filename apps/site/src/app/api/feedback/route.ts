@@ -289,7 +289,10 @@ async function insertFeedbackRow(submission: FeedbackIntake): Promise<string> {
       reporterName: submission.reporterName ?? null,
       route: submission.route ?? null,
       surface: submission.surface,
-      hasScreenshot: submission.hasScreenshot ?? false,
+      // An attached screenshot IS a screenshot, whatever the caller claimed:
+      // the flag is a client-set hint and the field is the evidence. Only the
+      // hint is persisted — the image itself lives in Linear, never in Neon.
+      hasScreenshot: submission.hasScreenshot ?? !!submission.screenshot,
       hasTranscript: submission.hasTranscript ?? false,
     })
     .returning({ id: feedbackSubmission.id });
