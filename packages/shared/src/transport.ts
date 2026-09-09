@@ -2119,19 +2119,16 @@ export interface Transport extends RoomTransport {
    * there, the settings only Claude Code understands, something already
    * occupies the target. Callers render that sentence rather than an error.
    *
-   * With `claudeOnly` nothing moves: the skill is recorded in the project's
-   * manifest as belonging to Claude Code, which is the way out of the refusal a
-   * Claude-shaped skill gets.
+   * **It only ever moves.** The route also accepts `claudeOnly`, which records
+   * a skill as Claude Code's instead of moving it — but no surface built on this
+   * interface offers that choice, and a parameter nothing can pass is a
+   * decision documented in the wrong place. `dorkos harness adopt <name>
+   * --claude-only` is where a person makes it today.
    *
    * @param projectPath - The project root, absolute.
    * @param name - The skill's folder name.
-   * @param claudeOnly - Record it as Claude Code's instead of moving it.
    */
-  adoptHarness(
-    projectPath: string,
-    name: string,
-    claudeOnly?: boolean
-  ): Promise<HarnessAdoptResponse>;
+  adoptHarness(projectPath: string, name: string): Promise<HarnessAdoptResponse>;
 
   // --- Approvals (spec `agent-trust` §3.3) ---
 

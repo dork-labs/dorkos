@@ -240,9 +240,14 @@ export function SkillHarnessRow({
         <>
           {/* The refusal takes the advice line's place, because the advice no
               longer describes what would happen if the button were pressed
-              again. */}
-          <p className="text-muted-foreground text-3xs">
-            {refusal === undefined ? adoptableAdvice(row.source) : refusal.reason}
+              again — and the line is a POLITE live region, because pressing the
+              button changes this sentence and nothing else on the row moves.
+              Without it, a person who cannot see the row is told nothing at all.
+              A refusal that somehow carries no sentence falls back to the
+              advice: an empty paragraph would read as "this row has nothing to
+              say" about a skill only one tool can see. */}
+          <p role="status" aria-live="polite" className="text-muted-foreground text-3xs">
+            {refusal?.reason || adoptableAdvice(row.source)}
           </p>
           <p className="text-muted-foreground text-3xs">
             Run: <InlineCode>{adoptCommand(row.name, projectPath)}</InlineCode>

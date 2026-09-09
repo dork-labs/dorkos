@@ -144,6 +144,48 @@ describe('SkillHarnessRow — Share with every agent', () => {
     await waitFor(() => expect(adoptHarness).toHaveBeenCalledWith(PROJECT, ADOPTABLE.name));
   });
 
+  it('SK-16: announces the outcome — the line that changes is a polite live region', async () => {
+    // The button changes a sentence somewhere else on the row and nothing else
+    // moves, so a screen reader is told nothing at all unless that line is a
+    // live region. Seeded defect: drop the `aria-live` and the only feedback a
+    // person who cannot see the row gets is silence. `polite` rather than
+    // `assertive`: this is the answer to something they asked for, not an alarm.
+    renderRow(ADOPTABLE, ['claude-code', 'codex', 'cursor']);
+
+    const advice = screen.getByText(
+      'Lives in .claude/skills. Move it to .agents/skills so every agent can read it.'
+    );
+    expect(advice).toHaveAttribute('aria-live', 'polite');
+    expect(advice).toHaveAttribute('role', 'status');
+  });
+
+  it('SK-16: falls back to the advice when a refusal arrives with no sentence in it', async () => {
+    // A refusal with an empty `reason` is a bug somewhere upstream, and the row
+    // must not answer it with a blank line where its advice used to be — an
+    // empty paragraph reads as "this row has nothing to say about a skill only
+    // one of your tools can see". Seeded defect: branch on `refusal ===
+    // undefined` instead of on the sentence and the row goes silent.
+    const adoptHarness = vi.fn().mockResolvedValue({
+      moved: [],
+      declared: [],
+      refusals: [
+        { name: ADOPTABLE.name, source: ADOPTABLE.source, reason: '', rule: 'not-adoptable' },
+      ],
+      status: HARNESS_STATUS_READY,
+    });
+    renderRow(ADOPTABLE, ['claude-code', 'codex', 'cursor'], adoptHarness);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Share with every agent' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Move it' }));
+
+    await waitFor(() => expect(adoptHarness).toHaveBeenCalled());
+    expect(
+      screen.getByText(
+        'Lives in .claude/skills. Move it to .agents/skills so every agent can read it.'
+      )
+    ).toBeInTheDocument();
+  });
+
   it('SK-16: draws the refusal where the advice line was, and keeps the button', async () => {
     // A refusal is an answer with its own way out, so the row prints the
     // sentence the engine wrote instead of the advice it no longer describes.

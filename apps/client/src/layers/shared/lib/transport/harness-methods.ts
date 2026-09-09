@@ -33,21 +33,17 @@ export function createHarnessMethods(baseUrl: string) {
       });
     },
 
-    adoptHarness(
-      projectPath: string,
-      name: string,
-      claudeOnly?: boolean
-    ): Promise<HarnessAdoptResponse> {
+    adoptHarness(projectPath: string, name: string): Promise<HarnessAdoptResponse> {
       // A body for the same reason the sync uses one, plus a second: the skill's
       // name is a folder name, and a folder name in a URL is a folder name in an
       // access log.
+      //
+      // Two fields, never three. The route also takes `claudeOnly`, and this
+      // sends it never: the app has no affordance for that choice, so passing it
+      // through would be an option nothing can set.
       return fetchJSON<HarnessAdoptResponse>(baseUrl, '/harness/adopt', {
         method: 'POST',
-        body: JSON.stringify({
-          projectPath,
-          name,
-          ...(claudeOnly === undefined ? {} : { claudeOnly }),
-        }),
+        body: JSON.stringify({ projectPath, name }),
       });
     },
   };

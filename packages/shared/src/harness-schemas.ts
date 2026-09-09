@@ -663,6 +663,43 @@ export const HarnessAdoptDeclarationSchema = z.object({
 export type HarnessAdoptDeclaration = z.infer<typeof HarnessAdoptDeclarationSchema>;
 
 /**
+ * Which rule refused, as a closed set rather than a string.
+ *
+ * Thirteen members from two engine types, and the split is the reason this is
+ * spelled out rather than inferred: the first eleven are `AdoptRefusalRule` —
+ * the ladder's own rules plus the three the APPLY raises — and the last two are
+ * `AdoptBlocked`'s, which are facts about the DIRECTORY that stop every
+ * candidate at once. A blocked run comes back as the refusal for the name the
+ * caller asked about, so both halves reach the wire and a set missing either
+ * one would reject a real answer.
+ *
+ * Closed because a surface is meant to be able to ACT on it — a sentence is
+ * what a person reads, the rule is what code branches on, and nothing can
+ * branch on `string`. The route assigns the engine's own refusals into this
+ * shape, so a rule the engine gains and this enum has not is a type error there
+ * rather than a value a client meets at runtime; `zod-to-openapi` projects the
+ * members, so the generated docs list them too.
+ */
+export const HarnessAdoptRefusalRuleSchema = z.enum([
+  'not-adoptable',
+  'hostile-path',
+  'room-seeded-name',
+  'target-exists',
+  'source-is-symlink',
+  'unreadable-frontmatter',
+  'not-on-allowlist',
+  'claude-only-wrong-root',
+  'cross-device',
+  'link-blocked',
+  'manifest-unwritable',
+  'canonical-layer-ignored',
+  'auto-adopt-not-permitted',
+]);
+
+/** Which rule refused. */
+export type HarnessAdoptRefusalRule = z.infer<typeof HarnessAdoptRefusalRuleSchema>;
+
+/**
  * One skill that will not be moved, and the one sentence saying why.
  *
  * A refusal rides a `200`: it is an answer carrying its own way out, and the
@@ -673,7 +710,7 @@ export const HarnessAdoptRefusalSchema = z.object({
   name: z.string(),
   source: z.string(),
   reason: z.string(),
-  rule: z.string(),
+  rule: HarnessAdoptRefusalRuleSchema,
 });
 
 /** One skill that will not be moved, and why. */

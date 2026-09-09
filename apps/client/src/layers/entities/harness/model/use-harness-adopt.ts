@@ -21,6 +21,14 @@ import { harnessKeys } from '../api/query-keys';
  * sentence is the answer, and repeating it as a toast that fades would be the
  * same words in a worse place.
  *
+ * **The fan-out below is the load-bearing write, not the exact-key one.** The
+ * row carries `status.projectPath` — the path the ROUTE resolved — while the
+ * page keyed its read by the path it was handed, so on any tree where those two
+ * spellings differ (a symlinked checkout is the ordinary case) the exact-key
+ * write lands on a key nothing reads and the predicate write is what repaints
+ * the page. The exact-key write stays because it is the rule this hook is
+ * written to and the one a reader looks for.
+ *
  * **It writes the answer into every cached status describing that folder**,
  * rather than only into the key built from the path it was handed. The two can
  * be different strings for one directory: the page keys its read by the path it

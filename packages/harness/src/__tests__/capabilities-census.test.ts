@@ -381,7 +381,7 @@ describe('the harness capabilities census', () => {
     expect(rows.length).toBeGreaterThanOrEqual(88);
     expect(journeys.length).toBeGreaterThanOrEqual(14);
     expect(files.length).toBeGreaterThanOrEqual(66);
-    expect(titles.length).toBeGreaterThanOrEqual(668);
+    expect(titles.length).toBeGreaterThanOrEqual(669);
     // And every root really contributed, so a moved directory is a red rather
     // than a quietly smaller census.
     for (const root of TEST_ROOTS) {

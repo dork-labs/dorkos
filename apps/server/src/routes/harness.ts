@@ -306,6 +306,30 @@ export interface HarnessRouterDeps {
 type HarnessAdoptResult = Omit<HarnessAdoptResponse, 'status'>;
 
 /**
+ * One adopt result, in the shapes that go on the wire.
+ *
+ * `moved` is mapped rather than sent through: `AdoptMove.link` is the
+ * projector's own action, and the one part of it a caller can use is where
+ * Claude Code now finds the skill. Sending the rest would freeze an engine type
+ * into the API.
+ *
+ * @param applied - what {@link applyAdopt} did.
+ * @returns the same facts, wire-shaped.
+ */
+function answered(applied: AdoptResult): HarnessAdoptResult {
+  return {
+    moved: applied.moved.map((move) => ({
+      name: move.name,
+      from: move.from,
+      to: move.to,
+      ...(move.link?.target === undefined ? {} : { link: { target: move.link.target } }),
+    })),
+    declared: applied.declared,
+    refusals: applied.refusals,
+  };
+}
+
+/**
  * Build the harness router.
  *
  * @param deps - The data directory, the hook-decision reader, and the approval
@@ -602,7 +626,10 @@ export function createHarnessRouter(deps: HarnessRouterDeps): Router {
           // — and this route is only ever reached by a person pressing a button
           // on an agent's own project. Establishing the other two costs a room
           // store read on a path that has no room, and they arrive with the boot
-          // path that needs them.
+          // path that needs them. DOR-1945's
+          // `services/harness/directory-ownership.ts` answers exactly this
+          // question from the path's shape under dork home, and is what replaces
+          // this literal once both slices are on one branch.
           ownership: 'plain',
         });
         // A blocked plan is a fact about the DIRECTORY rather than about this
@@ -610,34 +637,15 @@ export function createHarnessRouter(deps: HarnessRouterDeps): Router {
         // candidate at once. It rides back as the refusal for the name the
         // caller asked about, so the page has one place to draw a sentence
         // instead of two shapes that say the same kind of thing.
-        const blocked = plan.blocked;
-        const applied: AdoptResult | undefined =
-          blocked === undefined ? applyAdopt(resolved, plan) : undefined;
+        const { blocked } = plan;
         const result: HarnessAdoptResult =
-          applied === undefined
+          blocked !== undefined
             ? {
                 moved: [],
                 declared: [],
-                refusals: [
-                  { name, source: '', reason: blocked?.reason ?? '', rule: blocked?.rule ?? '' },
-                ],
+                refusals: [{ name, source: '', reason: blocked.reason, rule: blocked.rule }],
               }
-            : {
-                // Mapped rather than sent through: `AdoptMove.link` is the
-                // projector's own action, and the one part of it a caller can
-                // use is where Claude Code now finds the skill. Sending the rest
-                // would freeze an engine type into the API.
-                moved: applied.moved.map((move) => ({
-                  name: move.name,
-                  from: move.from,
-                  to: move.to,
-                  ...(move.link?.target === undefined
-                    ? {}
-                    : { link: { target: move.link.target } }),
-                })),
-                declared: applied.declared,
-                refusals: applied.refusals,
-              };
+            : answered(applyAdopt(resolved, plan));
         return {
           result,
           status: buildHarnessStatus({

@@ -51852,7 +51852,22 @@
                             "type": "string"
                           },
                           "rule": {
-                            "type": "string"
+                            "type": "string",
+                            "enum": [
+                              "not-adoptable",
+                              "hostile-path",
+                              "room-seeded-name",
+                              "target-exists",
+                              "source-is-symlink",
+                              "unreadable-frontmatter",
+                              "not-on-allowlist",
+                              "claude-only-wrong-root",
+                              "cross-device",
+                              "link-blocked",
+                              "manifest-unwritable",
+                              "canonical-layer-ignored",
+                              "auto-adopt-not-permitted"
+                            ]
                           }
                         },
                         "required": [
