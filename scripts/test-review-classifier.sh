@@ -486,7 +486,7 @@ check "workflow: the claude_args block was found" yes \
 
 # 1. Flags, in order, duplicates included.
 expected_flags=$(
-  printf '%s\n' --allowedTools --disallowedTools --setting-sources --max-turns
+  printf '%s\n' --tools --allowedTools --disallowedTools --setting-sources --max-turns
 )
 actual_flags=$(
   printf '%s\n' "$claude_args" |
@@ -503,6 +503,22 @@ tools_of() {
     sed "s/^$1 \"//; s/\"$//" |
     tr ',' '\n'
 }
+
+# `--allowedTools` only controls approval. This list is the availability fence
+# that removes Agent, CronCreate and every other built-in the one-shot reviewer
+# does not need. Pin the exact set so replacing it with `default`, adding Agent,
+# or dropping the flag cannot preserve a green harness by leaving the permission
+# list below untouched. MCP tools are outside `--tools` and stay governed by the
+# explicit permission entry in expected_tools.
+expected_builtin_tools=$(
+  printf '%s\n' \
+    'Bash' \
+    'Read' \
+    'Grep' \
+    'Glob'
+)
+check "workflow: built-in availability is exactly the one-shot review set" \
+  "$expected_builtin_tools" "$(tools_of --tools)"
 
 expected_tools=$(
   printf '%s\n' \
@@ -563,6 +579,7 @@ check "workflow: --max-turns is wired to the PR-size step" \
 # shellcheck disable=SC2016
 expected_claude_args=$(
   printf '%s\n' \
+    "            --tools \"$(printf '%s' "$expected_builtin_tools" | tr '\n' ',')\"" \
     "            --allowedTools \"$(printf '%s' "$expected_tools" | tr '\n' ',')\"" \
     "            --disallowedTools \"$(printf '%s' "$expected_denied" | tr '\n' ',')\"" \
     '            --setting-sources user' \
