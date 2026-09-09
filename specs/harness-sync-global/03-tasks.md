@@ -103,7 +103,7 @@ Files:
 
 The block is assembled in the CLI BESIDE `formatDropList`'s output, never inside it. Putting it inside would make `@dorkos/harness` read a home directory, which three of its module docs forbid by name (`inventory/index.ts:47-50`, `inventory/types.ts:22-24`, `inventory/hooks.ts:11-15`).
 
-The frozen lines, with `{root}`, `{n}`, `{name}`, `{repo}`, `{marketplace}`, `{url}` and `{reason}` the only substitutions:
+The frozen lines, with `{root}`, `{n}`, `{name}`, `{repo}`, `{marketplace}`, `{url}`, `{reason}` and `{project}` the only substitutions. **`{project}` is the project's ABSOLUTE path, never `.`**: the install command is sent to a running server, which resolves `projectPath` in ITS OWN process, so a `.` names the directory the SERVER was started in — measured as `Access denied: projectPath outside boundary` from outside the boundary, and as a silent install into the wrong project from inside it:
 
 ```
 Installed in Claude Code only
@@ -113,7 +113,7 @@ Installed in Claude Code only
 
   DorkOS can install these for this project, so every agent tool here gets them:
     - {name} (from {repo})
-  Run: dorkos install {name} --project .
+  Run: dorkos install {name} --project {project}
   DorkOS has to be running, and it asks you to approve the install first.
 
   DorkOS does not have these sources yet:

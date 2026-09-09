@@ -2242,7 +2242,17 @@ describe('runHarnessSync — what Claude Code alone has', () => {
       '  DorkOS can install these for this project, so every agent tool here gets them:'
     );
     expect(output).toContain('    - context7 (from anthropics/claude-plugins-official)');
-    expect(output).toContain('  Run: dorkos install context7 --project .');
+    // ABSOLUTE, never `.`. The command is sent to a running server, which
+    // resolves `projectPath` in ITS process: a `.` there means the directory the
+    // server was started in, so the offer either 403s outside the boundary or
+    // silently installs into whatever project the server happens to be sitting
+    // in. Seeded defect: put `--project .` back.
+    // `realpathSync`, because the command carries `process.cwd()` and macOS
+    // resolves `/var` to `/private/var` on the way in. That the two spellings
+    // differ is the point: an absolute path is a path, and `.` is a question the
+    // server answers about itself.
+    expect(output).toContain(`  Run: dorkos install context7 --project ${fs.realpathSync(tmpDir)}`);
+    expect(output).not.toContain('--project .');
     expect(output).toContain(
       '  DorkOS has to be running, and it asks you to approve the install first.'
     );
@@ -2286,6 +2296,67 @@ describe('runHarnessSync — what Claude Code alone has', () => {
     expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('Harness sync failed'));
   });
 
+  it('SRC-08: says once that it cannot read its own sources, and still lists the plugins', async () => {
+    // Seeded defect: fall every plugin back to `unknown-source`. The report then
+    // reads "DorkOS cannot tell where these came from" directly above the
+    // repository it just named, and never says what actually went wrong.
+    fs.writeFileSync(path.join(homeDir, 'marketplaces.json'), '{ "version": 1, "sources": ');
+    writeClaudeSettings({
+      enabledPlugins: { 'context7@claude-plugins-official': true },
+      extraKnownMarketplaces: {
+        'claude-plugins-official': {
+          source: { source: 'github', repo: 'anthropics/claude-plugins-official' },
+        },
+      },
+    });
+
+    await runHarnessSync(syncArgs({ check: true }));
+
+    const output = printed();
+    expect(output).toContain(
+      `  DorkOS could not read its own list of sources (${path.join(homeDir, 'marketplaces.json')}), so it cannot offer installs right now.`
+    );
+    expect(output).toContain('  Turned on in Claude Code:');
+    expect(output).toContain('    - context7 (from anthropics/claude-plugins-official)');
+    // No offer is made, and the contradictory heading is not printed either.
+    expect(output).not.toContain('dorkos install context7');
+    expect(output).not.toContain('DorkOS cannot tell where these came from');
+  });
+
+  it('SRC-08, HK-14: names the part of the settings file it could not read, and lists the rest', async () => {
+    // Seeded defect: declare `hooks` and `extraKnownMarketplaces` in the Zod
+    // slice again. One bad byte in either then answers "DorkOS could not read
+    // your settings" for a file whose plugin list was perfectly readable.
+    writeClaudeSettings({
+      enabledPlugins: {
+        'context7@claude-plugins-official': true,
+        'playwright@claude-plugins-official': 'true',
+      },
+      extraKnownMarketplaces: {
+        'claude-plugins-official': {
+          source: { source: 'github', repo: 'anthropics/claude-plugins-official' },
+        },
+      },
+      hooks: 'Stop, obviously',
+    });
+
+    await runHarnessSync(syncArgs({ check: true }));
+
+    const output = printed();
+    expect(output).toContain(
+      `  DorkOS could not read the hooks part of ${claudeRoot}/settings.json; the plugin list is still right.`
+    );
+    expect(output).toContain(
+      '  DorkOS could not read 1 of the entries in that file, so it is not listed.'
+    );
+    // And the list it came for is there, entire.
+    expect(output).toContain(
+      '  You turned on 1 plugin in Claude Code. Your other agent tools cannot see them.'
+    );
+    expect(output).toContain('    - context7 (from anthropics/claude-plugins-official)');
+    expect(output).not.toContain('could not read ' + claudeRoot + '/settings.json,');
+  });
+
   it('SRC-08: prints the same block from --fix, in the same place', async () => {
     writeClaudeSettings({
       enabledPlugins: { 'context7@claude-plugins-official': true },
@@ -2300,7 +2371,7 @@ describe('runHarnessSync — what Claude Code alone has', () => {
 
     const output = printed();
     expect(output).toContain('Installed in Claude Code only');
-    expect(output).toContain('  Run: dorkos install context7 --project .');
+    expect(output).toContain(`  Run: dorkos install context7 --project ${fs.realpathSync(tmpDir)}`);
     expect(output.search(/Dropped artifacts|No drops/)).toBeLessThan(
       output.indexOf('Installed in Claude Code only')
     );

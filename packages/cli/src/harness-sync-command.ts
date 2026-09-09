@@ -400,9 +400,10 @@ function readIfPresent(repoRoot: string, rel: string): string | undefined {
  * flow that already exists, with its own preview and its own approval.
  *
  * @param claudeOnly - what the settings read found.
+ * @param repoRoot - the project's absolute path, for the install command.
  * @returns the lines to print, empty when there is nothing to say.
  */
-function formatClaudeOnly(claudeOnly: HarnessClaudeOnly): string[] {
+function formatClaudeOnly(claudeOnly: HarnessClaudeOnly, repoRoot: string): string[] {
   const { root, plugins, personalHookCommands: hooks } = claudeOnly;
   const HEADING = 'Installed in Claude Code only';
 
@@ -414,7 +415,8 @@ function formatClaudeOnly(claudeOnly: HarnessClaudeOnly): string[] {
       '  Nothing else in this report is affected.',
     ];
   }
-  if (plugins.length === 0) return [];
+  const notices = claudeOnly.unreadableParts.length + (claudeOnly.skippedEntries ?? 0);
+  if (plugins.length === 0 && notices === 0) return [];
 
   // Where a plugin came from, in the strongest form the data supports. Neither
   // side carries a version DorkOS can compare, so a resolved repository is "the
@@ -429,19 +431,58 @@ function formatClaudeOnly(claudeOnly: HarnessClaudeOnly): string[] {
   const inGroup = (offer: HarnessClaudeOnly['plugins'][number]['offer']): typeof plugins =>
     machineWide.filter((plugin) => plugin.offer === offer);
 
-  const lines: string[] = [
-    '',
-    HEADING,
-    `  Read from ${root}`,
-    '',
-    `  You turned on ${plugins.length} ${plugins.length === 1 ? 'plugin' : 'plugins'} in Claude Code. Your other agent tools cannot see them.`,
-  ];
+  const lines: string[] = ['', HEADING, `  Read from ${root}`];
+  if (plugins.length > 0) {
+    lines.push(
+      '',
+      `  You turned on ${plugins.length} ${plugins.length === 1 ? 'plugin' : 'plugins'} in Claude Code. Your other agent tools cannot see them.`
+    );
+  }
+
+  // What DorkOS could not read, said BEFORE the lists it affects, so nobody
+  // reads a short list as a complete one. Each line names one key and says what
+  // still holds, because "something went wrong" over a report full of confident
+  // answers is worse than no line at all.
+  for (const part of claudeOnly.unreadableParts) {
+    lines.push(
+      '',
+      `  DorkOS could not read the ${part} part of ${root}/settings.json; the plugin list is still right.`
+    );
+  }
+  const skipped = claudeOnly.skippedEntries ?? 0;
+  if (skipped > 0) {
+    lines.push(
+      '',
+      skipped === 1
+        ? '  DorkOS could not read 1 of the entries in that file, so it is not listed.'
+        : `  DorkOS could not read ${skipped} of the entries in that file, so they are not listed.`
+    );
+  }
+  if (plugins.length === 0) return lines;
 
   if (hooks > 0) {
     lines.push(
       '',
       `  Your personal Claude Code settings run ${hooks} ${hooks === 1 ? 'command' : 'commands'} automatically. Only Claude Code runs ${hooks === 1 ? 'it' : 'them'}.`
     );
+  }
+
+  if (claudeOnly.sourcesUnreadable !== undefined) {
+    // No offer can be made about anything, so none of the four group headings is
+    // true. The plugins and their repositories still are, and the actual cause
+    // is said once instead of being spread across every row as "DorkOS cannot
+    // tell where these came from".
+    lines.push(
+      '',
+      `  DorkOS could not read its own list of sources (${claudeOnly.sourcesUnreadable}), so it cannot offer installs right now.`,
+      '',
+      '  Turned on in Claude Code:',
+      ...plugins.map(from),
+      '',
+      '  Your company can also turn plugins on or off, in a settings file DorkOS cannot read. So this list may',
+      '  not be the whole story.'
+    );
+    return lines;
   }
 
   const canInstall = inGroup('install');
@@ -454,7 +495,7 @@ function formatClaudeOnly(claudeOnly: HarnessClaudeOnly): string[] {
     // a name and the command that shares it are one thing to read, and eight
     // names followed by eight commands is not.
     for (const plugin of canInstall) {
-      lines.push(from(plugin), `  Run: dorkos install ${plugin.name} --project .`);
+      lines.push(from(plugin), `  Run: dorkos install ${plugin.name} --project ${repoRoot}`);
     }
     lines.push('  DorkOS has to be running, and it asks you to approve the install first.');
   }
@@ -650,7 +691,7 @@ function reportCheck(
   }
   for (const line of formatLeftAlone(drift.leftAlone, manifest, harnessFilter)) console.log(line);
   reportWithheld(withheld, dorkHome);
-  for (const line of formatClaudeOnly(claudeOnly)) console.log(line);
+  for (const line of formatClaudeOnly(claudeOnly, repoRoot)) console.log(line);
   for (const line of formatNotEnabled(plan)) console.log(line);
   for (const line of formatManifestNotices(manifest)) console.log(line);
   for (const line of formatGitignore(missingGitignoreLines(repoRoot, plan), false)) {
@@ -757,7 +798,7 @@ function reportFix(
   // this is what was installed, and this is what was not.
   reportWithheld(withheld, dorkHome);
 
-  for (const line of formatClaudeOnly(claudeOnly)) console.log(line);
+  for (const line of formatClaudeOnly(claudeOnly, repoRoot)) console.log(line);
   for (const line of formatNotEnabled(plan)) console.log(line);
   for (const line of formatManifestNotices(manifest)) console.log(line);
 
