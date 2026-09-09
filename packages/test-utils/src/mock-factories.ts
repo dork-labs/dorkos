@@ -880,6 +880,15 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       conflicts: 0,
       askedAbout: [],
     }),
+    // An adopt that moved the skill and refused nothing, over the same clean
+    // tree. A test about a refusal — or about the chips after the move — passes
+    // its own answer through `overrides`.
+    adoptHarness: vi.fn().mockResolvedValue({
+      moved: [],
+      declared: [],
+      refusals: [],
+      status: mockHarnessStatus(),
+    }),
     // The Inbox (spec `notification-system`)
     listNotifications: vi
       .fn()

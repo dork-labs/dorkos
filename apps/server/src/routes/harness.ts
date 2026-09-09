@@ -169,8 +169,21 @@ import { existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { z } from 'zod';
-import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
-import { HarnessStatusQuerySchema, HarnessSyncBodySchema } from '@dorkos/shared/harness-schemas';
+import {
+  HARNESS_MANIFEST_PATH,
+  applyAdopt,
+  inventorySourceTree,
+  loadManifest,
+  planAdopt,
+  readAdoptCandidates,
+  type AdoptResult,
+} from '@dorkos/harness';
+import {
+  HarnessAdoptBodySchema,
+  type HarnessAdoptResponse,
+  HarnessStatusQuerySchema,
+  HarnessSyncBodySchema,
+} from '@dorkos/shared/harness-schemas';
 import { BoundaryError, validateBoundaryOrDorkHome } from '../lib/boundary.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
@@ -221,6 +234,20 @@ const HarnessSyncBody = HarnessSyncBodySchema.refine(({ projectPath }) => isAbso
 });
 
 /**
+ * The adopt body, with the same absolute-path rule bolted on for the same reason
+ * as {@link HarnessStatusQuery} and {@link HarnessSyncBody}.
+ *
+ * It fires BEFORE `resolveProject` does anything, which matters more here than
+ * on the two beside it: a relative path resolved against the server's own
+ * `process.cwd()` would move a file inside whatever repository the operator
+ * happened to start the process in.
+ */
+const HarnessAdoptBody = HarnessAdoptBodySchema.refine(
+  ({ projectPath }) => isAbsolute(projectPath),
+  { path: ['projectPath'], error: 'projectPath must be an absolute path' }
+);
+
+/**
  * Machine-readable refusal code when something that is not a person calls the
  * sync, and the one for a project with no manifest.
  *
@@ -229,6 +256,7 @@ const HarnessSyncBody = HarnessSyncBodySchema.refine(({ projectPath }) => isAbso
  * literals, which is what makes a silent rename a red rather than a shrug.
  */
 const HARNESS_SYNC_OPERATOR_ONLY_CODE = 'operator_only_harness_sync';
+const HARNESS_ADOPT_OPERATOR_ONLY_CODE = 'operator_only_harness_adopt';
 const HARNESS_NOT_SET_UP_CODE = 'harness_not_set_up';
 
 /** What the harness router reads, and — for the sync alone — writes through. */
@@ -265,6 +293,40 @@ export interface HarnessRouterDeps {
    * able to answer it too.
    */
   dorkosHarness?: () => HarnessId | undefined;
+}
+
+/**
+ * The three lists an adopt answers with, in the shapes that go on the wire.
+ *
+ * Named because the lock's turn returns it and a turn returning an anonymous
+ * object is a turn whose type nobody can read. `Omit` rather than a second
+ * literal, so the wire shape stays defined exactly once — in the schema the
+ * OpenAPI document is generated from.
+ */
+type HarnessAdoptResult = Omit<HarnessAdoptResponse, 'status'>;
+
+/**
+ * One adopt result, in the shapes that go on the wire.
+ *
+ * `moved` is mapped rather than sent through: `AdoptMove.link` is the
+ * projector's own action, and the one part of it a caller can use is where
+ * Claude Code now finds the skill. Sending the rest would freeze an engine type
+ * into the API.
+ *
+ * @param applied - what {@link applyAdopt} did.
+ * @returns the same facts, wire-shaped.
+ */
+function answered(applied: AdoptResult): HarnessAdoptResult {
+  return {
+    moved: applied.moved.map((move) => ({
+      name: move.name,
+      from: move.from,
+      to: move.to,
+      ...(move.link?.target === undefined ? {} : { link: { target: move.link.target } }),
+    })),
+    declared: applied.declared,
+    refusals: applied.refusals,
+  };
 }
 
 /**
@@ -506,6 +568,104 @@ export function createHarnessRouter(deps: HarnessRouterDeps): Router {
       // Logged, not echoed, for the reason the GET gives: the engine's message
       // can name a path the caller never sent.
       logger.error('[harness] POST /sync failed', { err, projectPath: resolved });
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // POST /api/harness/adopt  { projectPath: <absolute path>, name, claudeOnly? }
+  router.post('/adopt', async (req, res) => {
+    // Ahead of validation, the same order and for the same reason as the sync:
+    // a caller that may not do this at all gets one answer whatever it sent.
+    if (!resolveDecisionAuthority(readCallerAuthority(req, res)).allowed) {
+      return res.status(403).json({
+        error: 'Only a person can move a skill',
+        code: HARNESS_ADOPT_OPERATOR_ONLY_CODE,
+        message:
+          'This moves a file inside your project, so it is a decision a person makes in DorkOS ' +
+          'rather than something an agent does on your behalf.',
+      });
+    }
+
+    const parsed = HarnessAdoptBody.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid body', details: z.treeifyError(parsed.error) });
+    }
+
+    const resolved = await resolveProject(parsed.data.projectPath, res, 'POST /adopt');
+    if (resolved === undefined) return;
+
+    // Before the engine, because `loadManifest` throws ENOENT there and a
+    // project that shares nothing is not an adopt that did no work.
+    if (!existsSync(join(resolved, HARNESS_MANIFEST_PATH))) {
+      return res.status(409).json({
+        error: 'DorkOS isn’t sharing agent files for this folder yet',
+        code: HARNESS_NOT_SET_UP_CODE,
+        message: 'Run `dorkos harness sync --fix` in this folder to set it up.',
+      });
+    }
+
+    const { name, claudeOnly } = parsed.data;
+    try {
+      // Plan, apply and the status read are ONE turn: the answer this route
+      // gives is what the page renders INSTEAD of re-reading, so a status
+      // recomputed outside the lock could describe a tree a watcher (DOR-1850)
+      // or a marketplace install rewrote between the move and the read.
+      const { result, status } = await withProjectLock(resolved, () => {
+        const manifest = loadManifest(resolved);
+        const read = readAdoptCandidates(resolved, inventorySourceTree(resolved), manifest);
+        const plan = planAdopt({
+          ...read,
+          request: {
+            mode: 'explicit',
+            name,
+            ...(claudeOnly === true ? { claudeOnly: true } : {}),
+          },
+          // `plain`, the same answer the CLI gives for the same explicit run.
+          // The two other ownerships exist for the AUTO path — B1 is about a run
+          // nobody asked for, and R3 protects a skill seeded into a room folder
+          // — and this route is only ever reached by a person pressing a button
+          // on an agent's own project. Establishing the other two costs a room
+          // store read on a path that has no room, and they arrive with the boot
+          // path that needs them. DOR-1945's
+          // `services/harness/directory-ownership.ts` answers exactly this
+          // question from the path's shape under dork home, and is what replaces
+          // this literal once both slices are on one branch.
+          ownership: 'plain',
+        });
+        // A blocked plan is a fact about the DIRECTORY rather than about this
+        // skill — `.agents/` ignored by git (AP-15) — and it stops every
+        // candidate at once. It rides back as the refusal for the name the
+        // caller asked about, so the page has one place to draw a sentence
+        // instead of two shapes that say the same kind of thing.
+        const { blocked } = plan;
+        const result: HarnessAdoptResult =
+          blocked !== undefined
+            ? {
+                moved: [],
+                declared: [],
+                refusals: [{ name, source: '', reason: blocked.reason, rule: blocked.rule }],
+              }
+            : answered(applyAdopt(resolved, plan));
+        return {
+          result,
+          status: buildHarnessStatus({
+            projectPath: resolved,
+            dorkHome: deps.dorkHome,
+            decisions: readHookDecisions(),
+            // Asked the same way `GET /status` asks it, so the page does not
+            // flicker between two truths about the tool DorkOS runs (DOR-1901).
+            dorkosHarness: readDorkosHarness(),
+          }),
+        };
+      });
+
+      // A refusal rides a `200`: it is an answer carrying its own way out, and
+      // the row draws the sentence where its advice line was.
+      return res.json({ ...result, status });
+    } catch (err: unknown) {
+      // Logged, not echoed, for the reason the two routes above give: the
+      // engine's message can name a path the caller never sent.
+      logger.error('[harness] POST /adopt failed', { err, projectPath: resolved });
       return res.status(500).json({ error: 'Internal server error' });
     }
   });

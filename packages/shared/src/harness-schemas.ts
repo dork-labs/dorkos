@@ -599,3 +599,137 @@ export const HarnessSyncResponseSchema = z.object({
 
 /** What a sync did, and the status recomputed after it. */
 export type HarnessSyncResponse = z.infer<typeof HarnessSyncResponseSchema>;
+
+/**
+ * What one adopt carries: the project, the skill by name, and whether to record
+ * it as Claude Code's instead of moving it.
+ *
+ * Declared here, beside {@link HarnessSyncBodySchema}, and **without an
+ * `isAbsolute` refinement** — the same split, for the same reason: this module
+ * is what the CLIENT imports, `isAbsolute` is `node:path` and its answer is
+ * platform-dependent, and a regex reimplementation in a browser-safe module
+ * would be a second, wrong copy. `routes/harness.ts` bolts the rule on beside
+ * the other two.
+ */
+export const HarnessAdoptBodySchema = z.object({
+  projectPath: z
+    .string()
+    .min(1)
+    .refine((value) => value.trim().length > 0, 'projectPath must not be blank'),
+  /** The skill's folder name, as the person named it. */
+  name: z
+    .string()
+    .min(1)
+    .refine((value) => value.trim().length > 0, 'name must not be blank'),
+  /**
+   * Record the skill as belonging to Claude Code instead of moving it.
+   *
+   * Optional, and absent means "move it": a caller that says nothing is asking
+   * for the thing the button does.
+   */
+  claudeOnly: z.boolean().optional(),
+});
+
+/** What one adopt carries. */
+export type HarnessAdoptBody = z.infer<typeof HarnessAdoptBodySchema>;
+
+/**
+ * One skill that moved into `.agents/skills`.
+ *
+ * `link` carries the ONE field a reader needs — where Claude Code now finds the
+ * skill — rather than the projector's whole action: the rest of that action is
+ * about how the engine writes a symlink, which is nothing a caller can use, and
+ * a wire shape that mirrored it would freeze an internal type into the API.
+ * It is present exactly when the manifest enables Claude Code.
+ */
+export const HarnessAdoptMoveSchema = z.object({
+  name: z.string(),
+  from: z.string(),
+  to: z.string(),
+  link: z.object({ target: z.string() }).optional(),
+});
+
+/** One skill that moved into `.agents/skills`. */
+export type HarnessAdoptMove = z.infer<typeof HarnessAdoptMoveSchema>;
+
+/** One skill recorded in `manifest.claudeOnlySkills` instead of being moved. */
+export const HarnessAdoptDeclarationSchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  reason: z.string(),
+});
+
+/** One skill recorded as belonging to Claude Code. */
+export type HarnessAdoptDeclaration = z.infer<typeof HarnessAdoptDeclarationSchema>;
+
+/**
+ * Which rule refused, as a closed set rather than a string.
+ *
+ * Thirteen members from two engine types, and the split is the reason this is
+ * spelled out rather than inferred: the first eleven are `AdoptRefusalRule` —
+ * the ladder's own rules plus the three the APPLY raises — and the last two are
+ * `AdoptBlocked`'s, which are facts about the DIRECTORY that stop every
+ * candidate at once. A blocked run comes back as the refusal for the name the
+ * caller asked about, so both halves reach the wire and a set missing either
+ * one would reject a real answer.
+ *
+ * Closed because a surface is meant to be able to ACT on it — a sentence is
+ * what a person reads, the rule is what code branches on, and nothing can
+ * branch on `string`. The route assigns the engine's own refusals into this
+ * shape, so a rule the engine gains and this enum has not is a type error there
+ * rather than a value a client meets at runtime; `zod-to-openapi` projects the
+ * members, so the generated docs list them too.
+ */
+export const HarnessAdoptRefusalRuleSchema = z.enum([
+  'not-adoptable',
+  'hostile-path',
+  'room-seeded-name',
+  'target-exists',
+  'source-is-symlink',
+  'unreadable-frontmatter',
+  'not-on-allowlist',
+  'claude-only-wrong-root',
+  'cross-device',
+  'link-blocked',
+  'manifest-unwritable',
+  'canonical-layer-ignored',
+  'auto-adopt-not-permitted',
+]);
+
+/** Which rule refused. */
+export type HarnessAdoptRefusalRule = z.infer<typeof HarnessAdoptRefusalRuleSchema>;
+
+/**
+ * One skill that will not be moved, and the one sentence saying why.
+ *
+ * A refusal rides a `200`: it is an answer carrying its own way out, and the
+ * page draws the sentence where the row's advice line was — the same thing it
+ * already does with a drop reason.
+ */
+export const HarnessAdoptRefusalSchema = z.object({
+  name: z.string(),
+  source: z.string(),
+  reason: z.string(),
+  rule: HarnessAdoptRefusalRuleSchema,
+});
+
+/** One skill that will not be moved, and why. */
+export type HarnessAdoptRefusal = z.infer<typeof HarnessAdoptRefusalSchema>;
+
+/**
+ * What one adopt did, and the status recomputed after it.
+ *
+ * The status is the whole point of the shape: it is computed inside the same
+ * lock the move ran in, so a caller renders the tree THIS call left rather than
+ * one somebody else rewrote in between, and replaces its cached status with it
+ * rather than re-reading.
+ */
+export const HarnessAdoptResponseSchema = z.object({
+  moved: z.array(HarnessAdoptMoveSchema),
+  declared: z.array(HarnessAdoptDeclarationSchema),
+  refusals: z.array(HarnessAdoptRefusalSchema),
+  status: HarnessStatusResponseSchema,
+});
+
+/** What one adopt did, and the status recomputed after it. */
+export type HarnessAdoptResponse = z.infer<typeof HarnessAdoptResponseSchema>;

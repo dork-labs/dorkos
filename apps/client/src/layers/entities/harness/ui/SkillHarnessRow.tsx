@@ -8,8 +8,20 @@ import { ChevronDown } from 'lucide-react';
 import type { HarnessId, HarnessRow } from '@dorkos/shared/harness-schemas';
 import { HARNESS_LABELS } from '@dorkos/shared/harness-schemas';
 import { cn } from '@/layers/shared/lib/utils';
-import { InlineCode } from '@/layers/shared/ui';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Button,
+  InlineCode,
+} from '@/layers/shared/ui';
 import { collapsedChipLabel, harnessRowCells, isRowFullyShared } from '../lib/harness-status';
+import { useHarnessAdopt } from '../model/use-harness-adopt';
 import { HarnessStateChip } from './HarnessStateChip';
 
 /**
@@ -58,6 +70,36 @@ function adoptCommand(name: string, projectPath: string): string {
   return `dorkos harness adopt ${name} --project ${projectPath}`;
 }
 
+/** What the button on an adoptable row says. */
+const ADOPT_BUTTON_LABEL = 'Share with every agent';
+
+/**
+ * What the confirm says before anything moves — both paths, and what is left
+ * behind at the old one.
+ *
+ * Two variants, chosen by whether this project has Claude Code turned ON, never
+ * by which folder the skill came out of. The link is Claude Code's projection of
+ * a canonical skill, so a project that does not run Claude Code gets none — and
+ * promising "a link behind so Claude Code still finds it" there would be a
+ * sentence about something that did not happen, leaving a person hunting for a
+ * path nothing wrote (spec §8, Deviation 17).
+ *
+ * Module-private, and the tests assert the literal rather than calling this: a
+ * test comparing a string against the function that produced it cannot fail on
+ * a copy change.
+ *
+ * @param name - the skill's name.
+ * @param source - the row's repo-relative source path.
+ * @param keepsClaudeLink - whether this project enables Claude Code.
+ * @returns the sentence under the confirm's question.
+ */
+function adoptConfirmDescription(name: string, source: string, keepsClaudeLink: boolean): string {
+  const move = `It moves from ${source} to .agents/skills/${name}`;
+  return keepsClaudeLink
+    ? `${move}, and DorkOS leaves a link behind so Claude Code still finds it.`
+    : `${move}, where every agent reads it.`;
+}
+
 /**
  * The tag on a row that came from a package installed for every project.
  *
@@ -89,12 +131,24 @@ export interface SkillHarnessRowProps {
  * from the LEFT (`dir="rtl"` around a `<bdi dir="ltr">`, the idiom the model list
  * and the search hit row already use) because a path's leaf identifies it and
  * its head is what every row repeats. Line 2 is the chip list, wrapping. Line 3
- * is the advice, now in two parts: where the file lives and what moving it
- * buys, then the one command that does it. Still copy rather than a button —
- * moving a file out from under a person's editor is not something a side panel
- * should offer without naming both paths first (D3) — but a printed command is
- * something they can read before they run it, which is the same disclosure a
- * `--fix` gets.
+ * is the advice, in two parts: where the file lives and what moving it buys,
+ * then the one command that does it.
+ *
+ * **And, since DOR-1946, a button that does it here.** The row deliberately
+ * shipped without one (D3): moving a file out from under a person's editor is
+ * not something a side panel should offer without naming both paths first — and
+ * half of that reason was that there was no verb to offer, so the page could not
+ * put a button on an action that did not exist. The other half is ANSWERED
+ * rather than overruled. The button moves nothing; it opens a confirm that names
+ * the source, the target and what is left behind at the old path, which is the
+ * same disclosure the sweep gets before the Sync button acts. The command stays
+ * beside it, for the person who would rather run it where `git diff` is one
+ * keystroke away.
+ *
+ * A refusal comes back as a `200` with one sentence in it, and the row draws
+ * that sentence where the advice line was — the same thing it already does with
+ * a drop reason. Nothing about it is an error, so nothing throws and no toast
+ * fires.
  *
  * **One layout, no breakpoint.** The chips wrap, and that is the whole mobile
  * answer: the docked panel at its narrowest, the phone sheet and the full-page
@@ -128,6 +182,8 @@ export function SkillHarnessRow({
   showEveryHarness,
 }: SkillHarnessRowProps) {
   const [expandedHere, setExpandedHere] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const adopt = useHarnessAdopt(projectPath);
 
   const cells = harnessRowCells(row, enabled);
   // The row's own toggle exists only while the page-level one is off: two
@@ -135,6 +191,8 @@ export function SkillHarnessRow({
   // does. While "Show every agent tool" is on, it IS the control.
   const collapsible = isRowFullyShared(row, enabled) && !showEveryHarness;
   const collapsed = collapsible && !expandedHere;
+  // This row's own mutation, so the only answer it can hold is about this skill.
+  const refusal = adopt.data?.refusals[0];
 
   return (
     <div role="group" aria-label={row.name} className="flex flex-col gap-1 py-1.5">
@@ -180,10 +238,51 @@ export function SkillHarnessRow({
 
       {row.adoptable && (
         <>
-          <p className="text-muted-foreground text-3xs">{adoptableAdvice(row.source)}</p>
+          {/* The refusal takes the advice line's place, because the advice no
+              longer describes what would happen if the button were pressed
+              again — and the line is a POLITE live region, because pressing the
+              button changes this sentence and nothing else on the row moves.
+              Without it, a person who cannot see the row is told nothing at all.
+              A refusal that somehow carries no sentence falls back to the
+              advice: an empty paragraph would read as "this row has nothing to
+              say" about a skill only one tool can see. */}
+          <p role="status" aria-live="polite" className="text-muted-foreground text-3xs">
+            {refusal?.reason || adoptableAdvice(row.source)}
+          </p>
           <p className="text-muted-foreground text-3xs">
             Run: <InlineCode>{adoptCommand(row.name, projectPath)}</InlineCode>
           </p>
+          <div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 text-xs"
+              disabled={adopt.isPending}
+              onClick={() => setConfirmOpen(true)}
+            >
+              {ADOPT_BUTTON_LABEL}
+            </Button>
+          </div>
+          <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Move {row.name} so every agent can read it?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {adoptConfirmDescription(
+                    row.name,
+                    row.source ?? '',
+                    enabled.includes('claude-code')
+                  )}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => adopt.mutate(row.name)}>
+                  Move it
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </>
       )}
     </div>

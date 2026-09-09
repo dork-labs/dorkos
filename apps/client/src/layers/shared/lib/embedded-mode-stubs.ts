@@ -913,6 +913,13 @@ export const harnessStubs = {
   async syncHarness(): Promise<never> {
     throw new Error('Agent file sharing is not supported in embedded mode');
   },
+
+  // The move half, and the same convention: a vault surface never offers the
+  // button — the page draws `unavailable` and lists nothing to move — so
+  // reaching this means a new surface was wired to it, and the error says so.
+  async adoptHarness(): Promise<never> {
+    throw new Error('Moving a skill into .agents/skills is not supported in embedded mode');
+  },
 };
 
 /** Shapes (DOR-355) are a server-only marketplace concept — inert in embedded mode. */

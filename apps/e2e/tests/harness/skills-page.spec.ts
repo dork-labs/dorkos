@@ -220,4 +220,66 @@ test.describe('Skills — what each of your tools can see', () => {
     await expect(summary).toHaveCount(0);
     await expect(banner).toHaveCount(0);
   });
+  test('SRC-07, SRC-10: the button moves the skill, and the chips flip on the answer it returned', async ({
+    page,
+    request,
+    rightPanel,
+    roomsApi,
+    harnessRepo,
+  }) => {
+    // What only a browser can answer: that the button on the row a person is
+    // looking at moves the file on disk and repaints that row from the answer
+    // the move returned, with no second read. Seeded defect: answer with the
+    // status read BEFORE the apply — or invalidate instead of writing the
+    // response into the cache — and the chip below stays "Codex can’t see it".
+    const repo = await harnessRepo.stage({ harnessNativeSkill: true });
+    const agent = await roomsApi.registerAgent(`E2E Adopt ${roomsApi.runId}`, '📦', '#f59e0b', {
+      path: repo.root,
+    });
+    const skill = repo.harnessNativeSkill();
+
+    // Setup, not the subject: the same starting tree the first test uses.
+    const synced = await request.post('/api/harness/sync', {
+      data: { projectPath: agent.projectPath },
+    });
+    expect(synced.ok(), await synced.text()).toBe(true);
+
+    await rightPanel.openProfilePage('skills', agent.projectPath);
+    const skills = page.locator('[data-slot="profile-skills"]');
+    await expect(skills).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+
+    // Expanded, because a row every tool is current on collapses to one chip —
+    // which is what this row becomes the moment the move lands.
+    await skills.getByRole('switch', { name: 'Show every agent tool' }).click();
+
+    const row = skills.getByRole('group', { name: skill, exact: true });
+    await expect(row.getByRole('listitem', { name: 'Codex can’t see it' })).toBeVisible();
+
+    await row.getByRole('button', { name: 'Share with every agent' }).click();
+
+    // Both paths named before anything moves — the whole reason there is a
+    // confirm rather than a button that acts.
+    const confirm = page.getByRole('alertdialog');
+    await expect(confirm).toContainText(`Move ${skill} so every agent can read it?`);
+    await expect(confirm).toContainText(
+      `It moves from .claude/skills/${skill} to .agents/skills/${skill}, and DorkOS leaves a link behind so Claude Code still finds it.`
+    );
+    await confirm.getByRole('button', { name: 'Move it' }).click();
+
+    // The chip flips off the recomputed status the route answered with.
+    await expect(row.getByRole('listitem', { name: 'Codex reads it' })).toBeVisible({
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    await expect(row.getByRole('listitem', { name: 'Claude Code shared' })).toBeVisible();
+    // And the row stops offering the move it has already made.
+    await expect(row.getByRole('button', { name: 'Share with every agent' })).toHaveCount(0);
+
+    // On disk, which is the only place this is true or false: the skill is at
+    // the canonical root and Claude Code reads it through the link left behind.
+    expect(isPresent(join(repo.root, '.agents', 'skills', skill, 'SKILL.md'))).toBe(true);
+    expect(
+      lstatSync(join(repo.root, '.claude', 'skills', skill)).isSymbolicLink(),
+      `.claude/skills/${skill} should be the link the move left behind`
+    ).toBe(true);
+  });
 });

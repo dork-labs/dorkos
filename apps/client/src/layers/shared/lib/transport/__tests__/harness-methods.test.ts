@@ -66,6 +66,48 @@ describe('createHarnessMethods().getHarnessStatus', () => {
   });
 });
 
+describe('createHarnessMethods().adoptHarness', () => {
+  it('POSTs /harness/adopt with the project and the skill in the BODY, never the URL', async () => {
+    // A body for the reason the sync beside it uses one, plus a second: the
+    // skill's name is a folder name, and a folder name in a URL is a folder name
+    // in an access log. Seeded defect: build a query string here and the two
+    // paths a person owns are logged by every proxy in front of the app.
+    const answer = { moved: [], declared: [], refusals: [], status: READY_STATUS };
+    const fetchMock = vi.fn(
+      async (_url: unknown, _init?: RequestInit) =>
+        new Response(JSON.stringify(answer), { status: 200 })
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await createHarnessMethods('/api').adoptHarness('/repo', 'release-notes');
+
+    expect(result.moved).toEqual([]);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/harness/adopt');
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe('POST');
+    // Exactly two fields, and `claudeOnly` is not one of them: the app has no
+    // affordance for it, so a client that sent it would be documenting a
+    // decision nobody can make here.
+    expect(JSON.parse(init.body as string)).toEqual({
+      projectPath: '/repo',
+      name: 'release-notes',
+    });
+  });
+
+  it('throws on a non-OK response rather than resolving a half-answer', async () => {
+    // A refusal is a 200 carrying a sentence; a 403 or a 409 is not an answer
+    // the page can draw, so it has to reach the mutation's error path.
+    globalThis.fetch = vi.fn(
+      async (_url: unknown, _init?: RequestInit) =>
+        new Response(JSON.stringify({ error: 'Only a person can move a skill' }), { status: 403 })
+    ) as unknown as typeof fetch;
+
+    await expect(
+      createHarnessMethods('/api').adoptHarness('/repo', 'release-notes')
+    ).rejects.toThrow();
+  });
+});
+
 describe('the embedded (Obsidian) harness stub', () => {
   it('answers `unavailable` with the app sentence, never an empty list of skills', async () => {
     // Purpose: Decision 26. An empty list would tell an Obsidian reader they
@@ -75,6 +117,16 @@ describe('the embedded (Obsidian) harness stub', () => {
     expect(status.state).toBe('unavailable');
     expect(status.detail).toBe('Agent file sharing runs in the DorkOS app.');
     expect(status.projectPath).toBe('/vault/project');
+  });
+
+  it('throws a sentence naming the surface when something asks it to move a skill', async () => {
+    // The file's own convention for a write half: a descriptive error, never a
+    // quiet no-op. Nothing in a vault calls this — the page answers
+    // `unavailable` and lists nothing to move — so reaching it means somebody
+    // wired a new surface to it, and the error is what tells them.
+    await expect(harnessStubs.adoptHarness()).rejects.toThrow(
+      'Moving a skill into .agents/skills is not supported in embedded mode'
+    );
   });
 
   it('resolves a FULL response the response schema accepts, so it cannot drift', async () => {

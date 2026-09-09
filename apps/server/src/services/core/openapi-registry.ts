@@ -87,6 +87,8 @@ import {
 } from '@dorkos/shared/relay-schemas';
 import { WorktreeScanResultSchema } from '@dorkos/shared/workspace';
 import {
+  HarnessAdoptBodySchema,
+  HarnessAdoptResponseSchema,
   HarnessStatusQuerySchema,
   HarnessStatusResponseSchema,
   HarnessSyncBodySchema,
@@ -5328,6 +5330,70 @@ registry.registerPath({
     },
     500: {
       description: 'The sync failed unexpectedly. The reason is logged, never echoed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/harness/adopt',
+  tags: ['Harness'],
+  summary: 'Move one skill into `.agents/skills`, where every agent reads it',
+  description:
+    'Moves one skill, by name, out of the folder only some agent tools look in and into ' +
+    '`.agents/skills` — one `rename(2)`, plus the link Claude Code reads it through when this ' +
+    'project has Claude Code turned on. It answers with the status recomputed after the move, ' +
+    'inside the same lock the move ran in, so the caller renders the tree this call left. ' +
+    '**A refusal is a `200`.** A skill that is not there, one that is already canonical, one ' +
+    'whose settings only Claude Code understands, a target that already has something in it: ' +
+    'each comes back in `refusals` with one plain sentence saying what to do about it, because a ' +
+    'refusal is an answer rather than a failure. ' +
+    '**A person, not an agent.** A caller naming itself an agent, or holding an approval token, ' +
+    'is refused: this moves a file a person wrote. ' +
+    'With `claudeOnly: true` nothing moves — the skill is recorded in the manifest as belonging ' +
+    'to Claude Code, with the reason written out in words, and the other tools are told why they ' +
+    'do not get it. ' +
+    '`projectPath` must be absolute, and inside the configured directory boundary or under ' +
+    '`{dorkHome}/agents`.',
+  request: {
+    body: {
+      content: { 'application/json': { schema: HarnessAdoptBodySchema } },
+    },
+  },
+  responses: {
+    200: {
+      description:
+        'What the adopt did — or the one sentence saying why it did not — and the status ' +
+        'recomputed after it',
+      content: { 'application/json': { schema: HarnessAdoptResponseSchema } },
+    },
+    400: {
+      description:
+        '`projectPath` was missing, blank or relative, `name` was missing or blank, or ' +
+        '`projectPath` named something that is not a directory',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description:
+        '`code: "operator_only_harness_adopt"` — the caller named itself an agent or held an ' +
+        'approval token — or `projectPath` resolves outside the directory boundary and outside ' +
+        '`{dorkHome}/agents`',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No directory there',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        '`code: "harness_not_set_up"` — this project has no `.agents/harness.manifest.json`, so ' +
+        'there is nothing to move a skill within. `dorkos harness sync --fix` in the folder sets ' +
+        'it up',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    500: {
+      description: 'The adopt failed unexpectedly. The reason is logged, never echoed',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

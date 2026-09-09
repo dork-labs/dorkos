@@ -654,6 +654,39 @@ There is **no staging directory and no backup**, unlike the marketplace transact
 
 **A crash between steps 2 and 3 leaves the skill whole at `.agents/skills/<name>` and nothing at the old path.** Nothing is lost: every byte is at the canonical root, which five of the six tools read natively, and what is missing is the symlink the next sync plans anyway. That state is drift, which this engine already names and fixes — not damage.
 
+### From the app: `POST /api/harness/adopt` and the row's own button
+
+The same engine, reached from the page instead of a terminal (DOR-1946). The route lives beside the
+other two in [`apps/server/src/routes/harness.ts`](../apps/server/src/routes/harness.ts) and mirrors
+`POST /api/harness/sync` clause for clause: **a person, not an agent** —
+`resolveDecisionAuthority(readCallerAuthority(req, res))` before the body is even parsed, so a caller
+that may not do this at all gets one answer whatever it sent, with `code: operator_only_harness_adopt`
+and the sentence saying why; a **relative `projectPath` is `400`** from the route module's own
+`.refine`, because `isAbsolute` is `node:path` and the browser-safe schema module cannot ask it; a
+project with no manifest is the same **`409 harness_not_set_up`**; and plan, apply and the status
+recompute are **one `withProjectLock` turn**, so the answer describes the tree this move left rather
+than one a watcher rewrote in between.
+
+**A refusal is a `200`.** The response is `{ moved, declared, refusals, status }`, and a refusal
+carries the engine's own sentence — a `404` for "no such skill" would make the page special-case one
+refusal out of eight to draw the same words. A run-level `blocked` (the gitignored `.agents/`, AP-15)
+comes back as the refusal for the name that was asked about, so the page has one shape to render
+rather than two.
+
+On the page, an adoptable row carries **Share with every agent**
+([`SkillHarnessRow.tsx`](../apps/client/src/layers/entities/harness/ui/SkillHarnessRow.tsx)). It moves
+nothing: it opens an `AlertDialog` that names the source, the target and — when this project enables
+Claude Code — the link left behind, which is the same disclosure the sweep gets before the Sync
+button acts. That answers the half of D3 that was about surprise; the half about there being no verb
+to offer is what slices 1 and 2 closed. The command stays printed beside the button.
+
+**The mutation does not invalidate**, for the reason `use-harness-sync.ts` gives about its own POST:
+the response already carries the status recomputed inside the lock, so
+[`use-harness-adopt.ts`](../apps/client/src/layers/entities/harness/model/use-harness-adopt.ts) writes
+it into the cache. It writes it into every cached status describing that folder rather than only the
+key built from the path it was handed, because the row carries the path the ROUTE resolved and the
+page keyed its read by the path it was given — one directory, two spellings.
+
 ### Adoption produces an authored skill
 
 There is no `adopted` provenance and there never will be (DOR-1944). A moved skill lives in `.agents/skills`, which is the authored root, scanned by the authored scanner and committed like every other authored skill. The value the engine used to carry was worse than unused: `isEphemeralProvenance('adopted')` answered `true`, so anything that set it would have sent the gitignore half of the engine to tell a person to ignore a skill they had just committed.
