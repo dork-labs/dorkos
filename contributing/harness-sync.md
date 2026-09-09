@@ -491,7 +491,14 @@ Neither reaches a model, so neither needs the money gate at all. What makes them
 
 A free run gets exactly the same isolation as a paid one: `HOME` and the harness's own config home both point at an empty sandbox, so no stored sign-in and none of the operator's own `~/.agents/skills` or `~/.claude/skills` can reach the answer. `scripts/__tests__/harness-smoke-e2e.test.ts` proves that through the real `spawn` boundary rather than by inspecting the function that builds the environment.
 
-The two reports these produced are committed at [`meta/harness-smoke/`](../meta/harness-smoke/) — not under `test-results/`, which is gitignored — and the contract's H cells cite them.
+The reports these produced are committed at [`meta/harness-smoke/`](../meta/harness-smoke/) — not under `test-results/`, which is gitignored — and the contract's H cells cite them.
+
+**`--scenario` picks the fixture, and there are two.** The default, `project`, is everything above: a whole repository, projected, asked what the binary finds inside a checkout. `--scenario user-tier` stages the other one — an **empty** project and a globally installed package reachable only through a link in the run's own home directory — and asks whether the harness opens that directory at all, which is the measurement DOR-1924 gates slice A3 of the global-scope programme on. It runs one staging per **round** (`claude-user-root`, then `agents-user-root`), because a single staging that wrote both directories could not tell "this harness does not read `~/.agents/skills`" apart from "it stops reading it once its own skills folder exists"; for Claude Code the first round also injects a package with `--plugin-dir`, the flag the Claude Agent SDK itself appends for each `{ type: 'local', path }` entry `plugin-activation.ts` builds, so the "one entry or two" question is asked of a real DorkOS-driven session shape rather than of an approximation. Its reports are named `<stamp>-<harness>-user-tier.md` and print the raw listing entries behind every verdict.
+
+```bash
+bash scripts/harness-smoke/run.sh claude --free --scenario user-tier
+bash scripts/harness-smoke/run.sh codex  --free --scenario user-tier
+```
 
 ### The paid half — one command per harness
 

@@ -144,13 +144,25 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
           'appeared as `x`, so identity is the frontmatter key and the directory need not match; ' +
           'two skills whose frontmatter agreed both appeared, so duplicates are not merged; the ' +
           '`.agents/skills/pkg__x` entry is a symlink into `.dork/plugins`, so symlinks are ' +
-          'followed; and a skill of the operator’s in `~/.agents/skills` appeared on a fixture ' +
-          'whose CODEX_HOME was an empty temp directory, so the user-scope read path is real.',
+          'followed; and a package linked into `~/.agents/skills` inside a THROWAWAY home appeared ' +
+          'too (DOR-1924, `meta/harness-smoke/20260909-095328.829-codex-user-tier.md`), so the ' +
+          'user-scope read path is real and measured rather than borrowed from the operator’s own ' +
+          'machine.',
       },
       notes: [
         'Five cells on this row are still `docs` and nothing has looked at them: `walk`, `nameRegex`, ' +
           '`nameRequired`, `onInvalidName` and `liveReload`. `verified: binary` is a claim about ' +
           'the row having been observed at all — `observed.cells` is the claim about WHICH cells.',
+        '`identity: frontmatter` is right about the KEY and incomplete about the printed name, and ' +
+          'the difference is measured (DOR-1924, `meta/harness-smoke/20260909-095328.829-codex-user-tier.md`). ' +
+          'When a skill’s resolved directory sits inside a package carrying a Claude Code plugin ' +
+          'manifest (`.claude-plugin/plugin.json`), codex-cli 0.145.0 lists it as ' +
+          '`<plugin-name>:<frontmatter-name>` rather than under the bare frontmatter name — so a ' +
+          'marketplace-installed package linked into `~/.agents/skills` as `<pkg>__<name>` appears ' +
+          'as `<pkg>:<name>`, which is neither the link’s directory name nor the name the ' +
+          'projection engine spells. A package with no such manifest keeps its bare name, which is ' +
+          'why the project-scope fixture is unaffected. Nothing in the engine reads this name, and ' +
+          'nothing should: it is a display key, not a path.',
         'Codex documents no charset rule and no directory-match rule for a skill name, which is why the engine\'s `<pkg>__<name>` projection into `.agents/skills` is expected to load here and nowhere else with confidence: the contract\'s SK-09 calls Codex "the one harness DorkOS source-verified" and names OpenCode, Cursor and Copilot as the ones whose stated name rules `pkg__name` violates.',
         '`dedupe: none` is the vendor\'s own statement that duplicates are not merged — a different claim from "we do not know", and the reason two skills sharing a frontmatter name are a collision warning (SK-06) rather than a silent merge.',
         'The user scope also includes skills bundled with the binary; those are not a filesystem path a projection can reach, so they are not listed.',
