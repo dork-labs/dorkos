@@ -290,7 +290,8 @@ inventory.skills.filter(
 );
 ```
 
-`canonicalNames` and `claudeOnlyNames` are the same two flags `planClaudeSkillsDirSkill` already takes
+`canonicalNames` and `claudeOnlyNames` are the same two flags `planClaudeSkillsDirSkill` (renamed
+`planAuthoredRootSkill` by DOR-1902, which widened it to every authored root) already takes
 (`alsoCanonical`, `listed`), so the status model reads the two facts the projector reads and never invents a
 third.
 
@@ -321,7 +322,10 @@ rendered as one line of advice under the skill's name.
 
 **Scope limit, stated.** `.opencode/skills` and `.cursor/skills` are not inventoried, so a skill living there
 is not reported as adoptable. That is SRC-07's own scope (it names `.claude/skills`), and widening the
-inventory is a follow-up.
+inventory is a follow-up. **That follow-up landed as DOR-1902** (contract §8 XA-06): the inventory now walks
+every project-level skills root the vendor table documents, so a skill in any of them is `harness-native` and
+adoptable, and the advice names the row's own folder rather than `.claude/skills`. Everything else in this
+section is unchanged — it is still a row-level boolean, still one line of advice, and still never a chip.
 
 #### 1.6 `pending-approval`, and what it may say
 
