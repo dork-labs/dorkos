@@ -2,8 +2,8 @@
 covers:
   - 'fix(harness): a folder in the way blocks one write, never all (DOR-1882)'
   - 'fix(harness): a hostile tree is read, not thrown out of (DOR-1882)'
-  - 'fix(harness): a skills folder DorkOS cannot read stops the sweep (DOR-1882)'
-  - 'fix(harness): a read-only folder is named, not hit at the write (DOR-1882)'
+  - 'fix(harness): an unreadable skills folder stops the sweep (DOR-1882)'
+  - 'fix(harness): a read-only folder is named, not hit at write (DOR-1882)'
 ---
 
 ### Fixed
