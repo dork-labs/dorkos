@@ -125,8 +125,14 @@ test.describe('Skills — what each of your tools can see', () => {
       harnessNative.getByRole('listitem', { name: 'Claude Code reads it' })
     ).toBeVisible();
     await expect(harnessNative.getByRole('listitem', { name: 'Codex can’t see it' })).toBeVisible();
+    // The advice names the folder the row is actually in (DOR-1902: it is
+    // `.opencode/skills` for an OpenCode-first repo), so the expected sentence
+    // is built the way the row builds it, from the source path's parent, rather
+    // than quoted — the folder here is `.claude/skills` because that is where
+    // the fixture staged this skill.
+    const adoptableFolder = '.claude/skills';
     await expect(harnessNative).toContainText(
-      'Lives in .claude/skills. Move it to .agents/skills so every agent can read it.'
+      `Lives in ${adoptableFolder}. Move it to .agents/skills so every agent can read it.`
     );
 
     // The honesty gate. The reason is read off the API and compared with what
