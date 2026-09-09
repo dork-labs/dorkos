@@ -171,13 +171,18 @@ export type LinkCheck = 'link-text' | 'resolved-target';
  * The comparison a platform is capable of.
  *
  * Windows gets `resolved-target`, and the reason is that a Windows directory
- * link is not a symlink at all. `symlinkType` asks for a JUNCTION — the only
- * directory link Windows makes without Developer Mode or admin rights — and a
- * junction's stored target is ALWAYS absolute: Node resolves the relative text
- * against the link's parent before handing it to Windows, so `readlink` answers
- * `C:\repo\.agents\skills\x` where the plan said `..\..\.agents\skills\x`.
- * Comparing text there calls every junction drifted forever — `--check` could
- * never go clean, and `--fix` would delete and recreate every link on every run.
+ * link is not always a symlink at all. `symlinkTypeFor` (`windows-links.ts`)
+ * asks for a real `'dir'` link where this account may make one and falls back to
+ * a JUNCTION — the only directory link Windows makes without Developer Mode or
+ * admin rights — where it may not, and a junction's stored target is ALWAYS
+ * absolute: Node resolves the relative text against the link's parent before
+ * handing it to Windows, so `readlink` answers `C:\repo\.agents\skills\x` where
+ * the plan said `..\..\.agents\skills\x`. Comparing text there calls every
+ * junction drifted forever — `--check` could never go clean, and `--fix` would
+ * delete and recreate every link on every run. One comparison for the whole
+ * platform, because a machine can hold links of both kinds: a junction made
+ * before Developer Mode was turned on resolves exactly as the real link beside
+ * it does.
  *
  * Nothing about POSIX changes: `link-text` is the same byte comparison the
  * engine has always made.

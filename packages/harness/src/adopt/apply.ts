@@ -81,7 +81,7 @@ export function applyAdopt(repoRoot: string, plan: AdoptPlan): AdoptResult {
  *    inside one repository and therefore on one filesystem.
  * 3. The link, through the engine's own `applyPlan` rather than a `symlinkSync`
  *    here — same function every sync uses, same relative link text, same
- *    `symlinkType` answer on Windows.
+ *    `symlinkTypeFor` answer on Windows.
  * 4. If step 3 threw or reported a conflict: rename back, and refuse with the
  *    conflict's own reason. The restore is one rename into a path this same
  *    process vacated a moment ago, so it cannot fail for a reason step 2 did not

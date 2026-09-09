@@ -4,10 +4,14 @@ name: harness-windows
 # suite, on a REAL Windows runner.
 #
 # WHY THIS EXISTS: the engine has a Windows branch nothing has ever executed.
-# `apply/apply.ts`'s `symlinkType()` returns `'junction'` on win32 — the only
-# directory link Windows makes without Developer Mode or admin rights — and
-# every test, every pre-push gate and every CI leg in this repo runs on macOS or
-# ubuntu, where that function returns `undefined` on its first line. Two contract
+# `apply/windows-links.ts`'s `symlinkTypeFor()` asks Windows for a real `'dir'`
+# link where the account may make one and falls back to a `'junction'` — the only
+# directory link Windows makes without Developer Mode or admin rights — where it
+# may not, and every test, every pre-push gate and every CI leg in this repo runs
+# on macOS or ubuntu, where that function returns `undefined` on its first line.
+# Which branch a run took is measured here and nowhere else (DOR-1883): the
+# journey case at the bottom of `j10-clone-without-symlinks.test.ts` asks the
+# capability probe, then holds `git ls-files --stage` against its answer. Two contract
 # rows sit behind it and both were marked untested: AP-06 (links are relative, so
 # a moved or cloned checkout keeps working; on Windows a directory link is a
 # junction) and J-10 (a teammate clones the repo, on Windows without Developer
@@ -173,9 +177,10 @@ jobs:
       #   * whether a FILE symlink can be made — the journey suites build their
       #     own links with `fs.symlinkSync` and would fail here without it;
       #   * whether a DIRECTORY symlink can be made — needs privilege, and is
-      #     precisely what `symlinkType()` avoids needing;
-      #   * whether a JUNCTION can be made — what `symlinkType()` asks for, and
-      #     the one that must work without privilege;
+      #     what `symlinkTypeFor()` now asks for first, because git commits one
+      #     as a link;
+      #   * whether a JUNCTION can be made — the fallback, and the one that must
+      #     work without privilege;
       #   * what a junction's `readlink` TEXT is — the absolute path that the
       #     `linkCheckFor('win32')` comment claims it is. If that claim is ever
       #     wrong, this log line is where it shows.
