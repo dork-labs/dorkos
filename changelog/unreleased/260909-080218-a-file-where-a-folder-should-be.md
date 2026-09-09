@@ -5,6 +5,7 @@ covers:
   - 'fix(harness): an unreadable skills folder stops the sweep (DOR-1882)'
   - 'fix(harness): a read-only folder is named, not hit at write (DOR-1882)'
   - 'fix(harness): a generated file is written on a difference, not always (DOR-1882)'
+  - 'fix(harness): the settings merge writes on a difference, not always (DOR-1882)'
 ---
 
 ### Fixed
