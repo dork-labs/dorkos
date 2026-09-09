@@ -424,6 +424,76 @@ describe('a folder DorkOS may not write in', () => {
   );
 
   it.skipIf(!CAN_MAKE_UNREADABLE)(
+    'AP-01, AP-11: a synced tree with a read-only wrapper folder is clean, and stays untouched',
+    () => {
+      // The gap the re-review found, and the sharpest form of it: `--check` and
+      // `--fix` disagreed on a tree with NOTHING wrong. `applyGenerate` rewrote
+      // every wrapper unconditionally, so `isDrifted` — the predicate that
+      // decides which folders to ask about permission — was a claim about the
+      // wrong set. Measured on the built dist: `--check` said "No drift" and
+      // exited 0; the `--fix` beside it died with EACCES out of the atomic
+      // write's temp file, on a folder whose contents were already correct.
+      //
+      // 0555 on the INNERMOST wrapper dir is the exposed level, and only that
+      // one: `mkdirSync` on a directory that is already there needs no write
+      // bit, so a read-only `.claude/commands` is invisible to a synced tree
+      // while a read-only `.claude/commands/acme` is not.
+      stageRepo();
+      applyPlan(repo, plan(), { sweepOrphans: true });
+      const synced = snapshotTree(repo);
+      makeReadOnly('.claude/commands/acme');
+
+      const drift = checkPlan(repo, plan());
+      expect(drift.drifted).toEqual([]);
+      expect(drift.blocked).toEqual([]);
+      expect(drift.clean).toBe(true);
+
+      // The claim `--check` just made, kept: no throw, nothing written, and the
+      // wrappers reported as realized exactly as an already-correct link is.
+      const { applied, conflicts } = applyPlan(repo, plan(), { sweepOrphans: true });
+
+      expect(conflicts).toEqual([]);
+      expect(applied.map((a) => a.target)).toContain('.claude/commands/acme/hello.md');
+      expect(diffSnapshots(synced, snapshotTree(repo))).toEqual({
+        added: [],
+        changed: [],
+        removed: [],
+      });
+    }
+  );
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)(
+    'AP-07, AP-11: one wrapper missing under a read-only folder blocks that file, and the sweep still runs',
+    () => {
+      // The half-applied half of the same bug. With one wrapper deleted the
+      // folder IS written to, so it is a blocked conflict — but the byte-correct
+      // `.gitignore` beside it was rewritten regardless and threw first, before
+      // the six sweeps ran, leaving a staged orphan on disk. `--check` named one
+      // path and `--fix` named none, having died.
+      stageRepo();
+      applyPlan(repo, plan(), { sweepOrphans: true });
+      // An orphan the sweep must still take: a skill link whose source is gone.
+      rmSync(join(repo, '.agents', 'skills', 'alpha'), { recursive: true, force: true });
+      rmSync(join(repo, '.claude', 'commands', 'acme', 'hello.md'), { force: true });
+      makeReadOnly('.claude/commands/acme');
+
+      const built = plan();
+      const drift = checkPlan(repo, built);
+      const blockedTargets = drift.blocked.map((a) => a.target);
+      expect(blockedTargets).toEqual(['.claude/commands/acme/hello.md']);
+      expect(drift.orphans).toContain('.claude/skills/alpha');
+
+      const { conflicts, swept } = applyPlan(repo, built, { sweepOrphans: true });
+
+      // `--check` and `--fix` name the same one path…
+      expect(conflicts.map((a) => a.target)).toEqual(blockedTargets);
+      // …and the sweeps ran, which is what the throw used to cost.
+      expect(swept).toContain('.claude/skills/alpha');
+      expect([...swept].sort()).toEqual([...drift.orphans].sort());
+    }
+  );
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)(
     'AP-03, AP-11: a read-only folder nothing writes to is not a fault',
     () => {
       // The objection the permission probe has to answer, or it is worse than

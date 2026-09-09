@@ -257,19 +257,38 @@ function applyScaffold(repoRoot: string, action: ProjectionAction): void {
 }
 
 /**
- * (Re)write a generated target deterministically.
+ * Realize a generated target deterministically, writing only on a difference.
  *
- * Two gates, in order. The target's SHAPE decides whether a write may happen at
+ * Three gates, in order. The target's SHAPE decides whether a write may happen at
  * this path at all — a directory or a live symlink is refused whoever owns it,
- * because the bytes would not land here. Only then does ownership decide: command
- * wrappers are wholly the engine's (their marker is the predicate, and the caller
- * has already checked it), so they are simply rewritten, while the per-harness
- * hooks files are not the engine's by path and go through
- * {@link applyGeneratedHookFile} and its sidecar rules instead.
+ * because the bytes would not land here. Then ownership: command wrappers are
+ * wholly the engine's (their marker is the predicate, and the caller has already
+ * checked it), while the per-harness hooks files are not the engine's by path and
+ * go through {@link applyGeneratedHookFile} and its sidecar rules instead. Last,
+ * the BYTES: a wrapper already holding exactly what the plan says is realized,
+ * and this returns without touching it.
+ *
+ * **That last gate is load-bearing, and it was missing.** This function used to
+ * rewrite every wrapper on every sync, which made `isDrifted` — the predicate
+ * both modes use to decide which actions are "about to write", and so which
+ * folders to ask about permission — a claim about the wrong set. A fully synced
+ * repository with `chmod 0555` on one wrapper directory therefore had `--check`
+ * report NO DRIFT and exit 0, while the `--fix` beside it died with EACCES out
+ * of `writeFileAtomic` (measured on the built dist, DOR-1882 re-review). Worse,
+ * the file it died on was the one the plan had nothing to change about: the
+ * self-ignoring `.gitignore`, byte-correct and never probed, thrown on before
+ * the six sweeps ran and with a staged orphan still on disk.
+ *
+ * The hooks-file branch has always worked this way ({@link generatedHookOutcome}
+ * answers `unchanged`), and for the second reason too: these paths are watched,
+ * and a write that changes nothing is still a change event for whoever is
+ * watching. Command wrappers now match.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param action - the `generate` action to realize.
- * @returns `undefined` when the target now matches the plan; the reason to report
+ * @returns `undefined` when the target now matches the plan — whether this call
+ *   wrote it or found it already right, which is what `applied` has always meant
+ *   for a link that already pointed where the plan said; the reason to report
  *   when something the engine may not write over occupies it — a conflict, left
  *   untouched.
  */
@@ -291,6 +310,10 @@ function applyGenerate(repoRoot: string, action: ProjectionAction): string | und
       ? undefined
       : HAND_WRITTEN_HOOKS_REASON;
   }
+  // Already exactly these bytes: realized, and nothing to do. Never a direct
+  // read — absent, an unreadable file and a dead link all answer `undefined`
+  // here rather than throwing, and every one of them is a write.
+  if (readFileIfPresent(absTarget) === content) return undefined;
   writeFileAtomic(absTarget, content);
   return undefined;
 }
