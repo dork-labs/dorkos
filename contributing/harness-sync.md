@@ -385,11 +385,11 @@ Claude Code watches its skill directories, so a skill linked into an existing `.
 
 `.agents/harness.manifest.json` is the engine's only hand-authored input. It is scaffolded when a repo has none and never rewritten afterwards (ADR-302, and see [ADR-0302's DOR-1851 amendment](../decisions/0302-instructions-scaffolded-not-generated.md) for the one exception, `--enable`). Three keys, and every one of them is read:
 
-| Key                | What it decides                                                                                                                                                       |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `harnesses`        | The enabled projection targets. Defaults to `["claude-code"]`. `dorkos harness sync --fix --enable <id>` is the only thing that ever adds one to an EXISTING manifest |
-| `claudeOnlySkills` | Skills deliberately kept out of `.agents/skills`, each with the path it really lives at and why. The manifest is the only evidence they exist                         |
-| `hookPolicies`     | One entry per harness: `{ tool, projection: 'native' \| 'generate' \| 'none', configPath?, status?, notes? }`                                                         |
+| Key                | What it decides                                                                                                                                                                                                                                                                  |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `harnesses`        | The enabled projection targets. Defaults to `["claude-code"]`. `dorkos harness sync --fix --enable <id>` is the only thing that ever adds one to an EXISTING manifest                                                                                                            |
+| `claudeOnlySkills` | Skills deliberately kept out of `.agents/skills`, each with the path it really lives at and why. The manifest is the only evidence they exist. `dorkos harness adopt <name> --claude-only` is the one command that adds an entry, and it appends exactly one array element (§15) |
+| `hookPolicies`     | One entry per harness: `{ tool, projection: 'native' \| 'generate' \| 'none', configPath?, status?, notes? }`                                                                                                                                                                    |
 
 Everything else the engine needs it derives — the scanner reconstructs the skills from `.agents/skills/*`, so the schema is `.strict()` and a stale, derivable `sharedSkills` array is rejected rather than silently accepted.
 
@@ -608,3 +608,50 @@ Clause 4 is not "the plan does not name it", and the difference is a measured da
 **A deployment somebody confined writes nothing in a home directory and says so, and its dork-home tier is unaffected.** The boundary limits how far DorkOS reaches into a person's disk, and `<dorkHome>` is DorkOS's own directory, which every deployment already writes to on every boot — so scheduled global skills keep running.
 
 The predicate is `boundaryWasConfigured(env, config)` ([`lib/boundary.ts`](../apps/server/src/lib/boundary.ts)), and it is deliberately **not** derived from `initBoundary`'s argument. That function has exactly two callers and the CLI is neither, so a CLI process would always read "not configured" and write into a confined machine's home directory; and `harness-boot.ts` passes `path.dirname(dorkHome)`, a non-null argument, where nothing was configured at all, so the eval harness would read "configured" and stop projecting. Both failures are silent and they point opposite ways. So the predicate reads the two places a boundary can actually be set — the `DORKOS_BOUNDARY` environment variable and the `server.boundary` config field — and nothing else. `validateBoundaryOrDorkHome` is never called here: it narrows to `<dorkHome>/agents/*` on purpose, so reaching for it would either refuse the write or invite somebody to widen a security narrowing to make a feature work.
+
+## 16. Adopting a skill somebody's agent wrote
+
+Claude Code writes a skill into `.claude/skills/<name>/` mid-session. Codex and Gemini CLI never see it, and nothing about the file is wrong — it is just in one tool's folder rather than in the one every tool reads. `dorkos harness adopt <name>` moves it to `.agents/skills/<name>`.
+
+```
+dorkos harness adopt <name> [--project <path>] [--claude-only] [--check]
+```
+
+**One skill, by name, and never on its own.** There is no bare `dorkos harness adopt` that acts and no multi-adopt: a command that moved a folder full of somebody's files because they pressed return is the failure §16 D3 refuses. Every sync report names the candidates instead — one headline per folder, with the command that moves each — so the list and the action are two separate keystrokes.
+
+**The exit codes are the opposite of `sync --check`'s, on purpose.** `sync --check` asks "is my tree in sync?", so outstanding work is a non-zero answer. `adopt <name> --check` asks "will this command work?", so `0` means it would move and `1` means it was refused. A refusal prints its sentence on stdout with the plan; a usage error goes to stderr, like every other command in the package.
+
+### The refusal ladder
+
+Eight rules, first match wins, most fundamental first — what makes the whole run impossible, then what makes the filesystem operation impossible, then what makes the RESULT wrong ([`adopt/plan.ts`](../packages/harness/src/adopt/plan.ts)). The planner is pure: it takes facts a reader established and returns a plan, so each rule is provable on its own without a staged tree. Every refusal is one plain sentence naming the obstacle and the way out, frozen in [`adopt/refusals.ts`](../packages/harness/src/adopt/refusals.ts) and asserted verbatim.
+
+The two run-level ones come first: a `harness.autoAdopt` that cannot apply here, and a `.gitignore` that keeps `.agents/` out of git — moving a skill in that repository would take it out of git for everybody who clones it (AP-15). Then, per skill: a folder on the way DorkOS may not write through (in DOR-1882's own words, so a sync and an adopt say the same thing about the same file), one of the names DorkOS seeds into every room folder, something already at the target, a source that is itself a link, frontmatter that will not parse, and finally the allowlist.
+
+### The allowlist, and why it is one
+
+A skill is safe to share automatically only when **its frontmatter holds nothing outside the [agentskills.io](https://agentskills.io) base fields** (`name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools`) **and its body carries no `${CLAUDE_…}` token**.
+
+An allowlist rather than a denylist of Claude-only fields, because a denylist has to be extended every time a vendor ships a field on a Tuesday, and its failure direction when nobody does is _moved anyway_. An allowlist's is _reported and left alone_, which is the answer a person can act on.
+
+Both clauses read the file **as written** — `readRawFrontmatter`, never `parseSkillFile`. `SkillFrontmatterSchema` strips a key it does not know, and a `hooks:` block in a `SKILL.md` is a real thing Claude Code runs and DorkOS's own inventory reads (HK-12). A predicate built on the parsed object sees a clean six-key skill and moves a file that runs shell commands.
+
+There is no `--force`. The exposure is one-way: five tools read `.agents/skills` the instant the directory lands there, and `manifest.claudeOnlySkills` cannot un-expose a skill that has already moved. The two ways out are editing the file (take the Claude-only field out and adopt it) or `--claude-only`, which records the placement as deliberate — one element appended to `manifest.claudeOnlySkills`, every other byte of the manifest where it was, through the same text surgery `--enable` uses ([`scaffold/declare-claude-only.ts`](../packages/harness/src/scaffold/declare-claude-only.ts)).
+
+### The move, and what a crash leaves
+
+Per skill, in this order and no other ([`adopt/apply.ts`](../packages/harness/src/adopt/apply.ts)):
+
+1. `mkdir -p .agents/skills` — and it is taken back down if the move does not happen, so a refusal leaves the tree exactly as it found it.
+2. `renameSync`. **The single mutating step**, atomic because both paths are inside one repository and so on one filesystem.
+3. The link back at `.claude/skills/<name>`, realized through the engine's own `applyPlan` — the same function every sync uses, with the same relative link text and the same answer from `symlinkType` on Windows.
+4. If the link cannot be written, everything goes back.
+
+There is **no staging directory and no backup**, unlike the marketplace transaction. That module stages because it builds content that does not exist yet and backs up because it overwrites an occupied target; adopt refuses an occupied target outright and moves content that is already whole. Staging would buy a copy step that is not atomic, plus lost hard links and mode bits, in exchange for closing a window `rename(2)` does not have. A cross-device `EXDEV` is refused with its own sentence for the same reason: the alternative is copy-then-delete, whose failure mode is exactly the half-moved skill this design promises never to leave.
+
+**The link is the projector's own action**, not a hand-rolled one: `planAdoptedSkillLink(name)` is what `planSkill`'s claude-code branch returns and what adopt applies, so "the next sync's plan already matches" is a fact the compiler holds rather than two literals that agree today. Only a `.claude/skills` source gets one — every other harness-owned folder belongs to a tool that already reads `.agents/skills`, so a link back would be a path DorkOS wrote that no plan action names.
+
+**A crash between steps 2 and 3 leaves the skill whole at `.agents/skills/<name>` and nothing at the old path.** Nothing is lost: every byte is at the canonical root, which five of the six tools read natively, and what is missing is the symlink the next sync plans anyway. That state is drift, which this engine already names and fixes — not damage.
+
+### Adoption produces an authored skill
+
+There is no `adopted` provenance and there never will be (DOR-1944). A moved skill lives in `.agents/skills`, which is the authored root, scanned by the authored scanner and committed like every other authored skill. The value the engine used to carry was worse than unused: `isEphemeralProvenance('adopted')` answered `true`, so anything that set it would have sent the gitignore half of the engine to tell a person to ignore a skill they had just committed.

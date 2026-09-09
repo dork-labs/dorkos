@@ -64,7 +64,11 @@ export interface CensusTestRoot {
 export const TEST_ROOTS: readonly CensusTestRoot[] = [
   { dir: 'packages/harness/src', match: /\.test\.ts$/, least: 45 },
   { dir: 'apps/server/src/services/harness/__tests__', match: /\.test\.ts$/, least: 9 },
-  { dir: 'packages/cli/src/__tests__', match: /^harness-sync.*\.test\.ts$/, least: 2 },
+  {
+    dir: 'packages/cli/src/__tests__',
+    match: /^harness-(?:sync|adopt).*\.test\.ts$/,
+    least: 3,
+  },
   {
     dir: 'apps/server/src/services/runtimes/codex/__tests__',
     match: /^(?:scan-skill-commands|skill-parity)\.test\.ts$/,
