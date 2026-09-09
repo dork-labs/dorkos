@@ -18,6 +18,15 @@
       "linearIssue": "DOR-1931"
     },
     {
+      "id": "260908-154500",
+      "slug": "codex-session-reliability",
+      "title": "Reliable Codex sessions",
+      "created": "2026-09-08",
+      "status": "implemented",
+      "project": "Sessions & Runtimes",
+      "linearIssue": "DOR-1925"
+    },
+    {
       "id": "260908-102701",
       "slug": "harness-sync-global",
       "title": "Harness Sync at global scope, and Claude Code's own /plugin installs as a source",

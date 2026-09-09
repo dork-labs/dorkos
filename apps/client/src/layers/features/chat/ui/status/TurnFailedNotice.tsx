@@ -20,6 +20,8 @@ interface TurnFailedNoticeProps {
    * so the failed message can send itself (DOR-1650). Returns whether it did.
    */
   onSigninComplete?: () => boolean;
+  /** Opens the active session's model picker for a permanent model rejection. */
+  onChooseModel?: () => void;
 }
 
 /**
@@ -45,18 +47,26 @@ interface TurnFailedNoticeProps {
  * usually lands within ~300ms and renders the inline error block instead, so
  * the delay avoids a notice that flashes in and immediately hands off.
  */
-export function TurnFailedNotice({ sessionId, onRetry, onSigninComplete }: TurnFailedNoticeProps) {
+export function TurnFailedNotice({
+  sessionId,
+  onRetry,
+  onSigninComplete,
+  onChooseModel,
+}: TurnFailedNoticeProps) {
   const runtime = useSessionRuntime(sessionId);
   const lastError = useSessionStreamStatus(sessionId)?.lastError ?? null;
-  const isAuthError = lastError?.category === 'auth_error';
-  // Auth failures own their friendly, runtime-aware copy inside ErrorMessageBlock,
-  // so we don't clobber it with the generic "X stopped unexpectedly" heading.
+  const usesCategoryRecovery =
+    lastError?.category === 'auth_error' ||
+    lastError?.category === 'model_unavailable' ||
+    lastError?.category === 'runtime_update_required';
+  // Failures with a known recovery own their heading and next step inside
+  // ErrorMessageBlock. Do not replace those with the generic runtime failure.
   const heading =
-    !isAuthError && runtime
+    !usesCategoryRecovery && runtime
       ? `${getRuntimeDescriptor(runtime).label} stopped unexpectedly`
       : undefined;
   const message = lastError?.message ?? GENERIC_FAILURE_COPY;
-  const subtext = isAuthError ? undefined : message;
+  const subtext = usesCategoryRecovery ? undefined : message;
   const runtimeLabel = runtime ? runtimeDisplayName(runtime) : undefined;
   const details = lastError
     ? [lastError.code, lastError.details].filter(Boolean).join('\n')
@@ -78,6 +88,7 @@ export function TurnFailedNotice({ sessionId, onRetry, onSigninComplete }: TurnF
         details={details || undefined}
         onRetry={onRetry}
         onSigninComplete={onSigninComplete}
+        onChooseModel={onChooseModel}
         runtimeLabel={runtimeLabel}
         sessionId={sessionId}
       />

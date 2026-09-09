@@ -204,6 +204,26 @@ describe('TurnFailedNotice', () => {
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
   });
 
+  it('uses model recovery copy and withholds Retry for a permanent rejection', () => {
+    const onChooseModel = vi.fn();
+    mockSessionRuntime.mockReturnValue('codex');
+    mockSessionStreamStatus.mockReturnValue(
+      statusWithLastError({
+        message:
+          'gpt-5.4 isn’t available with a ChatGPT account. Choose another model from the model menu.',
+        category: 'model_unavailable',
+      })
+    );
+    render(<TurnFailedNotice sessionId="s1" onRetry={vi.fn()} onChooseModel={onChooseModel} />);
+
+    expect(screen.getByText('Model unavailable')).toBeInTheDocument();
+    expect(screen.getByText(/Choose another model from the model menu/)).toBeInTheDocument();
+    expect(screen.queryByText('Codex stopped unexpectedly')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+    screen.getByRole('button', { name: 'Choose model' }).click();
+    expect(onChooseModel).toHaveBeenCalledOnce();
+  });
+
   it('renders no Details affordance when lastError carries neither code nor details', () => {
     mockSessionStreamStatus.mockReturnValue(
       statusWithLastError({ message: 'Sidecar crashed.', category: 'execution_error' })

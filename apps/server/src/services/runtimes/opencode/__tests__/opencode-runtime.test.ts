@@ -2057,8 +2057,12 @@ describe('OpenCodeRuntime', () => {
         updateLastSeen: () => undefined,
       });
       resolveDorkosMcpInjection.mockResolvedValue({
-        url: 'http://localhost:4242/mcp',
-        headers: { Authorization: 'Bearer test', 'X-DorkOS-Agent': 'agent-token' },
+        url: 'http://127.0.0.1:4341/agent-mcp',
+        headers: {
+          Authorization: 'Bearer test',
+          'X-DorkOS-Connector-Runtime': 'opencode',
+          'X-DorkOS-Connector-Cwd': encodeURIComponent(canonicalDirectory),
+        },
       });
 
       try {
@@ -2278,6 +2282,7 @@ describe('OpenCodeRuntime', () => {
       harness.runtime.setConnectorRuntimeTools({
         principals,
         listenerUrl: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
         isConnectorCapabilityId: (id) =>
           new Set([
             'connectors.execute_read',

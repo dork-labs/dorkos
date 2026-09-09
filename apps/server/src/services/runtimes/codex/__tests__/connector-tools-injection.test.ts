@@ -15,6 +15,7 @@ describe('Codex connector runtime MCP injection', () => {
     const cwd = '/repo with spaces';
     const injection = {
       url: 'http://127.0.0.1:4341/mcp',
+      agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
       headers: connectorRuntimeHeaders({ bearer: secret, runtime: 'codex', canonicalCwd: cwd }),
     };
 
@@ -55,6 +56,7 @@ describe('Codex connector runtime MCP injection', () => {
     expect(() =>
       buildCodexOptions('/bin/codex', undefined, undefined, undefined, null, {
         url: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
         headers: { 'X-Unmapped-Secret': 'secret' },
       })
     ).toThrow(/no environment variable is defined/);

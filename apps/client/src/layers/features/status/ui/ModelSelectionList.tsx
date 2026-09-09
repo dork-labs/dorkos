@@ -82,9 +82,8 @@ export function ModelLoadError({ onRetry }: { onRetry: () => void }) {
  * Two kinds of string reach {@link ModelIdLine}. OpenCode builds a description as
  * `` `${providerName} · ${modelId}` `` (`opencode/providers/models.ts`) and the
  * vanished-model banner draws a raw saved id, so both END on the identifier —
- * the case worth protecting. Codex's descriptions are fixed sentences in this
- * repo (`codex/runtime-constants.ts`), and claude-code's arrive from its SDK, so
- * far always as sentences too — every description observed ends either on an id
+ * the case worth protecting. Codex and Claude Code descriptions arrive from
+ * their runtime model catalogs; every description observed ends either on an id
  * or on prose.
  *
  * The tell is the LAST word: an id carries a path or tag separator inside it,
@@ -340,7 +339,8 @@ export function ModelSelectionList({
 
   // The saved model can stop existing (provider switched, model deleted). Surface
   // it as unavailable and let the person pick another, never auto-switch (spec §11).
-  const missingSaved = selectedModel.length > 0 && !models.some((m) => m.value === selectedModel);
+  const missingSaved =
+    models.length > 0 && selectedModel.length > 0 && !models.some((m) => m.value === selectedModel);
   const banner = missingSaved ? <UnavailableSavedModel value={selectedModel} /> : null;
 
   // A shortened, unconfirmed menu has to admit it. Otherwise the list looks
@@ -357,6 +357,17 @@ export function ModelSelectionList({
     () => (useSearchableMenu ? groupByTier(filteredModels) : []),
     [filteredModels, useSearchableMenu]
   );
+
+  if (models.length === 0) {
+    return (
+      <div
+        className="border-border text-muted-foreground text-2xs rounded-xl border border-dashed p-3 leading-snug"
+        data-testid="model-catalog-unavailable"
+      >
+        Model choices couldn’t be loaded. Check the runtime in Settings, then try again.
+      </div>
+    );
+  }
 
   if (!useSearchableMenu) {
     return (

@@ -85,7 +85,8 @@ import {
   type CodexThreadRecord,
 } from './thread-map.js';
 import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
-import { CODEX_CAPABILITIES, CODEX_MODELS } from './runtime-constants.js';
+import { CODEX_CAPABILITIES } from './runtime-constants.js';
+import { CodexModelCatalog } from './model-catalog.js';
 import {
   dorkosToolsPosture,
   resolveDorkosMcpInjection,
@@ -139,6 +140,8 @@ export interface CodexRuntimeOptions {
    * for tests; production passes nothing.
    */
   resolveBinary?: () => Promise<string | null>;
+  /** Account-aware model catalog; injectable so runtime tests never spawn app-server. */
+  modelCatalog?: Pick<CodexModelCatalog, 'getSupportedModels'>;
   /**
    * Loopback URL of the scoped `dorkos_ui` MCP server
    * ({@link ./codex-ui-mcp-server}) that exposes `control_ui` to Codex for
@@ -181,6 +184,8 @@ export class CodexRuntime implements AgentRuntime {
   private sharedClient: { binary: string; client: Codex } | null = null;
   /** How this runtime finds its `codex` binary — see {@link CodexRuntimeOptions.resolveBinary}. */
   private readonly resolveBinary: () => Promise<string | null>;
+  /** Models visible to the same binary and Codex account a real turn uses. */
+  private readonly modelCatalog: Pick<CodexModelCatalog, 'getSupportedModels'>;
   /** Kept so every turn's client is built with the same UI-bridge wiring. */
   private readonly mcpUiUrl: string | undefined;
   /**
@@ -235,6 +240,8 @@ export class CodexRuntime implements AgentRuntime {
     this.threadMap = options.threadMap;
     this.defaultCwd = options.defaultCwd ?? DEFAULT_CWD;
     this.resolveBinary = options.resolveBinary ?? resolveCodexBinaryPath;
+    this.modelCatalog =
+      options.modelCatalog ?? new CodexModelCatalog({ resolveBinary: this.resolveBinary });
     this.mcpUiUrl = options.mcpUiUrl;
     // No SDK client is built here on purpose — see `sharedClient`.
   }
@@ -302,8 +309,10 @@ export class CodexRuntime implements AgentRuntime {
    * @param managed - Enabled managed servers in Codex config shape, with the
    *   header values that must ride the environment; empty maps when none.
    * @param dorkosTools - The resolved `dorkos` tool server, or null when it is
-   *   not injected this turn. It carries a freshly minted identity token, so a
-   *   client holding one can never be shared across turns.
+   *   not injected this turn. It carries the runtime's turn-bound principal,
+   *   so a client holding one can never be shared across turns.
+   * @param connectorTools - The same turn binding on the private connector
+   *   capability route, or null when this turn has none.
    */
   private async clientForTurn(
     tokenEnv: Record<string, string>,
@@ -586,6 +595,7 @@ export class CodexRuntime implements AgentRuntime {
         this.activeConnectorBindings.set(controller, connectorBinding.bindingId);
         connectorTools = {
           url: this.connectorRuntimeTools.listenerUrl,
+          agentToolsUrl: this.connectorRuntimeTools.agentToolsUrl,
           headers: connectorRuntimeHeaders({
             bearer: connectorBinding.bearer,
             runtime: this.type,
@@ -609,11 +619,9 @@ export class CodexRuntime implements AgentRuntime {
       );
 
       // The `dorkos` tool server, when the experiment is on and this cwd hosts a
-      // registered agent (spec `tool-only-room-replies` §D4). Resolved PER TURN,
-      // like the env token above and for the same reason: it carries a freshly
-      // minted identity token, so a per-session or per-boot resolve would let the
-      // 30-day fuse arm on a long-lived agent. `null` injects nothing, which is
-      // exactly today's behaviour.
+      // registered agent (spec `tool-only-room-replies` §D4). It reuses the
+      // already-open connector turn binding on a separate capability route, so
+      // it expires and revokes with this exact turn. `null` injects nothing.
       //
       // Scoped to every agent-bound session rather than to room turns: the runtime
       // cannot know why it was called, and these tools are worth having outside a
@@ -623,7 +631,7 @@ export class CodexRuntime implements AgentRuntime {
       // `dorkos` is reserved against them this turn — see below.
       const dorkosTools = await resolveDorkosMcpInjection(
         meshAgent ? cwd : undefined,
-        meshAgent?.displayName ?? meshAgent?.name
+        connectorTools
       );
 
       // The agent's ENABLED managed MCP servers for this cwd, injected inline via
@@ -1023,7 +1031,7 @@ export class CodexRuntime implements AgentRuntime {
   // --- Capabilities ---
 
   async getSupportedModels(): Promise<ModelOption[]> {
-    return CODEX_MODELS;
+    return this.modelCatalog.getSupportedModels();
   }
 
   /** Codex exposes no subagent registry. */
@@ -1117,8 +1125,10 @@ export class CodexRuntime implements AgentRuntime {
    * @returns Whether the `dorkos` entry is configured for it.
    */
   async carriesRoomTools(session: { cwd: string }): Promise<boolean> {
-    return dorkosToolsPosture(this.meshCore?.getByPath(session.cwd) ? session.cwd : undefined)
-      .wired;
+    return dorkosToolsPosture(
+      this.meshCore?.getByPath(session.cwd) ? session.cwd : undefined,
+      this.connectorRuntimeTools !== undefined
+    ).wired;
   }
 
   /**

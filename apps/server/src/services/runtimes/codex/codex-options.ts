@@ -42,7 +42,7 @@ import { type CodexManagedMcpServers, type CodexMcpServerRecord } from './mcp-se
  *
  * `CodexOptions.env` has four sources, and every one of them is a secret that
  * must not travel any other way: `extraEnv` (the agent's `DORKOS_AGENT_TOKEN`),
- * the `dorkos` server's two header values, and every HTTP header the agent's own
+ * the `dorkos` server's turn-binding header values, and every HTTP header the agent's own
  * managed servers carry (DOR-993), plus the connector server's turn bearer and
  * context headers — all placed under the variable names their `env_http_headers`
  * entries point Codex at. Setting `env` at all stops the SDK inheriting
@@ -97,12 +97,11 @@ export function buildCodexOptions(
  * adapter's `mergeSessionMcpServers` gives, and defense in depth on top of the
  * converter already dropping (and now reporting) the reserved names.
  *
- * The `dorkos` entry is streamable HTTP carrying the bearer and the agent
- * identity — see {@link resolveDorkosMcpInjection} for why both are mandatory —
- * and it names them by environment variable rather than value, the same rule the
- * managed-server converter now follows for every header it maps. Codex's MCP
- * client sends no `Origin`, so it clears `validateMcpOrigin` through the
- * non-browser early return, exactly as `dorkos_ui` already does.
+ * The `dorkos` entry is streamable HTTP carrying the bound authorization,
+ * runtime, and cwd headers. It names them by environment variable rather than
+ * value, the same rule the managed-server converter follows for every header it
+ * maps. Codex's MCP client sends no browser origin, which the loopback listener
+ * accepts after authenticating the turn.
  *
  * @param mcpUiUrl - Loopback URL of the `dorkos_ui` server, or undefined.
  * @param managedServers - Enabled managed servers in Codex config shape.
@@ -123,11 +122,11 @@ function buildMcpServersConfig(
       // `env_http_headers`, never `http_headers`. This config object is
       // flattened into `--config key=value` arguments on the `codex exec`
       // command line, so a value written here lands in the spawned argv, where
-      // any process running as this user can read it with `ps`. Both values are
-      // credentials — the MCP bearer, and an identity that can post as this
-      // agent — so the config carries only the NAMES of the environment
-      // variables holding them, and Codex resolves the values inside the
-      // subprocess. `buildCodexOptions` puts them there.
+      // any process running as this user can read it with `ps`. The authorization
+      // bearer is a credential; the runtime and cwd headers bind it to this
+      // adapter and directory. The config therefore carries only the NAMES of
+      // the environment variables holding all three, and Codex resolves their
+      // values inside the subprocess. `buildCodexOptions` puts them there.
       env_http_headers: dorkosHeaderEnvNames(dorkosTools),
     };
   }

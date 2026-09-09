@@ -182,19 +182,19 @@ export class OpenCodeMcpManager {
    * The `dorkos` tool server for a directory, as a one-entry record to fold into
    * the desired set, or `{}` when it must not be injected.
    *
-   * This is OpenCode's ONLY per-agent identity channel, and structurally so: its
-   * sidecar is one shared process with a fixed environment, so there is no
-   * `DORKOS_AGENT_TOKEN` env seam to use the way codex and claude-code do, and
-   * there never will be. The token has to ride the server's own `headers`.
+   * OpenCode's sidecar is one shared process with a fixed environment. The
+   * runtime therefore passes its short-lived turn binding in this server's own
+   * headers; the loopback listener derives identity and session facts from the
+   * verified binding.
    *
    * @param cwd - The directory being reconciled.
    */
-  private async resolveDorkosServer(cwd: string): Promise<Record<string, OpenCodeMcpServerConfig>> {
+  private async resolveDorkosServer(
+    cwd: string,
+    runtimeTools?: ConnectorRuntimeMcpInjection
+  ): Promise<Record<string, OpenCodeMcpServerConfig>> {
     const agent = this.meshCore?.getByPath(cwd);
-    const injection = await resolveDorkosMcpInjection(
-      agent ? cwd : undefined,
-      agent?.displayName ?? agent?.name
-    );
+    const injection = await resolveDorkosMcpInjection(agent ? cwd : undefined, runtimeTools);
     if (!injection) return {};
     return {
       [DORKOS_MCP_SERVER_NAME]: {
@@ -308,12 +308,12 @@ export class OpenCodeMcpManager {
       );
     }
 
-    // The `dorkos` tool server is resolved on EVERY reconcile, and its identity
-    // token is freshly minted each time (spec `tool-only-room-replies` §D4). It
-    // is written LAST so a managed server can never shadow the name DorkOS owns.
+    // The `dorkos` tool server is resolved on EVERY reconcile from this exact
+    // turn's binding (spec `tool-only-room-replies` §D4). It is written LAST so
+    // a managed server can never shadow the name DorkOS owns.
     const servers: Record<string, OpenCodeMcpServerConfig> = {
       ...managed.servers,
-      ...(await this.resolveDorkosServer(agentCwd)),
+      ...(await this.resolveDorkosServer(agentCwd, connectorTools)),
       ...(connectorTools
         ? {
             [CONNECTOR_RUNTIME_MCP_SERVER_NAME]: {
@@ -326,12 +326,11 @@ export class OpenCodeMcpManager {
         : {}),
     };
 
-    // A re-minted token changes `headers`, so it changes this signature, so the
-    // no-op early return below does NOT fire and the server is re-added with the
-    // fresh credential. That falls out of hashing the whole desired set rather
-    // than its names — true by accident before DOR-1613, and pinned by a test
-    // now, because the alternative is a session whose token quietly expires
-    // mid-life and whose every room write then 401s.
+    // Every turn gets a fresh bearer and binding headers, so it gets a distinct
+    // signature. The no-op early return below therefore cannot reuse a prior
+    // turn's authority: the server is re-added with the exact current binding.
+    // That falls out of hashing the whole desired set rather than its names,
+    // and is pinned by a test.
     const signature = JSON.stringify(servers);
     const prev = this.injectedByCwd.get(cwd);
     // Nothing desired and nothing we ever injected here: no reconcile to do, and
