@@ -62,10 +62,13 @@ export { readOnlyCarveOutToolNames } from './mcp-projection.js';
 // The in-session hold seam. On the barrel because BOTH halves of the tool
 // surface now compose it — the registry projection here, and the hand-registered
 // gate next door (DOR-1930) — so it is no longer private to this directory.
+// `CAPABILITY_APPROVAL_HOLD_CAP_MS` deliberately stays OFF the barrel: its two
+// readers import it by path and adding it here would assert a consumer that does
+// not exist.
 export {
   awaitCapabilityApproval,
-  CAPABILITY_APPROVAL_HOLD_CAP_MS,
   type CapabilityApprovalHold,
 } from './capability-approval-hold.js';
+export { abortSignalOf } from './abort-signal.js';
 export { registerCapabilitiesInOpenApi } from './openapi-projection.js';
 export { CapabilityToolError, unwrapMcpEnvelope, type McpTextEnvelope } from './mcp-envelope.js';

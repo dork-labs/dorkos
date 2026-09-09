@@ -33,6 +33,7 @@ import {
 import type { CapabilityHoldSession } from '../../../core/capabilities/capability-approval-hold.js';
 import type { ApprovalService } from '../../../core/approvals/index.js';
 import { CONNECTOR_RUNTIME_CAPABILITY_IDS } from '../../../connectors/runtime-capability-scope.js';
+import { abortSignalOf } from '../../../core/capabilities/index.js';
 
 /**
  * The in-session seam: the live session inline cards are rendered into, plus the
@@ -52,14 +53,6 @@ export interface InSessionCapabilityHold {
  * mid-turn interrupt ends any in-session hold. Typed `unknown` by the SDK, so it
  * is narrowed defensively — a surface without one simply holds to its own cap.
  */
-function abortSignalOf(extra: unknown): AbortSignal | undefined {
-  if (extra && typeof extra === 'object' && 'signal' in extra) {
-    const signal = (extra as { signal?: unknown }).signal;
-    if (signal instanceof AbortSignal) return signal;
-  }
-  return undefined;
-}
-
 /**
  * Build the in-session `dorkos` server tool definitions for every registry
  * capability advertised on the in-session surface.

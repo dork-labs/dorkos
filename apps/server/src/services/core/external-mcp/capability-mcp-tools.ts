@@ -22,12 +22,7 @@ import {
   deriveMcpAnnotations,
   invokeCapabilityAsMcpResult,
 } from '../capabilities/mcp-projection.js';
-
-function abortSignalOf(extra: unknown): AbortSignal | undefined {
-  if (!extra || typeof extra !== 'object' || !('signal' in extra)) return undefined;
-  const signal = (extra as { signal?: unknown }).signal;
-  return signal instanceof AbortSignal ? signal : undefined;
-}
+import { abortSignalOf } from '../capabilities/index.js';
 
 /**
  * Register every registry capability advertised on the given MCP server against

@@ -130,6 +130,28 @@ function textResult(payload: unknown): CallToolResult {
   return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
 }
 
+/** One gated call, as {@link runGate} is asked to decide it. */
+interface GateRun {
+  /** The tool's tier declaration, from the shared table. */
+  action: GatedAction;
+  /** The arguments the SDK parsed for this call. */
+  args: unknown;
+  /** The calling agent, when the surface resolved one. */
+  identity?: AgentIdentity;
+  /** Whether the caller can be told to open the approval panel (DOR-1570). */
+  interactive: boolean;
+  /** Which surface the call arrived over, recorded for an unattributed card. */
+  origin: ApprovalOrigin;
+  /**
+   * A token to present INSTEAD of one carried in `args`.
+   *
+   * The resume path only (DOR-1930). It rides beside the input rather than
+   * inside it, so the arguments hashed on the resume are the same bytes the
+   * person approved.
+   */
+  approvalToken?: string;
+}
+
 /**
  * What the gate concluded about one hand-registered tool call: either run the
  * handler with these arguments, or return this result instead.
@@ -149,6 +171,14 @@ type GateOutcome =
        * their payload unchanged.
        */
       fresh?: ApprovalRequiredPayload;
+      /**
+       * The arguments this pass hashed, already split from any token.
+       *
+       * Handed back so a resume re-presents the SAME input rather than
+       * reconstructing it — the approval binds to a hash of these, so rebuilding
+       * them is the one way the person could approve one thing and another run.
+       */
+      input: unknown;
     };
 
 /**
@@ -160,28 +190,24 @@ type GateOutcome =
  * the registry path has to assert schema parse-idempotence to get the same
  * property, because it parses once more on the way in.
  *
- * @param action - The tool's tier declaration, from the shared table.
- * @param args - The arguments the SDK parsed for this call.
- * @param identity - The calling agent, when the surface resolved one.
- * @param interactive - Whether the caller can be told to open the approval panel.
- * @param origin - Which surface the call arrived over, recorded so an
- *   unattributed card can say the true thing DorkOS knows about it.
+ * @param run - The action, its arguments, and the surface it arrived on.
  * @returns Whether to proceed, and with what.
  */
-async function runGate(
-  action: GatedAction,
-  args: unknown,
-  identity: AgentIdentity | undefined,
-  interactive: boolean,
-  origin: ApprovalOrigin
-): Promise<GateOutcome> {
+async function runGate(run: GateRun): Promise<GateOutcome> {
+  const { action, args, identity, interactive, origin } = run;
   // Only a destructive tool advertises `approvalToken`, so only a destructive call
   // has one to lift off. Anything else passes its arguments through untouched
   // rather than silently losing a field that happens to share the name.
-  const { approvalToken, input } =
+  const split =
     action.tier === 'destructive'
       ? splitApprovalToken(args)
       : { approvalToken: undefined, input: args };
+  const input = split.input;
+  // A token supplied out-of-band wins over one carried in the arguments. That is
+  // the resume path (below), and carrying it beside the input rather than
+  // spreading it back INTO the input is what keeps the hashed arguments byte
+  // identical across the two passes — the person approves exactly what runs.
+  const approvalToken = run.approvalToken ?? split.approvalToken;
 
   // Named HERE rather than inside the gate because every registry that can name
   // an id is async and `enforceCapabilityTier` is not (DOR-1929). This is the
@@ -210,7 +236,12 @@ async function runGate(
       decision.outcome === 'approval_required' && isFreshApprovalAsk(decision.payload)
         ? decision.payload
         : undefined;
-    return { allowed: false, result: textResult(decision.payload), ...(fresh ? { fresh } : {}) };
+    return {
+      allowed: false,
+      result: textResult(decision.payload),
+      input,
+      ...(fresh ? { fresh } : {}),
+    };
   }
   return { allowed: true, input: (input ?? {}) as Record<string, unknown> };
 }
@@ -230,6 +261,16 @@ function abortSignalOf(extra: unknown): AbortSignal | undefined {
   if (!extra || typeof extra !== 'object' || !('signal' in extra)) return undefined;
   const signal = (extra as { signal?: unknown }).signal;
   return signal instanceof AbortSignal ? signal : undefined;
+}
+
+/** How {@link runGatedInSession} reaches the real handler, and what it may wait on. */
+interface HandlerRun {
+  /** Invokes the real handler with the gate-approved input. */
+  invoke: (input: Record<string, unknown>) => Promise<CallToolResult>;
+  /** The live session's hold seam, when this surface has one. */
+  hold?: CapabilityApprovalHold;
+  /** The SDK's second handler argument, read for an abort signal. */
+  extra: unknown;
 }
 
 /**
@@ -252,45 +293,40 @@ function abortSignalOf(extra: unknown): AbortSignal | undefined {
  * back off before the input is hashed, so the token cannot change the hash it is
  * checked against.
  *
- * @param action - The tool's tier declaration.
- * @param args - The arguments the SDK parsed for this call.
- * @param identity - The calling agent, when the surface resolved one.
- * @param hold - The live session's hold seam, when this surface has one.
- * @param extra - The SDK's second handler argument, read for an abort signal.
- * @param run - Invokes the real handler with the gate-approved input.
+ * @param call - The action, its arguments, and the surface it arrived on.
+ * @param run - The handler to invoke, plus the hold seam and the SDK's `extra`.
  * @returns The tool result to hand back to the model.
  */
-async function runGatedInSession(
-  action: GatedAction,
-  args: unknown,
-  identity: AgentIdentity | undefined,
-  hold: CapabilityApprovalHold | undefined,
-  extra: unknown,
-  run: (input: Record<string, unknown>) => Promise<CallToolResult>
-): Promise<CallToolResult> {
-  const outcome = await runGate(action, args, identity, true, 'session');
-  if (outcome.allowed) return run(outcome.input);
-  if (!hold || !outcome.fresh) return outcome.result;
+async function runGatedInSession(call: GateRun, run: HandlerRun): Promise<CallToolResult> {
+  const outcome = await runGate(call);
+  if (outcome.allowed) return run.invoke(outcome.input);
+  if (!run.hold || !outcome.fresh) return outcome.result;
 
-  const signal = abortSignalOf(extra);
+  const signal = abortSignalOf(run.extra);
   const decided = await awaitCapabilityApproval(
-    { ...hold, ...(signal ? { signal } : {}) },
+    { ...run.hold, ...(signal ? { signal } : {}) },
     outcome.fresh
   );
   // `timeout` and `expired` are not failures — they are the poll flow, which
   // still works: the card is on the dashboard and the agent still holds a token.
   if (decided !== 'granted' && decided !== 'denied') return outcome.result;
 
-  // A full gate pass, not a shortcut around it: the token is consumed here, and
-  // a denial comes back as an ordinary refusal payload.
-  const retried = await runGate(
-    action,
-    { ...(args as Record<string, unknown>), approvalToken: outcome.fresh.approvalToken },
-    identity,
-    true,
-    'session'
-  );
-  return retried.allowed ? run(retried.input) : retried.result;
+  // A full gate pass, not a shortcut around it. The token rides beside the SAME
+  // input the first pass hashed, so the binding the person approved is the one
+  // checked here — and a denial comes back as an ordinary refusal payload.
+  //
+  // "Goes through the gate" rather than "always spends the token": if the person
+  // answered with "allow, and stop asking", the grant created a standing
+  // permission, and the resume is allowed by THAT before the token is consulted.
+  // The token then goes unspent, which is harmless — the permission already
+  // licenses the action, and on this path the model never receives the token at
+  // all. Shared with the registry path, not introduced here.
+  const retried = await runGate({
+    ...call,
+    args: outcome.input,
+    approvalToken: outcome.fresh.approvalToken,
+  });
+  return retried.allowed ? run.invoke(retried.input) : retried.result;
 }
 
 /**
@@ -366,18 +402,28 @@ export function gateHandRegisteredMcpTools<T extends SdkMcpTool>(
     return {
       ...definition,
       inputSchema: gatedInputSchema(action, definition.inputSchema),
-      handler: async (args: never, extra: unknown): Promise<CallToolResult> =>
-        // `interactive: true` throughout — this entry point wraps the IN-SESSION
-        // server, where `control_ui` exists, so a gated call may be told to put
-        // the approval in front of the operator (DOR-1570).
-        runGatedInSession(
-          action,
-          args,
-          (await resolveContext?.())?.identity,
-          hold,
-          extra,
-          (input) => handler(input as never, extra)
-        ),
+      handler: async (args: never, extra: unknown): Promise<CallToolResult> => {
+        // Resolved ONCE per call: the resolver memoizes per session, but reading
+        // it twice here would still be two awaits for one fact.
+        const identity = (await resolveContext?.())?.identity;
+        return runGatedInSession(
+          {
+            action,
+            args,
+            ...(identity ? { identity } : {}),
+            // `interactive: true` — this entry point wraps the IN-SESSION server,
+            // where `control_ui` exists, so a gated call may be told to put the
+            // approval in front of the operator (DOR-1570).
+            interactive: true,
+            origin: 'session',
+          },
+          {
+            invoke: (input: Record<string, unknown>) => handler(input as never, extra),
+            ...(hold ? { hold } : {}),
+            extra,
+          }
+        );
+      },
       // The wrapper reproduces the SDK's tool shape field for field; the cast
       // restores the caller's concrete type, which a spread of a generic widens.
     } as unknown as T;
@@ -461,7 +507,15 @@ export function gatedToolRegistrar(server: McpServer, identity?: AgentIdentity):
       (async (args: never, extra: unknown): Promise<CallToolResult> => {
         // `interactive: false` — the external `/mcp` server is sessionless, so
         // the UI tools are not registered and must not be suggested.
-        const outcome = await runGate(action, args, identity, false, 'external-mcp');
+        const outcome = await runGate({
+          action,
+          args,
+          ...(identity ? { identity } : {}),
+          // `interactive: false` — the external `/mcp` server is sessionless, so
+          // the UI tools are not registered and must not be suggested.
+          interactive: false,
+          origin: 'external-mcp',
+        });
         if (!outcome.allowed) return outcome.result;
         return cb(outcome.input as never, extra);
         // The SDK's `registerTool` is generic over the input and output shapes it

@@ -120,6 +120,11 @@ describe('a hand-registered destructive tool waits for the operator', () => {
     // granting alone empties the pending list, so that assertion passes just as
     // well with the resume reverted. `consume` is called by the gate and by
     // nothing else, so seeing it succeed IS seeing the gate re-entered.
+    //
+    // A plain grant, deliberately. "Allow, and stop asking" creates a standing
+    // permission that allows the resume BEFORE the token is consulted, so the
+    // token goes unspent on that path — harmless, but it would make this spy
+    // assert the opposite of what it is here to prove.
     const consume = vi.spyOn(approvals, 'consume');
 
     const pending = call(hold());
@@ -141,6 +146,11 @@ describe('a hand-registered destructive tool waits for the operator', () => {
   it('degrades to the poll payload when nobody answers before the cap', async () => {
     // Never worse than the flow it replaces: the card is still on the dashboard
     // and the agent still holds a usable token.
+    //
+    // The payload assertions alone would pass in a world where the hold does not
+    // exist — they are equally true of the old poll flow, which is exactly the
+    // regression this case is named for. So it also asserts the hold HAPPENED
+    // and ended in a timeout, which only the held path can produce.
     const [gated] = gateHandRegisteredMcpTools([tool()], undefined, {
       ...hold()!,
       capMs: 10,
@@ -153,6 +163,36 @@ describe('a hand-registered destructive tool waits for the operator', () => {
     expect(payload.status).toBe('approval_required');
     expect(payload.approvalToken).toEqual(expect.any(String));
     expect(ran).toEqual([]);
+    // It waited, then gave up — and retired its own card on the way out, so the
+    // person is not left looking at an inline card nothing will ever resolve.
+    expect(queue.map((e) => e.type)).toEqual([
+      'capability_approval_required',
+      'capability_approval_resolved',
+    ]);
+    expect(queue[1]?.data).toMatchObject({ outcome: 'timeout' });
+  });
+
+  it('gives up early, and retires its card, when the turn is interrupted', async () => {
+    // A mid-turn interrupt aborts the held tool call. The signal arrives on the
+    // SDK's `extra`, which is the only reason `abortSignalOf` exists — and
+    // nothing else in the suite exercises that branch.
+    const controller = new AbortController();
+    const [gated] = gateHandRegisteredMcpTools([tool()], undefined, hold());
+
+    const pending = gated!.handler({ agentId: TARGET } as Record<string, unknown>, {
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(approvals.listPending()).toHaveLength(1));
+    controller.abort();
+
+    // An abort resolves the wait as `timeout` rather than throwing, so the call
+    // degrades to the poll payload exactly as the cap does.
+    expect(payloadOf(await pending).status).toBe('approval_required');
+    expect(ran).toEqual([]);
+    expect(queue.map((e) => e.type)).toEqual([
+      'capability_approval_required',
+      'capability_approval_resolved',
+    ]);
   });
 
   it('leaves a surface with no hold exactly as it was', async () => {
