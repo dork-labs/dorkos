@@ -12,6 +12,9 @@ covers:
   - 'fix(config): the migration key moves to 0.77.0, because 0.76.0 landed first (DOR-1924)'
   - 'refactor(server,cli): the configured boundary root is read in one place (DOR-1924)'
   - 'fix(cli): a confined deployment says what it cannot reach, not that it found nothing (DOR-1924)'
+  # Same fold: two rebase repairs, nothing a person could have seen.
+  - 'fix(config): the global-scope migration sits beside 0.76.0 after the rebase (DOR-1924)'
+  - 'refactor(harness): the extracted probe calls the exported helper by its name (DOR-1924)'
   - 'fix(harness,cli): a run that shares with Claude Code alone says so (DOR-1924)'
 ---
 
