@@ -40,7 +40,7 @@ import { logger } from '../../../lib/logger.js';
 
 const DORK_HOME = '/tmp/dork-home';
 const REPO = '/tmp/someones-repo';
-const AGENT = { name: 'tangerines', path: REPO, origin: 'registered' } as const;
+const AGENT = { name: 'tangerines', path: REPO };
 
 /** A minimal plan stub — the seam is stubbed, so its shape is opaque to the trigger. */
 const FAKE_PLAN = { actions: [], drops: [], warnings: [], notEnabled: [] } as never;
@@ -141,7 +141,7 @@ describe('runAgentCreatedProjection', () => {
     expect(seamSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('TR-03, TR-11: leaves a workspace DorkOS is building to its own pass', async () => {
+  it('TR-03, TR-11: leaves a workspace the create pipeline built to its own pass', async () => {
     // The race this trigger must lose on purpose. `createAgentWorkspace`
     // notifies the seam BEFORE it runs `projectAgentWorkspace`, and by then it
     // has already scaffolded `AGENTS.md`, `.claude/CLAUDE.md`, `GEMINI.md` and
@@ -153,7 +153,7 @@ describe('runAgentCreatedProjection', () => {
     // denied (HK-08) — and a codex-enabled manifest is what turns an unattended
     // pass into a writer of shell commands.
     await runAgentCreatedProjection(
-      { name: 'tangerines', path: REPO, origin: 'created' },
+      { ...AGENT, workspaceProjectedByPipeline: true },
       { dorkHome: DORK_HOME }
     );
 
@@ -165,12 +165,29 @@ describe('runAgentCreatedProjection', () => {
     expect(mockConfigGet).not.toHaveBeenCalled();
   });
 
+  it('J-03, TR-11: still projects for a path a person named, which is not the pipeline', async () => {
+    // `POST /api/agents` mints a manifest at a directory somebody chose and
+    // scaffolds nothing else. It declares `origin: 'created'` like the pipeline
+    // does, and skipping on THAT string would skip the exact journey this
+    // trigger exists for — a person pointing an agent at a repo they work in.
+    await runAgentCreatedProjection(
+      { ...AGENT, workspaceProjectedByPipeline: false },
+      { dorkHome: DORK_HOME }
+    );
+
+    expect(seamSpy).toHaveBeenCalledWith(REPO, {
+      dorkHome: DORK_HOME,
+      sweepOrphans: false,
+      dorkosHarness: 'claude-code',
+    });
+  });
+
   it('TR-11: leaves an agent home to its own pass', async () => {
     // `<dorkHome>/agents/*` is projected by `agent-creator` at creation and by
     // the boot backfill after, with a Claude-Code-only manifest on purpose.
     // Doing it again here would write a different harness set into that folder.
     await runAgentCreatedProjection(
-      { name: 'dorkbot', path: `${DORK_HOME}/agents/dorkbot`, origin: 'registered' },
+      { name: 'dorkbot', path: `${DORK_HOME}/agents/dorkbot` },
       { dorkHome: DORK_HOME }
     );
 

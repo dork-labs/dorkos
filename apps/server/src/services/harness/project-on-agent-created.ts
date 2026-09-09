@@ -39,16 +39,21 @@
  *
  * ## Which arrivals fire it
  *
- * **Registration, never creation.** `CreatedAgentInfo.origin` decides, and the
- * two are genuinely different events. An `origin: 'created'` arrival is the
- * create pipeline (`createAgentWorkspace`) or the New Agent route minting a
- * workspace DorkOS is building right now; a `'registered'` one is a person
- * taking a directory they already work in onto the roster, or a discovery scan
- * finding one. The second is this trigger's whole journey (contract J-03); the
- * first is a workspace that already has an owner.
+ * **Every arrival except the one that already has a projector.** The create
+ * PIPELINE (`createAgentWorkspace`) projects the workspace it just built, and
+ * it says so on the arrival: `workspaceProjectedByPipeline`. That flag is the
+ * only thing this trigger skips on.
  *
- * It is not a preference, it is a race that was measured. `createAgentWorkspace`
- * notifies this seam BEFORE it runs its own `projectAgentWorkspace`, and that
+ * It is a flag rather than a reading of `origin`, and the difference is a whole
+ * journey. `origin: 'created'` is true of the pipeline AND of
+ * `POST /api/agents`, which is not the pipeline at all — it mints a manifest at
+ * a path a person named and scaffolds nothing else — so a person pointing an
+ * agent at a repository they already work in arrives as `'created'` and is
+ * exactly the journey this trigger exists for (contract J-03). Skipping on the
+ * origin string would skip them; skipping on the fact skips only the pipeline.
+ *
+ * And the pipeline has to be skipped, because it is a race that was measured.
+ * It notifies this seam BEFORE it runs its own `projectAgentWorkspace`, and that
  * pass deliberately scaffolds `AGENT_WORKSPACE_HARNESSES` — Claude Code alone,
  * with every package's hooks denied (contract HK-08). Both scaffolds are
  * write-if-absent, so whichever lands first wins, and this one is first. By then
@@ -61,15 +66,6 @@
  * commands — with a hook in that workspace's `.claude/settings.json` DorkOS
  * generated a `.codex/hooks.json` for it, which is the hazard
  * `project-agent-workspace.ts`'s module docs exist to name.
- *
- * The cost, stated: `POST /api/agents` declares `'created'` too, and it is NOT
- * the create pipeline — it mints a manifest at a path a person chose and
- * scaffolds nothing else. A person pointing an agent at a repo through THAT
- * route gets no projection until they run `dorkos harness sync --fix`. It has no
- * client caller (the app's New Agent flow is `POST /api/agents/create`), and the
- * safe half of the trade is the half that matters: a wrong harness set written
- * unattended into a workspace is a file an agent then reads, and a missing one
- * is a command away.
  *
  * ## Where it refuses
  *
@@ -133,7 +129,6 @@ import { join } from 'node:path';
 import { validateBoundaryOrDorkHome } from '../../lib/boundary.js';
 import { logger } from '../../lib/logger.js';
 import { configManager } from '../core/config-manager.js';
-import type { AgentArrival } from '../rooms/moments/moment-detectors.js';
 import { dorkosHarness } from './dorkos-harness.js';
 import { isAgentHome } from './project-agent-workspace.js';
 import {
@@ -141,17 +136,18 @@ import {
   withProjectLock,
 } from './project-with-consent.js';
 
-/** The just-registered agent, as this trigger reads it. */
+/** The just-created or just-registered agent, as this trigger reads it. */
 export interface ProjectedAgent {
   /** The agent's slug, for the log lines. */
   name: string;
   /** The directory the agent works in — the repository this trigger is about. */
   path: string;
   /**
-   * How the agent arrived. Only a `'registered'` one is projected here — see
+   * Set only by the create pipeline, which projects this workspace itself a few
+   * lines after it notifies. The one thing this trigger stands down for — see
    * "Which arrivals fire it" above for the race that decides it.
    */
-  origin: AgentArrival;
+  workspaceProjectedByPipeline?: boolean;
 }
 
 /** Options for {@link runAgentCreatedProjection}. */
@@ -204,12 +200,12 @@ export async function runAgentCreatedProjection(
   agent: ProjectedAgent,
   opts: RunAgentCreatedProjectionOptions
 ): Promise<void> {
-  const { name, path, origin } = agent;
+  const { name, path } = agent;
 
-  // A workspace DorkOS is building right now already has an owner, and this
+  // A workspace the create pipeline built already has a projector, and this
   // trigger would beat it to the manifest — see "Which arrivals fire it".
-  if (origin === 'created') {
-    logger.debug('[HarnessSync] A newly created workspace projects itself; not projecting', {
+  if (agent.workspaceProjectedByPipeline === true) {
+    logger.debug('[HarnessSync] The create pipeline projects this workspace; not projecting', {
       agent: name,
       path,
     });

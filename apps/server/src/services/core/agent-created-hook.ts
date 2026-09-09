@@ -77,6 +77,27 @@ export interface CreatedAgentInfo {
    * call site must decide rather than inherit whichever default read better.
    */
   origin: AgentArrival;
+  /**
+   * Set by `createAgentWorkspace`, and by nothing else: this workspace is one
+   * the creation PIPELINE built and is about to project itself.
+   *
+   * It exists because `origin` cannot answer the question a reaction actually
+   * has. `POST /api/agents` says `'created'` too — it mints a manifest at a path
+   * a person named — but it scaffolds no instruction files and projects
+   * nothing, so a reaction that skipped every `'created'` arrival would skip a
+   * person pointing an agent at their own repository. This flag is the FACT
+   * instead of a proxy for it: the pipeline scaffolds `AGENTS.md` and the
+   * per-harness pointers, then runs `projectAgentWorkspace` a few lines after
+   * this notify, deliberately Claude-Code-only with every package's hooks
+   * denied (contract HK-08). A second projector reacting to the same arrival
+   * would race that pass and win, because both scaffolds are write-if-absent —
+   * and the manifest it wrote would be derived from DorkOS's own pointer files
+   * (DOR-1901). Read by `services/harness/project-on-agent-created.ts`.
+   *
+   * Absent everywhere else, which is the honest default: a caller that did not
+   * project this workspace has nothing to say about it.
+   */
+  workspaceProjectedByPipeline?: true;
 }
 
 /**

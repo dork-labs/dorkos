@@ -3436,10 +3436,10 @@ async function start() {
     // at a repository used to trigger nothing at all, so a project that had only
     // ever run another tool got a managed session that had never read its own
     // `AGENTS.md` (DOR-1901). Awaited, so the registration response reflects a
-    // tree that is already set up; it swallows its own failures, and refuses a
-    // `'created'` arrival (the create pipeline projects its own workspace, and
-    // would lose the write-if-absent race to this), agent homes, and anything
-    // outside the boundary.
+    // tree that is already set up; it swallows its own failures, and stands down
+    // for a workspace the create pipeline built (it projects that one itself,
+    // and would lose the write-if-absent race to this), for agent homes, and
+    // for anything outside the boundary.
     await runAgentCreatedProjection(agent, { dorkHome });
     const rebound = await rebindShapeSchedulesForAgent(agent, {
       listShapes: () => listInstalledShapeManifests(dorkHome),
