@@ -13,8 +13,8 @@
  *    every row but one: nothing else here has been checked against a running
  *    harness binary. The exception is `codex.skills`, which the H tier's free
  *    probe settled on 2026-09-09 (DOR-1856) — `observed` on that row names the
- *    six cells a real `codex-cli 0.145.0` was watched deciding, the report they
- *    were read from, and leaves the four nobody looked at alone. Read
+ *    five cells a real `codex-cli 0.145.0` was watched deciding, the report they
+ *    were read from, and leaves the five nobody looked at alone. Read
  *    `verified: 'binary'` as "a run touched this row", never as "every cell here
  *    is measured"; that is what `observed.cells` is for.
  * 2. **`unknown` is an answer.** Where a vendor page said nothing — OpenCode's
