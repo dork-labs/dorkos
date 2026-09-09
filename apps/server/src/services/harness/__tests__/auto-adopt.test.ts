@@ -38,6 +38,7 @@ import { resolveDirectoryOwnership } from '../directory-ownership.js';
 import { initConfigManager, configManager } from '../../core/config-manager.js';
 import { logger } from '../../../lib/logger.js';
 import { SEEDED_PACK_EXCLUDES } from '../../rooms/repo/room-worktree-manager.js';
+import { RoomRepoStore } from '../../rooms/repo/room-repo-store.js';
 
 let dorkHome: string;
 
@@ -92,6 +93,28 @@ function buildAgentHome(name: string): string {
   const dir = join(dorkHome, 'agents', name);
   mkdirSync(dir, { recursive: true });
   return buildWorkspace(dir);
+}
+
+/**
+ * One skill in Claude Code's own folder, in a workspace whose manifest enables
+ * the harnesses given — `['claude-code']` being the case where every enabled
+ * tool can already see it.
+ */
+function buildAgentHomeWith(
+  name: string,
+  harnesses: readonly string[],
+  skills: readonly { name: string; frontmatter: string }[]
+): string {
+  const dir = join(dorkHome, 'agents', name);
+  mkdirSync(join(dir, '.agents', 'skills'), { recursive: true });
+  mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
+  writeFileSync(
+    join(dir, '.agents', 'harness.manifest.json'),
+    JSON.stringify({ version: 1, harnesses }, null, 2)
+  );
+  for (const skill of skills)
+    writeSkill(join(dir, '.claude', 'skills'), skill.name, skill.frontmatter);
+  return dir;
 }
 
 /**
@@ -289,6 +312,22 @@ describe('SK-16: harness.autoAdopt on moves only what the allowlist recognises',
 });
 
 describe('SRC-11: harness.autoAdopt on in a room worktree', () => {
+  it('SRC-11: the shape it recognises is the one the store actually lays down', () => {
+    // The resolver matches `<dorkHome>/rooms/<id>/worktrees/<slug>` by shape, and
+    // a shape is only worth matching while it is the shape that exists. Asked of
+    // `RoomRepoStore` itself rather than spelled a second time here, so moving
+    // the layout reds this instead of silently making every room worktree read
+    // as somebody's own project — where `harness.autoAdopt` does nothing and R3
+    // never fires. `worktreesPath` touches no database.
+    const store = new RoomRepoStore(undefined as never, dorkHome);
+    const worktree = join(store.worktreesPath('room-1'), 'agent-abc');
+
+    expect(resolveDirectoryOwnership(worktree, dorkHome)).toBe('room-worktree');
+    // And one rung either side, so the match is the shape rather than a prefix.
+    expect(resolveDirectoryOwnership(store.worktreesPath('room-1'), dorkHome)).toBe('plain');
+    expect(resolveDirectoryOwnership(join(worktree, 'nested'), dorkHome)).toBe('plain');
+  });
+
   it('SRC-11: refuses a reserved pack name with S4 and moves the authored one', () => {
     configManager.set('harness', { ...configManager.get('harness'), autoAdopt: true });
     const reserved = OPERATING_SKILLS_PACK[0]!.name;
@@ -352,6 +391,92 @@ describe('SRC-11: harness.autoAdopt on in a room worktree', () => {
   });
 });
 
+describe('SRC-07: the summary counts only folders that still have something to say', () => {
+  it('SRC-07: a folder whose only candidate was adopted is not counted in the hint', async () => {
+    // What this catches: `M` counted every folder that HAD a candidate, so a
+    // pass that moved the only one in a folder still said "in 2 agent folders"
+    // and sent the reader looking for a line that was never printed. Seeded
+    // defect: count on `adopt.adoptable > 0` again and the sentence reds.
+    configManager.set('harness', { ...configManager.get('harness'), autoAdopt: true });
+    const moved = buildAgentHomeWith('alpha', ['claude-code', 'codex'], [CANDIDATES[0]!]);
+    const left = buildAgentHomeWith('beta', ['claude-code', 'codex'], [CANDIDATES[1]!]);
+
+    const summary = await backfillAgentWorkspaceSkills([moved, left], dorkHome);
+
+    expect(summary.adoptableSkills).toBe(2);
+    expect(summary.adoptedSkills).toBe(1);
+    const complete = vi
+      .mocked(logger.info)
+      .mock.calls.find(
+        (call) => call[0] === '[HarnessSync] Agent workspace skill backfill complete'
+      );
+    expect((complete?.[1] as { hint?: string }).hint).toBe(
+      "1 skill in 1 agent folder lives only in one agent tool's folder. Each is named above with its folder."
+    );
+  });
+});
+
+describe('SRC-07: nothing is reported where every enabled tool can already see it', () => {
+  it('SRC-07: a claude-code-only workspace prints no line and adds no hint', async () => {
+    // `adoptableSentence` withholds a headline when the tool list is empty — a
+    // claim about tools has to be true — so a workspace where every enabled tool
+    // reads `.claude/skills` had a line with an EMPTY command list and a hint
+    // pointing at it. The counters follow the same rule as the sentence, and
+    // this is the assertion that keeps the two together. Seeded defect: count
+    // every candidate again and both the count and the hint come back.
+    const agentDir = buildAgentHomeWith('solo', ['claude-code'], [...CANDIDATES]);
+
+    const summary = await backfillAgentWorkspaceSkills([agentDir], dorkHome);
+
+    expect(summary.adoptableSkills).toBe(0);
+    expect(summary.adoptedSkills).toBe(0);
+    const complete = vi
+      .mocked(logger.info)
+      .mock.calls.find(
+        (call) => call[0] === '[HarnessSync] Agent workspace skill backfill complete'
+      );
+    expect((complete?.[1] as { hint?: string }).hint).toBeUndefined();
+    expect(infoPayloads().filter((payload) => typeof payload.adoptable === 'number')).toEqual([]);
+  });
+
+  it('SRC-07: and with the flag ON it still moves nothing there', async () => {
+    // The move buys nothing — every enabled tool already reads the folder it is
+    // in — and moving a person's files unattended for no gain is the thing this
+    // whole design refuses. Same rule as the sentence, applied to the action.
+    configManager.set('harness', { ...configManager.get('harness'), autoAdopt: true });
+    const agentDir = buildAgentHomeWith('solo', ['claude-code'], [CANDIDATES[0]!]);
+
+    const summary = await backfillAgentWorkspaceSkills([agentDir], dorkHome);
+
+    expect(summary.adoptedSkills).toBe(0);
+    expect(canonicalSkills(agentDir)).toEqual([]);
+    expect(claudeSkills(agentDir)).toEqual(['safe']);
+  });
+});
+
+describe('AP-15: a folder that cannot take a moved skill says so once', () => {
+  it('AP-15: logs the run-level refusal on its own line, with no skill name on it', () => {
+    // A gitignored `.agents/` stops every candidate at once, and the sentence is
+    // about the DIRECTORY. It used to travel as a refusal with `skill: ''`,
+    // which reads as a refusal that lost the skill it was about — and the way
+    // out is in the sentence, so it must not be swallowed either.
+    configManager.set('harness', { ...configManager.get('harness'), autoAdopt: true });
+    const agentDir = buildAgentHome('alpha');
+    execFileSync('git', ['init', '-q'], { cwd: agentDir });
+    writeFileSync(join(agentDir, '.gitignore'), '.agents/\n');
+
+    const outcome = adoptInOwnedWorkspace(agentDir, 'agent-home');
+
+    expect(outcome.adoptable).toBe(3);
+    expect(outcome.adopted).toBe(0);
+    expect(outcome.refusals).toEqual([]);
+    expect(outcome.blocked).toBe(
+      "DorkOS can't move a skill into .agents/skills here: .gitignore tells git to ignore .agents/, so moving it would take the skill out of git for everybody who clones this project. Stop ignoring .agents/ in .gitignore, or leave the skill where it is."
+    );
+    expect(canonicalSkills(agentDir)).toEqual([]);
+  });
+});
+
 describe('D3: the flag is inert where DorkOS does not own the directory', () => {
   it('D3: a plain project is `plain` ownership, whatever the flag says', () => {
     configManager.set('harness', { ...configManager.get('harness'), autoAdopt: true });
@@ -363,23 +488,34 @@ describe('D3: the flag is inert where DorkOS does not own the directory', () => 
     }
   });
 
-  it('D3: no unprompted trigger reads harness.autoAdopt at all', () => {
+  it('D3: no unprompted trigger reads harness.autoAdopt, by name or through the module that does', () => {
     // Not a behaviour test but an ABSENCE test, and it is the one that makes the
     // inertness structural: `runAutoProjection`, the agent-created projection and
     // the `.agents/skills` watcher all run in directories a PERSON owns, and a
     // `true` there does nothing because there is no branch that could be
-    // mis-written to make it do something. Seeded defect: read the flag in
-    // `runAutoProjection` and this reds.
+    // mis-written to make it do something.
+    //
+    // **Both spellings are asserted, because the first one alone is not an
+    // absence.** Grepping for the literal `autoAdopt` misses the way a trigger
+    // would ACTUALLY grow this: one call to `adoptInOwnedWorkspace`, which reads
+    // the flag on the trigger's behalf and never says its name. Seeded defect:
+    // either read the flag in `runAutoProjection` or import that module there —
+    // one of the two assertions catches each.
     const triggers = ['auto-project.ts', 'project-on-agent-created.ts', 'skills-watcher.ts'];
     for (const file of triggers) {
       const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
       expect(source, `${file} must not read harness.autoAdopt`).not.toContain('autoAdopt');
+      expect(source, `${file} must not reach the flag through adopt-owned-workspace`).not.toContain(
+        'adopt-owned-workspace'
+      );
+      expect(source, `${file} must not call adoptInOwnedWorkspace`).not.toContain(
+        'adoptInOwnedWorkspace'
+      );
     }
-    // And the two that DO, so the absence above cannot pass by the flag having
-    // been renamed out from under it.
-    for (const file of ['adopt-owned-workspace.ts']) {
-      const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
-      expect(source).toContain('autoAdopt');
-    }
+    // And the module that DOES, so the absences above cannot pass by the flag or
+    // the entry point having been renamed out from under them.
+    const owner = readFileSync(new URL('../adopt-owned-workspace.ts', import.meta.url), 'utf8');
+    expect(owner).toContain('autoAdopt');
+    expect(owner).toContain('adoptInOwnedWorkspace');
   });
 });

@@ -29,6 +29,16 @@
  * unreadable manifest or a tree that will not walk costs a log line rather than
  * a boot or a turn.
  *
+ * **It walks the source tree once, and that is one walk more than the pass it
+ * follows already did.** `projectAgentWorkspace` calls `project()`, which builds
+ * its own inventory and keeps it: neither the plan it returns nor the status
+ * that comes back out carries one, so there is nothing for a caller to hand
+ * over. Threading the inventory through would mean widening `project()`'s
+ * return for three callers, two of which never adopt — so the second walk is
+ * accepted for now and the widening is the follow-up (DOR-1945). The cost is one
+ * directory walk per owned workspace per boot, on a pass that is already
+ * best-effort and already yields to the event loop between workspaces.
+ *
  * @module services/harness/adopt-owned-workspace
  */
 import {
@@ -54,8 +64,13 @@ import { configManager } from '../core/config-manager.js';
 /** What one owned workspace's adopt pass found and did. */
 export interface OwnedWorkspaceAdoptOutcome {
   /**
-   * SKILLS that live only in one agent tool's own folder in this workspace —
-   * found, whatever was done about them.
+   * SKILLS that live only in one agent tool's own folder in this workspace AND
+   * that at least one tool this workspace enables cannot see — found, whatever
+   * was done about them.
+   *
+   * The second half of that is not a detail: a skill every enabled tool already
+   * reads is not a problem anybody can act on, and counting it produced a log
+   * line with no command under it.
    */
   adoptable: number;
   /** How many of those this pass actually moved. Zero unless the flag is on. */
@@ -73,6 +88,16 @@ export interface OwnedWorkspaceAdoptOutcome {
   lines: string[];
   /** One frozen sentence per skill this pass would not move, with the way out. */
   refusals: { name: string; reason: string }[];
+  /**
+   * One sentence about the DIRECTORY that stopped every candidate at once —
+   * a gitignored `.agents/` (AP-15, S3) — absent when nothing did.
+   *
+   * Its own field rather than a refusal with an empty name, because it names no
+   * skill: repeating it once per candidate would print the same paragraph six
+   * times, and a refusal whose `skill` is `''` reads as a refusal that lost the
+   * skill it was about.
+   */
+  blocked?: string;
 }
 
 /** Nothing found, nothing done — the answer for a workspace with no candidates. */
@@ -128,8 +153,18 @@ export function autoAdoptFromDisk(dorkHome: string): boolean {
 }
 
 /**
- * Read every adoptable skill in one directory DorkOS owns, and move the
- * allowlisted ones when `harness.autoAdopt` says so.
+ * Read every adoptable skill in one directory DorkOS owns that some enabled
+ * agent tool cannot see, and move the allowlisted ones when `harness.autoAdopt`
+ * says so.
+ *
+ * **The "cannot see it" filter is the same rule {@link adoptableSentence}
+ * applies to the headline, applied to the count and to the ACTION as well, and
+ * keeping the three together is the point.** A skill in `.claude/skills` in a
+ * workspace whose manifest enables only Claude Code is read by every tool that
+ * workspace runs: there is no headline to print about it (a claim about tools
+ * has to be true), no problem to count, and nothing to gain by moving a
+ * person's folder unattended. Counting it anyway produced a log line with an
+ * empty command list and a summary hint pointing at a sentence nobody printed.
  *
  * @param workspaceDir - Absolute path to the owned workspace.
  * @param ownership - What DorkOS owns it as, decided by the caller.
@@ -142,16 +177,23 @@ export function adoptInOwnedWorkspace(
   try {
     const manifest = loadManifest(workspaceDir);
     const read = readAdoptCandidates(workspaceDir, inventorySourceTree(workspaceDir), manifest);
-    if (read.candidates.length === 0) return NOTHING;
+    // Sorted once, here, so every count, every name and every sentence below is
+    // in the same order — and narrowed to the skills some enabled tool cannot
+    // see, which is the rule the headline already applies (see the docs above).
+    const found = read.candidates
+      .filter(
+        (candidate) => harnessesThatCannotSee(candidate.root, read.enabledHarnesses).length > 0
+      )
+      .sort((a, b) => (a.name < b.name ? -1 : 1));
+    if (found.length === 0) return NOTHING;
 
-    const found = [...read.candidates].sort((a, b) => (a.name < b.name ? -1 : 1));
-    const lines = sentencesFor(found, read.enabledHarnesses, workspaceDir);
+    const skills = found.map((candidate) => candidate.name);
     if (!autoAdoptPermitted()) {
       return {
         adoptable: found.length,
         adopted: 0,
-        skills: found.map((c) => c.name),
-        lines,
+        skills,
+        lines: sentencesFor(found, read.enabledHarnesses, workspaceDir),
         refusals: [],
       };
     }
@@ -159,25 +201,35 @@ export function adoptInOwnedWorkspace(
     // R7 is hard in auto mode and there is no `--force`, so what comes back is
     // only ever the allowlisted skills — the engine's guarantee, not a filter
     // repeated here.
-    const plan = planAdopt({ ...read, request: { mode: 'auto' }, ownership });
+    const plan = planAdopt({
+      ...read,
+      candidates: found,
+      request: { mode: 'auto' },
+      ownership,
+    });
     const result = applyAdopt(workspaceDir, plan);
-    // A run-level `blocked` stops every candidate at once (a gitignored
-    // `.agents/`, AP-15). It is reported like a refusal rather than swallowed,
-    // because the person's way out is in its sentence.
-    const blocked = plan.blocked === undefined ? [] : [{ name: '', reason: plan.blocked.reason }];
+    const moved = new Set(result.moved.map((move) => move.name));
 
     return {
       adoptable: found.length,
       adopted: result.moved.length,
-      skills: found.map((c) => c.name),
-      // Recomputed AFTER the moves, so the lines name what is still only in one
+      skills,
+      // Built AFTER the moves, so the lines name what is still only in one
       // tool's folder rather than what was there when the pass started.
       lines: sentencesFor(
-        found.filter((c) => !result.moved.some((m) => m.name === c.name)),
+        found.filter((candidate) => !moved.has(candidate.name)),
         read.enabledHarnesses,
         workspaceDir
       ),
-      refusals: [...blocked, ...result.refusals.map((r) => ({ name: r.name, reason: r.reason }))],
+      refusals: result.refusals.map((refusal) => ({
+        name: refusal.name,
+        reason: refusal.reason,
+      })),
+      // A run-level `blocked` stops every candidate at once (a gitignored
+      // `.agents/`, AP-15). It is about the DIRECTORY rather than about any one
+      // skill, so it is carried on its own field and printed on its own line —
+      // a refusal with an empty name reads as a refusal that lost its skill.
+      ...(plan.blocked === undefined ? {} : { blocked: plan.blocked.reason }),
     };
   } catch (err) {
     logger.warn('[HarnessSync] Reading adoptable skills failed (non-fatal)', {

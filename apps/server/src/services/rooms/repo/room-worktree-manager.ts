@@ -1239,8 +1239,16 @@ export class RoomWorktreeManager {
   /**
    * The second of the two sites that consult `harness.autoAdopt`, beside
    * `backfillAgentWorkspaceSkills` — and, like it, one that has already
-   * established DorkOS owns the directory: every path here is a worktree under
-   * `<dorkHome>/rooms/<roomId>/worktrees/` that this manager made.
+   * established DorkOS owns the directory: every path here comes from
+   * `store.worktreesPath(roomId)` and was created by this manager, which is
+   * stronger evidence than any path check could give.
+   *
+   * So the ownership is passed as a literal rather than resolved. That the
+   * RESOLVER agrees — that `resolveDirectoryOwnership` answers `room-worktree`
+   * for exactly the shape `RoomRepoStore` lays down — is asserted in
+   * `services/harness/__tests__/auto-adopt.test.ts`, asked of the store rather
+   * than spelled twice, so moving the layout reds there instead of silently
+   * making the terminal read a room worktree as somebody's own project.
    *
    * It runs after the seed-and-project pairing in both of its callers, for the
    * reason the flag's own docs give: a skill DorkOS seeded is not a candidate,
@@ -1272,6 +1280,13 @@ export class RoomWorktreeManager {
       // standing in that directory (S1d/S1e).
       adoptable_lines: adopt.lines,
     });
+    if (adopt.blocked !== undefined) {
+      logger.info('[rooms] this room worktree cannot take a moved skill', {
+        roomId,
+        worktree: slug,
+        reason: adopt.blocked,
+      });
+    }
     for (const refusal of adopt.refusals) {
       logger.info('[rooms] a skill in this room worktree was not moved', {
         roomId,

@@ -473,8 +473,11 @@ export async function backfillAgentWorkspaceSkills(
     // has none. This loop is the only place with both `agentDir` and the adopt
     // result in hand; `projectAgentWorkspace` is called from three places with
     // different jobs and knows nothing about adoption.
+    // Counted only when something is LEFT to look at. A folder whose only
+    // candidate this pass moved has nothing named above it, and counting it
+    // made the hint say "in 2 agent folders" over one printed line.
+    if (adopt.adoptable > adopt.adopted) foldersWithAdoptable += 1;
     if (adopt.adoptable > 0) {
-      foldersWithAdoptable += 1;
       logger.info('[HarnessSync] Skills in this agent workspace live in one agent tool only', {
         agentDir,
         adoptable: adopt.adoptable,
@@ -484,6 +487,14 @@ export async function backfillAgentWorkspaceSkills(
         // not standing in that directory (S1d/S1e). Empty when every agent tool
         // this workspace enables can already see every one of them.
         adoptable_lines: adopt.lines,
+      });
+    }
+    if (adopt.blocked !== undefined) {
+      // About the DIRECTORY, not about any one skill, so it gets its own line
+      // with no skill name on it (AP-15's gitignored `.agents/` is the case).
+      logger.info('[HarnessSync] This agent workspace cannot take a moved skill', {
+        agentDir,
+        reason: adopt.blocked,
       });
     }
     for (const refusal of adopt.refusals) {
