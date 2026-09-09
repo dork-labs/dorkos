@@ -274,11 +274,11 @@ export function scaffoldManifest(
     const found = detectHarnesses(repoRoot);
     detected = found.length > 0;
     const base = detected ? found : DEFAULT_HARNESSES;
+    const ours = opts?.dorkosHarness;
+    addedForDorkos = ours !== undefined && !base.includes(ours) ? ours : null;
     // Appended rather than sorted into canonical order, so the file reads as
     // what it is: the harnesses this folder shows, and then the one DorkOS runs.
-    const missing = opts?.dorkosHarness !== undefined && !base.includes(opts.dorkosHarness);
-    harnesses = missing ? [...base, opts.dorkosHarness as HarnessId] : base;
-    addedForDorkos = missing ? (opts.dorkosHarness as HarnessId) : null;
+    harnesses = addedForDorkos === null ? base : [...base, addedForDorkos];
   }
 
   // Two-space indent + trailing newline so the file reads (and diffs) like the

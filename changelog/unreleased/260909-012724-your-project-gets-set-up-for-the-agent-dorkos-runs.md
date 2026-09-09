@@ -2,6 +2,7 @@
 covers:
   - 'feat(harness): a project DorkOS manages turns on its own tool (DOR-1901)'
   - 'feat(server): pointing an agent at a project sets it up once (DOR-1901)'
+  - 'refactor(harness): the added harness is a value, not a cast (DOR-1901)'
 ---
 
 ### Added

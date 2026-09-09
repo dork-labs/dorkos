@@ -95,22 +95,6 @@ export interface RunAgentCreatedProjectionOptions {
 }
 
 /**
- * Seam for the calls this trigger makes, injectable so a test can exercise the
- * refusals and the ordering without touching a real tree.
- *
- * Three entries, the same two the install trigger has plus the boundary: the
- * consent-carrying projection, the manifest scaffold, and the question of
- * whether DorkOS may write here at all.
- *
- * @internal Exported for testing only.
- */
-export const _internal = {
-  scaffoldManifest: defaultScaffoldManifest,
-  projectWithConsent: defaultProjectWithConsent,
-  withinBoundary: defaultWithinBoundary,
-};
-
-/**
  * Whether DorkOS may write into a directory, by the server's own boundary rule.
  *
  * Any throw is a refusal, including the one an uninitialized boundary raises: a
@@ -127,6 +111,22 @@ async function defaultWithinBoundary(path: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Seam for the calls this trigger makes, injectable so a test can exercise the
+ * refusals and the ordering without touching a real tree.
+ *
+ * Three entries, the same two the install trigger has plus the boundary: the
+ * consent-carrying projection, the manifest scaffold, and the question of
+ * whether DorkOS may write here at all.
+ *
+ * @internal Exported for testing only.
+ */
+export const _internal = {
+  scaffoldManifest: defaultScaffoldManifest,
+  projectWithConsent: defaultProjectWithConsent,
+  withinBoundary: defaultWithinBoundary,
+};
 
 /**
  * Set up the repository an agent was just pointed at, once.
