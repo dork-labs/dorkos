@@ -28,7 +28,6 @@ import {
   missingGitignoreLines,
   pluginHookReach,
   scaffoldManifest,
-  CLAUDE_SETTINGS_LOCAL_TARGET,
   CODEX_HOOKS_TARGET,
   GENERATED_HOOK_TARGET_HARNESSES,
   HARNESS_IDS,

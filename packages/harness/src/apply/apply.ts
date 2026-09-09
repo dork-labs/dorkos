@@ -672,7 +672,7 @@ export function sweepSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan)
  * none of them. `swept` stays a `string[]` because that is what the equality
  * contract with `sweepPreview` is written against and what every existing caller
  * reads; the two are the same paths in the same order, which
- * `sweep-reasons.test.ts` asserts.
+ * `__tests__/orphan-preview.test.ts` asserts.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the projection plan to apply.

@@ -44,7 +44,12 @@ export function HarnessSyncSummary({ result, onDismiss }: HarnessSyncSummaryProp
     >
       <div className="flex flex-col gap-1">
         <p>
-          <span className="font-medium">Agent files updated.</span> {countedFiles(applied)} written.
+          <span className="font-medium">Agent files updated.</span>
+          {/* A sync whose whole job was a removal wrote nothing, and "0 files
+              written." is a sentence that reads like a failure over a receipt
+              for work that succeeded. The removal list below is the answer in
+              that case, so the count simply does not appear. */}
+          {applied > 0 && <> {countedFiles(applied)} written.</>}
         </p>
         {removals.length > 0 && (
           <div className="flex flex-col gap-0.5">

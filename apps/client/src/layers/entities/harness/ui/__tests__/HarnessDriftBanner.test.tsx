@@ -17,6 +17,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { HARNESS_STATUS_ALL_SHARED, HARNESS_STATUS_READY } from '../../__fixtures__/harness-status';
+import { harnessKeys } from '../../api/query-keys';
 import { HarnessDriftBanner } from '../HarnessDriftBanner';
 
 // The `approval_resolved` subscription needs the app-level `EventStreamProvider`
@@ -50,14 +51,24 @@ function createWrapper(transport: Transport) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
-  return ({ children }: { children: ReactNode }) => (
+  const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>{children}</TransportProvider>
     </QueryClientProvider>
   );
+  return { wrapper, queryClient };
 }
 
-/** Render the banner against one status, and wait for the read to settle. */
+/**
+ * Render the banner against one status, and wait for the read to SETTLE.
+ *
+ * Settled, not merely requested. The transport having been called says the
+ * fetch started; the banner draws from the answer, so a case that asserts an
+ * ABSENCE — "a clean tree draws nothing" — would otherwise pass in the gap
+ * before the answer arrives, and pass just as happily over a banner that draws
+ * unconditionally. The query's own cache state is the marker, because this
+ * component renders nothing of its own to wait for when there is nothing to say.
+ */
 async function renderBanner(status: HarnessStatusResponse, sync?: HarnessSyncResponse) {
   const getHarnessStatus = vi.fn().mockResolvedValue(status);
   const syncHarness = vi.fn().mockResolvedValue(
@@ -71,9 +82,13 @@ async function renderBanner(status: HarnessStatusResponse, sync?: HarnessSyncRes
     }
   );
   const transport = createMockTransport({ getHarnessStatus, syncHarness });
-  render(<HarnessDriftBanner projectPath="/repo" />, { wrapper: createWrapper(transport) });
+  const { wrapper, queryClient } = createWrapper(transport);
+  render(<HarnessDriftBanner projectPath="/repo" />, { wrapper });
   await waitFor(() => expect(getHarnessStatus).toHaveBeenCalledWith('/repo'));
-  return { getHarnessStatus, syncHarness };
+  await waitFor(() =>
+    expect(queryClient.getQueryState(harnessKeys.status('/repo'))?.status).toBe('success')
+  );
+  return { getHarnessStatus, syncHarness, queryClient };
 }
 
 describe('HarnessDriftBanner — one condition, one message, one action', () => {
@@ -124,7 +139,9 @@ describe('HarnessDriftBanner — one condition, one message, one action', () => 
     // which is also the seeded defect the browser test's last step catches.
     await renderBanner(CLEAN);
 
-    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    // The read has SETTLED by here (see `renderBanner`), so this is an absence
+    // over an answer rather than over a gap.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sync now' })).not.toBeInTheDocument();
   });
 
@@ -201,7 +218,9 @@ describe('HarnessDriftBanner — the sync', () => {
     const getHarnessStatus = vi.fn().mockResolvedValue(statusWith({ drifted: 1 }));
     const syncHarness = vi.fn().mockReturnValue(pending);
     const transport = createMockTransport({ getHarnessStatus, syncHarness });
-    render(<HarnessDriftBanner projectPath="/repo" />, { wrapper: createWrapper(transport) });
+    render(<HarnessDriftBanner projectPath="/repo" />, {
+      wrapper: createWrapper(transport).wrapper,
+    });
     await waitFor(() => expect(getHarnessStatus).toHaveBeenCalled());
 
     await user.click(await screen.findByRole('button', { name: 'Sync now' }));
@@ -258,7 +277,9 @@ describe('HarnessDriftBanner — the sync', () => {
       askedAbout: [],
     });
     const transport = createMockTransport({ getHarnessStatus, syncHarness });
-    render(<HarnessDriftBanner projectPath="/repo" />, { wrapper: createWrapper(transport) });
+    render(<HarnessDriftBanner projectPath="/repo" />, {
+      wrapper: createWrapper(transport).wrapper,
+    });
     await waitFor(() => expect(getHarnessStatus).toHaveBeenCalled());
 
     await user.click(await screen.findByRole('button', { name: 'Sync now' }));
@@ -272,6 +293,32 @@ describe('HarnessDriftBanner — the sync', () => {
     expect(screen.queryByText('Some agent files are out of date.')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sync now' })).not.toBeInTheDocument();
     expect(getHarnessStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('says nothing about a count when the sync wrote nothing', async () => {
+    // Purpose: a removal-only sync did its whole job and wrote no files, and
+    // "0 files written." reads like a failure over a receipt for work that
+    // succeeded. Seeded defect: print the count unconditionally and this reds
+    // on the exact sentence.
+    const user = userEvent.setup();
+    await renderBanner(statusWith({ drifted: 1 }), {
+      status: CLEAN,
+      applied: 0,
+      swept: ['.claude/skills/beta'],
+      removals: [
+        { path: '.claude/skills/beta', reason: 'The skill this link pointed to is gone.' },
+      ],
+      conflicts: 0,
+      askedAbout: [],
+    });
+
+    await user.click(await screen.findByRole('button', { name: 'Sync now' }));
+
+    expect(await screen.findByText('Agent files updated.')).toBeInTheDocument();
+    expect(screen.queryByText(/files written/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/0 files/)).not.toBeInTheDocument();
+    // The removal IS the receipt here, so it still has to be on screen.
+    expect(screen.getByText('Removed 1 file DorkOS put here:')).toBeInTheDocument();
   });
 
   it('says a package is waiting when the sync raised a card', async () => {
