@@ -9,6 +9,9 @@ covers:
   # Folds in here: all three refine this same unreleased behaviour, and nothing a
   # person could have seen before it.
   - 'fix(harness,cli): the lines about a shared package stop saying nobody can see it (DOR-1924)'
+  - 'fix(config): the migration key moves to 0.77.0, because 0.76.0 landed first (DOR-1924)'
+  - 'refactor(server,cli): the configured boundary root is read in one place (DOR-1924)'
+  - 'fix(cli): a confined deployment says what it cannot reach, not that it found nothing (DOR-1924)'
 ---
 
 ### Added
