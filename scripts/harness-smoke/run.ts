@@ -35,7 +35,13 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolveFreeGate, resolveSmokeGate } from './gate.js';
-import { INSTRUCTIONS_SENTINEL, stageSmokeFixture, type SmokeFixture } from './fixture.js';
+import {
+  INSTRUCTIONS_SENTINEL,
+  SMOKE_SCENARIOS,
+  stageSmokeFixture,
+  type SmokeFixture,
+  type SmokeScenario,
+} from './fixture.js';
 import {
   SMOKE_HARNESS_IDS,
   smokeHarnessFor,
@@ -55,7 +61,15 @@ import {
   type ListingAbsence,
   type Verdict,
 } from './oracles.js';
-import { armLine, renderRunReport, renderSkipReport, reportFileName } from './report.js';
+import { userTierNotRun, userTierVerdicts } from './user-tier.js';
+import {
+  armLine,
+  renderRunReport,
+  renderSkipReport,
+  renderUserTierReport,
+  reportFileName,
+  type UserTierRoundReport,
+} from './report.js';
 
 /**
  * The default ceiling, in USD.
@@ -106,6 +120,8 @@ export interface SmokeOptions {
   model?: string;
   /** Run only the oracles that reach no model, and spend nothing. */
   free: boolean;
+  /** Which fixture to ask about. `project` is the original and the default. */
+  scenario: SmokeScenario;
 }
 
 /**
@@ -130,7 +146,8 @@ export function parseArgs(
       ok: false,
       error:
         `Usage: run.sh <${SMOKE_HARNESS_IDS.join('|')}> ` +
-        `[--free] [--max-usd N] [--report DIR] [--binary PATH] [--model ID]`,
+        `[--free] [--scenario ${SMOKE_SCENARIOS.join('|')}] [--max-usd N] [--report DIR] ` +
+        `[--binary PATH] [--model ID]`,
     };
   }
   if (!smokeHarnessFor(harness)) {
@@ -145,6 +162,7 @@ export function parseArgs(
   let binary: string | undefined;
   let model: string | undefined;
   let free = false;
+  let scenario: SmokeScenario = 'project';
 
   for (let index = 0; index < rest.length; index += 1) {
     const flag = rest[index];
@@ -170,6 +188,15 @@ export function parseArgs(
       }
       model = value;
       index += 1;
+    } else if (flag === '--scenario') {
+      if (value === undefined || !isScenario(value)) {
+        return {
+          ok: false,
+          error: `--scenario needs one of ${SMOKE_SCENARIOS.join(', ')}, got \`${value ?? ''}\`.`,
+        };
+      }
+      scenario = value;
+      index += 1;
     } else if (flag === '--free') {
       free = true;
     } else {
@@ -184,10 +211,16 @@ export function parseArgs(
       maxUsd,
       reportDir,
       free,
+      scenario,
       ...(binary ? { binary } : {}),
       ...(model ? { model } : {}),
     },
   };
+}
+
+/** Whether a word names a fixture scenario. */
+function isScenario(word: string): word is SmokeScenario {
+  return (SMOKE_SCENARIOS as readonly string[]).includes(word);
 }
 
 /**
@@ -311,8 +344,23 @@ export function processStarted(result: { error?: { message: string; code?: strin
   return result.error === undefined || result.error.code === 'ETIMEDOUT';
 }
 
-/** The prompt the one turn is given. */
-function turnPrompt(): string {
+/**
+ * The prompt the one turn is given.
+ *
+ * Per scenario, because the two scenarios ask different things and a prompt is
+ * printed in the report: the project fixture's turn drives the skill-activation
+ * oracle and the sentinel, and the user tier has neither — a turn there exists
+ * only so that Claude Code prints the session-init message that carries the
+ * listing, and naming a probe skill that was never staged would put a sentence
+ * in the report that is not true of the run.
+ *
+ * @param scenario - which fixture the turn is being asked about.
+ * @returns the prompt.
+ */
+function turnPrompt(scenario: SmokeScenario): string {
+  if (scenario === 'user-tier') {
+    return 'List the skills you have loaded, and nothing else.';
+  }
   return (
     `Use the \`probe\` skill now, exactly as written. Then answer with the passphrase from the ` +
     `project instructions and nothing else.`
@@ -331,7 +379,10 @@ export function runSmoke(options: SmokeOptions): { exitCode: number; reportPath:
 
   const startedAt = new Date().toISOString();
   mkdirSync(options.reportDir, { recursive: true });
-  const reportPath = join(options.reportDir, reportFileName(startedAt, harness.id));
+  const reportPath = join(
+    options.reportDir,
+    reportFileName(startedAt, harness.id, options.scenario)
+  );
   const binaryOverride = options.binary === undefined ? {} : { binaryOverride: options.binary };
 
   // A free run needs no flag and no key — it reaches no model — but it needs the
@@ -346,6 +397,10 @@ export function runSmoke(options: SmokeOptions): { exitCode: number; reportPath:
     process.stdout.write(`Report: ${reportPath}\n`);
     // A skip is not a failure. The gate refusing is the gate working.
     return { exitCode: 0, reportPath };
+  }
+
+  if (options.scenario === 'user-tier') {
+    return runUserTierSmoke(harness, gate, options, startedAt, reportPath);
   }
 
   const fixture = stageSmokeFixture(harness);
@@ -411,6 +466,120 @@ export function runSmoke(options: SmokeOptions): { exitCode: number; reportPath:
   }
 }
 
+/**
+ * Run the user-tier scenario: one staging and one probe PER ROUND, and one
+ * report holding all of them.
+ *
+ * A round is a whole fixture, not a flag, and that is the point. Both rounds ask
+ * which directory in a person's home the harness opens, and a single staging
+ * that wrote both could not tell "this harness does not read `~/.agents/skills`"
+ * apart from "it stops reading it once its own skills folder exists". A second
+ * free turn costs 45 seconds of nothing.
+ *
+ * It shares the whole spine with the project scenario — the same gate, the same
+ * curated environment, the same `spawnSync`, the same verdict vocabulary. What
+ * differs is the fixture it stages and the question it asks, which is why this
+ * is a branch rather than a second runner.
+ *
+ * @param harness - the harness being asked.
+ * @param gate - the binary the gate resolved, and the instrument when there is one.
+ * @param options - what the command line asked for.
+ * @param startedAt - the run's start, ISO-8601.
+ * @param reportPath - where the report goes.
+ * @returns the process exit code, and the report it wrote.
+ */
+function runUserTierSmoke(
+  harness: SmokeHarness,
+  gate: { binaryPath: string; key?: string },
+  options: SmokeOptions,
+  startedAt: string,
+  reportPath: string
+): { exitCode: number; reportPath: string } {
+  const rounds: UserTierRoundReport[] = [];
+  const verdicts: Verdict[] = [];
+  let credential: Verdict | undefined;
+
+  for (const round of harness.userTierRounds) {
+    const fixture = stageSmokeFixture(harness, { scenario: 'user-tier', round });
+    try {
+      const observed = probeHarness(harness, fixture, gate, options);
+      const roundVerdicts = [
+        ...userTierVerdicts(harness, fixture.subjects, observed.listing, observed.absence),
+        // Only on the paid path, and per ROUND rather than per run: the ceiling
+        // is a per-turn flag on the binary, so a run of two rounds bounded one
+        // turn twice and the report has to say that rather than imply one
+        // number covered both.
+        ...(options.free ? [] : [ceilingVerdict(harness, observed.turn, options.maxUsd)]),
+      ];
+      verdicts.push(...roundVerdicts);
+      // The same environment serves every round, so the credential answer is a
+      // property of the RUN. Taken from the first round that produced one, and
+      // reported once, rather than repeated under each heading as if it were
+      // three separate measurements.
+      credential ??=
+        observed.turn.credentialSource === undefined
+          ? undefined
+          : credentialVerdict(harness, observed.turn, options.free);
+      rounds.push({
+        round,
+        roots: fixture.userTierRoots,
+        injectDirs: fixture.injectDirs,
+        staged: fixture.applied,
+        verdicts: roundVerdicts,
+        ...(observed.listing ? { listing: observed.listing } : {}),
+        ...(observed.turn.costUsd === undefined ? {} : { costUsd: observed.turn.costUsd }),
+        // The turn's argv where the listing rides a turn, the listing probe's
+        // where it does not. One of the two always exists, and a report that did
+        // not carry it could not be re-run by the person reading it.
+        ...((observed.turnCommand ?? observed.listingCommand) === undefined
+          ? {}
+          : { command: (observed.turnCommand ?? observed.listingCommand) as string }),
+        notes: observed.notes,
+      });
+    } finally {
+      fixture.cleanup();
+    }
+  }
+
+  credential ??= credentialVerdict(harness, { startupSeen: false, text: '' }, options.free);
+  verdicts.push(credential);
+
+  writeFileSync(
+    reportPath,
+    renderUserTierReport({
+      harness,
+      startedAt,
+      free: options.free,
+      pinnedModel: modelFor(harness, options),
+      rounds,
+      credential,
+      notRun: userTierNotRun(harness),
+    })
+  );
+
+  for (const round of rounds) {
+    process.stdout.write(`--- ${round.round}\n`);
+    for (const verdict of round.verdicts) {
+      process.stdout.write(`${verdict.status.toUpperCase().padEnd(8)}${verdict.id}\n`);
+    }
+  }
+  process.stdout.write(`--- run\n`);
+  process.stdout.write(`${credential.status.toUpperCase().padEnd(8)}${credential.id}\n`);
+  const spent = rounds.reduce((total, round) => total + (round.costUsd ?? 0), 0);
+  process.stdout.write(
+    `\nCost: ${
+      options.free
+        ? 'nothing — --free reaches no model'
+        : rounds.every((round) => round.costUsd === undefined)
+          ? `not reported by ${harness.label}`
+          : `${spent.toFixed(4)} USD across ${rounds.length} round(s)`
+    }\n`
+  );
+  process.stdout.write(`Report: ${reportPath}\n`);
+  for (const round of rounds) for (const note of round.notes) process.stdout.write(`${note}\n`);
+  return { exitCode: overallStatus(verdicts) === 'failed' ? 1 : 0, reportPath };
+}
+
 /** The model this run pins: the harness's cheap one, or an explicit override. */
 function modelFor(harness: SmokeHarness, options: SmokeOptions): string {
   return options.model ?? harness.model.id;
@@ -430,6 +599,14 @@ interface ProbeOutcome {
   skillProbeRan: boolean;
   /** The turn's command line, for reproduction. Absent when no turn ran. */
   turnCommand?: string;
+  /**
+   * The non-model listing probe's command line, for reproduction.
+   *
+   * Recorded for the same reason the turn's is: a report that says what a binary
+   * answered without saying what it was asked cannot be re-run by the person
+   * reading it. Absent for a harness whose listing rides the turn.
+   */
+  listingCommand?: string;
   /** Oracles this run deliberately did not reach, in the report's words. */
   notRun: string[];
   /** Lines to print after the report path. */
@@ -461,18 +638,21 @@ function probeHarness(
   const context = {
     repoRoot: fixture.repoRoot,
     binaryPath: gate.binaryPath,
-    prompt: turnPrompt(),
+    prompt: turnPrompt(options.scenario),
     noncesDir: fixture.noncesDir,
     model: modelFor(harness, options),
     maxUsd: options.maxUsd,
+    injectDirs: fixture.injectDirs,
   };
   const timeout = free ? FREE_PROBE_TIMEOUT_MS : PROBE_TIMEOUT_MS;
   const notRun: string[] = [];
   const notes: string[] = [];
 
   let listing: ListingObservation | undefined;
+  let listingCommand: string | undefined;
   if (harness.listingProbe && harness.parseListing) {
     const probe = harness.listingProbe(context);
+    listingCommand = [probe.command, ...probe.args].join(' ');
     const result = runProbe(probe, fixture.repoRoot, { ...env, ...probe.env }, timeout);
     if (!processStarted(result)) {
       notes.push(`Note: the listing probe never started — ${result.error?.message ?? ''}`);
@@ -489,6 +669,7 @@ function probeHarness(
     );
     return {
       ...(listing ? { listing } : {}),
+      ...(listingCommand === undefined ? {} : { listingCommand }),
       absence: 'no-surface',
       turn: { startupSeen: false, text: '' },
       turnRan: false,
@@ -527,6 +708,7 @@ function probeHarness(
 
   return {
     ...(listing ? { listing } : {}),
+    ...(listingCommand === undefined ? {} : { listingCommand }),
     // A harness with an in-turn listing that printed no startup record had an
     // oracle that DID NOT RUN, which is a different thing from never having one.
     absence:

@@ -55,6 +55,7 @@
  * @module harness-smoke/harnesses
  */
 import type { HarnessId } from '../../packages/harness/dist/manifest/schema.js';
+import type { UserTierRound } from './fixture.js';
 
 /** The one variable that ARMS a smoke run, whatever harness it names. */
 export const HARNESS_SMOKE_OPT_IN_VAR = 'DORKOS_HARNESS_SMOKE';
@@ -212,6 +213,18 @@ export interface ProbeContext {
   model: string;
   /** The per-run ceiling in USD, for a harness whose CLI takes one. */
   maxUsd: number;
+  /**
+   * Absolute package directories the probe must load as session plugins.
+   *
+   * Always EMPTY in the project scenario, which is why every existing report is
+   * byte-identical: a harness's argv only grows when the user-tier scenario asks
+   * a question about injection. The one route that exists is Claude Code's
+   * `--plugin-dir`, which is what the Claude Agent SDK itself appends for each
+   * `{ type: 'local', path }` entry (`sdk.mjs`, 0.3.224) — so this reproduces
+   * what `plugin-activation.ts` does in a DorkOS-driven session rather than
+   * approximating it.
+   */
+  injectDirs: readonly string[];
 }
 
 /** One command the smoke runs, fully resolved. */
@@ -250,6 +263,15 @@ export interface SmokeHarness {
   deniesFileReads: FileReadDenial;
   /** What, if anything, it can be asked for free. */
   free: FreeMode;
+  /**
+   * The user-tier rounds this harness can be asked, in report order.
+   *
+   * Per harness because the question is per READ PATH: only Claude Code has a
+   * personal skills directory of its own to ask about, and only Claude Code has
+   * an injection route for the duplicate question. Everything else is asked the
+   * one question the shared `~/.agents/skills` directory raises.
+   */
+  userTierRounds: readonly UserTierRound[];
   /** The cheap model the runner pins, and where that choice comes from. */
   model: { flag: string; id: string; why: string };
   /** How far the calibration diff can honestly go, and why. */
@@ -412,6 +434,9 @@ const CLAUDE: SmokeHarness = {
       'fire and the session-init message prints before the first API request, so the listing, ' +
       'credential and hook oracles all answer and nothing is billed',
   },
+  // Both rounds: Claude Code is the only harness with a personal skills
+  // directory of its own AND the only one DorkOS injects packages into.
+  userTierRounds: ['claude-user-root', 'agents-user-root'],
   model: {
     flag: '--model',
     id: 'claude-haiku-4-5-20251001',
@@ -475,6 +500,11 @@ const CLAUDE: SmokeHarness = {
       // silently denied would read as "the skill did not fire".
       '--permission-mode',
       'bypassPermissions',
+      // Empty in the project scenario, so that argv is unchanged. In the
+      // user-tier scenario this is the DorkOS-driven session reproduced: the SDK
+      // turns each `{ type: 'local', path }` from `plugin-activation.ts` into
+      // exactly this flag.
+      ...ctx.injectDirs.flatMap((dir) => ['--plugin-dir', dir]),
       ctx.prompt,
     ],
     env: {},
@@ -486,8 +516,20 @@ const CLAUDE: SmokeHarness = {
 // Codex
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** The line shape inside Codex's `<skills_instructions>` block. */
-const CODEX_SKILL_LINE = /^- ([^:]+): (.*) \(file: (.+)\)$/;
+/**
+ * The line shape inside Codex's `<skills_instructions>` block.
+ *
+ * The name is matched as a run of NON-SPACE characters rather than as "anything
+ * but a colon", and the difference is not cosmetic: Codex namespaces a skill
+ * whose resolved directory sits inside a package carrying a
+ * `.claude-plugin/plugin.json`, printing `- agentspkg:agentsskill: The … (file: …)`.
+ * The old pattern read that name as `agentspkg` and folded the rest into the
+ * description, which would have put a name Codex never used into a report whose
+ * whole job is to say what the binary printed. `\S+` cannot cross a space, so it
+ * still cannot swallow a description that contains a colon of its own, and on
+ * every name without one it matches exactly what the old pattern matched.
+ */
+const CODEX_SKILL_LINE = /^- (\S+): (.*) \(file: (.+)\)$/;
 
 /**
  * Read `codex debug prompt-input`'s JSON — the free, non-model listing oracle.
@@ -593,6 +635,10 @@ const CODEX: SmokeHarness = {
     kind: 'listing-only',
     note: 'its listing probe is already non-model, and nothing else about Codex is free',
   },
+  // One round. `~/.agents/skills` IS Codex's user-scope read path, so the shared
+  // directory is its whole user tier; there is no second root and no injection
+  // route to ask about.
+  userTierRounds: ['agents-user-root'],
   model: {
     flag: '-m',
     id: 'gpt-5.6-luna',
@@ -704,6 +750,11 @@ const OPENCODE: SmokeHarness = {
       'nobody has found one, for the same reason the listing cell is unknown: the binary was not ' +
       'installed on the machine that built this runner',
   },
+  // `~/.agents/skills` is one of OpenCode's three documented user read paths, so
+  // the round is the right question to put to it. Whether it can ANSWER is a
+  // different matter: its listing surface is still `unknown`, so the verdict
+  // will read UNKNOWN until somebody with the binary finds one.
+  userTierRounds: ['agents-user-root'],
   model: {
     flag: '--model',
     id: 'openrouter/qwen/qwen3.7-flash',

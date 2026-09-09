@@ -374,6 +374,112 @@ describe('end to end, against the fake harness', () => {
     rmSync(dir, { recursive: true, force: true });
   }, 60_000);
 
+  it('answers all three of DOR-1924’s questions on a healthy tree, and shows the entries', () => {
+    // The deliverable is the ENTRIES, not the verdicts: a report that said
+    // "listed 1×" without them would be this runner asking to be believed.
+    const run = runSmokeE2e('claude', 'ok', ['--free', '--scenario', 'user-tier']);
+    expect(run.code).toBe(0);
+    expect(run.report).toContain('**PASS** `user-tier-listed`');
+    expect(run.report).toContain('**PASS** `injection-duplicate`');
+    expect(run.report).toContain('**PASS** `injection-control`');
+    expect(run.report).toContain('**PASS** `agents-user-root`');
+    // The raw listing, per round, and the roots the run wrote into.
+    expect(run.report).toContain('### The raw listing');
+    expect(run.report).toContain('`userpkg__userskill`');
+    expect(run.report).toContain('`injpkg:injskill`');
+    expect(run.report).toContain('### The roots it wrote');
+    // Both rounds ran, and each is its own staging.
+    expect(run.report).toContain('## Round `claude-user-root`');
+    expect(run.report).toContain('## Round `agents-user-root`');
+    // The oracles this scenario cannot reach are named rather than omitted.
+    expect(run.report).toContain('## What this run did NOT answer');
+  }, 90_000);
+
+  it('reports a second entry as the FINDING that flips §2.9, and still exits 0', () => {
+    const run = runSmokeE2e('claude', 'user-tier-twice', ['--free', '--scenario', 'user-tier']);
+    expect(run.code).toBe(0);
+    expect(run.report).toContain('**FINDING** `injection-duplicate`');
+    expect(run.report).toContain('sdkInjected');
+  }, 90_000);
+
+  it('fails, naming SRC-04, when the harness never opens its own user skills folder', () => {
+    const run = runSmokeE2e('claude', 'user-tier-missing', ['--free', '--scenario', 'user-tier']);
+    expect(run.code).toBe(1);
+    expect(run.report).toContain('**FAIL** `user-tier-listed`');
+    expect(run.report).toContain('SRC-04');
+    // And the duplicate question goes UNKNOWN rather than claiming a dedupe it
+    // cannot see: with the link route dead, one entry is one route working.
+    expect(run.report).toContain('**UNKNOWN** `injection-duplicate`');
+  }, 90_000);
+
+  it('reports a Claude Code that DOES read `~/.agents/skills` as the finding that shrinks A3', () => {
+    const run = runSmokeE2e('claude', 'agents-root-read', ['--free', '--scenario', 'user-tier']);
+    expect(run.code).toBe(0);
+    expect(run.report).toContain('**FINDING** `agents-user-root`');
+    expect(run.report).toContain('redundant');
+  }, 90_000);
+
+  it('fails the injection control, and refuses to answer the duplicate, when nothing loaded', () => {
+    const run = runSmokeE2e('claude', 'no-injection', ['--free', '--scenario', 'user-tier']);
+    expect(run.code).toBe(1);
+    expect(run.report).toContain('**FAIL** `injection-control`');
+    expect(run.report).toContain('**UNKNOWN** `injection-duplicate`');
+  }, 90_000);
+
+  it('asks Codex the shared-directory question, and says the duplicate one does not apply', () => {
+    // Not an UNKNOWN that reads like a gap: Codex has no injection route for
+    // DorkOS to use, so the question is not applicable rather than unanswered.
+    const run = runSmokeE2e('codex', 'ok', ['--free', '--scenario', 'user-tier']);
+    expect(run.code).toBe(0);
+    expect(run.report).toContain('**PASS** `agents-user-root`');
+    expect(run.report).toContain('Not an unknown; not applicable');
+    expect(run.report).not.toContain('`injection-duplicate`');
+    // Codex reports paths, so the report shows one beside every entry — and the
+    // entry itself is the NAMESPACED key a real codex-cli 0.145.0 prints for a
+    // package carrying a Claude Code plugin manifest, not the link's directory
+    // name and not the bare frontmatter name.
+    expect(run.report).toMatch(/`agentspkg:agentsskill` — `\S+\/SKILL\.md`/);
+  }, 90_000);
+
+  it('fails Codex’s round when a documented user read path reached nothing', () => {
+    const run = runSmokeE2e('codex', 'user-tier-missing', ['--free', '--scenario', 'user-tier']);
+    expect(run.code).toBe(1);
+    expect(run.report).toContain('**FAIL** `agents-user-root`');
+    expect(run.report).toContain('vendor facts contradicted by the binary');
+  }, 90_000);
+
+  it('writes the two scenarios to two files, so neither answer overwrites the other', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'smoke-e2e-both-'));
+    const reports = join(dir, 'reports');
+    mkdirSync(reports, { recursive: true });
+    const binary = fakeBinary(dir, 'ok');
+    for (const extra of [[], ['--scenario', 'user-tier']]) {
+      execFileSync(
+        'bash',
+        [
+          join(REPO_ROOT, 'scripts/harness-smoke/run.sh'),
+          'codex',
+          '--free',
+          '--binary',
+          binary,
+          '--report',
+          reports,
+          ...extra,
+        ],
+        {
+          encoding: 'utf8',
+          // eslint-disable-next-line no-restricted-syntax -- a child process needs a PATH; there is no app config equivalent.
+          env: { PATH: process.env.PATH ?? '' },
+        }
+      );
+    }
+    const written = execFileSync('ls', [reports], { encoding: 'utf8' }).trim().split('\n');
+    expect(written).toHaveLength(2);
+    expect(written.filter((name) => name.endsWith('-codex-user-tier.md'))).toHaveLength(1);
+    expect(written.filter((name) => name.endsWith('-codex.md'))).toHaveLength(1);
+    rmSync(dir, { recursive: true, force: true });
+  }, 90_000);
+
   it('writes a SKIP report and exits 0 when nothing armed it', () => {
     // The gate refusing is the gate working, and the exit code has to say so or
     // an operator's nightly loop would report a failure every night.

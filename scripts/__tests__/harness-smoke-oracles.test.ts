@@ -282,6 +282,7 @@ describe('what the skill-activation oracle is allowed to claim', () => {
       noncesDir: '/sandbox/nonces',
       model: 'm',
       maxUsd: 0.25,
+      injectDirs: [],
     }).args;
     const denied = args
       .map((arg) => /^Bash\(([^:]+):\*\)$/.exec(arg)?.[1])

@@ -35,8 +35,8 @@
  * @module harness-smoke/fake-harness
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /** The one behaviour each scenario bends. */
@@ -54,19 +54,49 @@ export type FakeScenario =
   /** The turn was served by a stored sign-in rather than the named key. */
   | 'ambient-credential'
   /** The turn cost more than the ceiling. */
-  | 'over-budget';
+  | 'over-budget'
+  /**
+   * The harness never opens its user-scope skills directory — the failure that
+   * would make slice A3's whole user tier buy a person nothing.
+   */
+  | 'user-tier-missing'
+  /**
+   * The harness lists the same skill directory once per route it is reachable
+   * by, instead of once per target. This is the outcome
+   * `specs/harness-sync-global/02-specification.md` §2.9 names as the one that
+   * flips the design to its `sdkInjected` fallback.
+   */
+  | 'user-tier-twice'
+  /**
+   * Claude Code also reads `~/.agents/skills`. Its vendor row does not list that
+   * path, so a harness that read it would make the Claude Code user-tier link
+   * redundant and shrink slice A3.
+   */
+  | 'agents-root-read'
+  /**
+   * `--plugin-dir` loads nothing. The duplicate question then cannot be asked at
+   * all, which is a different answer from "the two routes collapsed".
+   */
+  | 'no-injection';
+
+/** Every scenario word, in the order the type declares them. */
+const FAKE_SCENARIOS: readonly FakeScenario[] = [
+  'ok',
+  'no-listing',
+  'no-hooks',
+  'no-skill',
+  'no-sentinel',
+  'ambient-credential',
+  'over-budget',
+  'user-tier-missing',
+  'user-tier-twice',
+  'agents-root-read',
+  'no-injection',
+];
 
 /** Whether a word names a scenario. */
 function isScenario(word: string | undefined): word is FakeScenario {
-  return (
-    word === 'ok' ||
-    word === 'no-listing' ||
-    word === 'no-hooks' ||
-    word === 'no-skill' ||
-    word === 'no-sentinel' ||
-    word === 'ambient-credential' ||
-    word === 'over-budget'
-  );
+  return word !== undefined && (FAKE_SCENARIOS as readonly string[]).includes(word);
 }
 
 /** One skill the fake found, keyed the way the harness it is impersonating keys skills. */
@@ -112,6 +142,171 @@ function skillsIn(dir: string, keyBy: 'directory' | 'frontmatter'): FoundSkill[]
     found.push({ key, skillMd, description: parsed.description, body: parsed.body });
   }
   return found.sort((a, b) => a.key.localeCompare(b.key) || a.skillMd.localeCompare(b.skillMd));
+}
+
+/**
+ * The home directory the fake was launched with.
+ *
+ * A binary reads its own environment; that is the whole of what this stands in
+ * for. The runner points `HOME` at a per-run sandbox (`probeEnv`), so this can
+ * only ever reach a directory the run created itself.
+ */
+function fakeHome(): string {
+  // eslint-disable-next-line no-restricted-syntax -- this module stands in for a BINARY, and HOME is how a binary finds a person's home directory.
+  return process.env.HOME ?? '';
+}
+
+/**
+ * Claude Code's own configuration root — `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
+ *
+ * The same resolution `apps/server/src/services/runtimes/claude-code/claude-config-dir.ts`
+ * mirrors for the real binary, and for the same reason: it is another program's
+ * rule about its own directory, not DorkOS's about ours.
+ */
+function fakeClaudeRoot(): string {
+  // eslint-disable-next-line no-restricted-syntax -- CLAUDE_CONFIG_DIR is Claude Code's own variable, read here because this module impersonates Claude Code.
+  return process.env.CLAUDE_CONFIG_DIR ?? join(fakeHome(), '.claude');
+}
+
+/**
+ * The skills a `--plugin-dir` argument loads, keyed the way Claude Code keys a
+ * plugin's skill.
+ *
+ * Measured on claude 2.1.266: a package injected with `--plugin-dir` appears as
+ * `<plugin>:<skill>`, where `<plugin>` is the `name` in its
+ * `.claude-plugin/plugin.json` and `<skill>` is the skill's directory. A
+ * directory carrying no plugin manifest is not a plugin, so nothing is loaded
+ * from it.
+ *
+ * @param args - everything the fake was launched with.
+ * @returns the skills every injected package holds.
+ */
+function injectedSkills(args: readonly string[]): FoundSkill[] {
+  const found: FoundSkill[] = [];
+  for (const [index, arg] of args.entries()) {
+    if (arg !== '--plugin-dir') continue;
+    const dir = args[index + 1];
+    if (dir === undefined) continue;
+    const manifest = readJson(join(dir, '.claude-plugin', 'plugin.json')) as
+      { name?: unknown } | undefined;
+    const pluginName = typeof manifest?.name === 'string' ? manifest.name : undefined;
+    if (pluginName === undefined) continue;
+    for (const skill of skillsIn(join(dir, 'skills'), 'directory')) {
+      found.push({ ...skill, key: `${pluginName}:${skill.key}` });
+    }
+  }
+  return found;
+}
+
+/**
+ * Collapse entries that resolve to the same file, keeping the first.
+ *
+ * The behaviour under test, and measured rather than assumed: on claude 2.1.266
+ * a package reachable BOTH through `<claudeRoot>/skills/<pkg>__<name>` and
+ * through `--plugin-dir` produced ONE entry, under the personal-skills name. So
+ * the healthy fake collapses, the `user-tier-twice` fake does not, and the two
+ * drive the two branches §2.9 gates the design on.
+ *
+ * @param found - every skill discovered, user-tier routes before injected ones.
+ * @returns one entry per resolved file.
+ */
+function dedupeByRealpath(found: readonly FoundSkill[]): FoundSkill[] {
+  const seen = new Set<string>();
+  const kept: FoundSkill[] = [];
+  for (const skill of found) {
+    let resolved: string;
+    try {
+      resolved = realpathSync(skill.skillMd);
+    } catch {
+      resolved = skill.skillMd;
+    }
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    kept.push(skill);
+  }
+  return kept;
+}
+
+/**
+ * Everything a Claude-shaped invocation would find, through Claude Code's own
+ * read paths.
+ *
+ * Three tiers, in the order a listing prints them: the project's
+ * `.claude/skills`, the person's own `<claudeRoot>/skills`, and whatever
+ * `--plugin-dir` loaded. `~/.agents/skills` is deliberately NOT among them —
+ * it is not on the `claude-code` row's `skills.readPaths.user` in
+ * `packages/harness/src/vendor-facts/index.ts`, and a fake that read it would
+ * make a documented gap look closed.
+ *
+ * @param cwd - the directory the fake was launched in.
+ * @param args - everything after the scenario flag.
+ * @param scenario - the behaviour to bend.
+ * @returns the skills, deduplicated by target unless the scenario says otherwise.
+ */
+function claudeSkills(cwd: string, args: readonly string[], scenario: FakeScenario): FoundSkill[] {
+  if (scenario === 'no-listing') return [];
+  const found = [
+    ...skillsIn(join(cwd, '.claude', 'skills'), 'directory'),
+    ...(scenario === 'user-tier-missing'
+      ? []
+      : skillsIn(join(fakeClaudeRoot(), 'skills'), 'directory')),
+    ...(scenario === 'agents-root-read'
+      ? skillsIn(join(fakeHome(), '.agents', 'skills'), 'directory')
+      : []),
+    ...(scenario === 'no-injection' ? [] : injectedSkills(args)),
+  ];
+  return scenario === 'user-tier-twice' ? found : dedupeByRealpath(found);
+}
+
+/**
+ * Everything a Codex-shaped invocation would find.
+ *
+ * Two tiers: the project's `.agents/skills` and the person's `~/.agents/skills`,
+ * which is what the `codex` row's `skills.readPaths.user` lists.
+ *
+ * @param cwd - the directory the fake was launched in.
+ * @param scenario - the behaviour to bend.
+ * @returns the skills, keyed the way Codex keys them.
+ */
+function codexSkills(cwd: string, scenario: FakeScenario): FoundSkill[] {
+  if (scenario === 'no-listing') return [];
+  return [
+    ...skillsIn(join(cwd, '.agents', 'skills'), 'frontmatter'),
+    ...(scenario === 'user-tier-missing'
+      ? []
+      : skillsIn(join(fakeHome(), '.agents', 'skills'), 'frontmatter')),
+  ].map(namespaceByPluginManifest);
+}
+
+/**
+ * Codex's namespacing rule, measured rather than documented.
+ *
+ * On codex-cli 0.145.0 a skill whose resolved `SKILL.md` sits at
+ * `<pkg>/skills/<name>/SKILL.md`, where `<pkg>` carries a
+ * `.claude-plugin/plugin.json`, is listed as `<pkg-name>:<frontmatter-name>`
+ * rather than under its bare frontmatter name — a marketplace-installed package
+ * linked into `~/.agents/skills` is exactly that shape. A skill under a package
+ * with no such manifest keeps its bare name, which is why the project fixture's
+ * `.agents/skills/pkg__x` is unaffected: the journey DSL writes the DorkOS
+ * manifest and not this one.
+ *
+ * @param skill - one discovered skill.
+ * @returns the same skill, namespaced when its package says so.
+ */
+function namespaceByPluginManifest(skill: FoundSkill): FoundSkill {
+  let resolved: string;
+  try {
+    resolved = realpathSync(skill.skillMd);
+  } catch {
+    return skill;
+  }
+  const skillsDir = dirname(dirname(resolved));
+  if (skillsDir.split(/[\\/]/).pop() !== 'skills') return skill;
+  const manifest = readJson(join(dirname(skillsDir), '.claude-plugin', 'plugin.json')) as
+    { name?: unknown } | undefined;
+  return typeof manifest?.name === 'string'
+    ? { ...skill, key: `${manifest.name}:${skill.key}` }
+    : skill;
 }
 
 /** Every namespaced command under `.claude/commands`, as a person would type it. */
@@ -208,9 +403,13 @@ function runProbeSkill(skills: readonly FoundSkill[], cwd: string): void {
 }
 
 /** Emit the `claude --print --output-format stream-json` NDJSON. */
-function speakClaude(root: string, scenario: FakeScenario, sentinel: string): string {
-  const skills =
-    scenario === 'no-listing' ? [] : skillsIn(join(root, '.claude', 'skills'), 'directory');
+function speakClaude(
+  root: string,
+  args: readonly string[],
+  scenario: FakeScenario,
+  sentinel: string
+): string {
+  const skills = claudeSkills(root, args, scenario);
   const commands = scenario === 'no-listing' ? [] : claudeCommandsIn(root);
   const init = {
     type: 'system',
@@ -233,8 +432,7 @@ function speakClaude(root: string, scenario: FakeScenario, sentinel: string): st
 
 /** Emit the `codex debug prompt-input` JSON. */
 function speakCodexPromptInput(root: string, scenario: FakeScenario, sentinel: string): string {
-  const skills =
-    scenario === 'no-listing' ? [] : skillsIn(join(root, '.agents', 'skills'), 'frontmatter');
+  const skills = codexSkills(root, scenario);
   const lines = skills.map(
     (skill) => `- ${skill.key}: ${skill.description} (file: ${skill.skillMd})`
   );
@@ -320,7 +518,7 @@ export function speak(
   if (scenario !== 'no-skill') {
     runProbeSkill(skillsIn(join(cwd, '.claude', 'skills'), 'directory'), cwd);
   }
-  return speakClaude(cwd, scenario, sentinel);
+  return speakClaude(cwd, args, scenario, sentinel);
 }
 
 /**
