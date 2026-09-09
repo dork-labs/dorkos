@@ -246,8 +246,13 @@ function removalLines(removals: readonly SweptPath[], about: 'will' | 'did'): st
  * @returns 0 on success, 1 when a link was blocked by something DorkOS does not own.
  */
 async function enableTool(dorkHome: string, tool: HarnessId): Promise<number> {
-  const { readGlobalSharingFromDisk, writeGlobalSharing, globalRootsFor, boundaryConfigFromDisk } =
-    await import('../server/services/harness/global-scope.js');
+  const {
+    readGlobalSharingFromDisk,
+    writeGlobalSharing,
+    globalRootsFor,
+    boundaryConfigFromDisk,
+    configuredBoundaryRoot,
+  } = await import('../server/services/harness/global-scope.js');
   const { boundaryWasConfigured } = await import('../server/lib/boundary.js');
   const { initConfigManager } = await import('../server/services/core/config-manager.js');
   const { applyGlobalPlan, projectGlobal, globalBoundarySkipLine } =
@@ -273,10 +278,8 @@ async function enableTool(dorkHome: string, tool: HarnessId): Promise<number> {
 
   const boundaryConfig = boundaryConfigFromDisk(dorkHome);
   if (boundaryWasConfigured(process.env, boundaryConfig)) {
-    const root =
-      process.env.DORKOS_BOUNDARY?.trim() || String(boundaryConfig.getDot('server.boundary'));
     console.log('');
-    console.log(globalBoundarySkipLine(root));
+    console.log(globalBoundarySkipLine(configuredBoundaryRoot(process.env, boundaryConfig)));
     return 0;
   }
 

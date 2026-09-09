@@ -147,6 +147,29 @@ export function boundaryConfigFromDisk(dorkHome: string): BoundaryConfigReader {
   };
 }
 
+/**
+ * The boundary root somebody configured, as they wrote it.
+ *
+ * Only meaningful when {@link boundaryWasConfigured} says one WAS configured;
+ * the two are read together and never apart, which is why this reads the same
+ * two places in the same order rather than re-deriving them at each caller. It
+ * is what the frozen skip line interpolates, so a person is told the root they
+ * set rather than the one DorkOS resolved it to.
+ *
+ * @param env - the process environment.
+ * @param config - the config store to read `server.boundary` from.
+ * @returns the configured root, or an empty string when nothing is configured.
+ */
+export function configuredBoundaryRoot(
+  env: NodeJS.ProcessEnv,
+  config: BoundaryConfigReader
+): string {
+  const fromEnv = env.DORKOS_BOUNDARY?.trim();
+  if (fromEnv) return fromEnv;
+  const fromConfig = config.getDot('server.boundary');
+  return typeof fromConfig === 'string' ? fromConfig.trim() : '';
+}
+
 /** Everything a caller needs to build a global plan and report on it honestly. */
 export interface GlobalScopeInputs {
   /** The roots to hand the planner. Both user roots are absent under a boundary. */
@@ -209,8 +232,7 @@ export function resolveGlobalScopeInputs(
     // `<dorkHome>/agents/*` on purpose, so reaching for it would either refuse
     // the write or invite somebody to widen a security narrowing to make a
     // feature work.
-    const configured = env.DORKOS_BOUNDARY?.trim() || String(config.getDot('server.boundary'));
-    return { ...base, roots: { dorkHome }, boundaryRoot: configured };
+    return { ...base, roots: { dorkHome }, boundaryRoot: configuredBoundaryRoot(env, config) };
   }
 
   const enabled = new Set(answer.harnesses);
