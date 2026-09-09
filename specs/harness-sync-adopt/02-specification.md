@@ -1107,13 +1107,12 @@ capability contract quotes for J-06. This is DOR-1921's and DOR-1922's lesson ap
 rather than after (`plan/global-installs.ts` records the measurement), and `adoptableSentence`'s
 optional `projectPath` is the one switch between them.
 
-**S14b and S15b exist because a project that does not enable Claude Code gets no link** (Deviation 17;
-an earlier draft said "four of the five roots get no link", which keyed the variant off the source
-folder instead of off the reader) (§1.6, Decision 16). Promising "a
-link behind so Claude Code still finds it" for a skill moved out of `.opencode/skills` would be a
-sentence about something that did not happen — and would leave a person hunting for a link that was
-never planned. The variant is chosen by the same condition `move.link` is: present only for
-`.claude/skills`.
+**S14b and S15b exist because a project that does not enable Claude Code gets no link** (§1.6,
+Decision 16; an earlier draft said "four of the five roots get no link", which keyed the variant off
+the source folder instead of off the reader — Deviation 17). Promising "a link behind so Claude Code
+still finds it" to a project that does not run Claude Code would be a sentence about something that
+did not happen, and would leave a person hunting for a link that was never planned. The variant is
+chosen by the same condition `move.link` is: present only when the manifest enables `claude-code`.
 
 **R7's sentence is picked by WHOSE fields the offending keys are, and the schema's shape gets
 that wrong in both directions.** An earlier draft asked one question — is the key one
