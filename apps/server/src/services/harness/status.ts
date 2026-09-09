@@ -107,15 +107,18 @@ const ARTIFACT_KIND = {
 /**
  * The engine's provenance values, mapped onto the response's.
  *
- * The response has a fourth the engine does not — `harness-native`, for a skill
+ * The response has a third the engine does not — `harness-native`, for a skill
  * authored in one tool's own directory (`.claude/skills`, `.opencode/skills`, …)
  * rather than in the canonical layer — so this direction is total and the reverse
  * one is not.
+ *
+ * The `satisfies` is why this file is named by the compiler whenever the
+ * engine's union changes, which is exactly what happened when `'adopted'` was
+ * retired (DOR-1944).
  */
 const PROVENANCE = {
   authored: 'authored',
   installed: 'installed',
-  adopted: 'adopted',
 } satisfies Record<Provenance, HarnessProvenance>;
 
 /**

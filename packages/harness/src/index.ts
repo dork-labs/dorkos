@@ -2,8 +2,9 @@
  * `@dorkos/harness` — the cross-agent file projection engine.
  *
  * Projects skills, instructions, hooks, and commands from a canonical source
- * (`.agents/`, and — in later phases — marketplace-installed plugins and adopted
- * assets) to every enabled agent harness, with an honest per-harness drop list.
+ * (`.agents/`, and marketplace-installed plugins) to every enabled agent
+ * harness, with an honest per-harness drop list. `adopt/` is the way an asset an
+ * agent wrote in one tool's own folder gets INTO that canonical source.
  */
 export * from './manifest/schema.js';
 export * from './manifest/notices.js';

@@ -14,10 +14,13 @@ describe('resolveSourceRoots', () => {
 });
 
 describe('isEphemeralProvenance', () => {
-  it('SRC-10: classifies installed + adopted as ephemeral, authored as committed', () => {
+  it('SRC-10: classifies installed as ephemeral and authored as committed', () => {
+    // The case that pinned `adopted` as ephemeral went with the value itself
+    // (DOR-1944). A skill adopt moved is AUTHORED, so it is committed — and the
+    // old value was worse than unused, because this function answering `true`
+    // for it would have told a person to gitignore a skill they just committed.
     expect(isEphemeralProvenance('authored')).toBe(false);
     expect(isEphemeralProvenance('installed')).toBe(true);
-    expect(isEphemeralProvenance('adopted')).toBe(true);
   });
 
   it('AP-09: declares the gitignore patterns installed + generated projections require', () => {

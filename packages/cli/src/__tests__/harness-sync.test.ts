@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
+import { createHash } from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 
@@ -17,14 +18,19 @@ import {
 } from './harness-fixtures.js';
 
 /**
- * The sorted set of every path under `root`.
+ * The sorted set of every path under `root`, each carrying what is AT it.
  *
- * This measures the tree's SHAPE — which paths exist — and nothing else: not file
- * contents, not mtimes. So it catches any *new* path a read-only mode leaves
- * behind (a manifest, a dotdir, a projected symlink) anywhere under the root,
- * which is the failure this suite exists to catch, but an in-place rewrite of a
- * file that already existed would pass it. No check-mode path can reach such a
- * rewrite today; if one ever can, this helper has to start hashing contents.
+ * It measures the tree's shape AND its contents: every new path a read-only mode
+ * leaves behind (a manifest, a dotdir, a projected symlink), and every in-place
+ * rewrite of a file that was already there.
+ *
+ * **The contents half is new (DOR-1944), and this docstring asked for it.** It
+ * used to measure shape alone and say so — "no check-mode path can reach such a
+ * rewrite today; if one ever can, this helper has to start hashing contents".
+ * `dorkos harness adopt` is one that can: it moves a directory a person wrote, so
+ * "the tree did not change" has to mean the same BYTES are in the same places
+ * rather than paths with the same names. A link is compared by its text for the
+ * same reason.
  */
 function snapshotTree(root: string): string[] {
   const walk = (dir: string, prefix: string): string[] =>
@@ -32,10 +38,12 @@ function snapshotTree(root: string): string[] {
       .readdirSync(dir, { withFileTypes: true })
       .flatMap((entry) => {
         const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-        // Never follow symlinks: a projected link is itself the change under test.
-        return entry.isDirectory() && !entry.isSymbolicLink()
-          ? [rel, ...walk(path.join(dir, entry.name), rel)]
-          : [rel];
+        const abs = path.join(dir, entry.name);
+        // Never follow symlinks: a projected link is itself the change under
+        // test, and its own text is what says where it points.
+        if (entry.isSymbolicLink()) return [`${rel} -> ${fs.readlinkSync(abs)}`];
+        if (entry.isDirectory()) return [rel, ...walk(abs, rel)];
+        return [`${rel} ${createHash('sha256').update(fs.readFileSync(abs)).digest('hex')}`];
       })
       .sort();
   return walk(root, '');
