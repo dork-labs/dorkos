@@ -422,6 +422,18 @@ export function buildPlan(input: {
    * is reported as present — the honest answer for a caller that has not looked.
    */
   detectedHarnesses?: readonly DetectedHarness[];
+  /**
+   * The harness DorkOS's own default runtime reads. When the manifest does not
+   * enable it, it joins {@link ProjectionPlan.notEnabled} as a `dorkos-runtime`
+   * entry — the notice for a repo that has left no footprint for that harness
+   * because it has never run it (DOR-1901).
+   *
+   * Injected rather than read, like every other answer `buildPlan` is handed:
+   * `runtimes.default` is a `~/.dork/config.json` key and this engine reads no
+   * config. Omitted, no such entry is produced, which is the honest answer for a
+   * caller that has not looked.
+   */
+  dorkosHarness?: HarnessId;
 }): ProjectionPlan {
   const {
     repoRoot,
@@ -433,6 +445,7 @@ export function buildPlan(input: {
     installedPlugins = [],
     inventory = inventorySourceTree(repoRoot),
     detectedHarnesses = [],
+    dorkosHarness,
   } = input;
   const skills = scanSkills(repoRoot);
   const warnings: ProjectionWarning[] = [];
@@ -618,6 +631,31 @@ export function buildPlan(input: {
     actions: all.filter((a) => a.kind !== 'drop'),
     drops: all.filter((a) => a.kind === 'drop'),
     warnings,
-    notEnabled: detectedHarnesses.filter((d) => !manifest.harnesses.includes(d.harness)),
+    notEnabled: notEnabledHarnesses(manifest.harnesses, detectedHarnesses, dorkosHarness),
   };
+}
+
+/**
+ * Every harness this manifest does not enable that something says it should,
+ * footprints first.
+ *
+ * The DorkOS entry is added only when no footprint already names that harness,
+ * so a repo that has both a `.claude/` and DorkOS running Claude Code is one
+ * line rather than two — and the line it gets is the one with a path in it,
+ * because a path is the more actionable of the two answers.
+ *
+ * @param enabled - the manifest's own harness set.
+ * @param detected - harnesses whose own files are in the repo.
+ * @param dorkosHarness - the harness DorkOS's default runtime reads, if known.
+ * @returns one entry per harness to report, in the order the report prints them.
+ */
+function notEnabledHarnesses(
+  enabled: readonly HarnessId[],
+  detected: readonly DetectedHarness[],
+  dorkosHarness: HarnessId | undefined
+): DetectedHarness[] {
+  const missing = detected.filter((d) => !enabled.includes(d.harness));
+  if (dorkosHarness === undefined || enabled.includes(dorkosHarness)) return missing;
+  if (missing.some((d) => d.harness === dorkosHarness)) return missing;
+  return [...missing, { harness: dorkosHarness, why: 'dorkos-runtime' }];
 }

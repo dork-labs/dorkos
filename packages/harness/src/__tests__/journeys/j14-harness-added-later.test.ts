@@ -96,7 +96,7 @@ describe('J-14 — a harness added after the manifest was written', () => {
     addCursor();
 
     const after = plan();
-    expect(after.notEnabled).toEqual([{ harness: 'cursor', signal: '.cursor/' }]);
+    expect(after.notEnabled).toEqual([{ harness: 'cursor', why: 'footprint', signal: '.cursor/' }]);
     // A notice, not a fault: nothing is missing, nothing is stale, and the exit
     // code a person sees is the same one they saw yesterday.
     expect(checkPlan(repo, after).clean).toBe(true);

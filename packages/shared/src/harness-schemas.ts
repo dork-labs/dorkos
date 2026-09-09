@@ -49,6 +49,50 @@ export const HARNESS_LABELS: Readonly<Record<HarnessId, string>> = {
 };
 
 /**
+ * The harness each agent runtime DorkOS can run reads its own files through.
+ *
+ * DorkOS runs agents; the agents read instructions and skills through a harness.
+ * `claude-code` the RUNTIME starts Claude Code, which reads `.claude/`; so a
+ * project DorkOS manages has to enable `claude-code` the HARNESS or the session
+ * DorkOS starts there never sees the project's `AGENTS.md` (DOR-1901). The two
+ * vocabularies happen to share three spellings, which is exactly why the mapping
+ * is written down rather than assumed: nothing guarantees the next runtime's id
+ * is a harness id, and a runtime with no harness of its own is a real answer.
+ *
+ * `null` means "this runtime reads no harness's files", not "unknown". Today
+ * only `test-mode` is that — it is the e2e fake, it reads nothing off disk, and
+ * enabling a harness for it would write files for an agent that cannot read
+ * them. An id absent from this table is unknown, and the two are kept apart so a
+ * runtime added without a decision here is a gap somebody can find:
+ * `apps/server/src/services/harness/__tests__/runtime-harness-table.test.ts`
+ * walks the runtimes this repo actually ships and fails on one this table does
+ * not name.
+ */
+export const RUNTIME_HARNESSES: Readonly<Record<string, HarnessId | null>> = {
+  'claude-code': 'claude-code',
+  codex: 'codex',
+  opencode: 'opencode',
+  'test-mode': null,
+};
+
+/**
+ * The harness a runtime reads its files through, or `undefined` when it reads
+ * none — either because the runtime has no harness (`test-mode`) or because
+ * DorkOS has never heard of it.
+ *
+ * Both collapse to `undefined` on purpose at the CALL site: every caller does
+ * the same thing with them, which is to enable nothing extra. The distinction
+ * lives in {@link RUNTIME_HARNESSES}, where it is a decision rather than a
+ * branch.
+ *
+ * @param runtime - A runtime type id, e.g. the stored `runtimes.default`.
+ * @returns The harness that runtime reads, or `undefined`.
+ */
+export function harnessForRuntime(runtime: string): HarnessId | undefined {
+  return RUNTIME_HARNESSES[runtime] ?? undefined;
+}
+
+/**
  * What one cell of the status grid says — an artifact paired with one enabled
  * harness.
  *
@@ -247,6 +291,31 @@ export const HarnessRemovalSchema = z.object({
 export type HarnessRemoval = z.infer<typeof HarnessRemovalSchema>;
 
 /**
+ * A harness this project does not enable that something says it should.
+ *
+ * Two things can say so, and they are different claims about different
+ * evidence, so `why` says which and the surfaces word the line differently:
+ *
+ * - `footprint` — the harness's OWN files are in the folder (`.cursor/`), and
+ *   `signal` is the repo-relative path that gave it away (contract TR-11).
+ * - `dorkos-runtime` — DorkOS's own default runtime reads this harness, so
+ *   every session DorkOS starts here reads whatever that harness reads. There
+ *   is no path to name, so `signal` is absent (DOR-1901).
+ *
+ * Neither is an error: a person who runs Cursor on a different project is not
+ * wrong. Both are notices with the one command that turns the harness on.
+ */
+export const NotEnabledHarnessSchema = z.object({
+  harness: HarnessIdSchema,
+  why: z.enum(['footprint', 'dorkos-runtime']),
+  /** The repo-relative path that gave a `footprint` away. Absent otherwise. */
+  signal: z.string().optional(),
+});
+
+/** A harness this project does not enable that something says it should. */
+export type NotEnabledHarness = z.infer<typeof NotEnabledHarnessSchema>;
+
+/**
  * The one query a status read carries.
  *
  * It lives beside the response rather than in the route because the route is
@@ -411,7 +480,7 @@ export const HarnessStatusResponseSchema = z.object({
   detail: z.string().optional(),
   computedAt: z.string(),
   enabled: z.array(HarnessIdSchema),
-  notEnabled: z.array(z.object({ harness: HarnessIdSchema, signal: z.string() })),
+  notEnabled: z.array(NotEnabledHarnessSchema),
   clean: z.boolean(),
   counts: z.object({
     /**

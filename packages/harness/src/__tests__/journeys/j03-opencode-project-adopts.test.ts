@@ -25,12 +25,15 @@
  *   when the inventory learns those two roots, that test fails and its
  *   replacement is the positive assertion the row describes.
  *
- * There is a fourth finding this journey turned up, and it is the reason the
- * first `it` exists: detection never enables Claude Code for this tree, so the
- * pointer the row promises is never scaffolded by the path a person actually
- * takes. The row assumes a manifest of `opencode` + `claude-code`; the engine
- * scaffolds `codex` + `opencode`, because it enables the harnesses whose files
- * are on disk and DorkOS's own harness has left none there yet.
+ * The first `it` used to pin a FOURTH finding as a negative: detection enables
+ * the harnesses whose files are on disk, and this tree has none of Claude
+ * Code's, so the manifest came out `codex, opencode` and the pointer the row
+ * promises was never written by the path a person actually takes. DOR-1901
+ * closed it. `scaffoldManifest` now takes the harness DorkOS's own default
+ * runtime reads as an injected input and adds it to whatever detection found,
+ * so the scaffold is `codex, opencode, claude-code` — detection's answer, then
+ * the one the folder could not show — and the first sync writes the pointer.
+ * That test is now the POSITIVE assertion the row describes.
  *
  * Rows: J-03, IN-01 (the instruction pointer), CM-03 (repo-local command
  * wrappers), AP-07 (the sweep only ever deletes what it wrote). The two
@@ -104,7 +107,7 @@ function linesAbout(p: ProjectionPlan, source: string): string[] {
 }
 
 describe('J-03 — an OpenCode project adopts DorkOS', () => {
-  it('J-03: detection enables the harnesses whose files are here, and writes nothing', () => {
+  it('J-03, IN-01, TR-11: the tool DorkOS runs is enabled here, and the pointer lands', () => {
     const repo = stageOpenCodeRepo();
     const before = snapshotTree(repo.root);
     // The fixture is a real repository, not an empty directory — without this
@@ -124,28 +127,49 @@ describe('J-03 — an OpenCode project adopts DorkOS', () => {
       'opencode.json',
     ]);
 
-    const scaffold = scaffoldManifest(repo.root);
+    // This is the path a person actually takes: DorkOS scaffolds the manifest
+    // for a project it has just been pointed at, and it knows one thing the
+    // folder cannot show it — the agent tool its own sessions run on.
+    const scaffold = scaffoldManifest(repo.root, { dorkosHarness: 'claude-code' });
 
     // Codex because `AGENTS.md` is its instruction file, OpenCode because
-    // `.opencode/` is on disk. NOT `claude-code`: the contract's J-03 row assumes
-    // `opencode` + `claude-code`, and nothing in this tree is Claude Code's, so
-    // detection has nothing to go on. The consequence is the next assertion —
-    // the `.claude/CLAUDE.md` pointer the row promises never gets written by the
-    // path a person actually takes. Recorded, not endorsed: closing it is a
-    // decision about whether DorkOS's own harness is always enabled, which
-    // belongs to the detection row (TR-11), not to a test.
-    expect(scaffold.harnesses).toEqual(['codex', 'opencode']);
+    // `.opencode/` is on disk — detection's own answer, in its own order — and
+    // then Claude Code, appended because DorkOS runs it here and nothing in this
+    // tree could have said so. The row's `opencode` + `claude-code` was right
+    // about the outcome and wrong about how the set is reached.
+    expect(scaffold.harnesses).toEqual(['codex', 'opencode', 'claude-code']);
     expect(scaffold.detected).toBe(true);
+    expect(scaffold.addedForDorkos).toBe('claude-code');
 
     const { conflicts } = applyPlan(repo.root, plan(repo), { sweepOrphans: true });
 
+    // The whole first sync: the manifest, and the pointer. Nothing else — the
+    // two OpenCode kinds this journey is still silent about are the last `it`.
     expect(conflicts).toEqual([]);
     expect(diffSnapshots(before, snapshotTree(repo.root))).toEqual({
-      added: ['.agents', '.agents/harness.manifest.json'],
+      added: ['.agents', '.agents/harness.manifest.json', '.claude', '.claude/CLAUDE.md'],
       changed: [],
       removed: [],
     });
-    expect(existsSync(join(repo.root, '.claude', 'CLAUDE.md'))).toBe(false);
+    // A pointer, not a copy: their own AGENTS.md stays the one file they edit,
+    // and a DorkOS Claude Code session in this repo now reads it (IN-01).
+    expect(readText(join(repo.root, '.claude', 'CLAUDE.md'))).toBe('@../AGENTS.md\n');
+  });
+
+  it('J-03, TR-11: a manifest written before this says so, and says how to fix it', () => {
+    // The other half of the same gap. An existing manifest is the person's file
+    // and detection never rewrites it (ADR-302), so a project set up before
+    // DOR-1901 keeps a harness set with no Claude Code in it — and nothing on
+    // disk is Claude Code's, so the footprint notice cannot fire. The plan says
+    // it anyway, from the one fact the tree cannot show.
+    const repo = stageOpenCodeRepo({ manifest: { harnesses: ['codex', 'opencode'] } });
+
+    expect(project(repo.root, { dorkHome: repo.dorkHome }).notEnabled).toEqual([]);
+    expect(
+      project(repo.root, { dorkHome: repo.dorkHome, dorkosHarness: 'claude-code' }).notEnabled
+    ).toEqual([{ harness: 'claude-code', why: 'dorkos-runtime' }]);
+    // Reporting only: nothing was written, and the manifest is byte-identical.
+    expect(existsSync(join(repo.root, '.claude'))).toBe(false);
   });
 
   it('J-03, IN-01: with Claude Code enabled, the whole first sync is one pointer file', () => {

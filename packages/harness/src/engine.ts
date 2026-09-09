@@ -13,7 +13,7 @@
  */
 import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseHarnessManifest, type HarnessManifest } from './manifest/schema.js';
+import { parseHarnessManifest, type HarnessId, type HarnessManifest } from './manifest/schema.js';
 import { buildPlan } from './plan/projector.js';
 import { CLAUDE_COMMANDS_DIR, CLAUDE_SKILLS_DIR } from './plan/installed-projector.js';
 import type { ClaudeOnlySkillLocation, ProjectionPlan } from './plan/types.js';
@@ -156,14 +156,24 @@ export function scanClaudeOnlySkills(
  * asks for; DorkOS's own install-triggered projection passes a gate instead
  * (`services/harness/hook-approval.ts`, DOR-522).
  *
+ * `opts.dorkosHarness` is the harness DorkOS's own default runtime reads. It
+ * changes nothing a sync WRITES — it only adds a `dorkos-runtime` entry to
+ * `plan.notEnabled` when the manifest does not enable it, so a report can say so
+ * (DOR-1901). It is injected because this engine reads no config.
+ *
  * @param repoRoot - absolute path to the repository root.
- * @param opts - optional resolved dork home, enabling global-scope projection, and
- *   an optional per-package gate on hook contribution.
+ * @param opts - optional resolved dork home, enabling global-scope projection,
+ *   an optional per-package gate on hook contribution, and the harness DorkOS's
+ *   own runtime reads.
  * @returns the full projection plan (actions + honest drop list).
  */
 export function project(
   repoRoot: string,
-  opts?: { dorkHome?: string; allowPluginHooks?: (packageName: string) => boolean }
+  opts?: {
+    dorkHome?: string;
+    allowPluginHooks?: (packageName: string) => boolean;
+    dorkosHarness?: HarnessId;
+  }
 ): ProjectionPlan {
   const installedPlugins = scanInstalledPlugins({
     dorkHome: opts?.dorkHome,
@@ -184,5 +194,6 @@ export function project(
     // written is reported instead of silently never projected to (TR-11).
     detectedHarnesses: detectHarnessFootprints(repoRoot),
     ...(opts?.allowPluginHooks ? { allowPluginHooks: opts.allowPluginHooks } : {}),
+    ...(opts?.dorkosHarness ? { dorkosHarness: opts.dorkosHarness } : {}),
   });
 }
