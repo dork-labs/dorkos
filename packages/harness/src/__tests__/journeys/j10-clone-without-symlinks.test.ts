@@ -318,6 +318,11 @@ describe('J-10 — a clone whose checkout cannot make symlinks', () => {
       expect(typeof canMakeRealLinks).toBe('boolean');
 
       const plan = project(origin);
+      // Initialised BEFORE the apply, because the sentence is about what
+      // `git add` would do and `junctionCommitWarnings` answers nothing where
+      // there is no `.git` yet — asking afterwards would have made the junction
+      // branch below assert a warning the apply could never have carried.
+      git(origin, ['init', '--quiet', '--initial-branch=main']);
       const { warnings } = applyPlan(origin, plan);
       for (const [i, link] of LINKS.entries()) {
         const abs = join(origin, link);
@@ -331,7 +336,6 @@ describe('J-10 — a clone whose checkout cannot make symlinks', () => {
         expect(isAbsolute(readlinkSync(abs))).toBe(!canMakeRealLinks);
       }
 
-      git(origin, ['init', '--quiet', '--initial-branch=main']);
       git(origin, ['add', '--all']);
       const staged = git(origin, ['ls-files', '--stage', '--', '.claude/skills'])
         .split('\n')
