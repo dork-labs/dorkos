@@ -118,7 +118,7 @@ global package droppable by name.
 | **DOR-1852** (`specs/harness-sync-status`), slices 3 and 4 = DOR-1891/1892 | `GET /api/harness/status` and `HarnessStatusResponse`. §1.8 and §3 add fields to that schema. **If it is late:** every slice here still ships, because every surface this spec builds renders in `dorkos harness sync` first. The schema additions land with whichever ticket gets there second, guarded by §3's compile-time table. |
 | **DOR-1856** (the H tier)                                                  | The only gate in this spec: slice A3 may not land before it reports (§Implementation Phases). **If it is late:** slices B1, A1 and A2 are unaffected.                                                                                                                                                                                |
 | **DOR-1889** (`checkPlan().orphans` equals the next `swept`)               | `plan/types.ts`'s `DriftResult.orphans` doc already pins this for the six project sweeps. Slice A2's global sweep joins the same contract from the start rather than being retro-fitted.                                                                                                                                             |
-| `conf` v15.1.0 + `UserConfigSchema`                                        | §2.3's `harness.global` block and its `'0.76.0'` migration. `config-manager.ts:3772-3780` already reserves that key by name.                                                                                                                                                                                                         |
+| `conf` v15.1.0 + `UserConfigSchema`                                        | §2.3's `harness.global` block and its migration. Written as `'0.76.0'`; **shipped as `'0.77.0'`** (DOR-1924), because DOR-1903 landed `'0.76.0'` on `main` while slice A3 was open. The rule is "strictly above the newest tag AND above every key already there", never a fixed number.                                             |
 | `@dorkos/marketplace`                                                      | Unchanged. Part B's offer is a printed command into the install flow that exists.                                                                                                                                                                                                                                                    |
 
 Vendor documentation this spec rests on, all fetched 2026-09-08 by the ideation and re-stated here:
@@ -775,8 +775,8 @@ covers the other.
   list is `undefined` there on a fresh install. **This step, not the migration, is what makes
   `harness.global` exist for new installs**, and skipping it is the failure `adding-config-fields` warns
   about in bold.
-- **Key `'0.76.0'`,** and be clear about what it is for. `projectVersion` is `SERVER_VERSION`, which is
-  `0.0.0` in a raw dev tree and below `0.76.0` in every build until that release ships, so **this key runs
+- **Key `'0.76.0'`** at the time of writing, and **`'0.77.0'` as shipped** — DOR-1903 took `'0.76.0'` while slice A3 was open. Be clear about what it is for. `projectVersion` is `SERVER_VERSION`, which is
+  `0.0.0` in a raw dev tree and below that key in every build until that release ships, so **this key runs
   for nobody until then**. That is correct and not a defect: the default factory covers fresh installs and
   every in-memory parse, and the migration exists to write the leaf into the config files of people who
   already have a stored `harness` section, on the release that ships it. `conf`'s shallow merge does not

@@ -3851,7 +3851,7 @@ describe('seedHarnessGlobal migration (DOR-1924, case 9)', () => {
     expect(store.data.harness).toBeUndefined();
   });
 
-  it('a real pre-0.76.0 config file gains harness.global on disk (full conf path)', () => {
+  it('a real pre-0.77.0 config file gains harness.global on disk (full conf path)', () => {
     // The half neither the mock store nor a `getDot` assertion can reach (see
     // `seedRoomRepoDefaults` above for the DOR-1496 measurement this shape comes
     // from). `harness.global` is a nested-leaf case, so this body is the ONLY
@@ -3870,7 +3870,7 @@ describe('seedHarnessGlobal migration (DOR-1924, case 9)', () => {
         JSON.stringify({
           version: 1,
           harness: { autoSync: false, approvedHooks: ['flow@abc'], refusedHooks: [] },
-          __internal__: { migrations: { version: '0.75.0' } },
+          __internal__: { migrations: { version: '0.76.0' } },
         }),
         'utf-8'
       );
@@ -3882,7 +3882,7 @@ describe('seedHarnessGlobal migration (DOR-1924, case 9)', () => {
         schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
         defaults: USER_CONFIG_DEFAULTS,
         clearInvalidConfig: false,
-        projectVersion: '0.76.0',
+        projectVersion: '0.77.0',
         migrations: CONFIG_MIGRATIONS,
       });
 
