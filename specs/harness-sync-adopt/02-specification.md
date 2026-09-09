@@ -1105,7 +1105,7 @@ computed and drawn today, so the assertion is green on `main`. Each slice names 
 
 `packages/cli/src/__tests__/harness-adopt.test.ts`, real engine, real temp repo — exit codes paired
 with whole-tree snapshots, the idiom `harness-sync.test.ts` established after DOR-678 (an
-exit-code-only assertion "passed throughout the life of the bug", `:171`).
+exit-code-only test "passed throughout the life of the bug", `:217-222`).
 
 **And this is the work that has to teach `snapshotTree` to hash.** Its helper measures the tree's
 SHAPE and nothing else, and its own docstring (`harness-sync.test.ts:17-41`) names the blind spot and
