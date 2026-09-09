@@ -194,7 +194,33 @@ describe('SRC-07: harness.autoAdopt off is the report-only posture', () => {
       );
     expect(complete).toBeDefined();
     expect((complete?.[1] as { hint?: string }).hint).toBe(
-      "3 skills in 1 agent folders live only in one agent tool's folder. Each is named above with its folder."
+      "3 skills in 1 agent folder live only in one agent tool's folder. Each is named above with its folder."
+    );
+  });
+
+  it('SRC-07: the hint counts in singulars when there is one of each', async () => {
+    // "1 skills in 1 agent folders" is a sentence a person reads in a log line,
+    // and this repository's writing bar covers it. Measured in the seam before
+    // it was fixed.
+    const agentDir = join(dorkHome, 'agents', 'solo');
+    mkdirSync(join(agentDir, '.agents', 'skills'), { recursive: true });
+    mkdirSync(join(agentDir, '.claude', 'skills'), { recursive: true });
+    writeFileSync(
+      join(agentDir, '.agents', 'harness.manifest.json'),
+      JSON.stringify({ version: 1, harnesses: ['claude-code', 'codex'] }, null, 2)
+    );
+    writeSkill(join(agentDir, '.claude', 'skills'), 'safe', 'name: safe\ndescription: Portable\n');
+
+    const summary = await backfillAgentWorkspaceSkills([agentDir], dorkHome);
+    expect(summary.adoptableSkills).toBe(1);
+
+    const complete = vi
+      .mocked(logger.info)
+      .mock.calls.find(
+        (call) => call[0] === '[HarnessSync] Agent workspace skill backfill complete'
+      );
+    expect((complete?.[1] as { hint?: string }).hint).toBe(
+      "1 skill in 1 agent folder lives only in one agent tool's folder. Each is named above with its folder."
     );
   });
 });

@@ -534,7 +534,12 @@ export async function backfillAgentWorkspaceSkills(
 function adoptableHint(summary: AgentWorkspaceBackfillSummary, folders: number): string {
   const left = summary.adoptableSkills - summary.adoptedSkills;
   if (left <= 0) return '';
-  return `${left} skills in ${folders} agent folders live only in one agent tool's folder. Each is named above with its folder.`;
+  // Pluralised at both ends, because "1 skills in 1 agent folders" is a sentence
+  // a person reads in a log line and this repository's writing bar covers it.
+  const skills = `${left} skill${left === 1 ? '' : 's'}`;
+  const places = `${folders} agent folder${folders === 1 ? '' : 's'}`;
+  const verb = left === 1 ? 'lives' : 'live';
+  return `${skills} in ${places} ${verb} only in one agent tool's folder. Each is named above with its folder.`;
 }
 
 /**
