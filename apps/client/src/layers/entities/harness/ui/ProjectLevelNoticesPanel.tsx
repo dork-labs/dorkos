@@ -7,7 +7,7 @@ import { useState } from 'react';
 import type { HarnessProjectEntry } from '@dorkos/shared/harness-schemas';
 import { cn } from '@/layers/shared/lib/utils';
 import { Badge, CollapsibleFieldCard } from '@/layers/shared/ui';
-import { projectEntryHeading } from '../lib/harness-status';
+import { projectEntryCountLabel, projectEntryHeading } from '../lib/harness-status';
 
 /** What a {@link ProjectLevelNoticesPanel} draws. */
 export interface ProjectLevelNoticesPanelProps {
@@ -23,6 +23,9 @@ export interface ProjectLevelNoticesPanelProps {
  * single tool, and a `notice` about the manifest itself. Each is
  * `<kind> · <artifact> <name>` with the engine's own sentence under it,
  * unchanged.
+ *
+ * **The count carries its unit**, for the reason the drop panels' does: nothing
+ * here is a skill, and a bare number beside a page titled Skills reads as one.
  *
  * **A `notice` reads as a notice.** It is drawn muted and carries no tool name,
  * because it is about `.agents/harness.manifest.json` — a retired key, or a hook
@@ -41,8 +44,8 @@ export function ProjectLevelNoticesPanel({ entries }: ProjectLevelNoticesPanelPr
       onOpenChange={setOpen}
       trigger={<span className="text-xs">Project-level notices</span>}
       badge={
-        <Badge variant="secondary" size="xs">
-          {entries.length}
+        <Badge variant="secondary" size="xs" className="whitespace-nowrap">
+          {projectEntryCountLabel(entries.length)}
         </Badge>
       }
     >

@@ -206,6 +206,17 @@ export function HarnessPanelShowcases() {
       <ShowcaseDemo>
         <NotEnabledNotice notEnabled={HARNESS_STATUS_READY.notEnabled} />
       </ShowcaseDemo>
+
+      <ShowcaseLabel>All three, at the docked panel’s narrowest</ShowcaseLabel>
+      <ShowcaseDemo>
+        <AtPanelWidth>
+          <div className="flex flex-col gap-2">
+            <NotEnabledNotice notEnabled={HARNESS_STATUS_READY.notEnabled} />
+            <NotSharedPanel rows={HARNESS_STATUS_READY.rows} enabled={THREE_TOOLS} />
+            <ProjectLevelNoticesPanel entries={HARNESS_STATUS_READY.projectLevel} />
+          </div>
+        </AtPanelWidth>
+      </ShowcaseDemo>
     </PlaygroundSection>
   );
 }

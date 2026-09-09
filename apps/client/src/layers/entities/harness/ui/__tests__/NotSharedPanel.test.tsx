@@ -33,6 +33,44 @@ describe('NotSharedPanel', () => {
     expect(screen.queryByRole('button', { name: /Claude Code/ })).not.toBeInTheDocument();
   });
 
+  it('counts agent files rather than a bare number, and says so again in words', async () => {
+    // Purpose: the unit. On this repository the Skills list draws 31 rows while
+    // this panel counts 37, and not one of the 37 is a skill — the list draws
+    // skills, the panel draws every kind of agent file (D27). A bare "37" beside
+    // a page titled Skills asks a person to reconcile two numbers that were
+    // never the same thing. Seeded defect: put `group.entries.length` back in
+    // the badge and both assertions below red.
+    const user = userEvent.setup();
+    render(<NotSharedPanel rows={rows} enabled={enabled} />);
+
+    // The BADGE, not the trigger's accessible name: the badge is a separate
+    // element inside the trigger, and jsdom applies no CSS, so the composed
+    // name joins them with no separator ("…Codex3 agent files") where a real
+    // browser blockifies the flex child and inserts one. The badge's own text
+    // is the fact; the joining is a rendering artefact (this file's first case
+    // already says so about the count).
+    const codex = screen.getByRole('button', { name: /^Not shared with Codex/ });
+    expect(within(codex).getByText('3 agent files')).toBeInTheDocument();
+    const cursor = screen.getByRole('button', { name: /^Not shared with Cursor/ });
+    expect(within(cursor).getByText('2 agent files')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Not shared with Codex/ }));
+
+    expect(
+      screen.getByText('Every agent file Codex cannot see — skills, rules, commands and more.')
+    ).toBeInTheDocument();
+  });
+
+  it('says "1 agent file" when a tool is missing exactly one', () => {
+    // Purpose: the singular is the case a `${n} agent files` template gets wrong,
+    // and it is the common one — most tools miss one thing, not thirty-seven.
+    const oneDrop = rows.filter((row) => row.name === 'browser-testing');
+    render(<NotSharedPanel rows={oneDrop} enabled={enabled} />);
+
+    const codex = screen.getByRole('button', { name: /^Not shared with Codex/ });
+    expect(within(codex).getByText('1 agent file')).toBeInTheDocument();
+  });
+
   it('repeats every reason verbatim, so the tooltip is never the only copy', async () => {
     // Purpose: the honesty gate. `dorkos harness sync` prints these exact
     // strings; a paraphrase here would leave two surfaces describing one fact in
@@ -84,6 +122,9 @@ describe('ProjectLevelNoticesPanel', () => {
     render(<ProjectLevelNoticesPanel entries={projectLevel} />);
 
     const trigger = screen.getByRole('button', { name: /^Project-level notices/ });
+    // The same unit fix as the drop panels': nothing under this heading is a
+    // skill either, so the badge says what it is counting.
+    expect(within(trigger).getByText('4 entries')).toBeInTheDocument();
     await user.click(trigger);
 
     // Plain words, not the API's own `kind` values: a person reading their own
@@ -112,6 +153,13 @@ describe('ProjectLevelNoticesPanel', () => {
 
     const text = within(container).getByRole('list').textContent ?? '';
     expect(text).not.toMatch(/Claude Code|Cursor|Gemini CLI|Copilot|OpenCode/);
+  });
+
+  it('says "1 entry" when there is exactly one', () => {
+    render(<ProjectLevelNoticesPanel entries={projectLevel.slice(0, 1)} />);
+
+    const trigger = screen.getByRole('button', { name: /^Project-level notices/ });
+    expect(within(trigger).getByText('1 entry')).toBeInTheDocument();
   });
 
   it('draws nothing when the project has nothing to say', () => {

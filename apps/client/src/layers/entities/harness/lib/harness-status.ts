@@ -182,6 +182,40 @@ export function collapsedChipLabel(count: number): string {
 }
 
 /**
+ * A drop panel's count, in units — "37 agent files", never a bare 37.
+ *
+ * The unit is load-bearing on a page titled Skills. This repository lists 31
+ * skills and the Codex panel counts 37, of which NONE is a skill: the panel is
+ * every kind of agent file the tool cannot see (D27 — the API is wider than the
+ * list), and a reader handed two numbers and one unit cannot reconcile them.
+ *
+ * @param count - How many agent files that tool cannot see.
+ */
+export function dropCountLabel(count: number): string {
+  return count === 1 ? '1 agent file' : `${count} agent files`;
+}
+
+/**
+ * The line a drop panel opens with, so the unit is stated in words as well as
+ * counted in the badge.
+ *
+ * @param label - The tool's display name.
+ */
+export function dropPanelSummary(label: string): string {
+  return `Every agent file ${label} cannot see — skills, rules, commands and more.`;
+}
+
+/**
+ * The project-level panel's count, in units, for the reason
+ * {@link dropCountLabel} gives: these are not skills either.
+ *
+ * @param count - How many project-level entries there are.
+ */
+export function projectEntryCountLabel(count: number): string {
+  return count === 1 ? '1 entry' : `${count} entries`;
+}
+
+/**
  * One file a tool cannot see, and the plan's own sentence about why.
  *
  * Not exported: it is reachable through {@link HarnessDropGroup}, which is what
