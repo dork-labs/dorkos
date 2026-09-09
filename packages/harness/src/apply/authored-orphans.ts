@@ -38,6 +38,7 @@ import type { ProjectionPlan } from '../plan/types.js';
 import { AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
 import { CLAUDE_SKILLS_DIR } from '../plan/installed-projector.js';
 import { isDanglingSymlink, isSymlink, listDir } from './link-state.js';
+import { removableOf } from './sweep-warnings.js';
 
 /**
  * Find the authored skill links that point at nothing.
@@ -47,6 +48,25 @@ import { isDanglingSymlink, isSymlink, listDir } from './link-state.js';
  * @returns the repo-relative paths of the dead links, sorted.
  */
 export function findOrphanedAuthoredLinks(repoRoot: string, plan: ProjectionPlan): string[] {
+  // `rmSync` needs the write bit on `.claude/skills`, not on the link. A folder
+  // that refuses it makes this a blocked removal rather than a promise the next
+  // `--fix` throws on (DOR-1941, `apply/sweep-warnings.ts`).
+  return removableOf(repoRoot, allOrphanedAuthoredLinks(repoRoot, plan));
+}
+
+/**
+ * The same search with the removal probe NOT applied.
+ *
+ * Its own function so `apply.ts` can recover the blocked half from the same
+ * predicate rather than from a second one — the exported finder is this
+ * filtered, and the warning list is this minus that.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan.
+ * @returns the repo-relative paths of the dead links, sorted, before the folder
+ *   is asked.
+ */
+export function allOrphanedAuthoredLinks(repoRoot: string, plan: ProjectionPlan): string[] {
   // A skill folder nobody could list makes every link that points into it look
   // DEAD as well as unplanned — both halves of this predicate, from one cause.
   // The plan says so, and the sweep stands down until the folder is readable

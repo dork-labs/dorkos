@@ -41,7 +41,8 @@
  *
  * @module apply/sweep-warnings
  */
-import { join } from 'node:path';
+import { accessSync, constants } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { ProjectionPlan } from '../plan/types.js';
 import { AGENTS_SKILLS_DIR } from '../scan/scanner.js';
 import {
@@ -125,4 +126,117 @@ export function sweepScanWarnings(repoRoot: string, plan: ProjectionPlan): strin
     }
   }
   return blind.map(sweepBlindWarning);
+}
+
+/**
+ * Whether this platform can be asked about write permission at all.
+ *
+ * Not Windows, for the reason `write-path-occupants.ts` states about the
+ * identical probe on the WRITING side: `accessSync(dir, W_OK)` there reports the
+ * read-only attribute, which directories do not meaningfully carry, and answers
+ * "writable" for a folder an ACL denies. The shapes this protects against are
+ * POSIX mode bits, and Windows keeps the behaviour it had — the removal itself
+ * reports the failure.
+ */
+const CAN_ASK_ABOUT_WRITING = process.platform !== 'win32';
+
+/**
+ * The sentence for a removal DorkOS may not make, written down once.
+ *
+ * It names BOTH paths on purpose: the link is what would have gone, and the
+ * folder is what has to change for it to go. Every other reason in this engine
+ * that is about a folder above a path says so the same way
+ * (`write-path-occupants.ts`).
+ *
+ * @param rel - the repo-relative path a sweep would have removed.
+ * @param relDir - the repo-relative folder that refuses the write.
+ * @returns the sentence to report.
+ */
+export function blockedRemovalWarning(rel: string, relDir: string): string {
+  return (
+    `\`${rel}\` would be removed, and DorkOS may not write in \`${relDir}\` ` +
+    `(permission denied), so it was left exactly as it is. Fix the folder’s permissions, ` +
+    `then re-run.`
+  );
+}
+
+/**
+ * Whether the folder holding `rel` refuses the write `rmSync` needs.
+ *
+ * **`rmSync` needs the write bit on the PARENT, not on the entry**, which is
+ * why nothing else in this engine had asked: every other probe here is about
+ * the path being written, and a deletion writes the directory. Measured at mode
+ * 0555 on `.claude/skills` holding a dead link — `checkPlan` promised the
+ * removal and `applyPlan` threw EACCES out of the sweep, after the action loop
+ * had already written (DOR-1941).
+ *
+ * The identical `accessSync(dir, W_OK | X_OK)` the write-path probe uses, so a
+ * folder DorkOS may not create a link in and a folder it may not remove one from
+ * are the same question asked twice rather than two answers about one mode bit.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param rel - the repo-relative path a sweep would remove.
+ * @param probed - a memo of folders already answered for; siblings share one.
+ * @returns the folder that refuses, or `undefined` when the removal may proceed.
+ */
+function unwritableParent(
+  repoRoot: string,
+  rel: string,
+  probed: Map<string, boolean>
+): string | undefined {
+  if (!CAN_ASK_ABOUT_WRITING) return undefined;
+  const relDir = dirname(rel);
+  const cached = probed.get(relDir);
+  if (cached !== undefined) return cached ? relDir : undefined;
+  let refuses: boolean;
+  try {
+    accessSync(join(repoRoot, relDir), constants.W_OK | constants.X_OK);
+    refuses = false;
+  } catch {
+    // A folder that is not there at all cannot hold anything to remove, so the
+    // caller never asks about one — every path here came out of a listing.
+    refuses = true;
+  }
+  probed.set(relDir, refuses);
+  return refuses ? relDir : undefined;
+}
+
+/**
+ * Split the paths a sweep found into the ones it may really take and the ones it
+ * may not.
+ *
+ * One function for both halves so `--check` and `--fix` can never disagree about
+ * which is which: the preview drops exactly what the sweep would have thrown on,
+ * and the sweep skips exactly what the preview declined to promise (AP-07's
+ * equality contract, DOR-1889).
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param paths - the repo-relative paths one sweep named, in its own order.
+ * @returns the paths that may be removed, and one sentence per path that may not.
+ */
+export function partitionRemovable(
+  repoRoot: string,
+  paths: readonly string[]
+): { removable: string[]; warnings: string[] } {
+  const removable: string[] = [];
+  const warnings: string[] = [];
+  const probed = new Map<string, boolean>();
+  for (const rel of paths) {
+    const relDir = unwritableParent(repoRoot, rel, probed);
+    if (relDir === undefined) removable.push(rel);
+    else warnings.push(blockedRemovalWarning(rel, relDir));
+  }
+  return { removable, warnings };
+}
+
+/**
+ * The paths a sweep may really take — the half of {@link partitionRemovable}
+ * every `find*` returns.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param paths - the repo-relative paths one sweep named.
+ * @returns the ones whose folder will take the write.
+ */
+export function removableOf(repoRoot: string, paths: readonly string[]): string[] {
+  return partitionRemovable(repoRoot, paths).removable;
 }

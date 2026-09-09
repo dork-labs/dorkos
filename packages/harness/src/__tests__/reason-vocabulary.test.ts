@@ -101,7 +101,7 @@ import { manifestNotices } from '../manifest/notices.js';
 import { SWEEP_REASONS } from '../apply/sweep-reasons.js';
 import { GENERATE_DIRECTORY_REASON, GENERATE_SYMLINK_REASON } from '../apply/generate-occupants.js';
 import { HAND_WRITTEN_HOOKS_REASON } from '../apply/generated-ownership.js';
-import { sweepBlindWarning } from '../apply/sweep-warnings.js';
+import { blockedRemovalWarning, sweepBlindWarning } from '../apply/sweep-warnings.js';
 import {
   SYMLINKS_OFF_REASON,
   SYMLINK_DIRECTORY_REASON,
@@ -373,6 +373,7 @@ function collectReasons(repoRoot: string, dorkHome: string): Reason[] {
   // permissions (DOR-1939).
   for (const warning of drift.warnings) add('warning', warning);
   add('warning', sweepBlindWarning('.opencode/commands'));
+  add('warning', blockedRemovalWarning('.claude/skills/gone', '.claude/skills'));
 
   // `plan.notEnabled` is deliberately NOT collected. Its entries carry a
   // `signal` — `.gemini/`, `.github/copilot-instructions.md` — which is a PATH,

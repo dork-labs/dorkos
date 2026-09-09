@@ -50,7 +50,11 @@ import { AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.
 import type { ClaudeHooksConfig } from '../generate/hooks.js';
 import { isAtomicTempName, isStaleAtomicTemp, writeFileAtomic } from './atomic-write.js';
 import { HAND_WRITTEN_HOOKS_REASON, readFileIfPresent } from './generated-ownership.js';
-import { findOrphanedAuthoredLinks, sweepAuthoredOrphans } from './authored-orphans.js';
+import {
+  allOrphanedAuthoredLinks,
+  findOrphanedAuthoredLinks,
+  sweepAuthoredOrphans,
+} from './authored-orphans.js';
 import {
   isDanglingSymlink,
   isSymlink,
@@ -70,6 +74,7 @@ import { junctionCommitWarnings, symlinkTypeFor, waitForSymlinkRemoval } from '.
 import {
   applyGeneratedHookFile,
   findBlockedGenerateTargets,
+  allGeneratedOrphans,
   findGeneratedOrphans,
   findLeftAloneGeneratedHookFiles,
   generatedHookOutcome,
@@ -78,7 +83,7 @@ import {
 } from './generated-targets.js';
 import { blockingGenerateOccupant } from './generate-occupants.js';
 import { findBlockedWritePaths, findUnwritableTargets } from './write-path-occupants.js';
-import { sweepScanWarnings } from './sweep-warnings.js';
+import { partitionRemovable, removableOf, sweepScanWarnings } from './sweep-warnings.js';
 import {
   CLAUDE_COMMANDS_DIR,
   CLAUDE_SKILLS_DIR,
@@ -361,6 +366,22 @@ function applyMerge(repoRoot: string, action: ProjectionAction): boolean {
  * @returns the repo-relative paths a sweep would remove.
  */
 export function findInstalledOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  return removableOf(repoRoot, allInstalledOrphans(repoRoot, plan));
+}
+
+/**
+ * The same search with the removal probe NOT applied — every path this sweep
+ * owns and would take if the folder let it.
+ *
+ * Its own function so the blocked half can be recovered from the same predicate
+ * rather than from a second one: `find*` is this filtered, and
+ * {@link blockedRemovalWarnings} is this minus that (DOR-1941).
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (every symlink target is kept).
+ * @returns the repo-relative paths, before the folder is asked.
+ */
+function allInstalledOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
   // A plan built over a skill folder nobody could read is not evidence of what
   // is installed — see `skillSourcesUnreadable`.
   if (skillSourcesUnreadable(plan)) return [];
@@ -426,6 +447,18 @@ export function sweepInstalledOrphans(repoRoot: string, plan: ProjectionPlan): s
  * @returns the repo-relative paths a sweep would remove.
  */
 export function findGeneratedCommandOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  return removableOf(repoRoot, allGeneratedCommandOrphans(repoRoot, plan));
+}
+
+/**
+ * The same search with the removal probe NOT applied — see
+ * {@link allInstalledOrphans} for why each finder has one.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (its generate targets are kept).
+ * @returns the repo-relative paths, before the folder is asked.
+ */
+function allGeneratedCommandOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
   const kept = new Set(
     plan.actions
       .filter((a) => a.kind === 'generate' && a.target?.startsWith(`${CLAUDE_COMMANDS_DIR}/`))
@@ -512,6 +545,18 @@ export function sweepGeneratedCommandOrphans(repoRoot: string, plan: ProjectionP
  * @returns the repo-relative paths a sweep would remove.
  */
 export function findOpencodeCommandOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  return removableOf(repoRoot, allOpencodeCommandOrphans(repoRoot, plan));
+}
+
+/**
+ * The same search with the removal probe NOT applied — see
+ * {@link allInstalledOrphans} for why each finder has one.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (its generate targets are kept).
+ * @returns the repo-relative paths, before the folder is asked.
+ */
+function allOpencodeCommandOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
   const kept = new Set(
     plan.actions
       .filter((a) => a.kind === 'generate' && a.target?.startsWith(`${OPENCODE_COMMANDS_DIR}/`))
@@ -670,6 +715,18 @@ function findBlockedOpencodeCommandFiles(repoRoot: string, plan: ProjectionPlan)
  * @returns the repo-relative path a sweep would rewrite (one entry) or empty.
  */
 export function findSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan): string[] {
+  return removableOf(repoRoot, allSettingsHooksOrphan(repoRoot, plan));
+}
+
+/**
+ * The same search with the removal probe NOT applied — see
+ * {@link allInstalledOrphans} for why each finder has one.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan.
+ * @returns the one repo-relative path, or none.
+ */
+function allSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan): string[] {
   const hasMerge = plan.actions.some(
     (a) => a.kind === 'merge' && a.target === CLAUDE_SETTINGS_LOCAL_TARGET
   );
@@ -868,12 +925,16 @@ export function applyPlan(
     swept: removals.map(({ path }) => path),
     removals,
     leftAlone,
-    // Two subjects, one list. The junction sentence is asked LAST, so it
+    // Three subjects, one list. The junction sentence is asked LAST, so it
     // answers about the links this run just made rather than about the tree it
-    // found; the sweep sentence is about a folder it could not look inside.
-    // `checkPlan` asks the same two functions off the same plan, which is what
-    // keeps the two modes saying one thing.
-    warnings: [...junctionCommitWarnings(repoRoot, plan), ...sweepScanWarnings(repoRoot, plan)],
+    // found; the other two are about a folder it could not look inside and a
+    // path it may not remove. `checkPlan` asks the same three functions off the
+    // same plan, which is what keeps the two modes saying one thing.
+    warnings: [
+      ...junctionCommitWarnings(repoRoot, plan),
+      ...sweepScanWarnings(repoRoot, plan),
+      ...blockedRemovalWarnings(repoRoot, plan),
+    ],
   };
 }
 
@@ -995,6 +1056,33 @@ function findOrphans(repoRoot: string, plan: ProjectionPlan): SweptPath[] {
 }
 
 /**
+ * Every removal this plan would make and DorkOS may not, as sentences.
+ *
+ * The six finders drop these on their way out — that is what stops `--check`
+ * promising a removal `--fix` cannot make — so the blocked half is recovered
+ * from the six UNFILTERED searches beside them rather than from a second set of
+ * predicates. Each `find*` is its `all*` twin filtered by `removableOf`, and
+ * this is the same twin split the other way, so the two halves are one partition
+ * of one set by construction and no path can fall between them.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan.
+ * @returns one sentence per blocked removal, sorted by path.
+ */
+function blockedRemovalWarnings(repoRoot: string, plan: ProjectionPlan): string[] {
+  if (plan.narrowedTo !== undefined) return [];
+  const raw = [
+    ...allInstalledOrphans(repoRoot, plan),
+    ...allOrphanedAuthoredLinks(repoRoot, plan),
+    ...allGeneratedOrphans(repoRoot, plan),
+    ...allGeneratedCommandOrphans(repoRoot, plan),
+    ...allOpencodeCommandOrphans(repoRoot, plan),
+    ...allSettingsHooksOrphan(repoRoot, plan),
+  ];
+  return partitionRemovable(repoRoot, [...new Set(raw)].sort()).warnings;
+}
+
+/**
  * Diff a projection plan against the current on-disk state without mutating it.
  *
  * Four answers, deliberately kept apart: what is stale and a re-run would fix
@@ -1063,11 +1151,16 @@ export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
     orphans: removals.map(({ path }) => path),
     removals,
     leftAlone: findLeftAloneGeneratedHookFiles(repoRoot, plan),
-    // Not drift, and the first of the two is never an exit code either: a
-    // junction resolves where the plan says. It is what COMMITTING one would do
-    // that a person has to be told, and told before they commit, which is why
-    // `--check` answers it too.
-    warnings: [...junctionCommitWarnings(repoRoot, plan), ...sweepScanWarnings(repoRoot, plan)],
+    // Not drift, and the first two are never an exit code either: a junction
+    // resolves where the plan says, and a sweep that cannot look removes
+    // nothing. It is what COMMITTING a junction would do that a person has to
+    // be told, and told before they commit, which is why `--check` answers it
+    // too. The THIRD one does count — see `clean` below.
+    warnings: [
+      ...junctionCommitWarnings(repoRoot, plan),
+      ...sweepScanWarnings(repoRoot, plan),
+      ...blockedRemovalWarnings(repoRoot, plan),
+    ],
     // A skill folder nobody could read is the fourth way this answer is not
     // "everything is as the plan says": the sweeps stood down over it, so the
     // tree may hold links a readable folder would have settled either way, and

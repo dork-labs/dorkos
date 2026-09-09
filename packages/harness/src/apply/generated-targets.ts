@@ -28,6 +28,7 @@ import {
   writeGeneratedSidecar,
 } from './generated-ownership.js';
 import { blockingGenerateOccupant } from './generate-occupants.js';
+import { removableOf } from './sweep-warnings.js';
 
 /** True when a target is one of the per-harness hooks files the sidecar rules guard. */
 export function isGeneratedHookTarget(
@@ -165,6 +166,22 @@ export function applyGeneratedHookFile(
  * @returns the repo-relative paths a sweep would prune, sidecars included.
  */
 export function findGeneratedOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  // The folder has to take the write the removal makes — see
+  // `apply/sweep-warnings.ts`, and DOR-1941 for the tree that measured it.
+  return removableOf(repoRoot, allGeneratedOrphans(repoRoot, plan));
+}
+
+/**
+ * The same search with the removal probe NOT applied.
+ *
+ * Its own function so `apply.ts` can recover the blocked half from the same
+ * predicate rather than from a second one.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (its generate targets are kept).
+ * @returns the repo-relative paths, before the folder is asked.
+ */
+export function allGeneratedOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
   const regenerated = new Set(
     plan.actions.filter((a) => a.kind === 'generate' && a.target).map((a) => a.target as string)
   );
