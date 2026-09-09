@@ -24,9 +24,12 @@
  * has proved sane, which is what makes the run all-or-nothing per projection
  * instead of "everything up to the first hostile folder".
  *
- * Three shapes are refused, and one that looks like them is not:
+ * Four SHAPES are refused, and one that looks like them is not:
  *
  * - a **file** where a folder must be. Nothing can be created under it.
+ * - a **link to a file**, which is the same obstacle wearing a different hat and
+ *   says so in its own words: "`.claude` is a file" about a path that is plainly
+ *   a link sends somebody looking for a file that is not there.
  * - a **link that cannot be followed** — dangling, or a loop. `mkdirSync` sees
  *   an existing entry and raises EEXIST rather than creating anything, and a
  *   write through it would land wherever the link says if it ever resolved.
@@ -37,6 +40,15 @@
  *   lands in a real directory, and refusing it would break a working repository
  *   for the sake of a rule about links.
  *
+ * PERMISSION is a fifth answer and a different question, so it has its own pass
+ * ({@link unwritableWritePath}): a folder that lists perfectly and may not be
+ * written in raises EACCES from `mkdirSync`, from the atomic write's
+ * `writeFileSync`, or from `symlinkSync` — measured at mode 0555 on
+ * `.claude/commands`, `.claude/commands/<pkg>` and `.claude/skills`. It is asked
+ * only of the actions that would really write, because a repository whose
+ * projections all already match is one this engine writes nothing to, and
+ * reporting its folders would turn a clean tree into a wall of faults.
+ *
  * The reason names the FOLDER, not the target. Every other conflict in this
  * engine is about the target's own path, which the report already prints; here
  * the obstacle is somewhere above it, and a sentence that did not say where
@@ -44,9 +56,9 @@
  *
  * @module apply/write-path-occupants
  */
-import { statSync } from 'node:fs';
+import { accessSync, constants, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { ProjectionKind, ProjectionPlan } from '../plan/types.js';
+import type { ProjectionAction, ProjectionKind, ProjectionPlan } from '../plan/types.js';
 import { isSymlink, tryListDir } from './link-state.js';
 
 /**
@@ -65,7 +77,8 @@ const WRITING_KINDS: ReadonlySet<ProjectionKind> = new Set<ProjectionKind>([
 ]);
 
 /** Why a directory on a write path cannot be written through. */
-export type WritePathCause = 'file' | 'unfollowable-link' | 'unreadable';
+export type WritePathCause =
+  'file' | 'link-to-file' | 'unfollowable-link' | 'unreadable' | 'read-only';
 
 /**
  * The one sentence each cause gets, written down once.
@@ -83,18 +96,24 @@ export type WritePathCause = 'file' | 'unfollowable-link' | 'unreadable';
  */
 export const WRITE_PATH_REASONS = {
   file: 'is a file — DorkOS needs a folder there to write this. Move the file aside, then re-run',
+  'link-to-file':
+    'is a link to a file — DorkOS needs a folder there to write this. Repoint the link at a ' +
+    'folder, or delete it, then re-run',
   'unfollowable-link':
     'is a link DorkOS cannot follow — it needs a folder there to write this. Delete the link, ' +
     'then re-run',
   unreadable:
     'is a folder DorkOS cannot read (permission denied). Fix the folder’s permissions, then re-run',
+  'read-only':
+    'is a folder DorkOS may not write in (permission denied). Fix the folder’s permissions, ' +
+    'then re-run',
 } as const satisfies Record<WritePathCause, string>;
 
 /**
  * The finished reason for one blocked write path.
  *
  * @param relDir - the repo-relative folder that is in the way.
- * @param cause - which of the three shapes it is.
+ * @param cause - which of the five answers it is.
  * @returns the one-line reason to report beside the action.
  */
 export function writePathReason(relDir: string, cause: WritePathCause): string {
@@ -123,7 +142,10 @@ function directoryBlock(absDir: string): WritePathCause | undefined {
     // resolves to nothing is one `mkdirSync` refuses with EEXIST.
     return isSymlink(absDir) ? 'unfollowable-link' : undefined;
   }
-  if (!stats.isDirectory()) return 'file';
+  // A link to a file is refused for the same reason a file is, and says so in
+  // its own words: "`.claude` is a file" about a path that is plainly a link
+  // sends somebody to look for a file that is not there.
+  if (!stats.isDirectory()) return isSymlink(absDir) ? 'link-to-file' : 'file';
   // A directory that stats fine can still be one nobody may open — mode-000 is
   // the measured shape — and the wrapper-dir scan has to READ this one.
   return tryListDir(absDir) === undefined ? 'unreadable' : undefined;
@@ -182,6 +204,93 @@ export function findBlockedWritePaths(repoRoot: string, plan: ProjectionPlan): M
       blocked.set(target, writePathReason(relDir, cause));
       break; // the outermost obstacle is the one to clear
     }
+  }
+  return blocked;
+}
+
+/**
+ * Whether this platform can be asked about write permission at all.
+ *
+ * Not Windows. `accessSync(dir, W_OK)` there reports the read-only ATTRIBUTE,
+ * which directories do not meaningfully carry, and answers "writable" for a
+ * folder an ACL denies — so the probe would be a promise the platform cannot
+ * keep, in both directions. The shapes it protects against are POSIX mode bits,
+ * and Windows keeps the behaviour it had: the write itself reports the failure.
+ */
+const CAN_ASK_ABOUT_WRITING = process.platform !== 'win32';
+
+/**
+ * Why a write to this target would fail on permissions — asked only of a target
+ * something is actually about to be written to.
+ *
+ * Where {@link findBlockedWritePaths} is about SHAPE (a file where a folder
+ * belongs, whatever anyone intends to do about it), this is about one specific
+ * write: the deepest folder that already exists on the way to `target` is the
+ * one that has to take a new entry — the temp file every atomic write creates,
+ * or the link, or the folder above it — and a folder that lists but may not be
+ * written in raises EACCES from `writeFileSync`, `mkdirSync` or `symlinkSync`
+ * rather than from anything either mode had asked. Measured at mode 0555 on
+ * `.claude/commands`, `.claude/commands/<pkg>` and `.claude/skills`.
+ *
+ * **Scoped to drifted actions on purpose.** A repository whose projections all
+ * already match is one this engine writes nothing to, and calling its folders
+ * blocked would turn a clean tree into a wall of faults over a permission
+ * nothing was going to need. The caller decides what "would write" means, and
+ * `--check` and `--fix` ask it the same way so they cannot disagree.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param target - the action's repo-relative target path.
+ * @returns the reason to report, or `undefined` when the write may proceed.
+ */
+export function unwritableWritePath(repoRoot: string, target: string): string | undefined {
+  if (!CAN_ASK_ABOUT_WRITING) return undefined;
+  // Deepest first: the folder that will hold the new entry is the last one that
+  // is already there. Everything below it this engine creates itself, and owns.
+  const dirs = writePathDirs(target).reverse();
+  for (const relDir of dirs) {
+    const abs = join(repoRoot, relDir);
+    let stats;
+    try {
+      stats = statSync(abs);
+    } catch {
+      continue; // not there yet: the engine will make it, inside the next one up
+    }
+    if (!stats.isDirectory()) return undefined; // a shape question, already answered
+    try {
+      accessSync(abs, constants.W_OK | constants.X_OK);
+      return undefined;
+    } catch {
+      return writePathReason(relDir, 'read-only');
+    }
+  }
+  // Every folder on the way is still to be made, so the repository root takes
+  // the first one. It is not probed: a root this process cannot write in has
+  // already stopped the manifest read that got us here.
+  return undefined;
+}
+
+/**
+ * The reason a drifted action cannot be written, for the targets a caller says
+ * are about to be written to.
+ *
+ * One helper so `applyPlan` and `checkPlan` ask the identical question of the
+ * identical set — the property `generate-occupants.ts` states for shape, applied
+ * to permission.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param actions - the actions a write would touch (already shape-checked).
+ * @returns each blocked target mapped to its reason.
+ */
+export function findUnwritableTargets(
+  repoRoot: string,
+  actions: readonly ProjectionAction[]
+): Map<string, string> {
+  const blocked = new Map<string, string>();
+  for (const action of actions) {
+    const target = action.target;
+    if (target === undefined || !WRITING_KINDS.has(action.kind)) continue;
+    const reason = unwritableWritePath(repoRoot, target);
+    if (reason !== undefined) blocked.set(target, reason);
   }
   return blocked;
 }

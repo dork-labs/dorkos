@@ -87,6 +87,16 @@ function makeUnreadable(rel: string): void {
   chmodded.push(abs);
 }
 
+/**
+ * Make a directory readable but not writable — the shape that lists perfectly
+ * and then raises EACCES from the write itself.
+ */
+function makeReadOnly(rel: string): void {
+  const abs = join(repo, rel);
+  chmodSync(abs, 0o555);
+  chmodded.push(abs);
+}
+
 /** Put a plain file where a folder belongs. */
 function fileInTheWay(rel: string): void {
   writeFileAt(join(repo, rel), IN_THE_WAY);
@@ -371,6 +381,66 @@ describe('a folder nobody may read on a write path', () => {
         ['.opencode/commands/acme-hello.md', '.opencode/commands/.gitignore'],
         '.opencode/commands'
       );
+    }
+  );
+});
+
+describe('a folder DorkOS may not write in', () => {
+  it.skipIf(!CAN_MAKE_UNREADABLE)(
+    'AP-11: at mode 0555, blocks the writes that need it — EACCES from three different calls',
+    () => {
+      // Listable, so the shape pass says nothing about it; the failure lands on
+      // the WRITE. Measured at 0555: `mkdirSync` for a wrapper directory under
+      // `.claude/commands`, `writeFileSync` for the atomic temp inside
+      // `.claude/commands/acme`, and `symlinkSync` for a link into
+      // `.claude/skills` — three calls, one permission.
+      stageRepo();
+      mkdirSync(join(repo, '.claude', 'commands'), { recursive: true });
+      makeReadOnly('.claude/commands');
+
+      const applied = expectBlockedNotThrown(
+        ['.claude/commands/acme/hello.md', '.claude/commands/acme/.gitignore'],
+        '.claude/commands'
+      );
+
+      expect(reasonFor(applied.conflicts, '.claude/commands/acme/hello.md')).toContain(
+        'may not write in'
+      );
+    }
+  );
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)(
+    'AP-11: at mode 0555 on a skills folder, blocks the links',
+    () => {
+      stageRepo();
+      mkdirSync(join(repo, '.claude', 'skills'), { recursive: true });
+      makeReadOnly('.claude/skills');
+
+      expectBlockedNotThrown(
+        ['.claude/skills/alpha', '.claude/skills/acme__greet'],
+        '.claude/skills'
+      );
+    }
+  );
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)(
+    'AP-03, AP-11: a read-only folder nothing writes to is not a fault',
+    () => {
+      // The objection the permission probe has to answer, or it is worse than
+      // the crash: a repository whose projections all already match is one this
+      // engine writes nothing to, so the mode of the folder holding them is
+      // nobody's business. Sync clean FIRST, then lock the folder.
+      stageRepo();
+      applyPlan(repo, plan(), { sweepOrphans: true });
+      makeReadOnly('.claude/skills');
+
+      const drift = checkPlan(repo, plan());
+
+      expect(drift.blocked.map((a) => a.target)).not.toContain('.claude/skills/alpha');
+      expect(drift.clean).toBe(true);
+
+      const { conflicts } = applyPlan(repo, plan(), { sweepOrphans: true });
+      expect(conflicts).toEqual([]);
     }
   );
 });

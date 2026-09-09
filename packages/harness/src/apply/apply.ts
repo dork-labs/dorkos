@@ -71,7 +71,7 @@ import {
   sweepGeneratedOrphans,
 } from './generated-targets.js';
 import { blockingGenerateOccupant } from './generate-occupants.js';
-import { findBlockedWritePaths } from './write-path-occupants.js';
+import { findBlockedWritePaths, findUnwritableTargets } from './write-path-occupants.js';
 import {
   CLAUDE_COMMANDS_DIR,
   CLAUDE_SKILLS_DIR,
@@ -753,6 +753,17 @@ export function applyPlan(
   // the difference between a blocked projection and a half-applied tree with the
   // six sweeps never reached (`write-path-occupants.ts`, DOR-1882).
   const blockedWritePaths = findBlockedWritePaths(repoRoot, plan);
+  // And the permission half, asked only of the actions that are really about to
+  // write — `isDrifted` is what "really about to write" means, and `checkPlan`
+  // scopes it with the same predicate so the two modes name the same paths.
+  const unwritableTargets = findUnwritableTargets(
+    repoRoot,
+    plan.actions.filter(
+      (action) =>
+        !(action.target !== undefined && blockedWritePaths.has(action.target)) &&
+        isDrifted(repoRoot, action)
+    )
+  );
   const blockedWrapperDirs = findBlockedWrapperDirs(repoRoot, plan);
   const blockedOpencodeCommandFiles = findBlockedOpencodeCommandFiles(repoRoot, plan);
 
@@ -760,7 +771,9 @@ export function applyPlan(
     // Whatever the kind, a write that cannot reach its path is a conflict with
     // the way out beside it, never an exception out of the middle of the loop.
     const writePathReason =
-      action.target === undefined ? undefined : blockedWritePaths.get(action.target);
+      action.target === undefined
+        ? undefined
+        : (blockedWritePaths.get(action.target) ?? unwritableTargets.get(action.target));
     if (writePathReason !== undefined) {
       conflicts.push({ ...action, reason: writePathReason });
       continue;
@@ -984,12 +997,22 @@ export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
   const onBlockedPath = (action: ProjectionAction): boolean =>
     action.target !== undefined && blockedWritePaths.has(action.target);
 
-  const drifted = plan.actions.filter(
+  // Drift is asked once and used twice: it is the answer, and it is also what
+  // scopes the permission probe — a projection already on disk is one nothing
+  // writes to, so its folder's mode is nobody's business (`unwritableWritePath`).
+  const wouldWrite = plan.actions.filter(
     (action) => !onBlockedPath(action) && isDrifted(repoRoot, action)
+  );
+  const unwritableTargets = findUnwritableTargets(repoRoot, wouldWrite);
+  const drifted = wouldWrite.filter(
+    (action) => !(action.target !== undefined && unwritableTargets.has(action.target))
   );
   const blocked = [
     ...plan.actions.flatMap((action) => {
-      const reason = action.target === undefined ? undefined : blockedWritePaths.get(action.target);
+      const reason =
+        action.target === undefined
+          ? undefined
+          : (blockedWritePaths.get(action.target) ?? unwritableTargets.get(action.target));
       return reason === undefined ? [] : [{ ...action, reason }];
     }),
     ...findBlockedGenerateTargets(repoRoot, plan).filter((a) => !onBlockedPath(a)),
