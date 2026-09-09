@@ -13,7 +13,20 @@ superseded-by: null
 
 Accepted (extracted from spec: harness-sync — installed-plugin projection and `provenance` shipped in `@dorkos/harness`; the explicit `dorkos harness adopt` verb is not yet implemented)
 
-**A proposed amendment narrows one clause at GLOBAL scope:** [260908-191538](260908-191538-global-scope-projection-is-skills-only-and-symlinked.md) (Global-scope projection is skills-only and symlinked) narrows "its **portable subset** (skills, hooks) projects **automatically on install** … scope-matched (project↔project, global↔global)" to skills only, asked for rather than automatic, at global scope alone. It is `proposed`, so **everything below still governs as written**; the full retirement note lands when that ADR is accepted (spec `harness-sync-global`, DOR-1857).
+**One clause is narrowed at GLOBAL scope by**
+[260908-191538](260908-191538-global-scope-projection-is-skills-only-and-symlinked.md) (Global-scope
+projection is skills-only and symlinked). The clause: "its **portable subset** (skills, hooks) projects
+**automatically on install** to every enabled harness … scope-matched (project↔project, global↔global)".
+
+At global scope the portable subset is **skills only** (hooks, commands, instructions and MCP servers are
+refused at user scope, each with its reason recorded in `meta/harness-sync-capabilities.md`), and the
+projection is **not automatic on install**: it is asked for once and remembered in `harness.global`. The
+related Negative bullet "the projector must understand … scope mapping" is now understated rather than
+wrong, and reads as history.
+
+**At project scope this clause is unchanged**, and so is everything else here: three source classes, one
+engine, one drop list, a `provenance` tag on every action, projections ephemeral and gitignored, adoption
+explicit. That is why this ADR stays `accepted` rather than `superseded`.
 
 **A second proposed amendment widens the THIRD source class's clause:**
 [260909-085610](260909-085610-adoption-is-explicit-everywhere-and-automatic-only-behind-an-allowlist.md)
