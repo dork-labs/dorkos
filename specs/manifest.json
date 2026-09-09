@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260909-090525",
+      "slug": "harness-sync-adopt",
+      "title": "Harness Sync — adopt: report first, move one skill on purpose",
+      "created": "2026-09-09",
+      "status": "specified"
+    },
+    {
       "id": "260909-012725",
       "slug": "approval-verdict-delivery",
       "title": "Telling an agent how its approval ended, after it stopped waiting",

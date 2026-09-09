@@ -15,6 +15,26 @@ Accepted (extracted from spec: harness-sync — installed-plugin projection and 
 
 **A proposed amendment narrows one clause at GLOBAL scope:** [260908-191538](260908-191538-global-scope-projection-is-skills-only-and-symlinked.md) (Global-scope projection is skills-only and symlinked) narrows "its **portable subset** (skills, hooks) projects **automatically on install** … scope-matched (project↔project, global↔global)" to skills only, asked for rather than automatic, at global scope alone. It is `proposed`, so **everything below still governs as written**; the full retirement note lands when that ADR is accepted (spec `harness-sync-global`, DOR-1857).
 
+**A second proposed amendment widens the THIRD source class's clause:**
+[260909-085610](260909-085610-adoption-is-explicit-everywhere-and-automatic-only-behind-an-allowlist.md)
+(Adoption is reported everywhere, explicit by one command, and automatic only behind an allowlist
+where DorkOS owns the directory) widens "(3) **agent-native** assets — promoted to canonical only via
+an **explicit, reviewable `dorkos harness adopt`** (skills + instructions in v1), never
+automatically". Three things change: an asset nobody has adopted is **reported** in every sync and
+boot summary rather than left to be noticed; the explicit verb moves **one skill at a time**, with a
+frozen refusal and a way out for each case it will not; and the move **is** automatic in the two
+directories DorkOS owns — an agent home and a room worktree — off by default there too, and behind an
+allowlist of the agentskills.io base fields when it is on. It also retires **`adopted` as a standing
+`Provenance` value**: the third source class survives as an ACT, and what the act produces is an
+`authored` skill in the canonical layer. Two Consequences bullets below are narrowed with it —
+"Adoption is explicit and reviewable, so the canonical source never silently absorbs a foreign asset"
+still holds for every path a person takes and is replaced by an allowlist where DorkOS is the author,
+and "`adopt` needs per-source importers and a review UX" is smaller than it reads: skills only, one
+union of documented skill roots, and no importer per source. The clause's other half is unchanged —
+instructions stay explicit, and hook and command adoption stay deferred as lossy. It is `proposed`,
+so **everything below still governs as written**; the retirement note lands when that ADR is accepted
+(spec `harness-sync-adopt`, DOR-1853).
+
 ## Context
 
 Harness Sync as first specified projected only the repo's _authored_ canonical source (`.agents/`), but two other kinds of agent files exist on disk and a user wants them in every harness too. Marketplace plugins install to `<scope>/plugins/<name>` (`~/.dork/plugins` global or `<project>/.dork/plugins`) and today reach only the DorkOS-driven Claude runtime, via the SDK `plugins` array — there is **no** filesystem bridge to Codex/Cursor/OpenCode. Separately, users have assets installed natively by an agent (skills in `.claude/`, rules in `.cursor/`) that are stranded in that one harness. The vendored-maps decision (ADR-301) means we own the projector, so adding source roots is our choice, not a library constraint.
