@@ -527,7 +527,7 @@ A uuid in a skill body proves a MODEL read a file, not that a HARNESS loaded a s
 
 ## 14. What happens when something is in the way
 
-A projection can be stopped by whatever is already on disk, and the engine has one answer for all of it: **block and report**. The projection is left unmade, the thing in the way is left exactly as it is, and the action comes back carrying one sentence naming the obstacle and the way out. Nothing throws over what is in the way, and nothing is half done.
+A projection can be stopped by whatever is already on disk, and the engine has one answer for all of it: **block and report**. The projection is left unmade, the thing in the way is left exactly as it is, and the action comes back carrying one sentence naming the obstacle and the way out. On the write path nothing throws over what is in the way, and nothing is half done. The sweeps are the one path this does not yet cover: an orphan inside a folder DorkOS may not write in is promised by `--check` and thrown on by `--fix` (`rmSync` needs the parent's write bit), because a sweep target is by definition not in the plan and so never meets the probe — DOR-1941 gives the `find*` halves the same probe.
 
 **Four questions, asked in that order**, and each has its own module so no caller can ask one of them a different way somewhere else:
 
