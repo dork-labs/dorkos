@@ -6,14 +6,16 @@
  * interception block in `cli.ts` and owns:
  *
  * - Help text for `harness` itself (no/`--help`/`-h` subcommand).
- * - Dynamic-import dispatch into the `sync` handler in `harness-sync-command.ts`
- *   and the `hooks` handler in `harness-hooks-command.ts`.
+ * - Dynamic-import dispatch into the `sync` handler in `harness-sync-command.ts`,
+ *   the `hooks` handler in `harness-hooks-command.ts`, and the `global` handler
+ *   in `harness-global-command.ts`.
  * - Uniform error rendering for parse and runtime failures.
  *
  * The whole namespace drives the `@dorkos/harness` projection engine entirely
  * offline — no server runtime. It reads `~/.dork/config.json` for the hook
- * decisions a person has made, and writes it only for the two flags that exist
- * to change one (`sync --fix --allow-hooks`, `hooks --revoke`).
+ * decisions a person has made, and writes it only for the four flags that exist
+ * to change one (`sync --fix --allow-hooks`, `hooks --revoke`,
+ * `global --enable`, `global --disable`).
  *
  * Like every other command handler in this package, the dispatcher returns the
  * intended exit code rather than calling `process.exit` directly — `cli.ts`
@@ -32,6 +34,8 @@ Project skills, instructions, hooks, and commands from the canonical
 Subcommands:
   sync [options]    Report or apply the cross-harness projection plan
   hooks [options]   See and change which packages may run commands
+  global [options]  See and change which agent tools can see the packages you
+                    installed for all your projects
 
 Sync acts on the folder you run it in, reading its manifest at
 \`.agents/harness.manifest.json\` — so run it from your project root. If that
@@ -63,6 +67,15 @@ Options (hooks):
       --list                  Show every decision you have made (default)
       --revoke <pkg>          Forget a package's decision, so you are asked again
 
+Options (global):
+      --list                  Show what you chose and where the links go (default)
+      --enable <tool>         Share your all-projects packages with one agent
+                              tool, and put the links where it looks
+      --disable <tool>        Stop sharing with one. DorkOS removes the links
+                              that folder no longer needs, first
+                              <tool> is one of claude-code, codex, cursor,
+                              gemini, copilot, opencode
+
 Examples:
   dorkos harness sync
   dorkos harness sync --fix
@@ -72,6 +85,10 @@ Examples:
   dorkos harness sync --fix --write-gitignore
   dorkos harness hooks --list
   dorkos harness hooks --revoke acme-tools
+  dorkos harness sync --global
+  dorkos harness global --list
+  dorkos harness global --enable codex
+  dorkos harness global --disable codex
 `;
 
 /**
@@ -116,8 +133,19 @@ export async function runHarnessDispatcher(
       return result.exitCode;
     }
 
+    if (subcommand === 'global') {
+      if (subArgs[0] === '--help' || subArgs[0] === '-h') {
+        console.log(HELP_TEXT);
+        return 0;
+      }
+      const { runHarnessGlobal, parseHarnessGlobalArgs } =
+        await import('../harness-global-command.js');
+      const result = await runHarnessGlobal(parseHarnessGlobalArgs(subArgs));
+      return result.exitCode;
+    }
+
     console.error(`Unknown harness subcommand: ${subcommand}`);
-    console.error('Usage: dorkos harness <sync|hooks> [options]');
+    console.error('Usage: dorkos harness <sync|hooks|global> [options]');
     return 1;
   } catch (err) {
     console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);

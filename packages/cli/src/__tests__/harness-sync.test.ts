@@ -11,6 +11,7 @@ import { runHarnessDispatcher } from '../commands/harness-dispatcher.js';
 import {
   createTempDir,
   pinEmptyClaudeRoot,
+  pinHome,
   syncArgs,
   writeFixtureRepo,
 } from './harness-fixtures.js';
@@ -2656,6 +2657,7 @@ describe('runHarnessSync --global — the packages installed for all your projec
   let tmpDir: string;
   let originalCwd: string;
   let homeDir: string;
+  let userHome: string;
   let logSpy: MockInstance<typeof console.log>;
   let errorSpy: MockInstance<typeof console.error>;
 
@@ -2687,8 +2689,12 @@ describe('runHarnessSync --global — the packages installed for all your projec
     originalCwd = process.cwd();
     tmpDir = createTempDir();
     homeDir = createTempDir();
+    userHome = createTempDir();
     vi.stubEnv('DORK_HOME', homeDir);
     pinEmptyClaudeRoot(homeDir);
+    // The user tier resolves `~/.agents/skills` through `os.homedir()`, so a
+    // global case would otherwise read the developer's own home directory.
+    pinHome(userHome);
     process.chdir(tmpDir);
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -2699,6 +2705,7 @@ describe('runHarnessSync --global — the packages installed for all your projec
     vi.unstubAllEnvs();
     logSpy.mockRestore();
     errorSpy.mockRestore();
+    fs.rmSync(userHome, { recursive: true, force: true });
     // Mode first: `rmSync -r` has to read a directory to empty it, so the
     // mode-000 one the unreadable-root case stages would leak the temp tree.
     try {

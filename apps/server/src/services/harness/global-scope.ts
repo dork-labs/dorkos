@@ -20,19 +20,35 @@
  * `hook-consent.ts` does for the same reason and under the same rule: the two
  * must agree, so they parse one schema.
  *
- * **It resolves both roots even when nothing is enabled.** The roots say where
- * DorkOS MAY write and the harness list says whether anybody asked it to; the
- * planner needs both, and collapsing them would make each mean the other. The
- * one thing that removes a root is a configured boundary.
+ * **A root is returned only when an agent tool that reads it is enabled**, and
+ * that is what keeps DorkOS out of the home directory of somebody who never said
+ * yes. The roots are what the SWEEP scans (`globalSweepDirs`), not just what the
+ * plan writes into — so returning them unconditionally would have every
+ * `dorkos harness sync --global` read two folders in a home directory on a
+ * machine that had never shared anything, and offer for removal a link a person
+ * hand-built there themselves. Nothing DorkOS never wrote to is ever read.
+ *
+ * The consequence is an ORDERING rule for `dorkos harness global --disable`, and
+ * it is the whole of why that command is written the way it is: forgetting the
+ * tool first would take its directory out of this answer, so nothing would scan
+ * it and every link DorkOS put there would be stranded. See
+ * `harness-global-command.ts`.
+ *
+ * The planner asks the same two questions again over the roots it is handed, and
+ * that duplication is deliberate: a pure planner that trusted its caller to have
+ * filtered would be one caller away from writing a Claude Code link for somebody
+ * who never enabled Claude Code.
  *
  * @module services/harness/global-scope
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { GlobalPlanRoots } from '@dorkos/harness';
+import { AGENTS_SKILLS_DIR_READERS, type GlobalPlanRoots } from '@dorkos/harness';
 import type { HarnessId } from '@dorkos/shared/harness-schemas';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import { boundaryWasConfigured, type BoundaryConfigReader } from '../../lib/boundary.js';
+import { configManager } from '../core/config-manager.js';
+import { logConfigWrite } from '../core/operator/config-write.js';
 import { inheritedClaudeRoot } from '../runtimes/claude-code/claude-config-dir.js';
 import { agentsUserSkillsDir } from './agents-user-home.js';
 
@@ -94,6 +110,41 @@ export function readGlobalSharingFromDisk(dorkHome: string): GlobalSharingAnswer
 /** One short clause naming what went wrong, for a message a person reads. */
 function describeReadFailure(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * A {@link BoundaryConfigReader} backed by `config.json` on disk, for a process
+ * that must not open the config store.
+ *
+ * The CLI's `harness` namespace is intercepted before anything boots, and
+ * `dorkos harness sync --check` writes nothing — so it cannot ask the config
+ * manager whether a boundary was configured, because `conf`'s constructor
+ * creates the file and the directory around it. It reads the same field out of
+ * the same file instead.
+ *
+ * Only `server.boundary` is answered. Every other key is `undefined`, which is
+ * deliberate: this exists for one predicate, and a general-purpose disk-backed
+ * config reader is a second source of truth waiting to drift from the manager.
+ *
+ * @param dorkHome - the resolved DorkOS data directory.
+ * @returns a reader that answers `server.boundary` and nothing else.
+ */
+export function boundaryConfigFromDisk(dorkHome: string): BoundaryConfigReader {
+  return {
+    getDot: (key: string): unknown => {
+      if (key !== 'server.boundary') return undefined;
+      try {
+        const raw: unknown = JSON.parse(readFileSync(join(dorkHome, 'config.json'), 'utf8'));
+        const server = (raw as { server?: { boundary?: unknown } } | null)?.server;
+        return server?.boundary;
+      } catch {
+        // A missing or damaged file is not a configured boundary. The one thing
+        // this must never do is answer "confined" because it could not read: a
+        // machine nobody confined would silently stop sharing.
+        return undefined;
+      }
+    },
+  };
 }
 
 /** Everything a caller needs to build a global plan and report on it honestly. */
@@ -162,12 +213,85 @@ export function resolveGlobalScopeInputs(
     return { ...base, roots: { dorkHome }, boundaryRoot: configured };
   }
 
+  const enabled = new Set(answer.harnesses);
   return {
     ...base,
     roots: {
       dorkHome,
-      agentsSkillsDir: agentsUserSkillsDir(),
-      claudeSkillsDir: join(inheritedClaudeRoot(), 'skills'),
+      ...(AGENTS_SKILLS_DIR_READERS.some((harness) => enabled.has(harness))
+        ? { agentsSkillsDir: agentsUserSkillsDir() }
+        : {}),
+      ...(enabled.has('claude-code')
+        ? { claudeSkillsDir: join(inheritedClaudeRoot(), 'skills') }
+        : {}),
     },
   };
+}
+
+/**
+ * The roots a global plan would have if this machine shared with `harnesses`.
+ *
+ * `dorkos harness global --enable` and `--disable` both need an answer for a
+ * list that is not on disk yet: enable needs the root the new tool implies
+ * before it has written the tool down, and disable needs the root the OLD list
+ * implied so the sweep can still find what it is removing. Both go through here
+ * rather than resolving a home directory of their own.
+ *
+ * @param dorkHome - the resolved DorkOS data directory.
+ * @param harnesses - the list to answer for.
+ * @param env - the process environment, for the boundary check.
+ * @param config - the config store the boundary check reads.
+ * @returns the roots that list implies, with both user roots absent under a
+ *   configured boundary.
+ */
+export function globalRootsFor(
+  dorkHome: string,
+  harnesses: readonly HarnessId[],
+  env: NodeJS.ProcessEnv,
+  config: BoundaryConfigReader
+): GlobalPlanRoots {
+  if (boundaryWasConfigured(env, config)) return { dorkHome };
+  const enabled = new Set(harnesses);
+  return {
+    dorkHome,
+    ...(AGENTS_SKILLS_DIR_READERS.some((harness) => enabled.has(harness))
+      ? { agentsSkillsDir: agentsUserSkillsDir() }
+      : {}),
+    ...(enabled.has('claude-code')
+      ? { claudeSkillsDir: join(inheritedClaudeRoot(), 'skills') }
+      : {}),
+  };
+}
+
+/**
+ * Record which agent tools DorkOS shares globally installed packages with, and
+ * stamp when the question was answered.
+ *
+ * Needs `initConfigManager` to have run: this OPENS the store and writes, which
+ * is why only the two explicit verbs (`dorkos harness global --enable` and
+ * `--disable`) reach it, and never a read-only path (DOR-678).
+ *
+ * `askedAt` is stamped on every write, including one that empties the list. A
+ * decline is a timestamp with an empty list, and it is remembered — which is
+ * what stops the ask printing again for somebody who already said no.
+ *
+ * The list is REPLACED rather than merged, and every caller passes a list it
+ * derived from the stored one. One explicit verb, one array element, nothing
+ * round-tripped, which is the shape ADR-0302's amendment established.
+ *
+ * @param harnesses - the new list, already deduplicated and ordered by the caller.
+ * @param reason - the subsystem name for the config-write log line.
+ * @param now - the timestamp to stamp; injected so a test can pin it.
+ */
+export function writeGlobalSharing(
+  harnesses: readonly HarnessId[],
+  reason: string,
+  now: Date = new Date()
+): void {
+  const harness = configManager.get('harness');
+  configManager.set('harness', {
+    ...harness,
+    global: { harnesses: [...harnesses], askedAt: now.toISOString() },
+  });
+  logConfigWrite(reason, 'harness', harness, configManager.get('harness'));
 }
