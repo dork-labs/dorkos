@@ -44,6 +44,7 @@ import {
 } from '../index.js';
 import { invokeCapabilityAsMcpResult } from '../mcp-projection.js';
 import {
+  awaitCapabilityApproval,
   CAPABILITY_APPROVAL_HOLD_CAP_MS,
   type CapabilityApprovalHold,
 } from '../capability-approval-hold.js';
@@ -313,6 +314,8 @@ describe('capability approval hold (DOR-939)', () => {
     const cardless = {
       awaitDecision: approvals.awaitDecision.bind(approvals),
       getPending: () => undefined,
+      claimVerdictDelivery: approvals.claimVerdictDelivery.bind(approvals),
+      releaseVerdictDelivery: approvals.releaseVerdictDelivery.bind(approvals),
     };
 
     const result = await invokeCapabilityAsMcpResult(
@@ -336,5 +339,136 @@ describe('capability approval hold (DOR-939)', () => {
     expect(payloadOf(result).status).toBe('approval_required');
     expect(session.eventQueue).toEqual([]);
     expect(ran).toEqual([]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // The delivery claim (spec `approval-verdict-delivery`)
+  //
+  // A hold and the out-of-band deliverer both wake on the same
+  // `approval_resolved` broadcast, so exactly one of them must be allowed to
+  // speak. The hold takes the claim when it STARTS waiting rather than when the
+  // decision lands, because a hold that is waiting WILL deliver — through its own
+  // return value — and claiming at the decision is a race a person can lose in
+  // either direction: two turns for one answer, or none at all.
+  // ---------------------------------------------------------------------------
+  describe('the delivery claim', () => {
+    /** Invoke from a session, which is what gives the approval somewhere to deliver. */
+    function invokeFromSession(overrides: Partial<CapabilityApprovalHold> = {}) {
+      return invokeCapabilityAsMcpResult(
+        registry,
+        'gated.destroy',
+        { name: 'production' },
+        { identity: AGENT, sessionId: 'session-1', cwd: '/work/repo' },
+        hold(overrides)
+      );
+    }
+
+    it('records where to deliver, all the way from the invoking surface', async () => {
+      // The plumbing claim, end to end: the surface knows the session, the gate
+      // passes it, the row keeps it. Without this the columns are the "declared,
+      // validated, unreachable" defect and nothing could ever be delivered.
+      const resultP = invokeFromSession();
+      await vi.waitFor(() => expect(cardData()).toBeDefined());
+      const approvalId = cardData()!.approval.approvalId;
+
+      approvals.grant(approvalId);
+      await resultP;
+
+      expect(approvals.verdictDelivery(approvalId)).toMatchObject({
+        sessionId: 'session-1',
+        cwd: '/work/repo',
+      });
+    });
+
+    it('is taken the moment the hold starts waiting, not when the answer lands', async () => {
+      const resultP = invokeFromSession();
+      await vi.waitFor(() => expect(cardData()).toBeDefined());
+      const approvalId = cardData()!.approval.approvalId;
+
+      // The out-of-band deliverer, arriving mid-wait, is locked out — while the
+      // person has not answered anything yet.
+      expect(approvals.claimVerdictDelivery(approvalId)).toBe(false);
+
+      approvals.grant(approvalId);
+      await resultP;
+    });
+
+    it('is KEPT when the person decides, so nothing delivers the answer twice', async () => {
+      const resultP = invokeFromSession();
+      await vi.waitFor(() => expect(cardData()).toBeDefined());
+      const approvalId = cardData()!.approval.approvalId;
+
+      approvals.grant(approvalId);
+      await resultP;
+
+      // The tool call itself carried the answer back. A second delivery would be a
+      // turn nobody asked for, telling the agent something it already acted on.
+      expect(approvals.claimVerdictDelivery(approvalId)).toBe(false);
+    });
+
+    it('is RELEASED when the hold gives up without a decision', async () => {
+      // The case the whole feature is for: the cap runs out, the person answers at
+      // minute twenty, and the out-of-band deliverer must be free to take it. A
+      // hold that kept its claim here would leave the answer spoken for by
+      // something that has been gone for an hour.
+      vi.useFakeTimers();
+      try {
+        const resultP = invokeFromSession({ capMs: 1_000 });
+        await vi.waitFor(() => expect(cardData()).toBeDefined());
+        const approvalId = cardData()!.approval.approvalId;
+        expect(approvals.claimVerdictDelivery(approvalId)).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(1_000);
+        await resultP;
+
+        expect(approvals.claimVerdictDelivery(approvalId)).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('releases nothing it never took', async () => {
+      // A hold whose claim was refused — the approval names no session, or
+      // something else already owns the delivery — must not hand back a claim it
+      // does not hold. Doing so would free a delivery the other path is in the
+      // middle of, which is the two-turn failure wearing the opposite hat.
+      //
+      // Driven against the primitive rather than through the registry, because
+      // the losing branch is unreachable end to end: a hold claims the instant it
+      // mints its own approval, so it always wins in production. The invariant is
+      // still real, and this is the only way to hold it to it.
+      const release = vi.fn();
+      const outcome = await awaitCapabilityApproval(
+        {
+          approvals: {
+            awaitDecision: () => Promise.resolve('timeout' as const),
+            getPending: () => undefined,
+            claimVerdictDelivery: () => false,
+            releaseVerdictDelivery: release,
+          },
+          session,
+          capMs: 1,
+        },
+        {
+          status: 'approval_required',
+          capabilityId: 'gated.destroy',
+          capabilityTitle: 'Destroy the thing',
+          tier: 'destructive',
+          approvalId: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
+          approvalToken: 'deadbeef',
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          reason: 'no_approval',
+          message: 'needs approval',
+          retry: {
+            channel: 'mcp-argument',
+            field: APPROVAL_TOKEN_ARGUMENT,
+            instructions: 'retry with the token',
+          },
+        }
+      );
+
+      expect(outcome).toBe('timeout');
+      expect(release).not.toHaveBeenCalled();
+    });
   });
 });

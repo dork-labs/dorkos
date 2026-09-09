@@ -18,6 +18,7 @@ import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import type { EffortLevel, SessionSettings } from '@dorkos/shared/types';
 import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
 import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
+import { formatApprovalVerdict } from '../shared/approval-verdict-block.js';
 import { formatRoomContext } from '../shared/room-context-block.js';
 import { formatSeedContext } from '../shared/seed-context-block.js';
 import { formatStagedContext } from '../shared/staged-context-block.js';
@@ -93,7 +94,7 @@ export function projectThreadOptions(settings: SessionSettings, cwd?: string): T
  * body is the structured data as JSON: honest, machine-readable, and free of
  * the Claude adapter's heavyweight formatting dependencies.
  *
- * Two kinds are exceptions, and neither is a style preference — see
+ * Four kinds are exceptions, and none of them is a style preference — see
  * {@link renderContextBody}.
  */
 function renderContextEntry(entry: AdditionalContextEntry): string {
@@ -102,19 +103,24 @@ function renderContextEntry(entry: AdditionalContextEntry): string {
 }
 
 /**
- * The body of one rendered block: structured data as JSON, except for the two
- * kinds whose body is PROSE and must read identically on every runtime.
+ * The body of one rendered block: structured data as JSON, except for the kinds
+ * whose body is PROSE and must read identically on every runtime.
  *
  * `room_context` carries text other people wrote, wrapped in an untrusted-input
  * fence that a JSON dump would not carry. `seed_context` carries a paragraph
  * somebody wrote for a model to read, plus the sentence telling the reader the
  * person cannot see the block — JSON would deliver both as one quoted line with
- * `\n` spelled out in it. Both go through the shared writers in
- * `runtimes/shared/`, so a room holding agents on three runtimes, and a seeded
- * turn on any of them, read the same words.
+ * `\n` spelled out in it. `approval_verdict` reports a security decision a person
+ * made, and the `default` arm below is exactly what would have shipped it here as
+ * a raw dump while it read as a formatted block on claude-code. All of them go
+ * through the shared writers in `runtimes/shared/`, so a room holding agents on
+ * three runtimes, a seeded turn on any of them, and a verdict delivered to any of
+ * them read the same words.
  */
 function renderContextBody(entry: AdditionalContextEntry): string {
   switch (entry.kind) {
+    case 'approval_verdict':
+      return formatApprovalVerdict(entry.data);
     case 'room_context':
       // The prefix Codex qualifies plugin-provided MCP tools with, so the
       // tool-only closing directive can name the posting tool rather than

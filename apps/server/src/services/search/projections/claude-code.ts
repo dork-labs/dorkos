@@ -362,7 +362,7 @@ function readSpeech(line: TranscriptLine): { role: 'user' | 'assistant'; body: s
     if (body === '') return null;
     // The auto-first-turn kickoff is DorkOS's own instruction wearing the
     // person's role, and `stripSystemTags` cannot reach it: it strips
-    // `<system-reminder>` and the eight `CONTEXT_TAG` wrappers, and
+    // `<system-reminder>` and every `CONTEXT_TAG` wrapper, and
     // `dork-kickoff` is not one of them. Without this the birth turn is
     // returned by search as the person's own words. The predicate is the one
     // the render seams already use, never a second copy of the rule

@@ -309,7 +309,10 @@ import {
   manifestToolGroupGrants,
   type CapabilityRegistry,
 } from './services/core/capabilities/index.js';
-import { initApprovalSubjectResolvers } from './services/core/approvals/index.js';
+import {
+  initApprovalSubjectResolvers,
+  startApprovalVerdictDelivery,
+} from './services/core/approvals/index.js';
 import { createMcpRouter } from './routes/mcp.js';
 import { createMcpAuth } from './middleware/mcp-auth.js';
 import { validateMcpOrigin } from './middleware/mcp-origin.js';
@@ -2213,6 +2216,27 @@ async function start() {
       return describeHookProjectionCapability(capabilityId);
     },
   });
+  // An answer given after the in-session hold gave up has to reach the agent that
+  // asked, or a person ends up relaying it by hand — which is the bug DOR-1931
+  // reports. The subscription lives for the life of the process; its listener does
+  // nothing but hand off, because `eventFanOut` runs listeners synchronously on
+  // the broadcast write path (spec `approval-verdict-delivery`).
+  startApprovalVerdictDelivery(approvalService);
+  // Hand back the delivery claims that only a hold in a DEAD process could still
+  // hold. A hold lives in process memory and holds a turn open, so none survives
+  // a restart — and without this sweep, a restart while somebody was deciding
+  // reproduced the very bug this feature fixes: the person answers at minute
+  // twenty and the deliverer is locked out by a hold that died an hour ago.
+  try {
+    const released = approvalService.releaseStaleVerdictClaims();
+    if (released > 0) {
+      logger.info(`[Approvals] Released ${released} verdict claim(s) stranded by a restart`);
+    }
+  } catch (err) {
+    logger.warn('[Approvals] Failed to release stranded verdict claims (non-fatal)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
   try {
     const purged = approvalService.purgeExpired();
     if (purged > 0) {

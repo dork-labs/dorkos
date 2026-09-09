@@ -44,8 +44,14 @@ import { abortSignalOf } from '../../../core/capabilities/index.js';
 export interface InSessionCapabilityHold {
   /** The live session whose event queue carries the inline cards. */
   session: CapabilityHoldSession;
-  /** The approval primitive — reads the card and waits for the decision. */
-  approvals: Pick<ApprovalService, 'awaitDecision' | 'getPending'>;
+  /**
+   * The approval primitive — reads the card, waits for the decision, and owns the
+   * single-delivery claim while it waits (spec `approval-verdict-delivery`).
+   */
+  approvals: Pick<
+    ApprovalService,
+    'awaitDecision' | 'getPending' | 'claimVerdictDelivery' | 'releaseVerdictDelivery'
+  >;
 }
 
 /**

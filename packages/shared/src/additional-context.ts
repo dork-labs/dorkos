@@ -30,7 +30,8 @@ export type ContextKind =
   | 'env'
   | 'relay_context'
   | 'room_context'
-  | 'seed_context';
+  | 'seed_context'
+  | 'approval_verdict';
 
 /** Lifetime of an entry — informs adapter placement, not yet load-bearing. */
 export type ContextScope = 'per-turn' | 'per-session';
@@ -762,6 +763,45 @@ export interface StagedContextData {
 }
 
 /**
+ * How an approval a person answered LATE is told to the agent that asked
+ * (spec `approval-verdict-delivery`).
+ *
+ * The in-session hold caps at ten minutes and the approval window is two hours,
+ * so an answer given at minute twenty reaches nobody: the tool call has long
+ * since returned its poll payload and the turn has ended. This is the payload
+ * that closes that gap — server-authored throughout, so nothing an agent
+ * supplied is interpolated into a security notice.
+ *
+ * Its own kind rather than a reused `staged_context`, because that kind's
+ * formatter tells the agent "the person attached this ahead of their message",
+ * and dressing a server-authored verdict as something the operator typed is a
+ * lie in the one place this codebase is most careful not to tell one.
+ */
+export interface ApprovalVerdictData {
+  /** The approval this settles — the id the requester was handed when it asked. */
+  approvalId: string;
+  /**
+   * The capability's human-facing title, as the CARD showed it.
+   *
+   * Denormalized onto the approval row from the capability registry at request
+   * time, never from the requester (see `CapabilityDescriptorLookup`), so an
+   * agent cannot choose the words a person is told they approved.
+   */
+  capabilityTitle: string;
+  /** What the person decided. */
+  outcome: 'granted' | 'denied';
+  /** When they decided it. ISO 8601 UTC. */
+  decidedAt: string;
+  /**
+   * The reason the person typed with a refusal, when they gave one.
+   *
+   * The one field in this payload DorkOS did not write, so the block fences it
+   * rather than rendering it as prose — see `runtimes/shared/approval-verdict-block.ts`.
+   */
+  denyReason?: string;
+}
+
+/**
  * Discriminated union of the canonical server-assembled entries. Each member
  * pairs a {@link ContextKind} with its structured `data` payload and a
  * {@link ContextScope}.
@@ -774,7 +814,8 @@ export type AdditionalContextEntry =
   | { kind: 'env'; scope: 'per-session'; data: EnvData }
   | { kind: 'relay_context'; scope: 'per-turn'; data: RelayContextData }
   | { kind: 'room_context'; scope: 'per-turn'; data: RoomContextData }
-  | { kind: 'seed_context'; scope: 'per-turn'; data: SeedContextData };
+  | { kind: 'seed_context'; scope: 'per-turn'; data: SeedContextData }
+  | { kind: 'approval_verdict'; scope: 'per-turn'; data: ApprovalVerdictData };
 
 /** The per-turn bag a runtime receives via `MessageOpts.additionalContext`. */
 export type AdditionalContext = AdditionalContextEntry[];
@@ -807,6 +848,7 @@ export const CONTEXT_TAG = {
   relay_context: 'relay_context',
   room_context: 'room_context',
   seed_context: 'seed_context',
+  approval_verdict: 'approval_verdict',
 } satisfies Record<ContextKind, string>;
 
 /**
@@ -1028,6 +1070,15 @@ export const SeedContextDataSchema = z.object({ text: z.string().min(1) });
 /** Zod schema for {@link StagedContextData}. */
 export const StagedContextDataSchema = z.object({ text: z.string().min(1) });
 
+/** Zod schema for {@link ApprovalVerdictData}. */
+export const ApprovalVerdictDataSchema = z.object({
+  approvalId: z.string().min(1),
+  capabilityTitle: z.string().min(1),
+  outcome: z.enum(['granted', 'denied']),
+  decidedAt: z.string().min(1),
+  denyReason: z.string().min(1).optional(),
+});
+
 /** Zod schema for {@link AdditionalContextEntry} (discriminated on `kind`). */
 export const AdditionalContextEntrySchema = z.discriminatedUnion('kind', [
   z.object({
@@ -1069,6 +1120,11 @@ export const AdditionalContextEntrySchema = z.discriminatedUnion('kind', [
     kind: z.literal('seed_context'),
     scope: z.literal('per-turn'),
     data: SeedContextDataSchema,
+  }),
+  z.object({
+    kind: z.literal('approval_verdict'),
+    scope: z.literal('per-turn'),
+    data: ApprovalVerdictDataSchema,
   }),
 ]);
 
