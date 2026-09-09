@@ -162,3 +162,30 @@ export async function ensureGlobalSkillsRoot(dorkHome: string): Promise<string> 
   }
   return dir;
 }
+
+/**
+ * Where the packages whose skills reach this root are installed.
+ *
+ * A packaged skill is discovered through a `<pkg>__<name>` SYMLINK in a skills
+ * root, and its row is keyed on the file the link resolves to — a path inside a
+ * `plugins/` directory that is not a root and that no scan ever enumerates. The
+ * reconciler needs to name that directory to be able to say anything about such
+ * a row once its link is gone (DOR-1934), and this is the one place the pairing
+ * is written down: `<dorkHome>/skills` is fed by `<dorkHome>/plugins`, and a
+ * project's `.agents/skills` by that project's `.dork/plugins`.
+ *
+ * Spelled here rather than imported from `@dorkos/harness`: the pairing is a
+ * fact about where the marketplace installer puts things, the engine spells the
+ * same two directories for its own reasons, and the integration test drives the
+ * real sweep over the real link so the two cannot drift apart in silence.
+ *
+ * @param root - The skills root.
+ * @returns The absolute packages directory, or `undefined` for a project root
+ *   that does not say which project it belongs to.
+ */
+export function pluginsRootFor(root: TaskRoot): string | undefined {
+  if (root.scope === 'global') return path.join(path.dirname(root.dir), 'plugins');
+  return root.projectPath === undefined
+    ? undefined
+    : path.join(root.projectPath, '.dork', 'plugins');
+}

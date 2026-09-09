@@ -492,10 +492,16 @@ export async function linkedSkillDirs(root: TaskRoot): Promise<string[]> {
  * rest. The parts that no longer exist cannot themselves be symlinks any more,
  * so nothing is lost by carrying them through literally.
  *
+ * Exported because the reconciler resolves the PLUGINS directory the same way
+ * before comparing a row's path against it: that directory can be gone (the
+ * package was uninstalled) or sit under a symlinked ancestor (every macOS temp
+ * directory does), and both spellings have to meet in one place or the
+ * comparison silently matches nothing (DOR-1934).
+ *
  * @param target - An absolute path, possibly gone.
  * @returns The same path with every resolvable ancestor resolved.
  */
-async function resolveThroughAncestors(target: string): Promise<string> {
+export async function resolveThroughAncestors(target: string): Promise<string> {
   const tail: string[] = [];
   let current = target;
   for (;;) {

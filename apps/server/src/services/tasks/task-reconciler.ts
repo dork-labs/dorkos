@@ -32,8 +32,14 @@ import path from 'node:path';
 import type { TaskStore } from './task-store.js';
 import type { TaskRegistrar } from './task-registrar.js';
 import type { ScheduleIdentityRegistry } from './schedule-identity.js';
-import { linkedSkillDirs, scanTaskRoot, taskRootShape } from './skills-root-discovery.js';
-import type { TaskRoot } from './skills-roots.js';
+import {
+  linkedSkillDirs,
+  resolveThroughAncestors,
+  scanTaskRoot,
+  taskRootShape,
+} from './skills-root-discovery.js';
+import { pluginsRootFor, type TaskRoot } from './skills-roots.js';
+import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { UNWATCHED_ROOT_SWEEP_SECONDS, type TaskWatchHealth } from './task-file-watcher.js';
 import { resolveParkedScheduleRemoved } from '../notifications/emitters/schedule-park.js';
 import { logger, logError } from '../../lib/logger.js';
@@ -82,6 +88,26 @@ interface ReportedFailure {
   lastSeenAt: number;
   /** Byte-identical recurrences swallowed since the last log. */
   suppressed: number;
+}
+
+/**
+ * Whether `filePath` sits inside any of `roots`, judged one path segment at a
+ * time.
+ *
+ * `startsWith` alone answers `true` for `<dorkHome>/plugins-of-someone-else`
+ * against `<dorkHome>/plugins`, which is a neighbouring directory this pass has
+ * no claim over whatever it is called — and the claim here ends in a deleted
+ * row with its whole run history.
+ *
+ * @param filePath - The absolute path a row is keyed on.
+ * @param roots - Resolved packages directories this pass read the links of.
+ * @returns Whether the file is under one of them.
+ */
+function isInsideAny(filePath: string, roots: ReadonlySet<string>): boolean {
+  for (const root of roots) {
+    if (filePath === root || filePath.startsWith(root + path.sep)) return true;
+  }
+  return false;
 }
 
 /**
@@ -423,6 +449,14 @@ export class TaskReconciler {
     // Directories this pass actually enumerated. ONLY these may testify that a
     // file is gone — see the retirement loop below.
     const scannedDirs = new Set<string>();
+    // The packages directories feeding the roots this pass read, resolved. A row
+    // whose file sits in one of these was reached through a link, and this pass
+    // walked the only directory such a link can live in.
+    const pluginRoots = new Set<string>();
+    // Every file a link in one of those roots still resolves to. This is what
+    // "still reachable" means for a packaged skill: not that the file is there,
+    // but that something in a watched root still points at it (DOR-1934).
+    const linkedFiles = new Set<string>();
 
     for (const root of roots) {
       let results;
@@ -460,7 +494,14 @@ export class TaskReconciler {
       // in the directory it names. `dirname` because a link points at the SKILL
       // directory, and what the retirement gate compares is the directory that
       // CONTAINS it — the same level as a root.
-      seenIn.push(...(await linkedSkillDirs(root)).map((d) => path.dirname(d)));
+      const linkedDirs = await linkedSkillDirs(root);
+      seenIn.push(...linkedDirs.map((d) => path.dirname(d)));
+      for (const dir of linkedDirs) linkedFiles.add(path.join(dir, SKILL_FILENAME));
+      // Where this root's packaged skills are installed, resolved the same way
+      // the links are, so a `/var` -> `/private/var` machine compares like with
+      // like and an uninstalled package's directory still has a name.
+      const pluginsRoot = pluginsRootFor(root);
+      if (pluginsRoot !== undefined) pluginRoots.add(await resolveThroughAncestors(pluginsRoot));
       await this.recordScanned(root, scannedDirs, seenIn);
 
       for (const result of results) {
@@ -533,6 +574,13 @@ export class TaskReconciler {
     //    normal operation, because `addDirectory` runs once at boot: a project
     //    whose agent registered after startup, and one whose agent was
     //    unregistered (its directory is dropped, its rows are not).
+    // 1b. …or the row's file sits in a packages directory feeding a root this
+    //    pass DID read, and no link in those roots resolves to it any more. A
+    //    packaged skill's row is keyed inside `plugins/`, which is not a root
+    //    and which nothing enumerates, so gate 1 alone could never speak about
+    //    one after its link was swept — and it went on firing for a package
+    //    that had been uninstalled (DOR-1934). Such a row PAUSES while its file
+    //    is still there and follows the ordinary ladder when it is not.
     // 2. The file is genuinely not on disk. Being absent from `seenFilePaths`
     //    only means the scan did not return it, and the scan skips slots it
     //    enumerated fine (reserved names, dotfiles, symlinked directories) —
@@ -552,22 +600,39 @@ export class TaskReconciler {
     const now = Date.now();
     for (const task of allTasks) {
       if (!task.filePath || seenFilePaths.has(task.filePath)) continue;
-      if (!scannedDirs.has(path.dirname(path.dirname(task.filePath)))) continue;
+      const enumerated = scannedDirs.has(path.dirname(path.dirname(task.filePath)));
+      // Gate 1b. A packaged skill's row is keyed on a path inside a `plugins/`
+      // directory, which is not a root and which no scan enumerates — so once
+      // the `<pkg>__<name>` link that made it discoverable is swept, gate 1
+      // never passes again and the row runs forever for a skill nothing can
+      // reach (DOR-1934). This pass DID walk the only directory such a link can
+      // live in, so it may speak: a row in a packages directory it read, that no
+      // link in those roots resolves to any more, is unreachable.
+      const unreachable =
+        !enumerated && isInsideAny(task.filePath, pluginRoots) && !linkedFiles.has(task.filePath);
+      if (!enumerated && !unreachable) continue;
 
       // Gate 2. One stat per candidate — rows already believed missing — so
       // this costs nothing in the common case of nothing being wrong.
+      let fileGone = false;
       try {
         await fs.access(task.filePath);
-        continue; // The file is right there; the scan just skipped its slot.
+        // The file is right there. For an enumerated directory that means the
+        // scan skipped its slot and the row stands. For an unreachable one it
+        // changes nothing: what made the skill a schedule was being reachable
+        // from a watched root, and it is not — so it pauses below, and never
+        // deletes, because the file and its history are both still real.
+        if (!unreachable) continue;
       } catch (err) {
         // ENOENT is the only answer that means "deleted". EACCES or EMFILE
         // means we could not look, which is never evidence of absence.
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') continue;
+        fileGone = true;
       }
 
       try {
         const updatedAt = new Date(task.updatedAt).getTime();
-        if (now - updatedAt > ORPHAN_GRACE_MS) {
+        if (fileGone && now - updatedAt > ORPHAN_GRACE_MS) {
           this.store.deleteTask(task.id);
           // A deleted row with a live job is worse than a stale schedule: the
           // job still fires, and the run it tries to record belongs to a
@@ -584,6 +649,11 @@ export class TaskReconciler {
           // Pausing a row the operator can see, while its job keeps firing, is
           // the same lie the watcher told before the registrar existed.
           this.registrar.syncTask(task.id);
+          if (unreachable && !fileGone) {
+            logger.info(
+              `[TaskReconciler] ${task.filePath} is no longer linked into a folder DorkOS watches — paused`
+            );
+          }
         }
       } catch (err) {
         this.report('error', `[TaskReconciler] Failed to retire removed task ${task.id}`, err);
