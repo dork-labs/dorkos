@@ -197,6 +197,7 @@ import { storedHookDecisions, type HookDecisions } from '../services/harness/hoo
 import { collectClaudeOnlyPlugins } from '../services/harness/claude-enabled-plugins.js';
 import { projectWithConsent, withProjectLock } from '../services/harness/project-with-consent.js';
 import { buildHarnessStatus } from '../services/harness/status.js';
+import { resolveDirectoryOwnership } from '../services/harness/directory-ownership.js';
 import { dorkosHarness } from '../services/harness/dorkos-harness.js';
 import type { HarnessId } from '@dorkos/shared/harness-schemas';
 
@@ -620,17 +621,12 @@ export function createHarnessRouter(deps: HarnessRouterDeps): Router {
             name,
             ...(claudeOnly === true ? { claudeOnly: true } : {}),
           },
-          // `plain`, the same answer the CLI gives for the same explicit run.
-          // The two other ownerships exist for the AUTO path — B1 is about a run
-          // nobody asked for, and R3 protects a skill seeded into a room folder
-          // — and this route is only ever reached by a person pressing a button
-          // on an agent's own project. Establishing the other two costs a room
-          // store read on a path that has no room, and they arrive with the boot
-          // path that needs them. DOR-1945's
-          // `services/harness/directory-ownership.ts` answers exactly this
-          // question from the path's shape under dork home, and is what replaces
-          // this literal once both slices are on one branch.
-          ownership: 'plain',
+          // From the path's shape under dork home (DOR-1945), the same answer
+          // the CLI gives for the same explicit run: a room worktree keeps R3
+          // (a reserved pack name is refused there — the reap would delete the
+          // moved copy), an agent home reads the same way the boot pass does,
+          // and anything else is the person's own project.
+          ownership: resolveDirectoryOwnership(resolved, deps.dorkHome),
         });
         // A blocked plan is a fact about the DIRECTORY rather than about this
         // skill — `.agents/` ignored by git (AP-15) — and it stops every

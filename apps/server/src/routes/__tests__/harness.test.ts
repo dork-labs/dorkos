@@ -1113,6 +1113,29 @@ describe('POST /api/harness/adopt', () => {
     expect(HarnessAdoptResponseSchema.safeParse(res.body).success).toBe(true);
     expect(diffSnapshots(before, snapshotTree(repo))).toEqual(NO_CHANGES);
   });
+  it('SRC-11: an agent home adopts through the route with its ownership resolved, not assumed', async () => {
+    // The route asks `resolveDirectoryOwnership` (DOR-1945) instead of passing
+    // the literal `'plain'`. Under dork home the only shape the boundary lets a
+    // request reach is `{dorkHome}/agents/*`, so this is the reachable half of
+    // the wiring: an agent home resolves to `agent-home`, and an explicit adopt
+    // there still moves the skill. A room worktree (`{dorkHome}/rooms/*/
+    // worktrees/*`) is where R3 would fire, but the boundary refuses it before
+    // the route runs, so it is pinned by the resolver's own suite instead.
+    const repo = join(dorkHome, 'agents', 'route-adopt-home');
+    mkdirSync(repo, { recursive: true });
+    staged.push(repo);
+    writeManifest(repo, ['claude-code', 'codex']);
+    writeAt(
+      join(repo, '.claude', 'skills', 'release-notes', 'SKILL.md'),
+      '---\nname: release-notes\ndescription: How this release is written up\n---\n\n# release-notes\n'
+    );
+
+    const res = await adoptSkill(repo, 'release-notes');
+
+    expect(res.status).toBe(200);
+    expect(res.body.moved.map((m: { name: string }) => m.name)).toEqual(['release-notes']);
+    expect(res.body.refusals).toEqual([]);
+  });
   it('SRC-07, SRC-10, AP-17: moves the skill, leaves Claude Code its link, and the RETURNED status says so', async () => {
     // Seeded defect: recompute the status BEFORE the apply — or answer with the
     // status the GET before the click produced — and the row still reads
