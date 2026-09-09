@@ -25,7 +25,7 @@ import type {
   ProjectionPlan,
   ProjectionWarning,
 } from './types.js';
-import { scanSkills, AGENTS_SKILLS_DIR, type SkillEntry } from '../scan/scanner.js';
+import { listAuthoredSkills, AGENTS_SKILLS_DIR, type SkillEntry } from '../scan/scanner.js';
 import type { ClaudeHooksConfig } from '../generate/hooks.js';
 import {
   collectHookSources,
@@ -447,15 +447,38 @@ export function buildPlan(input: {
     detectedHarnesses = [],
     dorkosHarness,
   } = input;
-  const skills = scanSkills(repoRoot);
+  const authored = listAuthoredSkills(repoRoot);
+  const skills = authored.skills;
   const warnings: ProjectionWarning[] = [];
   const claudeOnlyNames = new Set(manifest.claudeOnlySkills.map((entry) => entry.name));
   const agentsSkillNames = new Set(skills.map((skill) => skill.name));
 
+  // Every skill SOURCE folder the scan could not read: this repo's own canonical
+  // layer, and each installed package's `skills/`. An empty listing from a
+  // failed read looks exactly like an empty folder, and the plan is the sweeps'
+  // only evidence of what is installed — so this list is what stops them
+  // deleting live links for a folder nobody could look in (DOR-1882).
+  const unreadableSkillRoots = [
+    ...(authored.unreadable ? [AGENTS_SKILLS_DIR] : []),
+    ...installedPlugins.flatMap((plugin) => plugin.unreadableSkillRoots ?? []),
+  ];
+  warnings.push(...planUnreadableSkillRootWarnings(unreadableSkillRoots));
+
   // Say what the tree holds and could not be read — a `.mcp.json` that will not
   // parse, a file where `.claude/agents` should be a directory. Once per source,
   // ahead of every harness, for the reason `planUnreadableHookWarnings` gives.
-  warnings.push(...planInventoryWarnings(inventory));
+  //
+  // A skills root the line above already named is dropped here, so one folder
+  // gets one line. The inventory's sentence is the strictly smaller of the two —
+  // it says nothing was read from the folder, while the skill-root line says
+  // that AND what the engine did about it — and two surfaces describing one fact
+  // is how a person stops reading either.
+  const namedSkillRoots = new Set(unreadableSkillRoots);
+  warnings.push(
+    ...planInventoryWarnings(inventory).filter(
+      (warning) => warning.source === undefined || !namedSkillRoots.has(warning.source)
+    )
+  );
 
   // Partition installed plugins: only project-scoped, projectable-type plugins
   // contribute assets; global installs and other types are reported as drops.
@@ -632,7 +655,45 @@ export function buildPlan(input: {
     drops: all.filter((a) => a.kind === 'drop'),
     warnings,
     notEnabled: notEnabledHarnesses(manifest.harnesses, detectedHarnesses, dorkosHarness),
+    ...(unreadableSkillRoots.length > 0 ? { unreadableSkillRoots } : {}),
   };
+}
+
+/**
+ * The harness a skill-root warning is attributed to.
+ *
+ * A PLACEHOLDER, exactly like {@link planInventoryWarnings}': the loss reaches
+ * every harness that reads skills, and `HarnessId` has no member for "all of
+ * them", so each warning carries `harnessAgnostic` beside it and no `--harness
+ * <id>` filter can hide it.
+ */
+const SKILL_ROOT_ATTRIBUTION: HarnessId = 'claude-code';
+
+/**
+ * One warning per skill folder the scan could not read, in the words a person
+ * needs: which folder, and what DorkOS did about it.
+ *
+ * The second half is the part that matters. The engine's answer to an unreadable
+ * skills folder is to leave every link that points into it alone — including the
+ * ones it would otherwise have swept — so the person is looking at a tree that
+ * is deliberately not tidied, and a warning that only named the folder would
+ * leave them to work that out.
+ *
+ * @param roots - the repo-relative skill folders that could not be listed.
+ * @returns one warning per folder, empty when every root read cleanly.
+ */
+function planUnreadableSkillRootWarnings(roots: readonly string[]): ProjectionWarning[] {
+  return roots.map((root) => ({
+    artifact: 'skill' as const,
+    harness: SKILL_ROOT_ATTRIBUTION,
+    harnessAgnostic: true,
+    name: root,
+    source: root,
+    reason:
+      `DorkOS could not read ${root}, so it does not know which skills are in there. ` +
+      `Every link that points into it was left exactly as it is, including any DorkOS ` +
+      `would otherwise have removed. Fix the folder, then re-run.`,
+  }));
 }
 
 /**

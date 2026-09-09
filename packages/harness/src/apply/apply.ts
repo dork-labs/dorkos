@@ -90,6 +90,36 @@ import {
 const INSTALLED_SKILL_DIRS = [AGENTS_SKILLS_DIR, CLAUDE_SKILLS_DIR] as const;
 
 /**
+ * Whether any skill SOURCE folder was unreadable when this plan was built — the
+ * one condition under which both skill-link sweeps stand down.
+ *
+ * The sweeps read the plan as their keep-set: a link the plan does not name is
+ * an orphan. That inference holds only while the plan is a complete answer, and
+ * a folder nobody could list yields the same empty result an empty folder does.
+ * So `chmod 000 .agents/skills` made every authored projection look orphaned and
+ * `applyPlan` deleted `.claude/skills/*`; an unreadable package `skills/` took
+ * all four of that package's links the same way. Both measured on the built dist
+ * (DOR-1882), and both silent — the crash they replaced at least removed nothing.
+ *
+ * ONE flag suppresses BOTH sweeps, rather than matching each unreadable folder
+ * to the links it would have named. The authored root and a package's `skills/`
+ * feed one keep-set, the cost of over-suppressing is a dead link left lying
+ * about until the folder is readable again, and the cost of under-suppressing is
+ * somebody's projections deleted. A rule that cannot be got subtly wrong is
+ * worth more here than a tidier tree.
+ *
+ * The other four sweeps are untouched: none of them reads a skill source. The
+ * generated-hook and command-wrapper sweeps own their targets by marker or
+ * sidecar, and the settings sweep by sentinel.
+ *
+ * @param plan - the plan whose keep-set is in question.
+ * @returns `true` when at least one skill root could not be listed.
+ */
+function skillSourcesUnreadable(plan: ProjectionPlan): boolean {
+  return (plan.unreadableSkillRoots?.length ?? 0) > 0;
+}
+
+/**
  * How this platform decides whether a link on disk is the link the plan wants.
  *
  * Resolved once at module scope: it is a property of the running platform, not
@@ -307,6 +337,9 @@ function applyMerge(repoRoot: string, action: ProjectionAction): boolean {
  * @returns the repo-relative paths a sweep would remove.
  */
 export function findInstalledOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  // A plan built over a skill folder nobody could read is not evidence of what
+  // is installed — see `skillSourcesUnreadable`.
+  if (skillSourcesUnreadable(plan)) return [];
   const managed = new Set(
     plan.actions.filter((a) => a.kind === 'symlink' && a.target).map((a) => a.target as string)
   );
@@ -955,9 +988,10 @@ export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
     (action) => !onBlockedPath(action) && isDrifted(repoRoot, action)
   );
   const blocked = [
-    ...plan.actions
-      .filter(onBlockedPath)
-      .map((action) => ({ ...action, reason: blockedWritePaths.get(action.target as string) })),
+    ...plan.actions.flatMap((action) => {
+      const reason = action.target === undefined ? undefined : blockedWritePaths.get(action.target);
+      return reason === undefined ? [] : [{ ...action, reason }];
+    }),
     ...findBlockedGenerateTargets(repoRoot, plan).filter((a) => !onBlockedPath(a)),
     ...findBlockedSymlinkTargets(repoRoot, plan).filter((a) => !onBlockedPath(a)),
   ];
@@ -968,6 +1002,15 @@ export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
     orphans: removals.map(({ path }) => path),
     removals,
     leftAlone: findLeftAloneGeneratedHookFiles(repoRoot, plan),
-    clean: drifted.length === 0 && blocked.length === 0 && removals.length === 0,
+    // A skill folder nobody could read is the fourth way this answer is not
+    // "everything is as the plan says": the sweeps stood down over it, so the
+    // tree may hold links a readable folder would have settled either way, and
+    // saying `clean` over that is the same lie as saying it over nine files a
+    // sync would delete (DOR-1882).
+    clean:
+      drifted.length === 0 &&
+      blocked.length === 0 &&
+      removals.length === 0 &&
+      !skillSourcesUnreadable(plan),
   };
 }

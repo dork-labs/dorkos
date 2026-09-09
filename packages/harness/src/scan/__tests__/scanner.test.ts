@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { scanSkills, scanSkillDirs, AGENTS_SKILLS_DIR } from '../scanner.js';
+import { listAuthoredSkills, scanSkillDirs, AGENTS_SKILLS_DIR } from '../scanner.js';
 
 let dir = '';
 afterEach(() => {
@@ -36,7 +36,7 @@ function skillsRoot(): string {
   return join(dir, AGENTS_SKILLS_DIR);
 }
 
-describe('scanSkills', () => {
+describe('listAuthoredSkills', () => {
   it('SRC-01: derives one entry per immediate skill dir containing SKILL.md', () => {
     // Skills a + b have SKILL.md; dir c and a stray file must be ignored.
     dir = mkdtempSync(join(tmpdir(), 'harness-scan-'));
@@ -47,7 +47,7 @@ describe('scanSkills', () => {
     mkdirSync(join(dir, '.agents', 'skills', 'c'), { recursive: true });
     writeFileSync(join(dir, '.agents', 'skills', 'stray.txt'), 'x');
 
-    expect(scanSkills(dir)).toEqual([
+    expect(listAuthoredSkills(dir).skills).toEqual([
       { name: 'a', sourceDir: '.agents/skills/a' },
       { name: 'b', sourceDir: '.agents/skills/b' },
     ]);
@@ -56,7 +56,7 @@ describe('scanSkills', () => {
   it('returns an empty array when .agents/skills is absent', () => {
     // A repo with no skills root yields no skills and does not throw.
     dir = mkdtempSync(join(tmpdir(), 'harness-scan-'));
-    expect(scanSkills(dir)).toEqual([]);
+    expect(listAuthoredSkills(dir).skills).toEqual([]);
   });
 
   it('SK-13: skips a `<pkg>__<skill>` SYMLINK — that is a managed installed projection, not authored', () => {
@@ -67,7 +67,9 @@ describe('scanSkills', () => {
     writeSkillDir('authored');
     linkSkillDir('projected', 'acme__projected');
 
-    expect(scanSkills(dir)).toEqual([{ name: 'authored', sourceDir: '.agents/skills/authored' }]);
+    expect(listAuthoredSkills(dir).skills).toEqual([
+      { name: 'authored', sourceDir: '.agents/skills/authored' },
+    ]);
   });
 
   it('SK-13: finds an authored skill whose source directory is a symlink', () => {
@@ -78,7 +80,7 @@ describe('scanSkills', () => {
     writeSkillDir('authored');
     linkSkillDir('notes', 'notes');
 
-    expect(scanSkills(dir)).toEqual([
+    expect(listAuthoredSkills(dir).skills).toEqual([
       { name: 'authored', sourceDir: '.agents/skills/authored' },
       { name: 'notes', sourceDir: '.agents/skills/notes' },
     ]);
@@ -91,7 +93,7 @@ describe('scanSkills', () => {
     dir = mkdtempSync(join(tmpdir(), 'harness-scan-'));
     writeSkillDir('my__helper');
 
-    expect(scanSkills(dir)).toEqual([
+    expect(listAuthoredSkills(dir).skills).toEqual([
       { name: 'my__helper', sourceDir: '.agents/skills/my__helper' },
     ]);
   });

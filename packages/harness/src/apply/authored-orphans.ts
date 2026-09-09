@@ -47,6 +47,12 @@ import { isDanglingSymlink, isSymlink, listDir } from './link-state.js';
  * @returns the repo-relative paths of the dead links, sorted.
  */
 export function findOrphanedAuthoredLinks(repoRoot: string, plan: ProjectionPlan): string[] {
+  // A skill folder nobody could list makes every link that points into it look
+  // DEAD as well as unplanned — both halves of this predicate, from one cause.
+  // The plan says so, and the sweep stands down until the folder is readable
+  // again (`apply.ts`'s `skillSourcesUnreadable` carries the whole reasoning).
+  if ((plan.unreadableSkillRoots?.length ?? 0) > 0) return [];
+
   const planned = new Set(
     plan.actions.filter((a) => a.kind === 'symlink' && a.target).map((a) => a.target as string)
   );

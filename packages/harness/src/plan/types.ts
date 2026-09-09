@@ -256,6 +256,28 @@ export interface ProjectionPlan {
    * answer both questions.
    */
   narrowedTo?: HarnessId;
+  /**
+   * Skill SOURCE folders the scan could not list — `.agents/skills`, or an
+   * installed package's `skills/` — each spelled the way that scan spells its
+   * paths.
+   *
+   * **This is a safety marker, not a report line, and the skill sweeps read it.**
+   * A folder nobody could look in yields an empty listing, which is the same
+   * value an empty folder yields and the opposite fact; the plan is the sweeps'
+   * only evidence of what is installed, so an empty listing from a failed read
+   * made every live link pointing into that folder look orphaned. One `chmod
+   * 000` on `.agents/skills` deleted `.claude/skills/*`, and a package's
+   * unreadable `skills/` took all four of its links — measured on the built dist
+   * (DOR-1882). While this is non-empty both skill-link sweeps stand down and
+   * `checkPlan` is not clean, and a warning names each folder.
+   *
+   * The same shape `plan/global-projector.ts` carries as `unreadableRoot`, for
+   * the same reason and with the same consequence.
+   *
+   * Absent means every skill root read cleanly, which is the ordinary case.
+   * `buildPlan` is the only thing that sets it.
+   */
+  unreadableSkillRoots?: string[];
 }
 
 /**
@@ -338,8 +360,13 @@ export interface DriftResult {
   leftAlone: string[];
   /**
    * True when the plan is fully realized on disk: nothing drifted, nothing
-   * blocked, and nothing a sweep would remove. `leftAlone` entries do not make a
-   * tree unclean.
+   * blocked, nothing a sweep would remove, and every skill folder readable.
+   * `leftAlone` entries do not make a tree unclean.
+   *
+   * The last clause is {@link ProjectionPlan.unreadableSkillRoots}, and it earns
+   * its place the way the orphan clause did: a folder DorkOS could not look in
+   * is a question this answer cannot settle, and calling the tree clean over one
+   * is the same lie as calling it clean over nine files a sync would delete.
    *
    * For a plan narrowed to one harness ({@link ProjectionPlan.narrowedTo}) this
    * says nothing about orphans: `orphans` is empty by rule there, so a `true`
