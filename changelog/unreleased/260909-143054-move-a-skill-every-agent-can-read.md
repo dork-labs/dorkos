@@ -6,6 +6,9 @@ covers:
   # Folds in here: it corrects the manifest line the first bullet writes, before
   # anybody could have seen one, so there is nothing to report as a fix.
   - 'fix(harness): a manifest entry is written the way the file is written (DOR-1944)'
+  # Internal: the block's root keeps its type. Nothing a person sees changes,
+  # but the gate counts a refactor as user-facing, so it is claimed here.
+  - 'refactor(cli): the adoptable block keeps its root typed (DOR-1944)'
 ---
 
 ### Added
