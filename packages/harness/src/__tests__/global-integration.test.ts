@@ -361,7 +361,7 @@ describe('AP-07 global: a plan that could not be built removes nothing', () => {
     expect(swept).toEqual([join(globalSkillsDir(dorkHome), 'globex__greet')]);
     // A different cause, so a different sentence: the package is still there.
     expect(removals.map((r) => r.reason)).toEqual([
-      'The package this came from no longer has a skill of this name.',
+      'The package this skill came from no longer has a skill of this name.',
     ]);
     expect(existsOnDisk(join(globalSkillsDir(dorkHome), 'globex__hello'))).toBe(true);
   });

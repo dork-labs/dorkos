@@ -63,7 +63,7 @@ export const SWEEP_REASONS = {
   'stale-temp': 'A half-written file an interrupted sync left behind.',
   'global-package-gone':
     'The package this skill came from is no longer installed for all your projects.',
-  'global-skill-gone': 'The package this came from no longer has a skill of this name.',
+  'global-skill-gone': 'The package this skill came from no longer has a skill of this name.',
 } as const satisfies Record<string, string>;
 
 /** Which sweep found a path — the whole of what decides its reason. */
