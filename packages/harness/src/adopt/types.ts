@@ -11,10 +11,27 @@
  *
  * @module adopt/types
  */
-import type { SkillRoot } from '../inventory/types.js';
+import { HARNESS_NATIVE_SKILL_ROOTS, type SkillRoot } from '../inventory/types.js';
 
 /** The canonical skills layer every adopted skill lands in. */
 export const ADOPT_TARGET_ROOT = '.agents/skills';
+
+/**
+ * Every skills root that belongs to ONE agent tool rather than to all of them.
+ *
+ * The same set `apps/server/src/services/harness/status.ts` calls
+ * `HARNESS_OWNED_SKILL_ROOTS`, spelled here because this package cannot import
+ * the server. A skill in any of these is one a person could move;
+ * {@link ADOPT_TARGET_ROOT} is where they would move it to.
+ *
+ * It lives in this module rather than beside the reader because the PLANNER
+ * needs it too: it is the sentence R1 falls back to when a caller hands it no
+ * roots at all.
+ */
+export const HARNESS_OWNED_SKILL_ROOTS: readonly SkillRoot[] = [
+  '.claude/skills',
+  ...HARNESS_NATIVE_SKILL_ROOTS,
+];
 
 /**
  * One skill that could be moved into the canonical layer, and everything the
@@ -87,7 +104,15 @@ export interface AdoptExclusion {
 /** What DorkOS owns the directory a run is happening in as. */
 export type DirectoryOwnership = 'plain' | 'agent-home' | 'room-worktree';
 
-/** One move the plan will make. */
+/**
+ * One move the plan will make.
+ *
+ * There is no `link` field yet. The symlink Claude Code needs at the old path
+ * arrives in slice 2, when `planAdoptedSkillLink` is extracted out of
+ * `plan/projector.ts`: the link adopt leaves has to be the link the projector
+ * plans, and that is only a fact the compiler holds once both callers share one
+ * export. A field nothing could set would be a field nothing checks.
+ */
 export interface AdoptMove {
   /** The skill's name. */
   name: string;
@@ -179,8 +204,16 @@ export type AdoptRequest =
       claudeOnly?: boolean;
     };
 
-/** Everything {@link planAdopt} needs, and nothing it would have to read a disk for. */
-export interface AdoptInput {
+/**
+ * Everything {@link planAdopt} needs, and nothing it would have to read a disk
+ * for.
+ *
+ * Named for the skill it is about rather than `AdoptInput`, because
+ * `services/relay/chat-bridge` already exports a type by that name about
+ * adopting a bridged SESSION — a different verb on a different noun, and two of
+ * them in one editor's autocomplete is how somebody imports the wrong one.
+ */
+export interface AdoptSkillInput {
   /** What the run was asked to do. */
   request: AdoptRequest;
   /** Every skill that could be moved. */

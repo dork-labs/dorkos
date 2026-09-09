@@ -22,41 +22,24 @@ import { join } from 'node:path';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import type { HarnessManifest } from '../manifest/schema.js';
-import {
-  HARNESS_NATIVE_SKILL_ROOTS,
-  type SkillInventoryEntry,
-  type SkillRoot,
-  type SourceInventory,
-} from '../inventory/types.js';
+import type { SkillInventoryEntry, SkillRoot, SourceInventory } from '../inventory/types.js';
 import { canonicalLayerIgnoredBy } from '../apply/gitignore.js';
 import { blockedWritePath, type WritePathCause } from '../apply/write-path-occupants.js';
 import { CLAUDE_TOKEN_PREFIX } from './allowlist.js';
 import {
   ADOPT_TARGET_ROOT,
+  HARNESS_OWNED_SKILL_ROOTS,
   type AdoptCandidate,
   type AdoptExclusion,
-  type AdoptInput,
+  type AdoptSkillInput,
 } from './types.js';
-
-/**
- * Every skills root that belongs to ONE agent tool rather than to all of them.
- *
- * The same set `status.ts` calls `HARNESS_OWNED_SKILL_ROOTS`, spelled here
- * because this package cannot import the server. A skill in any of these is one
- * a person could move; `.agents/skills` is the canonical layer and is the place
- * they would move it TO.
- */
-const HARNESS_OWNED_SKILL_ROOTS: readonly SkillRoot[] = [
-  '.claude/skills',
-  ...HARNESS_NATIVE_SKILL_ROOTS,
-];
 
 /** The canonical skills root: a skill here is already shared with every harness. */
 const CANONICAL_SKILLS_ROOT: SkillRoot = '.agents/skills';
 
 /** What {@link readAdoptCandidates} establishes, and {@link planAdopt} decides over. */
 export type AdoptReadResult = Pick<
-  AdoptInput,
+  AdoptSkillInput,
   'candidates' | 'exclusions' | 'roots' | 'canonicalLayerIgnoredBy'
 >;
 
@@ -152,12 +135,21 @@ function readCandidate(
   probed: Map<string, WritePathCause | undefined>
 ): AdoptCandidate {
   const target = `${ADOPT_TARGET_ROOT}/${skill.name}`;
-  // Asked of the `SKILL.md` inside each folder rather than of the folder, so the
-  // folder ITSELF is one of the directories on the write path and a file sitting
-  // where either belongs is answered by the same check as a file two levels up.
-  const pathBlockedReason =
-    blockedWritePath(repoRoot, `${skill.source}/${SKILL_FILENAME}`, probed) ??
-    blockedWritePath(repoRoot, `${target}/${SKILL_FILENAME}`, probed);
+  // Asked of the `SKILL.md` inside the target folder rather than of the folder,
+  // so the folder ITSELF is one of the directories on the write path: a file at
+  // `.agents/skills/<name>` is answered by the same check as a file at
+  // `.agents/skills`, and R2 gets there before R4 calls it an occupied target.
+  //
+  // The SOURCE is deliberately not probed, and the reason is that it cannot
+  // fail. Every hostile shape above a candidate's own folder stops it becoming
+  // a candidate first: an unreadable `.claude/skills` is refused by the
+  // inventory's own root probe, and a source folder that is a file, a dangling
+  // link, a link to a file, or unreadable holds no `SKILL.md` the scanner can
+  // read, so it never reaches this list. Probing it anyway was a branch no tree
+  // could reach — see `adoptable-agreement.test.ts`, which pins what a person
+  // gets instead, and DOR-1943's follow-up on the inventory dropping such a
+  // folder with no record at all.
+  const pathBlockedReason = blockedWritePath(repoRoot, `${target}/${SKILL_FILENAME}`, probed);
 
   let text: string | undefined;
   try {

@@ -17,7 +17,7 @@
  *
  * @module adopt/plan
  */
-import { allowlistVerdict } from './allowlist.js';
+import { allowlistVerdict, type AllowlistVerdict } from './allowlist.js';
 import {
   ADOPT_DECLARATION_REASONS,
   ADOPT_SENTENCES,
@@ -26,9 +26,10 @@ import {
 } from './refusals.js';
 import {
   ADOPT_TARGET_ROOT,
+  HARNESS_OWNED_SKILL_ROOTS,
   type AdoptCandidate,
   type AdoptDeclaration,
-  type AdoptInput,
+  type AdoptSkillInput,
   type AdoptPlan,
   type AdoptRefusal,
 } from './types.js';
@@ -44,7 +45,7 @@ const CLAUDE_SKILLS_ROOT = '.claude/skills';
  * @returns the moves, the declarations and one sentence per refusal — or a
  *   single `blocked` and nothing else.
  */
-export function planAdopt(input: AdoptInput): AdoptPlan {
+export function planAdopt(input: AdoptSkillInput): AdoptPlan {
   const { request } = input;
 
   // `--claude-only` writes one line into the manifest and moves nothing, so
@@ -98,7 +99,7 @@ function blockedByAutoAdopt(): AdoptPlan['blocked'] {
  * @param candidates - the candidates this run is deciding.
  * @returns the plan's moves and refusals.
  */
-function decide(input: AdoptInput, candidates: readonly AdoptCandidate[]): AdoptPlan {
+function decide(input: AdoptSkillInput, candidates: readonly AdoptCandidate[]): AdoptPlan {
   const moves: AdoptPlan['moves'] = [];
   const refusals: AdoptRefusal[] = [];
   for (const candidate of candidates) {
@@ -127,7 +128,7 @@ function decide(input: AdoptInput, candidates: readonly AdoptCandidate[]): Adopt
  * @param candidate - the skill being decided.
  * @returns the refusal, or `undefined` when the skill may be moved.
  */
-function refuse(input: AdoptInput, candidate: AdoptCandidate): AdoptRefusal | undefined {
+function refuse(input: AdoptSkillInput, candidate: AdoptCandidate): AdoptRefusal | undefined {
   const { name, source } = candidate;
 
   // R2 — a directory on the way to the source or the target is not one DorkOS
@@ -156,13 +157,7 @@ function refuse(input: AdoptInput, candidate: AdoptCandidate): AdoptRefusal | un
   // `manifest.claudeOnlySkills` cannot un-expose a skill that has already moved.
   const verdict = allowlistVerdict(candidate);
   if (!verdict.safe) {
-    const reason =
-      verdict.why === 'body-token'
-        ? ADOPT_SENTENCES.S7b(name)
-        : verdict.why === 'claude-field'
-          ? ADOPT_SENTENCES.S7(name, joinNames(verdict.fields))
-          : ADOPT_SENTENCES.S7c(name, joinNames(verdict.fields));
-    return { name, source, rule: 'not-on-allowlist', reason };
+    return { name, source, rule: 'not-on-allowlist', reason: notOnAllowlistReason(name, verdict) };
   }
   return undefined;
 }
@@ -175,7 +170,7 @@ function refuse(input: AdoptInput, candidate: AdoptCandidate): AdoptRefusal | un
  * @param name - the name the person asked for.
  * @returns the refusal.
  */
-function notAdoptable(input: AdoptInput, name: string): AdoptRefusal {
+function notAdoptable(input: AdoptSkillInput, name: string): AdoptRefusal {
   const excluded = input.exclusions.find((entry) => entry.name === name);
   if (excluded?.why === 'also-canonical') {
     return {
@@ -193,7 +188,11 @@ function notAdoptable(input: AdoptInput, name: string): AdoptRefusal {
       reason: ADOPT_SENTENCES.S2c(name),
     };
   }
-  return { name, source: '', rule: 'not-adoptable', reason: ADOPT_SENTENCES.S2(name, input.roots) };
+  // A caller that looked in no roots at all would otherwise print "in .", so the
+  // fallback the reader applies is applied here as well: a pure function cannot
+  // rely on its caller having done it.
+  const roots = input.roots.length > 0 ? input.roots : HARNESS_OWNED_SKILL_ROOTS;
+  return { name, source: '', rule: 'not-adoptable', reason: ADOPT_SENTENCES.S2(name, roots) };
 }
 
 /**
@@ -203,7 +202,7 @@ function notAdoptable(input: AdoptInput, name: string): AdoptRefusal {
  * @param name - the name the person asked for.
  * @returns a plan carrying one declaration, or one refusal.
  */
-function planDeclaration(input: AdoptInput, name: string): AdoptPlan {
+function planDeclaration(input: AdoptSkillInput, name: string): AdoptPlan {
   const candidate = input.candidates.find((entry) => entry.name === name);
   if (candidate === undefined) {
     return { moves: [], declarations: [], refusals: [notAdoptable(input, name)] };
@@ -241,11 +240,61 @@ function planDeclaration(input: AdoptInput, name: string): AdoptPlan {
  * @returns the entry to append to `manifest.claudeOnlySkills`.
  */
 function declare(candidate: AdoptCandidate): AdoptDeclaration {
-  const verdict = allowlistVerdict(candidate);
-  const reason = verdict.safe
-    ? ADOPT_DECLARATION_REASONS.onPurpose()
-    : verdict.why === 'body-token'
-      ? ADOPT_DECLARATION_REASONS.bodyToken()
-      : ADOPT_DECLARATION_REASONS.fields(joinNames(verdict.fields));
-  return { name: candidate.name, path: candidate.source, reason };
+  return {
+    name: candidate.name,
+    path: candidate.source,
+    reason: declarationReason(allowlistVerdict(candidate)),
+  };
+}
+
+/**
+ * The sentence R7 refuses with, chosen by whose fields the offending keys are.
+ *
+ * A sentence that names a tool is only printed when EVERY key it names belongs
+ * to that tool — the mixed case gets S7c, which claims nothing about who
+ * understands what and still names every key the person has to take out.
+ *
+ * @param name - the skill's name.
+ * @param verdict - what the allowlist found wrong.
+ * @returns the frozen sentence.
+ */
+function notOnAllowlistReason(
+  name: string,
+  verdict: Extract<AllowlistVerdict, { safe: false }>
+): string {
+  switch (verdict.why) {
+    case 'body-token':
+      return ADOPT_SENTENCES.S7b(name);
+    case 'claude-field':
+      return ADOPT_SENTENCES.S7(name, joinNames(verdict.fields));
+    case 'dorkos-field':
+      return ADOPT_SENTENCES.S7d(name, joinNames(verdict.fields));
+    default:
+      return ADOPT_SENTENCES.S7c(name, joinNames(verdict.fields));
+  }
+}
+
+/**
+ * The `reason` a `--claude-only` entry carries (S18), chosen the same way.
+ *
+ * The unknown case deliberately says "on purpose" rather than "only Claude Code
+ * understands": a person opening that manifest a year later should read what
+ * DorkOS actually knew, and DorkOS does not know who understands a key it has
+ * never heard of.
+ *
+ * @param verdict - what the allowlist found wrong, if anything.
+ * @returns the sentence to store in `manifest.claudeOnlySkills`.
+ */
+function declarationReason(verdict: AllowlistVerdict): string {
+  if (verdict.safe) return ADOPT_DECLARATION_REASONS.onPurpose();
+  switch (verdict.why) {
+    case 'body-token':
+      return ADOPT_DECLARATION_REASONS.bodyToken();
+    case 'claude-field':
+      return ADOPT_DECLARATION_REASONS.claudeFields(joinNames(verdict.fields));
+    case 'dorkos-field':
+      return ADOPT_DECLARATION_REASONS.dorkosFields(joinNames(verdict.fields));
+    default:
+      return ADOPT_DECLARATION_REASONS.unknownFields(joinNames(verdict.fields));
+  }
 }

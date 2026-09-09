@@ -52,29 +52,61 @@ export const AGENTSKILLS_BASE_FIELDS = [
 export const CLAUDE_TOKEN_PREFIX = '${CLAUDE_';
 
 /**
- * Every frontmatter key `SkillFrontmatterSchema` itself declares that is not a
- * base field — layer 2 plus `schedule` and `kind`.
+ * The fields that are DorkOS's own — not part of the open standard, and not
+ * Claude Code's either.
  *
- * Read off the schema's own shape rather than spelled a second time, so a field
- * the schema gains tomorrow moves between the two refusal sentences on its own:
- * a key in here is one DorkOS can say only Claude Code understands, and a key
- * outside it — a typo, a third-party extension — is one DorkOS can say nothing
- * about at all.
+ * Spelled out rather than derived, because the schema cannot tell them apart
+ * from Claude Code's dialect: all three layers share one shape. `schedule` is
+ * the one with a running consequence (the scheduler watches `.agents/skills`
+ * and never `.claude/skills`, `services/tasks/skills-roots.ts`), and `kind` is
+ * a marketplace-author discriminator (ADR-0229). Saying "only Claude Code
+ * understands" about either would be false in the one direction that matters:
+ * it is DorkOS, not Claude Code, that acts on them.
  */
-export const SCHEMA_DECLARED_NON_BASE_FIELDS: ReadonlySet<string> = new Set(
-  Object.keys(SkillFrontmatterSchema.shape).filter(
-    (field) => !(AGENTSKILLS_BASE_FIELDS as readonly string[]).includes(field)
-  )
-);
+export const DORKOS_OWN_FIELDS = ['schedule', 'kind'] as const;
+
+/**
+ * Claude Code frontmatter fields the DorkOS schema does not have at all.
+ *
+ * `hooks` is the whole reason this predicate reads RAW frontmatter: Claude Code
+ * registers those hooks the moment the skill is invoked, DorkOS's own inventory
+ * reads them (HK-12), and `SkillFrontmatterSchema` strips the key. A key the
+ * schema never declares would otherwise fall through to "DorkOS doesn't
+ * recognise it" — which is false about a field DorkOS demonstrably reads, and
+ * which contradicted the manifest line the same run writes.
+ */
+export const CLAUDE_ONLY_EXTRA_FIELDS = ['hooks'] as const;
+
+/**
+ * Every frontmatter key that belongs to Claude Code's dialect — layer 2 of
+ * `SkillFrontmatterSchema`, plus the keys the schema does not model.
+ *
+ * Layer 2 is read off the schema's own shape rather than spelled a second time,
+ * so a dialect field the schema gains tomorrow classifies itself. The two
+ * corrections around it are explicit because the shape gets them wrong in both
+ * directions: {@link DORKOS_OWN_FIELDS} are in the shape and are not Claude
+ * Code's, and {@link CLAUDE_ONLY_EXTRA_FIELDS} are Claude Code's and are not in
+ * the shape.
+ */
+export const CLAUDE_DIALECT_FIELDS: ReadonlySet<string> = new Set([
+  ...Object.keys(SkillFrontmatterSchema.shape).filter(
+    (field) =>
+      !(AGENTSKILLS_BASE_FIELDS as readonly string[]).includes(field) &&
+      !(DORKOS_OWN_FIELDS as readonly string[]).includes(field)
+  ),
+  ...CLAUDE_ONLY_EXTRA_FIELDS,
+]);
 
 /** Why a candidate is not safe to share, or that it is. */
 export type AllowlistVerdict =
   | { readonly safe: true }
   /** The body carries a `${CLAUDE_…}` token. */
   | { readonly safe: false; readonly why: 'body-token' }
-  /** Every offending key is one the schema declares, so it is Claude Code's dialect. */
+  /** Every offending key belongs to Claude Code's dialect. */
   | { readonly safe: false; readonly why: 'claude-field'; readonly fields: readonly string[] }
-  /** At least one offending key is one DorkOS has never heard of. */
+  /** Every offending key is one of DorkOS's own. */
+  | { readonly safe: false; readonly why: 'dorkos-field'; readonly fields: readonly string[] }
+  /** The offending keys are a mix, or at least one belongs to nobody DorkOS knows. */
   | { readonly safe: false; readonly why: 'unknown-field'; readonly fields: readonly string[] };
 
 /**
@@ -97,11 +129,13 @@ export function allowlistVerdict(
   const fields = candidate.frontmatterKeys.filter((key) => !base.includes(key));
   if (fields.length === 0) return { safe: true };
 
-  // Every offending key known to the schema means DorkOS can name the tool that
-  // understands them. One it cannot name makes that claim false for the whole
-  // list, so the weaker sentence — "DorkOS doesn't recognise" — is the honest one.
-  const why = fields.every((field) => SCHEMA_DECLARED_NON_BASE_FIELDS.has(field))
-    ? 'claude-field'
-    : 'unknown-field';
-  return { safe: false, why, fields };
+  // A sentence naming a tool is only honest when EVERY key it names belongs to
+  // that tool. A mixed list gets the weaker one, which claims nothing about who
+  // understands what and still names every key the person has to take out.
+  const dorkos: readonly string[] = DORKOS_OWN_FIELDS;
+  if (fields.every((field) => CLAUDE_DIALECT_FIELDS.has(field)))
+    return { safe: false, why: 'claude-field', fields };
+  if (fields.every((field) => dorkos.includes(field)))
+    return { safe: false, why: 'dorkos-field', fields };
+  return { safe: false, why: 'unknown-field', fields };
 }

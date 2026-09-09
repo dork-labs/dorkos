@@ -105,7 +105,14 @@ export const ADOPT_SENTENCES = {
     `moving it would hand it to agents that read a broken path. Run dorkos harness adopt ` +
     `${name} --claude-only to say it belongs to Claude Code, or take the token out and adopt it.`,
 
-  /** R7, and at least one offending key is one DorkOS has never heard of. */
+  /** R7, and every offending key is one of DorkOS's own. */
+  S7d: (name: string, fields: string): string =>
+    `"${name}" uses ${fields} in its settings, which are DorkOS's own and mean nothing to your ` +
+    `other agents. Moving it also changes what DorkOS does with it: a skill with a schedule ` +
+    `starts running on a timer once it is in .agents/skills. Take ${fields} out and adopt it, ` +
+    `or run dorkos harness adopt ${name} --claude-only to keep it where it is.`,
+
+  /** R7, and the offending keys are a mix, or one belongs to nobody DorkOS knows. */
   S7c: (name: string, fields: string): string =>
     `"${name}" uses ${fields} in its settings, which DorkOS doesn't recognise, so it can't tell ` +
     `whether your other agents can run it. Run dorkos harness adopt ${name} --claude-only to ` +
@@ -137,9 +144,21 @@ export const ADOPT_SENTENCES = {
  * by `dorkos harness adopt --claude-only`".
  */
 export const ADOPT_DECLARATION_REASONS = {
-  /** The frontmatter carried keys outside the base fields. */
-  fields: (fields: string): string =>
+  /** The frontmatter carried Claude Code's own dialect. */
+  claudeFields: (fields: string): string =>
     `Kept in Claude Code: its settings use ${fields}, which only Claude Code understands.`,
+  /** The frontmatter carried DorkOS's own fields. */
+  dorkosFields: (fields: string): string =>
+    `Kept in Claude Code: its settings use ${fields}, which are DorkOS's own.`,
+  /**
+   * The frontmatter carried keys DorkOS cannot place.
+   *
+   * It says "on purpose" and never "only Claude Code understands": DorkOS does
+   * not know that, and this line is read a year later by somebody deciding
+   * whether the entry is still true.
+   */
+  unknownFields: (fields: string): string =>
+    `Kept in Claude Code on purpose: its settings use ${fields}, which DorkOS doesn't recognise.`,
   /** The body carried a `${CLAUDE_…}` token. */
   bodyToken: (): string =>
     `Kept in Claude Code: its text uses ${CLAUDE_PLUGIN_ROOT}, which only Claude Code fills in.`,

@@ -28,7 +28,7 @@ import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { planAdopt } from '../plan.js';
 import { AGENTSKILLS_BASE_FIELDS } from '../allowlist.js';
 import { ROOM_SEEDED_SKILL_NAMES } from '../refusals.js';
-import type { AdoptCandidate, AdoptInput, AdoptRequest } from '../types.js';
+import type { AdoptCandidate, AdoptRequest, AdoptSkillInput } from '../types.js';
 
 /** The skill every case is about unless it says otherwise. */
 const NAME = 'deploy-checklist';
@@ -49,7 +49,7 @@ function candidate(overrides: Partial<AdoptCandidate> = {}): AdoptCandidate {
 }
 
 /** A run in a folder DorkOS owns, asking for one skill by name. */
-function input(overrides: Partial<AdoptInput> = {}): AdoptInput {
+function input(overrides: Partial<AdoptSkillInput> = {}): AdoptSkillInput {
   return {
     request: { mode: 'explicit', name: NAME },
     candidates: [candidate()],
@@ -322,14 +322,70 @@ describe('the adopt allowlist', () => {
       '---\nname: deploy-checklist\ndescription: d\ncontext: fork\n---\n\nBody.\n'
     );
     expect(onlyRefusal(plan).rule).toBe('not-on-allowlist');
-    expect(onlyRefusal(plan).reason).toContain('uses context in its settings');
+    // The FULL sentence, because S7 and S7c share their opening clause and a
+    // substring match would have passed for either.
+    expect(onlyRefusal(plan).reason).toBe(
+      '"deploy-checklist" uses context in its settings, which only Claude Code understands, so ' +
+        "moving it would hand it to agents that can't run it properly. Run dorkos harness adopt " +
+        'deploy-checklist --claude-only to say it belongs to Claude Code, or take context out ' +
+        'and adopt it.'
+    );
   });
 
-  it('SK-16: refuses a `hooks:` block the schema would have thrown away', () => {
+  it('SK-16: calls a `hooks:` block Claude Code’s, because DorkOS reads it too', () => {
+    // `hooks` is not in `SkillFrontmatterSchema` at all, so a classification
+    // keyed on the schema's shape called it a key DorkOS does not recognise —
+    // while `inventory/hooks.ts` reads it (HK-12) and the same run's manifest
+    // line said "only Claude Code understands". The full literal is what pins
+    // which of the two sentences this is.
     const plan = planFor(
       '---\nname: deploy-checklist\ndescription: d\nhooks:\n  PreToolUse:\n    - command: rm -rf /\n---\n\nBody.\n'
     );
-    expect(onlyRefusal(plan).reason).toContain('uses hooks in its settings');
+    expect(onlyRefusal(plan).reason).toBe(
+      '"deploy-checklist" uses hooks in its settings, which only Claude Code understands, so ' +
+        "moving it would hand it to agents that can't run it properly. Run dorkos harness adopt " +
+        'deploy-checklist --claude-only to say it belongs to Claude Code, or take hooks out and ' +
+        'adopt it.'
+    );
+  });
+
+  it('SK-16: S7d says a `schedule:` is DorkOS’s own, and what moving it would start', () => {
+    const plan = planFor(
+      '---\nname: deploy-checklist\ndescription: d\nschedule:\n  cron: 0 9 * * *\n---\n\nBody.\n'
+    );
+    expect(onlyRefusal(plan)).toEqual({
+      name: NAME,
+      source: `.claude/skills/${NAME}`,
+      rule: 'not-on-allowlist',
+      reason:
+        '"deploy-checklist" uses schedule in its settings, which are DorkOS\'s own and mean ' +
+        'nothing to your other agents. Moving it also changes what DorkOS does with it: a skill ' +
+        'with a schedule starts running on a timer once it is in .agents/skills. Take schedule ' +
+        'out and adopt it, or run dorkos harness adopt deploy-checklist --claude-only to keep ' +
+        'it where it is.',
+    });
+  });
+
+  it('SK-16: S7d covers `kind` too, which is DorkOS’s marketplace discriminator', () => {
+    const plan = planFor(
+      '---\nname: deploy-checklist\ndescription: d\nkind: skill\n---\n\nBody.\n'
+    );
+    expect(onlyRefusal(plan).reason).toContain(
+      '"deploy-checklist" uses kind in its settings, which are DorkOS\'s own'
+    );
+    expect(onlyRefusal(plan).reason).not.toContain('only Claude Code understands');
+  });
+
+  it('SK-16: a mixed list claims nothing about whose fields they are, and names them all', () => {
+    const plan = planFor(
+      '---\nname: deploy-checklist\ndescription: d\ncontext: fork\nschedule:\n  cron: 0 9 * * *\n---\n\nBody.\n'
+    );
+    expect(onlyRefusal(plan).reason).toBe(
+      '"deploy-checklist" uses context and schedule in its settings, which DorkOS doesn\'t ' +
+        "recognise, so it can't tell whether your other agents can run it. Run dorkos harness " +
+        'adopt deploy-checklist --claude-only to keep it where it is, or take context and ' +
+        'schedule out and adopt it.'
+    );
   });
 
   it('SK-16: a predicate reading the PARSED frontmatter would have moved that same file', () => {
@@ -362,7 +418,12 @@ describe('the adopt allowlist', () => {
     const plan = planFor(
       '---\nname: deploy-checklist\ndescription: d\n---\n\nRead ${CLAUDE_PLUGIN_ROOT}/refs.\n'
     );
-    expect(onlyRefusal(plan).reason).toContain('mentions ${CLAUDE_PLUGIN_ROOT} in its text');
+    expect(onlyRefusal(plan).reason).toBe(
+      '"deploy-checklist" mentions ${CLAUDE_PLUGIN_ROOT} in its text, which only Claude Code ' +
+        'fills in, so moving it would hand it to agents that read a broken path. Run dorkos ' +
+        'harness adopt deploy-checklist --claude-only to say it belongs to Claude Code, or take ' +
+        'the token out and adopt it.'
+    );
   });
 
   it('SK-16: moves a skill whose frontmatter is base fields only', () => {
@@ -505,10 +566,60 @@ describe('the shape of an adopt run', () => {
     ]);
   });
 
+  it('SK-16: a declared DorkOS field is recorded as DorkOS’s own, not as Claude Code’s', () => {
+    const plan = planAdopt(
+      input({
+        request: { mode: 'explicit', name: NAME, claudeOnly: true },
+        candidates: [candidate({ frontmatterKeys: ['name', 'description', 'schedule'] })],
+      })
+    );
+    expect(plan.declarations).toEqual([
+      {
+        name: NAME,
+        path: `.claude/skills/${NAME}`,
+        reason: "Kept in Claude Code: its settings use schedule, which are DorkOS's own.",
+      },
+    ]);
+  });
+
+  it('SK-16: a declared key DorkOS cannot place claims nothing about who understands it', () => {
+    // The manifest line is read a year later by somebody deciding whether the
+    // entry is still true, so it says what DorkOS actually knew.
+    const plan = planAdopt(
+      input({
+        request: { mode: 'explicit', name: NAME, claudeOnly: true },
+        candidates: [candidate({ frontmatterKeys: ['name', 'description', 'descripton'] })],
+      })
+    );
+    expect(plan.declarations[0]?.reason).toBe(
+      "Kept in Claude Code on purpose: its settings use descripton, which DorkOS doesn't " +
+        'recognise.'
+    );
+  });
+
+  it('SK-16: falls back to every root it could have looked in rather than printing "in ."', () => {
+    // A caller that hands the planner no roots at all — `joinNames([])` is the
+    // empty string, and the sentence would have read "in .".
+    const plan = planAdopt(
+      input({ request: { mode: 'explicit', name: 'nope' }, candidates: [], roots: [] })
+    );
+    expect(onlyRefusal(plan).reason).toBe(
+      'There is no skill called "nope" in .claude/skills, .codex/skills, .cursor/skills, ' +
+        '.gemini/skills, .github/skills and .opencode/skills. Run dorkos harness sync --check ' +
+        'to see what is here.'
+    );
+  });
+
   it('SK-16: the planner imports no filesystem, so every rule is provable from facts alone', () => {
     // The acceptance bar stated as a check rather than as a comment: a planner
     // that read a disk would need a staged tree per rule, which is the shape
     // `buildPlan` has and the reason adopt deliberately does not.
+    //
+    // The guard is TEXTUAL and ONE HOP: it reads these four files' own import
+    // statements and follows nothing. A module they import could pull `node:fs`
+    // in behind them — `refusals.ts` does, through `@dorkos/operating-skills`,
+    // whose barrel also exports a seeder. What it pins is the thing that
+    // matters here: no code in this unit opens a path, so no rule needs a tree.
     const here = join(import.meta.dirname, '..');
     const modules = ['plan.ts', 'allowlist.ts', 'refusals.ts', 'types.ts'];
     const offenders = modules.filter((file) =>

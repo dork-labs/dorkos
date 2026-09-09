@@ -368,14 +368,14 @@ describe('the harness capabilities census', () => {
     // report a perfectly consistent document.
     //
     // Every floor a row touches moves with it, by that row's own delta: SK-16
-    // (DOR-1943) raised `rows`, `titles` by its 29 cases, `claiming`, `built`
+    // (DOR-1943) raised `rows`, `titles` by its 37 cases, `claiming`, `built`
     // and `idsInTitles`. All five are `toBeGreaterThanOrEqual`, so none of them
     // BREAKS when it is left alone — which is exactly why raising them is part
     // of the work. A floor nobody raises is a floor that stops meaning anything.
     expect(rows.length).toBeGreaterThanOrEqual(87);
     expect(journeys.length).toBeGreaterThanOrEqual(14);
     expect(files.length).toBeGreaterThanOrEqual(63);
-    expect(titles.length).toBeGreaterThanOrEqual(619);
+    expect(titles.length).toBeGreaterThanOrEqual(627);
     // And every root really contributed, so a moved directory is a red rather
     // than a quietly smaller census.
     for (const root of TEST_ROOTS) {
