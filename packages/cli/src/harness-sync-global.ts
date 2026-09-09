@@ -24,6 +24,7 @@ import {
   globalSkillsDir,
   projectGlobal,
   type ProjectionAction,
+  type SweptPath,
 } from '@dorkos/harness';
 
 /**
@@ -42,14 +43,22 @@ function globalActionLine(action: ProjectionAction): string {
   return `  ${action.artifact} "${action.name}" -> ${action.target ?? '(no path)'}${note}`;
 }
 
-/** The heading and lines for every link a run is about to remove. */
-function removalPreview(orphans: readonly string[], about: 'will' | 'did'): string[] {
-  if (orphans.length === 0) return [];
+/**
+ * The heading and lines for every link a run is about to remove, or has.
+ *
+ * Each line carries the engine's own sentence for that path, from
+ * `apply/sweep-reasons.ts` — the same words the project-scope report prints, and
+ * two of them at global scope: a package that was uninstalled and a package that
+ * is still installed and no longer has a skill of that name go for different
+ * reasons, and a person reading a list of deletions is owed the difference.
+ */
+function removalPreview(removals: readonly SweptPath[], about: 'will' | 'did'): string[] {
+  if (removals.length === 0) return [];
   const heading =
     about === 'will'
-      ? `Removing ${orphans.length} link(s) — what they came from is gone:`
-      : `Removed ${orphans.length} link(s):`;
-  return ['', heading, ...orphans.map((path) => `  ${path}`)];
+      ? `Removing ${removals.length} link(s):`
+      : `Removed ${removals.length} link(s):`;
+  return ['', heading, ...removals.map(({ path, reason }) => `  ${path} — ${reason}`)];
 }
 
 /**
@@ -111,7 +120,7 @@ export function runGlobalSync(args: { fix: boolean }, dorkHome: string): number 
       console.log(`${drift.drifted.length} skill(s) to link:`);
       for (const action of drift.drifted) console.log(globalActionLine(action));
     }
-    for (const line of removalPreview(drift.orphans, 'will')) console.log(line);
+    for (const line of removalPreview(drift.removals, 'will')) console.log(line);
     if (drift.blocked.length > 0) {
       console.log('');
       console.log(
@@ -130,9 +139,9 @@ export function runGlobalSync(args: { fix: boolean }, dorkHome: string): number 
   }
 
   // The promise, before anything is removed.
-  for (const line of removalPreview(drift.orphans, 'will')) console.log(line);
+  for (const line of removalPreview(drift.removals, 'will')) console.log(line);
 
-  const { applied, conflicts, swept } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+  const { applied, conflicts, removals } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
 
   console.log('');
   console.log(
@@ -143,7 +152,7 @@ export function runGlobalSync(args: { fix: boolean }, dorkHome: string): number 
   for (const action of applied) console.log(globalActionLine(action));
 
   // The receipt, after.
-  for (const line of removalPreview(swept, 'did')) console.log(line);
+  for (const line of removalPreview(removals, 'did')) console.log(line);
 
   if (conflicts.length > 0) {
     console.log('');

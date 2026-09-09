@@ -12,12 +12,15 @@ covers:
   - "fix(harness): a package's timers are only said to work once they do (DOR-1923)"
   - 'fix(cli): --global refuses --strict, which it could never act on (DOR-1923)'
   - 'feat(client): a skill from an all-projects package says so (DOR-1923)'
+  # Folds in here too: it gives the same unreleased removal list the reasons
+  # DOR-1906 gave the project one, in the same words.
+  - 'fix(harness,cli): the global sweep says why each link goes (DOR-1923)'
 ---
 
 ### Added
 
 - A skill that runs on a timer inside a package you installed for all your projects now actually runs. `dorkos harness sync --global` puts those skills where DorkOS looks for timed work, so a daily job in a package you installed once shows up for you to approve like any other. It works from any folder and needs no project (DOR-1923)
-- Before it removes a link, `--global` prints every path it is about to remove, and prints them again once they are gone. It only ever removes links it made itself: a folder you made, or a link you made yourself, is left exactly where it is. Run it twice and the second run does nothing (DOR-1923)
+- Before it removes a link, `--global` prints every path it is about to remove — each with one plain sentence saying why — and prints them again once they are gone. It only ever removes links it made itself: a folder you made, or a link you made yourself, is left exactly where it is. Run it twice and the second run does nothing (DOR-1923)
 - The Skills page now lists the skills in your all-projects packages alongside your project's own, tagged "for all your projects", with the same sentence about who can see them — and the count above the list counts both (DOR-1923)
 
 ### Changed

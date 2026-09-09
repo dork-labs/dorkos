@@ -2656,6 +2656,11 @@ describe('runHarnessSync --global — the packages installed for all your projec
     const headings = trace.map((entry) => entry.text);
     expect(headings.some((t) => t.includes('Removing 1 link(s)'))).toBe(true);
     expect(headings.some((t) => t.includes('Removed 1 link(s)'))).toBe(true);
+    // Each line carries the engine's own sentence for that path, promised and
+    // delivered in the same words (DOR-1906).
+    expect(
+      naming.every((entry) => entry.text.includes('no longer installed for all your projects.'))
+    ).toBe(true);
     expect(fs.lstatSync(removed, { throwIfNoEntry: false })).toBeUndefined();
   });
 

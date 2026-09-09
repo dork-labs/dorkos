@@ -862,9 +862,13 @@ project scope. A global plan is never narrowed to one agent tool, so the `applyP
 narrowed sweep (`apply/apply.ts:693-698`) has no global twin; `buildGlobalPlan` has no `harness` narrowing
 parameter at all, which is the stronger form of the same protection.
 
-**Every path is printed before it is removed.** `checkGlobalPlan().orphans` equals the next
-`applyGlobalPlan().swept`, asserted as set equality in both directions, joining the contract DOR-1889 sets
-for the six project sweeps. The global apply prints the list first and then the receipt, in that order.
+**Every path is printed before it is removed, with the sentence saying why.** `checkGlobalPlan().orphans`
+equals the next `applyGlobalPlan().swept`, asserted as set equality in both directions, joining the
+contract DOR-1889 sets for the six project sweeps; `removals` carries the same paths with their reasons,
+joining the one DOR-1906 sets. The global sweep has **two** causes and so two sentences — the package was
+uninstalled, or the package is still installed and no longer has a skill of that name — because "no longer
+installed here" is wrong about both when there is no _here_. The global apply prints the list first and
+then the receipt, in that order.
 
 **A global uninstall must sweep the user-level links**, and that is the single riskiest line in this
 feature. It is exercised in the same slice as the sweep: a staged HOME holding a hand-authored directory, a

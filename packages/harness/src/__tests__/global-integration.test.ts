@@ -151,8 +151,16 @@ describe('IN-05 global: the sweep and the check agree', () => {
     rmSync(join(dorkHome, 'plugins', 'acme'), { recursive: true, force: true });
 
     const plan = projectGlobal({ roots, harnesses: [] });
-    const promised = checkGlobalPlan(plan, roots).orphans;
-    const { swept } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+    const drift = checkGlobalPlan(plan, roots);
+    const promised = drift.orphans;
+    // Every path carries the sentence saying why it goes, and an uninstall's
+    // sentence is not the sentence a renamed skill gets (DOR-1906's contract, at
+    // global scope).
+    expect(new Set(drift.removals.map((r) => r.reason))).toEqual(
+      new Set(['The package this skill came from is no longer installed for all your projects.'])
+    );
+    const { swept, removals } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+    expect(removals).toEqual(drift.removals);
 
     expect(promised).toEqual([
       join(globalSkillsDir(dorkHome), 'acme__build'),
@@ -177,6 +185,7 @@ describe('IN-05 global: the sweep and the check agree', () => {
       drifted: [],
       blocked: [],
       orphans: [],
+      removals: [],
       leftAlone: [],
       clean: true,
     });
@@ -348,8 +357,12 @@ describe('AP-07 global: a plan that could not be built removes nothing', () => {
     );
 
     const plan = projectGlobal({ roots, harnesses: [] });
-    const { swept } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+    const { swept, removals } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
     expect(swept).toEqual([join(globalSkillsDir(dorkHome), 'globex__greet')]);
+    // A different cause, so a different sentence: the package is still there.
+    expect(removals.map((r) => r.reason)).toEqual([
+      'The package this came from no longer has a skill of this name.',
+    ]);
     expect(existsOnDisk(join(globalSkillsDir(dorkHome), 'globex__hello'))).toBe(true);
   });
 

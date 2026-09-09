@@ -88,9 +88,10 @@ import {
   type GlobalPlanRoots,
   type GlobalProjectionPlan,
 } from '../plan/global-projector.js';
-import type { DriftResult, ProjectionAction } from '../plan/types.js';
+import type { DriftResult, ProjectionAction, SweptPath } from '../plan/types.js';
 import { INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
 import { listDir, occupantKind, pathExists } from './link-state.js';
+import { SWEEP_REASONS } from './sweep-reasons.js';
 import { blockingSymlinkOccupant, linkCheckFor, linkMatchesPlan } from './symlink-occupants.js';
 
 /**
@@ -210,11 +211,18 @@ function plannedTargets(plan: GlobalProjectionPlan): Set<string> {
  * equality in both directions, joining the contract DOR-1889 set for the six
  * project sweeps rather than being retro-fitted to it later.
  *
+ * Each path carries the one sentence saying why it goes, from the same
+ * `sweep-reasons.ts` the six project sweeps read — and the global sweep has two
+ * causes, not one: the package was uninstalled, or the package is still there
+ * and no longer has a skill of that name. A person reading a list of deletions
+ * is owed the difference.
+ *
  * @param plan - the current global plan (its symlink targets are kept).
  * @param roots - the roots the plan was built from.
- * @returns the absolute paths a sweep would remove, sorted and unique.
+ * @returns the absolute paths a sweep would remove with their reasons, sorted by
+ *   path and unique.
  */
-export function findGlobalOrphans(plan: GlobalProjectionPlan, roots: GlobalPlanRoots): string[] {
+export function findGlobalOrphans(plan: GlobalProjectionPlan, roots: GlobalPlanRoots): SweptPath[] {
   // A plan built from a folder nobody could read is evidence of nothing, and a
   // sweep run on it removes everything. Answered here rather than at each
   // caller so `--check`, the apply and every future reader get the rule.
@@ -223,7 +231,7 @@ export function findGlobalOrphans(plan: GlobalProjectionPlan, roots: GlobalPlanR
   const pluginsRoot = resolve(globalPluginsDir(roots.dorkHome));
   const planned = plannedTargets(plan);
   const enumerated = new Set(plan.enumeratedPackages);
-  const orphans = new Set<string>();
+  const orphans = new Map<string, string>();
   for (const dir of globalSweepDirs(roots)) {
     // `listDir`, never `existsSync` + `readdirSync`: a skills path that is a
     // file or unreadable has nothing to sweep and must not abort the run, nor
@@ -235,16 +243,18 @@ export function findGlobalOrphans(plan: GlobalProjectionPlan, roots: GlobalPlanR
       if (planned.has(abs)) continue; // still projected — keep
       // The package is gone from disk: this link came from an uninstall.
       if (!existsSync(join(pluginsRoot, pkg))) {
-        orphans.add(abs);
+        orphans.set(abs, SWEEP_REASONS['global-package-gone']);
         continue;
       }
       // The package is still installed. The plan may only overrule that for a
       // package it actually read — otherwise a broken manifest would look
       // exactly like an uninstall.
-      if (enumerated.has(pkg)) orphans.add(abs);
+      if (enumerated.has(pkg)) orphans.set(abs, SWEEP_REASONS['global-skill-gone']);
     }
   }
-  return [...orphans].sort();
+  return [...orphans.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([path, reason]) => ({ path, reason }));
 }
 
 /**
@@ -255,11 +265,14 @@ export function findGlobalOrphans(plan: GlobalProjectionPlan, roots: GlobalPlanR
  *
  * @param plan - the current global plan (its symlink targets are kept).
  * @param roots - the roots the plan was built from.
- * @returns the absolute paths removed, sorted and unique.
+ * @returns the absolute paths removed with their reasons, sorted and unique.
  */
-export function sweepGlobalOrphans(plan: GlobalProjectionPlan, roots: GlobalPlanRoots): string[] {
+export function sweepGlobalOrphans(
+  plan: GlobalProjectionPlan,
+  roots: GlobalPlanRoots
+): SweptPath[] {
   const orphans = findGlobalOrphans(plan, roots);
-  for (const abs of orphans) rmSync(abs, { force: true });
+  for (const { path } of orphans) rmSync(path, { force: true });
   return orphans;
 }
 
@@ -376,6 +389,7 @@ export function applyGlobalPlan(
   applied: ProjectionAction[];
   conflicts: ProjectionAction[];
   swept: string[];
+  removals: SweptPath[];
   leftAlone: string[];
 } {
   const applied: ProjectionAction[] = [];
@@ -402,8 +416,17 @@ export function applyGlobalPlan(
     }
   }
 
-  const swept = opts?.sweepOrphans ? sweepGlobalOrphans(plan, roots) : [];
-  return { applied, conflicts, swept, leftAlone: [] };
+  // `swept` stays a bare path list for the callers that only ever wanted paths,
+  // and `removals` is the same list with each path's reason beside it — the
+  // shape `applyPlan` settled on in DOR-1906.
+  const removals = opts?.sweepOrphans ? sweepGlobalOrphans(plan, roots) : [];
+  return {
+    applied,
+    conflicts,
+    swept: removals.map(({ path }) => path),
+    removals,
+    leftAlone: [],
+  };
 }
 
 /** Whether one global action's on-disk target diverges from the plan. */
@@ -440,12 +463,13 @@ export function checkGlobalPlan(plan: GlobalProjectionPlan, roots: GlobalPlanRoo
     const reason = blockingSymlinkOccupant(action.target, globalLinkText(action));
     if (reason !== undefined) blocked.push({ ...action, reason });
   }
-  const orphans = findGlobalOrphans(plan, roots);
+  const removals = findGlobalOrphans(plan, roots);
   return {
     drifted,
     blocked,
-    orphans,
+    orphans: removals.map(({ path }) => path),
+    removals,
     leftAlone: [],
-    clean: drifted.length === 0 && blocked.length === 0 && orphans.length === 0,
+    clean: drifted.length === 0 && blocked.length === 0 && removals.length === 0,
   };
 }
