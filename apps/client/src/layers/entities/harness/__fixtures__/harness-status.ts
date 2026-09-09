@@ -144,6 +144,10 @@ export const HARNESS_STATUS_READY: HarnessStatusResponse = {
     pendingApproval: 1,
   },
   sweepPreview: ['.claude/skills/beta', '.claude/skills/gamma'],
+  removals: [
+    { path: '.claude/skills/beta', reason: 'The skill this link pointed to is gone.' },
+    { path: '.claude/skills/gamma', reason: 'The skill this link pointed to is gone.' },
+  ],
   rows: [SHARED_ROW, DROPPED_ROW, DRIFTED_ROW, CONFLICT_ROW, WARNED_ROW, ADOPTABLE_ROW, HOOK_ROW],
   projectLevel: [
     {
@@ -191,6 +195,7 @@ export const HARNESS_STATUS_ALL_SHARED: HarnessStatusResponse = {
   clean: true,
   counts: { skills: 1, drifted: 0, conflicts: 0, orphans: 0, adoptable: 0, pendingApproval: 0 },
   sweepPreview: [],
+  removals: [],
   rows: [SHARED_ROW],
   projectLevel: [],
   pendingApproval: [],
@@ -202,6 +207,7 @@ export const HARNESS_STATUS_NO_SKILLS: HarnessStatusResponse = {
   clean: true,
   counts: { skills: 0, drifted: 0, conflicts: 0, orphans: 0, adoptable: 0, pendingApproval: 0 },
   sweepPreview: [],
+  removals: [],
   rows: [],
   notEnabled: [],
   projectLevel: [],
@@ -223,6 +229,7 @@ function emptyStatus(
     clean: true,
     counts: { skills: 0, drifted: 0, conflicts: 0, orphans: 0, adoptable: 0, pendingApproval: 0 },
     sweepPreview: [],
+    removals: [],
     rows: [],
     projectLevel: [],
     pendingApproval: [],

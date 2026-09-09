@@ -10,19 +10,30 @@
  * fixture and the route agree with each other while both were wrong — which is
  * exactly how DOR-678 shipped.
  *
- * **No config store is opened.** The router takes its hook-decision reader as a
- * dependency and this suite passes its own, so `configManager` is never
- * initialized here. That is not a convenience: it is half the proof. A route
- * that reached for the running server's store itself would throw on an
- * uninitialized singleton rather than pass quietly, and a route that opened a
- * store of its own would create `config.json` inside the dork-home this suite
- * snapshots.
+ * **No config store is opened, and the stand-in answers two keys only.** The
+ * router takes its hook-decision reader as a dependency and this suite passes
+ * its own; nothing here creates `config.json`, which the dork-home snapshot in
+ * the first case is what proves.
  *
- * **No fake `HookApprovalGateway` either, yet.** The spec's fixture pairs the
- * temp repo with one, and it belongs to `POST /api/harness/sync` (slice 7) —
- * the GET raises no approval card and reaches no gateway, so wiring one in now
- * would be a prop no test reads, the same reason the spec gives for keeping
- * `FakeAgentRuntime` out of this file.
+ * `configManager` still has to answer something, because two things reach it
+ * that are not the router's dependency: `resolveDecisionAuthority` asks whether
+ * login is on, and `mayAskAboutHooks` — inside the asking half the POST fires —
+ * asks whether a package has already been turned down. So the stand-in answers
+ * `auth` from {@link loginEnabled} and `harness` from the same decisions the
+ * router was given, and **throws for every other key**, naming it: a route that
+ * reached past its injected reader is a failure with a message rather than a
+ * quiet pass. It writes nothing to disk, so the never-writes claim is unchanged.
+ *
+ * Left unmocked it is `undefined` here, which reads as "login is on and nobody
+ * is signed in" — every sync would answer `403` for a reason that has nothing to
+ * do with the bar under test, and the asking half would throw.
+ *
+ * **The fake `HookApprovalGateway` belongs to the POST.** The GET raises no
+ * approval card and reaches no gateway; the sync does, and this file's one
+ * never decides anything — which is how "the route answers without waiting for
+ * a card" is a claim about the route rather than about how fast a fixture is.
+ * There is still no `FakeAgentRuntime`: these routes touch no runtime, and
+ * wiring one in would be a prop no test reads.
  *
  * Every case names the seeded defect that reds it: this route does not exist on
  * `main`, so "fails on main" is trivially true and proves nothing.
@@ -31,20 +42,108 @@
  */
 import { describe, expect, it, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import express from 'express';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { diffSnapshots, snapshotTree } from '@dorkos/harness/journeys';
-import { HarnessStatusResponseSchema } from '@dorkos/shared/harness-schemas';
+import {
+  HarnessStatusResponseSchema,
+  HarnessSyncResponseSchema,
+} from '@dorkos/shared/harness-schemas';
 import { initBoundary } from '../../lib/boundary.js';
 import { logger } from '../../lib/logger.js';
-import type { HookDecisions } from '../../services/harness/hook-consent.js';
+import type {
+  ApprovalBinding,
+  ApprovalConsumeResult,
+  ApprovalRequestInput,
+  ApprovalTicket,
+} from '../../services/core/approvals/approval-service.js';
+import { _internal as approvalInternal } from '../../services/harness/hook-approval.js';
+import { hookApprovalEntry, type HookDecisions } from '../../services/harness/hook-consent.js';
+import {
+  projectLockQueueDepth,
+  scanHookRequests,
+  withProjectLock,
+} from '../../services/harness/project-with-consent.js';
 import { createHarnessRouter } from '../harness.js';
 
 /** Nobody has decided anything — the shape every case here runs under. */
 const NO_DECISIONS: HookDecisions = { approved: [], refused: [] };
+
+/**
+ * The decisions the router reads, swapped per case.
+ *
+ * A `let` rather than a constant because the router reads its dependency ONCE,
+ * when it is built, and the sweep cases need a package's hooks to have been
+ * allowed before they can produce the ten paths the spec measured. Reset after
+ * every case, so one test's yes is never another's.
+ */
+let hookDecisions: HookDecisions = NO_DECISIONS;
+
+/**
+ * Whether DorkOS login is on, per case.
+ *
+ * `false` is the default posture and the one DOR-502 is about: a person's own
+ * terminal sends no cookie and must still be able to sync. `true` is what makes
+ * a signed-in user required, and both are asserted.
+ */
+let loginEnabled = false;
+
+/** Stands in for `sessionGate`'s resolved user, when a case signs one in. */
+let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
+
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: {
+    get: (key: string) => {
+      if (key === 'auth') return { enabled: loginEnabled };
+      if (key === 'harness') {
+        return { approvedHooks: hookDecisions.approved, refusedHooks: hookDecisions.refused };
+      }
+      throw new Error(`the harness router read config.${key} instead of its injected dependency`);
+    },
+    set: (key: string) => {
+      throw new Error(`the harness router wrote config.${key}; nothing here should write one`);
+    },
+  },
+}));
+
+/**
+ * An approval gateway that raises every card and decides none of them.
+ *
+ * That is the whole fixture: `askForHookProjection` polls `consume` until an
+ * outcome that is not `pending` arrives or the ticket expires, so a gateway that
+ * answers `pending` for ever is a person who has not looked at the screen. A
+ * route that awaited its cards would therefore never answer, which is exactly
+ * what the VC-02 case is for.
+ */
+const gateway = {
+  /** Packages a card was raised for, in order. */
+  requested: [] as string[],
+  request(input: ApprovalRequestInput): ApprovalTicket {
+    const summary = input.summary ?? '';
+    // The card's summary names the package; the route's `askedAbout` is what is
+    // really under test, so this only has to be enough to tell two apart.
+    this.requested.push(summary.includes('acme') ? 'acme' : summary);
+    return {
+      approvalId: `approval-${this.requested.length}`,
+      token: `token-${this.requested.length}`,
+      expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+    } as ApprovalTicket;
+  },
+  consume(_token: string, _binding: ApprovalBinding): ApprovalConsumeResult {
+    return { outcome: 'pending' } as ApprovalConsumeResult;
+  },
+};
 
 /**
  * The boundary root, the DorkOS data directory, and a directory outside both.
@@ -63,6 +162,17 @@ let emptyClaudeRoot: string;
 const staged: string[] = [];
 
 const app = express();
+// The POST takes a JSON body, and Express parses none by default. The GET never
+// needed this; without it `req.body` is undefined and every sync answers 400.
+app.use(express.json());
+// Stands in for `sessionGate`, which is what puts the resolved user on
+// `res.locals` in the real server. Without it there is no way to ask what a
+// signed-in operator gets, and the login-on cases would only ever see the
+// nobody-is-signed-in answer.
+app.use((_req, res, next) => {
+  if (signedInUser !== undefined) res.locals.user = signedInUser;
+  next();
+});
 const testServer = listeningServer(app);
 
 /**
@@ -100,6 +210,14 @@ beforeAll(async () => {
   emptyClaudeRoot = join(outside, 'claude-root-that-is-not-there');
   pinEmptyClaudeRoot();
   app.use('/api/harness', createHarnessRouter({ dorkHome, readHookDecisions: () => NO_DECISIONS }));
+  app.use(
+    '/api/harness',
+    createHarnessRouter({
+      dorkHome,
+      readHookDecisions: () => hookDecisions,
+      approvals: gateway,
+    })
+  );
   failingApp.use(
     '/api/harness',
     createHarnessRouter({
@@ -118,12 +236,20 @@ afterAll(() => {
 
 // The logger spy in the 500 case is the only mock here, and it has to come off
 // before the next case: left installed, it would swallow a real failure's log.
+// The consent state goes back too — a yes recorded for one project's package
+// would otherwise decide for the next case's — and so does the open-card memory,
+// which `mayAskAboutHooks` reads and which would stop the second card of a run.
 afterEach(() => {
   vi.restoreAllMocks();
   // `restoreAllMocks` does not touch env stubs, and one case below repoints
   // `$CLAUDE_CONFIG_DIR` at a fixture root. Put it back rather than leave the
   // next case reading somebody else's fixture.
   pinEmptyClaudeRoot();
+  hookDecisions = NO_DECISIONS;
+  loginEnabled = false;
+  signedInUser = undefined;
+  gateway.requested = [];
+  approvalInternal.forgetDecisions();
 });
 
 /** A fresh project directory inside the boundary. */
@@ -444,5 +570,377 @@ describe('GET /api/harness/status', () => {
     expect(res.body.claudeOnly.root).toBe(claudeRoot);
     expect(res.body.claudeOnly.unreadable).toBeTruthy();
     expect(res.body.claudeOnly.plugins).toEqual([]);
+  });
+});
+
+/**
+ * A project with one authored skill, and — when asked — one project-scoped
+ * marketplace plugin shipping a skill, a command and a hook.
+ *
+ * Staged the way a person's tree really is rather than by hand-writing the
+ * projected paths, so the fixture cannot drift away from what the engine
+ * actually writes. It is the shape §2.2.1 of the spec measured: three harnesses
+ * enabled, ten paths for a sweep to take once the skill is deleted and the
+ * plugin uninstalled.
+ */
+function stageSyncProject(tag: string, opts: { plugin?: boolean } = {}): string {
+  const repo = stageProject(tag);
+  writeManifest(repo, ['claude-code', 'codex', 'opencode']);
+  writeAt(
+    join(repo, '.agents', 'skills', 'alpha', 'SKILL.md'),
+    '---\nname: alpha\ndescription: The alpha skill\n---\n\n# alpha\n'
+  );
+  if (opts.plugin !== true) return repo;
+
+  const plugin = join(repo, '.dork', 'plugins', 'acme');
+  writeAt(
+    join(plugin, '.dork', 'manifest.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      name: 'acme',
+      version: '1.0.0',
+      type: 'plugin',
+      description: 'Acme test plugin',
+      layers: ['skills', 'hooks', 'commands'],
+    })
+  );
+  writeAt(
+    join(plugin, 'skills', 'greet', 'SKILL.md'),
+    '---\nname: greet\ndescription: The greet skill\n---\n\n# greet\n'
+  );
+  writeAt(join(plugin, 'commands', 'hello.md'), '---\ndescription: Say hello\n---\n\nSay hello.\n');
+  writeAt(
+    join(plugin, 'hooks', 'hooks.json'),
+    JSON.stringify({ Stop: [{ hooks: [{ type: 'command', command: 'echo acme' }] }] })
+  );
+  return repo;
+}
+
+/**
+ * Say yes, in advance, to every hook-declaring package in this project.
+ *
+ * Built from the production scanner and the production digest rather than from
+ * a hand-written entry, so a change to what a decision BINDS reds the fixture
+ * instead of quietly un-approving it. Without this the plugin's hooks stay
+ * withheld, `.codex/hooks.json` is never written, and the ten-path sweep the
+ * spec measured is a six-path one.
+ */
+function allowEveryPackagesHooks(repo: string): void {
+  hookDecisions = {
+    approved: scanHookRequests(repo, dorkHome).map(hookApprovalEntry),
+    refused: [],
+  };
+}
+
+/**
+ * The sync, as the page makes it.
+ *
+ * The trailing `.then` is not decoration, and the read above it has one for the
+ * same reason: supertest's request object is LAZY, and does not send until
+ * something subscribes to it. The lock case holds the request while it asserts
+ * about the queue — and without this it would be holding a request nobody had
+ * made, waiting for a queue depth that could never rise.
+ */
+function syncProject(projectPath: string) {
+  return request(testServer)
+    .post('/api/harness/sync')
+    .send({ projectPath })
+    .then((res) => res);
+}
+
+describe('POST /api/harness/sync', () => {
+  it('answers 409 harness_not_set_up on a project with no manifest, and writes nothing', async () => {
+    // Seeded defect: let `loadManifest` throw out of the seam and this reds with
+    // a 500 and a stack in the log — for a project in a state the status model
+    // has a name for and the page draws its own copy for. The snapshot is the
+    // other half: a 409 that scaffolded a manifest on the way past would be
+    // DOR-678 arriving through a different door.
+    const repo = stageProject('sync-bare');
+    writeAt(join(repo, 'README.md'), '# nothing set up here\n');
+    const before = snapshotTree(repo);
+
+    const res = await syncProject(repo);
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('harness_not_set_up');
+    expect(res.body.error).toContain('agent files');
+    expect(res.body.message).toContain('dorkos harness sync --fix');
+    expect(diffSnapshots(before, snapshotTree(repo))).toEqual(NO_CHANGES);
+  });
+
+  it('VC-05: refuses a caller naming itself an agent, and answers the same call without one', async () => {
+    // Seeded defect: drop the `resolveDecisionAuthority` bar and the first call
+    // answers 200 — a write into somebody's project, including a sweep, made by
+    // the thing the person is supposed to be deciding for. Both halves are here
+    // because a bar that refused EVERYONE would pass the first assertion alone.
+    const repo = stageSyncProject('sync-agent');
+
+    const refused = await request(testServer)
+      .post('/api/harness/sync')
+      .set('X-DorkOS-Agent', 'some-agent-token')
+      .send({ projectPath: repo });
+
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('operator_only_harness_sync');
+    // The refusal is ahead of validation, so it is the same answer whatever was
+    // sent: a caller that may not do this at all does not get to probe a schema.
+    const probed = await request(testServer)
+      .post('/api/harness/sync')
+      .set('X-DorkOS-Agent', 'some-agent-token')
+      .send({ projectPath: 42 });
+    expect(probed.status).toBe(403);
+
+    const allowed = await syncProject(repo);
+    expect(allowed.status).toBe(200);
+  });
+
+  it('VC-05: refuses the caller holding an approval token, and a person’s own terminal passes', async () => {
+    // The second half of the agent bar, and the reason it is
+    // `resolveDecisionAuthority` rather than `trustedCaller`: whoever asked must
+    // not answer, but a person's own terminal sends no cookie and must still
+    // work (DOR-502). Seeded defect: swap in `trustedCaller` and the cookie-less
+    // call below reds under login-on.
+    const repo = stageSyncProject('sync-token');
+
+    const refused = await request(testServer)
+      .post('/api/harness/sync')
+      .set('x-dorkos-approval', 'some-approval-token')
+      .send({ projectPath: repo });
+
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('operator_only_harness_sync');
+    expect((await syncProject(repo)).status).toBe(200);
+  });
+
+  it('answers 400 for a missing, blank or relative projectPath', async () => {
+    // Seeded defect: drop the body schema and the `isAbsolute` refinement, and a
+    // bare POST resolves `undefined` against the server's cwd — a sync, with a
+    // sweep, into whatever repository the operator happened to start it in.
+    expect((await request(testServer).post('/api/harness/sync')).status).toBe(400);
+    expect((await syncProject('   ')).status).toBe(400);
+
+    const relative = await syncProject('some/relative/project');
+    expect(relative.status).toBe(400);
+    expect(JSON.stringify(relative.body)).toContain('projectPath must be an absolute path');
+  });
+
+  it('TR-08: repairs a link somebody deleted, and the RETURNED status is clean', async () => {
+    // Seeded defect: return the status read BEFORE the apply and this reds — the
+    // page would draw "some agent files are out of date" over a tree the click
+    // had just made current, and the banner would never clear.
+    const repo = stageSyncProject('sync-repair');
+    expect((await syncProject(repo)).status).toBe(200);
+
+    const link = join(repo, '.claude', 'skills', 'alpha');
+    expect(existsSync(link)).toBe(true);
+    rmSync(link, { recursive: true, force: true });
+    // The read agrees something is wrong before the click, so the case cannot
+    // pass by nothing ever having been broken.
+    expect((await readStatus(repo)).body.clean).toBe(false);
+
+    const res = await syncProject(repo);
+
+    expect(res.status).toBe(200);
+    const parsed = HarnessSyncResponseSchema.safeParse(res.body);
+    expect(parsed.error?.issues ?? []).toEqual([]);
+    expect(res.body.status.clean).toBe(true);
+    expect(res.body.status.counts.drifted).toBe(0);
+    expect(res.body.applied).toBeGreaterThan(0);
+    expect(existsSync(link)).toBe(true);
+  });
+
+  it('AP-07: sweeps an uninstalled package’s projections and nothing else, and names every path', async () => {
+    // Seeded defect: pass `sweepOrphans: false` and the swept paths survive —
+    // `swept` is empty, the tree diff still names them as present, and the
+    // banner the person just clicked is still there afterwards, for ever.
+    const repo = stageSyncProject('sync-sweep', { plugin: true });
+    allowEveryPackagesHooks(repo);
+    expect((await syncProject(repo)).status).toBe(200);
+
+    const projected = snapshotTree(repo);
+    rmSync(join(repo, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
+
+    const res = await syncProject(repo);
+
+    expect(res.status).toBe(200);
+    expect([...res.body.swept].sort()).toEqual([
+      '.agents/skills/acme__greet',
+      '.claude/commands/acme/.gitignore',
+      '.claude/commands/acme/hello.md',
+      '.claude/settings.local.json',
+      '.claude/skills/acme__greet',
+      '.codex/hooks.json',
+      '.codex/hooks.json.dorkos-generated',
+      '.opencode/commands/.gitignore',
+      '.opencode/commands/acme-hello.md',
+    ]);
+
+    // The exact tree diff, both directions: what went is what `swept` named,
+    // the plugin's own directory the test removed, and nothing else. The
+    // authored skill and its links are untouched.
+    //
+    // Two paths are named here that `swept` does not, and both are deliberate.
+    // `.claude/settings.local.json` is in `swept` and does NOT go — only the
+    // hook groups DorkOS merged into it do, which is what its reason says. And
+    // `.claude/commands/acme` is the wrapper DIRECTORY the sweep tidies away
+    // once it is empty: the engine reports the FILES it removes, because a
+    // directory that only existed to hold them is bookkeeping.
+    const after = snapshotTree(repo);
+    const diff = diffSnapshots(projected, after);
+    expect(diff.added).toEqual([]);
+    expect(diff.removed.filter((p: string) => !p.startsWith('.dork/plugins/acme')).sort()).toEqual(
+      [
+        ...[...res.body.swept].filter((p: string) => p !== '.claude/settings.local.json'),
+        '.claude/commands/acme',
+      ].sort()
+    );
+    // The one path in the list that is NOT a deletion kept its promise.
+    expect(existsSync(join(repo, '.claude', 'settings.local.json'))).toBe(true);
+    expect(readFileSync(join(repo, '.claude', 'settings.local.json'), 'utf8')).not.toContain(
+      'echo acme'
+    );
+    expect(existsSync(join(repo, '.claude', 'skills', 'alpha'))).toBe(true);
+  });
+
+  it('AP-07, VC-01: the GET’s sweepPreview is exactly the next POST’s swept, on the ten-path tree', async () => {
+    // Seeded defect: revert Slice 2b's union and the preview is 1 path against a
+    // sweep of 10 — a person told one file is going and nine more taken. The
+    // count is asserted first, because empty-equals-empty satisfies set equality.
+    const repo = stageSyncProject('sync-preview', { plugin: true });
+    allowEveryPackagesHooks(repo);
+    expect((await syncProject(repo)).status).toBe(200);
+
+    rmSync(join(repo, '.agents', 'skills', 'alpha'), { recursive: true, force: true });
+    rmSync(join(repo, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
+
+    const preview = await readStatus(repo);
+    expect(preview.body.sweepPreview).toHaveLength(10);
+
+    const res = await syncProject(repo);
+
+    expect(res.body.swept).toHaveLength(10);
+    expect([...res.body.swept].sort()).toEqual([...preview.body.sweepPreview].sort());
+  });
+
+  it('AP-07, VC-01: says WHY each path goes, before the click and after it (DOR-1906)', async () => {
+    // Seeded defect: send the bare paths and drop `removals`, and the page has a
+    // list of ten files it can only introduce with one heading — which is wrong
+    // for at least five of them, and dangerously wrong for the settings file,
+    // which is not deleted at all.
+    const repo = stageSyncProject('sync-reasons', { plugin: true });
+    allowEveryPackagesHooks(repo);
+    expect((await syncProject(repo)).status).toBe(200);
+    rmSync(join(repo, '.agents', 'skills', 'alpha'), { recursive: true, force: true });
+    rmSync(join(repo, '.dork', 'plugins', 'acme'), { recursive: true, force: true });
+
+    const preview = await readStatus(repo);
+    const previewReasons: Record<string, string> = Object.fromEntries(
+      preview.body.removals.map((r: { path: string; reason: string }) => [r.path, r.reason])
+    );
+
+    expect(preview.body.removals.map((r: { path: string }) => r.path)).toEqual(
+      preview.body.sweepPreview
+    );
+    expect(previewReasons['.claude/skills/alpha']).toBe('The skill this link pointed to is gone.');
+    expect(previewReasons['.claude/skills/acme__greet']).toBe(
+      'The package this skill came from is no longer installed here.'
+    );
+    expect(previewReasons['.codex/hooks.json']).toBe(
+      'DorkOS wrote this, and no hooks project here any more.'
+    );
+    expect(previewReasons['.claude/settings.local.json']).toBe(
+      'Only the hook entries DorkOS added go; your own settings stay.'
+    );
+
+    // And the receipt says the same thing about the same ten paths, so the
+    // promise before the click and the list after it are one list.
+    const res = await syncProject(repo);
+    expect(
+      Object.fromEntries(
+        res.body.removals.map((r: { path: string; reason: string }) => [r.path, r.reason])
+      )
+    ).toEqual(previewReasons);
+  });
+
+  it('HK-11: leaves a hand-written .codex/hooks.json alone and reports it as a conflict', async () => {
+    // Seeded defect: widen the sweep past sidecar-matched files and this reds
+    // twice over — the file is gone, and the byte comparison names what was in
+    // it. HK-11 was three hand-written hooks files deleted by a sweep with no
+    // way to prove which generated files were its own.
+    const repo = stageSyncProject('sync-handwritten', { plugin: true });
+    allowEveryPackagesHooks(repo);
+    const mine = join(repo, '.codex', 'hooks.json');
+    // The shape Codex documents, which is also the shape the engine writes now —
+    // so this is unambiguously somebody's own file rather than the engine's own
+    // pre-sidecar output, which `generatedHookOutcome` migrates on purpose.
+    const contents = JSON.stringify(
+      { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo mine' }] }] } },
+      null,
+      2
+    );
+    writeAt(mine, contents);
+
+    const res = await syncProject(repo);
+
+    expect(res.status).toBe(200);
+    expect(readFileSync(mine, 'utf8')).toBe(contents);
+    expect(res.body.swept).not.toContain('.codex/hooks.json');
+    expect(res.body.conflicts).toBeGreaterThan(0);
+    expect(res.body.status.counts.conflicts).toBeGreaterThan(0);
+  });
+
+  it(
+    'VC-02: raises one card per unapproved package and answers without waiting for it',
+    { timeout: 4_000 },
+    async () => {
+      // Seeded defect: `await` the cards inside the route and this times out —
+      // the gateway below never decides, exactly like a person who has not looked
+      // at the screen yet, and the approval window is two hours. A button that
+      // hangs on a modal is the shape being refused here.
+      const repo = stageSyncProject('sync-card', { plugin: true });
+
+      const res = await syncProject(repo);
+
+      expect(res.status).toBe(200);
+      expect(res.body.askedAbout).toEqual(['acme']);
+      expect(gateway.requested).toEqual(['acme']);
+      // The hooks are not installed while nobody has answered, and the status
+      // says so rather than going quiet about it.
+      expect(existsSync(join(repo, '.codex', 'hooks.json'))).toBe(false);
+      expect(res.body.status.counts.pendingApproval).toBe(1);
+      expect(res.body.status.pendingApproval[0].packageName).toBe('acme');
+    }
+  );
+
+  it('AP-10: queues behind a projection already running on that repository, then answers 200', async () => {
+    // Seeded defect: drop `withProjectLock` and the POST applies into a tree
+    // another writer is half-way through, then reads a status describing
+    // neither. Asserted through the lock's own queue depth rather than a timer,
+    // so the case cannot pass by being slow.
+    const repo = stageSyncProject('sync-lock');
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const turn = withProjectLock(repo, () => held);
+
+    const post = syncProject(repo);
+    await vi.waitFor(
+      async () => {
+        // The response is checked first so a route that refused early fails with
+        // ITS reason rather than with a queue depth nobody can read.
+        expect(projectLockQueueDepth(repo)).toBe(2);
+        await Promise.resolve();
+      },
+      { timeout: 2_000 }
+    );
+
+    release();
+    await turn;
+    const res = await post;
+
+    expect(res.status).toBe(200);
+    expect(res.body.status.state).toBe('ready');
+    expect(res.body.status.clean).toBe(true);
   });
 });

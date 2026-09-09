@@ -891,6 +891,7 @@ export const harnessStubs = {
       clean: true,
       counts: { skills: 0, drifted: 0, conflicts: 0, orphans: 0, adoptable: 0, pendingApproval: 0 },
       sweepPreview: [],
+      removals: [],
       rows: [],
       projectLevel: [],
       pendingApproval: [],
