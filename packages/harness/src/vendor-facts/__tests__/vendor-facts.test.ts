@@ -287,3 +287,40 @@ describe('vendor-facts table', () => {
     expect(harnessesReadingProjectSkillRoot('.zed/skills')).toEqual([]);
   });
 });
+
+describe('the user-scope read paths that justify exactly two directories', () => {
+  it('SRC-04: every harness but claude-code reads ~/.agents/skills, and claude-code reads ~/.claude/skills', () => {
+    // This is the FIRST reader of `readPaths.user` in the repository, and it
+    // reads it as an assertion rather than as a path source
+    // (`vendor-facts/coverage.ts:49-52`: "data for humans; nothing here walks a
+    // home directory"). Slice A3 of the global-scope work resolves both
+    // directories in `apps/server/src/services/harness/agents-user-home.ts` and
+    // `.../claude-code/claude-config-dir.ts`, hardcoded, because the engine
+    // takes its roots injected and a home directory must be spelled in exactly
+    // one place per vendor. The design is "at most two user directories"
+    // (`specs/harness-sync-global/02-specification.md`, decision 3), and this is
+    // what binds that design to the facts: if a vendor-facts refresh moves a
+    // tool off `~/.agents/skills`, or gives Claude Code a second root, this reds
+    // and the design is revisited rather than quietly wrong.
+    const AGENTS_USER_SKILLS = '~/.agents/skills';
+    const CLAUDE_USER_SKILLS = '~/.claude/skills';
+
+    const sharesTheAgentsDir = HARNESS_IDS.filter((harness) =>
+      skillsFactsFor(harness).readPaths.user.includes(AGENTS_USER_SKILLS)
+    );
+    expect(sharesTheAgentsDir.sort()).toEqual(
+      ['codex', 'copilot', 'cursor', 'gemini', 'opencode'].sort()
+    );
+    // Counted as well as compared, so the invariant cannot be satisfied by a
+    // table that stopped carrying user read paths at all.
+    expect(sharesTheAgentsDir).toHaveLength(HARNESS_IDS.length - 1);
+
+    // The one that does not, and the directory it reads instead. Measured, not
+    // assumed: DOR-1856's free listing probe staged a link in a sandbox
+    // `~/.agents/skills` and a real `claude` 2.1.266 did not list it
+    // (`meta/harness-smoke/20260909-103643.543-claude-user-tier.md`), which is
+    // the whole reason the plan writes a second directory rather than one.
+    expect(skillsFactsFor('claude-code').readPaths.user).not.toContain(AGENTS_USER_SKILLS);
+    expect(skillsFactsFor('claude-code').readPaths.user).toContain(CLAUDE_USER_SKILLS);
+  });
+});

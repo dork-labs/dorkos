@@ -315,6 +315,38 @@ check 'named import is still refused' \
 check 'a sibling in the same directory is not exempt' \
   src/services/runtimes/opencode/opencode-runtime.ts "$ORDINARY" "$PROPS"
 
+# agents-user-home.ts is the SIXTH carve-out (DOR-1924). It mirrors the
+# $HOME/.agents/skills resolution five vendor pages document as a user-scope
+# skills read path, so Harness Sync at global scope can link a globally installed
+# package's skills where Codex, OpenCode, Cursor, Gemini CLI and Copilot look.
+#
+# It is the first carve-out exempt from BOTH halves, which is why its block does
+# not look like the three above. The other three are exempt from the CALL ban
+# only, so each must keep spelling its import `import os from 'os'` for ever;
+# that is a wart rather than a policy, since a declared carve-out whose job is to
+# call homedir decides nothing by which spelling it uses. Both spellings are
+# pinned silent here, and both are pinned refused in a sibling — the carve-out is
+# per FILE, and "the harness service may call homedir" is what would actually
+# have shipped otherwise.
+echo '--- the agents-user-home carve-out covers BOTH halves ---'
+check 'default import + member call is exempt' \
+  src/services/harness/agents-user-home.ts "$ORDINARY" ''
+check 'named import is exempt too' \
+  src/services/harness/agents-user-home.ts "$NAMED" ''
+check 'a sibling in the same directory is not exempt (call)' \
+  src/services/harness/status.ts "$ORDINARY" "$PROPS"
+check 'a sibling in the same directory is not exempt (import)' \
+  src/services/harness/status.ts "$NAMED" "$IMPORTS"
+# The SDK confinement (Hard Rule 2) survives the import-half carve-out. Handing
+# a file its own `no-restricted-imports` block REPLACES the server-wide options,
+# so a block written as `{ paths: [] }` would silently unban every runtime SDK in
+# it — the DOR-668 shape, in a new place.
+check_sdk 'the carve-out still bans the claude SDK' \
+  src/services/harness/agents-user-home.ts \
+  "import x from '@anthropic-ai/claude-agent-sdk';" banned
+check_sdk 'the carve-out still bans node-pty' \
+  src/services/harness/agents-user-home.ts "import x from 'node-pty';" banned
+
 # If this fired, the ban would be unusable: os.tmpdir() is how every test in the
 # server stages a fixture directory.
 echo '--- the rest of the os module is untouched ---'
