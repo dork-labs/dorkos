@@ -161,10 +161,17 @@ export function scanClaudeOnlySkills(
  * `plan.notEnabled` when the manifest does not enable it, so a report can say so
  * (DOR-1901). It is injected because this engine reads no config.
  *
+ * `opts.sharedWithTools` says whether this machine shares its all-projects
+ * packages with at least one agent tool (`harness.global.harnesses` being
+ * non-empty). It changes nothing a sync writes either: it decides one sentence,
+ * the drop each globally installed package earns, whose first clause stops being
+ * true the moment somebody answers that question. Injected for the same reason
+ * as the two above — this engine reads no config.
+ *
  * @param repoRoot - absolute path to the repository root.
  * @param opts - optional resolved dork home, enabling global-scope projection,
- *   an optional per-package gate on hook contribution, and the harness DorkOS's
- *   own runtime reads.
+ *   an optional per-package gate on hook contribution, the harness DorkOS's own
+ *   runtime reads, and whether all-projects packages are shared.
  * @returns the full projection plan (actions + honest drop list).
  */
 export function project(
@@ -173,6 +180,7 @@ export function project(
     dorkHome?: string;
     allowPluginHooks?: (packageName: string) => boolean;
     dorkosHarness?: HarnessId;
+    sharedWithTools?: boolean;
   }
 ): ProjectionPlan {
   const installedPlugins = scanInstalledPlugins({
@@ -195,5 +203,6 @@ export function project(
     detectedHarnesses: detectHarnessFootprints(repoRoot),
     ...(opts?.allowPluginHooks ? { allowPluginHooks: opts.allowPluginHooks } : {}),
     ...(opts?.dorkosHarness ? { dorkosHarness: opts.dorkosHarness } : {}),
+    ...(opts?.sharedWithTools === true ? { sharedWithTools: true } : {}),
   });
 }

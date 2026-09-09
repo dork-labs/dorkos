@@ -438,6 +438,18 @@ export function buildPlan(input: {
    * caller that has not looked.
    */
   dorkosHarness?: HarnessId;
+  /**
+   * Whether this machine shares its all-projects packages with at least one
+   * agent tool — `harness.global.harnesses` being non-empty.
+   *
+   * Read by ONE line: the drop each globally installed package earns says who
+   * can see it, and "only the Claude Code sessions DorkOS runs" stops being true
+   * the moment somebody answers the sharing question. Injected, like every other
+   * answer this engine is handed, because that list is a `~/.dork/config.json`
+   * key and nothing here reads config. Omitted, the drop reads as not-shared,
+   * which is the state of every machine that has not answered.
+   */
+  sharedWithTools?: boolean;
 }): ProjectionPlan {
   const {
     repoRoot,
@@ -658,7 +670,13 @@ export function buildPlan(input: {
   // terms. `repoRoot` reaches it because its uninstall command names this
   // repository by absolute path; a `.` would be resolved by the SERVER, against
   // a working directory that is not the reader's.
-  all.push(...planGlobalInstallDrops({ plugins: installedPlugins, repoRoot }));
+  all.push(
+    ...planGlobalInstallDrops({
+      plugins: installedPlugins,
+      repoRoot,
+      sharedWithTools: input.sharedWithTools === true,
+    })
+  );
 
   return {
     actions: all.filter((a) => a.kind !== 'drop'),

@@ -87,12 +87,13 @@ function repoWith(projectCopy?: { name: string; version: string }): string {
 }
 
 /** The plan for a repository, with both install scopes scanned off disk. */
-function planFor(repo: string): ProjectionPlan {
+function planFor(repo: string, opts?: { sharedWithTools?: boolean }): ProjectionPlan {
   return buildPlan({
     repoRoot: repo,
     manifest: MANIFEST,
     agentsMdExists: false,
     installedPlugins: scanInstalledPlugins({ dorkHome, projectRoot: repo }),
+    ...(opts?.sharedWithTools === true ? { sharedWithTools: true } : {}),
   });
 }
 
@@ -203,15 +204,17 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
     expect(extra).toEqual([]);
     expect(drop?.reason).toBe(
       'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. ' +
-        'Its 2 skills are not shared with this project: greet, nightly'
+        'Its 2 skills are not shared with this project: greet, nightly. ' +
+        'Run dorkos harness global --enable <tool> to share it with your other agent tools.'
     );
     expect(drop?.harnessAgnostic).toBe(true);
-    // No sentence anywhere in the plan names a command that does not exist, and
-    // this one names no command at all: `hello` is real but nothing in slice A1
-    // does anything with it, and "a global sync" is not a thing.
+    // No sentence anywhere in the plan names a command that does not exist.
+    // Slice A1 named none at all, because it had none to name; slice A3 names
+    // `dorkos harness global --enable`, which it also built, and that is the
+    // whole rule this block is written under.
     const everyReason = [...plan.drops, ...plan.warnings].map((e) => e.reason ?? '').join('\n');
     expect(everyReason).not.toMatch(/global sync/);
-    expect(drop?.reason).not.toMatch(/hello|dorkos harness/);
+    expect(drop?.reason).not.toMatch(/hello/);
     // It renders once, under the heading the CLI files package-level facts under.
     const report = formatDropList(plan);
     expect(report).toContain('plugin layers:');
@@ -228,10 +231,38 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
     const [drop] = dropsFor(plan, 'soloskill');
     expect(drop?.reason).toBe(
       'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. ' +
-        'Its 1 skill is not shared with this project: nightly'
+        'Its 1 skill is not shared with this project: nightly. ' +
+        'Run dorkos harness global --enable <tool> to share it with your other agent tools.'
     );
     // And the plural is untouched, so the fix is agreement rather than a rewrite.
     expect(dropsFor(plan, 'globex')[0]?.reason).toContain('Its 2 skills are not shared');
+  });
+
+  it('SRC-04: once the package IS shared, the sentence stops saying only DorkOS can see it', () => {
+    // The A3 half. The lead sentence is not appended to, it is REPLACED: "only
+    // the Claude Code sessions DorkOS runs can see it" is FALSE the moment
+    // `dorkos harness global --enable <tool>` has run, and a sentence that is
+    // wrong cannot be fixed by adding another sentence under it. The offer goes
+    // with it, because telling somebody to share what they already shared is
+    // the same defect from the other side.
+    //
+    // Seeded defect: keep one lead and append the A3 sentence. The status page
+    // then tells a person who shared with Codex that only DorkOS can see their
+    // package, in the same cell as the skill Codex is reading right now.
+    const plan = planFor(repoWith(), { sharedWithTools: true });
+
+    const [drop] = dropsFor(plan, 'globex');
+    expect(drop?.reason).toBe(
+      'installed for all your projects, and shared with the agent tools you chose. ' +
+        'Its 2 skills are not shared with this project: greet, nightly'
+    );
+    expect(drop?.reason).not.toContain('Only the Claude Code sessions DorkOS runs can see it');
+    expect(drop?.reason).not.toContain('dorkos harness global --enable');
+
+    // A package with nothing portable in it takes the same new lead.
+    expect(dropsFor(plan, 'barepkg')[0]?.reason ?? '').toContain(
+      'installed for all your projects, and shared with the agent tools you chose.'
+    );
   });
 
   it('SRC-04: a long skill list stops at ten names and counts the rest', () => {
@@ -262,7 +293,8 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
     expect(drop?.reason).toBe(
       'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. ' +
         'Its 2 skills are not shared with this project: daily-sweep, helper. ' +
-        'Run dorkos harness sync --fix --global so its skills that run on a timer work.'
+        'Run dorkos harness sync --fix --global so its skills that run on a timer work. ' +
+        'Run dorkos harness global --enable <tool> to share it with your other agent tools.'
     );
   });
 
@@ -277,7 +309,8 @@ describe('SRC-04 — the global-install drop says what the package holds', () =>
       expect(drop?.reason).toBe(
         'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. ' +
           'Its 2 skills are not shared with this project: daily-sweep, helper. ' +
-          'Its skills that run on a timer now work.'
+          'Its skills that run on a timer now work. ' +
+          'Run dorkos harness global --enable <tool> to share it with your other agent tools.'
       );
     } finally {
       clearGlobalLinks();

@@ -32,11 +32,12 @@
  * then did nothing would make that sentence false on every fresh machine, which
  * is the exact defect the whole drop block was rewritten to end. So the bare
  * `dorkos harness sync --global` — a check, which writes nothing in any case —
- * prints the ask under its report, and `--fix --global` links the dork-home tier
- * and prints the ask under that. The exit code still reports the WORK rather
- * than the question: a check that found links to make exits 1 whether or not it
- * also asked, because a CI script on a machine nobody has answered for would
- * otherwise read 0 for ever while the dork-home tier drifted.
+ * prints the ask under its report and exits `0`, and `--fix --global` links the
+ * dork-home tier and prints the ask under that. A run that asked exits `0`
+ * whatever the drift under it says: the question is what that run is for, and a
+ * non-zero exit beside a question reads as a failure rather than as something
+ * waiting on an answer. The moment somebody answers, the exit code goes back to
+ * reporting the work.
  *
  * @module harness-sync-global
  */
@@ -233,11 +234,13 @@ export async function runGlobalSync(args: { fix: boolean }, dorkHome: string): P
     );
     console.log(closingNote(inputs));
     printAsk();
-    // The exit code still reports the WORK, not the question. A check that found
-    // links to make exits 1 whether or not it also asked something, because a CI
-    // script running `--check --global` on a machine nobody has answered for
-    // would otherwise read 0 for ever while the dork-home tier drifted.
-    return drift.clean ? 0 : 1;
+    // A run that asked exits 0, whatever the drift under it says. The question
+    // is what that run is FOR, and a non-zero exit beside a question reads as a
+    // failure rather than as something waiting on an answer — a person told
+    // "this failed" by a command that only asked them something stops running
+    // it. The report above still names every link there is to make, and the
+    // moment somebody answers, the exit code goes back to reporting the work.
+    return owesTheAsk || drift.clean ? 0 : 1;
   }
 
   // Which user folders were missing BEFORE the run, so the restart caveat is
@@ -265,7 +268,7 @@ export async function runGlobalSync(args: { fix: boolean }, dorkHome: string): P
   if (conflicts.length > 0) {
     console.log('');
     console.log(
-      `${conflicts.length} link(s) left untouched — something DorkOS does not own occupies the path. Each line says what is in the way; clear it, then re-run:`
+      `${conflicts.length} link(s) left untouched — the path is occupied by something DorkOS does not own, or the folder will not take it. Each line says what is in the way; clear it, then re-run:`
     );
     for (const action of conflicts) console.log(globalActionLine(action));
   }
@@ -289,9 +292,15 @@ export async function runGlobalSync(args: { fix: boolean }, dorkHome: string): P
  * its root, a machine sharing with nothing says the links are DorkOS's own, and
  * a machine that shares says which of the five tools DorkOS has actually tested.
  */
-function closingNote(inputs: { harnesses: readonly string[]; boundaryRoot?: string }): string {
+function closingNote(inputs: { roots: GlobalPlanRoots; boundaryRoot?: string }): string {
   if (inputs.boundaryRoot !== undefined) return globalBoundarySkipLine(inputs.boundaryRoot);
-  return inputs.harnesses.length === 0 ? GLOBAL_REACH_NOTE : USER_TIER_MEASUREMENT_NOTE;
+  // The measurement note is about the SHARED folder, so it is said only when
+  // that folder is in play. Somebody sharing with Claude Code alone is told
+  // nothing about five tools this run never touched, and somebody sharing with
+  // nothing gets the reach note, which is still true of them.
+  return inputs.roots.agentsSkillsDir === undefined
+    ? GLOBAL_REACH_NOTE
+    : USER_TIER_MEASUREMENT_NOTE;
 }
 
 /** The user folders that do not exist yet, checked before the apply creates them. */

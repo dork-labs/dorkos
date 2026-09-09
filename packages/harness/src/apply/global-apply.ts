@@ -73,6 +73,8 @@
  * @module apply/global-apply
  */
 import {
+  accessSync,
+  constants,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -254,6 +256,13 @@ export function findGlobalOrphans(plan: GlobalProjectionPlan, roots: GlobalPlanR
   const planned = plannedTargets(plan);
   const enumerated = new Set(plan.enumeratedPackages);
   const orphans = new Map<string, string>();
+  // Which directories the plan still writes into. A candidate in a directory the
+  // plan names nothing in is a THIRD cause, and it needs its own sentence: the
+  // package is installed, the skill exists, and what changed is that nobody
+  // reads this folder for it any more. Told as "no longer has a skill of this
+  // name", a `--disable` would say something false about the package to a person
+  // watching two links go.
+  const plannedDirs = new Set([...planned].map((target) => dirname(target)));
   for (const dir of globalSweepDirs(roots)) {
     // `listDir`, never `existsSync` + `readdirSync`: a skills path that is a
     // file or unreadable has nothing to sweep and must not abort the run, nor
@@ -271,7 +280,13 @@ export function findGlobalOrphans(plan: GlobalProjectionPlan, roots: GlobalPlanR
       // The package is still installed. The plan may only overrule that for a
       // package it actually read — otherwise a broken manifest would look
       // exactly like an uninstall.
-      if (enumerated.has(pkg)) orphans.set(abs, SWEEP_REASONS['global-skill-gone']);
+      if (!enumerated.has(pkg)) continue;
+      orphans.set(
+        abs,
+        plannedDirs.has(resolve(dir))
+          ? SWEEP_REASONS['global-skill-gone']
+          : SWEEP_REASONS['global-folder-unshared']
+      );
     }
   }
   return [...orphans.entries()]
@@ -330,6 +345,68 @@ type SymlinkOutcome =
   { kind: 'written' } | { kind: 'unchanged' } | { kind: 'blocked'; reason: string };
 
 /**
+ * Whether this platform can be asked about write permission at all.
+ *
+ * Not Windows, for the reason `write-path-occupants.ts` states about its own
+ * probe: `accessSync(dir, W_OK)` there reports the read-only ATTRIBUTE, which
+ * directories do not meaningfully carry, and answers "writable" for a folder an
+ * ACL denies. A probe that is wrong in both directions is worse than the write
+ * reporting the failure itself.
+ */
+const CAN_ASK_ABOUT_WRITING = process.platform !== 'win32';
+
+/**
+ * Why a global link cannot be written, when the folder that would hold it says
+ * no — asked BEFORE the write, so a person is told rather than shown a stack.
+ *
+ * The project engine answers this for every write path between the repository
+ * root and the target (`unwritableWritePath`). A global plan needs one directory
+ * probed and not a path: the roots are absolute and given, and everything under
+ * them this engine makes itself. `chmod 000` on `~/.agents/skills` is the case
+ * that made this necessary — the sweep already skips an unreadable directory
+ * (`listDir` answers nothing and removes nothing), and the APPLY threw a raw
+ * EACCES over it, so the run that removed nothing said so with a stack trace.
+ *
+ * A folder that is not there yet is not probed: the engine creates it, inside a
+ * parent it will fail on visibly if it may not.
+ *
+ * @param target - the absolute link target.
+ * @returns the sentence, or `undefined` when the write may go ahead.
+ */
+function unwritableGlobalDir(target: string): string | undefined {
+  if (!CAN_ASK_ABOUT_WRITING) return undefined;
+  const dir = dirname(target);
+  let stats;
+  try {
+    stats = statSync(dir);
+  } catch {
+    return undefined; // not there yet: the engine makes it
+  }
+  if (!stats.isDirectory()) return undefined; // a shape question, answered elsewhere
+  try {
+    accessSync(dir, constants.W_OK | constants.X_OK);
+    return undefined;
+  } catch {
+    return GLOBAL_UNWRITABLE_DIR_REASON(dir);
+  }
+}
+
+/**
+ * The one sentence a folder DorkOS may not write in earns. Frozen here for the
+ * reason `sweep-reasons.ts` gives about its own table: the terminal, the app's
+ * conflict chip and the server's log all print the engine's `reason` verbatim.
+ *
+ * @param dir - the absolute folder that said no.
+ * @returns the sentence a person reads.
+ */
+function GLOBAL_UNWRITABLE_DIR_REASON(dir: string): string {
+  return (
+    `blocked by \`${dir}\`, which is a folder DorkOS may not write in (permission denied). ` +
+    `Nothing in it was changed or removed. Fix the folder\u2019s permissions, then re-run`
+  );
+}
+
+/**
  * Create or repair one global symlink.
  *
  * The same shape as the project apply's: look, act, and look again when another
@@ -348,6 +425,15 @@ function applyGlobalSymlink(action: ProjectionAction): SymlinkOutcome {
   const absTarget = action.target;
   const absSource = action.source;
   const linkText = globalLinkText(action);
+
+  // Asked before the write, so a folder that says no is a reported conflict
+  // rather than a stack trace. Only when something is really about to be
+  // written: a link that is already right is left alone above, and calling its
+  // folder blocked would turn a clean tree into a wall of faults.
+  const unwritable = unwritableGlobalDir(absTarget);
+  if (unwritable !== undefined && !linkMatchesPlan(absTarget, absSource, linkText, LINK_CHECK)) {
+    return { kind: 'blocked', reason: unwritable };
+  }
 
   for (let attempt = 0; attempt < SYMLINK_ATTEMPTS; attempt++) {
     if (pathExists(absTarget)) {
@@ -482,7 +568,13 @@ export function checkGlobalPlan(plan: GlobalProjectionPlan, roots: GlobalPlanRoo
   const blocked: ProjectionAction[] = [];
   for (const action of plan.actions) {
     if (action.kind !== 'symlink' || !action.source || !action.target) continue;
-    const reason = blockingSymlinkOccupant(action.target, globalLinkText(action));
+    // Both questions, in the order the apply asks them, so `--check` and `--fix`
+    // name the same paths for the same reasons. The permission probe is scoped
+    // to the DRIFTED actions for the same reason the apply scopes it: a link
+    // already correct is one nothing is about to write.
+    const reason =
+      blockingSymlinkOccupant(action.target, globalLinkText(action)) ??
+      (isGlobalDrifted(action) ? unwritableGlobalDir(action.target) : undefined);
     if (reason !== undefined) blocked.push({ ...action, reason });
   }
   const removals = findGlobalOrphans(plan, roots);

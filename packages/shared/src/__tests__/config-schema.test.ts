@@ -185,7 +185,15 @@ describe('UserConfigSchema', () => {
         defaultProvider: 'worktree',
         retentionCap: null,
       },
-      harness: { autoSync: true, approvedHooks: [], refusedHooks: [] },
+      harness: {
+        autoSync: true,
+        approvedHooks: [],
+        refusedHooks: [],
+        // Nothing shared into a home directory, and the question never asked
+        // (DOR-1924). Both are the closed state, and the factory has to list
+        // them or a fresh install parses them as `undefined`.
+        global: { harnesses: [], askedAt: null },
+      },
       workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
       runtimes: {
         default: 'claude-code',
@@ -569,7 +577,15 @@ describe('USER_CONFIG_DEFAULTS', () => {
         defaultProvider: 'worktree',
         retentionCap: null,
       },
-      harness: { autoSync: true, approvedHooks: [], refusedHooks: [] },
+      harness: {
+        autoSync: true,
+        approvedHooks: [],
+        refusedHooks: [],
+        // Nothing shared into a home directory, and the question never asked
+        // (DOR-1924). Both are the closed state, and the factory has to list
+        // them or a fresh install parses them as `undefined`.
+        global: { harnesses: [], askedAt: null },
+      },
       workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
       runtimes: {
         default: 'claude-code',

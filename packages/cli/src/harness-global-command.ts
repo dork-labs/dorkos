@@ -30,10 +30,12 @@
  *
  * @module harness-global-command
  */
+import { existsSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { rethrowUnknownOption } from './lib/parse-args-error.js';
 import { configPathFor, resolveDorkHome } from './harness-consent.js';
 import {
+  GLOBAL_SKILLS_RESTART_NOTE,
   HARNESS_IDS,
   HARNESS_LABELS,
   USER_TIER_MEASUREMENT_NOTE,
@@ -210,7 +212,7 @@ async function listSharing(dorkHome: string): Promise<number> {
     console.log('');
     const { globalBoundarySkipLine } = await import('@dorkos/harness');
     console.log(globalBoundarySkipLine(inputs.boundaryRoot));
-  } else {
+  } else if (inputs.roots.agentsSkillsDir !== undefined) {
     console.log('');
     console.log(USER_TIER_MEASUREMENT_NOTE);
   }
@@ -280,6 +282,13 @@ async function enableTool(dorkHome: string, tool: HarnessId): Promise<number> {
 
   const roots = globalRootsFor(dorkHome, next, process.env, boundaryConfig);
   const plan = projectGlobal({ roots, harnesses: next });
+  // Which user folders were missing BEFORE this run, so the restart caveat is
+  // printed only when this run created one. A tool already reading a folder
+  // picks up a new link in it on its own; what it cannot pick up is a folder
+  // that did not exist when it started.
+  const newFolders = [roots.agentsSkillsDir, roots.claudeSkillsDir].filter(
+    (dir): dir is string => dir !== undefined && !existsSync(dir)
+  );
   if (plan.unreadableRoot !== undefined) {
     console.log('');
     console.log(
@@ -304,13 +313,23 @@ async function enableTool(dorkHome: string, tool: HarnessId): Promise<number> {
   if (conflicts.length > 0) {
     console.log('');
     console.log(
-      `${conflicts.length} link(s) left untouched — something DorkOS does not own occupies the path. Each line says what is in the way; clear it, then re-run:`
+      `${conflicts.length} link(s) left untouched — the path is occupied by something DorkOS does not own, or the folder will not take it. Each line says what is in the way; clear it, then re-run:`
     );
     for (const action of conflicts) console.log(`  ${action.target} — ${action.reason ?? ''}`);
   }
 
-  console.log('');
-  console.log(USER_TIER_MEASUREMENT_NOTE);
+  if (newFolders.length > 0 && applied.length > 0) {
+    console.log('');
+    console.log(GLOBAL_SKILLS_RESTART_NOTE);
+  }
+
+  // Only when the SHARED folder is in play. Said after enabling Claude Code
+  // alone, it would be a sentence about five tools none of which this run
+  // touched.
+  if (roots.agentsSkillsDir !== undefined) {
+    console.log('');
+    console.log(USER_TIER_MEASUREMENT_NOTE);
+  }
   return conflicts.length === 0 ? 0 : 1;
 }
 

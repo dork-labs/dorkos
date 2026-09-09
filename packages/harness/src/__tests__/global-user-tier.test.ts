@@ -16,7 +16,15 @@
  * DorkOS's and counts what went.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import {
@@ -360,6 +368,60 @@ describe('AP-07 global: the user tier removes only what DorkOS wrote', () => {
     expect(drift.blocked.map((a) => a.target)).toEqual([occupied]);
     expect(drift.drifted.map((a) => a.target)).not.toContain(occupied);
   });
+});
+
+describe('a user folder DorkOS may not write in', () => {
+  // `chmod` means nothing when the process is root, and Windows reports the
+  // read-only attribute rather than the permission — so the case says which
+  // platform it is measuring rather than passing vacuously on the others.
+  const canMakeUnreadable = process.platform !== 'win32' && process.getuid?.() !== 0;
+
+  it.skipIf(!canMakeUnreadable)(
+    'is a reported conflict, not an exception, and nothing in it is changed or removed',
+    () => {
+      const dorkHome = stageDorkHome([{ name: 'globex', skills: ['greet'] }]);
+      const { agentsSkillsDir } = stageHome();
+      const roots: GlobalPlanRoots = { dorkHome, agentsSkillsDir };
+      mkdirSync(agentsSkillsDir, { recursive: true });
+
+      // A link DorkOS put there earlier, and a file the person put there.
+      symlinkSync(
+        relative(agentsSkillsDir, join(globalPluginsDir(dorkHome), 'goneco', 'skills', 'vanished')),
+        join(agentsSkillsDir, 'goneco__vanished')
+      );
+      chmodSync(agentsSkillsDir, 0o000);
+      try {
+        const plan = projectGlobal({ roots, harnesses: ['codex'] });
+
+        // `--check` says it, rather than promising a fix that would then throw.
+        const drift = checkGlobalPlan(plan, roots);
+        expect(drift.blocked.map((a) => a.target)).toContain(
+          join(agentsSkillsDir, 'globex__greet')
+        );
+        expect(drift.blocked[0]?.reason).toContain('may not write in (permission denied)');
+        expect(drift.blocked[0]?.reason).toContain('Nothing in it was changed or removed.');
+
+        // And `--fix` says the same thing instead of raising EACCES out of
+        // `symlinkSync`, which is what it did before this probe existed.
+        const result = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+        expect(result.conflicts.map((a) => a.target)).toContain(
+          join(agentsSkillsDir, 'globex__greet')
+        );
+        // The dork-home tier is unaffected: one hostile folder costs exactly the
+        // links that go through it.
+        expect(result.applied.map((a) => a.target)).toEqual([
+          join(globalSkillsDir(dorkHome), 'globex__greet'),
+        ]);
+        // And nothing was removed from the folder nobody could read. The sweep
+        // already skipped it — `listDir` answers nothing — and this pins that the
+        // two halves agree.
+        expect(result.swept).toEqual([]);
+      } finally {
+        chmodSync(agentsSkillsDir, 0o755);
+      }
+      expect([...snapshotTree(agentsSkillsDir).keys()]).toEqual(['goneco__vanished']);
+    }
+  );
 });
 
 describe('DORKOS_BOUNDARY: the user tier is skipped and the dork-home tier is not', () => {

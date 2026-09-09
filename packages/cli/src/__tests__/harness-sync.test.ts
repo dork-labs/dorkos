@@ -2804,7 +2804,14 @@ describe('runHarnessSync --global — the packages installed for all your projec
 
     const result = await runHarnessSync(syncArgs({ check: true, global: true }));
 
-    expect(result.exitCode).toBe(1); // there is work to do, and it says so
+    // ZERO while the one-time sharing question is outstanding: this run's job
+    // was to ask it, and a failure code beside a question reads as a failure
+    // (DOR-1924, spec §2.7). The report still names every link there is to
+    // make, and once somebody answers the exit code reports the work again.
+    expect(result.exitCode).toBe(0);
+    expect(printed()).toContain(
+      'Share the packages you installed for all your projects with your other agent tools?'
+    );
     expect(printed()).toContain('Run `dorkos harness sync --fix --global` to apply.');
     expect(snapshotTree(homeDir)).toEqual(before);
     expect(snapshotTree(tmpDir)).toEqual([]);

@@ -112,7 +112,8 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
 
       const result = await runHarnessSync(syncArgs({ global: true }));
 
-      expect(result.exitCode).not.toBe(2);
+      // Zero, while the question is outstanding: this run's job was to ask it.
+      expect(result.exitCode).toBe(0);
       const out = printed();
       expect(out).toContain(
         'Share the packages you installed for all your projects with your other agent tools?'
@@ -410,10 +411,27 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
     });
   });
 
+  describe('the sentence about what DorkOS has tested', () => {
+    it('is said when the shared folder is in play, and not when only Claude Code is', async () => {
+      installGlobal('globex', ['greet']);
+
+      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'claude-code']));
+      // Five tools none of this run touched. Saying it here would be a sentence
+      // about a folder nothing was written to.
+      expect(printed()).not.toContain('DorkOS tested Codex on 2026-09-09');
+      logSpy.mockClear();
+
+      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'codex']));
+      expect(printed()).toContain('DorkOS tested Codex on 2026-09-09');
+    });
+  });
+
   describe('the restart caveat', () => {
     it('prints once when the run created a skills folder that was not there before', async () => {
       installGlobal('globex', ['greet']);
       await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'claude-code']));
+      // The enable that CREATED the folder says it too, once.
+      expect(printed().split('Claude Code needs a restart').length - 1).toBe(1);
       logSpy.mockClear();
 
       // The folder is gone again, so the next run creates it.
