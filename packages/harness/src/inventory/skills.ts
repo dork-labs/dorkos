@@ -1,6 +1,6 @@
 /**
- * Skill half of the source inventory — the two roots a person authors a skill
- * in, and neither of the roots DorkOS writes into.
+ * Skill half of the source inventory — every root a person authors a skill in,
+ * and none of the paths DorkOS writes into.
  *
  * `.agents/skills` is the canonical layer the planner already scans, so this
  * reuses {@link scanSkillDirs} rather than re-deriving it, and only adds what an
@@ -21,6 +21,12 @@
  * module exists to end. A dangling link is neither: `scanSkillDirs` refuses one,
  * because a link to nothing holds no `SKILL.md`.
  *
+ * The harness-native roots — `.opencode/skills`, `.cursor/skills` and the rest of
+ * {@link ./types.js#HARNESS_NATIVE_SKILL_ROOTS} — are the third group, and they
+ * need none of that reasoning: DorkOS projects nothing into any of them, so
+ * everything found there is somebody's own. What they needed was to be walked at
+ * all, which is DOR-1902.
+ *
  * Each root is probed with {@link readDirEntries} before the scanner walks it.
  * `scanSkillDirs` guards an ABSENT directory and nothing else, so a file sitting
  * where `.claude/skills` belongs throws `ENOTDIR` out of it — which is fine for
@@ -37,7 +43,12 @@ import { CLAUDE_SKILLS_DIR } from '../plan/installed-projector.js';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { readDirEntries, readTextFile, relPath } from './read.js';
-import type { SkillInventoryEntry, SkillRoot, UnreadableSource } from './types.js';
+import {
+  HARNESS_NATIVE_SKILL_ROOTS,
+  type SkillInventoryEntry,
+  type SkillRoot,
+  type UnreadableSource,
+} from './types.js';
 
 /**
  * The two roots everything DorkOS projects into `.claude/skills` points back at:
@@ -108,27 +119,46 @@ function declaredName(repoRoot: string, sourceDir: string): string | undefined {
 }
 
 /**
- * Inventory every authored skill in the two roots a person writes them in.
+ * Every root this module walks, in report order: the canonical layer, the
+ * directory the engine projects into, then the folders that belong to another
+ * agent tool.
  *
- * The engine's own output is excluded from both roots, in the two different ways
- * the two roots need it: the `.agents/skills` walk uses the scanner's default
- * authored view (`<pkg>__<name>` **and** a symlink), and the `.claude/skills`
- * walk drops the entries that resolve back into `.agents/skills` or
- * `.dork/plugins`.
+ * The third group is DOR-1902's whole subject. A repository whose skills live in
+ * `.opencode/skills/` reached no list at all — not an action, not a drop, not a
+ * warning — which reads exactly like a repository with no skills in it, and is
+ * the same silence DOR-1845 ended one directory over. Each of those roots is a
+ * `readPaths.project` cell of the vendor table; see
+ * {@link ./types.js#HARNESS_NATIVE_SKILL_ROOTS}.
+ */
+const SKILL_ROOTS: readonly SkillRoot[] = [
+  AGENTS_SKILLS_DIR,
+  CLAUDE_SKILLS_DIR,
+  ...HARNESS_NATIVE_SKILL_ROOTS,
+];
+
+/**
+ * Inventory every authored skill in every root a person writes them in.
+ *
+ * The engine's own output is excluded from every root, in the two different ways
+ * the roots need it: the walk uses the scanner's default authored view
+ * (`<pkg>__<name>` **and** a symlink), and the `.claude/skills` walk additionally
+ * drops the entries that resolve back into `.agents/skills` or `.dork/plugins`.
+ * That second exclusion stays scoped to `.claude/skills` because that is the one
+ * skills directory DorkOS projects into: a symlink under `.opencode/skills` is
+ * somebody's own, whatever it points at.
  *
  * @param repoRoot - absolute path to the repository root.
- * @returns one entry per authored skill directory, `.agents/skills` first, plus
- *   any root that could not be listed.
+ * @returns one entry per authored skill directory, in {@link SKILL_ROOTS} order,
+ *   plus any root that could not be listed.
  */
 export function inventorySkills(repoRoot: string): {
   skills: SkillInventoryEntry[];
   unreadable: UnreadableSource[];
 } {
-  const agents = collect(repoRoot, AGENTS_SKILLS_DIR, {});
-  const claude = collect(repoRoot, CLAUDE_SKILLS_DIR, {});
+  const walked = SKILL_ROOTS.map((root) => collect(repoRoot, root));
   return {
-    skills: [...agents.skills, ...claude.skills],
-    unreadable: [...agents.unreadable, ...claude.unreadable],
+    skills: walked.flatMap((result) => result.skills),
+    unreadable: walked.flatMap((result) => result.unreadable),
   };
 }
 
@@ -137,20 +167,18 @@ export function inventorySkills(repoRoot: string): {
  *
  * @param repoRoot - absolute path to the repository root.
  * @param root - the repo-relative skills root to walk.
- * @param options - the scanner options that decide what counts as a source here.
  * @returns the entries found under `root`, or the reason it could not be walked.
  */
 function collect(
   repoRoot: string,
-  root: SkillRoot,
-  options: { followSymlinks?: boolean }
+  root: SkillRoot
 ): { skills: SkillInventoryEntry[]; unreadable: UnreadableSource[] } {
   const absRoot = join(repoRoot, root);
   const probe = readDirEntries(absRoot, root, 'skill');
   if (probe.unreadable) return { skills: [], unreadable: [probe.unreadable] };
 
   const skills: SkillInventoryEntry[] = [];
-  for (const skill of scanSkillDirs(absRoot, root, options)) {
+  for (const skill of scanSkillDirs(absRoot, root)) {
     const absEntry = join(repoRoot, skill.sourceDir);
     const isSymlink = lstatSync(absEntry, { throwIfNoEntry: false })?.isSymbolicLink() === true;
     if (root === CLAUDE_SKILLS_DIR && isSymlink && isManagedProjection(repoRoot, absEntry))

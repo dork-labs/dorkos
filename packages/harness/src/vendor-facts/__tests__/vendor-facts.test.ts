@@ -4,10 +4,14 @@ import { resolve } from 'node:path';
 import { HARNESS_IDS, type HarnessId } from '../../manifest/schema.js';
 import {
   HARNESS_VENDOR_FACTS,
+  PROJECT_SKILL_ROOT_READERS,
   VENDOR_FACTS_FETCHED_AT,
+  harnessesReadingProjectSkillRoot,
   hooksFactsFor,
   skillsFactsFor,
 } from '../index.js';
+import { HARNESS_NATIVE_SKILL_ROOTS } from '../../inventory/types.js';
+import { CLAUDE_SKILLS_DIR } from '../../plan/installed-projector.js';
 
 /** The canonical directory the whole skills half of the engine is organised around. */
 const CANONICAL_SKILLS_DIR = '.agents/skills';
@@ -244,5 +248,42 @@ describe('vendor-facts table', () => {
 
     expect(skillsFactsFor('claude-code').nameRegex).toBeUndefined();
     expect(skillsFactsFor('codex').nameRegex).toBeUndefined();
+  });
+
+  it('XA-06: the harness-native skill roots are exactly the project read paths the table documents', () => {
+    // Both directions, because both are ways to be wrong. A root invented in
+    // `inventory/types.ts` without a cell here would be a directory DorkOS walks
+    // and no vendor page documents — a claim about somebody else's software with
+    // nothing behind it. A cell added here without a root there would be a folder
+    // an agent tool reads that the inventory is silent about, which is DOR-1902's
+    // whole subject.
+    const documented = [...PROJECT_SKILL_ROOT_READERS.keys()]
+      .filter((root) => root !== CANONICAL_SKILLS_DIR && root !== CLAUDE_SKILLS_DIR)
+      .sort();
+
+    expect(documented).toEqual([...HARNESS_NATIVE_SKILL_ROOTS].sort());
+    // Counted, so a table that stopped producing roots would not pass this on an
+    // empty pair of lists.
+    expect(documented.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('XA-06: names the harnesses that read each root, and answers nothing for a root nobody documents', () => {
+    // The sentence a person reads about `.codex/skills` says CURSOR looks there,
+    // which is surprising and correct: Cursor lists it as a compatibility path
+    // and Codex's own row does not list it at all.
+    expect(harnessesReadingProjectSkillRoot('.codex/skills')).toEqual(['cursor']);
+    expect(harnessesReadingProjectSkillRoot('.opencode/skills')).toEqual(['opencode']);
+    // In `HARNESS_IDS` order, not the table's declaration order, so two readers
+    // of one root are always listed the same way round.
+    expect(harnessesReadingProjectSkillRoot(CANONICAL_SKILLS_DIR)).toEqual([
+      'codex',
+      'cursor',
+      'gemini',
+      'copilot',
+      'opencode',
+    ]);
+    // Not a guess and not a throw: a root no page names has no readers, which is
+    // what makes "we scan no folder a vendor does not document" checkable.
+    expect(harnessesReadingProjectSkillRoot('.zed/skills')).toEqual([]);
   });
 });

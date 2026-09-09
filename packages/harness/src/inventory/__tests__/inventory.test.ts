@@ -11,6 +11,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { inventorySourceTree } from '../index.js';
+import { HARNESS_NATIVE_SKILL_ROOTS } from '../types.js';
 import {
   GENERATED_COMMAND_MARKER,
   MANAGED_HOOK_SENTINEL_KEY,
@@ -248,6 +249,135 @@ describe('inventorySourceTree', () => {
     // The one with no declared name is still a file Claude Code reads, so it is
     // inventoried under its stem — and reported, because its identity is a guess.
     expect(unreadable.map((u) => u.source)).toEqual(['.claude/agents/nameless.md']);
+  });
+
+  it.each(HARNESS_NATIVE_SKILL_ROOTS)(
+    'XA-06: counts a skill in %s, the folder another agent tool reads',
+    (root) => {
+      repo = mkdtempSync(join(tmpdir(), 'harness-inv-native-'));
+      stageSkill(repo, `${root}/review-pr`);
+
+      const { skills, unreadable } = inventorySourceTree(repo);
+      expect(skills).toEqual([
+        {
+          kind: 'skill',
+          name: 'review-pr',
+          source: `${root}/review-pr`,
+          provenance: 'authored',
+          isSymlink: false,
+          root,
+          frontmatterName: 'review-pr',
+        },
+      ]);
+      expect(unreadable).toEqual([]);
+    }
+  );
+
+  it('XA-06: walks no skills folder the vendor table does not document', () => {
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-unknown-root-'));
+    // One root the table DOES document, so the assertion below is about the
+    // other two rather than about a walk that found nothing at all.
+    stageSkill(repo, '.opencode/skills/review-pr');
+    stageSkill(repo, '.zed/skills/review-pr');
+    stageSkill(repo, '.windsurf/skills/review-pr');
+
+    const { skills } = inventorySourceTree(repo);
+    expect(skills.map((skill) => skill.source)).toEqual(['.opencode/skills/review-pr']);
+  });
+
+  it('XA-06: says nothing about a harness-native root that is not there, and names one it cannot list', () => {
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-native-broken-'));
+    // Absent: `.cursor/skills` and the rest of them. Present and unusable: a
+    // FILE where `.opencode/skills` belongs, which is what a person gets for
+    // typing `> .opencode/skills` once.
+    writeFileAt(join(repo, '.opencode', 'skills'), 'not a directory\n');
+    stageSkill(repo, '.gemini/skills/ship');
+
+    const { skills, unreadable } = inventorySourceTree(repo);
+    expect(skills.map((skill) => skill.source)).toEqual(['.gemini/skills/ship']);
+    expect(unreadable.map((entry) => ({ kind: entry.kind, source: entry.source }))).toEqual([
+      { kind: 'skill', source: '.opencode/skills' },
+    ]);
+    expect(unreadable[0]?.reason).toContain('.opencode/skills could not be listed as a directory');
+  });
+
+  it('XA-07: counts the servers in another tool’s MCP config and records no name and no value', () => {
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-foreign-mcp-'));
+    writeJsonAt(join(repo, 'opencode.json'), {
+      $schema: 'https://opencode.ai/config.json',
+      theme: 'system',
+      mcp: {
+        linear: { type: 'local', command: ['npx', 'linear-mcp'] },
+        resend: {
+          type: 'local',
+          command: ['npx', 'resend-mcp'],
+          environment: { RESEND_API_KEY: 're_TOPSECRET' },
+        },
+      },
+    });
+    writeJsonAt(join(repo, '.cursor', 'mcp.json'), {
+      mcpServers: { shadcn: { command: 'npx', env: { CURSOR_TOKEN: 'ct_TOPSECRET' } } },
+    });
+    // A server split over a table and a sub-table is ONE server: taking the name
+    // up to its first dot is what makes `[mcp_servers.linear.env]` not a second.
+    writeFileAt(
+      join(repo, '.codex', 'config.toml'),
+      '[mcp_servers.linear]\ncommand = "npx"\n\n[mcp_servers.linear.env]\nLINEAR_API_KEY = "lin_TOPSECRET"\n\n[mcp_servers.shadcn]\ncommand = "npx"\n'
+    );
+
+    const { foreignMcpConfigs, mcpServers, unreadable } = inventorySourceTree(repo);
+    expect(foreignMcpConfigs).toEqual([
+      { source: '.codex/config.toml', serverCount: 2 },
+      { source: '.cursor/mcp.json', serverCount: 1 },
+      { source: 'opencode.json', serverCount: 2 },
+    ]);
+    // Not `.mcp.json`, which this tree does not have — a foreign config is never
+    // mistaken for the one file the engine reads.
+    expect(mcpServers).toEqual([]);
+    expect(unreadable).toEqual([]);
+    // Not one name and not one value reaches the record. The keys are as
+    // sensitive as the values here: `RESEND_API_KEY` names what the file holds.
+    const recorded = JSON.stringify(foreignMcpConfigs);
+    for (const secret of ['TOPSECRET', 'RESEND_API_KEY', 'LINEAR_API_KEY', 'linear', 'shadcn']) {
+      expect(recorded).not.toContain(secret);
+    }
+  });
+
+  it('XA-07: stays silent about another tool’s config that declares no MCP servers at all', () => {
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-foreign-quiet-'));
+    writeJsonAt(join(repo, 'opencode.json'), { $schema: 'x', theme: 'system' });
+    writeFileAt(join(repo, '.codex', 'config.toml'), 'model = "gpt-5"\n');
+
+    const { foreignMcpConfigs, unreadable } = inventorySourceTree(repo);
+    expect({ foreignMcpConfigs, unreadable }).toEqual({ foreignMcpConfigs: [], unreadable: [] });
+  });
+
+  it('XA-07: reports another tool’s MCP config that will not parse, and quotes none of it', () => {
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-foreign-broken-'));
+    // An UNQUOTED value, deliberately: that is the failure shape whose V8 message
+    // quotes the surrounding text back — `Unexpected token 'r', ..." { "key":
+    // re_TOPSECR"... is not valid JSON` — so the "quotes none of it" assertion
+    // below has something real to catch.
+    writeFileAt(join(repo, 'opencode.json'), '{ "mcp": { "resend": { "key": re_TOPSECRET } } }');
+    writeJsonAt(join(repo, '.cursor', 'mcp.json'), { mcpServers: ['not', 'an', 'object'] });
+
+    const { foreignMcpConfigs, unreadable } = inventorySourceTree(repo);
+    expect(foreignMcpConfigs).toEqual([]);
+    expect(unreadable).toEqual([
+      {
+        kind: 'mcp',
+        source: '.cursor/mcp.json',
+        reason:
+          '.cursor/mcp.json has a "mcpServers" key that is not an object, so DorkOS could not count the MCP servers in it — Cursor keeps MCP servers here (vendor docs, 2026-09-07)',
+      },
+      {
+        kind: 'mcp',
+        source: 'opencode.json',
+        reason:
+          'opencode.json is not valid JSON, so DorkOS could not read what it declares — OpenCode keeps MCP servers here, under "mcp" (vendor docs, 2026-09-07)',
+      },
+    ]);
+    expect(JSON.stringify(unreadable)).not.toContain('TOPSECRET');
   });
 
   it('XA-03: records MCP server names and never a value, because an env block holds secrets', () => {

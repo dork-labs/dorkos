@@ -49,7 +49,7 @@
  *
  * @module vendor-facts
  */
-import type { HarnessId } from '../manifest/schema.js';
+import { HARNESS_IDS, type HarnessId } from '../manifest/schema.js';
 import type { HarnessFacts } from './types.js';
 
 export * from './types.js';
@@ -324,4 +324,44 @@ export function skillsFactsFor(harness: HarnessId): HarnessFacts['skills'] {
  */
 export function hooksFactsFor(harness: HarnessId): HarnessFacts['hooks'] {
   return HARNESS_VENDOR_FACTS[harness].hooks;
+}
+
+/**
+ * Every project-level skills root the table above names, and which harnesses
+ * document reading it.
+ *
+ * Derived from {@link HARNESS_VENDOR_FACTS} at load rather than written out a
+ * second time, so a root can never be scanned, or described, on the strength of
+ * a sentence somebody typed here: if the table does not carry the cell, the root
+ * is not in this map and nothing downstream knows about it. That is the rule
+ * `inventory/types.ts` states for the harness-native roots it walks — a root with
+ * no vendor fact is not scanned — and this is where it is enforced.
+ *
+ * Keyed by the repo-relative root, valued by the harnesses in
+ * {@link HARNESS_IDS} order so two readers of one root are always listed the
+ * same way round.
+ */
+export const PROJECT_SKILL_ROOT_READERS: ReadonlyMap<string, readonly HarnessId[]> = (() => {
+  const readers = new Map<string, HarnessId[]>();
+  for (const harness of HARNESS_IDS) {
+    for (const root of HARNESS_VENDOR_FACTS[harness].skills.readPaths.project) {
+      readers.set(root, [...(readers.get(root) ?? []), harness]);
+    }
+  }
+  return readers;
+})();
+
+/**
+ * The harnesses whose own documentation says they read one project-level skills
+ * root.
+ *
+ * Empty for a root no vendor page names, which is an answer and not a gap: it is
+ * what makes "we do not scan a directory no vendor documents" checkable from
+ * outside.
+ *
+ * @param root - the repo-relative skills root to look up.
+ * @returns the harnesses documented as reading it, in {@link HARNESS_IDS} order.
+ */
+export function harnessesReadingProjectSkillRoot(root: string): readonly HarnessId[] {
+  return PROJECT_SKILL_ROOT_READERS.get(root) ?? [];
 }

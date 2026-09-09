@@ -53,7 +53,11 @@ import {
   CLAUDE_SKILLS_DIR,
 } from './installed-projector.js';
 import { planUnreadableHookWarnings } from './unreadable-hooks.js';
-import { planInventoriedArtifacts, planInventoryWarnings } from './source-artifacts.js';
+import {
+  planForeignMcpDrops,
+  planInventoriedArtifacts,
+  planInventoryWarnings,
+} from './source-artifacts.js';
 import { commandDropReason } from './command-formats.js';
 import { inventorySourceTree, type SourceInventory } from '../inventory/index.js';
 
@@ -633,6 +637,12 @@ export function buildPlan(input: {
       harnesses: manifest.harnesses,
     })
   );
+
+  // An MCP config belonging to another agent tool — `opencode.json`,
+  // `.codex/config.toml`, `.cursor/mcp.json`. One drop per file, emitted once
+  // rather than per harness, because `.mcp.json` is the only MCP file the engine
+  // reads whoever is running (DOR-1902).
+  all.push(...planForeignMcpDrops(inventory));
 
   // Harness-agnostic installed-plugin drops (emitted once, not per harness).
   for (const plugin of projectable) all.push(...dropNonPortableLayers(plugin));

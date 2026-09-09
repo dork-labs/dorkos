@@ -8,7 +8,7 @@
  *
  * The contract's J-03 row (`meta/harness-sync-capabilities.md` §12) makes three
  * claims about that tree, and this journey measures all three as exact tree
- * diffs. Two of them hold today and one does not:
+ * diffs. All three hold:
  *
  * - **Commands are safe.** Ownership of a file under `.opencode/commands` is a
  *   MARKER in the file, never the directory it sits in, so a person's own
@@ -18,12 +18,14 @@
  *   first sync writes is `.claude/CLAUDE.md` pointing at their `AGENTS.md`, so a
  *   DorkOS-managed Claude Code session reads the instructions they already have
  *   (IN-01).
- * - **It is silent about two kinds.** `.opencode/skills/*` and `opencode.json`
- *   reach no action, no drop and no warning — the row's own words, still true.
- *   The last `it` in this file pins that silence rather than asserting the
- *   contract's expectation, because a red suite is not a way to record a gap:
- *   when the inventory learns those two roots, that test fails and its
- *   replacement is the positive assertion the row describes.
+ * - **The two kinds this team actually has are named.** `.opencode/skills/*` is
+ *   read where it sits by OpenCode and an honest drop for Claude Code, naming the
+ *   folder they really use; `opencode.json`'s MCP servers are one project-level
+ *   drop saying how many there are and that DorkOS carries MCP servers from
+ *   `.mcp.json` only. The last `it` in this file used to PIN the opposite as a
+ *   negative — both reaching no list at all, because the inventory's roots were
+ *   Claude-shaped — and DOR-1902 turned it into the positive assertion the row
+ *   describes, with an exact tree diff proving that reporting both wrote nothing.
  *
  * The first `it` used to pin a FOURTH finding as a negative: detection enables
  * the harnesses whose files are on disk, and this tree has none of Claude
@@ -36,11 +38,11 @@
  * That test is now the POSITIVE assertion the row describes.
  *
  * Rows: J-03, IN-01 (the instruction pointer), CM-03 (repo-local command
- * wrappers), AP-07 (the sweep only ever deletes what it wrote). The two
- * silences get no row id on purpose: SK-13 is about a symlinked or `__`-named
- * source and XA-03 about `.mcp.json`, and neither is what a harness-native
- * skills root nobody reads or an `opencode.json` `mcp` block is. §8 is where a
- * row for them would go.
+ * wrappers), AP-07 (the sweep only ever deletes what it wrote), and XA-06 /
+ * XA-07 for the two kinds that used to be silent. Those two needed §8 rows of
+ * their own rather than an existing id: SK-13 is about a symlinked or `__`-named
+ * source and XA-03 about `.mcp.json`, and neither is what another tool's own
+ * skills folder or an `opencode.json` `mcp` block is.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync, rmSync } from 'node:fs';
@@ -267,36 +269,65 @@ describe('J-03 — an OpenCode project adopts DorkOS', () => {
     expect(readText(join(repo.root, AUTHORED_COMMAND))).toBe(authored);
   });
 
-  it('J-03: pins the two kinds this journey is still silent about', () => {
-    // THE GAP, PINNED. The contract's J-03 row says `.opencode/skills/*` should be
-    // reported adoptable and `opencode.json` should be reported rather than
-    // clobbered; the inventory walks `.agents/skills` and `.claude/skills` only
-    // (`inventory/types.ts` `SkillRoot`) and reads MCP servers out of `.mcp.json`
-    // only, so both are absent from every list the report prints.
-    //
-    // This asserts the silence rather than the expectation on purpose: the fix is
-    // an inventory change, not a test change, and a suite that ships red records
-    // nothing. When that fix lands this test goes red — replace it with the
-    // positive assertion the row describes, which is the whole point of it being
-    // here.
+  it('J-03, XA-06, XA-07: the two kinds this team actually has are named, and reporting them writes nothing', () => {
+    // THE GAP, CLOSED (DOR-1902). This case used to PIN the silence as a negative
+    // — `.opencode/skills/*` and `opencode.json` reaching no action, no drop and
+    // no warning, because the inventory walked `.agents/skills` and
+    // `.claude/skills` only and read MCP servers out of `.mcp.json` only. It is
+    // now the positive assertion the contract's J-03 row describes.
     const repo = stageOpenCodeRepo({ manifest: { harnesses: ['claude-code', 'opencode'] } });
+    const before = snapshotTree(repo.root);
     const p = plan(repo);
 
-    // Zero-subject guard: the plan does say something about this tree, so
-    // "nothing about these two" is a statement about them and not about a plan
-    // that came back empty.
+    // Zero-subject guard: the plan does say something about the rest of this tree
+    // too, so what follows is a statement about these two and not about a plan
+    // that came back full of everything.
     expect(linesAbout(p, 'AGENTS.md')).toEqual([
       'native instruction AGENTS.md',
       'scaffold instruction AGENTS.md',
     ]);
 
+    // Their two skills: read where they are by the tool that reads that folder,
+    // and an honest drop for the one that does not — with the folder they are
+    // actually in named, not `.claude/skills`.
     for (const skill of OPENCODE_SKILLS) {
-      expect(linesAbout(p, `.opencode/skills/${skill}`)).toEqual([]);
+      expect(linesAbout(p, `.opencode/skills/${skill}`)).toEqual([
+        `drop skill ${skill}`,
+        `native skill ${skill}`,
+      ]);
     }
-    expect(linesAbout(p, 'opencode.json')).toEqual([]);
-    // …and nothing names either root by any other route, either.
-    const everything = JSON.stringify([p.actions, p.drops, p.warnings]);
-    expect(everything).not.toContain('.opencode/skills');
-    expect(everything).not.toContain('opencode.json');
+    const reasons = [...p.actions, ...p.drops]
+      .filter((a) => a.source === '.opencode/skills/review-pr')
+      .map((a) => `${a.harness}: ${a.reason ?? ''}`)
+      .sort();
+    expect(reasons).toEqual([
+      'claude-code: kept in .opencode/skills, where OpenCode looks and Claude Code does not (vendor docs, 2026-09-07) — move it to .agents/skills to share it',
+      'opencode: OpenCode reads .opencode/skills directly (vendor docs, 2026-09-07)',
+    ]);
+
+    // Their MCP server: one project-level drop naming the file and the count,
+    // never the server and never a value.
+    expect(linesAbout(p, 'opencode.json')).toEqual(['drop mcp opencode.json']);
+    expect(p.drops.find((d) => d.source === 'opencode.json')).toEqual({
+      kind: 'drop',
+      artifact: 'mcp',
+      harness: 'claude-code',
+      harnessAgnostic: true,
+      provenance: 'authored',
+      name: 'opencode.json',
+      source: 'opencode.json',
+      reason:
+        'opencode.json declares 1 MCP server. DorkOS carries MCP servers from .mcp.json only, so the other tools do not get these.',
+    });
+    expect(JSON.stringify([p.actions, p.drops, p.warnings])).not.toContain('linear');
+
+    // And saying all of that changed nothing on disk: adopt is report-only (§16
+    // D3) and no MCP server is projected anywhere yet (XA-03). The only thing a
+    // `--fix` writes here is still the pointer, which the case above measures.
+    expect(diffSnapshots(before, snapshotTree(repo.root))).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
   });
 });
