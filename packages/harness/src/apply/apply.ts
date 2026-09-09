@@ -41,15 +41,7 @@
  *
  * @module apply/apply
  */
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  symlinkSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import type { DriftResult, ProjectionAction, ProjectionPlan, SweptPath } from '../plan/types.js';
 import { explainSweep } from './sweep-reasons.js';
@@ -79,6 +71,7 @@ import {
   sweepGeneratedOrphans,
 } from './generated-targets.js';
 import { blockingGenerateOccupant } from './generate-occupants.js';
+import { findBlockedWritePaths, findUnwritableTargets } from './write-path-occupants.js';
 import {
   CLAUDE_COMMANDS_DIR,
   CLAUDE_SKILLS_DIR,
@@ -95,6 +88,36 @@ import {
 
 /** Skill projection dirs an installed-orphan sweep must scan (Codex + Claude Code). */
 const INSTALLED_SKILL_DIRS = [AGENTS_SKILLS_DIR, CLAUDE_SKILLS_DIR] as const;
+
+/**
+ * Whether any skill SOURCE folder was unreadable when this plan was built — the
+ * one condition under which both skill-link sweeps stand down.
+ *
+ * The sweeps read the plan as their keep-set: a link the plan does not name is
+ * an orphan. That inference holds only while the plan is a complete answer, and
+ * a folder nobody could list yields the same empty result an empty folder does.
+ * So `chmod 000 .agents/skills` made every authored projection look orphaned and
+ * `applyPlan` deleted `.claude/skills/*`; an unreadable package `skills/` took
+ * all four of that package's links the same way. Both measured on the built dist
+ * (DOR-1882), and both silent — the crash they replaced at least removed nothing.
+ *
+ * ONE flag suppresses BOTH sweeps, rather than matching each unreadable folder
+ * to the links it would have named. The authored root and a package's `skills/`
+ * feed one keep-set, the cost of over-suppressing is a dead link left lying
+ * about until the folder is readable again, and the cost of under-suppressing is
+ * somebody's projections deleted. A rule that cannot be got subtly wrong is
+ * worth more here than a tidier tree.
+ *
+ * The other four sweeps are untouched: none of them reads a skill source. The
+ * generated-hook and command-wrapper sweeps own their targets by marker or
+ * sidecar, and the settings sweep by sentinel.
+ *
+ * @param plan - the plan whose keep-set is in question.
+ * @returns `true` when at least one skill root could not be listed.
+ */
+function skillSourcesUnreadable(plan: ProjectionPlan): boolean {
+  return (plan.unreadableSkillRoots?.length ?? 0) > 0;
+}
 
 /**
  * How this platform decides whether a link on disk is the link the plan wants.
@@ -234,19 +257,38 @@ function applyScaffold(repoRoot: string, action: ProjectionAction): void {
 }
 
 /**
- * (Re)write a generated target deterministically.
+ * Realize a generated target deterministically, writing only on a difference.
  *
- * Two gates, in order. The target's SHAPE decides whether a write may happen at
+ * Three gates, in order. The target's SHAPE decides whether a write may happen at
  * this path at all — a directory or a live symlink is refused whoever owns it,
- * because the bytes would not land here. Only then does ownership decide: command
- * wrappers are wholly the engine's (their marker is the predicate, and the caller
- * has already checked it), so they are simply rewritten, while the per-harness
- * hooks files are not the engine's by path and go through
- * {@link applyGeneratedHookFile} and its sidecar rules instead.
+ * because the bytes would not land here. Then ownership: command wrappers are
+ * wholly the engine's (their marker is the predicate, and the caller has already
+ * checked it), while the per-harness hooks files are not the engine's by path and
+ * go through {@link applyGeneratedHookFile} and its sidecar rules instead. Last,
+ * the BYTES: a wrapper already holding exactly what the plan says is realized,
+ * and this returns without touching it.
+ *
+ * **That last gate is load-bearing, and it was missing.** This function used to
+ * rewrite every wrapper on every sync, which made `isDrifted` — the predicate
+ * both modes use to decide which actions are "about to write", and so which
+ * folders to ask about permission — a claim about the wrong set. A fully synced
+ * repository with `chmod 0555` on one wrapper directory therefore had `--check`
+ * report NO DRIFT and exit 0, while the `--fix` beside it died with EACCES out
+ * of `writeFileAtomic` (measured on the built dist, DOR-1882 re-review). Worse,
+ * the file it died on was the one the plan had nothing to change about: the
+ * self-ignoring `.gitignore`, byte-correct and never probed, thrown on before
+ * the six sweeps ran and with a staged orphan still on disk.
+ *
+ * The hooks-file branch has always worked this way ({@link generatedHookOutcome}
+ * answers `unchanged`), and for the second reason too: these paths are watched,
+ * and a write that changes nothing is still a change event for whoever is
+ * watching. Command wrappers now match.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param action - the `generate` action to realize.
- * @returns `undefined` when the target now matches the plan; the reason to report
+ * @returns `undefined` when the target now matches the plan — whether this call
+ *   wrote it or found it already right, which is what `applied` has always meant
+ *   for a link that already pointed where the plan said; the reason to report
  *   when something the engine may not write over occupies it — a conflict, left
  *   untouched.
  */
@@ -268,6 +310,10 @@ function applyGenerate(repoRoot: string, action: ProjectionAction): string | und
       ? undefined
       : HAND_WRITTEN_HOOKS_REASON;
   }
+  // Already exactly these bytes: realized, and nothing to do. Never a direct
+  // read — absent, an unreadable file and a dead link all answer `undefined`
+  // here rather than throwing, and every one of them is a write.
+  if (readFileIfPresent(absTarget) === content) return undefined;
   writeFileAtomic(absTarget, content);
   return undefined;
 }
@@ -314,6 +360,9 @@ function applyMerge(repoRoot: string, action: ProjectionAction): boolean {
  * @returns the repo-relative paths a sweep would remove.
  */
 export function findInstalledOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  // A plan built over a skill folder nobody could read is not evidence of what
+  // is installed — see `skillSourcesUnreadable`.
+  if (skillSourcesUnreadable(plan)) return [];
   const managed = new Set(
     plan.actions.filter((a) => a.kind === 'symlink' && a.target).map((a) => a.target as string)
   );
@@ -534,9 +583,14 @@ function findBlockedWrapperDirs(repoRoot: string, plan: ProjectionPlan): Set<str
 
   const blocked = new Set<string>();
   for (const relDir of wrapperDirs) {
+    // `listDir`, never `existsSync` + `readdirSync`: a wrapper path that is a
+    // FILE or one nobody may read said "yes, something is here" to the guard and
+    // then threw ENOTDIR/EACCES out of the middle of the apply — before a single
+    // action had run, so not one projection landed (DOR-1882). Nothing listable
+    // holds no foreign content; the write path pre-pass has already blocked that
+    // package's wrappers with a reason naming the folder.
     const abs = join(repoRoot, relDir);
-    if (!existsSync(abs)) continue; // fresh dir: the engine will own it
-    const hasForeignContent = readdirSync(abs).some((entry) => isForeign(join(abs, entry), entry));
+    const hasForeignContent = listDir(abs).some((entry) => isForeign(join(abs, entry), entry));
     if (hasForeignContent) blocked.add(relDir);
   }
   return blocked;
@@ -715,10 +769,38 @@ export function applyPlan(
 
   const applied: ProjectionAction[] = [];
   const conflicts: ProjectionAction[] = [];
+  // FIRST, and pure: which actions cannot reach their target because a folder on
+  // the way is a file, an unfollowable link, or unreadable. Computed over the
+  // whole plan before anything is written, so a hostile folder costs exactly the
+  // projections that go through it rather than everything after it in the loop —
+  // the difference between a blocked projection and a half-applied tree with the
+  // six sweeps never reached (`write-path-occupants.ts`, DOR-1882).
+  const blockedWritePaths = findBlockedWritePaths(repoRoot, plan);
+  // And the permission half, asked only of the actions that are really about to
+  // write — `isDrifted` is what "really about to write" means, and `checkPlan`
+  // scopes it with the same predicate so the two modes name the same paths.
+  const unwritableTargets = findUnwritableTargets(
+    repoRoot,
+    plan.actions.filter(
+      (action) =>
+        !(action.target !== undefined && blockedWritePaths.has(action.target)) &&
+        isDrifted(repoRoot, action)
+    )
+  );
   const blockedWrapperDirs = findBlockedWrapperDirs(repoRoot, plan);
   const blockedOpencodeCommandFiles = findBlockedOpencodeCommandFiles(repoRoot, plan);
 
   for (const action of plan.actions) {
+    // Whatever the kind, a write that cannot reach its path is a conflict with
+    // the way out beside it, never an exception out of the middle of the loop.
+    const writePathReason =
+      action.target === undefined
+        ? undefined
+        : (blockedWritePaths.get(action.target) ?? unwritableTargets.get(action.target));
+    if (writePathReason !== undefined) {
+      conflicts.push({ ...action, reason: writePathReason });
+      continue;
+    }
     switch (action.kind) {
       case 'symlink': {
         const blockedReason = applySymlink(repoRoot, action);
@@ -929,10 +1011,35 @@ function findOrphans(repoRoot: string, plan: ProjectionPlan): SweptPath[] {
  *   whether the tree is clean.
  */
 export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
-  const drifted = plan.actions.filter((action) => isDrifted(repoRoot, action));
+  // The same pure pass `applyPlan` acts on, so `--check` names a hostile folder
+  // BEFORE anyone runs the write that used to die on it (DOR-1882). It wins over
+  // the target's own shape: `.claude/commands` being a file is why nothing is at
+  // `.claude/commands/acme/hello.md`, and naming the consequence instead of the
+  // cause would send a person to look at a path that is not the problem.
+  const blockedWritePaths = findBlockedWritePaths(repoRoot, plan);
+  const onBlockedPath = (action: ProjectionAction): boolean =>
+    action.target !== undefined && blockedWritePaths.has(action.target);
+
+  // Drift is asked once and used twice: it is the answer, and it is also what
+  // scopes the permission probe — a projection already on disk is one nothing
+  // writes to, so its folder's mode is nobody's business (`unwritableWritePath`).
+  const wouldWrite = plan.actions.filter(
+    (action) => !onBlockedPath(action) && isDrifted(repoRoot, action)
+  );
+  const unwritableTargets = findUnwritableTargets(repoRoot, wouldWrite);
+  const drifted = wouldWrite.filter(
+    (action) => !(action.target !== undefined && unwritableTargets.has(action.target))
+  );
   const blocked = [
-    ...findBlockedGenerateTargets(repoRoot, plan),
-    ...findBlockedSymlinkTargets(repoRoot, plan),
+    ...plan.actions.flatMap((action) => {
+      const reason =
+        action.target === undefined
+          ? undefined
+          : (blockedWritePaths.get(action.target) ?? unwritableTargets.get(action.target));
+      return reason === undefined ? [] : [{ ...action, reason }];
+    }),
+    ...findBlockedGenerateTargets(repoRoot, plan).filter((a) => !onBlockedPath(a)),
+    ...findBlockedSymlinkTargets(repoRoot, plan).filter((a) => !onBlockedPath(a)),
   ];
   const removals = plan.narrowedTo === undefined ? findOrphans(repoRoot, plan) : [];
   return {
@@ -941,6 +1048,15 @@ export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
     orphans: removals.map(({ path }) => path),
     removals,
     leftAlone: findLeftAloneGeneratedHookFiles(repoRoot, plan),
-    clean: drifted.length === 0 && blocked.length === 0 && removals.length === 0,
+    // A skill folder nobody could read is the fourth way this answer is not
+    // "everything is as the plan says": the sweeps stood down over it, so the
+    // tree may hold links a readable folder would have settled either way, and
+    // saying `clean` over that is the same lie as saying it over nine files a
+    // sync would delete (DOR-1882).
+    clean:
+      drifted.length === 0 &&
+      blocked.length === 0 &&
+      removals.length === 0 &&
+      !skillSourcesUnreadable(plan),
   };
 }

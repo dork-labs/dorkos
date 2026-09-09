@@ -7,9 +7,10 @@
  * of it: a file somebody wrote by hand at a generated hook
  * target, a real directory at a skill link target, a widowed ownership sidecar,
  * a **dead symlink** at one of the three kinds of target the engine writes (a
- * `generate` target, a `scaffold` target, a `symlink` target), and a **person's
+ * `generate` target, a `scaffold` target, a `symlink` target), a **person's
  * own dead link** under `.claude/skills` pointing at a vendored checkout that
- * moved — the shape the orphan sweep must never take, however dead it is. Each
+ * moved — the shape the orphan sweep must never take, however dead it is — and a
+ * plain **file where a FOLDER on a write path belongs**, at any depth. Each
  * generated repo is materialised into a real temp dir; nothing here is mocked.
  *
  * It lives in its own module because more than one property file reads it:
@@ -39,11 +40,19 @@
  * behind it throws — so a generator that only ever staged directories could not
  * fail the property that says `checkPlan` never throws.
  *
+ * P3b is why {@link RepoSpec.hostile} exists, and why those two command-directory
+ * shapes now reach a plan that WRITES into them. Until DOR-1882 they were
+ * downgraded first: a wrapper generated into a hostile command directory raised
+ * ENOTDIR, EEXIST or EACCES out of `applyPlan`, which would have redded P2, P3,
+ * P4 and P2c for a reason none of them names. A folder in the way is a `blocked`
+ * conflict now, so the narrowing is gone and a file may be staged at any depth of
+ * any write path.
+ *
  * @module __tests__/properties/arb-repo
  */
 import fc from 'fast-check';
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { HARNESS_IDS, type HarnessId } from '../../manifest/schema.js';
@@ -244,6 +253,25 @@ export interface RepoSpec {
    */
   personLink: boolean;
   /**
+   * Which folder to put a plain FILE at, as an index into the candidates this
+   * spec makes interesting ({@link hostileCandidates}) — or `null` for none.
+   *
+   * A number rather than a path, because the useful candidates depend on the
+   * REST of the spec: a wrapper directory is only a write path when a plugin
+   * ships a command, and a hooks folder only when something declares a hook.
+   * Picking a path outright meant seven repos in forty staged a file and just
+   * ONE projection was ever blocked by it — the arbitrary kept landing on
+   * `.cursor` and `.gemini`, where a generated repo plans nothing (measured; the
+   * floor in P3b was satisfied by that single case). An index resolved against a
+   * spec-derived list keeps the shrinker something to shrink and puts the file
+   * where the plan is actually going to write.
+   *
+   * Staged last and only where nothing else is, so it never contradicts the rest
+   * of the spec — {@link MaterialisedRepo.hostile} says which folder really got
+   * one, and the properties assert about that.
+   */
+  hostile: number | null;
+  /**
    * The repo's root `.gitignore`, as a subset of the patterns the engine
    * declares — or `null` for a directory that is not a git checkout at all.
    *
@@ -334,6 +362,65 @@ const CLAUDE_SKILL_FRONTMATTER: Record<(typeof CLAUDE_SKILL_DIRS)[number], strin
   nameless: null,
 };
 
+/**
+ * The folders a generated repo may find a plain FILE at, one per generated case.
+ *
+ * Every one of them is a directory some action's write must pass through, and
+ * they are chosen to cover **every depth** of one: the harness's own top folder,
+ * the collection inside it, and the per-package folder inside that. Before
+ * DOR-1882 a file at any of them raised ENOTDIR, EEXIST or EACCES out of the
+ * middle of `applyPlan` — so the three command-directory shapes were deliberately
+ * downgraded before they reached a plan that WROTE into them, and this list
+ * could not exist at all. It is the same claim from the other side: a folder in
+ * the way is a `blocked` conflict, so staging one may cost the projections that
+ * go through it and nothing else.
+ *
+ * A file is the shape, rather than a mode-000 directory, because the command
+ * directories already generate the unreadable one ({@link CommandDirState}) and
+ * a file is the one every platform can stage.
+ */
+/** The bytes a staged file-in-the-way holds, so a property can prove it survived. */
+export const HOSTILE_FILE_BYTES = 'not a folder\n';
+
+/**
+ * The folders this spec's plan will really write into, most specific first,
+ * followed by every folder in {@link HOSTILE_WRITE_PATHS} so the depth coverage
+ * that list documents stays reachable.
+ *
+ * Order is the whole mechanism: {@link materialise} walks it and stages the file
+ * at the first candidate the tree has left free, so a repo that ships a command
+ * gets its wrapper directory broken rather than an empty `.gemini`.
+ *
+ * @param spec - the generated repository, before it is written.
+ * @returns candidate folders, best first.
+ */
+function hostileCandidates(spec: RepoSpec): string[] {
+  const withCommands = spec.plugins.filter((plugin) => plugin.commands > 0);
+  const anySkills = spec.skills.length > 0 || spec.plugins.some((p) => p.skills.length > 0);
+  const anyHooks = spec.authoredHooks || spec.plugins.some((p) => p.hooks);
+  return [
+    ...withCommands.map((plugin) => `.claude/commands/${plugin.name}`),
+    ...(withCommands.length > 0 ? ['.claude/commands', '.opencode/commands', '.opencode'] : []),
+    ...(anySkills ? ['.claude/skills', '.agents/skills'] : []),
+    ...(anyHooks ? ['.codex', '.cursor', '.github/hooks'] : []),
+    ...HOSTILE_WRITE_PATHS,
+  ];
+}
+
+const HOSTILE_WRITE_PATHS = [
+  '.claude',
+  '.claude/skills',
+  '.claude/commands',
+  '.claude/commands/acme',
+  '.agents/skills',
+  '.codex',
+  '.cursor',
+  '.github/hooks',
+  '.gemini',
+  '.opencode',
+  '.opencode/commands',
+] as const;
+
 /** A skill a person keeps outside the canonical layer and links where Claude Code reads. */
 const PERSON_SKILL_SOURCE = 'vendor/skills/mine';
 /** The link into `.claude/skills` that reaches {@link PERSON_SKILL_SOURCE}. */
@@ -345,89 +432,53 @@ export const PERSON_SKILL_LINK = '.claude/skills/mine';
  * @returns an arbitrary over {@link RepoSpec}.
  */
 export function arbRepo(): fc.Arbitrary<RepoSpec> {
-  return fc
-    .record({
-      skills: fc.uniqueArray(fc.constantFrom(...SKILL_NAMES), { maxLength: 4 }),
-      plugins: fc.uniqueArray(
-        fc.record({
-          name: fc.constantFrom('acme', 'flow'),
-          skills: fc.uniqueArray(fc.constantFrom(...SKILL_NAMES), { maxLength: 2 }),
-          hooks: fc.boolean(),
-          commands: fc.integer({ min: 0, max: 1 }),
-        }),
-        { maxLength: 2, selector: (p) => p.name }
-      ),
-      authoredHooks: fc.boolean(),
-      agentsMd: fc.boolean(),
-      claudeCommands: fc.constantFrom<CommandDirState>(...COMMAND_DIR_STATES),
-      opencodeCommands: fc.constantFrom<CommandDirState>(...COMMAND_DIR_STATES),
-      rules: fc.uniqueArray(
-        fc.record({ name: fc.constantFrom(...RULE_NAMES), paths: fc.boolean() }),
-        { maxLength: 3, selector: (r) => r.name }
-      ),
-      agents: fc.uniqueArray(fc.constantFrom(...AGENT_NAMES), { maxLength: 3 }),
-      mcpServers: fc.option(fc.uniqueArray(fc.constantFrom(...MCP_NAMES), { maxLength: 2 }), {
-        nil: null,
+  return fc.record({
+    skills: fc.uniqueArray(fc.constantFrom(...SKILL_NAMES), { maxLength: 4 }),
+    plugins: fc.uniqueArray(
+      fc.record({
+        name: fc.constantFrom('acme', 'flow'),
+        skills: fc.uniqueArray(fc.constantFrom(...SKILL_NAMES), { maxLength: 2 }),
+        hooks: fc.boolean(),
+        commands: fc.integer({ min: 0, max: 1 }),
       }),
-      localSettingsHooks: fc.boolean(),
-      skillFrontmatterHooks: fc.boolean(),
-      linkedRulesDir: fc.boolean(),
-      deadAgentLink: fc.boolean(),
-      personSkillLink: fc.boolean(),
-      claudeSkills: fc.uniqueArray(fc.constantFrom(...CLAUDE_SKILL_DIRS), { maxLength: 3 }),
-      harnesses: fc.subarray([...HARNESS_IDS]),
-      occupant: fc.option(
-        fc.record({
-          target: fc.constantFrom(CODEX_HOOKS_TARGET, CURSOR_HOOKS_TARGET, COPILOT_HOOKS_TARGET),
-          sidecar: fc.constantFrom<SidecarState>('none', 'matching', 'stale'),
-          shape: fc.constantFrom<OccupantShape>('vendor', 'bare'),
-        }),
-        { nil: null }
-      ),
-      widowedSidecar: fc.boolean(),
-      dirOccupant: fc.boolean(),
-      dangling: fc.option(fc.constantFrom<DanglingKind>('generate', 'scaffold', 'skill'), {
-        nil: null,
+      { maxLength: 2, selector: (p) => p.name }
+    ),
+    authoredHooks: fc.boolean(),
+    agentsMd: fc.boolean(),
+    claudeCommands: fc.constantFrom<CommandDirState>(...COMMAND_DIR_STATES),
+    opencodeCommands: fc.constantFrom<CommandDirState>(...COMMAND_DIR_STATES),
+    rules: fc.uniqueArray(
+      fc.record({ name: fc.constantFrom(...RULE_NAMES), paths: fc.boolean() }),
+      { maxLength: 3, selector: (r) => r.name }
+    ),
+    agents: fc.uniqueArray(fc.constantFrom(...AGENT_NAMES), { maxLength: 3 }),
+    mcpServers: fc.option(fc.uniqueArray(fc.constantFrom(...MCP_NAMES), { maxLength: 2 }), {
+      nil: null,
+    }),
+    localSettingsHooks: fc.boolean(),
+    skillFrontmatterHooks: fc.boolean(),
+    linkedRulesDir: fc.boolean(),
+    deadAgentLink: fc.boolean(),
+    personSkillLink: fc.boolean(),
+    claudeSkills: fc.uniqueArray(fc.constantFrom(...CLAUDE_SKILL_DIRS), { maxLength: 3 }),
+    harnesses: fc.subarray([...HARNESS_IDS]),
+    occupant: fc.option(
+      fc.record({
+        target: fc.constantFrom(CODEX_HOOKS_TARGET, CURSOR_HOOKS_TARGET, COPILOT_HOOKS_TARGET),
+        sidecar: fc.constantFrom<SidecarState>('none', 'matching', 'stale'),
+        shape: fc.constantFrom<OccupantShape>('vendor', 'bare'),
       }),
-      personLink: fc.boolean(),
-      gitignore: fc.option(fc.subarray([...EPHEMERAL_GITIGNORE_PATTERNS]), { nil: null }),
-    })
-    .map(withListableCommandDirsWhenTheyAreWrittenTo);
-}
-
-/**
- * Keep a hostile command directory out of the one case that is a DIFFERENT bug.
- *
- * A plan that generates a wrapper into `.claude/commands/<pkg>/` or
- * `.opencode/commands/` reaches `writeFileAtomic`, whose `mkdirSync` raises one
- * of three, all measured: **EEXIST** when the flat `.opencode/commands` the
- * wrapper goes straight into is itself a file, **ENOTDIR** when a file is the
- * PARENT of the directory being made (`.claude/commands`, under which `<pkg>/`
- * has to be created), and **EACCES** through a mode-000 directory. That
- * `applyPlan` crash predates the sweeps having `find*` halves and no property
- * here is about it; it is tracked as **DOR-1882**. Staging it would red P2, P3,
- * P4 and P2c for a reason none of them names, which is how a generator stops
- * being evidence.
- *
- * So the hostile shapes are staged only where nothing WRITES into the directory
- * — which is every case the `--check` scans still visit, since those walks run
- * whatever the plan says. **This narrowing expires with DOR-1882:** once a
- * `generate` whose parent is not a writable directory is a `blocked` conflict
- * rather than an exception, delete this function and let the shapes through.
- *
- * @param spec - the generated repository.
- * @returns the same spec, with a hostile command dir downgraded where a wrapper
- *   would be written into it.
- */
-function withListableCommandDirsWhenTheyAreWrittenTo(spec: RepoSpec): RepoSpec {
-  if (!spec.plugins.some((plugin) => plugin.commands > 0)) return spec;
-  const listable = (state: CommandDirState): CommandDirState =>
-    state === 'file' || state === 'unreadable' ? 'empty' : state;
-  return {
-    ...spec,
-    claudeCommands: listable(spec.claudeCommands),
-    opencodeCommands: listable(spec.opencodeCommands),
-  };
+      { nil: null }
+    ),
+    widowedSidecar: fc.boolean(),
+    dirOccupant: fc.boolean(),
+    dangling: fc.option(fc.constantFrom<DanglingKind>('generate', 'scaffold', 'skill'), {
+      nil: null,
+    }),
+    personLink: fc.boolean(),
+    gitignore: fc.option(fc.subarray([...EPHEMERAL_GITIGNORE_PATTERNS]), { nil: null }),
+    hostile: fc.option(fc.nat({ max: 64 }), { nil: null }),
+  });
 }
 
 /**
@@ -489,6 +540,15 @@ export interface MaterialisedRepo {
    * eventually fails for the wrong reason.
    */
   unreadable: string[];
+  /**
+   * The repo-relative folder a plain file was really staged at, when one was.
+   *
+   * `spec.hostile` is what the generator ASKED for; this is what landed. The two
+   * differ whenever something else already occupies the path — most of these
+   * folders are ones an ordinary generated repo also fills — and a property that
+   * read the request would be asserting about a shape that is not there.
+   */
+  hostile?: string;
 }
 
 /**
@@ -712,7 +772,30 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
     dangling = { kind: spec.dangling, path: rel };
   }
 
-  return { repoRoot, dorkHome, occupantAbs, dangling, unreadable };
+  // And the file in the way goes last of all, for the same reason and one more:
+  // most of these folders are ones an ordinary generated repo fills, so it is
+  // staged only where the tree left the path free. What landed is reported, so
+  // no property asserts about a shape that is not there.
+  let hostile: string | undefined;
+  if (spec.hostile !== null) {
+    const candidates = hostileCandidates(spec);
+    // Start at the chosen index and walk on, so a spec whose best candidate the
+    // tree already occupies still gets a file somewhere rather than none.
+    for (let i = 0; i < candidates.length && hostile === undefined; i++) {
+      const rel = candidates[(spec.hostile + i) % candidates.length] as string;
+      if (existsSync(join(repoRoot, rel))) continue;
+      try {
+        writeFileAt(join(repoRoot, rel), HOSTILE_FILE_BYTES);
+        hostile = rel;
+      } catch {
+        // Something ABOVE it is already one of the generator's other hostile
+        // shapes — a file at `.claude/commands` under a candidate
+        // `.claude/commands/acme`, or a mode-000 directory. Try the next one.
+      }
+    }
+  }
+
+  return { repoRoot, dorkHome, occupantAbs, dangling, unreadable, hostile };
 }
 
 /**

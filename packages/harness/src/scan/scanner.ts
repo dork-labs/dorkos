@@ -7,7 +7,7 @@
  *
  * @module scan/scanner
  */
-import { existsSync, readdirSync, statSync, type Dirent } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, statSync, type Dirent } from 'node:fs';
 import { join } from 'node:path';
 
 /** A single authored skill discovered under `.agents/skills`. */
@@ -110,6 +110,103 @@ function resolvesToDirectory(absPath: string, entry: Dirent): boolean {
 }
 
 /**
+ * The entries in a directory, and whether something is there that could not be
+ * read.
+ *
+ * `existsSync` + `readdirSync` was here, and it answers only the commonest of
+ * the three ways there is nothing to scan: a FILE at `.agents/skills` (ENOTDIR)
+ * and one nobody may read (EACCES) both pass the guard and throw on the read —
+ * out of `buildPlan`, so `dorkos harness sync` died before it could report
+ * anything at all, `--check` included (DOR-1882; the same swap `apply/
+ * link-state.ts` made for the sweeps in DOR-1843).
+ *
+ * **The two answers are not interchangeable, and collapsing them was worse than
+ * the crash.** A skills root that cannot be listed holds no skills *as far as
+ * this scan can tell*, and the planner's output is the sweep's only evidence of
+ * what is installed — so an empty listing from a failed read made every live
+ * link that pointed into that folder look orphaned, and one `chmod 000` on
+ * `.agents/skills` deleted `.claude/skills/*` outright. ENOENT is the one errno
+ * that really means nothing is there; every other one is an entry the caller has
+ * to be told about (the same distinction `plan/global-projector.ts` draws with
+ * `unreadableRoot`, for exactly the same reason).
+ *
+ * Written out here rather than imported from `apply/link-state.ts`: the apply
+ * stage already reads this module, and pointing it back would make the two
+ * directories depend on each other.
+ *
+ * @param absDir - the absolute directory to list.
+ * @returns its entries, and whether the listing failed on something that is there.
+ */
+function listEntries(absDir: string): { entries: Dirent[]; unreadable: boolean } {
+  try {
+    return { entries: readdirSync(absDir, { withFileTypes: true }), unreadable: false };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return { entries: [], unreadable: true };
+    // ENOENT has two causes and they are opposite answers. Nothing at all is the
+    // silent one. A LINK POINTING AT NOTHING is not: somebody put that entry
+    // there, the skills it used to reach are still projected, and reading it as
+    // an empty folder is how `.agents/skills -> ../vault/skills` with the vault
+    // moved away deleted every link into it — which it did before any of this
+    // too. `lstat` sees the link where `readdir` cannot follow it.
+    return { entries: [], unreadable: entryIsThere(absDir) };
+  }
+}
+
+/** Whether anything at all occupies a path, a link pointing at nothing included. */
+function entryIsThere(absPath: string): boolean {
+  return lstatSync(absPath, { throwIfNoEntry: false }) !== undefined;
+}
+
+/** What {@link listSkillDirs} found: the skills, and whether the folder was readable. */
+export interface SkillDirListing {
+  /** The skills found, sorted by name. Empty for an absent root and an unreadable one alike. */
+  skills: SkillEntry[];
+  /**
+   * True when something occupies the root and it could not be listed — a file
+   * where the folder belongs, a folder nobody may read, a link to neither.
+   *
+   * **A caller that draws a conclusion from an EMPTY listing must read this
+   * first.** "No skills here" and "nobody could look" are the same array and
+   * opposite facts, and the second one is not evidence that a link pointing into
+   * this folder is an orphan (DOR-1882).
+   */
+  unreadable: boolean;
+}
+
+/**
+ * Enumerate skill directories directly under `absRoot`, reporting whether the
+ * root could be read at all.
+ *
+ * The full answer {@link scanSkillDirs} narrows: use this wherever an empty
+ * result would otherwise be read as "there is nothing here", and
+ * {@link scanSkillDirs} where the caller only ever wants the skills it can see.
+ *
+ * @param absRoot - absolute path to the directory to scan.
+ * @param relPrefix - repo-relative prefix prepended to each entry's name.
+ * @param options - see {@link ScanSkillDirsOptions}; defaults to the planner's view.
+ * @returns the skills found and whether the root was unreadable.
+ */
+export function listSkillDirs(
+  absRoot: string,
+  relPrefix: string,
+  options: ScanSkillDirsOptions = {}
+): SkillDirListing {
+  const { entries, unreadable } = listEntries(absRoot);
+  const skills: SkillEntry[] = [];
+  for (const entry of entries) {
+    const isLink = entry.isSymbolicLink();
+    if (isLink && options.followSymlinks === false) continue;
+    const isManagedProjection = isLink && entry.name.includes(INSTALLED_PROJECTION_MARKER);
+    if (isManagedProjection && !options.includeManagedProjections) continue;
+    const absEntry = join(absRoot, entry.name);
+    if (!resolvesToDirectory(absEntry, entry)) continue;
+    if (!existsSync(join(absEntry, 'SKILL.md'))) continue;
+    skills.push({ name: entry.name, sourceDir: `${relPrefix}/${entry.name}` });
+  }
+  return { skills: skills.sort((a, b) => a.name.localeCompare(b.name)), unreadable };
+}
+
+/**
  * Enumerate skill directories directly under `absRoot`, each returned as a
  * {@link SkillEntry} whose `sourceDir` is `<relPrefix>/<name>`.
  *
@@ -128,6 +225,12 @@ function resolvesToDirectory(absPath: string, entry: Dirent): boolean {
  *
  * Results are sorted by name so the projection plan is deterministic.
  *
+ * **An empty result is ambiguous here** — absent and unreadable both answer `[]`
+ * — so a caller that would treat "nothing found" as "nothing exists" must use
+ * {@link listSkillDirs} instead. The readers that keep this narrower form only
+ * ever show what they can see (the Codex palette, `dorkos://skills`), where the
+ * two answers really are the same.
+ *
  * @param absRoot - absolute path to the directory to scan.
  * @param relPrefix - repo-relative prefix prepended to each entry's name.
  * @param options - see {@link ScanSkillDirsOptions}; defaults to the planner's view.
@@ -139,32 +242,20 @@ export function scanSkillDirs(
   relPrefix: string,
   options: ScanSkillDirsOptions = {}
 ): SkillEntry[] {
-  if (!existsSync(absRoot)) return [];
-
-  const skills: SkillEntry[] = [];
-  for (const entry of readdirSync(absRoot, { withFileTypes: true })) {
-    const isLink = entry.isSymbolicLink();
-    if (isLink && options.followSymlinks === false) continue;
-    const isManagedProjection = isLink && entry.name.includes(INSTALLED_PROJECTION_MARKER);
-    if (isManagedProjection && !options.includeManagedProjections) continue;
-    const absEntry = join(absRoot, entry.name);
-    if (!resolvesToDirectory(absEntry, entry)) continue;
-    if (!existsSync(join(absEntry, 'SKILL.md'))) continue;
-    skills.push({ name: entry.name, sourceDir: `${relPrefix}/${entry.name}` });
-  }
-  return skills.sort((a, b) => a.name.localeCompare(b.name));
+  return listSkillDirs(absRoot, relPrefix, options).skills;
 }
 
 /**
- * Enumerate authored skills under `<repoRoot>/.agents/skills`.
+ * Enumerate authored skills under `<repoRoot>/.agents/skills`, and say whether
+ * that folder could be read.
  *
  * The authored view: a skill linked in from outside the repo counts, a real
  * directory whose name contains `__` counts, and the engine's own managed
  * `<pkg>__<name>` symlinks do not — see {@link scanSkillDirs}.
  *
  * @param repoRoot - absolute path to the repository root.
- * @returns one {@link SkillEntry} per immediate subdirectory containing a `SKILL.md`.
+ * @returns the authored skills, and whether `.agents/skills` was unreadable.
  */
-export function scanSkills(repoRoot: string): SkillEntry[] {
-  return scanSkillDirs(join(repoRoot, AGENTS_SKILLS_DIR), AGENTS_SKILLS_DIR);
+export function listAuthoredSkills(repoRoot: string): SkillDirListing {
+  return listSkillDirs(join(repoRoot, AGENTS_SKILLS_DIR), AGENTS_SKILLS_DIR);
 }

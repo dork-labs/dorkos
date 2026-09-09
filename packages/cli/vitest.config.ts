@@ -14,6 +14,14 @@ export default defineConfig({
     // the server through `DORKOS_LOG_LEVEL` and a renumbering would silently
     // change what `--log-level warn` means. Read from a stale dist it pins the
     // old numbers and reports success.
+    //
+    // **`@dorkos/harness` is NOT aliased, and its dist is the same trap.** The
+    // whole `harness sync` suite exercises the real engine through the package's
+    // `exports` map, so an engine change is invisible here until
+    // `pnpm --filter @dorkos/harness build` has run — measured twice on DOR-1882,
+    // once as a green suite over an unfixed engine and once as a green suite over
+    // a deliberately broken one. Build it before believing anything this file
+    // says about the engine.
     alias: [
       // The CLI reaches narrow server modules through `../server/{services,lib}/*`
       // specifiers that only resolve in the published dist layout; `scripts/build.ts`

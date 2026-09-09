@@ -24,7 +24,7 @@ import { join } from 'node:path';
 import { MarketplacePackageManifestSchema, PackageNameSchema } from '@dorkos/marketplace';
 import { hasSchedule, isInvalidSchedule, readScheduleField } from '@dorkos/skills/schedule-schema';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
-import { scanSkillDirs, CLAUDE_PLUGIN_ROOT_TOKEN, type SkillEntry } from '../scan/scanner.js';
+import { listSkillDirs, CLAUDE_PLUGIN_ROOT_TOKEN, type SkillEntry } from '../scan/scanner.js';
 import { emptyHooksConfig } from '../generate/hooks.js';
 import type { ClaudeHooksConfig, HookCommand, HookMatcherGroup } from '../generate/hooks.js';
 
@@ -173,6 +173,17 @@ export interface InstalledPlugin {
    * standard as a project one (DOR-1922).
    */
   unreadableHooks?: UnreadableHookDeclaration[];
+  /**
+   * This package's skill source folders (`skills/`, `.dork/tasks/`) that could
+   * not be listed, spelled the way {@link skills} spells its paths.
+   *
+   * Present only when there is one. It exists because an empty listing from a
+   * failed read is indistinguishable from an empty folder, and the plan is the
+   * sweep's only evidence of what this package installs — so without it, one
+   * unreadable `skills/` made every `<pkg>__<name>` link this package owns look
+   * like an orphan and the next sync deleted all of them (DOR-1882).
+   */
+  unreadableSkillRoots?: string[];
   /** Declared content layers from the manifest (informational). */
   layers: string[];
 }
@@ -487,21 +498,32 @@ function collectPortableSkills(
   pluginDir: string,
   sourcePrefix: string,
   dorkHomeLink?: (skillName: string) => boolean
-): InstalledSkill[] {
+): { skills: InstalledSkill[]; unreadableRoots: string[] } {
   const skillsRoot = join(pluginDir, 'skills');
   const tasksRoot = join(pluginDir, '.dork', 'tasks');
   const contained = { followSymlinks: false } as const;
-  const skillEntries = scanSkillDirs(skillsRoot, `${sourcePrefix}/skills`, contained).map((e) =>
+  const skillsRel = `${sourcePrefix}/skills`;
+  const tasksRel = `${sourcePrefix}/.dork/tasks`;
+  // `listSkillDirs`, not `scanSkillDirs`: what this returns becomes the sweep's
+  // keep-set, and an empty listing a failed read produced would take this
+  // package's live links with it (DOR-1882).
+  const skillsListing = listSkillDirs(skillsRoot, skillsRel, contained);
+  const tasksListing = listSkillDirs(tasksRoot, tasksRel, contained);
+  const skillEntries = skillsListing.skills.map((e) =>
     toInstalledSkill(e, skillsRoot, dorkHomeLink)
   );
-  const taskEntries = scanSkillDirs(tasksRoot, `${sourcePrefix}/.dork/tasks`, contained).map((e) =>
-    toInstalledSkill(e, tasksRoot, dorkHomeLink)
-  );
+  const taskEntries = tasksListing.skills.map((e) => toInstalledSkill(e, tasksRoot, dorkHomeLink));
   const byName = new Map<string, InstalledSkill>();
   for (const entry of [...skillEntries, ...taskEntries]) {
     if (!byName.has(entry.name)) byName.set(entry.name, entry); // skills win over same-named tasks
   }
-  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    skills: [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    unreadableRoots: [
+      ...(skillsListing.unreadable ? [skillsRel] : []),
+      ...(tasksListing.unreadable ? [tasksRel] : []),
+    ],
+  };
 }
 
 /**
@@ -585,14 +607,18 @@ function scanPluginsRoot(
               throwIfNoEntry: false,
             }) !== undefined
         : undefined;
+    const portable = collectPortableSkills(pluginDir, sourcePrefix, dorkHomeLink);
     plugins.push({
       name: manifest.name,
       type: manifest.type,
       location,
-      skills: collectPortableSkills(pluginDir, sourcePrefix, dorkHomeLink),
+      skills: portable.skills,
       commands: collectCommands(pluginDir, sourcePrefix),
       ...(hooks ? { hooks } : {}),
       ...(unreadable ? { unreadableHooks: unreadable } : {}),
+      ...(portable.unreadableRoots.length > 0
+        ? { unreadableSkillRoots: portable.unreadableRoots }
+        : {}),
       layers: manifest.layers,
     });
   }

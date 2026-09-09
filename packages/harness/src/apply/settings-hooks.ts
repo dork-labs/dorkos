@@ -102,20 +102,37 @@ function reconcileHooks(settings: SettingsFile, managed: ClaudeHooksConfig): Set
 
 /**
  * Merge the managed plugin hooks into the settings file: strip the previously
- * managed (sentinel-tagged) entries, append the current managed set, and
- * rewrite. Idempotent: N syncs leave exactly one copy of each managed group.
- * Every user-authored hook and non-hook key survives untouched.
+ * managed (sentinel-tagged) entries, append the current managed set, and write —
+ * **only when that would change the file**. Idempotent: N syncs leave exactly one
+ * copy of each managed group, and syncs 2..N touch nothing. Every user-authored
+ * hook and non-hook key survives untouched.
+ *
+ * The equality gate is the same one {@link managedHooksDrift} already answered
+ * `--check` with, and it is load-bearing rather than an optimisation. Without it
+ * this rewrote the file on every sync, so `isDrifted` — the predicate both modes
+ * scope the write-path permission probe by — was a claim about the wrong set: a
+ * fully synced repository with `chmod 0555` on `.claude` had `--check` report no
+ * drift and exit 0 while the `--fix` beside it died with EACCES out of
+ * `writeFileAtomic`, before the six sweeps ran (measured on the built dist,
+ * DOR-1882 re-review; the same defect `applyGenerate` carried for wrappers).
+ *
+ * It costs a person nothing and saves them something: this is the one file the
+ * projection shares with Claude Code, which re-reads it when it changes, so a
+ * no-op rewrite was a change event for every watcher on it every sync.
  *
  * @param absTarget - absolute path to `.claude/settings.local.json`.
  * @param managed - the managed hooks to install (sentinel-tagged, token-rewritten).
- * @returns `true` when the merge was written; `false` when the target exists but
- *   could not be parsed (corrupt or mid-write), in which case NOTHING is written
- *   and the caller must surface the abort as a conflict.
+ * @returns `true` when the file now holds the merge — whether this call wrote it
+ *   or found it already right; `false` when the target exists but could not be
+ *   parsed (corrupt or mid-write), in which case NOTHING is written and the
+ *   caller must surface the abort as a conflict.
  */
 export function mergeManagedHooks(absTarget: string, managed: ClaudeHooksConfig): boolean {
   const settings = readSettingsFile(absTarget);
   if (settings === undefined) return false; // corrupt target: never rewrite what we cannot parse
-  writeSettingsFile(absTarget, reconcileHooks(settings, managed));
+  const next = reconcileHooks(settings, managed);
+  if (JSON.stringify(next) === JSON.stringify(settings)) return true; // already exactly this
+  writeSettingsFile(absTarget, next);
   return true;
 }
 
