@@ -15,6 +15,7 @@ covers:
   # Same fold: two rebase repairs, nothing a person could have seen.
   - 'fix(config): the global-scope migration sits beside 0.76.0 after the rebase (DOR-1924)'
   - 'refactor(harness): the extracted probe calls the exported helper by its name (DOR-1924)'
+  - 'fix(harness): a user-tier target is joined the way the platform spells it (DOR-1924)'
   - 'fix(harness,cli): a run that shares with Claude Code alone says so (DOR-1924)'
 ---
 
