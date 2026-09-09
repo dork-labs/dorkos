@@ -156,7 +156,7 @@ interface Title {
  */
 const PINNED_GAPS: Readonly<Record<string, string>> = {
   'SRC-04':
-    'a global install is not projected; the test asserts the DROP, as the row’s own Coverage cell says',
+    'a global install is still not projected; the tests assert the SCAN and the DROP, as the row’s own Coverage cell says',
   'SRC-10':
     'adopt does not exist; the test pins only that `adopted` counts as ephemeral provenance',
   'CM-06':

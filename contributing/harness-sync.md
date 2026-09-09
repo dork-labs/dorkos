@@ -116,7 +116,15 @@ Key invariants:
 
 - **Two shapes at a `generate` target are blocked, not drift** (`apply/generate-occupants.ts`). A **directory** there is somebody's content and no write can land on it anyway; before this rule `--check` called it drift and told the person to run a `--fix` that then died with EISDIR partway through the loop. A **live symlink** is the subtler one: reading and writing both succeed, somewhere that is not this path — a `.codex/hooks.json` linked to a file outside the repository had the pre-sidecar migration rewrite that outside file. Neither is ever written over, whoever owns what is at the far end, and both carry a reason naming the way out. Only a DEAD link is cleared and replaced, because nothing is there.
 
-Global installs (`~/.dork/plugins`) are still SDK-injected by the claude-code runtime as a transitional exception until global-scope projection lands (DOR-174).
+### Global installs today
+
+A package installed for every project lives at `<dorkHome>/plugins/<pkg>` and is **scanned in full but projected nowhere**. `scanInstalledPlugins` enumerates its skills, its `commands/*.md` and its `hooks/hooks.json` exactly as it does a project install, against the package's absolute directory — `InstalledPlugin.location` is a union (`{ scope: 'project', relDir }` or `{ scope: 'global', absDir }`) so the compiler stops anything repo-relative from reading a global path by accident.
+
+**What is reported.** One drop per global package, harness-agnostic, so it renders under `plugin layers:` rather than under an agent tool that has nothing to do with it. It names the package's skills, or says the package has none, and it says who can see the package: only the Claude Code sessions DorkOS runs, which get it by SDK injection from the claude-code runtime.
+
+**What is not projected, and why.** Nothing writes to `<dorkHome>/skills` or to the user-scope directories the other agent tools read. `buildPlan` is repo-relative end to end and every apply and sweep path resolves against a `repoRoot`, so giving a global package a projection means building a second entry point, not widening this scan (DOR-174; `specs/harness-sync-global` slices A2 and A3). A globally installed skill that declares a schedule is invisible to the scheduler for the same reason.
+
+**The same package at both scopes** earns one extra line, once for the package and never once per agent tool: the two copies do not overwrite each other, but each agent tool merges its user tier over its project tier differently, so the notice says what Claude Code and Codex each do and how to remove either copy. DorkOS resolves nothing — a DorkOS-side precedence would be unenforceable, because the projection is a symlink in a directory the agent tool reads on its own terms.
 
 ## 5. The vendor-facts table and the coverage walk
 

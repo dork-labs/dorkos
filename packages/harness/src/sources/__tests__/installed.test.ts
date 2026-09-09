@@ -58,13 +58,13 @@ describe('scanInstalledPlugins', () => {
 
     const plugins = scanInstalledPlugins({ dorkHome, projectRoot });
 
-    expect(plugins.map((p) => `${p.scope}:${p.name}`)).toEqual([
+    expect(plugins.map((p) => `${p.location.scope}:${p.name}`)).toEqual([
       'global:global-plugin',
       'project:my-plugin',
     ]);
 
     const proj = plugins.find((p) => p.name === 'my-plugin')!;
-    expect(proj.relDir).toBe('.dork/plugins/my-plugin');
+    expect(proj.location).toEqual({ scope: 'project', relDir: '.dork/plugins/my-plugin' });
     expect(proj.skills).toEqual([
       {
         name: 'alpha',
@@ -82,12 +82,20 @@ describe('scanInstalledPlugins', () => {
     expect(proj.hooks).toHaveProperty('Stop');
     expect(proj.layers).toEqual(['skills', 'extensions', 'hooks']);
 
-    // Global plugin: identity only — no asset enumeration.
+    // Global plugin: enumerated too, against its absolute install directory
+    // (DOR-1922). What it holds is reported; where it can reach is the drop's
+    // subject, not the scan's.
     const glob = plugins.find((p) => p.name === 'global-plugin')!;
-    expect(glob.scope).toBe('global');
-    expect(glob.skills).toEqual([]);
+    expect(glob.location).toEqual({ scope: 'global', absDir: globalPlugin });
+    expect(glob.skills).toEqual([
+      {
+        name: 'gamma',
+        sourceDir: `${globalPlugin}/skills/gamma`,
+        usesPluginRoot: false,
+        hasSchedule: false,
+      },
+    ]);
     expect(glob.commands).toEqual([]);
-    expect(glob.relDir).toBeUndefined();
   });
 
   it('SK-07: enumerates top-level command files and flags skills that use the plugin-root token', () => {
@@ -155,7 +163,7 @@ describe('scanInstalledPlugins', () => {
     // No `dorkHome` — global scope is skipped, project scope is still scanned.
     const plugins = scanInstalledPlugins({ projectRoot });
 
-    expect(plugins.map((p) => `${p.scope}:${p.name}`)).toEqual(['project:my-plugin']);
+    expect(plugins.map((p) => `${p.location.scope}:${p.name}`)).toEqual(['project:my-plugin']);
     const proj = plugins[0]!;
     expect(proj.skills).toEqual([
       {
@@ -408,16 +416,5 @@ describe('scanInstalledPlugins — salvaged-hooks evidence (DOR-1724)', () => {
   it('HK-09: records nothing for a fully readable file', () => {
     writeHookyPlugin(JSON.stringify({ Stop: [{ hooks: [{ command: 'fine.sh' }] }] }));
     expect(scanUnreadable()).toEqual([]);
-  });
-
-  it('leaves the evidence absent on a global install, whose hooks are never read', () => {
-    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
-    dorkHome = mkdtempSync(join(tmpdir(), 'harness-home-'));
-    const plugin = join(dorkHome, 'plugins', 'hooky');
-    writeManifest(plugin, 'hooky', ['hooks']);
-    mkdirSync(join(plugin, 'hooks'), { recursive: true });
-    writeFileSync(join(plugin, 'hooks', 'hooks.json'), '{ not json');
-
-    expect(scanUnreadable()).toBeUndefined();
   });
 });

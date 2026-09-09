@@ -6,7 +6,7 @@ import { buildPlan } from '../projector.js';
 import { mergeHookConfigs, pluginRootText, projectedHooks } from '../installed-projector.js';
 import { getActionContent } from '../content-map.js';
 import { parseHarnessManifest } from '../../manifest/schema.js';
-import type { InstalledPlugin } from '../../sources/installed.js';
+import type { InstalledPlugin, ProjectInstalledPlugin } from '../../sources/installed.js';
 
 const MANIFEST = parseHarnessManifest({
   version: 1,
@@ -18,11 +18,10 @@ function emptyRepo(): string {
   return mkdtempSync(join(tmpdir(), 'harness-instproj-'));
 }
 
-const projectPlugin: InstalledPlugin = {
+const projectPlugin: ProjectInstalledPlugin = {
   name: 'acme',
   type: 'plugin',
-  scope: 'project',
-  relDir: '.dork/plugins/acme',
+  location: { scope: 'project', relDir: '.dork/plugins/acme' },
   skills: [
     {
       name: 'alpha',
@@ -297,7 +296,7 @@ describe('installed-plugin projection via buildPlan', () => {
       const globalPlugin: InstalledPlugin = {
         name: 'globex',
         type: 'plugin',
-        scope: 'global',
+        location: { scope: 'global', absDir: '/home/dork/.dork/plugins/globex' },
         skills: [],
         commands: [],
         layers: ['skills'],
@@ -313,7 +312,9 @@ describe('installed-plugin projection via buildPlan', () => {
       expect(plan.actions.some((a) => a.name.startsWith('globex'))).toBe(false);
       expect(plan.actions.some((a) => a.target?.includes('globex'))).toBe(false);
       const globalDrop = plan.drops.find((d) => d.name === 'globex');
-      expect(globalDrop?.reason).toMatch(/global-scope/);
+      // The reason's two forms are pinned in `global-install-drop.test.ts`; here
+      // it only has to be the global-install line rather than a projection.
+      expect(globalDrop?.reason).toMatch(/^installed for all your projects\./);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
@@ -464,7 +465,7 @@ describe('projectedHooks', () => {
     const global: InstalledPlugin = {
       name: 'global-pkg',
       type: 'plugin',
-      scope: 'global',
+      location: { scope: 'global', absDir: '/home/dork/.dork/plugins/global-pkg' },
       skills: [],
       commands: [],
       hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo global' }] }] },
@@ -525,10 +526,10 @@ describe('buildPlan hook gate (DOR-522)', () => {
 
   it('HK-07: gates per package, not all-or-nothing', () => {
     const repo = emptyRepo();
-    const other: InstalledPlugin = {
+    const other: ProjectInstalledPlugin = {
       ...projectPlugin,
       name: 'other',
-      relDir: '.dork/plugins/other',
+      location: { scope: 'project', relDir: '.dork/plugins/other' },
       skills: [],
       commands: [],
       hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo from-other' }] }] },

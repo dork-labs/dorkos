@@ -55,7 +55,7 @@
 import { join } from 'node:path';
 import { HARNESS_LABELS, type HarnessId } from '../manifest/schema.js';
 import type { ProjectionAction, ProjectionWarning } from './types.js';
-import type { InstalledPlugin } from '../sources/installed.js';
+import type { InstalledPlugin, ProjectInstalledPlugin } from '../sources/installed.js';
 import { emptyHooksConfig } from '../generate/hooks.js';
 import type { ClaudeHooksConfig, HookMatcherGroup } from '../generate/hooks.js';
 import { setActionContent } from './content-map.js';
@@ -406,9 +406,11 @@ export function projectedHooks(
 ): ProjectedPluginHooks[] {
   const out: ProjectedPluginHooks[] = [];
   for (const plugin of plugins) {
-    if (plugin.scope !== 'project' || !PROJECTABLE_PLUGIN_TYPES.has(plugin.type)) continue;
-    if (!plugin.relDir) continue;
-    const rewritten = rewritePluginRootInHooks(plugin.hooks, join(repoRoot, plugin.relDir));
+    if (plugin.location.scope !== 'project' || !PROJECTABLE_PLUGIN_TYPES.has(plugin.type)) continue;
+    const rewritten = rewritePluginRootInHooks(
+      plugin.hooks,
+      join(repoRoot, plugin.location.relDir)
+    );
     if (!rewritten) continue;
     const hooks: ProjectedHook[] = [];
     for (const [event, groups] of Object.entries(rewritten)) {
@@ -502,7 +504,7 @@ function pluginRootSkillWarning(
  */
 export function planInstalledSkills(
   harness: HarnessId,
-  plugin: InstalledPlugin
+  plugin: ProjectInstalledPlugin
 ): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
   const dir = INSTALLED_SKILL_TARGET_DIRS[harness];
   const actions: ProjectionAction[] = [];
@@ -585,7 +587,7 @@ export function planInstalledSkills(
  *   when an enabled harness already covers the directory).
  */
 export function planCanonicalSkillLinks(input: {
-  plugins: readonly InstalledPlugin[];
+  plugins: readonly ProjectInstalledPlugin[];
   harnesses: readonly HarnessId[];
 }): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
   const alreadyLinked = input.harnesses.some(
@@ -642,15 +644,14 @@ export function planCanonicalSkillLinks(input: {
  */
 export function planInstalledCommands(
   harness: HarnessId,
-  plugin: InstalledPlugin,
+  plugin: ProjectInstalledPlugin,
   repoRoot: string
 ): ProjectionAction[] {
   if (plugin.commands.length === 0) return [];
-  if (!plugin.relDir) return [];
+  const { relDir } = plugin.location;
 
-  if (harness === 'claude-code')
-    return planClaudeInstalledCommands(plugin, plugin.relDir, repoRoot);
-  if (harness === 'opencode') return planOpencodeInstalledCommands(plugin, plugin.relDir, repoRoot);
+  if (harness === 'claude-code') return planClaudeInstalledCommands(plugin, relDir, repoRoot);
+  if (harness === 'opencode') return planOpencodeInstalledCommands(plugin, relDir, repoRoot);
 
   return [
     {
@@ -741,11 +742,10 @@ function planOpencodeInstalledCommands(
  * @returns the `.gitignore` generate action, or `undefined` when no plugin ships a command.
  */
 export function planOpencodeCommandsGitignore(
-  plugins: InstalledPlugin[]
+  plugins: readonly ProjectInstalledPlugin[]
 ): ProjectionAction | undefined {
   const filenames: string[] = [];
   for (const plugin of plugins) {
-    if (!plugin.relDir) continue;
     for (const cmd of plugin.commands) {
       filenames.push(opencodeWrapperFilename(plugin.name, cmd.name));
     }
@@ -778,11 +778,11 @@ export function planOpencodeCommandsGitignore(
  * @returns the merge action, or `undefined` when no plugin contributes a hook.
  */
 export function planInstalledPluginHooks(
-  plugins: InstalledPlugin[],
+  plugins: readonly ProjectInstalledPlugin[],
   repoRoot: string
 ): ProjectionAction | undefined {
   const merged = mergeHookConfigs(
-    plugins.map((p) => (p.relDir ? toManagedHooks(p, join(repoRoot, p.relDir)) : undefined))
+    plugins.map((p) => toManagedHooks(p, join(repoRoot, p.location.relDir)))
   );
   if (Object.keys(merged).length === 0) return undefined;
 
@@ -814,7 +814,14 @@ export function dropNonPortableLayers(plugin: InstalledPlugin): ProjectionAction
     }));
 }
 
-/** Drop a whole plugin (one action) with the given reason — for global or unsupported-type plugins. */
+/**
+ * Drop a whole plugin (one action) with the given reason.
+ *
+ * Three emitters use it: a global install, a package whose type is not
+ * harness-portable, and the both-scopes notice (`plan/global-installs.ts`). All
+ * three are answers about a PACKAGE rather than about one agent tool, which is
+ * what {@link ProjectionAction.harnessAgnostic} says here.
+ */
 export function dropWholePlugin(plugin: InstalledPlugin, reason: string): ProjectionAction {
   return {
     kind: 'drop',

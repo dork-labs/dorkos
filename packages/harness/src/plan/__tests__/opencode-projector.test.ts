@@ -14,7 +14,7 @@ import {
 } from '../installed-projector.js';
 import { getActionContent } from '../content-map.js';
 import { parseHarnessManifest } from '../../manifest/schema.js';
-import type { InstalledPlugin } from '../../sources/installed.js';
+import type { ProjectInstalledPlugin } from '../../sources/installed.js';
 
 /** An empty repo root (no authored skills / AGENTS.md) so only installed projections show. */
 function emptyRepo(): string {
@@ -22,11 +22,10 @@ function emptyRepo(): string {
 }
 
 /** A project-scoped plugin with a rich-frontmatter command, two skills, and a token hook. */
-const plugin: InstalledPlugin = {
+const plugin: ProjectInstalledPlugin = {
   name: 'flow',
   type: 'plugin',
-  scope: 'project',
-  relDir: '.dork/plugins/flow',
+  location: { scope: 'project', relDir: '.dork/plugins/flow' },
   skills: [
     {
       name: 'capturing',
@@ -274,11 +273,10 @@ describe('planSkillNameCollisions — item C', () => {
     hasSchedule: false,
     frontmatterName,
   });
-  const pluginWith = (pkg: string, frontmatterName: string): InstalledPlugin => ({
+  const pluginWith = (pkg: string, frontmatterName: string): ProjectInstalledPlugin => ({
     name: pkg,
     type: 'plugin',
-    scope: 'project',
-    relDir: `.dork/plugins/${pkg}`,
+    location: { scope: 'project', relDir: `.dork/plugins/${pkg}` },
     skills: [skill('s', frontmatterName)],
     commands: [],
     layers: ['skills'],

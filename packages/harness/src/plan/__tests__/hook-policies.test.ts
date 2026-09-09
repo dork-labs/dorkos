@@ -6,7 +6,7 @@ import { buildPlan } from '../projector.js';
 import { pluginHookReach } from '../hooks-projection.js';
 import { parseHarnessManifest } from '../../manifest/schema.js';
 import type { ClaudeHooksConfig } from '../../generate/hooks.js';
-import type { InstalledPlugin } from '../../sources/installed.js';
+import type { ProjectInstalledPlugin } from '../../sources/installed.js';
 
 let dir = '';
 afterEach(() => {
@@ -27,12 +27,11 @@ function fixtureRepo(): string {
 }
 
 /** One project-scoped plugin that declares a hook, so the claude-code merge has a source. */
-function pluginWithHooks(): InstalledPlugin {
+function pluginWithHooks(): ProjectInstalledPlugin {
   return {
     name: 'p',
     type: 'plugin',
-    scope: 'project',
-    relDir: '.dork/plugins/p',
+    location: { scope: 'project', relDir: '.dork/plugins/p' },
     layers: ['hooks'],
     skills: [],
     commands: [],
@@ -40,7 +39,11 @@ function pluginWithHooks(): InstalledPlugin {
   };
 }
 
-function planFor(hookPolicies: unknown[], harnesses: string[], plugins: InstalledPlugin[] = []) {
+function planFor(
+  hookPolicies: unknown[],
+  harnesses: string[],
+  plugins: ProjectInstalledPlugin[] = []
+) {
   const manifest = parseHarnessManifest({ version: 1, harnesses, hookPolicies });
   return buildPlan({
     repoRoot: dir,

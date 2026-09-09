@@ -130,6 +130,25 @@ function writeInstalledPlugin(root: string, name: string, skill: string): void {
   fs.writeFileSync(path.join(plugin, 'skills', skill, 'SKILL.md'), `# ${skill}\n`);
 }
 
+/** The same package, installed for every project under the staged DORK_HOME. */
+function writeGlobalPlugin(home: string, name: string, skill: string): void {
+  const plugin = path.join(home, 'plugins', name);
+  fs.mkdirSync(path.join(plugin, '.dork'), { recursive: true });
+  fs.writeFileSync(
+    path.join(plugin, '.dork', 'manifest.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      name,
+      version: '9.9.9',
+      type: 'plugin',
+      description: 'A fixture plugin',
+      layers: ['skills'],
+    })
+  );
+  fs.mkdirSync(path.join(plugin, 'skills', skill), { recursive: true });
+  fs.writeFileSync(path.join(plugin, 'skills', skill, 'SKILL.md'), `# ${skill}\n`);
+}
+
 /**
  * A project-scoped plugin shipping all three layers a sync projects — a skill,
  * a slash command and a hook — so uninstalling it leaves an orphan in every
@@ -350,6 +369,48 @@ describe('runHarnessSync', () => {
     expect(fs.realpathSync(projected)).toBe(
       fs.realpathSync(path.join(tmpDir, '.dork', 'plugins', 'acme', 'skills', 'greet'))
     );
+  });
+
+  it('SRC-04, SRC-12: says what a global install holds, and names a package installed at both scopes once', async () => {
+    // Two things a person reads in the terminal, both about a package rather than
+    // about one agent tool, so both land under the `plugin layers:` heading.
+    //
+    // Seeded defect for the first: restore the old drop string. The block then
+    // tells the reader to "run a global sync", which no `dorkos harness sync`
+    // flag has ever accepted. Seeded defect for the second: emit the both-scopes
+    // notice per harness — this project runs three, so it prints three times.
+    writeFixtureRepo(tmpDir);
+    writeInstalledPlugin(tmpDir, 'acme', 'greet');
+    writeGlobalPlugin(homeDir, 'acme', 'greet');
+    writeGlobalPlugin(homeDir, 'globex', 'nightly');
+    process.chdir(tmpDir);
+
+    await runHarnessSync(syncArgs({ check: true, fix: false }));
+
+    const printed = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(printed).toContain('plugin layers:');
+    expect(printed).toContain(
+      '- plugin "globex": installed for all your projects. Only the Claude Code sessions ' +
+        'DorkOS runs can see it. Its 1 skill is not shared with this project: nightly'
+    );
+    expect(printed).not.toMatch(/global sync/);
+    expect(printed.split('is installed twice')).toHaveLength(2);
+    // The uninstall command names THIS repository by absolute path. A `.` would
+    // be forwarded verbatim and resolved by the server against its own working
+    // directory, so it would remove the all-projects copy — the opposite of what
+    // the sentence offers. `fs.realpath` because macOS temp dirs are symlinked
+    // and the engine reports the root the CLI resolved.
+    const repoRoot = fs.realpathSync(tmpDir);
+    expect(printed).toContain(
+      `Run dorkos uninstall acme --project ${repoRoot}  to remove this project's copy.`
+    );
+    expect(printed).not.toContain('--project .');
+    // And what it says about Claude Code is what is true before slice A3 writes
+    // anything into the user tier.
+    expect(printed).toContain(
+      'In a session DorkOS runs, Claude Code sees both copies, under different names.'
+    );
+    expect(printed).not.toContain('uses the all-projects copy, even here');
   });
 
   it('SK-03: tells the operator WHY a scheduled plugin skill is linked where no enabled harness reads (DOR-1518)', async () => {

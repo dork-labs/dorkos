@@ -43,9 +43,10 @@ const PLUGIN_DIR_PREFIX = '.dork/plugins/';
  *
  * Sourced entries answer by path — a `hooks/hooks.json` under `.dork/plugins/` is
  * a package's, a `.mcp.json` at the root is the project's. The sourceless ones
- * are all `artifact: 'plugin'` (a whole package, or one of its layers) and have
- * nothing but their kind to go on, which is enough because nothing else emits
- * that artifact without a source.
+ * are all `artifact: 'plugin'` (a whole package, one of its layers, or a global
+ * package whose hooks file could not be read, whose path is absolute and so has
+ * no repo-relative form to carry) and have nothing but their kind to go on,
+ * which is enough because nothing else emits that artifact without a source.
  *
  * So this leans on every agnostic emitter carrying a `source` when it has one to
  * carry, which is the same property that lets a warning be matched to the

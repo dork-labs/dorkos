@@ -32,7 +32,7 @@ import type { ClaudeHooksConfig, HookCommand, HookMatcherGroup } from '../genera
  * The repo-relative directory project-scoped marketplace installs live in.
  *
  * Repo-relative and slash-joined because that is what it is used for: building
- * an {@link InstalledPlugin.relDir}, and naming the directory in the
+ * a project {@link InstalledLocation}, and naming the directory in the
  * `.gitignore` contract (`EPHEMERAL_GITIGNORE_PATTERNS`). Join it against a
  * project root to get a path to read.
  */
@@ -40,6 +40,18 @@ export const PROJECT_PLUGINS_DIR = '.dork/plugins';
 
 /** Where an installed plugin lives — its install scope. */
 export type InstalledScope = 'global' | 'project';
+
+/**
+ * Where an installed package's files are.
+ *
+ * A project install is repo-relative because a project sync resolves against a
+ * repo root; a global install has no repo, so its directory is absolute. Making
+ * this a union rather than a scope tag beside an optional path is the point: the
+ * compiler names every site that assumed repo-relative, which is the whole of the
+ * engine before this slice (DOR-1922).
+ */
+export type InstalledLocation =
+  { scope: 'project'; relDir: string } | { scope: 'global'; absDir: string };
 
 /** A portable skill from an installed plugin, plus whether it needs plugin context. */
 export interface InstalledSkill extends SkillEntry {
@@ -120,37 +132,62 @@ export interface InstalledPlugin {
   name: string;
   /** Package type: `plugin` | `skill-pack` | `adapter` | `agent`. */
   type: string;
-  /** Which install root it came from. */
-  scope: InstalledScope;
-  /**
-   * Repo-relative install directory (e.g. `.dork/plugins/<name>`). Present only
-   * for project-scoped plugins — global plugins are not projected by a project
-   * sync, so their on-disk paths are not resolved.
-   */
-  relDir?: string;
+  /** Which install root it came from, and where in it the package sits. */
+  location: InstalledLocation;
   /**
    * Portable skill directories (from `skills/` and `.dork/tasks/`), each a
-   * `SKILL.md` directory with a repo-relative `sourceDir`. Empty for global
-   * plugins. De-duplicated by name (a `skills/` entry wins over a same-named
-   * `.dork/tasks/` entry).
+   * `SKILL.md` directory whose `sourceDir` follows {@link location}: repo-
+   * relative under a project install, absolute under a global one. De-duplicated
+   * by name (a `skills/` entry wins over a same-named `.dork/tasks/` entry).
    */
   skills: InstalledSkill[];
   /**
-   * Top-level slash-command files (`commands/*.md`). Empty for global plugins.
-   * Projected to the Claude Code harness as repo-local wrappers (DOR-193).
+   * Top-level slash-command files (`commands/*.md`), each `sourcePath` following
+   * {@link location} the same way {@link skills} does. Projected to the Claude
+   * Code harness as repo-local wrappers (DOR-193).
    */
   commands: InstalledCommand[];
-  /** Claude-plugin hooks (`hooks/hooks.json`), normalized. Project scope only. */
+  /** Claude-plugin hooks (`hooks/hooks.json`), normalized. */
   hooks?: ClaudeHooksConfig;
   /**
    * Every hook declaration in `hooks/hooks.json` the salvage could not use, so
-   * the projector can say out loud what got dropped. Project scope only, and
-   * paired with {@link hooks}: absent means the file was never read (a global
-   * install), an empty array means it was read and nothing was lost.
+   * the projector can say out loud what got dropped. Paired with {@link hooks}:
+   * absent means there is no such file, an empty array means it was read and
+   * nothing was lost. A global package's file is read to exactly the same
+   * standard as a project one (DOR-1922).
    */
   unreadableHooks?: UnreadableHookDeclaration[];
   /** Declared content layers from the manifest (informational). */
   layers: string[];
+}
+
+/**
+ * An installed package known to live inside the repository being synced, so
+ * every path it carries is repo-relative.
+ *
+ * The project sync resolves sources and targets against a repo root, so this is
+ * the shape most of the projector needs. Narrowing here rather than re-checking
+ * the scope at each use means a global package cannot reach a repo-relative
+ * reader at all — which is what {@link InstalledLocation} exists to make true.
+ */
+export type ProjectInstalledPlugin = InstalledPlugin & {
+  location: Extract<InstalledLocation, { scope: 'project' }>;
+};
+
+/**
+ * Whether a scanned package lives in the repository, narrowing it for every
+ * reader that resolves against a repo root.
+ *
+ * A type predicate rather than an inline comparison because `Array.filter` only
+ * narrows through one of these — the whole engine partitions installed packages
+ * by scope exactly once, at the top of `buildPlan`, and everything downstream
+ * takes the narrowed type.
+ *
+ * @param plugin - a scanned package.
+ * @returns true when its files are repo-relative.
+ */
+export function isProjectScoped(plugin: InstalledPlugin): plugin is ProjectInstalledPlugin {
+  return plugin.location.scope === 'project';
 }
 
 /** The minimal manifest fields the projector needs. */
@@ -300,18 +337,24 @@ function readMatcherGroup(group: unknown): HookMatcherGroup | undefined {
  * which is the exact disagreement this reader exists to end.
  *
  * @param pluginDir - absolute path to the plugin's install directory.
- * @param relDir - the same directory, repo-relative, used to name the file in
- *   every {@link UnreadableHookDeclaration} an operator will read.
+ * @param sourcePrefix - the same directory as the package's own paths spell it
+ *   (repo-relative when the install is project-scoped, absolute when it is
+ *   global), used to name the file in every {@link UnreadableHookDeclaration} an
+ *   operator will read.
  * @returns the salvaged hooks (absent when nothing survived) and every
  *   declaration that did not.
  */
 function readPluginHooks(
   pluginDir: string,
-  relDir: string
-): { hooks?: ClaudeHooksConfig; unreadable: UnreadableHookDeclaration[] } {
+  sourcePrefix: string
+): { hooks?: ClaudeHooksConfig; unreadable?: UnreadableHookDeclaration[] } {
   const hooksPath = join(pluginDir, 'hooks', 'hooks.json');
-  if (!existsSync(hooksPath)) return { unreadable: [] };
-  const relPath = `${relDir}/hooks/hooks.json`;
+  // No file, no reading: `unreadable` stays ABSENT so the two states
+  // {@link InstalledPlugin.unreadableHooks} documents stay apart — absent is
+  // "there is no such file", `[]` is "it was read and nothing was lost".
+  // Returning `[]` here collapsed them and made that doc wrong.
+  if (!existsSync(hooksPath)) return {};
+  const relPath = `${sourcePrefix}/hooks/hooks.json`;
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(hooksPath, 'utf8'));
@@ -392,8 +435,8 @@ function toInstalledSkill(entry: SkillEntry, absSkillsRoot: string): InstalledSk
 }
 
 /**
- * Collect a project plugin's portable skill dirs (skills/ + .dork/tasks/),
- * de-duped by name.
+ * Collect a plugin's portable skill dirs (skills/ + .dork/tasks/), de-duped by
+ * name — at either scope, against the prefix that spells this package's paths.
  *
  * **Both scans pass `followSymlinks: false`, and that is a containment rule, not
  * a tidiness one.** A package's install directory is a tree the ENGINE walks on
@@ -419,14 +462,14 @@ function toInstalledSkill(entry: SkillEntry, absSkillsRoot: string): InstalledSk
  * is content it authored, never a directory the engine writes into, so a
  * `<pkg>__<name>` entry there is not a projection to re-derive.
  */
-function collectPortableSkills(pluginDir: string, relDir: string): InstalledSkill[] {
+function collectPortableSkills(pluginDir: string, sourcePrefix: string): InstalledSkill[] {
   const skillsRoot = join(pluginDir, 'skills');
   const tasksRoot = join(pluginDir, '.dork', 'tasks');
   const contained = { followSymlinks: false } as const;
-  const skillEntries = scanSkillDirs(skillsRoot, `${relDir}/skills`, contained).map((e) =>
+  const skillEntries = scanSkillDirs(skillsRoot, `${sourcePrefix}/skills`, contained).map((e) =>
     toInstalledSkill(e, skillsRoot)
   );
-  const taskEntries = scanSkillDirs(tasksRoot, `${relDir}/.dork/tasks`, contained).map((e) =>
+  const taskEntries = scanSkillDirs(tasksRoot, `${sourcePrefix}/.dork/tasks`, contained).map((e) =>
     toInstalledSkill(e, tasksRoot)
   );
   const byName = new Map<string, InstalledSkill>();
@@ -437,7 +480,8 @@ function collectPortableSkills(pluginDir: string, relDir: string): InstalledSkil
 }
 
 /**
- * Collect a project plugin's top-level slash commands (`commands/*.md`).
+ * Collect a plugin's top-level slash commands (`commands/*.md`), at either
+ * scope, against the prefix that spells this package's paths.
  *
  * Only the top level is enumerated: Claude Code derives a command's namespace
  * from its immediate parent directory, and a plugin's commands live flat under
@@ -445,7 +489,7 @@ function collectPortableSkills(pluginDir: string, relDir: string): InstalledSkil
  * `${CLAUDE_PLUGIN_ROOT}` token and emit a repo-local wrapper. Sorted by name so
  * the projection plan is deterministic.
  */
-function collectCommands(pluginDir: string, relDir: string): InstalledCommand[] {
+function collectCommands(pluginDir: string, sourcePrefix: string): InstalledCommand[] {
   const commandsRoot = join(pluginDir, 'commands');
   if (!existsSync(commandsRoot)) return [];
   const commands: InstalledCommand[] = [];
@@ -459,7 +503,7 @@ function collectCommands(pluginDir: string, relDir: string): InstalledCommand[] 
     }
     commands.push({
       name: entry.name.slice(0, -'.md'.length),
-      sourcePath: `${relDir}/commands/${entry.name}`,
+      sourcePath: `${sourcePrefix}/commands/${entry.name}`,
       content,
     });
   }
@@ -469,9 +513,19 @@ function collectCommands(pluginDir: string, relDir: string): InstalledCommand[] 
 /**
  * Scan one plugins root (global or project) into {@link InstalledPlugin}s.
  *
- * Project plugins live at `<projectRoot>/.dork/plugins/<name>`, so their repo-
- * relative `relDir` is the literal `.dork/plugins/<name>` — no `projectRoot`
- * needed to build it.
+ * Both scopes are enumerated to the same standard: skills, commands and hooks
+ * are read whichever root the package came from, and every path it carries is
+ * spelled the way its {@link InstalledLocation} says. Project plugins live at
+ * `<projectRoot>/.dork/plugins/<name>`, so their `relDir` is the literal
+ * `.dork/plugins/<name>` — no `projectRoot` needed to build it. Global plugins
+ * have no repo to be relative to, so theirs is the absolute install directory.
+ *
+ * Enumerating a global package is not projecting it (DOR-1922). No projection
+ * stage targets `<dorkHome>/skills` yet — `buildPlan` is repo-relative end to
+ * end, and every apply/sweep path resolves against a `repoRoot` — so a globally
+ * installed skill still reaches nothing but a DorkOS-driven Claude Code session,
+ * a scheduled one included (the DOR-1518 gap). The difference this scan makes is
+ * that the drop can now say what is in the package instead of only its name.
  */
 function scanPluginsRoot(pluginsRoot: string, scope: InstalledScope): InstalledPlugin[] {
   if (!existsSync(pluginsRoot)) return [];
@@ -482,40 +536,24 @@ function scanPluginsRoot(pluginsRoot: string, scope: InstalledScope): InstalledP
     const manifest = readPluginManifest(pluginDir);
     if (!manifest) continue;
 
-    if (scope === 'global') {
-      // Global installs are reported but not projected by a project sync, so we
-      // record identity only — no path resolution or asset enumeration.
-      //
-      // KNOWN GAP (DOR-1518): this is also why a schedule-bearing skill in a
-      // GLOBALLY installed plugin (`<dorkHome>/plugins/<pkg>`) stays invisible to
-      // the scheduler. The scheduler's global watched root is `<dorkHome>/skills`,
-      // and no projection stage targets it — `buildPlan` is repo-relative end to
-      // end, and every apply/sweep path resolves against a `repoRoot`. The
-      // project-scope fix below (`planCanonicalSkillLinks`) therefore has no
-      // global twin; giving it one means building a global sync first, not
-      // widening this scan.
-      plugins.push({
-        name: manifest.name,
-        type: manifest.type,
-        scope,
-        skills: [],
-        commands: [],
-        layers: manifest.layers,
-      });
-      continue;
-    }
-
-    const relDir = `${PROJECT_PLUGINS_DIR}/${entry.name}`;
-    const { hooks, unreadable } = readPluginHooks(pluginDir, relDir);
+    const location: InstalledLocation =
+      scope === 'global'
+        ? { scope, absDir: pluginDir }
+        : { scope, relDir: `${PROJECT_PLUGINS_DIR}/${entry.name}` };
+    // How this package spells its own paths, and the prefix every asset below is
+    // named with. Slash-joined under an absolute directory too: Node reads a
+    // mixed-separator path on Windows, and a person reading the drop gets one
+    // path rather than two spellings of it.
+    const sourcePrefix = location.scope === 'global' ? location.absDir : location.relDir;
+    const { hooks, unreadable } = readPluginHooks(pluginDir, sourcePrefix);
     plugins.push({
       name: manifest.name,
       type: manifest.type,
-      scope,
-      relDir,
-      skills: collectPortableSkills(pluginDir, relDir),
-      commands: collectCommands(pluginDir, relDir),
+      location,
+      skills: collectPortableSkills(pluginDir, sourcePrefix),
+      commands: collectCommands(pluginDir, sourcePrefix),
       ...(hooks ? { hooks } : {}),
-      unreadableHooks: unreadable,
+      ...(unreadable ? { unreadableHooks: unreadable } : {}),
       layers: manifest.layers,
     });
   }
@@ -530,6 +568,9 @@ function scanPluginsRoot(pluginsRoot: string, scope: InstalledScope): InstalledP
  * scope (`<dorkHome>/plugins`) is only scanned when `dorkHome` is provided; an
  * offline `dorkos harness sync` (no `~/.dork`) thus still projects a repo's own
  * project-scoped installs.
+ *
+ * Nothing here reads a home directory of its own: `dorkHome` is injected, and a
+ * caller that does not pass one gets the project scope alone.
  *
  * @param opts - the project root to scan and, optionally, a resolved dork home.
  * @returns global plugins first (only when `dorkHome` is given), then project
