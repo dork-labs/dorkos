@@ -39,6 +39,7 @@ const CLEAN_RESULT = {
   applied: [],
   conflicts: [],
   swept: [],
+  removals: [],
   leftAlone: [],
 } as never;
 
@@ -141,9 +142,11 @@ describe('runAutoProjection', () => {
     });
 
     it('TR-02, AP-08: uninstall runs the same projection with sweepOrphans so orphans are pruned', async () => {
+      const reason = 'The package this skill came from is no longer installed here.';
       seamSpy.mockReturnValue({
         ...(CLEAN_RESULT as unknown as Record<string, unknown>),
         swept: ['.agents/skills/pkg__helper'],
+        removals: [{ path: '.agents/skills/pkg__helper', reason }],
       } as never);
 
       await runAutoProjection(
@@ -155,6 +158,18 @@ describe('runAutoProjection', () => {
       // seam has no default for it — this trigger has to say so every time.
       expect(seamSpy).toHaveBeenCalledWith(PROJECT, SEAM_OPTS);
       expect(seamSpy.mock.calls[0][1]).toEqual({ dorkHome: DORK_HOME, sweepOrphans: true });
+
+      // AP-07, DOR-1906: this pass runs unattended, so the deletion is named
+      // with its reason rather than counted. Seeded defect: log `swept.length`
+      // and nothing else — the shape this had before — and the operator is left
+      // with a number and no way back to which file went, or why.
+      expect(logger.info).toHaveBeenCalledWith(
+        '[HarnessSync] Removed projections whose source is gone',
+        expect.objectContaining({
+          projectPath: PROJECT,
+          removed: [`.agents/skills/pkg__helper — ${reason}`],
+        })
+      );
     });
 
     it('bails out (no projection) when the manifest still does not exist after scaffold', async () => {
