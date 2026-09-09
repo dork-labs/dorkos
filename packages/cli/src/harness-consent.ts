@@ -72,6 +72,27 @@ export async function readDorkosHarness(dorkHome: string): Promise<HarnessId | u
 }
 
 /**
+ * Whether `harness.autoAdopt` is on, and whether DorkOS owns this directory —
+ * the pair that decides whether B1's sentence (S8) is printed.
+ *
+ * Read without opening (or creating) the config store, same reason as
+ * {@link readStoredDecisions}. Ownership is resolved from the path alone, by the
+ * same function the server uses, so the terminal and the boot log cannot
+ * disagree about which directories DorkOS moves skills in.
+ *
+ * @param dorkHome - The resolved DorkOS data directory.
+ * @param repoRoot - The project the sync is running in.
+ * @returns True when the flag is on and this directory is not one DorkOS owns.
+ */
+export async function autoAdoptIsInertHere(dorkHome: string, repoRoot: string): Promise<boolean> {
+  const { autoAdoptFromDisk } = await import('../server/services/harness/adopt-owned-workspace.js');
+  if (!autoAdoptFromDisk(dorkHome)) return false;
+  const { resolveDirectoryOwnership } =
+    await import('../server/services/harness/directory-ownership.js');
+  return resolveDirectoryOwnership(repoRoot, dorkHome) === 'plain';
+}
+
+/**
  * The two lines shown when the settings file itself could not be read.
  *
  * It deliberately does NOT suggest `--allow-hooks`. That flag opens the config
