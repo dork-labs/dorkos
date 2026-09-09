@@ -16,6 +16,7 @@ import {
   roomReplyModeForToolCapableSession,
 } from '../../shared/room-tools-context.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
+import { formatApprovalVerdict } from '../../shared/approval-verdict-block.js';
 import { formatSeedContext } from '../../shared/seed-context-block.js';
 import { formatStagedContext } from '../../shared/staged-context-block.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
@@ -744,6 +745,13 @@ export function renderContextEntry(entry: AdditionalContextEntry): string {
       // sentence that tells the reader the person cannot see this block, and
       // that sentence must read identically on every runtime.
       return wrapTag(tag, formatSeedContext(entry.data));
+    case 'approval_verdict':
+      // Shared for the strongest version of the room_context reason: this block
+      // reports a SECURITY decision, and one written three times is one that
+      // says "DorkOS decided this" on one runtime and dumps JSON on the other
+      // two — which is exactly what the default arm in the Codex and OpenCode
+      // renderers would have done.
+      return wrapTag(tag, formatApprovalVerdict(entry.data));
   }
 }
 

@@ -107,8 +107,14 @@ export interface CapabilityHoldSession {
  * the SDK tool-call abort signal.
  */
 export interface CapabilityApprovalHold {
-  /** The approval primitive — reads the card and waits for the decision. */
-  approvals: Pick<ApprovalService, 'awaitDecision' | 'getPending'>;
+  /**
+   * The approval primitive — reads the card, waits for the decision, and owns the
+   * single-delivery claim while it waits (see {@link awaitCapabilityApproval}).
+   */
+  approvals: Pick<
+    ApprovalService,
+    'awaitDecision' | 'getPending' | 'claimVerdictDelivery' | 'releaseVerdictDelivery'
+  >;
   /** The live session whose inline card and stall-pause the hold drives. */
   session: CapabilityHoldSession;
   /** The held tool call's abort signal — a mid-turn interrupt ends the hold. */
@@ -171,6 +177,27 @@ function pushHoldResolved(
  * retires nothing and untracks a hold nobody registered, so it is pure noise on
  * the transcript (DOR-987).
  *
+ * ## The delivery claim, and why it is taken HERE (spec `approval-verdict-delivery`)
+ *
+ * A hold is not the only thing that can tell an agent how its approval ended. Past
+ * the cap the call returns the poll payload and the turn ends, so an answer given
+ * at minute twenty reaches nobody — which is what the out-of-band deliverer
+ * (`approvals/approval-verdict-delivery.ts`) exists to fix. Both wake on the SAME
+ * `approval_resolved` broadcast, so exactly one of them may speak.
+ *
+ * **The claim is taken when the wait STARTS, not when the decision lands.** A hold
+ * that is waiting WILL deliver — through its own return value, in the same turn —
+ * so the other path has to be locked out for the whole wait. Claiming at the
+ * decision instead is a race a person can lose in either direction: two turns for
+ * one answer, or none at all.
+ *
+ * **And a hold that gives up without a decision hands the claim back**, in the
+ * same `finally`, or a person answering an hour later would find the delivery
+ * spoken for by something long gone. `awaitDecision` never rejects — an abort
+ * resolves `'timeout'` — so that release is reached on every non-decision ending.
+ * Only a claim this call actually WON is released; one the other path already
+ * held is left exactly where it is.
+ *
  * @param hold - The approval primitive, session, abort signal, and cap.
  * @param payload - The gate's fresh `approval_required` payload for this call.
  * @returns How the wait ended; the caller resumes on `granted`/`denied` and
@@ -183,6 +210,10 @@ export async function awaitCapabilityApproval(
   const capMs = hold.capMs ?? CAPABILITY_APPROVAL_HOLD_CAP_MS;
   const startedAt = Date.now();
   const emitted = pushHoldCard(hold.session, payload, hold.approvals, startedAt, capMs);
+  // Before the await, never after it — see the module's "delivery claim" note.
+  // `false` here means the other path already owns the delivery (or this approval
+  // names no session to deliver to); the hold waits and resumes either way.
+  const claimed = hold.approvals.claimVerdictDelivery(payload.approvalId);
 
   let outcome: ApprovalDecisionOutcome = 'timeout';
   try {
@@ -192,6 +223,11 @@ export async function awaitCapabilityApproval(
     });
     return outcome;
   } finally {
+    // A decision was delivered by this call's return value, so the claim stays
+    // spent. Anything else means nobody was told, and the answer is still owed.
+    if (claimed && outcome !== 'granted' && outcome !== 'denied') {
+      hold.approvals.releaseVerdictDelivery(payload.approvalId);
+    }
     if (emitted) pushHoldResolved(hold.session, payload.approvalId, outcome);
   }
 }

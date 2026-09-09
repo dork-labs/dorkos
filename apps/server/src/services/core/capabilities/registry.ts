@@ -566,6 +566,20 @@ export function composeRegistry(
           ...(supplied.identity ? { identity: supplied.identity } : {}),
           ...(supplied.approvalToken ? { approvalToken: supplied.approvalToken } : {}),
           retryChannel: supplied.retryChannel ?? 'http-header',
+          // Where a verdict decided after the in-session hold gave up should be
+          // delivered (spec `approval-verdict-delivery`). The surface facts the
+          // adapter already forwards, handed on as a delivery ADDRESS — the gate
+          // reads nothing in it to decide anything. A sessionless surface (the
+          // external `/mcp` server, HTTP) supplies none, which is exactly the set
+          // with nowhere to deliver to.
+          ...(supplied.sessionId
+            ? {
+                requestingSession: {
+                  sessionId: supplied.sessionId,
+                  ...(supplied.cwd ? { cwd: supplied.cwd } : {}),
+                },
+              }
+            : {}),
           ...(preflight
             ? {
                 connectorAuthority: preflight.authorityBinding.approvalScope,

@@ -27,19 +27,32 @@ Before acting, read:
    - failing test names
    - expected vs actual behavior
    - error messages and stack traces
-3. **Read the failing test first**
+3. **Check load-sensitivity before diving in**
+   - passes in isolation but fails in the full run
+   - the assertion is about timing, throughput, or sample counts rather than
+     behavior
+   - the failure text names milliseconds, wall-clock boundaries, or "expected
+     N samples"
+   - the file is in a known flake family: harness atomic-write AP-10
+     (sample-throughput guard, MIN_SAMPLES fixed at 200), RoomLiveLane
+     (wall-clock boundaries), agent-activity (teardown timing),
+     palette-scope-chips (DOR-1502)
+   - a load-starved guard refusing to conclude is not a defect in your branch
+     — re-run once before spending a cycle, and if it repeats, it belongs to
+     the test's owner, not yours
+4. **Read the failing test first**
    - understand arrange / act / assert
    - explain what the test is trying to prove
-4. **Read the implementation under test**
+5. **Read the implementation under test**
    - trace inputs, transformations, and outputs
-5. **Decide where the bug lives**
+6. **Decide where the bug lives**
    - implementation
    - test logic
    - mock/setup
    - broader shared root cause
-6. **Apply a minimal fix**
+7. **Apply a minimal fix**
    - fix the real problem, not just the symptom
-7. **Re-run verification**
+8. **Re-run verification**
    - the failing test
    - nearby tests when relevant
 

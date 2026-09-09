@@ -24,10 +24,10 @@ fail=0
 # Build a synthetic workspace.
 #   $1 — root to build under
 # Creates two ordinary specs, the opt-in auth spec, the grep-filtered
-# @integration spec, and EVERY registered module (plain .ts files a spec imports
+# @integration specs, and EVERY registered module (plain .ts files a spec imports
 # — see REGISTERED_MODULES in the subject). The report has both ordinary specs
-# and the modules running, the auth spec skipped, and the @integration spec
-# absent entirely (grepInvert drops it from collection, so it never reaches the
+# and the modules running, the auth spec skipped, and the @integration specs
+# absent entirely (grepInvert drops them from collection, so they never reach the
 # report). That is the known-good run every case below bends exactly one thing
 # about.
 #
@@ -43,6 +43,7 @@ make_workspace() {
   : >"$root/apps/e2e/tests/alpha.spec.ts"
   : >"$root/apps/e2e/tests/beta.spec.ts"
   : >"$root/apps/e2e/tests/settings/auth-login.spec.ts"
+  : >"$root/apps/e2e/tests/chat/codex-session.spec.ts"
   : >"$root/apps/e2e/tests/chat/send-message.spec.ts"
   : >"$root/apps/e2e/tests/chat/compaction.ts"
   : >"$root/apps/e2e/tests/chat/composer-escape-and-ime.ts"
@@ -237,22 +238,26 @@ json.dump(d, open(p, 'w'))
 PY
 check 'a stale OPT_IN exemption is named' "$tmp/stale" 1 'OPT_IN_SPECS'
 
-# The @integration spec appears in the report — either E2E_INTEGRATION leaked
-# into CI (spending real model credit per run) or the file gained an untagged
-# test. Both must be loud.
-make_workspace "$tmp/filteredRan"
-python3 - "$tmp/filteredRan/apps/e2e/test-results/results.json" <<'PY'
+# An @integration spec appears in the report — either E2E_INTEGRATION leaked
+# into CI (spending real account credit per run) or the file gained an untagged
+# test. Both the existing generic turn and the Codex account proof must be loud.
+for filtered_spec in 'chat/send-message.spec.ts' 'chat/codex-session.spec.ts'; do
+  fixture_name=${filtered_spec##*/}
+  root="$tmp/filteredRan-${fixture_name%.spec.ts}"
+  make_workspace "$root"
+  python3 - "$root/apps/e2e/test-results/results.json" "$filtered_spec" <<'PY'
 import json, sys
-p = sys.argv[1]
+p, filtered_spec = sys.argv[1:]
 d = json.load(open(p))
 d['suites'].append({
-    "title": "chat", "file": "chat/send-message.spec.ts",
-    "specs": [{"title": "sends", "file": "chat/send-message.spec.ts",
+    "title": "chat", "file": filtered_spec,
+    "specs": [{"title": "drives a real turn", "file": filtered_spec,
                "tests": [{"status": "expected"}]}]})
 d['stats'] = {"expected": 4, "unexpected": 0, "flaky": 0, "skipped": 1}
 json.dump(d, open(p, 'w'))
 PY
-check 'an @integration spec appearing in the run is refused' "$tmp/filteredRan" 1 'FILTERED_SPECS'
+  check "a leaked @integration run is refused: $filtered_spec" "$root" 1 "$filtered_spec"
+done
 
 # An exemption naming a spec that no longer exists — a list nobody maintains.
 make_workspace "$tmp/deadExemption"

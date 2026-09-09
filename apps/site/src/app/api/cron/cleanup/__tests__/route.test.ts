@@ -12,9 +12,12 @@ vi.mock('@/lib/connectors/managed/event-cleanup-service', () => ({
 import { sweepManagedConnectorEventRetention } from '@/lib/connectors/managed/event-delivery-service';
 vi.mock('@/db/transaction-client', () => ({ getTransactionDb: vi.fn(() => ({ marker: 'db' })) }));
 vi.mock('@/lib/connectors/managed/event-delivery-service', () => ({
-  sweepManagedConnectorEventRetention: vi
-    .fn()
-    .mockResolvedValue({ contentRowsCleared: 2, metadataRowsDeleted: 1 }),
+  sweepManagedConnectorEventRetention: vi.fn().mockResolvedValue({
+    pages: 1,
+    contentRowsCleared: 2,
+    metadataRowsDeleted: 1,
+    protectedBytesCleared: 256,
+  }),
 }));
 
 // The route only needs a stand-in auth handle and a stubbed cleanup pass; the
@@ -75,6 +78,10 @@ describe('GET /api/cron/cleanup', () => {
     expect(body.ok).toBe(true);
     expect(body.counts).toEqual({ unverifiedUsers: 2, expiredDeviceCodes: 3, staleInstances: 1 });
     expect(sweepManagedConnectorEventRetention).toHaveBeenCalledTimes(1);
+    expect(sweepManagedConnectorEventRetention).toHaveBeenCalledWith(
+      { marker: 'db' },
+      { signal: expect.any(AbortSignal) }
+    );
     expect(recoverManagedEventCleanup).toHaveBeenCalledWith(
       { marker: 'db' },
       expect.any(AbortSignal)

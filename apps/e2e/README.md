@@ -150,6 +150,11 @@ Tag a spec `@integration` whenever it cannot pass without a live model. If you
 can express it against `TestModeRuntime` instead, put it on the mock leg (next
 section) and it runs everywhere.
 
+If every test in a new spec is `@integration`-only, register its path in
+`FILTERED_SPECS` in `scripts/assert-browser-tests-executed.sh` and add the same
+file to that guard's synthetic fixtures. The default report omits the whole
+file, so the inventory gate needs that explicit, self-tested exception.
+
 ## Specs that need the sidebar to themselves (`@sole-sidebar`)
 
 Most shared state in this suite is isolated by NAMING: `roomsApi` gives every

@@ -175,6 +175,7 @@ import {
   summaryFieldsNamingSubject,
   type ApprovalConsumeResult,
   type ApprovalConnectorAuthority,
+  type ApprovalRequestingSession,
   type ApprovalService,
   type ApprovalTicket,
   describeRemainingArguments,
@@ -532,6 +533,18 @@ export interface TierEnforcementRequest {
    * privilege a caller could claim by choosing a surface.
    */
   origin?: ApprovalOrigin;
+  /**
+   * The session this call came from, recorded on any approval this gate mints so
+   * a verdict answered after the in-session hold gave up can still reach it
+   * (spec `approval-verdict-delivery`).
+   *
+   * A DELIVERY ADDRESS and never an authorization fact — nothing here or
+   * downstream reads it to decide anything, for exactly the reason
+   * {@link origin} gives. Absent on every sessionless surface (the external
+   * `/mcp` server, HTTP, the introspection stub), which is precisely the set
+   * with nowhere to deliver to.
+   */
+  requestingSession?: ApprovalRequestingSession;
 }
 
 /** What {@link initCapabilityTierGate} wires the gate to at boot. */
@@ -968,6 +981,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     standingGrantEligible = true,
     subject,
     origin,
+    requestingSession,
   } = request;
 
   // The TIER decides whether to gate — never whether the caller identified
@@ -1136,6 +1150,9 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
         // caller records none, which is what makes its approval ineligible to be
         // made standing.
         ...(identity && standingGrantEligible ? { requestedByPath: identity.agentPath } : {}),
+        // Where to tell the answer, when the surface had a session at all. Not
+        // read by any decision here — see the field's own docblock.
+        ...(requestingSession ? { requestingSession } : {}),
       });
     } catch (err) {
       auditStoreFailure();

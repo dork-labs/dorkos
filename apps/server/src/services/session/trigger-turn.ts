@@ -89,7 +89,11 @@ import type {
   SessionSettings,
   StreamEvent,
 } from '@dorkos/shared/types';
-import type { ClientContext, RoomContextData } from '@dorkos/shared/additional-context';
+import type {
+  ApprovalVerdictData,
+  ClientContext,
+  RoomContextData,
+} from '@dorkos/shared/additional-context';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import type { SessionStateProjector } from './session-state-projector.js';
@@ -429,6 +433,15 @@ export interface TriggerTurnOpts {
    */
   seedContext?: string;
   /**
+   * How an approval this session asked for ended, when a person answered it late
+   * (spec `approval-verdict-delivery`). Passed straight to the assembler, which
+   * renders it into the neutral bag as an `approval_verdict` entry.
+   *
+   * Server-composed from the approval row and reachable only from
+   * `core/approvals/approval-verdict-delivery.ts` — never from a wire payload.
+   */
+  approvalVerdict?: ApprovalVerdictData;
+  /**
    * Instructions the CALLER attaches to this turn's system prompt, ahead of
    * anything the person typed and behind everything DorkOS says about the agent
    * itself (`launch-resolver.ts` concatenates it after the base append).
@@ -597,6 +610,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     context,
     roomContext,
     seedContext,
+    approvalVerdict,
     systemPromptAppend,
     accountHint,
     settings,
@@ -727,6 +741,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       clientContext: context,
       ...(roomContext ? { roomContext } : {}),
       ...(seedContext ? { seedContext } : {}),
+      ...(approvalVerdict ? { approvalVerdict } : {}),
       nativeContext: deps.getCapabilities().nativeContext,
     });
     // Fold in any context a person STAGED for a runtime that cannot append to

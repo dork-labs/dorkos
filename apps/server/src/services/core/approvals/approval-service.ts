@@ -41,7 +41,8 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { ulid } from 'ulidx';
-import { and, asc, eq, isNull, lt, approvals, type Db } from '@dorkos/db';
+import { and, asc, eq, isNotNull, isNull, lt, approvals, type Db } from '@dorkos/db';
+import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import {
   APPROVAL_DETAIL_MAX_LENGTH,
@@ -178,6 +179,42 @@ export interface ApprovalRequestInput {
   origin?: ApprovalOrigin;
   /** Authenticated connector scope; absent for every ordinary capability. */
   connectorAuthority?: ApprovalConnectorAuthority;
+  /**
+   * The session this request came from, so a verdict decided after the
+   * in-session hold gave up can still reach it (spec `approval-verdict-delivery`).
+   *
+   * Absent for every surface with no session — the external `/mcp` server, the
+   * introspection stub — which is exactly the set with nowhere to deliver to.
+   * It is a DELIVERY ADDRESS and never an authorization fact: nothing here or
+   * downstream reads it to decide anything, for the same reason `origin` does
+   * not.
+   */
+  requestingSession?: ApprovalRequestingSession;
+}
+
+/** Where a verdict for one approval would be delivered, when there is anywhere. */
+export interface ApprovalRequestingSession {
+  /** The session that asked. */
+  sessionId: string;
+  /**
+   * The directory that session runs in, when the surface knew one.
+   *
+   * Stored rather than looked up later because the lookup is what fails: the
+   * projector registry empties on restart and an approval outlives one easily
+   * inside two hours (the DOR-981 lesson `mcp-signin-resume` records as
+   * `originCwd`).
+   */
+  cwd?: string;
+}
+
+/** One approval's verdict, and the session it is owed to. */
+export interface ApprovalVerdictDelivery {
+  /** The session that asked for the approval. */
+  sessionId: string;
+  /** Where that session runs, when the request recorded it. */
+  cwd?: string;
+  /** The verdict itself, composed entirely from the stored row. */
+  verdict: ApprovalVerdictData;
 }
 
 /** Exact indexed connector authority frozen beside one approval. */
@@ -483,6 +520,11 @@ export class ApprovalService {
       expiresAt: new Date(now + this.ttlMs).toISOString(),
       decidedAt: null,
       consumedAt: null,
+      // A delivery ADDRESS, not an authority: where to tell the answer to, when
+      // the asking surface had a session at all.
+      requestingSessionId: input.requestingSession?.sessionId ?? null,
+      requestingCwd: input.requestingSession?.cwd ?? null,
+      notifiedAt: null,
     };
     this.db.insert(approvals).values(row).run();
 
@@ -691,6 +733,137 @@ export class ApprovalService {
     if (row.state === 'granted') return 'granted';
     if (row.state === 'denied') return 'denied';
     return undefined;
+  }
+
+  /**
+   * Take the right to deliver one approval's verdict, or learn that somebody
+   * else already has it (spec `approval-verdict-delivery`).
+   *
+   * Two paths deliver verdicts and both wake on the same `approval_resolved`
+   * broadcast: the in-session hold that resumes the held tool call, and the
+   * out-of-band deliverer that wakes a session which stopped waiting. A
+   * check-then-act between them lets both through, which is two turns for one
+   * decision — so the WRITE decides, exactly as {@link markConsumed} decides
+   * which of two presentations of one token wins.
+   *
+   * A row that names no session is refused rather than claimed: there is nothing
+   * to deliver to, and a claim on it would be a lock held forever over a delivery
+   * that can never happen.
+   *
+   * **Claim when you START waiting, not when the decision lands.** A hold that is
+   * waiting WILL deliver, so the other path must be locked out for the whole
+   * wait; claiming at the decision is a race a person can lose in either
+   * direction — two deliveries, or none.
+   *
+   * @param approvalId - ULID of the approval whose verdict is to be delivered.
+   * @returns True when this call took the claim; false when it was already taken,
+   *   the approval is unknown, or there is no session to deliver to.
+   */
+  claimVerdictDelivery(approvalId: string): boolean {
+    const result = this.db
+      .update(approvals)
+      .set({ notifiedAt: new Date().toISOString() })
+      .where(
+        and(
+          eq(approvals.id, approvalId),
+          isNull(approvals.notifiedAt),
+          isNotNull(approvals.requestingSessionId)
+        )
+      )
+      .run();
+    return result.changes === 1;
+  }
+
+  /**
+   * Give back a claim without having delivered on it.
+   *
+   * The in-session hold's release path: it claims when it starts waiting, and a
+   * hold that gives up WITHOUT a decision — the cap ran out, the turn was
+   * interrupted — has to hand the claim back, or a person answering at minute
+   * twenty would find the delivery spoken for by a hold that has been gone for an
+   * hour. `awaitDecision` never rejects (an abort resolves `'timeout'`), so the
+   * release path is reachable on every non-decision ending.
+   *
+   * Only the holder of a claim may call this, which is why it is unconditional:
+   * the caller already knows it won, and re-checking would only invite a caller
+   * that did not win to try.
+   *
+   * @param approvalId - ULID of the approval this caller claimed and is releasing.
+   */
+  releaseVerdictDelivery(approvalId: string): void {
+    this.db.update(approvals).set({ notifiedAt: null }).where(eq(approvals.id, approvalId)).run();
+  }
+
+  /**
+   * What one approval's verdict says, and which session is owed it.
+   *
+   * Composed ENTIRELY from the stored row, so nothing a caller supplied at
+   * delivery time can appear in a security notice. The capability title is the
+   * one the CARD showed, denormalized from the registry at request time (see
+   * {@link CapabilityDescriptorLookup}) — which is what stops an agent choosing
+   * the words a person is told they approved.
+   *
+   * `undefined` for three different absences, all of which mean "nothing to
+   * deliver": no such approval, an approval nobody can be told about (no
+   * requesting session), and an approval a person has not answered yet.
+   *
+   * @param approvalId - ULID of the approval.
+   */
+  verdictDelivery(approvalId: string): ApprovalVerdictDelivery | undefined {
+    const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
+    if (!row) return undefined;
+    if (!row.requestingSessionId) return undefined;
+    // Only a decision is a verdict. An expired or spent row has no answer in it,
+    // and `expired` is DOR-1932's subject, not this seam's.
+    if (row.state !== 'granted' && row.state !== 'denied') return undefined;
+    return {
+      sessionId: row.requestingSessionId,
+      ...(row.requestingCwd ? { cwd: row.requestingCwd } : {}),
+      verdict: {
+        approvalId: row.id,
+        // The column is `notNull` and `request` always writes the registry title
+        // or the capability id, so this can only be blank on a hand-edited row.
+        // Falling back beats rendering `Request: ` at a person's security
+        // decision — the id is always meaningful, an empty line never is.
+        capabilityTitle: row.capabilityTitle.trim() || row.capabilityId,
+        outcome: row.state,
+        // `decidedAt` is written in the same statement that sets `state`, so a
+        // decided row always has one; the fallback keeps a hand-edited row from
+        // rendering the word `undefined` into a security block.
+        decidedAt: row.decidedAt ?? row.createdAt,
+        ...(row.state === 'denied' && row.denyReason ? { denyReason: row.denyReason } : {}),
+      },
+    };
+  }
+
+  /**
+   * Hand back every delivery claim that only a dead process could still hold.
+   *
+   * Run once at boot. A claim on a PENDING approval can only belong to an
+   * in-session hold that is waiting right now — the out-of-band deliverer claims
+   * and delivers within one decided row, and never leaves a pending one claimed.
+   * A hold lives in process memory and holds a turn open, so no hold survives a
+   * restart: every claim on a pending row is therefore stranded by definition,
+   * and its release path (`awaitCapabilityApproval`'s `finally`) will never run.
+   *
+   * Without this, a restart while somebody was deciding reproduced the exact bug
+   * this feature exists to fix, one layer down: the person answers at minute
+   * twenty, the deliverer's claim is refused by a hold that died an hour ago, and
+   * the agent is never told — with the column meant to guarantee delivery being
+   * the thing that prevented it.
+   *
+   * Decided rows are deliberately untouched: their claim means the answer was
+   * delivered (or the session was gone for good), which a restart does not undo.
+   *
+   * @returns How many stranded claims were released.
+   */
+  releaseStaleVerdictClaims(): number {
+    const result = this.db
+      .update(approvals)
+      .set({ notifiedAt: null })
+      .where(and(eq(approvals.state, 'pending'), isNotNull(approvals.notifiedAt)))
+      .run();
+    return result.changes;
   }
 
   /**

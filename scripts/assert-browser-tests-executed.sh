@@ -151,7 +151,11 @@ OPT_IN_SPECS=(
 #
 #   chat/send-message.spec.ts — one describe block, tagged @integration: real
 #     agent turns awaiting real model responses.
+#   chat/codex-session.spec.ts — real Codex account discovery, model selection,
+#     two model turns, and durable session replay. It requires a connected Codex
+#     account and intentionally runs only when E2E_INTEGRATION=1 is explicit.
 FILTERED_SPECS=(
+  'chat/codex-session.spec.ts'
   'chat/send-message.spec.ts'
 )
 

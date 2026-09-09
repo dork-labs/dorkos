@@ -25,6 +25,7 @@ import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
 import { OPENCODE_DORKOS_TOOL_PREFIX } from '../../shared/dorkos-tool-names.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
+import { formatApprovalVerdict } from '../../shared/approval-verdict-block.js';
 import { formatSeedContext } from '../../shared/seed-context-block.js';
 import { formatStagedContext } from '../../shared/staged-context-block.js';
 
@@ -57,7 +58,7 @@ export function parseModelSelection(
 /**
  * Render one neutral context entry into a tagged block — the OpenCode half of
  * ADR-0273 (the server owns WHAT context exists; the adapter owns HOW it is
- * rendered). Same honest JSON rendering as the Codex adapter, and the same two
+ * rendered). Same honest JSON rendering as the Codex adapter, and the same four
  * exceptions — see {@link renderContextBody}.
  */
 function renderContextEntry(entry: AdditionalContextEntry): string {
@@ -66,17 +67,22 @@ function renderContextEntry(entry: AdditionalContextEntry): string {
 }
 
 /**
- * The body of one rendered block: structured data as JSON, except for the two
- * kinds whose body is PROSE and must read identically on every runtime.
+ * The body of one rendered block: structured data as JSON, except for the kinds
+ * whose body is PROSE and must read identically on every runtime.
  *
  * `room_context` carries text other people wrote inside an untrusted-input fence
  * a JSON dump would not carry. `seed_context` carries a paragraph somebody wrote
  * for a model to read, plus the sentence telling the reader the person cannot
  * see the block — JSON would deliver both as one quoted line with `\n` spelled
- * out in it. Both go through the shared writers in `runtimes/shared/`.
+ * out in it. `approval_verdict` reports a security decision a person made, and
+ * the `default` arm below is exactly what would have dumped it here as raw JSON
+ * while it read as a formatted block on claude-code. All of them go through the
+ * shared writers in `runtimes/shared/`.
  */
 function renderContextBody(entry: AdditionalContextEntry): string {
   switch (entry.kind) {
+    case 'approval_verdict':
+      return formatApprovalVerdict(entry.data);
     case 'room_context':
       // OpenCode builds `sanitize(server) + "_" + sanitize(tool)` rather than
       // the `mcp__server__tool` the other two use, so the tool-only closing

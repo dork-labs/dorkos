@@ -11,6 +11,11 @@ import type {
 } from '@dorkos/shared/connector-managed-schemas';
 import { schema } from '@/db/client';
 import {
+  lockManagedEventCapacity,
+  MANAGED_EVENT_CAPACITY_POLICY,
+  type ManagedEventCapacityPolicy,
+} from './event-capacity-service';
+import {
   lockLiveAuthorityPrincipal,
   managedRequestHash,
   type ManagedConnectorDatabase,
@@ -64,8 +69,10 @@ async function current(
   command: EventCommand,
   bindingId: string,
   worker: string,
-  provider: ManagedAuthorityProviderContext
+  provider: ManagedAuthorityProviderContext,
+  policy: ManagedEventCapacityPolicy
 ) {
+  await lockManagedEventCapacity(tx, principal.tenantId, policy);
   await lockLiveAuthorityPrincipal(tx, principal);
   const c = schema.managedConnectorConnection;
   const p = schema.managedConnectorProvider;
@@ -128,10 +135,12 @@ export async function applyManagedEventAuthorityCommand(
   db: ManagedConnectorDatabase,
   principal: ManagedConnectorPrincipal,
   command: EventCommand,
-  provider?: ManagedAuthorityProviderContext
+  provider?: ManagedAuthorityProviderContext,
+  policy: ManagedEventCapacityPolicy = MANAGED_EVENT_CAPACITY_POLICY
 ): Promise<{ status: ManagedConnectorAuthorityCommandStatus; conflict: boolean }> {
   const requestHash = managedRequestHash(command);
   const claim = await db.transaction(async (tx) => {
+    await lockManagedEventCapacity(tx, principal.tenantId, policy);
     await lockLiveAuthorityPrincipal(tx, principal);
     const [tenant] = await tx
       .select()
@@ -245,20 +254,48 @@ export async function applyManagedEventAuthorityCommand(
             eq(bindings.definitionId, definition.id),
             eq(bindings.filterHash, filterHash)
           );
-          await tx
-            .insert(bindings)
-            .values({
-              tenantId: principal.tenantId,
-              providerInstanceId: connection.providerInstanceId,
-              providerGeneration: connection.materialGeneration,
-              externalAccountRef: connection.externalAccountRef,
-              definitionId: definition.id,
-              filterHash,
-              filter: command.filter,
-            })
-            .onConflictDoNothing();
-          const [binding] = await tx.select().from(bindings).where(scope).for('update');
+          let [binding] = await tx.select().from(bindings).where(scope).for('update');
+          if (!binding) {
+            [binding] = await tx
+              .insert(bindings)
+              .values({
+                tenantId: principal.tenantId,
+                providerInstanceId: connection.providerInstanceId,
+                providerGeneration: connection.materialGeneration,
+                externalAccountRef: connection.externalAccountRef,
+                definitionId: definition.id,
+                filterHash,
+                filter: command.filter,
+              })
+              .onConflictDoNothing()
+              .returning();
+            if (!binding) [binding] = await tx.select().from(bindings).where(scope).for('update');
+          }
           if (!binding) throw new Error('Event binding unavailable.');
+          const reservations = await tx
+            .select({ id: subscriptions.id })
+            .from(subscriptions)
+            .where(
+              and(
+                eq(subscriptions.tenantId, principal.tenantId),
+                eq(subscriptions.bindingId, binding.id),
+                isNull(subscriptions.revokedAt)
+              )
+            )
+            .limit(policy.bindingSubscriptionLimit + 1)
+            .for('update');
+          const replacesReservation = Boolean(
+            priorSubscription &&
+            priorSubscription.bindingId === binding.id &&
+            priorSubscription.revokedAt === null
+          );
+          if (
+            reservations.length + (replacesReservation ? 0 : 1) >
+            policy.bindingSubscriptionLimit
+          ) {
+            state = 'rejected';
+            rejectionCode = 'event_subscription_limit_reached';
+          }
           const value = {
             connectionId: connection.id,
             targetInstanceId: principal.instanceId,
@@ -272,10 +309,14 @@ export async function applyManagedEventAuthorityCommand(
             revokedAt: null,
             updatedAt: now,
           };
-          await tx
-            .insert(subscriptions)
-            .values({ tenantId: principal.tenantId, id: command.subscriptionId, ...value })
-            .onConflictDoUpdate({ target: [subscriptions.tenantId, subscriptions.id], set: value });
+          if (state === 'pending')
+            await tx
+              .insert(subscriptions)
+              .values({ tenantId: principal.tenantId, id: command.subscriptionId, ...value })
+              .onConflictDoUpdate({
+                target: [subscriptions.tenantId, subscriptions.id],
+                set: value,
+              });
         }
       }
     }
@@ -325,7 +366,7 @@ export async function applyManagedEventAuthorityCommand(
     provider?.events
   ) {
     return {
-      status: await cleanupManagedEventBinding(db, principal, command, claim.row, provider),
+      status: await cleanupManagedEventBinding(db, principal, command, claim.row, provider, policy),
       conflict: false,
     };
   }
@@ -334,6 +375,7 @@ export async function applyManagedEventAuthorityCommand(
   const worker = randomUUID();
   const claimedAt = new Date();
   const binding = await db.transaction(async (tx) => {
+    await lockManagedEventCapacity(tx, principal.tenantId, policy);
     await lockLiveAuthorityPrincipal(tx, principal);
     const [subscription] = await tx
       .select()
@@ -361,6 +403,101 @@ export async function applyManagedEventAuthorityCommand(
     return held;
   });
   if (!binding) return { status: status(claim.row), conflict: false };
+  let providerMutationOccurred = false;
+  const terminalize = async (capturedTrigger?: ConnectorPhysicalTrigger) => {
+    const terminal = await db.transaction(async (tx) => {
+      await lockManagedEventCapacity(tx, principal.tenantId, policy);
+      const [receipt] = await tx
+        .select()
+        .from(commands)
+        .where(commandWhere(principal, command))
+        .for('update');
+      if (!receipt || receipt.requestHash !== requestHash || receipt.state !== 'pending')
+        return receipt ?? claim.row;
+      const [owned] = await tx
+        .select({ id: bindings.id })
+        .from(bindings)
+        .where(
+          and(
+            eq(bindings.tenantId, principal.tenantId),
+            eq(bindings.id, binding.id),
+            eq(bindings.leaseOwner, worker),
+            sql`${bindings.leasedUntil} > now()`
+          )
+        )
+        .for('update');
+      if (!owned) return receipt;
+      const terminalAt = new Date();
+      if (capturedTrigger)
+        await tx
+          .update(bindings)
+          .set({
+            state: 'ready',
+            providerTriggerRef: capturedTrigger.providerTriggerRef,
+            providerTriggerUuid: capturedTrigger.providerTriggerUuid ?? null,
+            externalAccountUuid: capturedTrigger.externalAccountUuid ?? null,
+            updatedAt: terminalAt,
+          })
+          .where(
+            and(
+              eq(bindings.tenantId, principal.tenantId),
+              eq(bindings.id, binding.id),
+              eq(bindings.leaseOwner, worker)
+            )
+          );
+      await tx
+        .update(subscriptions)
+        .set({ enabled: false, revokedAt: terminalAt, updatedAt: terminalAt })
+        .where(
+          and(
+            eq(subscriptions.tenantId, principal.tenantId),
+            eq(subscriptions.id, command.subscriptionId),
+            eq(subscriptions.bindingId, binding.id),
+            eq(subscriptions.scopeVersion, command.subscriptionVersion),
+            isNull(subscriptions.revokedAt)
+          )
+        );
+      const [finished] = await tx
+        .update(commands)
+        .set({
+          state: 'superseded',
+          eventBindingId: capturedTrigger ? binding.id : null,
+          externalCleanup: capturedTrigger ? 'pending' : 'not_required',
+          eventCleanupAfter: null,
+          updatedAt: terminalAt,
+        })
+        .where(
+          and(
+            commandWhere(principal, command),
+            eq(commands.requestHash, requestHash),
+            eq(commands.state, 'pending')
+          )
+        )
+        .returning();
+      return finished ?? receipt;
+    });
+    if (terminal.externalCleanup === 'pending' && provider.events) {
+      try {
+        await db.transaction(async (tx) => {
+          await lockManagedEventCapacity(tx, principal.tenantId, policy);
+          await tx
+            .update(bindings)
+            .set({ leaseOwner: null, leasedUntil: null })
+            .where(
+              and(
+                eq(bindings.tenantId, principal.tenantId),
+                eq(bindings.id, binding.id),
+                eq(bindings.leaseOwner, worker)
+              )
+            );
+        });
+        await cleanupManagedEventBinding(db, principal, command, terminal, provider, policy);
+      } catch {
+        // The durable captured-binding receipt remains eligible for bounded recovery.
+      }
+    }
+    return { status: status(terminal), conflict: false };
+  };
   try {
     const [definition] = await db
       .select()
@@ -375,8 +512,8 @@ export async function applyManagedEventAuthorityCommand(
       signal: provider.signal,
     };
     const authorizeDispatch = () =>
-      db.transaction((tx) => current(tx, principal, command, binding.id, worker, provider));
-    if (!(await authorizeDispatch())) return { status: status(claim.row), conflict: false };
+      db.transaction((tx) => current(tx, principal, command, binding.id, worker, provider, policy));
+    if (!(await authorizeDispatch())) return await terminalize();
     // Current local account state is insufficient proof of remote authentication.
     // Recheck the exact account before the trigger mutation, without exposing its body.
     try {
@@ -420,9 +557,11 @@ export async function applyManagedEventAuthorityCommand(
         });
         if (enabled.status !== 'ok') {
           if (enabled.status === 'outcome_unknown') await unknown();
+          if (enabled.status === 'denied') return await terminalize();
           return { status: status(claim.row), conflict: false };
         }
         trigger = { ...trigger, enabled: true };
+        providerMutationOccurred = true;
       }
     } else {
       if (binding.state === 'outcome_unknown')
@@ -430,8 +569,10 @@ export async function applyManagedEventAuthorityCommand(
       const created = await provider.events.createTrigger({ ...scope, authorizeDispatch });
       if (created.status !== 'ready') {
         if (created.status === 'outcome_unknown') await unknown();
+        if (created.status === 'denied') return await terminalize();
         return { status: status(claim.row), conflict: false };
       }
+      providerMutationOccurred = true;
       const confirmed = await provider.events.reconcileTrigger(scope);
       if (
         confirmed.status !== 'found' ||
@@ -447,7 +588,7 @@ export async function applyManagedEventAuthorityCommand(
     const finished = await db.transaction(async (tx) => {
       if (
         !trigger.enabled ||
-        !(await current(tx, principal, command, binding.id, worker, provider))
+        !(await current(tx, principal, command, binding.id, worker, provider, policy))
       )
         return claim.row;
       await tx
@@ -484,30 +625,37 @@ export async function applyManagedEventAuthorityCommand(
         .returning();
       return row;
     });
-    return { status: status(finished), conflict: false };
+    if (finished.state === 'applied') return { status: status(finished), conflict: false };
+    return await terminalize(providerMutationOccurred ? trigger : undefined);
   } finally {
-    await db
-      .update(bindings)
-      .set({ leaseOwner: null, leasedUntil: null })
-      .where(
-        and(
-          eq(bindings.tenantId, principal.tenantId),
-          eq(bindings.id, binding.id),
-          eq(bindings.leaseOwner, worker)
-        )
-      );
+    await db.transaction(async (tx) => {
+      await lockManagedEventCapacity(tx, principal.tenantId, policy);
+      await tx
+        .update(bindings)
+        .set({ leaseOwner: null, leasedUntil: null })
+        .where(
+          and(
+            eq(bindings.tenantId, principal.tenantId),
+            eq(bindings.id, binding.id),
+            eq(bindings.leaseOwner, worker)
+          )
+        );
+    });
   }
   async function unknown() {
-    await db
-      .update(bindings)
-      .set({ state: 'outcome_unknown', updatedAt: new Date() })
-      .where(
-        and(
-          eq(bindings.tenantId, principal.tenantId),
-          eq(bindings.id, binding!.id),
-          eq(bindings.leaseOwner, worker)
-        )
-      );
+    await db.transaction(async (tx) => {
+      await lockManagedEventCapacity(tx, principal.tenantId, policy);
+      await tx
+        .update(bindings)
+        .set({ state: 'outcome_unknown', updatedAt: new Date() })
+        .where(
+          and(
+            eq(bindings.tenantId, principal.tenantId),
+            eq(bindings.id, binding!.id),
+            eq(bindings.leaseOwner, worker)
+          )
+        );
+    });
   }
 }
 
@@ -517,21 +665,26 @@ export async function cleanupManagedEventBinding(
   principal: ManagedConnectorPrincipal,
   command: EventCommand,
   receipt: typeof commands.$inferSelect,
-  provider: ManagedAuthorityProviderContext
+  provider: ManagedAuthorityProviderContext,
+  policy: ManagedEventCapacityPolicy = MANAGED_EVENT_CAPACITY_POLICY
 ): Promise<ManagedConnectorAuthorityCommandStatus> {
   if (!receipt.eventBindingId || !provider.events) return status(receipt);
   const worker = randomUUID();
-  const [binding] = await db
-    .update(bindings)
-    .set({ leaseOwner: worker, leasedUntil: new Date(Date.now() + 60_000) })
-    .where(
-      and(
-        eq(bindings.tenantId, principal.tenantId),
-        eq(bindings.id, receipt.eventBindingId),
-        or(isNull(bindings.leaseOwner), lte(bindings.leasedUntil, new Date()))
+  const binding = await db.transaction(async (tx) => {
+    await lockManagedEventCapacity(tx, principal.tenantId, policy);
+    const [claimed] = await tx
+      .update(bindings)
+      .set({ leaseOwner: worker, leasedUntil: new Date(Date.now() + 60_000) })
+      .where(
+        and(
+          eq(bindings.tenantId, principal.tenantId),
+          eq(bindings.id, receipt.eventBindingId!),
+          or(isNull(bindings.leaseOwner), lte(bindings.leasedUntil, new Date()))
+        )
       )
-    )
-    .returning();
+      .returning();
+    return claimed;
+  });
   if (!binding) return status(receipt);
   const hasSubscribers = async (tx: Transaction) => {
     const active = await tx
@@ -559,10 +712,22 @@ export async function cleanupManagedEventBinding(
     return active.length > 0;
   };
   const liveClaim = async (tx: Transaction) => {
+    await lockManagedEventCapacity(tx, principal.tenantId, policy);
     await lockLiveAuthorityPrincipal(tx, principal);
     const [live] = await tx
       .select({ id: bindings.id })
       .from(bindings)
+      .innerJoin(
+        commands,
+        and(
+          eq(commands.tenantId, bindings.tenantId),
+          commandWhere(principal, command),
+          eq(commands.requestHash, receipt.requestHash),
+          eq(commands.state, receipt.state),
+          eq(commands.eventBindingId, bindings.id),
+          eq(commands.externalCleanup, 'pending')
+        )
+      )
       .innerJoin(
         schema.managedConnectorProvider,
         and(
@@ -609,7 +774,7 @@ export async function cleanupManagedEventBinding(
         .where(
           and(
             commandWhere(principal, command),
-            eq(commands.state, 'applied'),
+            eq(commands.state, receipt.state),
             eq(commands.requestHash, receipt.requestHash),
             eq(commands.eventBindingId, binding.id),
             eq(commands.externalCleanup, 'pending')
@@ -621,6 +786,7 @@ export async function cleanupManagedEventBinding(
   try {
     if (
       await db.transaction(async (tx) => {
+        await lockManagedEventCapacity(tx, principal.tenantId, policy);
         await lockLiveAuthorityPrincipal(tx, principal);
         return hasSubscribers(tx);
       })
@@ -655,15 +821,18 @@ export async function cleanupManagedEventBinding(
     if (deleted.status !== 'ok') return status(receipt);
     return finish('complete');
   } finally {
-    await db
-      .update(bindings)
-      .set({ leaseOwner: null, leasedUntil: null })
-      .where(
-        and(
-          eq(bindings.tenantId, principal.tenantId),
-          eq(bindings.id, binding.id),
-          eq(bindings.leaseOwner, worker)
-        )
-      );
+    await db.transaction(async (tx) => {
+      await lockManagedEventCapacity(tx, principal.tenantId, policy);
+      await tx
+        .update(bindings)
+        .set({ leaseOwner: null, leasedUntil: null })
+        .where(
+          and(
+            eq(bindings.tenantId, principal.tenantId),
+            eq(bindings.id, binding.id),
+            eq(bindings.leaseOwner, worker)
+          )
+        );
+    });
   }
 }

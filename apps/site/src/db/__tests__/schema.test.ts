@@ -11,6 +11,7 @@ import {
   feedbackSubmission,
   instance,
   instanceHeartbeats,
+  managedConnectorEventCapacity,
   managedConnectorEventBinding,
   managedConnectorEventDefinition,
   managedConnectorEventInbox,
@@ -396,6 +397,7 @@ describe('telemetry ↔ account isolation (privacy contract)', () => {
 
   it('cascades each managed event table directly with its owning tenant', () => {
     for (const table of [
+      managedConnectorEventCapacity,
       managedConnectorEventDefinition,
       managedConnectorEventBinding,
       managedConnectorEventSubscription,
@@ -407,6 +409,30 @@ describe('telemetry ↔ account isolation (privacy contract)', () => {
       expect(tenantFks).toHaveLength(1);
       expect(tenantFks[0].onDelete).toBe('cascade');
     }
+  });
+
+  it('keeps all managed event capacity counters non-negative and cleanup indexed', () => {
+    const config = getTableConfig(managedConnectorEventCapacity);
+    expect(new Set(Object.keys(getTableColumns(managedConnectorEventCapacity)))).toEqual(
+      new Set([
+        'tenantId',
+        'rateWindowStartedAt',
+        'acceptedInWindow',
+        'retainedRows',
+        'protectedPayloadBytes',
+        'nextCleanupAt',
+        'lastCleanupAt',
+        'updatedAt',
+      ])
+    );
+    expect(config.checks.map((check) => check.name).sort()).toEqual([
+      'managed_event_capacity_accepted_nonnegative',
+      'managed_event_capacity_bytes_nonnegative',
+      'managed_event_capacity_rows_nonnegative',
+    ]);
+    expect(config.indexes.map((index) => index.config.name)).toContain(
+      'managed_event_capacity_cleanup_idx'
+    );
   });
 });
 

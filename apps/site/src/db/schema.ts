@@ -174,6 +174,7 @@ export type InstanceHeartbeat = typeof instanceHeartbeats.$inferSelect;
 export type NewInstanceHeartbeat = typeof instanceHeartbeats.$inferInsert;
 
 export {
+  managedConnectorEventCapacity,
   managedConnectorEventDefinition,
   managedConnectorEventBinding,
   managedConnectorEventSubscription,

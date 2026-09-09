@@ -32,6 +32,7 @@ function readBearer(header: string | null): string | null {
 
 /** Run the scheduled cleanup pass; authorized by the `CRON_SECRET` Bearer token. */
 export async function GET(request: Request): Promise<Response> {
+  const eventMaintenance = AbortSignal.any([request.signal, AbortSignal.timeout(25_000)]);
   // Fail closed: no configured secret means no authenticated caller can exist, so
   // the job must not run (rather than run wide open).
   const secret = env.CRON_SECRET;
@@ -42,10 +43,14 @@ export async function GET(request: Request): Promise<Response> {
 
   const counts = await runCleanup(getAuth(), {});
   try {
-    const eventRetention = await sweepManagedConnectorEventRetention(getTransactionDb());
+    const eventRetention = eventMaintenance.aborted
+      ? { pages: 0, contentRowsCleared: 0, metadataRowsDeleted: 0, protectedBytesCleared: 0 }
+      : await sweepManagedConnectorEventRetention(getTransactionDb(), {
+          signal: eventMaintenance,
+        });
     const eventSubscriptions = await recoverManagedEventCleanup(
       getTransactionDb(),
-      AbortSignal.timeout(25_000)
+      eventMaintenance
     );
     return Response.json({ ok: true, counts, eventRetention, eventSubscriptions }, { status: 200 });
   } catch {

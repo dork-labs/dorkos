@@ -1,6 +1,8 @@
 /** Tenant-scoped managed receive consent, private physical triggers and protected delivery inbox. */
 import {
+  bigint,
   boolean,
+  check,
   foreignKey,
   index,
   integer,
@@ -12,11 +14,43 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import {
   connectorTenant,
   managedConnectorConnection,
   managedConnectorProvider,
 } from './managed-connectors-schema';
+
+/** One transactionally maintained admission and retained-storage ledger per tenant. */
+export const managedConnectorEventCapacity = pgTable(
+  'managed_connector_event_capacity',
+  {
+    tenantId: uuid('tenant_id')
+      .primaryKey()
+      .references(() => connectorTenant.id, { onDelete: 'cascade' }),
+    rateWindowStartedAt: timestamp('rate_window_started_at', { withTimezone: true })
+      .notNull()
+      .default(sql`date_trunc('minute', clock_timestamp())`),
+    acceptedInWindow: integer('accepted_in_window').notNull().default(0),
+    retainedRows: integer('retained_rows').notNull().default(0),
+    protectedPayloadBytes: bigint('protected_payload_bytes', { mode: 'number' })
+      .notNull()
+      .default(0),
+    nextCleanupAt: timestamp('next_cleanup_at', { withTimezone: true }),
+    lastCleanupAt: timestamp('last_cleanup_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check('managed_event_capacity_accepted_nonnegative', sql`${table.acceptedInWindow} >= 0`),
+    check('managed_event_capacity_rows_nonnegative', sql`${table.retainedRows} >= 0`),
+    check('managed_event_capacity_bytes_nonnegative', sql`${table.protectedPayloadBytes} >= 0`),
+    index('managed_event_capacity_cleanup_idx').on(
+      table.nextCleanupAt,
+      table.lastCleanupAt,
+      table.tenantId
+    ),
+  ]
+);
 
 /** Immutable server-owned event definition; discovery changes require fresh receive consent. */
 export const managedConnectorEventDefinition = pgTable(

@@ -165,6 +165,16 @@ Each batch runs the same chain, and no step is optional:
 
 ### Landing rules
 
+- **Check load-sensitivity before debugging a red test.** Before spending a
+  cycle on it, check the tells: it passes in isolation but fails in the full
+  run; the assertion is about timing, throughput, or sample counts rather than
+  behavior; the failure text names milliseconds, wall-clock boundaries, or
+  "expected N samples"; the file is in the known flake family (harness
+  atomic-write AP-10's sample-throughput guard, MIN_SAMPLES fixed at 200;
+  RoomLiveLane's wall-clock boundaries; agent-activity's teardown timing;
+  palette-scope-chips, DOR-1502). A load-starved guard refusing to conclude is
+  not a defect in your branch — re-run once before spending a cycle, and if it
+  repeats, it belongs to the test's owner, not your PR.
 - **A commit either isn't user-facing, or fills its own stub.** A commit that is
   genuinely not user-facing — a review-nit fold, a refactor, a CI tweak — takes a
   `chore(` or `ci(` subject, so the populator mints no stub at all. A user-facing

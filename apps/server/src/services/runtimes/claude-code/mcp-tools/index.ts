@@ -192,6 +192,22 @@ export function handRegisteredInSessionTools(
         })
       : undefined;
 
+  // Where a verdict lands if a person answers an approval after the in-session
+  // hold has already given up (spec `approval-verdict-delivery`). Read at CALL
+  // time and from the SAME two sources as the task provenance above, for the same
+  // first-turn rekey reason — an id captured at build time would address a
+  // session that no longer answers. The directory rides along because a cold
+  // start needs somewhere to resume, and the projector that would otherwise know
+  // it is exactly what a restart destroys (the DOR-981 lesson).
+  const resolveRequestingSession =
+    session || sessionId
+      ? () => {
+          const id = session?.sdkSessionId || sessionId;
+          if (!id) return undefined;
+          return { sessionId: id, ...(session?.cwd ? { cwd: session.cwd } : {}) };
+        }
+      : undefined;
+
   // Which tools ride this session's turn-1 prompt (DOR-1337 / F8). The rule
   // lives in `loadsAgentToAgentTools` because `context-builder.ts` reads the
   // same one to decide whether to TELL the agent they are loaded, and the two
@@ -220,7 +236,8 @@ export function handRegisteredInSessionTools(
         ...getExtensionTools(deps),
       ],
       resolveContext,
-      hold
+      hold,
+      resolveRequestingSession
     ),
     alwaysLoaded
   );

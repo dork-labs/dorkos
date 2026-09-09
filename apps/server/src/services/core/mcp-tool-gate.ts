@@ -107,7 +107,7 @@ import type { z } from 'zod';
 import type { ApprovalOrigin } from '@dorkos/shared/approval-schemas';
 
 import type { AgentIdentity } from './agent-identity/agent-identity-service.js';
-import { resolveApprovalSubject } from './approvals/index.js';
+import { resolveApprovalSubject, type ApprovalRequestingSession } from './approvals/index.js';
 import { awaitCapabilityApproval, type CapabilityApprovalHold } from './capabilities/index.js';
 import { approvalTokenArgument } from './capabilities/mcp-projection.js';
 import {
@@ -150,6 +150,17 @@ interface GateRun {
    * person approved.
    */
   approvalToken?: string;
+  /**
+   * The session this call arrived in, recorded on any approval the gate mints so
+   * a verdict answered after the hold gave up can still reach it
+   * (spec `approval-verdict-delivery`).
+   *
+   * These two tools are where the reported bug happened — an operator approved
+   * four `mesh_unregister` cards past the cap and nothing ever told the agent —
+   * so the row has to carry an address. Absent on the external `/mcp` server,
+   * which has no session and therefore nowhere to deliver to.
+   */
+  requestingSession?: ApprovalRequestingSession;
 }
 
 /**
@@ -194,7 +205,7 @@ type GateOutcome =
  * @returns Whether to proceed, and with what.
  */
 async function runGate(run: GateRun): Promise<GateOutcome> {
-  const { action, args, identity, interactive, origin } = run;
+  const { action, args, identity, interactive, origin, requestingSession } = run;
   // Only a destructive tool advertises `approvalToken`, so only a destructive call
   // has one to lift off. Anything else passes its arguments through untouched
   // rather than silently losing a field that happens to share the name.
@@ -229,6 +240,9 @@ async function runGate(run: GateRun): Promise<GateOutcome> {
     // `/mcp` server has no session and no `control_ui`, and the two entry
     // points below are what already tell those apart.
     interactive,
+    // Where to tell the answer if nobody is still holding for it. A delivery
+    // address, never an authorization fact — see the field's own docblock.
+    ...(requestingSession ? { requestingSession } : {}),
   });
 
   if (decision.outcome !== 'allowed') {
@@ -388,13 +402,21 @@ export interface SdkMcpTool {
  * @param hold - The live session's hold seam, when this server has one. With it,
  *   a fresh destructive ask waits for the operator and resumes in the same turn
  *   (DOR-1930); without it the poll payload is returned exactly as before.
+ * @param resolveRequestingSession - Which session this server belongs to, read at
+ *   CALL time for the same first-turn rekey reason every other per-call resolver
+ *   in `mcp-tools/index.ts` is: a brand-new session gains its canonical id
+ *   mid-first-turn, and an id captured at build time would address a session that
+ *   no longer answers. What it returns is recorded on any approval the gate mints,
+ *   so a verdict answered past the hold cap has somewhere to be delivered
+ *   (spec `approval-verdict-delivery`). Omitted on every sessionless surface.
  * @returns The same tools, gated, with `approvalToken` advertised where required.
  * @throws If any tool declares no tier in `MCP_TOOL_TIERS`.
  */
 export function gateHandRegisteredMcpTools<T extends SdkMcpTool>(
   tools: readonly T[],
   resolveContext?: () => Promise<{ identity?: AgentIdentity } | undefined>,
-  hold?: CapabilityApprovalHold
+  hold?: CapabilityApprovalHold,
+  resolveRequestingSession?: () => ApprovalRequestingSession | undefined
 ): T[] {
   return tools.map((definition) => {
     const action = gatedActionForMcpTool(definition.name);
@@ -406,11 +428,13 @@ export function gateHandRegisteredMcpTools<T extends SdkMcpTool>(
         // Resolved ONCE per call: the resolver memoizes per session, but reading
         // it twice here would still be two awaits for one fact.
         const identity = (await resolveContext?.())?.identity;
+        const requestingSession = resolveRequestingSession?.();
         return runGatedInSession(
           {
             action,
             args,
             ...(identity ? { identity } : {}),
+            ...(requestingSession ? { requestingSession } : {}),
             // `interactive: true` — this entry point wraps the IN-SESSION server,
             // where `control_ui` exists, so a gated call may be told to put the
             // approval in front of the operator (DOR-1570).

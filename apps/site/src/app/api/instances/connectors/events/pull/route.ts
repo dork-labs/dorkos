@@ -23,7 +23,11 @@ export async function POST(request: Request): Promise<Response> {
   const protector = managedEventProtector();
   if (!protector) return Response.json({ error: 'events_unavailable' }, { status: 503 });
   try {
-    await sweepManagedConnectorEventRetention(context.db);
+    await sweepManagedConnectorEventRetention(context.db, {
+      tenantId: context.principal.tenantId,
+      maxPages: 1,
+      signal: request.signal,
+    }).catch(() => undefined);
     return Response.json(
       await pullManagedConnectorEvents(context.db, context.principal, protector, parsed.data.limit)
     );

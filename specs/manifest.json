@@ -18,6 +18,14 @@
       "linearIssue": "DOR-1931"
     },
     {
+      "id": "260908-163711",
+      "slug": "hosted-notification-intake-bounds",
+      "title": "Bound hosted notification intake and backlog",
+      "created": "2026-09-08",
+      "status": "implemented",
+      "project": "connections"
+    },
+    {
       "id": "260908-151633",
       "slug": "runtime-subprocess-environment",
       "title": "Filter server secrets from runtime subprocess environments",
