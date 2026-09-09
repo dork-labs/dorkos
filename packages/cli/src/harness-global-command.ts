@@ -198,8 +198,12 @@ async function listSharing(dorkHome: string): Promise<number> {
     if (!harnesses.includes(harness)) continue;
     console.log(`  ${HARNESS_LABELS[harness]}`);
   }
-  console.log('');
-  console.log('Which puts links in:');
+  // Only when there is a directory to name. Under a boundary there is none, and
+  // an empty heading reads as a bug rather than as a rule being obeyed.
+  if (inputs.roots.agentsSkillsDir !== undefined || inputs.roots.claudeSkillsDir !== undefined) {
+    console.log('');
+    console.log('Which puts links in:');
+  }
   if (inputs.roots.agentsSkillsDir !== undefined) {
     console.log(
       `  ${inputs.roots.agentsSkillsDir}   read by Codex, OpenCode, Cursor, Gemini CLI and Copilot`
@@ -345,10 +349,17 @@ async function enableTool(dorkHome: string, tool: HarnessId): Promise<number> {
  * @returns 0 on success, 1 when the answer or the packages folder could not be read.
  */
 async function disableTool(dorkHome: string, tool: HarnessId): Promise<number> {
-  const { readGlobalSharingFromDisk, writeGlobalSharing, globalRootsFor, boundaryConfigFromDisk } =
-    await import('../server/services/harness/global-scope.js');
+  const {
+    readGlobalSharingFromDisk,
+    writeGlobalSharing,
+    globalRootsFor,
+    boundaryConfigFromDisk,
+    configuredBoundaryRoot,
+  } = await import('../server/services/harness/global-scope.js');
+  const { boundaryWasConfigured } = await import('../server/lib/boundary.js');
   const { initConfigManager } = await import('../server/services/core/config-manager.js');
-  const { projectGlobal, sweepGlobalOrphans, findGlobalOrphans } = await import('@dorkos/harness');
+  const { projectGlobal, sweepGlobalOrphans, findGlobalOrphans, globalBoundarySkipLine } =
+    await import('@dorkos/harness');
 
   const before = readGlobalSharingFromDisk(dorkHome);
   if (before.unreadable !== undefined) {
@@ -397,11 +408,23 @@ async function disableTool(dorkHome: string, tool: HarnessId): Promise<number> {
   console.log('');
   console.log(`Stopped sharing with ${HARNESS_LABELS[tool]}.`);
   if (removed.length === 0) {
-    console.log(
-      remaining.length === 0
-        ? '  Nothing to remove: DorkOS had put no links in that folder.'
-        : '  Nothing to remove: the same links serve the other agent tools you share with.'
-    );
+    // Three different reasons nothing went, and each is a different thing to
+    // tell somebody. A confined deployment is the one worth saying out loud:
+    // links this machine wrote before it was confined are still in the home
+    // folder, and DorkOS is no longer allowed to reach them.
+    if (boundaryWasConfigured(process.env, boundaryConfig)) {
+      console.log('  Nothing was removed from your home folder, because DorkOS may not reach it.');
+      console.log(
+        `  ${globalBoundarySkipLine(configuredBoundaryRoot(process.env, boundaryConfig))}`
+      );
+      console.log('  Any links it put there before are still there, and you can delete them.');
+    } else {
+      console.log(
+        remaining.length === 0
+          ? '  Nothing to remove: DorkOS had put no links in that folder.'
+          : '  Nothing to remove: the same links serve the other agent tools you share with.'
+      );
+    }
   }
   if (remaining.length === 0) {
     console.log('');

@@ -399,6 +399,50 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
       expect(printed()).toContain('DorkOS is limited to /workspace');
     });
 
+    it('--list under a boundary names no folder, rather than an empty heading', async () => {
+      installGlobal('globex', ['greet']);
+      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'codex']));
+      logSpy.mockClear();
+      vi.stubEnv('DORKOS_BOUNDARY', '/workspace');
+
+      await runHarnessGlobal(parseHarnessGlobalArgs(['--list']));
+
+      const out = printed();
+      // The answer is still shown — somebody confined the deployment, they did
+      // not un-choose Codex — and the reason no folder is named is said out loud.
+      expect(out).toContain('Codex');
+      expect(out).not.toContain('Which puts links in:');
+      expect(out).toContain('DorkOS is limited to /workspace');
+    });
+
+    it('--disable under a boundary says the links it cannot reach are still there', async () => {
+      // The honest half of the boundary rule. A machine that shared before it
+      // was confined still HAS those links; DorkOS may no longer touch them.
+      // "Nothing to remove: DorkOS had put no links in that folder" would be a
+      // lie about a folder full of DorkOS's links.
+      installGlobal('globex', ['greet']);
+      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'codex']));
+      const link = path.join(agentsSkillsDir(), 'globex__greet');
+      expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+      logSpy.mockClear();
+      vi.stubEnv('DORKOS_BOUNDARY', '/workspace');
+
+      const result = await runHarnessGlobal(parseHarnessGlobalArgs(['--disable', 'codex']));
+
+      expect(result.exitCode).toBe(0);
+      const out = printed();
+      expect(out).toContain(
+        'Nothing was removed from your home folder, because DorkOS may not reach it.'
+      );
+      expect(out).toContain(
+        'Any links it put there before are still there, and you can delete them.'
+      );
+      expect(out).not.toContain('DorkOS had put no links in that folder');
+      // Said, and true: the link is untouched and the answer is forgotten.
+      expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+      expect(storedGlobal()?.harnesses).toEqual([]);
+    });
+
     it('neither set: the user tier is planned, and the question is asked', async () => {
       installGlobal('globex', ['greet']);
       expect(process.env.DORKOS_BOUNDARY).toBeUndefined();
