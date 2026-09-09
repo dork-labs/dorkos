@@ -35,6 +35,8 @@
  *
  * @module services/core/auth
  */
+import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
@@ -79,8 +81,18 @@ export function isBetterAuthBaseUrlAdvisory(level: string, message: string): boo
  * @param db - The server's Drizzle database (from `@dorkos/db` `createDb`).
  * @param dorkHome - The resolved DorkOS data directory. Used to resolve (and, on
  *   first boot, persist) the session-signing secret.
+ * @param port - The validated server port; defaults to the server environment.
+ * @throws If a non-default instance's data directory cannot be canonicalized.
  */
-export function createAuth(db: Db, dorkHome: string) {
+export function createAuth(db: Db, dorkHome: string, port = env.DORKOS_PORT) {
+  // Cookies ignore TCP ports. Keep the primary install's legacy names, but
+  // separate other data homes. Canonical home identity stays stable when the
+  // desktop selects another fallback port or the same home uses a symlink.
+  // Startup creates the home before auth; fail closed if it cannot resolve.
+  const cookiePrefix =
+    port === 4242
+      ? 'better-auth'
+      : `better-auth-${createHash('sha256').update(realpathSync(dorkHome)).digest('hex').slice(0, 32)}`;
   return betterAuth({
     appName: 'DorkOS',
     // Resolve the signing secret up front: env override → persisted file →
@@ -173,6 +185,7 @@ export function createAuth(db: Db, dorkHome: string) {
     // `resolveAuthTrustedOrigins` for what it drops and why.
     trustedOrigins: () => resolveAuthTrustedOrigins(),
     advanced: {
+      cookiePrefix,
       // Secure in production; `trust proxy` in app.ts keeps this correct behind
       // the ngrok hop. `sameSite: 'lax'` is required by the P2 device flow and
       // OAuth callbacks.
