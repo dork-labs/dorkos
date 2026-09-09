@@ -189,6 +189,53 @@ export interface InstalledPlugin {
 }
 
 /**
+ * A package on disk whose `.dork/manifest.json` is there and will not parse.
+ *
+ * The package is not projected — there is no name, type or layer list to
+ * project it by — but it is not silent either. Without this record the package
+ * was simply skipped, and it then had no trace in the scan, the plan, the drop
+ * list, the status model or the terminal: somebody who broke a manifest half an
+ * hour ago was told nothing, and a package they installed just stopped being
+ * mentioned (DOR-1933).
+ *
+ * It travels BESIDE {@link InstalledSourceScan.plugins} rather than in it, and
+ * that separation is load-bearing: the global sweep keeps every link of a
+ * package still on disk that the plan did not enumerate (clause 4), so a broken
+ * package joining the enumerated list would have its links deleted the moment
+ * the manifest rotted.
+ */
+export interface UnreadablePackageManifest {
+  /**
+   * The package's folder name under the plugins root.
+   *
+   * The folder rather than the manifest `name`, because the manifest is the
+   * thing that would not parse: the folder name is the only name there is.
+   */
+  package: string;
+  /**
+   * The manifest file, spelled the way this package's own paths are spelled —
+   * repo-relative under a project install, absolute under a global one.
+   */
+  path: string;
+  /** Which install root it came from. */
+  scope: InstalledScope;
+}
+
+/**
+ * One scan of the install roots: what it read, and what it could not.
+ *
+ * Two lists rather than one, for the reason {@link UnreadablePackageManifest}
+ * gives — a package the scan could not read is evidence about nothing, and the
+ * sweep's keep-set is built from the first list alone.
+ */
+export interface InstalledSourceScan {
+  /** Every package the scan read, global first then project, each group sorted by name. */
+  plugins: InstalledPlugin[];
+  /** Every package whose `.dork/manifest.json` is there and will not parse. */
+  unreadableManifests: UnreadablePackageManifest[];
+}
+
+/**
  * An installed package known to live inside the repository being synced, so
  * every path it carries is repo-relative.
  *
@@ -231,19 +278,27 @@ interface PluginIdentity {
  * installer copies such packages verbatim, so nothing on disk ever gains a
  * `.dork/manifest.json`. Without this fallback every CC-native plugin was
  * invisible to projection and Harness Sync silently applied zero files
- * (DOR-264). Returns `undefined` when neither manifest is present or valid.
+ * (DOR-264).
+ *
+ * Three answers, because "there is no DorkOS manifest" and "there is one and it
+ * will not parse" are opposite facts about a package and used to be the same
+ * `undefined`. A manifest that is THERE and unusable answers `'unreadable'`, so
+ * the caller can name the package instead of dropping it in silence (DOR-1933);
+ * the Claude Code fallback is reached only when the DorkOS manifest is absent,
+ * because a broken file is something to fix rather than something to route
+ * around. `undefined` means neither manifest is present or valid.
  */
-function readPluginManifest(pluginDir: string): PluginIdentity | undefined {
+function readPluginManifest(pluginDir: string): PluginIdentity | 'unreadable' | undefined {
   const manifestPath = join(pluginDir, '.dork', 'manifest.json');
   if (!existsSync(manifestPath)) return readCcPluginManifest(pluginDir);
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
   } catch {
-    return undefined;
+    return 'unreadable';
   }
   const parsed = MarketplacePackageManifestSchema.safeParse(raw);
-  if (!parsed.success) return undefined;
+  if (!parsed.success) return 'unreadable';
   return { name: parsed.data.name, type: parsed.data.type, layers: parsed.data.layers };
 }
 
@@ -578,15 +633,13 @@ function scanPluginsRoot(
   pluginsRoot: string,
   scope: InstalledScope,
   dorkHome?: string
-): InstalledPlugin[] {
-  if (!existsSync(pluginsRoot)) return [];
+): InstalledSourceScan {
+  if (!existsSync(pluginsRoot)) return { plugins: [], unreadableManifests: [] };
   const plugins: InstalledPlugin[] = [];
+  const unreadableManifests: UnreadablePackageManifest[] = [];
   for (const entry of readdirSync(pluginsRoot, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const pluginDir = join(pluginsRoot, entry.name);
-    const manifest = readPluginManifest(pluginDir);
-    if (!manifest) continue;
-
     const location: InstalledLocation =
       scope === 'global'
         ? { scope, absDir: pluginDir }
@@ -596,6 +649,19 @@ function scanPluginsRoot(
     // mixed-separator path on Windows, and a person reading the drop gets one
     // path rather than two spellings of it.
     const sourcePrefix = location.scope === 'global' ? location.absDir : location.relDir;
+    const manifest = readPluginManifest(pluginDir);
+    // A manifest that is there and will not parse: the package cannot be
+    // projected, and the person is told which file to fix rather than watching
+    // the package disappear from every report (DOR-1933).
+    if (manifest === 'unreadable') {
+      unreadableManifests.push({
+        package: entry.name,
+        path: `${sourcePrefix}/.dork/manifest.json`,
+        scope,
+      });
+      continue;
+    }
+    if (!manifest) continue;
     const { hooks, unreadable } = readPluginHooks(pluginDir, sourcePrefix);
     // Whether a global sync has already linked each of this package's skills.
     // `lstat`, not `existsSync`: a link whose package was mid-reinstall is still
@@ -622,7 +688,10 @@ function scanPluginsRoot(
       layers: manifest.layers,
     });
   }
-  return plugins.sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    plugins: plugins.sort((a, b) => a.name.localeCompare(b.name)),
+    unreadableManifests: unreadableManifests.sort((a, b) => a.package.localeCompare(b.package)),
+  };
 }
 
 /**
@@ -653,11 +722,36 @@ function scanPluginsRoot(
 export function scanInstalledPlugins(
   opts: { projectRoot: string; dorkHome?: string } | { projectRoot?: string; dorkHome: string }
 ): InstalledPlugin[] {
-  const globalPlugins = opts.dorkHome
+  return scanInstalledSources(opts).plugins;
+}
+
+/**
+ * The same discovery, plus every package it could NOT read.
+ *
+ * {@link scanInstalledPlugins} is this function's first field, and the reason
+ * both exist is that most callers want the packages and nothing else. The two
+ * that want the rest are the planners: a package whose `.dork/manifest.json`
+ * will not parse is not projectable, and it has to be named all the same, or it
+ * vanishes from the scan, the plan, the report and the screen at once
+ * (DOR-1933).
+ *
+ * @param opts - a project root, a dork home, or both, exactly as
+ *   {@link scanInstalledPlugins} takes them.
+ * @returns the packages that were read, and one record per manifest that would
+ *   not parse — global roots first, each group sorted by name.
+ */
+export function scanInstalledSources(
+  opts: { projectRoot: string; dorkHome?: string } | { projectRoot?: string; dorkHome: string }
+): InstalledSourceScan {
+  const empty: InstalledSourceScan = { plugins: [], unreadableManifests: [] };
+  const global = opts.dorkHome
     ? scanPluginsRoot(join(opts.dorkHome, 'plugins'), 'global', opts.dorkHome)
-    : [];
-  const projectPlugins = opts.projectRoot
+    : empty;
+  const project = opts.projectRoot
     ? scanPluginsRoot(join(opts.projectRoot, PROJECT_PLUGINS_DIR), 'project')
-    : [];
-  return [...globalPlugins, ...projectPlugins];
+    : empty;
+  return {
+    plugins: [...global.plugins, ...project.plugins],
+    unreadableManifests: [...global.unreadableManifests, ...project.unreadableManifests],
+  };
 }

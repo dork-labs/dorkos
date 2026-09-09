@@ -36,7 +36,11 @@ import {
 import { planInstruction } from './instructions.js';
 import { planGlobalInstallDrops, planGlobalUnreadableHookWarnings } from './global-installs.js';
 
-import { isProjectScoped, type InstalledPlugin } from '../sources/installed.js';
+import {
+  isProjectScoped,
+  type InstalledPlugin,
+  type UnreadablePackageManifest,
+} from '../sources/installed.js';
 import {
   planInstalledSkills,
   planInstalledCommands,
@@ -53,6 +57,7 @@ import {
   CLAUDE_SKILLS_DIR,
 } from './installed-projector.js';
 import { planUnreadableHookWarnings } from './unreadable-hooks.js';
+import { planUnreadableManifestWarnings } from './unreadable-manifests.js';
 import {
   planForeignMcpDrops,
   planInventoriedArtifacts,
@@ -436,6 +441,17 @@ export function buildPlan(input: {
    */
   claudeOnlySkills?: ReadonlyMap<string, ClaudeOnlySkillLocation>;
   installedPlugins?: InstalledPlugin[];
+  /**
+   * Every installed package whose `.dork/manifest.json` would not parse, from
+   * the same scan {@link installedPlugins} came from.
+   *
+   * Not a subset of that list and never projectable — there is no name, type or
+   * layer list to project by — but each one earns a warning saying which file to
+   * fix and that its existing links were left alone (DOR-1933). Omitted means
+   * every manifest parsed, which is the honest reading for a caller that has not
+   * looked.
+   */
+  unreadableManifests?: readonly UnreadablePackageManifest[];
   allowPluginHooks?: (packageName: string) => boolean;
   /**
    * Everything the repository's source tree holds, by kind — the answer to
@@ -512,6 +528,10 @@ export function buildPlan(input: {
     ...installedPlugins.flatMap((plugin) => plugin.unreadableSkillRoots ?? []),
   ];
   warnings.push(...planUnreadableSkillRootWarnings(unreadableSkillRoots));
+
+  // A package whose manifest will not parse: read at the same moment, reported
+  // for the same reason, and just as invisible before it was (DOR-1933).
+  warnings.push(...planUnreadableManifestWarnings(input.unreadableManifests ?? []));
 
   // Say what the tree holds and could not be read — a `.mcp.json` that will not
   // parse, a file where `.claude/agents` should be a directory. Once per source,

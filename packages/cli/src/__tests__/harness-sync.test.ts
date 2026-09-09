@@ -2849,6 +2849,32 @@ describe('runHarnessSync --global — the packages installed for all your projec
     expect(snapshotTree(homeDir).some((p) => p.startsWith('skills'))).toBe(false);
   });
 
+  it('SRC-04: a package whose manifest will not parse is named, and its links stay', async () => {
+    // DOR-1933. Seeded defect: `readPluginManifest` answering `undefined` for a
+    // manifest that is THERE and will not parse. The package then reached no
+    // line of this report at all — the sweep kept its links (clause 4) and the
+    // person watching the terminal was told nothing about either fact.
+    installGlobal('badmanifest', [{ name: 'greet' }]);
+    await runHarnessSync(syncArgs({ fix: true, global: true }));
+    const linked = path.join(homeDir, 'skills', 'badmanifest__greet');
+    expect(fs.lstatSync(linked, { throwIfNoEntry: false })).toBeDefined();
+    logSpy.mockClear();
+
+    const manifest = path.join(homeDir, 'plugins', 'badmanifest', '.dork', 'manifest.json');
+    fs.writeFileSync(manifest, '{ not json');
+
+    const result = await runHarnessSync(syncArgs({ fix: true, global: true }));
+
+    expect(result.exitCode).toBe(0);
+    const output = printed();
+    expect(output).toContain('badmanifest');
+    expect(output).toContain(manifest);
+    expect(output).toContain('were left exactly as they are');
+    // The sentence and the disk agree: nothing was removed.
+    expect(fs.lstatSync(linked, { throwIfNoEntry: false })).toBeDefined();
+    expect(output).not.toContain('Removed 1 link(s)');
+  });
+
   it.skipIf(!CAN_MAKE_UNREADABLE)(
     'SK-03: a packages folder it cannot read stops the run and removes nothing',
     async () => {
