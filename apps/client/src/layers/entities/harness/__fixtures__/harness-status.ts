@@ -132,6 +132,40 @@ const HOOK_ROW: HarnessRow = {
 };
 
 /**
+ * A skill from a package installed for every project.
+ *
+ * It shares its NAME with {@link SHARED_ROW} on purpose. That is the pair the
+ * fourth key component exists for and the pair the row's tag exists for: same
+ * name, same kind, same chips, and a source that differs only in being absolute
+ * — which is not a difference a person reads off a row.
+ */
+const GLOBAL_ROW: HarnessRow = {
+  artifact: 'skill',
+  provenance: 'installed',
+  scope: 'global',
+  name: 'release',
+  source: '/Users/kai/.dork/plugins/release-kit/skills/release',
+  adoptable: false,
+  cells: {
+    'claude-code': {
+      state: 'dropped',
+      reason:
+        'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. Its 1 skill is not shared with this project: release. Its skills that run on a timer now work.',
+    },
+    codex: {
+      state: 'dropped',
+      reason:
+        'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. Its 1 skill is not shared with this project: release. Its skills that run on a timer now work.',
+    },
+    cursor: {
+      state: 'dropped',
+      reason:
+        'installed for all your projects. Only the Claude Code sessions DorkOS runs can see it. Its 1 skill is not shared with this project: release. Its skills that run on a timer now work.',
+    },
+  },
+};
+
+/**
  * The full, interesting status: six skills across three tools, with one row per
  * exception and a seventh row that is not a skill.
  */
@@ -285,3 +319,18 @@ export const HARNESS_STATUS_UNAVAILABLE: HarnessStatusResponse = emptyStatus(
   'unavailable',
   'Agent file sharing runs in the DorkOS app.'
 );
+
+/**
+ * The same project, plus a package installed for every project.
+ *
+ * Kept apart from {@link HARNESS_STATUS_READY} deliberately: that fixture is
+ * what a dozen component tests count rows against, and folding a global row into
+ * it would make every one of them a test about global scope. This one exists for
+ * the three facts that ARE about it — the row's tag, the two disjoint counts,
+ * and the key that tells two same-named rows apart.
+ */
+export const HARNESS_STATUS_WITH_GLOBAL: HarnessStatusResponse = {
+  ...HARNESS_STATUS_READY,
+  counts: { ...HARNESS_STATUS_READY.counts, globalSkills: 1 },
+  rows: [...HARNESS_STATUS_READY.rows, GLOBAL_ROW],
+};

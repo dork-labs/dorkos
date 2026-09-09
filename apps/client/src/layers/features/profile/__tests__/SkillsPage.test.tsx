@@ -23,7 +23,11 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { HARNESS_STATUS_NO_SKILLS, HARNESS_STATUS_READY } from '@/layers/entities/harness';
+import {
+  HARNESS_STATUS_NO_SKILLS,
+  HARNESS_STATUS_READY,
+  HARNESS_STATUS_WITH_GLOBAL,
+} from '@/layers/entities/harness';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 import { buildProfileDeepLinkHarness } from '@/test-helpers/profile-deep-link';
 import { ProfileView } from '../ui/ProfileView';
@@ -286,6 +290,24 @@ describe('the Skills row’s count', () => {
       })
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Skills: 6 skills' })).toBeInTheDocument();
+  });
+
+  it('counts the skills in packages installed for all projects too', async () => {
+    // Seeded defect: count `counts.skills` alone. The row then says 6 above a
+    // list of 7 — the schema states the two counts are disjoint and their sum is
+    // every skill row the page draws, and this is what keeps that true.
+    const { getHarnessStatus } = await renderProfile(MANAGED, HARNESS_STATUS_WITH_GLOBAL);
+
+    await openSkillsPage();
+    await waitFor(() => expect(getHarnessStatus).toHaveBeenCalledWith(PROJECT_PATH));
+    await goBack();
+
+    const total =
+      HARNESS_STATUS_WITH_GLOBAL.counts.skills + HARNESS_STATUS_WITH_GLOBAL.counts.globalSkills;
+    expect(
+      await screen.findByRole('button', { name: `Skills: ${total} skills` })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Skills: 7 skills' })).toBeInTheDocument();
   });
 
   it('never fires the status read from a profile open alone', async () => {

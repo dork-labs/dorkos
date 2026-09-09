@@ -105,7 +105,15 @@ export function useManagedAgentFacts(member: TeamMember, enabled: boolean): Prof
             newestAt: sessions.at(0)?.updatedAt ?? null,
           },
     tasks: schedules ? { count: mine.length, nextRunAt: next ?? null } : null,
-    skills: harnessStatus?.counts.skills ?? null,
+    // Both halves, because the list below draws both: the project's own skills
+    // and the ones in packages installed for all projects. The schema states
+    // that invariant — the two counts are disjoint and their sum is every skill
+    // row the page draws — and a profile row saying 31 above a list of 35 is
+    // exactly the drift it exists to prevent.
+    skills:
+      harnessStatus === undefined
+        ? null
+        : harnessStatus.counts.skills + harnessStatus.counts.globalSkills,
     tools: mcpServers ? mcpServers.filter((server) => server.enabled).length : null,
     personality,
     tasksAvailable: toolStatus.tasks !== 'disabled-by-server',

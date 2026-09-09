@@ -21,6 +21,18 @@ import { HarnessStateChip } from './HarnessStateChip';
 const ADOPTABLE_ADVICE =
   'Lives in .claude/skills. Move it to .agents/skills so every agent can read it.';
 
+/**
+ * The tag on a row that came from a package installed for every project.
+ *
+ * Two skills of the same name can sit in this list, one from this project and
+ * one from a package installed for all of them, and nothing else on the row
+ * tells them apart — the name is the same, the chips say the same thing, and the
+ * source path differs only in being absolute, which is not a difference a person
+ * reads. Muted rather than a chip: it says where the file came from, not what an
+ * agent tool does with it, and the chip row means the second thing.
+ */
+const GLOBAL_SCOPE_TAG = 'for all your projects';
+
 /** What a {@link SkillHarnessRow} draws. */
 export interface SkillHarnessRowProps {
   /** The file and its per-tool states. */
@@ -80,6 +92,9 @@ export function SkillHarnessRow({ row, enabled, showEveryHarness }: SkillHarness
     <div role="group" aria-label={row.name} className="flex flex-col gap-1 py-1.5">
       <div className="flex min-w-0 items-baseline gap-2">
         <span className="min-w-0 shrink truncate text-xs font-medium">{row.name}</span>
+        {row.scope === 'global' && (
+          <span className="text-muted-foreground text-3xs shrink-0">{GLOBAL_SCOPE_TAG}</span>
+        )}
         {row.source !== undefined && (
           <span
             dir="rtl"
