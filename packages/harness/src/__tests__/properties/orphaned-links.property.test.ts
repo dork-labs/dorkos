@@ -112,6 +112,12 @@ describe('P2 — every managed link resolves to a source the current plan names'
         fc.property(arbRepo(), fc.boolean(), (spec, rename) => {
           withRepo(spec, ({ repoRoot, dorkHome }) => {
             const firstPlan = project(repoRoot, { dorkHome });
+            // The `hostile` arbitrary may have put a FILE where `.agents/skills`
+            // belongs. The engine's answer is to stand the skill sweeps down and
+            // say so (DOR-1882), so a dead link is deliberately left in place —
+            // P4b in `apply-ownership.property.test.ts` asserts exactly that, and
+            // "no orphans" is not a claim this tree can make.
+            if ((firstPlan.unreadableSkillRoots?.length ?? 0) > 0) return;
             applyPlan(repoRoot, firstPlan, { sweepOrphans: true });
             examined += expectNoOrphans(repoRoot, firstPlan);
 
