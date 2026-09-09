@@ -43,10 +43,14 @@ interface BannerLine {
  * fixes neither. Running one over a conflict reports the same conflict again,
  * and a skill in the wrong folder is a move nobody has asked for (D3).
  *
+ * Not exported: the component is what every caller wants, and a second name
+ * nothing imports is surface `pnpm knip` names. The four branches are asserted
+ * through the rendered banner, which is where a person meets them.
+ *
  * @param status - The status this project is in.
  * @returns The line to draw, or `null` when the tree has nothing to say.
  */
-export function harnessBannerLine(status: HarnessStatusResponse): BannerLine | null {
+function harnessBannerLine(status: HarnessStatusResponse): BannerLine | null {
   const { counts, sweepPreview } = status;
   if (counts.drifted > 0 || sweepPreview.length > 0) {
     return {

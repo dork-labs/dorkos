@@ -218,11 +218,16 @@ const HarnessSyncBody = HarnessSyncBodySchema.refine(({ projectPath }) => isAbso
   error: 'projectPath must be an absolute path',
 });
 
-/** Machine-readable refusal code when something that is not a person calls the sync. */
-export const HARNESS_SYNC_OPERATOR_ONLY_CODE = 'operator_only_harness_sync';
-
-/** Machine-readable refusal code for a sync against a project with no manifest. */
-export const HARNESS_NOT_SET_UP_CODE = 'harness_not_set_up';
+/**
+ * Machine-readable refusal code when something that is not a person calls the
+ * sync, and the one for a project with no manifest.
+ *
+ * Module-private: nothing outside branches on either yet, and an exported name
+ * nothing imports is surface that goes stale. The route suite asserts the
+ * literals, which is what makes a silent rename a red rather than a shrug.
+ */
+const HARNESS_SYNC_OPERATOR_ONLY_CODE = 'operator_only_harness_sync';
+const HARNESS_NOT_SET_UP_CODE = 'harness_not_set_up';
 
 /** What the harness router reads, and — for the sync alone — writes through. */
 export interface HarnessRouterDeps {

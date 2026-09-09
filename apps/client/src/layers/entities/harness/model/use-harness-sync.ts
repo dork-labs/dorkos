@@ -30,6 +30,11 @@ export function useHarnessSync(projectPath: string) {
 
   return useMutation<HarnessSyncResponse, Error>({
     mutationFn: () => transport.syncHarness(projectPath),
+    // The shared `MutationCache.onError` is what reports a failure, and it is
+    // the only handler TanStack guarantees still runs when the page has moved
+    // on. This names the action in the person's words; the server's own
+    // sentence rides under it as the description (DOR-1378, DOR-1755).
+    meta: { errorLabel: 'Couldn’t share your agent files' },
     onSuccess: (response) => {
       queryClient.setQueryData<HarnessStatusResponse>(
         harnessKeys.status(projectPath),
@@ -39,9 +44,6 @@ export function useHarnessSync(projectPath: string) {
       // summary on the page instead: a list of files that are gone is not a
       // thing that should fade after four seconds.
       toast.success('Agent files updated.');
-    },
-    onError: (err) => {
-      toast.error('Couldn’t share agent files.', { description: err.message });
     },
   });
 }

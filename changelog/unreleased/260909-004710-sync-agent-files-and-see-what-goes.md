@@ -4,6 +4,7 @@ covers:
   - 'refactor(server): the asking half of auto-project stands alone (DOR-1895)'
   - 'feat(server): POST /api/harness/sync, for a person, never waiting on a card (DOR-1895)'
   - 'feat(client): the Sync button, and the banner that names what it removes (DOR-1895)'
+  - 'fix(client): one failed sync, one toast (DOR-1895)'
 ---
 
 ### Added
