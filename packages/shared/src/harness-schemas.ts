@@ -169,6 +169,19 @@ export const HarnessProvenanceSchema = z.enum([
 export type HarnessProvenance = z.infer<typeof HarnessProvenanceSchema>;
 
 /**
+ * Which scope a status row is about.
+ *
+ * Absent in stored data means `'project'`, which is what the row schema's
+ * `.default('project')` encodes: every row that existed before global scope did
+ * is a project row, and a reader that has not been taught about the field gets
+ * the same answer it always got.
+ */
+export const HarnessScopeSchema = z.enum(['project', 'global']);
+
+/** Which scope a status row is about. */
+export type HarnessScope = z.infer<typeof HarnessScopeSchema>;
+
+/**
  * One artifact's state in one harness, with the sentence that explains it.
  *
  * `reason` is the projection plan's own string, never a paraphrase: the CLI
@@ -190,10 +203,17 @@ export type HarnessCell = z.infer<typeof HarnessCellSchema>;
 /**
  * One agent file, and what every enabled harness does with it.
  *
- * The row key is `(artifact, source, name)` and all three are load-bearing:
- * two settings files both contribute a hook group named `hooks`, two MCP servers
- * share one `.mcp.json`, and a skill and a hook declared in that skill's own
- * frontmatter share a source while being different things.
+ * The row key is `(scope, artifact, source, name)` and all four are
+ * load-bearing: two settings files both contribute a hook group named `hooks`,
+ * two MCP servers share one `.mcp.json`, a skill and a hook declared in that
+ * skill's own frontmatter share a source while being different things, and the
+ * same package installed both in this project and for every project projects a
+ * skill of the same name and the same kind from sources that differ only in
+ * whether the path happens to be absolute. Keying on that spelling would be
+ * keying on an accident, so `scope` carries it instead.
+ *
+ * `source` follows the scope: repo-relative for a project row, absolute for a
+ * global one.
  *
  * `cells` is keyed by harness and holds one entry per ENABLED harness, so it is
  * a partial record over the six ids rather than a complete one.
@@ -201,6 +221,7 @@ export type HarnessCell = z.infer<typeof HarnessCellSchema>;
 export const HarnessRowSchema = z.object({
   artifact: HarnessArtifactKindSchema,
   provenance: HarnessProvenanceSchema,
+  scope: HarnessScopeSchema.default('project'),
   name: z.string(),
   source: z.string().optional(),
   adoptable: z.boolean(),
@@ -471,8 +492,13 @@ export type HarnessSyncBody = z.infer<typeof HarnessSyncBodySchema>;
  * with what a sync would delete, and there is no `drops` map because every
  * non-agnostic drop is already a cell of some row.
  *
- * On any `state` but `ready` only `projectPath`, `state` and `detail` are
- * meaningful: every list is empty and every count is zero.
+ * On any `state` but `ready` only `projectPath`, `state`, `detail` and the
+ * GLOBAL half are meaningful: every project list is empty and every project
+ * count is zero, while `rows` still carries what is installed for all projects
+ * and `counts.globalSkills` still counts it. A project with no manifest can hold
+ * a person who installed something globally, and telling them nothing because
+ * this folder is not set up would be the same silence the honest drop list
+ * exists to end.
  */
 export const HarnessStatusResponseSchema = z.object({
   projectPath: z.string(),
@@ -489,8 +515,22 @@ export const HarnessStatusResponseSchema = z.object({
      * two files, two rows, and counts twice, because the number under the
      * profile row has to match the number of rows the page draws. Measured: 6 on
      * the J-01 fixture, 31 on this repository.
+     *
+     * **Project rows only** — a row whose `scope` is `'global'` is counted by
+     * {@link globalSkills} instead.
      */
     skills: z.number().int().nonnegative(),
+    /**
+     * Rows whose `artifact` is `skill` and whose `scope` is `'global'` — the
+     * skills in packages installed for every project.
+     *
+     * Disjoint from {@link skills} by definition, stated because "skills" could
+     * otherwise mean either: that one counts PROJECT rows only, which is what it
+     * has always counted, so the number under the profile row does not move when
+     * global rows ship. Their sum is every skill row the page draws, and neither
+     * ever includes a row the other does.
+     */
+    globalSkills: z.number().int().nonnegative(),
     drifted: z.number().int().nonnegative(),
     conflicts: z.number().int().nonnegative(),
     orphans: z.number().int().nonnegative(),

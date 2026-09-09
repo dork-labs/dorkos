@@ -889,7 +889,15 @@ export const harnessStubs = {
       // Nothing is out of date, because nothing is set up to be out of date —
       // the same reading `status.ts` gives every state but `ready`.
       clean: true,
-      counts: { skills: 0, drifted: 0, conflicts: 0, orphans: 0, adoptable: 0, pendingApproval: 0 },
+      counts: {
+        skills: 0,
+        globalSkills: 0,
+        drifted: 0,
+        conflicts: 0,
+        orphans: 0,
+        adoptable: 0,
+        pendingApproval: 0,
+      },
       sweepPreview: [],
       removals: [],
       rows: [],

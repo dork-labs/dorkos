@@ -17,6 +17,7 @@ import type { HarnessRow, HarnessStatusResponse } from '@dorkos/shared/harness-s
 const SHARED_ROW: HarnessRow = {
   artifact: 'skill',
   provenance: 'authored',
+  scope: 'project',
   name: 'release',
   source: '.agents/skills/release',
   adoptable: false,
@@ -31,6 +32,7 @@ const SHARED_ROW: HarnessRow = {
 const DROPPED_ROW: HarnessRow = {
   artifact: 'skill',
   provenance: 'installed',
+  scope: 'project',
   name: 'browser-testing',
   source: '.agents/skills/browser-testing',
   adoptable: false,
@@ -48,6 +50,7 @@ const DROPPED_ROW: HarnessRow = {
 const DRIFTED_ROW: HarnessRow = {
   artifact: 'skill',
   provenance: 'authored',
+  scope: 'project',
   name: 'writing-changelogs',
   source: '.agents/skills/writing-changelogs',
   adoptable: false,
@@ -62,6 +65,7 @@ const DRIFTED_ROW: HarnessRow = {
 const CONFLICT_ROW: HarnessRow = {
   artifact: 'skill',
   provenance: 'authored',
+  scope: 'project',
   name: 'debugging-systematically',
   source: '.agents/skills/debugging-systematically',
   adoptable: false,
@@ -79,6 +83,7 @@ const CONFLICT_ROW: HarnessRow = {
 const WARNED_ROW: HarnessRow = {
   artifact: 'skill',
   provenance: 'installed',
+  scope: 'project',
   name: 'marketplace-dev',
   source: '.agents/skills/marketplace-dev',
   adoptable: false,
@@ -97,6 +102,7 @@ const WARNED_ROW: HarnessRow = {
 const ADOPTABLE_ROW: HarnessRow = {
   artifact: 'skill',
   provenance: 'harness-native',
+  scope: 'project',
   name: 'chat-self-test',
   source: '.claude/skills/chat-self-test',
   adoptable: true,
@@ -114,6 +120,7 @@ const ADOPTABLE_ROW: HarnessRow = {
 const HOOK_ROW: HarnessRow = {
   artifact: 'hook',
   provenance: 'installed',
+  scope: 'project',
   name: 'hooks',
   source: '.agents/hooks/settings.json',
   adoptable: false,
@@ -140,6 +147,7 @@ export const HARNESS_STATUS_READY: HarnessStatusResponse = {
   clean: false,
   counts: {
     skills: 6,
+    globalSkills: 0,
     drifted: 1,
     conflicts: 1,
     orphans: 2,
@@ -196,7 +204,15 @@ export const HARNESS_STATUS_READY: HarnessStatusResponse = {
 export const HARNESS_STATUS_ALL_SHARED: HarnessStatusResponse = {
   ...HARNESS_STATUS_READY,
   clean: true,
-  counts: { skills: 1, drifted: 0, conflicts: 0, orphans: 0, adoptable: 0, pendingApproval: 0 },
+  counts: {
+    skills: 1,
+    globalSkills: 0,
+    drifted: 0,
+    conflicts: 0,
+    orphans: 0,
+    adoptable: 0,
+    pendingApproval: 0,
+  },
   sweepPreview: [],
   removals: [],
   rows: [SHARED_ROW],
@@ -208,7 +224,15 @@ export const HARNESS_STATUS_ALL_SHARED: HarnessStatusResponse = {
 export const HARNESS_STATUS_NO_SKILLS: HarnessStatusResponse = {
   ...HARNESS_STATUS_READY,
   clean: true,
-  counts: { skills: 0, drifted: 0, conflicts: 0, orphans: 0, adoptable: 0, pendingApproval: 0 },
+  counts: {
+    skills: 0,
+    globalSkills: 0,
+    drifted: 0,
+    conflicts: 0,
+    orphans: 0,
+    adoptable: 0,
+    pendingApproval: 0,
+  },
   sweepPreview: [],
   removals: [],
   rows: [],
@@ -230,7 +254,15 @@ function emptyStatus(
     enabled: [],
     notEnabled: [],
     clean: true,
-    counts: { skills: 0, drifted: 0, conflicts: 0, orphans: 0, adoptable: 0, pendingApproval: 0 },
+    counts: {
+      skills: 0,
+      globalSkills: 0,
+      drifted: 0,
+      conflicts: 0,
+      orphans: 0,
+      adoptable: 0,
+      pendingApproval: 0,
+    },
     sweepPreview: [],
     removals: [],
     rows: [],
