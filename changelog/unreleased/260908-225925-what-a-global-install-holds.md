@@ -6,6 +6,7 @@ covers:
   - 'fix(harness): one skill reads as one skill in the global drop (DOR-1922)'
   - 'fix(harness): a true both-scopes notice, naming this repo (DOR-1922)'
   - 'fix(harness): a rotted global hooks file earns a line (DOR-1922)'
+  - 'fix(harness): the both-scopes notice says what Codex sees today (DOR-1922)'
 ---
 
 ### Changed
