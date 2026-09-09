@@ -51,6 +51,7 @@ import {
   HARNESS_NATIVE_SKILL_ROOTS,
   inventorySourceTree,
   loadManifest,
+  lockedSkills,
   manifestNotices,
   scanInstalledPlugins,
   type ArtifactType,
@@ -339,8 +340,15 @@ export function adoptableSkillSources(
   const canonicalNames = new Set(
     inventory.skills.filter((s) => s.root === CANONICAL_SKILLS_ROOT).map((s) => s.name)
   );
+  // A skill folder nobody may open is offered too, and comes from the engine's
+  // own helper rather than from a second reading of `inventory.unreadable`:
+  // `readAdoptCandidates` offers exactly this set, and a candidate one reader
+  // invented alone is the drift `adoptable-agreement.test.ts` exists to catch
+  // (DOR-1949). What a person gets on clicking it is R2's refusal naming the
+  // folder — true about their tree, where "there is no skill called that" was
+  // not.
   return new Set(
-    inventory.skills
+    [...inventory.skills, ...lockedSkills(inventory)]
       .filter(
         (s) =>
           HARNESS_OWNED_SKILL_ROOTS.has(s.root) &&

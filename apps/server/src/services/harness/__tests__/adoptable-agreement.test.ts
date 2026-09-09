@@ -30,6 +30,7 @@ import { dirname, join } from 'node:path';
 import {
   inventorySourceTree,
   loadManifest,
+  planAdopt,
   readAdoptCandidates,
   ROOM_SEEDED_SKILL_NAMES,
 } from '@dorkos/harness';
@@ -185,30 +186,46 @@ describe('the adopt reader and the status model', () => {
       blocked: forked?.pathBlockedReason,
     }).toEqual({ unreadable: false, target: 'absent', blocked: undefined });
   });
-  it('SK-16: leaves a skill folder DorkOS cannot open out of the list entirely', () => {
-    // The documented behaviour of the one shape R2's SOURCE leg would have
-    // caught, measured rather than assumed: the inventory's scanner cannot read
-    // a mode-000 folder's `SKILL.md`, so the skill reaches no list at all — not
-    // as a candidate, and not as an `unreadable` record either. There is
-    // therefore no tree in which a candidate carries a hostile SOURCE path,
-    // which is why `read.ts` probes only the target.
+  it('SK-16: offers a skill folder DorkOS cannot open, and says why it will not move', () => {
+    // The shape DOR-1943 measured and DOR-1949 fixed. The inventory used to drop
+    // a mode-000 skill folder with no entry and no record, so the skill reached
+    // no list at all and `dorkos harness adopt locked` answered R1's "there is
+    // no skill called `locked`" — false about the person's own repository.
     //
-    // What a person gets instead is R1's "there is no skill called …", which is
-    // not true of their tree. Fixing that means teaching `inventory/skills.ts`
-    // to record the folder; that changes what every consumer of the inventory
-    // sees, so it is a follow-up rather than part of this slice.
+    // Seeded defect: take the `lockedSkills` term out of either reader. One side
+    // then offers the folder and the other does not, and the equality above reds.
     const repo = stageTree();
     const locked = join(repo, '.claude/skills/locked');
     writeSkill(repo, '.claude/skills', 'locked');
     chmodSync(locked, 0o000);
     try {
       const inventory = inventorySourceTree(repo);
-      const { candidates } = readAdoptCandidates(repo, inventory, loadManifest(repo));
+      const manifest = loadManifest(repo);
+      const { candidates } = readAdoptCandidates(repo, inventory, manifest);
+      const fromStatus = adoptableSkillSources(
+        inventory,
+        new Set(manifest.claudeOnlySkills.map((entry) => entry.name))
+      );
+
       expect({
         skills: inventory.skills.filter((entry) => entry.name === 'locked').length,
         unreadable: inventory.unreadable.filter((entry) => entry.source.includes('locked')).length,
         candidates: candidates.filter((entry) => entry.name === 'locked').length,
-      }).toEqual({ skills: 0, unreadable: 0, candidates: 0 });
+        offered: fromStatus.has('.claude/skills/locked'),
+      }).toEqual({ skills: 0, unreadable: 1, candidates: 1, offered: true });
+
+      // R2's own sentence, naming the folder that is in the way rather than
+      // denying the skill exists.
+      const plan = planAdopt({
+        ...readAdoptCandidates(repo, inventory, manifest),
+        ownership: 'plain',
+        request: { mode: 'explicit', name: 'locked' },
+      });
+      expect(plan.refusals.map((refusal) => refusal.rule)).toEqual(['hostile-path']);
+      expect(plan.refusals[0]?.reason).toBe(
+        'blocked by `.claude/skills/locked`, which is a folder DorkOS cannot read ' +
+          '(permission denied). Fix the folder’s permissions, then re-run'
+      );
     } finally {
       chmodSync(locked, 0o755);
     }

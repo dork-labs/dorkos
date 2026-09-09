@@ -22,7 +22,12 @@ import { join } from 'node:path';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import type { HarnessManifest } from '../manifest/schema.js';
-import type { SkillInventoryEntry, SkillRoot, SourceInventory } from '../inventory/types.js';
+import type {
+  SkillInventoryEntry,
+  SkillRoot,
+  SourceInventory,
+  UnreadableSource,
+} from '../inventory/types.js';
 import { canonicalLayerIgnoredBy } from '../apply/gitignore.js';
 import { blockedWritePath, type WritePathCause } from '../apply/write-path-occupants.js';
 import { CLAUDE_TOKEN_PREFIX } from './allowlist.js';
@@ -61,9 +66,12 @@ export function readAdoptCandidates(
     inventory.skills.filter((s) => s.root === CANONICAL_SKILLS_ROOT).map((s) => s.name)
   );
   const declaredNames = new Set(manifest.claudeOnlySkills.map((entry) => entry.name));
-  const owned = inventory.skills.filter((s) =>
-    (HARNESS_OWNED_SKILL_ROOTS as readonly string[]).includes(s.root)
-  );
+  const owned = [
+    ...inventory.skills.filter((s) =>
+      (HARNESS_OWNED_SKILL_ROOTS as readonly string[]).includes(s.root)
+    ),
+    ...lockedSkills(inventory),
+  ];
 
   const candidates: AdoptCandidate[] = [];
   const exclusions: AdoptExclusion[] = [];
@@ -95,6 +103,63 @@ export function readAdoptCandidates(
     // leaves a link behind.
     enabledHarnesses: manifest.harnesses,
     ...ignoredBy(repoRoot),
+  };
+}
+
+/**
+ * The skill folders the inventory could not open, in a root a tool owns —
+ * candidates like any other, and refused by R2 with the reason that names the
+ * folder (DOR-1949).
+ *
+ * A skill nobody may look inside is still a skill somebody wrote, and leaving it
+ * out of this list is what made `dorkos harness adopt locked` answer R1's "there
+ * is no skill called `locked`" about a repository that plainly has one. It
+ * cannot be moved — that is R2's whole subject — but the sentence a person reads
+ * now names the folder and what to do about it instead of denying the skill
+ * exists.
+ *
+ * Exported because the STATUS model must offer exactly the same set: the two
+ * readers are compared by `services/harness/__tests__/adoptable-agreement.test.ts`,
+ * and a candidate one of them invented on its own is the drift that file exists
+ * to catch.
+ *
+ * @param inventory - the source-tree inventory, already walked.
+ * @returns one entry per unreadable skill folder, shaped like the inventory
+ *   entries beside it.
+ */
+export function lockedSkills(inventory: SourceInventory): SkillInventoryEntry[] {
+  return inventory.unreadable
+    .filter((record) => record.kind === 'skill')
+    .flatMap((record) => {
+      const placed = skillFolder(record);
+      return placed === undefined ? [] : [placed];
+    });
+}
+
+/**
+ * One unreadable record read as `<root>/<name>`, or nothing when it is not one.
+ *
+ * A record naming the ROOT itself (`.claude/skills` is a file) is not a skill,
+ * and neither is anything deeper than one level down.
+ */
+function skillFolder(record: UnreadableSource): SkillInventoryEntry | undefined {
+  const cut = record.source.lastIndexOf('/');
+  if (cut === -1) return undefined;
+  const root = record.source.slice(0, cut) as SkillRoot;
+  const name = record.source.slice(cut + 1);
+  if (name === '' || !(HARNESS_OWNED_SKILL_ROOTS as readonly string[]).includes(root)) {
+    return undefined;
+  }
+  return {
+    kind: 'skill',
+    name,
+    source: record.source,
+    provenance: 'authored',
+    // Not asked of the disk: `lstat` on the entry answers, but the one thing
+    // this candidate is going to be refused for is that DorkOS cannot read it,
+    // and R2 runs before R5 either way.
+    isSymlink: false,
+    root,
   };
 }
 
@@ -144,16 +209,20 @@ function readCandidate(
   // `.agents/skills/<name>` is answered by the same check as a file at
   // `.agents/skills`, and R2 gets there before R4 calls it an occupied target.
   //
-  // The SOURCE is deliberately not probed, and the reason is that it cannot
-  // fail. Every hostile shape above a candidate's own folder stops it becoming
-  // a candidate first: an unreadable `.claude/skills` is refused by the
-  // inventory's own root probe, and a source folder that is a file, a dangling
-  // link, a link to a file, or unreadable holds no `SKILL.md` the scanner can
-  // read, so it never reaches this list. Probing it anyway was a branch no tree
-  // could reach — see `adoptable-agreement.test.ts`, which pins what a person
-  // gets instead, and DOR-1943's follow-up on the inventory dropping such a
-  // folder with no record at all.
-  const pathBlockedReason = blockedWritePath(repoRoot, `${target}/${SKILL_FILENAME}`, probed);
+  // The SOURCE is probed first, and it is reachable now: a skill folder nobody
+  // may open reaches this list as a candidate (see {@link lockedSkills}), and it
+  // is the one whose own path is in the way. Source before target because it is
+  // the more fundamental of the two — a folder DorkOS cannot read is a folder it
+  // cannot move, whatever is or is not at `.agents/skills/<name>` — and because
+  // it names the path the person is looking at.
+  //
+  // The branch was removed as unreachable in DOR-1943, correctly at the time:
+  // the inventory dropped such a folder with no record, so no tree could produce
+  // a candidate with a hostile source. DOR-1949 gave it the record, and the
+  // branch its tree back.
+  const pathBlockedReason =
+    blockedWritePath(repoRoot, `${skill.source}/${SKILL_FILENAME}`, probed) ??
+    blockedWritePath(repoRoot, `${target}/${SKILL_FILENAME}`, probed);
 
   let text: string | undefined;
   try {

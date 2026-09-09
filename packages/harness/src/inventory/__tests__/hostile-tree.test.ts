@@ -212,6 +212,80 @@ describe('a hostile source tree', () => {
   });
 });
 
+describe('DOR-1949 — a skill folder DorkOS cannot open', () => {
+  /**
+   * A repository whose only skill is one nobody may look inside.
+   *
+   * Mode 000 on the FOLDER, which is the shape a person really produces (a
+   * `chmod -R` that caught one directory, a checkout restored from a backup
+   * with the wrong umask). The scanner's `existsSync` on the `SKILL.md` inside
+   * answers `false` through it, so the folder used to reach no list at all.
+   */
+  function stageLockedSkill(): void {
+    repo = mkdtempSync(join(tmpdir(), 'harness-locked-repo-'));
+    dorkHome = mkdtempSync(join(tmpdir(), 'harness-locked-home-'));
+    writeJsonAt(join(repo, '.agents', 'harness.manifest.json'), {
+      version: 1,
+      harnesses: ['claude-code'],
+    });
+    writeFileAt(
+      join(repo, '.claude', 'skills', 'locked', 'SKILL.md'),
+      '---\nname: locked\ndescription: A locked skill\n---\n\n# locked\n'
+    );
+    chmodSync(join(repo, '.claude', 'skills', 'locked'), 0o000);
+  }
+
+  afterEach(() => {
+    if (repo) {
+      try {
+        chmodSync(join(repo, '.claude', 'skills', 'locked'), 0o755);
+      } catch {
+        // never staged — the afterEach above removes whatever is there
+      }
+    }
+  });
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)('records it instead of dropping it in silence', () => {
+    // Seeded defect: `inventorySkills` walks only what `scanSkillDirs` hands
+    // back. A mode-000 folder is in neither list, so the tree answers
+    // `{ skills: 0, unreadable: 0 }` — a repository with a skill in it reads
+    // exactly like a repository with none (DOR-1949).
+    stageLockedSkill();
+
+    const inventory = inventorySourceTree(repo);
+
+    expect({
+      skills: inventory.skills.length,
+      unreadable: inventory.unreadable.map((entry) => `${entry.kind}:${entry.source}`),
+    }).toEqual({ skills: 0, unreadable: ['skill:.claude/skills/locked'] });
+    const [record] = inventory.unreadable;
+    expect(record?.reason).toContain('nobody may read it');
+    expect(record?.reason).not.toContain(repo);
+    expect(record?.reason).not.toMatch(/E[A-Z]+:/);
+  });
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)('turns it into a warning the report can draw', () => {
+    stageLockedSkill();
+
+    const plan = project(repo, { dorkHome });
+
+    expect(
+      plan.warnings.filter((w) => w.source === '.claude/skills/locked').map((w) => w.artifact)
+    ).toEqual(['skill']);
+    expect(() => checkPlan(repo, plan)).not.toThrow();
+  });
+
+  it('says nothing about an ordinary folder that simply holds no skill', () => {
+    // The silence that must survive: `.claude/skills/notes` with no `SKILL.md`
+    // is not a skill and not a fault, and a probe that reported every directory
+    // it could not turn into a skill would bury the one that matters.
+    repo = mkdtempSync(join(tmpdir(), 'harness-nonskill-repo-'));
+    mkdirSync(join(repo, '.claude', 'skills', 'notes'), { recursive: true });
+
+    expect(inventorySourceTree(repo).unreadable).toEqual([]);
+  });
+});
+
 describe('DOR-1938 — an inventory warning is a sentence, not an errno', () => {
   /**
    * Every hostile shape that reaches a `causeOf` call site, in one tree.
