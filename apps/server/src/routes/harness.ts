@@ -417,21 +417,22 @@ export function createHarnessRouter(deps: HarnessRouterDeps): Router {
     }
 
     try {
-      const ours = readDorkosHarness();
       // The apply and the read it answers with are ONE turn: a status recomputed
       // outside the lock could describe a tree somebody else rewrote in between,
       // which is the one thing this response is supposed to be authoritative
       // about. `sweepOrphans: true` is safe here because this plan takes no
       // harness filter — the seam throws if the two are ever combined.
       const { result, status } = await withProjectLock(resolved, () => {
+        // No `dorkosHarness` here, and the seam's own doc is why: that option
+        // changes nothing a projection WRITES — its only effect is one entry in
+        // `plan.notEnabled` — and this plan is applied, never reported. The
+        // response carries `applied`, `swept`, `conflicts` and `askedAbout` off
+        // it and nothing else. It goes to the STATUS below instead, which is
+        // the half a person reads, and which builds a plan of its own.
         const applied = projectWithConsent(resolved, {
           dorkHome: deps.dorkHome,
           sweepOrphans: true,
           decisions: readHookDecisions(),
-          // Asked once and handed to both halves of the turn, so the plan this
-          // sync applied and the status it answers with agree about the agent
-          // tool DorkOS runs here (DOR-1901).
-          dorkosHarness: ours,
         });
         return {
           result: applied,
@@ -439,7 +440,11 @@ export function createHarnessRouter(deps: HarnessRouterDeps): Router {
             projectPath: resolved,
             dorkHome: deps.dorkHome,
             decisions: readHookDecisions(),
-            dorkosHarness: ours,
+            // The one fact about this DorkOS the tree cannot show, asked the
+            // same way `GET /status` asks it: a sync that answered differently
+            // from the read before the click would make the panel flicker
+            // between two truths (DOR-1901).
+            dorkosHarness: readDorkosHarness(),
             // The only place a blocked target is discovered is the write that
             // hit it, so the recomputed status is told what this one ran into.
             afterWrite: { conflicts: applied.conflicts },

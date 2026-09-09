@@ -818,6 +818,38 @@ describe('POST /api/harness/sync', () => {
     expect(existsSync(link)).toBe(true);
   });
 
+  it('TR-11: the RETURNED status names the tool DorkOS runs, and the manifest is untouched', async () => {
+    // The sync's own half of DOR-1901's wiring. `GET /status` is covered above;
+    // this route builds a SECOND status, inside the lock, after its apply — and
+    // the two have to answer the same question about the same repo or the page
+    // draws one thing before the click and another after it.
+    //
+    // Seeded defect: drop `dorkosHarness: ours` from the recomputed
+    // `buildHarnessStatus`, or from the `projectWithConsent` call that shares
+    // the turn with it, and `notEnabled` comes back empty. Measured: dropping
+    // either left 143 files / 2529 tests green before this case existed.
+    //
+    // The manifest deliberately omits `claude-code` and the tree has no
+    // `.claude/` of its own until the sync writes one, so a footprint cannot
+    // account for the entry.
+    const repo = stageProject('sync-dorkos-runtime');
+    writeManifest(repo, ['codex', 'opencode']);
+    writeAt(join(repo, 'AGENTS.md'), '# House rules\n');
+    const manifestPath = join(repo, '.agents', 'harness.manifest.json');
+    const manifestBefore = readFileSync(manifestPath, 'utf8');
+
+    const res = await syncProject(repo);
+
+    expect(res.status).toBe(200);
+    expect(res.body.status.notEnabled).toEqual([{ harness: 'claude-code', why: 'dorkos-runtime' }]);
+    // A notice, never a repair: `--enable` is the only thing that writes this
+    // file, and it is committed and shared with everybody on the project
+    // (ADR-302). Byte equality rather than "it still parses the same", because
+    // a re-serialized manifest with somebody's spacing rewritten is exactly the
+    // harm that rule names.
+    expect(readFileSync(manifestPath, 'utf8')).toBe(manifestBefore);
+  });
+
   it('AP-07: sweeps an uninstalled package’s projections and nothing else, and names every path', async () => {
     // Seeded defect: pass `sweepOrphans: false` and the swept paths survive —
     // `swept` is empty, the tree diff still names them as present, and the

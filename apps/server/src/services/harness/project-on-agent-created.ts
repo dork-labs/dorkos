@@ -14,10 +14,11 @@
  * DorkOS then started there had never seen the house rules the person keeps in
  * their own `AGENTS.md`.
  *
- * This is that trigger. It fires once per created or registered agent, from the
- * one seam every arrival goes through (`services/core/agent-created-hook.ts`),
- * and it is the same shape `runAutoProjection` has — the consent seam, under the
- * project lock — with three deliberate differences.
+ * This is that trigger. It fires for every arrival except the create pipeline,
+ * which projects the workspace it just built — from the one seam every arrival
+ * goes through (`services/core/agent-created-hook.ts`) — and it is the same
+ * shape `runAutoProjection` has, the consent seam under the project lock, with
+ * three deliberate differences.
  *
  * ## What it does, and does not, do
  *
@@ -136,7 +137,7 @@ import {
   withProjectLock,
 } from './project-with-consent.js';
 
-/** The just-created or just-registered agent, as this trigger reads it. */
+/** The agent that just arrived, as this trigger reads it. */
 export interface ProjectedAgent {
   /** The agent's slug, for the log lines. */
   name: string;
@@ -193,7 +194,7 @@ export const _internal = {
 /**
  * Set up the repository an agent was just pointed at, once.
  *
- * @param agent - The agent that was created or registered.
+ * @param agent - The agent that arrived.
  * @param opts - Resolved dork home.
  */
 export async function runAgentCreatedProjection(
@@ -257,7 +258,7 @@ export async function runAgentCreatedProjection(
  * writer that scaffolded between the two would leave this one planning from a
  * manifest it never read.
  *
- * @param agent - The agent that was created or registered.
+ * @param agent - The agent that arrived.
  * @param dorkHome - Resolved DorkOS data directory.
  */
 function projectForAgent(agent: ProjectedAgent, dorkHome: string): void {
