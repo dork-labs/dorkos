@@ -119,10 +119,8 @@ test.describe('Skills — what each of your tools can see', () => {
     await expect(canonical.getByRole('listitem', { name: 'Codex reads it' })).toBeVisible();
     await expect(canonical.getByRole('listitem', { name: 'Claude Code shared' })).toBeVisible();
 
-    const harnessNative = skills.getByRole('group', {
-      name: repo.harnessNativeSkill ?? '',
-      exact: true,
-    });
+    const harnessNativeSkill = repo.harnessNativeSkill();
+    const harnessNative = skills.getByRole('group', { name: harnessNativeSkill, exact: true });
     await expect(
       harnessNative.getByRole('listitem', { name: 'Claude Code reads it' })
     ).toBeVisible();
@@ -141,7 +139,7 @@ test.describe('Skills — what each of your tools can see', () => {
     expect(status.ok(), await status.text()).toBe(true);
     const body = (await status.json()) as StatusResponse;
     const droppedRow = body.rows.find(
-      (row) => row.artifact === 'skill' && row.name === repo.harnessNativeSkill
+      (row) => row.artifact === 'skill' && row.name === harnessNativeSkill
     );
     const reason = droppedRow?.cells.codex?.reason;
     expect(reason, 'the status has no Codex reason for the .claude/skills skill').toBeDefined();
@@ -150,7 +148,7 @@ test.describe('Skills — what each of your tools can see', () => {
       .locator('[data-slot="collapsible-field-card"]')
       .filter({ hasText: 'Not shared with Codex' });
     await codexPanel.getByRole('button', { name: /Not shared with Codex/ }).click();
-    await expect(codexPanel).toContainText(`skill ${repo.harnessNativeSkill}`);
+    await expect(codexPanel).toContainText(`skill ${harnessNativeSkill}`);
     await expect(codexPanel).toContainText(reason as string);
   });
 
@@ -164,7 +162,7 @@ test.describe('Skills — what each of your tools can see', () => {
     const agent = await roomsApi.registerAgent(`E2E Sync ${roomsApi.runId}`, '🧹', '#0ea5e9', {
       path: repo.root,
     });
-    const orphan = repo.orphanedLink as string;
+    const orphan = repo.orphanedLink();
 
     await rightPanel.openProfilePage('skills', agent.projectPath);
 

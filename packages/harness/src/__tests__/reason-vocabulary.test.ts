@@ -30,6 +30,25 @@
  * package manifest may declare (`@dorkos/marketplace`'s `LAYER_LABELS`), never
  * to quoted text in general: quoting a sentence must not launder it.
  *
+ * ## What it covers, and what it does not
+ *
+ * Every sentence the ENGINE writes: the note on an action, the reason on a
+ * drop, a `ProjectionWarning`, what `checkPlan().blocked` says is in the way of
+ * a write (the `conflict` chip), what a sweep removes, and what `manifestNotices`
+ * says is wrong with the manifest itself. Two of those are TABLES rather than
+ * per-tree answers — `SWEEP_REASONS` and {@link BLOCKED_REASONS} — so both are
+ * enumerated whole as well as produced by the fixture: which entry a tree trips
+ * depends on what somebody happened to leave lying at a target.
+ *
+ * What it does NOT cover, and does not need to:
+ *
+ * - **Anything the client writes.** The seven chip words, the "Not shared with
+ *   `<harness>`" heading, the not-enabled sentence and every page state live in
+ *   `apps/client/src`, which `check-vocab-gate.ts` already scans. That is also
+ *   why `plan.notEnabled` is not collected here: its `signal` is a PATH.
+ * - **Anything the server writes.** The `pending-approval` copy and the status
+ *   envelope's own strings are in `apps/server/src`, scanned by the same gate.
+ *
  * ## Nothing zero-subject
  *
  * Three floors, all asserted before anything else is: the waves parsed, the
@@ -55,6 +74,13 @@ import { loadManifest, project } from '../engine.js';
 import { checkPlan } from '../apply/apply.js';
 import { manifestNotices } from '../manifest/notices.js';
 import { SWEEP_REASONS } from '../apply/sweep-reasons.js';
+import { GENERATE_DIRECTORY_REASON, GENERATE_SYMLINK_REASON } from '../apply/generate-occupants.js';
+import { HAND_WRITTEN_HOOKS_REASON } from '../apply/generated-ownership.js';
+import {
+  SYMLINKS_OFF_REASON,
+  SYMLINK_DIRECTORY_REASON,
+  SYMLINK_FILE_REASON,
+} from '../apply/symlink-occupants.js';
 
 /** Where the term list lives, relative to this file. Its own constant so a seeded defect can move it. */
 const BANNED_TERMS_PATH = join(
@@ -67,6 +93,22 @@ const BANNED_TERMS_PATH = join(
  * carve-out below exempts.
  */
 const PACKAGE_LAYER_NAMES = new Set(Object.keys(LAYER_LABELS));
+
+/**
+ * Every sentence `checkPlan().blocked` can carry, in one place, for the reason
+ * {@link SWEEP_REASONS} is iterated whole: a blocked cell reads `conflict` on
+ * the page and prints under `--check` in the terminal, and which of the six a
+ * tree happens to trip is an accident of that tree. The engine writes these
+ * one per module rather than in one table, so this is the table.
+ */
+const BLOCKED_REASONS = [
+  SYMLINKS_OFF_REASON,
+  SYMLINK_DIRECTORY_REASON,
+  SYMLINK_FILE_REASON,
+  GENERATE_DIRECTORY_REASON,
+  GENERATE_SYMLINK_REASON,
+  HAND_WRITTEN_HOOKS_REASON,
+] as const;
 
 /** Everything staged on disk, removed once the suite is done with it. */
 const staged: string[] = [];
@@ -104,13 +146,18 @@ function stagePackage(root: string, name: string, layers: string[], skills: stri
  * an authored skill and a harness-native one (per-harness placements and the
  * adoptable advice), a subagent, a rule and an `.mcp.json` (the kinds the
  * engine reports rather than projects), personal hooks, a dead `.claude/skills`
- * link (a sweep), a project package declaring every non-portable layer there is
- * (the layer drops, including the one this guard was written for), the same
- * package installed for all projects as well (the both-scopes notice), two more
- * global-only packages (both global-install forms), an unreadable package hooks
- * file (a warning), a manifest carrying a retired key and three useless hook
- * policies (the notices), and two harnesses whose own files are in the tree and
- * which the manifest does not enable (the not-enabled lines).
+ * link (a sweep), somebody's own file where a skill link goes and a
+ * hand-written `.codex/hooks.json` where the engine generates one (two of the
+ * blocked sentences), a project package declaring every non-portable layer
+ * there is (the layer drops, including the one this guard was written for), the
+ * same package installed for all projects as well (the both-scopes notice), two
+ * more global-only packages (both global-install forms), an unreadable package
+ * hooks file (a warning), and a manifest carrying a retired key and two useless
+ * hook policies (the notices).
+ *
+ * The two harnesses whose own files are here and which the manifest does not
+ * enable stay for a different reason — they are not vocabulary, see
+ * {@link collectReasons}.
  */
 function stageFixture(): { repoRoot: string; dorkHome: string } {
   const repoRoot = mkdtempSync(join(tmpdir(), 'harness-vocab-repo-'));
@@ -151,6 +198,19 @@ function stageFixture(): { repoRoot: string; dorkHome: string } {
     join('..', '..', '.agents', 'skills', 'deleted-skill'),
     join(repoRoot, '.claude', 'skills', 'deleted-skill')
   );
+
+  // Two things in the way, so the blocked family is PRODUCED and not only
+  // enumerated: somebody's own file where the canonical skill's link goes, and
+  // a hand-written hooks file at a path the engine generates from
+  // `.claude/settings.json`. A plain file rather than a directory for the
+  // first, deliberately — a directory holding a `SKILL.md` would be a skill in
+  // both roots, which earns a different sentence.
+  writeFileSync(join(repoRoot, '.claude', 'skills', 'ship-it'), 'somebody else wrote this\n');
+  write(
+    join(repoRoot, '.claude', 'settings.json'),
+    JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo done' }] }] } })
+  );
+  write(join(repoRoot, '.codex', 'hooks.json'), JSON.stringify({ description: 'mine', hooks: {} }));
 
   // A project package declaring every non-portable layer, with a hooks file
   // nothing can read.
@@ -196,13 +256,23 @@ function collectReasons(repoRoot: string, dorkHome: string): Reason[] {
   for (const action of plan.actions) add('action', action.reason);
   for (const drop of plan.drops) add('drop', drop.reason);
   for (const warning of plan.warnings) add('warning', warning.reason);
-  for (const detected of plan.notEnabled) add('not-enabled', detected.signal);
+  for (const blocked of drift.blocked) add('blocked', blocked.reason);
   for (const removal of drift.removals) add('sweep', removal.reason);
   for (const notice of manifestNotices(loadManifest(repoRoot))) add('manifest-notice', notice);
-  // The sweep table in full, not only the causes this tree happens to trip:
-  // six finders take files for five different reasons, and each of those
-  // sentences reaches the same disclosure (DOR-1895, DOR-1906).
+  // Both tables in full, not only the causes this tree happens to trip. Six
+  // sweep finders take files for five different reasons and each sentence
+  // reaches the same removal disclosure (DOR-1895, DOR-1906); six blocked
+  // reasons reach the `conflict` chip and the `--check` block, and which one a
+  // tree trips depends on what somebody happened to leave at a target.
   for (const reason of Object.values(SWEEP_REASONS)) add('sweep', reason);
+  for (const reason of BLOCKED_REASONS) add('blocked', reason);
+
+  // `plan.notEnabled` is deliberately NOT collected. Its entries carry a
+  // `signal` — `.gemini/`, `.github/copilot-instructions.md` — which is a PATH,
+  // not a sentence: the words a person reads there are written by the client
+  // (`NotEnabledNotice`, in `apps/client/src`, where `check-vocab-gate.ts`
+  // already scans them). Counting a path as vocabulary coverage would be this
+  // guard claiming a surface it does not check.
 
   return found;
 }
@@ -270,31 +340,41 @@ describe('VC-02 — the sentences the engine shows a person', () => {
     // reaches this package, so growth must not red. What must red is shrinkage
     // — a loader pointed at a missing file, or a fixture that stopped
     // producing a plan, would otherwise report a spotless vocabulary over an
-    // empty list. Measured 2026-09-08: 4 waves, 17 terms, 52 reasons.
+    // empty list. Measured 2026-09-09: 4 waves, 17 terms, 59 reasons.
     const readFrom = `Read ${terms.length} terms in ${waves.size} waves from ${BANNED_TERMS_PATH}.`;
     expect(waves.size, readFrom).toBeGreaterThanOrEqual(4);
     expect(terms.length, readFrom).toBeGreaterThanOrEqual(17);
     expect(
       reasons.length,
       'The fixture built a plan with almost nothing to say.'
-    ).toBeGreaterThanOrEqual(52);
+    ).toBeGreaterThanOrEqual(59);
   });
 
-  it('VC-02: the fixture reaches every family of reason the app can draw', () => {
-    // A count alone can be met by one family repeated, and the families are
-    // what the page actually draws in four different places.
+  it('VC-02: the fixture reaches every family of sentence the ENGINE writes', () => {
+    // A count alone can be met by one family repeated. Five families, and each
+    // is a different producer with a different failure mode: the note on an
+    // action, the reason on a drop, a warning, what is in the way of a write,
+    // what a sweep removes, and what is wrong with the manifest itself.
     const families = new Set(reasons.map((reason) => reason.family));
     expect([...families].sort()).toEqual([
       'action',
+      'blocked',
       'drop',
       'manifest-notice',
-      'not-enabled',
       'sweep',
       'warning',
     ]);
 
-    // And the two producers a family name does not distinguish, each named by a
-    // phrase only it writes.
+    // Two of the six tables are enumerated as well as produced, so a table that
+    // grew is checked even when this tree does not trip the new entry. The
+    // blocked one is also genuinely PRODUCED here, which is what says the
+    // enumeration is describing something real.
+    expect(reasons.filter((reason) => reason.family === 'blocked').length).toBeGreaterThan(
+      BLOCKED_REASONS.length
+    );
+
+    // And the three producers a family name does not distinguish, each named by
+    // a phrase only it writes.
     const all = reasons.map((reason) => reason.text);
     expect(all.some((text) => text.startsWith('plugin layer "adapters"'))).toBe(true);
     expect(all.some((text) => text.includes('installed for all your projects'))).toBe(true);

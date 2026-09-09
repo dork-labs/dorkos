@@ -63,18 +63,51 @@ export interface HarnessRepoOptions {
   orphanedLink?: boolean;
 }
 
-/** A repository this fixture staged, as the spec refers to it. */
+/**
+ * A repository this fixture staged, as the spec refers to it.
+ *
+ * The two optional pieces are reached through accessors rather than as
+ * `string | undefined` fields, and that is the point of them: a spec asking for
+ * a part it did not stage should fail SAYING so. Passed straight into a
+ * Playwright locator, an `undefined` narrowed away with `?? ''` becomes a role
+ * name of `''` and the run spends five seconds timing out before reporting
+ * that nothing is named the empty string, which is true and useless.
+ */
 export interface StagedHarnessRepo {
   /** Absolute path of the repository root — what an agent is registered at. */
   root: string;
   /** The skill in `.agents/skills`. */
   canonicalSkill: string;
-  /** The skill in `.claude/skills`, when one was staged. */
-  harnessNativeSkill?: string;
-  /** The repo-relative path of the dead link, when one was staged. */
-  orphanedLink?: string;
   /** The repo-relative path the canonical skill is projected to for Claude Code. */
   projectedLink: string;
+  /**
+   * The skill kept in `.claude/skills`.
+   *
+   * @throws when the repository was staged without `harnessNativeSkill`.
+   */
+  harnessNativeSkill: () => string;
+  /**
+   * The repo-relative path of the dead link.
+   *
+   * @throws when the repository was staged without `orphanedLink`.
+   */
+  orphanedLink: () => string;
+}
+
+/**
+ * A staged part, or a failure naming the option that was not passed.
+ *
+ * @param value - What `stage` recorded, if it staged this part at all.
+ * @param option - The option that would have staged it.
+ */
+function staged(value: string | undefined, option: keyof HarnessRepoOptions): string {
+  if (value === undefined) {
+    throw new Error(
+      `This repository was staged without \`${option}\`, so there is nothing to name. ` +
+        `Pass \`{ ${option}: true }\` to harnessRepo.stage().`
+    );
+  }
+  return value;
 }
 
 /** One `SKILL.md`, with the frontmatter every harness keys a skill by. */
@@ -130,12 +163,7 @@ export class HarnessRepoApi {
     // Claude Code is set up for.
     await mkdir(join(root, '.claude', 'skills'), { recursive: true });
 
-    const staged: StagedHarnessRepo = {
-      root,
-      canonicalSkill: HARNESS_REPO_SKILLS.canonical,
-      projectedLink: `.claude/skills/${HARNESS_REPO_SKILLS.canonical}`,
-    };
-
+    let harnessNativeSkill: string | undefined;
     if (options.harnessNativeSkill === true) {
       const dir = join(root, '.claude', 'skills', HARNESS_REPO_SKILLS.harnessNative);
       await mkdir(dir, { recursive: true });
@@ -143,9 +171,10 @@ export class HarnessRepoApi {
         join(dir, 'SKILL.md'),
         skillFile(HARNESS_REPO_SKILLS.harnessNative, 'How this release is written up.')
       );
-      staged.harnessNativeSkill = HARNESS_REPO_SKILLS.harnessNative;
+      harnessNativeSkill = HARNESS_REPO_SKILLS.harnessNative;
     }
 
+    let orphanedLink: string | undefined;
     if (options.orphanedLink === true) {
       // Relative, the way the engine writes its own links, and pointing into
       // `.agents/skills` — both are conditions of the sweep recognising it as
@@ -154,10 +183,16 @@ export class HarnessRepoApi {
         join('..', '..', '.agents', 'skills', HARNESS_REPO_SKILLS.deleted),
         join(root, '.claude', 'skills', HARNESS_REPO_SKILLS.deleted)
       );
-      staged.orphanedLink = `.claude/skills/${HARNESS_REPO_SKILLS.deleted}`;
+      orphanedLink = `.claude/skills/${HARNESS_REPO_SKILLS.deleted}`;
     }
 
-    return staged;
+    return {
+      root,
+      canonicalSkill: HARNESS_REPO_SKILLS.canonical,
+      projectedLink: `.claude/skills/${HARNESS_REPO_SKILLS.canonical}`,
+      harnessNativeSkill: () => staged(harnessNativeSkill, 'harnessNativeSkill'),
+      orphanedLink: () => staged(orphanedLink, 'orphanedLink'),
+    };
   }
 
   /**
