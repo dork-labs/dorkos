@@ -58,7 +58,7 @@ import {
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../../../../drizzle/', import.meta.url));
-const MANAGED_MIGRATION_PREFIXES = ['0011_', '0012_', '0013_'];
+const MANAGED_MIGRATION_PREFIXES = ['0011_', '0012_', '0013_', '0015_'];
 const EXECUTION_ATTRIBUTION = {
   surface: 'mcp' as const,
   actorKind: 'agent' as const,

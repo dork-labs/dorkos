@@ -197,6 +197,7 @@ describe('0014 managed event account cascade migration', () => {
     `);
     expect(directTenantEdges.rows).toEqual([
       { child: 'managed_connector_event_binding', delete_action: 'c' },
+      { child: 'managed_connector_event_capacity', delete_action: 'c' },
       { child: 'managed_connector_event_definition', delete_action: 'c' },
       { child: 'managed_connector_event_inbox', delete_action: 'c' },
       { child: 'managed_connector_event_subscription', delete_action: 'c' },
@@ -221,6 +222,7 @@ describe('0014 managed event account cascade migration', () => {
       'connector_tenant',
       'managed_connector_event_definition',
       'managed_connector_event_binding',
+      'managed_connector_event_capacity',
       'managed_connector_event_subscription',
       'managed_connector_event_inbox',
     ]) {

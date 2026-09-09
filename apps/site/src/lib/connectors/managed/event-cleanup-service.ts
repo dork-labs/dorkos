@@ -1,5 +1,5 @@
-/** Private disable-only reconciliation invoked by the existing authenticated cleanup job. */
-import { and, eq, gt, isNull, lte, or, sql } from 'drizzle-orm';
+/** Private captured-trigger reconciliation invoked by the existing authenticated cleanup job. */
+import { and, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import {
   ComposioEventClient,
   createComposioHostedClients,
@@ -46,7 +46,7 @@ function productionProvider(providerUserId: string) {
   };
 }
 
-/** Reconcile a bounded page of already-applied disable receipts, even while the local instance is offline. */
+/** Reconcile a bounded page of captured trigger cleanup receipts, even while the local instance is offline. */
 export async function recoverManagedEventCleanup(
   db: ManagedConnectorDatabase,
   signal: AbortSignal,
@@ -78,7 +78,7 @@ export async function recoverManagedEventCleanup(
     .where(
       and(
         eq(c.kind, 'set_event_subscription'),
-        eq(c.state, 'applied'),
+        inArray(c.state, ['applied', 'superseded']),
         eq(c.externalCleanup, 'pending'),
         or(isNull(c.eventCleanupAfter), lte(c.eventCleanupAfter, now))
       )
@@ -105,7 +105,7 @@ export async function recoverManagedEventCleanup(
           eq(c.instanceId, row.receipt.instanceId),
           eq(c.commandId, row.receipt.commandId),
           eq(c.kind, 'set_event_subscription'),
-          eq(c.state, 'applied'),
+          eq(c.state, row.receipt.state),
           eq(c.externalCleanup, 'pending'),
           eq(c.requestHash, row.receipt.requestHash),
           or(isNull(c.eventCleanupAfter), lte(c.eventCleanupAfter, now))
@@ -119,7 +119,10 @@ export async function recoverManagedEventCleanup(
       if (
         !parsed.success ||
         parsed.data.kind !== 'set_event_subscription' ||
-        parsed.data.enabled ||
+        !(
+          (row.receipt.state === 'applied' && !parsed.data.enabled) ||
+          (row.receipt.state === 'superseded' && parsed.data.enabled)
+        ) ||
         parsed.data.commandId !== row.receipt.commandId ||
         parsed.data.managedConnectionId !== row.receipt.connectionId ||
         managedRequestHash(parsed.data) !== row.receipt.requestHash
@@ -152,7 +155,7 @@ export async function recoverManagedEventCleanup(
       const provider = resolveProvider(row.providerUserId, signal);
       if (!provider?.events || provider.executionConfigDigest !== row.provider.configurationDigest)
         continue;
-      const result = await cleanupManagedEventBinding(
+      await cleanupManagedEventBinding(
         db,
         {
           ownerId: row.ownerId,
@@ -169,11 +172,19 @@ export async function recoverManagedEventCleanup(
           signal,
         }
       );
-      if (
-        result.state === 'applied' &&
-        ['complete', 'not_required'].includes(result.externalCleanup)
-      )
-        completed++;
+      const [settled] = await db
+        .select({ externalCleanup: c.externalCleanup })
+        .from(c)
+        .where(
+          and(
+            eq(c.tenantId, row.receipt.tenantId),
+            eq(c.instanceId, row.receipt.instanceId),
+            eq(c.commandId, row.receipt.commandId),
+            eq(c.requestHash, row.receipt.requestHash),
+            eq(c.state, row.receipt.state)
+          )
+        );
+      if (settled && ['complete', 'not_required'].includes(settled.externalCleanup)) completed++;
     } catch {
       /* Keep the durable cleanup receipt pending for the next bounded pass. */
     }

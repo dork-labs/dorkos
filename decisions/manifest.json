@@ -17,6 +17,24 @@
       ]
     },
     {
+      "id": "260908-163050",
+      "slug": "hosted-event-capacity-is-a-tenant-scoped-transaction",
+      "title": "Hosted event capacity is a tenant-scoped transaction",
+      "status": "accepted",
+      "created": "2026-09-08",
+      "extractedFrom": "spec",
+      "specSlug": "hosted-notification-intake-bounds",
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "apps/site/src/db/managed-connector-events-schema.ts",
+        "apps/site/src/lib/connectors/managed/event-ingress-service.ts",
+        "apps/site/src/lib/connectors/managed/event-delivery-service.ts",
+        "apps/site/src/lib/connectors/managed/event-authority-service.ts",
+        "apps/site/src/app/api/connectors/managed/events/route.ts"
+      ]
+    },
+    {
       "id": "260908-153657",
       "slug": "a-live-runtime-turn-renews-connections-authority-through-its-process-owner",
       "title": "A live runtime turn renews Connections authority through its process owner",

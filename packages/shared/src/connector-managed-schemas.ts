@@ -123,6 +123,7 @@ export const ManagedConnectorAuthorityCommandStatusSchema = z.discriminatedUnion
       'connection_unavailable',
       'revision_unavailable',
       'event_definition_unavailable',
+      'event_subscription_limit_reached',
       'invalid_event_filter',
       'permission_upgrade_required',
       'scope_conflict',

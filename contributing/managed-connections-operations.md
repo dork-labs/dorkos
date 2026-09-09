@@ -10,18 +10,18 @@ Managed source is deployed with its readiness switches off. The dedicated projec
 
 Paths below are relative to the repository root.
 
-| Responsibility                                                  | Location                                                                                                                                                                                  |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Environment validation and availability                         | `apps/site/src/env.ts`; `apps/site/src/lib/connectors/managed/config.ts`                                                                                                                  |
-| Existing site deployment, migrations and daily cleanup schedule | `apps/site/vercel.json`; `apps/site/drizzle.config.ts`; `apps/site/src/app/api/cron/cleanup/route.ts`                                                                                     |
-| Owner, tenant and linked-instance authority                     | `apps/site/src/lib/instance-service.ts`; `apps/site/src/lib/connectors/managed/{request-context,authority-service}.ts`                                                                    |
-| Browser account linking                                         | `apps/site/src/lib/connectors/managed/authentication-service.ts`; `apps/site/src/app/connectors/managed/authorize/route.ts`; `apps/site/src/app/api/connectors/managed/callback/route.ts` |
-| Composio SDK and material identity                              | `packages/connector-providers/src/composio/{hosted-client-factory,sdk-client,event-client,webhook-verifier}.ts`                                                                           |
-| Hosted event intake, buffer and cleanup                         | `apps/site/src/lib/connectors/managed/{event-ingress-service,event-delivery-service,event-cleanup-service,event-protection}.ts`                                                           |
-| Local event setup, recovery and delivery                        | `apps/server/src/services/connectors/events/`; `apps/server/src/services/connectors/event-inbox-store.ts`; `apps/server/src/index.ts`                                                     |
-| Private session acceptance and dispatch                         | `apps/server/src/services/session/private-messages/acceptance.ts`; `apps/server/src/services/session/{message-dispatcher,trigger-turn}.ts`                                                |
-| Delivery and metadata retention policy                          | `packages/shared/src/connector-event-schemas.ts`                                                                                                                                          |
-| Hosted usage receipts                                           | `apps/site/src/lib/connectors/managed/usage-service.ts`                                                                                                                                   |
+| Responsibility                                                   | Location                                                                                                                                                                                  |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Environment validation and availability                          | `apps/site/src/env.ts`; `apps/site/src/lib/connectors/managed/config.ts`                                                                                                                  |
+| Existing site deployment, migrations and hourly cleanup schedule | `apps/site/vercel.json`; `apps/site/drizzle.config.ts`; `apps/site/src/app/api/cron/cleanup/route.ts`                                                                                     |
+| Owner, tenant and linked-instance authority                      | `apps/site/src/lib/instance-service.ts`; `apps/site/src/lib/connectors/managed/{request-context,authority-service}.ts`                                                                    |
+| Browser account linking                                          | `apps/site/src/lib/connectors/managed/authentication-service.ts`; `apps/site/src/app/connectors/managed/authorize/route.ts`; `apps/site/src/app/api/connectors/managed/callback/route.ts` |
+| Composio SDK and material identity                               | `packages/connector-providers/src/composio/{hosted-client-factory,sdk-client,event-client,webhook-verifier}.ts`                                                                           |
+| Hosted event intake, capacity, buffer and cleanup                | `apps/site/src/lib/connectors/managed/{event-capacity-service,event-ingress-service,event-delivery-service,event-cleanup-service,event-protection}.ts`                                    |
+| Local event setup, recovery and delivery                         | `apps/server/src/services/connectors/events/`; `apps/server/src/services/connectors/event-inbox-store.ts`; `apps/server/src/index.ts`                                                     |
+| Private session acceptance and dispatch                          | `apps/server/src/services/session/private-messages/acceptance.ts`; `apps/server/src/services/session/{message-dispatcher,trigger-turn}.ts`                                                |
+| Delivery and metadata retention policy                           | `packages/shared/src/connector-event-schemas.ts`                                                                                                                                          |
+| Hosted usage receipts                                            | `apps/site/src/lib/connectors/managed/usage-service.ts`                                                                                                                                   |
 
 See [Environment Variables](./environment-variables.md), [Adding a Connector](./adding-a-connector.md) and [API Reference](./api-reference.md) for their existing reference material.
 
@@ -140,6 +140,30 @@ A passing test validates code behavior. It does not verify an owner sign-in, con
 
 ## Retention and Recovery Limits
 
+Hosted notifications have fixed service safety ceilings. These are deployment safeguards, not
+plan entitlements or owner-configurable quotas:
+
+| Boundary                         | Fixed ceiling                                                                |
+| -------------------------------- | ---------------------------------------------------------------------------- |
+| Novel accepted events            | 600 per tenant per UTC minute                                                |
+| One physical notification source | 100 active or reserved destinations                                          |
+| Retained inbox receipts          | 100,000 per tenant                                                           |
+| Protected payload storage        | 256 MiB per tenant                                                           |
+| Cleanup work                     | 100 tenant pages of 100 content clears and 100 metadata deletes, within 20 s |
+
+An exact redelivery does not spend another arrival unit or create another receipt. Fan-out does:
+one accepted event with 20 destinations adds up to 20 retained rows. Acknowledgement clears the
+protected payload and releases its bytes, but the payload-free receipt remains for deduplication
+until its 30-day metadata expiry. At the 100,000-row ceiling, a tenant can retain roughly 3,333
+receipts per day over 30 days. Row exhaustion may therefore continue after every payload has been
+acknowledged and until metadata retention frees rows.
+
+The signed receiver returns the same `429 event_intake_limited` response for every capacity reason.
+`Retry-After` is a positive retry hint. It does not promise that room will exist then or that the
+upstream sender will retry without loss. The 600-per-minute budget limits novel accepted work; it
+does not rate-limit invalid signatures, duplicates, or refused requests before the database. Edge
+flood protection remains a deployment concern outside this service ledger.
+
 - Managed event delivery expires seven days after verified reception. Pull, retry and local handoff preserve that original deadline.
 - Hosted payload is cleared after durable local ACK. Local protected content remains until a truthful terminal destination/turn outcome, or expiry. Queue acceptance alone does not clear content needed for protected dispatch.
 - Physical deletion runs on the next successful bounded sweep. A powered-off local app cannot erase its files; startup cleanup must precede resumed dispatch. Do not promise deletion at the exact expiry instant.
@@ -154,7 +178,28 @@ There is no exactly-once delivery promise. Dedupe, leases and durable receipts r
 
 ## Maintenance and Incident Response
 
-The existing authenticated `GET /api/cron/cleanup` runs at `04:00 UTC` daily through Vercel Cron. It also performs bounded event expiry cleanup and pending physical subscription cleanup. Success returns `eventRetention` and `eventSubscriptions` counts; an event maintenance failure returns 500 with `event_cleanup_failed`. Inspect the response and deployment logs without logging payloads or secrets. A bounded successful pass does not mean the entire backlog is empty.
+The existing authenticated `GET /api/cron/cleanup` runs hourly through Vercel Cron. It gives event
+retention and pending physical-subscription cleanup one shared 25-second signal; account cleanup is
+separate from that timing claim. Retention uses at most 20 seconds and then leaves the remaining
+signal for physical cleanup. Success returns aggregate `eventRetention` and `eventSubscriptions`
+counts; an event maintenance failure returns 500 with `event_cleanup_failed`. Inspect the response
+and deployment logs without logging payloads or tenant identifiers. A bounded successful pass does
+not mean the entire backlog is empty.
+
+Before the first deployment enables managed notification readiness, exclude or quiesce every old
+receiver version, apply the migration, and run `pnpm --filter @dorkos/site
+db:verify-event-capacity`. The command refuses to run while event readiness is on. It checks every
+tenant ledger against the retained inbox and refuses missing, stale, or already over-limit state;
+it does not repair or truncate data. Keep readiness off until it succeeds. After cutover, ingress,
+ACK, and retention maintain the ledger transactionally. A missing ledger or a counter inconsistency
+detected during one of those operations fails closed.
+
+For recovery, compare `retained_rows` with the tenant's inbox row count and
+`protected_payload_bytes` with the sum of UTF-8 bytes in non-empty protected payloads. Also check
+that `next_cleanup_at` is the earliest deadline that can clear content or delete metadata. Do this
+while intake is disabled and old receivers are excluded. Do not edit counters to force readiness;
+find the incomplete transaction or old-version write, preserve accepted receipts, and reconcile by
+an explicit reviewed repair or cleanup procedure.
 
 Pending physical cleanup scans due receipts fairly, normally 25 per pass. Scheduling makes a claimed row due again no sooner than 30 seconds; it does not create a new 30-second cloud job. Recovery requires the exact still-live owner/instance authority, matching provider material and usable event configuration. Missing/revoked keys, disabled event readiness or changed provider material can leave cleanup pending without SDK mutation. Local consent remains revoked. Do not enable another key or borrow another instance to clear the row.
 

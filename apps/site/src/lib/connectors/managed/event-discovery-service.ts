@@ -7,6 +7,7 @@ import type {
 } from '@dorkos/shared/connector-events';
 import { schema } from '@/db/client';
 import { lockLiveAuthorityPrincipal } from './authority-service';
+import { lockManagedEventCapacity } from './event-capacity-service';
 import type { ManagedConnectorRequestContext } from './request-context';
 
 /** Return exact server-owned event identities only after current provider material is rechecked. */
@@ -20,6 +21,7 @@ export async function listManagedEventDefinitions(
   if (!context.events) throw new Error('Account events are unavailable.');
   const page = await context.events.listDefinitions(request);
   return context.db.transaction(async (tx) => {
+    await lockManagedEventCapacity(tx, context.principal.tenantId);
     await lockLiveAuthorityPrincipal(tx, context.principal);
     const [provider] = await tx
       .select()

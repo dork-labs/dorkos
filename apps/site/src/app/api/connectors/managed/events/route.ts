@@ -6,6 +6,7 @@ import { readManagedConnectorConfig } from '@/lib/connectors/managed/config';
 import { managedEventProtector } from '@/lib/connectors/managed/event-protection';
 import { acceptManagedConnectorEvent } from '@/lib/connectors/managed/event-ingress-service';
 import { sweepManagedConnectorEventRetention } from '@/lib/connectors/managed/event-delivery-service';
+import { isManagedEventCapacityContention } from '@/lib/connectors/managed/event-capacity-service';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -52,12 +53,27 @@ export async function POST(request: Request): Promise<Response> {
     if (verified.status !== 'verified')
       return Response.json({ error: 'invalid_signature' }, { status: 401 });
     const db = getTransactionDb();
-    await sweepManagedConnectorEventRetention(db);
     const result = await acceptManagedConnectorEvent(db, verified.event, protector);
-    return result === 'accepted'
-      ? Response.json({ accepted: true }, { status: 202 })
-      : Response.json({ error: 'binding_rejected' }, { status: 403 });
-  } catch {
+    if (result.status === 'limited')
+      return Response.json(
+        { error: 'event_intake_limited' },
+        { status: 429, headers: { 'Retry-After': String(result.retryAfterSeconds) } }
+      );
+    if (result.status === 'rejected')
+      return Response.json({ error: 'binding_rejected' }, { status: 403 });
+    if (result.inserted > 0)
+      await sweepManagedConnectorEventRetention(db, {
+        tenantId: result.tenantId,
+        maxPages: 1,
+        signal: request.signal,
+      }).catch(() => undefined);
+    return Response.json({ accepted: true }, { status: 202 });
+  } catch (error) {
+    if (isManagedEventCapacityContention(error))
+      return Response.json(
+        { error: 'event_intake_limited' },
+        { status: 429, headers: { 'Retry-After': '1' } }
+      );
     return Response.json({ error: 'events_unavailable' }, { status: 503 });
   }
 }

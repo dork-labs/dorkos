@@ -6,6 +6,7 @@
 import { createHash } from 'node:crypto';
 import type { ConnectorEventCapability } from '@dorkos/shared/connector-events';
 import { applyManagedEventAuthorityCommand } from './event-authority-service';
+import type { ManagedEventCapacityPolicy } from './event-capacity-service';
 import {
   ComposioManagedAccountError,
   type ComposioManagedAccountClient,
@@ -99,19 +100,24 @@ export async function resolveConnectorTenant(
   db: ManagedConnectorDatabase,
   ownerId: string
 ): Promise<{ id: string; ownerUserId: string; providerUserId: string }> {
-  const [created] = await db
-    .insert(schema.connectorTenant)
-    .values({ ownerUserId: ownerId })
-    .onConflictDoNothing({ target: schema.connectorTenant.ownerUserId })
-    .returning();
-  if (created) return created;
-  const [existing] = await db
-    .select()
-    .from(schema.connectorTenant)
-    .where(eq(schema.connectorTenant.ownerUserId, ownerId))
-    .limit(1);
-  if (!existing) throw new Error('Connector tenant could not be resolved.');
-  return existing;
+  return db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(schema.connectorTenant)
+      .values({ ownerUserId: ownerId })
+      .onConflictDoNothing({ target: schema.connectorTenant.ownerUserId })
+      .returning();
+    if (created) {
+      await tx.insert(schema.managedConnectorEventCapacity).values({ tenantId: created.id });
+      return created;
+    }
+    const [existing] = await tx
+      .select()
+      .from(schema.connectorTenant)
+      .where(eq(schema.connectorTenant.ownerUserId, ownerId))
+      .limit(1);
+    if (!existing) throw new Error('Connector tenant could not be resolved.');
+    return existing;
+  });
 }
 
 /**
@@ -360,11 +366,12 @@ export async function applyManagedAuthorityCommand(
   db: ManagedConnectorDatabase,
   principal: ManagedConnectorPrincipal,
   rawCommand: unknown,
-  provider?: ManagedAuthorityProviderContext
+  provider?: ManagedAuthorityProviderContext,
+  eventPolicy?: ManagedEventCapacityPolicy
 ): Promise<{ status: ManagedConnectorAuthorityCommandStatus; conflict: boolean }> {
   const command = ManagedConnectorAuthorityCommandSchema.parse(rawCommand);
   if (command.kind === 'set_event_subscription')
-    return applyManagedEventAuthorityCommand(db, principal, command, provider);
+    return applyManagedEventAuthorityCommand(db, principal, command, provider, eventPolicy);
   const requestHash = managedRequestHash(command);
   const claimed = await db.transaction(async (tx) => {
     await lockLiveAuthorityPrincipal(tx, principal);

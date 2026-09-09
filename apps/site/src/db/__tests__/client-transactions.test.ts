@@ -83,6 +83,47 @@ describe('production database transactions', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
+  it('locks managed event capacity through the production Pool transaction before commit', async () => {
+    await postgres.exec(`
+      CREATE TABLE connector_tenant (
+        id uuid PRIMARY KEY
+      );
+      CREATE TABLE managed_connector_event_capacity (
+        tenant_id uuid PRIMARY KEY REFERENCES connector_tenant(id) ON DELETE cascade,
+        rate_window_started_at timestamptz NOT NULL DEFAULT date_trunc('minute', clock_timestamp()),
+        accepted_in_window integer NOT NULL DEFAULT 0,
+        retained_rows integer NOT NULL DEFAULT 0,
+        protected_payload_bytes bigint NOT NULL DEFAULT 0,
+        next_cleanup_at timestamptz,
+        last_cleanup_at timestamptz,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+      INSERT INTO connector_tenant VALUES ('11111111-1111-4111-8111-111111111111');
+      INSERT INTO managed_connector_event_capacity(tenant_id)
+      VALUES ('11111111-1111-4111-8111-111111111111');
+    `);
+    const { getTransactionDb } = await import('../transaction-client');
+    const { lockManagedEventCapacity } =
+      await import('@/lib/connectors/managed/event-capacity-service');
+    const db = getTransactionDb();
+    await db.transaction(async (tx) => {
+      const capacity = await lockManagedEventCapacity(tx, '11111111-1111-4111-8111-111111111111');
+      expect(capacity.retainedRows).toBe(0);
+      await tx.execute(sql`INSERT INTO authority_probe VALUES (3, 1)`);
+    });
+
+    expect(statements[0]).toBe('begin');
+    expect(statements).toContain("SET LOCAL lock_timeout = '1000ms'");
+    expect(statements).toContain("SET LOCAL statement_timeout = '5000ms'");
+    expect(
+      statements.some((statement) =>
+        /managed_connector_event_capacity[\s\S]+for update/i.test(statement)
+      )
+    ).toBe(true);
+    expect(statements.at(-1)).toBe('commit');
+    expect(release).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
   it('rolls back the earlier write when the authority callback fails, then supports another transaction', async () => {
     const { getTransactionDb } = await import('../transaction-client');
     const db = getTransactionDb();
