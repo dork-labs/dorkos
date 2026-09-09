@@ -17,6 +17,9 @@ covers:
   - 'refactor(harness): the extracted probe calls the exported helper by its name (DOR-1924)'
   - 'fix(harness): a user-tier target is joined the way the platform spells it (DOR-1924)'
   - 'fix(harness,cli): a run that shares with Claude Code alone says so (DOR-1924)'
+  # Same fold: it reverses the line above it and repairs two more Windows-only
+  # reds. All of it is inside this one unreleased feature.
+  - 'fix(harness): the user tier is measured the way Windows spells things (DOR-1924)'
 ---
 
 ### Added
