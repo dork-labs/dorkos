@@ -1,0 +1,9 @@
+{
+  "id": "260909-012725",
+  "slug": "approval-verdict-delivery",
+  "title": "Telling an agent how its approval ended, after it stopped waiting",
+  "created": "2026-09-09",
+  "status": "specified",
+  "project": "Agents as First-Class Operators",
+  "linearIssue": "DOR-1931"
+}
