@@ -128,15 +128,37 @@ const SYMLINK_ATTEMPTS = 3;
  * outright, and clause 4 keeps the links of any package still on disk that this
  * plan did not enumerate.
  *
- * One directory today. Slice A3 adds `agentsSkillsDir` and `claudeSkillsDir`
- * here, which is the whole of what "widening the reach" means — the predicate
- * below does not change.
+ * **The two user roots are here, and only the REACH widened** — the predicate
+ * below is unchanged from the slice that wrote it for one directory. That is
+ * what the third clause bought: a directory in somebody's home folder holds
+ * their own files, their own hand-built symlinks and another installer's
+ * directories, and the predicate already answers "is this ours" from the link's
+ * own text rather than from where it sits.
+ *
+ * A root that was not passed is not scanned. That is one rule with three
+ * callers: a boundary-confined deployment, an unanswered sharing question and a
+ * machine with no enabled harness all pass the same absent root, and nothing
+ * beneath it is read or removed.
+ *
+ * **A root IS scanned when the plan targets no links in it**, and that is the
+ * difference `--disable` is built on rather than a bug: the sweep's job is to
+ * remove what the current plan no longer names, so a directory whose last reader
+ * was just turned off must still be read once to empty it.
  *
  * @param roots - the roots the plan was built from.
- * @returns the absolute directories to scan, one level each.
+ * @returns the absolute directories to scan, one level each, without duplicates.
  */
 function globalSweepDirs(roots: GlobalPlanRoots): string[] {
-  return [globalSkillsDir(roots.dorkHome)];
+  // A `Set`, because nothing stops a caller pointing two roots at one directory
+  // — `CLAUDE_CONFIG_DIR=~/.agents` is legal — and scanning it twice would offer
+  // the same path for removal twice.
+  return [
+    ...new Set(
+      [globalSkillsDir(roots.dorkHome), roots.agentsSkillsDir, roots.claudeSkillsDir].filter(
+        (dir): dir is string => dir !== undefined
+      )
+    ),
+  ];
 }
 
 /**
