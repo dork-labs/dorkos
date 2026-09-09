@@ -253,15 +253,24 @@ export interface RepoSpec {
    */
   personLink: boolean;
   /**
-   * A plain file staged where a FOLDER on a write path belongs, or none.
+   * Which folder to put a plain FILE at, as an index into the candidates this
+   * spec makes interesting ({@link hostileCandidates}) — or `null` for none.
+   *
+   * A number rather than a path, because the useful candidates depend on the
+   * REST of the spec: a wrapper directory is only a write path when a plugin
+   * ships a command, and a hooks folder only when something declares a hook.
+   * Picking a path outright meant seven repos in forty staged a file and just
+   * ONE projection was ever blocked by it — the arbitrary kept landing on
+   * `.cursor` and `.gemini`, where a generated repo plans nothing (measured; the
+   * floor in P3b was satisfied by that single case). An index resolved against a
+   * spec-derived list keeps the shrinker something to shrink and puts the file
+   * where the plan is actually going to write.
    *
    * Staged last and only where nothing else is, so it never contradicts the rest
-   * of the spec — {@link MaterialisedRepo.hostile} says which case really got
-   * one. Its whole job is to reach the write paths: a projection through that
-   * folder must come back as a named `blocked` conflict rather than as an
-   * exception out of the middle of the apply (DOR-1882).
+   * of the spec — {@link MaterialisedRepo.hostile} says which folder really got
+   * one, and the properties assert about that.
    */
-  hostile: (typeof HOSTILE_WRITE_PATHS)[number] | null;
+  hostile: number | null;
   /**
    * The repo's root `.gitignore`, as a subset of the patterns the engine
    * declares — or `null` for a directory that is not a git checkout at all.
@@ -373,6 +382,31 @@ const CLAUDE_SKILL_FRONTMATTER: Record<(typeof CLAUDE_SKILL_DIRS)[number], strin
 /** The bytes a staged file-in-the-way holds, so a property can prove it survived. */
 export const HOSTILE_FILE_BYTES = 'not a folder\n';
 
+/**
+ * The folders this spec's plan will really write into, most specific first,
+ * followed by every folder in {@link HOSTILE_WRITE_PATHS} so the depth coverage
+ * that list documents stays reachable.
+ *
+ * Order is the whole mechanism: {@link materialise} walks it and stages the file
+ * at the first candidate the tree has left free, so a repo that ships a command
+ * gets its wrapper directory broken rather than an empty `.gemini`.
+ *
+ * @param spec - the generated repository, before it is written.
+ * @returns candidate folders, best first.
+ */
+function hostileCandidates(spec: RepoSpec): string[] {
+  const withCommands = spec.plugins.filter((plugin) => plugin.commands > 0);
+  const anySkills = spec.skills.length > 0 || spec.plugins.some((p) => p.skills.length > 0);
+  const anyHooks = spec.authoredHooks || spec.plugins.some((p) => p.hooks);
+  return [
+    ...withCommands.map((plugin) => `.claude/commands/${plugin.name}`),
+    ...(withCommands.length > 0 ? ['.claude/commands', '.opencode/commands', '.opencode'] : []),
+    ...(anySkills ? ['.claude/skills', '.agents/skills'] : []),
+    ...(anyHooks ? ['.codex', '.cursor', '.github/hooks'] : []),
+    ...HOSTILE_WRITE_PATHS,
+  ];
+}
+
 const HOSTILE_WRITE_PATHS = [
   '.claude',
   '.claude/skills',
@@ -443,7 +477,7 @@ export function arbRepo(): fc.Arbitrary<RepoSpec> {
     }),
     personLink: fc.boolean(),
     gitignore: fc.option(fc.subarray([...EPHEMERAL_GITIGNORE_PATTERNS]), { nil: null }),
-    hostile: fc.option(fc.constantFrom(...HOSTILE_WRITE_PATHS), { nil: null }),
+    hostile: fc.option(fc.nat({ max: 64 }), { nil: null }),
   });
 }
 
@@ -743,16 +777,21 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
   // staged only where the tree left the path free. What landed is reported, so
   // no property asserts about a shape that is not there.
   let hostile: string | undefined;
-  if (spec.hostile !== null && !existsSync(join(repoRoot, spec.hostile))) {
-    try {
-      writeFileAt(join(repoRoot, spec.hostile), HOSTILE_FILE_BYTES);
-      hostile = spec.hostile;
-    } catch {
-      // Something ABOVE it is already one of the generator's other hostile
-      // shapes — a file at `.claude/commands` under a requested
-      // `.claude/commands/acme`, or a mode-000 directory. Nothing was staged, so
-      // `hostile` stays undefined and no property asserts about it. The floors in
-      // P3b are what stop that becoming a green over nothing.
+  if (spec.hostile !== null) {
+    const candidates = hostileCandidates(spec);
+    // Start at the chosen index and walk on, so a spec whose best candidate the
+    // tree already occupies still gets a file somewhere rather than none.
+    for (let i = 0; i < candidates.length && hostile === undefined; i++) {
+      const rel = candidates[(spec.hostile + i) % candidates.length] as string;
+      if (existsSync(join(repoRoot, rel))) continue;
+      try {
+        writeFileAt(join(repoRoot, rel), HOSTILE_FILE_BYTES);
+        hostile = rel;
+      } catch {
+        // Something ABOVE it is already one of the generator's other hostile
+        // shapes — a file at `.claude/commands` under a candidate
+        // `.claude/commands/acme`, or a mode-000 directory. Try the next one.
+      }
     }
   }
 

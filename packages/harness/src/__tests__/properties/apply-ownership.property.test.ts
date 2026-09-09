@@ -38,11 +38,19 @@
  */
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { mkdirSync, mkdtempSync, readdirSync, readlinkSync, rmSync, symlinkSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { project } from '../../engine.js';
-import { applyPlan } from '../../apply/apply.js';
+import { applyPlan, checkPlan } from '../../apply/apply.js';
 import { applyGlobalPlan } from '../../apply/global-apply.js';
 import { globalSkillsDir, projectGlobal } from '../../plan/global-projector.js';
 import { COPILOT_HOOKS_TARGET } from '../../generate/hooks.js';
@@ -175,8 +183,132 @@ describe('P3b — applyPlan answers for a hostile write path, and never throws o
       // Both floors matter: the first says the generator really staged the
       // shape, the second that a plan really wrote through it. Either at zero
       // and the property above is a green over nothing.
-      expect(staged).toBeGreaterThan(0);
-      expect(blockedTargets).toBeGreaterThan(0);
+      // Both floors, and both carry the live counters so the next reader can
+      // see how much slack there is. They are not decoration: with the hostile
+      // file placed by a bare `constantFrom` it kept landing on `.cursor` and
+      // `.gemini`, where a generated repo plans nothing — 7 repos staged one and
+      // exactly ONE projection was ever blocked, which a floor of `> 0` was
+      // perfectly happy with. Choosing from the folders THIS spec's plan writes
+      // into took the same 40 runs to 33 and 11.
+      const counters = `staged=${staged} blockedTargets=${blockedTargets} over ${RUNS.numRuns} runs`;
+      expect(staged, counters).toBeGreaterThanOrEqual(10);
+      expect(blockedTargets, counters).toBeGreaterThanOrEqual(5);
+    },
+    PROPERTY_TIMEOUT_MS
+  );
+});
+
+/**
+ * The skill folders P4b breaks after the links are already on disk, and how.
+ *
+ * A FILE works on every platform and is the shape a person actually produces (a
+ * note saved where a folder belongs, a checkout that could not make a link);
+ * mode 000 needs POSIX and a non-root user. The package folder is separated from
+ * the authored one because they reach the keep-set by different paths — the
+ * package scan and `listAuthoredSkills` — and one fix could easily cover only one.
+ */
+const SKILL_ROOT_BREAKS = [
+  { root: '.agents/skills', how: 'file' },
+  { root: '.dork/plugins/acme/skills', how: 'file' },
+  ...(process.platform !== 'win32' && process.getuid?.() !== 0
+    ? ([
+        { root: '.agents/skills', how: 'unreadable' },
+        { root: '.dork/plugins/acme/skills', how: 'unreadable' },
+      ] as const)
+    : []),
+] as const;
+
+describe('P4b — a sweep never removes a link whose source folder was unlistable', () => {
+  it(
+    'AP-07: leaves every projection alone while a skill folder cannot be read',
+    () => {
+      // P4 itself cannot catch this, and the reason is worth stating: the links
+      // WERE written by an earlier apply, so they are in its ledger and the
+      // sweep is entitled to them by that rule. What makes deleting them wrong
+      // is that the plan stopped naming them for a reason that is not "their
+      // source is gone" — nobody could look. So this is a separate claim, run
+      // over the same generated repositories.
+      let broken = 0;
+      let linksAtRisk = 0;
+      fc.assert(
+        fc.property(arbRepo(), fc.nat(), (spec, pick) => {
+          withRepo(spec, ({ repoRoot, dorkHome }) => {
+            applyPlan(repoRoot, project(repoRoot, { dorkHome }), { sweepOrphans: true });
+
+            const chosen = SKILL_ROOT_BREAKS[pick % SKILL_ROOT_BREAKS.length];
+            const abs = join(repoRoot, chosen.root);
+            if (!existsOnDisk(abs)) return; // that folder is not in this repo
+
+            // A mode-000 folder defeats `withRepo`'s `rmSync -r` as thoroughly
+            // as it defeats the scan under test, so the mode goes back before
+            // this body returns however it returns.
+            let madeUnreadable: string | undefined;
+            try {
+              if (chosen.how === 'file') {
+                rmSync(abs, { recursive: true, force: true });
+                writeFileAt(abs, 'not a folder\n');
+              } else {
+                chmodSync(abs, 0o000);
+                madeUnreadable = abs;
+              }
+
+              // The links at risk are the ones that are there WHEN THE SWEEP
+              // RUNS, so the subject is measured after the break rather than
+              // before it. Replacing `.agents/skills` with a file removes the
+              // links inside it as a matter of arithmetic, and counting those as
+              // losses would make this property fail for its own staging —
+              // measured, on the first run.
+              const beforeSweep = snapshotTree(repoRoot);
+              const links = [...beforeSweep.keys()].filter(
+                (path) =>
+                  beforeSweep.get(path)?.kind === 'symlink' &&
+                  (path.startsWith('.claude/skills/') || path.startsWith('.agents/skills/'))
+              );
+              if (links.length === 0) return; // nothing at risk: nothing to claim
+              broken += 1;
+              linksAtRisk += links.length;
+
+              const brokenPlan = project(repoRoot, { dorkHome });
+              expect(brokenPlan.unreadableSkillRoots).toContain(chosen.root);
+
+              const { swept } = applyPlan(repoRoot, brokenPlan, { sweepOrphans: true });
+
+              // Not one skill link goes while a skill folder is unreadable…
+              expect(
+                swept.filter(
+                  (p) => p.startsWith('.claude/skills/') || p.startsWith('.agents/skills/')
+                )
+              ).toEqual([]);
+              // …and every one that was there is still there, unchanged.
+              const after = snapshotTree(repoRoot);
+              for (const link of links) {
+                expect({ link, entry: after.get(link) }).toEqual({
+                  link,
+                  entry: beforeSweep.get(link),
+                });
+              }
+              // `--check` says the same, and does not call the tree clean.
+              const drift = checkPlan(repoRoot, brokenPlan);
+              expect(drift.orphans).toEqual([]);
+              expect(drift.clean).toBe(false);
+            } finally {
+              if (madeUnreadable !== undefined) {
+                try {
+                  chmodSync(madeUnreadable, 0o755);
+                } catch {
+                  /* already gone */
+                }
+              }
+            }
+          });
+        }),
+        RUNS
+      );
+      // Both floors, because either at zero makes the property a green over
+      // nothing: one says a folder was really broken, the other that there were
+      // really links to lose when it was.
+      expect(broken, 'no generated repo had a skill folder to break').toBeGreaterThan(0);
+      expect(linksAtRisk, 'no link was ever at risk when one was broken').toBeGreaterThan(0);
     },
     PROPERTY_TIMEOUT_MS
   );
