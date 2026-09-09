@@ -21,6 +21,7 @@ covers:
   # reds. All of it is inside this one unreleased feature.
   - 'fix(harness): the user tier is measured the way Windows spells things (DOR-1924)'
   - 'fix(harness): a plan target is a real path, spelled the way the platform does (DOR-1924)'
+  - 'fix(shared): the config schema takes the harness IDS, not the harness SCHEMA (DOR-1924)'
 ---
 
 ### Added
