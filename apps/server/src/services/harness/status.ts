@@ -328,7 +328,7 @@ function byCell(entries: readonly ProjectionAction[]): Map<string, ProjectionAct
  * @param claudeOnlyNames - the names `manifest.claudeOnlySkills` declares.
  * @returns the repo-relative source paths of the adoptable skills.
  */
-function adoptableSkillSources(
+export function adoptableSkillSources(
   inventory: SourceInventory,
   claudeOnlyNames: ReadonlySet<string>
 ): ReadonlySet<string> {

@@ -1333,6 +1333,9 @@ importers:
       '@dorkos/marketplace':
         specifier: workspace:*
         version: link:../marketplace
+      '@dorkos/operating-skills':
+        specifier: workspace:*
+        version: link:../operating-skills
       '@dorkos/shared':
         specifier: workspace:*
         version: link:../shared

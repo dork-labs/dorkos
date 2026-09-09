@@ -300,7 +300,7 @@ const DORKOS_TEMP_DIR = path.posix.dirname(PROJECTED_ATTACHMENTS_ROOT);
  * is what keeps the exposure to seven known names — which is also why it must
  * never be widened to the directory as a convenience.
  */
-const SEEDED_PACK_EXCLUDES: readonly string[] = OPERATING_SKILLS_PACK.map(
+export const SEEDED_PACK_EXCLUDES: readonly string[] = OPERATING_SKILLS_PACK.map(
   (skill) => `/.agents/skills/${skill.name}/SKILL.md`
 );
 
