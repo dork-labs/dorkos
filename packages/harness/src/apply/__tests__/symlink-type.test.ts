@@ -132,7 +132,10 @@ describe('the Windows symlink type', () => {
   });
 
   it('AP-06: never asks the machine anything on POSIX, where the type argument is ignored', () => {
-    Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+    // A NAMED POSIX platform, never the host's: this suite runs on the
+    // `windows-latest` leg too, where restoring the host means going back to
+    // win32 and this case would assert POSIX behaviour of a Windows run.
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
     const probe = vi.fn(() => true);
     setDirSymlinkProbe(probe);
     stageSkill('posix', 'plain');

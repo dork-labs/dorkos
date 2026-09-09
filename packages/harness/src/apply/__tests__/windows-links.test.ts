@@ -36,6 +36,18 @@ function pretendPlatform(platform: NodeJS.Platform): void {
   Object.defineProperty(process, 'platform', { value: platform, configurable: true });
 }
 
+/**
+ * The platform the POSIX halves of these cases stand on.
+ *
+ * NAMED, never `realPlatform`. Every case here decides what the running platform
+ * is, so "restore the host" and "be POSIX" are two different acts — and on the
+ * `windows-latest` leg they are opposites. Reading the host for the POSIX half
+ * is how three cases here went red there and nowhere else: on that machine the
+ * restore put win32 back and each of them then asserted POSIX behaviour of a
+ * Windows run (measured, DOR-1883).
+ */
+const A_POSIX_PLATFORM: NodeJS.Platform = 'linux';
+
 beforeEach(() => {
   pretendPlatform('win32');
 });
@@ -119,7 +131,7 @@ describe('the Windows directory-link capability', () => {
     expect(isJunctionAt(junction)).toBe(false);
 
     stageJunction(repo, 'beta-as-junction');
-    pretendPlatform(realPlatform);
+    pretendPlatform(A_POSIX_PLATFORM);
     expect(isJunctionAt(join(repo, '.claude', 'skills', 'beta-as-junction'))).toBe(false);
   });
 });
@@ -169,7 +181,7 @@ describe('what a person is told about committing junctions', () => {
     const { repo, plan } = stageRepo('posix', ['alpha']);
     stageJunction(repo, 'alpha');
     stageGitDir(repo);
-    pretendPlatform(realPlatform);
+    pretendPlatform(A_POSIX_PLATFORM);
 
     expect(applyPlan(repo, plan).warnings).toEqual([]);
     expect(checkPlan(repo, plan).warnings).toEqual([]);

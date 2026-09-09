@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { project } from '../engine.js';
 import { applyPlan, checkPlan } from '../apply/apply.js';
+import { canSymlinkDirs } from '../apply/windows-links.js';
 
 let dir = '';
 afterEach(() => {
@@ -128,14 +129,18 @@ describe('harness engine integration', () => {
 
     const projected = join(dir, '.claude', 'skills', 'notes');
     expect(lstatSync(projected).isSymbolicLink()).toBe(true);
-    // WINDOWS SPELLS THIS LINK DIFFERENTLY, and it has no choice. A directory
-    // link there is a junction, and a junction's stored target is always
-    // absolute — Node resolves the relative text against the link's parent
-    // before Windows sees it. So the relative text is asserted where it exists,
-    // and the property that actually matters is asserted on both: the link
-    // resolves to the one real directory. Measured on a `windows-latest` runner
-    // (DOR-1855), where this line read `C:\Users\...\.agents\skills\notes`.
-    if (process.platform === 'win32') {
+    // WINDOWS SPELLS THIS LINK DIFFERENTLY ONLY WHERE IT HAS TO, so the question
+    // is what this MACHINE can do and not what platform it is. Where the account
+    // may make a real directory link the text is relative, exactly as on POSIX;
+    // where it may not, the link is a junction and a junction's stored target is
+    // always absolute — Node resolves the relative text against the link's
+    // parent before Windows sees it (measured on a `windows-latest` runner,
+    // DOR-1855, where this line read `C:\Users\...\.agents\skills\notes`;
+    // DOR-1883 made the privileged case the real link, and this branch keyed on
+    // the platform alone went red on the first runner that had the privilege).
+    // The property that actually matters is asserted on both: the link resolves
+    // to the one real directory.
+    if (process.platform === 'win32' && !canSymlinkDirs()) {
       expect(isAbsolute(readlinkSync(projected))).toBe(true);
     } else {
       expect(readlinkSync(projected)).toBe(join('..', '..', '.agents', 'skills', 'notes'));
