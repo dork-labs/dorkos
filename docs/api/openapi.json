@@ -51741,6 +51741,772 @@
         }
       }
     },
+    "/api/harness/adopt": {
+      "post": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Move one skill into `.agents/skills`, where every agent reads it",
+        "description": "Moves one skill, by name, out of the folder only some agent tools look in and into `.agents/skills` — one `rename(2)`, plus the link Claude Code reads it through when this project has Claude Code turned on. It answers with the status recomputed after the move, inside the same lock the move ran in, so the caller renders the tree this call left. **A refusal is a `200`.** A skill that is not there, one that is already canonical, one whose settings only Claude Code understands, a target that already has something in it: each comes back in `refusals` with one plain sentence saying what to do about it, because a refusal is an answer rather than a failure. **A person, not an agent.** A caller naming itself an agent, or holding an approval token, is refused: this moves a file a person wrote. With `claudeOnly: true` nothing moves — the skill is recorded in the manifest as belonging to Claude Code, with the reason written out in words, and the other tools are told why they do not get it. `projectPath` must be absolute, and inside the configured directory boundary or under `{dorkHome}/agents`.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "projectPath": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "claudeOnly": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "projectPath",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the adopt did — or the one sentence saying why it did not — and the status recomputed after it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "moved": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "from": {
+                            "type": "string"
+                          },
+                          "to": {
+                            "type": "string"
+                          },
+                          "link": {
+                            "type": "object",
+                            "properties": {
+                              "target": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "target"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "from",
+                          "to"
+                        ]
+                      }
+                    },
+                    "declared": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "path",
+                          "reason"
+                        ]
+                      }
+                    },
+                    "refusals": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "rule": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "source",
+                          "reason",
+                          "rule"
+                        ]
+                      }
+                    },
+                    "status": {
+                      "type": "object",
+                      "properties": {
+                        "projectPath": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "ready",
+                            "not-set-up",
+                            "unreadable",
+                            "unavailable"
+                          ]
+                        },
+                        "detail": {
+                          "type": "string"
+                        },
+                        "computedAt": {
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "claude-code",
+                              "codex",
+                              "cursor",
+                              "gemini",
+                              "copilot",
+                              "opencode"
+                            ]
+                          }
+                        },
+                        "notEnabled": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "harness": {
+                                "type": "string",
+                                "enum": [
+                                  "claude-code",
+                                  "codex",
+                                  "cursor",
+                                  "gemini",
+                                  "copilot",
+                                  "opencode"
+                                ]
+                              },
+                              "why": {
+                                "type": "string",
+                                "enum": [
+                                  "footprint",
+                                  "dorkos-runtime"
+                                ]
+                              },
+                              "signal": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "harness",
+                              "why"
+                            ]
+                          }
+                        },
+                        "clean": {
+                          "type": "boolean"
+                        },
+                        "counts": {
+                          "type": "object",
+                          "properties": {
+                            "skills": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "globalSkills": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "drifted": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "conflicts": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "orphans": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "adoptable": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "pendingApproval": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "skills",
+                            "globalSkills",
+                            "drifted",
+                            "conflicts",
+                            "orphans",
+                            "adoptable",
+                            "pendingApproval"
+                          ]
+                        },
+                        "sweepPreview": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "removals": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "reason": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "reason"
+                            ]
+                          }
+                        },
+                        "rows": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "artifact": {
+                                "type": "string",
+                                "enum": [
+                                  "skill",
+                                  "instruction",
+                                  "hook",
+                                  "command",
+                                  "plugin",
+                                  "agent",
+                                  "rule",
+                                  "mcp",
+                                  "manifest"
+                                ]
+                              },
+                              "provenance": {
+                                "type": "string",
+                                "enum": [
+                                  "authored",
+                                  "installed",
+                                  "harness-native"
+                                ]
+                              },
+                              "scope": {
+                                "type": "string",
+                                "enum": [
+                                  "project",
+                                  "global"
+                                ],
+                                "default": "project"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "source": {
+                                "type": "string"
+                              },
+                              "adoptable": {
+                                "type": "boolean"
+                              },
+                              "cells": {
+                                "type": "object",
+                                "properties": {
+                                  "claude-code": {
+                                    "type": "object",
+                                    "properties": {
+                                      "state": {
+                                        "type": "string",
+                                        "enum": [
+                                          "native",
+                                          "projected",
+                                          "drifted",
+                                          "dropped",
+                                          "warned",
+                                          "conflict",
+                                          "pending-approval"
+                                        ]
+                                      },
+                                      "reason": {
+                                        "type": "string"
+                                      },
+                                      "target": {
+                                        "type": "string"
+                                      },
+                                      "warnings": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "state"
+                                    ]
+                                  },
+                                  "codex": {
+                                    "type": "object",
+                                    "properties": {
+                                      "state": {
+                                        "type": "string",
+                                        "enum": [
+                                          "native",
+                                          "projected",
+                                          "drifted",
+                                          "dropped",
+                                          "warned",
+                                          "conflict",
+                                          "pending-approval"
+                                        ]
+                                      },
+                                      "reason": {
+                                        "type": "string"
+                                      },
+                                      "target": {
+                                        "type": "string"
+                                      },
+                                      "warnings": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "state"
+                                    ]
+                                  },
+                                  "cursor": {
+                                    "type": "object",
+                                    "properties": {
+                                      "state": {
+                                        "type": "string",
+                                        "enum": [
+                                          "native",
+                                          "projected",
+                                          "drifted",
+                                          "dropped",
+                                          "warned",
+                                          "conflict",
+                                          "pending-approval"
+                                        ]
+                                      },
+                                      "reason": {
+                                        "type": "string"
+                                      },
+                                      "target": {
+                                        "type": "string"
+                                      },
+                                      "warnings": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "state"
+                                    ]
+                                  },
+                                  "gemini": {
+                                    "type": "object",
+                                    "properties": {
+                                      "state": {
+                                        "type": "string",
+                                        "enum": [
+                                          "native",
+                                          "projected",
+                                          "drifted",
+                                          "dropped",
+                                          "warned",
+                                          "conflict",
+                                          "pending-approval"
+                                        ]
+                                      },
+                                      "reason": {
+                                        "type": "string"
+                                      },
+                                      "target": {
+                                        "type": "string"
+                                      },
+                                      "warnings": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "state"
+                                    ]
+                                  },
+                                  "copilot": {
+                                    "type": "object",
+                                    "properties": {
+                                      "state": {
+                                        "type": "string",
+                                        "enum": [
+                                          "native",
+                                          "projected",
+                                          "drifted",
+                                          "dropped",
+                                          "warned",
+                                          "conflict",
+                                          "pending-approval"
+                                        ]
+                                      },
+                                      "reason": {
+                                        "type": "string"
+                                      },
+                                      "target": {
+                                        "type": "string"
+                                      },
+                                      "warnings": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "state"
+                                    ]
+                                  },
+                                  "opencode": {
+                                    "type": "object",
+                                    "properties": {
+                                      "state": {
+                                        "type": "string",
+                                        "enum": [
+                                          "native",
+                                          "projected",
+                                          "drifted",
+                                          "dropped",
+                                          "warned",
+                                          "conflict",
+                                          "pending-approval"
+                                        ]
+                                      },
+                                      "reason": {
+                                        "type": "string"
+                                      },
+                                      "target": {
+                                        "type": "string"
+                                      },
+                                      "warnings": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "state"
+                                    ]
+                                  }
+                                }
+                              }
+                            },
+                            "required": [
+                              "artifact",
+                              "provenance",
+                              "name",
+                              "adoptable",
+                              "cells"
+                            ]
+                          }
+                        },
+                        "projectLevel": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "drop",
+                                  "warning",
+                                  "write",
+                                  "notice"
+                                ]
+                              },
+                              "artifact": {
+                                "type": "string",
+                                "enum": [
+                                  "skill",
+                                  "instruction",
+                                  "hook",
+                                  "command",
+                                  "plugin",
+                                  "agent",
+                                  "rule",
+                                  "mcp",
+                                  "manifest"
+                                ]
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "source": {
+                                "type": "string"
+                              },
+                              "target": {
+                                "type": "string"
+                              },
+                              "reason": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "artifact",
+                              "name",
+                              "reason"
+                            ]
+                          }
+                        },
+                        "pendingApproval": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "packageName": {
+                                "type": "string"
+                              },
+                              "events": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "commandCount": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "unasked",
+                                  "refused",
+                                  "unreadable-config"
+                                ]
+                              },
+                              "detail": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "packageName",
+                              "events",
+                              "commandCount",
+                              "reason"
+                            ]
+                          }
+                        },
+                        "claudeOnly": {
+                          "type": "object",
+                          "properties": {
+                            "root": {
+                              "type": "string"
+                            },
+                            "readAt": {
+                              "type": "string"
+                            },
+                            "unreadable": {
+                              "type": "string"
+                            },
+                            "mayBeOverridden": {
+                              "type": "boolean"
+                            },
+                            "plugins": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "marketplace": {
+                                    "type": "string"
+                                  },
+                                  "repo": {
+                                    "type": "string"
+                                  },
+                                  "settingsScope": {
+                                    "type": "string",
+                                    "enum": [
+                                      "user",
+                                      "project"
+                                    ]
+                                  },
+                                  "offer": {
+                                    "type": "string",
+                                    "enum": [
+                                      "install",
+                                      "add-source-then-install",
+                                      "unknown-source",
+                                      "no-package",
+                                      "sources-unreadable"
+                                    ]
+                                  },
+                                  "sourceUrl": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "marketplace",
+                                  "settingsScope",
+                                  "offer"
+                                ]
+                              }
+                            },
+                            "personalHookCommands": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "unreadableParts": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "extraKnownMarketplaces",
+                                  "hooks"
+                                ]
+                              }
+                            },
+                            "skippedEntries": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "sourcesUnreadable": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "root",
+                            "readAt",
+                            "mayBeOverridden",
+                            "plugins",
+                            "personalHookCommands",
+                            "unreadableParts"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "projectPath",
+                        "state",
+                        "computedAt",
+                        "enabled",
+                        "notEnabled",
+                        "clean",
+                        "counts",
+                        "sweepPreview",
+                        "removals",
+                        "rows",
+                        "projectLevel",
+                        "pendingApproval"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "moved",
+                    "declared",
+                    "refusals",
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`projectPath` was missing, blank or relative, `name` was missing or blank, or `projectPath` named something that is not a directory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`code: \"operator_only_harness_adopt\"` — the caller named itself an agent or held an approval token — or `projectPath` resolves outside the directory boundary and outside `{dorkHome}/agents`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No directory there",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`code: \"harness_not_set_up\"` — this project has no `.agents/harness.manifest.json`, so there is nothing to move a skill within. `dorkos harness sync --fix` in the folder sets it up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The adopt failed unexpectedly. The reason is logged, never echoed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/notifications": {
       "get": {
         "tags": [
