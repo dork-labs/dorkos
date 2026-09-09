@@ -28,6 +28,7 @@ export * from './sources/resolve-roots.js';
 export * from './sources/installed.js';
 export * from './generate/hooks.js';
 export * from './apply/apply.js';
+export * from './apply/global-apply.js';
 export * from './apply/gitignore.js';
 // The generated-hooks half of apply, kept in its own module: only the orphan
 // sweep is part of the package's surface, the rest is apply's business.
