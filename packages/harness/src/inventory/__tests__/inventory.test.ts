@@ -474,7 +474,12 @@ describe('inventorySourceTree', () => {
 
     const { foreignMcpConfigs, unreadable } = inventorySourceTree(repo);
     expect(foreignMcpConfigs).toEqual([]);
-    expect(unreadable.map((u) => u.source)).toContain('.codex/config.toml');
+    // POSIX answers ENOTDIR for a path under a file, which is the finding;
+    // Windows answers ENOENT, so there the file reads as simply absent — the
+    // claim that holds everywhere is "nothing threw and nothing was counted".
+    if (process.platform !== 'win32') {
+      expect(unreadable.map((u) => u.source)).toContain('.codex/config.toml');
+    }
   });
 
   it('XA-07: reads a config file that starts with a byte-order mark', () => {
