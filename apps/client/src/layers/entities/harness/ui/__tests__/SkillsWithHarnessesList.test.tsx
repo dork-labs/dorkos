@@ -161,6 +161,23 @@ describe('SkillsWithHarnessesList — the list', () => {
     expect(screen.getAllByText(/Move it to \.agents\/skills/)).toHaveLength(1);
   });
 
+  it('SRC-07: prints the command that moves the skill, carrying the absolute project', async () => {
+    // Seeded defect: pass `.` as the project. The command then means whatever
+    // folder the reader happens to be in — DOR-1921's own measurement, and the
+    // reason a string the SERVER prints never carries a relative path.
+    await renderWithStatus(HARNESS_STATUS_READY);
+
+    const row = await screen.findByRole('group', { name: 'chat-self-test' });
+    const command = within(row).getByText(
+      'dorkos harness adopt chat-self-test --project /Users/kai/code/dorkos'
+    );
+    expect(command.parentElement).toHaveTextContent(
+      'Run: dorkos harness adopt chat-self-test --project /Users/kai/code/dorkos'
+    );
+    // And only the adoptable row says it.
+    expect(screen.getAllByText(/dorkos harness adopt/)).toHaveLength(1);
+  });
+
   it('XA-06: names the folder the row is actually in, not always .claude/skills', () => {
     // Seeded defect: keep the sentence a constant. An OpenCode-first team is then
     // told to look in `.claude/skills`, a directory they do not have — advice
@@ -173,13 +190,26 @@ describe('SkillsWithHarnessesList — the list', () => {
       adoptable: true,
     } as const;
 
-    render(<SkillHarnessRow row={row} enabled={['claude-code']} showEveryHarness />);
+    render(
+      <SkillHarnessRow
+        row={row}
+        enabled={['claude-code']}
+        projectPath="/Users/kai/code/dorkos"
+        showEveryHarness
+      />
+    );
 
     expect(
       screen.getByText(
         'Lives in .opencode/skills. Move it to .agents/skills so every agent can read it.'
       )
     ).toBeInTheDocument();
+    // The command is built from the row's own name and the project it is in,
+    // whatever folder the skill sits in today.
+    expect(
+      screen.getByText('dorkos harness adopt review-pr --project /Users/kai/code/dorkos')
+        .parentElement
+    ).toHaveTextContent('Run: dorkos harness adopt review-pr --project /Users/kai/code/dorkos');
   });
 });
 
@@ -267,7 +297,14 @@ describe('SkillsWithHarnessesList — the collapse', () => {
     // the whole mechanism, and the `<bdi dir="ltr">` inside it is required
     // rather than decorative — without it the bidi algorithm claims any neutral
     // character at either end of the path and paints it at the opposite one.
-    render(<SkillHarnessRow row={SHARED_SKILL_ROW} enabled={['claude-code']} showEveryHarness />);
+    render(
+      <SkillHarnessRow
+        row={SHARED_SKILL_ROW}
+        enabled={['claude-code']}
+        projectPath="/Users/kai/code/dorkos"
+        showEveryHarness
+      />
+    );
 
     const path = screen.getByTitle('.agents/skills/release');
     expect(path).toHaveAttribute('dir', 'rtl');

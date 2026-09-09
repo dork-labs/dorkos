@@ -8,6 +8,7 @@ import { ChevronDown } from 'lucide-react';
 import type { HarnessId, HarnessRow } from '@dorkos/shared/harness-schemas';
 import { HARNESS_LABELS } from '@dorkos/shared/harness-schemas';
 import { cn } from '@/layers/shared/lib/utils';
+import { InlineCode } from '@/layers/shared/ui';
 import { collapsedChipLabel, harnessRowCells, isRowFullyShared } from '../lib/harness-status';
 import { HarnessStateChip } from './HarnessStateChip';
 
@@ -38,6 +39,26 @@ function adoptableAdvice(source: string | undefined): string {
 }
 
 /**
+ * The command that moves one skill, printed for the person to paste.
+ *
+ * `--project` carries the ABSOLUTE repository root, never `.`: the reader is not
+ * standing in that directory, so a pasted `.` means whatever folder they happen
+ * to be in — the defect DOR-1921 and `plan/global-installs.ts` both measured.
+ *
+ * Spelled here rather than imported from `@dorkos/harness`, which builds the
+ * same string for the terminal (`report/adoptable.ts`): that package is a Node
+ * filesystem engine and this is a browser bundle. The two are kept honest by
+ * asserting the literal on both sides.
+ *
+ * @param name - the skill's name.
+ * @param projectPath - the project's absolute path, as the status resolved it.
+ * @returns the command.
+ */
+function adoptCommand(name: string, projectPath: string): string {
+  return `dorkos harness adopt ${name} --project ${projectPath}`;
+}
+
+/**
  * The tag on a row that came from a package installed for every project.
  *
  * Two skills of the same name can sit in this list, one from this project and
@@ -53,6 +74,8 @@ const GLOBAL_SCOPE_TAG = 'for all your projects';
 export interface SkillHarnessRowProps {
   /** The file and its per-tool states. */
   row: HarnessRow;
+  /** The project's absolute path, for the command an adoptable row prints. */
+  projectPath: string;
   /** The enabled tools, in manifest order. */
   enabled: readonly HarnessId[];
   /** The page-level "Show every agent tool" preference. */
@@ -66,8 +89,12 @@ export interface SkillHarnessRowProps {
  * from the LEFT (`dir="rtl"` around a `<bdi dir="ltr">`, the idiom the model list
  * and the search hit row already use) because a path's leaf identifies it and
  * its head is what every row repeats. Line 2 is the chip list, wrapping. Line 3
- * is the advice, and it is copy — no button, because moving a file out from
- * under a person's editor is not something a side panel should offer (D3).
+ * is the advice, now in two parts: where the file lives and what moving it
+ * buys, then the one command that does it. Still copy rather than a button —
+ * moving a file out from under a person's editor is not something a side panel
+ * should offer without naming both paths first (D3) — but a printed command is
+ * something they can read before they run it, which is the same disclosure a
+ * `--fix` gets.
  *
  * **One layout, no breakpoint.** The chips wrap, and that is the whole mobile
  * answer: the docked panel at its narrowest, the phone sheet and the full-page
@@ -94,7 +121,12 @@ export interface SkillHarnessRowProps {
  * nothing until its text was read. It also leaves `listitem` free to mean
  * exactly one thing on this page — a chip.
  */
-export function SkillHarnessRow({ row, enabled, showEveryHarness }: SkillHarnessRowProps) {
+export function SkillHarnessRow({
+  row,
+  enabled,
+  projectPath,
+  showEveryHarness,
+}: SkillHarnessRowProps) {
   const [expandedHere, setExpandedHere] = useState(false);
 
   const cells = harnessRowCells(row, enabled);
@@ -147,7 +179,12 @@ export function SkillHarnessRow({ row, enabled, showEveryHarness }: SkillHarness
       </ul>
 
       {row.adoptable && (
-        <p className="text-muted-foreground text-3xs">{adoptableAdvice(row.source)}</p>
+        <>
+          <p className="text-muted-foreground text-3xs">{adoptableAdvice(row.source)}</p>
+          <p className="text-muted-foreground text-3xs">
+            Run: <InlineCode>{adoptCommand(row.name, projectPath)}</InlineCode>
+          </p>
+        </>
       )}
     </div>
   );

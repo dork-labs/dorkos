@@ -141,6 +141,9 @@ function AtPanelWidth({ children }: { children: ReactNode }) {
   );
 }
 
+/** The absolute project path the adoptable row's printed command carries. */
+const SHOWCASE_PROJECT = '/Users/you/projects/dorkos';
+
 /**
  * The skill row, in every shape it takes.
  *
@@ -160,9 +163,15 @@ export function SkillRowShowcases() {
           <SkillHarnessRow
             row={readyRow('release')}
             enabled={THREE_TOOLS}
+            projectPath={SHOWCASE_PROJECT}
             showEveryHarness={false}
           />
-          <SkillHarnessRow row={readyRow('release')} enabled={THREE_TOOLS} showEveryHarness />
+          <SkillHarnessRow
+            row={readyRow('release')}
+            enabled={THREE_TOOLS}
+            projectPath={SHOWCASE_PROJECT}
+            showEveryHarness
+          />
         </div>
       </ShowcaseDemo>
 
@@ -193,6 +202,7 @@ export function SkillRowShowcases() {
               key={name}
               row={readyRow(name)}
               enabled={THREE_TOOLS}
+              projectPath={SHOWCASE_PROJECT}
               showEveryHarness={false}
             />
           ))}
@@ -203,8 +213,18 @@ export function SkillRowShowcases() {
       <ShowcaseDemo>
         <AtPanelWidth>
           <div className="divide-border flex flex-col divide-y">
-            <SkillHarnessRow row={LONG_PATH_ROW} enabled={THREE_TOOLS} showEveryHarness={false} />
-            <SkillHarnessRow row={SIX_TOOL_ROW} enabled={SIX_TOOLS} showEveryHarness={false} />
+            <SkillHarnessRow
+              row={LONG_PATH_ROW}
+              enabled={THREE_TOOLS}
+              projectPath={SHOWCASE_PROJECT}
+              showEveryHarness={false}
+            />
+            <SkillHarnessRow
+              row={SIX_TOOL_ROW}
+              enabled={SIX_TOOLS}
+              projectPath={SHOWCASE_PROJECT}
+              showEveryHarness={false}
+            />
           </div>
         </AtPanelWidth>
       </ShowcaseDemo>
