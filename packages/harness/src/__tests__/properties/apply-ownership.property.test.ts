@@ -40,6 +40,7 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import {
   chmodSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -238,6 +239,11 @@ describe('P4b — a sweep never removes a link whose source folder was unlistabl
             const chosen = SKILL_ROOT_BREAKS[pick % SKILL_ROOT_BREAKS.length];
             const abs = join(repoRoot, chosen.root);
             if (!existsOnDisk(abs)) return; // that folder is not in this repo
+            // A generated repo may already hold a plain FILE at this root (the
+            // `hostile` arbitrary stages one) — that is P3b's subject, not this
+            // one's, and a mode-000 FILE would only defeat `snapshotTree`. Break
+            // folders, and only folders.
+            if (!lstatSync(abs).isDirectory()) return;
 
             // A mode-000 folder defeats `withRepo`'s `rmSync -r` as thoroughly
             // as it defeats the scan under test, so the mode goes back before

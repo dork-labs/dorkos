@@ -38,6 +38,7 @@ import {
   withRepo,
   PROPERTY_TIMEOUT_MS,
   RUNS,
+  HARNESS_NATIVE_SKILL,
   LINKED_RULES_FILE,
   PERSON_SKILL_LINK,
   type RepoSpec,
@@ -93,6 +94,11 @@ function stagedSources(spec: RepoSpec): string[] {
   return [
     ...spec.skills.map((name) => `.agents/skills/${name}`),
     ...spec.claudeSkills.map((dir) => `.claude/skills/${dir}`),
+    // The skill in another tool's own folder is an ENTRY; the `opencode.json`
+    // staged beside it is deliberately not one — it is a whole file the engine
+    // carries nothing out of, reported once rather than accounted for per
+    // harness, so it never belongs in this list (DOR-1902).
+    ...(spec.opencodeOwnFiles ? [HARNESS_NATIVE_SKILL] : []),
     ...(spec.personSkillLink ? [PERSON_SKILL_LINK] : []),
     ...(spec.claudeCommands === 'populated' ? ['.claude/commands/review.md'] : []),
     ...spec.rules.map((rule) => `.claude/rules/${rule.name}.md`),

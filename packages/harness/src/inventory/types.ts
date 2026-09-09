@@ -39,8 +39,44 @@ export interface InventoryEntryBase {
   provenance: Provenance;
 }
 
-/** The two roots a skill can be authored in. */
-export type SkillRoot = '.agents/skills' | '.claude/skills';
+/**
+ * The skills roots another agent tool reads and DorkOS neither owns nor writes
+ * into — the folders an OpenCode-first or Cursor-first repository keeps its own
+ * skills in (DOR-1902).
+ *
+ * Every entry is a `readPaths.project` cell of `vendor-facts/index.ts`, and the
+ * comment on each names the row it comes from. **A root with no vendor fact is
+ * not scanned**: the list is pinned against
+ * {@link ../vendor-facts/index.js#PROJECT_SKILL_ROOT_READERS} by
+ * `vendor-facts/__tests__/vendor-facts.test.ts`, so a root invented here without
+ * a cell reds, and a cell added to the table without a root here reds too.
+ *
+ * The two roots DorkOS itself owns are deliberately absent: `.agents/skills` is
+ * the canonical layer and `.claude/skills` is where the engine projects, and both
+ * are walked on their own terms above.
+ */
+export const HARNESS_NATIVE_SKILL_ROOTS = [
+  // `cursor.skills.readPaths.project` — Cursor reads `.codex/skills` as one of
+  // its four compatibility paths. Codex's own row does not list it.
+  '.codex/skills',
+  // `cursor.skills.readPaths.project`.
+  '.cursor/skills',
+  // `gemini.skills.readPaths.project`.
+  '.gemini/skills',
+  // `copilot.skills.readPaths.project`.
+  '.github/skills',
+  // `opencode.skills.readPaths.project`.
+  '.opencode/skills',
+] as const;
+
+/** One of the {@link HARNESS_NATIVE_SKILL_ROOTS}. */
+export type HarnessNativeSkillRoot = (typeof HARNESS_NATIVE_SKILL_ROOTS)[number];
+
+/**
+ * The roots a skill can be authored in: the two DorkOS knows by name, plus every
+ * {@link HARNESS_NATIVE_SKILL_ROOTS} entry.
+ */
+export type SkillRoot = '.agents/skills' | '.claude/skills' | HarnessNativeSkillRoot;
 
 /** One authored skill directory. */
 export interface SkillInventoryEntry extends InventoryEntryBase {
@@ -112,6 +148,30 @@ export interface McpInventoryEntry extends InventoryEntryBase {
   kind: 'mcp';
 }
 
+/**
+ * An MCP config file that belongs to another agent tool, and how many servers it
+ * declares (DOR-1902).
+ *
+ * NOT an {@link InventoryEntry}, on purpose. An entry is something the engine
+ * has to account for per harness — that is what the completeness check quantifies
+ * over — and this is the opposite: a whole file DorkOS carries nothing out of,
+ * for every harness at once. So it travels beside {@link UnreadableSource}, is
+ * reported once rather than once per harness, and reaches the report as a
+ * project-level drop.
+ *
+ * **A count, never a name and never a value.** These files hold the same live
+ * API keys `.mcp.json` does, and this record is printed by `dorkos harness sync`
+ * and served over an API. The readers in `inventory/foreign-mcp.ts` parse each
+ * shape only far enough to count its servers, and nothing below the top level of
+ * a server's declaration is ever read.
+ */
+export interface ForeignMcpConfig {
+  /** Repo-relative path of the config file, forward slashes on every platform. */
+  source: string;
+  /** How many MCP servers the file declares. */
+  serverCount: number;
+}
+
 /** Any one inventory entry. */
 export type InventoryEntry =
   | SkillInventoryEntry
@@ -154,6 +214,8 @@ export interface SourceInventory {
   rules: RuleInventoryEntry[];
   /** MCP servers declared in the authored `.mcp.json`. */
   mcpServers: McpInventoryEntry[];
+  /** MCP config files belonging to another agent tool, which DorkOS carries nothing out of. */
+  foreignMcpConfigs: ForeignMcpConfig[];
   /** Sources that are plainly there and could not be read. */
   unreadable: UnreadableSource[];
 }
@@ -186,5 +248,6 @@ export const EMPTY_INVENTORY: SourceInventory = {
   agents: [],
   rules: [],
   mcpServers: [],
+  foreignMcpConfigs: [],
   unreadable: [],
 };

@@ -15,7 +15,13 @@
  * turns every entry into an honest per-harness action or drop
  * (`plan/source-artifacts.ts`), and the completeness property P6, which asserts
  * that the plan names every entry for every enabled harness. VC-01's
- * `unmanaged (adoptable)` list is the third, when it is built.
+ * `unmanaged (adoptable)` list is the third: a skill in another tool's own
+ * folder (`./skills.ts`, DOR-1902) is exactly what it is about.
+ *
+ * One thing it records is NOT an entry: an MCP config file belonging to another
+ * agent tool (`./foreign-mcp.ts`). That is a whole file DorkOS carries nothing
+ * out of, for every harness at once, so it travels beside the unreadable sources
+ * and reaches the report once rather than once per harness.
  *
  * **It never throws.** A hostile tree is the normal case for a tool run in
  * somebody else's repository: a file where `.claude/agents` should be a
@@ -32,6 +38,7 @@ import { inventoryHooks } from './hooks.js';
 import { inventoryAgents } from './agents.js';
 import { inventoryRules } from './rules.js';
 import { inventoryMcpServers } from './mcp.js';
+import { inventoryForeignMcpConfigs } from './foreign-mcp.js';
 import type { SourceInventory } from './types.js';
 
 export * from './types.js';
@@ -41,6 +48,7 @@ export { inventoryHooks } from './hooks.js';
 export { inventoryAgents, CLAUDE_AGENTS_DIR } from './agents.js';
 export { inventoryRules, CLAUDE_RULES_DIR } from './rules.js';
 export { inventoryMcpServers, MCP_CONFIG_SOURCE } from './mcp.js';
+export { inventoryForeignMcpConfigs, FOREIGN_MCP_FACTS_FETCHED_AT } from './foreign-mcp.js';
 
 /**
  * Walk one repository's source tree and record everything a person authored in
@@ -60,6 +68,7 @@ export function inventorySourceTree(repoRoot: string): SourceInventory {
   const agents = inventoryAgents(repoRoot);
   const rules = inventoryRules(repoRoot);
   const mcp = inventoryMcpServers(repoRoot);
+  const foreignMcp = inventoryForeignMcpConfigs(repoRoot);
 
   return {
     skills: skills.skills,
@@ -68,6 +77,7 @@ export function inventorySourceTree(repoRoot: string): SourceInventory {
     agents: agents.agents,
     rules: rules.rules,
     mcpServers: mcp.mcpServers,
+    foreignMcpConfigs: foreignMcp.foreignMcpConfigs,
     unreadable: [
       ...skills.unreadable,
       ...commands.unreadable,
@@ -75,6 +85,7 @@ export function inventorySourceTree(repoRoot: string): SourceInventory {
       ...agents.unreadable,
       ...rules.unreadable,
       ...mcp.unreadable,
+      ...foreignMcp.unreadable,
     ],
   };
 }

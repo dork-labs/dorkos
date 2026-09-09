@@ -482,6 +482,58 @@ describe('VC-01 — the status model derives eight states from five reads', () =
     expect(copy.cells['codex']?.reason).toContain('remove it, or remove the canonical copy');
   });
 
+  it('VC-01, XA-06: a skill in another tool’s own folder is a harness-native adoptable row', () => {
+    // Seeded defect: keep `.claude/skills` as the only root that earns
+    // `harness-native` and `adoptable`. An OpenCode-first team then gets a row
+    // that claims their skill came from the canonical layer and offers no advice
+    // about it, which is the silence DOR-1902 closed one directory over.
+    const { repo, home } = stageBare('native-root', ['claude-code', 'opencode']);
+    writeSkill(join(repo, '.opencode', 'skills', 'review-pr'), 'review-pr');
+
+    const status = statusOf(repo, home);
+
+    const skill = row(status, 'skill', '.opencode/skills/review-pr', 'review-pr');
+    expect(skill.provenance).toBe('harness-native');
+    expect(skill.adoptable).toBe(true);
+    expect(skill.cells['opencode']).toEqual({
+      state: 'native',
+      reason: `OpenCode reads .opencode/skills directly ${CITED}`,
+    });
+    expect(skill.cells['claude-code']).toEqual({
+      state: 'dropped',
+      reason: `kept in .opencode/skills, where OpenCode looks and Claude Code does not ${CITED} — move it to .agents/skills to share it`,
+    });
+    expect(status.counts.adoptable).toBe(1);
+  });
+
+  it('VC-01, XA-07: another tool’s MCP config is one project-level drop and no row at all', () => {
+    // Seeded defect: let it become a row. `adoptable` means "you could move this
+    // into the canonical layer", and there is nowhere to move an `opencode.json`
+    // to — the engine projects no MCP server anywhere yet. It is a fact about the
+    // project, so it belongs beside the other project-level entries.
+    const { repo, home } = stageBare('foreign-mcp', ['claude-code', 'opencode']);
+    writeJsonAt(join(repo, 'opencode.json'), {
+      mcp: { linear: { type: 'local', command: ['npx', 'linear-mcp'] } },
+    });
+
+    const status = statusOf(repo, home);
+
+    expect(status.projectLevel).toEqual([
+      {
+        kind: 'drop',
+        artifact: 'mcp',
+        name: 'opencode.json',
+        source: 'opencode.json',
+        reason:
+          'opencode.json declares 1 MCP server. DorkOS carries MCP servers from .mcp.json only, so the other tools do not get these.',
+      },
+    ]);
+    expect(status.rows.filter((r) => r.source === 'opencode.json')).toEqual([]);
+    expect(allCells(status).some((c) => c?.reason?.includes('opencode.json'))).toBe(false);
+    // The server's name never leaves the file — the count is the whole read.
+    expect(JSON.stringify(status)).not.toContain('linear');
+  });
+
   it('VC-01: a harness-agnostic drop and a harness-agnostic warning both land in projectLevel and in no cell', () => {
     // Seeded defect: key project-level on `source === undefined`. The plugin-layer
     // drop carries no source and would still land right; the unreadable-hooks

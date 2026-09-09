@@ -11,6 +11,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { inventorySourceTree } from '../index.js';
+import { HARNESS_NATIVE_SKILL_ROOTS } from '../types.js';
 import {
   GENERATED_COMMAND_MARKER,
   MANAGED_HOOK_SENTINEL_KEY,
@@ -41,6 +42,42 @@ function link(repoRoot: string, linkRel: string, targetAbs: string): void {
   mkdirSync(dirname(abs), { recursive: true });
   symlinkSync(targetAbs, abs);
 }
+
+/**
+ * The five ways a `.codex/config.toml` can spell the same MCP servers.
+ *
+ * Every one is ordinary TOML and every one used to be counted by a hand-written
+ * header regex, which got three of them wrong — two as SILENT ZEROS: no drop, no
+ * warning, no line at all, which is the exact silence DOR-1902 exists to end,
+ * reintroduced one file deeper. A real parser answers all five.
+ */
+const CODEX_TOML_SHAPES = [
+  {
+    label: 'a comment after the table header',
+    toml: '[mcp_servers.alpha] # the one we use\ncommand = "npx"\n',
+    servers: 1,
+  },
+  {
+    label: 'inline tables under one [mcp_servers]',
+    toml: '[mcp_servers]\nalpha = { command = "npx" }\nbeta = { command = "npx" }\n',
+    servers: 2,
+  },
+  {
+    label: 'dotted keys and no table header at all',
+    toml: 'mcp_servers.alpha.command = "npx"\nmcp_servers.beta.command = "npx"\n',
+    servers: 2,
+  },
+  {
+    label: 'a table and its sub-table, which is one server',
+    toml: '[mcp_servers.alpha]\ncommand = "npx"\n\n[mcp_servers.alpha.env]\nK = "v"\n',
+    servers: 1,
+  },
+  {
+    label: 'quoted names that both start with the same dotted prefix',
+    toml: '[mcp_servers."a.b"]\ncommand = "npx"\n\n[mcp_servers."a.c"]\ncommand = "npx"\n',
+    servers: 2,
+  },
+] as const;
 
 describe('inventorySourceTree', () => {
   it('finds nothing in an empty tree, and says so with empty lists rather than throwing', () => {
@@ -248,6 +285,250 @@ describe('inventorySourceTree', () => {
     // The one with no declared name is still a file Claude Code reads, so it is
     // inventoried under its stem — and reported, because its identity is a guess.
     expect(unreadable.map((u) => u.source)).toEqual(['.claude/agents/nameless.md']);
+  });
+
+  it.each(HARNESS_NATIVE_SKILL_ROOTS)(
+    'XA-06: counts a skill in %s, the folder another agent tool reads',
+    (root) => {
+      repo = mkdtempSync(join(tmpdir(), 'harness-inv-native-'));
+      stageSkill(repo, `${root}/review-pr`);
+
+      const { skills, unreadable } = inventorySourceTree(repo);
+      expect(skills).toEqual([
+        {
+          kind: 'skill',
+          name: 'review-pr',
+          source: `${root}/review-pr`,
+          provenance: 'authored',
+          isSymlink: false,
+          root,
+          frontmatterName: 'review-pr',
+        },
+      ]);
+      expect(unreadable).toEqual([]);
+    }
+  );
+
+  it('XA-06: walks no skills folder the vendor table does not document', () => {
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-unknown-root-'));
+    // One root the table DOES document, so the assertion below is about the
+    // other two rather than about a walk that found nothing at all.
+    stageSkill(repo, '.opencode/skills/review-pr');
+    stageSkill(repo, '.zed/skills/review-pr');
+    stageSkill(repo, '.windsurf/skills/review-pr');
+
+    const { skills } = inventorySourceTree(repo);
+    expect(skills.map((skill) => skill.source)).toEqual(['.opencode/skills/review-pr']);
+  });
+
+  it('XA-06: says nothing about a harness-native root that is not there, and names one it cannot list', () => {
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-native-broken-'));
+    // Absent: `.cursor/skills` and the rest of them. Present and unusable: a
+    // FILE where `.opencode/skills` belongs, which is what a person gets for
+    // typing `> .opencode/skills` once.
+    writeFileAt(join(repo, '.opencode', 'skills'), 'not a directory\n');
+    stageSkill(repo, '.gemini/skills/ship');
+
+    const { skills, unreadable } = inventorySourceTree(repo);
+    expect(skills.map((skill) => skill.source)).toEqual(['.gemini/skills/ship']);
+    expect(unreadable.map((entry) => ({ kind: entry.kind, source: entry.source }))).toEqual([
+      { kind: 'skill', source: '.opencode/skills' },
+    ]);
+    expect(unreadable[0]?.reason).toContain('.opencode/skills could not be listed as a directory');
+  });
+
+  it('XA-07: counts the servers in another tool’s MCP config and records no name and no value', () => {
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-foreign-mcp-'));
+    writeJsonAt(join(repo, 'opencode.json'), {
+      $schema: 'https://opencode.ai/config.json',
+      theme: 'system',
+      mcp: {
+        linear: { type: 'local', command: ['npx', 'linear-mcp'] },
+        resend: {
+          type: 'local',
+          command: ['npx', 'resend-mcp'],
+          environment: { RESEND_API_KEY: 're_TOPSECRET' },
+        },
+      },
+    });
+    writeJsonAt(join(repo, '.cursor', 'mcp.json'), {
+      mcpServers: { shadcn: { command: 'npx', env: { CURSOR_TOKEN: 'ct_TOPSECRET' } } },
+    });
+    // A server split over a table and a sub-table is ONE server: taking the name
+    // up to its first dot is what makes `[mcp_servers.linear.env]` not a second.
+    writeFileAt(
+      join(repo, '.codex', 'config.toml'),
+      '[mcp_servers.linear]\ncommand = "npx"\n\n[mcp_servers.linear.env]\nLINEAR_API_KEY = "lin_TOPSECRET"\n\n[mcp_servers.shadcn]\ncommand = "npx"\n'
+    );
+
+    const { foreignMcpConfigs, mcpServers, unreadable } = inventorySourceTree(repo);
+    expect(foreignMcpConfigs).toEqual([
+      { source: '.codex/config.toml', serverCount: 2 },
+      { source: '.cursor/mcp.json', serverCount: 1 },
+      { source: 'opencode.json', serverCount: 2 },
+    ]);
+    // Not `.mcp.json`, which this tree does not have — a foreign config is never
+    // mistaken for the one file the engine reads.
+    expect(mcpServers).toEqual([]);
+    expect(unreadable).toEqual([]);
+    // Not one name and not one value reaches the record. The keys are as
+    // sensitive as the values here: `RESEND_API_KEY` names what the file holds.
+    const recorded = JSON.stringify(foreignMcpConfigs);
+    for (const secret of ['TOPSECRET', 'RESEND_API_KEY', 'LINEAR_API_KEY', 'linear', 'shadcn']) {
+      expect(recorded).not.toContain(secret);
+    }
+  });
+
+  it('XA-07: stays silent about another tool’s config that declares no MCP servers at all', () => {
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-foreign-quiet-'));
+    writeJsonAt(join(repo, 'opencode.json'), { $schema: 'x', theme: 'system' });
+    writeFileAt(join(repo, '.codex', 'config.toml'), 'model = "gpt-5"\n');
+
+    const { foreignMcpConfigs, unreadable } = inventorySourceTree(repo);
+    expect({ foreignMcpConfigs, unreadable }).toEqual({ foreignMcpConfigs: [], unreadable: [] });
+  });
+
+  it('XA-07: reports another tool’s MCP config that will not parse, and quotes none of it', () => {
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-foreign-broken-'));
+    // An UNQUOTED value, deliberately: that is the failure shape whose V8 message
+    // quotes the surrounding text back — `Unexpected token 'r', ..." { "key":
+    // re_TOPSECR"... is not valid JSON` — so the "quotes none of it" assertion
+    // below has something real to catch.
+    writeFileAt(join(repo, 'opencode.json'), '{ "mcp": { "resend": { "key": re_TOPSECRET } } }');
+    writeJsonAt(join(repo, '.cursor', 'mcp.json'), { mcpServers: ['not', 'an', 'object'] });
+    // Valid TOML whose `mcp_servers` is a string. Each format is told it is
+    // wrong in its OWN vocabulary — TOML has tables, JSON has objects — because a
+    // person reading a line about their `.codex/config.toml` should not be told
+    // it holds the wrong kind of object.
+    writeFileAt(join(repo, '.codex', 'config.toml'), 'mcp_servers = "nope"\n');
+
+    const { foreignMcpConfigs, unreadable } = inventorySourceTree(repo);
+    expect(foreignMcpConfigs).toEqual([]);
+    expect(unreadable).toEqual([
+      {
+        kind: 'mcp',
+        source: '.codex/config.toml',
+        reason:
+          '.codex/config.toml has an mcp_servers key that is not a table, so DorkOS could not count the MCP servers in it — Codex keeps MCP servers here, under [mcp_servers.<name>] (vendor docs, 2026-09-07)',
+      },
+      {
+        kind: 'mcp',
+        source: '.cursor/mcp.json',
+        reason:
+          '.cursor/mcp.json has a "mcpServers" key that is not an object, so DorkOS could not count the MCP servers in it — Cursor keeps MCP servers here (vendor docs, 2026-09-07)',
+      },
+      {
+        kind: 'mcp',
+        source: 'opencode.json',
+        reason:
+          'opencode.json is not valid JSON, so DorkOS could not read what it declares — OpenCode keeps MCP servers here, under "mcp" (vendor docs, 2026-09-07)',
+      },
+    ]);
+    expect(JSON.stringify(unreadable)).not.toContain('TOPSECRET');
+  });
+
+  it.each(CODEX_TOML_SHAPES)(
+    'XA-07: counts a .codex/config.toml written with $label',
+    ({ toml, servers }) => {
+      repo = mkdtempSync(join(tmpdir(), 'harness-inv-toml-'));
+      writeFileAt(join(repo, '.codex', 'config.toml'), toml);
+
+      const { foreignMcpConfigs, unreadable } = inventorySourceTree(repo);
+      expect({ foreignMcpConfigs, unreadable }).toEqual({
+        foreignMcpConfigs: [{ source: '.codex/config.toml', serverCount: servers }],
+        unreadable: [],
+      });
+    }
+  );
+
+  it('XA-07: reports a .codex/config.toml that will not parse, and quotes none of it', () => {
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-toml-broken-'));
+    // An unterminated string, which is the failure shape whose parser message
+    // prints the offending LINE back — `command = "npx_TOMLSECRET…` — so the
+    // assertion below has something real to catch.
+    writeFileAt(
+      join(repo, '.codex', 'config.toml'),
+      '[mcp_servers.alpha]\ncommand = "npx_TOMLSECRET_unterminated\n'
+    );
+
+    const { foreignMcpConfigs, unreadable } = inventorySourceTree(repo);
+    expect(foreignMcpConfigs).toEqual([]);
+    expect(unreadable).toEqual([
+      {
+        kind: 'mcp',
+        source: '.codex/config.toml',
+        reason:
+          '.codex/config.toml is not valid TOML, so DorkOS could not read what it declares — Codex keeps MCP servers here, under [mcp_servers.<name>] (vendor docs, 2026-09-07)',
+      },
+    ]);
+    expect(JSON.stringify(unreadable)).not.toContain('TOMLSECRET');
+  });
+
+  it('XA-07, AP-11: a file where `.codex` belongs is a finding, never a throw', () => {
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-codex-file-'));
+    // DOR-1882 closed this shape for every other reader: the ENOTDIR that
+    // `lstatSync(…, { throwIfNoEntry: false })` does NOT suppress took
+    // `project()` down before a line of the report was written. A file in the
+    // way of `.codex/config.toml` is something a person can see and move.
+    writeFileAt(join(repo, '.codex'), 'not a folder\n');
+
+    const { foreignMcpConfigs, unreadable } = inventorySourceTree(repo);
+    expect(foreignMcpConfigs).toEqual([]);
+    // POSIX answers ENOTDIR for a path under a file, which is the finding;
+    // Windows answers ENOENT, so there the file reads as simply absent — the
+    // claim that holds everywhere is "nothing threw and nothing was counted".
+    if (process.platform !== 'win32') {
+      expect(unreadable.map((u) => u.source)).toContain('.codex/config.toml');
+    }
+  });
+
+  it('XA-07: reads a config file that starts with a byte-order mark', () => {
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-bom-'));
+    // A BOM is what a Windows editor leaves on a JSON file, and `JSON.parse`
+    // refuses one — so the file that was plainly there and plainly full of MCP
+    // servers came back as "not valid JSON" instead of being counted.
+    writeFileAt(
+      join(repo, '.cursor', 'mcp.json'),
+      `\ufeff${JSON.stringify({ mcpServers: { shadcn: { command: 'npx' } } })}\n`
+    );
+    // Both parsers refuse a BOM, so the strip is pinned on the TOML path too:
+    // with it gone from that one call site, a Windows-saved Codex config full
+    // of servers is reported as "not valid TOML", and no other case notices.
+    writeFileAt(
+      join(repo, '.codex', 'config.toml'),
+      `\ufeff[mcp_servers.linear]\ncommand = "npx"\n`
+    );
+
+    const { foreignMcpConfigs, unreadable } = inventorySourceTree(repo);
+    expect({ foreignMcpConfigs, unreadable }).toEqual({
+      foreignMcpConfigs: [
+        { source: '.codex/config.toml', serverCount: 1 },
+        { source: '.cursor/mcp.json', serverCount: 1 },
+      ],
+      unreadable: [],
+    });
+  });
+
+  it('XA-06: inventories a `pkg__name` link in another tool’s folder, which DorkOS never wrote', () => {
+    repo = mkdtempSync(join(tmpdir(), 'harness-inv-native-link-'));
+    outside = mkdtempSync(join(tmpdir(), 'harness-inv-native-outside-'));
+    stageSkill(outside, 'ship');
+    // The `__` name and the symlink together are how the scanner recognises its
+    // OWN projection — in `.agents/skills` and `.claude/skills`, the two roots it
+    // writes into. It writes nothing into `.opencode/skills`, so an entry there is
+    // the person's however it is spelled, and skipping it gives a real skill no
+    // line at all.
+    link(repo, '.opencode/skills/flow__ship', join(outside, 'ship'));
+
+    const { skills, unreadable } = inventorySourceTree(repo);
+    expect(
+      skills.map((skill) => ({
+        name: skill.name,
+        source: skill.source,
+        isSymlink: skill.isSymlink,
+      }))
+    ).toEqual([{ name: 'flow__ship', source: '.opencode/skills/flow__ship', isSymlink: true }]);
+    expect(unreadable).toEqual([]);
   });
 
   it('XA-03: records MCP server names and never a value, because an env block holds secrets', () => {

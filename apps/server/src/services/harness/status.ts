@@ -48,6 +48,7 @@ import {
   checkPlan,
   globalInstallDropReason,
   HARNESS_MANIFEST_PATH,
+  HARNESS_NATIVE_SKILL_ROOTS,
   inventorySourceTree,
   loadManifest,
   manifestNotices,
@@ -106,8 +107,9 @@ const ARTIFACT_KIND = {
  * The engine's provenance values, mapped onto the response's.
  *
  * The response has a fourth the engine does not — `harness-native`, for a skill
- * authored in a harness's own directory rather than in the canonical layer — so
- * this direction is total and the reverse one is not.
+ * authored in one tool's own directory (`.claude/skills`, `.opencode/skills`, …)
+ * rather than in the canonical layer — so this direction is total and the reverse
+ * one is not.
  */
 const PROVENANCE = {
   authored: 'authored',
@@ -132,8 +134,23 @@ const INSTALL_SCOPE = {
 /** The canonical skills root: a skill here is shared with every harness. */
 const CANONICAL_SKILLS_ROOT = '.agents/skills';
 
-/** The Claude Code skills root: a skill here is the one a person can adopt. */
+/** The Claude Code skills root. */
 const CLAUDE_SKILLS_ROOT = '.claude/skills';
+
+/**
+ * Every skills root that belongs to one agent tool rather than to all of them —
+ * `.claude/skills` and each folder another tool reads (`.opencode/skills`,
+ * `.cursor/skills`, …).
+ *
+ * A skill in any of these is `harness-native` and is the one a person can adopt:
+ * the fact the row is about is that the file sits where only some tools look, and
+ * `.claude/skills` was never special about that — it was only the root the
+ * inventory happened to walk (DOR-1902).
+ */
+const HARNESS_OWNED_SKILL_ROOTS: ReadonlySet<string> = new Set<string>([
+  CLAUDE_SKILLS_ROOT,
+  ...HARNESS_NATIVE_SKILL_ROOTS,
+]);
 
 /**
  * The separator inside a row or cell key. A NUL, because no artifact name, path
@@ -287,15 +304,25 @@ function byCell(entries: readonly ProjectionAction[]): Map<string, ProjectionAct
 }
 
 /**
- * Every `.claude/skills` skill a person could move into the canonical layer.
+ * Every skill in one tool's own folder that a person could move into the
+ * canonical layer.
  *
  * Read straight off the inventory, with the two exclusions that ARE the
  * definition rather than an optimisation. A skill that also lives in
- * `.agents/skills` is a blocker whose fix is a deletion — the projector's own
- * words — so offering to move it would offer the one action that makes it worse.
- * A skill named in `manifest.claudeOnlySkills` is a person saying the placement
- * is deliberate, and offering to undo it would argue with a decision that was
- * written down.
+ * `.agents/skills` is a duplicate whose fix is a deletion — a blocker, in
+ * `.claude/skills`, where it occupies the projection target — so offering to move
+ * it would offer the one action that makes it worse. A skill named in
+ * `manifest.claudeOnlySkills` is a person saying the placement is deliberate, and
+ * offering to undo it would argue with a decision that was written down.
+ *
+ * That second exclusion is by NAME and reaches every root, deliberately. The
+ * manifest key is spelled for `.claude/skills`, but what it declares is that the
+ * SKILL is not to be shared — so a copy of it that turns up in another tool's
+ * folder gets no "move it to `.agents/skills`" either, because that move is the
+ * exposure the entry exists to refuse. The plan's WORDING stays scoped to
+ * `.claude/skills` (`planAuthoredRootSkill`'s `listed`), since a sentence about
+ * `manifest.claudeOnlySkills` naming `.opencode/skills` would be a sentence about
+ * the wrong directory. Different questions, so different scopes.
  *
  * @param inventory - the source-tree inventory.
  * @param claudeOnlyNames - the names `manifest.claudeOnlySkills` declares.
@@ -312,7 +339,7 @@ function adoptableSkillSources(
     inventory.skills
       .filter(
         (s) =>
-          s.root === CLAUDE_SKILLS_ROOT &&
+          HARNESS_OWNED_SKILL_ROOTS.has(s.root) &&
           !canonicalNames.has(s.name) &&
           !claudeOnlyNames.has(s.name)
       )
@@ -986,17 +1013,17 @@ function buildRows(input: {
   }
 
   const adoptable = adoptableSkillSources(inventory, claudeOnlyNames);
-  const claudeNativeSkills = new Set(
-    inventory.skills.filter((s) => s.root === CLAUDE_SKILLS_ROOT).map((s) => s.source)
+  const harnessNativeSkills = new Set(
+    inventory.skills.filter((s) => HARNESS_OWNED_SKILL_ROOTS.has(s.root)).map((s) => s.source)
   );
   return [...rows.values()].map((row) => ({
     artifact: row.artifact,
     scope: row.scope,
     // The one override on top of the plan's own provenance, and the only producer
-    // of `harness-native`: a skill authored where a harness looks rather than in
+    // of `harness-native`: a skill authored where one tool looks rather than in
     // the canonical layer is what the adoptable advice is about.
     provenance:
-      row.artifact === 'skill' && row.source !== undefined && claudeNativeSkills.has(row.source)
+      row.artifact === 'skill' && row.source !== undefined && harnessNativeSkills.has(row.source)
         ? 'harness-native'
         : row.provenance,
     name: row.name,

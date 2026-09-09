@@ -52,7 +52,7 @@ function causeOf(err: unknown): string {
  * @param absPath - the absolute path to probe.
  * @returns `true` only when nothing occupies it.
  */
-function nothingIsThere(absPath: string): boolean {
+export function nothingIsThere(absPath: string): boolean {
   try {
     lstatSync(absPath);
     return false;

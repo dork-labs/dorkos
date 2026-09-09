@@ -245,7 +245,14 @@ describe('P9b — a `native` skill is somewhere its harness actually reads', () 
         fc.property(arbRepo(), (spec) => {
           withRepo(spec, ({ repoRoot, dorkHome }) => {
             const plan = project(repoRoot, { dorkHome });
-            applyPlan(repoRoot, plan);
+            const { conflicts } = applyPlan(repoRoot, plan);
+            // A `native` claim about an installed skill rides the link another
+            // harness's action writes into `.agents/skills`. When something is
+            // in the way of that write (the `hostile` arbitrary stages a file
+            // there), the link is a blocked conflict and the tree is not the one
+            // the plan describes — that claim is DOR-1942's subject, not this
+            // property's.
+            if (conflicts.length > 0) return;
 
             const natives = plan.actions.filter(
               (a): a is ProjectionAction & { source: string } =>

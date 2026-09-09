@@ -160,6 +160,27 @@ describe('SkillsWithHarnessesList — the list', () => {
     ).toBeInTheDocument();
     expect(screen.getAllByText(/Move it to \.agents\/skills/)).toHaveLength(1);
   });
+
+  it('XA-06: names the folder the row is actually in, not always .claude/skills', () => {
+    // Seeded defect: keep the sentence a constant. An OpenCode-first team is then
+    // told to look in `.claude/skills`, a directory they do not have — advice
+    // about somebody else's repository (DOR-1902).
+    const row = {
+      ...SHARED_SKILL_ROW,
+      provenance: 'harness-native',
+      name: 'review-pr',
+      source: '.opencode/skills/review-pr',
+      adoptable: true,
+    } as const;
+
+    render(<SkillHarnessRow row={row} enabled={['claude-code']} showEveryHarness />);
+
+    expect(
+      screen.getByText(
+        'Lives in .opencode/skills. Move it to .agents/skills so every agent can read it.'
+      )
+    ).toBeInTheDocument();
+  });
 });
 
 describe('SkillsWithHarnessesList — the collapse', () => {

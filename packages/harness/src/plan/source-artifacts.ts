@@ -34,14 +34,20 @@
 import { HARNESS_LABELS, type HarnessId } from '../manifest/schema.js';
 import type { ProjectionAction, ProjectionWarning } from './types.js';
 import type {
+  ForeignMcpConfig,
   HookInventoryEntry,
   HookOrigin,
   SkillInventoryEntry,
   SourceInventory,
 } from '../inventory/types.js';
+import { MCP_CONFIG_SOURCE } from '../inventory/mcp.js';
 import { CLAUDE_SKILLS_DIR } from './installed-projector.js';
 import { AGENTS_SKILLS_DIR } from '../scan/scanner.js';
-import { skillsFactsFor, VENDOR_FACTS_FETCHED_AT } from '../vendor-facts/index.js';
+import {
+  harnessesReadingProjectSkillRoot,
+  skillsFactsFor,
+  VENDOR_FACTS_FETCHED_AT,
+} from '../vendor-facts/index.js';
 import { evaluateSkillRules, summariseSkillRules } from '../vendor-facts/skill-rules.js';
 
 /**
@@ -223,8 +229,9 @@ function frontmatterHookPlacement(harness: HarnessId): Placement {
 }
 
 /**
- * How one harness reaches one skill kept in `.claude/skills` — the single
- * decision behind every line about that directory.
+ * How one harness reaches one skill kept in a root DorkOS does not project into
+ * — the single decision behind every line about `.claude/skills` and about every
+ * other tool's own skills folder.
  *
  * `manifest.claudeOnlySkills` and the rest used to be two code paths, and they
  * disagreed: an unlisted skill was `native` for OpenCode while an IDENTICAL
@@ -251,18 +258,30 @@ function frontmatterHookPlacement(harness: HarnessId): Placement {
  *   would be a guess in the over-claiming direction, and not a `drop`, which
  *   would be one in the other.
  *
+ * **The same ladder answers for another tool's own folder** (DOR-1902).
+ * `.opencode/skills` is `.claude/skills` with a different name on it: a directory
+ * some harnesses read and others do not, holding skills nobody projected. The
+ * only difference is which sentences are available — `manifest.claudeOnlySkills`
+ * is a statement about `.claude/skills` and says nothing about
+ * `.opencode/skills`, and the copy sitting in `.claude/skills` is the one that
+ * BLOCKS a projection, because it occupies the target. Everything else — read the
+ * cell, run the rules, route to native / drop / warning — is one path, so the two
+ * can never say different things about two identical directories.
+ *
  * @param input - the harness, the inventoried skill, and what else is known about it.
  * @returns the one action or the one warning this pairing earns.
  */
-function planClaudeSkillsDirSkill(input: {
+function planAuthoredRootSkill(input: {
   harness: HarnessId;
   skill: SkillInventoryEntry;
-  /** Whether `manifest.claudeOnlySkills` names it. */
+  /** Whether `manifest.claudeOnlySkills` names it. Never true outside `.claude/skills`. */
   listed: boolean;
   /** Whether a skill of the same name also lives in the canonical layer. */
   alsoCanonical: boolean;
 }): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
   const { harness, skill, listed, alsoCanonical } = input;
+  const root = skill.root;
+  const projectionTarget = root === CLAUDE_SKILLS_DIR;
   const label = HARNESS_LABELS[harness];
   const facts = skillsFactsFor(harness);
   const cited = `(vendor docs, ${VENDOR_FACTS_FETCHED_AT})`;
@@ -276,28 +295,50 @@ function planClaudeSkillsDirSkill(input: {
   const action = (
     kind: 'native' | 'drop',
     reason: string
-  ): ReturnType<typeof planClaudeSkillsDirSkill> => ({
+  ): ReturnType<typeof planAuthoredRootSkill> => ({
     actions: [{ ...base, kind, reason }],
     warnings: [],
   });
+  const readsRoot = facts.readPaths.project.includes(root);
 
   // A skill in BOTH roots. `planSkill` already answers for the canonical copy, so
   // a second line telling somebody to "move it to .agents/skills" — where it
   // already is — is advice that contradicts the line above it. One honest
   // sentence about the copy that is actually in the way instead.
+  //
+  // "In the way" is only true of `.claude/skills`, which is the path the engine
+  // projects the canonical skill to. A duplicate in another tool's own folder
+  // blocks nothing; it is simply a second file with one name, and the advice for
+  // it is to pick one.
   if (alsoCanonical) {
+    if (projectionTarget) {
+      return action(
+        harness === 'claude-code' ? 'native' : 'drop',
+        `a second copy of a skill that also lives in ${AGENTS_SKILLS_DIR}; this one sits at the path DorkOS projects the canonical skill to, so it blocks that projection — remove it, or remove the canonical copy`
+      );
+    }
     return action(
-      harness === 'claude-code' ? 'native' : 'drop',
-      `a second copy of a skill that also lives in ${AGENTS_SKILLS_DIR}; this one sits at the path DorkOS projects the canonical skill to, so it blocks that projection — remove it, or remove the canonical copy`
+      readsRoot ? 'native' : 'drop',
+      `a second copy of a skill that also lives in ${AGENTS_SKILLS_DIR}, where DorkOS already accounts for it — two files under one name; remove one of them`
     );
   }
 
-  if (!facts.readPaths.project.includes(CLAUDE_SKILLS_DIR)) {
+  if (!readsRoot) {
+    if (listed) {
+      return action(
+        'drop',
+        `listed in manifest.claudeOnlySkills, and ${label} does not read ${root} either way ${cited} — move it to ${AGENTS_SKILLS_DIR} to share it`
+      );
+    }
+    if (projectionTarget) {
+      return action(
+        'drop',
+        `kept in ${root}, which ${label} does not read ${cited} — move it to ${AGENTS_SKILLS_DIR} to share it, or list it in manifest.claudeOnlySkills to say the Claude-only placement is deliberate`
+      );
+    }
     return action(
       'drop',
-      listed
-        ? `listed in manifest.claudeOnlySkills, and ${label} does not read ${CLAUDE_SKILLS_DIR} either way ${cited} — move it to ${AGENTS_SKILLS_DIR} to share it`
-        : `kept in ${CLAUDE_SKILLS_DIR}, which ${label} does not read ${cited} — move it to ${AGENTS_SKILLS_DIR} to share it, or list it in manifest.claudeOnlySkills to say the Claude-only placement is deliberate`
+      `kept in ${root}, ${whoReads(root)} and ${label} does not ${cited} — move it to ${AGENTS_SKILLS_DIR} to share it`
     );
   }
 
@@ -311,14 +352,14 @@ function planClaudeSkillsDirSkill(input: {
     return action(
       'native',
       listed
-        ? `listed in manifest.claudeOnlySkills, but ${label} reads ${CLAUDE_SKILLS_DIR} directly ${cited}, so it loads there too`
-        : `${label} reads ${CLAUDE_SKILLS_DIR} directly ${cited}`
+        ? `listed in manifest.claudeOnlySkills, but ${label} reads ${root} directly ${cited}, so it loads there too`
+        : `${label} reads ${root} directly ${cited}`
     );
   }
   if (outcome.droppedByRule) {
     return action(
       'drop',
-      `kept in ${CLAUDE_SKILLS_DIR}, which ${label} reads — but ${outcome.droppedReason ?? 'it refuses this one'} ${cited}; rename it to travel`
+      `kept in ${root}, which ${label} reads — but ${outcome.droppedReason ?? 'it refuses this one'} ${cited}; rename it to travel`
     );
   }
   return {
@@ -329,10 +370,63 @@ function planClaudeSkillsDirSkill(input: {
         harness,
         name: skill.name,
         source: skill.source,
-        reason: `kept in ${CLAUDE_SKILLS_DIR}, which ${label} reads — but whether it loads this one is undocumented: ${summariseSkillRules(outcome)}`,
+        reason: `kept in ${root}, which ${label} reads — but whether it loads this one is undocumented: ${summariseSkillRules(outcome)}`,
       },
     ],
   };
+}
+
+/**
+ * Which tools a skills root belongs to, as a clause.
+ *
+ * Read off the vendor table rather than written down, so the sentence a person
+ * gets about `.codex/skills` — that CURSOR is the harness documenting it as a
+ * read path, and Codex's own row does not — cannot drift from the cell that says
+ * so. A root nobody documents would answer "which no agent tool documents
+ * reading", and no such root is ever walked, which is what makes that branch
+ * unreachable rather than wrong.
+ *
+ * @param root - the repo-relative skills root.
+ * @returns a clause naming its readers, e.g. `where OpenCode looks`.
+ */
+function whoReads(root: string): string {
+  const readers = harnessesReadingProjectSkillRoot(root).map((id) => HARNESS_LABELS[id]);
+  if (readers.length === 0) return 'which no agent tool documents reading';
+  return `where ${readers.join(' and ')} ${readers.length === 1 ? 'looks' : 'look'}`;
+}
+
+/**
+ * Say what a MCP config file belonging to another agent tool holds, and that
+ * DorkOS carries nothing out of it (DOR-1902).
+ *
+ * A DROP rather than a warning: nothing failed to be read, and nothing is
+ * uncertain. The servers are declared, they are plainly there, and the engine
+ * projects no MCP server anywhere yet (XA-03) — which is the definition of an
+ * artifact with no home in a target harness.
+ *
+ * `harnessAgnostic`, so it is reported once instead of once per enabled harness
+ * and reaches a person under a heading about their own tree rather than under a
+ * tool's name. The answer really is the same for all six: `.mcp.json` is the one
+ * file the engine reads, whoever is running.
+ *
+ * The reason carries a COUNT and no name — see `inventory/foreign-mcp.ts` for
+ * why. `name` is the file, on the same reasoning `planInventoryWarnings` uses:
+ * the entry is about a whole file, so the file is what there is to name.
+ *
+ * @param inventory - the inventory whose foreign MCP configs to report.
+ * @returns one drop per file, or an empty list when the tree has none.
+ */
+export function planForeignMcpDrops(inventory: SourceInventory): ProjectionAction[] {
+  return inventory.foreignMcpConfigs.map((config: ForeignMcpConfig) => ({
+    kind: 'drop' as const,
+    artifact: 'mcp' as const,
+    harness: AGNOSTIC_ATTRIBUTION,
+    harnessAgnostic: true,
+    provenance: 'authored' as const,
+    name: config.source,
+    source: config.source,
+    reason: `${config.source} declares ${config.serverCount} MCP server${config.serverCount === 1 ? '' : 's'}. DorkOS carries MCP servers from ${MCP_CONFIG_SOURCE} only, so the other tools do not get these.`,
+  }));
 }
 
 /** Build one action from a placement, so every table entry is turned into a line the same way. */
@@ -459,15 +553,16 @@ export function planInventoriedArtifacts(input: InventoriedArtifactInput): {
     );
   }
 
-  // Every real skill directory in `.claude/skills`, listed by the manifest or
-  // not — one path, so the two can never again say different things about two
-  // identical directories.
+  // Every real skill directory in a root the engine does not project FROM —
+  // `.claude/skills`, and every other tool's own skills folder (DOR-1902).
+  // Listed by the manifest or not, and whichever folder it is in, one path: so
+  // two identical directories can never get opposite answers.
   for (const skill of inventory.skills) {
-    if (skill.root !== CLAUDE_SKILLS_DIR) continue;
-    const placed = planClaudeSkillsDirSkill({
+    if (skill.root === AGENTS_SKILLS_DIR) continue;
+    const placed = planAuthoredRootSkill({
       harness,
       skill,
-      listed: claudeOnlyNames.has(skill.name),
+      listed: skill.root === CLAUDE_SKILLS_DIR && claudeOnlyNames.has(skill.name),
       alsoCanonical: agentsSkillNames.has(skill.name),
     });
     actions.push(...placed.actions);
@@ -478,13 +573,13 @@ export function planInventoriedArtifacts(input: InventoriedArtifactInput): {
 }
 
 /**
- * The harness an inventory-read failure is attributed to.
+ * The harness an entry that is about no harness names anyway.
  *
- * Same reasoning as `plan/unreadable-hooks.ts`: the loss is harness-agnostic — a
- * `.mcp.json` that will not parse reaches nobody — but every
- * {@link ProjectionWarning} has to name a harness, and claude-code is the honest
- * answer available, since every source the inventory reads is a file Claude Code
- * is the canonical reader of.
+ * Same reasoning as `plan/unreadable-hooks.ts`: the fact is harness-agnostic — a
+ * `.mcp.json` that will not parse reaches nobody, and an `opencode.json`'s MCP
+ * servers reach nobody either — but every {@link ProjectionWarning} and every
+ * {@link ProjectionAction} has to name a harness, and claude-code is the least
+ * misleading answer available.
  *
  * It is a PLACEHOLDER, so every warning below carries `harnessAgnostic` beside
  * it. Without the flag the placeholder is read as an answer: a project running
@@ -492,7 +587,7 @@ export function planInventoriedArtifacts(input: InventoriedArtifactInput): {
  * and `--harness opencode` hid the loss entirely — the second half of contract
  * VC-02, arriving through a different emitter.
  */
-const UNREADABLE_ATTRIBUTION: HarnessId = 'claude-code';
+const AGNOSTIC_ATTRIBUTION: HarnessId = 'claude-code';
 
 /**
  * Report every source the inventory could see and could not read.
@@ -508,7 +603,7 @@ const UNREADABLE_ATTRIBUTION: HarnessId = 'claude-code';
 export function planInventoryWarnings(inventory: SourceInventory): ProjectionWarning[] {
   return inventory.unreadable.map((entry) => ({
     artifact: entry.kind,
-    harness: UNREADABLE_ATTRIBUTION,
+    harness: AGNOSTIC_ATTRIBUTION,
     harnessAgnostic: true,
     name: entry.source,
     source: entry.source,
