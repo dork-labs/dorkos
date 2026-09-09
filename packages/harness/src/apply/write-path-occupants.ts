@@ -234,7 +234,7 @@ export function blockedWritePath(
   for (const relDir of writePathDirs(target)) {
     let cause = probed.get(relDir);
     if (!probed.has(relDir)) {
-      cause = directoryBlock(join(repoRoot, relDir));
+      cause = directoryWriteBlock(join(repoRoot, relDir));
       probed.set(relDir, cause);
     }
     if (cause !== undefined) return writePathReason(relDir, cause);
