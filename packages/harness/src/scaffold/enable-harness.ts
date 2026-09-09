@@ -25,8 +25,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeFileAtomic } from '../apply/atomic-write.js';
-import { ZodError } from 'zod';
 import { parseHarnessManifest, type HarnessId } from '../manifest/schema.js';
+import {
+  findRootObject,
+  findValueSpan,
+  insertInto,
+  manifestSchemaReason,
+} from './manifest-edit.js';
 import { HARNESS_MANIFEST_PATH } from './manifest.js';
 
 /** What {@link enableHarnessInManifest} did, or why it could not. */
@@ -98,7 +103,7 @@ export function enableHarnessInManifest(repoRoot: string, harness: HarnessId): E
   try {
     manifest = parseHarnessManifest(parsed);
   } catch (err) {
-    return { outcome: 'unwritable', harness, path, reason: schemaReason(err) };
+    return { outcome: 'unwritable', harness, path, reason: manifestSchemaReason(err) };
   }
 
   // The VALIDATED set, so an absent `harnesses` key reads as the schema's own
@@ -135,20 +140,6 @@ export function enableHarnessInManifest(repoRoot: string, harness: HarnessId): E
 }
 
 /**
- * The first thing wrong with a manifest, as one sentence naming the key.
- *
- * A `ZodError`'s own `message` is a pretty-printed JSON array, so the first line
- * of it is `[` — which is what a person would have been shown. This says
- * `sharedSkills: Unrecognized key` instead.
- */
-function schemaReason(err: unknown): string {
-  const issue = err instanceof ZodError ? err.issues[0] : undefined;
-  if (!issue) return `it is not a valid harness manifest (${String(err)})`;
-  const at = issue.path.length > 0 ? `${issue.path.join('.')}: ` : '';
-  return `it is not a valid harness manifest (${at}${issue.message})`;
-}
-
-/**
  * The text edit that adds one harness: an element inserted into the `harnesses`
  * array, or — when the file has no such key — the whole key, carrying the set
  * the schema was defaulting to plus the new one.
@@ -172,157 +163,6 @@ function plannedEdit(
   if (!root) return undefined;
   const list = [...existing, harness].map((id) => JSON.stringify(id)).join(', ');
   return insertInto(text, root, `"harnesses": [${list}]`);
-}
-
-/** Where a JSON container starts and ends, as indexes of its brackets. */
-interface Span {
-  /** Index of the opening `[` or `{`. */
-  open: number;
-  /** Index of the matching closing bracket. */
-  close: number;
-}
-
-/**
- * Locate the value of a ROOT-object key in the raw text, when it opens with
- * `opener`.
- *
- * Depth-aware rather than a regex: a `"harnesses"` key nested inside some other
- * entry is not the one being edited, and a plain search would find whichever
- * came first in the file.
- */
-function findValueSpan(text: string, key: string, opener: '[' | '{'): Span | undefined {
-  let depth = 0;
-  let i = 0;
-  while (i < text.length) {
-    const ch = text[i];
-    if (ch === '"') {
-      const end = endOfString(text, i);
-      // A key of the ROOT object: depth 1, and followed by `:` then the opener.
-      if (depth === 1 && text.slice(i + 1, end) === key) {
-        const colon = skipWhitespace(text, end + 1);
-        if (text[colon] === ':') {
-          const open = skipWhitespace(text, colon + 1);
-          if (text[open] === opener) {
-            const close = endOfContainer(text, open);
-            if (close !== undefined) return { open, close };
-          }
-        }
-      }
-      i = end + 1;
-      continue;
-    }
-    if (ch === '{' || ch === '[') depth += 1;
-    else if (ch === '}' || ch === ']') depth -= 1;
-    i += 1;
-  }
-  return undefined;
-}
-
-/** The document's own outermost `{ … }`, the container a missing key is added to. */
-function findRootObject(text: string): Span | undefined {
-  const open = text.indexOf('{');
-  if (open === -1) return undefined;
-  const close = endOfContainer(text, open);
-  return close === undefined ? undefined : { open, close };
-}
-
-/** Index of the closing quote of the JSON string starting at `start`. */
-function endOfString(text: string, start: number): number {
-  for (let i = start + 1; i < text.length; i++) {
-    if (text[i] === '\\') {
-      i += 1;
-      continue;
-    }
-    if (text[i] === '"') return i;
-  }
-  return text.length;
-}
-
-/** Index of the bracket closing the container opened at `open`, or undefined. */
-function endOfContainer(text: string, open: number): number | undefined {
-  let depth = 0;
-  for (let i = open; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === '"') {
-      i = endOfString(text, i);
-      continue;
-    }
-    if (ch === '[' || ch === '{') depth += 1;
-    else if (ch === ']' || ch === '}') {
-      depth -= 1;
-      if (depth === 0) return i;
-    }
-  }
-  return undefined;
-}
-
-/** The first index at or after `from` that is not JSON whitespace. */
-function skipWhitespace(text: string, from: number): number {
-  let i = from;
-  while (i < text.length && /\s/.test(text[i] as string)) i += 1;
-  return i;
-}
-
-/**
- * Insert one entry into a JSON container, in the file's own layout, as a pure
- * insertion — nothing already in the file moves or changes.
- *
- * One routine for both containers, because the placement question is the same
- * one: an array gains `"cursor"`, the root object gains
- * `"harnesses": ["claude-code", "cursor"]`, and each goes after the last thing
- * already inside. A multi-line container puts it on its own line, indented like
- * the line the last entry ends on (or one step in from the bracket when the
- * container is empty); a single-line one gets `, x`. Either way the entry goes
- * AFTER the last, so no trailing comma is ever introduced and none is needed.
- */
-function insertInto(text: string, span: Span, entry: string): { text: string; inserted: string } {
-  const inner = text.slice(span.open + 1, span.close);
-  const multiline = inner.includes('\n');
-
-  // Empty container: the entry goes straight after the bracket, so the closing
-  // one and whatever whitespace sits in front of it are untouched.
-  if (inner.trim() === '') {
-    const inserted = multiline
-      ? `\n${indentOfLineAt(text, span.open)}${indentUnit(text)}${entry}`
-      : entry;
-    return { text: splice(text, span.open + 1, inserted), inserted };
-  }
-
-  const lastEntryEnd = span.open + 1 + trimmedEnd(inner);
-  const inserted = multiline ? `,\n${indentOfLineAt(text, lastEntryEnd)}${entry}` : `, ${entry}`;
-  return { text: splice(text, lastEntryEnd, inserted), inserted };
-}
-
-/** `text` with `insertion` placed at `at`, and nothing else changed. */
-function splice(text: string, at: number, insertion: string): string {
-  return text.slice(0, at) + insertion + text.slice(at);
-}
-
-/** The length of `s` with trailing whitespace removed. */
-function trimmedEnd(s: string): number {
-  return s.replace(/\s+$/, '').length;
-}
-
-/**
- * The leading whitespace of the line the index `at` falls on.
- *
- * The search starts at `at - 1` deliberately: `at` is one PAST the last element,
- * which is the newline itself when that element ends its line, and
- * `lastIndexOf` counts a hit at its own start index — so searching from `at`
- * finds that newline and reads the indent of the NEXT line (which is empty).
- */
-function indentOfLineAt(text: string, at: number): string {
-  const lineStart = text.lastIndexOf('\n', at - 1) + 1;
-  return /^[ \t]*/.exec(text.slice(lineStart, at))?.[0] ?? '';
-}
-
-/**
- * The file's own indentation step, read off its first indented line — so a
- * four-space manifest gets a four-space element and a tab-indented one gets a
- * tab. Two spaces when the file has no indented line to learn from.
- */
-function indentUnit(text: string): string {
-  return /\n([ \t]+)\S/.exec(text)?.[1] ?? '  ';
 }
 
 /**

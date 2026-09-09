@@ -24,6 +24,7 @@ export * from './scan/scanner.js';
 export * from './scaffold/instructions.js';
 export * from './scaffold/manifest.js';
 export * from './scaffold/enable-harness.js';
+export * from './scaffold/declare-claude-only.js';
 export * from './sources/resolve-roots.js';
 export * from './sources/installed.js';
 export * from './generate/hooks.js';
@@ -35,6 +36,7 @@ export * from './apply/gitignore.js';
 // sweep is part of the package's surface, the rest is apply's business.
 export { sweepGeneratedOrphans } from './apply/generated-targets.js';
 export * from './report/drop-list.js';
+export * from './report/adoptable.js';
 export * from './vendor-facts/index.js';
 export * from './vendor-facts/coverage.js';
 export * from './engine.js';

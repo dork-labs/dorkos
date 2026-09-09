@@ -12,6 +12,7 @@
  * @module adopt/types
  */
 import { HARNESS_NATIVE_SKILL_ROOTS, type SkillRoot } from '../inventory/types.js';
+import type { ProjectionAction } from '../plan/types.js';
 
 /** The canonical skills layer every adopted skill lands in. */
 export const ADOPT_TARGET_ROOT = '.agents/skills';
@@ -107,11 +108,10 @@ export type DirectoryOwnership = 'plain' | 'agent-home' | 'room-worktree';
 /**
  * One move the plan will make.
  *
- * There is no `link` field yet. The symlink Claude Code needs at the old path
- * arrives in slice 2, when `planAdoptedSkillLink` is extracted out of
- * `plan/projector.ts`: the link adopt leaves has to be the link the projector
- * plans, and that is only a fact the compiler holds once both callers share one
- * export. A field nothing could set would be a field nothing checks.
+ * The `link` is the projector's own action, never a hand-rolled one: it is what
+ * `planAdoptedSkillLink` returns, which is what `planSkill`'s claude-code branch
+ * returns, so "the next sync's plan already matches" holds between two callers
+ * of one function rather than between two literals that agree today.
  */
 export interface AdoptMove {
   /** The skill's name. */
@@ -120,6 +120,32 @@ export interface AdoptMove {
   from: string;
   /** Always `.agents/skills/<name>`. */
   to: string;
+  /**
+   * The symlink to leave at the old path, present for a `.claude/skills` source
+   * and for nothing else.
+   *
+   * Every other harness-owned root belongs to a tool that already reads
+   * `.agents/skills` in its own documented project read paths, so it keeps
+   * reading the skill at its new home; a link back there would be a path DorkOS
+   * wrote that no plan action ever names — an orphan by construction, at a path
+   * no sweep owns. Claude Code's project read paths are `['.claude/skills']` and
+   * nothing else, which is the whole reason the skills half of this engine
+   * exists.
+   */
+  link?: ProjectionAction;
+}
+
+/** What one adopt run actually did. */
+export interface AdoptResult {
+  /** The moves that landed, whole. */
+  moved: AdoptMove[];
+  /** The names recorded in `manifest.claudeOnlySkills`. */
+  declared: AdoptDeclaration[];
+  /**
+   * The plan's own refusals, plus any raised by the apply itself — an `EXDEV`
+   * rename, or a link the projection could not write.
+   */
+  refusals: AdoptRefusal[];
 }
 
 /** One name recorded in `manifest.claudeOnlySkills` instead of being moved (`--claude-only`). */
@@ -138,7 +164,14 @@ export interface AdoptDeclaration {
   reason: string;
 }
 
-/** Which rule refused, so a test and the census can name it. */
+/**
+ * Which rule refused, so a test and the census can name it.
+ *
+ * The last three are the APPLY's own, not the planner's: nothing about a tree
+ * can be read ahead of time to know that a `rename(2)` will cross a filesystem,
+ * that something will occupy the link target between the move and the link, or
+ * that the manifest will turn out not to be safely editable.
+ */
 export type AdoptRefusalRule =
   | 'not-adoptable'
   | 'hostile-path'
@@ -147,7 +180,10 @@ export type AdoptRefusalRule =
   | 'source-is-symlink'
   | 'unreadable-frontmatter'
   | 'not-on-allowlist'
-  | 'claude-only-wrong-root';
+  | 'claude-only-wrong-root'
+  | 'cross-device'
+  | 'link-blocked'
+  | 'manifest-unwritable';
 
 /** One candidate that will not be moved, and the one sentence saying why. */
 export interface AdoptRefusal {

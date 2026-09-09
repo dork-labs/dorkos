@@ -82,6 +82,36 @@ function readsAgentsSkillsReason(harness: HarnessId): string {
 }
 
 /**
+ * The one projection Claude Code needs for a skill that lives in the canonical
+ * layer: a symlink at `.claude/skills/<name>` pointing back at it.
+ *
+ * Exported because `adopt` leaves exactly this link behind after it moves a
+ * skill out of `.claude/skills`, and "the link adopt leaves is the link the
+ * planner plans" has to be a fact the compiler holds rather than two literals
+ * that agree today. Adopt cannot call {@link planSkill} instead: that function
+ * is module-private and takes a `SkillEntry` that `scanSkills` produces by
+ * walking `.agents/skills`, which by definition cannot see a skill that has not
+ * been moved there yet.
+ *
+ * One argument, because the name is all the two callers have in common — adopt
+ * has no `SkillEntry`, and the projector has no adopt candidate.
+ *
+ * @param name - the skill's name, which is its directory name at both ends.
+ * @returns the `symlink` action Claude Code's branch of the projection plans.
+ */
+export function planAdoptedSkillLink(name: string): ProjectionAction {
+  return {
+    kind: 'symlink',
+    artifact: 'skill',
+    harness: 'claude-code',
+    provenance: 'authored',
+    name,
+    source: `${AGENTS_SKILLS_DIR}/${name}`,
+    target: `${CLAUDE_SKILLS_DIR}/${name}`,
+  };
+}
+
+/**
  * Project a single authored skill (one found in `.agents/skills`) to one harness.
  *
  * Returns `undefined` for the one case with nothing honest to say: a skill the
@@ -118,9 +148,12 @@ function planSkill(
     if (location?.kind === 'directory' && location.atProjectionTarget) return undefined;
   }
 
-  if (harness === 'claude-code') {
-    return { ...base, kind: 'symlink', target: `${CLAUDE_SKILLS_DIR}/${skill.name}` };
-  }
+  // Through the shared export rather than built here, so the link `adopt` leaves
+  // behind after a move and the link this projection plans are the same value by
+  // construction. `skill.sourceDir` is `.agents/skills/<name>` for every skill
+  // that reaches this function — `listAuthoredSkills` is the only producer — so
+  // nothing about the action changes.
+  if (harness === 'claude-code') return planAdoptedSkillLink(skill.name);
   return { ...base, kind: 'native', reason: readsAgentsSkillsReason(harness) };
 }
 

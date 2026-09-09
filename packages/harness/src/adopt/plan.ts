@@ -17,6 +17,7 @@
  *
  * @module adopt/plan
  */
+import { planAdoptedSkillLink } from '../plan/projector.js';
 import { allowlistVerdict, type AllowlistVerdict } from './allowlist.js';
 import {
   ADOPT_DECLARATION_REASONS,
@@ -110,6 +111,11 @@ function decide(input: AdoptSkillInput, candidates: readonly AdoptCandidate[]): 
         name: candidate.name,
         from: candidate.source,
         to: `${ADOPT_TARGET_ROOT}/${candidate.name}`,
+        // Exactly one root gets a link back, and it is the projector's own
+        // action rather than one built here (see {@link AdoptMove.link}).
+        ...(candidate.root === CLAUDE_SKILLS_ROOT
+          ? { link: planAdoptedSkillLink(candidate.name) }
+          : {}),
       });
   }
   return { moves, declarations: [], refusals };
