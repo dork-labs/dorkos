@@ -145,6 +145,11 @@ export function SkillsWithHarnessesList({
             key={harnessRowKey(row)}
             row={row}
             enabled={status.enabled}
+            // The path the ROUTE resolved, not the one this component was
+            // handed: it is the absolute root a pasted command has to carry,
+            // and the status is where it has already been through
+            // `validateBoundaryOrDorkHome`.
+            projectPath={status.projectPath}
             showEveryHarness={showEveryHarness}
           />
         ))}

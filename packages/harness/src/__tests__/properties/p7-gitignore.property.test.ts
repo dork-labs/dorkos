@@ -39,7 +39,7 @@ import { arbRepo, PROPERTY_TIMEOUT_MS, RUNS, withRepo } from './arb-repo.js';
 
 /**
  * Every path this plan writes whose provenance makes it ephemeral: an installed
- * or adopted projection, and the install directory it reads.
+ * projection, and the install directory it reads.
  *
  * The engine's own rule covers two more families (the generated hooks files and
  * their sidecars, whose provenance is `authored`, and the install root itself);

@@ -36,10 +36,19 @@ export type ArtifactType =
   'skill' | 'instruction' | 'hook' | 'command' | 'plugin' | 'agent' | 'rule' | 'mcp';
 
 /**
- * Where an artifact came from. Drives the gitignore policy (installed/adopted
- * projections are ephemeral) and the collision policy.
+ * Where an artifact came from. Drives the gitignore policy (an installed
+ * projection is ephemeral) and the collision policy.
+ *
+ * There is no third value for an ADOPTED skill, and that is a decision rather
+ * than an omission (DOR-1944). A skill `dorkos harness adopt` moved is not a
+ * third kind of source: it lives in `.agents/skills`, which is the authored
+ * root, scanned by the authored scanner, projected by the authored branch of
+ * `planSkill`, and committed like every other authored skill. The value this
+ * union used to carry was worse than unused — `isEphemeralProvenance` answered
+ * `true` for it, so anything that ever set it would have sent the gitignore half
+ * of the engine to tell a person to ignore a skill they had just committed.
  */
-export type Provenance = 'authored' | 'installed' | 'adopted';
+export type Provenance = 'authored' | 'installed';
 
 /** A single planned projection of one artifact to one harness. */
 export interface ProjectionAction {

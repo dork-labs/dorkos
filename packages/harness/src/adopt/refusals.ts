@@ -135,6 +135,18 @@ export const ADOPT_SENTENCES = {
     `--claude-only records a skill as belonging to Claude Code, and "${name}" lives in ${root}. ` +
     `Leave it where it is, or move the folder yourself.`,
 
+  /**
+   * The apply's own refusal: `rename(2)` came back `EXDEV`, so the source and
+   * the canonical layer are on different filesystems.
+   *
+   * Never degraded to a copy-then-delete. That is the one alternative, it is not
+   * atomic, and its failure mode is exactly the half-moved skill this design
+   * promises never to leave.
+   */
+  S10: (source: string): string =>
+    `DorkOS can't move ${source} into .agents/skills because the two folders are on different ` +
+    `drives. Move the folder yourself, then run dorkos harness sync --fix.`,
+
   /** R6 — the frontmatter would not parse at all. */
   S12: (source: string): string =>
     `DorkOS can't read the settings at the top of ${source}/SKILL.md, so it can't tell whether ` +

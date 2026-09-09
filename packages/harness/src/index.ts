@@ -2,8 +2,9 @@
  * `@dorkos/harness` — the cross-agent file projection engine.
  *
  * Projects skills, instructions, hooks, and commands from a canonical source
- * (`.agents/`, and — in later phases — marketplace-installed plugins and adopted
- * assets) to every enabled agent harness, with an honest per-harness drop list.
+ * (`.agents/`, and marketplace-installed plugins) to every enabled agent
+ * harness, with an honest per-harness drop list. `adopt/` is the way an asset an
+ * agent wrote in one tool's own folder gets INTO that canonical source.
  */
 export * from './manifest/schema.js';
 export * from './manifest/notices.js';
@@ -24,6 +25,7 @@ export * from './scan/scanner.js';
 export * from './scaffold/instructions.js';
 export * from './scaffold/manifest.js';
 export * from './scaffold/enable-harness.js';
+export * from './scaffold/declare-claude-only.js';
 export * from './sources/resolve-roots.js';
 export * from './sources/installed.js';
 export * from './generate/hooks.js';
@@ -35,6 +37,7 @@ export * from './apply/gitignore.js';
 // sweep is part of the package's surface, the rest is apply's business.
 export { sweepGeneratedOrphans } from './apply/generated-targets.js';
 export * from './report/drop-list.js';
+export * from './report/adoptable.js';
 export * from './vendor-facts/index.js';
 export * from './vendor-facts/coverage.js';
 export * from './engine.js';

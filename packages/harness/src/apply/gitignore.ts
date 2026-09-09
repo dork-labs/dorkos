@@ -2,7 +2,7 @@
  * The `.gitignore` contract — the consumer `EPHEMERAL_GITIGNORE_PATTERNS` never
  * had (contract AP-09).
  *
- * Installed and adopted projections are machine-local: a skill symlink into a
+ * Installed projections are machine-local: a skill symlink into a
  * plugin directory, a generated hooks file, the user-owned settings file the
  * engine merges into. Committing one hands a teammate a link to a file their
  * clone does not have. `sources/resolve-roots.ts` has always DECLARED which
@@ -231,7 +231,7 @@ function isGitRepo(repoRoot: string): boolean {
  *
  * Three families, and the third is the one a provenance test alone would miss:
  *
- * - the TARGET of every installed/adopted projection — the skill links, the
+ * - the TARGET of every installed projection — the skill links, the
  *   command wrappers, the settings file plugin hooks merge into;
  * - the SOURCE those read, which is the plugin install directory itself;
  * - the generated per-harness hooks files and their ownership sidecars. Their

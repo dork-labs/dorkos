@@ -146,19 +146,19 @@ export type HarnessArtifactKind = z.infer<typeof HarnessArtifactKindSchema>;
 /**
  * Where the file a row is about came from.
  *
- * `harness-native` is this model's fourth value and the engine has three: it
- * marks a skill authored in a harness's own directory (`.claude/skills`) rather
- * than in the canonical layer, which is the whole subject of the adoptable
- * advice. `adopted` never occurs in v1 — nothing produces an adopted projection
- * yet — and it stays in the enum because the engine's `Provenance` has it and
- * dropping it would make the mapping table lie.
+ * `harness-native` is this model's third value and the engine has two: it marks
+ * a skill authored in a harness's own directory (`.claude/skills`,
+ * `.opencode/skills`, …) rather than in the canonical layer, which is the whole
+ * subject of the adoptable advice.
+ *
+ * There is no `adopted` value. It was here while the engine's `Provenance`
+ * carried one, and both were retired together (DOR-1944): adopting a skill moves
+ * it into `.agents/skills`, which makes it AUTHORED, and a value nothing could
+ * ever produce is a promise to a client that nothing keeps. Narrowing a
+ * published enum is the one real cost of that, and it is safe to take because
+ * the value could never have arrived.
  */
-export const HarnessProvenanceSchema = z.enum([
-  'authored',
-  'installed',
-  'adopted',
-  'harness-native',
-]);
+export const HarnessProvenanceSchema = z.enum(['authored', 'installed', 'harness-native']);
 
 /** Where the file one status row is about came from. */
 export type HarnessProvenance = z.infer<typeof HarnessProvenanceSchema>;

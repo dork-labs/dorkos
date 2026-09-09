@@ -134,6 +134,12 @@ test.describe('Skills — what each of your tools can see', () => {
     await expect(harnessNative).toContainText(
       `Lives in ${adoptableFolder}. Move it to .agents/skills so every agent can read it.`
     );
+    // And the command that does it, composed the way the row composes it: the
+    // skill's own name and the ABSOLUTE project the status resolved, never `.`
+    // — the reader is not standing in that folder (DOR-1944).
+    await expect(harnessNative).toContainText(
+      `Run: dorkos harness adopt ${harnessNativeSkill} --project ${agent.projectPath}`
+    );
 
     // The honesty gate. The reason is read off the API and compared with what
     // the panel draws, so this fails on a paraphrase rather than on a wording

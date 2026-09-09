@@ -40,7 +40,7 @@ const CANONICAL_SKILLS_ROOT: SkillRoot = '.agents/skills';
 /** What {@link readAdoptCandidates} establishes, and {@link planAdopt} decides over. */
 export type AdoptReadResult = Pick<
   AdoptSkillInput,
-  'candidates' | 'exclusions' | 'roots' | 'canonicalLayerIgnoredBy'
+  'candidates' | 'exclusions' | 'roots' | 'enabledHarnesses' | 'canonicalLayerIgnoredBy'
 >;
 
 /**
@@ -49,8 +49,8 @@ export type AdoptReadResult = Pick<
  * @param repoRoot - absolute path to the repository root.
  * @param inventory - the source-tree inventory, already walked.
  * @param manifest - the repository's harness manifest.
- * @returns the candidates, the skills that were excluded and why, and the roots
- *   this run looked in.
+ * @returns the candidates, the skills that were excluded and why, the roots this
+ *   run looked in, and the harnesses the manifest enables.
  */
 export function readAdoptCandidates(
   repoRoot: string,
@@ -90,6 +90,10 @@ export function readAdoptCandidates(
     candidates,
     exclusions,
     roots: rootsLookedIn(owned),
+    // Straight off the manifest, in its own order: the planner asks it one
+    // question — is Claude Code enabled? — and that decides whether a move
+    // leaves a link behind.
+    enabledHarnesses: manifest.harnesses,
     ...ignoredBy(repoRoot),
   };
 }

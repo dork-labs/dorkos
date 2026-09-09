@@ -26,6 +26,7 @@ import fc from 'fast-check';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { planAdopt } from '../plan.js';
+import { planAdoptedSkillLink } from '../../plan/projector.js';
 import { AGENTSKILLS_BASE_FIELDS } from '../allowlist.js';
 import { ROOM_SEEDED_SKILL_NAMES } from '../refusals.js';
 import type { AdoptCandidate, AdoptRequest, AdoptSkillInput } from '../types.js';
@@ -56,6 +57,10 @@ function input(overrides: Partial<AdoptSkillInput> = {}): AdoptSkillInput {
     exclusions: [],
     roots: ['.claude/skills'],
     ownership: 'agent-home',
+    // The two harnesses most of these cases have nothing to say about. Claude
+    // Code is among them because it decides one thing only — whether a move
+    // leaves a link behind — and the cases that care about that say so.
+    enabledHarnesses: ['claude-code', 'codex'],
     ...overrides,
   };
 }
@@ -434,8 +439,16 @@ describe('the adopt allowlist', () => {
       '---\nname: deploy-checklist\ndescription: d\nlicense: MIT\ncompatibility: any\nmetadata:\n  x: 1\n---\n\nBody.\n'
     );
     expect(plan.refusals).toEqual([]);
+    // The link is the PROJECTOR's own action, never one built here: it is what
+    // `planAdoptedSkillLink` returns, which is what `planSkill`'s claude-code
+    // branch returns, so a move promises exactly the link the next sync plans.
     expect(plan.moves).toEqual([
-      { name: NAME, from: `.claude/skills/${NAME}`, to: `.agents/skills/${NAME}` },
+      {
+        name: NAME,
+        from: `.claude/skills/${NAME}`,
+        to: `.agents/skills/${NAME}`,
+        link: planAdoptedSkillLink(NAME),
+      },
     ]);
   });
 

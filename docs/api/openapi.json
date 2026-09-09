@@ -208,7 +208,6 @@
                   "enum": [
                     "authored",
                     "installed",
-                    "adopted",
                     "harness-native"
                   ]
                 },
@@ -51219,7 +51218,6 @@
                                 "enum": [
                                   "authored",
                                   "installed",
-                                  "adopted",
                                   "harness-native"
                                 ]
                               },

@@ -131,8 +131,6 @@ interface Title {
 const PINNED_GAPS: Readonly<Record<string, string>> = {
   'SRC-04':
     'a global install is still not projected; the tests assert the SCAN and the DROP, as the row’s own Coverage cell says',
-  'SRC-10':
-    'adopt does not exist; the test pins only that `adopted` counts as ephemeral provenance',
   'CM-06':
     'nothing writes into Cursor’s or Gemini’s command dirs; the test asserts each drop names the format it is not writing to',
 };
@@ -369,13 +367,18 @@ describe('the harness capabilities census', () => {
     //
     // Every floor a row touches moves with it, by that row's own delta: SK-16
     // (DOR-1943) raised `rows`, `titles` by its 37 cases, `claiming`, `built`
-    // and `idsInTitles`. All five are `toBeGreaterThanOrEqual`, so none of them
-    // BREAKS when it is left alone — which is exactly why raising them is part
-    // of the work. A floor nobody raises is a floor that stops meaning anything.
-    expect(rows.length).toBeGreaterThanOrEqual(87);
+    // and `idsInTitles`, and DOR-1944 raised all six again — `rows` by AP-17,
+    // `files` by the three suites adopt's apply, its sentence builder and its
+    // command brought, `titles` by their cases, `built` and `claiming` by
+    // SRC-07, SRC-10 and AP-17, `idsInTitles` by SRC-07, AP-17 and J-06, and
+    // `closed` by §14's third gap. All of them are `toBeGreaterThanOrEqual`, so
+    // none of them BREAKS when it is left alone — which is exactly why raising
+    // them is part of the work. A floor nobody raises is a floor that stops
+    // meaning anything.
+    expect(rows.length).toBeGreaterThanOrEqual(88);
     expect(journeys.length).toBeGreaterThanOrEqual(14);
-    expect(files.length).toBeGreaterThanOrEqual(63);
-    expect(titles.length).toBeGreaterThanOrEqual(627);
+    expect(files.length).toBeGreaterThanOrEqual(66);
+    expect(titles.length).toBeGreaterThanOrEqual(660);
     // And every root really contributed, so a moved directory is a red rather
     // than a quietly smaller census.
     for (const root of TEST_ROOTS) {
@@ -392,7 +395,7 @@ describe('the harness capabilities census', () => {
 
   it('has a test title carrying the ID of every row that claims U, C or E coverage', () => {
     const claiming = rows.filter((row) => claimsCoverage(row.coverage));
-    expect(claiming.length).toBeGreaterThanOrEqual(51);
+    expect(claiming.length).toBeGreaterThanOrEqual(53);
 
     const uncovered = claiming.filter((row) => !idsInTitles.has(row.id)).map((row) => row.id);
 
@@ -410,7 +413,7 @@ describe('the harness capabilities census', () => {
     const built = rows.filter((row) =>
       row.state.replace(/\*/g, '').trimStart().startsWith('built')
     );
-    expect(built.length).toBeGreaterThanOrEqual(46);
+    expect(built.length).toBeGreaterThanOrEqual(49);
 
     const uncovered = built.filter((row) => claimsNoCoverage(row.coverage));
 
@@ -443,7 +446,7 @@ describe('the harness capabilities census', () => {
   });
 
   it('names no ID the document does not define', () => {
-    expect(idsInTitles.size).toBeGreaterThanOrEqual(74);
+    expect(idsInTitles.size).toBeGreaterThanOrEqual(77);
 
     const unknown = [...idsInTitles]
       .filter((id) => !documentedIds.has(id))
@@ -463,7 +466,7 @@ describe('the harness capabilities census', () => {
 
   it('has a test for every gap §14 struck through as closed', () => {
     const closed = closedGapIds();
-    expect(closed.length).toBeGreaterThanOrEqual(12);
+    expect(closed.length).toBeGreaterThanOrEqual(13);
 
     const unproven = closed.filter(
       (id) => documentedIds.has(id) && !idsInTitles.has(id) && !PENDING_RETITLE.includes(id)

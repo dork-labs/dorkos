@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { LOG_LEVEL_MAP } from '@dorkos/shared/config-schema';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { rethrowUnknownOption } from './lib/parse-args-error.js';
+import { wantsDebugDetail } from './lib/debug-detail.js';
 import {
   formatWithheldBlock,
   readDorkosHarness,
@@ -16,6 +16,12 @@ import type { WithheldHooks } from '../server/services/harness/project-with-cons
 import type { HarnessClaudeOnly } from '@dorkos/shared/harness-schemas';
 
 import {
+  ADOPTABLE_BLOCK_HEADING,
+  adoptCommandFor,
+  adoptableSentence,
+  harnessesThatCannotSee,
+  inventorySourceTree,
+  readAdoptCandidates,
   agentsMdExists,
   appendGitignoreLines,
   checkPlan,
@@ -39,6 +45,7 @@ import {
   HARNESS_MANIFEST_PATH,
   type HarnessId,
   type HarnessManifest,
+  type SkillRoot,
   type ProjectionAction,
   type ProjectionPlan,
   type SweptPath,
@@ -105,20 +112,6 @@ export interface HarnessSyncArgs {
    * people are most particular about.
    */
   writeGitignore: boolean;
-}
-
-/**
- * Whether this invocation asked for debug-level detail, by either spelling: the
- * `LOG_LEVEL` name a person exports, or the numeric `DORKOS_LOG_LEVEL` a parent
- * process (`cli.ts`, the server) has already resolved.
- */
-function wantsDebugDetail(): boolean {
-  /* eslint-disable no-restricted-syntax -- the harness branch in cli.ts runs before the log level is resolved and exported, so we mirror its `LOG_LEVEL || DORKOS_LOG_LEVEL` reading here */
-  const named = LOG_LEVEL_MAP[process.env.LOG_LEVEL ?? ''];
-  const numeric = Number(process.env.DORKOS_LOG_LEVEL);
-  /* eslint-enable no-restricted-syntax */
-  const level = named ?? (Number.isFinite(numeric) ? numeric : undefined);
-  return level !== undefined && level >= LOG_LEVEL_MAP.debug;
 }
 
 /**
@@ -202,6 +195,57 @@ function formatAction(action: ProjectionAction): string {
   const path = action.target ?? action.source ?? '(no path)';
   const note = action.reason ? ` — ${action.reason}` : '';
   return `  [${action.kind}] ${action.artifact} "${action.name}" -> ${path}  (${action.harness})${note}`;
+}
+
+/**
+ * The block naming every skill that lives where only some of this project's
+ * agents look, one headline per root (S1c, S1 and S1b).
+ *
+ * The set is the adopt engine's own candidate list rather than a second reading
+ * of the inventory, so the sentence a sync prints and the answer
+ * `dorkos harness adopt` gives cannot disagree about which skills are on offer.
+ *
+ * The CLI passes NO `projectPath`: it ran in the repository, so a bare command
+ * is right there — and that is the form the capability contract quotes for J-06.
+ * Every surface DorkOS prints from the SERVER passes the absolute one instead.
+ *
+ * Nothing is printed when every enabled tool can already see the skill, and this
+ * block never changes an exit code: a skill somebody keeps in one tool's folder
+ * is a real choice, the same rule AP-15 already follows for a gitignored
+ * `.agents/`.
+ *
+ * @param repoRoot - the project's absolute path.
+ * @param manifest - the manifest, for the harnesses it enables, in its order.
+ * @returns the lines to print, empty when there is nothing to say.
+ */
+function formatAdoptable(repoRoot: string, manifest: HarnessManifest): string[] {
+  // A second inventory walk, and worth it: the plan does not carry one, and this
+  // report is the only place the answer is needed.
+  const { candidates } = readAdoptCandidates(repoRoot, inventorySourceTree(repoRoot), manifest);
+  const byRoot = new Map<SkillRoot, string[]>();
+  for (const candidate of candidates) {
+    byRoot.set(candidate.root, [...(byRoot.get(candidate.root) ?? []), candidate.name]);
+  }
+
+  const lines: string[] = [];
+  // By folder name, so the block reads the same way twice on one tree: the map's
+  // own order is the inventory's walk order, which is a fact about a filesystem
+  // rather than about this report.
+  for (const [root, names] of [...byRoot].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    const sorted = [...names].sort();
+    const headline = adoptableSentence({
+      root,
+      names: sorted,
+      cannotSee: harnessesThatCannotSee(root, manifest.harnesses),
+    });
+    if (headline === '') continue;
+    lines.push(`  ${headline}`);
+    // A headline cannot name three skills in one command, and a list of names
+    // with no command is a second thing to look up — so each skill carries its
+    // own, in full.
+    if (sorted.length > 1) for (const name of sorted) lines.push(`    ${adoptCommandFor(name)}`);
+  }
+  return lines.length === 0 ? [] : ['', ADOPTABLE_BLOCK_HEADING, ...lines];
 }
 
 /**
@@ -720,6 +764,7 @@ function reportCheck(
   }
   for (const line of formatLeftAlone(drift.leftAlone, manifest, harnessFilter)) console.log(line);
   reportWithheld(withheld, dorkHome);
+  for (const line of formatAdoptable(repoRoot, manifest)) console.log(line);
   for (const line of formatClaudeOnly(claudeOnly, repoRoot)) console.log(line);
   for (const line of formatNotEnabled(plan)) console.log(line);
   for (const line of formatManifestNotices(manifest)) console.log(line);
@@ -830,6 +875,7 @@ function reportFix(
   // this is what was installed, and this is what was not.
   reportWithheld(withheld, dorkHome);
 
+  for (const line of formatAdoptable(repoRoot, manifest)) console.log(line);
   for (const line of formatClaudeOnly(claudeOnly, repoRoot)) console.log(line);
   for (const line of formatNotEnabled(plan)) console.log(line);
   for (const line of formatManifestNotices(manifest)) console.log(line);

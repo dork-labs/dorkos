@@ -7,8 +7,9 @@
  *
  * - Help text for `harness` itself (no/`--help`/`-h` subcommand).
  * - Dynamic-import dispatch into the `sync` handler in `harness-sync-command.ts`,
- *   the `hooks` handler in `harness-hooks-command.ts`, and the `global` handler
- *   in `harness-global-command.ts`.
+ *   the `hooks` handler in `harness-hooks-command.ts`, the `global` handler
+ *   in `harness-global-command.ts`, and the `adopt` handler in
+ *   `harness-adopt-command.ts`.
  * - Uniform error rendering for parse and runtime failures.
  *
  * The whole namespace drives the `@dorkos/harness` projection engine entirely
@@ -33,6 +34,8 @@ Project skills, instructions, hooks, and commands from the canonical
 
 Subcommands:
   sync [options]    Report or apply the cross-harness projection plan
+  adopt <name>      Move one skill into .agents/skills, where every agent
+                    reads it
   hooks [options]   See and change which packages may run commands
   global [options]  See and change which agent tools can see the packages you
                     installed for all your projects
@@ -63,6 +66,16 @@ Options (sync):
       --write-gitignore       Add the lines your .gitignore is missing for the
                               files DorkOS writes. Needs --fix
 
+Options (adopt):
+      --project <path>        The project to act on. Defaults to the folder
+                              you are in
+      --claude-only           Record the skill as Claude-Code-only instead
+                              of moving it
+      --check                 Say what would happen. Writes nothing.
+                              It exits 0 when the move would work and 1 when
+                              it would not — the opposite of sync --check,
+                              which exits 1 when there is work outstanding
+
 Options (hooks):
       --list                  Show every decision you have made (default)
       --revoke <pkg>          Forget a package's decision, so you are asked again
@@ -83,6 +96,9 @@ Examples:
   dorkos harness sync --fix --allow-hooks acme-tools
   dorkos harness sync --fix --enable cursor
   dorkos harness sync --fix --write-gitignore
+  dorkos harness adopt deploy-checklist
+  dorkos harness adopt deploy-checklist --check
+  dorkos harness adopt deploy-checklist --claude-only
   dorkos harness hooks --list
   dorkos harness hooks --revoke acme-tools
   dorkos harness sync --global
@@ -94,7 +110,7 @@ Examples:
 /**
  * Dispatch a `dorkos harness <subcommand>` invocation.
  *
- * @param subcommand - The subcommand name (`sync` or `hooks`). Pass
+ * @param subcommand - The subcommand name (`sync`, `adopt` or `hooks`). Pass
  *   `undefined`, `--help`, or `-h` to print help.
  * @param subArgs - The argv slice that follows the subcommand.
  * @returns The intended process exit code (`0` success, `1` drift/error).
@@ -122,6 +138,17 @@ export async function runHarnessDispatcher(
       return result.exitCode;
     }
 
+    if (subcommand === 'adopt') {
+      if (subArgs[0] === '--help' || subArgs[0] === '-h') {
+        console.log(HELP_TEXT);
+        return 0;
+      }
+      const { runHarnessAdopt, parseHarnessAdoptArgs } =
+        await import('../harness-adopt-command.js');
+      const result = await runHarnessAdopt(parseHarnessAdoptArgs(subArgs));
+      return result.exitCode;
+    }
+
     if (subcommand === 'hooks') {
       if (subArgs[0] === '--help' || subArgs[0] === '-h') {
         console.log(HELP_TEXT);
@@ -145,7 +172,7 @@ export async function runHarnessDispatcher(
     }
 
     console.error(`Unknown harness subcommand: ${subcommand}`);
-    console.error('Usage: dorkos harness <sync|hooks|global> [options]');
+    console.error('Usage: dorkos harness <sync|adopt|hooks|global> [options]');
     return 1;
   } catch (err) {
     console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
