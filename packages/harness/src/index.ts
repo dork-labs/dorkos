@@ -27,6 +27,7 @@ export * from './scaffold/enable-harness.js';
 export * from './sources/resolve-roots.js';
 export * from './sources/installed.js';
 export * from './generate/hooks.js';
+export * from './adopt/index.js';
 export * from './apply/apply.js';
 export * from './apply/global-apply.js';
 export * from './apply/gitignore.js';
