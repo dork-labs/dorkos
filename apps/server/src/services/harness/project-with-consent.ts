@@ -310,9 +310,18 @@ export interface ProjectWithConsentOptions {
    * It changes nothing a projection WRITES. Its only effect is one more entry in
    * `plan.notEnabled` when the manifest does not enable it, so a surface can say
    * "DorkOS runs Claude Code here and this project is not sharing to it"
-   * (DOR-1901). A trigger whose plan nobody reports — the `.agents/skills`
-   * watcher — may therefore leave it out; every trigger that PRINTS or RENDERS a
-   * plan passes it, or its report is missing a line that is true.
+   * (DOR-1901). `dorkos harness sync` prints that line and `GET
+   * /api/harness/status` renders it, so those two must pass it or their report
+   * is missing something true.
+   *
+   * The two server TRIGGERS — the marketplace install and the agent-created
+   * projection — pass it as well, and they print no `notEnabled` at all. That
+   * is deliberate: it is the same question about the same repo, and one
+   * TRIGGER answering it differently from the report a person then reads is
+   * how the two drift. It costs one config read per projection, already paid
+   * for the `harness.autoSync` check beside it. The `.agents/skills` watcher is
+   * the one caller that leaves it out, because it fires at file-event frequency
+   * and nothing downstream of it ever reads the field.
    *
    * Not defaulted from config here, unlike `decisions`: `dorkos harness sync
    * --check` must not open the config store (DOR-678), and a default that

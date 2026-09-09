@@ -3435,9 +3435,11 @@ async function start() {
     // Set the PROJECT up for the agent tool DorkOS runs there. Pointing an agent
     // at a repository used to trigger nothing at all, so a project that had only
     // ever run another tool got a managed session that had never read its own
-    // `AGENTS.md` (DOR-1901). Awaited, so the creation response reflects a tree
-    // that is already set up; it swallows its own failures, and refuses agent
-    // homes (their own pass owns those) and anything outside the boundary.
+    // `AGENTS.md` (DOR-1901). Awaited, so the registration response reflects a
+    // tree that is already set up; it swallows its own failures, and refuses a
+    // `'created'` arrival (the create pipeline projects its own workspace, and
+    // would lose the write-if-absent race to this), agent homes, and anything
+    // outside the boundary.
     await runAgentCreatedProjection(agent, { dorkHome });
     const rebound = await rebindShapeSchedulesForAgent(agent, {
       listShapes: () => listInstalledShapeManifests(dorkHome),

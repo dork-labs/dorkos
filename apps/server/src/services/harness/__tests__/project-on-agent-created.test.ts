@@ -40,7 +40,7 @@ import { logger } from '../../../lib/logger.js';
 
 const DORK_HOME = '/tmp/dork-home';
 const REPO = '/tmp/someones-repo';
-const AGENT = { name: 'tangerines', path: REPO };
+const AGENT = { name: 'tangerines', path: REPO, origin: 'registered' } as const;
 
 /** A minimal plan stub — the seam is stubbed, so its shape is opaque to the trigger. */
 const FAKE_PLAN = { actions: [], drops: [], warnings: [], notEnabled: [] } as never;
@@ -141,12 +141,36 @@ describe('runAgentCreatedProjection', () => {
     expect(seamSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('TR-03, TR-11: leaves a workspace DorkOS is building to its own pass', async () => {
+    // The race this trigger must lose on purpose. `createAgentWorkspace`
+    // notifies the seam BEFORE it runs `projectAgentWorkspace`, and by then it
+    // has already scaffolded `AGENTS.md`, `.claude/CLAUDE.md`, `GEMINI.md` and
+    // the Copilot pointer into the workspace — so detection here reads DorkOS's
+    // own scaffolds as four harnesses somebody uses, and both scaffolds are
+    // write-if-absent, so this one would win. Measured on a real server against
+    // a directory override: `claude-code, codex, gemini, copilot, opencode`,
+    // where the create pipeline means Claude Code alone with package hooks
+    // denied (HK-08) — and a codex-enabled manifest is what turns an unattended
+    // pass into a writer of shell commands.
+    await runAgentCreatedProjection(
+      { name: 'tangerines', path: REPO, origin: 'created' },
+      { dorkHome: DORK_HOME }
+    );
+
+    expect(seamSpy).not.toHaveBeenCalled();
+    expect(scaffoldSpy).not.toHaveBeenCalled();
+    // Decided before anything else is asked, so a no-op never queues behind
+    // somebody else's projection.
+    expect(boundarySpy).not.toHaveBeenCalled();
+    expect(mockConfigGet).not.toHaveBeenCalled();
+  });
+
   it('TR-11: leaves an agent home to its own pass', async () => {
     // `<dorkHome>/agents/*` is projected by `agent-creator` at creation and by
     // the boot backfill after, with a Claude-Code-only manifest on purpose.
     // Doing it again here would write a different harness set into that folder.
     await runAgentCreatedProjection(
-      { name: 'dorkbot', path: `${DORK_HOME}/agents/dorkbot` },
+      { name: 'dorkbot', path: `${DORK_HOME}/agents/dorkbot`, origin: 'registered' },
       { dorkHome: DORK_HOME }
     );
 

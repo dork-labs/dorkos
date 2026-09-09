@@ -349,7 +349,7 @@ Claude Code watches its skill directories, so a skill linked into an existing `.
 
 ### Switching it off
 
-`harness.autoSync` gates the install trigger, the watcher, the sweep and the turn-end re-projection alike. Off means no watcher is opened at all and nothing projects unprompted; `dorkos harness sync` still works.
+`harness.autoSync` gates all five unprompted triggers alike: the install trigger, the agent-created trigger, the watcher, the sweep and the turn-end re-projection. Off means no watcher is opened at all and nothing projects unprompted; `dorkos harness sync` still works.
 
 ## 11. The manifest, key by key
 

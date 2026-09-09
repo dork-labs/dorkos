@@ -15,6 +15,7 @@ import type { WithheldHooks } from '../server/services/harness/project-with-cons
 import type { HarnessClaudeOnly } from '@dorkos/shared/harness-schemas';
 
 import {
+  agentsMdExists,
   appendGitignoreLines,
   checkPlan,
   enableHarnessInManifest,
@@ -978,14 +979,24 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     const scaffold = scaffoldManifest(repoRoot, {
       ...(ourHarness === undefined ? {} : { dorkosHarness: ourHarness }),
     });
-    const setSource = scaffold.detected ? 'detected harnesses' : 'default harness set';
+    // What the set came from, and it is now three answers rather than two: a
+    // detected set can carry one harness detection did NOT find, and calling
+    // that whole list "detected harnesses" — or, worse, calling
+    // `claude-code, codex, opencode` the "default harness set" when the default
+    // is two of those — states something the person can check and find false.
+    const dorkos = scaffold.addedForDorkos;
+    const base = scaffold.detected ? 'detected harnesses' : 'default set';
+    const setSource =
+      dorkos === null
+        ? base
+        : `${base} plus ${HARNESS_LABELS[dorkos]}, because DorkOS runs it here`;
     console.log(
       `No manifest found; wrote a default at ${scaffold.path} ` +
         `(${setSource}: ${scaffold.harnesses.join(', ')}) - edit to customize.`
     );
-    // The one harness in that set the person's own folder does not explain.
-    if (scaffold.addedForDorkos) {
-      console.log(dorkosHarnessScaffoldNotice(scaffold.addedForDorkos));
+    // …and what that one entry means for the files in their folder.
+    if (dorkos) {
+      console.log(dorkosHarnessScaffoldNotice(dorkos, agentsMdExists(repoRoot)));
     }
     console.log('');
   }

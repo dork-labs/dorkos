@@ -234,15 +234,21 @@ function defaultManifest(harnesses: readonly HarnessId[]): HarnessManifest {
  * Scaffold a default `.agents/harness.manifest.json` into a repo when none exists.
  *
  * Write-if-absent (ADR-302): an existing manifest is never overwritten. When no
- * manifest is present, the scaffolder picks a harness set (detected from the
- * repo's on-disk footprint, or {@link DEFAULT_HARNESSES} when nothing is detected,
- * or overridden by `opts.harnesses`) and writes a valid, human-editable manifest
- * with empty policy arrays for the user to extend.
+ * manifest is present, the scaffolder picks a harness set and writes a valid,
+ * human-editable manifest with empty policy arrays for the user to extend.
+ *
+ * The set is `opts.harnesses` when the caller named one; otherwise it is what
+ * detection found on disk (or {@link DEFAULT_HARNESSES} when it found nothing),
+ * PLUS `opts.dorkosHarness` when that harness is not already in it — the one
+ * entry a person's own folder cannot explain, which is why the result names it
+ * separately.
  *
  * @param repoRoot - absolute path to the repository root to scaffold into.
- * @param opts - optional explicit harness set; defaults to detection + fallback.
- * @returns whether a manifest was written, its path, the harness set, and whether
- *   that set was detected (vs the documented fallback).
+ * @param opts - an explicit harness set, and/or the harness DorkOS's own default
+ *   runtime reads; both optional, and detection + fallback decide without them.
+ * @returns whether a manifest was written, its path, the harness set, whether
+ *   that set was detected (vs the documented fallback), and which harness — if
+ *   any — was added because DorkOS runs it here (`addedForDorkos`).
  */
 export function scaffoldManifest(
   repoRoot: string,
@@ -294,21 +300,32 @@ export function scaffoldManifest(
  * The one line every scaffold notice prints when a harness was turned on
  * because DorkOS runs it here.
  *
- * One sentence, in one place, so the CLI's `--fix` output and the server's
- * auto-projection log say the same thing about the same decision. It names the
- * consequence rather than the mechanism, because the consequence is the part a
- * person can act on: the file that will point at the `AGENTS.md` they already
- * have — or, for a harness that reads `AGENTS.md` itself, that it just does.
+ * One sentence, in one place, so the CLI's `--fix` output and the two server
+ * triggers say the same thing about the same decision. It names the consequence
+ * rather than the mechanism, because the consequence is the part a person can
+ * act on: the file that will point at the `AGENTS.md` they already have — or,
+ * for a harness that reads `AGENTS.md` itself, that it just does.
+ *
+ * `agentsMdExists` is not decoration. With no canonical `AGENTS.md` the engine
+ * plans no pointer at all — every harness's instruction projection is one honest
+ * drop instead (IN-03) — so promising `.claude/CLAUDE.md will point at your
+ * AGENTS.md` would be a line about a file that is not going to be written, in
+ * the one repo where the person most needs to know what is missing.
  *
  * @param harness - The harness {@link ScaffoldManifestResult.addedForDorkos} named.
+ * @param agentsMdExists - Whether the repo has a canonical `AGENTS.md` to point at.
  * @returns The line to print.
  */
-export function dorkosHarnessScaffoldNotice(harness: HarnessId): string {
+export function dorkosHarnessScaffoldNotice(harness: HarnessId, agentsMdExists: boolean): string {
   const pointer = instructionPointerTarget(harness);
   const consequence =
     pointer === undefined
-      ? 'it reads your AGENTS.md directly'
-      : `${pointer} will point at your AGENTS.md`;
+      ? agentsMdExists
+        ? 'it reads your AGENTS.md directly'
+        : 'it reads an AGENTS.md at your project root, once you add one'
+      : agentsMdExists
+        ? `${pointer} will point at your AGENTS.md`
+        : `${pointer} will point at your AGENTS.md, once you add one`;
   return `${HARNESS_LABELS[harness]} is turned on because DorkOS runs it here; ${consequence}.`;
 }
 

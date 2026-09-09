@@ -284,7 +284,7 @@ describe('detectHarnessFootprints', () => {
  */
 describe('dorkosHarnessScaffoldNotice', () => {
   it('J-03, IN-01: names the pointer file, for a harness that needs one', () => {
-    expect(dorkosHarnessScaffoldNotice('claude-code')).toBe(
+    expect(dorkosHarnessScaffoldNotice('claude-code', true)).toBe(
       'Claude Code is turned on because DorkOS runs it here; ' +
         '.claude/CLAUDE.md will point at your AGENTS.md.'
     );
@@ -293,8 +293,22 @@ describe('dorkosHarnessScaffoldNotice', () => {
   it('IN-01: says a native reader just reads it, rather than naming a file it never writes', () => {
     // OpenCode and Codex read `AGENTS.md` where it already sits (ADR-0302), so a
     // line promising a pointer file would promise a write that never happens.
-    expect(dorkosHarnessScaffoldNotice('opencode')).toBe(
+    expect(dorkosHarnessScaffoldNotice('opencode', true)).toBe(
       'OpenCode is turned on because DorkOS runs it here; it reads your AGENTS.md directly.'
+    );
+  });
+
+  it('IN-03: does not promise a pointer to an AGENTS.md that is not there', () => {
+    // With no canonical `AGENTS.md` the engine plans no pointer at all — every
+    // harness's instruction projection is one honest drop (IN-03) — so the
+    // unconditional line named a file this sync was never going to write.
+    expect(dorkosHarnessScaffoldNotice('claude-code', false)).toBe(
+      'Claude Code is turned on because DorkOS runs it here; ' +
+        '.claude/CLAUDE.md will point at your AGENTS.md, once you add one.'
+    );
+    expect(dorkosHarnessScaffoldNotice('opencode', false)).toBe(
+      'OpenCode is turned on because DorkOS runs it here; ' +
+        'it reads an AGENTS.md at your project root, once you add one.'
     );
   });
 });

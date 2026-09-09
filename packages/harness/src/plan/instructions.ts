@@ -50,15 +50,23 @@ const NO_AGENTS_MD_REASON = 'no AGENTS.md — nothing to read or point at';
  * and building a throwaway projection action to read it back would leave an
  * entry in the content side-table for a plan nobody is applying.
  *
- * A harness that is absent here reads `AGENTS.md` where it already sits.
+ * `null` is a harness that reads `AGENTS.md` where it already sits, and it is
+ * spelled out rather than left absent: a TOTAL `Record` is what makes a seventh
+ * harness id a compile error here. The `switch` this replaced had that property
+ * for free, and a `Partial` would have quietly let the new one fall through to
+ * `native` — which is the IN-03 lie, a plan claiming a harness reads a file
+ * nobody pointed it at.
  */
-const INSTRUCTION_POINTERS: Partial<Record<HarnessId, { target: string; content: string }>> = {
+const INSTRUCTION_POINTERS: Record<HarnessId, { target: string; content: string } | null> = {
   'claude-code': { target: '.claude/CLAUDE.md', content: CLAUDE_INSTRUCTION_CONTENT },
   gemini: { target: 'GEMINI.md', content: instructionPointer('./AGENTS.md') },
   copilot: {
     target: '.github/copilot-instructions.md',
     content: instructionPointer('../AGENTS.md'),
   },
+  codex: null,
+  cursor: null,
+  opencode: null,
 };
 
 /**

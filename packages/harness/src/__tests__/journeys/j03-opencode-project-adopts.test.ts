@@ -163,12 +163,25 @@ describe('J-03 — an OpenCode project adopts DorkOS', () => {
     // disk is Claude Code's, so the footprint notice cannot fire. The plan says
     // it anyway, from the one fact the tree cannot show.
     const repo = stageOpenCodeRepo({ manifest: { harnesses: ['codex', 'opencode'] } });
+    const before = snapshotTree(repo.root);
+    const manifestPath = join(repo.root, '.agents', 'harness.manifest.json');
+    const manifestBefore = readText(manifestPath);
 
     expect(project(repo.root, { dorkHome: repo.dorkHome }).notEnabled).toEqual([]);
     expect(
       project(repo.root, { dorkHome: repo.dorkHome, dorkosHarness: 'claude-code' }).notEnabled
     ).toEqual([{ harness: 'claude-code', why: 'dorkos-runtime' }]);
-    // Reporting only: nothing was written, and the manifest is byte-identical.
+
+    // Reporting only. The manifest is the person's file (ADR-302), so the claim
+    // is byte equality rather than "it still parses the same" — a re-serialized
+    // manifest with their spacing rewritten is exactly the harm that rule names.
+    expect(readText(manifestPath)).toBe(manifestBefore);
+    // And nothing anywhere else, either: `.claude/` is what a fix would write.
+    expect(diffSnapshots(before, snapshotTree(repo.root))).toEqual({
+      added: [],
+      changed: [],
+      removed: [],
+    });
     expect(existsSync(join(repo.root, '.claude'))).toBe(false);
   });
 

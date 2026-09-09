@@ -52,6 +52,7 @@
  * @module services/harness/auto-project
  */
 import {
+  agentsMdExists,
   dorkosHarnessScaffoldNotice,
   scaffoldManifest as defaultScaffoldManifest,
   HARNESS_MANIFEST_PATH,
@@ -245,9 +246,12 @@ async function projectAndAsk(
       // own folder, said as one plain line — the same sentence `dorkos harness
       // sync --fix` prints, from the same function (DOR-1901).
       if (scaffold.addedForDorkos) {
-        logger.info(`[HarnessSync] ${dorkosHarnessScaffoldNotice(scaffold.addedForDorkos)}`, {
-          projectPath,
-        });
+        logger.info(
+          `[HarnessSync] ${dorkosHarnessScaffoldNotice(scaffold.addedForDorkos, agentsMdExists(projectPath))}`,
+          {
+            projectPath,
+          }
+        );
       }
     }
     // If a manifest still does not exist (scaffold failed, or a race removed

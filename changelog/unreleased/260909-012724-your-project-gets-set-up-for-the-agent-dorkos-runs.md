@@ -3,11 +3,12 @@ covers:
   - 'feat(harness): a project DorkOS manages turns on its own tool (DOR-1901)'
   - 'feat(server): pointing an agent at a project sets it up once (DOR-1901)'
   - 'refactor(harness): the added harness is a value, not a cast (DOR-1901)'
+  - 'fix(server): a workspace DorkOS is building projects itself (DOR-1901)'
 ---
 
 ### Added
 
-- Point a DorkOS agent at a project and DorkOS sets that folder up straight away, instead of waiting for you to run anything. It only adds files — it never deletes anything and never asks you to approve anything on that pass (DOR-1901)
+- Point a DorkOS agent at a project you already work in and DorkOS sets that folder up straight away, instead of waiting for you to run anything. It only adds files — it never deletes anything and never asks you to approve anything on that pass. A brand-new agent still gets its own folder set up by the step that builds it, as before (DOR-1901)
 
 ### Fixed
 

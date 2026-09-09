@@ -311,7 +311,13 @@ describe('runHarnessSync', () => {
       fs.readFileSync(path.join(tmpDir, HARNESS_MANIFEST_PATH), 'utf8')
     ) as { harnesses: string[] };
     expect(manifest.harnesses).toEqual(['codex', 'opencode', 'claude-code']);
-    // One plain line for the one entry their folder does not explain…
+    // The set's provenance says which part of it their folder explains…
+    expect(logSpy).toHaveBeenCalledWith(
+      `No manifest found; wrote a default at ${HARNESS_MANIFEST_PATH} ` +
+        '(detected harnesses plus Claude Code, because DorkOS runs it here: ' +
+        'codex, opencode, claude-code) - edit to customize.'
+    );
+    // …and one plain line says what that one entry does for them.
     expect(logSpy).toHaveBeenCalledWith(
       'Claude Code is turned on because DorkOS runs it here; ' +
         '.claude/CLAUDE.md will point at your AGENTS.md.'
@@ -332,6 +338,11 @@ describe('runHarnessSync', () => {
 
     expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).not.toContain(
       'because DorkOS runs it here'
+    );
+    // The plain two-answer line, unchanged for every repo that explains itself.
+    expect(logSpy).toHaveBeenCalledWith(
+      `No manifest found; wrote a default at ${HARNESS_MANIFEST_PATH} ` +
+        '(detected harnesses: claude-code, codex) - edit to customize.'
     );
   });
 
