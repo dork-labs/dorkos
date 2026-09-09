@@ -51094,13 +51094,20 @@
                                   "opencode"
                                 ]
                               },
+                              "why": {
+                                "type": "string",
+                                "enum": [
+                                  "footprint",
+                                  "dorkos-runtime"
+                                ]
+                              },
                               "signal": {
                                 "type": "string"
                               }
                             },
                             "required": [
                               "harness",
-                              "signal"
+                              "why"
                             ]
                           }
                         },

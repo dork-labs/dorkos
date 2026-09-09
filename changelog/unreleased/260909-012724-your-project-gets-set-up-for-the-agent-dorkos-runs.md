@@ -5,6 +5,7 @@ covers:
   - 'refactor(harness): the added harness is a value, not a cast (DOR-1901)'
   - 'fix(server): a workspace DorkOS is building projects itself (DOR-1901)'
   - 'fix(server): the pipeline says it projects its own workspace (DOR-1901)'
+  - 'fix(docs): the guide names the one arrival that stands down (DOR-1901)'
 ---
 
 ### Added
