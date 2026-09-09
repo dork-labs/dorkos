@@ -111,9 +111,10 @@ function decide(input: AdoptSkillInput, candidates: readonly AdoptCandidate[]): 
         name: candidate.name,
         from: candidate.source,
         to: `${ADOPT_TARGET_ROOT}/${candidate.name}`,
-        // Exactly one root gets a link back, and it is the projector's own
-        // action rather than one built here (see {@link AdoptMove.link}).
-        ...(candidate.root === CLAUDE_SKILLS_ROOT
+        // The link is planned iff Claude Code is ENABLED — never off the source
+        // root — and it is the projector's own action rather than one built here
+        // (see {@link AdoptMove.link}).
+        ...(input.enabledHarnesses.includes('claude-code')
           ? { link: planAdoptedSkillLink(candidate.name) }
           : {}),
       });

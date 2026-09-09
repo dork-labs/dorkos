@@ -57,6 +57,10 @@ function input(overrides: Partial<AdoptSkillInput> = {}): AdoptSkillInput {
     exclusions: [],
     roots: ['.claude/skills'],
     ownership: 'agent-home',
+    // The two harnesses most of these cases have nothing to say about. Claude
+    // Code is among them because it decides one thing only — whether a move
+    // leaves a link behind — and the cases that care about that say so.
+    enabledHarnesses: ['claude-code', 'codex'],
     ...overrides,
   };
 }

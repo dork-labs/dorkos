@@ -12,6 +12,7 @@
  * @module adopt/types
  */
 import { HARNESS_NATIVE_SKILL_ROOTS, type SkillRoot } from '../inventory/types.js';
+import type { HarnessId } from '../manifest/schema.js';
 import type { ProjectionAction } from '../plan/types.js';
 
 /** The canonical skills layer every adopted skill lands in. */
@@ -121,16 +122,19 @@ export interface AdoptMove {
   /** Always `.agents/skills/<name>`. */
   to: string;
   /**
-   * The symlink to leave at the old path, present for a `.claude/skills` source
-   * and for nothing else.
+   * The symlink at `.claude/skills/<name>`, present exactly when the manifest
+   * ENABLES Claude Code — whatever folder the skill came out of.
    *
-   * Every other harness-owned root belongs to a tool that already reads
-   * `.agents/skills` in its own documented project read paths, so it keeps
-   * reading the skill at its new home; a link back there would be a path DorkOS
-   * wrote that no plan action ever names — an orphan by construction, at a path
-   * no sweep owns. Claude Code's project read paths are `['.claude/skills']` and
-   * nothing else, which is the whole reason the skills half of this engine
-   * exists.
+   * The condition is about the READER, not about the source. This link is Claude
+   * Code's projection of a canonical skill: it is what `planSkill`'s claude-code
+   * branch plans for every skill in `.agents/skills`, and it happens to sit at
+   * the path a `.claude/skills` skill was taken out of. So a skill adopted out
+   * of `.opencode/skills` in a repository that also runs Claude Code needs it
+   * just as much, and a `.claude/skills` skill adopted in a repository that does
+   * NOT enable Claude Code must not get one — that would be a path DorkOS wrote
+   * that no plan action names, an orphan by construction at a path no sweep
+   * owns. Every other enabled harness reads `.agents/skills` in its own
+   * documented project read paths, so none of them needs anything left behind.
    */
   link?: ProjectionAction;
 }
@@ -263,6 +267,15 @@ export interface AdoptSkillInput {
   roots: readonly SkillRoot[];
   /** What DorkOS owns this directory as — decided by the caller, never here. */
   ownership: DirectoryOwnership;
+  /**
+   * The harnesses the manifest enables, in its own order.
+   *
+   * Read for one question — is Claude Code among them? — which is what decides
+   * whether a move leaves a link behind (see {@link AdoptMove.link}). Carried on
+   * the input rather than read here because this module never opens a file, and
+   * the manifest is the reader's to load.
+   */
+  enabledHarnesses: readonly HarnessId[];
   /**
    * The repo-relative `.gitignore` that keeps `.agents/` out of git, when one
    * does (AP-15). Absent means git would track the canonical layer.

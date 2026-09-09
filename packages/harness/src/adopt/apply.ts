@@ -152,20 +152,25 @@ function applyMove(repoRoot: string, move: AdoptMove): AdoptRefusal | undefined 
 }
 
 /**
- * Put the skill back where it was, and say what happened when that is no longer
+ * Put the skill back where it was, and say what happened when that is not
  * possible.
  *
  * The ordinary case is one rename into a path this same process vacated a moment
- * ago, which cannot fail for a reason the move did not already prove impossible.
+ * ago. It is not guaranteed to succeed and is not treated as though it were:
+ * this process does not own the filesystem, and whatever blocked the link may
+ * equally have blocked the way back — a folder that lost its write bit between
+ * the two steps, a device that filled up, another writer taking the old path.
  *
- * The exception is the reason this is a function. For a `.claude/skills` source
- * the link's target IS the path the move vacated, so the only thing that can
- * block the link is something arriving at the old path while this ran — and a
- * rename back onto it would either fail or, worse, be asked to destroy whatever
- * a person just put there. So the skill stays whole at the canonical root, which
- * is the same state a crash between the two steps leaves: drift the next sync
- * fixes, named out loud rather than hidden behind a refusal that says nothing
- * happened.
+ * So both failures are answered rather than thrown. Something ALREADY at the old
+ * path is checked for first, because for a `.claude/skills` source the link's
+ * target IS the path the move vacated, and renaming back onto it would either
+ * fail or be asked to destroy whatever a person just put there. And a rename
+ * that throws anyway is caught, because a refusal that becomes an exception out
+ * of the middle of an apply is the one shape this module exists to avoid.
+ *
+ * Either way the skill stays whole at the canonical root, which is the same
+ * state a crash between the two steps leaves: drift the next sync fixes, named
+ * out loud rather than hidden behind a refusal that says nothing happened.
  *
  * @param input - the repository root, the move, both absolute paths, why the
  *   link could not be written in the engine's own words, and whether the
@@ -182,9 +187,14 @@ function restore(input: {
 }): AdoptRefusal {
   const { repoRoot, move, absFrom, absTo, blocked, layerExisted } = input;
   if (!somethingIsAt(absFrom)) {
-    renameSync(absTo, absFrom);
-    if (!layerExisted) removeIfEmpty(join(repoRoot, ADOPT_TARGET_ROOT));
-    return { name: move.name, source: move.from, rule: 'link-blocked', reason: blocked };
+    try {
+      renameSync(absTo, absFrom);
+      if (!layerExisted) removeIfEmpty(join(repoRoot, ADOPT_TARGET_ROOT));
+      return { name: move.name, source: move.from, rule: 'link-blocked', reason: blocked };
+    } catch {
+      // The way back failed too. Nothing is lost and the sentence below says
+      // exactly where the skill is, which is more use than an exception.
+    }
   }
   return {
     name: move.name,

@@ -25,6 +25,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { rethrowUnknownOption } from './lib/parse-args-error.js';
+import { wantsDebugDetail } from './lib/debug-detail.js';
 
 import {
   ADOPT_TARGET_ROOT,
@@ -159,7 +160,14 @@ export async function runHarnessAdopt(args: HarnessAdoptArgs): Promise<{ exitCod
     }
     return { exitCode: args.check ? reportWouldHappen(plan) : carryOut(repoRoot, plan) };
   } catch (err) {
+    // The same three lines `dorkos harness sync` prints, because it is the same
+    // person in the same folder with the same unreadable file: the sentence, the
+    // folder it happened in — a person who passed `--project` is not standing
+    // there — and the way to the stack rather than the stack itself.
     console.error(`Harness adopt failed: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`  in ${repoRoot}`);
+    if (err instanceof Error && err.stack && wantsDebugDetail()) console.error(err.stack);
+    else console.error('  Re-run with LOG_LEVEL=debug to see the stack.');
     return { exitCode: 1 };
   }
 }
@@ -175,7 +183,7 @@ function reportWouldHappen(plan: AdoptPlan): number {
     console.log(
       move.link === undefined
         ? `Would move ${move.from} to ${move.to}, where every agent reads it.`
-        : `Would move ${move.from} to ${move.to}, and leave a link at ${move.from} so Claude Code still finds it.`
+        : `Would move ${move.from} to ${move.to}, and leave a link at ${move.link.target} so Claude Code still finds it.`
     );
   }
   for (const declaration of plan.declarations) {
@@ -210,16 +218,19 @@ function carryOut(repoRoot: string, plan: AdoptPlan): number {
 }
 
 /**
- * What one landed move says (S15, and S15b for a root that gets no link).
+ * What one landed move says (S15, and S15b when no link was left).
  *
- * The variant is chosen by the same condition the link itself is, so a run can
- * never promise a link it did not make.
+ * The variant is chosen by the presence of the link itself, and the path it
+ * names is the LINK's own target rather than the folder the skill came out of —
+ * a skill adopted out of `.opencode/skills` is still found by Claude Code at
+ * `.claude/skills/<name>`, and naming the old folder there would send a person
+ * to look in a directory the link is not in.
  *
  * @param move - the move that landed.
  * @returns the sentence to print.
  */
 function movedSentence(move: AdoptMove): string {
-  return move.link === undefined
+  return move.link?.target === undefined
     ? `Moved ${move.name} to ${ADOPT_TARGET_ROOT}/${move.name}, where every agent reads it.`
-    : `Moved ${move.name} to ${ADOPT_TARGET_ROOT}/${move.name}. Claude Code still finds it through a link at ${move.from}.`;
+    : `Moved ${move.name} to ${ADOPT_TARGET_ROOT}/${move.name}. Claude Code still finds it through a link at ${move.link.target}.`;
 }

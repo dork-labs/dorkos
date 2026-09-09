@@ -115,8 +115,11 @@ function skipWhitespace(text: string, from: number): number {
  * `"harnesses": ["claude-code", "cursor"]`, and each goes after the last thing
  * already inside. A multi-line container puts it on its own line, indented like
  * the line the last entry ends on (or one step in from the bracket when the
- * container is empty); a single-line one gets `, x`. Either way the entry goes
- * AFTER the last, so no trailing comma is ever introduced and none is needed.
+ * container is empty); a single-line one gets `, x` — unless the ENTRY itself is
+ * several lines, in which case it is laid out as if the container were, because
+ * a multi-line entry pushed onto one line is exactly the unreadable result this
+ * function exists to avoid. Either way the entry goes AFTER the last, so no
+ * trailing comma is ever introduced and none is needed.
  *
  * An entry that is itself several lines — a whole object, which is what a
  * `claudeOnlySkills` line is — has every line after its first indented to the
@@ -134,7 +137,11 @@ export function insertInto(
   entry: string
 ): { text: string; inserted: string } {
   const inner = text.slice(span.open + 1, span.close);
-  const multiline = inner.includes('\n');
+  // The ENTRY's own shape counts as much as the container's. A `claudeOnlySkills`
+  // entry is a whole object written over several lines, and dropping it into a
+  // one-line or empty array with `, ` in front would leave its second line
+  // hanging at column zero inside a file every other line of which is indented.
+  const multiline = inner.includes('\n') || entry.includes('\n');
 
   // Empty container: the entry goes straight after the bracket, so the closing
   // one and whatever whitespace sits in front of it are untouched.

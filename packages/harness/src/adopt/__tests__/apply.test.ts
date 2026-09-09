@@ -43,6 +43,8 @@ const stub = vi.hoisted(() => ({
   throws: false,
   plant: undefined as string | undefined,
   exdev: false,
+  failSecondRename: false,
+  renames: 0,
 }));
 
 vi.mock('node:fs', async (importOriginal) => {
@@ -51,6 +53,10 @@ vi.mock('node:fs', async (importOriginal) => {
     ...actual,
     default: actual,
     renameSync: (...args: Parameters<typeof actual.renameSync>) => {
+      stub.renames += 1;
+      if (stub.failSecondRename && stub.renames === 2) {
+        throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+      }
       if (!stub.exdev) return actual.renameSync(...args);
       const err: NodeJS.ErrnoException = new Error('EXDEV: cross-device link');
       err.code = 'EXDEV';
@@ -90,6 +96,8 @@ beforeEach(() => {
   stub.throws = false;
   stub.plant = undefined;
   stub.exdev = false;
+  stub.failSecondRename = false;
+  stub.renames = 0;
   repos = [];
 });
 
@@ -269,6 +277,31 @@ describe('AP-17 — applyAdopt moves one skill and leaves the projection behind'
     );
   });
 
+  it('AP-17: says where the skill is when even the way back fails', () => {
+    // The restore is one rename into a path this process vacated a moment ago,
+    // and it is still not guaranteed: whatever blocked the link may equally
+    // block the way back. Stubbed here by making the SECOND rename the failing
+    // one, which no filesystem produces on demand.
+    //
+    // Seeded defect: leave the rename-back unguarded and the refusal becomes an
+    // exception out of the middle of the apply — the one shape this module
+    // exists to avoid.
+    const repo = stageRepo();
+    stub.throws = true;
+    stub.failSecondRename = true;
+
+    const result = applyAdopt(repo, planFor(repo));
+
+    expect(result.moved).toEqual([]);
+    expect(result.refusals[0]?.reason).toContain(
+      `Your skill is safe at .agents/skills/${NAME}, where every agent but Claude Code reads it.`
+    );
+    // Nothing was lost: every byte is at the canonical root.
+    expect(readFileSync(join(repo, '.agents', 'skills', NAME, 'checklist.txt'), 'utf8')).toBe(
+      'one\ntwo\n'
+    );
+  });
+
   it('AP-17: leaves no link for a root whose harness already reads the canonical layer', () => {
     // An OpenCode-first repository: every tool it enables reads `.agents/skills`
     // itself, so a link back into `.opencode/skills` would be a path DorkOS
@@ -291,23 +324,50 @@ describe('AP-17 — applyAdopt moves one skill and leaves the projection behind'
     });
   });
 
-  it('AP-17: leaves planned drift, never an orphan, when Claude Code is on too', () => {
-    // The honest edge of "the link is only for a `.claude/skills` source": in a
-    // repository that ALSO enables Claude Code, the skill's new home earns the
-    // ordinary claude-code symlink like every other authored skill, and adopt
-    // did not write it. What is left is therefore exactly one action of the
-    // projector's own plan — drift the next `--fix` closes, not an orphan and
-    // not damage.
+  it('AP-17: links a skill adopted out of ANOTHER tool’s folder, when Claude Code is on', () => {
+    // The link is planned iff `claude-code` is ENABLED, whatever folder the
+    // skill came from: the link is Claude Code's projection of a canonical
+    // skill, not a link back to the folder the skill was taken out of.
+    //
+    // Seeded defect: key the link off the source root instead. The skill then
+    // lands in `.agents/skills` with the claude-code symlink the projector
+    // plans still missing, and the very next `--check` reports drift.
     const repo = stageRepo('.opencode/skills', ['claude-code', 'codex', 'opencode']);
 
-    applyAdopt(repo, planFor(repo));
+    const plan = planFor(repo);
+    expect(plan.moves[0]?.link).toEqual(planAdoptedSkillLink(NAME));
+    applyAdopt(repo, plan);
 
+    expect(readlinkSync(join(repo, '.claude', 'skills', NAME))).toBe(
+      `../../.agents/skills/${NAME}`
+    );
     const drift = checkPlan(repo, project(repo));
-    expect({
-      clean: drift.clean,
-      orphans: drift.orphans.length,
-      drifted: drift.drifted,
-    }).toEqual({ clean: false, orphans: 0, drifted: [planAdoptedSkillLink(NAME)] });
+    expect({ clean: drift.clean, orphans: drift.orphans.length }).toEqual({
+      clean: true,
+      orphans: 0,
+    });
+  });
+
+  it('AP-17: leaves NO link for a .claude/skills skill when Claude Code is off', () => {
+    // The mirror image, and the reason the condition moved: a repository that
+    // does not enable Claude Code has no claude-code projection at all, so a
+    // link left at `.claude/skills/x` would be a path DorkOS wrote that no plan
+    // action names — an orphan by construction, at a path no sweep owns.
+    //
+    // Seeded defect: key the link off the source root, and this tree grows a
+    // `.claude/skills` link for a tool nobody enabled.
+    const repo = stageRepo('.claude/skills', ['codex', 'opencode']);
+
+    const plan = planFor(repo);
+    expect(plan.moves.map((move) => move.link)).toEqual([undefined]);
+    applyAdopt(repo, plan);
+
+    expect(hashTree(join(repo, '.claude'))).toEqual(['skills/']);
+    const drift = checkPlan(repo, project(repo));
+    expect({ clean: drift.clean, orphans: drift.orphans.length }).toEqual({
+      clean: true,
+      orphans: 0,
+    });
   });
 
   it('AP-17: refuses a move across filesystems rather than copying half a skill', () => {

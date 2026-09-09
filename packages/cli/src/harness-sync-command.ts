@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { LOG_LEVEL_MAP } from '@dorkos/shared/config-schema';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { rethrowUnknownOption } from './lib/parse-args-error.js';
+import { wantsDebugDetail } from './lib/debug-detail.js';
 import {
   formatWithheldBlock,
   readDorkosHarness,
@@ -112,20 +112,6 @@ export interface HarnessSyncArgs {
    * people are most particular about.
    */
   writeGitignore: boolean;
-}
-
-/**
- * Whether this invocation asked for debug-level detail, by either spelling: the
- * `LOG_LEVEL` name a person exports, or the numeric `DORKOS_LOG_LEVEL` a parent
- * process (`cli.ts`, the server) has already resolved.
- */
-function wantsDebugDetail(): boolean {
-  /* eslint-disable no-restricted-syntax -- the harness branch in cli.ts runs before the log level is resolved and exported, so we mirror its `LOG_LEVEL || DORKOS_LOG_LEVEL` reading here */
-  const named = LOG_LEVEL_MAP[process.env.LOG_LEVEL ?? ''];
-  const numeric = Number(process.env.DORKOS_LOG_LEVEL);
-  /* eslint-enable no-restricted-syntax */
-  const level = named ?? (Number.isFinite(numeric) ? numeric : undefined);
-  return level !== undefined && level >= LOG_LEVEL_MAP.debug;
 }
 
 /**
@@ -242,7 +228,10 @@ function formatAdoptable(repoRoot: string, manifest: HarnessManifest): string[] 
   }
 
   const lines: string[] = [];
-  for (const [root, names] of byRoot) {
+  // By folder name, so the block reads the same way twice on one tree: the map's
+  // own order is the inventory's walk order, which is a fact about a filesystem
+  // rather than about this report.
+  for (const [root, names] of [...byRoot].sort(([a], [b]) => (a < b ? -1 : 1))) {
     const sorted = [...names].sort();
     const headline = adoptableSentence({
       root,
