@@ -28,6 +28,7 @@ import {
 import { detectOllama } from '../providers/ollama.js';
 import { TurnEventQueue } from '../events/global-event-hub.js';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
+import { createRuntimeTurnRenewalConformanceFixture } from '../../connectors/__tests__/turn-renewal-conformance-fixture.js';
 import {
   DIRECTORY,
   OTHER_DIRECTORY,
@@ -2258,8 +2259,10 @@ describe('OpenCodeRuntime', () => {
             bindingId: `binding-${sequence}`,
             bearer: `secret-${sequence}`,
             expiresAt: '2099-01-01T00:00:00.000Z',
+            renewalPermit: {} as never,
           };
         }),
+        renew: vi.fn(),
         resolve: vi.fn(),
         revoke: vi.fn(async () => undefined),
       };
@@ -2267,7 +2270,8 @@ describe('OpenCodeRuntime', () => {
 
     function enableConnectorTools(
       harness: ReturnType<typeof makeRuntime>,
-      principals = connectorPort()
+      principals = connectorPort(),
+      createLeaseSupervisor?: ConnectorRuntimeTools['createLeaseSupervisor']
     ): ConnectorRuntimePrincipalPort {
       harness.runtime.setMeshCore({
         getByPath: (cwd: string) =>
@@ -2284,13 +2288,29 @@ describe('OpenCodeRuntime', () => {
             'connectors.execute_write',
             'connectors.execute_destructive',
           ]).has(id),
+        ...(createLeaseSupervisor && { createLeaseSupervisor }),
       });
       return principals;
     }
 
     it('uses the sidecar canonical directory and revokes on terminal completion', async () => {
       const harness = makeRuntime();
-      const principals = enableConnectorTools(harness);
+      const principals = connectorPort();
+      const stop = vi.fn();
+      vi.mocked(principals.openTurn).mockImplementationOnce(async (_input, ownership) => {
+        expect(ownership.isCurrent()).toBe(true);
+        return {
+          bindingId: 'binding-1',
+          bearer: 'secret-1',
+          expiresAt: '2099-01-01T00:00:00.000Z',
+          renewalPermit: {} as never,
+        };
+      });
+      enableConnectorTools(
+        harness,
+        principals,
+        vi.fn(() => ({ state: 'active', stop, assertUsable: vi.fn() }))
+      );
       const sessionId = nextSessionId();
       const { finished } = consume(
         harness.runtime.sendMessage(sessionId, 'hello', { cwd: DIRECTORY })
@@ -2315,24 +2335,34 @@ describe('OpenCodeRuntime', () => {
           },
         },
       });
-      expect(principals.openTurn).toHaveBeenCalledWith({
-        runtime: 'opencode',
-        canonicalSessionId: sessionId,
-        agentPath: DIRECTORY,
-        canonicalCwd: DIRECTORY,
-        signal: expect.any(AbortSignal),
-      });
+      expect(principals.openTurn).toHaveBeenCalledWith(
+        {
+          runtime: 'opencode',
+          canonicalSessionId: sessionId,
+          agentPath: DIRECTORY,
+          canonicalCwd: DIRECTORY,
+          signal: expect.any(AbortSignal),
+        },
+        { isCurrent: expect.any(Function) }
+      );
 
       for (const event of opencodeSimpleTurn(OC_SESSION_A, 'done')) {
         connection.push(globalEvent(DIRECTORY, event));
       }
       await finished;
       expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_terminal');
+      expect(stop).toHaveBeenCalledBefore(vi.mocked(principals.revoke));
+      expect(vi.mocked(principals.openTurn).mock.calls[0]?.[1].isCurrent()).toBe(false);
     });
 
     it('finishes revocation before granting the same-directory lease to the next turn', async () => {
       const harness = makeRuntime();
-      const principals = enableConnectorTools(harness);
+      const createLeaseSupervisor = vi.fn(() => ({
+        state: 'active' as const,
+        stop: vi.fn(),
+        assertUsable: vi.fn(),
+      }));
+      const principals = enableConnectorTools(harness, connectorPort(), createLeaseSupervisor);
       let finishRevocation: (() => void) | undefined;
       vi.mocked(principals.revoke).mockImplementationOnce(
         () =>
@@ -2365,6 +2395,10 @@ describe('OpenCodeRuntime', () => {
         secondConnection.push(globalEvent(DIRECTORY, event));
       }
       await second.finished;
+      expect(createLeaseSupervisor).toHaveBeenCalledTimes(2);
+      expect(createLeaseSupervisor.mock.calls[0]?.[0].permit).not.toBe(
+        createLeaseSupervisor.mock.calls[1]?.[0].permit
+      );
     });
 
     it('keeps a same-directory turn visible and cancellable while it waits for the lease', async () => {
@@ -2597,7 +2631,8 @@ describe('OpenCodeRuntime', () => {
 
     it('revokes setup when connector registration fails but still runs the ordinary turn', async () => {
       const harness = makeRuntime();
-      const principals = enableConnectorTools(harness);
+      const createLeaseSupervisor = vi.fn();
+      const principals = enableConnectorTools(harness, connectorPort(), createLeaseSupervisor);
       harness.client.mcp.add.mockRejectedValueOnce(new Error('connector add failed'));
       const sessionId = nextSessionId();
       const { finished } = consume(
@@ -2611,6 +2646,7 @@ describe('OpenCodeRuntime', () => {
       await finished;
       expect(principals.revoke).toHaveBeenCalledTimes(1);
       expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'setup_failed');
+      expect(createLeaseSupervisor).not.toHaveBeenCalled();
     });
 
     it('revokes setup when connector registration returns a failed status', async () => {
@@ -2648,6 +2684,42 @@ describe('OpenCodeRuntime', () => {
       connection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
       await finished;
       expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'runtime_failed');
+    });
+
+    it('keeps the real turn principal renewable for 72 hours and closes it at terminal', async () => {
+      const fixture = await createRuntimeTurnRenewalConformanceFixture('opencode');
+      const harness = makeRuntime();
+      enableConnectorTools(harness, fixture.principals, fixture.createLeaseSupervisor);
+      const sessionId = nextSessionId();
+      const turn = consume(harness.runtime.sendMessage(sessionId, 'hello', { cwd: DIRECTORY }));
+      let connection: FakeConnection | undefined;
+
+      try {
+        try {
+          connection = await openTurn(harness);
+          const connectorAdd = harness.client.mcp.add.mock.calls.find(
+            (call) => call[0]?.body?.name === 'dorkos_connections'
+          )?.[0];
+          expect(connectorAdd?.body?.config).toMatchObject({
+            headers: { Authorization: 'Bearer bearer-opencode' },
+          });
+          await fixture.advanceHours(72);
+          expect(harness.client.mcp.add).toHaveBeenCalledTimes(1);
+          expect(connectorAdd?.body?.config).toMatchObject({
+            headers: { Authorization: 'Bearer bearer-opencode' },
+          });
+        } finally {
+          if (connection) {
+            for (const event of opencodeSimpleTurn(OC_SESSION_A, 'done')) {
+              connection.push(globalEvent(DIRECTORY, event));
+            }
+          }
+          await turn.finished.catch(() => undefined);
+        }
+        await fixture.expectTerminalDenial();
+      } finally {
+        fixture.close();
+      }
     });
   });
 });

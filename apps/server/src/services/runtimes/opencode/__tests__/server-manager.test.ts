@@ -129,6 +129,9 @@ async function bootReady(
 
 describe('OpenCodeServerManager', () => {
   beforeEach(() => {
+    vi.stubEnv('MCP_API_KEY', 'synthetic-server-token');
+    vi.stubEnv('NANGO_ENCRYPTION_KEY', 'synthetic-nango-key');
+    vi.stubEnv('DO_NOT_TRACK', '1');
     vi.clearAllMocks();
     vi.useFakeTimers();
     children = [];
@@ -146,6 +149,15 @@ describe('OpenCodeServerManager', () => {
   });
 
   afterEach(() => {
+    try {
+      for (let index = 0; index < vi.mocked(spawn).mock.calls.length; index++) {
+        expect(spawnEnv(index)).not.toHaveProperty('MCP_API_KEY');
+        expect(spawnEnv(index)).not.toHaveProperty('NANGO_ENCRYPTION_KEY');
+        expect(spawnEnv(index).DO_NOT_TRACK).toBe('1');
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
     vi.useRealTimers();
   });
 

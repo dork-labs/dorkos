@@ -8,6 +8,8 @@
  *
  * @module services/runtimes/claude-code/runtime-cache
  */
+import { claudeConfigDirEnv, resolveActiveClaudeRoot } from '../claude-config-dir.js';
+import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import path from 'path';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { query, type Query, type ModelInfo } from '@anthropic-ai/claude-agent-sdk';
@@ -301,6 +303,11 @@ export class RuntimeCache {
           prompt: neverYield,
           options: {
             cwd,
+            env: runtimeEnvironment(
+              'claude-code',
+              'warmup',
+              claudeConfigDirEnv(resolveActiveClaudeRoot())
+            ),
             ...(this.claudeCliPath ? { pathToClaudeCodeExecutable: this.claudeCliPath } : {}),
           },
         });

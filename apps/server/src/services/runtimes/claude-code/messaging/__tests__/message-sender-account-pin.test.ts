@@ -152,16 +152,16 @@ describe('executeSdkQuery — Claude account pin', () => {
     // unsuffixed macOS Keychain name exactly when CLAUDE_CONFIG_DIR is UNSET, so
     // writing the default path where nothing was set would point the CLI at a
     // Keychain entry that does not exist and break sign-in.
-    delete process.env.CLAUDE_CONFIG_DIR;
     const defaultRoot = path.join(os.homedir(), '.claude');
 
     const options = await runTurn(makeSession({ accountRoot: defaultRoot }));
 
     const env = options.env as Record<string, string | undefined>;
     expect(env.CLAUDE_CONFIG_DIR).toBeUndefined();
-    // Present-as-undefined, not merely inherited: Node drops undefined values
-    // when it builds the child env, so this also ERASES an inherited value.
-    expect('CLAUDE_CONFIG_DIR' in env).toBe(true);
+    // The projected environment omits the server's active-account value. The
+    // SDK receives this complete object, so omission names the default account
+    // without falling back to the ambient ACTIVE value set in beforeEach.
+    expect(env).not.toHaveProperty('CLAUDE_CONFIG_DIR');
   });
 
   it('keeps the original account when a resume failure restarts as a new session (C2)', async () => {

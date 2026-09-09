@@ -2,10 +2,14 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { and, connectorRuntimeBindings, eq, isNull, type Db } from '@dorkos/db';
 import type {
+  ConnectorTurnOwnership,
+  ConnectorTurnRenewalPermit,
   ConnectorRuntimeBindingBootPort,
   ConnectorRuntimePrincipalPort,
   OpenConnectorTurnInput,
   OpenConnectorTurnResult,
+  RenewConnectorTurnInput,
+  RenewConnectorTurnResult,
   ResolveConnectorTurnInput,
   ResolveConnectorTurnResult,
   RevokeConnectorTurnReason,
@@ -104,6 +108,11 @@ export class ConnectorRuntimePrincipalService
   private readonly makeBearer: () => string;
   /** Process-local deny fence installed before a durable revoke can fail. */
   private readonly revokedBindingIds = new Set<string>();
+  /** Exact permit and adapter-owned liveness predicate for each open turn. */
+  private readonly renewalOwners = new Map<
+    string,
+    { readonly permit: ConnectorTurnRenewalPermit; readonly ownership: ConnectorTurnOwnership }
+  >();
   private bootEpoch?: string;
 
   /**
@@ -130,12 +139,16 @@ export class ConnectorRuntimePrincipalService
       .where(isNull(connectorRuntimeBindings.revokedAt))
       .run();
     this.revokedBindingIds.clear();
+    this.renewalOwners.clear();
     this.bootEpoch = bootEpoch;
     return Promise.resolve({ bootEpoch });
   }
 
   /** Open one bearer after resolving live canonical runtime authority. */
-  async openTurn(input: OpenConnectorTurnInput): Promise<OpenConnectorTurnResult> {
+  async openTurn(
+    input: OpenConnectorTurnInput,
+    ownership: ConnectorTurnOwnership
+  ): Promise<OpenConnectorTurnResult> {
     input.signal.throwIfAborted();
     const bootEpoch = this.requireBootEpoch();
     let resolved: ConnectorRuntimeAuthority;
@@ -149,6 +162,12 @@ export class ConnectorRuntimePrincipalService
       );
     }
     input.signal.throwIfAborted();
+    if (!ownership.isCurrent()) {
+      throw new ConnectorRuntimeAuthorityError(
+        'authority_refused',
+        'Canonical runtime authority could not be verified.'
+      );
+    }
 
     const bindingId = randomUUID();
     const bearer = this.makeBearer();
@@ -170,7 +189,88 @@ export class ConnectorRuntimePrincipalService
         expiresAt: expiresAt.toISOString(),
       })
       .run();
-    return { bindingId, bearer, expiresAt: expiresAt.toISOString() };
+    const renewalPermit = Object.freeze({}) as ConnectorTurnRenewalPermit;
+    this.renewalOwners.set(bindingId, { permit: renewalPermit, ownership });
+    return { bindingId, bearer, expiresAt: expiresAt.toISOString(), renewalPermit };
+  }
+
+  /** Renew only while the exact process-owned turn and durable claims remain current. */
+  async renew(input: RenewConnectorTurnInput): Promise<RenewConnectorTurnResult> {
+    const owner = this.renewalOwners.get(input.bindingId);
+    if (!owner || owner.permit !== input.permit) {
+      return { status: 'refused', reason: 'invalid' };
+    }
+    if (!owner.ownership.isCurrent()) {
+      this.denyForInactiveOwner(input.bindingId);
+      return { status: 'refused', reason: 'inactive_owner' };
+    }
+
+    const initial = this.bindingRow(input.bindingId);
+    if (!initial) return { status: 'refused', reason: 'invalid' };
+    const initialRefusal = this.bindingRefusal(initial);
+    if (initialRefusal) return { status: 'refused', reason: initialRefusal };
+    const claims = this.rowClaims(initial);
+    if (!(await this.authority.revalidateTurn(claims))) {
+      this.denyForAuthorityChange(initial.id);
+      return { status: 'refused', reason: 'authority_changed' };
+    }
+
+    // Everything from this fresh read through the SQLite CAS is synchronous.
+    // No callback can replace the active turn or cross expiry between the final
+    // process and durable fences and the update.
+    const current = this.bindingRow(input.bindingId);
+    if (!current) return { status: 'refused', reason: 'invalid' };
+    const currentRefusal = this.bindingRefusal(current);
+    if (currentRefusal) return { status: 'refused', reason: currentRefusal };
+    if (!this.sameBinding(initial, current)) {
+      return { status: 'refused', reason: 'authority_changed' };
+    }
+    const currentOwner = this.renewalOwners.get(input.bindingId);
+    if (
+      !currentOwner ||
+      currentOwner.permit !== input.permit ||
+      this.revokedBindingIds.has(input.bindingId)
+    ) {
+      return { status: 'refused', reason: 'revoked' };
+    }
+    if (!currentOwner.ownership.isCurrent()) {
+      this.denyForInactiveOwner(input.bindingId);
+      return { status: 'refused', reason: 'inactive_owner' };
+    }
+
+    const renewedAt = this.now().getTime();
+    if (Date.parse(current.expiresAt) <= renewedAt) {
+      return { status: 'refused', reason: 'expired' };
+    }
+    const expiresAt = new Date(
+      Math.max(Date.parse(current.expiresAt), renewedAt + this.bindingTtlMs)
+    ).toISOString();
+    const changed = this.db
+      .update(connectorRuntimeBindings)
+      .set({ expiresAt })
+      .where(
+        and(
+          eq(connectorRuntimeBindings.id, current.id),
+          eq(connectorRuntimeBindings.expiresAt, current.expiresAt),
+          eq(connectorRuntimeBindings.bootEpoch, current.bootEpoch),
+          isNull(connectorRuntimeBindings.revokedAt)
+        )
+      )
+      .run().changes;
+    if (changed === 1) return { status: 'renewed', expiresAt };
+
+    const committed = this.bindingRow(input.bindingId);
+    const committedOwner = this.renewalOwners.get(input.bindingId);
+    if (
+      committed &&
+      !this.bindingRefusal(committed) &&
+      this.sameBinding(current, committed) &&
+      committedOwner?.permit === input.permit &&
+      committedOwner.ownership.isCurrent()
+    ) {
+      return { status: 'renewed', expiresAt: committed.expiresAt };
+    }
+    return { status: 'refused', reason: 'revoked' };
   }
 
   /** Resolve a bearer against current process, context, expiry, and live authority. */
@@ -189,6 +289,9 @@ export class ConnectorRuntimePrincipalService
     if ((row.canonicalCwd ?? undefined) !== input.expectedCanonicalCwd) {
       return { status: 'refused', reason: 'wrong_cwd' };
     }
+    if (!this.hasCurrentOwner(row.id)) {
+      return { status: 'refused', reason: 'revoked' };
+    }
 
     const claims = {
       kind: 'runtime',
@@ -201,14 +304,7 @@ export class ConnectorRuntimePrincipalService
       ...(row.canonicalCwd && { canonicalCwd: row.canonicalCwd }),
     } as const;
     if (!(await this.authority.revalidateTurn(claims))) {
-      this.revokedBindingIds.add(row.id);
-      this.db
-        .update(connectorRuntimeBindings)
-        .set({ revokedAt: this.now().toISOString(), revokeReason: 'authority_changed' })
-        .where(
-          and(eq(connectorRuntimeBindings.id, row.id), isNull(connectorRuntimeBindings.revokedAt))
-        )
-        .run();
+      this.denyForAuthorityChange(row.id);
       return { status: 'refused', reason: 'authority_changed' };
     }
     const current = this.bindingRow(row.id);
@@ -217,6 +313,9 @@ export class ConnectorRuntimePrincipalService
     if (currentRefusal) return { status: 'refused', reason: currentRefusal };
     if (!this.sameBinding(row, current)) {
       return { status: 'refused', reason: 'authority_changed' };
+    }
+    if (!this.hasCurrentOwner(row.id)) {
+      return { status: 'refused', reason: 'revoked' };
     }
     return { status: 'resolved', principal: createServerPrincipal(claims) };
   }
@@ -247,25 +346,23 @@ export class ConnectorRuntimePrincipalService
     ) {
       return false;
     }
+    if (!this.hasCurrentOwner(claims.bindingId)) return false;
     if (await this.authority.revalidateTurn(claims)) {
       const current = this.bindingRow(claims.bindingId);
       return Boolean(
-        current && !this.bindingRefusal(current) && this.bindingMatchesPrincipal(current, claims)
+        current &&
+        !this.bindingRefusal(current) &&
+        this.bindingMatchesPrincipal(current, claims) &&
+        this.hasCurrentOwner(claims.bindingId)
       );
     }
-    this.revokedBindingIds.add(row.id);
-    this.db
-      .update(connectorRuntimeBindings)
-      .set({ revokedAt: this.now().toISOString(), revokeReason: 'authority_changed' })
-      .where(
-        and(eq(connectorRuntimeBindings.id, row.id), isNull(connectorRuntimeBindings.revokedAt))
-      )
-      .run();
+    this.denyForAuthorityChange(row.id);
     return false;
   }
 
   /** Revoke one binding on a terminal, cancelled, setup-failed, or runtime-failed path. */
   async revoke(bindingId: string, reason: RevokeConnectorTurnReason): Promise<void> {
+    this.renewalOwners.delete(bindingId);
     this.revokedBindingIds.add(bindingId);
     this.db
       .update(connectorRuntimeBindings)
@@ -282,6 +379,50 @@ export class ConnectorRuntimePrincipalService
       .from(connectorRuntimeBindings)
       .where(eq(connectorRuntimeBindings.id, bindingId))
       .get();
+  }
+
+  private rowClaims(row: RuntimeBindingRow): Extract<ServerPrincipalClaims, { kind: 'runtime' }> {
+    return {
+      kind: 'runtime',
+      owner: rowOwner(row),
+      bindingId: row.id,
+      runtime: row.runtime,
+      canonicalSessionId: row.canonicalSessionId,
+      agentId: row.agentId,
+      agentPath: row.agentPath,
+      ...(row.canonicalCwd && { canonicalCwd: row.canonicalCwd }),
+    };
+  }
+
+  private denyForAuthorityChange(bindingId: string): void {
+    this.renewalOwners.delete(bindingId);
+    this.revokedBindingIds.add(bindingId);
+    this.db
+      .update(connectorRuntimeBindings)
+      .set({ revokedAt: this.now().toISOString(), revokeReason: 'authority_changed' })
+      .where(
+        and(eq(connectorRuntimeBindings.id, bindingId), isNull(connectorRuntimeBindings.revokedAt))
+      )
+      .run();
+  }
+
+  private denyForInactiveOwner(bindingId: string): void {
+    this.renewalOwners.delete(bindingId);
+    this.revokedBindingIds.add(bindingId);
+    this.db
+      .update(connectorRuntimeBindings)
+      .set({ revokedAt: this.now().toISOString(), revokeReason: 'turn_cancelled' })
+      .where(
+        and(eq(connectorRuntimeBindings.id, bindingId), isNull(connectorRuntimeBindings.revokedAt))
+      )
+      .run();
+  }
+
+  private hasCurrentOwner(bindingId: string): boolean {
+    const owner = this.renewalOwners.get(bindingId);
+    if (owner?.ownership.isCurrent()) return true;
+    this.denyForInactiveOwner(bindingId);
+    return false;
   }
 
   private bindingRefusal(row: RuntimeBindingRow): 'revoked' | 'stale_boot' | 'expired' | undefined {

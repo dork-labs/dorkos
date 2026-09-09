@@ -13,6 +13,7 @@
  *
  * @module services/runtimes/codex/codex-options
  */
+import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
 import type { CodexOptions } from '@openai/codex-sdk';
 import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 import { DORKOS_MCP_SERVER_NAME } from '../shared/dorkos-tool-names.js';
@@ -40,15 +41,14 @@ import { type CodexManagedMcpServers, type CodexMcpServerRecord } from './mcp-se
  * and the shadowing guarantee.
  * `config` is omitted entirely when no source contributes a server.
  *
- * `CodexOptions.env` has four sources, and every one of them is a secret that
- * must not travel any other way: `extraEnv` (the agent's `DORKOS_AGENT_TOKEN`),
+ * `CodexOptions.env` starts with the projected OS/runtime environment. Four
+ * additional credential sources must travel only through environment values: `extraEnv` (the agent's `DORKOS_AGENT_TOKEN`),
  * the `dorkos` server's two header values, and every HTTP header the agent's own
  * managed servers carry (DOR-993), plus the connector server's turn bearer and
  * context headers — all placed under the variable names their `env_http_headers`
- * entries point Codex at. Setting `env` at all stops the SDK inheriting
- * `process.env` wholesale, so this function spreads the parent environment back
- * in explicitly (see {@link inheritedEnv}) before layering those on top. With
- * no source at all, `env` stays unset — the SDK's own inherit-everything path.
+ * entries point Codex at. Every launch receives a complete projected environment, including launches
+ * with no MCP servers or extra variables. The SDK never falls back to ambient
+ * inheritance. Header values are added only by their exact internal converters.
  *
  * @param binaryPath - Absolute path to the `codex` binary, or null/undefined
  * @param mcpUiUrl - Loopback URL of the scoped `dorkos_ui` MCP server, or undefined
@@ -71,18 +71,31 @@ export function buildCodexOptions(
   dorkosTools?: DorkosMcpInjection | null,
   connectorTools?: ConnectorRuntimeMcpInjection | null
 ): CodexOptions {
+  // Header converters mint names and values together. Validate the dynamic map
+  // against those exact config references before adding it to the projected env.
+  const headerNames = new Set(
+    Object.values(managed?.servers ?? {}).flatMap((server) =>
+      Object.values(
+        (server as { env_http_headers?: Record<string, string> }).env_http_headers ?? {}
+      )
+    )
+  );
+  for (const name of Object.keys(managed?.env ?? {})) {
+    if (!name.startsWith('DORKOS_MCP_HDR_') || !headerNames.has(name)) {
+      throw new Error('Invalid managed MCP header environment.');
+    }
+  }
   const env = {
-    ...(extraEnv ?? {}),
+    ...runtimeEnvironment('codex', 'turn', extraEnv),
     ...(managed?.env ?? {}),
     ...dorkosHeaderEnv(dorkosTools),
     ...connectorHeaderEnv(connectorTools),
   };
-  const hasExtraEnv = Object.keys(env).length > 0;
   const mcpServers = buildMcpServersConfig(mcpUiUrl, managed?.servers, dorkosTools, connectorTools);
   return {
     ...(binaryPath ? { codexPathOverride: binaryPath } : {}),
     ...(mcpServers ? { config: { mcp_servers: mcpServers } } : {}),
-    ...(hasExtraEnv ? { env: { ...inheritedEnv(), ...env } } : {}),
+    env,
   };
 }
 
@@ -138,20 +151,4 @@ function buildMcpServersConfig(
     };
   }
   return Object.keys(servers).length > 0 ? servers : undefined;
-}
-
-/**
- * The parent environment as a `Record<string, string>`, dropping unset keys.
- *
- * Reproduces exactly what the Codex SDK does when `CodexOptions.env` is absent,
- * so passing this plus one extra key is equivalent to inheritance plus that key,
- * never a narrowed environment that loses PATH, HOME, or CODEX_HOME.
- */
-function inheritedEnv(): Record<string, string> {
-  const result: Record<string, string> = {};
-  // eslint-disable-next-line no-restricted-syntax -- full env needed for the codex subprocess to inherit PATH/HOME/CODEX_HOME
-  for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined) result[key] = value;
-  }
-  return result;
 }

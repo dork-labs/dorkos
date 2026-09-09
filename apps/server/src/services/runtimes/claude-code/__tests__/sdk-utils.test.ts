@@ -18,9 +18,13 @@ vi.mock('node:module', () => ({
   createRequire: () => ({ resolve: (s: string) => h.resolve(s) }),
 }));
 
-vi.mock('node:fs', () => ({
-  existsSync: (path: string) => (typeof h.exists === 'function' ? h.exists(path) : h.exists),
-}));
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    existsSync: (path: string) => (typeof h.exists === 'function' ? h.exists(path) : h.exists),
+  };
+});
 
 /** Env var the packaged desktop app sets to an explicit `claude` binary path. */
 const CLI_PATH_ENV = 'DORKOS_CLAUDE_CLI_PATH';

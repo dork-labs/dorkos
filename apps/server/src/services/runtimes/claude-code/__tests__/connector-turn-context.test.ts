@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ServerPrincipalProof } from '../../../connectors/principal/server-principal.js';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
+import { createRuntimeTurnRenewalConformanceFixture } from '../../connectors/__tests__/turn-renewal-conformance-fixture.js';
 import { ClaudeConnectorTurnContext } from '../connector-turn-context.js';
 
 const principal = {
@@ -36,7 +37,9 @@ function port(): ConnectorRuntimePrincipalPort {
       bindingId: 'binding-1',
       bearer: 'secret-1',
       expiresAt: '2099-01-01T00:00:00.000Z',
+      renewalPermit: {} as never,
     }),
+    renew: vi.fn(),
     resolve: vi.fn().mockResolvedValue({ status: 'resolved', principal }),
     revoke: vi.fn().mockResolvedValue(undefined),
   };
@@ -59,13 +62,16 @@ describe('ClaudeConnectorTurnContext', () => {
     await expect(context.resolvePrincipal()).resolves.toBe(principal);
 
     expect(principals.openTurn).toHaveBeenCalledTimes(1);
-    expect(principals.openTurn).toHaveBeenCalledWith({
-      runtime: 'claude-code',
-      canonicalSessionId: 'canonical-session',
-      agentPath: '/repo',
-      canonicalCwd: '/repo',
-      signal: expect.any(AbortSignal),
-    });
+    expect(principals.openTurn).toHaveBeenCalledWith(
+      {
+        runtime: 'claude-code',
+        canonicalSessionId: 'canonical-session',
+        agentPath: '/repo',
+        canonicalCwd: '/repo',
+        signal: expect.any(AbortSignal),
+      },
+      { isCurrent: expect.any(Function) }
+    );
     expect(principals.resolve).toHaveBeenCalledWith({
       bearer: 'secret-1',
       expectedRuntime: 'claude-code',
@@ -107,7 +113,13 @@ describe('ClaudeConnectorTurnContext', () => {
   it('revokes cancellation that races binding creation', async () => {
     const principals = port();
     let finishOpen:
-      ((value: { bindingId: string; bearer: string; expiresAt: string }) => void) | undefined;
+      | ((value: {
+          bindingId: string;
+          bearer: string;
+          expiresAt: string;
+          renewalPermit: never;
+        }) => void)
+      | undefined;
     vi.mocked(principals.openTurn).mockImplementation(
       () =>
         new Promise((resolve) => {
@@ -127,6 +139,7 @@ describe('ClaudeConnectorTurnContext', () => {
       bindingId: 'binding-1',
       bearer: 'secret-1',
       expiresAt: '2099-01-01T00:00:00.000Z',
+      renewalPermit: {} as never,
     });
 
     await expect(resolving).rejects.toBeDefined();
@@ -137,25 +150,35 @@ describe('ClaudeConnectorTurnContext', () => {
 
   it('gives consecutive persistent-process turns distinct bindings', async () => {
     const principals = port();
+    const firstPermit = {} as never;
+    const secondPermit = {} as never;
+    const createLeaseSupervisor = vi.fn(() => ({
+      state: 'active' as const,
+      stop: vi.fn(),
+      assertUsable: vi.fn(),
+    }));
     vi.mocked(principals.openTurn)
       .mockResolvedValueOnce({
         bindingId: 'binding-1',
         bearer: 'secret-1',
         expiresAt: '2099-01-01T00:00:00.000Z',
+        renewalPermit: firstPermit,
       })
       .mockResolvedValueOnce({
         bindingId: 'binding-2',
         bearer: 'secret-2',
         expiresAt: '2099-01-01T00:00:00.000Z',
+        renewalPermit: secondPermit,
       });
+    const tools = { ...tooling(principals), createLeaseSupervisor };
     const first = new ClaudeConnectorTurnContext({
-      tools: tooling(principals),
+      tools,
       canonicalSessionId: () => 'session-1',
       agentPath: '/repo',
       cwd: '/repo',
     });
     const second = new ClaudeConnectorTurnContext({
-      tools: tooling(principals),
+      tools,
       canonicalSessionId: () => 'session-1',
       agentPath: '/repo',
       cwd: '/repo',
@@ -168,5 +191,90 @@ describe('ClaudeConnectorTurnContext', () => {
 
     expect(principals.revoke).toHaveBeenNthCalledWith(1, 'binding-1', 'turn_terminal');
     expect(principals.revoke).toHaveBeenNthCalledWith(2, 'binding-2', 'turn_terminal');
+    expect(createLeaseSupervisor).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ bindingId: 'binding-1', permit: firstPermit })
+    );
+    expect(createLeaseSupervisor).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ bindingId: 'binding-2', permit: secondPermit })
+    );
+  });
+
+  it('registers exact turn ownership and stops supervision before revoke', async () => {
+    const principals = port();
+    const stop = vi.fn();
+    const createLeaseSupervisor = vi.fn(() => ({
+      state: 'active' as const,
+      stop,
+      assertUsable: vi.fn(),
+    }));
+    const context = new ClaudeConnectorTurnContext({
+      tools: { ...tooling(principals), createLeaseSupervisor },
+      canonicalSessionId: () => 'canonical-session',
+      agentPath: '/repo',
+      cwd: '/repo',
+    });
+
+    await context.resolvePrincipal();
+    const ownership = vi.mocked(principals.openTurn).mock.calls[0]?.[1];
+    expect(ownership?.isCurrent()).toBe(true);
+    expect(createLeaseSupervisor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bindingId: 'binding-1',
+        runtime: 'claude-code',
+        permit: expect.any(Object),
+      })
+    );
+
+    await context.revoke('turn_terminal');
+    expect(ownership?.isCurrent()).toBe(false);
+    expect(stop).toHaveBeenCalledBefore(vi.mocked(principals.revoke));
+  });
+
+  it('surfaces one terminal lease loss on the next in-process Connections call', async () => {
+    const principals = port();
+    let leaseLost = false;
+    const assertUsable = vi.fn(() => {
+      if (leaseLost) throw new Error('Connections access expired. Start a new turn to continue.');
+    });
+    const context = new ClaudeConnectorTurnContext({
+      tools: {
+        ...tooling(principals),
+        createLeaseSupervisor: () => ({ state: 'active', stop: vi.fn(), assertUsable }),
+      },
+      canonicalSessionId: () => 'canonical-session',
+      agentPath: '/repo',
+      cwd: '/repo',
+    });
+    await context.resolvePrincipal();
+
+    leaseLost = true;
+    await expect(context.resolvePrincipal()).rejects.toThrow('Start a new turn');
+    expect(principals.openTurn).toHaveBeenCalledOnce();
+    expect(principals.resolve).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the real turn principal renewable for 72 hours and closes it at terminal', async () => {
+    const fixture = await createRuntimeTurnRenewalConformanceFixture('claude-code');
+    const context = new ClaudeConnectorTurnContext({
+      tools: {
+        ...tooling(fixture.principals),
+        createLeaseSupervisor: fixture.createLeaseSupervisor,
+      },
+      canonicalSessionId: () => 'claude-renewal-session',
+      agentPath: '/repo',
+      cwd: '/repo',
+    });
+
+    try {
+      await context.resolvePrincipal();
+      await fixture.advanceHours(72);
+      await context.revoke('turn_terminal');
+      await fixture.expectTerminalDenial();
+    } finally {
+      await context.revoke('turn_cancelled').catch(() => undefined);
+      fixture.close();
+    }
   });
 });

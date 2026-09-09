@@ -38,6 +38,7 @@ import {
 import { ConnectorUsageStore } from '../usage-store.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
+const TEST_TURN_OWNERSHIP = { isCurrent: () => true } as const;
 const CONNECTION_ID = 'connection-a' as const;
 const REVISION_ID = 'revision-a';
 const DESTRUCTIVE_REVISION_ID = 'revision-destructive';
@@ -385,13 +386,16 @@ describe('ConnectorExecutionBroker', () => {
       makeBearer: () => 'bearer-migration-failure',
     });
     await runtimePrincipals.initializeBoot();
-    const opened = await runtimePrincipals.openTurn({
-      runtime: 'claude-code',
-      canonicalSessionId: 'session-a',
-      agentPath: '/agents/agent-a',
-      canonicalCwd: '/agents/agent-a',
-      signal: new AbortController().signal,
-    });
+    const opened = await runtimePrincipals.openTurn(
+      {
+        runtime: 'claude-code',
+        canonicalSessionId: 'session-a',
+        agentPath: '/agents/agent-a',
+        canonicalCwd: '/agents/agent-a',
+        signal: new AbortController().signal,
+      },
+      TEST_TURN_OWNERSHIP
+    );
     const resolved = await runtimePrincipals.resolve({
       bearer: opened.bearer,
       expectedRuntime: 'claude-code',
@@ -533,13 +537,16 @@ describe('ConnectorExecutionBroker', () => {
         makeBearer: () => `bearer-final-${change}`,
       });
       await runtimePrincipals.initializeBoot();
-      const opened = await runtimePrincipals.openTurn({
-        runtime: 'claude-code',
-        canonicalSessionId: 'session-a',
-        agentPath: '/agents/agent-a',
-        canonicalCwd: '/agents/agent-a',
-        signal: new AbortController().signal,
-      });
+      const opened = await runtimePrincipals.openTurn(
+        {
+          runtime: 'claude-code',
+          canonicalSessionId: 'session-a',
+          agentPath: '/agents/agent-a',
+          canonicalCwd: '/agents/agent-a',
+          signal: new AbortController().signal,
+        },
+        TEST_TURN_OWNERSHIP
+      );
       const resolved = await runtimePrincipals.resolve({
         bearer: opened.bearer,
         expectedRuntime: 'claude-code',
@@ -701,13 +708,16 @@ describe('ConnectorExecutionBroker', () => {
         makeBearer: () => 'bearer-probe',
       });
       await runtimePrincipals.initializeBoot();
-      const opened = await runtimePrincipals.openTurn({
-        runtime: 'claude-code',
-        canonicalSessionId: 'session-a',
-        agentPath: '/agents/agent-a',
-        canonicalCwd: '/agents/agent-a',
-        signal: new AbortController().signal,
-      });
+      const opened = await runtimePrincipals.openTurn(
+        {
+          runtime: 'claude-code',
+          canonicalSessionId: 'session-a',
+          agentPath: '/agents/agent-a',
+          canonicalCwd: '/agents/agent-a',
+          signal: new AbortController().signal,
+        },
+        TEST_TURN_OWNERSHIP
+      );
       const resolved = await runtimePrincipals.resolve({
         bearer: opened.bearer,
         expectedRuntime: 'claude-code',
@@ -777,13 +787,16 @@ describe('ConnectorExecutionBroker', () => {
       makeBearer: () => 'bearer-valid-probe',
     });
     await runtimePrincipals.initializeBoot();
-    const opened = await runtimePrincipals.openTurn({
-      runtime: 'claude-code',
-      canonicalSessionId: 'session-a',
-      agentPath: '/agents/agent-a',
-      canonicalCwd: '/agents/agent-a',
-      signal: new AbortController().signal,
-    });
+    const opened = await runtimePrincipals.openTurn(
+      {
+        runtime: 'claude-code',
+        canonicalSessionId: 'session-a',
+        agentPath: '/agents/agent-a',
+        canonicalCwd: '/agents/agent-a',
+        signal: new AbortController().signal,
+      },
+      TEST_TURN_OWNERSHIP
+    );
     const resolved = await runtimePrincipals.resolve({
       bearer: opened.bearer,
       expectedRuntime: 'claude-code',
@@ -914,47 +927,123 @@ describe('ConnectorExecutionBroker', () => {
     expect(provider.commands).toHaveLength(1);
   });
 
-  it('revalidates a durable runtime binding before a safe retry', async () => {
+  it.each(['revoked', 'expired'] as const)(
+    'revalidates a %s durable runtime binding before a safe retry',
+    async (terminal) => {
+      let principalNowMs = Date.parse('2026-09-06T12:00:00.000Z');
+      const runtimePrincipals = new ConnectorRuntimePrincipalService({
+        db,
+        authority: {
+          authorizeTurn: async () => ({ owner: OWNER, agentId: 'agent-a' }),
+          revalidateTurn: async () => true,
+        },
+        makeBootEpoch: () => 'boot-a',
+        makeBearer: () => 'bearer-a',
+        bindingTtlMs: 1_000,
+        now: () => new Date(principalNowMs),
+      });
+      await runtimePrincipals.initializeBoot();
+      const opened = await runtimePrincipals.openTurn(
+        {
+          runtime: 'claude-code',
+          canonicalSessionId: 'session-a',
+          agentPath: '/agents/agent-a',
+          canonicalCwd: '/agents/agent-a',
+          signal: new AbortController().signal,
+        },
+        TEST_TURN_OWNERSHIP
+      );
+      const resolved = await runtimePrincipals.resolve({
+        bearer: opened.bearer,
+        expectedRuntime: 'claude-code',
+        expectedCanonicalCwd: '/agents/agent-a',
+      });
+      expect(resolved.status).toBe('resolved');
+      if (resolved.status !== 'resolved') throw new Error('Expected runtime principal.');
+
+      const runtimeBroker = new ConnectorExecutionBroker(
+        authorization,
+        new ConnectorUsageStore(db),
+        { revalidate: (principal) => runtimePrincipals.revalidatePrincipal(principal) },
+        () => new Date('2026-09-06T12:00:01.000Z')
+      );
+      provider.results.push(
+        { status: 'error', code: 'temporary', message: 'Try again', retryable: true },
+        { status: 'success', data: { delivered: true } }
+      );
+      let revoked = false;
+      provider.afterExecute = async () => {
+        if (revoked) return;
+        revoked = true;
+        if (terminal === 'revoked') {
+          await runtimePrincipals.revoke(opened.bindingId, 'runtime_failed');
+        } else {
+          principalNowMs += 1_000;
+        }
+      };
+      const authorized = await authorization.prepare({
+        capabilityId: 'connectors.execute_write',
+        target: retryTarget,
+        principal: resolved.principal,
+      });
+
+      await expect(
+        runtimeBroker.execute({
+          capabilityId: 'connectors.execute_write',
+          target: retryTarget,
+          principal: resolved.principal,
+          authorityBinding: authorized.authorityBinding,
+          surface: 'mcp',
+          signal: new AbortController().signal,
+        })
+      ).resolves.toMatchObject({
+        attemptCount: 1,
+        result: { status: 'error', code: 'temporary' },
+      });
+      expect(provider.commands).toHaveLength(1);
+    }
+  );
+
+  it('records a provider result that settles after the lease expires without repeating it', async () => {
+    let principalNowMs = Date.parse('2026-09-06T12:00:00.000Z');
     const runtimePrincipals = new ConnectorRuntimePrincipalService({
       db,
       authority: {
         authorizeTurn: async () => ({ owner: OWNER, agentId: 'agent-a' }),
         revalidateTurn: async () => true,
       },
-      makeBootEpoch: () => 'boot-a',
-      makeBearer: () => 'bearer-a',
+      makeBootEpoch: () => 'boot-cross-expiry',
+      makeBearer: () => 'bearer-cross-expiry',
+      bindingTtlMs: 1_000,
+      now: () => new Date(principalNowMs),
     });
     await runtimePrincipals.initializeBoot();
-    const opened = await runtimePrincipals.openTurn({
-      runtime: 'claude-code',
-      canonicalSessionId: 'session-a',
-      agentPath: '/agents/agent-a',
-      canonicalCwd: '/agents/agent-a',
-      signal: new AbortController().signal,
-    });
+    const opened = await runtimePrincipals.openTurn(
+      {
+        runtime: 'claude-code',
+        canonicalSessionId: 'session-a',
+        agentPath: '/agents/agent-a',
+        canonicalCwd: '/agents/agent-a',
+        signal: new AbortController().signal,
+      },
+      TEST_TURN_OWNERSHIP
+    );
     const resolved = await runtimePrincipals.resolve({
       bearer: opened.bearer,
       expectedRuntime: 'claude-code',
       expectedCanonicalCwd: '/agents/agent-a',
     });
-    expect(resolved.status).toBe('resolved');
     if (resolved.status !== 'resolved') throw new Error('Expected runtime principal.');
 
     const runtimeBroker = new ConnectorExecutionBroker(
       authorization,
       new ConnectorUsageStore(db),
       { revalidate: (principal) => runtimePrincipals.revalidatePrincipal(principal) },
-      () => new Date('2026-09-06T12:00:01.000Z')
+      () => new Date(principalNowMs)
     );
-    provider.results.push(
-      { status: 'error', code: 'temporary', message: 'Try again', retryable: true },
-      { status: 'success', data: { delivered: true } }
-    );
-    let revoked = false;
-    provider.afterExecute = async () => {
-      if (revoked) return;
-      revoked = true;
-      await runtimePrincipals.revoke(opened.bindingId, 'runtime_failed');
+    provider.results.push({ status: 'success', data: { delivered: true } });
+    provider.afterExecute = () => {
+      principalNowMs += 1_000;
     };
     const authorized = await authorization.prepare({
       capabilityId: 'connectors.execute_write',
@@ -973,9 +1062,11 @@ describe('ConnectorExecutionBroker', () => {
       })
     ).resolves.toMatchObject({
       attemptCount: 1,
-      result: { status: 'error', code: 'temporary' },
+      result: { status: 'success', data: { delivered: true } },
     });
     expect(provider.commands).toHaveLength(1);
+    expect(db.select().from(connectorUsageAttempts).all()).toHaveLength(1);
+    expect(db.select().from(connectorUsageTerminalReceipts).all()).toHaveLength(1);
   });
 
   it('stops a retry when the live grant changes after the first attempt', async () => {

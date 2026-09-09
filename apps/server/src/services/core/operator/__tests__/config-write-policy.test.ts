@@ -147,6 +147,9 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       // (DOR-1613). Refused for the `reach` stake: on, two more programs become
       // callers of this instance holding its local bearer.
       'runtimes.dorkosTools',
+      'runtimes.environment.inherit.claudeCode',
+      'runtimes.environment.inherit.codex',
+      'runtimes.environment.inherit.opencode',
       'runtimes.opencode.baseURL',
       'runtimes.opencode.binaryPath',
       'runtimes.opencode.defaultTrustStop',

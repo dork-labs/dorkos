@@ -62,6 +62,19 @@ Run the commands in your terminal, then check the runtime picker in the chat sta
   something else.
 </Callout>
 
+## Environment variables passed to agents
+
+DorkOS no longer passes its whole server environment to coding agents or their setup commands.
+It keeps the operating system settings they need, supported model sign-ins, and privacy choices such as `DO_NOT_TRACK`.
+Server secrets, including database passwords and Connections encryption keys, stay out of that inherited environment.
+
+Custom tools may need a variable that DorkOS does not pass automatically.
+You can allow its exact name for one runtime in your config file. Values stay in the environment that starts DorkOS.
+See [runtime environment settings](/docs/getting-started/configuration#runtime-environment-settings) for the format and upgrade steps.
+
+This reduces accidental exposure. It does not isolate agents from your operating system account.
+An agent with shell or file access may still reach your files, credentials, or other processes.
+
 ## Choose a Runtime
 
 Runtime selection works at three levels. An explicit per-session choice wins over the agent's runtime. The agent's runtime wins over the config default.

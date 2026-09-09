@@ -141,3 +141,6 @@ describe('isClaudeCliAuthenticated', () => {
     expect(runBinaryProbe).not.toHaveBeenCalled();
   });
 });
+
+// These child-process fixtures use an empty owner inheritance policy.
+vi.mock('../../../../core/config-manager.js', () => ({ configManager: { get: () => undefined } }));

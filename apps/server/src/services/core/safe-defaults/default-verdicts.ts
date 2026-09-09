@@ -254,6 +254,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // `false` is the withholding side of a real axis, not a preference. Off, two
   // more programs are simply not callers of this instance. A wipe landing back
   // here restores that, so it needs no carryover rule.
+  'runtimes.environment.inherit.claudeCode': [],
+  'runtimes.environment.inherit.codex': [],
+  'runtimes.environment.inherit.opencode': [],
   'runtimes.dorkosTools': false,
   'tunnel.domain': null,
   'tunnel.authtoken': null,

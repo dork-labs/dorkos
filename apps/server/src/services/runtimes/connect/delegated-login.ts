@@ -45,6 +45,7 @@
  *
  * @module services/runtimes/connect/delegated-login
  */
+import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
 import { spawn as nodeSpawn } from 'node:child_process';
 import path from 'node:path';
 import type { DelegatedLoginResult } from '@dorkos/shared/runtime-connect';
@@ -106,11 +107,9 @@ export interface LoginCommand {
   /** Argument vector that starts the vendor's login (no secret ever on argv). */
   args: string[];
   /**
-   * Full environment for the spawned login, already merged over `process.env`
-   * — currently just the `claude-code` account pin ({@link claudeConfigDirEnv}).
-   * `undefined` when the runtime has no env override to apply (`codex`), in
-   * which case the child inherits `process.env` unmodified, exactly as before
-   * this seam existed.
+   * Complete projected environment from the resolved runtime/login command.
+   * Direct internal callers without a command environment receive the Codex
+   * login profile; no path inherits the full server environment.
    */
   env?: NodeJS.ProcessEnv;
 }
@@ -153,7 +152,7 @@ export async function resolveLoginCommand(
   switch (type) {
     case 'codex': {
       const binary = await resolveCodexBinaryPath();
-      return binary ? { binary, args: ['login'] } : null;
+      return binary ? { binary, args: ['login'], env: runtimeEnvironment('codex', 'login') } : null;
     }
     case 'claude-code': {
       const binary = resolveClaudeCliPath();
@@ -162,11 +161,7 @@ export async function resolveLoginCommand(
       return {
         binary,
         args: ['auth', 'login'],
-        env: {
-          // eslint-disable-next-line no-restricted-syntax -- the CLI needs the full shell env (PATH, etc.) alongside the pinned account; see claude-code-runtime.ts for the identical pattern
-          ...process.env,
-          ...claudeConfigDirEnv(root),
-        },
+        env: runtimeEnvironment('claude-code', 'login', claudeConfigDirEnv(root)),
       };
     }
     default:
@@ -208,7 +203,7 @@ export function runDelegatedLogin(
     let stderr = '';
     const child = spawn(cmd.binary, cmd.args, {
       stdio: ['ignore', 'ignore', 'pipe'],
-      ...(cmd.env ? { env: cmd.env } : {}),
+      env: cmd.env ?? runtimeEnvironment('codex', 'login'),
     });
 
     const finish = (result: DelegatedLoginResult): void => {
@@ -264,7 +259,7 @@ export function pipeSecretToChild(
     let stderr = '';
     const child = spawn(cmd.binary, cmd.args, {
       stdio: ['pipe', 'ignore', 'pipe'],
-      ...(cmd.env ? { env: cmd.env } : {}),
+      env: cmd.env ?? runtimeEnvironment('codex', 'login'),
     });
 
     const finish = (result: DelegatedLoginResult): void => {

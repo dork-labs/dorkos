@@ -210,17 +210,15 @@ write churn described above no longer applies. Not re-verified live (no re-probe
 - `CodexOptions.env` gotcha: when set, the subprocess does **not** inherit `process.env`
   (dist source). Omitting it inherits everything (and the SDK then injects
   `CODEX_INTERNAL_ORIGINATOR_OVERRIDE=codex_sdk_ts`).
-  **The adapter now DOES set it, on one path only** (DOR-428): a turn whose working
-  directory hosts a registered agent builds a turn-scoped `Codex` client carrying that
-  agent's `DORKOS_AGENT_TOKEN`, because `ThreadOptions` has no env field and the boot
-  client is shared by every session. `inheritedEnv()` in `codex-runtime.ts` reproduces the
-  SDK's own inheritance loop (`Object.entries(process.env)`, skipping `undefined`) and the
-  token is layered on top, so PATH/HOME/CODEX_HOME survive; `prependPathDirs` still runs
-  afterwards inside the SDK. A turn with no registered agent, or one where minting fails,
-  keeps using the shared client with `env` unset. (That shared client is now built on the
-  FIRST turn, not at construction — DOR-1334: `new Codex()` throws when it cannot find a
-  binary, which kept the whole runtime out of the registry in the packaged app.) Verified live against
-  `@openai/codex-sdk` dist: `CodexExec.run` uses `envOverride` wholesale when present.
+  The adapter now sets a complete projected environment on every launch, including
+  the shared client with no registered agent or MCP servers (DOR-1904). OS/login
+  paths and the approved model profile survive; unknown parent variables require
+  owner exact-name opt-in. A registered-agent turn layers its fresh identity and
+  exact MCP header environment on top. The SDK still runs `prependPathDirs` and
+  adds its own originator marker. The shared client is created lazily on the first
+  turn and rebuilt when its binary or owner inheritance-name policy changes.
+  Synthetic installed-SDK spawn tests cover both explicit projection and the
+  omitted-env regression without invoking the Codex CLI or a model.
 - `CodexOptions.codexPathOverride` is where the binary DorkOS resolved wires in. The adapter
   now always sets it (`resolveCodexBinaryPath`: config `binaryPath` → vendored → provisioned
   → PATH), so the SDK's own discovery never runs; when unset the SDK resolves its **own

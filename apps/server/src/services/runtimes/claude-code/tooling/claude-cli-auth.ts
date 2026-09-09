@@ -125,10 +125,9 @@ function parseAuthStatus(statusJson: string): ClaudeAuthStatus | null {
  * to exactly one of these credentials and must not be attributed to the others.
  *
  * @param binary - The resolved `claude` binary (or `null` when none resolved).
- * @param env - Full environment for the probe, which decides WHICH account it
- *   reports on. Omit to inherit this process's, which is what the eval harness
- *   wants ("can a subprocess I spawn reach a model?"); the readiness ladder
- *   passes a pinned one so its answer describes the account sessions launch on.
+ * @param env - Validated account/credential overrides for the projected auth
+ *   environment. The readiness ladder passes the selected account pin; omission
+ *   uses the supported ambient Claude auth profile, never the full server env.
  * @returns The reported status, or `null` when the CLI could not be asked at all
  *   (no binary, signed out — which exits non-zero — or a bounded-out probe).
  */
@@ -142,7 +141,7 @@ export async function readClaudeAuthStatus(
       binary,
       ['auth', 'status', '--json'],
       CLAUDE_PROBE_TIMEOUT_MS,
-      env
+      { runtime: 'claude-code', purpose: 'auth-probe', overrides: env }
     );
     return parseAuthStatus(out);
   } catch (err) {

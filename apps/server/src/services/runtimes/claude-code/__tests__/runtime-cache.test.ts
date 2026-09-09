@@ -88,6 +88,25 @@ describe('RuntimeCache', () => {
     );
   });
 
+  it('projects explicit auth/privacy env for a warmup with no Connections', async () => {
+    vi.stubEnv('MCP_API_KEY', 'synthetic-server-token');
+    vi.stubEnv('NANGO_ENCRYPTION_KEY', 'synthetic-nango-key');
+    vi.stubEnv('DO_NOT_TRACK', '1');
+    const close = vi.fn();
+    vi.mocked(query).mockReturnValue({ supportedModels: async () => [], close } as never);
+    try {
+      await cache.warmup('/synthetic/project');
+      const options = vi.mocked(query).mock.calls.at(-1)?.[0].options;
+      expect(options?.env).toBeDefined();
+      expect(options?.env?.DO_NOT_TRACK).toBe('1');
+      expect(options?.env).not.toHaveProperty('MCP_API_KEY');
+      expect(options?.env).not.toHaveProperty('NANGO_ENCRYPTION_KEY');
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   // =========================================================================
   // getSupportedModels
   // =========================================================================

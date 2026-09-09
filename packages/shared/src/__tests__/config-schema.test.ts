@@ -191,6 +191,7 @@ describe('UserConfigSchema', () => {
         default: 'claude-code',
         defaultTrustStop: null,
         dorkosTools: false,
+        environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
         claudeCode: {
           defaultAccount: null,
           accounts: [],
@@ -574,6 +575,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         default: 'claude-code',
         defaultTrustStop: null,
         dorkosTools: false,
+        environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
         claudeCode: {
           defaultAccount: null,
           accounts: [],
@@ -995,6 +997,7 @@ describe('UserConfigSchema runtimes', () => {
       default: 'claude-code',
       defaultTrustStop: null,
       dorkosTools: false,
+      environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
       claudeCode: {
         defaultAccount: null,
         accounts: [],
@@ -1030,6 +1033,7 @@ describe('UserConfigSchema runtimes', () => {
       default: 'claude-code',
       defaultTrustStop: null,
       dorkosTools: false,
+      environment: { inherit: { claudeCode: [], codex: [], opencode: [] } },
       claudeCode: {
         defaultAccount: null,
         accounts: [],

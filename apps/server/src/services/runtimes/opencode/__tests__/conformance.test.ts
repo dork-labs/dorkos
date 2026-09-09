@@ -44,8 +44,8 @@
  * **"Free" there is a property of YOUR OpenCode config, not of this flag.** The
  * free arm writes `provider: null` / `defaultModel: null`, so the sidecar falls
  * back to whatever `~/.config/opencode` names as its default — and
- * `server-manager.ts` spreads `process.env` into the spawn, so an exported
- * `OPENROUTER_API_KEY` is reachable from it. If your OpenCode default is a hosted
+ * `server-manager.ts` includes supported model keys in the projected turn
+ * environment, so an exported `OPENROUTER_API_KEY` is reachable from it. If your OpenCode default is a hosted
  * model, `DORKOS_OPENCODE_LIVE=1` bills it. Point that default at a local model
  * before using this arm, or use the paid arm, which at least pins what it spends
  * on.
@@ -55,8 +55,8 @@
  * file the sidecar MERGES with the `OPENCODE_CONFIG_CONTENT` DorkOS injects
  * (verified live against 1.18.15: `GET /config` reports the model from the file
  * and the ask-ruleset from the injected content). The key itself travels as
- * `OPENROUTER_API_KEY` in the inherited environment — `server-manager.ts` spreads
- * `process.env` into the spawn — so nothing is written to disk.
+ * `OPENROUTER_API_KEY` in the projected turn environment — `server-manager.ts`
+ * preserves this supported key without writing its value to disk.
  *
  * Both modes need a `runtimes.opencode` config section to boot a sidecar at all,
  * and neither may touch the operator's real one: this file writes a THROWAWAY
@@ -329,8 +329,8 @@ async function prepareLiveConfig(): Promise<string> {
     const configFile = path.join(home, 'opencode.json');
     fs.writeFileSync(configFile, JSON.stringify({ model: PAID_MODEL }), 'utf8');
     // This suite owns the sidecar's environment for a manually-armed live run;
-    // `server-manager.ts` spreads `process.env` into the spawn, which is how the
-    // pin (and the key) reach it.
+    // `server-manager.ts` preserves OPENCODE_CONFIG and supported model keys
+    // in the projected turn environment, which is how the pin and key reach it.
     process.env.OPENCODE_CONFIG = configFile;
   }
   return home;

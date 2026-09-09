@@ -72,6 +72,7 @@
  *
  * @module services/runtimes/claude-code/sessions/warm-process-ledger
  */
+import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -168,8 +169,8 @@ function runPs(args: string[]): string | null {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: PS_TIMEOUT_MS,
-      // eslint-disable-next-line no-restricted-syntax -- forwarding the real environment to a child process, with the C locale forced so `lstart` reads identically every time
-      env: { ...process.env, LC_ALL: 'C' },
+      // Force the C locale so the same owned-process `lstart` identity is reproducible.
+      env: runtimeEnvironment('claude-code', 'process-inspection', { LC_ALL: 'C' }),
     });
   } catch {
     return null;

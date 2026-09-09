@@ -16,9 +16,13 @@ vi.mock('node:module', () => ({
   createRequire: () => ({ resolve: (s: string) => h.resolve(s) }),
 }));
 
-vi.mock('node:fs', () => ({
-  existsSync: (p: string) => h.exists(p),
-}));
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    existsSync: (p: string) => h.exists(p),
+  };
+});
 
 /** Where a one-click install writes; absent unless a test says otherwise. */
 const PROVISIONED = '/runtimes/claude-code/';

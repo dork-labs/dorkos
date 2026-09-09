@@ -34,6 +34,8 @@ import { CodexRuntime } from '../codex-runtime.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { codexSimpleTurn, makeMockThread } from './codex-scenarios.js';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
+import type { ConnectorTurnLeaseSupervisorFactory } from '../../connectors/connector-turn-lease-supervisor.js';
+import { createRuntimeTurnRenewalConformanceFixture } from '../../connectors/__tests__/turn-renewal-conformance-fixture.js';
 
 vi.mock('../check-dependencies.js', () => ({ checkCodexDependencies: vi.fn(() => []) }));
 vi.mock('../enumerate-mcp-servers.js', () => ({
@@ -325,12 +327,18 @@ describe('the dorkos tool server on a Codex turn', () => {
 
   describe('connector runtime binding', () => {
     function connectorPort(): ConnectorRuntimePrincipalPort {
+      let sequence = 0;
       return {
-        openTurn: vi.fn().mockResolvedValue({
-          bindingId: 'binding-1',
-          bearer: 'connector-turn-secret',
-          expiresAt: '2099-01-01T00:00:00.000Z',
+        openTurn: vi.fn(async () => {
+          sequence += 1;
+          return {
+            bindingId: `binding-${sequence}`,
+            bearer: `connector-turn-secret-${sequence}`,
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            renewalPermit: {} as never,
+          };
         }),
+        renew: vi.fn(),
         resolve: vi.fn(),
         revoke: vi.fn().mockResolvedValue(undefined),
       };
@@ -339,6 +347,16 @@ describe('the dorkos tool server on a Codex turn', () => {
     it('injects independently of external MCP posture and revokes on terminal completion', async () => {
       configState.value = { runtimes: { dorkosTools: false }, mcp: { enabled: false } };
       const principals = connectorPort();
+      const stop = vi.fn();
+      vi.mocked(principals.openTurn).mockImplementationOnce(async (_input, ownership) => {
+        expect(ownership.isCurrent()).toBe(true);
+        return {
+          bindingId: 'binding-1',
+          bearer: 'connector-turn-secret',
+          expiresAt: '2099-01-01T00:00:00.000Z',
+          renewalPermit: {} as never,
+        };
+      });
       const runtime = makeRuntime();
       runtime.setConnectorRuntimeTools({
         principals,
@@ -349,17 +367,25 @@ describe('the dorkos tool server on a Codex turn', () => {
             'connectors.execute_write',
             'connectors.execute_destructive',
           ]).has(id),
+        createLeaseSupervisor: vi.fn(() => ({
+          state: 'active' as const,
+          stop,
+          assertUsable: vi.fn(),
+        })),
       });
 
       await drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));
 
-      expect(principals.openTurn).toHaveBeenCalledWith({
-        runtime: 'codex',
-        canonicalSessionId: 's1',
-        agentPath: agentDir,
-        canonicalCwd: agentDir,
-        signal: expect.any(AbortSignal),
-      });
+      expect(principals.openTurn).toHaveBeenCalledWith(
+        {
+          runtime: 'codex',
+          canonicalSessionId: 's1',
+          agentPath: agentDir,
+          canonicalCwd: agentDir,
+          signal: expect.any(AbortSignal),
+        },
+        { isCurrent: expect.any(Function) }
+      );
       expect(lastMcpServers()['dorkos_connections']?.['url']).toBe('http://127.0.0.1:4341/mcp');
       const options = sdkMocks.constructorOptions.at(-1) as {
         config?: unknown;
@@ -370,10 +396,39 @@ describe('the dorkos tool server on a Codex turn', () => {
         'Bearer connector-turn-secret'
       );
       expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_terminal');
+      expect(stop).toHaveBeenCalledBefore(vi.mocked(principals.revoke));
+      expect(vi.mocked(principals.openTurn).mock.calls[0]?.[1].isCurrent()).toBe(false);
+    });
+
+    it('opens fresh authority for a later message on the same Codex thread', async () => {
+      const principals = connectorPort();
+      const createLeaseSupervisor = vi.fn<ConnectorTurnLeaseSupervisorFactory>(() => ({
+        state: 'active' as const,
+        stop: vi.fn(),
+        assertUsable: vi.fn(),
+      }));
+      const runtime = makeRuntime();
+      runtime.setConnectorRuntimeTools({
+        principals,
+        listenerUrl: 'http://127.0.0.1:4341/mcp',
+        isConnectorCapabilityId: () => true,
+        createLeaseSupervisor,
+      });
+
+      await drain(runtime.sendMessage('s1', 'first', { cwd: agentDir }));
+      await drain(runtime.sendMessage('s1', 'second', { cwd: agentDir }));
+
+      expect(principals.openTurn).toHaveBeenCalledTimes(2);
+      expect(principals.revoke).toHaveBeenNthCalledWith(1, 'binding-1', 'turn_terminal');
+      expect(principals.revoke).toHaveBeenNthCalledWith(2, 'binding-2', 'turn_terminal');
+      const firstPermit = createLeaseSupervisor.mock.calls[0]?.[0].permit;
+      const secondPermit = createLeaseSupervisor.mock.calls[1]?.[0].permit;
+      expect(firstPermit).not.toBe(secondPermit);
     });
 
     it('revokes a binding when setup fails after minting', async () => {
       const principals = connectorPort();
+      const stop = vi.fn();
       const runtime = new CodexRuntime({
         threadMap: new CodexThreadMap(db),
         resolveBinary: async () => {
@@ -391,12 +446,14 @@ describe('the dorkos tool server on a Codex turn', () => {
             'connectors.execute_write',
             'connectors.execute_destructive',
           ]).has(id),
+        createLeaseSupervisor: () => ({ state: 'active', stop, assertUsable: vi.fn() }),
       });
 
       await expect(drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }))).rejects.toThrow(
         'binary setup failed'
       );
       expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'setup_failed');
+      expect(stop).toHaveBeenCalledBefore(vi.mocked(principals.revoke));
     });
 
     it('revokes runtime failures after dispatch', async () => {
@@ -492,6 +549,36 @@ describe('the dorkos tool server on a Codex turn', () => {
 
       sdkMocks.releaseParked?.();
       await turn;
+    });
+
+    it('keeps the real turn principal renewable for 72 hours and closes it on cancellation', async () => {
+      const fixture = await createRuntimeTurnRenewalConformanceFixture('codex');
+      const runtime = makeRuntime();
+      runtime.setConnectorRuntimeTools({
+        principals: fixture.principals,
+        listenerUrl: 'http://127.0.0.1:4341/mcp',
+        isConnectorCapabilityId: () => true,
+        createLeaseSupervisor: fixture.createLeaseSupervisor,
+      });
+      sdkMocks.behavior = 'park-past-abort';
+      const turn = drain(runtime.sendMessage('codex-renewal-session', 'hello', { cwd: agentDir }));
+
+      try {
+        await vi.waitFor(() => expect(sdkMocks.prompts).toHaveLength(1));
+        const options = sdkMocks.constructorOptions.at(-1) as { env?: Record<string, string> };
+        expect(options.env?.['DORKOS_CONNECTOR_MCP_AUTHORIZATION']).toBe('Bearer bearer-codex');
+        await fixture.advanceHours(72);
+        expect(options.env?.['DORKOS_CONNECTOR_MCP_AUTHORIZATION']).toBe('Bearer bearer-codex');
+        await expect(runtime.interruptQuery('codex-renewal-session')).resolves.toEqual({
+          outcome: 'closed',
+          runtime: 'codex',
+        });
+        await fixture.expectTerminalDenial();
+      } finally {
+        sdkMocks.releaseParked?.();
+        await turn.catch(() => undefined);
+        fixture.close();
+      }
     });
   });
 

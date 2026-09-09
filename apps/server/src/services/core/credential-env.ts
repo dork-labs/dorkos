@@ -9,9 +9,9 @@
  * ever logged). A missing or dangling reference yields `{}` — the runtime falls
  * back to host/delegated-login auth rather than an empty-string secret.
  *
- * Codex is deliberately absent: it never sets `CodexOptions.env` (setting env
- * would drop PATH/HOME/CODEX_HOME — codex/NOTES.md), so Codex auth routes
- * through the delegated `codex login` (task 2.3), not an env var.
+ * Codex is deliberately absent: its own login/auth files and explicitly
+ * projected host keys remain its authority. The dormant credentialRef is not
+ * resolved here; setting a complete CodexOptions.env preserves OS/login paths.
  *
  * @module services/core/credential-env
  */

@@ -12,6 +12,8 @@
  *
  * @module services/runtimes/shared/run-probe
  */
+import type { EnvironmentRuntime, EnvironmentPurpose } from './runtime-environment.js';
+import { runtimeEnvironment } from './runtime-environment-config.js';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { logger } from '../../../lib/logger.js';
@@ -29,16 +31,18 @@ import { logger } from '../../../lib/logger.js';
  * @param binary - Absolute path or PATH name of the executable to run.
  * @param args - Argument vector (no shell, no interpolation — spec §Security).
  * @param timeoutMs - Hard upper bound on the probe.
- * @param env - Full environment for the child. Omit to inherit this process's.
- *   Pass one when the probe's answer depends on which account/config the child
- *   resolves, so the probe describes the same account the real work will use
- *   rather than whichever one the launching shell happened to export.
+ * @param environment - Explicit runtime/purpose and validated account/path overrides.
+ *   The default is a credential-free version probe, never ambient inheritance.
  */
 export function runBinaryProbe(
   binary: string,
   args: string[],
   timeoutMs: number,
-  env?: NodeJS.ProcessEnv
+  environment: {
+    runtime: EnvironmentRuntime;
+    purpose: EnvironmentPurpose;
+    overrides?: NodeJS.ProcessEnv;
+  } = { runtime: 'claude-code', purpose: 'version-probe' }
 ): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     let settled = false;
@@ -62,7 +66,7 @@ export function runBinaryProbe(
         encoding: 'utf-8',
         timeout: timeoutMs,
         killSignal: 'SIGKILL',
-        ...(env ? { env } : {}),
+        env: runtimeEnvironment(environment.runtime, environment.purpose, environment.overrides),
       },
       (err, stdout) => {
         if (err) return finish(() => reject(err));
@@ -154,12 +158,17 @@ export function logLocatorFailure(name: string, err: unknown): void {
  *
  * @param name - Binary name to locate (e.g. `'codex'`).
  * @param timeoutMs - Hard upper bound on the lookup.
+ * @param runtime - Runtime whose owner custom names accompany the locator.
  * @returns Absolute path to an existing binary on PATH, or `null` when none is found.
  */
-export async function findBinaryOnPath(name: string, timeoutMs: number): Promise<string | null> {
+export async function findBinaryOnPath(
+  name: string,
+  timeoutMs: number,
+  runtime: EnvironmentRuntime = 'claude-code'
+): Promise<string | null> {
   const locator = process.platform === 'win32' ? 'where' : 'which';
   try {
-    const out = await runBinaryProbe(locator, [name], timeoutMs);
+    const out = await runBinaryProbe(locator, [name], timeoutMs, { runtime, purpose: 'locator' });
     const found = out.split(/\r?\n/)[0]?.trim(); // `where` may return multiple matches
     if (found && existsSync(found)) return found;
     logger.debug(`[Runtimes] ${locator} named a ${name} that is not on disk`, { found });

@@ -37,6 +37,7 @@
  *
  * @module services/runtimes/claude-code/messaging/launch-resolver
  */
+import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import { readManifest } from '@dorkos/shared/manifest';
@@ -294,9 +295,7 @@ export async function resolveLaunch(args: {
     toolConfig: {
       askUserQuestion: { previewFormat: 'html' },
     },
-    env: {
-      // eslint-disable-next-line no-restricted-syntax -- full env needed for SDK subprocess inheritance
-      ...process.env,
+    env: runtimeEnvironment('claude-code', 'turn', {
       CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
       // An inherited MCP_TOOL_TIMEOUT shorter than the in-session approval hold
       // would kill every held destructive call mid-wait, with an ERROR where the
@@ -315,7 +314,7 @@ export async function resolveLaunch(args: {
       ...claudeCredentialEnv,
       // This session's freshly minted agent identity token (or nothing).
       ...agentTokenEnv,
-    },
+    }),
     ...(opts.claudeCliPath ? { pathToClaudeCodeExecutable: opts.claudeCliPath } : {}),
   };
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { DependencyCheck, SessionSettingsPort } from '@dorkos/shared/agent-runtime';
@@ -24,6 +24,24 @@ import {
   agentMessageItem,
   makeMockThread,
 } from './codex-scenarios.js';
+
+const environmentPolicy = vi.hoisted(() => ({ names: [] as string[] }));
+vi.mock('../../../core/config-manager.js', async () => {
+  const { USER_CONFIG_DEFAULTS } = await import('@dorkos/shared/config-schema');
+  return {
+    configManager: {
+      get: (key: keyof typeof USER_CONFIG_DEFAULTS) =>
+        key === 'runtimes'
+          ? {
+              ...USER_CONFIG_DEFAULTS.runtimes,
+              environment: {
+                inherit: { claudeCode: [], codex: environmentPolicy.names, opencode: [] },
+              },
+            }
+          : USER_CONFIG_DEFAULTS[key],
+    },
+  };
+});
 
 vi.mock('../check-dependencies.js', () => ({
   checkCodexDependencies: vi.fn(),
@@ -123,6 +141,7 @@ async function* abortableStream(getSignal: () => AbortSignal): AsyncGenerator<Th
 
 describe('CodexRuntime', () => {
   beforeEach(() => {
+    environmentPolicy.names = [];
     vi.clearAllMocks();
     sdkMocks.constructorOptions.length = 0;
     // Default scenario: a fresh single-turn thread per call (multi-turn safe).
@@ -134,6 +153,8 @@ describe('CodexRuntime', () => {
     // override this with their own resolved value.
     vi.mocked(enumerateCodexMcpServers).mockResolvedValue(null);
   });
+
+  afterEach(() => vi.unstubAllEnvs());
 
   describe('identity and dependencies', () => {
     it('identifies as the codex runtime', () => {
@@ -188,14 +209,14 @@ describe('CodexRuntime', () => {
       expect(sdkMocks.startThread).not.toHaveBeenCalled();
     });
 
-    it('passes the resolved binary as codexPathOverride, and never sets env on the shared client', async () => {
+    it('passes the resolved binary as codexPathOverride and a projected env on the shared client', async () => {
       const { runtime } = makeRuntime({ binaryPath: '/opt/custom/codex' });
 
       await drain(runtime.sendMessage(crypto.randomUUID(), 'hi', { cwd: '/projects/demo' }));
 
       const [shared] = sdkMocks.constructorOptions as Record<string, unknown>[];
       expect(shared).toMatchObject({ codexPathOverride: '/opt/custom/codex' });
-      expect(shared).not.toHaveProperty('env');
+      expect(shared).toHaveProperty('env');
     });
 
     it('reuses one shared client across turns while the resolved binary is unchanged', async () => {
@@ -212,6 +233,7 @@ describe('CodexRuntime', () => {
     it('includes codexPathOverride and the dorkos_ui MCP server when both args are given', () => {
       const options = buildCodexOptions('/opt/custom/codex', 'http://127.0.0.1:4242/codex-ui-mcp');
       expect(options).toEqual({
+        env: expect.any(Object),
         codexPathOverride: '/opt/custom/codex',
         config: {
           mcp_servers: {
@@ -223,35 +245,35 @@ describe('CodexRuntime', () => {
 
     it('omits config when no mcpUiUrl is provided', () => {
       const options = buildCodexOptions('/opt/custom/codex');
-      expect(options).toEqual({ codexPathOverride: '/opt/custom/codex' });
+      expect(options).toEqual({ codexPathOverride: '/opt/custom/codex', env: expect.any(Object) });
       expect(options).not.toHaveProperty('config');
     });
 
     it('omits codexPathOverride when binaryPath is falsy', () => {
-      expect(buildCodexOptions(null)).toEqual({});
+      expect(buildCodexOptions(null)).toEqual({ env: expect.any(Object) });
       expect(buildCodexOptions(undefined, 'http://127.0.0.1:4242/codex-ui-mcp')).toEqual({
+        env: expect.any(Object),
         config: {
           mcp_servers: { [CODEX_UI_MCP_SERVER]: { url: 'http://127.0.0.1:4242/codex-ui-mcp' } },
         },
       });
     });
 
-    it('omits env unless extraEnv is given', () => {
-      expect(
-        buildCodexOptions('/bin/codex', 'http://127.0.0.1:4242/codex-ui-mcp')
-      ).not.toHaveProperty('env');
-      expect(buildCodexOptions('/bin/codex', undefined, {})).not.toHaveProperty('env');
+    it('supplies complete env even without extraEnv', () => {
+      expect(buildCodexOptions('/bin/codex', 'http://127.0.0.1:4242/codex-ui-mcp')).toHaveProperty(
+        'env'
+      );
+      expect(buildCodexOptions('/bin/codex', undefined, {})).toHaveProperty('env');
     });
 
-    it('spreads the parent environment back in when extraEnv is given', () => {
-      // Setting `env` at all stops the SDK inheriting process.env, so a
-      // token-carrying client must reconstruct it or lose PATH/HOME/CODEX_HOME.
+    it('preserves OS inputs but withholds stale server identity when extraEnv is given', () => {
+      // Only the freshly minted token may reach this launch.
       vi.stubEnv('DORKOS_BUILD_OPTIONS_PROBE', 'inherited');
       try {
         const env = buildCodexOptions(null, undefined, { DORKOS_AGENT_TOKEN: 'deadbeef' })
           .env as Record<string, string>;
         expect(env.DORKOS_AGENT_TOKEN).toBe('deadbeef');
-        expect(env.DORKOS_BUILD_OPTIONS_PROBE).toBe('inherited');
+        expect(env.DORKOS_BUILD_OPTIONS_PROBE).toBeUndefined();
         expect(env.PATH ?? env.Path).toBeDefined();
         // Nothing unset leaks through as the string "undefined".
         expect(Object.values(env).every((v) => typeof v === 'string')).toBe(true);
@@ -259,6 +281,24 @@ describe('CodexRuntime', () => {
         vi.unstubAllEnvs();
       }
     });
+  });
+
+  it('rebuilds the actual shared client when the owner removes custom inheritance', async () => {
+    vi.stubEnv('SYNTHETIC_TOOL_SETTING', 'synthetic-value');
+    vi.stubEnv('MCP_API_KEY', 'synthetic-server-token');
+    environmentPolicy.names = ['SYNTHETIC_TOOL_SETTING'];
+    const { runtime } = makeRuntime();
+    await drain(runtime.sendMessage('env-session', 'one'));
+    const first = sdkMocks.constructorOptions.at(-1) as { env: Record<string, string> };
+    expect(first.env.SYNTHETIC_TOOL_SETTING).toBe('synthetic-value');
+    expect(first.env).not.toHaveProperty('MCP_API_KEY');
+    environmentPolicy.names = [];
+    const count = sdkMocks.constructorOptions.length;
+    await drain(runtime.sendMessage('env-session', 'two'));
+    expect(sdkMocks.constructorOptions).toHaveLength(count + 1);
+    const second = sdkMocks.constructorOptions.at(-1) as { env: Record<string, string> };
+    expect(second.env).not.toHaveProperty('SYNTHETIC_TOOL_SETTING');
+    expect(second.env).not.toHaveProperty('MCP_API_KEY');
   });
 
   describe('buildCodexOptions — managed MCP servers (DOR-892)', () => {

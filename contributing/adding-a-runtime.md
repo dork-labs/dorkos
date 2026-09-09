@@ -28,6 +28,7 @@ Related ADRs: [0307](../decisions/0307-second-and-third-runtimes-opencode-and-co
 | Adapter icons                       | `packages/icons/src/adapter-logos.tsx`                                                            |
 | Needs-setup UX                      | `apps/client/src/layers/entities/runtime/ui/RuntimeSetupDialog.tsx`                               |
 | Runtime enum (mesh/discovery)       | `packages/shared/src/mesh-schemas.ts` (`AgentRuntimeSchema`)                                      |
+| Connections turn lease              | `apps/server/src/services/runtimes/connectors/connector-turn-lease-supervisor.ts`                 |
 
 ## When to Use What
 
@@ -91,6 +92,35 @@ capability flag.
 - **Capabilities** (`getCapabilities`, `getSupportedModels`, `getSupportedSubagents`, `checkDependencies`): see the next two sections.
 - **Lifecycle** (`checkSessionHealth`, `getInternalSessionId`): `getInternalSessionId` is a loaded gun; see [Common Traps](#common-traps).
 - **Optional DI setters** (`setSessionSettings`, `setMeshCore`, `setRelay`, `setManagedMcpServers`, ...): implement `setSessionSettings` so per-session settings (model, permission mode) hydrate from and write through to the durable `session_metadata` store (ADR-0260). The composition root injects `runtimeRegistry` as the port. If you declare `supportsManagedMcpServers: true`, implement `setManagedMcpServers(resolver: ManagedMcpServerResolver)` too — nothing else enforces that link, so a runtime that declares the capability but skips the setter ships a UI affordance ("Add server" on an agent profile's Tools & MCP page) that silently does nothing. Codex and OpenCode are the worked examples (`setManagedMcpServers` in their runtime files); the composition root wires it via `runtime.setManagedMcpServers?.(agentMcpServerService)`.
+
+### Connections authority on long turns
+
+Connections authority belongs to one active message turn, even when that turn runs for days. The
+shared `ConnectorTurnLeaseSupervisor` renews the existing four-hour lease once per hour. It keeps
+the original bearer and changes only the durable expiry.
+
+| Runtime shape | Ownership proof                                                    | Attachment that stays unchanged            |
+| ------------- | ------------------------------------------------------------------ | ------------------------------------------ |
+| Claude Code   | The message's `ClaudeConnectorTurnContext` remains active          | In-process MCP capability context          |
+| Codex         | The same `AbortController` occupies the session's active-turn slot | Headers in the child's initial environment |
+| OpenCode      | The same active-turn object owns the canonical-directory lease     | Directory-scoped sidecar registration      |
+
+Every runtime must follow the same lifecycle:
+
+1. Open a binding with an adapter-owned `isCurrent()` guard.
+2. Start supervision only after Connections attachment succeeds.
+3. Stop the supervisor before revocation and before releasing the runtime-owned process or directory resource.
+4. Let the next message open a new binding and process-local permit, even when it resumes the same session or process.
+
+The supervisor is internal bookkeeping. It never calls an outside service, creates a usage attempt,
+or retries agent work. A refused renewal becomes terminal and every loopback denial returns the same
+safe instruction to start a new turn.
+
+This design deliberately keeps one bearer for the whole live turn. A copied bearer may therefore
+remain useful while the legitimate supervisor keeps renewing it. Once supervision stops, the last
+lease expires within four hours. Do not rotate the bearer in place, infer liveness from bearer
+traffic or a stored session, or expose renewal through REST, MCP, Transport, CLI, or a public schema.
+See [ADR 260908-153657](../decisions/260908-153657-a-live-runtime-turn-renews-connections-authority-through-its-process-owner.md).
 
 ### RuntimeCapabilities
 

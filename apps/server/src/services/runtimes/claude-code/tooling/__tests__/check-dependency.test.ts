@@ -421,7 +421,11 @@ describe('checkClaudeDependencies — sign-in expiry', () => {
       BUNDLED,
       ['auth', 'status', '--json'],
       expect.any(Number),
-      expect.objectContaining({ CLAUDE_CONFIG_DIR: '/home/dev/.claude-work' })
+      {
+        runtime: 'claude-code',
+        purpose: 'auth-probe',
+        overrides: { CLAUDE_CONFIG_DIR: '/home/dev/.claude-work' },
+      }
     );
   });
 

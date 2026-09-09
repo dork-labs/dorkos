@@ -18,6 +18,24 @@
       "linearIssue": "DOR-1931"
     },
     {
+      "id": "260908-151633",
+      "slug": "runtime-subprocess-environment",
+      "title": "Filter server secrets from runtime subprocess environments",
+      "created": "2026-09-08",
+      "status": "specified",
+      "linearIssue": "DOR-1904",
+      "project": "DorkOS Connections"
+    },
+    {
+      "id": "260908-151620",
+      "slug": "connections-runtime-turn-renewal",
+      "title": "Connections runtime-turn lease renewal",
+      "created": "2026-09-08",
+      "status": "implemented",
+      "project": "DorkOS Connections",
+      "linearIssue": "DOR-1903"
+    },
+    {
       "id": "260908-102701",
       "slug": "harness-sync-global",
       "title": "Harness Sync at global scope, and Claude Code's own /plugin installs as a source",

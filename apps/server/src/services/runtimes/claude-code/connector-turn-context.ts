@@ -5,6 +5,11 @@ import type {
   RevokeConnectorTurnReason,
 } from '../../connectors/runtime-principal-port.js';
 import type { ConnectorRuntimeTools } from '../connector-tools.js';
+import { logger } from '../../../lib/logger.js';
+import {
+  ConnectorTurnLeaseSupervisor,
+  type ConnectorTurnLeaseSupervisorHandle,
+} from '../connectors/connector-turn-lease-supervisor.js';
 
 /** Inputs whose live values identify one Claude turn. */
 export interface ClaudeConnectorTurnContextOptions {
@@ -30,6 +35,8 @@ export class ClaudeConnectorTurnContext {
   private opening: Promise<ServerPrincipalProof> | undefined;
   private binding: OpenConnectorTurnResult | undefined;
   private revocation: Promise<void> | undefined;
+  private supervisor: ConnectorTurnLeaseSupervisorHandle | undefined;
+  private active = true;
 
   constructor(private readonly options: ClaudeConnectorTurnContextOptions) {}
 
@@ -39,9 +46,12 @@ export class ClaudeConnectorTurnContext {
   }
 
   /** Open and resolve the structural principal on the first connector call. */
-  resolvePrincipal(): Promise<ServerPrincipalProof> {
+  async resolvePrincipal(): Promise<ServerPrincipalProof> {
+    this.supervisor?.assertUsable();
     this.opening ??= this.openAndResolve();
-    return this.opening;
+    const principal = await this.opening;
+    this.supervisor?.assertUsable();
+    return principal;
   }
 
   /** Cancel pending setup and revoke an already-open binding immediately. */
@@ -60,19 +70,24 @@ export class ClaudeConnectorTurnContext {
    * @param reason - Terminal state observed by the runtime generator.
    */
   async revoke(reason: RevokeConnectorTurnReason): Promise<void> {
+    this.active = false;
+    this.supervisor?.stop();
     if (reason === 'turn_cancelled') this.controller.abort();
     await this.opening?.catch(() => undefined);
     await this.revokeBinding(reason);
   }
 
   private async openAndResolve(): Promise<ServerPrincipalProof> {
-    const binding = await this.options.tools.principals.openTurn({
-      runtime: 'claude-code',
-      canonicalSessionId: this.options.canonicalSessionId(),
-      agentPath: this.options.agentPath,
-      canonicalCwd: this.options.cwd,
-      signal: this.controller.signal,
-    });
+    const binding = await this.options.tools.principals.openTurn(
+      {
+        runtime: 'claude-code',
+        canonicalSessionId: this.options.canonicalSessionId(),
+        agentPath: this.options.agentPath,
+        canonicalCwd: this.options.cwd,
+        signal: this.controller.signal,
+      },
+      { isCurrent: () => this.active }
+    );
     this.binding = binding;
     if (this.controller.signal.aborted) {
       await this.revokeBinding('turn_cancelled');
@@ -88,6 +103,18 @@ export class ClaudeConnectorTurnContext {
       await this.revokeBinding('setup_failed');
       throw new Error('Connector tools are unavailable for this Claude turn.');
     }
+    const createSupervisor =
+      this.options.tools.createLeaseSupervisor ??
+      ((options) => new ConnectorTurnLeaseSupervisor(options));
+    this.supervisor = createSupervisor({
+      principals: this.options.tools.principals,
+      bindingId: binding.bindingId,
+      permit: binding.renewalPermit,
+      runtime: 'claude-code',
+      expiresAt: binding.expiresAt,
+      signal: this.controller.signal,
+      onLost: (loss) => logger.warn('[ClaudeCodeRuntime] Connections lease lost', loss),
+    });
     return resolved.principal;
   }
 

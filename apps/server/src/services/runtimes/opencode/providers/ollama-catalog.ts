@@ -24,6 +24,7 @@
  *
  * @module services/runtimes/opencode/providers/ollama-catalog
  */
+import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import { execFile } from 'node:child_process';
 import os from 'node:os';
 import { promisify } from 'node:util';
@@ -176,7 +177,11 @@ async function probeNvidiaVramBytes(): Promise<number | null> {
     const { stdout } = await execFileAsync(
       'nvidia-smi',
       ['--query-gpu=memory.total', '--format=csv,noheader,nounits'],
-      { timeout: NVIDIA_PROBE_TIMEOUT_MS, killSignal: 'SIGKILL' }
+      {
+        timeout: NVIDIA_PROBE_TIMEOUT_MS,
+        killSignal: 'SIGKILL',
+        env: runtimeEnvironment('opencode', 'process-inspection'),
+      }
     );
     return parseNvidiaVramBytes(stdout);
   } catch {

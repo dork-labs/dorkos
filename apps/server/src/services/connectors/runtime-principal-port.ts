@@ -17,6 +17,20 @@ export interface OpenConnectorTurnInput {
   readonly signal: AbortSignal;
 }
 
+declare const connectorTurnRenewalPermitBrand: unique symbol;
+
+/** Opaque process-local proof that one exact runtime turn still owns its binding. */
+export interface ConnectorTurnRenewalPermit {
+  /** Compile-time brand; the service also requires exact object identity at runtime. */
+  readonly [connectorTurnRenewalPermitBrand]: true;
+}
+
+/** Process-owned identity guard registered when a runtime turn opens. */
+export interface ConnectorTurnOwnership {
+  /** Whether the same adapter-owned turn object still occupies its active slot. */
+  readonly isCurrent: () => boolean;
+}
+
 /** Opaque bearer and durable binding reference for one active runtime turn. */
 export interface OpenConnectorTurnResult {
   /** Server-minted durable binding identifier. */
@@ -25,7 +39,26 @@ export interface OpenConnectorTurnResult {
   readonly bearer: string;
   /** Absolute ISO 8601 expiry ceiling for the active turn. */
   readonly expiresAt: string;
+  /** Process-local authority kept outside every serialization boundary. */
+  readonly renewalPermit: ConnectorTurnRenewalPermit;
 }
+
+/** Inputs for renewing one unchanged runtime-turn binding. */
+export interface RenewConnectorTurnInput {
+  /** Exact durable binding opened for this turn. */
+  readonly bindingId: string;
+  /** Exact process-local permit returned with that binding. */
+  readonly permit: ConnectorTurnRenewalPermit;
+}
+
+/** Terminal reason why a binding cannot be renewed. */
+export type ConnectorTurnRenewalRefusalReason =
+  'invalid' | 'expired' | 'revoked' | 'stale_boot' | 'authority_changed' | 'inactive_owner';
+
+/** Result of one internal lease renewal attempt. */
+export type RenewConnectorTurnResult =
+  | { readonly status: 'renewed'; readonly expiresAt: string }
+  | { readonly status: 'refused'; readonly reason: ConnectorTurnRenewalRefusalReason };
 
 /** Context an internal projection must match while resolving a bearer. */
 export interface ResolveConnectorTurnInput {
@@ -59,7 +92,12 @@ export type RevokeConnectorTurnReason =
 /** Server-owned lifecycle for runtime connector authority. */
 export interface ConnectorRuntimePrincipalPort {
   /** Open one binding after resolving live canonical runtime context. */
-  openTurn(input: OpenConnectorTurnInput): Promise<OpenConnectorTurnResult>;
+  openTurn(
+    input: OpenConnectorTurnInput,
+    ownership: ConnectorTurnOwnership
+  ): Promise<OpenConnectorTurnResult>;
+  /** Renew one unchanged binding through its exact process-owned permit. */
+  renew(input: RenewConnectorTurnInput): Promise<RenewConnectorTurnResult>;
   /** Resolve one bearer and recheck current process and durable authority. */
   resolve(input: ResolveConnectorTurnInput): Promise<ResolveConnectorTurnResult>;
   /**

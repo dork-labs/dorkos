@@ -4128,13 +4128,17 @@ async function start() {
           input.agentPath,
           { interactive: false }
         );
-        const binding = await connectorRuntimePrincipals.openTurn({
-          runtime: 'claude-code',
-          canonicalSessionId: input.sessionId,
-          agentPath: input.agentPath,
-          canonicalCwd: input.agentPath,
-          signal: input.signal,
-        });
+        let ownsBinding = true;
+        const binding = await connectorRuntimePrincipals.openTurn(
+          {
+            runtime: 'claude-code',
+            canonicalSessionId: input.sessionId,
+            agentPath: input.agentPath,
+            canonicalCwd: input.agentPath,
+            signal: input.signal,
+          },
+          { isCurrent: () => ownsBinding && !input.signal.aborted }
+        );
         const [{ Client }, { StreamableHTTPClientTransport }] = await Promise.all([
           import('@modelcontextprotocol/sdk/client/index.js'),
           import('@modelcontextprotocol/sdk/client/streamableHttp.js'),
@@ -4164,6 +4168,7 @@ async function start() {
             { signal: input.signal, timeout: 120_000 }
           );
         } finally {
+          ownsBinding = false;
           await client.close().catch(() => {});
           await connectorRuntimePrincipals.revoke(binding.bindingId, 'turn_terminal');
         }

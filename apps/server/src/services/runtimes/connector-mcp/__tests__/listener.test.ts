@@ -1,3 +1,5 @@
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -30,6 +32,7 @@ function port(
 ): ConnectorRuntimePrincipalPort {
   return {
     openTurn: vi.fn(),
+    renew: vi.fn(),
     resolve: vi.fn().mockResolvedValue(result),
     revoke: vi.fn(),
   };
@@ -68,22 +71,42 @@ describe('connector runtime MCP listener', () => {
 
   it('binds an authenticated stateless MCP server to IPv4 loopback', async () => {
     const principals = port({ status: 'resolved', principal });
-    const factory = vi.fn(
-      () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' })
-    );
+    const factory = vi.fn(() => {
+      const server = new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' });
+      server.registerTool('verified', { description: 'Runtime listener proof.' }, () => ({
+        content: [{ type: 'text' as const, text: 'verified' }],
+      }));
+      return server;
+    });
     const listener = await startConnectorRuntimeMcpListener({ principals, serverFactory: factory });
     listeners.push(listener);
 
     expect(new URL(listener.url).hostname).toBe('127.0.0.1');
-    const response = await request(listener.url);
-
-    expect(response.status).toBe(200);
+    const client = new Client({ name: 'runtime-listener-test', version: '1.0.0' });
+    const transport = new StreamableHTTPClientTransport(new URL(listener.url), {
+      requestInit: {
+        headers: {
+          authorization: 'Bearer turn-secret',
+          [CONNECTOR_RUNTIME_KIND_HEADER]: 'codex',
+          [CONNECTOR_RUNTIME_CWD_HEADER]: encodeURIComponent('/repo'),
+        },
+      },
+    });
+    await client.connect(transport);
+    await expect(client.listTools()).resolves.toMatchObject({
+      tools: [{ name: 'verified' }],
+    });
+    await expect(client.callTool({ name: 'verified', arguments: {} })).resolves.toMatchObject({
+      content: [{ type: 'text', text: 'verified' }],
+    });
     expect(principals.resolve).toHaveBeenCalledWith({
       bearer: 'turn-secret',
       expectedRuntime: 'codex',
       expectedCanonicalCwd: '/repo',
     });
     expect(factory).toHaveBeenCalledWith(principal);
+    expect(principals.renew).not.toHaveBeenCalled();
+    await client.close();
   });
 
   it.each<ConnectorTurnRefusalReason>([
@@ -109,7 +132,10 @@ describe('connector runtime MCP listener', () => {
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({
       jsonrpc: '2.0',
-      error: { code: -32001, message: 'Unauthorized' },
+      error: {
+        code: -32001,
+        message: 'Connections access ended. Start a new turn to continue.',
+      },
       id: null,
     });
     expect(factory).not.toHaveBeenCalled();

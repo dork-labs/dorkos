@@ -6,6 +6,7 @@
  *
  * @module services/runtimes/claude-code/claude-code-runtime
  */
+import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
 import path from 'path';
 import { renameSession as sdkRenameSession, query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
@@ -1332,9 +1333,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           systemPrompt: { type: 'preset', preset: 'claude_code' },
           settingSources: ['local', 'project', 'user'],
           ...(this.spawnBinaryPath ? { pathToClaudeCodeExecutable: this.spawnBinaryPath } : {}),
-          env: {
-            // eslint-disable-next-line no-restricted-syntax -- full env needed for SDK subprocess inheritance
-            ...process.env,
+          env: runtimeEnvironment('claude-code', 'warmup', {
             // The probe gets the same explicit account pin a turn does, for two
             // reasons. `settingSources` includes `'user'`, which resolves under
             // the config dir — an inherited root would warm this cwd's palette
@@ -1344,7 +1343,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
             // holds during a rename or fork. There is no session here, so the
             // ACTIVE account is the only account this can mean.
             ...claudeConfigDirEnv(resolveActiveClaudeRoot()),
-          },
+          }),
         },
       });
       const commands = await Promise.race([

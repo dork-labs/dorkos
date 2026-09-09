@@ -11,6 +11,7 @@ import type {
   ConnectorRuntime,
   ConnectorRuntimePrincipalPort,
 } from '../connectors/runtime-principal-port.js';
+import type { ConnectorTurnLeaseSupervisorFactory } from './connectors/connector-turn-lease-supervisor.js';
 
 /** Header carrying the short-lived internal runtime bearer. */
 export const CONNECTOR_RUNTIME_AUTHORIZATION_HEADER = 'Authorization';
@@ -36,6 +37,8 @@ export interface ConnectorRuntimeTools {
   readonly listenerUrl: string;
   /** Broker-owned exact predicate for the five private runtime connector capabilities. */
   readonly isConnectorCapabilityId: (id: string) => boolean;
+  /** Testable process-local supervisor constructor; production uses the default. */
+  readonly createLeaseSupervisor?: ConnectorTurnLeaseSupervisorFactory;
 }
 
 /** One turn's fixed connector-only MCP transport configuration. */

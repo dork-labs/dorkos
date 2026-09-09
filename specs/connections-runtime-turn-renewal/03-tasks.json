@@ -1,0 +1,59 @@
+{
+  "spec": "specs/connections-runtime-turn-renewal/02-specification.md",
+  "slug": "connections-runtime-turn-renewal",
+  "generatedAt": "2026-09-08T15:16:20-05:00",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Renewable principal authority",
+      "subject": "[connections-runtime-turn-renewal] [P1] Add process-owned renewal permits and expiry CAS",
+      "description": "Extend the internal Connections runtime principal contract in `apps/server/src/services/connectors/runtime-principal-port.ts` and `apps/server/src/services/connectors/principal/runtime-principal-service.ts`. `openTurn` must return an opaque process-local permit whose exact object identity is registered for that binding. The permit is never persisted, serialized, logged, copied into MCP headers, or exposed through REST, Transport, external MCP, CLI, OpenAPI, or shared public schemas. `renew` accepts the exact binding and permit, rejects a copied or reconstructed value, revalidates the immutable owner/runtime/canonical-session/agent/path/working-directory authority, after awaited authority work synchronously re-reads the current row and clock, rejects an expired or terminal row, rechecks the exact permit, tombstone, and adapter-owned active-turn identity guard, and then updates only `expiresAt` with a compare-and-set on the freshly observed expiry, boot epoch, and `revokedAt IS NULL`. There must be no awaited gap between those final fences and the compare-and-set. Keep the bearer and all claims unchanged. Revoke/terminal teardown closes the permit before durable work; boot creates no permits and revokes prior bindings. Keep existing revoke callers compatible through the service's binding-to-permit ownership map.\n\nUse the existing four-hour lease horizon and return the committed expiry. Add injected-clock tests for before/exactly-at/after expiry; authority change; restart; revocation while renewal awaits authority; an authority wait that crosses expiry; active-turn slot replacement during that wait while the old abort signal remains live; two overlapping renewals; identical bearer/token hash and claims after success; monotonic expiry; fake-permit refusal; and bearer traffic that resolves or executes without changing expiry. Kill mutants that omit the final permit/tombstone/owner-slot checks, rely only on the pre-await clock, or replace the expiry CAS with an unconditional update. Assert that schemas, migrations, OpenAPI, Transport, CLI, and external MCP inventories do not gain a renewal seam.",
+      "activeForm": "Adding process-owned renewal authority",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": "DOR-1903",
+      "status": "completed"
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Supervisor and runtime ownership",
+      "subject": "[connections-runtime-turn-renewal] [P2] Supervise the same lease across Claude Code, Codex, and OpenCode",
+      "description": "Add one internal `ConnectorTurnLeaseSupervisor` under the server runtime Connections lifecycle. Give it injected clock and one-shot scheduler seams, the opaque renewal permit, the turn `AbortSignal`, and an adapter-supplied identity guard whose invalidation is registered with the permit and is rechecked at the renewal commit boundary. It schedules normal renewal three hours before the returned expiry, which is hourly under the four-hour policy. Transient storage failures retry after one minute, five minutes, then at a capped fifteen-minute cadence only while the old lease is live; callbacks at or after expiry do not call renew. Use unref'ed timers where supported. State is `active`, `stopped`, or terminal `lost`; a loss records only safe binding/runtime/reason/timestamp metadata, emits one structured warning, and makes the next Connections call instruct the user to start a new turn. Successful renewals and retries create no provider operation, usage attempt, Activity entry, toast, or turn event.\n\nWire the supervisor to each real adapter boundary without changing transports. Claude Code starts it only after the lazy first Connections setup succeeds and closes it with the per-message context, so a warm process's next message gets a fresh permit. Codex binds it to the exact active controller for `sendMessage`; the running child keeps one unchanged bearer in its initial environment, and cancellation/setup failure/child exit stop the supervisor and revoke before or while interrupting that child. OpenCode starts only after `dorkos_connections` registration reports applied, holds the canonical-directory lease until supervisor stop and revoke settle, performs no mid-turn `mcp.add`, and re-registers a fresh bearer for the next turn. No adapter may infer liveness from a session/thread/sidecar row. Prove timer cancellation, no post-stop callback, delayed-past-expiry refusal, slot replacement while renewal awaits authority, multi-callback single ownership, terminal warning once, clean next-call error, no hourly activity, and exact teardown ordering in adapter tests.",
+      "activeForm": "Supervising leases across runtime-owned turns",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": "DOR-1903",
+      "status": "completed"
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Composed authority proof",
+      "subject": "[connections-runtime-turn-renewal] [P3] Prove multi-day renewal and fail-closed execution boundaries",
+      "description": "Add shared conformance and public-seam regression coverage for the completed renewal lifecycle. Drive at least seventy-two hours with deterministic fake clocks through Claude Code, Codex, and OpenCode, while retaining their different attachment mechanisms. Prove one unchanged bearer remains authorized only while the exact active process-owned turn keeps renewing; request traffic, stored sessions, transcripts, Codex threads, OpenCode sessions, and MCP registration never renew or recreate it. Prove cancellation, terminal completion, setup/runtime failure, canonical structural-authority change, commit-boundary slot replacement, expiry crossed during awaited authority, and server restart close renewal permanently, and that warm Claude processes, resumed Codex threads, and reused OpenCode sidecars give the next message a fresh binding and permit.\n\nKeep connection, grant, operation-revision, session-override, and approval checks in the execution broker rather than adding them to the structural renewal resolver. Exercise the actual execution broker boundary: a provider call dispatched after final revalidation may settle across expiry and records its real result; expiry/revoke before a safe retry prevents the second provider command; an uncertain write remains `outcome_unknown` and is never retried by renewal logic. Use real SQLite restart coverage to show an old bearer cannot resolve and an old permit cannot renew. Exercise the loopback MCP initialize/tools-list/call path for Codex/OpenCode and Claude's in-process path, and assert an MCP client holding only the bearer has no renewal operation. Keep tests free of real waiting, external provider calls, paid models, new public schemas, migrations, or configuration. Add implementation-time operator/developer documentation that records the accepted same-bearer theft tradeoff. Add one truthful changelog fragment that explains days-long turn continuity and the four-hour post-supervision bound.",
+      "activeForm": "Proving multi-day authority and execution safety",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "2.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": "DOR-1903",
+      "status": "completed"
+    }
+  ]
+}

@@ -210,7 +210,8 @@ describe('readClaudeSignInDeadlines', () => {
     expect(mockedProbe).toHaveBeenCalledWith(
       '/usr/bin/security',
       ['find-generic-password', '-w', '-s', 'Claude Code-credentials-685abfe8'],
-      expect.any(Number)
+      5_000,
+      { runtime: 'claude-code', purpose: 'process-inspection' }
     );
   });
 
@@ -225,7 +226,8 @@ describe('readClaudeSignInDeadlines', () => {
     expect(mockedProbe).toHaveBeenCalledWith(
       '/usr/bin/security',
       ['find-generic-password', '-w', '-s', 'Claude Code-credentials'],
-      expect.any(Number)
+      5_000,
+      { runtime: 'claude-code', purpose: 'process-inspection' }
     );
   });
 

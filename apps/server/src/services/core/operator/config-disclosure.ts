@@ -340,6 +340,10 @@ export const CONFIG_DISCLOSURE = {
   'workbench.terminalGraceTtlMinutes': 'expose',
   'workbench.autoOpenDiff': 'expose',
 
+  // Only the owner can entrust additional environment variables to runtimes.
+  'runtimes.environment.inherit.claudeCode': 'withhold',
+  'runtimes.environment.inherit.codex': 'withhold',
+  'runtimes.environment.inherit.opencode': 'withhold',
   'runtimes.default': 'expose',
   // Whether Codex and OpenCode agents carry the DorkOS tools (spec
   // `tool-only-room-replies` §D5). Exposed although it is operator-only to
