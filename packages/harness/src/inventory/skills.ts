@@ -137,15 +137,31 @@ const SKILL_ROOTS: readonly SkillRoot[] = [
 ];
 
 /**
+ * The two roots the engine writes projections into, and therefore the only two
+ * where a `<pkg>__<name>` symlink might be its own output rather than a person's.
+ *
+ * The list is the pair `plan/installed-projector.ts` targets, not a subset of
+ * {@link SKILL_ROOTS} chosen by hand: everything else in {@link SKILL_ROOTS}
+ * belongs to another agent tool, and DorkOS has never written a byte into one.
+ */
+const ENGINE_WRITTEN_ROOTS: readonly SkillRoot[] = [AGENTS_SKILLS_DIR, CLAUDE_SKILLS_DIR];
+
+/**
  * Inventory every authored skill in every root a person writes them in.
  *
- * The engine's own output is excluded from every root, in the two different ways
- * the roots need it: the walk uses the scanner's default authored view
- * (`<pkg>__<name>` **and** a symlink), and the `.claude/skills` walk additionally
- * drops the entries that resolve back into `.agents/skills` or `.dork/plugins`.
- * That second exclusion stays scoped to `.claude/skills` because that is the one
- * skills directory DorkOS projects into: a symlink under `.opencode/skills` is
- * somebody's own, whatever it points at.
+ * The engine's own output is excluded from the two roots the engine WRITES INTO,
+ * in the two different ways they need it: `.agents/skills` and `.claude/skills`
+ * use the scanner's default authored view (`<pkg>__<name>` **and** a symlink),
+ * and `.claude/skills` additionally drops the entries that resolve back into
+ * `.agents/skills` or `.dork/plugins`.
+ *
+ * **A harness-native root gets neither exclusion**, because there is nothing
+ * there to exclude: DorkOS projects into `.agents/skills` and `.claude/skills`
+ * and nowhere else, so every entry under `.opencode/skills` is the person's
+ * however it is spelled. `includeManagedProjections` says so to the scanner —
+ * without it, somebody's own `.opencode/skills/flow__ship -> …` matched the
+ * engine's own projection shape and got no line at all, which is the silence this
+ * module exists to end wearing the engine's own hat.
  *
  * @param repoRoot - absolute path to the repository root.
  * @returns one entry per authored skill directory, in {@link SKILL_ROOTS} order,
@@ -155,7 +171,9 @@ export function inventorySkills(repoRoot: string): {
   skills: SkillInventoryEntry[];
   unreadable: UnreadableSource[];
 } {
-  const walked = SKILL_ROOTS.map((root) => collect(repoRoot, root));
+  const walked = SKILL_ROOTS.map((root) =>
+    collect(repoRoot, root, { includeManagedProjections: !ENGINE_WRITTEN_ROOTS.includes(root) })
+  );
   return {
     skills: walked.flatMap((result) => result.skills),
     unreadable: walked.flatMap((result) => result.unreadable),
@@ -171,14 +189,15 @@ export function inventorySkills(repoRoot: string): {
  */
 function collect(
   repoRoot: string,
-  root: SkillRoot
+  root: SkillRoot,
+  options: { includeManagedProjections: boolean }
 ): { skills: SkillInventoryEntry[]; unreadable: UnreadableSource[] } {
   const absRoot = join(repoRoot, root);
   const probe = readDirEntries(absRoot, root, 'skill');
   if (probe.unreadable) return { skills: [], unreadable: [probe.unreadable] };
 
   const skills: SkillInventoryEntry[] = [];
-  for (const skill of scanSkillDirs(absRoot, root)) {
+  for (const skill of scanSkillDirs(absRoot, root, options)) {
     const absEntry = join(repoRoot, skill.sourceDir);
     const isSymlink = lstatSync(absEntry, { throwIfNoEntry: false })?.isSymbolicLink() === true;
     if (root === CLAUDE_SKILLS_DIR && isSymlink && isManagedProjection(repoRoot, absEntry))

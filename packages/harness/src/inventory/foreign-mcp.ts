@@ -21,14 +21,24 @@
  * names in `.mcp.json` and states why it records nothing else: a real `env` block
  * holds live API keys, and this record is printed in a terminal, passed around
  * and served over an API. The same rule is stricter here, because there is
- * nothing a count cannot say that a name would need to. So each reader below
- * parses its file only far enough to count top-level server declarations, and
- * nothing inside one is ever read.
+ * nothing a count cannot say that a name would need to.
+ *
+ * The boundary is what LEAVES these readers, not how little they parse. Both
+ * parse the whole file — `JSON.parse`, and smol-toml for Codex — and hand back
+ * one number, because the number is the only thing a caller is given. An earlier
+ * version tried to be safe by parsing LESS, matching TOML table headers with a
+ * regex; it got three of five ordinary spellings wrong, two of them as silent
+ * zeros. Two consequences of parsing properly are load-bearing and both are
+ * tested: a parse error's own message never travels (both parsers quote the
+ * offending text back, and the offending text in one of these files is somebody's
+ * key), and a leading byte-order mark is stripped before either parse, because a
+ * file a Windows editor saved is not an unreadable file.
  *
  * @module inventory/foreign-mcp
  */
 import { lstatSync } from 'node:fs';
 import { join } from 'node:path';
+import { parse as parseToml } from 'smol-toml';
 import { readTextFile } from './read.js';
 import type { ForeignMcpConfig, UnreadableSource } from './types.js';
 
@@ -57,6 +67,9 @@ interface CountResult {
   unreadable?: string;
 }
 
+/** The repo-relative config file Codex reads MCP servers from. */
+const CODEX_CONFIG_SOURCE = '.codex/config.toml';
+
 /** One MCP config file another agent tool reads, and how its servers are counted. */
 interface ForeignMcpShape {
   /** Repo-relative path, forward slashes. */
@@ -72,11 +85,50 @@ interface ForeignMcpShape {
 }
 
 /**
- * Count the keys of one top-level object in a JSON file, and nothing below them.
+ * The byte-order mark a Windows editor leaves at the front of a UTF-8 file.
+ *
+ * Neither parser accepts one, and `readFile` does not strip it, so a
+ * `.cursor/mcp.json` saved by Notepad came back "not valid JSON" — a file plainly
+ * full of MCP servers reported as unreadable.
+ */
+const BOM = '\ufeff';
+
+/**
+ * A file's text without its byte-order mark, if it has one.
+ *
+ * @param text - the file's contents as read.
+ * @returns the same text, BOM removed.
+ */
+function stripBom(text: string): string {
+  return text.startsWith(BOM) ? text.slice(BOM.length) : text;
+}
+
+/**
+ * Count the keys of one top-level table, and nothing below them.
  *
  * `Object.keys(...).length` is the whole read: the values are never touched, so
- * an `env` block cannot reach a caller by any route, including a thrown error's
- * message.
+ * an `env` block cannot reach a caller by any route.
+ *
+ * @param servers - the value found under the servers key.
+ * @param label - the file's name, for the reason on a failure.
+ * @param wrongShape - what the file has instead, in that file's own vocabulary:
+ *   JSON has objects and TOML has tables, and a person reading a line about
+ *   their `.codex/config.toml` should not be told it has the wrong kind of
+ *   object.
+ * @returns the count, or why there is none.
+ */
+function countTableKeys(servers: unknown, label: string, wrongShape: string): CountResult {
+  if (servers === undefined) return {};
+  if (typeof servers !== 'object' || servers === null || Array.isArray(servers)) {
+    return {
+      unreadable: `${label} has ${wrongShape}, so DorkOS could not count the MCP servers in it`,
+    };
+  }
+  return { servers: Object.keys(servers).length };
+}
+
+/**
+ * Count the servers under one top-level key of a JSON file.
  *
  * @param key - the top-level key the servers sit under.
  * @param label - the file's name, for the reason on a failure.
@@ -86,7 +138,7 @@ function countJsonServers(key: string, label: string): (text: string) => CountRe
   return (text) => {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(text);
+      parsed = JSON.parse(stripBom(text));
     } catch {
       // The parse error's message is deliberately NOT carried. `JSON.parse`
       // quotes the text around the failure, and the text around a failure in one
@@ -100,59 +152,49 @@ function countJsonServers(key: string, label: string): (text: string) => CountRe
         unreadable: `${label} parses, but its top level is not an object, so DorkOS could not read what it declares`,
       };
     }
-    const servers = (parsed as Record<string, unknown>)[key];
-    if (servers === undefined) return {};
-    if (typeof servers !== 'object' || servers === null || Array.isArray(servers)) {
-      return {
-        unreadable: `${label} has a "${key}" key that is not an object, so DorkOS could not count the MCP servers in it`,
-      };
-    }
-    return { servers: Object.keys(servers).length };
+    return countTableKeys(
+      (parsed as Record<string, unknown>)[key],
+      label,
+      `a "${key}" key that is not an object`
+    );
   };
 }
 
 /**
- * The TOML table header a Codex MCP server is declared under.
+ * Count the servers a `.codex/config.toml` declares under `[mcp_servers]`.
  *
- * A header match rather than a TOML parse, and that is the point: a parser would
- * hand back every value in the file, and this needs none of them. The pattern is
- * anchored to a whole line, so the only way to over-count is a line inside a
- * multi-line string that reads exactly like a table header — which costs a wrong
- * number in a sentence, and never a leaked value.
- */
-const CODEX_MCP_TABLE = /^[ \t]*\[[ \t]*mcp_servers[ \t]*\.[ \t]*(.+?)[ \t]*\][ \t]*$/gm;
-
-/**
- * Count the `[mcp_servers.<name>]` tables in a `.codex/config.toml`.
+ * A real TOML parse, because the same servers have five ordinary spellings and a
+ * header-matching regex got three of them wrong — two of those as SILENT ZEROS,
+ * which is the exact silence this module exists to end, reintroduced one file
+ * deeper. A comment after the header (`[mcp_servers.alpha] # note`) missed the
+ * end-of-line anchor; inline tables under one `[mcp_servers]` and dotted keys
+ * (`mcp_servers.alpha.command = "npx"`) have no per-server header to match at
+ * all; and two QUOTED names sharing a dotted prefix collapsed into one. All five
+ * spellings are `CODEX_TOML_SHAPES` in `__tests__/inventory.test.ts`.
  *
- * Distinct names, because TOML lets one server's keys be split over a table and
- * a sub-table (`[mcp_servers.linear]` then `[mcp_servers.linear.env]`) — the
- * sub-table would otherwise count as a second server. The `.env` suffix is not
- * special-cased: taking the name up to its first dot is what makes both spellings
- * one server.
- *
- * Two ways the number can be off by one, both stated rather than papered over,
- * because the cost of each is a wrong count in one sentence and never a leaked
- * value: a line inside a multi-line string that reads exactly like a table
- * header counts as a server, and two servers whose names are QUOTED and both
- * start with the same dotted prefix (`["a.b"]`, `["a.c"]`) count as one. A real
- * TOML parser would fix both and would hand back every value in the file, which
- * is the trade this module exists to refuse.
+ * The parser hands back every value in the file and none of them is looked at:
+ * only `Object.keys` of the `mcp_servers` table leaves this function, and the
+ * parse error's message is dropped rather than carried, because smol-toml prints
+ * the offending LINE back and the offending line in one of these files is
+ * somebody's API key.
  *
  * @param text - the file's contents.
- * @returns the number of distinct servers, or nothing when it declares none.
+ * @returns the number of servers, or why there is none.
  */
 function countCodexServers(text: string): CountResult {
-  const names = new Set<string>();
-  for (const match of text.matchAll(CODEX_MCP_TABLE)) {
-    const declared =
-      (match[1] ?? '')
-        .split('.')[0]
-        ?.trim()
-        .replace(/^["']|["']$/g, '') ?? '';
-    if (declared !== '') names.add(declared);
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = parseToml(stripBom(text));
+  } catch {
+    return {
+      unreadable: `${CODEX_CONFIG_SOURCE} is not valid TOML, so DorkOS could not read what it declares`,
+    };
   }
-  return names.size === 0 ? {} : { servers: names.size };
+  return countTableKeys(
+    parsed['mcp_servers'],
+    CODEX_CONFIG_SOURCE,
+    'an mcp_servers key that is not a table'
+  );
 }
 
 /**
@@ -170,7 +212,7 @@ function countCodexServers(text: string): CountResult {
  */
 const FOREIGN_MCP_SHAPES: readonly ForeignMcpShape[] = [
   {
-    source: '.codex/config.toml',
+    source: CODEX_CONFIG_SOURCE,
     declaredIn: 'Codex keeps MCP servers here, under [mcp_servers.<name>]',
     count: countCodexServers,
   },

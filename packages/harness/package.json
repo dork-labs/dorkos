@@ -34,6 +34,7 @@
     "@dorkos/marketplace": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@dorkos/skills": "workspace:*",
+    "smol-toml": "^1.8.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {
