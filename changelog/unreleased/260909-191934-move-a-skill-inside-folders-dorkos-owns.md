@@ -3,6 +3,10 @@ covers:
   - 'feat(shared,server): harness.autoAdopt, off everywhere by default (DOR-1945)'
   - 'feat(server): the boot pass reports skills only one tool can see (DOR-1945)'
   - 'feat(cli): sync says when harness.autoAdopt does nothing here (DOR-1945)'
+  # Folds in here: it corrects the pluralisation of a sentence the second bullet
+  # writes, before anybody could have seen one, so there is nothing to report as
+  # a fix of its own.
+  - 'fix(server): the boot hint counts in singulars when there is one (DOR-1945)'
 ---
 
 ### Added
