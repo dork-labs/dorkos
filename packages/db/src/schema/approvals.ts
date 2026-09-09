@@ -174,6 +174,45 @@ export const approvals = sqliteTable(
 
     /** When the token was spent or written off. ISO 8601 UTC; enforces single use. */
     consumedAt: text('consumed_at'),
+
+    /**
+     * Which session asked, so a verdict can reach it after it stopped waiting
+     * (spec `approval-verdict-delivery`). Null for a request that arrived over a
+     * surface with no session — the external `/mcp` server, the introspection
+     * stub — which is exactly the set with nowhere to deliver to.
+     *
+     * A NEW column rather than a reuse of `connectorSessionId`: that one is
+     * preflight-frozen connector AUTHORITY that an approval binds to, and
+     * overloading an authority field to mean two things is how a binding stops
+     * meaning anything.
+     */
+    requestingSessionId: text('requesting_session_id'),
+
+    /**
+     * The directory that session runs in, so a cold start resumes in the right
+     * place.
+     *
+     * Stored rather than looked up because the lookup is what fails: the
+     * projector registry empties on restart and an approval outlives one easily
+     * inside a two-hour window. This is the DOR-981 lesson, which
+     * `mcp-signin-resume` records as `originCwd` for the identical reason.
+     */
+    requestingCwd: text('requesting_cwd'),
+
+    /**
+     * The single-delivery CLAIM. ISO 8601 UTC; null while unclaimed.
+     *
+     * Two paths can deliver one verdict — the in-session hold that resumes the
+     * held tool call, and the out-of-band deliverer — and both wake on the same
+     * `approval_resolved` broadcast, so a check-then-act lets both through. This
+     * column is written by a conditional update (`WHERE id = ? AND notified_at
+     * IS NULL`), the same shape that makes a token single-use, which is what
+     * makes "exactly one delivery" true by construction rather than by timing.
+     *
+     * A claim, not a receipt: the hold takes it when it STARTS waiting and
+     * releases it if it gives up without a decision.
+     */
+    notifiedAt: text('notified_at'),
   },
   (table) => [
     index('idx_approvals_state').on(table.state),

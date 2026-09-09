@@ -66,8 +66,16 @@ import type { ApprovalService } from '../approvals/index.js';
 export interface InSessionSurface {
   /** The live session inline cards and hold cards are pushed onto. */
   session: CapabilityHoldSession;
-  /** The approval primitive a destructive hold waits on, when one is wired. */
-  approvals?: Pick<ApprovalService, 'awaitDecision' | 'getPending'>;
+  /**
+   * The approval primitive a destructive hold waits on, when one is wired — and,
+   * while it waits, the single-delivery claim it holds so the out-of-band verdict
+   * deliverer cannot answer the same approval twice (spec
+   * `approval-verdict-delivery`).
+   */
+  approvals?: Pick<
+    ApprovalService,
+    'awaitDecision' | 'getPending' | 'claimVerdictDelivery' | 'releaseVerdictDelivery'
+  >;
   /** The tool call's abort signal — a mid-turn interrupt ends any hold. */
   signal?: AbortSignal;
   /** Override the hold cap (tests). */

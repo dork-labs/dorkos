@@ -126,6 +126,7 @@ import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { PermissionModeId, SessionSettings } from '@dorkos/shared/types';
 import type {
   AdditionalContext,
+  ApprovalVerdictData,
   ClientContext,
   RoomContextData,
 } from '@dorkos/shared/additional-context';
@@ -709,6 +710,12 @@ export interface DispatchMessageOpts {
   /** Background the caller attached to this turn; the person never sees it. */
   seedContext?: string;
   /**
+   * How an approval this session asked for ended, when a person answered it after
+   * the in-session hold gave up (spec `approval-verdict-delivery`). Passed
+   * straight through to the turn, which renders it into the neutral context bag.
+   */
+  approvalVerdict?: ApprovalVerdictData;
+  /**
    * Standing instructions for this turn's system prompt — a room's `ROOM.md`
    * conventions, a scheduled task's brief. Passed straight through to the turn;
    * see {@link TriggerTurnOpts.systemPromptAppend} for what belongs here and
@@ -927,6 +934,7 @@ interface DispatchPlan {
     | 'context'
     | 'roomContext'
     | 'seedContext'
+    | 'approvalVerdict'
     | 'systemPromptAppend'
     | 'accountHint'
     | 'settings'
@@ -1205,6 +1213,7 @@ function launchDispatch(
       ...(turn.context ? { context: turn.context } : {}),
       ...(turn.roomContext ? { roomContext: turn.roomContext } : {}),
       ...(turn.seedContext ? { seedContext: turn.seedContext } : {}),
+      ...(turn.approvalVerdict ? { approvalVerdict: turn.approvalVerdict } : {}),
       ...(turn.systemPromptAppend !== undefined
         ? { systemPromptAppend: turn.systemPromptAppend }
         : {}),

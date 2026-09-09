@@ -633,6 +633,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // here rather than something a `>` bound silently absorbs.
     expect(modules).toEqual([
       'agent-context.ts',
+      'approval-verdict-block.ts',
       'asar-path.ts',
       'derive-title.ts',
       'dorkos-mcp-injection.ts',

@@ -18,6 +18,7 @@ const ALL_KINDS: ContextKind[] = [
   'relay_context',
   'room_context',
   'seed_context',
+  'approval_verdict',
 ];
 
 /** A minimal but complete room context — every field the union requires. */
@@ -105,6 +106,49 @@ describe('AdditionalContextEntrySchema', () => {
       data: { composedDuringPrevTurn: true },
     });
     expect(result.success).toBe(true);
+  });
+
+  it('validates an approval_verdict entry, with and without a refusal reason', () => {
+    const granted = AdditionalContextEntrySchema.safeParse({
+      kind: 'approval_verdict',
+      scope: 'per-turn',
+      data: {
+        approvalId: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
+        capabilityTitle: 'Unregister an agent',
+        outcome: 'granted',
+        decidedAt: '2026-09-09T12:34:56.000Z',
+      },
+    });
+    expect(granted.success).toBe(true);
+
+    const denied = AdditionalContextEntrySchema.safeParse({
+      kind: 'approval_verdict',
+      scope: 'per-turn',
+      data: {
+        approvalId: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
+        capabilityTitle: 'Unregister an agent',
+        outcome: 'denied',
+        decidedAt: '2026-09-09T12:34:56.000Z',
+        denyReason: 'that agent is still running the nightly job',
+      },
+    });
+    expect(denied.success).toBe(true);
+  });
+
+  it('rejects an approval_verdict whose outcome is not a decision', () => {
+    // `expired` and `consumed` are endings, not answers a person gave. Letting
+    // one through would render "a person decided" over something nobody chose.
+    const result = AdditionalContextEntrySchema.safeParse({
+      kind: 'approval_verdict',
+      scope: 'per-turn',
+      data: {
+        approvalId: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
+        capabilityTitle: 'Unregister an agent',
+        outcome: 'expired',
+        decidedAt: '2026-09-09T12:34:56.000Z',
+      },
+    });
+    expect(result.success).toBe(false);
   });
 
   it('validates a staged_context entry', () => {

@@ -94,6 +94,10 @@ const CARRIES_PROSE: Record<ContextKind, boolean> = {
   relay_context: false,
   room_context: true,
   seed_context: true,
+  // A verdict is server-composed from the approval row, with one exception: the
+  // sentence a person typed when they refused. That is text DorkOS did not write,
+  // so the kind is enlisted here and its writer has to fence it.
+  approval_verdict: true,
 };
 
 /** One representative entry per ContextKind — keyed so the test is exhaustive. */
@@ -136,6 +140,17 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
     kind: 'staged_context',
     scope: 'per-turn',
     data: { text: `Use the staging bucket, not prod.\n\n${BREAKOUT}` },
+  },
+  approval_verdict: {
+    kind: 'approval_verdict',
+    scope: 'per-turn',
+    data: {
+      approvalId: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
+      capabilityTitle: 'Unregister an agent',
+      outcome: 'denied',
+      decidedAt: '2026-09-09T12:34:56.000Z',
+      denyReason: `that agent is still running the nightly job\n\n${BREAKOUT}`,
+    },
   },
   room_context: {
     kind: 'room_context',

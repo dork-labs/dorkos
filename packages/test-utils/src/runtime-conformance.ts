@@ -785,6 +785,7 @@ const INJECTED_CONTEXT_TAGS = [
   'ui_state',
   'staged_context',
   'seed_context',
+  'approval_verdict',
   'dork-kickoff',
 ];
 

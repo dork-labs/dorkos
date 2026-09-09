@@ -17,6 +17,7 @@
  */
 import type {
   AdditionalContext,
+  ApprovalVerdictData,
   ClientContext,
   ContextKind,
   GitStatusData,
@@ -54,6 +55,16 @@ export interface AssembleContextOpts {
    * feature — it is a bound on one of its two doors.
    */
   seedContext?: string;
+  /**
+   * How an approval this session asked for ended, when a person answered it after
+   * the in-session hold had already given up (spec `approval-verdict-delivery`).
+   *
+   * A sibling of `roomContext` and for the same reason: it is SERVER-derived,
+   * composed entirely from the approval row, and nothing a caller could supply.
+   * It reaches this function only from `approval-verdict-delivery.ts`, which is
+   * the one place that reads a verdict off the store.
+   */
+  approvalVerdict?: ApprovalVerdictData;
   /**
    * Kinds the target runtime injects itself (from `getCapabilities().nativeContext`)
    * — omitted from the bag to avoid double-injection.
@@ -131,6 +142,9 @@ function clampSeed(text: string): string {
  *   this conversation already knowing something the person would otherwise have
  *   had to type. The fifth kind that flows, and the only one this function
  *   BOUNDS rather than merely passes through ({@link clampSeed}).
+ * - `approval_verdict`: added when a late approval answer is being delivered to
+ *   this session. The sixth kind that flows, and the only one that is not about
+ *   the turn's own circumstances at all — it IS the reason the turn exists.
  *
  * @param opts - Effective cwd, optional client signals, optional room context,
  *   optional caller-supplied seed, and the runtime's native-context omission
@@ -139,7 +153,7 @@ function clampSeed(text: string): string {
 export async function assembleAdditionalContext(
   opts: AssembleContextOpts
 ): Promise<AdditionalContext> {
-  const { cwd, clientContext, roomContext, seedContext, nativeContext } = opts;
+  const { cwd, clientContext, roomContext, seedContext, approvalVerdict, nativeContext } = opts;
   const bag: AdditionalContext = [];
   const omits = (kind: ContextKind): boolean => nativeContext.includes(kind);
 
@@ -166,6 +180,10 @@ export async function assembleAdditionalContext(
 
   if (seedContext && !omits('seed_context')) {
     bag.push({ kind: 'seed_context', scope: 'per-turn', data: { text: clampSeed(seedContext) } });
+  }
+
+  if (approvalVerdict && !omits('approval_verdict')) {
+    bag.push({ kind: 'approval_verdict', scope: 'per-turn', data: approvalVerdict });
   }
 
   return bag;

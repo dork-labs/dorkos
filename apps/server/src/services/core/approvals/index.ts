@@ -25,7 +25,13 @@ export {
   type ApprovalBinding,
   type ApprovalConnectorAuthority,
   type ApprovalRequestInput,
+  type ApprovalRequestingSession,
+  type ApprovalVerdictDelivery,
 } from './approval-service.js';
+export {
+  deliverApprovalVerdict,
+  startApprovalVerdictDelivery,
+} from './approval-verdict-delivery.js';
 export {
   ApprovalGrantService,
   type ApprovalGrantInput,

@@ -205,4 +205,41 @@ describe('a hand-registered destructive tool waits for the operator', () => {
     expect(queue).toEqual([]);
     expect(ran).toEqual([]);
   });
+
+  // ---------------------------------------------------------------------------
+  // Where a late verdict is delivered (spec `approval-verdict-delivery`)
+  //
+  // These two tools are the ones the reported bug happened on: an operator
+  // approved four `mesh_unregister` cards past the hold cap and the agent that
+  // asked was never told, because the turn had ended. The row has to remember
+  // which session asked, or there is nowhere to deliver the answer to.
+  // ---------------------------------------------------------------------------
+  it('records the session that asked, so a late answer has somewhere to go', async () => {
+    const [gated] = gateHandRegisteredMcpTools([tool()], undefined, undefined, () => ({
+      sessionId: 'session-42',
+      cwd: '/agents/scout',
+    }));
+    await gated!.handler({ agentId: TARGET } as Record<string, unknown>, undefined);
+
+    const approvalId = approvals.listPending()[0]!.approvalId;
+    approvals.grant(approvalId);
+
+    expect(approvals.verdictDelivery(approvalId)).toMatchObject({
+      sessionId: 'session-42',
+      cwd: '/agents/scout',
+    });
+  });
+
+  it('records nothing for a surface that has no session', async () => {
+    // The external `/mcp` server registers these same tools with no session
+    // resolver, and its rows must stay byte-identical to the ones they always
+    // wrote — a claim on a row nobody can be told about is a lock held forever.
+    await call(undefined);
+
+    const approvalId = approvals.listPending()[0]!.approvalId;
+    approvals.grant(approvalId);
+
+    expect(approvals.verdictDelivery(approvalId)).toBeUndefined();
+    expect(approvals.claimVerdictDelivery(approvalId)).toBe(false);
+  });
 });
